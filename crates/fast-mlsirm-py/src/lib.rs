@@ -104,6 +104,7 @@ use mlsirm_core::fitstats::{
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::bifactor_grm::{fit_bifactor_grm as core_fit_bifactor_grm, BifactorGrmConfig};
+use mlsirm_core::bifactor_oakes::{bifactor_oakes_se as core_bifactor_oakes_se, BifactorOakesConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
     gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, phi_lambda as core_phi_lambda,
@@ -1418,6 +1419,101 @@ fn fit_bifactor_grm(
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("best_start", res.best_start)?;
     out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Observed-information standard errors for the single-group polytomous
+/// bifactor graded response model via the Oakes (1999, eq. 6, p. 480)
+/// identity, evaluated at GIVEN item parameters (valid at every point, not
+/// only the MLE): `d^2 l/d xi d xi' = [d^2 Q/d xi' d xi' + d^2 Q/d xi' d xi]`.
+/// The E-step is the Gibbons-Hedeker reduced E-step (Gibbons et al., 2007,
+/// eq. 15); each item loads the general factor plus at most one specific
+/// (Gibbons et al., 2007, eq. 9). `a_specific` must be exactly `0.0` for
+/// general-only items; `threshold` is row-major `n_items * (n_cat - 1)`
+/// strictly decreasing per item. `q_general`/`q_specific`/`fd_step` are
+/// REQUIRED caller arguments (no defaults below the 121-node study floor;
+/// the current supported-grid cap rejects above-41 values loudly until the
+/// quadrature-cap removal lands — never silently). Returns a dict with
+/// `labels`, `information` (row-major `k x k`, always present), `vcov` /
+/// `se` (or `None` when the information is not positive definite — never a
+/// substitute), `positive_definite`, `non_pd_reason` (or `None`).
+///
+/// References (APA 7th ed.): Oakes, D. (1999). Direct calculation of the
+/// information matrix via the EM algorithm. *Journal of the Royal
+/// Statistical Society Series B: Statistical Methodology, 61*(2), 479-482.
+/// https://doi.org/10.1111/1467-9868.00188; Gibbons, R. D., et al. (2007).
+/// Full-information item bifactor analysis of graded response data.
+/// *Applied Psychological Measurement, 31*(1), 4-19.
+/// https://doi.org/10.1177/0146621606289485
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (a_general, a_specific, threshold, y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general, q_specific, fd_step))]
+fn bifactor_oakes_se(
+    py: Python<'_>,
+    a_general: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_general: usize,
+    q_specific: usize,
+    fd_step: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let y_slice = y.as_slice()?;
+    let obs_vec: Option<Vec<bool>> = match &observed {
+        Some(o) => Some(o.as_slice()?.to_vec()),
+        None => None,
+    };
+    let yy: Vec<usize> = y_slice
+        .iter()
+        .enumerate()
+        .map(|(idx, &v)| {
+            if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) {
+                return Ok(0usize);
+            }
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let smap: Vec<i32> = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            i32::try_from(v)
+                .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = BifactorOakesConfig {
+        q_general,
+        q_specific,
+        fd_step,
+    };
+    let res = core_bifactor_oakes_se(
+        a_general.as_slice()?,
+        a_specific.as_slice()?,
+        threshold.as_slice()?,
+        &yy,
+        obs_vec.as_deref(),
+        &smap,
+        n_persons,
+        n_items,
+        n_specific,
+        n_cat,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("labels", res.labels)?;
+    out.set_item("information", res.information)?;
+    out.set_item("vcov", res.vcov)?;
+    out.set_item("se", res.se)?;
+    out.set_item("positive_definite", res.positive_definite)?;
+    out.set_item("non_pd_reason", res.non_pd_reason)?;
     Ok(out.into())
 }
 
@@ -9691,6 +9787,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_nominal_model, m)?)?;
     m.add_function(wrap_pyfunction!(fit_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm, m)?)?;
+    m.add_function(wrap_pyfunction!(bifactor_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;

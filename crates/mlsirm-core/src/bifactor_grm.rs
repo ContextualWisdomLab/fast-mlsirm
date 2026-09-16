@@ -203,22 +203,22 @@ pub struct BifactorGrmResult {
 
 /// Validated problem structure shared by the fitter and the public
 /// marginal-loglik entry points.
-struct Validated {
-    n_persons: usize,
-    n_items: usize,
-    n_specific: usize,
-    n_cat: usize,
-    m1: usize,
+pub(crate) struct Validated {
+    pub(crate) n_persons: usize,
+    pub(crate) n_items: usize,
+    pub(crate) n_specific: usize,
+    pub(crate) n_cat: usize,
+    pub(crate) m1: usize,
     /// Per-specific item-block member lists.
-    blocks: Vec<Vec<usize>>,
+    pub(crate) blocks: Vec<Vec<usize>>,
     /// General-only item indices.
-    general_only: Vec<usize>,
+    pub(crate) general_only: Vec<usize>,
     /// Per-item owning block (`None` = general-only).
-    item_block: Vec<Option<usize>>,
+    pub(crate) item_block: Vec<Option<usize>>,
 }
 
 #[allow(clippy::too_many_arguments)]
-fn validate(
+pub(crate) fn validate(
     y: &[usize],
     observed: Option<&[bool]>,
     specific_map: &[i32],
@@ -384,11 +384,11 @@ impl SplitMix64 {
 
 /// One item's working parameters.
 #[derive(Clone, Debug)]
-struct ItemParams {
-    a_g: f64,
+pub(crate) struct ItemParams {
+    pub(crate) a_g: f64,
     /// `None` for general-only items.
-    a_s: Option<f64>,
-    d: Vec<f64>,
+    pub(crate) a_s: Option<f64>,
+    pub(crate) d: Vec<f64>,
 }
 
 /// Proportion-based start (start 0): slopes at `a_G = 1.0` / `a_S = 0.8`,
@@ -437,13 +437,13 @@ fn initial_params(
         .collect()
 }
 
-fn gh_rule(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
+pub(crate) fn gh_rule(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
     crate::quadrature::gh_rule(q).ok_or_else(|| format!("unsupported quadrature count {q}"))
 }
 
 /// Per-item category log-prob tables at the current parameters:
 /// block items `lp[i][g * qs + h][k]`, general-only `lp[i][g][k]`.
-fn fill_logprob_tables(
+pub(crate) fn fill_logprob_tables(
     v: &Validated,
     params: &[ItemParams],
     tg: &[f64],
@@ -496,7 +496,7 @@ fn log_sum_exp(xs: &[f64]) -> f64 {
 /// counts per item (`counts[i][node][k]`, `node = g * qs + h` for block
 /// items, `node = g` for general-only items).
 #[allow(clippy::too_many_arguments)]
-fn e_step(
+pub(crate) fn e_step(
     v: &Validated,
     y: &[usize],
     observed: Option<&[bool]>,
@@ -1198,7 +1198,7 @@ pub fn bifactor_grm_marginal_loglik_brute(
     Ok(loglik)
 }
 
-fn check_param_shapes(
+pub(crate) fn check_param_shapes(
     v: &Validated,
     a_general: &[f64],
     a_specific: &[f64],
@@ -1236,7 +1236,7 @@ fn check_param_shapes(
     Ok(())
 }
 
-fn pack_params(
+pub(crate) fn pack_params(
     v: &Validated,
     a_general: &[f64],
     a_specific: &[f64],

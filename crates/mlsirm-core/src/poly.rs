@@ -143,7 +143,108 @@ pub fn grm_node_gradient(base: f64, thresholds: &[f64], counts: &[f64]) -> (f64,
     (g_base, g_t)
 }
 
-/// GPCM/nominal unified softmax cell. `scores[0] = intercepts[0] = 0` (baseline
+/// Hessian of the expected complete-data log-likelihood `sum_k r_k log P(Y=k)`
+/// at one node for the GRM cell, w.r.t. the boundary linear predictors
+/// `eta_j = base + thresholds[j]`. Returns `(grand_sum, row_sums, matrix)`
+/// where `matrix[j][l] = d^2 Q / d eta_j d eta_l` is TRIDIAGONAL (each
+/// category involves at most two adjacent boundaries), `row_sums[j]` is its
+/// `j`-th row sum, and `grand_sum` the sum of all entries — the exact
+/// aggregates the slope chain rule needs (`S_n`, `R^{(n)}_j`).
+///
+/// Closed form per boundary `j` (0-indexed, `M` boundaries, `K = M + 1`
+/// categories; `v_j = s_j (1 - s_j)`, `w_j = v_j (1 - 2 s_j)`):
+///
+/// ```text
+/// H_jj     = w_j * (r_{j+1}/P_{j+1} - r_j/P_j)
+///            - v_j^2 * (r_{j+1}/P_{j+1}^2 + r_j/P_j^2),
+/// H_{j,j+1} = r_{j+1} * v_j * v_{j+1} / P_{j+1}^2,
+/// ```
+///
+/// all other entries zero. Ratios `v/P` are evaluated in log space
+/// (`log v_j = log_sigmoid(eta_j) + log_sigmoid(-eta_j)`, `log P` from
+/// [`grm_logprobs`]), the same idiom as [`grm_node_gradient`]: directly
+/// exponentiating a valid tail category can underflow `P` to zero even
+/// though its curvature contribution is finite. Categories with zero count
+/// are skipped outright (avoids `0 * inf`).
+///
+/// The binary case (`M = 1`) collapses to the logistic Hessian
+/// `-(r_0 + r_1) * s * (1 - s)`.
+///
+/// Implementation basis: direct calculus on the cumulative-logit graded cell
+/// `P(Y >= k) = logistic(base + d_k)` (Gibbons et al., 2007, eq. 9, p. 7);
+/// the closed form above is cross-checked against a central finite
+/// difference of [`grm_node_gradient`] in the stage-3 Oakes unit tests
+/// (finite differences appear only as that test cross-check).
+///
+/// # References (APA 7th ed.)
+///
+/// Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E., Bhaumik,
+/// D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., & Stover, A. (2007).
+/// Full-information item bifactor analysis of graded response data. *Applied
+/// Psychological Measurement, 31*(1), 4-19.
+/// https://doi.org/10.1177/0146621606289485
+pub fn grm_node_hessian(
+    base: f64,
+    thresholds: &[f64],
+    counts: &[f64],
+) -> (f64, Vec<f64>, Vec<Vec<f64>>) {
+    let m = thresholds.len();
+    let mut mat = vec![vec![0.0f64; m]; m];
+    if m == 0 {
+        return (0.0, Vec::new(), mat);
+    }
+    let log_p = grm_logprobs(base, thresholds);
+    let mut one_minus_2s = vec![0.0f64; m];
+    let mut log_v = vec![0.0f64; m];
+    for (j, &d) in thresholds.iter().enumerate() {
+        let eta = base + d;
+        // s(eta) in (0, 1) for finite eta; 1 - 2s in (-1, 1).
+        let s = if eta >= 0.0 {
+            1.0 / (1.0 + (-eta).exp())
+        } else {
+            let ex = eta.exp();
+            ex / (1.0 + ex)
+        };
+        one_minus_2s[j] = 1.0 - 2.0 * s;
+        log_v[j] = log_sigmoid(eta) + log_sigmoid(-eta);
+    }
+    for j in 0..m {
+        // v_j / P ratios in log space (finite even in extreme tails).
+        let r_right = counts[j + 1];
+        let r_left = counts[j];
+        let rv_right = if r_right == 0.0 {
+            0.0
+        } else {
+            (log_v[j] - log_p[j + 1]).exp()
+        };
+        let rv_left = if r_left == 0.0 {
+            0.0
+        } else {
+            (log_v[j] - log_p[j]).exp()
+        };
+        let t_right = r_right * rv_right;
+        let t_left = r_left * rv_left;
+        // H_jj = w_j * A_j - v_j^2 * (r_{j+1}/P_{j+1}^2 + r_j/P_j^2),
+        // with w_j = v_j * (1 - 2 s_j): factor the shared v_j/P ratios.
+        mat[j][j] = one_minus_2s[j] * (t_right - t_left)
+            - (t_right * rv_right + t_left * rv_left);
+        // H_{j,j+1} = r_{j+1} * v_j * v_{j+1} / P_{j+1}^2 (category j+1 is
+        // the only one involving both boundaries j and j+1).
+        if j + 1 < m && r_right != 0.0 {
+            let off = r_right * (log_v[j] + log_v[j + 1] - 2.0 * log_p[j + 1]).exp();
+            mat[j][j + 1] = off;
+            mat[j + 1][j] = off;
+        }
+    }
+    let mut row_sums = vec![0.0f64; m];
+    let mut grand = 0.0f64;
+    for (j, row) in mat.iter().enumerate() {
+        let s: f64 = row.iter().sum();
+        row_sums[j] = s;
+        grand += s;
+    }
+    (grand, row_sums, mat)
+}
 /// category pinned). `psi_k = scores[k]*base + intercepts[k]`; returns the
 /// stable `log softmax_k(psi)` for `k = 0..K-1`. Nests binary 2PL at `K=2`,
 /// `scores=[0,1]`, `intercepts=[0,b]` (then `logP_1 = log_sigmoid(base+b)`).

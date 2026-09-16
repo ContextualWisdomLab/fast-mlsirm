@@ -71,8 +71,8 @@ References (APA 7th ed.):
         https://doi.org/10.1007/BF03372160
 
     Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation
-        of item parameters: Application of an EM algorithm. *Psychometrika,
-        46*(4), 443-459. https://doi.org/10.1007/BF02293801
+    of item parameters: Application of an EM algorithm. *Psychometrika,
+    46*(4), 443-459. https://doi.org/10.1007/BF02293801
 """
 
 from __future__ import annotations
@@ -291,4 +291,179 @@ def fit_bifactor_grm(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+    )
+
+
+@dataclass
+class BifactorOakesSe:
+    """Observed-information standard errors for the bifactor GRM.
+
+    ``labels`` the ``k`` free-parameter names (``a_general:{i}``,
+    ``a_specific:{i}`` for block items, ``d:{i}:{k}``);
+    ``information`` the ``k x k`` observed information (always present);
+    ``vcov`` the ``k x k`` inverse information, or ``None`` when the
+    information is not positive definite (never a substitute);
+    ``se`` the standard errors, or ``None`` exactly when ``vcov`` is
+    ``None``; ``positive_definite`` the flag; ``non_pd_reason`` the reason,
+    or ``None`` when positive definite.
+    """
+
+    labels: list
+    information: np.ndarray
+    vcov: np.ndarray | None
+    se: np.ndarray | None
+    positive_definite: bool
+    non_pd_reason: str | None
+
+
+def bifactor_oakes_se(
+    a_general: np.ndarray,
+    a_specific: np.ndarray,
+    threshold: np.ndarray,
+    responses: np.ndarray,
+    specific_map: np.ndarray,
+    n_cat: int,
+    n_specific: int,
+    q_general: int,
+    q_specific: int,
+    fd_step: float,
+) -> BifactorOakesSe:
+    """Observed-information SEs via the Oakes (1999, eq. 6, p. 480) identity
+    at given item parameters (valid at every point, not only the MLE).
+
+    ``a_general``/``a_specific`` are length-``n_items`` vectors
+    (``a_specific`` exactly ``0`` for general-only items); ``threshold`` is
+    ``n_items x (n_cat - 1)`` strictly decreasing per row; ``responses`` is a
+    persons x items integer-category array (``0..n_cat-1``; ``NaN`` or
+    negative = missing, dropped MAR); ``specific_map`` is length-``n_items``
+    with ``-1`` for general-only items. ``q_general``/``q_specific`` are
+    Gauss-Hermite node counts (one of ``(7, 11, 15, 21, 31, 41)``) and
+    ``fd_step`` the cross-term finite-difference step — REQUIRED caller
+    arguments with no defaults (node counts govern precision; no value is
+    clamped, and above-cap values raise until the quadrature-cap removal
+    lands). Out-of-range arguments raise ``ValueError``; a non-positive-
+    definite information returns ``positive_definite=False`` with
+    ``non_pd_reason`` and ``None`` SEs (never substituted).
+
+    Implementation basis: Oakes, D. (1999). Direct calculation of the
+    information matrix via the EM algorithm. *Journal of the Royal
+    Statistical Society Series B: Statistical Methodology, 61*(2), 479-482.
+    https://doi.org/10.1111/1467-9868.00188; graded cell Gibbons, R. D., et
+    al. (2007). Full-information item bifactor analysis of graded response
+    data. *Applied Psychological Measurement, 31*(1), 4-19.
+    https://doi.org/10.1177/0146621606289485
+    """
+
+    def _as_finite_vector(values: object, name: str, length: int) -> np.ndarray:
+        arr = np.asarray(values, dtype=np.float64)
+        if arr.shape != (length,):
+            raise ValueError(f"{name} must have length {length}")
+        if not bool(np.isfinite(arr).all()):
+            raise ValueError(f"{name} must be finite")
+        return arr
+
+    n_cat_int = _finite_integer_control(n_cat, "n_cat")
+    if n_cat_int < 2:
+        raise ValueError("n_cat must be >= 2")
+    n_specific_int = _finite_integer_control(n_specific, "n_specific")
+    if n_specific_int < 1:
+        raise ValueError("n_specific must be >= 1")
+    q_general_int = _finite_integer_control(q_general, "q_general")
+    if q_general_int not in _SUPPORTED_Q:
+        raise ValueError(f"q_general must be one of {_SUPPORTED_Q}")
+    q_specific_int = _finite_integer_control(q_specific, "q_specific")
+    if q_specific_int not in _SUPPORTED_Q:
+        raise ValueError(f"q_specific must be one of {_SUPPORTED_Q}")
+    fd_float = _positive_real_control(fd_step, "fd_step")
+
+    y = np.asarray(responses)
+    if np.iscomplexobj(y):
+        raise ValueError("responses must be real-valued")
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    if y.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
+    y = y.astype(np.float64, copy=False)
+    if np.isinf(y).any():
+        raise ValueError("responses must not contain infinity")
+    n_persons, n_items = y.shape
+
+    smap = np.asarray(specific_map)
+    if smap.ndim != 1 or smap.shape[0] != n_items:
+        raise ValueError("specific_map must be a 1-D array of length n_items")
+    if smap.dtype.kind == "f":
+        if not bool(np.isfinite(smap).all()):
+            raise ValueError("specific_map entries must be finite integers")
+        if bool((smap != np.floor(smap)).any()):
+            raise ValueError("specific_map entries must be integers")
+    try:
+        smap_int = smap.astype(np.int64, copy=False)
+    except (TypeError, ValueError):
+        raise ValueError("specific_map entries must be integers") from None
+    if bool((smap_int < -1).any()) or bool((smap_int >= n_specific_int).any()):
+        raise ValueError(
+            "specific_map entries must be -1 (general-only) or in "
+            f"0..{n_specific_int - 1}"
+        )
+
+    ag = _as_finite_vector(a_general, "a_general", n_items)
+    as_ = _as_finite_vector(a_specific, "a_specific", n_items)
+    th = np.asarray(threshold, dtype=np.float64)
+    if th.shape != (n_items, n_cat_int - 1):
+        raise ValueError(
+            "threshold must have shape (n_items, n_cat - 1)"
+        )
+    if not bool(np.isfinite(th).all()):
+        raise ValueError("threshold must be finite")
+
+    observed = np.isfinite(y) & (y >= 0)
+    if np.any(observed):
+        observed_y = y[observed]
+        if np.any(observed_y != np.floor(observed_y)) or observed_y.max() >= n_cat_int:
+            raise ValueError(
+                "responses must be integer categories in 0..n_cat-1 where observed"
+            )
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "bifactor_oakes_se"):
+        raise RuntimeError("bifactor_oakes_se requires the compiled Rust core")
+
+    yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
+    res = core.bifactor_oakes_se(
+        ag.reshape(-1),
+        as_.reshape(-1),
+        th.reshape(-1),
+        yy,
+        observed.reshape(-1),
+        smap_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_specific_int),
+        int(n_cat_int),
+        int(q_general_int),
+        int(q_specific_int),
+        float(fd_float),
+    )
+    labels = [str(v) for v in res["labels"]]
+    information = np.asarray(res["information"], dtype=np.float64)
+    k = len(labels)
+    information = information.reshape(k, k)
+    vcov_raw = res["vcov"]
+    se_raw = res["se"]
+    vcov = (
+        None
+        if vcov_raw is None
+        else np.asarray(vcov_raw, dtype=np.float64).reshape(k, k)
+    )
+    se = None if se_raw is None else np.asarray(se_raw, dtype=np.float64)
+    reason_raw = res["non_pd_reason"]
+    return BifactorOakesSe(
+        labels=labels,
+        information=information,
+        vcov=vcov,
+        se=se,
+        positive_definite=bool(res["positive_definite"]),
+        non_pd_reason=None if reason_raw is None else str(reason_raw),
     )
