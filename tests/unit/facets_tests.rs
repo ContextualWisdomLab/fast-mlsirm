@@ -289,7 +289,7 @@ fn disconnected_design_is_flagged() {
 fn rejects_bad_inputs() {
     let y = vec![0usize; 4];
     assert!(fit_facets(&y, None, 2, 2, 1, 1, 7, 50, 1e-6).is_err()); // n_cat < 2
-    assert!(fit_facets(&y, None, 2, 2, 1, 2, 8, 50, 1e-6).is_err()); // bad q
+    assert!(fit_facets(&y, None, 2, 2, 1, 2, 0, 50, 1e-6).is_err()); // #1929: q=0 is bad, q=8 is now fine
     assert!(fit_facets(&y, None, 2, 2, 1, 2, 7, 0, 1e-6).is_err()); // max_iter 0
     assert!(fit_facets(&y, None, 2, 2, 1, 2, 7, 50, f64::NAN).is_err());
     assert!(fit_facets(&y, None, 3, 2, 1, 2, 7, 50, 1e-6).is_err()); // len mismatch

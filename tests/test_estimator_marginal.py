@@ -142,5 +142,6 @@ def test_numpy_trace_endpoint_matches_returned_parameters_after_max_iter():
 
 
 def test_marginal_rejects_invalid_quadrature():
-    with pytest.raises(ValueError, match="q_theta must be one of"):
-        FitConfig(q_theta=12).validate()
+    # #1929: no node-count cap; q_theta=12 is now accepted, only < 1 is not.
+    with pytest.raises(ValueError, match="q_theta must be >= 1"):
+        FitConfig(q_theta=0).validate()

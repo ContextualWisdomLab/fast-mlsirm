@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import InitVar, dataclass
 import math
+import sys
 from typing import Any, Iterable
 
 import numpy as np
@@ -20,7 +21,6 @@ from .pilot_observations import (
 )
 
 _TESTLET_DESIGN_TOKEN = object()
-_SUPPORTED_Q_GAMMA = (7, 11, 15, 21, 31, 41)
 _SUPPORTED_MODELS = ("rasch", "2pl")
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
@@ -234,14 +234,14 @@ class TestletPilotDesign:
             minimum=1,
             maximum=MAX_MAX_ITER,
         )
+        # #1929: no node-count cap; the Rust core generates any n >= 1 rule
+        # on demand (Golub & Welsch, 1969) and guards allocation overflow.
         normalized_q_gamma = _normalized_integer(
             q_gamma,
             "q_gamma",
-            minimum=min(_SUPPORTED_Q_GAMMA),
-            maximum=max(_SUPPORTED_Q_GAMMA),
+            minimum=1,
+            maximum=sys.maxsize,
         )
-        if normalized_q_gamma not in _SUPPORTED_Q_GAMMA:
-            raise ValueError(f"q_gamma must be one of {_SUPPORTED_Q_GAMMA}")
         return {
             "responses": self.responses_array(),
             "testlet_id": self.testlet_id_array(),

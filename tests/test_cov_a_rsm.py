@@ -52,8 +52,9 @@ def test_fit_rsm_rejects_n_cat_range():
 
 
 def test_fit_rsm_rejects_bad_q_theta():
+    # #1929: no node-count cap; q_theta=8 is now accepted, only q_theta < 1 is not.
     with pytest.raises(ValueError):
-        fit_rsm(_poly(), n_cat=3, q_theta=8)
+        fit_rsm(_poly(), n_cat=3, q_theta=0)
 
 
 def test_fit_rsm_rejects_bad_max_iter():

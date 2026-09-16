@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import numpy as np
 
-SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 MAX_FACTOR_DIMENSIONS = 64
 MAX_GPCM_CATEGORIES = 256
 MAX_MARGINAL_WORKING_SET = 100_000_000
@@ -240,9 +239,9 @@ def _preflight_xi_node_count(
 
     Non-spatial models own a single placeholder node and ignore tensor/QMC
     controls so hostile ``q_xi`` objects never execute. Tensor GH rules require
-    an exact built-in integer from :data:`SUPPORTED_Q` and bound the product
-    grid with :func:`_bounded_tensor_node_count`. QMC/MC rules require exact
-    integer ``xi_points`` and never inspect ``q_xi``.
+    an exact built-in integer ``q_xi >= 1`` (#1929: no node-count cap) and
+    bound the product grid with :func:`_bounded_tensor_node_count`. QMC/MC
+    rules require exact integer ``xi_points`` and never inspect ``q_xi``.
     """
     if type(uses_space) is not bool:
         raise ValueError("uses_space must be a boolean")
@@ -260,8 +259,8 @@ def _preflight_xi_node_count(
         raise ValueError("q_xi must be an exact built-in integer")
     if type(latent_dim) is not int or isinstance(latent_dim, bool):
         raise ValueError("latent_dim must be an exact built-in integer")
-    if q_xi not in SUPPORTED_Q:
-        raise ValueError(f"unsupported quadrature size {q_xi}; supported: {list(SUPPORTED_Q)}")
+    if q_xi < 1:
+        raise ValueError(f"q_xi must be >= 1; got {q_xi}")
     if latent_dim < 1:
         raise ValueError("latent_dim must be a positive integer")
     count = _bounded_tensor_node_count(q_xi, latent_dim, limit=_MAX_TENSOR_XI_NODES)
@@ -274,8 +273,9 @@ def _preflight_xi_node_count(
 
 def _gh(q: int) -> tuple[np.ndarray, np.ndarray]:
     """Return ``q``-point probabilists' Gauss-Hermite nodes and unit-sum weights."""
-    if q not in SUPPORTED_Q:
-        raise ValueError(f"unsupported quadrature size {q}; supported: {SUPPORTED_Q}")
+    # #1929: no node-count cap; hermegauss handles any q >= 1 natively.
+    if q < 1:
+        raise ValueError(f"q must be >= 1; got {q}")
     nodes, weights = np.polynomial.hermite_e.hermegauss(q)
     return nodes, weights / weights.sum()
 

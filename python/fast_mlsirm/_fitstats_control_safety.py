@@ -13,7 +13,6 @@ from typing import Any, Callable
 
 import numpy as np
 
-_SUPPORTED_QUADRATURE = (7, 11, 15, 21, 31, 41)
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
     np.int16,
@@ -47,7 +46,7 @@ def _trusted_integer(value: Any, name: str) -> int:
         return value
     if any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
         return int(value)
-    raise ValueError(f"{name} must be one of {_SUPPORTED_QUADRATURE}")
+    raise ValueError(f"{name} must be an integer")
 
 
 def _trusted_integer_real(value: Any, name: str) -> float:
@@ -103,8 +102,10 @@ def _validate_sx2_controls(
     quadrature = []
     for name, value in (("q_theta", q_theta), ("q_xi", q_xi)):
         normalized = _trusted_integer(value, name)
-        if normalized not in _SUPPORTED_QUADRATURE:
-            raise ValueError(f"{name} must be one of {_SUPPORTED_QUADRATURE}")
+        # #1929: no node-count cap; the Rust core generates any n >= 1 rule
+        # on demand (Golub & Welsch, 1969) and guards allocation overflow.
+        if normalized < 1:
+            raise ValueError(f"{name} must be >= 1")
         quadrature.append(normalized)
 
     numeric = []

@@ -269,14 +269,26 @@ def logistic_dif_purified(
     """Zumbo logistic-regression DIF with an ITERATIVELY PURIFIED matching criterion (compute in Rust).
 
     The same purification loop as :func:`mantel_haenszel_dif_purified`, with the anchor decided by
-    ``jg_class`` (the Jodoin-Gierl class of the 2-df omnibus test). Unlike the Mantel-Haenszel variant
-    this detects crossing DIF, so a non-uniform item is removed from the criterion too.
+    ``flagged_bh`` (the Benjamini-Hochberg-adjusted 2-df omnibus ``chi2_total`` test).
+
+    **Fixed in #1941: the anchor now actually shrinks.** The criterion was previously ``jg_class``
+    (the Jodoin-Gierl class of the omnibus test), which #1880 retired to ``"U"`` ("not applicable")
+    for every item, so the purification loop could never fire: the anchor never shrank (``n_anchor``
+    stayed at its initial size and ``rounds`` stayed ``0``) regardless of uniform or crossing DIF in
+    the data. No calibrated practical-significance class survives for this statistic — the same
+    reasoning :func:`fast_mlsirm.polytomous.dif_polytomous_purified` already applies: Jodoin and
+    Gierl's (2001) bands are stated on a 1-df Zumbo-Thomas weighted-least-squares partition this
+    package does not compute, not on the 2-df Nagelkerke ``delta_r2`` this package reports — so
+    ``flagged_bh`` is used directly rather than a guessed replacement class. This makes the anchor
+    MORE aggressive at large N than :func:`mantel_haenszel_dif_purified`'s practical-significance
+    (ETS class B/C) screen, not less.
 
     Returns everything :func:`logistic_dif` returns — including its PER-ITEM ``converged`` array, one
     flag per item's IRLS fit — plus ``anchor``, ``n_anchor``, ``rounds``, and the scalar
     ``purify_converged`` and ``purify_termination_reason`` for the purification loop itself. The
     per-item and loop-level diagnostics are deliberately named differently because they answer
-    different questions.
+    different questions. ``jg_class`` itself is untouched by this fix and remains ``"U"`` for every
+    item.
 
     IMPORTANT — the anchor is selected from the SAME data that is then tested against it, so the returned
     p-values are conditional on a data-dependent selection: they are not guaranteed super-uniform under
@@ -285,10 +297,17 @@ def logistic_dif_purified(
     than removes criterion contamination and can fail outright when DIF is unbalanced in direction
     (Wang & Su, 2004).
 
-    Reference (APA 7th ed.):
+    References (APA 7th ed.):
+        Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking metrics and assessing
+            item bias in item response theory. *Applied Psychological Measurement, 12*(3), 253-260.
+            https://doi.org/10.1177/014662168801200304
         French, B. F., & Maller, S. J. (2007). Iterative purification and effect size use with logistic
             regression for differential item functioning detection. *Educational and Psychological
             Measurement, 67*(3), 373-393. https://doi.org/10.1177/0013164406294781
+        Zumbo, B. D. (1999). *A handbook on the theory and methods of differential item functioning
+            (DIF): Logistic regression modeling as a unitary framework for binary and Likert-type
+            (ordinal) item scores* (p. 27). Directorate of Human Resources Research and Evaluation,
+            Department of National Defense.
     """
     from .fitstats import _core_module
 

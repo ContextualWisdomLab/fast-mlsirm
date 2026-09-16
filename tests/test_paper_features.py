@@ -1371,7 +1371,7 @@ def test_score_polytomous_rejects_malformed_scoring_contract():
         loglik=0.0,
         n_iter=0,
     )
-    with pytest.raises(ValueError, match="q_theta must be one of"):
+    with pytest.raises(ValueError, match="q_theta must be an integer"):
         score_polytomous(np.array([[0.0]]), fit, q_theta=21.5)
 
     fit.slope[0] = np.nan
@@ -2428,9 +2428,16 @@ def test_dif_purification():
     assert q0["purify_termination_reason"] == "stable_flag_set"
     np.testing.assert_array_equal(q0["chi2_mh"], p0["chi2_mh"])
 
-    # the logistic variant runs and also drops the planted items from its anchor
-    lp = logistic_dif_purified(y, group)
-    assert all(not lp["anchor"][d] for d in dif_items)
+    # FIXED (#1941): the logistic variant's purification criterion switched from the unreachable
+    # jg_class (retired to "U" for every item by #1880) to flagged_bh, so the anchor now actually
+    # shrinks around the planted items instead of staying stuck at the full test. A smaller shift
+    # than the Mantel-Haenszel fixture above: the 2-df omnibus chi2_total logistic test is powerful
+    # enough at shift=1.2, n=3000 to flag every item (universal criterion contamination, not just
+    # the planted ones), which would make "planted items leave, clean items stay" unfalsifiable.
+    y_logit, group_logit = bank(dif_items, 0.6, 41)
+    lp = logistic_dif_purified(y_logit, group_logit)
+    assert all(not lp["anchor"][d] for d in dif_items), "planted items must leave the anchor"
+    assert lp["n_anchor"] == 12 - len(dif_items) and lp["rounds"] >= 1
     # the loop's scalar flag must NOT collide with logistic_dif's PER-ITEM convergence array: the two
     # answer different questions, and a same-named scalar silently destroyed the array at the boundary
     assert np.asarray(lp["converged"], dtype=bool).shape == (12,)
@@ -4991,8 +4998,9 @@ def test_fit_facets_rejects_malformed_and_flags_disconnected():
         bad = valid.copy()
         bad[:, :, 1] = np.nan
         fit_facets(bad, n_cat=2)
+    # #1929: no node-count cap; q_theta=10 is now accepted, only < 1 is not.
     with pytest.raises(ValueError, match="q_theta"):
-        fit_facets(valid, n_cat=2, q_theta=10)
+        fit_facets(valid, n_cat=2, q_theta=0)
     with pytest.raises(ValueError, match="max_iter"):
         fit_facets(valid, n_cat=2, max_iter=0)
     with pytest.raises(ValueError, match="tol"):
