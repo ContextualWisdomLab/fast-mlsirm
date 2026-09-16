@@ -10,11 +10,16 @@ Modelling decisions and their sources (every non-obvious choice is cited;
 decisions without a paper source are marked as implementation choices):
 
 - Cumulative-logit graded form ``P(Y >= k) = logistic(a_G*theta_G +
-  a_S*theta_S + d_k)`` with strictly decreasing boundary intercepts
-  (Gibbons et al., 2007, eq. 4; Samejima, 1969).
+  a_S*theta_S + d_k)`` with strictly decreasing boundary intercepts. The
+  linear predictor follows Gibbons et al. (2007, eq. 9, "The Bifactor Model
+  for Graded Response Data" section); the logistic link is an implementation
+  choice (the paper uses the normal ogive) matching the ``mirt`` graded
+  comparison; adjacent-difference category probabilities follow Samejima
+  (1969).
 - Orthogonal ``N(0, 1)`` factors; each item on the general factor plus at
-  most one specific (Gibbons et al., 2007, "Model" section). Caller-supplied
-  item-to-specific map; general-only items (``-1``) allowed.
+  most one specific (Gibbons et al., 2007, "The Bifactor Model for Graded
+  Response Data" section; Gibbons & Hedeker, 1992, eq. 1).
+  Caller-supplied item-to-specific map; general-only items (``-1``) allowed.
 - Slopes UNCONSTRAINED on the real line so reverse-keyed items are
   representable (implementation choice extending the crate's #1879
   unconstrained-slope contract to the bifactor case; Gibbons et al. estimate
@@ -24,11 +29,14 @@ decisions without a paper source are marked as implementation choices):
   (largest-magnitude slope positive; ``poly::canonicalize_slope_reflection``,
   ``grm.rs``) — an implementation choice for reporting, not a paper
   prescription; thresholds are invariant under the joint flip.
-- At least two items per specific factor required for identification
-  (Gibbons et al., 2007, identification discussion).
+- At least two items per specific factor required (implementation choice,
+  not a paper prescription: no minimum-block-size theorem was found in the
+  cited sources, and smaller blocks leave the general/specific split weakly
+  identified).
 - E-step integrates each specific factor within its item block at fixed
-  general nodes (Gibbons et al., 2007, "Parameter estimation" section), also
-  described as the two-tier reduction in Cai et al. (2011).
+  general nodes (Gibbons et al., 2007, eq. 15, "Marginal Maximum Likelihood
+  Estimation" section; Cai et al., 2011, extend Gibbons and Hedeker's
+  (1992) bifactor dimension reduction, p. 221).
 - Gauss-Hermite quadrature on fixed grids; the EM node set never
   reparametrizes, so EM is monotone (Bock & Aitkin, 1981).
 - ``seed`` drives ONLY the random-start jitter; quadrature is deterministic,
@@ -73,11 +81,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
-
 _SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
-_MAX_SPECIFIC = 16
-_MAX_STARTS = 32
 
 
 def _finite_integer_control(value: object, name: str) -> int:
@@ -175,23 +179,23 @@ def fit_bifactor_grm(
     ``specific_map`` is a length-``n_items`` integer array with ``-1`` for
     general-only items and ``0..n_specific-1`` otherwise; every specific
     factor needs at least two items. ``q_general``/``q_specific`` are
-    Gauss-Hermite node counts (one of ``(7, 11, 15, 21, 31, 41)``);
+    Gauss-Hermite node counts (one of ``(7, 11, 15, 21, 31, 41)`` — the
+    embedded rules that exist, hence the only accepted values);
     ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik.
-    Out-of-range caller arguments raise ``ValueError`` (never clamped);
-    unobserved categories raise; ``max_iter`` exhaustion returns
+    Out-of-range caller arguments raise ``ValueError`` (never clamped, and —
+    per the no-magic-caps rule — upper-bounded only where a real constraint
+    exists); unobserved categories raise; ``max_iter`` exhaustion returns
     ``converged=False`` instead of substituting values.
 
     See the module docstring for the model, the paper basis of every
     non-obvious decision, and the APA 7th references.
     """
     n_cat_int = _finite_integer_control(n_cat, "n_cat")
-    if not 2 <= n_cat_int <= MAX_POLYTOMOUS_CATEGORIES:
-        raise ValueError(
-            f"n_cat must be between 2 and {MAX_POLYTOMOUS_CATEGORIES}"
-        )
+    if n_cat_int < 2:
+        raise ValueError("n_cat must be >= 2")
     n_specific_int = _finite_integer_control(n_specific, "n_specific")
-    if not 1 <= n_specific_int <= _MAX_SPECIFIC:
-        raise ValueError(f"n_specific must be between 1 and {_MAX_SPECIFIC}")
+    if n_specific_int < 1:
+        raise ValueError("n_specific must be >= 1")
     q_general_int = _finite_integer_control(q_general, "q_general")
     if q_general_int not in _SUPPORTED_Q:
         raise ValueError(f"q_general must be one of {_SUPPORTED_Q}")
@@ -199,11 +203,11 @@ def fit_bifactor_grm(
     if q_specific_int not in _SUPPORTED_Q:
         raise ValueError(f"q_specific must be one of {_SUPPORTED_Q}")
     max_iter_int = _finite_integer_control(max_iter, "max_iter")
-    if not 1 <= max_iter_int <= MAX_MAX_ITER:
-        raise ValueError(f"max_iter must be between 1 and {MAX_MAX_ITER}")
+    if max_iter_int < 1:
+        raise ValueError("max_iter must be >= 1")
     n_starts_int = _finite_integer_control(n_starts, "n_starts")
-    if not 1 <= n_starts_int <= _MAX_STARTS:
-        raise ValueError(f"n_starts must be between 1 and {_MAX_STARTS}")
+    if n_starts_int < 1:
+        raise ValueError("n_starts must be >= 1")
     tol_float = _positive_real_control(tol, "tol")
     seed_int = _u64_seed(seed)
 
