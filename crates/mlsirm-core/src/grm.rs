@@ -212,7 +212,7 @@ fn validate(
             return Err(format!("loading_pattern[{idx}] must be 0 or 1; got {v}"));
         }
     }
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     for p in 0..n_persons {
         for i in 0..n_items {
             if is_obs(p, i) && y[p * n_items + i] >= n_cat {
@@ -452,7 +452,7 @@ pub fn fit_grm(
                 .collect()
         })
         .collect();
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
 
     // Init: slope = 1.0 on the item's FIRST loaded dim (0 elsewhere); beta_k = logit(P(Y>=k))
     // cumulative-from-top, ordered DECREASING — exactly fit_poly_unidim's GRM init (base=theta at D=1).

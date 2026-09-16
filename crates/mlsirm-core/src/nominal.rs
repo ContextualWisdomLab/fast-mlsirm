@@ -215,7 +215,7 @@ fn validate(
             return Err(format!("loading_pattern[{idx}] must be 0 or 1; got {v}"));
         }
     }
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     for p in 0..n_persons {
         for i in 0..n_items {
             if is_obs(p, i) && y[p * n_items + i] >= n_cat {
@@ -472,7 +472,7 @@ pub fn fit_nominal(
                 .collect()
         })
         .collect();
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
 
     // Init: category slope = k on the item's FIRST loaded dim (0 on the others); intercept =
     // log(freq_k / freq_0). At D = 1 (single loaded dim) this is fit_nominal's a_k = k, c_k init.

@@ -348,7 +348,7 @@ fn base_scores(y: &[u8], n_persons: usize, n_items: usize, anchor: Option<&[bool
     (0..n_persons)
         .map(|p| {
             (0..n_items)
-                .filter(|&j| anchor.map_or(true, |m| m[j]))
+                .filter(|&j| anchor.is_none_or(|m| m[j]))
                 .map(|j| y[p * n_items + j] as usize)
                 .sum()
         })
@@ -394,7 +394,7 @@ fn mh_sweep(
 
     let mut rows: Vec<MhDifRow> = Vec::with_capacity(n_items);
     for i in 0..n_items {
-        let in_anchor = anchor.map_or(true, |m| m[i]);
+        let in_anchor = anchor.is_none_or(|m| m[i]);
         for p in 0..n_persons {
             let yi = y[p * n_items + i];
             resp[p] = yi;
@@ -814,7 +814,7 @@ fn logistic_sweep(
 
     let mut rows: Vec<LogisticDifRow> = Vec::with_capacity(n_items);
     for i in 0..n_items {
-        let in_anchor = anchor.map_or(true, |m| m[i]);
+        let in_anchor = anchor.is_none_or(|m| m[i]);
         for p in 0..n_persons {
             let yi = y[p * n_items + i];
             resp[p] = yi as f64;
@@ -1951,7 +1951,7 @@ pub fn delta_plot(
     if group.iter().any(|&g| g > 1) {
         return Err("delta_plot: group entries must be 0 (reference) or 1 (focal)".into());
     }
-    if !group.iter().any(|&g| g == 0) || !group.iter().any(|&g| g == 1) {
+    if !group.contains(&0) || !group.contains(&1) {
         return Err("delta_plot: both groups must be non-empty".into());
     }
     for &v in responses {
@@ -2439,7 +2439,7 @@ pub fn mantel_smd_dif(
     if group.iter().any(|&g| g > 1) {
         return Err("group labels must be 0 (reference) or 1 (focal)".into());
     }
-    if !group.iter().any(|&g| g == 0) || !group.iter().any(|&g| g == 1) {
+    if !group.contains(&0) || !group.contains(&1) {
         return Err("both a reference (0) and a focal (1) group must be present".into());
     }
     // Full-total matching (crate MH convention). Totals are bounded by
@@ -2643,7 +2643,7 @@ pub fn gmh_dif(
     if group.iter().any(|&g| g > 1) {
         return Err("group labels must be 0 (reference) or 1 (focal)".into());
     }
-    if !group.iter().any(|&g| g == 0) || !group.iter().any(|&g| g == 1) {
+    if !group.contains(&0) || !group.contains(&1) {
         return Err("both a reference (0) and a focal (1) group must be present".into());
     }
     // Full-total matching (identical to `mantel_smd_dif`).

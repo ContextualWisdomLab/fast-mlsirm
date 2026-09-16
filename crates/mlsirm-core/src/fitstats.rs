@@ -199,7 +199,7 @@ pub fn leniency_residuals(
     if y.len() != observed.len() || y.len() != prob.len() {
         return Err("y, observed, and prob must share the same length".into());
     }
-    if y.len() % n_persons != 0 {
+    if !y.len().is_multiple_of(n_persons) {
         return Err("response length must be divisible by n_persons".into());
     }
     let n_items = y.len() / n_persons;
@@ -1941,7 +1941,7 @@ fn cholesky_lower(a: &mut [f64], n: usize) -> Result<(), String> {
     for attempt in 0..8 {
         if attempt > 0 {
             a.copy_from_slice(&orig);
-            let ridge = base * (10.0_f64).powi(attempt as i32);
+            let ridge = base * (10.0_f64).powi(attempt);
             for i in 0..n {
                 a[i * n + i] += ridge;
             }
@@ -2916,7 +2916,7 @@ fn validate_observed_categories(
 ) -> Result<(), String> {
     if y.iter()
         .enumerate()
-        .any(|(idx, &value)| observed.map_or(true, |o| o[idx]) && value >= n_cat)
+        .any(|(idx, &value)| observed.is_none_or(|o| o[idx]) && value >= n_cat)
     {
         Err("observed response categories must be < n_cat".into())
     } else {
@@ -3002,7 +3002,7 @@ pub fn poly_local_dependence(
         }
     }
 
-    let is_obs = |pp: usize, i: usize| observed.map_or(true, |o| o[pp * n_items + i]);
+    let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * n_items + i]);
     // Chen & Thissen (1997) / mirt reference: the two-way independence df,
     // df = cells - independence-model params = K² - (2K-1) = (K-1)² (binary -> 1).
     // With FITTED item parameters the marginal MLE absorbs the univariate margins,
@@ -3141,7 +3141,7 @@ pub fn m2_cmle_rasch(
         scores[person] = score;
         score_counts[score] += 1;
     }
-    if score_counts.iter().any(|&c| c == 0) {
+    if score_counts.contains(&0) {
         let missing: Vec<usize> = score_counts
             .iter()
             .enumerate()
@@ -3500,7 +3500,7 @@ pub fn poly_m2(
     }
 
     // complete cases (M2 assumes a single sample size N)
-    let is_obs = |pp: usize, i: usize| observed.map_or(true, |o| o[pp * n_items + i]);
+    let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * n_items + i]);
     let mut complete: Vec<usize> = Vec::with_capacity(n_persons);
     for pp in 0..n_persons {
         if (0..n_items).all(|i| is_obs(pp, i)) {
