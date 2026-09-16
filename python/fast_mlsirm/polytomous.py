@@ -312,8 +312,31 @@ def expected_total_score_monotonicity(
     Samejima, F. (1972). A general model for free-response data.
     *Psychometrika Monograph Supplement, 37*(4, Pt. 2).
 
+    Samejima, F. (1969). Estimation of latent ability using a response
+    pattern of graded scores. *Psychometrika Monograph Supplement, 17*.
+    Chapter 5 gives the graded operating characteristics: the cumulative
+    form with a discrimination and per-bound difficulties (eqs. 5-1-5-4).
+
+    Lord, F. M. (1980). *Applications of item response theory to practical
+    testing problems*. Chapter 4: the regression of score on ability
+    (eq. 4-2), number-right true score (eq. 4-5, increasing in ability when
+    each item response function is), and the test characteristic function
+    (eq. 4-9).
+
     van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
     Statistical Software, 20*(11), 1-19. https://doi.org/10.18637/jss.v020.i11
+    Manifest monotonicity is defined on grouped rest-score proportions
+    (p. 5, eq. 3) with per-comparison significance tests; stochastic
+    ordering of the latent trait by the sum score fails for polytomous
+    models generally (p. 3; Hemker et al., 1997).
+
+    Hemker, B. T., Sijtsma, K., Molenaar, I. W., & Junker, B. W. (1996).
+    Polytomous IRT models and monotone likelihood ratio of the total
+    score. *Psychometrika, 61*, 679-693.
+
+    Hemker, B. T., Sijtsma, K., Molenaar, I. W., & Junker, B. W. (1997).
+    Stochastic ordering using the latent trait and the sum score in
+    polytomous IRT models. *Psychometrika, 62*, 331-347.
     """
     grid = _validated_monotonicity_grid(theta)
     expected_total = polytomous_expected_response(fit, grid).sum(axis=1)
@@ -546,6 +569,13 @@ def fit_polytomous(
     convergence fields describe the observed-data likelihood at the returned
     parameter state; reaching ``max_iter`` is reported as nonconvergence.
     ``n_cat`` is limited to 2..64 and ``max_iter`` to 1..100,000.
+
+    Slopes are UNCONSTRAINED, so a reverse-keyed item is returned with a
+    negative ``slope`` rather than being floored at zero. Because
+    ``(a, theta) -> (-a, -theta)`` leaves the likelihood unchanged, the sign of
+    the slope vector as a whole is fixed by convention: the largest-magnitude
+    slope is returned positive. Trait scores from :func:`score_polytomous` are
+    on that same orientation.
 
     References
     ----------
