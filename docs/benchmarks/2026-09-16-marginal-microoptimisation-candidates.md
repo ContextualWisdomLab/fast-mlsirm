@@ -56,34 +56,43 @@ r = np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)
 
 Three open pull requests propose different replacements: #1842, #1866, #1893.
 
-| source | expression | time | agreement with current code |
-| --- | --- | ---: | --- |
-| current | as above | `1.0178 s` | — |
-| #1866 | `np.stack([(y[:, i] == k).astype(post.dtype, copy=False) @ post for k in range(k_cat)], axis=1)` | `0.3404 s` | max diff `3.69e-13` |
-| #1893 | same, with `.T` on a one-dimensional mask | `0.3404 s` | max diff `3.69e-13` |
-| #1842 | `((y[:, i, None] == k_range).astype(post.dtype, copy=False).T @ post).T` | `0.1399 s` | **exact, `0.00e+00`** |
+| source | head | expression | best of 3 | agreement |
+| --- | --- | --- | ---: | --- |
+| current | `ce65339f` | as above | `0.2765 s` | — |
+| #1866 | `1e280547` | `np.stack([(y[:, i] == k).astype(post.dtype, copy=False) @ post for k in range(k_cat)], axis=1)` | `0.1907 s` | `3.98e-13` |
+| #1893 | `6b29336a` | `((y[:, i, None] == np.arange(k_cat)).astype(post.dtype, copy=False).T @ post).T` | `0.0829 s` | **exact** |
+| #1842 | `ad53b67c` | `((y[:, i, None] == k_range).astype(post.dtype, copy=False).T @ post).T` | `0.0813 s` | **exact** |
 
-`(2000 persons, 49 nodes, 5 categories)`, 2,000 calls per cell.
+`(2000 persons, 49 nodes, 5 categories)`, 2,000 calls per cell, three runs.
 
-**#1842 differs in kind, not degree.** The other two replace the inner reduction
-but keep the Python loop over categories — one matrix-vector product per
-category. #1842 builds the indicator matrix once and does a single
-matrix-matrix product, removing the loop. Hence `2.4x` faster than the other
-two and `7.3x` faster than the current code, against their `3.0x`.
+**Correction (2026-09-16).** An earlier revision of this note reported #1893 at
+`0.3404 s` with a `3.69e-13` difference and described its `.T` as a no-op on a
+one-dimensional mask. That measured #1893 at commit `98b61cbb`, which used the
+#1866 form. The pull request was then updated twice, and its current head
+`6b29336a` uses the loop-free form instead. The row above replaces the wrong
+one. The `.T` is not a no-op at this head: the mask is two-dimensional.
 
-It is also bit-exact against the current code, where the other two differ in the
-last digits from accumulating per category. `3.69e-13` is far inside this
-repository's `1e-6` parity tolerance and harmless either way; exactness is a free
-tiebreaker rather than a requirement.
+**Two candidates differ in kind, not degree.** #1866 replaces the inner
+reduction but keeps the Python loop over categories — one matrix-vector product
+per category. #1893 and #1842 build the indicator matrix once and do a single
+matrix-matrix product, removing the loop. That is worth `3.3x` against the
+current code where #1866 is worth `1.5x`.
 
-`#1893`'s `.T` is a no-op: `y[:, i]` selects one column, so the mask is
-one-dimensional.
+#1893 and #1842 are the same expression. The only difference is that #1842
+hoists `k_range = np.arange(k_cat)` out of the loop, worth about `2%` here —
+`0.0813 s` against `0.0829 s`, which is within the spread of separate runs and
+should not decide between them.
+
+Both loop-free forms are bit-exact against the current code. #1866 differs in
+the last digits from accumulating per category; `3.98e-13` is far inside this
+repository's `1e-6` parity tolerance and harmless.
 
 ## What this does and does not establish
 
-It establishes that both optimisations are real at the shapes in use, that
-#1842 is the strongest of the categorical-reduction candidates on speed and
-exactness together, and that the distance-line proposals are interchangeable.
+It establishes that both optimisations are real at the shapes in use, that the
+loop-free categorical reduction (#1842 and #1893, the same expression) beats the
+per-category form on speed and exactness together, and that the distance-line
+proposals are interchangeable.
 
 It does not establish an end-to-end fit-time improvement, which would need a
 whole-fit benchmark rather than a micro-benchmark, and it does not review any
