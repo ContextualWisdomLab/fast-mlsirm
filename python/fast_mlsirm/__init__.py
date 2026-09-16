@@ -53,12 +53,9 @@ from .sampling_design import (
 from .sampling_design import (
     finite_population_proportion_design as finite_population_proportion_design,
 )
-from .polytomous_bifactor import (
-    PolytomousBifactorFit as PolytomousBifactorFit,
-    fit_polytomous_bifactor as fit_polytomous_bifactor,
+from .bifactor_recursion import (
     bifactor_lord_wingersky as bifactor_lord_wingersky,
     direct_enumeration_bifactor as direct_enumeration_bifactor,
-    bifactor_slope_sensitivity as bifactor_slope_sensitivity,
 )
 from .bifactor_bootstrap import (
     BifactorBootstrapResult as BifactorBootstrapResult,
@@ -322,11 +319,8 @@ __all__ = list(_legacy_init.__all__) + [
     "AchievedProportion",
     "finite_population_proportion_design",
     "finite_population_achieved_proportion",
-    "PolytomousBifactorFit",
-    "fit_polytomous_bifactor",
     "bifactor_lord_wingersky",
     "direct_enumeration_bifactor",
-    "bifactor_slope_sensitivity",
     "BifactorBootstrapResult",
     "run_bifactor_bootstrap",
 ]

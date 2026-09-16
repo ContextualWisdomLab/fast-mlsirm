@@ -175,6 +175,26 @@ pub struct MixedItemSpec {
     pub n_categories: usize,
 }
 
+/// Optimizer bound on every free parameter of an item, on the parameter's own
+/// working scale. These are numerical guards on the M-step, not model claims:
+/// an estimate resting on one is the bound, not an interior optimum, which is
+/// why [`MixedItemEstimate::at_bound`] reports it to the caller.
+const PARAM_BOUND: (f64, f64) = (-12.0, 12.0);
+/// Optimizer bound on the working slope parameter of a free-slope family. The
+/// working scale is `log a`, so this bounds `a` to `exp(-5) ..= exp(4)`, i.e.
+/// roughly `0.0067 ..= 54.6`, and its lower end is also a hard positivity
+/// floor — see the unconstrained-slope issue tracked against this module.
+const SLOPE_BOUND: (f64, f64) = (-5.0, 4.0);
+/// Optimizer bound on each latent-space coordinate of a spatial family.
+const SPATIAL_BOUND: (f64, f64) = (-6.0, 6.0);
+
+/// `at_bound` role for the slope of a free-slope family.
+pub const AT_BOUND_SLOPE: &str = "slope";
+/// `at_bound` role for a latent-space coordinate of a spatial family.
+pub const AT_BOUND_LATENT_POSITION: &str = "latent_position";
+/// `at_bound` role for any other free parameter of the item.
+pub const AT_BOUND_PARAMETER: &str = "parameter";
+
 #[derive(Clone, Debug)]
 pub struct MixedItemEstimate {
     pub kind: MixedItemKind,
@@ -187,6 +207,15 @@ pub struct MixedItemEstimate {
     pub lower_asymptote: Option<f64>,
     pub upper_asymptote: Option<f64>,
     pub zeta: Vec<f64>,
+    /// Parameter roles whose estimate rests on an optimizer bound at the
+    /// returned solution: [`AT_BOUND_SLOPE`], [`AT_BOUND_LATENT_POSITION`],
+    /// [`AT_BOUND_PARAMETER`]. Empty is the normal case. A non-empty entry
+    /// means the reported value IS the bound and the optimizer was still
+    /// pushing against it, so that value is not an estimate of the parameter
+    /// and must not be read as one — in particular a bounded slope is
+    /// indistinguishable, in the reported number alone, from a genuinely
+    /// small discrimination.
+    pub at_bound: Vec<&'static str>,
 }
 
 #[derive(Clone, Debug)]
@@ -752,17 +781,37 @@ fn numeric_gradient(spec: &MixedItemSpec, params: &[f64], grid: &Grid, counts: &
 
 fn clamp_params(spec: &MixedItemSpec, values: &mut [f64], latent_dim: usize) {
     for value in values.iter_mut() {
-        *value = value.clamp(-12.0, 12.0);
+        *value = value.clamp(PARAM_BOUND.0, PARAM_BOUND.1);
     }
     if spec.kind.has_free_slope() {
-        values[0] = values[0].clamp(-5.0, 4.0);
+        values[0] = values[0].clamp(SLOPE_BOUND.0, SLOPE_BOUND.1);
     }
     if spec.kind.is_spatial() {
         let start = values.len() - latent_dim;
         for value in &mut values[start..] {
-            *value = value.clamp(-6.0, 6.0);
+            *value = value.clamp(SPATIAL_BOUND.0, SPATIAL_BOUND.1);
         }
     }
+}
+
+/// Which bounds [`clamp_params`] is holding at `params`. Reads the same
+/// constants the clamp applies, so the report cannot drift from the bound.
+fn bounds_in_force(spec: &MixedItemSpec, params: &[f64], latent_dim: usize) -> Vec<&'static str> {
+    let on = |value: f64, bound: (f64, f64)| value <= bound.0 || value >= bound.1;
+    let mut roles = Vec::new();
+    if spec.kind.has_free_slope() && on(params[0], SLOPE_BOUND) {
+        roles.push(AT_BOUND_SLOPE);
+    }
+    let spatial_start = params.len().saturating_sub(latent_dim);
+    if spec.kind.is_spatial() && params[spatial_start..].iter().any(|v| on(*v, SPATIAL_BOUND)) {
+        roles.push(AT_BOUND_LATENT_POSITION);
+    }
+    let free_slope_offset = usize::from(spec.kind.has_free_slope());
+    let others = params[free_slope_offset..spatial_start.max(free_slope_offset)].iter();
+    if others.copied().any(|v| on(v, PARAM_BOUND)) {
+        roles.push(AT_BOUND_PARAMETER);
+    }
+    roles
 }
 
 fn symmetrize_and_ridge(hessian: &mut [Vec<f64>], ridge: f64) {
@@ -893,6 +942,7 @@ fn public_estimate(spec: &MixedItemSpec, params: &[f64], latent_dim: usize) -> M
         lower_asymptote: None,
         upper_asymptote: None,
         zeta: Vec::new(),
+        at_bound: bounds_in_force(spec, params, latent_dim),
     };
     match spec.kind {
         MixedItemKind::Rasch => {

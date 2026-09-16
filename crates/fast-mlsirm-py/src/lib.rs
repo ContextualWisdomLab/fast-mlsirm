@@ -103,6 +103,11 @@ use mlsirm_core::fitstats::{
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
+use mlsirm_core::bifactor_grm::{
+    fit_bifactor_grm as core_fit_bifactor_grm,
+    fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup, BifactorGrmConfig,
+    BifactorMultigroupConfig,
+};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
     gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, phi_lambda as core_phi_lambda,
@@ -1315,6 +1320,258 @@ fn fit_grm(
     out.set_item("converged", res.converged)?;
     out.set_item("termination_reason", res.termination_reason)?;
     out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Parse a CPU/GPU execution-device string for the bifactor E-step sweep.
+///
+/// Accepts `cpu` (f64 scalar sweep), `gpu` (WGSL f32 person-parallel sweep
+/// with a CPU fallback warning), and `auto` (GPU when available, silent
+/// fallback); anything else is a loud `ValueError`, never a silent default.
+fn parse_device(name: &str) -> PyResult<mlsirm_core::Device> {
+    mlsirm_core::Device::parse(name).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "device must be one of 'cpu', 'gpu', 'auto'; got '{name}'"
+        ))
+    })
+}
+
+/// Single-group polytomous bifactor graded response model (Gibbons et al., 2007;
+/// Gibbons & Hedeker, 1992; Samejima, 1969;
+/// `mlsirm_core::bifactor_grm::fit_bifactor_grm`). Each item's `n_cat` ORDERED
+/// categories load the general factor (`a_general`, unconstrained) and at most
+/// one orthogonal specific factor (`a_specific`, unconstrained, `0` for
+/// general-only items): `P(Y>=k|theta) = sigmoid(a_G*theta_G + a_S*theta_S + d_k)`
+/// with strictly decreasing boundary intercepts `d`, `theta ~ N(0, I)` per
+/// dimension. `specific_map` is length `n_items` with `-1` for general-only
+/// items and `0..n_specific` otherwise (each specific needs >= 2 items).
+/// Estimation is Bock-Aitkin EM with Gibbons-Hedeker dimension reduction
+/// (`O(Q_G * sum_s Q_S * |block_s|)` per person); `q_general`/`q_specific` are
+/// Gauss-Hermite counts, `n_starts` deterministic starts from `seed` keep the
+/// best loglik. Returns a dict with `a_general`, `a_specific`, `threshold`
+/// (`n_items * (n_cat-1)`, strictly decreasing per item), `theta_g_eap` /
+/// `theta_g_sd` (general-factor EAP + posterior SD), `category_counts`
+/// (`n_items * n_cat`), `loglik_trace`, `n_iter`, `converged`,
+/// `termination_reason`, `final_loglik_change`, `best_start`, `n_parameters`.
+/// Unobserved categories raise `ValueError`; `max_iter` exhaustion reports
+/// `converged = False` instead of substituting values.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu"))]
+fn fit_bifactor_grm(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_general: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+    n_starts: usize,
+    seed: u64,
+    device: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let y_slice = y.as_slice()?;
+    let obs_vec: Option<Vec<bool>> = match &observed {
+        Some(o) => Some(o.as_slice()?.to_vec()),
+        None => None,
+    };
+    // Missing cells may carry any negative placeholder (the Python wrapper
+    // sends 0); only observed cells must be non-negative categories.
+    let yy: Vec<usize> = y_slice
+        .iter()
+        .enumerate()
+        .map(|(idx, &v)| {
+            if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) {
+                return Ok(0usize);
+            }
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let smap: Vec<i32> = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            i32::try_from(v)
+                .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = BifactorGrmConfig {
+        q_general,
+        q_specific,
+        max_iter,
+        tol,
+        n_starts,
+        seed,
+        // newton_iter/ridge: inner Newton M-step controls, not exposed to
+        // Python and out of #1929's quadrature-node scope.
+        newton_iter: 10,
+        ridge: 1e-8,
+        device: parse_device(device)?,
+    };
+    let res = py
+        .detach(|| {
+            core_fit_bifactor_grm(
+                &yy,
+                obs_vec.as_deref(),
+                &smap,
+                n_persons,
+                n_items,
+                n_specific,
+                n_cat,
+                &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("a_general", res.a_general)?;
+    out.set_item("a_specific", res.a_specific)?;
+    out.set_item("threshold", res.threshold)?;
+    out.set_item("theta_g_eap", res.theta_g_eap)?;
+    out.set_item("theta_g_sd", res.theta_g_sd)?;
+    out.set_item("category_counts", res.category_counts)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("best_start", res.best_start)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Multiple-group polytomous bifactor graded response model, stage 2 of #1912
+/// (`mlsirm_core::bifactor_grm::fit_bifactor_grm_multigroup`). Groups share
+/// item parameters except items flagged free in `anchor` (`None` = all common;
+/// otherwise length `n_items` with `true` = common, `false` = free per group;
+/// at least one common item is required when `n_groups >= 2` to link the
+/// scales — Cai, Yang, & Hansen, 2011). Group 0 is the reference pinned to
+/// `N(0, I)`; each focal group's general-factor mean/variance — plus, when
+/// `estimate_specific_vars` is set, its specific-factor variances (means fixed
+/// at 0) — are estimated by marginal ML via EM with the Gibbons-Hedeker
+/// reduction applied per group (Gibbons et al., 2007, eq. 15, "Marginal
+/// Maximum Likelihood Estimation" section; Cai et al., 2011, extend Gibbons
+/// and Hedeker's (1992) bifactor dimension reduction, p. 221). Reflection is canonicalized jointly across groups (general flip
+/// also negates every group mean and the reported general EAPs). Returns a
+/// dict with per-group `a_general` / `a_specific` / `threshold` (`n_groups`
+/// rows; anchored rows identical), `general_mean` / `general_sd` (`[0]` pinned
+/// to `0` / `1`), `specific_sd` (`n_groups x n_specific`, `[0]` all `1`),
+/// `theta_g_eap` / `theta_g_sd` on the common scale, `group_category_counts`,
+/// `loglik_trace`, `n_iter`, `converged`, `termination_reason`,
+/// `final_loglik_change`, `best_start`, `n_parameters`. The item M-step uses
+/// the crate defaults (`newton_iter = 10`, `ridge = 1e-8`, Hessian
+/// conditioning only, NOT a prior), shared with the GRM estimator. With
+/// `n_groups == 1` this bit-reproduces `fit_bifactor_grm`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, group_id, n_groups, specific_map, n_persons, n_items, n_specific, n_cat, anchor = None, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, estimate_specific_vars = false, device = "cpu"))]
+fn fit_bifactor_grm_multigroup(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    group_id: PyReadonlyArray1<'_, i64>,
+    n_groups: usize,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_specific: usize,
+    n_cat: usize,
+    anchor: Option<PyReadonlyArray1<'_, bool>>,
+    q_general: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+    n_starts: usize,
+    seed: u64,
+    estimate_specific_vars: bool,
+    device: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let y_slice = y.as_slice()?;
+    let obs_vec: Option<Vec<bool>> = match &observed {
+        Some(o) => Some(o.as_slice()?.to_vec()),
+        None => None,
+    };
+    let yy: Vec<usize> = y_slice
+        .iter()
+        .enumerate()
+        .map(|(idx, &v)| {
+            if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) {
+                return Ok(0usize);
+            }
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let gid: Vec<usize> = group_id
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("group_id labels must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let smap: Vec<i32> = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            i32::try_from(v)
+                .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+        })
+        .collect::<PyResult<_>>()?;
+    let anchor_vec: Option<Vec<bool>> = match &anchor {
+        Some(a) => Some(a.as_slice()?.to_vec()),
+        None => None,
+    };
+    let cfg = BifactorMultigroupConfig {
+        q_general,
+        q_specific,
+        max_iter,
+        tol,
+        n_starts,
+        seed,
+        estimate_specific_vars,
+        device: parse_device(device)?,
+        ..BifactorMultigroupConfig::default()
+    };
+    let res = py
+        .detach(|| {
+            core_fit_bifactor_grm_multigroup(
+                &yy,
+                obs_vec.as_deref(),
+                &gid,
+                n_groups,
+                &smap,
+                n_persons,
+                n_items,
+                n_specific,
+                n_cat,
+                anchor_vec.as_deref(),
+                &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("a_general", res.a_general)?;
+    out.set_item("a_specific", res.a_specific)?;
+    out.set_item("threshold", res.threshold)?;
+    out.set_item("general_mean", res.general_mean)?;
+    out.set_item("general_sd", res.general_sd)?;
+    out.set_item("specific_sd", res.specific_sd)?;
+    out.set_item("theta_g_eap", res.theta_g_eap)?;
+    out.set_item("theta_g_sd", res.theta_g_sd)?;
+    out.set_item("group_category_counts", res.group_category_counts)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("best_start", res.best_start)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }
@@ -4567,10 +4824,11 @@ fn score_wle(
 /// `n_persons` with `0` = reference, `1` = focal. Returns a dict of per-item arrays: `item`,
 /// `chi2_uniform`/`p_uniform` and `chi2_nonuniform`/`p_nonuniform` (1 df each, DESCRIPTIVE and
 /// unadjusted), `chi2_total`/`p_total` (2 df, the PRIMARY omnibus test that Benjamini-Hochberg adjusts),
-/// `delta_r2` (Nagelkerke `R2(M2) - R2(M0)`), `delta_r2_uniform` (uncalibrated descriptive),
-/// `jg_class` (Jodoin & Gierl, 2001 `"A"`/`"B"`/`"C"`, or `"U"` when undefined), `flagged_bh`, and
-/// `converged`. A failed fit (separation, rank-deficient design, no convergence) reports NaN statistics,
-/// `converged=False`, and is never flagged.
+/// `delta_r2` (Nagelkerke `R2(M2) - R2(M0)`), `delta_r2_uniform` (descriptive, `R2(M1) - R2(M0)`),
+/// `jg_class` (always `"U"`, "not applicable" — the Jodoin & Gierl, 2001 bands are calibrated on a
+/// different, underdetermined statistic; see `python/fast_mlsirm/dif.py::logistic_dif` and #1880),
+/// `flagged_bh`, and `converged`. A failed fit (separation, rank-deficient design, no convergence)
+/// reports NaN statistics, `converged=False`, and is never flagged.
 ///
 /// References (APA 7th ed.):
 ///   Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I error and power rates using an effect size
@@ -6833,6 +7091,7 @@ fn fit_mixed_items(
         item.set_item("lower_asymptote", estimate.lower_asymptote)?;
         item.set_item("upper_asymptote", estimate.upper_asymptote)?;
         item.set_item("zeta", estimate.zeta)?;
+        item.set_item("at_bound", estimate.at_bound)?;
         items.append(item)?;
     }
     out.set_item("items", items)?;
@@ -9588,6 +9847,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_mhrm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal_model, m)?)?;
     m.add_function(wrap_pyfunction!(fit_grm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_bifactor_grm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_bifactor_grm_multigroup, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;

@@ -11,10 +11,11 @@
 //! Valid probabilities require the boundaries to be STRICTLY DECREASING
 //! (`beta_i,0 > beta_i,1 > ... > beta_i,{M-2}`).
 //!
-//! At `D = 1` with `S_i = {0}` this is `poly::fit_poly_unidim(PolyModel::Grm)` — but WITHIN optimizer
-//! tolerance and up to a reflection, not bit-exact: `fit_poly_unidim` forces `a > 0` via a `log a`
-//! parametrization, whereas the confirmatory multidimensional model uses an UNCONSTRAINED slope so
-//! that reverse-keyed / negative cross-loadings are representable (the compensatory-MIRT choice).
+//! At `D = 1` with `S_i = {0}` this is `poly::fit_poly_unidim(PolyModel::Grm)` — WITHIN optimizer
+//! tolerance, not bit-exact (different parametrization of the same model, different M-step). Both
+//! estimate an UNCONSTRAINED slope so that reverse-keyed items and negative cross-loadings are
+//! representable (the compensatory-MIRT choice), and both pin the resulting reflection
+//! indeterminacy by requiring the anchor item to load positively.
 //!
 //! **Estimation.** Bock-Aitkin marginal MLE (EM) over the `D`-dim latent grid, reusing the MIRT node
 //! machinery (`nodes::build_xi_nodes`, `node_rule` gh/qmc/mc, so `D <= 3` uses Gauss-Hermite and

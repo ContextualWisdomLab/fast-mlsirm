@@ -1,108 +1,93 @@
 # Copyright (c) 2026 ContextualWisdomLab. All rights reserved.
 # SPDX-License-Identifier: MIT
 
-"""CPU/GPU E-step equivalence for the polytomous bifactor GRM.
+"""CPU/GPU E-step equivalence for the Bock-Aitkin bifactor GRM.
 
 Tolerance derivation (documented, from float precision)
 -------------------------------------------------------
 The WGSL kernels accumulate in f32 (machine epsilon ≈ 1.19e-7) while the CPU
-reference path is f64. Expected counts are reductions over persons of
-posterior weights in [0, 1], so the worst-case absolute error per count entry
-scales with ``n_persons`` (≈ 200 × 1.2e-7 ≈ 2.4e-5); the marginal log-likelihood
-sums per-person terms every EM iteration, adding an iteration factor (≈ 10
-here, hence the looser loglik bound). Fit-level slope/threshold agreement is
-asserted at 1e-4 (about three orders of magnitude above the measured
-f32-level differences of ~1e-7) and loglik agreement at 1e-2 absolute
-(relative ~2e-6 on the fixture scale); both bounds were confirmed by
-measurement on the fixture below (CPU vs GPU: slope 1.6e-7, threshold
-7.8e-8, loglik 4.0e-5 at qmc_draws=241).
+reference sweep is f64. Expected counts are reductions over persons of
+posterior weights in [0, 1] (worst-case per-entry error ~ ``n_persons`` ×
+eps ≈ 1.4e-5 here); the marginal log-likelihood sums per-person terms every
+EM iteration. Fit-level agreement is asserted at 1e-4 absolute for slopes
+and thresholds (about three orders of magnitude above the measured f32-level
+differences of ~2e-7) and 1e-3 absolute for the loglik (measured 4.7e-5);
+convergence paths (iterations, flags) must agree exactly.
 
-Quadrature is precision: equivalence is demonstrated at 241 and 481 Halton
-draws (above the 121-draw floor for study settings); node counts are caller
-arguments with no upper cap.
+Quadrature follows the merged estimator contract: Gauss-Hermite counts are
+caller arguments restricted to the embedded rule set ``(7, 11, 15, 21, 31,
+41)`` with no defaults; equivalence runs at the 21-point grid (finer than
+the 7-point grids of the stage-1/2 tests). Node counts are never capped.
 
-Implementation basis: Gibbons, R. D., & Hedeker, D. R. (1992).
-Full-information item bi-factor analysis. *Psychometrika, 57*(3), 423–436.
-https://doi.org/10.1007/BF02295430; Cai, L., Yang, J. S., & Hansen, M.
-(2011). Generalized full-information item bifactor analysis. *Psychological
-Methods, 16*(3), 221–248. https://doi.org/10.1037/a0023350
+Implementation basis: Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D.
+J., Segawa, E., Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V.
+J., & Stover, A. (2007). Full-information item bifactor analysis of graded
+response data. *Applied Psychological Measurement, 31*(1), 4–19.
+https://doi.org/10.1177/0146621606289485; Bock, R. D., & Aitkin, M. (1981).
+Marginal maximum likelihood estimation of item parameters: Application of
+an EM algorithm. *Psychometrika, 46*(4), 443–459.
+https://doi.org/10.1007/BF02293801
 """
 
 import time
 
 import numpy as np
-import pytest
 
-from fast_mlsirm.polytomous_bifactor import fit_polytomous_bifactor
+from fast_mlsirm.bifactor_grm import fit_bifactor_grm
+from fast_mlsirm.bifactor_multigroup import fit_bifactor_grm_multigroup
 
 SLOPE_ATOL = 1e-4
 THRESHOLD_ATOL = 1e-4
-LOGLIK_ATOL = 1e-2
+LOGLIK_ATOL = 1e-3
 
 
-def _fixture():
-    n_persons = 200
-    n_items = 10
-    n_cat = 3
-    n_dims = 3
-    loading_pattern = np.zeros((n_items, n_dims), dtype=np.uint8)
-    for i in range(n_items):
-        loading_pattern[i, 0] = 1
-        loading_pattern[i, 1 + (i % 2)] = 1
-
-    rng = np.random.default_rng(42)
-    responses = rng.integers(0, n_cat, size=(n_persons, n_items), endpoint=False)
-
-    # Reverse-keyed items (measurement-relevant fixture asymmetry)
-    responses[:, 1] = n_cat - 1 - responses[:, 1]
-    responses[:, 3] = n_cat - 1 - responses[:, 3]
-
-    group_ids = np.zeros(n_persons, dtype=np.int64)
-    group_ids[n_persons // 2 :] = 1
-    return responses, loading_pattern, n_cat, group_ids
+def _fixture(n_persons=120, n_items=8, n_cat=3, seed=42):
+    smap = np.zeros(n_items, dtype=np.int64)
+    smap[n_items // 2 :] = 1
+    rng = np.random.default_rng(seed)
+    responses = rng.integers(0, n_cat, size=(n_persons, n_items)).astype(float)
+    # Reverse-keyed items (measurement-relevant fixture asymmetry).
+    responses[:, 1] = (n_cat - 1) - responses[:, 1]
+    responses[:, n_items // 2 + 1] = (n_cat - 1) - responses[
+        :, n_items // 2 + 1
+    ]
+    return responses, smap, n_cat
 
 
-@pytest.mark.parametrize("qmc_draws", [241, 481])
-def test_bifactor_gpu_equivalence(qmc_draws, capfd):
-    """CPU and GPU E-steps agree within f32-derived tolerance (multigroup)."""
-    responses, loading_pattern, n_cat, group_ids = _fixture()
+def test_bifactor_gpu_equivalence_single_group(capfd):
+    """CPU and GPU E-steps agree within f32-derived tolerance (single group)."""
+    responses, smap, n_cat = _fixture()
+    kw = dict(
+        n_cat=n_cat,
+        n_specific=2,
+        q_general=21,
+        q_specific=21,
+        max_iter=25,
+        tol=1e-4,
+        n_starts=1,
+        seed=1,
+    )
 
     t0 = time.perf_counter()
-    fit_cpu = fit_polytomous_bifactor(
-        responses=responses,
-        loading_pattern=loading_pattern,
-        n_cat=n_cat,
-        group_ids=group_ids,
-        n_groups=2,
-        max_iter=10,
-        qmc_draws=qmc_draws,
-        compute_oakes_se=False,
-        device="cpu",
-    )
+    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu")
     t1 = time.perf_counter()
-
-    fit_gpu = fit_polytomous_bifactor(
-        responses=responses,
-        loading_pattern=loading_pattern,
-        n_cat=n_cat,
-        group_ids=group_ids,
-        n_groups=2,
-        max_iter=10,
-        qmc_draws=qmc_draws,
-        compute_oakes_se=False,
-        device="gpu",
-    )
+    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
     t2 = time.perf_counter()
 
     cpu_time, gpu_time = t1 - t0, t2 - t1
-    slope_diff = float(np.max(np.abs(fit_cpu.slope - fit_gpu.slope)))
+    slope_diff = float(
+        max(
+            np.max(np.abs(fit_cpu.a_general - fit_gpu.a_general)),
+            np.max(np.abs(fit_cpu.a_specific - fit_gpu.a_specific)),
+        )
+    )
     threshold_diff = float(np.max(np.abs(fit_cpu.threshold - fit_gpu.threshold)))
-    loglik_diff = abs(float(fit_cpu.loglik) - float(fit_gpu.loglik))
+    loglik_diff = abs(float(fit_cpu.loglik_trace[-1]) - float(fit_gpu.loglik_trace[-1]))
 
     err = capfd.readouterr().err
     gpu_executed = "falling back" not in err
     print(
-        f"\n[qn={qmc_draws}] CPU {cpu_time:.3f}s vs GPU {gpu_time:.3f}s "
+        f"\n[single q=21] CPU {cpu_time:.3f}s vs GPU {gpu_time:.3f}s "
         f"(gpu_executed={gpu_executed}); max|Δslope|={slope_diff:.3e} "
         f"max|Δthreshold|={threshold_diff:.3e} |Δloglik|={loglik_diff:.3e}"
     )
@@ -110,15 +95,63 @@ def test_bifactor_gpu_equivalence(qmc_draws, capfd):
     # Convergence path must agree exactly (same iterations, same outcome).
     assert fit_cpu.converged == fit_gpu.converged
     assert fit_cpu.n_iter == fit_gpu.n_iter
-    np.testing.assert_allclose(fit_cpu.slope, fit_gpu.slope, atol=SLOPE_ATOL)
+    assert fit_cpu.best_start == fit_gpu.best_start
+    np.testing.assert_allclose(fit_cpu.a_general, fit_gpu.a_general, atol=SLOPE_ATOL)
+    np.testing.assert_allclose(
+        fit_cpu.a_specific, fit_gpu.a_specific, atol=SLOPE_ATOL
+    )
     np.testing.assert_allclose(
         fit_cpu.threshold, fit_gpu.threshold, atol=THRESHOLD_ATOL
     )
     assert loglik_diff <= LOGLIK_ATOL
-    # Group-moment agreement at the same single-precision level.
+
+
+def test_bifactor_gpu_equivalence_multigroup(capfd):
+    """CPU and GPU E-steps agree within f32-derived tolerance (two groups)."""
+    responses, smap, n_cat = _fixture()
+    n_persons = responses.shape[0]
+    group = np.zeros(n_persons, dtype=np.int64)
+    group[n_persons // 2 :] = 1
+    kw = dict(
+        n_cat=n_cat,
+        n_specific=2,
+        q_general=11,
+        q_specific=11,
+        max_iter=15,
+        tol=1e-4,
+        n_starts=1,
+        seed=1,
+    )
+
+    t0 = time.perf_counter()
+    fit_cpu = fit_bifactor_grm_multigroup(responses, group, smap, **kw, device="cpu")
+    t1 = time.perf_counter()
+    fit_gpu = fit_bifactor_grm_multigroup(responses, group, smap, **kw, device="gpu")
+    t2 = time.perf_counter()
+
+    cpu_time, gpu_time = t1 - t0, t2 - t1
+    slope_diff = float(np.max(np.abs(fit_cpu.a_general - fit_gpu.a_general)))
+    threshold_diff = float(np.max(np.abs(fit_cpu.threshold - fit_gpu.threshold)))
+    loglik_diff = abs(float(fit_cpu.loglik_trace[-1]) - float(fit_gpu.loglik_trace[-1]))
+
+    err = capfd.readouterr().err
+    gpu_executed = "falling back" not in err
+    print(
+        f"\n[multi q=11] CPU {cpu_time:.3f}s vs GPU {gpu_time:.3f}s "
+        f"(gpu_executed={gpu_executed}); max|Δslope|={slope_diff:.3e} "
+        f"max|Δthreshold|={threshold_diff:.3e} |Δloglik|={loglik_diff:.3e}"
+    )
+
+    assert fit_cpu.converged == fit_gpu.converged
+    assert fit_cpu.n_iter == fit_gpu.n_iter
+    np.testing.assert_allclose(fit_cpu.a_general, fit_gpu.a_general, atol=SLOPE_ATOL)
     np.testing.assert_allclose(
-        fit_cpu.group_means, fit_gpu.group_means, atol=SLOPE_ATOL
+        fit_cpu.a_specific, fit_gpu.a_specific, atol=SLOPE_ATOL
     )
     np.testing.assert_allclose(
-        fit_cpu.group_variances, fit_gpu.group_variances, atol=SLOPE_ATOL
+        fit_cpu.threshold, fit_gpu.threshold, atol=THRESHOLD_ATOL
+    )
+    assert loglik_diff <= LOGLIK_ATOL
+    np.testing.assert_allclose(
+        fit_cpu.general_mean, fit_gpu.general_mean, atol=SLOPE_ATOL
     )

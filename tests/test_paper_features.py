@@ -2217,8 +2217,9 @@ def test_logistic_dif_zumbo():
     np.testing.assert_allclose(
         lr["chi2_uniform"] + lr["chi2_nonuniform"], lr["chi2_total"], atol=1e-6
     )
-    clean = [i for i in range(n_items) if i not in (cross_item, unif_item)]
-    assert all(lr["jg_class"][i] == "A" for i in clean)
+    # #1880: jg_class is "not applicable" (U) for every item now, clean or not -- the bands were
+    # calibrated on a different, underdetermined statistic (see logistic_dif's docstring).
+    assert all(lr["jg_class"][i] == "U" for i in range(n_items))
 
     # validation
     with pytest.raises(ValueError):

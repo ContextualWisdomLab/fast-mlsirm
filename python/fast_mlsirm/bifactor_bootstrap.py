@@ -1,14 +1,16 @@
 # Copyright (c) 2026 ContextualWisdomLab. All rights reserved.
 # SPDX-License-Identifier: MIT
 
-"""Joint person bootstrap for polytomous bifactor models.
+"""Joint person bootstrap for the bifactor graded response model.
 
 Resamples persons (stratified by group when multiple groups are present),
-refits the polytomous bifactor graded response model on each replicate, and
-reports empirical standard errors and percentile intervals from the converged
-replicates. Replicate count, batch size, Monte Carlo stopping ratio, and
-compute budget are caller arguments; this module defines no study-specific
-defaults for them.
+refits the Bock-Aitkin bifactor GRM on each replicate
+(:func:`fast_mlsirm.bifactor_grm.fit_bifactor_grm` for one group,
+:func:`fast_mlsirm.bifactor_multigroup.fit_bifactor_grm_multigroup` for
+several), and reports empirical standard errors and percentile intervals
+from the converged replicates. Replicate count, batch size, Monte Carlo
+stopping ratio, and compute budget are caller arguments; this module defines
+no study-specific defaults for them.
 
 Implementation basis
 --------------------
@@ -33,12 +35,14 @@ References
   No. 1001, http://dido.econ.yale.edu/~dwka/pub/p1001.pdf; see eqs.
   (4.1)–(4.4) for the batch-size formulae and § 6 for the 95% interval
   simulations motivating the default ``ci_level``).
+- Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E.,
+  Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., & Stover,
+  A. (2007). Full-information item bifactor analysis of graded response
+  data. *Applied Psychological Measurement, 31*(1), 4–19.
+  https://doi.org/10.1177/0146621606289485
 - Gibbons, R. D., & Hedeker, D. R. (1992). Full-information item bi-factor
   analysis. *Psychometrika, 57*(3), 423–436.
   https://doi.org/10.1007/BF02295430
-- Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
-  item bifactor analysis. *Psychological Methods, 16*(3), 221–248.
-  https://doi.org/10.1037/a0023350
 """
 
 from __future__ import annotations
@@ -50,7 +54,9 @@ import os
 import time
 import numpy as np
 
-from .polytomous_bifactor import fit_polytomous_bifactor
+from .bifactor_grm import _SUPPORTED_Q as _GH_RULES
+from .bifactor_grm import fit_bifactor_grm
+from .bifactor_multigroup import fit_bifactor_grm_multigroup
 
 
 @dataclass
@@ -63,23 +69,26 @@ class BifactorBootstrapResult:
     converged: np.ndarray  # bool per completed replicate, in replicate order
     stopped_early: bool  # True when the MC stopping rule fired
     ci_level: float
-    replicate_slopes: np.ndarray  # (B_conv, n_items, n_dims)
-    replicate_thresholds: np.ndarray  # (B_conv, n_items, n_cat - 1)
-    replicate_group_means: np.ndarray  # (B_conv, n_groups, n_dims)
-    replicate_group_variances: np.ndarray  # (B_conv, n_groups, n_dims)
+    n_groups: int
+    replicate_a_general: np.ndarray  # (B_conv, n_items)
+    replicate_a_specific: np.ndarray  # (B_conv, n_items)
+    replicate_threshold: np.ndarray  # (B_conv, n_items, n_cat - 1)
+    replicate_general_mean: np.ndarray  # (B_conv, n_groups)
+    replicate_general_sd: np.ndarray  # (B_conv, n_groups)
+    replicate_specific_sd: np.ndarray  # (B_conv, n_groups, n_specific)
     replicate_loglik: np.ndarray  # (B_conv,)
-    se_slope: np.ndarray  # (n_items, n_dims)
-    se_threshold: np.ndarray  # (n_items, n_cat - 1)
-    se_group_means: np.ndarray  # (n_groups, n_dims)
-    se_group_variances: np.ndarray  # (n_groups, n_dims)
-    ci_lower_slope: np.ndarray
-    ci_upper_slope: np.ndarray
+    se_a_general: np.ndarray
+    se_a_specific: np.ndarray
+    se_threshold: np.ndarray
+    se_general_mean: np.ndarray
+    se_general_sd: np.ndarray
+    se_specific_sd: np.ndarray
+    ci_lower_a_general: np.ndarray
+    ci_upper_a_general: np.ndarray
+    ci_lower_a_specific: np.ndarray
+    ci_upper_a_specific: np.ndarray
     ci_lower_threshold: np.ndarray
     ci_upper_threshold: np.ndarray
-    ci_lower_group_means: np.ndarray
-    ci_upper_group_means: np.ndarray
-    ci_lower_group_variances: np.ndarray
-    ci_upper_group_variances: np.ndarray
     wall_clock_seconds: float
     throughput_replicates_per_second: float
     device: str = "cpu"
@@ -116,87 +125,113 @@ def _generate_bootstrap_indices(
 def _fit_single_replicate(
     rep_idx: int,
     responses: np.ndarray,
-    loading_pattern: np.ndarray,
+    specific_map: np.ndarray,
     n_cat: int,
+    n_specific: int,
     group_ids: np.ndarray | None,
     n_groups: int,
-    seed: int,
+    anchor_mask: np.ndarray | None,
+    q_general: int,
+    q_specific: int,
     max_iter: int,
     tol: float,
-    ridge: float,
-    newton_iter: int,
-    qmc_draws: int,
-    slope_bound: float | None,
+    n_starts: int,
+    rep_seed: int,
+    estimate_specific_vars: bool,
     device: str,
-) -> tuple[int, bool, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
+) -> tuple:
     """Execute one bootstrap resample and fit.
 
     The replicate seed derives deterministically from the caller-supplied
     ``base_seed`` and the replicate index, so CPU and GPU runs with the same
-    ``base_seed`` draw identical resamples and identical QMC shifts and match
-    replicate-by-replicate up to device precision.
+    ``base_seed`` draw identical resamples and identical start jitter and
+    match replicate-by-replicate up to device precision.
     """
-    rng = np.random.Generator(np.random.PCG64(seed))
+    rng = np.random.Generator(np.random.PCG64(rep_seed))
     n_persons = responses.shape[0]
+    n_items = responses.shape[1]
 
     indices = _generate_bootstrap_indices(n_persons, group_ids, n_groups, rng)
     y_boot = responses[indices]
     g_boot = group_ids[indices] if group_ids is not None else None
 
-    # Distinct seed for QMC draws to avoid alignment artifacts
-    qmc_seed = (seed ^ 0x5DEE_CE66_D) & 0xFFFF_FFFF_FFFF_FFFF
+    def _nan_result(converged: bool, err: str):
+        m1 = n_cat - 1
+        return (
+            rep_idx,
+            converged,
+            np.full(n_items, np.nan),
+            np.full(n_items, np.nan),
+            np.full((n_items, m1), np.nan),
+            np.full(n_groups, np.nan),
+            np.full(n_groups, np.nan),
+            np.full((n_groups, n_specific), np.nan),
+            float("nan"),
+            err,
+        )
 
     try:
-        fit = fit_polytomous_bifactor(
+        if group_ids is None or n_groups <= 1:
+            fit = fit_bifactor_grm(
+                responses=y_boot,
+                specific_map=specific_map,
+                n_cat=n_cat,
+                n_specific=n_specific,
+                q_general=q_general,
+                q_specific=q_specific,
+                max_iter=max_iter,
+                tol=tol,
+                n_starts=n_starts,
+                seed=rep_seed,
+                device=device,
+            )
+            a_g = np.asarray(fit.a_general, dtype=np.float64)
+            a_s = np.asarray(fit.a_specific, dtype=np.float64)
+            thr = np.asarray(fit.threshold, dtype=np.float64).reshape(n_items, n_cat - 1)
+            means = np.zeros(1)
+            sds = np.ones(1)
+            spec = np.ones((1, n_specific))
+            ll = (
+                float(fit.loglik_trace[-1]) if len(fit.loglik_trace) else float("nan")
+            )
+            return (
+                rep_idx, bool(fit.converged), a_g, a_s, thr, means, sds, spec, ll, "",
+            )
+        fit = fit_bifactor_grm_multigroup(
             responses=y_boot,
-            loading_pattern=loading_pattern,
+            group=g_boot,
+            specific_map=specific_map,
             n_cat=n_cat,
-            group_ids=g_boot,
-            n_groups=n_groups,
+            n_specific=n_specific,
+            anchor_mask=anchor_mask,
+            q_general=q_general,
+            q_specific=q_specific,
             max_iter=max_iter,
             tol=tol,
-            ridge=ridge,
-            newton_iter=newton_iter,
-            qmc_draws=qmc_draws,
-            seed=qmc_seed,
-            slope_bound=slope_bound,
-            compute_oakes_se=False,  # SEs estimated empirically from bootstrap
+            n_starts=n_starts,
+            seed=rep_seed,
+            estimate_specific_vars=estimate_specific_vars,
             device=device,
         )
+        # Multigroup arrays are (n_groups, ...): the bootstrap resamples
+        # persons, so per-replicate summaries keep the group axis.
+        a_g = np.asarray(fit.a_general, dtype=np.float64)
+        a_s = np.asarray(fit.a_specific, dtype=np.float64)
+        thr = np.asarray(fit.threshold, dtype=np.float64)
+        means = np.asarray(fit.general_mean, dtype=np.float64)
+        sds = np.asarray(fit.general_sd, dtype=np.float64)
+        spec = np.asarray(fit.specific_sd, dtype=np.float64)
+        ll = float(fit.loglik_trace[-1]) if len(fit.loglik_trace) else float("nan")
         return (
-            rep_idx,
-            fit.converged,
-            fit.slope,
-            fit.threshold,
-            fit.group_means,
-            fit.group_variances,
-            fit.loglik,
+            rep_idx, bool(fit.converged), a_g, a_s, thr, means, sds, spec, ll, "",
         )
-    except Exception:
-        n_items, n_dims = loading_pattern.shape
-        return (
-            rep_idx,
-            False,
-            np.full((n_items, n_dims), np.nan),
-            np.full((n_items, n_cat - 1), np.nan),
-            np.full((n_groups, n_dims), np.nan),
-            np.full((n_groups, n_dims), np.nan),
-            float("-inf"),
-        )
+    except Exception as exc:  # noqa: BLE001 — replicate failure is data, reported via flags
+        return _nan_result(False, f"{type(exc).__name__}: {exc}")
 
 
-def _stack_monitor_vector(
-    slopes: list[np.ndarray],
-    thresholds: list[np.ndarray],
-    means: list[np.ndarray],
-    variances: list[np.ndarray],
-) -> np.ndarray:
-    """Stack converged replicate estimates into one row-per-replicate matrix."""
-    rows = [
-        np.concatenate([s.ravel(), t.ravel(), m.ravel(), v.ravel()])[None, :]
-        for s, t, m, v in zip(slopes, thresholds, means, variances)
-    ]
-    return np.concatenate(rows, axis=0)
+def _stack_monitor_vector(rows: list[np.ndarray]) -> np.ndarray:
+    """Stack converged replicate summaries into one row-per-replicate matrix."""
+    return np.concatenate([r[None, :] for r in rows], axis=0)
 
 
 def _endpoint_movement(
@@ -208,7 +243,7 @@ def _endpoint_movement(
     """Maximum endpoint movement relative to the new interval half-width.
 
     Entries with zero half-width (parameters that are constant across
-    replicates, e.g. fixed reference-group moments) carry no Monte Carlo
+    replicates, e.g. pinned reference-group moments) carry no Monte Carlo
     uncertainty and are excluded. This is the observable proxy for the
     percentage deviation of finite-``B`` interval endpoints from their ideal
     counterparts in Andrews and Buchinsky (2000, §§ 2–4).
@@ -222,33 +257,43 @@ def _endpoint_movement(
     return float(np.max(move))
 
 
+def _require_int(value: object, name: str, minimum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise ValueError(f"{name} must be an integer >= {minimum}, got {value!r}")
+    return value
+
+
 def run_bifactor_bootstrap(
     responses: np.ndarray,
-    loading_pattern: np.ndarray,
+    specific_map: np.ndarray,
     n_cat: int,
+    n_specific: int,
     n_replicates: int,
     batch_size: int,
     mc_stopping_ratio: float,
     compute_budget_seconds: float,
+    q_general: int,
+    q_specific: int,
     group_ids: np.ndarray | None = None,
     n_groups: int = 1,
+    anchor_mask: np.ndarray | None = None,
     n_jobs: int = -1,
     base_seed: int = 42,
     device: str = "cpu",
     ci_level: float = 0.95,
-    slope_bound: float | None = None,
-    max_iter: int = 100,
-    tol: float = 1e-4,
-    ridge: float = 1e-6,
-    newton_iter: int = 10,
-    qmc_draws: int = 2000,
+    max_iter: int = 500,
+    tol: float = 1e-6,
+    n_starts: int = 1,
+    estimate_specific_vars: bool = False,
 ) -> BifactorBootstrapResult:
     """Run joint person bootstrap replications with parallel workers.
 
     Parameters:
         responses: Persons x items array of response categories.
-        loading_pattern: Items x dims array in {0, 1}.
+        specific_map: Length-``n_items`` array with ``-1`` for general-only
+            items and ``0..n_specific-1`` otherwise.
         n_cat: Number of response categories.
+        n_specific: Number of specific factors.
         n_replicates: Total bootstrap replicates requested (caller-supplied;
             no study-specific default is defined by this module).
         batch_size: Replicates per batch; the stopping rule and the compute
@@ -261,36 +306,40 @@ def run_bifactor_bootstrap(
             replicates within budget).
         compute_budget_seconds: Wall-clock budget; batch execution stops when
             the elapsed time reaches this bound.
-        group_ids: Optional 1-D group membership indices.
+        q_general/q_specific: Required Gauss-Hermite node counts (members of
+            the embedded rule set); no default is offered.
+        group_ids: Optional 1-D group membership indices (``None`` selects
+            the single-group estimator).
         n_groups: Number of groups.
+        anchor_mask: Optional multigroup anchor mask (``None`` = all common).
         n_jobs: Number of parallel workers (-1 for all logical cores).
         base_seed: Master seed for deterministic replication.
         device: 'cpu', 'gpu', or 'auto' execution device.
         ci_level: Nominal level of the reported percentile intervals and of
             the endpoints monitored by the stopping rule (0 < level < 1).
-        slope_bound: Upper bound on slope magnitude.
         max_iter: Max EM iterations per replicate.
         tol: Convergence tolerance.
-        ridge: Ridge stabilization penalty.
-        newton_iter: Newton steps per M-step.
-        qmc_draws: Halton draws per person.
+        n_starts: EM starts per replicate (deterministic from the replicate seed).
+        estimate_specific_vars: Multigroup focal specific-variance estimation.
 
     Returns:
         BifactorBootstrapResult with replicate matrices, empirical SEs,
         percentile intervals, per-replicate convergence flags, and timing.
         Replicates that fail to converge (or raise) are reported in
         ``converged`` and excluded from all summary statistics; failed
-        replicates are never substituted or imputed.
+        replicates are never substituted or imputed. When no replicate
+        converges, a ``RuntimeError`` carrying the first replicate's error
+        is raised instead of returning empty summaries.
 
     References:
         Andrews, D. W. K., & Buchinsky, M. (2000). A three-step method for
         choosing the number of bootstrap repetitions. *Econometrica, 68*(1),
         23–51. https://www.jstor.org/stable/2999474
     """
-    if isinstance(n_replicates, bool) or not isinstance(n_replicates, int) or n_replicates < 1:
-        raise ValueError(f"n_replicates must be a positive integer, got {n_replicates!r}")
-    if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
-        raise ValueError(f"batch_size must be a positive integer, got {batch_size!r}")
+    n_replicates = _require_int(n_replicates, "n_replicates", 1)
+    batch_size = _require_int(batch_size, "batch_size", 1)
+    n_starts = _require_int(n_starts, "n_starts", 1)
+    max_iter = _require_int(max_iter, "max_iter", 1)
     if (
         isinstance(mc_stopping_ratio, bool)
         or not isinstance(mc_stopping_ratio, (float, int))
@@ -319,53 +368,45 @@ def run_bifactor_bootstrap(
         raise ValueError(f"ci_level must satisfy 0 < level < 1, got {ci_level!r}")
     if not isinstance(device, str) or device.strip().lower() not in ("cpu", "gpu", "auto"):
         raise ValueError(f"device must be one of 'cpu', 'gpu', 'auto'; got {device!r}")
-    if isinstance(qmc_draws, bool) or not isinstance(qmc_draws, int) or qmc_draws < 1:
-        raise ValueError(f"qmc_draws must be a positive integer, got {qmc_draws!r}")
     device = device.strip().lower()
-
-    start_time = time.perf_counter()
-
-    if n_jobs <= 0:
-        n_jobs = max(1, os.cpu_count() or 1)
+    if q_general not in _GH_RULES:
+        raise ValueError(f"q_general must be one of {_GH_RULES}")
+    if q_specific not in _GH_RULES:
+        raise ValueError(f"q_specific must be one of {_GH_RULES}")
+    if not isinstance(tol, (float, int)) or not math.isfinite(tol) or tol <= 0:
+        raise ValueError(f"tol must be finite and positive, got {tol!r}")
+    if not isinstance(estimate_specific_vars, bool):
+        raise ValueError("estimate_specific_vars must be a bool")
 
     y_arr = np.asarray(responses, dtype=np.float64)
-    lp_arr = np.asarray(loading_pattern, dtype=np.uint8)
-    n_items, n_dims = lp_arr.shape
+    if y_arr.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y_arr.shape
+    smap_arr = np.asarray(specific_map)
     g_arr = np.asarray(group_ids, dtype=np.int64) if group_ids is not None else None
+    if g_arr is not None and (g_arr.ndim != 1 or g_arr.size != n_persons):
+        raise ValueError("group_ids must have length n_persons")
+    anchor_arr = np.asarray(anchor_mask, dtype=bool) if anchor_mask is not None else None
+
+    start_time = time.perf_counter()
+    if n_jobs <= 0:
+        n_jobs = max(1, os.cpu_count() or 1)
 
     alpha = 1.0 - float(ci_level)
     lo_q, hi_q = 100.0 * alpha / 2.0, 100.0 * (1.0 - alpha / 2.0)
 
-    # Prepare replicate tasks with deterministic seeds
+    # Prepare replicate tasks with deterministic seeds.
     tasks = []
     for b in range(n_replicates):
-        # 64-bit linear congruential step for uncorrelated replicate seeds
-        rep_seed = int((base_seed + b * 0x9E37_79B9_7F4A_7C15) & 0x7FFF_FFFF_FFFF_FFFF)
+        # 64-bit golden-ratio step for uncorrelated replicate seeds.
+        rep_seed = int((base_seed + b * 0x9E37_79B9_7F4A_7C15) & 0xFFFF_FFFF_FFFF_FFFF)
         tasks.append((
-            b,
-            y_arr,
-            lp_arr,
-            n_cat,
-            g_arr,
-            n_groups,
-            rep_seed,
-            max_iter,
-            tol,
-            ridge,
-            newton_iter,
-            qmc_draws,
-            slope_bound,
-            device,
+            b, y_arr, smap_arr, n_cat, n_specific, g_arr, n_groups, anchor_arr,
+            q_general, q_specific, max_iter, float(tol), n_starts, rep_seed,
+            estimate_specific_vars, device,
         ))
 
     results: list = [None] * n_replicates
-    converged_flags = np.zeros(0, dtype=bool)
-    converged_slopes: list[np.ndarray] = []
-    converged_thresholds: list[np.ndarray] = []
-    converged_means: list[np.ndarray] = []
-    converged_vars: list[np.ndarray] = []
-    converged_logliks: list[float] = []
-
     batches = [tasks[i:i + batch_size] for i in range(0, len(tasks), batch_size)]
     completed_reps = 0
     stopped_early = False
@@ -374,11 +415,8 @@ def run_bifactor_bootstrap(
     batches_completed = 0
 
     for batch_pos, batch in enumerate(batches):
-        # Check compute budget
-        elapsed_so_far = time.perf_counter() - start_time
-        if elapsed_so_far >= compute_budget_seconds:
+        if time.perf_counter() - start_time >= compute_budget_seconds:
             break
-
         if n_jobs == 1 or len(batch) == 1:
             for t in batch:
                 res = _fit_single_replicate(*t)
@@ -389,87 +427,130 @@ def run_bifactor_bootstrap(
                 for f in concurrent.futures.as_completed(futures):
                     res = f.result()
                     results[res[0]] = res
-
-        batch_flags = np.array(
-            [results[t[0]][1] for t in batch], dtype=bool
-        )
-        converged_flags = np.concatenate([converged_flags, batch_flags])
         completed_reps += len(batch)
         batches_completed += 1
-
-        for t in batch:
-            r = results[t[0]]
-            if r is not None and r[1]:  # converged
-                converged_slopes.append(r[2])
-                converged_thresholds.append(r[3])
-                converged_means.append(r[4])
-                converged_vars.append(r[5])
-                converged_logliks.append(r[6])
 
         # Monte Carlo stopping check at batch boundaries (needs two endpoint
         # estimates to measure movement, so it can only fire from the second
         # completed batch on, and never on the final batch).
         last_batch = batch_pos == len(batches) - 1
-        if (
-            mc_stopping_ratio > 0
-            and batches_completed >= 2
-            and not last_batch
-            and converged_slopes
-        ):
-            stacked = _stack_monitor_vector(
-                converged_slopes, converged_thresholds, converged_means, converged_vars
-            )
-            new_lo = np.percentile(stacked, lo_q, axis=0)
-            new_hi = np.percentile(stacked, hi_q, axis=0)
-            if prev_lo is not None and prev_hi is not None:
-                movement = _endpoint_movement(prev_lo, prev_hi, new_lo, new_hi)
-                if movement < mc_stopping_ratio:
-                    stopped_early = True
-                    break
-            prev_lo, prev_hi = new_lo, new_hi
+        if mc_stopping_ratio > 0 and batches_completed >= 2 and not last_batch:
+            conv_rows = [
+                np.concatenate([
+                    np.ravel(results[t[0]][2]), np.ravel(results[t[0]][3]),
+                    np.ravel(results[t[0]][4]), np.ravel(results[t[0]][5]),
+                    np.ravel(results[t[0]][6]), np.ravel(results[t[0]][7]),
+                ])
+                for t in tasks[:completed_reps]
+                if results[t[0]] is not None and results[t[0]][1]
+            ]
+            if conv_rows:
+                stacked = _stack_monitor_vector(conv_rows)
+                new_lo = np.percentile(stacked, lo_q, axis=0)
+                new_hi = np.percentile(stacked, hi_q, axis=0)
+                if prev_lo is not None and prev_hi is not None:
+                    if _endpoint_movement(prev_lo, prev_hi, new_lo, new_hi) < mc_stopping_ratio:
+                        stopped_early = True
+                        break
+                prev_lo, prev_hi = new_lo, new_hi
 
-    n_conv = len(converged_slopes)
-    if n_conv > 1:
-        slopes_mat = np.stack(converged_slopes, axis=0)
-        thresh_mat = np.stack(converged_thresholds, axis=0)
-        means_mat = np.stack(converged_means, axis=0)
-        vars_mat = np.stack(converged_vars, axis=0)
-        loglik_vec = np.array(converged_logliks, dtype=np.float64)
+    done = [r for r in results[:completed_reps] if r is not None]
+    flags = np.array([r[1] for r in done], dtype=bool)
+    conv = [r for r in done if r[1]]
+    n_conv = len(conv)
+    if n_conv == 0:
+        first_err = done[0][9] if done else "no replicate completed"
+        raise RuntimeError(
+            f"joint person bootstrap: 0/{completed_reps} replicates converged; "
+            f"first replicate error: {first_err}"
+        )
 
-        # Empirical standard errors: ddof=1 sample standard deviation
-        se_slope = np.std(slopes_mat, axis=0, ddof=1)
-        se_thresh = np.std(thresh_mat, axis=0, ddof=1)
-        se_means = np.std(means_mat, axis=0, ddof=1)
-        se_vars = np.std(vars_mat, axis=0, ddof=1)
-
-        ci_lower_slope = np.percentile(slopes_mat, lo_q, axis=0)
-        ci_upper_slope = np.percentile(slopes_mat, hi_q, axis=0)
-        ci_lower_thresh = np.percentile(thresh_mat, lo_q, axis=0)
-        ci_upper_thresh = np.percentile(thresh_mat, hi_q, axis=0)
-        ci_lower_means = np.percentile(means_mat, lo_q, axis=0)
-        ci_upper_means = np.percentile(means_mat, hi_q, axis=0)
-        ci_lower_vars = np.percentile(vars_mat, lo_q, axis=0)
-        ci_upper_vars = np.percentile(vars_mat, hi_q, axis=0)
+    m1 = n_cat - 1
+    if group_ids is None or n_groups <= 1:
+        eff_groups = 1
+        slopes_mat = np.stack([r[2] for r in conv], axis=0)
+        spec_mat = np.stack([r[3] for r in conv], axis=0)
+        thresh_mat = np.stack([r[4] for r in conv], axis=0).reshape(n_conv, n_items, m1)
+        means_mat = np.stack([r[5] for r in conv], axis=0).reshape(n_conv, 1)
+        sds_mat = np.stack([r[6] for r in conv], axis=0).reshape(n_conv, 1)
+        sspec_mat = np.stack([r[7] for r in conv], axis=0).reshape(n_conv, 1, -1)
     else:
-        slopes_mat = np.empty((0, n_items, n_dims), dtype=np.float64)
-        thresh_mat = np.empty((0, n_items, n_cat - 1), dtype=np.float64)
-        means_mat = np.empty((0, n_groups, n_dims), dtype=np.float64)
-        vars_mat = np.empty((0, n_groups, n_dims), dtype=np.float64)
-        loglik_vec = np.empty(0, dtype=np.float64)
+        eff_groups = n_groups
+        slopes_mat = np.stack([r[2] for r in conv], axis=0).reshape(n_conv, n_groups, n_items)
+        spec_mat = np.stack([r[3] for r in conv], axis=0).reshape(n_conv, n_groups, n_items)
+        thresh_mat = np.stack([r[4] for r in conv], axis=0).reshape(
+            n_conv, n_groups, n_items, m1
+        )
+        means_mat = np.stack([r[5] for r in conv], axis=0).reshape(n_conv, n_groups)
+        sds_mat = np.stack([r[6] for r in conv], axis=0).reshape(n_conv, n_groups)
+        sspec_mat = np.stack([r[7] for r in conv], axis=0).reshape(
+            n_conv, n_groups, -1
+        )
+    # Collapse the group axis for the single-group path so summaries keep the
+    # item-major shapes callers expect.
+    if eff_groups == 1 and (group_ids is None or n_groups <= 1):
+        slopes_flat = slopes_mat
+        spec_flat = spec_mat
+        thresh_flat = thresh_mat
+    else:
+        slopes_flat = slopes_mat.reshape(n_conv, -1)
+        spec_flat = spec_mat.reshape(n_conv, -1)
+        thresh_flat = thresh_mat.reshape(n_conv, -1)
+    loglik_vec = np.array([r[8] for r in conv], dtype=np.float64)
 
-        se_slope = np.full((n_items, n_dims), np.nan)
-        se_thresh = np.full((n_items, n_cat - 1), np.nan)
-        se_means = np.full((n_groups, n_dims), np.nan)
-        se_vars = np.full((n_groups, n_dims), np.nan)
+    def _summarize(mat: np.ndarray):
+        if mat.shape[0] > 1:
+            return (
+                np.std(mat, axis=0, ddof=1),
+                np.percentile(mat, lo_q, axis=0),
+                np.percentile(mat, hi_q, axis=0),
+            )
+        nan = np.full(mat.shape[1:], np.nan)
+        return nan, nan, nan
 
-        ci_lower_slope = np.full((n_items, n_dims), np.nan)
-        ci_upper_slope = np.full((n_items, n_dims), np.nan)
-        ci_lower_thresh = np.full((n_items, n_cat - 1), np.nan)
-        ci_upper_thresh = np.full((n_items, n_cat - 1), np.nan)
-        ci_lower_means = np.full((n_groups, n_dims), np.nan)
-        ci_upper_means = np.full((n_groups, n_dims), np.nan)
-        ci_lower_vars = np.full((n_groups, n_dims), np.nan)
-        ci_upper_vars = np.full((n_groups, n_dims), np.nan)
+    se_ag, lo_ag, hi_ag = _summarize(slopes_flat)
+    se_as, lo_as, hi_as = _summarize(spec_flat)
+    se_th, lo_th, hi_th = _summarize(thresh_flat)
+    se_mn, _, _ = _summarize(means_mat.reshape(n_conv, -1))
+    se_sd, _, _ = _summarize(sds_mat.reshape(n_conv, -1))
+    se_ss, _, _ = _summarize(sspec_mat.reshape(n_conv, -1))
+
+    # Restore structured shapes for item-major summaries.
+    def _shape(mat: np.ndarray, shape: tuple) -> np.ndarray:
+        return mat.reshape(shape)
+
+    if eff_groups == 1 and (group_ids is None or n_groups <= 1):
+        se_ag_s, lo_ag_s, hi_ag_s = se_ag, lo_ag, hi_ag
+        se_as_s, lo_as_s, hi_as_s = se_as, lo_as, hi_as
+        se_th_s, lo_th_s, hi_th_s = (
+            _shape(se_th, (n_items, m1)),
+            _shape(lo_th, (n_items, m1)),
+            _shape(hi_th, (n_items, m1)),
+        )
+        rep_ag, rep_as = slopes_mat, spec_mat
+        rep_th = thresh_mat
+    else:
+        se_ag_s, lo_ag_s, hi_ag_s = (
+            _shape(se_ag, (n_groups, n_items)),
+            _shape(lo_ag, (n_groups, n_items)),
+            _shape(hi_ag, (n_groups, n_items)),
+        )
+        se_as_s, lo_as_s, hi_as_s = (
+            _shape(se_as, (n_groups, n_items)),
+            _shape(lo_as, (n_groups, n_items)),
+            _shape(hi_as, (n_groups, n_items)),
+        )
+        se_th_s, lo_th_s, hi_th_s = (
+            _shape(se_th, (n_groups, n_items, m1)),
+            _shape(lo_th, (n_groups, n_items, m1)),
+            _shape(hi_th, (n_groups, n_items, m1)),
+        )
+        rep_ag = slopes_mat
+        rep_as = spec_mat
+        rep_th = thresh_mat
+    se_mn_s = se_mn.reshape(eff_groups)
+    se_sd_s = se_sd.reshape(eff_groups)
+    se_ss_s = se_ss.reshape(eff_groups, -1)
 
     elapsed = time.perf_counter() - start_time
     throughput = completed_reps / elapsed if elapsed > 0 else 0.0
@@ -478,26 +559,29 @@ def run_bifactor_bootstrap(
         n_requested=n_replicates,
         n_replicates=completed_reps,
         n_converged=n_conv,
-        converged=converged_flags,
+        converged=flags,
         stopped_early=stopped_early,
         ci_level=float(ci_level),
-        replicate_slopes=slopes_mat,
-        replicate_thresholds=thresh_mat,
-        replicate_group_means=means_mat,
-        replicate_group_variances=vars_mat,
+        n_groups=eff_groups,
+        replicate_a_general=rep_ag,
+        replicate_a_specific=rep_as,
+        replicate_threshold=rep_th,
+        replicate_general_mean=means_mat,
+        replicate_general_sd=sds_mat,
+        replicate_specific_sd=sspec_mat,
         replicate_loglik=loglik_vec,
-        se_slope=se_slope,
-        se_threshold=se_thresh,
-        se_group_means=se_means,
-        se_group_variances=se_vars,
-        ci_lower_slope=ci_lower_slope,
-        ci_upper_slope=ci_upper_slope,
-        ci_lower_threshold=ci_lower_thresh,
-        ci_upper_threshold=ci_upper_thresh,
-        ci_lower_group_means=ci_lower_means,
-        ci_upper_group_means=ci_upper_means,
-        ci_lower_group_variances=ci_lower_vars,
-        ci_upper_group_variances=ci_upper_vars,
+        se_a_general=se_ag_s,
+        se_a_specific=se_as_s,
+        se_threshold=se_th_s,
+        se_general_mean=se_mn_s,
+        se_general_sd=se_sd_s,
+        se_specific_sd=se_ss_s,
+        ci_lower_a_general=lo_ag_s,
+        ci_upper_a_general=hi_ag_s,
+        ci_lower_a_specific=lo_as_s,
+        ci_upper_a_specific=hi_as_s,
+        ci_lower_threshold=lo_th_s,
+        ci_upper_threshold=hi_th_s,
         wall_clock_seconds=elapsed,
         throughput_replicates_per_second=throughput,
         device=device,

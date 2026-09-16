@@ -22,12 +22,12 @@ Prior to this decision, `fast-mlsirm` supported bifactor scoreability indices an
 - **Caller-controlled bootstrap scale**: replicate count, batch size, stopping ratio (Monte Carlo error of interval endpoints relative to half-width, in the role of the Andrews–Buchinsky percentage-deviation bound), and compute budget are validated caller arguments; the stopping rule follows Andrews and Buchinsky (2000, §§ 2–4).
 - **Reproducibility & Parity**: CPU and GPU executions, as well as deterministic replicate seeds, must produce parameter estimates matching replicate-by-replicate within device precision.
 - **Methodological Scope Integrity**: Maintain simple-structure and structured bifactor contracts in dedicated modules (`bifactor_recursion` and `bifactor_grm`) without mutating existing general multidimensional contracts in place.
-- **Identification & Standardization**: Enforce reference group standard normal constraints ($\mu_0 = 0, \sigma_0^2 = 1$) while freely estimating focal group distributions and computing observed information standard errors via Oakes' identity.
+- **Identification & Standardization**: Enforce reference group standard normal constraints ($\mu_0 = 0, \sigma_0^2 = 1$) while freely estimating focal group distributions; empirical uncertainty comes from the joint person bootstrap.
 
 ## Ownership and dependency direction
 
-- **Owning Component**: `fast-mlsirm` owns the numerical kernels in `crates/mlsirm-core`, PyO3 bindings in `crates/fast-mlsirm-py`, and the typed Python orchestrators in `fast_mlsirm.polytomous_bifactor` and `fast_mlsirm.bifactor_bootstrap`.
-- **Downstream Boundary**: `Psychometrics Commons` and research reporting scripts consume the exported classes (`PolytomousBifactorFit`, `BifactorBootstrapResult`) and functions as pure calculation and diagnostic APIs. No database, HTTP, or product-specific models are introduced into `fast-mlsirm`.
+- **Owning Component**: `fast-mlsirm` owns the numerical kernels in `crates/mlsirm-core` (`bifactor_grm`, `bifactor_recursion`, `gpu_bifactor`), PyO3 bindings in `crates/fast-mlsirm-py`, and the typed Python orchestrators in `fast_mlsirm.bifactor_grm`, `fast_mlsirm.bifactor_multigroup`, `fast_mlsirm.bifactor_recursion`, and `fast_mlsirm.bifactor_bootstrap`.
+- **Downstream Boundary**: `Psychometrics Commons` and research reporting scripts consume the exported classes (`BifactorGrmFit`, `BifactorMultigroupFit`, `BifactorBootstrapResult`) and functions as pure calculation and diagnostic APIs. No database, HTTP, or product-specific models are introduced into `fast-mlsirm`.
 
 ## Decision
 
@@ -35,13 +35,12 @@ We implement and verify the following components:
 
 1. **Rust Numerical Kernels (`crates/mlsirm-core`)**:
    - `bifactor_recursion.rs`: Implements two-stage Lord-Wingersky recursion for polytomous bifactor models. Stage 1 computes within-domain score distributions conditional on the general and specific factors and integrates over the specific factor. Stage 2 convolves across independent domains conditional on the general factor.
-   - `bifactor_grm.rs`: Implements Quasi-Monte Carlo EM (QMCEM) using deterministic shifted Halton sequences for joint estimation of discrimination slopes, ordered category thresholds, and multiple-group latent mean/variance vectors.
-   - **Oakes Observed Information Matrix**: Implements Louis/Oakes numerical derivatives of conditional expectations to yield standard errors for all item parameters without requiring complete inversion of full Hessian matrices.
-   - **Slope Bounding & Monotonicity Sensitivity**: Implements box-constrained Newton steps for discrimination parameters ($|a_{id}| \le M$), verifying monotonic non-decrease in log-likelihood across increasing bound values ($[4, 6, 8, 10]$).
+   - `bifactor_grm.rs`: Bock-Aitkin EM with Gibbons-Hedeker dimension reduction for the single-group (`fit_bifactor_grm`) and multigroup (`fit_bifactor_grm_multigroup`) polytomous bifactor GRM over caller-chosen Gauss-Hermite grids, with unconstrained slopes (reverse-keyed items representable), deterministic reflection canonicalization, deterministic multi-start selection, loud validation, and non-convergence reported via flags, never substituted.
+   - `gpu_bifactor.rs`: WGSL `f32` person-parallel sweep of the reduced E-step (single-group and multigroup, including group moment accumulators), selected via the `device` field of both configs with CPU fallback. The `f64` CPU sweep remains the numerical reference.
+   - **Empirical uncertainty via bootstrap**: standard errors and percentile intervals come from the joint person bootstrap (`bifactor_bootstrap.py`), not from in-fit analytic approximations.
 
-2. **GIL-Free PyO3 Extension (`crates/fast-mlsirm-py`)**:
-   - Exposes `fast_mlsirm._bifactor_core` initialized via `_bifactor_core_loader.py`.
-   - Wraps computation-intensive EM loops and slope sweeps in `py.detach(move || { ... })`, completely releasing the Python Global Interpreter Lock during estimation.
+2. **PyO3 Extension (`crates/fast-mlsirm-py`)**:
+   - Exposes `fit_bifactor_grm` / `fit_bifactor_grm_multigroup` on `_core` (with a validated `device` argument) and Lord-Wingersky recursion on `_bifactor_core` via `_bifactor_core_loader.py`.
 
 3. **Parallel Bootstrap Dispatcher (`python/fast_mlsirm/bifactor_bootstrap.py`)**:
    - Implements stratified person bootstrap resampling preserving group proportions.
@@ -53,10 +52,9 @@ We implement and verify the following components:
 ## Invariants / acceptance evidence
 
 1. **Recursion Precision**: On a 257-point grid $[-8.0, 8.0]$ with step $0.0625$, the maximum absolute difference between `bifactor_lord_wingersky` and `direct_enumeration_bifactor` is $\le 10^{-12}$ (`test_bifactor_lord_wingersky_matches_direct_enumeration`).
-2. **Multiple-Group Identification**: Group 0 moments are strictly fixed to $\mu = 0, \sigma^2 = 1$, while focal group moments are freely estimated (`test_fit_polytomous_bifactor_multiple_group_and_oakes_se`).
-3. **Oakes Standard Errors**: Standard errors for all slopes and thresholds are strictly finite, positive, and free of missing/NaN values.
-4. **Monotonic Sensitivity**: Log-likelihood is monotonically non-decreasing as slope upper bounds increase across $\{4.0, 6.0, 8.0, 10.0\}$ (`test_bifactor_slope_sensitivity_monotonic_loglik`).
-5. **Bootstrap completion & parity**: requested replicates run to completion within budget on both devices unless the caller stopping rule fires; same-seed CPU and GPU runs agree replicate-by-replicate within single-precision tolerance.
+2. **Stage-1/2 identification and reporting**: reference-group pinning, same-seed bit-reproduction, loud validation, and non-convergence reported via flags (`tests/test_bifactor_grm.py`, `tests/test_bifactor_multigroup.py`, `tests/unit/bifactor_grm_tests.rs`).
+3. **GPU/CPU E-step parity**: fit-level agreement within the documented single-precision envelope on fixtures with reverse-keyed items, single-group and multigroup (`tests/test_bifactor_gpu.py`; counts-level Rust test `estep_gpu_matches_cpu_counts_and_loglik`).
+4. **Bootstrap completion & parity**: requested replicates run to completion within budget on both devices unless the caller stopping rule fires; same-seed CPU and GPU runs agree replicate-by-replicate within single-precision tolerance; per-replicate convergence is reported and failed replicates are never substituted (`tests/test_bifactor_bootstrap*.py`).
 
 ## Non-goals and claims not made
 
@@ -74,13 +72,13 @@ We implement and verify the following components:
 
 ### Costs / risks
 
-- Per-iteration cost grows with the caller-chosen QMC draw count; mitigated by deterministic Halton sampling and adaptive convergence tolerances.
+- Per-iteration cost grows with the caller-chosen Gauss-Hermite grid; the GPU sweep pays per-sweep buffer setup, so small problems stay CPU-faster while study-scale problems (e.g. n ≈ 1000) show multi-fold GPU speedups (measured numbers in the PR, not estimates).
 - Multiple-group estimation requires sufficient person counts per focal group to ensure well-conditioned group variance updates; group sizes are caller data, not library constants.
 
 ## Alternatives considered
 
-- **Multiprocessing via `ProcessPoolExecutor`**: Rejected due to high memory footprint and IPC serialization cost for large response matrices. Using `py.detach` with native thread pooling achieved zero-overhead concurrency.
-- **Numerical Hessian Finite Differences**: Rejected for standard errors due to $O(P^2)$ likelihood evaluation scaling; Oakes' formula leverages EM conditional expectations and converges significantly faster.
+- **Multiprocessing via `ProcessPoolExecutor`**: Rejected due to high memory footprint and IPC serialization cost for large response matrices. Releasing the GIL around the Rust fit (`py.detach`) with native thread pooling achieves zero-overhead concurrency.
+- **In-fit analytic standard errors**: not implemented at this stage; uncertainty comes from the joint person bootstrap (empirical SEs and percentile intervals from converged replicates).
 
 ## Security and privacy implications
 
@@ -89,9 +87,9 @@ We implement and verify the following components:
 
 ## Verification and release evidence
 
-- Rust unit and integration tests: bifactor suites pass (`cargo test -p mlsirm-core --features gpu bifactor`), including the Oakes/identification test on the 16-item fixture with reverse-keyed method factor.
+- Rust unit and integration tests: bifactor suites pass (`cargo test -p mlsirm-core --features gpu bifactor`), including the counts-level E-step parity test.
 - No crate-wide `erasing_op`/`identity_op` suppression; function-level `#[allow]` only where narrowly justified.
-- Python pytest suites pass, including CPU/GPU E-step equivalence at 241 and 481 Halton draws and the bootstrap stopping/validation/parity suite.
+- Python pytest suites pass, including CPU/GPU E-step equivalence on Gauss-Hermite grids and the bootstrap stopping/validation/parity suite.
 - Measured CPU vs GPU wall times are recorded in the PR (measured, not estimated).
 
 ## Research and standards basis

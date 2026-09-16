@@ -244,6 +244,7 @@ fn grad_zeta_kernel(@builtin(global_invocation_id) gid: vec3<u32>) {
 pub(crate) struct GpuContext {
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
+    storage_buffers_per_stage: u32,
     layout: wgpu::BindGroupLayout,
     compute_e: wgpu::ComputePipeline,
     grad_b_alpha: wgpu::ComputePipeline,
@@ -283,6 +284,8 @@ impl GpuContext {
         {
             return None;
         }
+        let storage_buffers_per_stage =
+            adapter_limits.max_storage_buffers_per_shader_stage;
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("mlsirm-gpgpu"),
             // Request the adapter's real limits so the 17-binding layout fits on
@@ -341,13 +344,23 @@ impl GpuContext {
             layout,
             device,
             queue,
+            storage_buffers_per_stage,
         })
     }
 
     pub(crate) fn get() -> Option<&'static GpuContext> {
         CONTEXT.get_or_init(GpuContext::init).as_ref()
     }
-}fn storage_init(device: &wgpu::Device, label: &str, data: &[f32]) -> wgpu::Buffer {
+
+    /// Adapter's storage-buffer budget per shader stage, for bind-group
+    /// layouts larger than this context's own (callers return `None` and
+    /// fall back to CPU when their layout does not fit).
+    pub(crate) fn adapter_storage_buffers(&self) -> u32 {
+        self.storage_buffers_per_stage
+    }
+}
+
+fn storage_init(device: &wgpu::Device, label: &str, data: &[f32]) -> wgpu::Buffer {
     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(label),
         contents: bytemuck::cast_slice(data),
