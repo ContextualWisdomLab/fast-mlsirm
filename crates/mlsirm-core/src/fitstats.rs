@@ -2978,7 +2978,7 @@ pub fn poly_local_dependence(
     let z = n_cat - 1;
 
     // per-item, per-node category probabilities P_i(a | theta_t)
-    let (nodes, weights) = crate::quadrature::require_gh_rule(q_theta, "quadrature size")?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "quadrature size")?;
     let qn = nodes.len();
     let mut probs = vec![0.0_f64; n_items * qn * n_cat];
     for i in 0..n_items {
@@ -3527,7 +3527,7 @@ pub fn poly_m2(
     }
 
     // cumulative-probability tensor S[(i*qn+t)*z + (c-1)] = P(Y_i >= c | theta_t)
-    let (nodes, weights) = crate::quadrature::require_gh_rule(q_theta, "quadrature size")?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "quadrature size")?;
     let qn = nodes.len();
     let build_cum = |slope: &[f64], cat_params: &[f64]| -> Vec<f64> {
         let mut sc = vec![0.0_f64; n_items * qn * z];
