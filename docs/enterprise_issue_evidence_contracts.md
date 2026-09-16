@@ -188,6 +188,15 @@ adapters perform no latent measurement, calibration, comparative ranking,
 expected utility, value-of-information, intervention-effect, or queue-routing
 arithmetic.
 
+The first provider-neutral decision-support arithmetic boundary is exposed
+separately as `fast_mlsirm.decision_support`. It accepts only explicit
+caller-supplied state probabilities, action utilities, intervention costs, and
+an optional joint state/signal distribution. Its Rust core computes expected
+net intervention value, EVPI, and EVSI; it does not infer organizational
+utilities, causal effects, or queue policy from issue text or scores. The issue
+adapters remain responsible for binding any future decision result to their
+content-addressed provenance.
+
 Successful compilation confirms only schema and provenance consistency. It does
 not determine evidence sufficiency, recommend an intervention, or complete human
 review. A persisted score remains one fallible judge observation that requires
