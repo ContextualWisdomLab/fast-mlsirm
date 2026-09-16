@@ -189,7 +189,9 @@ examples/enterprise_demo/ Synthetic procurement evidence manifests
   einsum/BLAS-backed forms), `sentinel.md` (security — `np.load(...,
   allow_pickle=False)`, no `assert` for runtime checks, validate URI schemes,
   bound user-derived array dimensions), `palette.md` (HTML report
-  accessibility).
+  accessibility). Jules maintains and regenerates these files — read them, but
+  do not hand-edit them in repository-owned PRs (see AGENTS.md,
+  "Jules-originated pull requests").
 - CI gates (`.github/workflows/ci.yml`): `python` (editable install +
   rust-default assertion + pytest), `rust` (both cargo test invocations),
   `fuzz` (bounded Atheris runs), `package` (wheel build + release acceptance +
