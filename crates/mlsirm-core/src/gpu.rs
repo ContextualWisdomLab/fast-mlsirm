@@ -254,7 +254,7 @@ struct GpuContext {
 
 static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
 
-fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
+pub(crate) fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::COMPUTE,
@@ -375,7 +375,7 @@ fn staging_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffe
     })
 }
 
-fn read_mapped(buffer: &wgpu::Buffer) -> Option<Vec<f32>> {
+pub(crate) fn read_mapped(buffer: &wgpu::Buffer) -> Option<Vec<f32>> {
     let view = buffer.slice(..).get_mapped_range().ok()?;
     let values: Vec<f32> = bytemuck::cast_slice::<u8, f32>(&view).to_vec();
     drop(view);

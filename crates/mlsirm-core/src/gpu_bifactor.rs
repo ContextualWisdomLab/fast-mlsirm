@@ -10,7 +10,7 @@ pub(crate) struct BifactorEstepInputs<'a> {
     pub n_cat: usize,
     pub qn: usize,
     pub effective_groups: usize,
-    pub group_lp: &'a [Vec<f64>], // Outer len: effective_groups, Inner len: n_items * qn * n_cat
+    pub group_lp: &'a [Vec<Vec<f64>>], // Outer len: effective_groups, Middle len: n_items, Inner len: qn * n_cat
 }
 
 pub(crate) struct BifactorEstepOutputs {
@@ -251,32 +251,39 @@ pub(crate) fn e_step_bifactor_gpu(inputs: &BifactorEstepInputs) -> Option<Bifact
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
         bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
     });
 
     let pl_log_node = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
+        label: Some("log_node_pipeline"),
         layout: Some(&pipeline_layout),
         module: &module,
-        entry_point: "compute_log_node",
+        entry_point: Some("compute_log_node"),
+        cache: None,
+        compilation_options: Default::default(),
     });
     let pl_post_q = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
+        label: Some("post_q_pipeline"),
         layout: Some(&pipeline_layout),
         module: &module,
-        entry_point: "compute_post_q",
+        entry_point: Some("compute_post_q"),
+        cache: None,
+        compilation_options: Default::default(),
     });
     let pl_reduce_group = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
+        label: Some("reduce_group_pipeline"),
         layout: Some(&pipeline_layout),
         module: &module,
-        entry_point: "reduce_group_post",
+        entry_point: Some("reduce_group_post"),
+        cache: None,
+        compilation_options: Default::default(),
     });
     let pl_reduce_counts = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
+        label: Some("reduce_counts_pipeline"),
         layout: Some(&pipeline_layout),
         module: &module,
-        entry_point: "reduce_counts",
+        entry_point: Some("reduce_counts"),
+        cache: None,
+        compilation_options: Default::default(),
     });
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });

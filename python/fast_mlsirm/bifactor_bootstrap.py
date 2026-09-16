@@ -167,6 +167,15 @@ def run_bifactor_bootstrap(
     Returns:
         BifactorBootstrapResult with replicate matrices, empirical SEs, and timing.
     """
+    if not isinstance(n_replicates, int) or n_replicates <= 0:
+        raise ValueError(f"n_replicates must be positive, got {n_replicates}")
+    if not isinstance(batch_size, int) or batch_size <= 0:
+        raise ValueError(f"batch_size must be positive, got {batch_size}")
+    if not isinstance(mc_stopping_ratio, (float, int)) or mc_stopping_ratio < 0:
+        raise ValueError(f"mc_stopping_ratio must be non-negative, got {mc_stopping_ratio}")
+    if not isinstance(compute_budget_seconds, (float, int)) or compute_budget_seconds <= 0:
+        raise ValueError(f"compute_budget_seconds must be positive, got {compute_budget_seconds}")
+
     start_time = time.perf_counter()
 
     if n_jobs <= 0:
