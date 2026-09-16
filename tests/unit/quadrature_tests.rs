@@ -14,7 +14,7 @@ fn required_rule_covers_success_and_error_contracts() {
 
 #[test]
 fn dense_unidimensional_rule_is_normalized_and_symmetric() {
-    for q in [61, 81] {
+    for q in [61, 81, 121] {
         let (nodes, weights) = crate::quadrature::gh_rule_unidim(q).unwrap();
         assert_eq!(nodes.len(), q);
         assert_eq!(weights.len(), q);

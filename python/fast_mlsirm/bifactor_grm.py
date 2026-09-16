@@ -292,3 +292,204 @@ def fit_bifactor_grm(
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
     )
+
+
+@dataclass
+class BifactorGrmFipcFit:
+    """Fitted focal-group bifactor GRM under fixed-item calibration.
+
+    ``a_general`` / ``a_specific`` / ``threshold`` cover all items with
+    anchored entries bit-identical to the fixed inputs (signs kept, no
+    reflection canonicalization). ``general_mean`` / ``general_sd`` are the
+    estimated focal general-factor mean/SD; ``specific_sd`` the focal
+    specific-factor SDs (1.0 unless estimated). ``theta_g_eap`` /
+    ``theta_g_sd`` are general-factor EAPs on the focal scale.
+    """
+
+    a_general: np.ndarray
+    a_specific: np.ndarray
+    threshold: np.ndarray
+    general_mean: float
+    general_sd: float
+    specific_sd: np.ndarray
+    theta_g_eap: np.ndarray
+    theta_g_sd: np.ndarray
+    category_counts: np.ndarray
+    n_cat: int
+    n_specific: int
+    loglik_trace: np.ndarray
+    n_iter: int
+    converged: bool
+    termination_reason: str
+    final_loglik_change: float
+    n_parameters: int
+
+
+def fit_bifactor_grm_fipc(
+    responses: np.ndarray,
+    specific_map: np.ndarray,
+    n_cat: int,
+    n_specific: int,
+    anchor: np.ndarray,
+    fixed_a_general: np.ndarray,
+    fixed_a_specific: np.ndarray,
+    fixed_threshold: np.ndarray,
+    q_general: int = 21,
+    q_specific: int = 11,
+    max_iter: int = 500,
+    tol: float = 1e-6,
+    newton_iter: int = 10,
+    ridge: float = 1e-8,
+    estimate_specific_vars: bool = False,
+) -> BifactorGrmFipcFit:
+    """Fit the focal group with fixed anchor items (FIPC; compute in Rust).
+
+    ``responses`` is a persons x items integer-category array
+    (``0..n_cat-1``; ``NaN`` or negative = missing, dropped MAR).
+    ``specific_map`` is a length-``n_items`` integer array with ``-1`` for
+    general-only items and ``0..n_specific-1`` otherwise. ``anchor`` is a
+    length-``n_items`` boolean array; anchored items are pinned at
+    ``fixed_a_general`` / ``fixed_a_specific`` (``0`` for general-only
+    items) / ``fixed_threshold`` (``n_items x (n_cat-1)``, strictly
+    decreasing per anchored row) from a reference calibration, while the
+    remaining items and the focal general mean/variance — plus the focal
+    specific variances iff ``estimate_specific_vars`` — are estimated by
+    MML-EM with the prior updated after every M-step, the MWU-MEM method
+    (Kim, 2006, eqs. 14-15, pp. 361-362; Paek & Young, 2005). Slopes may be
+    negative (reverse-keyed anchors keep their signs bit-exact: no
+    reflection canonicalization, no rescaling of the latent points per Kim,
+    2006, p. 362). ``q_general``/``q_specific`` are caller-owned
+    Gauss-Hermite node counts (one of ``(7, 11, 15, 21, 31, 41)``).
+
+    References (APA 7th ed.):
+
+        Kim, S. (2006). A comparative study of IRT fixed parameter
+            calibration methods. *Journal of Educational Measurement, 43*(4),
+            355-381. https://doi.org/10.1111/j.1745-3984.2006.00021.x
+
+        Paek, I., & Young, M. J. (2005). Investigation of student growth
+            recovery in a fixed-item linking procedure with a fixed-person
+            prior distribution for mixed-format test data. *Applied
+            Measurement in Education, 18*(2), 199-215.
+            https://doi.org/10.1207/s15324818ame1802_4
+    """
+    n_cat_int = _finite_integer_control(n_cat, "n_cat")
+    if n_cat_int < 2:
+        raise ValueError("n_cat must be >= 2")
+    n_specific_int = _finite_integer_control(n_specific, "n_specific")
+    if n_specific_int < 1:
+        raise ValueError("n_specific must be >= 1")
+    q_general_int = _finite_integer_control(q_general, "q_general")
+    if q_general_int not in _SUPPORTED_Q:
+        raise ValueError(f"q_general must be one of {_SUPPORTED_Q}")
+    q_specific_int = _finite_integer_control(q_specific, "q_specific")
+    if q_specific_int not in _SUPPORTED_Q:
+        raise ValueError(f"q_specific must be one of {_SUPPORTED_Q}")
+    max_iter_int = _finite_integer_control(max_iter, "max_iter")
+    if max_iter_int < 1:
+        raise ValueError("max_iter must be >= 1")
+    newton_int = _finite_integer_control(newton_iter, "newton_iter")
+    if newton_int < 1:
+        raise ValueError("newton_iter must be >= 1")
+    tol_float = _positive_real_control(tol, "tol")
+    ridge_float = _positive_real_control(ridge, "ridge")
+
+    y = np.asarray(responses)
+    if np.iscomplexobj(y):
+        raise ValueError("responses must be real-valued")
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    if y.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
+    y = y.astype(np.float64, copy=False)
+    if np.isinf(y).any():
+        raise ValueError("responses must not contain infinity")
+    n_persons, n_items = y.shape
+
+    smap = np.asarray(specific_map)
+    if smap.ndim != 1 or smap.shape[0] != n_items:
+        raise ValueError("specific_map must be a 1-D array of length n_items")
+    try:
+        smap_int = smap.astype(np.int64, copy=False)
+    except (TypeError, ValueError):
+        raise ValueError("specific_map entries must be integers") from None
+    if bool((smap_int < -1).any()) or bool((smap_int >= n_specific_int).any()):
+        raise ValueError(
+            "specific_map entries must be -1 (general-only) or in "
+            f"0..{n_specific_int - 1}"
+        )
+
+    anchor_arr = np.asarray(anchor, dtype=bool)
+    if anchor_arr.ndim != 1 or anchor_arr.shape[0] != n_items:
+        raise ValueError("anchor must be a 1-D boolean array of length n_items")
+    if not bool(anchor_arr.any()):
+        raise ValueError("at least one anchor item is required")
+    fag = np.asarray(fixed_a_general, dtype=np.float64)
+    fas = np.asarray(fixed_a_specific, dtype=np.float64)
+    fth = np.asarray(fixed_threshold, dtype=np.float64)
+    if fag.shape != (n_items,) or fas.shape != (n_items,):
+        raise ValueError("fixed slopes must be 1-D arrays of length n_items")
+    if fth.shape != (n_items, n_cat_int - 1):
+        raise ValueError("fixed_threshold must have shape (n_items, n_cat - 1)")
+    for arr, name in ((fag, "fixed_a_general"), (fas, "fixed_a_specific"), (fth, "fixed_threshold")):
+        if not bool(np.isfinite(arr).all()):
+            raise ValueError(f"{name} must be finite")
+
+    observed = np.isfinite(y) & (y >= 0)
+    if np.any(observed):
+        observed_y = y[observed]
+        if np.any(observed_y != np.floor(observed_y)) or observed_y.max() >= n_cat_int:
+            raise ValueError(
+                "responses must be integer categories in 0..n_cat-1 where observed"
+            )
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_bifactor_grm_fipc"):
+        raise RuntimeError("fit_bifactor_grm_fipc requires the compiled Rust core")
+
+    yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
+    res = core.fit_bifactor_grm_fipc(
+        yy,
+        observed.reshape(-1),
+        smap_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_specific_int),
+        int(n_cat_int),
+        anchor_arr.reshape(-1),
+        fag.reshape(-1),
+        fas.reshape(-1),
+        fth.reshape(-1),
+        int(q_general_int),
+        int(q_specific_int),
+        int(max_iter_int),
+        float(tol_float),
+        int(newton_int),
+        float(ridge_float),
+        bool(estimate_specific_vars),
+    )
+    return BifactorGrmFipcFit(
+        a_general=np.asarray(res["a_general"], dtype=np.float64),
+        a_specific=np.asarray(res["a_specific"], dtype=np.float64),
+        threshold=np.asarray(res["threshold"], dtype=np.float64).reshape(
+            n_items, n_cat_int - 1
+        ),
+        general_mean=float(res["general_mean"]),
+        general_sd=float(res["general_sd"]),
+        specific_sd=np.asarray(res["specific_sd"], dtype=np.float64),
+        theta_g_eap=np.asarray(res["theta_g_eap"], dtype=np.float64),
+        theta_g_sd=np.asarray(res["theta_g_sd"], dtype=np.float64),
+        category_counts=np.asarray(res["category_counts"], dtype=np.int64).reshape(
+            n_items, n_cat_int
+        ),
+        n_cat=int(n_cat_int),
+        n_specific=int(n_specific_int),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
+        n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+        termination_reason=str(res["termination_reason"]),
+        final_loglik_change=float(res["final_loglik_change"]),
+        n_parameters=int(res["n_parameters"]),
+    )
