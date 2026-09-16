@@ -388,7 +388,7 @@ def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
     a note describing how many of the total rows are shown.
     """
     if not rows:
-        return '<div class="empty-state" role="status" aria-atomic="true">No rows were recorded in this section.</div>'
+        return '<div class="empty-state" role="status">No rows were recorded in this section.</div>'
 
     columns = _columns(rows)
     body_rows = []
@@ -624,7 +624,7 @@ body {
   top: -40px;
   left: 0;
   background: var(--teal);
-  color: white;
+  color: var(--bg);
   padding: 8px 16px;
   z-index: 100;
   transition: top 0.2s ease-in-out;
@@ -761,6 +761,7 @@ h3 {
   align-items: center;
   padding: 4px 8px;
   border-radius: 4px;
+  transition: background-color 0.15s ease-in-out;
 }
 
 .bar-row:hover {
