@@ -363,9 +363,41 @@ fn checked_em_delta(
     Ok(Some((delta, stopping_tolerance)))
 }
 
+/// Resolve the reflection indeterminacy of an unconstrained-slope unidimensional
+/// fit. `(a_i, theta) -> (-a_i, -theta)` leaves `base = a_i * theta` — hence the
+/// likelihood and every category parameter — unchanged, so the sign of the slope
+/// vector as a whole is not identified by the data. Pin it by requiring the
+/// largest-magnitude slope in `slope` to be positive, flipping `slope` and the
+/// companion vector `also` together when it is not. This is the unidimensional
+/// case of the per-dimension rule in `crate::grm`, and it is a no-op on the
+/// all-positive fits the previous `log a` parametrization could produce.
+/// Returns whether the orientation was reversed, so a caller that also reports
+/// quantities on the latent scale (e.g. group means) can reverse them too
+/// (Bafumi et al., 2005, on fixing the reflection of a latent scale).
+fn canonicalize_slope_reflection(slope: &mut [f64], also: &mut [f64]) -> bool {
+    let anchor = slope
+        .iter()
+        .enumerate()
+        .max_by(|(_, x), (_, y)| {
+            x.abs()
+                .partial_cmp(&y.abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(i, _)| i);
+    let Some(anchor) = anchor else { return false };
+    if slope[anchor] >= 0.0 {
+        return false;
+    }
+    for a in slope.iter_mut().chain(also.iter_mut()) {
+        *a = -*a;
+    }
+    true
+}
+
 /// Negative expected complete-data log-lik and its gradient for one item over
-/// the quadrature nodes. `params = [log_a, cat_1..cat_{K-1}]`; `counts[node]` is
-/// the length-`K` expected category-count vector at that node.
+/// the quadrature nodes. `params = [a, cat_1..cat_{K-1}]` with `a` UNCONSTRAINED
+/// (see `canonicalize_slope_reflection`); `counts[node]` is the length-`K`
+/// expected category-count vector at that node.
 fn item_neg_ll_grad(
     params: &[f64],
     nodes: &[f64],
@@ -373,7 +405,7 @@ fn item_neg_ll_grad(
     model: PolyModel,
 ) -> (f64, Vec<f64>) {
     let k = counts[0].len();
-    let a = params[0].exp();
+    let a = params[0];
     let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
     let mut ll = 0.0_f64;
     let mut grad = vec![0.0_f64; params.len()];
@@ -390,7 +422,7 @@ fn item_neg_ll_grad(
                 for m in 0..k - 1 {
                     grad[1 + m] += g_ic[m];
                 }
-                grad[0] += g_base * base; // d base / d log_a = a*theta = base
+                grad[0] += g_base * theta; // d base / d a = theta
             }
             PolyModel::Grm => {
                 let thr = &params[1..];
@@ -400,7 +432,7 @@ fn item_neg_ll_grad(
                 for m in 0..k - 1 {
                     grad[1 + m] += g_t[m];
                 }
-                grad[0] += g_base * base;
+                grad[0] += g_base * theta; // d base / d a = theta
             }
         }
     }
@@ -527,9 +559,10 @@ pub fn fit_poly_unidim(
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
     let qn = nodes.len();
 
-    // init: log_a = 0; category params from base rates (GPCM) / cumulative rates (GRM)
+    // init: a = 1; category params from base rates (GPCM) / cumulative rates (GRM)
     let mut params = vec![vec![0.0_f64; n_cat]; n_items];
     for i in 0..n_items {
+        params[i][0] = 1.0;
         let mut freq = vec![1e-3_f64; n_cat];
         for p in 0..n_persons {
             if is_obs(p, i) {
@@ -570,7 +603,7 @@ pub fn fit_poly_unidim(
         // per-item cell log-probs at each node: item_lp[i][node*n_cat + k]
         let mut item_lp = vec![vec![0.0_f64; qn * n_cat]; n_items];
         for i in 0..n_items {
-            let a = params[i][0].exp();
+            let a = params[i][0];
             for (nd, &theta) in nodes.iter().enumerate() {
                 let base = a * theta;
                 let lp = match model {
@@ -644,7 +677,8 @@ pub fn fit_poly_unidim(
     }
 
     let ll = *loglik_trace.last().expect("EM trace is never empty");
-    let slope: Vec<f64> = (0..n_items).map(|i| params[i][0].exp()).collect();
+    let mut slope: Vec<f64> = (0..n_items).map(|i| params[i][0]).collect();
+    let _ = canonicalize_slope_reflection(&mut slope, &mut []);
     let cat_params: Vec<Vec<f64>> = params.iter().map(|p| p[1..].to_vec()).collect();
     Ok(PolyFit {
         slope,
@@ -1408,6 +1442,7 @@ pub fn fit_poly_multigroup(
     // pooled init from all groups (same scheme as fit_poly_unidim)
     let mut params = vec![vec![0.0_f64; n_cat]; n_items];
     for i in 0..n_items {
+        params[i][0] = 1.0;
         let mut freq = vec![1e-3_f64; n_cat];
         for p in 0..n_persons {
             if is_obs(p, i) {
@@ -1464,7 +1499,7 @@ pub fn fit_poly_multigroup(
                 } else {
                     &params[i]
                 };
-                let a = p_i[0].exp();
+                let a = p_i[0];
                 for (t, &th) in theta[g].iter().enumerate() {
                     let base = a * th;
                     let lp = match model {
@@ -1576,16 +1611,23 @@ pub fn fit_poly_multigroup(
         it += 1;
     }
 
-    let slope: Vec<f64> = (0..n_items).map(|i| params[i][0].exp()).collect();
+    let mut slope: Vec<f64> = (0..n_items).map(|i| params[i][0]).collect();
     let cat_params: Vec<Vec<f64>> = params.iter().map(|p| p[1..].to_vec()).collect();
-    let (studied_slope, studied_cat) = if studied_item.is_some() {
+    let (mut studied_slope, studied_cat) = if studied_item.is_some() {
         (
-            studied_params.iter().map(|p| p[0].exp()).collect(),
+            studied_params.iter().map(|p| p[0]).collect::<Vec<f64>>(),
             studied_params.iter().map(|p| p[1..].to_vec()).collect(),
         )
     } else {
         (Vec::new(), Vec::new())
     };
+    // (a, theta) -> (-a, -theta): a reversed slope orientation reverses every
+    // group mean on theta as well; the SDs are unchanged.
+    if canonicalize_slope_reflection(&mut slope, &mut studied_slope) {
+        for m in mu.iter_mut() {
+            *m = -*m;
+        }
+    }
     Ok(TwoGroupPolyFit {
         slope,
         cat_params,

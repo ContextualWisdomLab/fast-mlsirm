@@ -1,4 +1,5 @@
 pub mod agreement;
+pub mod bifactor_grm;
 pub mod bifactor_indices;
 pub mod cdm;
 pub mod classification;
