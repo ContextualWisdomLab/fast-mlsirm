@@ -7064,6 +7064,7 @@ fn fit_mixed_items(
         item.set_item("lower_asymptote", estimate.lower_asymptote)?;
         item.set_item("upper_asymptote", estimate.upper_asymptote)?;
         item.set_item("zeta", estimate.zeta)?;
+        item.set_item("at_bound", estimate.at_bound)?;
         items.append(item)?;
     }
     out.set_item("items", items)?;
