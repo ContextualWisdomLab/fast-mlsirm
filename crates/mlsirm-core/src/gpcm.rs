@@ -14,10 +14,10 @@
 //! free per-category slopes), but with a strictly smaller, single-slope-vector parametrization the
 //! free-slope [`crate::nominal::fit_nominal`] cannot express as a mode. Unlike the GRM the
 //! softmax is finite for ANY step values, so there is NO ordering constraint on the steps. Reduces
-//! to `poly::fit_poly_unidim(PolyModel::Gpcm)` at `D = 1` within optimizer tolerance and up to
-//! reflection (NOT bit-exact: `fit_poly_unidim` forces `a > 0` via a `log a` parametrization, while
-//! the confirmatory model uses an UNCONSTRAINED slope so reverse-keyed / negative cross-loadings are
-//! representable).
+//! to `poly::fit_poly_unidim(PolyModel::Gpcm)` at `D = 1` within optimizer tolerance (NOT bit-exact:
+//! a different parametrization of the same model and a different M-step). Both estimate an
+//! UNCONSTRAINED slope so reverse-keyed / negative cross-loadings are representable, and both pin
+//! the reflection indeterminacy by requiring the anchor item to load positively.
 //!
 //! **Estimation.** Bock-Aitkin marginal MLE (EM) over the `D`-dim latent grid, reusing the MIRT node
 //! machinery (`nodes::build_xi_nodes`, `node_rule` gh/qmc/mc, so `D <= 3` uses Gauss-Hermite and
