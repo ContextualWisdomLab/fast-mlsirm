@@ -290,8 +290,7 @@ def _load_json_bounded(
                     f"of {MAX_JSON_NESTING_DEPTH}"
                 )
         elif char in "]}":
-            if depth > 0:
-                depth -= 1
+            depth -= 1
 
     def reject_duplicate_members(pairs):
         """Build one JSON object while rejecting repeated member names."""

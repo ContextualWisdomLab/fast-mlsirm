@@ -106,8 +106,7 @@ def _validate_contract_depth(content: str) -> None:
                     "contract_json exceeds the maximum JSON nesting depth of 128"
                 )
         elif char in "]}":
-            if depth > 0:
-                depth -= 1
+            depth -= 1
 
 
 def _contract_object(contract_json: str) -> dict[str, Any]:

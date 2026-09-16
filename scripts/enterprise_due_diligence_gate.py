@@ -40,7 +40,9 @@ def _safe_output_path(output_path: Path) -> Path:
     root = Path.cwd().resolve()
     candidate = Path(output_path)
     if candidate.is_absolute():
-        raise ValueError("output path must be relative to the current working directory")
+        raise ValueError(
+            "output path must be relative to the current working directory"
+        )
     if ".." in candidate.parts:
         raise ValueError("output path must remain within the current working directory")
 
@@ -54,7 +56,9 @@ def _safe_output_path(output_path: Path) -> Path:
     try:
         resolved.relative_to(root)
     except ValueError:
-        raise ValueError("output path must remain within the current working directory") from None
+        raise ValueError(
+            "output path must remain within the current working directory"
+        ) from None
     if resolved.exists() and not resolved.is_file():
         raise ValueError("output path must name a regular file")
     return resolved
@@ -108,7 +112,9 @@ def validate_source_commit(value: str) -> str:
         or len(value) not in (40, 64)
         or any(character not in _GIT_HEX_DIGITS for character in value)
     ):
-        raise ValueError("source_commit must be a canonical lowercase full Git object identity")
+        raise ValueError(
+            "source_commit must be a canonical lowercase full Git object identity"
+        )
     return value
 
 
@@ -125,13 +131,17 @@ def build_gate_manifest(
     if not isinstance(valuation_claim, bool):
         raise ValueError("valuation_claim must be a boolean")
     if valuation_claim:
-        raise ValueError("enterprise due-diligence evidence must not be a valuation claim")
+        raise ValueError(
+            "enterprise due-diligence evidence must not be a valuation claim"
+        )
 
     canonical_gate_name = normalize_gate_name(gate_name)
     normalized_currency = validate_currency_code(currency_code)
     normalized_amount = validate_scenario_amount(scenario_amount)
     normalized_commit = validate_source_commit(source_commit)
-    scenario_name = f"{normalized_currency.lower()}_{normalized_amount}_procurement_scenario"
+    scenario_name = (
+        f"{normalized_currency.lower()}_{normalized_amount}_procurement_scenario"
+    )
 
     return {
         "currency_code": normalized_currency,
@@ -192,7 +202,8 @@ def _write_manifest_descriptor(
             else:
                 raise ValueError("manifest output could not be written")
 
-            assert temporary_fd is not None
+            if temporary_fd is None:
+                raise RuntimeError("temporary_fd must not be None")
             try:
                 stream = os.fdopen(temporary_fd, "w", encoding="utf-8")
             except BaseException:
@@ -205,7 +216,8 @@ def _write_manifest_descriptor(
                 stream.flush()
                 os.fsync(stream.fileno())
 
-            assert temporary_path is not None
+            if temporary_path is None:
+                raise RuntimeError("temporary_path must not be None")
             if existing_mode is not None:
                 os.chmod(temporary_path, existing_mode)
             os.replace(temporary_path, validated_path)
@@ -268,7 +280,8 @@ def _write_manifest_descriptor(
             else:
                 raise ValueError("manifest output could not be written")
 
-            assert temporary_fd is not None
+            if temporary_fd is None:
+                raise RuntimeError("temporary_fd must not be None")
             if existing_mode is not None:
                 os.fchmod(temporary_fd, existing_mode)
             try:
@@ -283,7 +296,8 @@ def _write_manifest_descriptor(
                 stream.flush()
                 os.fsync(stream.fileno())
 
-            assert temporary_name is not None
+            if temporary_name is None:
+                raise RuntimeError("temporary_name must not be None")
             os.rename(
                 temporary_name,
                 components[-1],
@@ -394,7 +408,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_path = Path(args.out)
         write_gate_manifest(manifest, output_path)
     except ValueError as exc:
-        print(json.dumps({"error": str(exc), "status": "failed"}, sort_keys=True), file=sys.stderr)
+        print(
+            json.dumps({"error": str(exc), "status": "failed"}, sort_keys=True),
+            file=sys.stderr,
+        )
         return 2
 
     print(
