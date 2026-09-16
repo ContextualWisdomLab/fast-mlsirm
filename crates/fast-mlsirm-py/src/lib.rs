@@ -103,6 +103,7 @@ use mlsirm_core::fitstats::{
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
+use mlsirm_core::bifactor_grm::{fit_bifactor_grm as core_fit_bifactor_grm, BifactorGrmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
     gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, phi_lambda as core_phi_lambda,
@@ -1315,6 +1316,107 @@ fn fit_grm(
     out.set_item("converged", res.converged)?;
     out.set_item("termination_reason", res.termination_reason)?;
     out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Single-group polytomous bifactor graded response model (Gibbons et al., 2007;
+/// Gibbons & Hedeker, 1992; Samejima, 1969;
+/// `mlsirm_core::bifactor_grm::fit_bifactor_grm`). Each item's `n_cat` ORDERED
+/// categories load the general factor (`a_general`, unconstrained) and at most
+/// one orthogonal specific factor (`a_specific`, unconstrained, `0` for
+/// general-only items): `P(Y>=k|theta) = sigmoid(a_G*theta_G + a_S*theta_S + d_k)`
+/// with strictly decreasing boundary intercepts `d`, `theta ~ N(0, I)` per
+/// dimension. `specific_map` is length `n_items` with `-1` for general-only
+/// items and `0..n_specific` otherwise (each specific needs >= 2 items).
+/// Estimation is Bock-Aitkin EM with Gibbons-Hedeker dimension reduction
+/// (`O(Q_G * sum_s Q_S * |block_s|)` per person); `q_general`/`q_specific` are
+/// Gauss-Hermite counts, `n_starts` deterministic starts from `seed` keep the
+/// best loglik. Returns a dict with `a_general`, `a_specific`, `threshold`
+/// (`n_items * (n_cat-1)`, strictly decreasing per item), `theta_g_eap` /
+/// `theta_g_sd` (general-factor EAP + posterior SD), `category_counts`
+/// (`n_items * n_cat`), `loglik_trace`, `n_iter`, `converged`,
+/// `termination_reason`, `final_loglik_change`, `best_start`, `n_parameters`.
+/// Unobserved categories raise `ValueError`; `max_iter` exhaustion reports
+/// `converged = False` instead of substituting values.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15))]
+fn fit_bifactor_grm(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_general: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+    n_starts: usize,
+    seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let y_slice = y.as_slice()?;
+    let obs_vec: Option<Vec<bool>> = match &observed {
+        Some(o) => Some(o.as_slice()?.to_vec()),
+        None => None,
+    };
+    // Missing cells may carry any negative placeholder (the Python wrapper
+    // sends 0); only observed cells must be non-negative categories.
+    let yy: Vec<usize> = y_slice
+        .iter()
+        .enumerate()
+        .map(|(idx, &v)| {
+            if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) {
+                return Ok(0usize);
+            }
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let smap: Vec<i32> = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            i32::try_from(v)
+                .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = BifactorGrmConfig {
+        q_general,
+        q_specific,
+        max_iter,
+        tol,
+        n_starts,
+        seed,
+        ..BifactorGrmConfig::default()
+    };
+    let res = core_fit_bifactor_grm(
+        &yy,
+        obs_vec.as_deref(),
+        &smap,
+        n_persons,
+        n_items,
+        n_specific,
+        n_cat,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("a_general", res.a_general)?;
+    out.set_item("a_specific", res.a_specific)?;
+    out.set_item("threshold", res.threshold)?;
+    out.set_item("theta_g_eap", res.theta_g_eap)?;
+    out.set_item("theta_g_sd", res.theta_g_sd)?;
+    out.set_item("category_counts", res.category_counts)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("best_start", res.best_start)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }
@@ -9588,6 +9690,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_mhrm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal_model, m)?)?;
     m.add_function(wrap_pyfunction!(fit_grm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_bifactor_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;

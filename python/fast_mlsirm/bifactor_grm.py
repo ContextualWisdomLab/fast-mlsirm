@@ -1,0 +1,294 @@
+"""Single-group polytomous bifactor graded response model (Gibbons et al., 2007;
+Gibbons & Hedeker, 1992; Samejima, 1969; Cai, Yang, & Hansen, 2011).
+
+Each item's ordered categories load the general factor and at most one
+orthogonal specific factor. Estimation is Bock-Aitkin marginal maximum
+likelihood with Gibbons-Hedeker dimension reduction; the numerical work runs
+in Rust (``mlsirm_core::bifactor_grm``).
+
+Modelling decisions and their sources (every non-obvious choice is cited;
+decisions without a paper source are marked as implementation choices):
+
+- Cumulative-logit graded form ``P(Y >= k) = logistic(a_G*theta_G +
+  a_S*theta_S + d_k)`` with strictly decreasing boundary intercepts. The
+  linear predictor follows Gibbons et al. (2007, eq. 9, "The Bifactor Model
+  for Graded Response Data" section); the logistic link is an implementation
+  choice (the paper uses the normal ogive) matching the ``mirt`` graded
+  comparison; adjacent-difference category probabilities follow Samejima
+  (1969).
+- Orthogonal ``N(0, 1)`` factors; each item on the general factor plus at
+  most one specific (Gibbons et al., 2007, "The Bifactor Model for Graded
+  Response Data" section; Gibbons & Hedeker, 1992, eq. 1).
+  Caller-supplied item-to-specific map; general-only items (``-1``) allowed.
+- Slopes UNCONSTRAINED on the real line so reverse-keyed items are
+  representable (implementation choice extending the crate's #1879
+  unconstrained-slope contract to the bifactor case; Gibbons et al. estimate
+  positive loadings but the loglik is symmetric under per-dimension
+  reflection).
+- Reflection pinned per dimension by the crate's deterministic rule
+  (largest-magnitude slope positive; ``poly::canonicalize_slope_reflection``,
+  ``grm.rs``) — an implementation choice for reporting, not a paper
+  prescription; thresholds are invariant under the joint flip.
+- At least two items per specific factor required (implementation choice,
+  not a paper prescription: no minimum-block-size theorem was found in the
+  cited sources, and smaller blocks leave the general/specific split weakly
+  identified).
+- E-step integrates each specific factor within its item block at fixed
+  general nodes (Gibbons et al., 2007, eq. 15, "Marginal Maximum Likelihood
+  Estimation" section; Cai et al., 2011, extend Gibbons and Hedeker's
+  (1992) bifactor dimension reduction, p. 221).
+- Gauss-Hermite quadrature on fixed grids; the EM node set never
+  reparametrizes, so EM is monotone (Bock & Aitkin, 1981).
+- ``seed`` drives ONLY the random-start jitter; quadrature is deterministic,
+  so reruns with the same arguments bit-reproduce (implementation choice for
+  the #1912 reproducibility requirement).
+- Newton M-step depth (10 inner iterations) and ridge (1e-8, Hessian
+  conditioning only, not a prior) are fixed implementation choices shared
+  with the crate's GRM estimator, not caller arguments.
+- Unobserved categories raise instead of imputing (an unobserved category
+  leaves a boundary intercept unidentified; Samejima, 1969). Non-convergence
+  reports ``converged=False`` instead of substituting values (implementation
+  choice for the #1912 fail-loud requirement).
+
+References (APA 7th ed.):
+
+    Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E.,
+        Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., &
+        Stover, A. (2007). Full-information item bifactor analysis of graded
+        response data. *Applied Psychological Measurement, 31*(1), 4-19.
+        https://doi.org/10.1177/0146621606289485
+
+    Gibbons, R. D., & Hedeker, D. R. (1992). Full-information item bi-factor
+        analysis. *Psychometrika, 57*(3), 423-436.
+        https://doi.org/10.1007/BF02295430
+
+    Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
+        item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
+        https://doi.org/10.1037/a0023350
+
+    Samejima, F. (1969). Estimation of latent ability using a response pattern
+        of graded scores. *Psychometrika, 34*(S1), 1-97.
+        https://doi.org/10.1007/BF03372160
+
+    Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation
+        of item parameters: Application of an EM algorithm. *Psychometrika,
+        46*(4), 443-459. https://doi.org/10.1007/BF02293801
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+_SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
+
+
+def _finite_integer_control(value: object, name: str) -> int:
+    """Normalize a trusted finite integer-valued scalar without callbacks."""
+
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a finite integer")
+    try:
+        numeric = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be a finite integer") from None
+    if not np.isfinite(numeric) or numeric != np.floor(numeric):
+        raise ValueError(f"{name} must be a finite integer")
+    return int(numeric)
+
+
+def _positive_real_control(value: object, name: str) -> float:
+    """Normalize a trusted finite positive real scalar without callbacks."""
+
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a real number")
+    try:
+        numeric = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be finite and > 0") from None
+    if not np.isfinite(numeric) or numeric <= 0:
+        raise ValueError(f"{name} must be finite and > 0")
+    return numeric
+
+
+def _u64_seed(value: object) -> int:
+    """Normalize the deterministic start seed without callbacks."""
+
+    if isinstance(value, bool):
+        raise ValueError("seed must be a non-negative integer")
+    try:
+        numeric = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("seed must be a non-negative integer") from None
+    if not np.isfinite(numeric) or numeric != np.floor(numeric):
+        raise ValueError("seed must be a non-negative integer")
+    seed = int(numeric)
+    if not 0 <= seed < 2**64:
+        raise ValueError("seed must be in [0, 2**64)")
+    return seed
+
+
+@dataclass
+class BifactorGrmFit:
+    """Fitted single-group polytomous bifactor GRM.
+
+    ``a_general`` the ``n_items`` general slopes (unconstrained,
+    reflection-canonicalized); ``a_specific`` the ``n_items`` specific slopes
+    (``0`` for general-only items, canonicalized within each block);
+    ``threshold`` the ``n_items x (n_cat-1)`` strictly decreasing boundary
+    intercepts; ``theta_g_eap`` / ``theta_g_sd`` the general-factor EAP and
+    posterior SD; ``category_counts`` the observed ``n_items x n_cat`` counts.
+    ``termination_reason`` is ``"tolerance_met"`` or ``"max_iter_reached"``;
+    ``best_start`` the winning start in ``0..n_starts``.
+    """
+
+    a_general: np.ndarray
+    a_specific: np.ndarray
+    threshold: np.ndarray
+    theta_g_eap: np.ndarray
+    theta_g_sd: np.ndarray
+    category_counts: np.ndarray
+    n_cat: int
+    n_specific: int
+    loglik_trace: np.ndarray
+    n_iter: int
+    converged: bool
+    termination_reason: str
+    final_loglik_change: float
+    best_start: int
+    n_parameters: int
+
+
+def fit_bifactor_grm(
+    responses: np.ndarray,
+    specific_map: np.ndarray,
+    n_cat: int,
+    n_specific: int,
+    q_general: int = 21,
+    q_specific: int = 11,
+    max_iter: int = 500,
+    tol: float = 1e-6,
+    n_starts: int = 1,
+    seed: int = 0x9E37_79B9_7F4A_7C15,
+) -> BifactorGrmFit:
+    """Fit the single-group polytomous bifactor GRM (compute in Rust).
+
+    ``responses`` is a persons x items integer-category array
+    (``0..n_cat-1``; ``NaN`` or negative = missing, dropped MAR).
+    ``specific_map`` is a length-``n_items`` integer array with ``-1`` for
+    general-only items and ``0..n_specific-1`` otherwise; every specific
+    factor needs at least two items. ``q_general``/``q_specific`` are
+    Gauss-Hermite node counts (one of ``(7, 11, 15, 21, 31, 41)`` — the
+    embedded rules that exist, hence the only accepted values);
+    ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik.
+    Out-of-range caller arguments raise ``ValueError`` (never clamped, and —
+    per the no-magic-caps rule — upper-bounded only where a real constraint
+    exists); unobserved categories raise; ``max_iter`` exhaustion returns
+    ``converged=False`` instead of substituting values.
+
+    See the module docstring for the model, the paper basis of every
+    non-obvious decision, and the APA 7th references.
+    """
+    n_cat_int = _finite_integer_control(n_cat, "n_cat")
+    if n_cat_int < 2:
+        raise ValueError("n_cat must be >= 2")
+    n_specific_int = _finite_integer_control(n_specific, "n_specific")
+    if n_specific_int < 1:
+        raise ValueError("n_specific must be >= 1")
+    q_general_int = _finite_integer_control(q_general, "q_general")
+    if q_general_int not in _SUPPORTED_Q:
+        raise ValueError(f"q_general must be one of {_SUPPORTED_Q}")
+    q_specific_int = _finite_integer_control(q_specific, "q_specific")
+    if q_specific_int not in _SUPPORTED_Q:
+        raise ValueError(f"q_specific must be one of {_SUPPORTED_Q}")
+    max_iter_int = _finite_integer_control(max_iter, "max_iter")
+    if max_iter_int < 1:
+        raise ValueError("max_iter must be >= 1")
+    n_starts_int = _finite_integer_control(n_starts, "n_starts")
+    if n_starts_int < 1:
+        raise ValueError("n_starts must be >= 1")
+    tol_float = _positive_real_control(tol, "tol")
+    seed_int = _u64_seed(seed)
+
+    y = np.asarray(responses)
+    if np.iscomplexobj(y):
+        raise ValueError("responses must be real-valued")
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    if y.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
+    y = y.astype(np.float64, copy=False)
+    if np.isinf(y).any():
+        raise ValueError("responses must not contain infinity")
+    n_persons, n_items = y.shape
+
+    smap = np.asarray(specific_map)
+    if smap.ndim != 1 or smap.shape[0] != n_items:
+        raise ValueError("specific_map must be a 1-D array of length n_items")
+    if smap.dtype.kind == "f":
+        if not bool(np.isfinite(smap).all()):
+            raise ValueError("specific_map entries must be finite integers")
+        if bool((smap != np.floor(smap)).any()):
+            raise ValueError("specific_map entries must be integers")
+    try:
+        smap_int = smap.astype(np.int64, copy=False)
+    except (TypeError, ValueError):
+        raise ValueError("specific_map entries must be integers") from None
+    if bool((smap_int < -1).any()) or bool((smap_int >= n_specific_int).any()):
+        raise ValueError(
+            "specific_map entries must be -1 (general-only) or in "
+            f"0..{n_specific_int - 1}"
+        )
+
+    observed = np.isfinite(y) & (y >= 0)
+    if np.any(observed):
+        observed_y = y[observed]
+        if np.any(observed_y != np.floor(observed_y)) or observed_y.max() >= n_cat_int:
+            raise ValueError(
+                "responses must be integer categories in 0..n_cat-1 where observed"
+            )
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_bifactor_grm"):
+        raise RuntimeError("fit_bifactor_grm requires the compiled Rust core")
+
+    yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
+    res = core.fit_bifactor_grm(
+        yy,
+        observed.reshape(-1),
+        smap_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_specific_int),
+        int(n_cat_int),
+        int(q_general_int),
+        int(q_specific_int),
+        int(max_iter_int),
+        float(tol_float),
+        int(n_starts_int),
+        int(seed_int),
+    )
+    return BifactorGrmFit(
+        a_general=np.asarray(res["a_general"], dtype=np.float64),
+        a_specific=np.asarray(res["a_specific"], dtype=np.float64),
+        threshold=np.asarray(res["threshold"], dtype=np.float64).reshape(
+            n_items, n_cat_int - 1
+        ),
+        theta_g_eap=np.asarray(res["theta_g_eap"], dtype=np.float64),
+        theta_g_sd=np.asarray(res["theta_g_sd"], dtype=np.float64),
+        category_counts=np.asarray(res["category_counts"], dtype=np.int64).reshape(
+            n_items, n_cat_int
+        ),
+        n_cat=int(n_cat_int),
+        n_specific=int(n_specific_int),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
+        n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+        termination_reason=str(res["termination_reason"]),
+        final_loglik_change=float(res["final_loglik_change"]),
+        best_start=int(res["best_start"]),
+        n_parameters=int(res["n_parameters"]),
+    )
