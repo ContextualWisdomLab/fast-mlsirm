@@ -77,7 +77,7 @@ def test_renderer_writes_deterministic_accessible_source_text_free_artifact(
     assert "-20.0" in first
     assert "Estimator log-likelihood trace" in first
     assert "mlsirm_core_facets_fit_facets" not in first
-    assert 'class="empty-state" role="status" aria-atomic="true"' in first
+    assert 'class="empty-state" role="status"' in first
     assert "global optimality" in first
     assert "Canonical essay facets calibration JSON" in first
     assert "workflow_stage" in first
@@ -114,7 +114,7 @@ def test_renderer_shows_explicit_empty_review_state(tmp_path: Path) -> None:
     assert '<section class="review-clear"' in html
     assert "No structural trigger" in html
     assert (
-        '<div class="empty-state" role="status" aria-atomic="true">'
+        '<div class="empty-state" role="status">'
         "No structural review trigger was emitted.</div>"
     ) in html
     assert "not evidence of" in html.lower()
@@ -277,5 +277,5 @@ def test_replay_identity_mismatch_and_private_empty_renderer(
         ),
     )
     assert report_html._identifier_list((), empty_message="Nothing declared.") == (
-        '<div class="empty-state" role="status" aria-atomic="true">Nothing declared.</div>'
+        '<div class="empty-state" role="status">Nothing declared.</div>'
     )

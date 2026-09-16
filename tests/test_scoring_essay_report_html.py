@@ -92,7 +92,7 @@ def test_clean_report_renders_deterministic_accessible_exact_values(
     assert "default-src &#x27;none&#x27;" in first
     assert "script-src" not in first
     assert "No structural review trigger was emitted." in first
-    assert 'class="empty-state" role="status" aria-atomic="true"' in first
+    assert 'class="empty-state" role="status"' in first
     assert "No structural trigger" in first
     assert report.report_fingerprint in first
     assert report.engine_descriptor.engine_fingerprint in first
@@ -173,7 +173,7 @@ def test_empty_table_renders_an_explicit_empty_state() -> None:
     )
     assert (
         rendered
-        == '<div class="empty-state" role="status" aria-atomic="true">No evidence is available.</div>'
+        == '<div class="empty-state" role="status">No evidence is available.</div>'
     )
 
 

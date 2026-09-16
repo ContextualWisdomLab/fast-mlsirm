@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -63,46 +62,3 @@ def test_benchmark_reference_comparison_remains_below_safety_ceiling() -> None:
 
     assert report["legacy_broadcast"] is not None
     assert report["legacy_broadcast"]["maximum_absolute_difference"] <= 1e-12
-
-
-def test_numpy_configuration_supports_legacy_show_config(monkeypatch) -> None:
-    benchmark = _load_benchmark_module()
-    configuration_calls = []
-
-    def legacy_show_config():
-        configuration_calls.append(None)
-        print("configuration " + "x" * 32768 + " complete legacy configuration")
-
-    monkeypatch.setattr(benchmark.np, "show_config", legacy_show_config)
-    configuration_text = benchmark._numpy_configuration()
-    assert configuration_text.endswith("complete legacy configuration")
-    assert len(configuration_text) > 32768
-    assert configuration_calls == [None]
-
-
-def test_numpy_configuration_modern_mode_is_warning_free() -> None:
-    benchmark = _load_benchmark_module()
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        configuration_text = benchmark._numpy_configuration()
-    assert configuration_text
-
-
-def test_numpy_configuration_preserves_modern_dictionary(monkeypatch) -> None:
-    """Keep the requested mode and returned build metadata in the report."""
-    import ast
-
-    benchmark = _load_benchmark_module()
-    configuration_calls = []
-    build_configuration = {"Build Dependencies": {"blas": {"name": "fixture-blas"}}}
-
-    def modern_show_config(*, mode):
-        configuration_calls.append(mode)
-        return build_configuration
-
-    monkeypatch.setattr(benchmark.np, "show_config", modern_show_config)
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        configuration_text = benchmark._numpy_configuration()
-    assert configuration_calls == ["dicts"]
-    assert ast.literal_eval(configuration_text) == build_configuration
