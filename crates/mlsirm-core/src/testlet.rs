@@ -450,7 +450,12 @@ fn m_step(
                 // matrix nonsingular for every valid item.
                 let da = (h_bb * g_a - h_ab * g_b) / det;
                 let db = (h_aa * g_b - h_ab * g_a) / det;
-                ai = (ai - da).clamp(1e-3, 10.0);
+                // Magnitude guard only; symmetric, so it does not also impose
+                // `a > 0` and floor a reverse-keyed item (see `crate::mmle`).
+                ai = (ai - da).clamp(
+                    -crate::mmle::A_MAGNITUDE_BOUND,
+                    crate::mmle::A_MAGNITUDE_BOUND,
+                );
                 bi -= db;
                 if da.abs() + db.abs() < 1e-8 {
                     break;
@@ -562,7 +567,10 @@ pub fn fit_testlet(
         };
         let project = |p: &mut [f64]| {
             for ai in p.iter_mut().take(j) {
-                *ai = ai.clamp(1e-3, 10.0);
+                *ai = ai.clamp(
+                    -crate::mmle::A_MAGNITUDE_BOUND,
+                    crate::mmle::A_MAGNITUDE_BOUND,
+                );
             }
             for d in 0..d_n {
                 let idx = 2 * j + d;
@@ -668,7 +676,7 @@ pub fn fit_testlet(
     }
 
     // Final pass at the returned params: theta EAP + final loglik.
-    let (final_ll, _, _, _, theta) = full_estep(&ctx, &a, &beta, &sigma2);
+    let (final_ll, _, _, _, mut theta) = full_estep(&ctx, &a, &beta, &sigma2);
     if !converged
         && loglik_trace
             .last()
@@ -686,6 +694,12 @@ pub fn fit_testlet(
         "max_iter_reached"
     };
 
+    // Pin the reflection `(a, theta) -> (-a, -theta)`. `beta` is the intercept
+    // and is invariant; `sigma2` is a variance of a symmetric testlet effect and
+    // is invariant; `b = -beta/a` is on theta's scale, so it flips with the
+    // slope and is derived AFTER the flip. A no-op under `Rasch`, where every
+    // slope is pinned at 1.0.
+    crate::mmle::canonicalize_reflection(&mut a, &mut theta);
     let b: Vec<f64> = (0..j).map(|i| -beta[i] / a[i]).collect();
     let k = if fix_slope { 1 } else { 2 };
     // Only FREELY-estimated testlet variances count: singletons are pinned to 0
