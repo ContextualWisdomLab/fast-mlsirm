@@ -24,6 +24,7 @@ pr-queue-governance*/
 *.npy
 *.npz
 .codegraph/
+graphify-out/
 # Merge/rebase backup artifacts must never be committed (see cli.py.orig removal).
 *.orig
 *.rej

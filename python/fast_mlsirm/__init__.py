@@ -53,6 +53,17 @@ from .sampling_design import (
 from .sampling_design import (
     finite_population_proportion_design as finite_population_proportion_design,
 )
+from .polytomous_bifactor import (
+    PolytomousBifactorFit as PolytomousBifactorFit,
+    fit_polytomous_bifactor as fit_polytomous_bifactor,
+    bifactor_lord_wingersky as bifactor_lord_wingersky,
+    direct_enumeration_bifactor as direct_enumeration_bifactor,
+    bifactor_slope_sensitivity as bifactor_slope_sensitivity,
+)
+from .bifactor_bootstrap import (
+    BifactorBootstrapResult as BifactorBootstrapResult,
+    run_bifactor_bootstrap as run_bifactor_bootstrap,
+)
 
 # Harden historical public adapters before copying legacy exports. These
 # wrappers validate and normalize semantic controls/evidence only; result
@@ -311,6 +322,13 @@ __all__ = list(_legacy_init.__all__) + [
     "AchievedProportion",
     "finite_population_proportion_design",
     "finite_population_achieved_proportion",
+    "PolytomousBifactorFit",
+    "fit_polytomous_bifactor",
+    "bifactor_lord_wingersky",
+    "direct_enumeration_bifactor",
+    "bifactor_slope_sensitivity",
+    "BifactorBootstrapResult",
+    "run_bifactor_bootstrap",
 ]
 
 del _PackageNotFoundError, _distribution_version, _public_fit, _public_name

@@ -1,5 +1,7 @@
 pub mod agreement;
 pub mod bifactor_indices;
+pub mod bifactor_recursion;
+pub mod bifactor_grm;
 pub mod cdm;
 pub mod classification;
 pub mod crm;
