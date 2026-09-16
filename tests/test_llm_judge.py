@@ -11,7 +11,6 @@ import pytest
 from fast_mlsirm import CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1
 from fast_mlsirm.irt_contract import validate_irt_response_matrix
 from fast_mlsirm.llm_judge import (
-    CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1,
     MAX_BINARY_THRESHOLD_CALLS,
     ContextualOrchestratorJudge,
     JudgeCriterion,
@@ -1128,3 +1127,12 @@ def test_judge_accepts_bounded_json_nesting() -> None:
         criteria=CRITERIA,
     )
     assert result.score == 0.8
+
+
+def test_reject_nonfinite():
+    from fast_mlsirm.llm_judge import _response_object, JudgeFormatError
+    import pytest
+    with pytest.raises(JudgeFormatError, match="non-finite"):
+        _response_object('{"meets_threshold": NaN, "rationale": "x"}', required_fields={"meets_threshold", "rationale"})
+    with pytest.raises(JudgeFormatError, match="non-finite"):
+        _response_object('{"meets_threshold": 1e999, "rationale": "x"}', required_fields={"meets_threshold", "rationale"})
