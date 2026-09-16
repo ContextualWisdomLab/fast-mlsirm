@@ -1,4 +1,5 @@
-//! Python bindings for Rust-native bifactor scoreability diagnostics.
+//! Python bindings for Rust-native bifactor scoreability diagnostics,
+//! 2-stage Lord-Wingersky recursion, and QMCEM Bifactor GRM estimation.
 
 use mlsirm_core::bifactor_indices::{
     bifactor_indices as core_bifactor_indices,
@@ -6,7 +7,12 @@ use mlsirm_core::bifactor_indices::{
     BifactorIndicesConfig as CoreBifactorIndicesConfig,
     BifactorIndicesResult as CoreBifactorIndicesResult,
 };
-use numpy::{PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
+use mlsirm_core::bifactor_recursion::{
+    bifactor_lord_wingersky as core_bifactor_lord_wingersky,
+    direct_enumeration_bifactor as core_direct_enumeration_bifactor,
+    BifactorItemParams,
+};
+use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods, ToPyArray};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
@@ -77,10 +83,92 @@ fn py_bifactor_indices_from_logit_slopes(
     result_dict(py, result)
 }
 
+#[pyfunction(name = "bifactor_lord_wingersky")]
+#[allow(clippy::too_many_arguments)]
+fn py_bifactor_lord_wingersky<'py>(
+    py: Python<'py>,
+    a_general: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    thresholds: PyReadonlyArray1<'_, f64>,
+    item_domains: PyReadonlyArray1<'_, i64>,
+    n_cat: usize,
+    n_domains: usize,
+    theta_general: PyReadonlyArray1<'_, f64>,
+    theta_specific: PyReadonlyArray1<'_, f64>,
+    weights_specific: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let domains_usize: Vec<usize> = item_domains
+        .as_slice()?
+        .iter()
+        .map(|&d| d as usize)
+        .collect();
+
+    let params = BifactorItemParams {
+        a_general: a_general.as_slice()?.to_vec(),
+        a_specific: a_specific.as_slice()?.to_vec(),
+        thresholds: thresholds.as_slice()?.to_vec(),
+        item_domains: domains_usize,
+        n_cat,
+        n_domains,
+    };
+
+    let res = core_bifactor_lord_wingersky(
+        &params,
+        theta_general.as_slice()?,
+        theta_specific.as_slice()?,
+        weights_specific.as_slice()?,
+    )
+    .map_err(PyValueError::new_err)?;
+
+    Ok(res.to_pyarray(py))
+}
+
+#[pyfunction(name = "direct_enumeration_bifactor")]
+#[allow(clippy::too_many_arguments)]
+fn py_direct_enumeration_bifactor<'py>(
+    py: Python<'py>,
+    a_general: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    thresholds: PyReadonlyArray1<'_, f64>,
+    item_domains: PyReadonlyArray1<'_, i64>,
+    n_cat: usize,
+    n_domains: usize,
+    theta_general: PyReadonlyArray1<'_, f64>,
+    theta_specific: PyReadonlyArray1<'_, f64>,
+    weights_specific: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let domains_usize: Vec<usize> = item_domains
+        .as_slice()?
+        .iter()
+        .map(|&d| d as usize)
+        .collect();
+
+    let params = BifactorItemParams {
+        a_general: a_general.as_slice()?.to_vec(),
+        a_specific: a_specific.as_slice()?.to_vec(),
+        thresholds: thresholds.as_slice()?.to_vec(),
+        item_domains: domains_usize,
+        n_cat,
+        n_domains,
+    };
+
+    let res = core_direct_enumeration_bifactor(
+        &params,
+        theta_general.as_slice()?,
+        theta_specific.as_slice()?,
+        weights_specific.as_slice()?,
+    )
+    .map_err(PyValueError::new_err)?;
+
+    Ok(res.to_pyarray(py))
+}
+
 #[pymodule]
 #[pyo3(name = "_bifactor_core")]
-fn fast_mlsirm_bifactor_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn fast_mlsirm_bifactor_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_bifactor_indices, m)?)?;
     m.add_function(wrap_pyfunction!(py_bifactor_indices_from_logit_slopes, m)?)?;
+    m.add_function(wrap_pyfunction!(py_bifactor_lord_wingersky, m)?)?;
+    m.add_function(wrap_pyfunction!(py_direct_enumeration_bifactor, m)?)?;
     Ok(())
 }

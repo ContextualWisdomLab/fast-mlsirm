@@ -34,6 +34,10 @@ gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage)"] }
 
+[lints.clippy]
+erasing_op = "allow"
+identity_op = "allow"
+
 [dev-dependencies]
 # proptest is dual MIT / Apache-2.0 licensed -- permissive, matches this crate.
 proptest = "1"
