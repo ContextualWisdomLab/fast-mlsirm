@@ -236,6 +236,255 @@ def polytomous_expected_response(fit: PolytomousFit, theta: np.ndarray) -> np.nd
     return _polytomous_predictions(fit, theta)[1]
 
 
+def _validated_monotonicity_grid(theta: np.ndarray) -> np.ndarray:
+    """A strictly ascending finite 1-D grid of at least two points."""
+    grid = np.asarray(theta, dtype=np.float64)
+    if grid.ndim != 1:
+        raise ValueError("theta must be a 1-D grid")
+    if grid.size < 2:
+        raise ValueError("theta must hold at least two points to have a slope")
+    if not np.all(np.isfinite(grid)):
+        raise ValueError("theta must be finite")
+    if not np.all(np.diff(grid) > 0.0):
+        raise ValueError("theta must be strictly ascending")
+    return grid
+
+
+@dataclass(frozen=True)
+class ExpectedScoreMonotonicity:
+    """Where and by how much an expected-total-score curve decreases.
+
+    ``theta`` is the grid the curve was evaluated on, ascending, and
+    ``expected_total`` the curve itself. ``total_decrease`` is the sum of the
+    magnitudes of the downward steps; ``decreasing_intervals`` holds one
+    ``(start, end)`` pair per maximal run of consecutive downward steps, in
+    theta units. ``monotone`` is true exactly when both are empty/zero.
+    """
+
+    theta: np.ndarray
+    expected_total: np.ndarray
+    total_decrease: float
+    decreasing_intervals: tuple[tuple[float, float], ...]
+    monotone: bool
+
+
+def expected_total_score_monotonicity(
+    fit: PolytomousFit,
+    theta: np.ndarray,
+) -> ExpectedScoreMonotonicity:
+    """Report where the expected total score decreases over a caller's grid.
+
+    ``theta`` is evaluated as given: the grid is the caller's measurement
+    decision, not this function's, because which region of the trait matters
+    depends on where the respondents are.
+
+    **Only two statistics are reported, and the omissions are deliberate.**
+    Under grid refinement the count of decreasing points diverges and the
+    largest single decrease goes to zero, so neither describes the curve -- they
+    describe the grid. ``total_decrease`` converges to the integral of the
+    negative part of the derivative, and the intervals converge to the region
+    where it is negative. A count and a maximum are what a Mokken monotonicity
+    summary reports, but those are sample statistics on grouped-respondent
+    proportions with a sampling distribution (van der Ark, 2007, p. 5, eq. 3),
+    which a grid evaluation of a fitted model does not have. They are not the
+    same quantities under the same names.
+
+    **Why a decrease means what it means.** For a unidimensional graded model
+    the expected total score is increasing in ``theta`` whenever every slope is
+    positive; the conclusion traces to Samejima (1972) through Hemker, Sijtsma
+    and Molenaar. The derivation is a one-line consequence a reader can check:
+    ``dE[T]/dtheta = sum_i a_i * (sum_k sigmoid'(a_i*theta + beta_ik))``, a
+    positive-weighted combination of the slopes, so a decrease requires a
+    negative ``a_i``. No source states the derivative in that form, so it is
+    shown rather than cited.
+
+    **Two things this diagnostic is not.** It is not a hypothesis test: no
+    sampling distribution is claimed and no published bootstrap or delta-method
+    statement about the monotonicity of an estimated expected-score curve
+    appears to exist. And it must not be read through stochastic-ordering
+    results: the graded model has neither the monotone likelihood ratio
+    property nor guaranteed stochastic ordering of the latent by the total
+    score (van der Ark, 2007, p. 3), so that literature would attach a property
+    this model does not have.
+
+    References
+    ----------
+    Samejima, F. (1972). A general model for free-response data.
+    *Psychometrika Monograph Supplement, 37*(4, Pt. 2).
+
+    Samejima, F. (1969). Estimation of latent ability using a response
+    pattern of graded scores. *Psychometrika Monograph Supplement, 17*.
+    Chapter 5 gives the graded operating characteristics: the cumulative
+    form with a discrimination and per-bound difficulties (eqs. 5-1-5-4).
+
+    Lord, F. M. (1980). *Applications of item response theory to practical
+    testing problems*. Chapter 4: the regression of score on ability
+    (eq. 4-2), number-right true score (eq. 4-5, increasing in ability when
+    each item response function is), and the test characteristic function
+    (eq. 4-9).
+
+    van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
+    Statistical Software, 20*(11), 1-19. https://doi.org/10.18637/jss.v020.i11
+    Manifest monotonicity is defined on grouped rest-score proportions
+    (p. 5, eq. 3) with per-comparison significance tests; stochastic
+    ordering of the latent trait by the sum score fails for polytomous
+    models generally (p. 3; Hemker et al., 1997).
+
+    Hemker, B. T., Sijtsma, K., Molenaar, I. W., & Junker, B. W. (1996).
+    Polytomous IRT models and monotone likelihood ratio of the total
+    score. *Psychometrika, 61*, 679-693.
+
+    Hemker, B. T., Sijtsma, K., Molenaar, I. W., & Junker, B. W. (1997).
+    Stochastic ordering using the latent trait and the sum score in
+    polytomous IRT models. *Psychometrika, 62*, 331-347.
+    """
+    grid = _validated_monotonicity_grid(theta)
+    expected_total = polytomous_expected_response(fit, grid).sum(axis=1)
+    return _decrease_report(grid, expected_total)
+
+
+def _decrease_report(
+    grid: np.ndarray, expected_total: np.ndarray
+) -> ExpectedScoreMonotonicity:
+    """Shared reduction from a curve to the two grid-stable statistics."""
+    step = np.diff(expected_total)
+    falling = step < 0.0
+    total_decrease = float(-step[falling].sum()) if falling.any() else 0.0
+
+    intervals: list[tuple[float, float]] = []
+    start: int | None = None
+    for index, is_falling in enumerate(falling):
+        if is_falling and start is None:
+            start = index
+        elif not is_falling and start is not None:
+            intervals.append((float(grid[start]), float(grid[index])))
+            start = None
+    if start is not None:
+        intervals.append((float(grid[start]), float(grid[-1])))
+
+    return ExpectedScoreMonotonicity(
+        theta=grid,
+        expected_total=expected_total,
+        total_decrease=total_decrease,
+        decreasing_intervals=tuple(intervals),
+        monotone=not intervals,
+    )
+
+
+def focal_expected_total_score_monotonicity(
+    fit,
+    dimension: int,
+    theta: np.ndarray,
+    q_nuisance: int = 41,
+) -> ExpectedScoreMonotonicity:
+    """Monotonicity of the expected total score along one dimension of a
+    multidimensional graded fit, with the other dimensions integrated out.
+
+    ``fit`` is a :class:`~fast_mlsirm.grm.GrmFit`; ``dimension`` selects the
+    focal trait; ``theta`` is the caller's grid on it. ``q_nuisance`` is the
+    caller-chosen Gauss-Hermite node count in ``1..=4096``: the lower bound
+    is exact (an ``n``-node Gauss rule exists for every ``n >= 1``;
+    Golub & Welsch, 1969) and the upper bound reuses this package's
+    quadrature-point budget (``MAX_POLY_QUADRATURE_POINTS``), not a new
+    constant. Returns the same report
+    as :func:`expected_total_score_monotonicity`, with the same two grid-stable
+    statistics and the same omissions.
+
+    **The nuisance integral collapses to one dimension, exactly.** The model is
+    compensatory, so item ``i``'s linear predictor splits as
+    ``a_if * theta_f + sum_{d != f} a_id * theta_d``. Under the fitted prior
+    ``theta ~ MVN(0, I)`` the second term is a linear combination of
+    independent standard normals, hence normal with variance
+    ``sigma_i^2 = sum_{d != f} a_id^2``. So marginalizing over any number of
+    nuisance dimensions is a single one-dimensional Gaussian integral per item,
+    evaluated here on a ``q_nuisance``-node Gauss-Hermite rule. This is a
+    property of the compensatory form and the independent prior, not an
+    approximation that improves with more dimensions.
+
+    **The monotonicity conclusion survives the marginalization**, and the step
+    that carries it is Leibniz's rule — differentiating under the integral sign,
+    elementary real analysis rather than a psychometric proposition, which is
+    why no psychometric citation is attached to it. Differentiating gives
+    ``dE[T]/dtheta_f = sum_i a_if * E_z[sum_k sigmoid'(a_if*theta_f + z +
+    beta_ik)]``, again a positive-weighted combination of the FOCAL slopes, so
+    a decrease still requires some ``a_if < 0``. Note what that does not say: it
+    constrains the focal column only, and an item loading negatively on a
+    nuisance dimension does not make this curve decrease.
+
+    No source states the multidimensional case, so this is presented as a
+    derivation rather than as received theory. The scope contrast is
+    verified: stochastic ordering of the latent trait by the sum score is a
+    dichotomous-scores result that fails for polytomous models generally
+    (van der Ark, 2007, p. 3; Hemker et al., 1997). The orthogonal-factor
+    integration has the same structure elsewhere: under independent
+    ``N(0, 1)`` factors the bifactor pattern integral stays two-dimensional
+    no matter how many specific factors the scale has (Gibbons et al., 2007,
+    eqs. 12-14).
+
+    References
+    ----------
+    Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E.,
+    Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., &
+    Stover, A. (2007). Full-information item bifactor analysis of graded
+    response data. *Applied Psychological Measurement, 31*(1), 4-19.
+    https://doi.org/10.1177/0146621606289485
+    The bifactor restriction collapses the s-fold integral to one general
+    plus one specific dimension (eq. 12); the Gauss-Hermite quadrature
+    form is eq. 14; the orthogonal-basis assumption is stated on pp. 8-9.
+
+    van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
+    Statistical Software, 20*(11), 1-19. https://doi.org/10.18637/jss.v020.i11
+
+    Hemker, B. T., Sijtsma, K., Molenaar, I. W., & Junker, B. W. (1997).
+    Stochastic ordering using the latent trait and the sum score in
+    polytomous IRT models. *Psychometrika, 62*, 331-347.
+    """
+    grid = _validated_monotonicity_grid(theta)
+    if not hasattr(fit, "slope") or not hasattr(fit, "threshold"):
+        raise TypeError("fit must expose slope and threshold arrays")
+    slope = np.asarray(fit.slope, dtype=np.float64)
+    if slope.ndim != 2:
+        raise ValueError("fit.slope must be an n_items x n_dims matrix")
+    if not np.all(np.isfinite(slope)):
+        raise ValueError("fit.slope must be finite")
+    n_items, n_dims = slope.shape
+    focal = _bounded_integer(dimension, "dimension", 0, n_dims - 1)
+    nodes_requested = _bounded_integer(
+        q_nuisance, "q_nuisance", 1, MAX_POLY_QUADRATURE_POINTS
+    )
+
+    threshold = np.asarray(fit.threshold, dtype=np.float64)
+    if threshold.ndim != 2 or threshold.shape[0] != n_items:
+        raise ValueError("fit.threshold must be n_items x (n_cat - 1)")
+    if not np.all(np.isfinite(threshold)):
+        raise ValueError("fit.threshold must be finite")
+
+    nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
+    weights = weights / weights.sum()
+
+    nuisance_sd = np.sqrt(
+        np.square(slope).sum(axis=1) - np.square(slope[:, focal])
+    )
+    unit_slope = np.ones(1, dtype=np.float64)
+
+    expected_total = np.zeros(grid.size, dtype=np.float64)
+    for item in range(n_items):
+        base = slope[item, focal] * grid[:, None] + nuisance_sd[item] * nodes[None, :]
+        cell = PolytomousFit(
+            model="grm",
+            slope=unit_slope,
+            cat_params=threshold[item : item + 1],
+            loglik=float("nan"),
+            n_iter=0,
+            converged=True,
+            termination_reason="marginalized",
+        )
+        expected = polytomous_expected_response(cell, base.reshape(-1))
+        expected_total += (expected.reshape(base.shape) * weights[None, :]).sum(axis=1)
+
+    return _decrease_report(grid, expected_total)
+
+
 def _core_module():
     """Return the compiled Rust core module, or ``None`` if it is unavailable."""
     try:
@@ -320,6 +569,13 @@ def fit_polytomous(
     convergence fields describe the observed-data likelihood at the returned
     parameter state; reaching ``max_iter`` is reported as nonconvergence.
     ``n_cat`` is limited to 2..64 and ``max_iter`` to 1..100,000.
+
+    Slopes are UNCONSTRAINED, so a reverse-keyed item is returned with a
+    negative ``slope`` rather than being floored at zero. Because
+    ``(a, theta) -> (-a, -theta)`` leaves the likelihood unchanged, the sign of
+    the slope vector as a whole is fixed by convention: the largest-magnitude
+    slope is returned positive. Trait scores from :func:`score_polytomous` are
+    on that same orientation.
 
     References
     ----------
@@ -1199,6 +1455,171 @@ def dif_polytomous(
         "flagged_bh": np.asarray(res["flagged_bh"], dtype=bool),
         "effect_size": np.asarray(res["effect_size"], dtype=np.float64),
     }
+
+
+def _benjamini_hochberg(p_values: np.ndarray, fdr_q: float) -> np.ndarray:
+    """Benjamini-Hochberg over the CONVERGED items only.
+
+    A non-converged augmented fit has a ``NaN`` p-value. Including it would
+    inflate the number of tests and weaken the threshold for every other item,
+    so it is excluded from the correction and left unflagged -- the same
+    treatment :func:`dif_polytomous` gives it, stated here because excluding a
+    test from a multiplicity correction changes what the correction means.
+    """
+    from . import fitstats
+
+    p = np.asarray(p_values, dtype=np.float64)
+    decisions = np.zeros(p.size, dtype=bool)
+    finite = np.isfinite(p)
+    if finite.any():
+        decisions[finite] = fitstats.benjamini_hochberg(p[finite], fdr_q)
+    return decisions
+
+
+def dif_polytomous_purified(
+    responses: np.ndarray,
+    group_id: np.ndarray,
+    n_cat: int,
+    model: str = "gpcm",
+    q_theta: int = 21,
+    max_iter: int = 200,
+    tol: float = 1e-5,
+    fdr_q: float = 0.05,
+    max_rounds: int = 3,
+    min_anchor_items: int = 4,
+) -> dict[str, np.ndarray]:
+    """Iteratively purified :func:`dif_polytomous`, and the anchor-eligible set.
+
+    :func:`dif_polytomous` tests every studied item against **all** other items
+    as the anchor, once. Items with DIF are therefore part of the anchor that
+    every other item is judged against. Purification rebuilds the anchor from
+    the currently unflagged items -- each item is tested against
+    ``anchor UNION {itself}``, the same rule the dichotomous purified functions
+    use -- and repeats until the flagged set stabilizes, the anchor would fall
+    below ``min_anchor_items``, or ``max_rounds`` is reached.
+
+    Returns everything :func:`dif_polytomous` returns, plus ``anchor`` (bool per
+    item), ``n_anchor``, ``rounds`` (purification rounds after the initial
+    full-test sweep; ``0`` means none were applied), ``purify_converged``, and
+    ``purify_termination_reason`` (``"stable_flag_set"``,
+    ``"max_rounds_reached"``, or ``"insufficient_anchor_items"``).
+
+    **Check the reason before using the anchor.** On
+    ``"insufficient_anchor_items"`` the returned ``anchor`` is the screened set
+    that fell below ``min_anchor_items`` -- it is reported rather than replaced
+    by the previous, larger one, because returning the larger set would present
+    a failed purification as a clean bank. So ``n_anchor`` can be smaller than
+    ``min_anchor_items``, and that combination means the bank could not support
+    the loop, not that few items are invariant. The reported per-item statistics
+    are from the last completed sweep (against the previous anchor); the
+    sub-floor candidate is not re-swept because the floor guards a
+    too-short criterion.
+
+    **The removal criterion differs from the dichotomous functions, and the
+    difference is forced.** Those drop an item from the anchor on PRACTICAL
+    significance -- ETS class B or C -- because the Mantel-Haenszel chi-square
+    is over-powered at large N. No comparable calibrated class exists for this
+    sweep: the Jodoin-Gierl bands are stated on a one-degree-of-freedom uniform
+    pseudo-R-squared increment computed as a Zumbo-Thomas weighted-least-squares
+    partition, on dichotomous three-parameter items in 40-item tests, none of
+    which describes a polytomous likelihood-ratio statistic. Removal here is
+    therefore on ``flagged_bh`` alone, which makes this loop MORE aggressive at
+    large N than its dichotomous counterpart, not less. ``effect_size`` is
+    returned unchanged and uninterpreted; it carries no class.
+
+    **The returned p-values are conditional on a data-dependent selection.**
+    The anchor is chosen from the same data then tested against it, so they are
+    not guaranteed super-uniform under the null and Benjamini-Hochberg does not
+    control the FDR at ``fdr_q`` for a purified sweep. Treat ``flagged_bh`` as a
+    screening device. Purification reduces rather than removes criterion
+    contamination and can fail outright when DIF is unbalanced in direction.
+
+    References (APA 7th ed.):
+        Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking
+            metrics and assessing item bias in item response theory. *Applied
+            Psychological Measurement, 12*(3), 253-260.
+            https://doi.org/10.1177/014662168801200304
+        Thissen, D., Steinberg, L., & Wainer, H. (1993). Detection of
+            differential item functioning using the parameters of item response
+            models. In P. W. Holland & H. Wainer (Eds.), *Differential item
+            functioning* (pp. 67-113). Lawrence Erlbaum.
+    """
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_items = int(y.shape[1])
+    rounds_cap = _bounded_integer(max_rounds, "max_rounds", 0, 50)
+    floor = _bounded_integer(min_anchor_items, "min_anchor_items", 1, max(n_items, 1))
+
+    def sweep(anchor: np.ndarray) -> dict[str, np.ndarray]:
+        """One full sweep, each item tested against ``anchor UNION {itself}``."""
+        result = {
+            "item": np.arange(n_items, dtype=np.int64),
+            "lr": np.full(n_items, np.nan),
+            "df": np.zeros(n_items, dtype=np.int64),
+            "p_value": np.full(n_items, np.nan),
+            "flagged_bh": np.zeros(n_items, dtype=bool),
+            "effect_size": np.full(n_items, np.nan),
+        }
+        for item in range(n_items):
+            columns = np.flatnonzero(anchor | (np.arange(n_items) == item))
+            local = int(np.flatnonzero(columns == item)[0])
+            one = dif_polytomous(
+                y[:, columns],
+                group_id,
+                n_cat,
+                model=model,
+                studied_items=np.array([local], dtype=np.int64),
+                q_theta=q_theta,
+                max_iter=max_iter,
+                tol=tol,
+                fdr_q=fdr_q,
+            )
+            for key in ("lr", "df", "p_value", "effect_size"):
+                result[key][item] = one[key][0]
+        # Multiplicity is controlled ACROSS items, so Benjamini-Hochberg is
+        # applied to the assembled sweep rather than to each one-item call,
+        # where it would be a no-op.
+        result["flagged_bh"] = _benjamini_hochberg(result["p_value"], fdr_q)
+        return result
+
+    anchor = np.ones(n_items, dtype=bool)
+    report = sweep(anchor)
+    flagged = report["flagged_bh"].copy()
+    rounds = 0
+    reason = "stable_flag_set"
+
+    while rounds < rounds_cap:
+        candidate = ~flagged
+        if int(candidate.sum()) < floor:
+            # Report the screened set even though it is below the floor. The
+            # floor means "too few items remain to run another sweep against",
+            # not "the flags were wrong", and returning the previous, larger
+            # anchor would present a failed purification as a clean bank --
+            # the most permissive possible answer, delivered silently.
+            anchor = candidate
+            reason = "insufficient_anchor_items"
+            break
+        if np.array_equal(candidate, anchor):
+            reason = "stable_flag_set"
+            break
+        anchor = candidate
+        report = sweep(anchor)
+        rounds += 1
+        if np.array_equal(report["flagged_bh"], flagged):
+            reason = "stable_flag_set"
+            break
+        flagged = report["flagged_bh"].copy()
+    else:
+        if rounds_cap > 0 and not np.array_equal(~flagged, anchor):
+            reason = "max_rounds_reached"
+
+    report["anchor"] = anchor
+    report["n_anchor"] = int(anchor.sum())
+    report["rounds"] = rounds
+    report["purify_converged"] = reason == "stable_flag_set"
+    report["purify_termination_reason"] = reason
+    return report
 
 
 def u3_person_fit_polytomous(
