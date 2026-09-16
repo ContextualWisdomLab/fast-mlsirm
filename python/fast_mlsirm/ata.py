@@ -444,7 +444,8 @@ def _content_feasible(
         needed = max(0, minimum - counts.get(lbl, 0))
         if needed == 0:
             continue
-        available = int(np.sum(labels[eligible_now] == lbl))
+        # Optimized: replace np.sum with np.count_nonzero to avoid boolean-to-integer array casting overhead
+        available = int(np.count_nonzero(labels[eligible_now] == lbl))
         if available < needed:
             return False
     return True
