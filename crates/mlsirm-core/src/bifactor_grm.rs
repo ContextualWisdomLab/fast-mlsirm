@@ -159,20 +159,9 @@ pub struct BifactorGrmConfig {
     pub ridge: f64,
 }
 
-impl Default for BifactorGrmConfig {
-    fn default() -> Self {
-        Self {
-            q_general: 21,
-            q_specific: 11,
-            max_iter: 500,
-            tol: 1e-6,
-            n_starts: 1,
-            seed: 0x9E37_79B9_7F4A_7C15,
-            newton_iter: 10,
-            ridge: 1e-8,
-        }
-    }
-}
+// No `Default` impl: `q_general`/`q_specific` are quadrature node counts
+// with no sourced accuracy target for any particular value (Project rule,
+// issue #1929), so every field is a caller-owned, explicit choice.
 
 /// Result of [`fit_bifactor_grm`].
 #[derive(Clone, Debug)]
@@ -1079,10 +1068,18 @@ pub fn bifactor_grm_marginal_loglik(
     q_general: usize,
     q_specific: usize,
 ) -> Result<f64, String> {
+    // max_iter/tol/n_starts/seed/newton_iter/ridge are irrelevant here: this
+    // helper only evaluates loglik at given parameters, it does not fit, so
+    // `validate` sees them only for its own field-level bounds checks.
     let cfg = BifactorGrmConfig {
         q_general,
         q_specific,
-        ..BifactorGrmConfig::default()
+        max_iter: 1,
+        tol: 1.0,
+        n_starts: 1,
+        seed: 0,
+        newton_iter: 1,
+        ridge: 1.0,
     };
     let v = validate(
         y,
@@ -1134,10 +1131,18 @@ pub fn bifactor_grm_marginal_loglik_brute(
     q_general: usize,
     q_specific: usize,
 ) -> Result<f64, String> {
+    // max_iter/tol/n_starts/seed/newton_iter/ridge are irrelevant here: this
+    // helper only evaluates loglik at given parameters, it does not fit, so
+    // `validate` sees them only for its own field-level bounds checks.
     let cfg = BifactorGrmConfig {
         q_general,
         q_specific,
-        ..BifactorGrmConfig::default()
+        max_iter: 1,
+        tol: 1.0,
+        n_starts: 1,
+        seed: 0,
+        newton_iter: 1,
+        ridge: 1.0,
     };
     let v = validate(
         y,

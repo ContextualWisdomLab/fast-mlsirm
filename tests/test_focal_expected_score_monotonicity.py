@@ -60,7 +60,7 @@ def test_the_nuisance_collapse_matches_direct_integration() -> None:
     )
     grid = np.linspace(-3.0, 3.0, 13)
 
-    report = focal_expected_total_score_monotonicity(_Fit(slope), 0, grid)
+    report = focal_expected_total_score_monotonicity(_Fit(slope), 0, grid, q_nuisance=41)
     reference = _monte_carlo_curve(slope, 0, grid, draws=200_000)
 
     # 200k draws over three dimensions; the residual is sampling noise, and the
@@ -73,7 +73,7 @@ def test_a_negative_focal_slope_is_what_makes_the_curve_decrease() -> None:
     slope = np.array([[0.30, -1.80], [0.25, 1.60], [0.20, -1.40], [-2.40, 0.90]])
     grid = np.linspace(-4.0, 4.0, 401)
 
-    focal_zero = focal_expected_total_score_monotonicity(_Fit(slope), 0, grid)
+    focal_zero = focal_expected_total_score_monotonicity(_Fit(slope), 0, grid, q_nuisance=41)
     assert not focal_zero.monotone
     assert focal_zero.total_decrease > 0.0
 
@@ -83,7 +83,7 @@ def test_large_negative_nuisance_loadings_do_not_make_the_focal_curve_decrease()
     slope = np.array([[1.30, -1.90], [1.10, -1.70], [0.95, -2.10], [1.25, -1.50]])
     grid = np.linspace(-4.0, 4.0, 401)
 
-    report = focal_expected_total_score_monotonicity(_Fit(slope), 0, grid)
+    report = focal_expected_total_score_monotonicity(_Fit(slope), 0, grid, q_nuisance=41)
 
     assert report.monotone
     assert report.total_decrease == 0.0
@@ -107,7 +107,7 @@ def test_the_focal_dimension_must_exist(dimension: int) -> None:
     slope = np.array([[1.0, 0.5, 0.2]])
     with pytest.raises(ValueError, match="dimension"):
         focal_expected_total_score_monotonicity(
-            _Fit(slope), dimension, np.linspace(-2.0, 2.0, 9)
+            _Fit(slope), dimension, np.linspace(-2.0, 2.0, 9), q_nuisance=41
         )
 
 
@@ -142,19 +142,27 @@ def test_a_single_node_places_all_nuisance_mass_at_the_mean() -> None:
 def test_malformed_fits_fail_closed() -> None:
     grid = np.linspace(-2.0, 2.0, 9)
     with pytest.raises(TypeError):
-        focal_expected_total_score_monotonicity(object(), 0, grid)
+        focal_expected_total_score_monotonicity(object(), 0, grid, q_nuisance=41)
     bad_slope = _Fit(np.array([[1.0, 0.5]]))
     bad_slope.slope = np.array([1.0, 0.5])
     with pytest.raises(ValueError, match="n_items x n_dims"):
-        focal_expected_total_score_monotonicity(bad_slope, 0, grid)
+        focal_expected_total_score_monotonicity(bad_slope, 0, grid, q_nuisance=41)
     bad_threshold = _Fit(np.array([[1.0, 0.5]]))
     bad_threshold.threshold = np.array([1.2, 0.0, -1.2])
     with pytest.raises(ValueError, match="n_cat - 1"):
-        focal_expected_total_score_monotonicity(bad_threshold, 0, grid)
+        focal_expected_total_score_monotonicity(bad_threshold, 0, grid, q_nuisance=41)
     nonfinite = _Fit(np.array([[1.0, np.inf]]))
     with pytest.raises(ValueError, match="finite"):
-        focal_expected_total_score_monotonicity(nonfinite, 0, grid)
+        focal_expected_total_score_monotonicity(nonfinite, 0, grid, q_nuisance=41)
     with pytest.raises(ValueError, match="finite"):
         focal_expected_total_score_monotonicity(
-            _Fit(np.array([[1.0, 0.5]])), 0, np.array([0.0, np.nan, 1.0])
+            _Fit(np.array([[1.0, 0.5]])), 0, np.array([0.0, np.nan, 1.0]), q_nuisance=41
         )
+
+
+def test_q_nuisance_is_required() -> None:
+    """RED test for #1929: no unsourced default exists for q_nuisance."""
+    slope = np.array([[1.0, 0.5]])
+    grid = np.linspace(-2.0, 2.0, 9)
+    with pytest.raises(TypeError):
+        focal_expected_total_score_monotonicity(_Fit(slope), 0, grid)

@@ -375,14 +375,16 @@ def focal_expected_total_score_monotonicity(
     fit,
     dimension: int,
     theta: np.ndarray,
-    q_nuisance: int = 41,
+    q_nuisance: int,
 ) -> ExpectedScoreMonotonicity:
     """Monotonicity of the expected total score along one dimension of a
     multidimensional graded fit, with the other dimensions integrated out.
 
     ``fit`` is a :class:`~fast_mlsirm.grm.GrmFit`; ``dimension`` selects the
-    focal trait; ``theta`` is the caller's grid on it. ``q_nuisance`` is the
-    caller-chosen Gauss-Hermite node count in ``1..=4096``: the lower bound
+    focal trait; ``theta`` is the caller's grid on it. ``q_nuisance`` is a
+    required, caller-chosen Gauss-Hermite node count in ``1..=4096`` — no
+    default is offered, because no accuracy target is on file to source one
+    against (Project rule, issue #1929). The lower bound
     is exact (an ``n``-node Gauss rule exists for every ``n >= 1``;
     Golub & Welsch, 1969) and the upper bound reuses this package's
     quadrature-point budget (``MAX_POLY_QUADRATURE_POINTS``), not a new
@@ -488,7 +490,7 @@ def focal_expected_total_score_monotonicity(
 def bifactor_expected_total_score_monotonicity(
     fit,
     theta: np.ndarray,
-    q_specific: int = 41,
+    q_specific: int,
 ) -> ExpectedScoreMonotonicity:
     """Monotonicity of the expected total score along the general factor of
     a fitted bifactor GRM, with each item's specific factor integrated out.
@@ -497,8 +499,10 @@ def bifactor_expected_total_score_monotonicity(
     object exposing the same ``a_general``, ``a_specific``, and ``threshold``
     fields); the general factor is always the focal dimension, matching the
     bifactor model's role for it (Gibbons et al., 2007). ``theta`` is the
-    caller's grid on the general factor. ``q_specific`` is the caller-chosen
-    Gauss-Hermite node count in ``1..=4096``: the lower bound is exact (an
+    caller's grid on the general factor. ``q_specific`` is a required,
+    caller-chosen Gauss-Hermite node count in ``1..=4096`` — no default is
+    offered, because no accuracy target is on file to source one against
+    (Project rule, issue #1929). The lower bound is exact (an
     ``n``-node Gauss rule exists for every ``n >= 1``; Golub & Welsch, 1969)
     and the upper bound reuses this package's quadrature-point budget
     (``MAX_POLY_QUADRATURE_POINTS``), not a new constant. Returns the same
