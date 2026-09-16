@@ -410,6 +410,8 @@ fn gpcm_optimizer_and_em_diagnostics_cover_defensive_paths() {
         .contains("decreased"));
 }
 
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn design_d2(n_cat: usize) -> (Vec<u8>, usize, Vec<f64>, Vec<f64>) {
     let n_dims = 2usize;
     let m1 = n_cat - 1;
@@ -436,6 +438,8 @@ fn design_d2(n_cat: usize) -> (Vec<u8>, usize, Vec<f64>, Vec<f64>) {
 /// anchored). Asserts slope recovery, STEP recovery (numeric — GPCM steps are unordered, no
 /// ordering canary), per-dim EAP, finite steps, EM monotone.
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn gpcm_recovers_d2_with_negative_cross_loader() {
     let (n_dims, n_cat) = (2usize, 3usize);
     let (pattern, n_items, slope, step) = design_d2(n_cat);
@@ -503,6 +507,8 @@ fn gpcm_recovers_d2_with_negative_cross_loader() {
 /// invariant under the joint (slope, theta) flip (GPCM steps are unordered — no ordering canary —
 /// so a reflection bug that also negated the steps could only be caught by this value check).
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn gpcm_reflection_fires_on_negative_anchor() {
     let (n_dims, n_cat) = (2usize, 3usize);
     let m1 = n_cat - 1;
