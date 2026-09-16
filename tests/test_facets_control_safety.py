@@ -281,7 +281,8 @@ def test_fit_facets_rejects_protocol_and_boolean_controls_before_core(
     ("field", "bad_value", "message"),
     [
         ("n_cat", 1, "n_cat must be an integer in"),
-        ("q_theta", 9, "q_theta must be one of"),
+        # #1929: no node-count cap; q_theta=9 is now accepted, only < 1 is not.
+        ("q_theta", 0, "q_theta must be >= 1"),
         ("max_iter", 0, "max_iter must be an integer in"),
         ("tol", 0.0, "tol must be finite and > 0"),
         ("tol", float("nan"), "tol must be finite and > 0"),

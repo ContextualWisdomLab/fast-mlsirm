@@ -445,21 +445,52 @@ pub(crate) const GH_WEIGHTS_81: [f64; 81] = [
 ];
 
 
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
-// The dense rule is intentionally separate: multidimensional tensor grids keep
-// the legacy supported set so q in {61, 81} cannot create an accidental dense tensor grid.
+// Small fixed tables (7..81) stay hard-coded for parity/perf; everything else
+// is generated on demand at whatever node count the caller asks for. Per
+// #1929, node count controls the precision of the marginal-likelihood
+// integral and this crate must not silently cap it.
 //
-// Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature rules.
-// Mathematics of Computation, 23(106), 221–230.
-// https://doi.org/10.1090/S0025-5718-69-99647-1. Their n-node Gaussian rule is
-// exact for weighted polynomials through degree 2n-1. Bock, R. D., & Aitkin,
-// M. (1981). Marginal maximum likelihood estimation of item parameters:
-// Application of an EM algorithm. Psychometrika, 46(4), 443–459.
-// https://doi.org/10.1007/BF02293801. Together these sources support q in
-// {61, 81} as denser fixed approximations to the existing unidimensional
-// standard-normal expectations used by calibration and diagnostics, not as
-// adaptive error guarantees or multidimensional tensor-grid rules.
+// Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature
+// rules. Mathematics of Computation, 23(106), 221-230.
+// https://doi.org/10.1090/S0025-5718-69-99647-1. Full text read via the
+// open copy at https://csclub.uwaterloo.ca/~pbarfuss/GolubWelsch.pdf.
+//
+// Golub & Welsch (1969, eq. 2.1-2.2, p. 222-223) show that any orthogonal
+// polynomial family with monic three-term recurrence
+// p_j(x) = (x - alpha_j) p_{j-1}(x) - beta_j p_{j-2}(x) has its Gauss
+// quadrature nodes equal to the eigenvalues of the symmetric tridiagonal
+// Jacobi matrix J with diagonal alpha_j and off-diagonal sqrt(beta_j), and
+// (1969, eq. 2.6, p. 223) each node's weight equal to mu_0 times the squared
+// first component of J's corresponding normalized eigenvector, where mu_0 is
+// the total mass of the weight function. Section 3 (pp. 223-226) further
+// shows that only the first component of each eigenvector is needed, so the
+// full eigenvector matrix never has to be formed or stored (1969, p. 225,
+// "it is not necessary to compute the entire matrix of eigenvectors") —
+// `tql2_first_row` below applies that same reduction to a standard implicit
+// symmetric-tridiagonal QL sweep (the QL/QR family Golub & Welsch, 1969,
+// Section 3, p. 223 identify as "one of the most effective methods"),
+// tracking a single row instead of an N x N accumulator.
+//
+// For the probabilists' Hermite weight e^{-x^2/2} used throughout this
+// crate, the monic recurrence He_{k+1}(x) = x He_k(x) - k He_{k-1}(x) (the
+// standard three-term recurrence for He_n, e.g. Abramowitz, M., & Stegun,
+// I. A. (Eds.). (1972). Handbook of Mathematical Functions (10th printing,
+// Table 22.7, row 22.7.14, p. 782). U.S. Government Printing Office;
+// https://personal.math.ubc.ca/~cbm/aands/page_782.htm, read directly) gives
+// alpha_k = 0, beta_k = k for k = 1, ..., n-1. Weights are renormalized to
+// sum to 1 (this crate's convention, matching the embedded tables above)
+// rather than left at the raw mu_0 = sqrt(2*pi) scale, which is equivalent
+// since both differ only by the constant factor mu_0 in eq. 2.6.
+//
+// Correctness is checked in `tests/unit/quadrature_tests.rs`: bit-for-bit
+// agreement with the embedded tables for n in {7, 11, 15, 21, 31, 41},
+// weights summing to 1, node/weight symmetry, and exact integration of
+// standard-normal moments through degree 2n-1 for n in {7, 41, 121, 241,
+// 481} (Golub & Welsch, 1969, Theorem, p. 222: an N-point Gauss rule is
+// exact for polynomials of degree <= 2N - 1).
 
 static GH_61: OnceLock<(Vec<f64>, Vec<f64>)> = OnceLock::new();
 
@@ -558,48 +589,184 @@ fn gh_rule_61() -> (&'static [f64], &'static [f64]) {
     (nodes, weights)
 }
 
-pub(crate) fn gh_rule(q: usize) -> Option<(&'static [f64], &'static [f64])> {
-    match q {
-        7 => Some((&GH_NODES_7, &GH_WEIGHTS_7)),
-        11 => Some((&GH_NODES_11, &GH_WEIGHTS_11)),
-        15 => Some((&GH_NODES_15, &GH_WEIGHTS_15)),
-        21 => Some((&GH_NODES_21, &GH_WEIGHTS_21)),
-        31 => Some((&GH_NODES_31, &GH_WEIGHTS_31)),
-        41 => Some((&GH_NODES_41, &GH_WEIGHTS_41)),
-        _ => None,
+/// Symmetric tridiagonal QL eigenreduction (implicit shifts), tracking only
+/// the first component of each eigenvector instead of accumulating the full
+/// eigenvector matrix (Golub & Welsch, 1969, Section 3, p. 225: "it is not
+/// necessary to compute the entire matrix of eigenvectors"). `d` holds the
+/// diagonal (overwritten with eigenvalues on return, unsorted), `e[1..]`
+/// holds the off-diagonal (`e[0]` is unused/scratch), and `z1` holds the
+/// first row of the identity on entry and the first eigenvector component
+/// per eigenvalue on return.
+fn tql2_first_row(d: &mut [f64], e: &mut [f64], z1: &mut [f64]) -> Result<(), String> {
+    let n = d.len();
+    if n <= 1 {
+        return Ok(());
     }
+    for i in 1..n {
+        e[i - 1] = e[i];
+    }
+    e[n - 1] = 0.0;
+    for l in 0..n {
+        let mut iter = 0;
+        loop {
+            let mut m = l;
+            while m + 1 < n {
+                let dd = d[m].abs() + d[m + 1].abs();
+                if e[m].abs() <= f64::EPSILON * dd {
+                    break;
+                }
+                m += 1;
+            }
+            if m == l {
+                break;
+            }
+            iter += 1;
+            if iter > 100 {
+                return Err(format!(
+                    "Gauss-Hermite eigenvalue solve failed to converge for n={n}"
+                ));
+            }
+            let mut g = (d[l + 1] - d[l]) / (2.0 * e[l]);
+            let mut r = g.hypot(1.0);
+            g = d[m] - d[l] + e[l] / (g + if g >= 0.0 { r.abs() } else { -r.abs() });
+            let mut s = 1.0_f64;
+            let mut c = 1.0_f64;
+            let mut p = 0.0_f64;
+            for i in (l..m).rev() {
+                let mut f = s * e[i];
+                let b = c * e[i];
+                r = f.hypot(g);
+                e[i + 1] = r;
+                if r == 0.0 {
+                    d[i + 1] -= p;
+                    e[m] = 0.0;
+                    break;
+                }
+                s = f / r;
+                c = g / r;
+                g = d[i + 1] - p;
+                r = (d[i] - g) * s + 2.0 * c * b;
+                p = s * r;
+                d[i + 1] = g + p;
+                g = c * r - b;
+                f = z1[i + 1];
+                z1[i + 1] = s * z1[i] + c * f;
+                z1[i] = c * z1[i] - s * f;
+            }
+            d[l] -= p;
+            e[l] = g;
+            e[m] = 0.0;
+        }
+    }
+    Ok(())
+}
+
+/// Generate the `n`-node probabilists' Gauss-Hermite rule for arbitrary `n`
+/// via Golub & Welsch (1969): nodes are the eigenvalues of the tridiagonal
+/// Jacobi matrix for He_n's recurrence (alpha_k = 0, beta_k = k), weights are
+/// the squared first eigenvector components renormalized to sum to 1. See
+/// the module-level comment above for full citations and locators.
+fn gauss_hermite_probabilists(n: usize) -> Result<(Vec<f64>, Vec<f64>), String> {
+    if n == 0 {
+        return Err("quadrature node count must be >= 1".to_string());
+    }
+    if n == 1 {
+        return Ok((vec![0.0], vec![1.0]));
+    }
+    let mut d = vec![0.0_f64; n];
+    let mut e = vec![0.0_f64; n];
+    for (i, e_i) in e.iter_mut().enumerate().skip(1) {
+        *e_i = (i as f64).sqrt();
+    }
+    let mut z1 = vec![0.0_f64; n];
+    z1[0] = 1.0;
+    tql2_first_row(&mut d, &mut e, &mut z1)?;
+
+    let mut pairs: Vec<(f64, f64)> = d.iter().zip(z1.iter()).map(|(&x, &z)| (x, z * z)).collect();
+    pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).expect("eigenvalues are finite"));
+
+    let weight_sum: f64 = pairs.iter().map(|p| p.1).sum();
+    let mut nodes: Vec<f64> = pairs.iter().map(|p| p.0).collect();
+    let mut weights: Vec<f64> = pairs.iter().map(|p| p.1 / weight_sum).collect();
+
+    // The weight function e^{-x^2/2} is symmetric about 0, so the exact rule
+    // is symmetric; average mirrored pairs to cancel roundoff asymmetry from
+    // the iterative eigensolve (checked directly in the symmetry test).
+    for i in 0..n / 2 {
+        let j = n - 1 - i;
+        let m = (nodes[j] - nodes[i]) / 2.0;
+        nodes[i] = -m;
+        nodes[j] = m;
+        let w = (weights[i] + weights[j]) / 2.0;
+        weights[i] = w;
+        weights[j] = w;
+    }
+    if n % 2 == 1 {
+        nodes[n / 2] = 0.0;
+    }
+    Ok((nodes, weights))
+}
+
+static GH_CACHE: OnceLock<Mutex<HashMap<usize, &'static (Vec<f64>, Vec<f64>)>>> = OnceLock::new();
+
+/// Compute (and cache) an arbitrary-`n` rule not in the embedded tables.
+/// `checked_mul` guards the O(n^2) eigensolve cost/allocation instead of a
+/// node-count cap (#1929): huge `n` fails loudly rather than hanging.
+fn gh_rule_computed(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
+    q.checked_mul(q).ok_or_else(|| {
+        format!("quadrature node count {q} is too large: q * q overflows usize")
+    })?;
+    let cache = GH_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = cache.lock().expect("gauss-hermite cache poisoned");
+    if let Some(&entry) = guard.get(&q) {
+        return Ok((entry.0.as_slice(), entry.1.as_slice()));
+    }
+    let rule = gauss_hermite_probabilists(q)?;
+    let leaked: &'static (Vec<f64>, Vec<f64>) = Box::leak(Box::new(rule));
+    guard.insert(q, leaked);
+    Ok((leaked.0.as_slice(), leaked.1.as_slice()))
+}
+
+fn resolve_gh_rule(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
+    match q {
+        0 => Err("quadrature node count must be >= 1".to_string()),
+        7 => Ok((&GH_NODES_7, &GH_WEIGHTS_7)),
+        11 => Ok((&GH_NODES_11, &GH_WEIGHTS_11)),
+        15 => Ok((&GH_NODES_15, &GH_WEIGHTS_15)),
+        21 => Ok((&GH_NODES_21, &GH_WEIGHTS_21)),
+        31 => Ok((&GH_NODES_31, &GH_WEIGHTS_31)),
+        41 => Ok((&GH_NODES_41, &GH_WEIGHTS_41)),
+        61 => Ok(gh_rule_61()),
+        81 => Ok(gh_rule_81()),
+        _ => gh_rule_computed(q),
+    }
+}
+
+/// Any node count `q >= 1` is supported (#1929: no table, no cap); `None`
+/// only for `q == 0` or an allocation-overflow guard tripping.
+pub(crate) fn gh_rule(q: usize) -> Option<(&'static [f64], &'static [f64])> {
+    resolve_gh_rule(q).ok()
 }
 
 pub(crate) fn gh_rule_unidim(q: usize) -> Option<(&'static [f64], &'static [f64])> {
-    match q {
-        61 => Some(gh_rule_61()),
-        81 => Some(gh_rule_81()),
-        _ => gh_rule(q),
-    }
+    gh_rule(q)
 }
 
-/// Resolve an embedded rule with a consistent public-validation error.
+/// Resolve a rule with a consistent public-validation error (n >= 1 and
+/// allocation-overflow both surface here, per #1929 requirement 3).
 pub(crate) fn require_gh_rule(
     q: usize,
     name: &str,
 ) -> Result<(&'static [f64], &'static [f64]), String> {
-    match gh_rule(q) {
-        Some(rule) => Ok(rule),
-        None => Err(format!("unsupported {name} {q}")),
-    }
+    resolve_gh_rule(q).map_err(|e| format!("{name} {q}: {e}"))
 }
 
 pub(crate) fn require_gh_rule_unidim(
     q: usize,
     name: &str,
 ) -> Result<(&'static [f64], &'static [f64]), String> {
-    match gh_rule_unidim(q) {
-        Some(rule) => Ok(rule),
-        None => Err(format!("unsupported {name} {q}")),
-    }
+    require_gh_rule(q, name)
 }
-
-pub(crate) const SUPPORTED_Q: [usize; 6] = [7, 11, 15, 21, 31, 41];
 
 #[cfg(test)]
 #[path = "../../../tests/unit/quadrature_tests.rs"]

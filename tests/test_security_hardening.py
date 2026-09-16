@@ -870,7 +870,8 @@ def test_fit_testlet_rejects_empty_bank_before_native(monkeypatch):
         ({"tol": -1.0}, "tol"),
         ({"q_gamma": True}, "q_gamma"),
         ({"q_gamma": 7.5}, "q_gamma"),
-        ({"q_gamma": 8}, "q_gamma"),
+        # #1929: no node-count cap; q_gamma=8 is now accepted, only < 1 is not.
+        ({"q_gamma": 0}, "q_gamma"),
         ({"init_sigma2": np.inf}, "init_sigma2"),
         ({"init_sigma2": -1.0}, "init_sigma2"),
     ],
@@ -908,13 +909,21 @@ def test_fit_testlet_rejects_oversized_response_matrix_before_native(monkeypatch
         testlet.fit_testlet(np.zeros((2, 2)), np.array([0, 0]))
 
 
-@pytest.mark.parametrize("q", [0, 8, 1_000_000_000])
-def test_2pl_rejects_unsupported_quadrature_before_native(monkeypatch, q):
+@pytest.mark.parametrize(
+    ("q", "match"),
+    [
+        (0, "q must be >= 1"),
+        # #1929: no node-count cap on q itself; the resulting q**n_dims grid
+        # is still bounded fail-closed before native (_MAX_MIRT_GH_NODES).
+        (1_000_000_000, "node cap"),
+    ],
+)
+def test_2pl_rejects_unsupported_quadrature_before_native(monkeypatch, q, match):
     from fast_mlsirm import models
     from fast_mlsirm.twopl import fit_2pl
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
-    with pytest.raises(ValueError, match="q must be one of"):
+    with pytest.raises(ValueError, match=match):
         fit_2pl(
             np.array([[1.0, 0.0]]), model=models.confirmatory(np.eye(2, dtype=np.int64)), q=q
         )
@@ -1028,7 +1037,8 @@ def test_polytomous_dif_rejects_unsafe_studied_items_before_native(
     [
         ({"n_cat": 2.5}, "n_cat"),
         ({"model": "bad"}, "model"),
-        ({"q_theta": 8}, "q_theta"),
+        # #1929: no node-count cap; q_theta=8 is now accepted, only out-of-range is not.
+        ({"q_theta": 0}, "q_theta"),
         ({"max_iter": 1.5}, "max_iter"),
         ({"tol": np.nan}, "tol"),
         ({"fdr_q": 1.5}, "fdr_q"),

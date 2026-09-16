@@ -364,8 +364,8 @@ fn testlet_validate_rejects_malformed() {
         n,
         j,
         d_n,
-        &TestletConfig { q_gamma: 8, ..d }
-    )); // not in SUPPORTED_Q
+        &TestletConfig { q_gamma: 0, ..d }
+    )); // #1929: q_gamma must be >= 1 (no fixed-table cap; 8 is now accepted)
     assert!(bad(
         &y,
         &obs,

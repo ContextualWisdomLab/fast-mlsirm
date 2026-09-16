@@ -639,7 +639,8 @@ fn nominal_validation_sampling_rules_and_missing_paths() {
         2,
         1,
         2,
-        &NominalConfig { q: 3, ..base }
+        // #1929: no node-count cap; q=3 is now accepted, only q=0 is rejected.
+        &NominalConfig { q: 0, ..base }
     )
     .is_err());
     let halton = NominalConfig {

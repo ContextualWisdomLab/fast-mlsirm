@@ -297,9 +297,11 @@ def fit_mixed_items(
     categories = _categories(y, observed, n_categories)
     if not isinstance(latent_dim, int) or not 1 <= latent_dim <= 3:
         raise ValueError("latent_dim must be an integer in 1..=3")
-    allowed_q = {7, 11, 15, 21, 31, 41}
-    if q_theta not in allowed_q or q_xi not in allowed_q:
-        raise ValueError("q_theta and q_xi must be one of 7, 11, 15, 21, 31, 41")
+    # #1929: no node-count cap; the Rust core generates any n >= 1 rule on
+    # demand (Golub & Welsch, 1969) and guards allocation overflow
+    # (q_xi ** latent_dim via checked_pow in nodes::build_xi_nodes).
+    if q_theta < 1 or q_xi < 1:
+        raise ValueError("q_theta and q_xi must be >= 1")
     if not isinstance(max_iter, int) or max_iter <= 0:
         raise ValueError("max_iter must be a positive integer")
     if not np.isfinite(tol) or tol <= 0.0:

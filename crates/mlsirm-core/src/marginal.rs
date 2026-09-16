@@ -2018,17 +2018,14 @@ fn validate(
     if !config.eps_distance.is_finite() || config.eps_distance <= 0.0 {
         return Err("eps_distance must be positive and finite".into());
     }
-    let mut required_q = vec![mcfg.q_theta, mcfg.q_u];
+    // #1929: no node-count cap; require_gh_rule surfaces both the n >= 1
+    // bound and the checked-mul overflow guard on huge q.
+    let mut required_q = vec![("q_theta", mcfg.q_theta), ("q_u", mcfg.q_u)];
     if matches!(mcfg.xi_rule, XiRuleKind::GaussHermite) {
-        required_q.push(mcfg.q_xi);
+        required_q.push(("q_xi", mcfg.q_xi));
     }
-    for q in required_q {
-        if gh_rule(q).is_none() {
-            return Err(format!(
-                "unsupported quadrature size {q}; supported: {:?}",
-                crate::quadrature::SUPPORTED_Q
-            ));
-        }
+    for (name, q) in required_q {
+        crate::quadrature::require_gh_rule(q, name)?;
     }
     if matches!(mcfg.xi_rule, XiRuleKind::Halton | XiRuleKind::MonteCarlo) && mcfg.xi_points == 0 {
         return Err("xi_points must be >= 1 for the Halton/MonteCarlo rules".into());
