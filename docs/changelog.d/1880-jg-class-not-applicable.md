@@ -25,48 +25,40 @@
   criterion, or use `mantel_haenszel_dif_purified` (unaffected; it purifies
   on its own ETS `ets_class`, not `jg_class`).
 
-## Why
-
-Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I error and power rates
-using an effect size measure with the logistic regression procedure for DIF
-detection. *Applied Measurement in Education, 14*(4), 329-349, calibrates its
-`.035`/`.070` bands (p. 335) on a Zumbo-Thomas weighted-least-squares
-(Pratt-Pregibon) partition (p. 333) — not the Nagelkerke pseudo-R² this
-package computes — and states them on the ONE-degree-of-freedom UNIFORM
-increment, not the 2-df omnibus this package previously lettered (`delta_r2`).
-Both mismatches were confirmed against the primary source (read in full via
-institutional access) and would need correcting together, but the
-replacement statistic is itself underdetermined by that source: eq. 4 (p.
-333) does not say whether its correlation is taken against the observed
-response or the working response of the IRLS linearization, nor on which
-scale the standardized coefficient is computed, and both choices change the
-number. A package cannot letter a quantity it cannot compute, so the honest
-fix is "not applicable," not a guessed replacement.
-
-The bands are additionally scoped to the paper's own simulation — dichotomous
-responses generated from a 3PL model (pp. 337, 339) on 40-item tests (pp.
-336-337) — so they were never licensed for the polytomous logistic-regression
-sweep either (see PR #1890's independent finding on this point).
-
-## Migration
-
-- Any stored or logged `jg_class` values from before this change reflected
-  bands applied to the wrong quantity (2-df omnibus instead of 1-df uniform)
-  computed from the wrong statistic (Nagelkerke instead of the Zumbo-Thomas
-  WLS partition); they should not be treated as ground truth and do not need
-  to be "corrected" to a new letter, because no letter is defensible.
-- Use `delta_r2` / `delta_r2_uniform` (continuous, unchanged) and `flagged_bh`
-  (significance only, unchanged) directly.
-
-## References
-
-Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I error and power rates
-    using an effect size measure with the logistic regression procedure for
-    DIF detection. *Applied Measurement in Education, 14*(4), 329-349.
-    https://doi.org/10.1207/S15324818AME1404_2
-Nagelkerke, N. J. D. (1991). A note on a general definition of the
-    coefficient of determination. *Biometrika, 78*(3), 691-692.
-    https://doi.org/10.1093/biomet/78.3.691
-Zumbo, B. D. (1999). *A handbook on the theory and methods of differential
-    item functioning (DIF)*. Directorate of Human Resources Research and
-    Evaluation, Department of National Defense.
+- **Why.** Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I error and
+  power rates using an effect size measure with the logistic regression
+  procedure for DIF detection. *Applied Measurement in Education, 14*(4),
+  329-349, calibrates its `.035`/`.070` bands (p. 335) on a Zumbo-Thomas
+  weighted-least-squares (Pratt-Pregibon) partition (p. 333) — not the
+  Nagelkerke pseudo-R² this package computes — and states them on the
+  ONE-degree-of-freedom UNIFORM increment, not the 2-df omnibus this package
+  previously lettered (`delta_r2`). Both mismatches were confirmed against
+  the primary source (read in full via institutional access) and would need
+  correcting together, but the replacement statistic is itself
+  underdetermined by that source: eq. 4 (p. 333) does not say whether its
+  correlation is taken against the observed response or the working response
+  of the IRLS linearization, nor on which scale the standardized coefficient
+  is computed, and both choices change the number. A package cannot letter a
+  quantity it cannot compute, so the honest fix is "not applicable," not a
+  guessed replacement. The bands are additionally scoped to the paper's own
+  simulation — dichotomous responses generated from a 3PL model (pp. 337,
+  339) on 40-item tests (pp. 336-337) — so they were never licensed for the
+  polytomous logistic-regression sweep either (see PR #1890's independent
+  finding on this point).
+- **Migration.** Any stored or logged `jg_class` values from before this
+  change reflected bands applied to the wrong quantity (2-df omnibus instead
+  of 1-df uniform) computed from the wrong statistic (Nagelkerke instead of
+  the Zumbo-Thomas WLS partition); they should not be treated as ground truth
+  and do not need to be "corrected" to a new letter, because no letter is
+  defensible. Use `delta_r2` / `delta_r2_uniform` (continuous, unchanged) and
+  `flagged_bh` (significance only, unchanged) directly.
+- **References.** Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I
+  error and power rates using an effect size measure with the logistic
+  regression procedure for DIF detection. *Applied Measurement in Education,
+  14*(4), 329-349. https://doi.org/10.1207/S15324818AME1404_2 — Nagelkerke,
+  N. J. D. (1991). A note on a general definition of the coefficient of
+  determination. *Biometrika, 78*(3), 691-692.
+  https://doi.org/10.1093/biomet/78.3.691 — Zumbo, B. D. (1999). *A handbook
+  on the theory and methods of differential item functioning (DIF)*.
+  Directorate of Human Resources Research and Evaluation, Department of
+  National Defense.
