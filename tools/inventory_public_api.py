@@ -118,9 +118,10 @@ def collect_python_rows() -> list[dict]:
         if any(part.startswith("_") for part in modname.split(".")):
             continue
         try:
-            # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
-            # modname is safely derived from pkgutil.walk_packages over the internal fast_mlsirm package, not untrusted user input.
-            mod = importlib.import_module(modname)
+            # modname is safely derived from pkgutil.walk_packages over the internal fast_mlsirm package.
+            mod = importlib.import_module(
+                modname
+            )  # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
         except Exception:
             continue
         for name in sorted(vars(mod)):
