@@ -28,12 +28,38 @@
 //! `P(T_ν > t) = (1/2) I_{ν/(ν+t²)}(ν/2, 1/2)` for `t ≥ 0` (and the
 //! reflection for `t < 0`). χ²(1) reuses [`crate::fitstats::chi2_sf`].
 //!
+//! # Moderated (simple) slopes
+//!
+//! For the H1–H5 study parameterization
+//! `Y ~ X*W*Z + X*E` with mean-centered predictors before products, the
+//! pick-a-point / simple-slope weights follow Aiken and West (1991, ch. 2)
+//! and Hayes (2018, ch. 7–8):
+//!
+//! ```text
+//! dY/dX | (W,Z,E) = b_X + b_XW W + b_XZ Z + b_XE E + b_XWZ W Z
+//! dY/dZ | (X,W)   = b_Z + b_XZ X + b_WZ W + b_XWZ X W
+//! ```
+//!
+//! Standard errors are `sqrt(c' V c)` via [`linear_contrast`], never
+//! post-hoc SE synthesis. Slope differences use one contrast equal to the
+//! difference of two simple-slope weight vectors (Hayes, 2018, conditional-
+//! effect pairwise comparison pattern).
+//!
 //! # References
+//!
+//! Aiken, L. S., & West, S. G. (1991). *Multiple regression: Testing and
+//!     interpreting interactions*. Sage. (Simple-slope / pick-a-point
+//!     algebra, ch. 2.)
 //!
 //! DiDonato, A. R., & Morris, A. H., Jr. (1992). Algorithm 708: Significant
 //!     digit computation of the incomplete beta function ratios.
 //!     *ACM Transactions on Mathematical Software, 18*(3), 360–373.
 //!     <https://doi.org/10.1145/131766.131776>
+//!
+//! Hayes, A. F. (2018). *Introduction to mediation, moderation, and
+//!     conditional process analysis: A regression-based approach* (2nd ed.).
+//!     Guilford Press. (Conditional effects and pairwise slope comparisons,
+//!     ch. 7–8.)
 //!
 //! Long, J. S., & Ervin, L. H. (2000). Using heteroscedasticity consistent
 //!     standard errors in the linear regression model. *The American
@@ -355,6 +381,133 @@ pub fn linear_contrast(
         p_f,
         df,
     })
+}
+
+/// Number of columns in the H1–H5 design `Y ~ X*W*Z + X*E`.
+pub const XWZ_E_K: usize = 10;
+
+/// Design row for `Y ~ X*W*Z + X*E` at centered probe values `(x,w,z,e)`.
+///
+/// Column order: `(Intercept), X, W, Z, E, X:W, X:Z, W:Z, X:E, X:W:Z`
+/// (Aiken & West, 1991, ch. 2 product terms; Hayes, 2018, ch. 7).
+pub fn xwz_e_design_row(x: f64, w: f64, z: f64, e: f64) -> [f64; XWZ_E_K] {
+    [
+        1.0,
+        x,
+        w,
+        z,
+        e,
+        x * w,
+        x * z,
+        w * z,
+        x * e,
+        x * w * z,
+    ]
+}
+
+/// Dot product of a design row with `β` (predicted mean at probes).
+pub fn design_row_dot(row: &[f64], beta: &[f64]) -> Result<f64, String> {
+    if row.len() != beta.len() {
+        return Err(format!(
+            "design row length {} does not match beta length {}",
+            row.len(),
+            beta.len()
+        ));
+    }
+    let mut s = 0.0_f64;
+    for i in 0..row.len() {
+        let v = row[i] * beta[i];
+        if !v.is_finite() {
+            return Err("non-finite design_row_dot contribution".to_owned());
+        }
+        s += v;
+    }
+    if !s.is_finite() {
+        return Err("non-finite design_row_dot".to_owned());
+    }
+    Ok(s)
+}
+
+/// Weight vector `c` such that `c'β = dY/d(focal)` at probe values.
+///
+/// `focal` is `"X"` or `"Z"` for the H1–H5 parameterization
+/// (Aiken & West, 1991, ch. 2; Hayes, 2018, ch. 7–8).
+pub fn conditional_slope_weights(
+    focal: &str,
+    x: f64,
+    w: f64,
+    z: f64,
+    e: f64,
+) -> Result<Vec<f64>, String> {
+    let mut c = vec![0.0_f64; XWZ_E_K];
+    match focal.trim().to_ascii_uppercase().as_str() {
+        // dY/dX = bX + bXW*W + bXZ*Z + bXE*E + bXWZ*W*Z
+        "X" => {
+            c[1] = 1.0;
+            c[5] = w;
+            c[6] = z;
+            c[8] = e;
+            c[9] = w * z;
+        }
+        // dY/dZ = bZ + bXZ*X + bWZ*W + bXWZ*X*W
+        "Z" => {
+            c[3] = 1.0;
+            c[6] = x;
+            c[7] = w;
+            c[9] = x * w;
+        }
+        other => {
+            return Err(format!(
+                "unknown focal {other:?}; expected \"X\" or \"Z\" for XWZ+E"
+            ));
+        }
+    }
+    if !c.iter().all(|v| v.is_finite()) {
+        return Err("non-finite conditional slope weights".to_owned());
+    }
+    Ok(c)
+}
+
+/// Simple slope estimate + Wald/t/F via [`linear_contrast`].
+pub fn conditional_slope(
+    beta: &[f64],
+    vcov: &[f64],
+    focal: &str,
+    x: f64,
+    w: f64,
+    z: f64,
+    e: f64,
+    df: f64,
+) -> Result<ContrastResult, String> {
+    if beta.len() != XWZ_E_K {
+        return Err(format!(
+            "conditional_slope expects beta length {XWZ_E_K}, got {}",
+            beta.len()
+        ));
+    }
+    let weights = conditional_slope_weights(focal, x, w, z, e)?;
+    linear_contrast(beta, vcov, &weights, df)
+}
+
+/// Difference of two simple slopes (same focal, two probe tuples `(x,w,z,e)`).
+pub fn slope_difference(
+    beta: &[f64],
+    vcov: &[f64],
+    focal: &str,
+    probes_a: (f64, f64, f64, f64),
+    probes_b: (f64, f64, f64, f64),
+    df: f64,
+) -> Result<ContrastResult, String> {
+    if beta.len() != XWZ_E_K {
+        return Err(format!(
+            "slope_difference expects beta length {XWZ_E_K}, got {}",
+            beta.len()
+        ));
+    }
+    let wa = conditional_slope_weights(focal, probes_a.0, probes_a.1, probes_a.2, probes_a.3)?;
+    let wb = conditional_slope_weights(focal, probes_b.0, probes_b.1, probes_b.2, probes_b.3)?;
+    let diff: Vec<f64> = wa.iter().zip(wb.iter()).map(|(a, b)| a - b).collect();
+    linear_contrast(beta, vcov, &diff, df)
 }
 
 /// Upper-tail `P(Chi2_1 >= q)` (exact via [`chi2_sf`]).
