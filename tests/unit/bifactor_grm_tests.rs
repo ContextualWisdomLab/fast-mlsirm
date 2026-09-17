@@ -131,6 +131,7 @@ fn valid_config() -> BifactorGrmConfig {
         seed: 42,
         newton_iter: 3,
         ridge: 1e-8,
+        device: crate::Device::Cpu,
     }
 }
 
@@ -456,5 +457,73 @@ fn non_convergence_is_reported_not_substituted() {
         fit.loglik_trace.len() == 2,
         "trace must hold the initial and one updated loglik; got {}",
         fit.loglik_trace.len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Stage 5: GPU/CPU E-step parity on expected counts and loglik.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn estep_gpu_matches_cpu_counts_and_loglik() {
+    // The WGSL person-parallel sweep accumulates in f32 while the CPU
+    // reference is f64: per-count-entry error scales with n_persons × eps
+    // (≈ 12 × 1.2e-7 here), so the envelope below is orders of magnitude
+    // above the expected f32 noise. The tiny fixture carries a negative
+    // general slope (reverse-keyed item 1), so sign handling is covered.
+    // Without a GPU adapter the GPU entry falls back to CPU and the
+    // comparison is trivially exact; the fit-level Python test pins the
+    // real-device numbers.
+    use super::{
+        e_step, fill_logprob_tables, gh_rule, initial_params, validate,
+    };
+
+    let (y, n_persons) = tiny_data();
+    let cfg = valid_config();
+    let v = validate(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("tiny fixture must validate");
+    let (tg, wg) = gh_rule(7).expect("Q=7 rule must exist");
+    let (ts, ws) = gh_rule(7).expect("Q=7 rule must exist");
+    let params = initial_params(&v, &y, None, cfg.seed, 0);
+    let tables = fill_logprob_tables(&v, &params, tg, ts, 7, 7);
+    let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+
+    let (ll_cpu, counts_cpu) = e_step(
+        &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
+        crate::Device::Cpu,
+    );
+    let (ll_gpu, counts_gpu) = e_step(
+        &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
+        crate::Device::Gpu,
+    );
+
+    assert!(
+        (ll_cpu - ll_gpu).abs() <= 1e-3,
+        "E-step loglik must agree within f32 envelope: cpu={ll_cpu}, gpu={ll_gpu}"
+    );
+    assert_eq!(counts_cpu.len(), counts_gpu.len());
+    let mut max_diff = 0.0f64;
+    for (cc, gc) in counts_cpu.iter().zip(counts_gpu.iter()) {
+        assert_eq!(cc.len(), gc.len());
+        for (cn, gn) in cc.iter().zip(gc.iter()) {
+            assert_eq!(cn.len(), gn.len());
+            for (&a, &b) in cn.iter().zip(gn.iter()) {
+                max_diff = max_diff.max((a - b).abs());
+            }
+        }
+    }
+    assert!(
+        max_diff <= 1e-4,
+        "expected counts must agree within f32 envelope; got max|diff|={max_diff:.3e}"
     );
 }

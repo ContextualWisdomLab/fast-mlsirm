@@ -5,6 +5,92 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
+#### Bifactor GRM observed-information standard errors (Oakes)
+
+Stage-3 standard errors for the single-group polytomous bifactor graded
+response model (stage 3 of #1912): `mlsirm_core::bifactor_oakes::
+bifactor_oakes_se` (with `BifactorOakesConfig`) returns the full
+item-parameter observed information, its inverse vcov, and standard errors
+via the Oakes (1999, eq. 6) identity, evaluated at given item parameters.
+The complete-data gradient and Hessian are analytic
+(`poly::grm_node_hessian`, cross-checked against central finite differences
+in tests); the cross term re-runs the Gibbons-Hedeker reduced E-step once
+per free parameter. The assembly is written behind a `PosteriorProvider`
+trait so the stage-2 multigroup calibration reuses it with group-specific
+E-steps. A non-positive-definite information matrix is reported with
+`positive_definite = false` and a `non_pd_reason`, while `vcov`/`se` are
+`None` — never a generalized inverse or any other substitute (#1912
+acceptance criterion 3). Python surface:
+`fast_mlsirm.bifactor_grm.bifactor_oakes_se` returning `BifactorOakesSe`
+(quadrature counts and the cross-term step are required caller arguments).
+Evidence: analytic-vs-finite-difference Q-Hessian agreement; Oakes
+information vs numerical Hessian of the exact marginal log-likelihood on a
+tiny problem; mean-SE vs empirical-SD agreement over 100 simulation
+replicates at recovery scale (worst 0.235, Monte Carlo noise ~7%);
+small-grid convergence stabilization; mirt `SE.type = "Oakes"`
+agreement on the committed fixture (SEs 8.4e-3, vcov 1.9e-2 at matched
+quadpts = 15); study-settings grid convergence at 121 vs. 241 Gauss-Hermite
+nodes per dimension (#1929's node-count cap removal made this grid
+reachable) — Oakes SEs agree to `maxRel|dSE| = 8.76e-9`, run once locally
+in `bifactor_oakes_calibration::study_settings_se_converges_at_121_vs_241_nodes`
+(`#[ignore]`d as long-running, ~46 min at `q=241`).
+
+#### GPU-parallel bifactor E-step and joint person bootstrap with caller-controlled stopping
+
+- Add a GPU-parallel E-step for the Bock-Aitkin bifactor GRM with
+  Gibbons-Hedeker dimension reduction
+  (`crates/mlsirm-core/src/gpu_bifactor.rs`), covering the single-group
+  estimator and the multigroup calibration (including group moment
+  accumulators). Kernels accumulate in f32; CPU/GPU fit-level agreement is
+  asserted within a documented single-precision tolerance on fixtures
+  including reverse-keyed items and multiple groups. CPU fallback when no
+  GPU adapter is available; `device` is a validated argument
+  (`cpu`/`gpu`/`auto`) on both configs, both PyO3 entry points, and both
+  Python wrappers.
+- Release the GIL around the Rust bifactor fits (`py.detach`) so the
+  bootstrap thread pool parallelizes.
+- Add a joint person bootstrap driver
+  (`fast_mlsirm.bifactor_bootstrap.run_bifactor_bootstrap`) in which
+  replicate count, batch size, Monte Carlo stopping ratio, and compute
+  budget are caller arguments with validated ranges. The stopping rule is a
+  sequential application of the endpoint-accuracy framework of Andrews and
+  Buchinsky (2000, §§ 2–4): the run stops once the maximum
+  percentile-interval endpoint movement relative to the interval half-width
+  falls below the caller ratio. Per-replicate convergence is reported;
+  failed replicates are excluded, never substituted.
+- Report bootstrap percentile intervals alongside empirical standard errors.
+- Add two-stage Lord-Wingersky score recursion
+  (`fast_mlsirm.bifactor_recursion`) matching direct enumeration within
+  1e-12.
+- Assert stage-5 CPU/GPU fit-level parity at the maintainer-standard
+  study-precision quadrature grids (`tests/test_bifactor_gpu_high_q.py`,
+  gated behind `STAGE5_HIGH_Q=1` like the Rust `#[ignore]` node-count
+  regressions): CPU and GPU E-steps agree within the documented
+  single-precision envelope at 121 and 241 nodes per dimension, and the
+  CPU fits at 121 vs 241 nodes agree within the 5e-3 numerical band
+  (marginal-likelihood integral convergence). Quadrature counts are caller
+  arguments with no defaults and no caps: any `n >= 1` resolves via the
+  shared arbitrary-`n` Gauss-Hermite rule
+  (`quadrature::require_gh_rule`, Golub & Welsch, 1969; #1929/#1945),
+  replacing the fixed `SUPPORTED_Q` membership table this branch
+  previously enforced.
+- Measure the joint person bootstrap at the 121-point study grid
+  (`test_joint_bootstrap_cpu_vs_gpu_wall_time_q121`, same gate):
+  measured CPU vs GPU wall times are printed for the PR record rather
+  than asserted against machine-specific thresholds.
+- Measured study-grid evidence (Apple Silicon, `STAGE5_HIGH_Q=1`, tiny
+  48-person/6-item/2-specific fixture, `tol=1e-3`): single-group parity
+  at `q=121` — CPU 4.544s vs GPU 6.181s, `max|Δslope|=1.897e-07`,
+  `max|Δthreshold|=1.138e-07`, `|Δloglik|=2.374e-05` (4 EM iterations,
+  both converged); at `q=241` — CPU 21.642s vs GPU 26.561s,
+  `max|Δslope|=1.326e-07`, `max|Δthreshold|=1.356e-07`,
+  `|Δloglik|=3.232e-05` (4 iterations, both converged); CPU 121-vs-241
+  agreement `|Δloglik|=4.829e-09` (integral converged). Joint bootstrap
+  at `q=121` (`B=2`, two-group multigroup path): CPU 161.512s
+  (80.756s/rep) vs GPU 210.261s (105.130s/rep), replicate-by-replicate
+  parity within 1e-3. Small problems stay CPU-faster (per-sweep GPU
+  buffer setup dominates), as already disclosed in ADR-0027.
+
 #### Single-group polytomous two-tier GRM with reduction over the specific tier (stage 4 of #1912)
 
 - Add a single-group full-information polytomous two-tier graded response
@@ -21,6 +107,55 @@
   (slopes/intercepts/correlation/loglik agreement bands with measured values
   reported in the tests).
 
+#### Public API naming convention and unsourced-defaults policy (#1959)
+
+- **ADR-0028** (`docs/adr/0028-public-api-naming-and-defaults-policy.md`,
+  Proposed): one verb-first naming convention and one unsourced-defaults
+  policy (numerical-precision controls, decision thresholds, seeds, model
+  choice) for every public `fast_mlsirm` callable and PyO3 entry point.
+- `tools/inventory_public_api.py`: regenerates a full public-callable
+  inventory (`docs/api/inventory-YYYYMMDD.csv`) via static analysis, no Rust
+  build required.
+- `tools/classify_renames_and_defaults.py`: mechanically applies ADR-0028's
+  rules to the inventory, producing
+  `docs/api/renames-and-defaults-YYYYMMDD.csv` with a proposed name and a
+  per-default decision (`keep+source` / `require` / `change`) for every
+  callable, absorbing #1958/#1960's completed `dif_polytomous*` outcome.
+No code, name, or default changes in this PR (Phase 1, documentation only);
+per-module implementation is tracked in the sub-issues this PR opens.
+
+#### Fixed-item parameter calibration (FIPC) for polytomous GRM
+
+- Add fixed-item parameter calibration for the unidimensional GRM
+  (`mlsirm_core::poly::fit_poly_fipc`, Python `fast_mlsirm.polytomous.fit_poly_fipc`)
+  and the polytomous bifactor GRM
+  (`mlsirm_core::bifactor_grm::fit_bifactor_grm_fipc`, Python
+  `fast_mlsirm.bifactor_grm.fit_bifactor_grm_fipc`): caller-fixed anchor
+  items from a reference calibration plus a flag vector; non-anchor item
+  parameters and the focal population's latent mean/variance (general
+  factor; specific variances where identified) estimated by MML-EM with the
+  prior distribution updated after every M-step — the MWU-MEM method (Kim,
+  2006, eqs. 14-15, pp. 361-362), the only compared variant that recovered
+  shifted focal distributions without under-estimation (pp. 377-378; Paek &
+  Young, 2005). No rescaling of the latent points after an EM cycle, no
+  reflection canonicalization: fixed anchors pin the orientation, including
+  reverse-keyed anchors. Quadrature node counts stay caller arguments; the
+  unidimensional rule set gains the 121-node Gauss-Hermite rule
+  (`numpy.polynomial.hermite_e.hermegauss(121)`, weights normalized) as the
+  study floor.
+- Validate against `mirt::fixedCalib` (MWU-MEM default) on a committed
+  unidimensional GRM fixture (`tests/fixtures/poly_fipc_grm/`, R 4.x with
+  mirt 1.46.1): free-item agreement plus a same-objective profile-likelihood
+  corroboration (mirt's stacked-data empirical-histogram loglik is recorded
+  but not directly comparable). Recovery under a known mean/variance shift,
+  equivalence to concurrent calibration with anchors fixed at truth, and
+  reverse-keyed anchors are covered for both models; study-scale runs
+  (`N = 1,020`, `q_theta = 121` unidimensional) run as ignored
+  statistical-studies tests with bands from measured multi-seed spreads.
+  Paper basis: Kim (2006, JEM 43(4), 355-381,
+  https://doi.org/10.1111/j.1745-3984.2006.00021.x) and Paek & Young (2005,
+  AME 18(2), 199-215, https://doi.org/10.1207/s15324818ame1802_4).
+
 ### Changed
 
 #### Clippy lint triage for #1905
@@ -33,6 +168,14 @@
   `type_complexity` (5, public signatures), `if_same_then_else`
   (2, intentional degenerate arms with distinct documented reasons).
   Test-target warnings are triaged as follow-up in the issue.
+
+#### GPU-parallel bifactor E-step and joint person bootstrap with caller-controlled stopping
+
+- `q_general`/`q_specific` validation in the stage-5 Python surface
+  (`bifactor_bootstrap.run_bifactor_bootstrap`) now accepts any integer
+  `n >= 1` instead of the removed fixed-table membership set, matching
+  the merged estimator contract (#1929/#1945); out-of-range counts still
+  fail loudly and are never clamped.
 
 #### Single-group polytomous two-tier GRM with reduction over the specific tier (stage 4 of #1912)
 
@@ -47,6 +190,93 @@
   (2.20s, final loglik -1246.539916) and `q=241` converged in 6 iterations
   (8.12s, final loglik -1246.539916) — `|loglik diff| = 0.000000`, well
   inside the 5e-3 tolerance.
+
+#### Verify Bock & Zimowski (1997) locators in bifactor/multigroup docs (#1927)
+
+- **Full-text verification attempted, chapter unobtainable.** Bock &
+  Zimowski (1997), *Multiple group IRT* (Handbook of Modern IRT, ch. 25,
+  pp. 433-448), cited in `crates/mlsirm-core/src/bifactor_grm.rs` and
+  `poly::fit_poly_multigroup`, is absent from the maintainer's Zotero
+  library and local paper cache, has no open-access copy, and the Springer
+  chapter page redirects to an institutional login; the KW library
+  (kupis.kw.ac.kr) document-delivery/e-book route could not be completed
+  because Chrome browser automation was unavailable this session. Only the
+  publisher's own chapter metadata (chapter 25, pp. 433-448) was
+  independently confirmed via Springer's DOI record and WorldCat.
+- **No internal locator needed correcting.** Both citation sites already
+  claimed no chapter-internal equation or page locator (the pooling claim
+  was labeled "conceptual"), so there was nothing unverifiable to remove.
+  Both comments now record the verification attempt and its outcome, and
+  point to the already page-verified Cai, Yang, & Hansen (2011, Zotero
+  `TNQ22C7T`) and Bock & Aitkin (1981) references — read in full — as the
+  independently verified sources for the same reference-group multigroup
+  pooling this chapter describes.
+
+#### Unsourced defaults removed from the polytomous DIF entry points (#1958)
+
+- **`dif_polytomous`, `dif_polytomous_purified`, and
+  `dif_polytomous_anchor_sets` no longer default `model`, `q_theta`,
+  `max_iter`, `tol`, `fdr_q`, `max_rounds` (the latter two functions), or
+  `min_anchor_items`.** All are now required caller arguments. Previously
+  `model` silently defaulted to `"gpcm"` (differing from the `"grm"` used
+  elsewhere in this package's own study measurement models) and `q_theta`
+  defaulted to `21`, a Gauss-Hermite node count with no accuracy target on
+  file to source it against — the exact violation of the #1929 quadrature
+  rule (node counts are caller arguments, no defaulted value below the
+  project's 121-node floor) that this issue reports. `max_iter`, `tol`,
+  `fdr_q`, `max_rounds`, and `min_anchor_items` have the same problem: none
+  of `200`, `1e-5`, `0.05`, `3`, or `4` has a documented source in this
+  repository, and this package does not ship a default it cannot defend.
+- **Same reasoning already applied on this file.**
+  `focal_expected_total_score_monotonicity` and
+  `bifactor_expected_total_score_monotonicity` already require `q_nuisance`
+  / `q_specific` with no default under #1929; this change extends that
+  requirement to the sibling tuning constants on the three polytomous DIF
+  functions rather than leaving them as a special case.
+- **`fdr_q` and the purification loop have citable conventions, even though
+  neither is defaulted.** `0.05` is the illustrative FDR level used
+  throughout Benjamini, Y., & Hochberg, Y. (1995). Controlling the false
+  discovery rate: A practical and powerful approach to multiple testing.
+  *Journal of the Royal Statistical Society: Series B (Methodological),
+  57*(1), 289-300. https://doi.org/10.1111/j.2517-6161.1995.tb02031.x — and
+  the anchor-rebuild-and-repeat purification loop itself is Candell, G. L.,
+  & Drasgow, F. (1988). An iterative procedure for linking metrics and
+  assessing item bias in item response theory. *Applied Psychological
+  Measurement, 12*(3), 253-260.
+  https://doi.org/10.1177/014662168801200304 — but neither source states a
+  specific round count, so `max_rounds` still has no defensible default and
+  stays required.
+- **Breaking change, audited against the codebase's other DIF/polytomous
+  entry points.** The observed-score DIF functions in `dif.py`
+  (`mantel_haenszel_dif`, `mantel_haenszel_dif_purified`,
+  `logistic_dif`, `logistic_dif_purified`, `sibtest`, `mantel_smd_dif`,
+  `gmh_dif`, `breslow_day_dif`) and the other polytomous fit/diagnostic
+  functions in `polytomous.py` were checked for the same pattern: none of
+  them defaults a Gauss-Hermite node count (they either take none, or -- for
+  the already-fixed `focal_expected_total_score_monotonicity` /
+  `bifactor_expected_total_score_monotonicity` -- already require it), so
+  they are out of scope for this issue's #1929 violation. Their `fdr_q`
+  defaults are unchanged.
+
+#### Fixed-item parameter calibration (FIPC) for polytomous GRM
+
+- `BifactorFipcConfig.q_general`/`q_specific` validation (and the Python
+  `fit_bifactor_grm_fipc` wrapper) now resolve the shared arbitrary-`n`
+  Gauss-Hermite quadrature (`quadrature::require_gh_rule`, any `n >= 1`,
+  #1929) instead of the removed fixed `SUPPORTED_Q` table, matching
+  `fit_bifactor_grm`/`fit_bifactor_grm_multigroup`. Move the ignored
+  `bifactor_fipc_study_n1020` study test from `q_general=31..41,
+  q_specific=21..31` to the maintainer's >= 121-node-per-dimension floor
+  (`q_general = q_specific = 121` for both the reference and FIPC fits);
+  executed locally in release mode (668s), converged, all recovery
+  assertions passing.
+- `quadrature::require_gh_rule_unidim` now actually dispatches through the
+  embedded 121-node unidimensional table (`gh_rule_121`,
+  `numpy.polynomial.hermite_e.hermegauss(121)`) instead of silently falling
+  back to the generic arbitrary-`n` path at every node count — the wiring
+  bug that made the embedded table dead code is fixed so `fit_poly_fipc`'s
+  `q_theta = 121` study path uses it as intended; re-verified locally
+  (`fipc_study_recovery_n1020_q121`, release mode, 7.14s, passing).
 
 #### Release cut 0.10.0
 
@@ -89,6 +319,29 @@
 - Review capability-gated non-executions through an explicit allowlist instead of rewriting capability-specific tests.
 - Treat unexpected passes as failures by default with strict xfail handling.
 
+#### Graphify tooling investigation for #1847 and #1833
+
+- #1847: `to_json`'s node-count shrink guard refused a `cluster-only` write
+  on an unchanged graph after `build_from_json`'s ghost-merge pass
+  legitimately collapsed a manifest-derived duplicate node into its
+  AST-canonical twin (`crate:mlsirm-core` / `pkg_mlsirm_core`, zero
+  incident edges dropped). `build_from_json` now records the collapsed
+  count (`_ghost_dedup_count`); the shrink guard excuses a drop only when
+  fully explained by it. Upstream PR:
+  https://github.com/Graphify-Labs/graphify/pull/3623.
+- #1833: a workspace-only `Cargo.toml` (`[workspace]`, no `[package]`)
+  correctly emits no package node, but the extractor's zero-node detector
+  could not tell that apart from an unexplained failure and printed a
+  persistent warning every run. The manifest parser now marks this case
+  `skipped`, so the by-design exclusion is explicit instead of warning.
+  Upstream PR: https://github.com/Graphify-Labs/graphify/pull/3622.
+- No fast-mlsirm runtime, Cargo, or Python code changed — both issues were
+  tooling-only (Graphify artifact refresh/reviewability), confirmed via a
+  RED-then-GREEN regression test in the `seonghobae/graphify` fork before
+  the upstream PRs were opened.
+- Pinned install/rollback instructions for trying the fork fix locally are
+  recorded on fast-mlsirm#1833.
+
 #### Clippy lint triage for #1905
 
 - Resolve the 24 deny-level `clippy::erasing_op` errors: every site was
@@ -107,6 +360,11 @@
   parse to bit-identical `f64` values (verified programmatically);
   the quadrature tables' shortest-roundtrip claim now holds.
   Lib warnings 279 -> 163.
+
+#### GPU-parallel bifactor E-step and joint person bootstrap with caller-controlled stopping
+
+- Remove the crate-wide `clippy::erasing_op` / `clippy::identity_op`
+  allowance; no broad lint suppression remains.
 
 #### `logistic_dif_purified` purifies again, on `flagged_bh` (#1941)
 
@@ -150,6 +408,22 @@
   (DIF): Logistic regression modeling as a unitary framework for binary and
   Likert-type (ordinal) item scores* (p. 27). Directorate of Human Resources
   Research and Evaluation, Department of National Defense.
+
+#### Stage-1 bifactor GRM mirt fixture regenerated with corrected category order (#1950)
+
+- `tests/fixtures/bifactor_grm_stage1/generate_mirt_fixture.R` compared the
+  simulated uniform draw against each graded-response boundary probability
+  with `u > p_k`, which reversed the intended category order (higher latent
+  trait produced *lower* observed categories). The nested-event identity
+  `P(Y >= k) = P(u < p_k)` requires `u < p_k`; regenerated `dataset.csv` and
+  `mirt_fixture.json` with the corrected rule and added a category-order
+  guard (`cor(theta_g, rowSums(resp)) > 0.3`) so a reversed rule fails fast
+  next time instead of only being caught by inspection.
+- `crates/mlsirm-core/tests/bifactor_grm_mirt_agreement.rs` still passes
+  unchanged: the Rust<->mirt comparison canonicalizes reflection per
+  dimension before comparing slopes/intercepts/log-likelihood, so it was
+  insensitive to the category-order bug and remains a valid agreement check
+  on the corrected fixture.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.10.0] - 2026-09-17
 

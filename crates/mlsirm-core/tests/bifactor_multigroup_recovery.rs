@@ -156,6 +156,7 @@ fn multigroup_recovers_group_shifts_and_shared_items() {
         seed: 0x9E37_79B9_7F4A_7C15,
         newton_iter: 10,
         ridge: 1e-8,
+        device: mlsirm_core::Device::Cpu,
         estimate_specific_vars: false,
     };
     let fit = fit_bifactor_grm_multigroup(
