@@ -11,6 +11,8 @@ import fast_mlsirm
 from fast_mlsirm._bifactor_core_loader import bifactor_core
 from fast_mlsirm.bifactor_scoreability import (
     BifactorScoreabilityResult,
+    assess_bifactor_scoreability,
+    assess_bifactor_scoreability_from_logit_slopes,
     bifactor_scoreability,
     bifactor_scoreability_from_logit_slopes,
 )
@@ -70,7 +72,9 @@ def test_standardized_loading_wrapper_has_exact_rust_parity():
     """The Python layer only marshals the compiled standardized-loading result."""
     loadings = _loadings()
     uniquenesses = _uniquenesses()
-    result = bifactor_scoreability(loadings, uniquenesses, general_factor=0)
+    result = assess_bifactor_scoreability(
+        loadings, uniquenesses, general_factor=0, zero_tolerance=0.0
+    )
     raw = bifactor_core().bifactor_indices(
         loadings,
         uniquenesses,
@@ -86,10 +90,53 @@ def test_standardized_loading_wrapper_has_exact_rust_parity():
 def test_logit_slope_wrapper_has_exact_rust_parity():
     """Fitted logistic slopes are standardized and scored only in Rust."""
     slopes = _logit_slopes()
-    result = bifactor_scoreability_from_logit_slopes(slopes, general_factor=0)
+    result = assess_bifactor_scoreability_from_logit_slopes(
+        slopes, general_factor=0, zero_tolerance=0.0
+    )
     raw = bifactor_core().bifactor_indices_from_logit_slopes(slopes, 0, 0.0)
 
     _assert_result_matches_raw(result, raw)
+
+
+def test_zero_tolerance_is_a_required_argument():
+    """ADR-0028 (#1963): zero_tolerance has no default and must be supplied."""
+    with pytest.raises(TypeError):
+        assess_bifactor_scoreability(_loadings(), _uniquenesses(), general_factor=0)
+    with pytest.raises(TypeError):
+        assess_bifactor_scoreability_from_logit_slopes(
+            _logit_slopes(), general_factor=0
+        )
+
+
+def test_deprecated_bifactor_scoreability_alias_still_works_and_warns():
+    """ADR-0028 (#1963): the pre-rename name is kept as a deprecated alias."""
+    loadings = _loadings()
+    uniquenesses = _uniquenesses()
+    with pytest.warns(DeprecationWarning):
+        old_result = bifactor_scoreability(
+            loadings, uniquenesses, general_factor=0, zero_tolerance=0.0
+        )
+    new_result = assess_bifactor_scoreability(
+        loadings, uniquenesses, general_factor=0, zero_tolerance=0.0
+    )
+    _assert_result_matches_raw(
+        old_result,
+        bifactor_core().bifactor_indices(loadings, uniquenesses, 0, 0.0),
+    )
+    np.testing.assert_allclose(old_result.omega_total, new_result.omega_total)
+
+
+def test_deprecated_bifactor_scoreability_from_logit_slopes_alias_still_works_and_warns():
+    """ADR-0028 (#1963): the pre-rename name is kept as a deprecated alias."""
+    slopes = _logit_slopes()
+    with pytest.warns(DeprecationWarning):
+        old_result = bifactor_scoreability_from_logit_slopes(
+            slopes, general_factor=0, zero_tolerance=0.0
+        )
+    new_result = assess_bifactor_scoreability_from_logit_slopes(
+        slopes, general_factor=0, zero_tolerance=0.0
+    )
+    np.testing.assert_allclose(old_result.omega_total, new_result.omega_total)
 
 
 def test_package_root_exports_the_public_bifactor_api():
@@ -110,7 +157,9 @@ def test_every_declared_package_export_exists():
 
 def test_result_vectors_are_immutable():
     """Typed diagnostics cannot be silently altered after Rust validation."""
-    result = bifactor_scoreability(_loadings(), _uniquenesses())
+    result = assess_bifactor_scoreability(
+        _loadings(), _uniquenesses(), zero_tolerance=0.0
+    )
     for vector in (
         result.ecv_ss,
         result.ecv_sg,
@@ -134,7 +183,7 @@ def test_result_vectors_are_immutable():
 def test_public_wrapper_validates_array_shapes(loadings, uniquenesses, message):
     """Shape mismatches fail before crossing the compiled boundary."""
     with pytest.raises(ValueError, match=message):
-        bifactor_scoreability(loadings, uniquenesses)
+        assess_bifactor_scoreability(loadings, uniquenesses, zero_tolerance=0.0)
 
 
 def test_missing_general_factor_fails_through_rust():
@@ -143,7 +192,9 @@ def test_missing_general_factor_fails_through_rust():
     loadings[0, 0] = 0.0
     uniquenesses = 1.0 - np.square(loadings).sum(axis=1)
     with pytest.raises(ValueError, match="general factor"):
-        bifactor_scoreability(loadings, uniquenesses, general_factor=0)
+        assess_bifactor_scoreability(
+            loadings, uniquenesses, general_factor=0, zero_tolerance=0.0
+        )
 
 
 def test_nonfirst_general_factor_and_single_item_domain_reach_rust():
@@ -157,7 +208,9 @@ def test_nonfirst_general_factor_and_single_item_domain_reach_rust():
         dtype=np.float64,
     )
     uniquenesses = 1.0 - np.square(loadings).sum(axis=1)
-    result = bifactor_scoreability(loadings, uniquenesses, general_factor=1)
+    result = assess_bifactor_scoreability(
+        loadings, uniquenesses, general_factor=1, zero_tolerance=0.0
+    )
 
     assert result.factor_item_counts == (2, 3, 1)
     assert result.is_strict_bifactor is True
@@ -169,7 +222,7 @@ def test_cross_loaded_specific_pattern_is_descriptive_but_has_no_puc():
     loadings = _loadings()
     loadings[0, 2] = 0.10
     uniquenesses = 1.0 - np.square(loadings).sum(axis=1)
-    result = bifactor_scoreability(loadings, uniquenesses)
+    result = assess_bifactor_scoreability(loadings, uniquenesses, zero_tolerance=0.0)
 
     assert result.is_strict_bifactor is False
     assert result.puc is None
@@ -179,12 +232,14 @@ def test_standardized_identity_accepts_roundoff_but_rejects_material_error():
     """The public path preserves the documented Rust identity tolerance."""
     loadings = np.asarray([[0.70, 0.20], [0.80, 0.30]], dtype=np.float64)
     roundoff = np.asarray([0.47 + 5e-9, 0.27 - 5e-9], dtype=np.float64)
-    assert bifactor_scoreability(loadings, roundoff).factor_item_counts == (2, 2)
+    assert assess_bifactor_scoreability(
+        loadings, roundoff, zero_tolerance=0.0
+    ).factor_item_counts == (2, 2)
 
     material = roundoff.copy()
     material[0] += 1e-5
     with pytest.raises(ValueError, match="sum to one"):
-        bifactor_scoreability(loadings, material)
+        assess_bifactor_scoreability(loadings, material, zero_tolerance=0.0)
 
 
 def test_sign_cancelled_composite_variance_is_rejected_by_rust():
@@ -195,7 +250,9 @@ def test_sign_cancelled_composite_variance_is_rejected_by_rust():
         dtype=np.float64,
     )
     with pytest.raises(ValueError, match="omega denominator must be positive"):
-        bifactor_scoreability(loadings, np.zeros(2, dtype=np.float64))
+        assess_bifactor_scoreability(
+            loadings, np.zeros(2, dtype=np.float64), zero_tolerance=0.0
+        )
 
 
 def test_python_rejects_oversized_work_before_loading_the_rust_module(monkeypatch):
@@ -212,7 +269,7 @@ def test_python_rejects_oversized_work_before_loading_the_rust_module(monkeypatc
     loadings = np.zeros((12_208, 64), dtype=np.float64)
     uniquenesses = np.ones(12_208, dtype=np.float64)
     with pytest.raises(ValueError, match="work budget"):
-        bifactor_scoreability(loadings, uniquenesses)
+        assess_bifactor_scoreability(loadings, uniquenesses, zero_tolerance=0.0)
 
 
 def test_loader_caches_the_secondary_extension_module():
@@ -222,14 +279,16 @@ def test_loader_caches_the_secondary_extension_module():
 
 def test_plain_nested_sequences_keep_the_public_array_like_contract():
     """Ordinary nested Python lists remain accepted after bounded preflight."""
-    result = bifactor_scoreability(_loadings().tolist(), _uniquenesses().tolist())
+    result = assess_bifactor_scoreability(
+        _loadings().tolist(), _uniquenesses().tolist(), zero_tolerance=0.0
+    )
     assert result.factor_item_counts == (4, 2, 2)
 
 
 def test_numpy_row_sequences_keep_the_public_array_like_contract():
     """Lists of one-dimensional NumPy rows remain valid two-dimensional inputs."""
     loadings = [row.copy() for row in _loadings()]
-    result = bifactor_scoreability(loadings, _uniquenesses())
+    result = assess_bifactor_scoreability(loadings, _uniquenesses(), zero_tolerance=0.0)
     assert result.factor_item_counts == (4, 2, 2)
 
 
@@ -237,4 +296,4 @@ def test_numpy_row_sequences_keep_the_public_array_like_contract():
 def test_plain_sequences_reject_non_matrix_shapes_before_core(loadings):
     """Empty, one-dimensional, and three-dimensional lists fail closed."""
     with pytest.raises(ValueError, match="2-D item-by-factor matrix"):
-        bifactor_scoreability(loadings, _uniquenesses())
+        assess_bifactor_scoreability(loadings, _uniquenesses(), zero_tolerance=0.0)

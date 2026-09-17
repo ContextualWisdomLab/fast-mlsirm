@@ -124,7 +124,16 @@ def test_rejects_out_of_range_caller_arguments() -> None:
         _fit(y, n_starts=0)
     with pytest.raises(ValueError):
         fit_bifactor_grm(
-            y, np.array([0, 0, 0, 1, 1]), N_CAT, N_SPECIFIC, q_general=7, q_specific=7
+            y,
+            np.array([0, 0, 0, 1, 1]),
+            N_CAT,
+            N_SPECIFIC,
+            q_general=7,
+            q_specific=7,
+            max_iter=500,
+            tol=1e-5,
+            n_starts=1,
+            seed=SEED,
         )
     with pytest.raises(ValueError):
         fit_bifactor_grm(
@@ -134,6 +143,10 @@ def test_rejects_out_of_range_caller_arguments() -> None:
             N_SPECIFIC,
             q_general=7,
             q_specific=7,
+            max_iter=500,
+            tol=1e-5,
+            n_starts=1,
+            seed=SEED,
         )
 
 
@@ -142,6 +155,37 @@ def test_q_general_and_q_specific_are_required() -> None:
     y = _simulate(SEED)
     with pytest.raises(TypeError):
         fit_bifactor_grm(y, SPECIFIC_MAP, N_CAT, N_SPECIFIC)
+
+
+def test_max_iter_n_starts_seed_and_tol_are_required() -> None:
+    """ADR-0028 (#1963): iteration/convergence/replicate/seed controls have no default."""
+    y = _simulate(SEED)
+    base = dict(q_general=7, q_specific=7, max_iter=500, tol=1e-5, n_starts=1, seed=SEED)
+    for missing in ("max_iter", "tol", "n_starts", "seed"):
+        kwargs = {k: v for k, v in base.items() if k != missing}
+        with pytest.raises(TypeError):
+            fit_bifactor_grm(y, SPECIFIC_MAP, N_CAT, N_SPECIFIC, **kwargs)
+
+
+def test_deprecated_positional_default_removed_for_fipc() -> None:
+    """ADR-0028 (#1963): fit_bifactor_grm_fipc's max_iter/tol are also required."""
+    from fast_mlsirm.bifactor_grm import fit_bifactor_grm_fipc
+
+    y = _simulate(SEED)
+    fit = _fit(y)
+    anchor = np.zeros(N_ITEMS, dtype=bool)
+    anchor[:3] = True
+    with pytest.raises(TypeError):
+        fit_bifactor_grm_fipc(
+            y,
+            SPECIFIC_MAP,
+            N_CAT,
+            N_SPECIFIC,
+            anchor,
+            fit.a_general,
+            fit.a_specific,
+            fit.threshold,
+        )
 
 
 def test_uncapped_start_budget_is_accepted() -> None:
