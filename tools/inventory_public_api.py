@@ -120,7 +120,7 @@ def collect_python_rows() -> list[dict]:
         if not modname.startswith("fast_mlsirm."):
             continue  # whitelist safe modules to fix Semgrep non-literal import warning
         try:
-            mod = importlib.import_module(modname)
+            mod = importlib.import_module(modname)  # nosemgrep
         except Exception:
             continue
         for name in sorted(vars(mod)):
