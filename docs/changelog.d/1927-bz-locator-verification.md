@@ -1,6 +1,6 @@
 # Verify Bock & Zimowski (1997) locators in bifactor/multigroup docs (#1927)
 
-## Docs
+## Changed
 
 - **Full-text verification attempted, chapter unobtainable.** Bock &
   Zimowski (1997), *Multiple group IRT* (Handbook of Modern IRT, ch. 25,
