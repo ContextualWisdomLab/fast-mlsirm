@@ -184,7 +184,7 @@ def test_public_spatial_mmle_rejects_versioned_callable_with_stale_signature(
 
 def test_compiled_rust_core_exports_current_marginal_capability() -> None:
     """The native module publishes the exact Python-supported ABI version."""
-    core = pytest.importorskip("fast_mlsirm._core")
+    core = importlib.import_module("fast_mlsirm._core")
     capability = core.MARGINAL_CAPABILITY_VERSION
     assert type(capability) is int
     assert capability == fit_module._MARGINAL_CAPABILITY_VERSION

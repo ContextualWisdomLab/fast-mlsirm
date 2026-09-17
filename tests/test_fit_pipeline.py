@@ -1,3 +1,5 @@
+from importlib import import_module
+
 import numpy as np
 import pytest
 
@@ -44,7 +46,7 @@ def test_auto_backend_requires_rust_core(monkeypatch):
 
 
 def test_rust_backend_fit_smoke():
-    pytest.importorskip("fast_mlsirm._core")
+    import_module("fast_mlsirm._core")
     data = simulate(MLS2PLMConfig(n_persons=12, n_dims=1, items_per_dim=2, latent_dim=1, seed=31))
 
     result = fit(

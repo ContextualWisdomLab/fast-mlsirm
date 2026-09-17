@@ -49,7 +49,9 @@ def test_population_labels_preserve_signed_int64_upper_boundary() -> None:
 def test_population_labels_preserve_extended_precision_int64_upper_boundary() -> None:
     """A wider real dtype must preserve an exactly representable INT64_MAX label."""
     if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
-        pytest.skip("np.longdouble has no additional precision on this platform")
+        pytest.fail(
+            "extended-precision population-label evidence requires longdouble wider than binary64"
+        )
 
     labels = np.array(
         [np.longdouble(0), np.longdouble(np.iinfo(np.int64).max)],

@@ -154,7 +154,7 @@ def test_native_multilevel_moments_match_the_reference_reduction():
     """Rust multilevel moment integration matches the paper-backed reference path."""
     core = fitstats._core_module()
     if core is None:
-        pytest.skip("compiled Rust core is unavailable in this test environment")
+        pytest.fail("compiled Rust core is required for multilevel moment parity")
 
     probs = np.array(
         [
@@ -193,7 +193,7 @@ def test_native_cluster_covariance_matches_explicit_cluster_reference():
     """Rust cluster covariance preserves finite-cluster correction and centering."""
     core = fitstats._core_module()
     if core is None:
-        pytest.skip("compiled Rust core is unavailable in this test environment")
+        pytest.fail("compiled Rust core is required for cluster covariance parity")
 
     rows = np.array(
         [[1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0], [1.0, 1.0], [1.0, 1.0]]

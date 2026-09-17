@@ -144,7 +144,9 @@ def test_score_wle_rejects_lossy_longdouble_control_before_data(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
-        pytest.skip("platform long double is not wider than binary64")
+        pytest.fail(
+            "lossless WLE-control evidence requires longdouble wider than binary64"
+        )
     hostile = _HostileArrayProvider()
     core_calls = _forbid_core(monkeypatch)
     lossy = np.longdouble(1) + np.finfo(np.longdouble).eps

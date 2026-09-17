@@ -90,7 +90,9 @@ def test_fit_2pl_rejects_extended_precision_value_that_would_round_to_binary_res
     """A wider real value must not become 1.0 merely because float64 narrows it."""
 
     if np.finfo(np.longdouble).nmant <= np.finfo(np.float64).nmant:
-        pytest.skip("np.longdouble has no additional precision on this platform")
+        pytest.fail(
+            "lossless 2PL response-admission evidence requires longdouble wider than binary64"
+        )
 
     core_calls = _install_no_core(monkeypatch)
     one = np.longdouble(1)

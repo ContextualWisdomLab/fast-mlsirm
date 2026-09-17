@@ -127,7 +127,7 @@ def test_projected_m2_native_rejects_nonfinite_inputs(target):
     """The PyO3 boundary must reject non-finite values before Rust arithmetic."""
     core = fitstats._core_module()
     if core is None:
-        pytest.skip("compiled Rust core is unavailable in this test environment")
+        pytest.fail("compiled Rust core is required for native projection evidence")
 
     residual = np.array([0.25, -0.25], dtype=np.float64)
     delta = np.array([[1.0], [0.5]], dtype=np.float64)
@@ -150,7 +150,7 @@ def test_projected_m2_native_rejects_oversized_broadcast_before_copy():
     """Logical broadcast shapes must hit the resource guard before materialization."""
     core = fitstats._core_module()
     if core is None:
-        pytest.skip("compiled Rust core is unavailable in this test environment")
+        pytest.fail("compiled Rust core is required for native projection evidence")
 
     size = 2049
     residual = np.zeros(size, dtype=np.float64)

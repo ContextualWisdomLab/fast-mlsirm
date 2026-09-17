@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 import json
 import sys
 from unittest.mock import patch
-
-import pytest
 
 from fast_mlsirm.cli import main
 
@@ -16,7 +15,7 @@ def test_cli_plain_unidimensional_mmle_auto_reports_rust(
 ) -> None:
     """Plain MMLE must report the resolved Rust backend, never the selector ``auto``."""
 
-    pytest.importorskip("fast_mlsirm._core")
+    import_module("fast_mlsirm._core")
     monkeypatch.chdir(tmp_path)
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
