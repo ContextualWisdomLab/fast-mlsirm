@@ -25,6 +25,10 @@ fully before making changes. In particular it defines:
   Psychometrics Commons or own its HTTP, session, consent, database, UI, or
   deployment concerns. The hosted runtime must not be recreated under
   `services/assessment_runtime` in this repository.
+- **Temporal and architecture ownership**: TEPP owns temporal/event composition
+  and semantics; fast-mlsirm owns reusable time-indexed psychometric numerical
+  kernels over explicit carriers. Context Fabric integration remains contract-
+  mediated and fail-closed until an immutable released contract exists.
 
 ## Runtime Contract
 
@@ -141,6 +145,24 @@ orchestration, UI, product persistence, and deployment belong to that repository
 or the owning CWL service. This repository must remain independently installable
 and must not acquire a reverse dependency on Psychometrics Commons. The hosted
 runtime must not be recreated under `services/assessment_runtime` here.
+
+TEPP owns temporal/event composition and semantics, including event ontology,
+temporal validity/order, changing-membership history, and longitudinal leakage
+policy. fast-mlsirm owns reusable time-indexed psychometric numerical kernels
+over explicit supplied occasion/time carriers. TEPP-originated designs cross an
+explicit versioned immutable Anti-Corruption Layer only; cross-service SQL,
+direct TEPP database access, and hidden TEPP runtime dependencies are forbidden.
+
+`ContextualWisdomLab/context-graph-contracts` is the contract-only Shared Kernel
+for Context Assertions, CloudEvents, provenance, conformance, and admission.
+`ContextualWisdomLab/enterprise-architecture-core` is the authoritative EA
+Decision Plane. This repository consumes those owner surfaces read-only and may
+project architecture/package/backend/toolchain/consumer-lifecycle facts only
+through an immutable released context-graph-contracts contract with provenance.
+Estimator values, latent scores, DIF/fit diagnostics, and scientific-validity
+evidence are not authoritative EA facts. Do not pin unreleased sibling PR heads,
+copy scientific result data into EA authority, or use a foreign database as an
+integration shortcut.
 
 ### Layout and how the pieces connect
 

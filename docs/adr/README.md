@@ -23,7 +23,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0004](0004-governed-rubric-item-bank-lifecycle.md) | Proposed | Build candidate-blind evidence-grounded rubric/item generation into a governed psychometric item-bank lifecycle. |
 | [0005](0005-automated-scoring-raters.md) | Accepted | Human and automated scorers are fallible raters; calibration/validation must model rater effects and preserve terminal states. |
 | [0006](0006-relation-safe-model-selection.md) | Accepted | Factor retention and structural model choice are distinct; model comparison is relation-safe and fail-closed when distinguishability is unknown. |
-| [0007](0007-multilevel-multiple-membership-temporal.md) | Proposed | Multilevel, cross-classified, multiple-membership and temporal structure are first-class; Rust estimators require recovery evidence before production release. |
+| [0007](0007-multilevel-multiple-membership-temporal.md) | Proposed | Multilevel, cross-classified, multiple-membership and time-indexed psychometric structure are first-class; Rust estimators require recovery evidence, while TEPP temporal/event ownership is governed by ADR-0028. |
 | [0008](0008-true-parameter-recovery-ci.md) | Accepted | True-parameter recovery/coverage, not correlation alone, is the core scientific CI evidence for numerical estimators. |
 | [0009](0009-adaptive-rotation-selection.md) | Accepted | Protected main uses a Rust criterion registry, deterministic multi-start and criterion-neutral empirical selection; no universal best criterion or global-optimum claim. GPU/additional-criterion expansion remains separately gated. |
 | [0010](0010-llm-orchestration-and-credentials.md) | Accepted | Model-backed automation uses provider-neutral boundaries, NVIDIA NIM credentials where needed, and never uses Copilot credentials for development scheduling. |
@@ -35,14 +35,15 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0016](0016-figma-buyer-evidence-design-boundary.md) | Accepted | Bind the buyer-review Figma file ID to repository-local packet validation while keeping Code Connect and hosted UI ownership downstream. |
 | [0017](0017-bradley-terry-mm.md) | Accepted | Adopt Bradley–Terry fitted by Hunter MM, plus the implemented additive-ties BRATT variant; do not claim Rao–Kupper/Davidson. |
 | [0018](0018-angoff-delta-plot-dif.md) | Accepted | Adopt Angoff delta-plot (Magis & Facon threshold) as the small-sample observed-score DIF screen; distinct from MH/logistic/SIBTEST. |
-| [0019](0019-rust-longitudinal-state-engine.md) | Proposed | Rust owns the first respondent-level longitudinal state layer as independent OLS trends and caller-supplied discrete AR; full joint multilevel estimation remains gated. |
-| [0020](0020-joint-hierarchical-ctar-rasch.md) | Proposed | Joint MAP hierarchical continuous-time AR(1) Rasch estimates shared `(mu, tau, lambda)` and person-occasion states; MMMC and GPU parity remain excluded. |
+| [0019](0019-rust-longitudinal-state-engine.md) | Proposed | Rust numerical state-layer proposal; event ontology, temporal validity and composition remain TEPP-owned under ADR-0028. |
+| [0020](0020-joint-hierarchical-ctar-rasch.md) | Proposed | Joint MAP hierarchical continuous-time AR(1) Rasch numerical kernel; temporal/event composition remains TEPP-owned under ADR-0028. |
 | [0021](0021-residual-interaction-map-boundary.md) | Accepted | Rust owns residual interaction-map arithmetic and provenance-bearing diagnostics. |
 | [0022](0022-finite-population-proportion-sampling-design.md) | Proposed | Rust owns the versioned NIST proportion sample-size/FPC and ABS proportional/Neyman allocation artifact; every prevalence and policy input is caller evidence. |
 | [0023](0023-tepp-anchored-lineage-channel-weight-boundary.md) | Proposed | Admit continuous channel evidence and exact accepted TEPP v1 identity, while estimation fails closed until pair-level independent criterion evidence exists. |
 | [0024](0024-macos-native-rust-mlx-metal-consumer-boundary.md) | Accepted | Consume macOS-native Rust-owned MLX Metal through authenticated host transport with exact backend/parity receipts; Linux never claims Metal. |
 | [0025](0025-finite-population-achieved-proportion.md) | Proposed | Rust terminates a complete one-stratum SRSWOR design with the achieved proportion, design variance, and Wang/Konijn exact interval. |
 | [0026](0026-public-polytomous-prediction-boundary.md) | Proposed | Expose Rust-owned GRM/GPCM category probabilities and expected responses through the public Python boundary. |
+| [0028](0028-tepp-temporal-event-composition-boundary.md) | Accepted | TEPP owns temporal/event composition and semantics; fast-mlsirm retains reusable time-indexed psychometric numerical kernels behind an explicit Anti-Corruption Layer. |
 | [0100](0100-adaptive-contextual-orchestrator-default.md) | Accepted | contextual-orchestrator adaptive mode is the injected LLM-judge default while transport ownership stays upstream. |
 
 ## ADR completeness rule
