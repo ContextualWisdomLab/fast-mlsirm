@@ -19,6 +19,15 @@
 //! path scales with `n_persons`; parity tests assert fit-level agreement
 //! derived from that bound (see `tests/test_bifactor_gpu.py`).
 //!
+//! # Adapter limits
+//!
+//! Dispatches are factored into `(x, y, z)` against the adapter's runtime
+//! `max_compute_workgroups_per_dimension` (65535 on Apple Metal / WebGPU) so
+//! large node×item×category grids (e.g. AC late-life bifactor at q=241) do
+//! not panic with a validation error. Storage buffers are sized against
+//! `max_storage_buffer_binding_size` / `max_buffer_size` and fall back to CPU
+//! when they do not fit — no hardcoded workgroup or byte caps.
+//!
 //! # References
 //!
 //! - Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E.,
@@ -133,10 +142,22 @@ fn lse_h(base: u32, n: u32) -> f32 {
     return mx + log(s);
 }
 
+// Flatten a 3-D workgroup grid (workgroup_size 64,1,1) into a 1-D invocation
+// index so host-side dispatch can split across x/y/z when a single axis would
+// exceed the adapter's max_compute_workgroups_per_dimension (Metal/WebGPU).
+fn flat_idx(wid: vec3<u32>, lid: u32, nwg: vec3<u32>) -> u32 {
+    let wg = wid.x + wid.y * nwg.x + wid.z * nwg.x * nwg.y;
+    return wg * 64u + lid;
+}
+
 // Per (person, general node): general loglik, block integrals, block table.
 @compute @workgroup_size(64)
-fn accumulate(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
-    let idx = gid_inv.x;
+fn accumulate(
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(local_invocation_index) lid: u32,
+    @builtin(num_workgroups) nwg: vec3<u32>,
+) {
+    let idx = flat_idx(wid, lid, nwg);
     let total = dims.np * dims.qg;
     if (idx >= total) { return; }
     let p = idx / dims.qg;
@@ -175,8 +196,12 @@ fn accumulate(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
 
 // Per person: marginal loglik and general posterior.
 @compute @workgroup_size(64)
-fn normalize(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
-    let p = gid_inv.x;
+fn normalize(
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(local_invocation_index) lid: u32,
+    @builtin(num_workgroups) nwg: vec3<u32>,
+) {
+    let p = flat_idx(wid, lid, nwg);
     if (p >= dims.np) { return; }
     var mx = -1e38;
     for (var t = 0u; t < dims.qg; t = t + 1u) {
@@ -199,16 +224,18 @@ fn normalize(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
 
 // Per (person, block, general node): joint (t, h) posterior.
 @compute @workgroup_size(64)
-fn joint_post(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
-    let idx = gid_inv.x;
+fn joint_post(
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(local_invocation_index) lid: u32,
+    @builtin(num_workgroups) nwg: vec3<u32>,
+) {
+    let idx = flat_idx(wid, lid, nwg);
     let total = dims.np * dims.ns * dims.qg;
     if (idx >= total) { return; }
     let p = idx / (dims.ns * dims.qg);
     let rem = idx % (dims.ns * dims.qg);
     let s = rem / dims.qg;
     let t = rem % dims.qg;
-    let base = ((p * dims.ns + s) * dims.qg + t) * dims.qs;
-
     let base = ((p * dims.ns + s) * dims.qg + t) * dims.qs;
     let lw = log_wg[t];
     // Exactly-zero Gauss-Hermite mass at large q yields log_w = -inf; then
@@ -232,8 +259,12 @@ fn joint_post(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
 
 // General-only expected counts over (group, item, t, k).
 @compute @workgroup_size(64)
-fn reduce_counts_gen(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
-    let idx = gid_inv.x;
+fn reduce_counts_gen(
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(local_invocation_index) lid: u32,
+    @builtin(num_workgroups) nwg: vec3<u32>,
+) {
+    let idx = flat_idx(wid, lid, nwg);
     let total = dims.ng * dims.ni * dims.qg * dims.nc;
     if (idx >= total) { return; }
     let k = idx % dims.nc;
@@ -256,8 +287,12 @@ fn reduce_counts_gen(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
 
 // Block-item expected counts over (group, item, t, h, k).
 @compute @workgroup_size(64)
-fn reduce_counts_blk(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
-    let idx = gid_inv.x;
+fn reduce_counts_blk(
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(local_invocation_index) lid: u32,
+    @builtin(num_workgroups) nwg: vec3<u32>,
+) {
+    let idx = flat_idx(wid, lid, nwg);
     let total = dims.ng * dims.ni * dims.qg * dims.qs * dims.nc;
     if (idx >= total) { return; }
     let k = idx % dims.nc;
@@ -284,8 +319,12 @@ fn reduce_counts_blk(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
 
 // Per-group general moments (w, s1, s2) packed as 3 + 2*ns floats.
 @compute @workgroup_size(64)
-fn reduce_moments_g(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
-    let g = gid_inv.x;
+fn reduce_moments_g(
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(local_invocation_index) lid: u32,
+    @builtin(num_workgroups) nwg: vec3<u32>,
+) {
+    let g = flat_idx(wid, lid, nwg);
     if (g >= dims.ng) { return; }
     let row = g * (3u + 2u * dims.ns);
     var w = 0.0;
@@ -308,8 +347,12 @@ fn reduce_moments_g(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
 
 // Per-(group, block) specific moments (w_spec, s2_spec).
 @compute @workgroup_size(64)
-fn reduce_moments_s(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
-    let idx = gid_inv.x;
+fn reduce_moments_s(
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(local_invocation_index) lid: u32,
+    @builtin(num_workgroups) nwg: vec3<u32>,
+) {
+    let idx = flat_idx(wid, lid, nwg);
     let total = dims.ng * dims.ns;
     if (idx >= total) { return; }
     let g = idx / dims.ns;
@@ -348,7 +391,8 @@ const MIN_STORAGE_BUFFERS: u32 = 20;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
     use crate::gpu::{
-        dispatch_count, output_buffer, staging_buffer, storage_entry, submit_and_readback,
+        dispatch_count, dispatch_workgroups_nd, output_buffer, staging_buffer, storage_buffer_fits,
+        storage_entry, submit_and_readback,
     };
 
     let ctx = GpuContext::get()?;
@@ -356,6 +400,8 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         return None;
     }
     let device = &ctx.device;
+    let limits = device.limits();
+    let max_wg = limits.max_compute_workgroups_per_dimension;
 
     let np = inputs.n_persons;
     let ni = inputs.n_items;
@@ -365,6 +411,28 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let qs = inputs.qs;
     let ng = inputs.n_groups;
     let stride = qg * qs;
+
+    // Fail closed on storage binding budget before allocating (Metal/WebGPU
+    // report these at runtime; never hardcode a byte cap).
+    let buffer_lens = [
+        np * ni,                 // yobs as i32 — sized separately below
+        np * qg,                 // genlog / postg
+        np * ns * qg,            // logi
+        np * ns * qg * qs,       // blockacc / joint
+        np,                      // ll
+        np * ns,                 // anyobs
+        ng * ni * stride * nc,   // counts
+        ng * (3 + 2 * ns),       // moments
+    ];
+    for &len in &buffer_lens[1..] {
+        if !storage_buffer_fits(&limits, len) {
+            return None;
+        }
+    }
+    // yobs is i32; reuse the f32-sized check with equal element width.
+    if !storage_buffer_fits(&limits, buffer_lens[0]) {
+        return None;
+    }
 
     // y/observed packed as i32 (-1 = missing).
     let mut yobs = vec![-1i32; np * ni];
@@ -391,6 +459,9 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
             tab_off[g * ni + i] = tables.len() as u32;
             tables.extend(inputs.tables_groups[g][i].iter().map(|&v| v as f32));
         }
+    }
+    if !storage_buffer_fits(&limits, tables.len()) {
+        return None;
     }
     let mut block_of = vec![-1i32; ni];
     for (i, b) in inputs.item_block.iter().enumerate() {
@@ -603,6 +674,9 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let pl_ms = make("reduce_moments_s");
 
     // One compute pass per kernel so storage writes are visible downstream.
+    // Factor each 1-D workgroup count into x/y/z against the adapter's
+    // max_compute_workgroups_per_dimension (65535 on Apple Metal) so study-
+    // scale q×item×category grids (e.g. AC late-life q=241) do not panic.
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     for (pipeline, groups) in [
@@ -614,13 +688,14 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         (&pl_mg, dispatch_count(ng)),
         (&pl_ms, dispatch_count(ng * ns)),
     ] {
+        let (dx, dy, dz) = dispatch_workgroups_nd(groups.max(1), max_wg)?;
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: None,
             timestamp_writes: None,
         });
         cpass.set_bind_group(0, &bind_group, &[]);
         cpass.set_pipeline(pipeline);
-        cpass.dispatch_workgroups(groups.max(1), 1, 1);
+        cpass.dispatch_workgroups(dx, dy, dz);
     }
 
     let ll_staging = staging_buffer(device, "ll_read", np);
