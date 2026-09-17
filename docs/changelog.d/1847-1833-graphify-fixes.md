@@ -1,6 +1,6 @@
 # Graphify tooling investigation for #1847 and #1833
 
-## Fixed (upstream, `Graphify-Labs/graphify`)
+## Fixed
 
 - #1847: `to_json`'s node-count shrink guard refused a `cluster-only` write
   on an unchanged graph after `build_from_json`'s ghost-merge pass
@@ -16,9 +16,6 @@
   persistent warning every run. The manifest parser now marks this case
   `skipped`, so the by-design exclusion is explicit instead of warning.
   Upstream PR: https://github.com/Graphify-Labs/graphify/pull/3622.
-
-## Notes
-
 - No fast-mlsirm runtime, Cargo, or Python code changed — both issues were
   tooling-only (Graphify artifact refresh/reviewability), confirmed via a
   RED-then-GREEN regression test in the `seonghobae/graphify` fork before
