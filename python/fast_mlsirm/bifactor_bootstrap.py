@@ -54,9 +54,29 @@ import os
 import time
 import numpy as np
 
-from .bifactor_grm import _SUPPORTED_Q as _GH_RULES
 from .bifactor_grm import fit_bifactor_grm
 from .bifactor_multigroup import fit_bifactor_grm_multigroup
+
+
+def _require_gh_nodes(value: object, name: str) -> int:
+    """Validate a Gauss-Hermite node count (any ``n >= 1``, no table cap).
+
+    The Rust core generates any ``n >= 1`` rule on demand (Golub & Welsch,
+    1969; issue #1929) and guards allocation overflow, so the Python layer
+    only enforces the lower bound and integer-ness here.
+    """
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be >= 1")
+    try:
+        numeric = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be >= 1") from None
+    if not np.isfinite(numeric) or numeric != np.floor(numeric):
+        raise ValueError(f"{name} must be >= 1")
+    intval = int(numeric)
+    if intval < 1:
+        raise ValueError(f"{name} must be >= 1")
+    return intval
 
 
 @dataclass
@@ -306,8 +326,9 @@ def run_bifactor_bootstrap(
             replicates within budget).
         compute_budget_seconds: Wall-clock budget; batch execution stops when
             the elapsed time reaches this bound.
-        q_general/q_specific: Required Gauss-Hermite node counts (members of
-            the embedded rule set); no default is offered.
+        q_general/q_specific: Required Gauss-Hermite node counts (any integer
+            ``>= 1``; generated on demand via Golub & Welsch, 1969 — no
+            fixed-table cap, issue #1929); no default is offered.
         group_ids: Optional 1-D group membership indices (``None`` selects
             the single-group estimator).
         n_groups: Number of groups.
@@ -369,10 +390,8 @@ def run_bifactor_bootstrap(
     if not isinstance(device, str) or device.strip().lower() not in ("cpu", "gpu", "auto"):
         raise ValueError(f"device must be one of 'cpu', 'gpu', 'auto'; got {device!r}")
     device = device.strip().lower()
-    if q_general not in _GH_RULES:
-        raise ValueError(f"q_general must be one of {_GH_RULES}")
-    if q_specific not in _GH_RULES:
-        raise ValueError(f"q_specific must be one of {_GH_RULES}")
+    q_general = _require_gh_nodes(q_general, "q_general")
+    q_specific = _require_gh_nodes(q_specific, "q_specific")
     if not isinstance(tol, (float, int)) or not math.isfinite(tol) or tol <= 0:
         raise ValueError(f"tol must be finite and positive, got {tol!r}")
     if not isinstance(estimate_specific_vars, bool):

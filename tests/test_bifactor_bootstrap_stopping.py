@@ -160,8 +160,14 @@ def test_bootstrap_argument_validation():
         {"ci_level": 0.0},
         {"ci_level": 1.0},
         {"ci_level": 1.5},
-        {"q_general": 13},
-        {"q_specific": 241},
+        {"q_general": 0},
+        {"q_general": -3},
+        {"q_general": 11.5},
+        {"q_general": True},
+        {"q_specific": 0},
+        {"q_specific": -3},
+        {"q_specific": 11.5},
+        {"q_specific": True},
         {"n_starts": 0},
     ]
     for bad in bad_cases:

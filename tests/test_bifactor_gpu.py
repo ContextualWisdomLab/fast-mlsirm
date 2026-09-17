@@ -15,9 +15,11 @@ differences of ~2e-7) and 1e-3 absolute for the loglik (measured 4.7e-5);
 convergence paths (iterations, flags) must agree exactly.
 
 Quadrature follows the merged estimator contract: Gauss-Hermite counts are
-caller arguments restricted to the embedded rule set ``(7, 11, 15, 21, 31,
-41)`` with no defaults; equivalence runs at the 21-point grid (finer than
-the 7-point grids of the stage-1/2 tests). Node counts are never capped.
+caller arguments (any integer ``>= 1``, generated on demand via Golub &
+Welsch, 1969 — no fixed-table cap, issue #1929) with no defaults; smoke
+equivalence runs at small grids while study-precision parity runs at the
+maintainer-standard 121- and 241-point grids (chosen by precision
+convergence). Node counts are never capped.
 
 Implementation basis: Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D.
 J., Segawa, E., Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V.
