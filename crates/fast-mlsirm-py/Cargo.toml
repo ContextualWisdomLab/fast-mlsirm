@@ -14,6 +14,6 @@ path = "src/entrypoint.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-mlsirm-core = { path = "../mlsirm-core", default-features = false }
+mlsirm-core = { path = "../mlsirm-core" }
 numpy = "0.29.0"
 pyo3 = "0.29.0"
