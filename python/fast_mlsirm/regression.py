@@ -3,7 +3,7 @@
 All numerical work (OLS normal equations, hat diagonal, HC sandwich meats,
 linear contrasts, and χ²/F/t upper tails) is delegated to the Rust extension.
 This module only validates NumPy layout and marshals results. It does not
-import SciPy or call Rscript.
+pull in third-party stats packages or shell out to an R interpreter.
 
 Basis
 -----
