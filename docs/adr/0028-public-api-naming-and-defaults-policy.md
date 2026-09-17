@@ -97,18 +97,81 @@ Every public callable name is built from ordered segments:
 <verb>_<model_or_family_token>_<object>_<scope_qualifier>
 ```
 
-1. **Verb-first.** The first segment is an action verb: `fit`, `score`,
-   `predict`, `simulate`, `estimate`, `validate`, `build`, `render`,
-   `select`, `assemble`, `equate`, `evaluate`, `calibrate`, `resolve`,
-   `load`, `save`, `normalize`, `detect` (procedure-detection family, see
-   below), or another verb already established as a majority pattern in
-   `docs/api/inventory-20260917.csv` (e.g. `build_*` covers 48 functions,
-   `fit_*` covers 50). A bare named-method exception is allowed only for an
-   eponymous statistical procedure with no natural verb paraphrase already
-   accepted in an ADR (e.g. `bradley_terry_mm`, ADR-0017) — these keep their
-   published name rather than being forced into `fit_bradley_terry_mm`
-   redundancy when the module already makes the verb unambiguous from
-   context (`fit.py`).
+1. **Verb-first.** The first segment is an action verb from the controlled
+   vocabulary below (`tools/classify_renames_and_defaults.py`'s
+   `VERB_VOCAB` is this table's authoritative, checked copy — the two must
+   not drift):
+
+   | Verb | Definition |
+   |---|---|
+   | `fit` | estimate a model's parameters from data |
+   | `score` | compute a person-level (or aggregate) score from a fitted model or response pattern |
+   | `predict` | compute a model-implied expected value (response, probability, category) |
+   | `simulate` | generate synthetic response data from a model/process |
+   | `estimate` | compute a numeric quantity via an estimation procedure short of full model fitting (e.g. a reliability or bias estimate) |
+   | `validate` | check that input/output data or a specification satisfies a stated contract |
+   | `check` | evaluate whether an already-computed quantity satisfies a stated property (e.g. monotonicity) |
+   | `build` | assemble a composite structure, report, or specification from inputs |
+   | `render` | produce a caller-facing presentation artifact from already-computed values |
+   | `select` | choose one or more items/options from a candidate set |
+   | `assemble` | construct a form/test from an item pool under constraints |
+   | `equate` | place two forms' scores on a common scale |
+   | `evaluate` | run a procedure to produce a pass/fail or judged result |
+   | `calibrate` | place item/person parameters on a common metric |
+   | `resolve` | turn a caller-supplied identifier/spec into a concrete internal object |
+   | `load` / `save` | read/persist data or artifacts |
+   | `normalize` | rescale a quantity onto a fixed reference scale |
+   | `detect` | run a screen that flags an item/response for a named condition (e.g. DIF) |
+   | `compute` | calculate a numeric diagnostic/statistic with no more specific verb above applying |
+   | `compare` | contrast two or more fitted models/artifacts |
+   | `run` | execute a full external or multi-step procedure |
+   | `analyze` | perform a named multi-step analysis producing a composite report |
+   | `enumerate` | exhaustively iterate a combinatorial space |
+   | `generate` | produce new content (e.g. items), distinct from `simulate`'s synthetic response data |
+   | `administer` | deliver one step or a full session of an assessment |
+   | `align` | bring two spaces/scales/objects into correspondence |
+   | `audit` | check governance/policy compliance of an artifact |
+   | `classify` | assign a discrete category/decision to an input |
+   | `compile` | assemble a specification from declarative inputs into a runnable form |
+   | `describe` | produce a human-readable summary of a contract/object |
+   | `diagnose` | run a diagnostic screen and report the result |
+   | `draw` | sample values from a distribution |
+   | `execute` | carry out a previously prepared plan/pipeline step |
+   | `expand` | unfold a compact representation into its full form |
+   | `export` | write a caller-facing artifact to an external format/location |
+   | `extract` | pull a structured subset out of a larger artifact |
+   | `get` | return an already-computed or stored value with no computation |
+   | `govern` | apply a governance/acceptance policy and return its verdict |
+   | `link` | place two instruments/forms on a common latent scale (IRT linking) |
+   | `list` | return an enumerable, unordered collection of options |
+   | `migrate` | transform a versioned artifact from one schema version to another |
+   | `parse` | turn external/raw input into an internal structured representation |
+   | `prepare` | transform raw input into the shape a downstream routine requires |
+   | `project` | map values from one representation into another (e.g. a matrix) |
+   | `rotate` | apply a factor-rotation criterion to a loading matrix |
+   | `route` | direct a case/item through a multi-branch decision path |
+   | `smooth` | apply a smoothing procedure to raw counts/frequencies |
+   | `standardize` | rescale to a fixed reference distribution (mean/SD) |
+   | `count` | tally a discrete quantity |
+
+   A bare named-method exception (no verb) is allowed only for an eponymous
+   statistical procedure, algorithm, or rating system whose *published name*
+   — not a verb paraphrase of it — is the term the psychometric/measurement
+   literature (and this repository's own accepted ADRs 0011, 0017, 0018,
+   0021, 0022, 0025) already use, e.g. `bradley_terry_mm` (ADR-0017),
+   `residual_interaction_map` (ADR-0021), `delta_plot` (ADR-0018),
+   `cronbach_alpha`, `sibtest`, `dimtest`, `m2`, `s_x2`, `icc`,
+   `elo_rating`/`glicko_rating`, `sigmoid`/`softplus`/`logit` — a verb prefix
+   here would make the function harder, not easier, to find, since callers
+   search by the term they already know from the source. This exception is
+   not a default: `tools/classify_renames_and_defaults.py`'s `EPONYM_KEEP`
+   set is the exhaustive, hand-reviewed list of every Python callable this
+   applies to (193 of 648, as of the 2026-09-17 inventory); a name that is
+   not verb-first and not in `EPONYM_KEEP` is a naming violation and gets a
+   proposed rename in `RENAME_MAP`, not a silent `keep`. This rule governs
+   free *functions*; classes keep the existing PascalCase noun convention
+   (`PolytomousFit`, `ExpectedScoreMonotonicity`), which this ADR does not
+   change.
 2. **Model/family token is a prefix, immediately after the verb.** When a
    function is specific to a model family (`grm`, `gpcm`, `bifactor`,
    `2pl`, `cdm`/`gdina`, `mantel_haenszel`, `logistic`, `breslow_day`,
@@ -120,20 +183,34 @@ Every public callable name is built from ordered segments:
    are prefix/mid, only `direct_enumeration_bifactor` is a trailing
    exception) and regularizes the DIF family, which currently splits
    roughly evenly between prefix and suffix placement of `dif`.
-3. **Scope qualifier (data-shape qualifier) is a trailing suffix.**
-   `polytomous`, `dichotomous`, `multigroup`, and comparable data-shape
-   qualifiers go last: `score_polytomous`, `fit_lsirm_polytomous`,
-   `fit_bifactor_grm_multigroup`. This matches the majority placement
-   already observed for `polytomous` (13 of 18 occurrences are trailing;
-   `polytomous_expected_response`, `polytomous_category_probabilities`,
-   `polytomous_information_criteria`, and the two `dif_polytomous_*` mid
-   occurrences are the renamed minority) and for `multigroup` (2 of 2
+3. **Scope qualifier (data-shape qualifier) is a trailing suffix, always
+   the last segment.** `polytomous`, `dichotomous`, `multigroup`, and
+   comparable data-shape qualifiers go last, after any object noun:
+   `score_polytomous`, `fit_lsirm_polytomous`, `fit_bifactor_grm_multigroup`,
+   `compute_item_fit_polytomous`, `predict_expected_response_polytomous`
+   (renaming `polytomous_expected_response`, prefix violation),
+   `compute_information_criteria_polytomous` (renaming
+   `polytomous_information_criteria`, prefix violation),
+   `diagnose_local_dependence_polytomous` (renaming
+   `local_dependence_polytomous`, which already had `polytomous` trailing
+   and only needed a verb — the rename must not move it to prefix just
+   because other `polytomous_*` violations were prefix). This matches the
+   majority placement already observed for `polytomous` (13 of 18
+   occurrences are trailing pre-rename) and for `multigroup` (2 of 2
    occurrences already trailing — no violation, kept as the pattern).
 4. **A function name never carries the same qualifier in two positions**
-   (e.g. no `fit_polytomous_polytomous_grm`); disambiguating object nouns
-   (`_monotonicity`, `_cutoff`, `_indices`, `_purified`) go after the scope
-   qualifier only when the scope qualifier itself is absent, otherwise
-   before it, per rule 1-3 ordering.
+   (e.g. no `fit_polytomous_polytomous_grm`). When both an object noun and
+   a scope qualifier are present, the object goes immediately after the
+   verb/model segment and the scope qualifier stays last:
+   `<verb>_<model_or_family_token>_<object>_<scope_qualifier>` (rule 3
+   applies to the whole name, not just to a bare `<verb>_<scope>` pair) —
+   e.g. `detect_dif_anchor_sets_polytomous` (renaming
+   `dif_polytomous_anchor_sets`, which had put the object `anchor_sets`
+   after the scope qualifier). A pure variant/modifier suffix that is not a
+   noun object of the function (`_purified`) stays after the scope
+   qualifier, since it modifies the whole named procedure rather than
+   naming a returned object: `detect_dif_polytomous_purified`,
+   `detect_dif_logistic_purified`.
 5. **`_legacy_init.py` is deprecation-only.** No new public name is added
    there; it exists solely to re-export names during the one-minor-release
    deprecation window this ADR requires (Migration, below). Once every
@@ -183,19 +260,25 @@ that default too so the two layers cannot silently disagree:
    rule (#1929); a cited default below 121 does not qualify for `keep` and
    is `change`d to required regardless of the citation, since 121 is a
    floor, not a citable-away constraint.
-2. **Decision thresholds, flag cutoffs, and stopping rules** — significance
-   levels (`alpha`, `alpha_level`), multiple-comparison controls (`fdr_q`),
-   flagging cutoffs (`se_threshold`, `flag_threshold`, `min_expected`,
-   `min_discrimination`, `min_effect`, `person_flag_threshold`,
-   `itemfit_penalty_weight`, `msq_band`, `isolation_z`, `sx2_min_effect`,
-   `zero_tolerance`), and iteration/purification stopping rules
-   (`max_rounds`, `min_anchor_items`, `min_flags_to_remove`, `j_min`) are
-   **required arguments** unless the docstring cites an APA 7th source for
-   the exact value (e.g. Benjamini & Hochberg, 1995, for a `fdr_q=0.05`
-   default; Candell & Drasgow, 1988, for a purification `max_rounds`
-   default) — a general "this function implements method X" citation for
-   the *method* does not by itself source a specific *default value* for a
-   tunable threshold inside that method.
+2. **Decision thresholds, flag cutoffs, coverage levels, and stopping
+   rules** — significance levels (`alpha`, `alpha_level`),
+   multiple-comparison controls (`fdr_q`), flagging cutoffs
+   (`se_threshold`, `flag_threshold`, `min_expected`, `min_discrimination`,
+   `min_effect`, `person_flag_threshold`, `itemfit_penalty_weight`,
+   `msq_band`, `isolation_z`, `sx2_min_effect`, `zero_tolerance`,
+   `z_fast`), confidence/coverage levels (`ci_level`, `conf_level`,
+   `centile`), and iteration/purification stopping rules (`max_rounds`,
+   `min_anchor_items`, `min_flags_to_remove`, `j_min`) are **required
+   arguments** unless the docstring cites an APA 7th source for the exact
+   value (e.g. Benjamini & Hochberg, 1995, for a `fdr_q=0.05` default;
+   Candell & Drasgow, 1988, for a purification `max_rounds` default) — a
+   general "this function implements method X" citation for the *method*
+   does not by itself source a specific *default value* for a tunable
+   threshold inside that method. `ci_level=0.95`/`conf_level=0.95` are the
+   same failure mode as `alpha=0.05`: a conventional value with no
+   function-specific source, so `require`d, not `keep`-with-a-generic-CI-
+   theory citation (a citation for confidence-interval theory in general
+   does not source *this function's* choice of 95% over 90%/99%).
 3. **Seeds are always required for stochastic routines.** No public
    callable that samples, bootstraps, or otherwise uses randomness may ship
    a numeric-literal default seed (`seed=0`, `seed=11400714819323198485`,
@@ -237,7 +320,15 @@ that default too so the two layers cannot silently disagree:
    `keep+source`, `require`, or `change`, each with a `rationale` column —
    this is the acceptance evidence that the policy above was applied
    mechanically and exhaustively to every row of the inventory, not
-   selectively to the six examples in #1959's issue body.
+   selectively to the six examples in #1959's issue body. Concretely, of
+   the 648 unique public Python callables in the 2026-09-17 inventory, 211
+   are hand-reviewed name renames (`RENAME_MAP`) and 193 are hand-reviewed
+   eponym exceptions (`EPONYM_KEEP`); `tools/classify_renames_and_defaults.py`
+   raises every first-token-noncompliant name that is in neither set to a
+   `name_decision` of `review` rather than defaulting it to `keep` (as of
+   this inventory, that set is empty — every violation was reviewed), so a
+   future name the classifier has not yet seen cannot silently pass as
+   compliant.
 3. A future PR that renames a function or removes a default must update the
    corresponding row's status in `docs/api/renames-and-defaults-20260917.csv`
    (or its successor date-stamped file) and add the matching `Deprecated`/

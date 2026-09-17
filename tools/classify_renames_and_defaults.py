@@ -42,19 +42,88 @@ OUT_FIELDS = [
     "migration_note",
 ]
 
+# --- naming: controlled verb vocabulary (ADR-0028, "Naming convention") ----
+# Every entry is the first token of a compliant name. Definitions live in the
+# ADR itself; this set is what the classifier checks the first token against.
+VERB_VOCAB = {
+    "fit", "score", "predict", "simulate", "estimate", "validate", "check",
+    "build", "render", "select", "assemble", "equate", "evaluate",
+    "calibrate", "resolve", "load", "save", "normalize", "detect",
+    "compute", "compare", "run", "analyze", "enumerate", "generate",
+    "administer", "align", "audit", "classify", "compile", "describe",
+    "diagnose", "draw", "execute", "expand", "export", "extract", "get",
+    "govern", "link", "list", "migrate", "parse", "prepare", "project",
+    "route", "smooth", "standardize", "count", "rotate",
+}
+
+# --- naming: eponym exceptions (ADR-0028 rule 1's named-procedure clause) --
+# A callable named after the published statistic/algorithm/rating system it
+# implements, where that name (not a verb paraphrase) is the term the
+# psychometric/measurement literature and this repository's own accepted
+# ADRs (0011, 0017, 0018, 0021, 0022, 0025) already use for it. Kept as-is:
+# forcing a verb prefix here would make these harder to find, not easier,
+# since callers search by the term they already know from the paper.
+EPONYM_KEEP = {
+    "a_stratified", "andersen_lr_test", "benjamini_hochberg", "bhapkar_mh",
+    "bradley_terry_mm", "bratt_mm", "circular_triads", "cronbach_alpha",
+    "delta_plot", "dimtest", "elo_rating", "elom_rating",
+    "feldt_alpha_ci", "fide_rating", "finite_population_achieved_proportion",
+    "finite_population_proportion_design", "finn_coefficient",
+    "fleiss_kappa", "gauss_hermite_nodes", "gbt", "glb_fa",
+    "glb_fa_from_data", "glicko2_rating", "glicko_rating", "gtheory_pi",
+    "gtheory_pio", "guttman_lambdas", "hanson_brennan",
+    "hanson_brennan_from_params", "hofstee", "icc", "ilsr_pairwise",
+    "ilsr_rankings", "ilsr_top1", "infit_outfit", "k_index", "kendall_u",
+    "kripp_alpha", "lee_classification", "light_kappa",
+    "livingston_correlation", "livingston_k2", "livingston_lewis", "logit",
+    "lsr_pairwise", "lsr_rankings", "lsr_top1", "m2", "m2_cmle_rasch",
+    "m2_multigroup", "m2_multilevel", "m2_polytomous", "main", "maxwell_re",
+    "minres_fa", "minres_fa_from_data", "neg_loglik_and_grad", "oakes_standard_errors",
+    "omega_total_1f", "omega_total_1f_from_data", "owen_cat", "owen_update",
+    "parallel_analysis", "phi_lambda", "raju_area", "rank_centrality",
+    "residual_interaction_map", "robinson_a", "rudner_classification",
+    "s_x2", "sibtest", "sigmoid", "softplus", "stephenson_rating",
+    "stuart_maxwell_mh", "subkoviak_agreement", "sympson_hetter",
+    "taylor_russell", "tenberge_mu", "thurstone_case_v", "velicer_map",
+    "velicer_map_from_data", "vuong_nonnested", "wollack_omega",
+    "woodruff_sawyer_normal", "woodruff_sawyer_sb",
+}
+EPONYM_RATIONALE = (
+    "ADR-0028 rule 1 eponym exception: name is the published statistic's/"
+    "algorithm's literature-standard term, not a generic object noun; a "
+    "verb paraphrase would obscure the reference rather than clarify it."
+)
+
 # --- naming: known ADR-0028 violations -> corrected name -------------------
-# Built from the positional-majority analysis in ADR-0028 (docs/adr/0028-*).
+# Every non-verb-first, non-eponym name found in the 2026-09-17 inventory,
+# hand-reviewed and assigned a verb from VERB_VOCAB (docs/adr/0028-*,
+# "Naming convention"). Keyed by current_name; covers Python names only
+# (PyO3 entry points are exempt, rule 6).
 RENAME_MAP = {
-    # polytomous: majority is a trailing scope qualifier.
-    "polytomous_expected_response": "predict_polytomous_expected_response",
-    "polytomous_category_probabilities": "predict_polytomous_category_probabilities",
-    "polytomous_information_criteria": "score_polytomous_information_criteria",
-    "dif_polytomous_anchor_sets": "detect_dif_polytomous_anchor_sets",
+    # polytomous: majority is a trailing scope qualifier. Rule 4: when an
+    # object noun and a scope qualifier are both present, object precedes
+    # scope (<verb>_<model>_<object>_<scope>), so polytomous stays LAST
+    # even though the verb/object it follows changes per function.
+    "polytomous_expected_response": "predict_expected_response_polytomous",
+    "polytomous_category_probabilities": "predict_category_probabilities_polytomous",
+    "polytomous_information_criteria": "compute_information_criteria_polytomous",
+    "dif_polytomous_anchor_sets": "detect_dif_anchor_sets_polytomous",
     "dif_polytomous_purified": "detect_dif_polytomous_purified",
     "dif_polytomous": "detect_dif_polytomous",
+    "information_polytomous": "compute_information_polytomous",
+    "local_dependence_polytomous": "diagnose_local_dependence_polytomous",
+    "item_fit_polytomous": "compute_item_fit_polytomous",
+    "person_fit_polytomous": "compute_person_fit_polytomous",
+    "u3_cutoff_polytomous": "compute_u3_cutoff_polytomous",
+    "u3_person_fit_polytomous": "compute_u3_person_fit_polytomous",
+    "expected_total_score_monotonicity": "check_expected_total_score_monotonicity",
+    "bifactor_expected_total_score_monotonicity": "check_bifactor_expected_total_score_monotonicity",
+    "focal_expected_total_score_monotonicity": "check_focal_expected_total_score_monotonicity",
     # bifactor: majority is verb-adjacent prefix, not trailing.
     "direct_enumeration_bifactor": "enumerate_bifactor_direct",
-    "focal_expected_total_score_monotonicity": "bifactor_focal_expected_total_score_monotonicity",
+    "bifactor_lord_wingersky": "enumerate_bifactor_lord_wingersky",
+    "bifactor_scoreability": "assess_bifactor_scoreability",
+    "bifactor_scoreability_from_logit_slopes": "assess_bifactor_scoreability_from_logit_slopes",
     # DIF family: unify on the detect_dif_<method> prefix form.
     "mantel_haenszel_dif": "detect_dif_mantel_haenszel",
     "gmh_dif": "detect_dif_gmh",
@@ -62,16 +131,95 @@ RENAME_MAP = {
     "logistic_dif": "detect_dif_logistic",
     "mantel_haenszel_dif_purified": "detect_dif_mantel_haenszel_purified",
     "logistic_dif_purified": "detect_dif_logistic_purified",
+    "mantel_smd_dif": "detect_dif_mantel_smd",
+    "eb_mh_dif": "detect_dif_eb_mh",
     "dif_analysis": "detect_dif_summary",
     # verb-first violations (qualifier before verb).
     "cat_simulate_polytomous": "simulate_cat_polytomous",
     "cat_next_item": "select_cat_next_item",
+    "ccat_select": "select_ccat",
+    "ci_classify": "classify_ci",
+    "sprt_classify": "classify_sprt",
+    "epv_select": "select_epv",
+    "kl_select": "select_kl",
+    "irtree_expand": "expand_irtree",
+    "loglinear_smooth": "smooth_loglinear",
+    "two_stage_route": "route_two_stage",
+    "two_stage_score": "score_two_stage",
+    # CAT-administration family: unify on administer_<method> prefix,
+    # matching the already-compliant administer_adaptive_test.
+    "flexilevel_administer": "administer_flexilevel",
+    "pyramidal_administer": "administer_pyramidal",
+    "stradaptive_administer": "administer_stradaptive",
+    # equating/linking family: unify on the equate_/link_ verb.
+    "circle_arc_equate": "equate_circle_arc",
+    "circle_arc_middle_anchor": "compute_circle_arc_middle_anchor",
+    "nominal_weights_mean_equate": "equate_nominal_weights_mean",
+    "composite_linking": "link_composite",
+    "irt_link": "link_irt",
+    # generic object nouns needing a verb (default "compute" unless a more
+    # specific verb applies).
+    "ability_standard_error": "compute_ability_standard_error",
+    "adjusted_chi2_pairs": "compute_adjusted_chi2_pairs",
+    "available_rotation_criteria": "list_available_rotation_criteria",
+    "bank_information": "compute_bank_information",
+    "canonical_generation_contract": "get_canonical_generation_contract",
+    "category_logprobs": "compute_category_logprobs",
+    "chi2_sf": "compute_chi2_sf",
+    "confirmatory": "build_confirmatory_model",
+    "exploratory": "build_exploratory_model",
+    "dimensionality_diagnostics": "diagnose_dimensionality",
+    "dimensionality_residuals": "compute_dimensionality_residuals",
+    "empirical_reliability": "estimate_empirical_reliability",
+    "separation_reliability": "estimate_separation_reliability",
+    "enterprise_issue_evidence_references": "get_enterprise_issue_evidence_references",
+    "equating_standard_errors": "compute_equating_standard_errors",
+    "exact_value_csv": "render_exact_value_csv",
+    "exact_value_json": "render_exact_value_json",
+    "exact_value_text": "render_exact_value_text",
+    "exact_value_disclosure": "validate_exact_value_disclosure",
+    "fixed_item_calibration_diagnostics": "diagnose_fixed_item_calibration",
+    "flexilevel_score_distribution": "score_flexilevel_distribution",
+    "gdina_wald_selection": "compute_gdina_wald_selection",
+    "gpcm_node_gradient": "compute_gpcm_node_gradient",
+    "grm_category_logprobs": "compute_grm_category_logprobs",
+    "k_variants": "list_k_variants",
+    "kl_information": "compute_kl_information",
+    "ksirt_analysis": "analyze_ksirt",
+    "linear_predictor": "compute_linear_predictor",
+    "mean_pairwise_cor": "compute_mean_pairwise_cor",
+    "mean_pairwise_rho": "compute_mean_pairwise_rho",
+    "metrics_rating": "compute_metrics_rating",
+    "model_flags": "get_model_flags",
+    "mokken_analysis": "analyze_mokken",
+    "n_cohen_kappa": "compute_n_cohen_kappa",
+    "n_dims_of": "count_dimensions_of",
+    "observed_information": "compute_observed_information",
+    "ordered_column_names": "get_ordered_column_names",
+    "paired_rating_range_evidence": "compute_paired_rating_range_evidence",
+    "person_fit": "compute_person_fit",
+    "person_fit_np": "compute_person_fit_np",
+    "person_fit_resampling": "compute_person_fit_resampling",
+    "plausible_values": "draw_plausible_values",
+    "rag_evidence_regime_limitations": "get_rag_evidence_regime_limitations",
+    "rater_bias": "estimate_rater_bias",
+    "recovery_report": "build_recovery_report",
+    "residual_item_fit": "compute_residual_item_fit",
+    "response_process_dimensionality_diagnostics": "diagnose_response_process_dimensionality",
+    "response_process_fit_diagnostics": "diagnose_response_process_fit",
+    "rotation_criterion_value_gradient": "compute_rotation_criterion_value_gradient",
+    "rt_person_fit": "compute_rt_person_fit",
+    "second_order_test": "evaluate_second_order_test",
+    "selection_utility": "compute_selection_utility",
+    "serving_prior": "get_serving_prior",
+    "standard_errors_from_vcov": "compute_standard_errors_from_vcov",
+    "subscore_analysis": "analyze_subscore",
+    "tcc_drift": "compute_tcc_drift",
+    "vcov_from_hessian": "compute_vcov_from_hessian",
+    "weighted_contextual_effect": "compute_weighted_contextual_effect",
+    "item_information": "compute_item_information",
+    "item_information_matrix": "compute_item_information_matrix",
 }
-NAME_RATIONALE = (
-    "ADR-0028 naming convention: model/family token is a prefix immediately "
-    "after the verb, scope qualifier (data shape) is a trailing suffix, "
-    "verb always leads."
-)
 
 # --- defaults: parameter-name -> policy family ------------------------------
 QUADRATURE_RE = re.compile(
@@ -92,7 +240,8 @@ THRESHOLD_RE = re.compile(
     r"^(alpha|alpha_level|fdr_q|se_threshold|flag_threshold|min_expected|"
     r"min_discrimination|min_effect|person_flag_threshold|"
     r"itemfit_penalty_weight|msq_band|isolation_z|sx2_min_effect|"
-    r"zero_tolerance|max_rounds|min_anchor_items|min_flags_to_remove|j_min)$"
+    r"zero_tolerance|max_rounds|min_anchor_items|min_flags_to_remove|j_min|"
+    r"ci_level|conf_level|centile|z_fast)$"
 )
 MODEL_RE = re.compile(r"^model$")
 
@@ -180,21 +329,54 @@ def build_rows(inventory_rows: list[dict]) -> list[dict]:
         module = r["module"]
         source = r["source"]
         kind = r["kind"]
-        if source == "python" and current_name in RENAME_MAP:
-            proposed_name = RENAME_MAP[current_name]
-            name_decision = "rename"
-            name_rationale = NAME_RATIONALE
-        elif source == "pyo3":
+        if source == "pyo3":
             proposed_name = current_name
             name_decision = "keep"
             name_rationale = (
                 "ADR-0028: PyO3 entry points are a private implementation "
                 "detail, exempt from the public naming rules."
             )
-        else:
+        elif kind == "class":
             proposed_name = "keep"
             name_decision = "keep"
-            name_rationale = "Already conforms to ADR-0028 naming convention."
+            name_rationale = (
+                "ADR-0028 rule 1 (verb-first) governs free functions; "
+                "classes follow the existing PascalCase noun convention, "
+                "which this ADR does not change."
+            )
+        elif current_name in EPONYM_KEEP:
+            proposed_name = "keep"
+            name_decision = "keep"
+            name_rationale = EPONYM_RATIONALE
+        elif current_name.split("_")[0] in VERB_VOCAB:
+            proposed_name = "keep"
+            name_decision = "keep"
+            name_rationale = (
+                "ADR-0028 rule 1: first token is in the controlled verb "
+                "vocabulary -> already compliant."
+            )
+        elif current_name in RENAME_MAP:
+            proposed_name = RENAME_MAP[current_name]
+            name_decision = "rename"
+            name_rationale = (
+                "ADR-0028 naming convention: verb-first, model/family token "
+                "as a verb-adjacent prefix, scope qualifier (data shape) as "
+                "a trailing suffix; hand-reviewed against the 2026-09-17 "
+                "inventory (not a bare eponym, see EPONYM_KEEP)."
+            )
+        else:
+            # Safety net: should be empty against the 2026-09-17 inventory
+            # (every violation was hand-reviewed into RENAME_MAP or
+            # EPONYM_KEEP); a future regeneration that finds a genuinely new
+            # name here needs the same hand review, not a guessed default.
+            proposed_name = "NEEDS-MANUAL-REVIEW"
+            name_decision = "review"
+            name_rationale = (
+                "ADR-0028: first token not in the verb vocabulary and not "
+                "in EPONYM_KEEP or RENAME_MAP -- new name since the last "
+                "hand review, needs a human naming decision before this row "
+                "can be `keep` or `rename`."
+            )
 
         params = _parse_params(r.get("parameters", ""))
         defaulted = [(n, d) for n, d in params if d is not None]
