@@ -168,6 +168,7 @@ fn ref_config() -> BifactorGrmConfig {
         seed: 0x9E37_79B9_7F4A_7C15,
         newton_iter: 10,
         ridge: 1e-8,
+        device: mlsirm_core::Device::Cpu,
     }
 }
 
@@ -293,6 +294,7 @@ fn bifactor_fipc_matches_concurrent_at_true_anchors() {
             newton_iter: 10,
             ridge: 1e-8,
             estimate_specific_vars: false,
+            device: mlsirm_core::Device::Cpu,
         },
     )
     .expect("concurrent multigroup fit must succeed");

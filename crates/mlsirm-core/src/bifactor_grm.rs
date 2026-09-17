@@ -2889,6 +2889,11 @@ pub fn fit_bifactor_grm_fipc(
         seed: 0x9E37_79B9_7F4A_7C15,
         newton_iter: cfg.newton_iter,
         ridge: cfg.ridge,
+        // FIPC (#1912 stage-2b) predates the GPU E-step (#1931, stage 5) and
+        // has no device knob of its own; this reused single-group validator
+        // only checks shapes/blocks, never runs the E-step, so the device
+        // choice here is inert either way.
+        device: crate::Device::Cpu,
     };
     let v = validate(
         y,
@@ -3016,6 +3021,8 @@ pub fn fit_bifactor_grm_fipc(
             &log_ws,
             qg,
             qs,
+            // FIPC predates the GPU E-step (#1931); always run the CPU sweep.
+            crate::Device::Cpu,
         );
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
