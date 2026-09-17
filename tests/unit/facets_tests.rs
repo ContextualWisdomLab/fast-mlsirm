@@ -260,6 +260,8 @@ fn sparse_design_recovers_severity_order() {
 // hardcoding true.
 // ---------------------------------------------------------------------------
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn disconnected_design_is_flagged() {
     // Two islands: persons 0..P/2 x item 0 x rater 0; persons P/2.. x item 1 x rater 1.
     let (np, ni, nj) = (60usize, 2usize, 2usize);
@@ -289,7 +291,7 @@ fn disconnected_design_is_flagged() {
 fn rejects_bad_inputs() {
     let y = vec![0usize; 4];
     assert!(fit_facets(&y, None, 2, 2, 1, 1, 7, 50, 1e-6).is_err()); // n_cat < 2
-    assert!(fit_facets(&y, None, 2, 2, 1, 2, 8, 50, 1e-6).is_err()); // bad q
+    assert!(fit_facets(&y, None, 2, 2, 1, 2, 0, 50, 1e-6).is_err()); // #1929: q=0 is bad, q=8 is now fine
     assert!(fit_facets(&y, None, 2, 2, 1, 2, 7, 0, 1e-6).is_err()); // max_iter 0
     assert!(fit_facets(&y, None, 2, 2, 1, 2, 7, 50, f64::NAN).is_err());
     assert!(fit_facets(&y, None, 3, 2, 1, 2, 7, 50, 1e-6).is_err()); // len mismatch

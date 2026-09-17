@@ -60,7 +60,9 @@ def test_unsupported_exact_q_xi_fails_before_array_coercion(
 
     monkeypatch.setattr(marginal.np, "asarray", forbidden_asarray)
 
-    with pytest.raises(ValueError, match="unsupported quadrature size"):
+    # #1929: no node-count cap; an astronomical q_xi is now caught by the
+    # overflow-safe tensor-grid-size bound instead of a fixed-table lookup.
+    with pytest.raises(ValueError, match="tensor-grid limit"):
         marginal.fit_marginal_numpy(
             object(),  # type: ignore[arg-type]
             object(),  # type: ignore[arg-type]

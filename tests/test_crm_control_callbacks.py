@@ -102,7 +102,8 @@ def test_invalid_exact_controls_fail_before_core(monkeypatch):
 
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
     cases = (
-        ({"q_theta": 9}, "q_theta"),
+        # #1929: no node-count cap; q_theta=9 is now accepted, only < 1 is not.
+        ({"q_theta": 0}, "q_theta"),
         ({"q_theta": True}, "q_theta"),
         ({"max_iter": 0}, "max_iter"),
         ({"max_iter": True}, "max_iter"),

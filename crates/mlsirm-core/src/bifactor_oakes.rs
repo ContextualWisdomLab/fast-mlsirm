@@ -77,15 +77,15 @@ use crate::bifactor_grm::{
     Validated,
 };
 use crate::poly::{grm_node_gradient, grm_node_hessian};
-use crate::quadrature::SUPPORTED_Q;
 
 /// Configuration for [`bifactor_oakes_se`]. Every field is caller-owned and
 /// range-validated; nothing is clamped.
 #[derive(Clone, Copy, Debug)]
 pub struct BifactorOakesConfig {
-    /// Gauss-Hermite nodes for the general factor (one of `SUPPORTED_Q`).
+    /// Gauss-Hermite nodes for the general factor (#1929: any `q >= 1`; the
+    /// eigensolve overflow guard fires in `gh_rule` when nodes are drawn).
     pub q_general: usize,
-    /// Gauss-Hermite nodes per specific factor (one of `SUPPORTED_Q`).
+    /// Gauss-Hermite nodes per specific factor (#1929: any `q >= 1`).
     pub q_specific: usize,
     /// Relative finite-difference step for the Oakes cross term
     /// (`h_j = fd_step * (1 + |xi_j|)`); the complete-data gradient and
@@ -543,17 +543,14 @@ pub fn bifactor_oakes_se(
     n_cat: usize,
     cfg: &BifactorOakesConfig,
 ) -> Result<BifactorOakesResult, String> {
-    if !SUPPORTED_Q.contains(&cfg.q_general) {
-        return Err(format!(
-            "q_general must be one of {SUPPORTED_Q:?}; got {}",
-            cfg.q_general
-        ));
+    // #1929: no node-count cap. Only the lower bound (>= 1) is checked here;
+    // `gh_rule` (called wherever nodes are actually generated) also guards
+    // the eigensolve allocation against usize overflow for absurd q.
+    if cfg.q_general < 1 {
+        return Err(format!("q_general must be >= 1; got {}", cfg.q_general));
     }
-    if !SUPPORTED_Q.contains(&cfg.q_specific) {
-        return Err(format!(
-            "q_specific must be one of {SUPPORTED_Q:?}; got {}",
-            cfg.q_specific
-        ));
+    if cfg.q_specific < 1 {
+        return Err(format!("q_specific must be >= 1; got {}", cfg.q_specific));
     }
     let provider = Stage1Provider::new(
         y,

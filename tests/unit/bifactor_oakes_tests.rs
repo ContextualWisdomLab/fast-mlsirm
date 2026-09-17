@@ -5,11 +5,10 @@
 //! Gauss-Hermite grids (`q = 7`) as an explicitly labeled analytic
 //! cross-check — the two compared paths share the same grid, so quadrature
 //! error cancels and the comparison is exact. NONE of these represents study
-//! settings. Study-settings calibration (121 GH nodes per dimension) is
-//! blocked on the `SUPPORTED_Q <= 41` cap removal (worker task_d46e974a271e,
-//! branch `fix/1929-quadrature-defaults`); the calibration test upgrades to
-//! 121 on rebase. Node counts are caller arguments everywhere — no test
-//! bypasses the supported-grid validation.
+//! settings. Study-settings calibration (>= 121 GH nodes per dimension) is
+//! `bifactor_oakes_calibration.rs::study_settings_se_converges_at_121_vs_241_nodes`.
+//! Node counts are caller arguments everywhere — no test bypasses the
+//! supported-grid validation.
 //!
 //! * Complete-data exactness: the analytic per-item `Q` Hessian (Term A of
 //!   the Oakes identity) must equal a central finite difference of the

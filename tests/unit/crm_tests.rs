@@ -229,7 +229,7 @@ fn crm_handles_missing_data() {
 fn crm_validate_rejects_malformed() {
     assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 3, 21, 10, 1e-6).is_err()); // wrong len
     assert!(fit_crm(&[0.5, 1.5], &[true, true], 1, 2, 21, 10, 1e-6).is_err()); // out of (0,1)
-    assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 2, 99, 10, 1e-6).is_err()); // bad q
+    assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 2, 0, 10, 1e-6).is_err()); // #1929: q=0 is bad, q=99 is now fine
     assert!(fit_crm(&[], &[], 0, 2, 21, 10, 1e-6).is_err()); // no persons
     assert!(fit_crm(&[], &[], 2, 0, 21, 10, 1e-6).is_err()); // no items
     assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 2, 21, 0, 1e-6).is_err()); // no iterations

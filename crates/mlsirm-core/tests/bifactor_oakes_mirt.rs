@@ -11,9 +11,11 @@
 //! density and compares standard errors and the full vcov against mirt's.
 //!
 //! GRID SCOPE (maintainer quadrature rule): matched quadpts = 15 is an
-//! implementation cross-check, NOT study settings. The 121+-node
-//! study-settings fixture follows the SUPPORTED_Q cap removal (rebase on
-//! `fix/1929-quadrature-defaults`).
+//! implementation cross-check, NOT study settings. See
+//! `bifactor_oakes_calibration.rs::study_settings_se_converges_at_121_vs_241_nodes`
+//! for the 121+-node study-settings evidence (Rust-only self-consistency);
+//! a matching 121+-node mirt fixture is separate scope (regenerating the R
+//! oracle at higher quadpts).
 //!
 //! # References (APA 7th ed.)
 //!
