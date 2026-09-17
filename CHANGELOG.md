@@ -5,19 +5,43 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 
-#### Release cut 0.11.2
+#### Release cut 0.11.3
 
-- Project version is bumped to 0.11.2 in `pyproject.toml`, `crates/mlsirm-core`,
+- Project version is bumped to 0.11.3 in `pyproject.toml`, `crates/mlsirm-core`,
   and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
-  `[0.11.2] - 2026-09-18` release section, headlined by moderated slopes H1–H5
-  HC3 parity (`conditional_slope`, `slope_difference`, `xwz_e_design_row`)
-  from #1985.
-- This cut removes the standing predecessor note `release-0.11.1-cut.md`, whose
-  substance is permanently recorded in the `[0.11.1] - 2026-09-18` section and
+  `[0.11.3] - 2026-09-18` release section, headlined by the bifactor GPU E-step
+  Metal/WebGPU workgroup-dimension split (#1987): dispatches are factored across
+  `(x, y, z)` from runtime adapter limits, WGSL uses an f32-representable
+  zero-mass sentinel, and the PyO3 cdylib again enables the `gpu` default feature.
+- This cut removes the standing predecessor note `release-0.11.2-cut.md`, whose
+  substance is permanently recorded in the `[0.11.2] - 2026-09-18` section and
   in git history.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
+
+## [0.11.3] - 2026-09-18
+
+### Fixed
+
+#### Bifactor GPU E-step Metal/WebGPU workgroup-dimension limit (#1987)
+
+- Split bifactor reduced E-step compute dispatches across `(x, y, z)` using the
+  adapter's runtime `max_compute_workgroups_per_dimension` so Apple Metal no
+  longer panics when a 1-D workgroup count exceeds 65535 (AC late-life
+  multigroup bootstrap at q=241 required 141573 groups on `reduce_counts_blk`).
+- Query `max_storage_buffer_binding_size` / `max_buffer_size` before allocating
+  E-step buffers and fall back to the f64 CPU path when they do not fit; no
+  hardcoded workgroup or byte caps.
+- Replace the WGSL zero-mass log-weight sentinel `-1e300` with an f32-representable
+  `-1e37` so `create_shader_module` succeeds on Metal (WGSL rejects the abstract
+  literal inside an `f32` comparison).
+- Re-enable the `mlsirm-core` default `gpu` feature on the PyO3 cdylib (it had been
+  disabled via `default-features = false` in a WIP salvage commit), so `device="gpu"`
+  again reaches the wgpu kernels instead of always falling back to CPU.
+- Extend study-precision CPU/GPU parity coverage with a q=481 leg and a wide-item
+  q=241 Metal 2-D dispatch leg gated by `STAGE5_HIGH_Q=1`.
 
 
 ## [0.11.2] - 2026-09-18
