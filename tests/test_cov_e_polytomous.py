@@ -83,8 +83,9 @@ def test_dif_rejects_non_numeric_group_id():
 
 
 def test_fit_polytomous_rejects_bad_q_theta():
-    with pytest.raises(ValueError, match="q_theta must be one of"):
-        fit_polytomous(_responses(4, 2, 3), n_cat=3, q_theta=12)
+    # #1929: no node-count cap; q_theta=12 is now accepted, only < 1 is not.
+    with pytest.raises(ValueError, match="q_theta must be in 1"):
+        fit_polytomous(_responses(4, 2, 3), n_cat=3, q_theta=0)
 
 
 def test_fit_polytomous_accepts_81_node_rule():
@@ -93,11 +94,13 @@ def test_fit_polytomous_accepts_81_node_rule():
     assert np.isfinite(fit.loglik)
 
 
-def test_fit_lsirm_rejects_81_node_xi_rule():
-    with pytest.raises(ValueError, match="q_theta/q_xi must be one of"):
-        fit_lsirm_polytomous(
-            _responses(4, 2, 3), n_cat=3, q_theta=81, q_xi=81, max_iter=1
-        )
+def test_fit_lsirm_accepts_81_node_xi_rule():
+    # #1929: no node-count cap; 81 used to be rejected (outside the fixed
+    # xi table) and is now a perfectly valid node count.
+    fit = fit_lsirm_polytomous(
+        _responses(4, 2, 3), n_cat=3, q_theta=81, q_xi=81, max_iter=1
+    )
+    assert np.isfinite(fit.loglik)
 
 
 def test_fit_polytomous_requires_core(monkeypatch):
@@ -174,8 +177,9 @@ def test_fit_lsirm_rejects_bad_latent_dim():
 
 
 def test_fit_lsirm_rejects_bad_quadrature():
-    with pytest.raises(ValueError, match="q_theta/q_xi must be one of"):
-        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, q_xi=12)
+    # #1929: no node-count cap; q_xi=12 is now accepted, only < 1 is not.
+    with pytest.raises(ValueError, match="q_theta and q_xi must be >= 1"):
+        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, q_xi=0)
 
 
 def test_fit_lsirm_rejects_bad_tol():
@@ -244,8 +248,9 @@ def test_local_dependence_requires_core(monkeypatch):
 
 
 def test_fit_nominal_rejects_bad_q_theta():
-    with pytest.raises(ValueError, match="q_theta must be one of"):
-        fit_nominal_polytomous(_responses(4, 2, 3), n_cat=3, q_theta=12)
+    # #1929: no node-count cap; q_theta=12 is now accepted, only < 1 is not.
+    with pytest.raises(ValueError, match="q_theta must be in 1"):
+        fit_nominal_polytomous(_responses(4, 2, 3), n_cat=3, q_theta=0)
 
 
 def test_fit_nominal_requires_core(monkeypatch):

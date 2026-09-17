@@ -269,14 +269,26 @@ def logistic_dif_purified(
     """Zumbo logistic-regression DIF with an ITERATIVELY PURIFIED matching criterion (compute in Rust).
 
     The same purification loop as :func:`mantel_haenszel_dif_purified`, with the anchor decided by
-    ``jg_class`` (the Jodoin-Gierl class of the 2-df omnibus test). Unlike the Mantel-Haenszel variant
-    this detects crossing DIF, so a non-uniform item is removed from the criterion too.
+    ``flagged_bh`` (the Benjamini-Hochberg-adjusted 2-df omnibus ``chi2_total`` test).
+
+    **Fixed in #1941: the anchor now actually shrinks.** The criterion was previously ``jg_class``
+    (the Jodoin-Gierl class of the omnibus test), which #1880 retired to ``"U"`` ("not applicable")
+    for every item, so the purification loop could never fire: the anchor never shrank (``n_anchor``
+    stayed at its initial size and ``rounds`` stayed ``0``) regardless of uniform or crossing DIF in
+    the data. No calibrated practical-significance class survives for this statistic — the same
+    reasoning :func:`fast_mlsirm.polytomous.dif_polytomous_purified` already applies: Jodoin and
+    Gierl's (2001) bands are stated on a 1-df Zumbo-Thomas weighted-least-squares partition this
+    package does not compute, not on the 2-df Nagelkerke ``delta_r2`` this package reports — so
+    ``flagged_bh`` is used directly rather than a guessed replacement class. This makes the anchor
+    MORE aggressive at large N than :func:`mantel_haenszel_dif_purified`'s practical-significance
+    (ETS class B/C) screen, not less.
 
     Returns everything :func:`logistic_dif` returns — including its PER-ITEM ``converged`` array, one
     flag per item's IRLS fit — plus ``anchor``, ``n_anchor``, ``rounds``, and the scalar
     ``purify_converged`` and ``purify_termination_reason`` for the purification loop itself. The
     per-item and loop-level diagnostics are deliberately named differently because they answer
-    different questions.
+    different questions. ``jg_class`` itself is untouched by this fix and remains ``"U"`` for every
+    item.
 
     IMPORTANT — the anchor is selected from the SAME data that is then tested against it, so the returned
     p-values are conditional on a data-dependent selection: they are not guaranteed super-uniform under
@@ -285,10 +297,17 @@ def logistic_dif_purified(
     than removes criterion contamination and can fail outright when DIF is unbalanced in direction
     (Wang & Su, 2004).
 
-    Reference (APA 7th ed.):
+    References (APA 7th ed.):
+        Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking metrics and assessing
+            item bias in item response theory. *Applied Psychological Measurement, 12*(3), 253-260.
+            https://doi.org/10.1177/014662168801200304
         French, B. F., & Maller, S. J. (2007). Iterative purification and effect size use with logistic
             regression for differential item functioning detection. *Educational and Psychological
             Measurement, 67*(3), 373-393. https://doi.org/10.1177/0013164406294781
+        Zumbo, B. D. (1999). *A handbook on the theory and methods of differential item functioning
+            (DIF): Logistic regression modeling as a unitary framework for binary and Likert-type
+            (ordinal) item scores* (p. 27). Directorate of Human Resources Research and Evaluation,
+            Department of National Defense.
     """
     from .fitstats import _core_module
 
@@ -585,11 +604,40 @@ def logistic_dif(
     - ``chi2_uniform`` / ``p_uniform`` (1 df) tests ``b2`` *assuming* ``b3 = 0``; it is a descriptive
       follow-up, is NOT the group term of the full model, and is not interpretable when non-uniform DIF
       is present. Component p-values are unadjusted.
-    - ``delta_r2`` is the Nagelkerke pseudo-R² change ``R2(M2) - R2(M0)`` (Zumbo's effect size), and
-      ``jg_class`` classifies it by Jodoin & Gierl (2001): ``"A"`` negligible (< 0.035), ``"B"`` moderate,
-      ``"C"`` large (>= 0.070) — forced to ``"A"`` when the omnibus test is not BH-significant, and
-      ``"U"`` when undefined. ``delta_r2_uniform`` is an uncalibrated descriptive value with no class.
-      (The older Zumbo & Thomas, 1997 cut-offs of 0.13/0.26 are much more conservative.)
+    - ``delta_r2`` is the Nagelkerke pseudo-R² change ``R2(M2) - R2(M0)`` (Zumbo's effect size) and
+      ``delta_r2_uniform`` is ``R2(M1) - R2(M0)``; both are reported as DESCRIPTIVE numbers only.
+      ``jg_class`` is always ``"U"`` ("not applicable") — see "Fixed in #1880" below for why no
+      letter is defended for either quantity.
+
+      **Fixed in #1880: the Jodoin & Gierl (2001) letter class is retired, not repointed.**
+      Jodoin & Gierl calibrate their ``.035``/``.070`` bands (p. 335) on a Zumbo-Thomas
+      weighted-least-squares (Pratt-Pregibon) partition (p. 333), not on the Nagelkerke pseudo-R²
+      this package computes, and additionally state those bands on the ONE-df uniform increment,
+      not the 2-df omnibus this package previously lettered. Both mismatches would need fixing
+      together, but the replacement statistic is itself UNDERDETERMINED by the source: eq. 4 does
+      not say whether its correlation is taken against the observed response or the working
+      response of the IRLS linearization, nor on which scale the standardized coefficient is
+      computed, and both choices change the number (p. 333). A package cannot letter a quantity it
+      cannot compute, so ``jg_class`` reports ``"U"`` unconditionally instead of a class that would
+      carry no external referent. Prefer ``delta_r2`` / ``delta_r2_uniform`` directly to any letter.
+
+      The bands are additionally scoped to Jodoin & Gierl's own simulation: DICHOTOMOUS responses
+      generated from a 3PL model (pp. 337, 339) on 40-item tests (pp. 336-337); nothing in the
+      paper licenses them for the polytomous logistic-regression sweep (see PR #1890), which is a
+      second, independent reason no letter is available there either. The bands are anchored to
+      SIBTEST's ``.059``/``.088`` via a cubic regression (p. 335), NOT to a Cohen norm, so ``.035``
+      must not be read as "3.5% of variance is a small effect" (pp. 345-346) even where the
+      underlying quantity were available. The non-uniform extension is in the original itself
+      (p. 336) but rests on two items and is called provisional (pp. 346-347); the procedures
+      become conservative at large balanced samples and underpowered at unequal group sizes
+      (pp. 346-347).
+
+      Zumbo (1999, p. 27) states an older, SEPARATE convention (``0.13``/``0.26``) as a Cohen-style
+      cut applied directly to the SAME Nagelkerke omnibus quantity this package computes, which
+      Jodoin & Gierl supersede rather than adopt for their own bands (p. 334); it is not restored
+      here because this package does not ship a letter class calibrated on a source it has not
+      independently verified end to end, and ``0.13`` was itself credited historically to the
+      unobtainable Zumbo & Thomas (1997) working paper rather than to Zumbo (1999) directly.
 
     Items whose fits fail (separation, a rank-deficient design, no convergence) report ``NaN``
     statistics with ``converged=False`` and are never flagged. As with Mantel-Haenszel, the studied item

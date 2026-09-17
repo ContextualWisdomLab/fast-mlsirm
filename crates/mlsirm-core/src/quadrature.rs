@@ -282,184 +282,215 @@ pub(crate) const GH_NODES_81: [f64; 81] = [
     -16.070115288084143,
     -15.363360220077677,
     -14.73368054299171,
-    -14.153774548779939,
+    -14.15377454877994,
     -13.609582762216585,
     -13.092675857688906,
     -12.597501586482979,
-    -12.120159198016569,
+    -12.12015919801657,
     -11.657775826461798,
     -11.208157786358138,
-    -10.769581337343361,
+    -10.76958133734336,
     -10.340660046957302,
-    -9.9202569218315535,
-    -9.5074240510437793,
+    -9.920256921831553,
+    -9.50742405104378,
     -9.101359871906519,
-    -8.7013781230942584,
-    -8.3068847821466427,
-    -7.9173605988965079,
-    -7.5323476392102702,
+    -8.701378123094258,
+    -8.306884782146643,
+    -7.917360598896508,
+    -7.53234763921027,
     -7.1514387595211675,
-    -6.7742692606393824,
-    -6.4005101871838912,
-    -6.0298628868802302,
-    -5.6620545463576697,
+    -6.774269260639382,
+    -6.400510187183891,
+    -6.02986288688023,
+    -5.66205454635767,
     -5.296834492223109,
-    -4.9339710978387394,
+    -4.933971097838739,
     -4.573249173746504,
-    -4.2144677472925451,
-    -3.8574381575682382,
-    -3.5019824072656451,
-    -3.1479317248132901,
-    -2.7951252991803441,
-    -2.4434091567047238,
+    -4.214467747292545,
+    -3.857438157568238,
+    -3.501982407265645,
+    -3.14793172481329,
+    -2.795125299180344,
+    -2.443409156704724,
     -2.0926351547129305,
     -1.7426600709209537,
     -1.3933447709042779,
     -1.0445534384991042,
-    -0.69615285599343169,
-    -0.34801172249465351,
+    -0.6961528559934317,
+    -0.3480117224946535,
     0.0,
-    0.34801172249465351,
-    0.69615285599343169,
+    0.3480117224946535,
+    0.6961528559934317,
     1.0445534384991042,
     1.3933447709042779,
     1.7426600709209537,
     2.0926351547129305,
-    2.4434091567047238,
-    2.7951252991803441,
-    3.1479317248132901,
-    3.5019824072656451,
-    3.8574381575682382,
-    4.2144677472925451,
+    2.443409156704724,
+    2.795125299180344,
+    3.14793172481329,
+    3.501982407265645,
+    3.857438157568238,
+    4.214467747292545,
     4.573249173746504,
-    4.9339710978387394,
+    4.933971097838739,
     5.296834492223109,
-    5.6620545463576697,
-    6.0298628868802302,
-    6.4005101871838912,
-    6.7742692606393824,
+    5.66205454635767,
+    6.02986288688023,
+    6.400510187183891,
+    6.774269260639382,
     7.1514387595211675,
-    7.5323476392102702,
-    7.9173605988965079,
-    8.3068847821466427,
-    8.7013781230942584,
+    7.53234763921027,
+    7.917360598896508,
+    8.306884782146643,
+    8.701378123094258,
     9.101359871906519,
-    9.5074240510437793,
-    9.9202569218315535,
+    9.50742405104378,
+    9.920256921831553,
     10.340660046957302,
-    10.769581337343361,
+    10.76958133734336,
     11.208157786358138,
     11.657775826461798,
-    12.120159198016569,
+    12.12015919801657,
     12.597501586482979,
     13.092675857688906,
     13.609582762216585,
-    14.153774548779939,
+    14.15377454877994,
     14.73368054299171,
     15.363360220077677,
     16.070115288084143,
     16.925476835034505,
 ];
 pub(crate) const GH_WEIGHTS_81: [f64; 81] = [
-    2.4528055138979769e-63,
+    2.452805513897977e-63,
     2.5392599790110647e-57,
     1.4715361059410395e-52,
-    1.7446471278413031e-48,
-    7.0530127309631424e-45,
+    1.744647127841303e-48,
+    7.053012730963142e-45,
     1.2721951837934705e-41,
     1.2063175236617348e-38,
-    6.7090375039002427e-36,
+    6.709037503900243e-36,
     2.3656319313870077e-33,
-    5.6033548723345991e-31,
-    9.3216634799383481e-29,
+    5.603354872334599e-31,
+    9.321663479938348e-29,
     1.1281327190756607e-26,
     1.0218473057257003e-24,
-    7.0910770254680374e-23,
+    7.091077025468037e-23,
     3.844131066500376e-21,
     1.6549612938551538e-19,
-    5.7382219378320453e-18,
-    1.6218666315382721e-16,
-    3.7761924960082651e-15,
-    7.3091912739458981e-14,
+    5.738221937832045e-18,
+    1.621866631538272e-16,
+    3.776192496008265e-15,
+    7.309191273945898e-14,
     1.1856329334260767e-12,
     1.6232084074369437e-11,
     1.8874073283497914e-10,
     1.8743179035614513e-09,
     1.5975703422328164e-08,
     1.1739104500747906e-07,
-    7.4658706303601696e-07,
+    7.46587063036017e-7,
     4.1240539582658024e-06,
     1.9848557310766824e-05,
-    8.3465497037017855e-05,
+    8.346549703701785e-5,
     0.00030742200906347524,
-    0.00099395000039951783,
+    0.0009939500003995178,
     0.0028263907639617886,
-    0.0070805561570686021,
-    0.015649455812784971,
+    0.007080556157068602,
+    0.01564945581278497,
     0.030553610014116196,
-    0.052747541031847783,
-    0.080589300110354159,
+    0.05274754103184778,
+    0.08058930011035416,
     0.10903458212018821,
-    0.13069487488539799,
+    0.130694874885398,
     0.13882799390429282,
-    0.13069487488539799,
+    0.130694874885398,
     0.10903458212018821,
-    0.080589300110354159,
-    0.052747541031847783,
+    0.08058930011035416,
+    0.05274754103184778,
     0.030553610014116196,
-    0.015649455812784971,
-    0.0070805561570686021,
+    0.01564945581278497,
+    0.007080556157068602,
     0.0028263907639617886,
-    0.00099395000039951783,
+    0.0009939500003995178,
     0.00030742200906347524,
-    8.3465497037017855e-05,
+    8.346549703701785e-5,
     1.9848557310766824e-05,
     4.1240539582658024e-06,
-    7.4658706303601696e-07,
+    7.46587063036017e-7,
     1.1739104500747906e-07,
     1.5975703422328164e-08,
     1.8743179035614513e-09,
     1.8874073283497914e-10,
     1.6232084074369437e-11,
     1.1856329334260767e-12,
-    7.3091912739458981e-14,
-    3.7761924960082651e-15,
-    1.6218666315382721e-16,
-    5.7382219378320453e-18,
+    7.309191273945898e-14,
+    3.776192496008265e-15,
+    1.621866631538272e-16,
+    5.738221937832045e-18,
     1.6549612938551538e-19,
     3.844131066500376e-21,
-    7.0910770254680374e-23,
+    7.091077025468037e-23,
     1.0218473057257003e-24,
     1.1281327190756607e-26,
-    9.3216634799383481e-29,
-    5.6033548723345991e-31,
+    9.321663479938348e-29,
+    5.603354872334599e-31,
     2.3656319313870077e-33,
-    6.7090375039002427e-36,
+    6.709037503900243e-36,
     1.2063175236617348e-38,
     1.2721951837934705e-41,
-    7.0530127309631424e-45,
-    1.7446471278413031e-48,
+    7.053012730963142e-45,
+    1.744647127841303e-48,
     1.4715361059410395e-52,
     2.5392599790110647e-57,
-    2.4528055138979769e-63,
+    2.452805513897977e-63,
 ];
 
 
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
-// The dense rule is intentionally separate: multidimensional tensor grids keep
-// the legacy supported set so q in {61, 81} cannot create an accidental dense tensor grid.
+// Small fixed tables (7..81) stay hard-coded for parity/perf; everything else
+// is generated on demand at whatever node count the caller asks for. Per
+// #1929, node count controls the precision of the marginal-likelihood
+// integral and this crate must not silently cap it.
 //
-// Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature rules.
-// Mathematics of Computation, 23(106), 221–230.
-// https://doi.org/10.1090/S0025-5718-69-99647-1. Their n-node Gaussian rule is
-// exact for weighted polynomials through degree 2n-1. Bock, R. D., & Aitkin,
-// M. (1981). Marginal maximum likelihood estimation of item parameters:
-// Application of an EM algorithm. Psychometrika, 46(4), 443–459.
-// https://doi.org/10.1007/BF02293801. Together these sources support q in
-// {61, 81} as denser fixed approximations to the existing unidimensional
-// standard-normal expectations used by calibration and diagnostics, not as
-// adaptive error guarantees or multidimensional tensor-grid rules.
+// Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature
+// rules. Mathematics of Computation, 23(106), 221-230.
+// https://doi.org/10.1090/S0025-5718-69-99647-1. Full text read via the
+// open copy at https://csclub.uwaterloo.ca/~pbarfuss/GolubWelsch.pdf.
+//
+// Golub & Welsch (1969, eq. 2.1-2.2, p. 222-223) show that any orthogonal
+// polynomial family with monic three-term recurrence
+// p_j(x) = (x - alpha_j) p_{j-1}(x) - beta_j p_{j-2}(x) has its Gauss
+// quadrature nodes equal to the eigenvalues of the symmetric tridiagonal
+// Jacobi matrix J with diagonal alpha_j and off-diagonal sqrt(beta_j), and
+// (1969, eq. 2.6, p. 223) each node's weight equal to mu_0 times the squared
+// first component of J's corresponding normalized eigenvector, where mu_0 is
+// the total mass of the weight function. Section 3 (pp. 223-226) further
+// shows that only the first component of each eigenvector is needed, so the
+// full eigenvector matrix never has to be formed or stored (1969, p. 225,
+// "it is not necessary to compute the entire matrix of eigenvectors") —
+// `tql2_first_row` below applies that same reduction to a standard implicit
+// symmetric-tridiagonal QL sweep (the QL/QR family Golub & Welsch, 1969,
+// Section 3, p. 223 identify as "one of the most effective methods"),
+// tracking a single row instead of an N x N accumulator.
+//
+// For the probabilists' Hermite weight e^{-x^2/2} used throughout this
+// crate, the monic recurrence He_{k+1}(x) = x He_k(x) - k He_{k-1}(x) (the
+// standard three-term recurrence for He_n, e.g. Abramowitz, M., & Stegun,
+// I. A. (Eds.). (1972). Handbook of Mathematical Functions (10th printing,
+// Table 22.7, row 22.7.14, p. 782). U.S. Government Printing Office;
+// https://personal.math.ubc.ca/~cbm/aands/page_782.htm, read directly) gives
+// alpha_k = 0, beta_k = k for k = 1, ..., n-1. Weights are renormalized to
+// sum to 1 (this crate's convention, matching the embedded tables above)
+// rather than left at the raw mu_0 = sqrt(2*pi) scale, which is equivalent
+// since both differ only by the constant factor mu_0 in eq. 2.6.
+//
+// Correctness is checked in `tests/unit/quadrature_tests.rs`: bit-for-bit
+// agreement with the embedded tables for n in {7, 11, 15, 21, 31, 41},
+// weights summing to 1, node/weight symmetry, and exact integration of
+// standard-normal moments through degree 2n-1 for n in {7, 41, 121, 241,
+// 481} (Golub & Welsch, 1969, Theorem, p. 222: an N-point Gauss rule is
+// exact for polynomials of degree <= 2N - 1).
 
 static GH_121: OnceLock<(Vec<f64>, Vec<f64>)> = OnceLock::new();
 
@@ -629,28 +660,28 @@ fn gh_rule_61() -> (&'static [f64], &'static [f64]) {
         let positive = [
             0.0,
             0.40063821105995046,
-            0.80153826303172659,
+            0.8015382630317266,
             1.2029642303011723,
             1.6051847101182257,
             2.008475226640472,
-            2.4131208142506848,
-            2.8194188542255731,
+            2.413120814250685,
+            2.819418854225573,
             3.2276822527149105,
             3.638243067606806,
-            4.0514567191649027,
-            4.4677069572407992,
-            4.8874118107487146,
-            5.3110308195370264,
-            5.7390739549506931,
-            6.1721127891630712,
-            6.6107947002797749,
+            4.051456719164903,
+            4.467706957240799,
+            4.887411810748715,
+            5.311030819537026,
+            5.739073954950693,
+            6.172112789163071,
+            6.610794700279775,
             7.055861242232579,
-            7.5081723365509907,
-            7.9687387811758628,
-            8.4387669441217881,
-            8.9197218412129384,
-            9.4134189285095022,
-            9.9221626372550862,
+            7.508172336550991,
+            7.968738781175863,
+            8.438766944121788,
+            8.919721841212938,
+            9.413418928509502,
+            9.922162637255086,
             10.448964909729462,
             10.997909441340786,
             11.574803203521677,
@@ -663,34 +694,34 @@ fn gh_rule_61() -> (&'static [f64], &'static [f64]) {
             0.1598141411777855,
             0.14753749310915876,
             0.11605765134525153,
-            0.077742307060467822,
+            0.07774230706046782,
             0.044299190141556276,
             0.021440700089215427,
-            0.0087970077780564638,
-            0.0030522259632903151,
-            0.00089286291334885349,
-            0.00021942509449102729,
-            4.5111525791571688e-05,
-            7.7204093582151049e-06,
+            0.008797007778056464,
+            0.003052225963290315,
+            0.0008928629133488535,
+            0.0002194250944910273,
+            4.511152579157169e-5,
+            7.720409358215105e-6,
             1.0935537165661111e-06,
             1.2734244397327087e-07,
             1.209624282534318e-08,
-            9.2880342218154687e-10,
+            9.288034221815469e-10,
             5.7039803251286501e-11,
             2.7668880796351234e-12,
             1.0446062071534655e-13,
             3.015866131841913e-15,
-            6.5184766419075028e-17,
+            6.518476641907503e-17,
             1.0277368048053688e-18,
             1.1444908106729494e-20,
-            8.6411169244947458e-23,
+            8.641116924494746e-23,
             4.193948417922687e-25,
             1.2179530564067127e-27,
             1.9132142558327285e-30,
             1.3977653698327285e-33,
-            3.7088060732095731e-37,
+            3.708806073209573e-37,
             2.2364824894989637e-41,
-            9.3712287678837323e-47,
+            9.371228767883732e-47,
         ];
         let mut nodes = positive
             .iter()
@@ -711,49 +742,191 @@ fn gh_rule_61() -> (&'static [f64], &'static [f64]) {
     (nodes, weights)
 }
 
-pub(crate) fn gh_rule(q: usize) -> Option<(&'static [f64], &'static [f64])> {
+/// Symmetric tridiagonal QL eigenreduction (implicit shifts), tracking only
+/// the first component of each eigenvector instead of accumulating the full
+/// eigenvector matrix (Golub & Welsch, 1969, Section 3, p. 225: "it is not
+/// necessary to compute the entire matrix of eigenvectors"). `d` holds the
+/// diagonal (overwritten with eigenvalues on return, unsorted), `e[1..]`
+/// holds the off-diagonal (`e[0]` is unused/scratch), and `z1` holds the
+/// first row of the identity on entry and the first eigenvector component
+/// per eigenvalue on return.
+fn tql2_first_row(d: &mut [f64], e: &mut [f64], z1: &mut [f64]) -> Result<(), String> {
+    let n = d.len();
+    if n <= 1 {
+        return Ok(());
+    }
+    for i in 1..n {
+        e[i - 1] = e[i];
+    }
+    e[n - 1] = 0.0;
+    for l in 0..n {
+        let mut iter = 0;
+        loop {
+            let mut m = l;
+            while m + 1 < n {
+                let dd = d[m].abs() + d[m + 1].abs();
+                if e[m].abs() <= f64::EPSILON * dd {
+                    break;
+                }
+                m += 1;
+            }
+            if m == l {
+                break;
+            }
+            iter += 1;
+            if iter > 100 {
+                return Err(format!(
+                    "Gauss-Hermite eigenvalue solve failed to converge for n={n}"
+                ));
+            }
+            let mut g = (d[l + 1] - d[l]) / (2.0 * e[l]);
+            let mut r = g.hypot(1.0);
+            g = d[m] - d[l] + e[l] / (g + if g >= 0.0 { r.abs() } else { -r.abs() });
+            let mut s = 1.0_f64;
+            let mut c = 1.0_f64;
+            let mut p = 0.0_f64;
+            for i in (l..m).rev() {
+                let mut f = s * e[i];
+                let b = c * e[i];
+                r = f.hypot(g);
+                e[i + 1] = r;
+                if r == 0.0 {
+                    d[i + 1] -= p;
+                    e[m] = 0.0;
+                    break;
+                }
+                s = f / r;
+                c = g / r;
+                g = d[i + 1] - p;
+                r = (d[i] - g) * s + 2.0 * c * b;
+                p = s * r;
+                d[i + 1] = g + p;
+                g = c * r - b;
+                f = z1[i + 1];
+                z1[i + 1] = s * z1[i] + c * f;
+                z1[i] = c * z1[i] - s * f;
+            }
+            d[l] -= p;
+            e[l] = g;
+            e[m] = 0.0;
+        }
+    }
+    Ok(())
+}
+
+/// Generate the `n`-node probabilists' Gauss-Hermite rule for arbitrary `n`
+/// via Golub & Welsch (1969): nodes are the eigenvalues of the tridiagonal
+/// Jacobi matrix for He_n's recurrence (alpha_k = 0, beta_k = k), weights are
+/// the squared first eigenvector components renormalized to sum to 1. See
+/// the module-level comment above for full citations and locators.
+fn gauss_hermite_probabilists(n: usize) -> Result<(Vec<f64>, Vec<f64>), String> {
+    if n == 0 {
+        return Err("quadrature node count must be >= 1".to_string());
+    }
+    if n == 1 {
+        return Ok((vec![0.0], vec![1.0]));
+    }
+    let mut d = vec![0.0_f64; n];
+    let mut e = vec![0.0_f64; n];
+    for (i, e_i) in e.iter_mut().enumerate().skip(1) {
+        *e_i = (i as f64).sqrt();
+    }
+    let mut z1 = vec![0.0_f64; n];
+    z1[0] = 1.0;
+    tql2_first_row(&mut d, &mut e, &mut z1)?;
+
+    let mut pairs: Vec<(f64, f64)> = d.iter().zip(z1.iter()).map(|(&x, &z)| (x, z * z)).collect();
+    pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).expect("eigenvalues are finite"));
+
+    let weight_sum: f64 = pairs.iter().map(|p| p.1).sum();
+    let mut nodes: Vec<f64> = pairs.iter().map(|p| p.0).collect();
+    let mut weights: Vec<f64> = pairs.iter().map(|p| p.1 / weight_sum).collect();
+
+    // The weight function e^{-x^2/2} is symmetric about 0, so the exact rule
+    // is symmetric; average mirrored pairs to cancel roundoff asymmetry from
+    // the iterative eigensolve (checked directly in the symmetry test).
+    for i in 0..n / 2 {
+        let j = n - 1 - i;
+        let m = (nodes[j] - nodes[i]) / 2.0;
+        nodes[i] = -m;
+        nodes[j] = m;
+        let w = (weights[i] + weights[j]) / 2.0;
+        weights[i] = w;
+        weights[j] = w;
+    }
+    if n % 2 == 1 {
+        nodes[n / 2] = 0.0;
+    }
+    Ok((nodes, weights))
+}
+
+static GH_CACHE: OnceLock<Mutex<HashMap<usize, &'static (Vec<f64>, Vec<f64>)>>> = OnceLock::new();
+
+/// Compute (and cache) an arbitrary-`n` rule not in the embedded tables.
+/// `checked_mul` guards the O(n^2) eigensolve cost/allocation instead of a
+/// node-count cap (#1929): huge `n` fails loudly rather than hanging.
+fn gh_rule_computed(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
+    q.checked_mul(q).ok_or_else(|| {
+        format!("quadrature node count {q} is too large: q * q overflows usize")
+    })?;
+    let cache = GH_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = cache.lock().expect("gauss-hermite cache poisoned");
+    if let Some(&entry) = guard.get(&q) {
+        return Ok((entry.0.as_slice(), entry.1.as_slice()));
+    }
+    let rule = gauss_hermite_probabilists(q)?;
+    let leaked: &'static (Vec<f64>, Vec<f64>) = Box::leak(Box::new(rule));
+    guard.insert(q, leaked);
+    Ok((leaked.0.as_slice(), leaked.1.as_slice()))
+}
+
+fn resolve_gh_rule(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
     match q {
-        7 => Some((&GH_NODES_7, &GH_WEIGHTS_7)),
-        11 => Some((&GH_NODES_11, &GH_WEIGHTS_11)),
-        15 => Some((&GH_NODES_15, &GH_WEIGHTS_15)),
-        21 => Some((&GH_NODES_21, &GH_WEIGHTS_21)),
-        31 => Some((&GH_NODES_31, &GH_WEIGHTS_31)),
-        41 => Some((&GH_NODES_41, &GH_WEIGHTS_41)),
-        _ => None,
+        0 => Err("quadrature node count must be >= 1".to_string()),
+        7 => Ok((&GH_NODES_7, &GH_WEIGHTS_7)),
+        11 => Ok((&GH_NODES_11, &GH_WEIGHTS_11)),
+        15 => Ok((&GH_NODES_15, &GH_WEIGHTS_15)),
+        21 => Ok((&GH_NODES_21, &GH_WEIGHTS_21)),
+        31 => Ok((&GH_NODES_31, &GH_WEIGHTS_31)),
+        41 => Ok((&GH_NODES_41, &GH_WEIGHTS_41)),
+        61 => Ok(gh_rule_61()),
+        81 => Ok(gh_rule_81()),
+        _ => gh_rule_computed(q),
+    }
+}
+
+/// Any node count `q >= 1` is supported (#1929: no table, no cap); `None`
+/// only for `q == 0` or an allocation-overflow guard tripping.
+pub(crate) fn gh_rule(q: usize) -> Option<(&'static [f64], &'static [f64])> {
+    resolve_gh_rule(q).ok()
+}
+
+fn resolve_gh_rule_unidim(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
+    match q {
+        121 => Ok(gh_rule_121()),
+        _ => resolve_gh_rule(q),
     }
 }
 
 pub(crate) fn gh_rule_unidim(q: usize) -> Option<(&'static [f64], &'static [f64])> {
-    match q {
-        61 => Some(gh_rule_61()),
-        81 => Some(gh_rule_81()),
-        121 => Some(gh_rule_121()),
-        _ => gh_rule(q),
-    }
+    resolve_gh_rule_unidim(q).ok()
 }
 
-/// Resolve an embedded rule with a consistent public-validation error.
+/// Resolve a rule with a consistent public-validation error (n >= 1 and
+/// allocation-overflow both surface here, per #1929 requirement 3).
 pub(crate) fn require_gh_rule(
     q: usize,
     name: &str,
 ) -> Result<(&'static [f64], &'static [f64]), String> {
-    match gh_rule(q) {
-        Some(rule) => Ok(rule),
-        None => Err(format!("unsupported {name} {q}")),
-    }
+    resolve_gh_rule(q).map_err(|e| format!("{name} {q}: {e}"))
 }
 
 pub(crate) fn require_gh_rule_unidim(
     q: usize,
     name: &str,
 ) -> Result<(&'static [f64], &'static [f64]), String> {
-    match gh_rule_unidim(q) {
-        Some(rule) => Ok(rule),
-        None => Err(format!("unsupported {name} {q}")),
-    }
+    resolve_gh_rule_unidim(q).map_err(|e| format!("{name} {q}: {e}"))
 }
-
-pub(crate) const SUPPORTED_Q: [usize; 6] = [7, 11, 15, 21, 31, 41];
 
 #[cfg(test)]
 #[path = "../../../tests/unit/quadrature_tests.rs"]

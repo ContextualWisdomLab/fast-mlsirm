@@ -110,8 +110,9 @@ def test_poly_fipc_validation() -> None:
     anchor[0] = True
     with pytest.raises(ValueError):
         fit_poly_fipc(y, N_CAT, np.zeros(N_ITEMS, dtype=bool), good_slope, good_cat)
+    # #1929: no node-count cap; q_theta=25 is now accepted, only < 1 is not.
     with pytest.raises(ValueError):
-        fit_poly_fipc(y, N_CAT, anchor, good_slope, good_cat, q_theta=25)
+        fit_poly_fipc(y, N_CAT, anchor, good_slope, good_cat, q_theta=0)
 
 
 SPECIFIC_MAP = np.array([0, 0, 0, 0, 1, 1, 1, 1], dtype=np.int64)

@@ -110,10 +110,12 @@ def test_same_seed_bit_reproduces() -> None:
 
 def test_rejects_out_of_range_caller_arguments() -> None:
     y = _simulate(SEED)
+    # #1929: no node-count cap; q_general=5/q_specific=22 are now accepted,
+    # only < 1 is not.
     with pytest.raises(ValueError):
-        _fit(y, q_general=5)
+        _fit(y, q_general=0)
     with pytest.raises(ValueError):
-        _fit(y, q_specific=22)
+        _fit(y, q_specific=0)
     with pytest.raises(ValueError):
         _fit(y, max_iter=0)
     with pytest.raises(ValueError):
@@ -121,11 +123,25 @@ def test_rejects_out_of_range_caller_arguments() -> None:
     with pytest.raises(ValueError):
         _fit(y, n_starts=0)
     with pytest.raises(ValueError):
-        fit_bifactor_grm(y, np.array([0, 0, 0, 1, 1]), N_CAT, N_SPECIFIC)
+        fit_bifactor_grm(
+            y, np.array([0, 0, 0, 1, 1]), N_CAT, N_SPECIFIC, q_general=7, q_specific=7
+        )
     with pytest.raises(ValueError):
         fit_bifactor_grm(
-            y, np.array([0, 0, 0, 1, 1, 5], dtype=np.int64), N_CAT, N_SPECIFIC
+            y,
+            np.array([0, 0, 0, 1, 1, 5], dtype=np.int64),
+            N_CAT,
+            N_SPECIFIC,
+            q_general=7,
+            q_specific=7,
         )
+
+
+def test_q_general_and_q_specific_are_required() -> None:
+    """RED test for #1929: no unsourced defaults exist for the node counts."""
+    y = _simulate(SEED)
+    with pytest.raises(TypeError):
+        fit_bifactor_grm(y, SPECIFIC_MAP, N_CAT, N_SPECIFIC)
 
 
 def test_uncapped_start_budget_is_accepted() -> None:

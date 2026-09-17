@@ -31,3 +31,23 @@
   Paper basis: Kim (2006, JEM 43(4), 355-381,
   https://doi.org/10.1111/j.1745-3984.2006.00021.x) and Paek & Young (2005,
   AME 18(2), 199-215, https://doi.org/10.1207/s15324818ame1802_4).
+
+## Changed
+
+- `BifactorFipcConfig.q_general`/`q_specific` validation (and the Python
+  `fit_bifactor_grm_fipc` wrapper) now resolve the shared arbitrary-`n`
+  Gauss-Hermite quadrature (`quadrature::require_gh_rule`, any `n >= 1`,
+  #1929) instead of the removed fixed `SUPPORTED_Q` table, matching
+  `fit_bifactor_grm`/`fit_bifactor_grm_multigroup`. Move the ignored
+  `bifactor_fipc_study_n1020` study test from `q_general=31..41,
+  q_specific=21..31` to the maintainer's >= 121-node-per-dimension floor
+  (`q_general = q_specific = 121` for both the reference and FIPC fits);
+  executed locally in release mode (668s), converged, all recovery
+  assertions passing.
+- `quadrature::require_gh_rule_unidim` now actually dispatches through the
+  embedded 121-node unidimensional table (`gh_rule_121`,
+  `numpy.polynomial.hermite_e.hermegauss(121)`) instead of silently falling
+  back to the generic arbitrary-`n` path at every node count — the wiring
+  bug that made the embedded table dead code is fixed so `fit_poly_fipc`'s
+  `q_theta = 121` study path uses it as intended; re-verified locally
+  (`fipc_study_recovery_n1020_q121`, release mode, 7.14s, passing).

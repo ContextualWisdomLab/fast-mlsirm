@@ -97,7 +97,7 @@ fn binary_cells_match_their_defining_formulas() {
         kind: MixedItemKind::TwoPl,
         n_categories: 2,
     };
-    let lp = item_logprobs(&two, &[1.2_f64.ln(), -0.3], theta, &[], 0);
+    let lp = item_logprobs(&two, &[1.2, -0.3], theta, &[], 0);
     let expected = 1.0 / (1.0 + (-(1.2 * theta - 0.3)).exp());
     assert!((lp[1].exp() - expected).abs() < 1e-12);
 
@@ -106,7 +106,7 @@ fn binary_cells_match_their_defining_formulas() {
         n_categories: 2,
     };
     let raw_lower = logit(0.2);
-    let lp = item_logprobs(&three, &[1.2_f64.ln(), -0.3, raw_lower], theta, &[], 0);
+    let lp = item_logprobs(&three, &[1.2, -0.3, raw_lower], theta, &[], 0);
     let expected = 0.2 + 0.8 * logistic(1.2 * theta - 0.3);
     assert!((lp[1].exp() - expected).abs() < 1e-12);
 
@@ -114,7 +114,7 @@ fn binary_cells_match_their_defining_formulas() {
         kind: MixedItemKind::ThreePlUpper,
         n_categories: 2,
     };
-    let lp = item_logprobs(&upper, &[1.2_f64.ln(), -0.3, logit(0.85)], theta, &[], 0);
+    let lp = item_logprobs(&upper, &[1.2, -0.3, logit(0.85)], theta, &[], 0);
     let expected = 0.85 * logistic(1.2 * theta - 0.3);
     assert!((lp[1].exp() - expected).abs() < 1e-12);
 
@@ -123,7 +123,7 @@ fn binary_cells_match_their_defining_formulas() {
         n_categories: 2,
     };
     let raw_gap = logit((0.85 - 0.2) / (1.0 - 0.2));
-    let params = [1.2_f64.ln(), -0.3, raw_lower, raw_gap];
+    let params = [1.2, -0.3, raw_lower, raw_gap];
     let lp = item_logprobs(&four, &params, theta, &[], 0);
     let expected = 0.2 + 0.65 * logistic(1.2 * theta - 0.3);
     assert!((lp[1].exp() - expected).abs() < 1e-12);
@@ -165,7 +165,7 @@ fn partial_credit_and_sequential_cells_match_definitions() {
         kind: MixedItemKind::Sequential,
         n_categories: 3,
     };
-    let params = [1.4_f64.ln(), 0.2, -0.5];
+    let params = [1.4, 0.2, -0.5];
     let lp = item_logprobs(&sequential, &params, theta, &[], 0);
     let q1 = logistic(1.4 * theta + 0.2);
     let q2 = logistic(1.4 * theta - 0.5);
@@ -211,10 +211,18 @@ fn new_family_aliases_and_public_constraints_are_explicit() {
         kind: MixedItemKind::FourPl,
         n_categories: 2,
     };
-    let mut extreme = [8.0, 20.0, -20.0, 20.0];
+    // `FourPl` absorbs the reflection in its slope, so its bound is now
+    // symmetric on the natural scale: it caps magnitude and leaves sign alone.
+    let mut extreme = [80.0, 20.0, -20.0, 20.0];
     clamp_params(&four, &mut extreme, 0);
-    assert_eq!(extreme[0], 4.0);
+    assert_eq!(extreme[0], SLOPE_MAGNITUDE);
     assert_eq!(extreme[1], 12.0);
+    let mut reversed = [-80.0, 20.0, -20.0, 20.0];
+    clamp_params(&four, &mut reversed, 0);
+    assert_eq!(
+        reversed[0], -SLOPE_MAGNITUDE,
+        "the slope bound must cap magnitude without imposing a sign"
+    );
     let estimate = public_estimate(&four, &extreme, 0);
     let lower = estimate.lower_asymptote.unwrap();
     let upper = estimate.upper_asymptote.unwrap();
@@ -429,8 +437,10 @@ fn mixed_fit_validation_and_helper_boundaries() {
     assert!(call(&[0, 2], None, 2, 1, &[binary.clone()], 1, 1e-6).is_err());
     assert!(call(&[0, 0], None, 2, 1, &[binary.clone()], 1, 1e-6).is_err());
     assert!(build_grid(&[spatial.clone()], 0, 7, 7).is_err());
-    assert!(build_grid(&[binary.clone()], 1, 5, 7).is_err());
-    assert!(build_grid(&[spatial], 1, 7, 5).is_err());
+    // #1929: no node-count cap; q_theta=5 is now accepted, only q_theta=0 is not.
+    assert!(build_grid(&[binary.clone()], 1, 0, 7).is_err());
+    // #1929: no node-count cap; q_xi=5 is now accepted, only q_xi=0 is not.
+    assert!(build_grid(&[spatial], 1, 7, 0).is_err());
     assert!(tensor_grid(41, 4).is_err());
     assert!(ordered_values(&[]).is_empty());
     assert!(ordered_raw(&[]).is_empty());
@@ -492,6 +502,42 @@ fn mixed_fit_validation_and_helper_boundaries() {
     let zero_counts = vec![0.0; grid.cell() * 2];
     let stationary = m_step_item(&binary, &initial, &grid, &zero_counts, 6);
     assert_eq!(stationary.len(), initial.len());
+}
+
+/// `at_bound` reports the roles whose estimate rests on an optimizer bound. The
+/// integration test next to it covers the silent case on fitted data; this
+/// covers the firing case directly, which fitted data cannot reach reliably.
+#[test]
+fn at_bound_names_every_role_whose_estimate_rests_on_a_bound() {
+    let two = MixedItemSpec {
+        kind: MixedItemKind::TwoPl,
+        n_categories: 2,
+    };
+    let mut interior = [1.2, -0.3];
+    clamp_params(&two, &mut interior, 0);
+    assert!(
+        public_estimate(&two, &interior, 0).at_bound.is_empty(),
+        "an interior optimum must report nothing"
+    );
+
+    // Magnitude bound, reachable from either side now that it is symmetric.
+    for extreme in [1e6_f64, -1e6] {
+        let mut params = [extreme, -0.3];
+        clamp_params(&two, &mut params, 0);
+        assert_eq!(
+            public_estimate(&two, &params, 0).at_bound,
+            vec![AT_BOUND_SLOPE],
+            "a slope on the magnitude bound must be reported ({extreme:e})"
+        );
+    }
+
+    // A non-slope parameter on the general bound reports the other role.
+    let mut wide = [1.2, -1e6];
+    clamp_params(&two, &mut wide, 0);
+    assert_eq!(
+        public_estimate(&two, &wide, 0).at_bound,
+        vec![AT_BOUND_PARAMETER]
+    );
 }
 
 // ===================== reflection taxonomy =====================

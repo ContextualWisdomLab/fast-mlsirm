@@ -337,13 +337,13 @@ pub fn fit_mmle_2pl(
 /// Largest slope magnitude the M-step will accept, on the natural scale. A
 /// numerical guard on the Newton step, not a model claim; it is symmetric so
 /// that it bounds magnitude without constraining sign.
-const A_MAGNITUDE_BOUND: f64 = 10.0;
+pub(crate) const A_MAGNITUDE_BOUND: f64 = 10.0;
 
 /// Pin the reflection `(a, theta) -> (-a, -theta)` by requiring the
 /// largest-magnitude slope to be positive. `b` is invariant under the flip and
 /// is not touched. A no-op whenever the anchor item is already positive, which
 /// is every fit whose items mostly key with the trait.
-fn canonicalize_reflection(a: &mut [f64], theta: &mut [f64]) {
+pub(crate) fn canonicalize_reflection(a: &mut [f64], theta: &mut [f64]) {
     let anchor = a
         .iter()
         .enumerate()

@@ -61,9 +61,10 @@ def test_fit_nominal_rejects_n_cat_out_of_range():
         fit_nominal(_poly(), 65)
 
 
-def test_fit_nominal_rejects_unsupported_q():
+def test_fit_nominal_rejects_zero_q():
+    # #1929: no node-count cap; q=8 is now accepted, only q < 1 is rejected.
     with pytest.raises(ValueError):
-        fit_nominal(_poly(), 3, 1, q=8)
+        fit_nominal(_poly(), 3, 1, q=0)
 
 
 def test_fit_nominal_rejects_max_iter_out_of_range():

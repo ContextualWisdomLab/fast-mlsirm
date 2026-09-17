@@ -29,9 +29,8 @@
 //! - `bifactor_fipc_specific_variances_where_identified`: with
 //!   `estimate_specific_vars`, a shifted specific variance is recovered.
 //! - `bifactor_fipc_study_n1020` (`#[ignore]`, statistical-studies):
-//!   study-representative run at the reanalysis sample size on the densest
-//!   supported quadrature rung (see module docs on the 121-node-floor
-//!   question for tensor grids).
+//!   study-representative run at the reanalysis sample size, >= 121 nodes
+//!   per dimension (the maintainer's minimum-precision standard, #1929).
 //!
 //! Tolerance basis (measured, not tuned): recovery bands carry margin over
 //! the observed estimation spread at these sample sizes (bifactor GRM
@@ -403,11 +402,13 @@ fn bifactor_fipc_specific_variances_where_identified() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "slow (121-node grids); run with: cargo test --release -- --ignored --nocapture"]
 fn bifactor_fipc_study_n1020() {
-    // Study-representative: reanalysis sample size on the densest supported
-    // quadrature rung. (Tensor-grid 121/dim is caller-possible only if the
-    // quadrature set grows; see the PR discussion of the 121-node floor.)
+    // Study-representative: reanalysis sample size at the maintainer's
+    // minimum-precision standard, >= 121 nodes per dimension (#1929 removed
+    // the fixed quadrature-table cap that used to bound this test at 41; see
+    // `bifactor_grm_recovery.rs::bifactor_grm_121_vs_241_nodes_agree` for the
+    // node-count numerical-agreement evidence this floor is based on).
     let n_foc = 1020usize;
     let y_ref = simulate(&TRUE_A_G, &TRUE_A_S, 3000, 0.0, 1.0, &[1.0, 1.0], 909);
     let reference = fit_bifactor_grm(
@@ -418,7 +419,7 @@ fn bifactor_fipc_study_n1020() {
         N_ITEMS,
         N_SPECIFIC,
         N_CAT,
-        &BifactorGrmConfig { q_general: 31, q_specific: 21, tol: 1e-6, max_iter: 1000, ..ref_config() },
+        &BifactorGrmConfig { q_general: 121, q_specific: 121, tol: 1e-6, max_iter: 1000, ..ref_config() },
     )
     .expect("study reference fit must succeed");
     assert!(reference.converged);
@@ -436,8 +437,8 @@ fn bifactor_fipc_study_n1020() {
         &reference.a_specific,
         &reference.threshold,
         &BifactorFipcConfig {
-            q_general: 41,
-            q_specific: 31,
+            q_general: 121,
+            q_specific: 121,
             tol: 1e-6,
             max_iter: 1000,
             ..fipc_config()

@@ -128,27 +128,33 @@ def test_rejects_fit_missing_bifactor_fields() -> None:
 
     with pytest.raises(TypeError):
         bifactor_expected_total_score_monotonicity(
-            _NotBifactor(), np.linspace(-1.0, 1.0, 3)
+            _NotBifactor(), np.linspace(-1.0, 1.0, 3), q_specific=41
         )
 
 
 def test_rejects_mismatched_slope_lengths() -> None:
     fit = _BifactorFit(np.array([1.0, 1.0]), np.array([0.5]))
     with pytest.raises(ValueError):
-        bifactor_expected_total_score_monotonicity(fit, np.linspace(-1.0, 1.0, 3))
+        bifactor_expected_total_score_monotonicity(
+            fit, np.linspace(-1.0, 1.0, 3), q_specific=41
+        )
 
 
 def test_rejects_non_finite_slopes() -> None:
     fit = _BifactorFit(np.array([1.0, np.nan]), np.array([0.5, 0.3]))
     with pytest.raises(ValueError):
-        bifactor_expected_total_score_monotonicity(fit, np.linspace(-1.0, 1.0, 3))
+        bifactor_expected_total_score_monotonicity(
+            fit, np.linspace(-1.0, 1.0, 3), q_specific=41
+        )
 
 
 def test_rejects_threshold_shape_mismatch() -> None:
     fit = _BifactorFit(np.array([1.0, 1.0]), np.array([0.5, 0.3]))
     fit.threshold = fit.threshold[:1]
     with pytest.raises(ValueError):
-        bifactor_expected_total_score_monotonicity(fit, np.linspace(-1.0, 1.0, 3))
+        bifactor_expected_total_score_monotonicity(
+            fit, np.linspace(-1.0, 1.0, 3), q_specific=41
+        )
 
 
 @pytest.mark.parametrize("q_specific", [0, -1, 4097])
@@ -163,4 +169,13 @@ def test_rejects_out_of_range_q_specific(q_specific: int) -> None:
 def test_rejects_empty_fit() -> None:
     fit = _BifactorFit(np.array([]), np.array([]))
     with pytest.raises(ValueError):
+        bifactor_expected_total_score_monotonicity(
+            fit, np.linspace(-1.0, 1.0, 3), q_specific=41
+        )
+
+
+def test_q_specific_is_required() -> None:
+    """RED test for #1929: no unsourced default exists for q_specific."""
+    fit = _BifactorFit(np.array([1.0, 1.0]), np.array([0.5, 0.3]))
+    with pytest.raises(TypeError):
         bifactor_expected_total_score_monotonicity(fit, np.linspace(-1.0, 1.0, 3))
