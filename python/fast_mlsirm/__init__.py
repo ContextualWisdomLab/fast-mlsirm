@@ -76,9 +76,9 @@ _install_icc_control_safety(_reliability)
 
 _install_dif_control_safety(_dif)
 for _dif_name in (
-    "logistic_dif",
-    "mantel_haenszel_dif_purified",
-    "logistic_dif_purified",
+    "detect_dif_logistic",
+    "detect_dif_mantel_haenszel_purified",
+    "detect_dif_logistic_purified",
 ):
     if hasattr(_legacy_init, _dif_name):
         setattr(_legacy_init, _dif_name, getattr(_dif, _dif_name))
