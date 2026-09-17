@@ -232,7 +232,7 @@ point to.
 **Implementation implication.** Target **GRM-LSIRM (cumulative-logit)** as the
 default polytomous model. The GRM cell replaces the softmax cell:
 `P(Y=k) = Phi_k - Phi_{k+1}` with `Phi_k = sigmoid(a*theta + beta_{i,k} - gamma*d)`;
-the softmax `category_logprobs`/`gpcm_node_gradient` oracle is retained for the
+the softmax `compute_category_logprobs`/`compute_gpcm_node_gradient` oracle is retained for the
 GPCM/nominal options only. Which model is primary depends on the target items' response
 format: ordinal Likert / rubric levels -> GRM; partial-credit performance levels
 -> GPCM.

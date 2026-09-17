@@ -263,14 +263,15 @@ class TwoPlFit:
 
 def fit_2pl(
     responses: np.ndarray,
-    model: int | ExploratoryModel | ConfirmatoryModel = 1,
+    model: int | ExploratoryModel | ConfirmatoryModel,
     q: int = 21,
     estimate_corr: bool = False,
-    max_iter: int = 500,
-    tol: float = 1e-6,
+    *,
+    max_iter: int,
+    tol: float,
     node_rule: str = "gh",
-    xi_points: int = 4000,
-    xi_seed: int = 0x9E37_79B9_7F4A_7C15,
+    xi_points: int,
+    xi_seed: int,
 ) -> TwoPlFit:
     """Fit the compensatory 2PL item response model (compute in Rust; Reckase, 2009;
     Bock, Gibbons & Muraki, 1988).

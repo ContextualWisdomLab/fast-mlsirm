@@ -1063,21 +1063,21 @@ def test_category_logprobs_binary_parity_and_gpcm_monotone():
     a proper log-softmax; GPCM scores make higher `base` favor higher categories.
     Parity reference for the Rust polytomous kernel (design spec)."""
     import numpy as np
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
 
     rng = np.random.default_rng(0)
     base = rng.normal(size=32)
     b = 0.3
 
     # binary 2PL: logP_1 == log_sigmoid(base + b), logP_0 == log_sigmoid(-(base+b))
-    lp = category_logprobs(base, [0.0, 1.0], [0.0, b])
+    lp = compute_category_logprobs(base, [0.0, 1.0], [0.0, b])
     assert np.allclose(np.exp(lp).sum(axis=-1), 1.0, atol=1e-12)
     eta = base + b
     assert np.allclose(lp[:, 1], -np.logaddexp(0.0, -eta), atol=1e-12)
     assert np.allclose(lp[:, 0], -np.logaddexp(0.0, eta), atol=1e-12)
 
     # GPCM (scores 0,1,2): larger base shifts mass to the top category
-    lp3 = category_logprobs(np.array([-2.0, 2.0]), [0.0, 1.0, 2.0], [0.0, 0.0, 0.0])
+    lp3 = compute_category_logprobs(np.array([-2.0, 2.0]), [0.0, 1.0, 2.0], [0.0, 0.0, 0.0])
     assert np.allclose(np.exp(lp3).sum(axis=-1), 1.0, atol=1e-12)
     p_top = np.exp(lp3[:, 2])
     assert p_top[1] > p_top[0]
@@ -1085,7 +1085,7 @@ def test_category_logprobs_binary_parity_and_gpcm_monotone():
     # baseline must be pinned
     import pytest
     with pytest.raises(ValueError):
-        category_logprobs(base, [0.5, 1.0], [0.0, b])
+        compute_category_logprobs(base, [0.5, 1.0], [0.0, b])
 
 
 def test_gpcm_node_gradient_matches_finite_difference():
@@ -1093,7 +1093,7 @@ def test_gpcm_node_gradient_matches_finite_difference():
     score-weighted base residual, and nominal-score gradient) matches central
     finite differences — de-risks the Rust M-step before it is written."""
     import numpy as np
-    from fast_mlsirm.estimators.marginal import category_logprobs, gpcm_node_gradient
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs, compute_gpcm_node_gradient
 
     scores = np.array([0.0, 1.0, 2.0, 3.0])
     intercepts = np.array([0.0, 0.2, -0.1, 0.3])
@@ -1101,9 +1101,9 @@ def test_gpcm_node_gradient_matches_finite_difference():
     base = 0.4
 
     def q(b, ic, sc):
-        return float(np.dot(counts, category_logprobs(b, sc, ic)))
+        return float(np.dot(counts, compute_category_logprobs(b, sc, ic)))
 
-    g_ic, g_base, g_sc = gpcm_node_gradient(base, scores, intercepts, counts)
+    g_ic, g_base, g_sc = compute_gpcm_node_gradient(base, scores, intercepts, counts)
     h = 1e-6
     for m in range(1, 4):
         ic_p, ic_m = intercepts.copy(), intercepts.copy()
@@ -1117,7 +1117,7 @@ def test_gpcm_node_gradient_matches_finite_difference():
     assert abs((q(base + h, intercepts, scores) - q(base - h, intercepts, scores)) / (2 * h) - g_base) < 1e-5
 
     # residual closure
-    p = np.exp(category_logprobs(base, scores, intercepts))
+    p = np.exp(compute_category_logprobs(base, scores, intercepts))
     assert abs((counts - counts.sum() * p).sum()) < 1e-12
 
 
@@ -1125,7 +1125,7 @@ def test_fit_gpcm_numpy_recovers_known_parameters():
     """Unidimensional GPCM MMLE-EM (the polytomous parity reference) recovers
     known slopes and category intercepts from simulated data."""
     import numpy as np
-    from fast_mlsirm.estimators.marginal import category_logprobs, fit_gpcm_numpy
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs, fit_gpcm_numpy
 
     rng = np.random.default_rng(7)
     n_persons, n_items, k_cat = 4000, 6, 3
@@ -1136,11 +1136,11 @@ def test_fit_gpcm_numpy_recovers_known_parameters():
     scores = np.arange(k_cat, dtype=float)
     y = np.zeros((n_persons, n_items), dtype=int)
     for i in range(n_items):
-        p = np.exp(category_logprobs(a_true[i] * theta, scores, c_true[i]))
+        p = np.exp(compute_category_logprobs(a_true[i] * theta, scores, c_true[i]))
         for pp in range(n_persons):
             y[pp, i] = rng.choice(k_cat, p=p[pp])
 
-    res = fit_gpcm_numpy(y, k_cat, max_iter=80)
+    res = fit_gpcm_numpy(y, k_cat, max_iter=80, q_theta=21, tol=1e-6)
     assert np.isfinite(res["loglik"])
     assert res["converged"]
     assert res["termination_reason"] == "tolerance"
@@ -1159,7 +1159,7 @@ def test_fit_gpcm_numpy_reports_likelihood_at_returned_parameters():
     """The reference EM result and trace end at the returned parameter state."""
     import numpy as np
 
-    from fast_mlsirm.estimators.marginal import _gh, category_logprobs, fit_gpcm_numpy
+    from fast_mlsirm.estimators.marginal import _gh, compute_category_logprobs, fit_gpcm_numpy
 
     y = np.array(
         [
@@ -1180,7 +1180,7 @@ def test_fit_gpcm_numpy_reports_likelihood_at_returned_parameters():
     scores = np.arange(3, dtype=np.float64)
     log_node = np.zeros((y.shape[0], nodes.size), dtype=np.float64)
     for item in range(y.shape[1]):
-        item_lp = category_logprobs(
+        item_lp = compute_category_logprobs(
             res["a"][item] * nodes, scores, res["intercepts"][item]
         )
         log_node += item_lp[:, y[:, item]].T
@@ -1209,14 +1209,14 @@ def test_fit_gpcm_numpy_rejects_malformed_controls_and_responses():
     valid = np.array([[0, 1], [1, 2]], dtype=np.int64)
     for bad in (np.array([0, 1, 2]), np.empty((0, 2)), np.array([[0.5, 1.0]])):
         with pytest.raises(ValueError):
-            fit_gpcm_numpy(bad, 3, q_theta=7, max_iter=1)
+            fit_gpcm_numpy(bad, 3, q_theta=7, max_iter=1, tol=1e-6)
     for kwargs in (
         {"n_cat": 3.5},
         {"n_cat": 3, "max_iter": 0},
         {"n_cat": 3, "tol": 0.0},
     ):
         with pytest.raises(ValueError):
-            fit_gpcm_numpy(valid, **kwargs)
+            fit_gpcm_numpy(valid, **{"q_theta": 7, "max_iter": 1, "tol": 1e-6, **kwargs})
 
 
 def test_poly_cell_and_fitter_rust_numpy_parity():
@@ -1230,14 +1230,14 @@ def test_poly_cell_and_fitter_rust_numpy_parity():
         pytest.skip("compiled core not available")
     if not hasattr(_core, "fit_poly_unidim"):  # pragma: no cover
         pytest.skip("core built without polytomous functions")
-    from fast_mlsirm.estimators.marginal import category_logprobs, fit_gpcm_numpy
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs, fit_gpcm_numpy
 
     # cell parity: same softmax formula in both languages
     scores = np.array([0.0, 1.0, 2.0])
     intercepts = np.array([0.0, 0.3, -0.2])
     for base in (-1.3, 0.0, 0.75):
         rust = np.array(_core.gpcm_cell_logprobs(float(base), scores, intercepts))
-        npy = category_logprobs(np.array([base]), scores, intercepts)[0]
+        npy = compute_category_logprobs(np.array([base]), scores, intercepts)[0]
         assert np.allclose(rust, npy, atol=1e-12), f"cell parity at base={base}"
 
     # fitter agreement: same EM/Newton, same GH grid -> same MLE
@@ -1249,12 +1249,12 @@ def test_poly_cell_and_fitter_rust_numpy_parity():
     theta = rng.normal(0.0, 1.0, n_persons)
     y = np.zeros((n_persons, n_items), dtype=np.int64)
     for i in range(n_items):
-        p = np.exp(category_logprobs(a_true[i] * theta, scores, c_true[i]))
+        p = np.exp(compute_category_logprobs(a_true[i] * theta, scores, c_true[i]))
         for pp in range(n_persons):
             y[pp, i] = rng.choice(k, p=p[pp])
 
     rust_fit = _core.fit_poly_unidim(y.ravel(), n_persons, n_items, k, None, "gpcm", 21, 80, 1e-6)
-    npy_fit = fit_gpcm_numpy(y, k)
+    npy_fit = fit_gpcm_numpy(y, k, q_theta=21, max_iter=80, tol=1e-6)
     assert np.allclose(np.array(rust_fit["slope"]), npy_fit["a"], atol=0.05)
     assert np.isfinite(rust_fit["loglik"])
 
@@ -1327,7 +1327,7 @@ def test_score_polytomous_recovers_theta():
     import numpy as np
     import pytest
     from fast_mlsirm import fit_polytomous, score_polytomous
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "score_poly_eap"):
@@ -1342,7 +1342,7 @@ def test_score_polytomous_recovers_theta():
     scores = np.arange(k, dtype=float)
     y = np.zeros((n_persons, n_items), dtype=int)
     for i in range(n_items):
-        p = np.exp(category_logprobs(a_true[i] * theta_true, scores, c_true[i]))
+        p = np.exp(compute_category_logprobs(a_true[i] * theta_true, scores, c_true[i]))
         for pp in range(n_persons):
             y[pp, i] = rng.choice(k, p=p[pp])
 
@@ -1384,14 +1384,14 @@ def test_grm_cell_rust_numpy_parity():
     and the NumPy GRM cell is a proper (normalized) log-distribution."""
     import numpy as np
     import pytest
-    from fast_mlsirm.estimators.marginal import grm_category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_grm_category_logprobs
 
     # NumPy self-consistency: normalization + binary reduction
     for base in (-1.0, 0.3, 1.7):
-        lp = grm_category_logprobs(np.array([base]), np.array([1.0, -1.0]))[0]
+        lp = compute_grm_category_logprobs(np.array([base]), np.array([1.0, -1.0]))[0]
         assert abs(np.log(np.exp(lp).sum())) < 1e-12
     # binary GRM (K=2): P(Y=1) = sigmoid(base + beta)
-    lp2 = grm_category_logprobs(np.array([0.4]), np.array([0.2]))[0]
+    lp2 = compute_grm_category_logprobs(np.array([0.4]), np.array([0.2]))[0]
     assert abs(lp2[1] - (-np.logaddexp(0.0, -(0.4 + 0.2)))) < 1e-12
 
     try:
@@ -1403,16 +1403,16 @@ def test_grm_cell_rust_numpy_parity():
     thr = np.array([1.3, 0.1, -1.2])
     for base in (-1.4, 0.0, 0.9):
         rust = np.array(_core.grm_cell_logprobs(float(base), thr))
-        npy = grm_category_logprobs(np.array([base]), thr)[0]
+        npy = compute_grm_category_logprobs(np.array([base]), thr)[0]
         assert np.allclose(rust, npy, atol=1e-12), f"grm parity at base={base}"
 
 
 def test_grm_cell_extreme_predictor_stays_finite():
-    from fast_mlsirm.estimators.marginal import grm_category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_grm_category_logprobs
 
     thresholds = np.array([1.0, 0.0])
     expected_middle = -1000.0 + np.log1p(-np.exp(-1.0))
-    npy = grm_category_logprobs(np.array([1000.0]), thresholds)[0]
+    npy = compute_grm_category_logprobs(np.array([1000.0]), thresholds)[0]
     assert np.all(np.isfinite(npy)), npy
     np.testing.assert_allclose(npy[1], expected_middle, atol=1e-12)
 
@@ -1431,7 +1431,7 @@ def test_information_polytomous_api():
     import numpy as np
     import pytest
     from fast_mlsirm import fit_polytomous, information_polytomous
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "poly_information_curves"):
@@ -1446,7 +1446,7 @@ def test_information_polytomous_api():
     scores = np.arange(k, dtype=float)
     y = np.zeros((n_persons, n_items), dtype=int)
     for i in range(n_items):
-        p = np.exp(category_logprobs(a_true[i] * theta_p, scores, c_true[i]))
+        p = np.exp(compute_category_logprobs(a_true[i] * theta_p, scores, c_true[i]))
         for pp in range(n_persons):
             y[pp, i] = rng.choice(k, p=p[pp])
 
@@ -1466,7 +1466,7 @@ def test_fit_polytomous_handles_missing_data():
     import numpy as np
     import pytest
     from fast_mlsirm import fit_polytomous, score_polytomous
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "fit_poly_unidim"):
@@ -1481,7 +1481,7 @@ def test_fit_polytomous_handles_missing_data():
     scores = np.arange(k, dtype=float)
     y = np.full((n_persons, n_items), np.nan)
     for i in range(n_items):
-        p = np.exp(category_logprobs(a_true[i] * theta, scores, c_true[i]))
+        p = np.exp(compute_category_logprobs(a_true[i] * theta, scores, c_true[i]))
         for pp in range(n_persons):
             if rng.random() < 0.25:            # ~25% MCAR missing -> stays NaN
                 continue
@@ -1500,7 +1500,7 @@ def test_fit_lsirm_polytomous_recovers_positions():
     import numpy as np
     import pytest
     from fast_mlsirm import fit_lsirm_polytomous
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "fit_poly_lsirm"):
@@ -1523,7 +1523,7 @@ def test_fit_lsirm_polytomous_recovers_positions():
         xi = rng.standard_normal(ld)
         for i in range(n_items):
             base = a_true[i] * theta - np.sqrt(1e-8 + np.sum((xi - zeta_true[i]) ** 2))
-            pr = np.exp(category_logprobs(np.array([base]), scores, c_true[i])[0])
+            pr = np.exp(compute_category_logprobs(np.array([base]), scores, c_true[i])[0])
             y[p, i] = rng.choice(k, p=pr / pr.sum())
 
     fit = fit_lsirm_polytomous(y, k, latent_dim=ld, model="gpcm", q_theta=7, q_xi=7, max_iter=30, tol=1e-5)
@@ -1547,7 +1547,7 @@ def test_polytomous_information_criteria():
     import numpy as np
     import pytest
     from fast_mlsirm import fit_polytomous, polytomous_information_criteria
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "fit_poly_unidim"):
@@ -1562,7 +1562,7 @@ def test_polytomous_information_criteria():
     scores = np.arange(k, dtype=float)
     y = np.zeros((n_persons, n_items), dtype=int)
     for i in range(n_items):
-        p = np.exp(category_logprobs(a[i] * theta, scores, c[i]))
+        p = np.exp(compute_category_logprobs(a[i] * theta, scores, c[i]))
         for pp in range(n_persons):
             y[pp, i] = rng.choice(k, p=p[pp])
 
@@ -1610,7 +1610,7 @@ def test_item_fit_polytomous_sx2():
     import numpy as np
     import pytest
     from fast_mlsirm import fit_polytomous, item_fit_polytomous
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(
@@ -1627,7 +1627,7 @@ def test_item_fit_polytomous_sx2():
     scores = np.arange(k, dtype=float)
     y = np.zeros((n_persons, n_items), dtype=int)
     for i in range(n_items):
-        p = np.exp(category_logprobs(a[i] * theta, scores, c[i]))
+        p = np.exp(compute_category_logprobs(a[i] * theta, scores, c[i]))
         for pp in range(n_persons):
             y[pp, i] = rng.choice(k, p=p[pp])
 
@@ -1666,7 +1666,7 @@ def test_m2_polytomous():
     import numpy as np
     import pytest
     from fast_mlsirm import fit_polytomous, m2_polytomous
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "poly_m2"):
@@ -1677,7 +1677,7 @@ def test_m2_polytomous():
         y = np.zeros((n, j), dtype=int)
         scores = np.arange(k, dtype=float)
         for i in range(j):
-            p = np.exp(category_logprobs(a[i] * theta, scores, c[i]))
+            p = np.exp(compute_category_logprobs(a[i] * theta, scores, c[i]))
             for pp in range(n):
                 y[pp, i] = np.random.default_rng(1000 + i * n + pp).choice(k, p=p[pp])
         return y
@@ -1810,7 +1810,7 @@ def test_local_dependence_polytomous():
     import numpy as np
     import pytest
     from fast_mlsirm import fit_polytomous, local_dependence_polytomous
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(
@@ -1824,7 +1824,7 @@ def test_local_dependence_polytomous():
         scores = np.arange(k, dtype=float)
         for i in range(j):
             base = a[i] * theta + (testlet if testlet is not None and i in (0, 1) else 0.0)
-            p = np.exp(category_logprobs(base, scores, c[i]))
+            p = np.exp(compute_category_logprobs(base, scores, c[i]))
             for pp in range(n):
                 y[pp, i] = np.random.default_rng(300 + i * n + pp).choice(k, p=p[pp])
         return y
@@ -1870,7 +1870,7 @@ def test_fit_nominal_polytomous():
     import numpy as np
     import pytest
     from fast_mlsirm import fit_nominal_polytomous, fit_polytomous
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "fit_nominal"):
@@ -1885,7 +1885,7 @@ def test_fit_nominal_polytomous():
     scores = np.arange(k, dtype=float)
     y = np.zeros((n, j), dtype=int)
     for i in range(j):
-        p = np.exp(category_logprobs(a[i] * theta, scores, c[i]))
+        p = np.exp(compute_category_logprobs(a[i] * theta, scores, c[i]))
         for pp in range(n):
             y[pp, i] = rng.choice(k, p=p[pp])
 
@@ -1941,7 +1941,7 @@ def test_person_fit_polytomous():
     import numpy as np
     import pytest
     from fast_mlsirm import fit_polytomous, person_fit_polytomous
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "poly_person_fit"):
@@ -1957,7 +1957,7 @@ def test_person_fit_polytomous():
 
     def sim_person(th):
         return [
-            rng.choice(k, p=np.exp(category_logprobs(np.array([a[i] * th]), scores, c[i])[0]))
+            rng.choice(k, p=np.exp(compute_category_logprobs(np.array([a[i] * th]), scores, c[i])[0]))
             for i in range(j)
         ]
 
@@ -1980,7 +1980,7 @@ def test_person_fit_polytomous():
     for p in range(m):
         for i in range(j):
             ti = 1.6 if i % 2 == 0 else -1.6
-            pr = np.exp(category_logprobs(np.array([a[i] * ti]), scores, c[i])[0])
+            pr = np.exp(compute_category_logprobs(np.array([a[i] * ti]), scores, c[i])[0])
             ab[p, i] = rng.choice(k, p=pr)
     pf_ab = person_fit_polytomous(ab, fit)
     assert np.mean(pf_ab["flagged"][:m]) > 0.6
@@ -2038,7 +2038,7 @@ def test_dif_polytomous():
     import numpy as np
     import pytest
     from fast_mlsirm import dif_polytomous
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(
@@ -2070,7 +2070,7 @@ def test_dif_polytomous():
                     d = 0.7
                     ci = ci + a[i] * d * scores
                 base = a[i] * theta[p]
-                pr = np.exp(category_logprobs(base, scores, ci))
+                pr = np.exp(compute_category_logprobs(base, scores, ci))
                 y[p, i] = rng.choice(k, p=pr)
         return y, gid
 
@@ -2589,8 +2589,8 @@ def test_rasch_cml_and_andersen_lr():
     # (a) N(0,1) ability and (b) a strongly right-skewed ability
     ya = sim(rng.standard_normal(n))
     yb = sim(1.5 * rng.exponential(size=n) - 1.5)
-    fa = fit_rasch_cml(ya)
-    fb = fit_rasch_cml(yb)
+    fa = fit_rasch_cml(ya, max_iter=100, tol=1e-8)
+    fb = fit_rasch_cml(yb, max_iter=100, tol=1e-8)
     assert fa["converged"] and fb["converged"]
     assert fa["beta"].shape == (k,) and fa["se"].shape == (k,)
     assert abs(fa["beta"].sum()) < 1e-8  # sum-zero identification
@@ -2603,7 +2603,7 @@ def test_rasch_cml_and_andersen_lr():
     theta = rng.standard_normal(n)
     group = (np.arange(n) % 2)
     y_rasch = sim(theta)
-    t1 = andersen_lr_test(y_rasch, group)
+    t1 = andersen_lr_test(y_rasch, group, max_iter=100, tol=1e-8)
     assert t1["df"] == (2 - 1) * (k - 1)
     assert t1["p_value"] > 0.01
     y_dif = y_rasch.copy()
@@ -2613,14 +2613,14 @@ def test_rasch_cml_and_andersen_lr():
     mask = group == 1
     p_dif = 1.0 / (1.0 + np.exp(-(theta[mask][:, None] - b0)))
     y_dif[mask] = (rng.random((mask.sum(), k)) < p_dif).astype(float)
-    t2 = andersen_lr_test(y_dif, group)
+    t2 = andersen_lr_test(y_dif, group, max_iter=100, tol=1e-8)
     assert t2["lr"] > t1["lr"] + 15.0 and t2["p_value"] < 0.01
 
     # validation: non-0/1 responses rejected
     with pytest.raises(ValueError):
         bad = ya.copy()
         bad[0, 0] = 2
-        fit_rasch_cml(bad)
+        fit_rasch_cml(bad, max_iter=100, tol=1e-8)
 
 
 def test_andersen_group_labels_must_be_finite(monkeypatch):
@@ -2638,7 +2638,7 @@ def test_andersen_group_labels_must_be_finite(monkeypatch):
     responses = np.array([[1.0, 0.0], [0.0, 1.0]])
     for invalid in (np.nan, np.inf, -np.inf):
         with pytest.raises(ValueError, match="finite non-negative integers"):
-            andersen_lr_test(responses, np.array([0.0, invalid]))
+            andersen_lr_test(responses, np.array([0.0, invalid]), max_iter=100, tol=1e-8)
 
 
 def test_dif_polytomous_grm_no_silent_false_negative():
@@ -2649,7 +2649,7 @@ def test_dif_polytomous_grm_no_silent_false_negative():
     import numpy as np
     import pytest
     from fast_mlsirm import dif_polytomous
-    from fast_mlsirm.estimators.marginal import grm_category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_grm_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "poly_dif"):
@@ -2662,7 +2662,7 @@ def test_dif_polytomous_grm_no_silent_false_negative():
     b = np.tile(np.array([1.2, 0.0, -1.2]), (j, 1))
 
     def draw(theta, ai, bi):
-        p = np.exp(grm_category_logprobs(ai * theta, bi))
+        p = np.exp(compute_grm_category_logprobs(ai * theta, bi))
         return rng.choice(k, p=p)
 
     y = np.zeros((2 * n_per, j))
@@ -2702,7 +2702,7 @@ def test_u3_person_fit_polytomous():
         u3_cutoff_polytomous,
         u3_person_fit_polytomous,
     )
-    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.estimators.marginal import compute_category_logprobs
     from fast_mlsirm.polytomous import _core_module
 
     if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "u3_person_fit"):
@@ -2730,7 +2730,7 @@ def test_u3_person_fit_polytomous():
                 if p < n_care:  # careless: uniform-random category
                     y[p, i] = rng.integers(k)
                 else:
-                    pr = np.exp(category_logprobs(a[i] * theta[p], scores, c[i]))
+                    pr = np.exp(compute_category_logprobs(a[i] * theta[p], scores, c[i]))
                     y[p, i] = rng.choice(k, p=pr)
         return y
 
@@ -4071,7 +4071,7 @@ def test_fit_rsm_recovers_shared_thresholds():
     y = np.array([[draw(theta[j], delta_true[i]) for i in range(n_items)] for j in range(n)],
                  dtype=float)
 
-    res = fit_rsm(y)
+    res = fit_rsm(y, q_theta=41, max_iter=500, tol=1e-6)
     assert isinstance(res, RsmFit) and res.converged
     assert np.all(np.diff(res.loglik_trace) >= -1e-6)  # monotone ascent
     assert res.n_parameters == n_items + n_cat - 2
@@ -4083,10 +4083,10 @@ def test_fit_rsm_recovers_shared_thresholds():
     # missing-at-random
     ym = y.copy()
     ym[rng.random(ym.shape) < 0.15] = np.nan
-    assert fit_rsm(ym).converged
+    assert fit_rsm(ym, q_theta=41, max_iter=500, tol=1e-6).converged
 
     with pytest.raises(ValueError):
-        fit_rsm(y.ravel())  # not 2-D
+        fit_rsm(y.ravel(), q_theta=41, max_iter=500, tol=1e-6)  # not 2-D
 
 
 def test_fit_rsm_rejects_unidentified_or_malformed_inputs():
@@ -4102,21 +4102,21 @@ def test_fit_rsm_rejects_unidentified_or_malformed_inputs():
 
     valid = np.array([[0.0, 1.0], [1.0, 0.0]])
     with pytest.raises(ValueError, match="at least one person"):
-        fit_rsm(np.empty((0, 2)), n_cat=2)
+        fit_rsm(np.empty((0, 2)), n_cat=2, q_theta=41, max_iter=500, tol=1e-6)
     with pytest.raises(ValueError, match="at least one person"):
-        fit_rsm(np.empty((2, 0)), n_cat=2)
+        fit_rsm(np.empty((2, 0)), n_cat=2, q_theta=41, max_iter=500, tol=1e-6)
     with pytest.raises(ValueError, match="integer categories"):
-        fit_rsm(np.array([[0.2, 1.0], [1.0, 0.0]]), n_cat=2)
+        fit_rsm(np.array([[0.2, 1.0], [1.0, 0.0]]), n_cat=2, q_theta=41, max_iter=500, tol=1e-6)
     with pytest.raises(ValueError, match="finite integer categories"):
-        fit_rsm(np.array([[0.0, np.inf], [1.0, 0.0]]), n_cat=2)
+        fit_rsm(np.array([[0.0, np.inf], [1.0, 0.0]]), n_cat=2, q_theta=41, max_iter=500, tol=1e-6)
     with pytest.raises(ValueError, match="item 1 has no observed responses"):
-        fit_rsm(np.array([[0.0, np.nan], [1.0, np.nan]]), n_cat=2)
+        fit_rsm(np.array([[0.0, np.nan], [1.0, np.nan]]), n_cat=2, q_theta=41, max_iter=500, tol=1e-6)
     with pytest.raises(ValueError, match="max_iter"):
-        fit_rsm(valid, n_cat=2, max_iter=0)
+        fit_rsm(valid, n_cat=2, max_iter=0, q_theta=41, tol=1e-6)
     with pytest.raises(ValueError, match="tol"):
-        fit_rsm(valid, n_cat=2, tol=np.inf)
+        fit_rsm(valid, n_cat=2, tol=np.inf, q_theta=41, max_iter=500)
 
-    unfinished = fit_rsm(valid, n_cat=2, max_iter=1)
+    unfinished = fit_rsm(valid, n_cat=2, max_iter=1, q_theta=41, tol=1e-6)
     assert not unfinished.converged
     assert unfinished.n_iter == 1
     assert len(unfinished.loglik_trace) == 2
@@ -4150,7 +4150,7 @@ def test_fit_2pl_recovers_confirmatory_loadings():
     p = 1.0 / (1.0 + np.exp(-(theta @ loading.T + intercept)))
     y = (rng.random((n, n_items)) < p).astype(float)
 
-    res = fit_2pl(y, model=models.confirmatory(pattern), q=21)
+    res = fit_2pl(y, model=models.confirmatory(pattern), q=21, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     assert isinstance(res, TwoPlFit) and res.converged
     assert res.loading.shape == (n_items, n_dims) and res.n_dims == 2
     # off-pattern entries are exactly zero
@@ -4171,22 +4171,22 @@ def test_fit_2pl_recovers_confirmatory_loadings():
 
     # a rotationally-degenerate all-ones pattern is rejected (no pure anchor per dimension)
     with pytest.raises(ValueError):
-        fit_2pl(y, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)))
+        fit_2pl(y, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     fractional = pattern.astype(float)
     fractional[0, 1] = 0.5
     with pytest.raises(ValueError, match="exactly 0 or 1"):
-        fit_2pl(y, model=models.confirmatory(fractional))
+        fit_2pl(y, model=models.confirmatory(fractional), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError, match="q must be a finite integer"):
-        fit_2pl(y, model=models.confirmatory(pattern), q=15.5)
+        fit_2pl(y, model=models.confirmatory(pattern), q=15.5, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError, match="max_iter must be a finite integer"):
-        fit_2pl(y, model=models.confirmatory(pattern), max_iter=1.5)
+        fit_2pl(y, model=models.confirmatory(pattern), max_iter=1.5, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     # missing (MAR) handled
     ymiss = y.copy()
     ymiss[0, 0] = np.nan
-    assert fit_2pl(ymiss, model=models.confirmatory(pattern), q=15).converged
+    assert fit_2pl(ymiss, model=models.confirmatory(pattern), q=15, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15).converged
 
     # A one-step run that has not met the documented tolerance is explicitly unfinished.
-    unfinished = fit_2pl(y, model=models.confirmatory(pattern), q=7, max_iter=1, tol=1e-12)
+    unfinished = fit_2pl(y, model=models.confirmatory(pattern), q=7, max_iter=1, tol=1e-12, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     assert not unfinished.converged
     assert unfinished.termination_reason == "max_iter_reached"
     assert unfinished.n_iter == 1
@@ -4194,13 +4194,13 @@ def test_fit_2pl_recovers_confirmatory_loadings():
     assert unfinished.final_loglik_change >= 1e-12
 
     # estimate_corr=False reports Sigma = I; estimate_corr=True recovers a known correlation.
-    ortho = fit_2pl(y, model=models.confirmatory(pattern), q=15, estimate_corr=False)
+    ortho = fit_2pl(y, model=models.confirmatory(pattern), q=15, estimate_corr=False, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     assert np.allclose(ortho.corr, np.eye(n_dims))
     ncorr = np.linalg.cholesky(np.array([[1.0, 0.5], [0.5, 1.0]]))
     thc = (ncorr @ rng.standard_normal((n_dims, n))).T
     pc = 1.0 / (1.0 + np.exp(-(thc @ loading.T + intercept)))
     yc = (rng.random((n, n_items)) < pc).astype(float)
-    rc = fit_2pl(yc, model=models.confirmatory(pattern), q=15, estimate_corr=True)
+    rc = fit_2pl(yc, model=models.confirmatory(pattern), q=15, estimate_corr=True, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     assert rc.corr.shape == (n_dims, n_dims)
     assert np.allclose(np.diag(rc.corr), 1.0) and np.allclose(rc.corr, rc.corr.T)
     realized = np.corrcoef(thc.T)[0, 1]
@@ -4247,8 +4247,8 @@ def test_fit_2pl_qmc_high_dim():
 
     # GH cannot reach D=4; QMC (Halton) can.
     with pytest.raises(ValueError):
-        fit_2pl(y, model=models.confirmatory(pattern), node_rule="gh")
-    res = fit_2pl(y, model=models.confirmatory(pattern), node_rule="qmc", xi_points=4000, xi_seed=12345)
+        fit_2pl(y, model=models.confirmatory(pattern), node_rule="gh", max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
+    res = fit_2pl(y, model=models.confirmatory(pattern), node_rule="qmc", xi_points=4000, xi_seed=12345, max_iter=500, tol=1e-6)
     assert isinstance(res, TwoPlFit) and res.n_dims == 4
     assert np.all(res.loading[pattern == 0] == 0.0)
     assert np.sqrt(np.mean((res.loading - loading) ** 2)) < 0.18
@@ -4260,11 +4260,11 @@ def test_fit_2pl_qmc_high_dim():
 
     # node_rule validation and D<=6 bounds.
     with pytest.raises(ValueError, match="node_rule"):
-        fit_2pl(y, model=models.confirmatory(pattern), node_rule="nope")
+        fit_2pl(y, model=models.confirmatory(pattern), node_rule="nope", max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     pat7 = np.eye(7, dtype=np.int64)
     y7 = (rng.random((200, 7)) < 0.5).astype(float)
     with pytest.raises(ValueError):
-        fit_2pl(y7, model=models.confirmatory(pat7), node_rule="qmc", xi_points=200)  # D=7 > 6
+        fit_2pl(y7, model=models.confirmatory(pat7), node_rule="qmc", xi_points=200, max_iter=500, tol=1e-6, xi_seed=0x9E3779B97F4A7C15)  # D=7 > 6
 
     # Two-sided wrapper plumbing at D=2: GH and QMC agree within QMC error yet differ bit-wise
     # (a silent GH fallback on the QMC arm would make them identical).
@@ -4278,8 +4278,8 @@ def test_fit_2pl_qmc_high_dim():
     th2 = rng.standard_normal((2000, 2))
     p2 = 1.0 / (1.0 + np.exp(-(th2 @ ld2.T + ic2)))
     y2 = (rng.random((2000, 7)) < p2).astype(float)
-    gh2 = fit_2pl(y2, model=models.confirmatory(pat2), q=21, node_rule="gh")
-    qmc2 = fit_2pl(y2, model=models.confirmatory(pat2), node_rule="qmc", xi_points=6000, xi_seed=0)
+    gh2 = fit_2pl(y2, model=models.confirmatory(pat2), q=21, node_rule="gh", max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
+    qmc2 = fit_2pl(y2, model=models.confirmatory(pat2), node_rule="qmc", xi_points=6000, xi_seed=0, max_iter=500, tol=1e-6)
     max_abs = max(
         np.max(np.abs(gh2.loading - qmc2.loading)),
         np.max(np.abs(gh2.intercept - qmc2.intercept)),
@@ -4327,7 +4327,7 @@ def test_fit_mhrm_recovers_high_dimensional_2pl():
     p = 1.0 / (1.0 + np.exp(-(theta @ loading.T + intercept)))
     y = (rng.random((n, n_items)) < p).astype(float)
 
-    res = fit_mhrm(y, model=models.confirmatory(pattern), max_cycles=1400, burn_in=280, mh_steps=8, seed=7)
+    res = fit_mhrm(y, model=models.confirmatory(pattern), max_cycles=1400, burn_in=280, mh_steps=8, seed=7, target_accept=0.3, tol=1e-3)
     assert isinstance(res, MhrmFit) and res.n_dims == 6
     assert res.loading.shape == (n_items, n_dims)
     assert np.all(res.loading[pattern == 0] == 0.0)
@@ -4347,12 +4347,12 @@ def test_fit_mhrm_recovers_high_dimensional_2pl():
 
     # rotationally-degenerate pattern (every item loads all dims -> no pure anchor) rejected
     with pytest.raises(ValueError):
-        fit_mhrm(y, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)))
+        fit_mhrm(y, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)), max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
     # non-binary response rejected
     with pytest.raises(ValueError):
         ybad = y.copy()
         ybad[0, 0] = 2
-        fit_mhrm(ybad, model=models.confirmatory(pattern))
+        fit_mhrm(ybad, model=models.confirmatory(pattern), max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
 
 
 def test_fit_mhrm_reports_the_windowed_stopping_metric():
@@ -4383,7 +4383,7 @@ def test_fit_mhrm_reports_the_windowed_stopping_metric():
         mh_steps=1,
         tol=tol,
         seed=52,
-        estimate_se=False,
+        estimate_se=False, target_accept=0.3
     )
 
     assert result.converged
@@ -4421,7 +4421,7 @@ def test_fit_mhrm_estimate_corr_recovers_factor_correlation():
     y = (rng.random((n, n_items)) < p).astype(float)
 
     res = fit_mhrm(y, model=models.confirmatory(pattern), max_cycles=1500, burn_in=320,
-                   mh_steps=8, estimate_corr=True, seed=3)
+                   mh_steps=8, estimate_corr=True, seed=3, target_accept=0.3, tol=1e-3)
     assert isinstance(res, MhrmFit)
     assert res.corr.shape == (n_dims, n_dims)
     assert np.allclose(np.diag(res.corr), 1.0)
@@ -4430,7 +4430,7 @@ def test_fit_mhrm_estimate_corr_recovers_factor_correlation():
 
     # estimate_corr=False -> exactly the identity, and fewer parameters
     res0 = fit_mhrm(y, model=models.confirmatory(pattern), max_cycles=400, burn_in=100,
-                    estimate_corr=False, seed=3)
+                    estimate_corr=False, seed=3, mh_steps=5, target_accept=0.3, tol=1e-3)
     assert np.array_equal(res0.corr, np.eye(n_dims))
     assert res0.n_parameters == n_items + n_items
 
@@ -4487,7 +4487,7 @@ def test_fit_mhrm_gpcm_recovers_high_dimensional_polytomous():
     y = (u[:, :, None] > np.cumsum(prob, axis=2)).sum(axis=2).astype(float)  # inverse-CDF draw
 
     res = fit_mhrm(y, model=models.confirmatory(pattern), family="gpcm", n_cat=n_cat,
-                   max_cycles=1200, burn_in=250, mh_steps=6, seed=11)
+                   max_cycles=1200, burn_in=250, mh_steps=6, seed=11, target_accept=0.3, tol=1e-3)
     assert isinstance(res, MhrmFit) and res.n_dims == n_dims
     assert res.family == "gpcm" and res.n_cat == n_cat
     assert res.loading.shape == (n_items, n_dims)
@@ -4508,12 +4508,12 @@ def test_fit_mhrm_gpcm_recovers_high_dimensional_polytomous():
     with pytest.raises(ValueError):
         ybad = y.copy()
         ybad[0, 0] = n_cat
-        fit_mhrm(ybad, model=models.confirmatory(pattern), family="gpcm", n_cat=n_cat)
+        fit_mhrm(ybad, model=models.confirmatory(pattern), family="gpcm", n_cat=n_cat, max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
     # a declared category never observed for an item (unidentified step) rejected
     with pytest.raises(ValueError):
         ycov = y.copy()
         ycov[ycov[:, 0] == 1, 0] = 0  # item 0 never shows category 1
-        fit_mhrm(ycov, model=models.confirmatory(pattern), family="gpcm", n_cat=n_cat)
+        fit_mhrm(ycov, model=models.confirmatory(pattern), family="gpcm", n_cat=n_cat, max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
 
 
 def test_fit_nominal_recovers_confirmatory_multidimensional_categories():
@@ -4558,7 +4558,7 @@ def test_fit_nominal_recovers_confirmatory_multidimensional_categories():
     u = rng.random((n, n_items))
     y = (probs.cumsum(axis=2) < u[:, :, None]).sum(axis=2)
 
-    res = fit_nominal(y, n_cat, model=models.confirmatory(pattern), q=21)
+    res = fit_nominal(y, n_cat, model=models.confirmatory(pattern), q=21, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     assert isinstance(res, NominalResponseFit) and res.converged
     assert res.slope.shape == (n_items, n_cat, n_dims) and res.n_dims == 2 and res.n_cat == 3
     # baseline category and off-pattern entries are EXACTLY zero
@@ -4591,17 +4591,17 @@ def test_fit_nominal_recovers_confirmatory_multidimensional_categories():
     # validation
     with pytest.raises(ValueError):  # GH cannot reach D=4
         pat4 = np.eye(4, dtype=np.int64)
-        fit_nominal(np.zeros((50, 4), dtype=np.int64), n_cat, model=models.confirmatory(pat4), node_rule="gh")
+        fit_nominal(np.zeros((50, 4), dtype=np.int64), n_cat, model=models.confirmatory(pat4), node_rule="gh", max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError):  # no pure anchor for either dim
-        fit_nominal(y, n_cat, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)))
+        fit_nominal(y, n_cat, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError):  # category out of range
         ybad = y.copy()
         ybad[0, 0] = n_cat
-        fit_nominal(ybad, n_cat, model=models.confirmatory(pattern))
+        fit_nominal(ybad, n_cat, model=models.confirmatory(pattern), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError):  # an unobserved category for an item
         ygap = y.copy()
         ygap[ygap[:, 0] == 2, 0] = 1
-        fit_nominal(ygap, n_cat, model=models.confirmatory(pattern))
+        fit_nominal(ygap, n_cat, model=models.confirmatory(pattern), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
 
 def test_fit_grm_recovers_confirmatory_multidimensional_ordered_categories():
@@ -4647,7 +4647,7 @@ def test_fit_grm_recovers_confirmatory_multidimensional_ordered_categories():
         u = rng.random(n)
         y[:, i] = (pk.cumsum(axis=1) < u[:, None]).sum(axis=1)
 
-    res = fit_grm(y, n_cat, model=models.confirmatory(pattern), q=21)
+    res = fit_grm(y, n_cat, model=models.confirmatory(pattern), q=21, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     assert isinstance(res, GrmFit) and res.converged
     assert res.slope.shape == (n_items, n_dims) and res.threshold.shape == (n_items, n_cat - 1)
     assert res.n_dims == 2 and res.n_cat == 3
@@ -4671,15 +4671,15 @@ def test_fit_grm_recovers_confirmatory_multidimensional_ordered_categories():
     # validation
     with pytest.raises(ValueError):  # GH D=4
         fit_grm((np.arange(200).reshape(50, 4) % n_cat).astype(np.int64), n_cat,
-                model=models.confirmatory(np.eye(4, dtype=np.int64)), node_rule="gh")
+                model=models.confirmatory(np.eye(4, dtype=np.int64)), node_rule="gh", max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError):  # no pure anchor
-        fit_grm(y, n_cat, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)))
+        fit_grm(y, n_cat, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError):  # category out of range
         ybad = y.copy(); ybad[0, 0] = n_cat
-        fit_grm(ybad, n_cat, model=models.confirmatory(pattern))
+        fit_grm(ybad, n_cat, model=models.confirmatory(pattern), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError):  # unobserved category
         ygap = y.copy(); ygap[ygap[:, 0] == 1, 0] = 0
-        fit_grm(ygap, n_cat, model=models.confirmatory(pattern))
+        fit_grm(ygap, n_cat, model=models.confirmatory(pattern), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
 
 def test_fit_gpcm_recovers_confirmatory_multidimensional_adjacent_category():
@@ -4730,7 +4730,7 @@ def test_fit_gpcm_recovers_confirmatory_multidimensional_adjacent_category():
         u = rng.random(n)
         y[:, i] = (pk.cumsum(axis=1) < u[:, None]).sum(axis=1)
 
-    res = fit_gpcm(y, n_cat, model=models.confirmatory(pattern), q=21)
+    res = fit_gpcm(y, n_cat, model=models.confirmatory(pattern), q=21, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     assert isinstance(res, GpcmFit) and res.converged
     assert res.slope.shape == (n_items, n_dims) and res.step.shape == (n_items, n_cat - 1)
     assert res.n_dims == 2 and res.n_cat == 4
@@ -4754,15 +4754,15 @@ def test_fit_gpcm_recovers_confirmatory_multidimensional_adjacent_category():
     # validation
     with pytest.raises(ValueError):  # GH D=4
         fit_gpcm((np.arange(200).reshape(50, 4) % n_cat).astype(np.int64), n_cat,
-                 model=models.confirmatory(np.eye(4, dtype=np.int64)), node_rule="gh")
+                 model=models.confirmatory(np.eye(4, dtype=np.int64)), node_rule="gh", max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError):  # no pure anchor
-        fit_gpcm(y, n_cat, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)))
+        fit_gpcm(y, n_cat, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError):  # category out of range
         ybad = y.copy(); ybad[0, 0] = n_cat
-        fit_gpcm(ybad, n_cat, model=models.confirmatory(pattern))
+        fit_gpcm(ybad, n_cat, model=models.confirmatory(pattern), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError):  # unobserved category
         ygap = y.copy(); ygap[ygap[:, 0] == 1, 0] = 0
-        fit_gpcm(ygap, n_cat, model=models.confirmatory(pattern))
+        fit_gpcm(ygap, n_cat, model=models.confirmatory(pattern), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
 
 def test_fit_mixture_recovers_two_class_rasch():
@@ -4788,7 +4788,7 @@ def test_fit_mixture_recovers_two_class_rasch():
         b = b0 if cls[p] == 0 else -b0
         y[p] = (rng.random(j) < 1 / (1 + np.exp(-(theta[p] + b)))).astype(float)
 
-    res = fit_mixture(y, n_classes=2, model="rasch", n_starts=8, seed=123)
+    res = fit_mixture(y, n_classes=2, model="rasch", n_starts=8, seed=123, max_iter=500, tol=1e-6)
     assert isinstance(res, MixtureFit) and res.converged
     assert np.all(np.diff(res.loglik_trace) >= -1e-6)
     assert res.a.shape == (2, j) and np.allclose(res.a, 1.0)  # Rasch: a == 1
@@ -4819,9 +4819,9 @@ def test_fit_mixture_recovers_two_class_rasch():
     assert ari(res.map_class, cls) > 0.35, "class recovery (ARI) too low"
 
     with pytest.raises(ValueError):
-        fit_mixture(y.ravel(), n_classes=2)  # responses not 2-D
+        fit_mixture(y.ravel(), n_classes=2, model='rasch', n_starts=1, max_iter=500, tol=1e-6, seed=0x2545F491)  # responses not 2-D
     with pytest.raises(ValueError):
-        fit_mixture(y, n_classes=2, model="graded")  # unknown within-class model
+        fit_mixture(y, n_classes=2, model="graded", n_starts=1, max_iter=500, tol=1e-6, seed=0x2545F491)  # unknown within-class model
 
 
 def test_fit_lltm_recovers_basic_parameters():
@@ -4846,7 +4846,7 @@ def test_fit_lltm_recovers_basic_parameters():
     theta = rng.standard_normal(n)
     y = (rng.random((n, j)) < 1 / (1 + np.exp(-(theta[:, None] + b_true[None, :])))).astype(float)
 
-    res = fit_lltm(y, q)
+    res = fit_lltm(y, q, max_iter=500, tol=1e-6)
     assert isinstance(res, LltmFit) and res.converged
     assert np.all(np.diff(res.loglik_trace) >= -1e-6)
     assert res.eta.shape == (k,) and res.b.shape == (j,)
@@ -4858,10 +4858,10 @@ def test_fit_lltm_recovers_basic_parameters():
     assert res.lr_p > 0.01, f"LR falsely rejected true LLTM: p={res.lr_p}"
 
     with pytest.raises(ValueError):
-        fit_lltm(y.ravel(), q)  # responses not 2-D
+        fit_lltm(y.ravel(), q, max_iter=500, tol=1e-6)  # responses not 2-D
     with pytest.raises(ValueError):
         # rows sum to a constant + intercept => rank-deficient design, rejected
-        fit_lltm(y, np.ones((j, 1)))
+        fit_lltm(y, np.ones((j, 1)), max_iter=500, tol=1e-6)
 
 
 def test_fit_testlet_recovers_local_dependence():
@@ -4967,7 +4967,7 @@ def test_fit_facets_recovers_rater_severity():
     keep = ~np.isnan(y1).all(axis=(1, 2))
     y1 = y1[keep]
     r_f = fit_facets(y1, n_cat=n_cat)
-    r_r = fit_rsm(y1[:, :, 0], n_cat=n_cat)
+    r_r = fit_rsm(y1[:, :, 0], n_cat=n_cat, q_theta=41, max_iter=500, tol=1e-6)
     assert np.allclose(r_f.rater_severity, [0.0])
     assert np.allclose(r_f.item_difficulty, r_r.item_location, atol=5e-3)
     assert np.allclose(r_f.thresholds, r_r.thresholds, atol=5e-3)
@@ -5118,7 +5118,7 @@ def test_ksirt_analysis_fixture_exact_values():
     0.5 (kills NW-normalization mutants)."""
     import numpy as np
     import pytest
-    from fast_mlsirm import KsirtResult, ksirt_analysis
+    from fast_mlsirm import KsirtResult, analyze_ksirt
     from fast_mlsirm.fitstats import _core_module
 
     core = _core_module()
@@ -5127,7 +5127,7 @@ def test_ksirt_analysis_fixture_exact_values():
 
     x = np.array([[0.0], [1.0], [0.0], [1.0]])
     q02, q04 = -0.8416212335729143, -0.2533471031357997  # qnorm(.2), qnorm(.4)
-    r = ksirt_analysis(x, nevalpoints=5)
+    r = analyze_ksirt(x, nevalpoints=5)
     assert isinstance(r, KsirtResult)
     # ties.method="first": totals [0,1,0,1] -> ranks [1,3,2,4]
     assert np.allclose(r.theta, [q02, -q04, q04, -q02], atol=1e-8)
@@ -5137,7 +5137,7 @@ def test_ksirt_analysis_fixture_exact_values():
     assert len(r.options) == 1 and np.array_equal(r.options[0], [0.0, 1.0])
     assert r.occ[0].shape == (2, 5)
     # huge bandwidth -> equal NW weights -> OCC = marginal proportions
-    flat = ksirt_analysis(x, nevalpoints=5, bandwidth=np.array([1e9]))
+    flat = analyze_ksirt(x, nevalpoints=5, bandwidth=np.array([1e9]))
     assert np.allclose(flat.occ[0], 0.5, atol=1e-12)
     assert np.allclose(flat.expected[0], 0.5, atol=1e-12)
     assert np.allclose(flat.expected_total, 0.5, atol=1e-12)
@@ -5151,7 +5151,7 @@ def test_ksirt_analysis_recovery_and_rejects_malformed_input():
     crate)."""
     import numpy as np
     import pytest
-    from fast_mlsirm import ksirt_analysis
+    from fast_mlsirm import analyze_ksirt
     from fast_mlsirm.fitstats import _core_module
 
     core = _core_module()
@@ -5163,7 +5163,7 @@ def test_ksirt_analysis_recovery_and_rejects_malformed_input():
     t = rng.standard_normal(n)
     bs = np.array([-1.0, -0.3, 0.4, 1.1])
     x = (rng.random((n, 4)) < 1.0 / (1.0 + np.exp(-1.5 * (t[:, None] - bs)))).astype(float)
-    r = ksirt_analysis(x, kernel="gaussian")
+    r = analyze_ksirt(x, kernel="gaussian", nevalpoints=51)
     d = np.diff(r.expected_total)
     assert np.all(d > -1e-9)  # non-decreasing everywhere
     assert np.all(d[10:-10] > 0.0)  # strictly increasing in the interior
@@ -5172,21 +5172,21 @@ def test_ksirt_analysis_recovery_and_rejects_malformed_input():
 
     ok = x[:8]
     with pytest.raises(ValueError, match="2-D"):
-        ksirt_analysis(ok.reshape(-1))
+        analyze_ksirt(ok.reshape(-1), nevalpoints=51)
     with pytest.raises(ValueError, match="complete"):
         bad = ok.copy()
         bad[0, 0] = np.nan
-        ksirt_analysis(bad)
+        analyze_ksirt(bad, nevalpoints=51)
     with pytest.raises(ValueError, match="kernel"):
-        ksirt_analysis(ok, kernel="triangular")
+        analyze_ksirt(ok, kernel="triangular", nevalpoints=51)
     with pytest.raises(ValueError, match="nevalpoints"):
-        ksirt_analysis(ok, nevalpoints=1)
+        analyze_ksirt(ok, nevalpoints=1)
     with pytest.raises(ValueError, match="nevalpoints"):
-        ksirt_analysis(ok, nevalpoints=10**11)  # allocation bound
+        analyze_ksirt(ok, nevalpoints=10**11)  # allocation bound
     with pytest.raises(ValueError, match="one value per item"):
-        ksirt_analysis(ok, bandwidth=np.array([0.5]))
+        analyze_ksirt(ok, nevalpoints=51, bandwidth=np.array([0.5]))
     with pytest.raises(ValueError, match="positive"):
-        ksirt_analysis(ok, bandwidth=np.array([0.5, -0.1, 0.5, 0.5]))
+        analyze_ksirt(ok, nevalpoints=51, bandwidth=np.array([0.5, -0.1, 0.5, 0.5]))
 
 
 def test_subscore_analysis_matches_independent_reference():
@@ -11357,3 +11357,32 @@ class TestNCohenKappa:
         assert isinstance(r, NCohenKappaResult)
         assert isinstance(r.n, int) and r.n == 86
         assert r.pre_ceil < r.n <= r.pre_ceil + 1
+
+
+def test_ksirt_analysis_alias_is_deprecated_and_matches_analyze_ksirt():
+    """The renamed alias (ADR-0028): ``ksirt_analysis`` still works, warns,
+    and returns the exact same result as ``analyze_ksirt``."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import analyze_ksirt, ksirt_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "ksirt_occ"):
+        pytest.skip("compiled core built without ksirt_occ")
+
+    x = np.array([[0.0], [1.0], [0.0], [1.0]])
+    with pytest.deprecated_call():
+        old = ksirt_analysis(x, nevalpoints=5)
+    new = analyze_ksirt(x, nevalpoints=5)
+    assert np.allclose(old.theta, new.theta)
+    assert np.allclose(old.grid, new.grid)
+
+
+def test_analyze_ksirt_requires_nevalpoints():
+    import numpy as np
+    from fast_mlsirm import analyze_ksirt
+
+    x = np.array([[0.0], [1.0], [0.0], [1.0]])
+    with pytest.raises(TypeError):
+        analyze_ksirt(x)

@@ -187,10 +187,10 @@ def fit_two_tier_grm(
     n_specific: int,
     q_primary: int,
     q_specific: int,
-    max_iter: int = 500,
-    tol: float = 1e-6,
-    n_starts: int = 1,
-    seed: int = 0x9E37_79B9_7F4A_7C15,
+    max_iter: int,
+    tol: float,
+    n_starts: int,
+    seed: int,
 ) -> TwoTierGrmFit:
     """Fit the single-group polytomous two-tier GRM (compute in Rust).
 

@@ -76,7 +76,7 @@ Has citation and locator: `mantel_haenszel_dif`, `logistic_dif_purified`,
 
 Only `u3_poly_person_fit` carries any citation token, and it lacks a
 locator. The other 17 (`grm_logprobs`, `grm_node_gradient`,
-`gpcm_logprobs`, `gpcm_node_gradient`, `polytomous_predictions`,
+`gpcm_logprobs`, `compute_gpcm_node_gradient` (formerly `gpcm_node_gradient`), `polytomous_predictions`,
 `fit_poly_unidim`, `fit_nominal`, `poly_person_fit`, `poly_cat_next_item`,
 `poly_cat_simulate`, `fit_poly_multigroup`, `poly_dif_sweep`,
 `u3_poly_bootstrap_cutoff`, `poly_item_information`,

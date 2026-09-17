@@ -68,7 +68,7 @@ from .bifactor_multigroup import fit_bifactor_grm_multigroup as fit_bifactor_grm
 from .two_tier_grm import fit_two_tier_grm as fit_two_tier_grm, TwoTierGrmFit as TwoTierGrmFit
 from .gpcm import fit_gpcm as fit_gpcm, GpcmFit as GpcmFit
 from .facets import fit_facets as fit_facets, FacetsFit as FacetsFit
-from .ksirt import ksirt_analysis as ksirt_analysis, KsirtResult as KsirtResult
+from .ksirt import analyze_ksirt as analyze_ksirt, ksirt_analysis as ksirt_analysis, KsirtResult as KsirtResult
 from .subscores import (
     subscore_analysis as subscore_analysis,
     SubscoreResult as SubscoreResult,
@@ -415,6 +415,7 @@ __all__ = [  # noqa: RUF022
     "FacetsFit",
     "mokken_analysis",
     "MokkenResult",
+    "analyze_ksirt",
     "ksirt_analysis",
     "KsirtResult",
     "subscore_analysis",

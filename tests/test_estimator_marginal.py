@@ -121,6 +121,10 @@ def test_numpy_trace_endpoint_matches_returned_parameters_after_max_iter():
         "q_u": 7,
         "max_iter": 1,
         "m_steps": 2,
+        "tol": 1e-5,
+        "eps_distance": 1e-8,
+        "xi_points": 256,
+        "xi_seed": 0,
     }
     result = fit_marginal_numpy(y, observed, factor_id, **fit_kwargs)
     anchors = {
