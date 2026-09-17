@@ -152,15 +152,45 @@ def test_fit_mmle_2pl_handles_singular_item_hessian():
 
 
 def test_fit_mmle_2pl_newton_exhausts_inner_iterations():
-    # A perfect Guttman response set drives each item's slope to the clip
-    # boundary (10.0); once pinned there the inner Newton loop keeps proposing a
-    # step above the boundary, so it never meets the early-exit tolerance and
-    # runs all 25 iterations before falling through to the assignment.
+    """Guttman patterns stress Newton without resting on the safety rail.
+
+    The former unsourced ``|a|=10`` clip made this fixture appear "at bound."
+    Under the numerical safety rail at 30.0 the same Guttman set settles at a
+    large but interior slope (well below the rail), so the rail is not a silent
+    substantive ceiling. True rail engagement (duplicate-column local
+    dependence) is covered by ``tests/test_mmle_slope_divergence.py``.
+
+    References
+    ----------
+    Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
+    item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
+    443–459. https://doi.org/10.1007/BF02293801 (infinite-slope boundary
+    solutions as Heywood-like degeneracy, p. 457; non-finite ML for degenerate
+    patterns, p. 454)
+
+    Chalmers, R. P. (2012). mirt: A multidimensional item response theory package
+    for the R environment. *Journal of Statistical Software, 48*(6), 1–29.
+    https://doi.org/10.18637/jss.v048.i06 (prior constraints for
+    excessive/convergence-problem parameters, pp. 14–15)
+
+    Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+    (ETS Research Report No. 85–33). Educational Testing Service.
+    https://eric.ed.gov/?id=ED268138 (ML yields infinite or implausible
+    estimates in small samples, report p. 44)
+    """
+    # Numerical safety rail; mirrors estimators.mmle._SLOPE_DIVERGENCE_RAIL.
+    slope_divergence_rail = 30.0
     theta_rank = np.linspace(-4.0, 4.0, 80)
     y = (theta_rank[:, None] > np.array([-1.0, 0.0, 1.0])[None, :]).astype(float)
     observed = np.ones_like(y, dtype=bool)
     out = fit_mmle_2pl(y, observed, n_nodes=11, max_iter=30, tol=1e-6, seed=1)
-    assert np.isclose(out["a"].max(), 10.0)
+    a = np.asarray(out["a"], dtype=float)
+    assert np.all(np.isfinite(a))
+    assert float(np.max(np.abs(a))) < slope_divergence_rail
+    assert float(np.max(np.abs(a))) > 5.0
+    assert out.get("status") != "slope_diverged"
+    if "slope_diverged" in out:
+        assert not any(out["slope_diverged"])
 
 
 # -- objective.py ------------------------------------------------------------

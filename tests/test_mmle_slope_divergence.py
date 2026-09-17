@@ -54,7 +54,14 @@ def _build_clean_fixture():
 def test_guttman_item_does_not_falsely_flag_and_recovers():
     y, observed = _build_guttman_fixture()
     result = fit_mmle_2pl(
-        y, observed, n_nodes=41, max_iter=500, tol=1e-6, ridge_a=1e-3, ridge_b=1e-3
+        y,
+        observed,
+        n_nodes=41,
+        max_iter=500,
+        tol=1e-6,
+        ridge_a=1e-3,
+        ridge_b=1e-3,
+        seed=7,
     )
     assert "slope_diverged" in result
     diverged = result["slope_diverged"]
@@ -74,7 +81,14 @@ def test_guttman_item_does_not_falsely_flag_and_recovers():
 def test_no_guttman_item_converges_clean():
     y, observed = _build_clean_fixture()
     result = fit_mmle_2pl(
-        y, observed, n_nodes=41, max_iter=500, tol=1e-6, ridge_a=1e-3, ridge_b=1e-3
+        y,
+        observed,
+        n_nodes=41,
+        max_iter=500,
+        tol=1e-6,
+        ridge_a=1e-3,
+        ridge_b=1e-3,
+        seed=7,
     )
     assert "slope_diverged" in result
     diverged = result["slope_diverged"]
@@ -97,7 +111,14 @@ def test_duplicate_item_flags_true_divergence():
     y = np.concatenate([y_ord, y_ord[:, [0]]], axis=1)
     observed = np.ones_like(y, dtype=bool)
     result = fit_mmle_2pl(
-        y, observed, n_nodes=41, max_iter=500, tol=1e-6, ridge_a=1e-3, ridge_b=1e-3
+        y,
+        observed,
+        n_nodes=41,
+        max_iter=500,
+        tol=1e-6,
+        ridge_a=1e-3,
+        ridge_b=1e-3,
+        seed=7,
     )
     assert "slope_diverged" in result
     diverged = result["slope_diverged"]
