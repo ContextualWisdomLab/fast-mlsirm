@@ -5,6 +5,136 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 
+#### ADR-0028 naming/defaults applied to `dif`, `deltaplot`, and `polytomous` (#1962)
+
+- **`fast_mlsirm.deltaplot.delta_plot`: `alpha` and `max_iter` are now
+  required keyword arguments** (previously defaulted to `0.05` and `10`).
+  Neither value has a documented source in this repository (ADR-0028 rule 2
+  for `alpha`, a decision threshold; rule 1 for `max_iter`, an
+  iteration/convergence control), so the package no longer ships a default
+  it cannot defend. Every in-repo call site was updated to pass the old
+  values explicitly.
+- **`fast_mlsirm.dif`: `raju_area`'s `alpha` and `sibtest`'s `fdr_q`/`j_min`
+  are now required keyword-only arguments** (previously `0.05`, `0.05`,
+  `5`), for the same reason (ADR-0028 rule 2: no cited source for these
+  specific cutoffs).
+- **`fast_mlsirm.dif`: the renamed DIF entry points also drop the same
+  unsourced defaults on their new names** (old aliases keep accepting the
+  old default for one minor release): `detect_dif_mantel_haenszel`'s
+  `fdr_q`; `detect_dif_mantel_haenszel_purified`'s `fdr_q`, `max_rounds`,
+  `min_anchor_items`; `detect_dif_logistic`'s `fdr_q`, `max_iter`;
+  `detect_dif_logistic_purified`'s `fdr_q`, `max_iter`, `max_rounds`,
+  `min_anchor_items`; `detect_dif_breslow_day`'s `fdr_q`.
+- **`fast_mlsirm.polytomous`: unsourced defaults removed from fit/scoring
+  entry points.** `fit_lsirm_polytomous` (`max_iter`, `model`, `q_theta`,
+  `q_xi`, `tol`), `fit_nominal_polytomous` (`max_iter`, `q_theta`, `tol`),
+  `fit_poly_fipc` (`max_iter`, `q_theta`, `tol`), `fit_polytomous`
+  (`max_iter`, `model`, `q_theta`, `tol`), `m2_polytomous` (`q_theta`), and
+  `score_polytomous` (`q_theta`) now require these arguments explicitly —
+  same #1929 quadrature-node-count rule and ADR-0028 rules 1/2/4 already
+  applied to the sibling `dif_polytomous*` functions in #1958/#1960. The
+  renamed functions `simulate_cat_polytomous` (`q_theta`, `se_threshold`,
+  `seed`), `compute_item_fit_polytomous` (`min_expected`, `q_theta`),
+  `diagnose_local_dependence_polytomous` (`q_theta`),
+  `compute_person_fit_polytomous` (`flag_threshold`, `q_theta`), and
+  `compute_u3_cutoff_polytomous` (`alpha`, `n_rep`, `seed`) drop the same
+  category of default under their new name; old aliases keep the old
+  default for one minor release.
+- All in-repo call sites (package, tests, docs, examples) that relied on a
+  removed default were updated to pass the old value explicitly.
+- **Not yet mirrored on the PyO3 side (Python-only change; follow-up
+  needed).** The PyO3 entry points backing `logistic_dif`/
+  `logistic_dif_purified` (`fdr_q`, `max_iter`) keep their own Rust-side
+  defaults (`fast_mlsirm._core` module functions, per
+  `docs/api/renames-and-defaults-20260917.csv`'s `pyo3` rows) — mirroring
+  the Python-side default removal into the PyO3 binding is a separate,
+  Rust-build-required change tracked for a follow-up PR rather than done
+  here (this PR is Python-only per its scope).
+
+#### ADR-0028 naming/defaults applied to the bifactor modules (#1963)
+
+- **`fit_bifactor_grm` (`bifactor_grm.py`) no longer defaults `max_iter`,
+  `tol`, `n_starts`, or `seed`.** All four are now required caller
+  arguments: `max_iter`/`tol` are unsourced iteration/convergence precision
+  controls, `n_starts` is an unsourced replicate count, and `seed` is a
+  fixed stochastic seed baked into the previous default — the same ADR-0028
+  reasoning already applied to `dif_polytomous_purified` (#1958/#1960) and
+  the `q_general`/`q_specific` node counts (#1929) on this same function.
+- **`fit_bifactor_grm_fipc` (`bifactor_grm.py`) no longer defaults `max_iter`
+  or `tol`.** Same reasoning as above; `q_general`, `q_specific`,
+  `newton_iter`, `ridge`, and `estimate_specific_vars` are unchanged
+  (out of ADR-0028 policy scope per the decision table).
+- **`fit_bifactor_grm_multigroup` (`bifactor_multigroup.py`) no longer
+  defaults `max_iter`, `tol`, `n_starts`, or `seed`.** Same reasoning as
+  `fit_bifactor_grm`.
+- **`run_bifactor_bootstrap` (`bifactor_bootstrap.py`) no longer defaults
+  `base_seed`, `ci_level`, `max_iter`, `n_starts`, or `tol`.** `base_seed` is
+  a fixed stochastic seed; `ci_level` is an unsourced decision threshold;
+  `max_iter`/`tol` are unsourced convergence controls; `n_starts` is an
+  unsourced replicate count. These five parameters are now required and
+  keyword-only (a `*` was added ahead of them to keep the remaining
+  optional parameters — `group_ids`, `n_groups`, `anchor_mask`, `n_jobs`,
+  `device`, `estimate_specific_vars` — keyword-only-compatible without
+  reordering the required, non-defaulted set ahead of them positionally).
+- **`assess_bifactor_scoreability` / `assess_bifactor_scoreability_from_logit_slopes`
+  no longer default `zero_tolerance`.** `0.0` was an unsourced
+  decision-threshold flag cutoff; it is now a required keyword-only
+  argument on both the new names and their deprecated aliases.
+- No "keep" decision in this issue's slice of
+  `docs/api/renames-and-defaults-20260917.csv` (device, `q_general`,
+  `q_specific`, `newton_iter`, `ridge`, `general_factor`, `n_groups`,
+  `n_jobs`, `group_ids`, `anchor`/`anchor_mask`,
+  `estimate_specific_vars`) carries a cited APA 7th source in its
+  `default_rationale` column, so no docstring citations were added for
+  this issue; the existing Golub & Welsch (1969) / Gibbons et al. (2007) /
+  Cai, Yang & Hansen (2011) / Andrews & Buchinsky (2000) references on
+  these five modules are unchanged.
+- **Not yet mirrored on the PyO3 side (Python-only change; follow-up
+  needed).** The compiled `crates/fast-mlsirm-py` bindings still default
+  `max_iter`, `n_starts`, `seed` (and `tol`) on `fit_bifactor_grm` and
+  `fit_bifactor_grm_multigroup`, and `max_iter`/`tol` on
+  `fit_bifactor_grm_fipc` (`#[pyo3(signature = (...))]` in
+  `crates/fast-mlsirm-py/src/lib.rs`). A follow-up PR should remove those
+  PyO3-side defaults so the two layers agree.
+
+#### ADR-0028 naming/defaults applied to core IRT fitters (#1964)
+
+- **73 previously-defaulted parameters across `fast_mlsirm.grm`,
+  `fast_mlsirm.gpcm`, `fast_mlsirm.twopl`, `fast_mlsirm.two_tier_grm`,
+  `fast_mlsirm.nominal`, `fast_mlsirm.rsm`, `fast_mlsirm.mhrm`,
+  `fast_mlsirm.rasch_cml`, `fast_mlsirm.lltm`, `fast_mlsirm.mixed`,
+  `fast_mlsirm.mixture`, `fast_mlsirm.objective`,
+  `fast_mlsirm.estimators.marginal`, and `fast_mlsirm.estimators.mmle` are
+  now required caller arguments**, per ADR-0028's defaults policy: node
+  counts (`q_theta`, `q_xi`, `q_u`, `xi_points`, `n_nodes`, `nevalpoints`),
+  iteration/convergence controls (`max_iter`, `max_cycles`, `burn_in`,
+  `mh_steps`, `tol`, `target_accept`, `m_steps`, `eps_distance`),
+  replicate/restart counts (`n_starts`), stochastic seeds (`xi_seed`,
+  `seed`), and model-family selectors (`model`) on generic fitters. None of
+  these had a cited source for its exact numeric default (the ADR-0028
+  Context section found zero in-docstring citations for any of them across
+  the package), so none qualifies for `keep`.
+- Every affected function keeps parameters with a stated `keep` decision
+  (e.g. `q`/`node_rule` on the quadrature-based fitters, `estimate_se`,
+  `estimate_corr`, `family`, `ridge_a`/`ridge_b`, `latent_dim`, `n_threads`)
+  at their existing defaults — those already have a `keep` rationale in
+  `docs/api/renames-and-defaults-20260917.csv` outside this change's scope.
+- New parameters became keyword-only (`*,` inserted before the first
+  newly-required parameter that would otherwise follow a still-defaulted
+  one) only where needed to keep the signature syntactically valid;
+  existing positional call sites for parameters that stayed positional
+  (e.g. `model` on `fit_grm`/`fit_gpcm`/`fit_nominal`/`fit_2pl`) are
+  unaffected.
+- Every in-package, test, and doc call site was updated to pass the
+  previously-implicit default explicitly, so no numerical behavior changes
+  — this is a required-argument change only, not a default-*value* change,
+  and `tests/test_rust_parity.py` (Rust<->NumPy numerical parity) remains
+  green.
+- No PyO3/`fast_mlsirm._core` signature required a matching change for
+  this issue's functions: the compiled entry points these Python wrappers
+  call already take the resolved values as plain positional/keyword
+  arguments with no Rust-side default to drop.
+
 #### Release cut 0.11.0
 
 - Project version is bumped to 0.11.0 in `pyproject.toml`, `crates/mlsirm-core`,
@@ -28,6 +158,74 @@
   in git history.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
+
+### Deprecated
+
+#### ADR-0028 naming/defaults applied to `dif`, `deltaplot`, and `polytomous` (#1962)
+
+- **`fast_mlsirm.dif`: renamed to verb-first names.** `mantel_haenszel_dif`
+  -> `detect_dif_mantel_haenszel`, `mantel_haenszel_dif_purified` ->
+  `detect_dif_mantel_haenszel_purified`, `logistic_dif` ->
+  `detect_dif_logistic`, `logistic_dif_purified` ->
+  `detect_dif_logistic_purified`, `mantel_smd_dif` -> `detect_dif_mantel_smd`,
+  `gmh_dif` -> `detect_dif_gmh`, `breslow_day_dif` -> `detect_dif_breslow_day`.
+  The old names remain as deprecated aliases (identical signature and
+  defaults) for one minor release, emitting `DeprecationWarning`, and stay
+  exported from the same places as before (`fast_mlsirm/__init__.py` via
+  `_legacy_init.py`).
+- **`fast_mlsirm.polytomous`: renamed to verb-first names.**
+  `bifactor_expected_total_score_monotonicity` ->
+  `check_bifactor_expected_total_score_monotonicity`,
+  `cat_simulate_polytomous` -> `simulate_cat_polytomous`, `dif_polytomous` ->
+  `detect_dif_polytomous`, `dif_polytomous_anchor_sets` ->
+  `detect_dif_anchor_sets_polytomous`, `dif_polytomous_purified` ->
+  `detect_dif_polytomous_purified`, `expected_total_score_monotonicity` ->
+  `check_expected_total_score_monotonicity`,
+  `focal_expected_total_score_monotonicity` ->
+  `check_focal_expected_total_score_monotonicity`, `information_polytomous`
+  -> `compute_information_polytomous`, `item_fit_polytomous` ->
+  `compute_item_fit_polytomous`, `local_dependence_polytomous` ->
+  `diagnose_local_dependence_polytomous`, `person_fit_polytomous` ->
+  `compute_person_fit_polytomous`, `polytomous_category_probabilities` ->
+  `predict_category_probabilities_polytomous`, `polytomous_expected_response`
+  -> `predict_expected_response_polytomous`, `polytomous_information_criteria`
+  -> `compute_information_criteria_polytomous`, `u3_cutoff_polytomous` ->
+  `compute_u3_cutoff_polytomous`, `u3_person_fit_polytomous` ->
+  `compute_u3_person_fit_polytomous`. Same one-minor-release deprecated-alias
+  policy as above.
+
+#### ADR-0028 naming/defaults applied to the bifactor modules (#1963)
+
+- **`fast_mlsirm.bifactor_recursion.bifactor_lord_wingersky` is renamed to
+  `enumerate_bifactor_lord_wingersky`.** The old name remains available for
+  one minor release and emits `DeprecationWarning`; it forwards to the new
+  name with identical behavior.
+- **`fast_mlsirm.bifactor_recursion.direct_enumeration_bifactor` is renamed to
+  `enumerate_bifactor_direct`.** Same one-minor-release deprecated-alias
+  treatment as above.
+- **`fast_mlsirm.bifactor_scoreability.bifactor_scoreability` is renamed to
+  `assess_bifactor_scoreability`.** Same one-minor-release deprecated-alias
+  treatment; both old and new names are exported from `fast_mlsirm` and
+  `fast_mlsirm.bifactor_scoreability`.
+- **`fast_mlsirm.bifactor_scoreability.bifactor_scoreability_from_logit_slopes`
+  is renamed to `assess_bifactor_scoreability_from_logit_slopes`.** Same
+  one-minor-release deprecated-alias treatment.
+
+#### ADR-0028 naming/defaults applied to core IRT fitters (#1964)
+
+- **Six renamed callables keep a one-minor-release alias that emits
+  `DeprecationWarning`, per ADR-0028's naming convention:**
+  - `fast_mlsirm.estimators.marginal.category_logprobs` -> `compute_category_logprobs`
+  - `fast_mlsirm.estimators.marginal.gpcm_node_gradient` -> `compute_gpcm_node_gradient`
+  - `fast_mlsirm.estimators.marginal.grm_category_logprobs` -> `compute_grm_category_logprobs`
+  - `fast_mlsirm.ksirt.ksirt_analysis` -> `analyze_ksirt` (also re-exported,
+    old and new, from `fast_mlsirm/__init__.py` and `_legacy_init.py`, same
+    as before)
+  - `fast_mlsirm.objective.linear_predictor` -> `compute_linear_predictor`
+  - `fast_mlsirm.objective.model_flags` -> `get_model_flags`
+  Each old name is now a thin wrapper that warns and delegates to the new
+  name with identical behavior; the alias and its `_legacy_init.py` entry
+  are deleted at the start of the next minor release.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 
 
