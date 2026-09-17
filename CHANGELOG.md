@@ -3,6 +3,36 @@
 ## Unreleased
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Changed
+
+#### Release cut 0.11.0
+
+- Project version is bumped to 0.11.0 in `pyproject.toml`, `crates/mlsirm-core`,
+  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
+  `[0.11.0] - 2026-09-17` release section, headlined by Rust-owned OLS with
+  HC0–HC3 sandwich covariance (`fit_ols_hc`, `contrast`, and χ²/F/t helpers;
+  #1982). Also folded from the post-0.10.0 lineage through the OLS merge tip:
+  bifactor GRM Oakes standard errors, GPU-parallel bifactor E-step / joint
+  person bootstrap / Lord–Wingersky recursion (#1912 stages), FIPC polytomous
+  bifactor calibration, two-tier GRM stage 4, required polytomous DIF controls
+  (#1958), purified logistic DIF `flagged_bh` clarification (#1941), stage-1
+  mirt fixture category-order fix (#1950), fail-closed pytest skip/xfail
+  outcomes (#1732/#1936), clippy lint triage (#1905), graphify upstream fixes
+  (#1847/#1833), Bock–Zimowski locator verification notes (#1927), and
+  ADR-0028 public API naming / unsourced-defaults policy docs and inventory
+  tooling (#1959/#1961). Intentionally deferred to the next release: bifactor
+  ADR-0028 rename/defaults application (#1963/#1969) and bifactor stall fix
+  #1981.
+- This cut removes the standing predecessor note `release-0.10.0-cut.md`, whose
+  substance is permanently recorded in the `[0.10.0] - 2026-09-17` section and
+  in git history.
+- Released authoritative fragments are removed from `docs/changelog.d`; the
+  directory again holds only genuinely unreleased notes.
+<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
+
+## [0.11.0] - 2026-09-17
+
 ### Added
 
 #### Bifactor GRM observed-information standard errors (Oakes)
@@ -123,6 +153,20 @@ in `bifactor_oakes_calibration::study_settings_se_converges_at_121_vs_241_nodes`
   callable, absorbing #1958/#1960's completed `dif_polytomous*` outcome.
 No code, name, or default changes in this PR (Phase 1, documentation only);
 per-module implementation is tracked in the sub-issues this PR opens.
+
+#### Rust-owned OLS with HC0–HC3 sandwich covariance (#1982)
+
+- Expose Rust-owned ordinary least squares with MacKinnon–White HC0–HC3
+  heteroskedasticity-consistent covariance through `fast_mlsirm.fit_ols_hc`,
+  plus `contrast` (Wald χ²(1) with t/F tails) and upper-tail helpers
+  `chi2_sf_df1`, `f_sf`, and `t_sf`. Numerical work stays in `mlsirm-core`
+  (`regression`); the Python module only validates NumPy layout and marshals
+  results — no SciPy or Rscript dependency on this path (MacKinnon & White,
+  1985; Long & Ervin, 2000).
+- Bound design size (`n ≤ 1_000_000`, `k ≤ 1_024`), require finite float64
+  evidence, and require residual `df = n - k` for contrast t/F tails.
+- Rust integration tests (`crates/mlsirm-core/tests/regression_ols.rs`) and
+  Python Rust↔parity gates (`tests/test_rust_regression_ols_hc_parity.py`).
 
 #### Fixed-item parameter calibration (FIPC) for polytomous GRM
 
@@ -278,38 +322,6 @@ per-module implementation is tracked in the sub-issues this PR opens.
   `q_theta = 121` study path uses it as intended; re-verified locally
   (`fipc_study_recovery_n1020_q121`, release mode, 7.14s, passing).
 
-#### Release cut 0.10.0
-
-- Project version is bumped to 0.10.0 in `pyproject.toml`, `crates/mlsirm-core`,
-  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
-  `[0.10.0] - 2026-09-17` release section: two-stage polytomous bifactor GRM
-  calibration (single-group and multiple-group concurrent, #1912), expected-
-  total-score and focal-dimension monotonicity diagnostics for unidimensional,
-  multidimensional, and bifactor graded fits (#1873, #1888, #1889, #1928),
-  purified polytomous DIF with per-item and per-focal-group anchor sets
-  (#1874, #1890, #1891), retirement of `logistic_dif`'s `jg_class` to "not
-  applicable" (a breaking change, #1880), required (no unsourced-default)
-  quadrature node-count arguments across the new bifactor/monotonicity APIs (a
-  breaking change, #1933), symmetric (sign-preserving) slope-magnitude bounds
-  for `fit_mmle_2pl`, `fit_testlet`, and `fit_mixture` that stop silently
-  floor-clamping reverse-keyed slopes to a near-zero value (breaking changes,
-  #1884, #1885), an `at_bound` boundary-value report for `fit_mixed_items`
-  estimates (#1882), reverse-keyed and reflection-classification contract
-  coverage (#1870, #1883), a fail-closed assertion for dedicated Statistical
-  Studies recovery jobs (#1937), and this release cycle's own doc/changelog
-  self-corrections (#1938, #1940).
-- Eleven of the PRs folded into this release (#1926, #1888, #1889, #1928,
-  #1890, #1891, #1870, #1882, #1883, #1884, #1933) had originally merged with
-  no `docs/changelog.d` fragment; their fragments were written retroactively
-  for this cut from each PR's title, body, and linked issue, sourced against
-  the actual merged public API surface rather than restated from memory.
-- This cut also removes the standing predecessor note `release-0.9.1-cut.md`,
-  whose substance is permanently recorded in the `[0.9.1] - 2026-08-25`
-  section and in git history, mirroring the precedent set by that cut's own
-  removal of `release-0.9.0-cut.md`.
-- Released authoritative fragments are removed from `docs/changelog.d`; the
-  directory again holds only genuinely unreleased notes.
-
 ### Fixed
 
 #### Fail-closed pytest outcomes
@@ -424,7 +436,7 @@ per-module implementation is tracked in the sub-issues this PR opens.
   dimension before comparing slopes/intercepts/log-likelihood, so it was
   insensitive to the category-order bug and remains a valid agreement check
   on the corrected fixture.
-<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
 ## [0.10.0] - 2026-09-17
 
 ### Added
