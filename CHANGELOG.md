@@ -5,23 +5,35 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 
-#### Release cut 0.11.1
+#### Release cut 0.11.2
 
-- Project version is bumped to 0.11.1 in `pyproject.toml`, `crates/mlsirm-core`,
+- Project version is bumped to 0.11.2 in `pyproject.toml`, `crates/mlsirm-core`,
   and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
-  `[0.11.1] - 2026-09-18` release section, headlined by the bifactor GRM
-  dense-quadrature EM stall fix (#1976 / #1981): zero-weight Gauss–Hermite
-  nodes are skipped in the E-step, and a bit-identical start-slope plateau is
-  reported as `numerical_em_stall` instead of a false `tolerance_met`. Also
-  folded from the post-0.11.0 deferred lineage: ADR-0028 naming/defaults
-  application for `dif`/`deltaplot`/`polytomous` (#1962), bifactor modules
-  (#1963/#1969), and core IRT fitters (#1964/#1973).
-- This cut removes the standing predecessor note `release-0.11.0-cut.md`, whose
-  substance is permanently recorded in the `[0.11.0] - 2026-09-17` section and
+  `[0.11.2] - 2026-09-18` release section, headlined by moderated slopes H1–H5
+  HC3 parity (`conditional_slope`, `slope_difference`, `xwz_e_design_row`)
+  from #1985.
+- This cut removes the standing predecessor note `release-0.11.1-cut.md`, whose
+  substance is permanently recorded in the `[0.11.1] - 2026-09-18` section and
   in git history.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
+
+## [0.11.2] - 2026-09-18
+
+### Added
+
+#### Moderated (simple) slopes on the H1–H5 OLS design (#1985)
+
+- Rust + PyO3 + Python helpers for Aiken–West / Hayes pick-a-point slopes on
+  the length-10 `Y ~ X*W*Z + X*E` design: `xwz_e_design_row`,
+  `design_row_dot`, `conditional_slope`, and `slope_difference`, reusing the
+  existing HC sandwich `linear_contrast` path for SEs (no SciPy / Rscript).
+- H1–H5 parity fixtures under `tests/data/regression_h1_h5/`
+  (`beta_vcov.npz` aggregates plus coefficient/contrast CSVs) and
+  `tests/test_moderated_slopes_h1_h5_parity.py` asserting estimate and HC3 SE
+  to atol `1e-6` against `library_regression_h1_h5_contrasts.csv`.
 
 
 ## [0.11.1] - 2026-09-18
