@@ -237,6 +237,21 @@ from .rating_range import (
 from .rating_range import (
     paired_rating_range_evidence as paired_rating_range_evidence,
 )
+from .regression import (
+    chi2_sf_df1 as chi2_sf_df1,
+)
+from .regression import (
+    contrast as contrast,
+)
+from .regression import (
+    f_sf as f_sf,
+)
+from .regression import (
+    fit_ols_hc as fit_ols_hc,
+)
+from .regression import (
+    t_sf as t_sf,
+)
 from .rotation import (
     RotationCriterionInfo as RotationCriterionInfo,
 )
@@ -312,6 +327,11 @@ __all__ = list(_legacy_init.__all__) + [
     "validate_irt_experiment_readiness",
     "RatingRangeEvidence",
     "paired_rating_range_evidence",
+    "chi2_sf_df1",
+    "contrast",
+    "f_sf",
+    "fit_ols_hc",
+    "t_sf",
     "SAMPLING_DESIGN_SCHEMA_VERSION",
     "ACHIEVED_PROPORTION_SCHEMA_VERSION",
     "SamplingStratum",
