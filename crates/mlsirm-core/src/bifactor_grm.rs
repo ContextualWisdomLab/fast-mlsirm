@@ -1391,6 +1391,17 @@ fn pack_params(
 //   multiple-group IRT (conceptual; no equation locator claimed — the pooled
 //   item M-step stacks each group's nodes and expected counts, exactly the
 //   `poly::fit_poly_multigroup` Bock-Zimowski pooling already in this crate).
+//   #1927 full-text verification attempt (2026-09-17): the chapter is absent
+//   from the maintainer's Zotero library and local paper cache, has no open-
+//   access copy, and the Springer chapter page redirects to an institutional
+//   login the automated KW-library route (browser control unavailable this
+//   session) could not complete; only the publisher's own chapter metadata
+//   (title, authors, chapter 25, pp. 433-448) was independently confirmed via
+//   Springer's DOI record and WorldCat. No equation/page locator inside the
+//   chapter is claimed here or below, so nothing internal needed correcting;
+//   the same reference-group multigroup pooling this chapter describes is
+//   independently verified, with page-level locators, via Cai, Yang, &
+//   Hansen (2011, Zotero `TNQ22C7T`) above and Bock & Aitkin (1981) below.
 // - Bafumi et al. (2005) for fixing the per-dimension reflection
 //   `(a, theta) -> (-a, -theta)` by a parameter restriction; here the crate
 //   rule (largest-magnitude slope positive per dimension, read from the
