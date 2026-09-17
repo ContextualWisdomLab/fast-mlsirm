@@ -761,7 +761,6 @@ h3 {
   align-items: center;
   padding: 4px 8px;
   border-radius: 4px;
-  transition: background-color 0.15s ease-in-out;
 }
 
 .bar-row:hover {
