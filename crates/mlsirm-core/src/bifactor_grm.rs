@@ -158,6 +158,11 @@ pub struct BifactorGrmConfig {
     pub newton_iter: usize,
     /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
     pub ridge: f64,
+    /// Compute device for the E-step sweep: `Cpu` runs the `f64` scalar
+    /// sweep; `Gpu`/`Auto` run the WGSL `f32` person-parallel sweep when a
+    /// compatible adapter exists and fall back to CPU otherwise (`Gpu`
+    /// warns on fallback, `Auto` does not).
+    pub device: crate::Device,
 }
 
 // No `Default` impl: `q_general`/`q_specific` are quadrature node counts
@@ -482,7 +487,16 @@ fn log_sum_exp(xs: &[f64]) -> f64 {
 /// One reduced E-step sweep: observed-data loglik plus expected category
 /// counts per item (`counts[i][node][k]`, `node = g * qs + h` for block
 /// items, `node = g` for general-only items).
+///
+/// When `device` is `Gpu`/`Auto` and a compatible adapter exists, the
+/// person sweep runs in the WGSL `f32` kernels
+/// ([`crate::gpu_bifactor::e_step_reduced_gpu`]); otherwise — including the
+/// marginal-loglik oracle path, which always passes `Cpu` — the `f64`
+/// scalar sweep below runs.
 #[allow(clippy::too_many_arguments)]
+// `tg`/`ts` feed only the cfg-gated GPU branch (group moments); the CPU
+// sweep below needs tables and log-weights alone.
+#[cfg_attr(any(not(feature = "gpu"), coverage), allow(unused_variables))]
 fn e_step(
     v: &Validated,
     y: &[usize],
@@ -492,7 +506,69 @@ fn e_step(
     log_ws: &[f64],
     qg: usize,
     qs: usize,
+    tg: &[f64],
+    ts: &[f64],
+    device: crate::Device,
 ) -> (f64, Vec<Vec<Vec<f64>>>) {
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    {
+        if device == crate::Device::Gpu || device == crate::Device::Auto {
+            // Small host-side staging wrappers (no table data is duplicated
+            // beyond this Vec-of-Vec shell): the GPU path flattens them.
+            let tables_wrapped = vec![tables.to_vec()];
+            let tg_wrapped = vec![tg.to_vec()];
+            let ts_wrapped = vec![vec![ts.to_vec(); v.n_specific]];
+            let inputs = crate::gpu_bifactor::ReducedEstepInputs {
+                y,
+                observed,
+                group_id: None,
+                n_persons: v.n_persons,
+                n_items: v.n_items,
+                n_specific: v.n_specific,
+                n_cat: v.n_cat,
+                qg,
+                qs,
+                n_groups: 1,
+                tables_groups: &tables_wrapped,
+                item_block: &v.item_block,
+                blocks: &v.blocks,
+                tg_groups: &tg_wrapped,
+                ts_groups: &ts_wrapped,
+                log_wg,
+                log_ws,
+            };
+            if let Some(res) = crate::gpu_bifactor::e_step_reduced_gpu(&inputs) {
+                let stride = res.counts_stride_nodes;
+                let mut counts: Vec<Vec<Vec<f64>>> =
+                    Vec::with_capacity(v.n_items);
+                for i in 0..v.n_items {
+                    let base = i * stride * v.n_cat;
+                    if v.item_block[i].is_some() {
+                        counts.push(
+                            res.counts[base..base + qg * qs * v.n_cat]
+                                .chunks_exact(v.n_cat)
+                                .map(<[f64]>::to_vec)
+                                .collect(),
+                        );
+                    } else {
+                        counts.push(
+                            res.counts[base..base + qg * v.n_cat]
+                                .chunks_exact(v.n_cat)
+                                .map(<[f64]>::to_vec)
+                                .collect(),
+                        );
+                    }
+                }
+                return (res.loglik, counts);
+            }
+        }
+    }
+    if device == crate::Device::Gpu {
+        eprintln!(
+            "fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found; \
+             falling back to CPU implementation."
+        );
+    }
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
     let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
     for (i, par) in tables.iter().enumerate() {
@@ -791,7 +867,9 @@ fn run_single_start(
 
     loop {
         let tables = fill_logprob_tables(v, &params, tg, ts, qg, qs);
-        let (ll, counts) = e_step(v, y, observed, &tables, log_wg, log_ws, qg, qs);
+        let (ll, counts) = e_step(
+            v, y, observed, &tables, log_wg, log_ws, qg, qs, tg, ts, cfg.device,
+        );
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
@@ -1078,6 +1156,7 @@ pub fn bifactor_grm_marginal_loglik(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        device: crate::Device::Cpu,
     };
     let v = validate(
         y,
@@ -1105,6 +1184,10 @@ pub fn bifactor_grm_marginal_loglik(
         &log_ws,
         tg.len(),
         ts.len(),
+        tg,
+        ts,
+        // Exactness oracle: always the f64 CPU sweep.
+        crate::Device::Cpu,
     )
     .0)
 }
@@ -1141,6 +1224,7 @@ pub fn bifactor_grm_marginal_loglik_brute(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        device: crate::Device::Cpu,
     };
     let v = validate(
         y,
@@ -1391,6 +1475,8 @@ pub struct BifactorMultigroupConfig {
     pub ridge: f64,
     /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
     pub estimate_specific_vars: bool,
+    /// Compute device for the E-step sweep (see [`BifactorGrmConfig::device`]).
+    pub device: crate::Device,
 }
 
 impl Default for BifactorMultigroupConfig {
@@ -1405,6 +1491,7 @@ impl Default for BifactorMultigroupConfig {
             newton_iter: 10,
             ridge: 1e-8,
             estimate_specific_vars: false,
+            device: crate::Device::Cpu,
         }
     }
 }
@@ -1639,6 +1726,7 @@ fn e_step_multigroup(
     log_ws: &[f64],
     qg: usize,
     qs: usize,
+    device: crate::Device,
 ) -> (
     f64,
     Vec<Vec<Vec<Vec<f64>>>>,
@@ -1681,6 +1769,71 @@ fn e_step_multigroup(
             }
         }
         tables_groups.push(tables);
+    }
+
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    {
+        if device == crate::Device::Gpu || device == crate::Device::Auto {
+            let inputs = crate::gpu_bifactor::ReducedEstepInputs {
+                y,
+                observed,
+                group_id: Some(group_id),
+                n_persons: v.n_persons,
+                n_items: v.n_items,
+                n_specific: v.n_specific,
+                n_cat: v.n_cat,
+                qg,
+                qs,
+                n_groups,
+                tables_groups: &tables_groups,
+                item_block: &v.item_block,
+                blocks: &v.blocks,
+                tg_groups,
+                ts_groups,
+                log_wg,
+                log_ws,
+            };
+            if let Some(res) = crate::gpu_bifactor::e_step_reduced_gpu(&inputs) {
+                let stride = res.counts_stride_nodes;
+                let mut counts: Vec<Vec<Vec<Vec<f64>>>> =
+                    Vec::with_capacity(n_groups);
+                for g in 0..n_groups {
+                    let mut cg = Vec::with_capacity(v.n_items);
+                    for i in 0..v.n_items {
+                        let base = (g * v.n_items + i) * stride * v.n_cat;
+                        let n_nodes = if v.item_block[i].is_some() {
+                            qg * qs
+                        } else {
+                            qg
+                        };
+                        cg.push(
+                            res.counts[base..base + n_nodes * v.n_cat]
+                                .chunks_exact(v.n_cat)
+                                .map(<[f64]>::to_vec)
+                                .collect(),
+                        );
+                    }
+                    counts.push(cg);
+                }
+                let mut s2_spec = vec![vec![0.0; v.n_specific]; n_groups];
+                let mut w_spec = vec![vec![0.0; v.n_specific]; n_groups];
+                for g in 0..n_groups {
+                    for s in 0..v.n_specific {
+                        s2_spec[g][s] = res.s2_spec[g * v.n_specific + s];
+                        w_spec[g][s] = res.w_spec[g * v.n_specific + s];
+                    }
+                }
+                return (
+                    res.loglik, counts, res.w_acc, res.s1_g, res.s2_g, s2_spec, w_spec,
+                );
+            }
+        }
+    }
+    if device == crate::Device::Gpu {
+        eprintln!(
+            "fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found; \
+             falling back to CPU implementation."
+        );
     }
 
     let mut counts: Vec<Vec<Vec<Vec<f64>>>> = Vec::with_capacity(n_groups);
@@ -1878,6 +2031,7 @@ fn run_single_start_multigroup(
             log_ws,
             qg,
             qs,
+            cfg.device,
         );
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
@@ -2114,6 +2268,7 @@ pub fn fit_bifactor_grm_multigroup(
             seed: cfg.seed,
             newton_iter: cfg.newton_iter,
             ridge: cfg.ridge,
+            device: cfg.device,
         };
         let single = fit_bifactor_grm(
             y,
@@ -2156,6 +2311,7 @@ pub fn fit_bifactor_grm_multigroup(
         seed: cfg.seed,
         newton_iter: cfg.newton_iter,
         ridge: cfg.ridge,
+        device: cfg.device,
     };
     let v = validate(
         y,

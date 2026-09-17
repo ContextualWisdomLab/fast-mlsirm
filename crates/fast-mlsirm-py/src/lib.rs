@@ -1325,6 +1325,19 @@ fn fit_grm(
     Ok(out.into())
 }
 
+/// Parse a CPU/GPU execution-device string for the bifactor E-step sweep.
+///
+/// Accepts `cpu` (f64 scalar sweep), `gpu` (WGSL f32 person-parallel sweep
+/// with a CPU fallback warning), and `auto` (GPU when available, silent
+/// fallback); anything else is a loud `ValueError`, never a silent default.
+fn parse_device(name: &str) -> PyResult<mlsirm_core::Device> {
+    mlsirm_core::Device::parse(name).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "device must be one of 'cpu', 'gpu', 'auto'; got '{name}'"
+        ))
+    })
+}
+
 /// Single-group polytomous bifactor graded response model (Gibbons et al., 2007;
 /// Gibbons & Hedeker, 1992; Samejima, 1969;
 /// `mlsirm_core::bifactor_grm::fit_bifactor_grm`). Each item's `n_cat` ORDERED
@@ -1346,7 +1359,7 @@ fn fit_grm(
 /// `converged = False` instead of substituting values.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15))]
+#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu"))]
 fn fit_bifactor_grm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1362,6 +1375,7 @@ fn fit_bifactor_grm(
     tol: f64,
     n_starts: usize,
     seed: u64,
+    device: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
@@ -1400,18 +1414,22 @@ fn fit_bifactor_grm(
         // Python and out of #1929's quadrature-node scope.
         newton_iter: 10,
         ridge: 1e-8,
+        device: parse_device(device)?,
     };
-    let res = core_fit_bifactor_grm(
-        &yy,
-        obs_vec.as_deref(),
-        &smap,
-        n_persons,
-        n_items,
-        n_specific,
-        n_cat,
-        &cfg,
-    )
-    .map_err(PyValueError::new_err)?;
+    let res = py
+        .detach(|| {
+            core_fit_bifactor_grm(
+                &yy,
+                obs_vec.as_deref(),
+                &smap,
+                n_persons,
+                n_items,
+                n_specific,
+                n_cat,
+                &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("a_general", res.a_general)?;
     out.set_item("a_specific", res.a_specific)?;
@@ -1453,7 +1471,7 @@ fn fit_bifactor_grm(
 /// `n_groups == 1` this bit-reproduces `fit_bifactor_grm`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, group_id, n_groups, specific_map, n_persons, n_items, n_specific, n_cat, anchor = None, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, estimate_specific_vars = false))]
+#[pyo3(signature = (y, observed, group_id, n_groups, specific_map, n_persons, n_items, n_specific, n_cat, anchor = None, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, estimate_specific_vars = false, device = "cpu"))]
 fn fit_bifactor_grm_multigroup(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1473,6 +1491,7 @@ fn fit_bifactor_grm_multigroup(
     n_starts: usize,
     seed: u64,
     estimate_specific_vars: bool,
+    device: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
@@ -1518,22 +1537,26 @@ fn fit_bifactor_grm_multigroup(
         n_starts,
         seed,
         estimate_specific_vars,
+        device: parse_device(device)?,
         ..BifactorMultigroupConfig::default()
     };
-    let res = core_fit_bifactor_grm_multigroup(
-        &yy,
-        obs_vec.as_deref(),
-        &gid,
-        n_groups,
-        &smap,
-        n_persons,
-        n_items,
-        n_specific,
-        n_cat,
-        anchor_vec.as_deref(),
-        &cfg,
-    )
-    .map_err(PyValueError::new_err)?;
+    let res = py
+        .detach(|| {
+            core_fit_bifactor_grm_multigroup(
+                &yy,
+                obs_vec.as_deref(),
+                &gid,
+                n_groups,
+                &smap,
+                n_persons,
+                n_items,
+                n_specific,
+                n_cat,
+                anchor_vec.as_deref(),
+                &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("a_general", res.a_general)?;
     out.set_item("a_specific", res.a_specific)?;

@@ -241,9 +241,10 @@ fn grad_zeta_kernel(@builtin(global_invocation_id) gid: vec3<u32>) {
 ///
 /// Initialization (adapter + device request, shader compilation) is expensive
 /// and is done once; the optimizer calls the objective thousands of times.
-struct GpuContext {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+pub(crate) struct GpuContext {
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    storage_buffers_per_stage: u32,
     layout: wgpu::BindGroupLayout,
     compute_e: wgpu::ComputePipeline,
     grad_b_alpha: wgpu::ComputePipeline,
@@ -254,7 +255,7 @@ struct GpuContext {
 
 static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
 
-fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
+pub(crate) fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::COMPUTE,
@@ -283,6 +284,8 @@ impl GpuContext {
         {
             return None;
         }
+        let storage_buffers_per_stage =
+            adapter_limits.max_storage_buffers_per_shader_stage;
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("mlsirm-gpgpu"),
             // Request the adapter's real limits so the 17-binding layout fits on
@@ -341,11 +344,19 @@ impl GpuContext {
             layout,
             device,
             queue,
+            storage_buffers_per_stage,
         })
     }
 
-    fn get() -> Option<&'static GpuContext> {
+    pub(crate) fn get() -> Option<&'static GpuContext> {
         CONTEXT.get_or_init(GpuContext::init).as_ref()
+    }
+
+    /// Adapter's storage-buffer budget per shader stage, for bind-group
+    /// layouts larger than this context's own (callers return `None` and
+    /// fall back to CPU when their layout does not fit).
+    pub(crate) fn adapter_storage_buffers(&self) -> u32 {
+        self.storage_buffers_per_stage
     }
 }
 
@@ -357,7 +368,7 @@ fn storage_init(device: &wgpu::Device, label: &str, data: &[f32]) -> wgpu::Buffe
     })
 }
 
-fn output_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffer {
+pub(crate) fn output_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: (len * std::mem::size_of::<f32>()) as u64,
@@ -366,7 +377,7 @@ fn output_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffer
     })
 }
 
-fn staging_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffer {
+pub(crate) fn staging_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: (len * std::mem::size_of::<f32>()) as u64,
@@ -375,7 +386,7 @@ fn staging_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffe
     })
 }
 
-fn read_mapped(buffer: &wgpu::Buffer) -> Option<Vec<f32>> {
+pub(crate) fn read_mapped(buffer: &wgpu::Buffer) -> Option<Vec<f32>> {
     let view = buffer.slice(..).get_mapped_range().ok()?;
     let values: Vec<f32> = bytemuck::cast_slice::<u8, f32>(&view).to_vec();
     drop(view);
@@ -383,7 +394,38 @@ fn read_mapped(buffer: &wgpu::Buffer) -> Option<Vec<f32>> {
     Some(values)
 }
 
-fn dispatch_count(total: usize) -> u32 {
+/// Shared GPU readback: copy device `sources` into MAP_READ staging buffers,
+/// submit `encoder`, block on mapping, and return the mapped `f32` vectors.
+///
+/// Every entry of `copies` is `(device_src, staging_dst, len_f32)` where
+/// `staging_dst` was created by [`staging_buffer`]. Returns `None` when the
+/// device poll or any mapping fails, signalling the caller to fall back to
+/// the CPU implementation rather than yielding partial results.
+pub(crate) fn submit_and_readback(
+    ctx: &GpuContext,
+    encoder: wgpu::CommandEncoder,
+    copies: &[(&wgpu::Buffer, &wgpu::Buffer, usize)],
+) -> Option<Vec<Vec<f32>>> {
+    let mut cmd = encoder;
+    for (src, dst, len) in copies {
+        cmd.copy_buffer_to_buffer(
+            src,
+            0,
+            dst,
+            0,
+            (*len * std::mem::size_of::<f32>()) as u64,
+        );
+    }
+    ctx.queue.submit(Some(cmd.finish()));
+    let staging: Vec<&wgpu::Buffer> = copies.iter().map(|(_, dst, _)| *dst).collect();
+    for s in &staging {
+        s.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+    }
+    ctx.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+    staging.iter().map(|s| read_mapped(s)).collect()
+}
+
+pub(crate) fn dispatch_count(total: usize) -> u32 {
     total.div_ceil(WORKGROUP_SIZE as usize) as u32
 }
 
