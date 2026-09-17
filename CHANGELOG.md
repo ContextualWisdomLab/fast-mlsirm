@@ -5,6 +5,29 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 
+#### Release cut 0.11.1
+
+- Project version is bumped to 0.11.1 in `pyproject.toml`, `crates/mlsirm-core`,
+  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
+  `[0.11.1] - 2026-09-18` release section, headlined by the bifactor GRM
+  dense-quadrature EM stall fix (#1976 / #1981): zero-weight Gauss–Hermite
+  nodes are skipped in the E-step, and a bit-identical start-slope plateau is
+  reported as `numerical_em_stall` instead of a false `tolerance_met`. Also
+  folded from the post-0.11.0 deferred lineage: ADR-0028 naming/defaults
+  application for `dif`/`deltaplot`/`polytomous` (#1962), bifactor modules
+  (#1963/#1969), and core IRT fitters (#1964/#1973).
+- This cut removes the standing predecessor note `release-0.11.0-cut.md`, whose
+  substance is permanently recorded in the `[0.11.0] - 2026-09-17` section and
+  in git history.
+- Released authoritative fragments are removed from `docs/changelog.d`; the
+  directory again holds only genuinely unreleased notes.
+<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
+
+## [0.11.1] - 2026-09-18
+
+### Changed
+
 #### ADR-0028 naming/defaults applied to `dif`, `deltaplot`, and `polytomous` (#1962)
 
 - **`fast_mlsirm.deltaplot.delta_plot`: `alpha` and `max_iter` are now
@@ -135,29 +158,6 @@
   call already take the resolved values as plain positional/keyword
   arguments with no Rust-side default to drop.
 
-#### Release cut 0.11.0
-
-- Project version is bumped to 0.11.0 in `pyproject.toml`, `crates/mlsirm-core`,
-  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
-  `[0.11.0] - 2026-09-17` release section, headlined by Rust-owned OLS with
-  HC0–HC3 sandwich covariance (`fit_ols_hc`, `contrast`, and χ²/F/t helpers;
-  #1982). Also folded from the post-0.10.0 lineage through the OLS merge tip:
-  bifactor GRM Oakes standard errors, GPU-parallel bifactor E-step / joint
-  person bootstrap / Lord–Wingersky recursion (#1912 stages), FIPC polytomous
-  bifactor calibration, two-tier GRM stage 4, required polytomous DIF controls
-  (#1958), purified logistic DIF `flagged_bh` clarification (#1941), stage-1
-  mirt fixture category-order fix (#1950), fail-closed pytest skip/xfail
-  outcomes (#1732/#1936), clippy lint triage (#1905), graphify upstream fixes
-  (#1847/#1833), Bock–Zimowski locator verification notes (#1927), and
-  ADR-0028 public API naming / unsourced-defaults policy docs and inventory
-  tooling (#1959/#1961). Intentionally deferred to the next release: bifactor
-  ADR-0028 rename/defaults application (#1963/#1969) and bifactor stall fix
-  #1981.
-- This cut removes the standing predecessor note `release-0.10.0-cut.md`, whose
-  substance is permanently recorded in the `[0.10.0] - 2026-09-17` section and
-  in git history.
-- Released authoritative fragments are removed from `docs/changelog.d`; the
-  directory again holds only genuinely unreleased notes.
 
 ### Deprecated
 
@@ -226,8 +226,21 @@
   Each old name is now a thin wrapper that warns and delegates to the new
   name with identical behavior; the alias and its `_legacy_init.py` entry
   are deleted at the start of the next minor release.
-<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 
+### Fixed
+
+#### Bifactor GRM dense-quadrature EM stall (#1976 / #1981)
+
+- Skip Gauss–Hermite nodes whose prior weight underflows to exact zero in the
+  bifactor GRM E-step (CPU and GPU) so `gen_log - log_wg` no longer forms
+  `(-inf) - (-inf)` NaNs that poison expected counts and freeze the M-step at
+  the start slopes.
+- When relative loglik change would claim `tolerance_met` but every item
+  parameter is still bit-identical to the start, report `converged=False` /
+  `termination_reason="numerical_em_stall"` instead of a false success.
+- Document the new termination reason on single-group and multigroup bifactor
+  fit result surfaces; pin the contract with Rust regression tests (including
+  a dense q=421 fit) and a Python issue-repro gate.
 
 ## [0.11.0] - 2026-09-17
 
