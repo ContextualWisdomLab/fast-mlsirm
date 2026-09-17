@@ -1462,12 +1462,12 @@ def dif_polytomous(
     responses: np.ndarray,
     group_id: np.ndarray,
     n_cat: int,
-    model: str = "gpcm",
+    model: str,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
+    fdr_q: float,
     studied_items: np.ndarray | None = None,
-    q_theta: int = 21,
-    max_iter: int = 200,
-    tol: float = 1e-5,
-    fdr_q: float = 0.05,
 ) -> dict[str, np.ndarray]:
     """Likelihood-ratio DIF sweep for polytomous items via a two-group marginal-EM
     fit (compute in Rust; Thissen, Steinberg & Wainer, 1993). Group 0 is the
@@ -1490,11 +1490,20 @@ def dif_polytomous(
     non-negative integers; densified internally, so non-contiguous or 1-based
     codes are fine).
     ``studied_items`` limits the sweep to those column indices (default: all
-    items). ``model`` is ``"grm"`` or ``"gpcm"``; GPCM is recommended when focal
-    groups have sparse extreme categories (GRM thresholds can become disordered
-    on a rarely used category). This is the parametric IRT-LR approach; for an
-    observed-score alternative that needs no multi-group calibration see the
-    ordinal-logistic DIF of Zumbo (1999).
+    items). ``model`` is ``"grm"`` or ``"gpcm"`` -- a required caller choice, not
+    defaulted: the two models disagree on sparse extreme categories (GRM
+    thresholds can become disordered there) and neither is a documented default
+    for this package's own study measurement models (issue #1958), so silently
+    picking one on the caller's behalf would misrepresent which model was fit.
+    ``q_theta``, ``max_iter``, ``tol``, ``fdr_q``, ``max_rounds`` (on
+    :func:`dif_polytomous_purified`), and ``min_anchor_items`` are likewise all
+    required caller arguments with no default: no accuracy, convergence, or
+    FDR-level target is on file in this repository to source a default value
+    against for any of them (the same quadrature-node rule as #1929, extended
+    here to the sibling tuning constants because guessing one arbitrary number
+    is no more defensible than guessing another). This is the parametric IRT-LR
+    approach; for an observed-score alternative that needs no multi-group
+    calibration see the ordinal-logistic DIF of Zumbo (1999).
 
     References (APA 7th ed.):
         Thissen, D., Steinberg, L., & Wainer, H. (1993). Detection of
@@ -1597,15 +1606,26 @@ def dif_polytomous_purified(
     responses: np.ndarray,
     group_id: np.ndarray,
     n_cat: int,
-    model: str = "gpcm",
-    q_theta: int = 21,
-    max_iter: int = 200,
-    tol: float = 1e-5,
-    fdr_q: float = 0.05,
-    max_rounds: int = 3,
-    min_anchor_items: int = 4,
+    model: str,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
+    fdr_q: float,
+    max_rounds: int,
+    min_anchor_items: int,
 ) -> dict[str, np.ndarray]:
     """Iteratively purified :func:`dif_polytomous`, and the anchor-eligible set.
+
+    ``model``, ``q_theta``, ``max_iter``, ``tol``, ``fdr_q``, ``max_rounds``, and
+    ``min_anchor_items`` are all required caller arguments with no default (issue
+    #1958): none has an accuracy, convergence, or FDR-level target on file in
+    this repository to source a default value against, the same reasoning
+    :func:`focal_expected_total_score_monotonicity` already applies to
+    ``q_nuisance`` under #1929. ``fdr_q`` is conventionally set at the
+    illustrative level used throughout Benjamini & Hochberg (1995); the
+    purification loop itself -- rebuild the anchor from currently unflagged
+    items, repeat -- is Candell & Drasgow's (1988), but neither source states a
+    specific round count, so ``max_rounds`` is not defaulted from it.
 
     :func:`dif_polytomous` tests every studied item against **all** other items
     as the anchor, once. Items with DIF are therefore part of the anchor that
@@ -1743,16 +1763,21 @@ def dif_polytomous_anchor_sets(
     responses: np.ndarray,
     group_id: np.ndarray,
     n_cat: int,
-    model: str = "gpcm",
-    q_theta: int = 21,
-    max_iter: int = 200,
-    tol: float = 1e-5,
-    fdr_q: float = 0.05,
-    max_rounds: int = 3,
-    min_anchor_items: int = 4,
+    model: str,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
+    fdr_q: float,
+    max_rounds: int,
+    min_anchor_items: int,
     reference_group: int | None = None,
 ) -> dict:
     """Anchor-eligible set per focal group, and the intersection across them.
+
+    ``model``, ``q_theta``, ``max_iter``, ``tol``, ``fdr_q``, ``max_rounds``, and
+    ``min_anchor_items`` are all required caller arguments with no default,
+    passed straight through to :func:`dif_polytomous_purified` per focal group;
+    see that function's docstring for why none is defaulted (issue #1958).
 
     :func:`dif_polytomous_purified` estimates one latent distribution per group
     and returns a single anchor set for the whole comparison. That is the right
