@@ -241,9 +241,10 @@ fn grad_zeta_kernel(@builtin(global_invocation_id) gid: vec3<u32>) {
 ///
 /// Initialization (adapter + device request, shader compilation) is expensive
 /// and is done once; the optimizer calls the objective thousands of times.
-struct GpuContext {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+pub(crate) struct GpuContext {
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    storage_buffers_per_stage: u32,
     layout: wgpu::BindGroupLayout,
     compute_e: wgpu::ComputePipeline,
     grad_b_alpha: wgpu::ComputePipeline,
@@ -254,7 +255,7 @@ struct GpuContext {
 
 static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
 
-fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
+pub(crate) fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::COMPUTE,
@@ -283,6 +284,8 @@ impl GpuContext {
         {
             return None;
         }
+        let storage_buffers_per_stage =
+            adapter_limits.max_storage_buffers_per_shader_stage;
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("mlsirm-gpgpu"),
             // Request the adapter's real limits so the 17-binding layout fits on
@@ -341,11 +344,19 @@ impl GpuContext {
             layout,
             device,
             queue,
+            storage_buffers_per_stage,
         })
     }
 
-    fn get() -> Option<&'static GpuContext> {
+    pub(crate) fn get() -> Option<&'static GpuContext> {
         CONTEXT.get_or_init(GpuContext::init).as_ref()
+    }
+
+    /// Adapter's storage-buffer budget per shader stage, for bind-group
+    /// layouts larger than this context's own (callers return `None` and
+    /// fall back to CPU when their layout does not fit).
+    pub(crate) fn adapter_storage_buffers(&self) -> u32 {
+        self.storage_buffers_per_stage
     }
 }
 
@@ -357,7 +368,7 @@ fn storage_init(device: &wgpu::Device, label: &str, data: &[f32]) -> wgpu::Buffe
     })
 }
 
-fn output_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffer {
+pub(crate) fn output_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: (len * std::mem::size_of::<f32>()) as u64,
@@ -366,7 +377,7 @@ fn output_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffer
     })
 }
 
-fn staging_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffer {
+pub(crate) fn staging_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: (len * std::mem::size_of::<f32>()) as u64,
@@ -375,7 +386,7 @@ fn staging_buffer(device: &wgpu::Device, label: &str, len: usize) -> wgpu::Buffe
     })
 }
 
-fn read_mapped(buffer: &wgpu::Buffer) -> Option<Vec<f32>> {
+pub(crate) fn read_mapped(buffer: &wgpu::Buffer) -> Option<Vec<f32>> {
     let view = buffer.slice(..).get_mapped_range().ok()?;
     let values: Vec<f32> = bytemuck::cast_slice::<u8, f32>(&view).to_vec();
     drop(view);
@@ -383,8 +394,115 @@ fn read_mapped(buffer: &wgpu::Buffer) -> Option<Vec<f32>> {
     Some(values)
 }
 
-fn dispatch_count(total: usize) -> u32 {
+/// Shared GPU readback: copy device `sources` into MAP_READ staging buffers,
+/// submit `encoder`, block on mapping, and return the mapped `f32` vectors.
+///
+/// Every entry of `copies` is `(device_src, staging_dst, len_f32)` where
+/// `staging_dst` was created by [`staging_buffer`]. Returns `None` when the
+/// device poll or any mapping fails, signalling the caller to fall back to
+/// the CPU implementation rather than yielding partial results.
+pub(crate) fn submit_and_readback(
+    ctx: &GpuContext,
+    encoder: wgpu::CommandEncoder,
+    copies: &[(&wgpu::Buffer, &wgpu::Buffer, usize)],
+) -> Option<Vec<Vec<f32>>> {
+    let mut cmd = encoder;
+    for (src, dst, len) in copies {
+        cmd.copy_buffer_to_buffer(
+            src,
+            0,
+            dst,
+            0,
+            (*len * std::mem::size_of::<f32>()) as u64,
+        );
+    }
+    ctx.queue.submit(Some(cmd.finish()));
+    let staging: Vec<&wgpu::Buffer> = copies.iter().map(|(_, dst, _)| *dst).collect();
+    for s in &staging {
+        s.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+    }
+    ctx.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+    staging.iter().map(|s| read_mapped(s)).collect()
+}
+
+pub(crate) fn dispatch_count(total: usize) -> u32 {
     total.div_ceil(WORKGROUP_SIZE as usize) as u32
+}
+
+/// Factor a 1-D workgroup count into `(x, y, z)` so each axis stays within the
+/// adapter's `max_compute_workgroups_per_dimension` (65535 on Apple Metal /
+/// WebGPU). Extra threads from ceiling padding are skipped by the shader's
+/// `idx >= total` guard. Returns `None` when even a full 3-D grid cannot cover
+/// `n_groups` (caller falls back to CPU).
+pub(crate) fn dispatch_workgroups_nd(n_groups: u32, max_per_dim: u32) -> Option<(u32, u32, u32)> {
+    let n = n_groups.max(1);
+    if max_per_dim == 0 {
+        return None;
+    }
+    if n <= max_per_dim {
+        return Some((n, 1, 1));
+    }
+    let max = u64::from(max_per_dim);
+    let need = u64::from(n);
+    let x = max;
+    let y_needed = need.div_ceil(x);
+    if y_needed <= max {
+        return Some((max_per_dim, y_needed as u32, 1));
+    }
+    let y = max;
+    let z_needed = need.div_ceil(x.checked_mul(y)?);
+    if z_needed <= max {
+        return Some((max_per_dim, max_per_dim, z_needed as u32));
+    }
+    None
+}
+
+/// True when an `f32` storage buffer of `len` elements fits the adapter's
+/// `max_buffer_size` and `max_storage_buffer_binding_size` (queried at runtime;
+/// no hardcoded byte caps).
+pub(crate) fn storage_buffer_fits(limits: &wgpu::Limits, len: usize) -> bool {
+    let Some(bytes) = len.checked_mul(std::mem::size_of::<f32>()) else {
+        return false;
+    };
+    bytes as u64 <= limits.max_buffer_size
+        && bytes <= limits.max_storage_buffer_binding_size as usize
+}
+
+#[cfg(test)]
+mod dispatch_nd_tests {
+    use super::dispatch_workgroups_nd;
+
+    #[test]
+    fn one_dimensional_when_under_limit() {
+        assert_eq!(dispatch_workgroups_nd(100, 65535), Some((100, 1, 1)));
+        assert_eq!(dispatch_workgroups_nd(65535, 65535), Some((65535, 1, 1)));
+    }
+
+    #[test]
+    fn two_dimensional_covers_metal_bifactor_blk_counts() {
+        // AC late-life q=241 multigroup bootstrap: reduce_counts_blk needed
+        // 141573 workgroups on x alone and Metal rejected it.
+        let (x, y, z) = dispatch_workgroups_nd(141_573, 65_535).expect("fits 2-D");
+        assert!(x <= 65_535 && y <= 65_535 && z == 1);
+        assert!(u64::from(x) * u64::from(y) * u64::from(z) >= 141_573);
+    }
+
+    #[test]
+    fn three_dimensional_when_needed() {
+        let max = 10u32;
+        let n = max * max + 1;
+        let (x, y, z) = dispatch_workgroups_nd(n, max).expect("fits 3-D");
+        assert_eq!((x, y), (max, max));
+        assert!(z >= 2 && z <= max);
+        assert!(u64::from(x) * u64::from(y) * u64::from(z) >= u64::from(n));
+    }
+
+    #[test]
+    fn none_when_beyond_cube() {
+        let max = 2u32;
+        let beyond = max * max * max + 1;
+        assert_eq!(dispatch_workgroups_nd(beyond, max), None);
+    }
 }
 
 /// GPGPU evaluation of the penalized negative log-likelihood and its gradient.

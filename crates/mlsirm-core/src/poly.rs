@@ -143,7 +143,107 @@ pub fn grm_node_gradient(base: f64, thresholds: &[f64], counts: &[f64]) -> (f64,
     (g_base, g_t)
 }
 
-/// GPCM/nominal unified softmax cell. `scores[0] = intercepts[0] = 0` (baseline
+/// Hessian of the expected complete-data log-likelihood `sum_k r_k log P(Y=k)`
+/// at one node for the GRM cell, w.r.t. the boundary linear predictors
+/// `eta_j = base + thresholds[j]`. Returns `(grand_sum, row_sums, matrix)`
+/// where `matrix[j][l] = d^2 Q / d eta_j d eta_l` is TRIDIAGONAL (each
+/// category involves at most two adjacent boundaries), `row_sums[j]` is its
+/// `j`-th row sum, and `grand_sum` the sum of all entries — the exact
+/// aggregates the slope chain rule needs (`S_n`, `R^{(n)}_j`).
+///
+/// Closed form per boundary `j` (0-indexed, `M` boundaries, `K = M + 1`
+/// categories; `v_j = s_j (1 - s_j)`, `w_j = v_j (1 - 2 s_j)`):
+///
+/// ```text
+/// H_jj     = w_j * (r_{j+1}/P_{j+1} - r_j/P_j)
+///            - v_j^2 * (r_{j+1}/P_{j+1}^2 + r_j/P_j^2),
+/// H_{j,j+1} = r_{j+1} * v_j * v_{j+1} / P_{j+1}^2,
+/// ```
+///
+/// all other entries zero. Ratios `v/P` are evaluated in log space
+/// (`log v_j = log_sigmoid(eta_j) + log_sigmoid(-eta_j)`, `log P` from
+/// [`grm_logprobs`]), the same idiom as [`grm_node_gradient`]: directly
+/// exponentiating a valid tail category can underflow `P` to zero even
+/// though its curvature contribution is finite. Categories with zero count
+/// are skipped outright (avoids `0 * inf`).
+///
+/// The binary case (`M = 1`) collapses to the logistic Hessian
+/// `-(r_0 + r_1) * s * (1 - s)`.
+///
+/// Implementation basis: direct calculus on the cumulative-logit graded cell
+/// `P(Y >= k) = logistic(base + d_k)` (Gibbons et al., 2007, eq. 9, p. 7);
+/// the closed form above is cross-checked against a central finite
+/// difference of [`grm_node_gradient`] in the stage-3 Oakes unit tests
+/// (finite differences appear only as that test cross-check).
+///
+/// # References (APA 7th ed.)
+///
+/// Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E., Bhaumik,
+/// D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., & Stover, A. (2007).
+/// Full-information item bifactor analysis of graded response data. *Applied
+/// Psychological Measurement, 31*(1), 4-19.
+/// https://doi.org/10.1177/0146621606289485
+pub fn grm_node_hessian(
+    base: f64,
+    thresholds: &[f64],
+    counts: &[f64],
+) -> (f64, Vec<f64>, Vec<Vec<f64>>) {
+    let m = thresholds.len();
+    let mut mat = vec![vec![0.0f64; m]; m];
+    if m == 0 {
+        return (0.0, Vec::new(), mat);
+    }
+    let log_p = grm_logprobs(base, thresholds);
+    let mut one_minus_2s = vec![0.0f64; m];
+    let mut log_v = vec![0.0f64; m];
+    for (j, &d) in thresholds.iter().enumerate() {
+        let eta = base + d;
+        // s(eta) in (0, 1) for finite eta; 1 - 2s in (-1, 1).
+        let s = if eta >= 0.0 {
+            1.0 / (1.0 + (-eta).exp())
+        } else {
+            let ex = eta.exp();
+            ex / (1.0 + ex)
+        };
+        one_minus_2s[j] = 1.0 - 2.0 * s;
+        log_v[j] = log_sigmoid(eta) + log_sigmoid(-eta);
+    }
+    for j in 0..m {
+        // v_j / P ratios in log space (finite even in extreme tails).
+        let r_right = counts[j + 1];
+        let r_left = counts[j];
+        let rv_right = if r_right == 0.0 {
+            0.0
+        } else {
+            (log_v[j] - log_p[j + 1]).exp()
+        };
+        let rv_left = if r_left == 0.0 {
+            0.0
+        } else {
+            (log_v[j] - log_p[j]).exp()
+        };
+        let t_right = r_right * rv_right;
+        let t_left = r_left * rv_left;
+        // H_jj = w_j * A_j - v_j^2 * (r_{j+1}/P_{j+1}^2 + r_j/P_j^2),
+        // with w_j = v_j * (1 - 2 s_j): factor the shared v_j/P ratios.
+        mat[j][j] = one_minus_2s[j] * (t_right - t_left) - (t_right * rv_right + t_left * rv_left);
+        // H_{j,j+1} = r_{j+1} * v_j * v_{j+1} / P_{j+1}^2 (category j+1 is
+        // the only one involving both boundaries j and j+1).
+        if j + 1 < m && r_right != 0.0 {
+            let off = r_right * (log_v[j] + log_v[j + 1] - 2.0 * log_p[j + 1]).exp();
+            mat[j][j + 1] = off;
+            mat[j + 1][j] = off;
+        }
+    }
+    let mut row_sums = vec![0.0f64; m];
+    let mut grand = 0.0f64;
+    for (j, row) in mat.iter().enumerate() {
+        let s: f64 = row.iter().sum();
+        row_sums[j] = s;
+        grand += s;
+    }
+    (grand, row_sums, mat)
+}
 /// category pinned). `psi_k = scores[k]*base + intercepts[k]`; returns the
 /// stable `log softmax_k(psi)` for `k = 0..K-1`. Nests binary 2PL at `K=2`,
 /// `scores=[0,1]`, `intercepts=[0,b]` (then `logP_1 = log_sigmoid(base+b)`).
@@ -691,9 +791,313 @@ pub fn fit_poly_unidim(
     })
 }
 
+/// Result of [`fit_poly_fipc`]. `slope`/`cat_params` cover ALL items:
+/// anchored entries echo the caller-supplied fixed values bit-exactly, free
+/// entries hold the FIPC estimates. `mu`/`sigma` are the estimated focal
+/// latent mean/SD. `n_iter` counts completed M-steps; `loglik_trace` holds
+/// `n_iter + 1` observed-data likelihoods with its endpoint evaluated at the
+/// returned parameters.
+pub struct PolyFipcFit {
+    pub slope: Vec<f64>,
+    pub cat_params: Vec<Vec<f64>>,
+    pub mu: f64,
+    pub sigma: f64,
+    pub loglik: f64,
+    pub n_iter: usize,
+    pub converged: bool,
+    pub termination_reason: String,
+    pub loglik_trace: Vec<f64>,
+    pub final_delta: f64,
+    pub stopping_tolerance: f64,
+}
+
+/// Fixed-item parameter calibration (FIPC) for the unidimensional graded
+/// response model by Bock-Aitkin marginal MLE (EM). `y` is
+/// `n_persons * n_items`, row-major, categories `0..n_cat-1` (complete data
+/// unless `observed` masks cells MAR). `anchor[i] == true` pins item `i` at
+/// `anchor_slope[i]` / `anchor_cat_params[i]` (the reference calibration on
+/// the old scale) for every EM cycle; the remaining items are freely
+/// estimated. The focal latent distribution starts at `N(0, 1)` and its
+/// mean/variance are re-estimated after EVERY M-step from the E-step
+/// posterior moments (closed form, the parametric-normal realization of the
+/// weight update) — the multiple-weights-updating / multiple-EM-cycles
+/// (MWU-MEM) method, the only variant of the five compared methods that
+/// recovered shifted focal distributions without under-estimation. The
+/// no-prior-update variant is deliberately NOT exposed: the sources
+/// recommend only the updating method for shifted populations.
+///
+/// Concretely, with standard nodes `x_t` and weights `w_t`, each sweep
+/// evaluates the E-step at the shifted nodes `theta_t = mu + sigma * x_t`
+/// (the Bock-Zimowski node-shift reparameterization, so the shared
+/// Gauss-Hermite weights are reused exactly) with anchor likelihoods from
+/// the FIXED parameters, then M-steps the free items and the distribution
+/// with the posterior moments. The latent points are NEVER rescaled after
+/// an EM cycle, and no reflection canonicalization is applied: the fixed
+/// anchors pin the scale orientation, including reverse-keyed
+/// (negative-slope) anchors and free items.
+///
+/// Convergence is checked on the observed-data log likelihood evaluated at
+/// the same parameters that are returned, with the same monotonicity guard
+/// as [`fit_poly_unidim`].
+///
+/// # References (APA 7th ed.)
+///
+/// Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+/// methods. *Journal of Educational Measurement, 43*(4), 355-381.
+/// https://doi.org/10.1111/j.1745-3984.2006.00021.x — FPC task definition
+/// (p. 359: fix old items, calibrate new ones onto the old scale); the five
+/// methods and their EM equations (NWU-OEM eqs. 6-7, p. 360; NWU-MEM eqs.
+/// 8-9, pp. 360-361; OWU-OEM eqs. 10-11, p. 361; OWU-MEM eqs. 12-13,
+/// p. 361; MWU-MEM eqs. 14-15, pp. 361-362; classification Table 1,
+/// p. 362); "the ability points should not be rescaled after each EM cycle"
+/// (p. 362); the `N(0, 1)` prior used when conducting FPC (p. 364); the
+/// shifted focal conditions `N(0.5, 1.2^2)` and `N(1, 1.4^2)` (pp. 364-365);
+/// the MWU-MEM recommendation and the under-estimation of the four other
+/// methods under shift (abstract; Summary and Discussion, pp. 377-378).
+///
+/// Paek, I., & Young, M. J. (2005). Investigation of student growth recovery
+/// in a fixed-item linking procedure with a fixed-person prior distribution
+/// for mixed-format test data. *Applied Measurement in Education, 18*(2),
+/// 199-215. https://doi.org/10.1207/s15324818ame1802_4 — a fixed person
+/// prior biases ability-growth estimates under fixed-item linking, and the
+/// iterative prior-update calibration procedure recovers the growth
+/// (abstract; procedure as described in Kim, 2006, p. 378).
+///
+/// Bock, R. D., & Zimowski, M. F. (1997). Multiple group IRT. In W. J. van der
+/// Linden & R. K. Hambleton (Eds.), *Handbook of modern item response theory*
+/// (pp. 433-448). Springer. https://doi.org/10.1007/978-1-4757-2691-6_25 —
+/// the estimated-group `N(mu_g, sigma_g^2)` with the node-shift form.
+///
+/// Samejima, F. (1969). Estimation of latent ability using a response pattern
+/// of graded scores. *Psychometrika, 34*(S1), 1-97.
+/// https://doi.org/10.1007/BF03372160 — the cumulative GRM cell.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_poly_fipc(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    anchor: &[bool],
+    anchor_slope: &[f64],
+    anchor_cat_params: &[Vec<f64>],
+    q_theta: usize,
+    max_iter: usize,
+    tol: f64,
+) -> Result<PolyFipcFit, String> {
+    if n_persons == 0 || n_items == 0 {
+        return Err("n_persons and n_items must be >= 1".into());
+    }
+    if !(2..=POLY_MAX_CAT).contains(&n_cat) {
+        return Err(format!("n_cat must be in 2..={POLY_MAX_CAT}"));
+    }
+    if !(1..=POLY_MAX_ITER).contains(&max_iter) {
+        return Err(format!("max_iter must be in 1..={POLY_MAX_ITER}"));
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and > 0".into());
+    }
+    if anchor.len() != n_items {
+        return Err("anchor must have length n_items".into());
+    }
+    if !anchor.iter().any(|&a| a) {
+        return Err("at least one anchor item is required to pin the FIPC scale".into());
+    }
+    if anchor_slope.len() != n_items {
+        return Err("anchor_slope must have length n_items".into());
+    }
+    if anchor_cat_params.len() != n_items {
+        return Err("anchor_cat_params must have length n_items".into());
+    }
+    for (i, cats) in anchor_cat_params.iter().enumerate() {
+        if cats.len() != n_cat - 1 {
+            return Err(format!("anchor_cat_params[{i}] must have length n_cat - 1"));
+        }
+    }
+    // Anchored entries must be finite with strictly decreasing GRM
+    // thresholds; slopes may be NEGATIVE (reverse-keyed anchors pin the
+    // orientation and must survive bit-exact). Free-item entries of the
+    // anchor arrays are never read.
+    for i in 0..n_items {
+        if !anchor[i] {
+            continue;
+        }
+        if !anchor_slope[i].is_finite() {
+            return Err(format!("anchor_slope[{i}] must be finite"));
+        }
+        if anchor_cat_params[i].iter().any(|v| !v.is_finite()) {
+            return Err(format!("anchor_cat_params[{i}] must be finite"));
+        }
+        if anchor_cat_params[i].windows(2).any(|pair| pair[0] <= pair[1]) {
+            return Err(format!(
+                "anchor_cat_params[{i}] must be strictly decreasing (GRM thresholds)"
+            ));
+        }
+    }
+    let n_cells =
+        crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
+    if y.len() != n_cells {
+        return Err("y must have length n_persons * n_items".into());
+    }
+    if let Some(o) = observed {
+        if o.len() != n_cells {
+            return Err("observed must have length n_persons * n_items".into());
+        }
+    }
+    validate_observed_categories(y, observed, n_cat)?;
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
+    let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
+    let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
+    let qn = nodes.len();
+
+    // Working params [a, cat_1..cat_{K-1}] per item: anchors pinned at the
+    // caller values, free items from focal base rates (same scheme as
+    // fit_poly_unidim). The focal prior starts at N(0, 1) (Kim, 2006, p. 364).
+    let mut params = vec![vec![0.0_f64; n_cat]; n_items];
+    for i in 0..n_items {
+        if anchor[i] {
+            params[i][0] = anchor_slope[i];
+            params[i][1..].copy_from_slice(&anchor_cat_params[i]);
+            continue;
+        }
+        params[i][0] = 1.0;
+        let mut freq = vec![1e-3_f64; n_cat];
+        for p in 0..n_persons {
+            if is_obs(p, i) {
+                freq[y[p * n_items + i]] += 1.0;
+            }
+        }
+        let tot: f64 = freq.iter().sum();
+        for f in freq.iter_mut() {
+            *f /= tot;
+        }
+        let mut cum = 0.0_f64;
+        for k in (1..n_cat).rev() {
+            cum += freq[k];
+            if !(0.0 < cum && cum < 1.0) {
+                return Err("smoothed GRM cumulative probability must be in (0, 1)".into());
+            }
+            params[i][k] = (cum / (1.0 - cum)).ln();
+        }
+    }
+    let mut mu = 0.0_f64;
+    let mut sigma = 1.0_f64;
+
+    let mut ll: f64;
+    let mut it = 0usize;
+    let mut converged = false;
+    let mut termination_reason = "max_iter".to_owned();
+    let mut final_delta = f64::INFINITY;
+    let mut stopping_tolerance = f64::INFINITY;
+    let mut loglik_trace = Vec::with_capacity(max_iter + 1);
+    loop {
+        // Focal nodes for this sweep (node-shift reparameterization).
+        let theta: Vec<f64> = nodes.iter().map(|&x| mu + sigma * x).collect();
+        // Per-item cell log-probs at each node.
+        let mut item_lp = vec![vec![0.0_f64; qn * n_cat]; n_items];
+        for i in 0..n_items {
+            let a = params[i][0];
+            for (nd, &th) in theta.iter().enumerate() {
+                let lp = grm_logprobs(a * th, &params[i][1..]);
+                item_lp[i][nd * n_cat..(nd + 1) * n_cat].copy_from_slice(&lp);
+            }
+        }
+        // E-step: posteriors, expected counts, and focal trait moments.
+        let mut counts = vec![vec![vec![0.0_f64; n_cat]; qn]; n_items];
+        let (mut w_acc, mut s1, mut s2) = (0.0_f64, 0.0_f64, 0.0_f64);
+        ll = 0.0;
+        let mut log_node = vec![0.0_f64; qn];
+        for p in 0..n_persons {
+            log_node[..qn].copy_from_slice(&log_w[..qn]);
+            for i in 0..n_items {
+                if !is_obs(p, i) {
+                    continue;
+                }
+                let yc = y[p * n_items + i];
+                for t in 0..qn {
+                    log_node[t] += item_lp[i][t * n_cat + yc];
+                }
+            }
+            let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let mut denom = 0.0_f64;
+            for value in log_node.iter().take(qn) {
+                denom += (value - mx).exp();
+            }
+            ll += mx + denom.ln();
+            for t in 0..qn {
+                let post = (log_node[t] - mx).exp() / denom;
+                w_acc += post;
+                s1 += post * theta[t];
+                s2 += post * theta[t] * theta[t];
+                for i in 0..n_items {
+                    if is_obs(p, i) {
+                        counts[i][t][y[p * n_items + i]] += post;
+                    }
+                }
+            }
+        }
+        let status = multigroup_em_status(ll, loglik_trace.last().copied(), tol);
+        if record_multigroup_em_status(
+            status,
+            ll,
+            &mut loglik_trace,
+            &mut converged,
+            &mut termination_reason,
+            &mut final_delta,
+            &mut stopping_tolerance,
+        ) {
+            break;
+        }
+        if it == max_iter {
+            break;
+        }
+        // M-step, free item parameters (anchors are never touched).
+        for i in 0..n_items {
+            if anchor[i] {
+                continue;
+            }
+            params[i] = m_step_item(params[i].clone(), &theta, &counts[i], PolyModel::Grm, 10);
+        }
+        // M-step, focal latent distribution (MWU: updated after EVERY
+        // M-step). Unconstrained-positive with NO clamping: a non-finite or
+        // non-positive update fails loudly instead of silently rescaling.
+        if !(w_acc > 0.0 && w_acc.is_finite()) {
+            return Err("FIPC focal distribution has no posterior mass".into());
+        }
+        let mean = s1 / w_acc;
+        let var = s2 / w_acc - mean * mean;
+        if !mean.is_finite() || !var.is_finite() {
+            return Err("non-finite FIPC focal moment update".into());
+        }
+        if var <= 0.0 {
+            return Err(format!("non-positive FIPC focal variance update ({var:.6e})"));
+        }
+        mu = mean;
+        sigma = var.sqrt();
+        it += 1;
+    }
+
+    // No reflection canonicalization and no rescaling: the fixed anchors pin
+    // the scale orientation (Kim, 2006, p. 362).
+    let ll = *loglik_trace.last().expect("EM trace is never empty");
+    let slope: Vec<f64> = (0..n_items).map(|i| params[i][0]).collect();
+    let cat_params: Vec<Vec<f64>> = params.iter().map(|p| p[1..].to_vec()).collect();
+    Ok(PolyFipcFit {
+        slope,
+        cat_params,
+        mu,
+        sigma,
+        loglik: ll,
+        n_iter: it,
+        converged,
+        termination_reason,
+        loglik_trace,
+        final_delta,
+        stopping_tolerance,
+    })
+}
+
 /// Result of [`fit_nominal`]. Per item, `scores[i]` holds the `K-1` free
-/// category scoring values `a_1..a_{K-1}` and `intercepts[i]` the `K-1` free
-/// intercepts `c_1..c_{K-1}` (the baseline category is pinned `a_0 = c_0 = 0`).
 pub struct NominalFit {
     pub scores: Vec<Vec<f64>>,
     pub intercepts: Vec<Vec<f64>>,
@@ -1362,6 +1766,19 @@ fn record_multigroup_em_status(
 /// Bock, R. D., & Zimowski, M. F. (1997). Multiple group IRT. In W. J. van der
 ///   Linden & R. K. Hambleton (Eds.), *Handbook of modern item response theory*
 ///   (pp. 433–448). Springer. https://doi.org/10.1007/978-1-4757-2691-6_25
+///
+/// No equation/page locator inside this chapter is claimed here (the docstring
+/// above cites no chapter-internal page or equation). #1927 full-text
+/// verification attempt (2026-09-17): unobtainable — absent from the
+/// maintainer's Zotero library and local paper cache, no open-access copy, and
+/// the Springer chapter page requires an institutional login the KW-library
+/// proxy route could not complete without browser automation this session;
+/// only the publisher's own chapter metadata (chapter 25, pp. 433-448) was
+/// independently confirmed via Springer's DOI record and WorldCat. The same
+/// reference-group multigroup calibration this chapter describes is
+/// independently verified, with page-level locators, in `bifactor_grm.rs`'s
+/// module docs via Cai, Yang, & Hansen (2011, Zotero `TNQ22C7T`) and Bock &
+/// Aitkin (1981).
 #[allow(clippy::too_many_arguments)]
 pub fn fit_poly_multigroup(
     y: &[usize],

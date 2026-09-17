@@ -41,6 +41,8 @@ def test_add_rejects_counts_that_cannot_cross_native_boundary_exactly(
         delta_plot(
             _DataSentinel(),
             _DataSentinel(),
+            alpha=0.05,
+            max_iter=10,
             extreme="add",
             nr_add=nr_add,
         )

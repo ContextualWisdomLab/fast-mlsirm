@@ -41,7 +41,7 @@ def test_singlefree_accepts_two_anchors_per_dimension():
     res = fit_marginal_numpy(
         y, observed, np.array([0, 0, 0]), model="MLS2PLM", n_dims=1,
         latent_dim=1, q_theta=7, q_xi=7, max_iter=1,
-        pop={"kind": "singlefree"}, anchors=anchors,
+        pop={"kind": "singlefree"}, anchors=anchors, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     # anchored items keep their fixed easiness.
     np.testing.assert_allclose(res["b"][:2], anchors["b"][:2])
@@ -68,7 +68,7 @@ def test_tau_m_step_skips_when_information_is_zero():
     res = fit_marginal_numpy(
         y, observed, np.array([0, 0, 0, 0]), model="MLS2PLM", n_dims=1,
         latent_dim=1, q_theta=7, q_xi=7, max_iter=2, anchors=anchors,
-        penalty={"lambda_tau": 0.0},
+        penalty={"lambda_tau": 0.0}, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     assert np.isfinite(res["tau"])
 
@@ -88,7 +88,7 @@ def test_tau_line_search_exhausts_at_clip_boundary():
     res = fit_marginal_numpy(
         y, observed, np.array([0, 0, 0, 0]), model="MLS2PLM", n_dims=1,
         latent_dim=1, q_theta=7, q_xi=7, max_iter=6,
-        penalty={"mu_tau": 50.0, "lambda_tau": 5.0},
+        penalty={"mu_tau": 50.0, "lambda_tau": 5.0}, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     assert np.isfinite(res["tau"])
     assert res["tau"] <= 5.0
@@ -113,7 +113,7 @@ def test_covariate_line_search_exhausts_at_clip_boundary():
         y, observed, np.array([0, 1, 0, 1]), model="MLS2PLM", n_dims=2,
         latent_dim=2, q_theta=7, q_xi=7, max_iter=4,
         pop={"kind": "multigroup", "group_id": group_id, "n_groups": 2},
-        covariate={"w": w, "init_delta": 10.0},
+        covariate={"w": w, "init_delta": 10.0}, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     assert np.isfinite(res["delta"])
     assert res["delta"] <= 10.0

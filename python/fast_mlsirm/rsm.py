@@ -219,9 +219,10 @@ def _real_numeric_response_matrix(value: object) -> np.ndarray:
 def fit_rsm(
     responses: np.ndarray,
     n_cat: int | None = None,
-    q_theta: int = 41,
-    max_iter: int = 500,
-    tol: float = 1e-6,
+    *,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
 ) -> RsmFit:
     """Fit the rating scale model (compute in Rust; Andrich, 1978).
 

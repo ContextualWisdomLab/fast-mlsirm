@@ -64,10 +64,20 @@ for (i in seq_len(N_ITEMS)) {
   p2 <- plogis(base + D2[i])
   p3 <- plogis(base + D3[i])
   u <- runif(N_PERSONS)
-  # Categories 0..3 from the cumulative model: Y >= 1 w.p. p1, etc.
-  resp[, i] <- as.integer(u > p1) + as.integer(u > p2) + as.integer(u > p3)
+  # Categories 0..3 from the cumulative model: since p1 > p2 > p3, the
+  # events {u < p3} subset {u < p2} subset {u < p1} nest, and Y is the count
+  # of thresholds cleared: Y = I(u < p1) + I(u < p2) + I(u < p3), so
+  # P(Y >= k) = P(u < p_k) = p_k as intended (higher theta -> higher category).
+  # A previous version compared with `u > p_k`, which reversed the category
+  # order (#1950): higher theta then produced LOWER categories.
+  resp[, i] <- as.integer(u < p1) + as.integer(u < p2) + as.integer(u < p3)
 }
 stopifnot(all(resp >= 0L & resp < N_CAT))
+# Category order must match the model: higher theta_G should co-occur with
+# higher observed categories (#1950 regression guard against a reversed
+# category-generation rule going undetected again).
+row_score <- rowSums(resp)
+stopifnot(cor(theta_g, row_score) > 0.3)
 # Every declared category must be observed for every item (the Rust fitter
 # refuses unidentified boundaries instead of imputing them).
 for (i in seq_len(N_ITEMS)) {

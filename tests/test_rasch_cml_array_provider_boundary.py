@@ -28,7 +28,7 @@ def test_fit_rasch_cml_rejects_response_provider_before_protocol_or_core(
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
 
     with pytest.raises(ValueError, match="responses must be complete 0/1"):
-        rasch_cml.fit_rasch_cml(_HostileArrayProvider())
+        rasch_cml.fit_rasch_cml(_HostileArrayProvider(), max_iter=100, tol=1e-8)
 
 
 def test_andersen_rejects_group_provider_before_protocol_or_core(
@@ -39,7 +39,7 @@ def test_andersen_rejects_group_provider_before_protocol_or_core(
     responses = np.array([[0, 1], [1, 0], [0, 1], [1, 0]], dtype=np.int8)
 
     with pytest.raises(ValueError, match="group labels must be finite non-negative integers"):
-        rasch_cml.andersen_lr_test(responses, _HostileArrayProvider())
+        rasch_cml.andersen_lr_test(responses, _HostileArrayProvider(), max_iter=100, tol=1e-8)
 
 
 def test_rasch_cml_preserves_trusted_builtin_and_numpy_scalar_evidence(
@@ -107,8 +107,8 @@ def test_rasch_cml_preserves_trusted_builtin_and_numpy_scalar_evidence(
     ]
     group = [np.int16(0), np.uint8(0), 1, np.int32(1)]
 
-    assert rasch_cml.fit_rasch_cml(responses)["converged"] is True
-    assert rasch_cml.andersen_lr_test(responses, group)["converged"] is True
+    assert rasch_cml.fit_rasch_cml(responses, max_iter=100, tol=1e-8)["converged"] is True
+    assert rasch_cml.andersen_lr_test(responses, group, max_iter=100, tol=1e-8)["converged"] is True
     assert captured["fit"].tolist() == [0, 1, 1, 0, 0, 1, 1, 0]
     assert captured["group"].tolist() == [0, 0, 1, 1]
 
@@ -145,7 +145,7 @@ def _assert_andersen_dense_groups(
             }
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
-    assert rasch_cml.andersen_lr_test(responses, group)["converged"] is True
+    assert rasch_cml.andersen_lr_test(responses, group, max_iter=100, tol=1e-8)["converged"] is True
 
 
 def test_andersen_preserves_integer_identity_beyond_float64_exact_boundary(

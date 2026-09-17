@@ -148,12 +148,12 @@ def fit_mmle_2pl(
     y: np.ndarray,
     observed: np.ndarray,
     *,
-    n_nodes: int = 41,
-    max_iter: int = 500,
-    tol: float = 1e-6,
+    n_nodes: int,
+    max_iter: int,
+    tol: float,
     ridge_a: float = 1e-3,
     ridge_b: float = 1e-3,
-    seed: int = 1,
+    seed: int,
 ) -> dict[str, object]:
     """Calibrate a unidimensional 2PL by MMLE-EM under missing data.
 

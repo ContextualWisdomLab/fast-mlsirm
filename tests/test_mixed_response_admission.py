@@ -23,5 +23,5 @@ def test_mixed_fit_rejects_complex_responses_before_real_narrowing() -> None:
             responses,
             ["2pl", "2pl"],
             [2, 2],
-            max_iter=1,
+            max_iter=1, q_theta=21, q_xi=7, tol=1e-5
         )
