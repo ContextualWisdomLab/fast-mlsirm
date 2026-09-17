@@ -168,7 +168,7 @@ def test_fit_polytomous_control_validators_preserve_numpy_scalars() -> None:
         (
             "dif_polytomous",
             (_BombResponses(), np.zeros(1, dtype=np.int64), _HostileInt(2)),
-            {},
+            {"model": "gpcm", "q_theta": 21, "max_iter": 200, "tol": 1e-5, "fdr_q": 0.05},
         ),
         ("score_polytomous", (_BombResponses(), None), {"q_theta": _HostileInt(21)}),
     ],

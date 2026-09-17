@@ -2076,7 +2076,7 @@ def test_dif_polytomous():
 
     # impact but NO DIF: anchor items should be (mostly) clean, df = n_cat
     y0, gid0 = gen(dif_on_item0=False)
-    res0 = dif_polytomous(y0, gid0, k, model="gpcm")
+    res0 = dif_polytomous(y0, gid0, k, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
     assert res0["item"].shape == (j,)
     for key in ("lr", "df", "p_value", "flagged_bh", "effect_size"):
         assert res0[key].shape == (j,)
@@ -2088,26 +2088,31 @@ def test_dif_polytomous():
 
     # inject uniform DIF on item 0: it should be flagged with the largest effect
     y1, gid1 = gen(dif_on_item0=True)
-    res1 = dif_polytomous(y1, gid1, k, model="gpcm")
+    res1 = dif_polytomous(y1, gid1, k, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
     assert res1["flagged_bh"][0]
     assert res1["p_value"][0] < 0.01
     assert res1["effect_size"][0] == res1["effect_size"].max()
     assert res1["flagged_bh"][1:].sum() <= 1  # anchors stay clean
 
     # studied_items subset restricts the sweep
-    sub = dif_polytomous(y1, gid1, k, model="gpcm", studied_items=np.array([0, 3]))
+    sub = dif_polytomous(
+        y1, gid1, k, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05,
+        studied_items=np.array([0, 3]),
+    )
     assert list(sub["item"]) == [0, 3]
 
     # non-contiguous labels {0,2} must densify to 2 groups (df == n_cat), giving
     # the SAME result as contiguous {0,1} -- not an inflated, conservative df.
     gid_gap = np.where(gid1 == 1, 2, 0)
-    res_gap = dif_polytomous(y1, gid_gap, k, model="gpcm")
+    res_gap = dif_polytomous(y1, gid_gap, k, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
     assert np.all(res_gap["df"] == k)  # not (3-1)*k = 2k
     assert res_gap["flagged_bh"][0]  # strong DIF still detected despite label gap
     np.testing.assert_allclose(res_gap["lr"], res1["lr"], rtol=1e-6)
 
     with pytest.raises(ValueError):
-        dif_polytomous(y1, gid1[:-5], k)  # group_id length mismatch
+        dif_polytomous(
+            y1, gid1[:-5], k, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05,
+        )  # group_id length mismatch
 
 
 def test_mantel_haenszel_dif():
@@ -2674,7 +2679,7 @@ def test_dif_polytomous_grm_no_silent_false_negative():
             else:
                 y[p, i] = draw(theta[p], a[i], b[i])
 
-    res = dif_polytomous(y, gid, k, model="grm")
+    res = dif_polytomous(y, gid, k, model="grm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
     # item 0 must NOT be a silent clean report: either surfaced NaN, or (if the
     # fit stayed finite) correctly flagged. A finite p>0.5 unflagged would be the
     # masked false-negative the guard exists to prevent.
