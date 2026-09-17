@@ -372,13 +372,22 @@ jobs:
             --notes-file release_notes.md
       - name: Dispatch package publication from the verified release source
         env:
-          CONTROL_PLANE_COMMIT: ${{ github.sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_COMMIT: ${{ inputs.release_commit }}
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           set -euo pipefail
+          git fetch --no-tags origin "$DEFAULT_BRANCH"
+          CONTROL_PLANE_COMMIT="$(git rev-parse "origin/$DEFAULT_BRANCH")"
+          if ! printf '%s' "$CONTROL_PLANE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "default-branch HEAD is unavailable for package publication dispatch" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" "$CONTROL_PLANE_COMMIT"; then
+            echo "release commit must be an ancestor of the current default branch" >&2
+            exit 1
+          fi
           gh workflow run publish-pypi.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref "$DEFAULT_BRANCH" \
