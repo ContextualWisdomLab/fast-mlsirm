@@ -107,7 +107,8 @@ def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
     assert "permissions:\n      contents: write\n      actions: write" in release_job
     assert "gh workflow run publish-pypi.yml" in release_job
     assert 'DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}' in release_job
-    assert 'CONTROL_PLANE_COMMIT: ${{ github.sha }}' in release_job
+    assert 'git rev-parse "origin/$DEFAULT_BRANCH"' in release_job
+    assert "release commit must be an ancestor of the current default branch" in release_job
     assert '--ref "$DEFAULT_BRANCH"' in release_job
     assert '--ref "v$RELEASE_VERSION"' not in release_job
     assert '-f release_tag="v$RELEASE_VERSION"' in release_job
