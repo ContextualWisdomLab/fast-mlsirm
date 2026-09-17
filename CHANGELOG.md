@@ -312,6 +312,13 @@ per-module implementation is tracked in the sub-issues this PR opens.
 
 ### Fixed
 
+#### Fail-closed pytest outcomes
+
+- Escalate any pytest invocation with a skip, import-or-skip, skipif, xfail, or xpass outcome to a non-zero exit status via a session-level enforcement plugin, so a successful suite proves every collected evidence lane executed.
+- Count collection-time skips as well as setup/call/teardown skips, and fail closed when outcome accounting cannot be observed.
+- Review capability-gated non-executions through an explicit allowlist instead of rewriting capability-specific tests.
+- Treat unexpected passes as failures by default with strict xfail handling.
+
 #### Graphify tooling investigation for #1847 and #1833
 
 - #1847: `to_json`'s node-count shrink guard refused a `cluster-only` write
@@ -401,6 +408,22 @@ per-module implementation is tracked in the sub-issues this PR opens.
   (DIF): Logistic regression modeling as a unitary framework for binary and
   Likert-type (ordinal) item scores* (p. 27). Directorate of Human Resources
   Research and Evaluation, Department of National Defense.
+
+#### Stage-1 bifactor GRM mirt fixture regenerated with corrected category order (#1950)
+
+- `tests/fixtures/bifactor_grm_stage1/generate_mirt_fixture.R` compared the
+  simulated uniform draw against each graded-response boundary probability
+  with `u > p_k`, which reversed the intended category order (higher latent
+  trait produced *lower* observed categories). The nested-event identity
+  `P(Y >= k) = P(u < p_k)` requires `u < p_k`; regenerated `dataset.csv` and
+  `mirt_fixture.json` with the corrected rule and added a category-order
+  guard (`cor(theta_g, rowSums(resp)) > 0.3`) so a reversed rule fails fast
+  next time instead of only being caught by inspection.
+- `crates/mlsirm-core/tests/bifactor_grm_mirt_agreement.rs` still passes
+  unchanged: the Rust<->mirt comparison canonicalizes reflection per
+  dimension before comparing slopes/intercepts/log-likelihood, so it was
+  insensitive to the category-order bug and remains a valid agreement check
+  on the corrected fixture.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.10.0] - 2026-09-17
 
