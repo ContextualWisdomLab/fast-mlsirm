@@ -5,6 +5,18 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
+#### APA 7th docstring citation audit for the late-life reanalysis code path
+
+- Audit `python/fast_mlsirm/{polytomous,bifactor_grm,dif}.py` and the Rust
+  modules they call (`poly.rs`, `bifactor_grm.rs`, `two_tier_grm.rs`,
+  `quadrature.rs`, `dif.rs`, `linking.rs`) for the AGENTS.md rule requiring
+  an APA 7th in-text citation with a verified page/equation locator plus a
+  reference entry on every docstring implementing a method. No behavior or
+  docstring changes; gaps (64 of 74 audited public symbols) are recorded in
+  `docs/doctoring/apa7-docstring-audit-late-life-path.md` and filed as a
+  tracking issue for paper-by-paper follow-up.
+
+
 #### Single-group polytomous two-tier GRM with reduction over the specific tier (stage 4 of #1912)
 
 - Add a single-group full-information polytomous two-tier graded response
