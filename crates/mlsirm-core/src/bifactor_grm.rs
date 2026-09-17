@@ -158,6 +158,11 @@ pub struct BifactorGrmConfig {
     pub newton_iter: usize,
     /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
     pub ridge: f64,
+    /// Compute device for the E-step sweep: `Cpu` runs the `f64` scalar
+    /// sweep; `Gpu`/`Auto` run the WGSL `f32` person-parallel sweep when a
+    /// compatible adapter exists and fall back to CPU otherwise (`Gpu`
+    /// warns on fallback, `Auto` does not).
+    pub device: crate::Device,
 }
 
 // No `Default` impl: `q_general`/`q_specific` are quadrature node counts
@@ -483,7 +488,16 @@ fn log_sum_exp(xs: &[f64]) -> f64 {
 /// One reduced E-step sweep: observed-data loglik plus expected category
 /// counts per item (`counts[i][node][k]`, `node = g * qs + h` for block
 /// items, `node = g` for general-only items).
+///
+/// When `device` is `Gpu`/`Auto` and a compatible adapter exists, the
+/// person sweep runs in the WGSL `f32` kernels
+/// ([`crate::gpu_bifactor::e_step_reduced_gpu`]); otherwise — including the
+/// marginal-loglik oracle path, which always passes `Cpu` — the `f64`
+/// scalar sweep below runs.
 #[allow(clippy::too_many_arguments)]
+// `tg`/`ts` feed only the cfg-gated GPU branch (group moments); the CPU
+// sweep below needs tables and log-weights alone.
+#[cfg_attr(any(not(feature = "gpu"), coverage), allow(unused_variables))]
 pub(crate) fn e_step(
     v: &Validated,
     y: &[usize],
@@ -493,7 +507,69 @@ pub(crate) fn e_step(
     log_ws: &[f64],
     qg: usize,
     qs: usize,
+    tg: &[f64],
+    ts: &[f64],
+    device: crate::Device,
 ) -> (f64, Vec<Vec<Vec<f64>>>) {
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    {
+        if device == crate::Device::Gpu || device == crate::Device::Auto {
+            // Small host-side staging wrappers (no table data is duplicated
+            // beyond this Vec-of-Vec shell): the GPU path flattens them.
+            let tables_wrapped = vec![tables.to_vec()];
+            let tg_wrapped = vec![tg.to_vec()];
+            let ts_wrapped = vec![vec![ts.to_vec(); v.n_specific]];
+            let inputs = crate::gpu_bifactor::ReducedEstepInputs {
+                y,
+                observed,
+                group_id: None,
+                n_persons: v.n_persons,
+                n_items: v.n_items,
+                n_specific: v.n_specific,
+                n_cat: v.n_cat,
+                qg,
+                qs,
+                n_groups: 1,
+                tables_groups: &tables_wrapped,
+                item_block: &v.item_block,
+                blocks: &v.blocks,
+                tg_groups: &tg_wrapped,
+                ts_groups: &ts_wrapped,
+                log_wg,
+                log_ws,
+            };
+            if let Some(res) = crate::gpu_bifactor::e_step_reduced_gpu(&inputs) {
+                let stride = res.counts_stride_nodes;
+                let mut counts: Vec<Vec<Vec<f64>>> =
+                    Vec::with_capacity(v.n_items);
+                for i in 0..v.n_items {
+                    let base = i * stride * v.n_cat;
+                    if v.item_block[i].is_some() {
+                        counts.push(
+                            res.counts[base..base + qg * qs * v.n_cat]
+                                .chunks_exact(v.n_cat)
+                                .map(<[f64]>::to_vec)
+                                .collect(),
+                        );
+                    } else {
+                        counts.push(
+                            res.counts[base..base + qg * v.n_cat]
+                                .chunks_exact(v.n_cat)
+                                .map(<[f64]>::to_vec)
+                                .collect(),
+                        );
+                    }
+                }
+                return (res.loglik, counts);
+            }
+        }
+    }
+    if device == crate::Device::Gpu {
+        eprintln!(
+            "fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found; \
+             falling back to CPU implementation."
+        );
+    }
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
     let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
     for (i, par) in tables.iter().enumerate() {
@@ -792,7 +868,9 @@ fn run_single_start(
 
     loop {
         let tables = fill_logprob_tables(v, &params, tg, ts, qg, qs);
-        let (ll, counts) = e_step(v, y, observed, &tables, log_wg, log_ws, qg, qs);
+        let (ll, counts) = e_step(
+            v, y, observed, &tables, log_wg, log_ws, qg, qs, tg, ts, cfg.device,
+        );
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
@@ -1079,6 +1157,7 @@ pub fn bifactor_grm_marginal_loglik(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        device: crate::Device::Cpu,
     };
     let v = validate(
         y,
@@ -1106,6 +1185,10 @@ pub fn bifactor_grm_marginal_loglik(
         &log_ws,
         tg.len(),
         ts.len(),
+        tg,
+        ts,
+        // Exactness oracle: always the f64 CPU sweep.
+        crate::Device::Cpu,
     )
     .0)
 }
@@ -1142,6 +1225,7 @@ pub fn bifactor_grm_marginal_loglik_brute(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        device: crate::Device::Cpu,
     };
     let v = validate(
         y,
@@ -1308,6 +1392,17 @@ pub(crate) fn pack_params(
 //   multiple-group IRT (conceptual; no equation locator claimed — the pooled
 //   item M-step stacks each group's nodes and expected counts, exactly the
 //   `poly::fit_poly_multigroup` Bock-Zimowski pooling already in this crate).
+//   #1927 full-text verification attempt (2026-09-17): the chapter is absent
+//   from the maintainer's Zotero library and local paper cache, has no open-
+//   access copy, and the Springer chapter page redirects to an institutional
+//   login the automated KW-library route (browser control unavailable this
+//   session) could not complete; only the publisher's own chapter metadata
+//   (title, authors, chapter 25, pp. 433-448) was independently confirmed via
+//   Springer's DOI record and WorldCat. No equation/page locator inside the
+//   chapter is claimed here or below, so nothing internal needed correcting;
+//   the same reference-group multigroup pooling this chapter describes is
+//   independently verified, with page-level locators, via Cai, Yang, &
+//   Hansen (2011, Zotero `TNQ22C7T`) above and Bock & Aitkin (1981) below.
 // - Bafumi et al. (2005) for fixing the per-dimension reflection
 //   `(a, theta) -> (-a, -theta)` by a parameter restriction; here the crate
 //   rule (largest-magnitude slope positive per dimension, read from the
@@ -1381,6 +1476,8 @@ pub struct BifactorMultigroupConfig {
     pub ridge: f64,
     /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
     pub estimate_specific_vars: bool,
+    /// Compute device for the E-step sweep (see [`BifactorGrmConfig::device`]).
+    pub device: crate::Device,
 }
 
 impl Default for BifactorMultigroupConfig {
@@ -1395,6 +1492,7 @@ impl Default for BifactorMultigroupConfig {
             newton_iter: 10,
             ridge: 1e-8,
             estimate_specific_vars: false,
+            device: crate::Device::Cpu,
         }
     }
 }
@@ -1629,6 +1727,7 @@ fn e_step_multigroup(
     log_ws: &[f64],
     qg: usize,
     qs: usize,
+    device: crate::Device,
 ) -> (
     f64,
     Vec<Vec<Vec<Vec<f64>>>>,
@@ -1671,6 +1770,71 @@ fn e_step_multigroup(
             }
         }
         tables_groups.push(tables);
+    }
+
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    {
+        if device == crate::Device::Gpu || device == crate::Device::Auto {
+            let inputs = crate::gpu_bifactor::ReducedEstepInputs {
+                y,
+                observed,
+                group_id: Some(group_id),
+                n_persons: v.n_persons,
+                n_items: v.n_items,
+                n_specific: v.n_specific,
+                n_cat: v.n_cat,
+                qg,
+                qs,
+                n_groups,
+                tables_groups: &tables_groups,
+                item_block: &v.item_block,
+                blocks: &v.blocks,
+                tg_groups,
+                ts_groups,
+                log_wg,
+                log_ws,
+            };
+            if let Some(res) = crate::gpu_bifactor::e_step_reduced_gpu(&inputs) {
+                let stride = res.counts_stride_nodes;
+                let mut counts: Vec<Vec<Vec<Vec<f64>>>> =
+                    Vec::with_capacity(n_groups);
+                for g in 0..n_groups {
+                    let mut cg = Vec::with_capacity(v.n_items);
+                    for i in 0..v.n_items {
+                        let base = (g * v.n_items + i) * stride * v.n_cat;
+                        let n_nodes = if v.item_block[i].is_some() {
+                            qg * qs
+                        } else {
+                            qg
+                        };
+                        cg.push(
+                            res.counts[base..base + n_nodes * v.n_cat]
+                                .chunks_exact(v.n_cat)
+                                .map(<[f64]>::to_vec)
+                                .collect(),
+                        );
+                    }
+                    counts.push(cg);
+                }
+                let mut s2_spec = vec![vec![0.0; v.n_specific]; n_groups];
+                let mut w_spec = vec![vec![0.0; v.n_specific]; n_groups];
+                for g in 0..n_groups {
+                    for s in 0..v.n_specific {
+                        s2_spec[g][s] = res.s2_spec[g * v.n_specific + s];
+                        w_spec[g][s] = res.w_spec[g * v.n_specific + s];
+                    }
+                }
+                return (
+                    res.loglik, counts, res.w_acc, res.s1_g, res.s2_g, s2_spec, w_spec,
+                );
+            }
+        }
+    }
+    if device == crate::Device::Gpu {
+        eprintln!(
+            "fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found; \
+             falling back to CPU implementation."
+        );
     }
 
     let mut counts: Vec<Vec<Vec<Vec<f64>>>> = Vec::with_capacity(n_groups);
@@ -1868,6 +2032,7 @@ fn run_single_start_multigroup(
             log_ws,
             qg,
             qs,
+            cfg.device,
         );
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
@@ -2104,6 +2269,7 @@ pub fn fit_bifactor_grm_multigroup(
             seed: cfg.seed,
             newton_iter: cfg.newton_iter,
             ridge: cfg.ridge,
+            device: cfg.device,
         };
         let single = fit_bifactor_grm(
             y,
@@ -2146,6 +2312,7 @@ pub fn fit_bifactor_grm_multigroup(
         seed: cfg.seed,
         newton_iter: cfg.newton_iter,
         ridge: cfg.ridge,
+        device: cfg.device,
     };
     let v = validate(
         y,
@@ -2489,6 +2656,622 @@ pub fn fit_bifactor_grm_multigroup(
         termination_reason: outcome.termination_reason,
         final_loglik_change: outcome.final_loglik_change,
         best_start,
+        n_parameters,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Fixed-item parameter calibration (FIPC) for the focal group (Kim, 2006,
+// MWU-MEM).
+//
+// A focal group responds to `anchor` items whose general/specific slopes and
+// boundary intercepts are FIXED at reference-calibration values plus new
+// (free) items. The fitter estimates the free-item parameters AND the focal
+// latent distribution — the general-factor mean/variance and, where
+// identified, the specific-factor variances — by Bock-Aitkin MML-EM with the
+// prior updated after EVERY M-step (Kim, 2006, MWU-MEM eqs. 14-15,
+// pp. 361-362; workflow Table 1, p. 362). There is no rescaling of the latent
+// points after an EM cycle (Kim, 2006, p. 362) and no reflection
+// canonicalization: the fixed anchors pin the orientation, including
+// reverse-keyed anchors with negative slopes.
+//
+// # Implementation basis (APA 7th ed.; every locator verified against the
+// # cited source — no invented equation numbers)
+//
+// - Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+//   methods. *Journal of Educational Measurement, 43*(4), 355-381.
+//   https://doi.org/10.1111/j.1745-3984.2006.00021.x — the MWU-MEM
+//   (multiple-weights updating / multiple EM) procedure: M-step item
+//   objective eq. 14 (pp. 361-362), posterior weight update eq. 15 (p. 362),
+//   the EM workflow Table 1 (p. 362), the no-rescale rule ("the ability
+//   points should not be rescaled after each EM cycle", p. 362), the fixed `N(0, 1)` person prior for the
+//   FPC baseline (p. 364), the mean-shift / variance-shift study conditions
+//   (pp. 364-365), and the recommendation to update the prior iteratively
+//   rather than fix it (pp. 377-378).
+// - Paek, I., & Young, M. J. (2005). Investigation of student growth recovery
+//   in a fixed-item linking procedure with a fixed-person prior distribution
+//   for mixed-format test data. *Applied Measurement in Education, 18*(2),
+//   199-215. https://doi.org/10.1207/s15324818ame1802_4 — a fixed person
+//   prior biases the focal growth/shift estimate, while iteratively updating
+//   the prior recovers it (abstract; cf. Kim, 2006, p. 378).
+// - Gibbons et al. (2007), eq. 9 (bifactor graded linear predictor) and eq.
+//   15 (person marginal factoring per general node), plus Gibbons & Hedeker
+//   (1992) for the bifactor EM with Stuart's reduction — the same reduction
+//   this module's E-step already implements (see the module docs).
+// - Bock, R. D., & Zimowski, M. F. (1997). Multiple group IRT. In W. J. van
+//   der Linden & R. K. Hambleton (Eds.), *Handbook of modern item response
+//   theory* (pp. 433-448). Springer.
+//   https://doi.org/10.1007/978-1-4757-2691-6_25 — the node-shift
+//   distribution form `theta_{G,t} = mu + sigma * X_t`,
+//   `theta_{S,s,h} = tau_s * X_h` with the shared Gauss-Hermite weights kept
+//   (conceptual; no equation locator claimed — it is exactly the pooling this
+//   crate's multigroup stage-2 already uses).
+//
+// The parametric-normal prior update (`mu`, `sigma`, and, when requested,
+// `tau_s` from E-step posterior moments) realizes Kim's discrete weight
+// update (eq. 15) inside the Bock-Zimowski parametric family: same
+// update-the-prior-after-every-M-step semantics, normal-family form.
+//
+// # Caller-owned numerics (no hidden clamps, no new constants)
+//
+// Every numeric choice is a caller argument or mirrors an existing one:
+// `q_general`, `q_specific`, `max_iter`, `tol`, `newton_iter`, `ridge` behave
+// exactly like the stage-1/stage-2 controls (same loud-`Err` validation, same
+// Newton M-step); starts mirror `initial_params` start 0 (`a_G = 1.0`,
+// `a_S = 0.8`, cumulative-logit base-rate intercepts, `mu = 0`, `sigma = 1`,
+// `tau = 1`) deterministically with NO jitter and a single start; anchors pin
+// orientation so no canonicalization runs. Group variances are estimated
+// unconstrained-positive with NO clamping: a non-finite or non-positive
+// update is a loud `Err`, mirroring the stage-2 focal update.
+//
+// # References (APA 7th ed.)
+//
+// Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+// methods. *Journal of Educational Measurement, 43*(4), 355-381.
+// https://doi.org/10.1111/j.1745-3984.2006.00021.x
+//
+// Paek, I., & Young, M. J. (2005). Investigation of student growth recovery
+// in a fixed-item linking procedure with a fixed-person prior distribution
+// for mixed-format test data. *Applied Measurement in Education, 18*(2),
+// 199-215. https://doi.org/10.1207/s15324818ame1802_4
+//
+// Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E., Bhaumik,
+// D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., & Stover, A. (2007).
+// Full-information item bifactor analysis of graded response data. *Applied
+// Psychological Measurement, 31*(1), 4-19.
+// https://doi.org/10.1177/0146621606289485
+//
+// Gibbons, R. D., & Hedeker, D. R. (1992). Full-information item bi-factor
+// analysis. *Psychometrika, 57*(3), 423-436.
+// https://doi.org/10.1007/BF02295430
+//
+// Bock, R. D., & Zimowski, M. F. (1997). Multiple group IRT. In W. J.
+// van der Linden & R. K. Hambleton (Eds.), *Handbook of modern item response
+// theory* (pp. 433-448). Springer. https://doi.org/10.1007/978-1-4757-2691-6_25
+
+/// Configuration for [`fit_bifactor_grm_fipc`]. Every field is caller-owned
+/// and range-validated; nothing is clamped. `newton_iter`/`ridge` behave like
+/// the stage-1/stage-2 controls.
+#[derive(Clone, Copy, Debug)]
+pub struct BifactorFipcConfig {
+    /// Gauss-Hermite nodes for the general factor (any `n >= 1`).
+    pub q_general: usize,
+    /// Gauss-Hermite nodes per specific factor (any `n >= 1`).
+    pub q_specific: usize,
+    pub max_iter: usize,
+    pub tol: f64,
+    /// Inner Newton iterations per free-item M-step.
+    pub newton_iter: usize,
+    /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
+    pub ridge: f64,
+    /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
+    pub estimate_specific_vars: bool,
+}
+
+impl Default for BifactorFipcConfig {
+    fn default() -> Self {
+        Self {
+            q_general: 21,
+            q_specific: 11,
+            max_iter: 500,
+            tol: 1e-6,
+            newton_iter: 10,
+            ridge: 1e-8,
+            estimate_specific_vars: false,
+        }
+    }
+}
+
+/// Result of [`fit_bifactor_grm_fipc`].
+///
+/// Anchor items are bit-identical to the fixed inputs. `general_mean` /
+/// `general_sd` are the ESTIMATED focal general-factor mean/SD;
+/// `specific_sd` holds the estimated focal specific-factor SDs when
+/// `estimate_specific_vars` and 1.0 otherwise. `theta_g_eap`/`theta_g_sd`
+/// are per-person general-factor EAPs on the FOCAL scale.
+#[derive(Clone, Debug)]
+pub struct BifactorFipcResult {
+    /// General slopes `a_iG`, length `n_items` (anchors bit-exact, signs kept).
+    pub a_general: Vec<f64>,
+    /// Specific slopes `a_iS`, length `n_items` (`0.0` for general-only
+    /// items; anchors bit-exact, signs kept).
+    pub a_specific: Vec<f64>,
+    /// Ordered boundary intercepts `d_ik`, row-major `n_items * (n_cat - 1)`
+    /// (anchor rows bit-exact).
+    pub threshold: Vec<f64>,
+    /// Estimated focal general-factor mean.
+    pub general_mean: f64,
+    /// Estimated focal general-factor SD.
+    pub general_sd: f64,
+    /// Focal specific-factor SDs, length `n_specific` (1.0 unless estimated).
+    pub specific_sd: Vec<f64>,
+    /// General-factor EAP `E[theta_G | Y_p]` on the focal scale.
+    pub theta_g_eap: Vec<f64>,
+    /// General-factor posterior SD, length `n_persons`.
+    pub theta_g_sd: Vec<f64>,
+    /// Observed-data category counts, row-major `n_items * n_cat`.
+    pub category_counts: Vec<usize>,
+    pub loglik_trace: Vec<f64>,
+    pub n_iter: usize,
+    pub converged: bool,
+    pub termination_reason: String,
+    pub final_loglik_change: f64,
+    /// Free item parameters (anchors are fixed, counted zero) plus estimated
+    /// focal distribution parameters (general mean/variance, and the specific
+    /// variances when estimated).
+    pub n_parameters: usize,
+}
+
+/// Fit the focal group with fixed anchor items (Kim, 2006, MWU-MEM) for the
+/// polytomous bifactor GRM.
+///
+/// `y`/`observed` are row-major `n_persons * n_items` focal responses
+/// (`y` ordered categories `0..n_cat-1`, missing cells dropped MAR);
+/// `specific_map` is length `n_items` with `-1` for general-only items and
+/// `0..n_specific` otherwise; `anchor[i] == true` pins item `i` at
+/// (`fixed_a_general[i]`, `fixed_a_specific[i]`, `fixed_threshold` row `i`)
+/// for ALL EM cycles while the remaining items are freely estimated. Slopes
+/// may be NEGATIVE (reverse-keyed anchors keep their signs bit-exact: no
+/// reflection canonicalization runs). The focal general mean/variance — plus
+/// the focal specific variances iff `cfg.estimate_specific_vars` — are
+/// re-estimated after EVERY M-step from E-step posterior moments (Kim, 2006,
+/// eqs. 14-15, pp. 361-362), with NO rescaling of the latent points (Kim,
+/// 2006, p. 362).
+///
+/// Returns `Err` on malformed input (shapes and config exactly like the
+/// existing fitters; at least one anchor required; fixed arrays finite with
+/// correct lengths; `fixed_a_specific[i]` exactly `0.0` for general-only
+/// items, mirroring `bifactor_grm_marginal_loglik`; anchor thresholds
+/// strictly decreasing per item), unobserved categories, or numerical
+/// failure. Non-convergence reports `converged == false` with
+/// `termination_reason == "max_iter_reached"`, never a substitute.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::needless_range_loop)] // item/node indexing is inherently indexed
+pub fn fit_bifactor_grm_fipc(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_specific: usize,
+    n_cat: usize,
+    anchor: &[bool],
+    fixed_a_general: &[f64],
+    fixed_a_specific: &[f64],
+    fixed_threshold: &[f64],
+    cfg: &BifactorFipcConfig,
+) -> Result<BifactorFipcResult, String> {
+    // Config checks mirror `validate_multigroup_cfg` exactly (quadrature must
+    // resolve a Gauss-Hermite rule; lower bounds only; caller-owned numerics
+    // behave identically).
+    crate::quadrature::require_gh_rule(cfg.q_general, "q_general")?;
+    crate::quadrature::require_gh_rule(cfg.q_specific, "q_specific")?;
+    if cfg.max_iter < 1 {
+        return Err("max_iter must be >= 1".into());
+    }
+    if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    if cfg.newton_iter < 1 {
+        return Err("newton_iter must be >= 1".into());
+    }
+    if !cfg.ridge.is_finite() || cfg.ridge <= 0.0 {
+        return Err("ridge must be finite and positive".into());
+    }
+    // Base structural validation (shapes, blocks, pooled categories, checked
+    // arithmetic) reuses the single-group validator so FIPC accepts exactly
+    // the same data layouts as the existing fitters.
+    let single_cfg = BifactorGrmConfig {
+        q_general: cfg.q_general,
+        q_specific: cfg.q_specific,
+        max_iter: cfg.max_iter,
+        tol: cfg.tol,
+        n_starts: 1,
+        seed: 0x9E37_79B9_7F4A_7C15,
+        newton_iter: cfg.newton_iter,
+        ridge: cfg.ridge,
+        // FIPC (#1912 stage-2b) predates the GPU E-step (#1931, stage 5) and
+        // has no device knob of its own; this reused single-group validator
+        // only checks shapes/blocks, never runs the E-step, so the device
+        // choice here is inert either way.
+        device: crate::Device::Cpu,
+    };
+    let v = validate(
+        y,
+        observed,
+        specific_map,
+        n_persons,
+        n_items,
+        n_specific,
+        n_cat,
+        &single_cfg,
+    )?;
+    if anchor.len() != n_items {
+        return Err("anchor must have length n_items".into());
+    }
+    if !anchor.iter().any(|&a| a) {
+        return Err("at least one anchored (fixed) item is required to identify the focal scale".into());
+    }
+    if fixed_a_general.len() != n_items || fixed_a_specific.len() != n_items {
+        return Err("fixed_a_general/fixed_a_specific must have length n_items".into());
+    }
+    if fixed_threshold.len() != n_items * v.m1 {
+        return Err("fixed_threshold must have length n_items * (n_cat - 1)".into());
+    }
+    if [fixed_a_general, fixed_a_specific, fixed_threshold]
+        .concat()
+        .iter()
+        .any(|x| !x.is_finite())
+    {
+        return Err("fixed anchor parameters must be finite".into());
+    }
+    for (i, block) in v.item_block.iter().enumerate() {
+        if block.is_none() && fixed_a_specific[i] != 0.0 {
+            return Err(format!(
+                "fixed_a_specific[{i}] must be exactly 0.0 for general-only items \
+                 (specific_map[{i}] == -1); got {}",
+                fixed_a_specific[i]
+            ));
+        }
+    }
+    for (i, chunk) in fixed_threshold.chunks_exact(v.m1).enumerate() {
+        if anchor[i] && chunk.windows(2).any(|w| w[0] <= w[1]) {
+            return Err(format!(
+                "fixed thresholds of anchor item {i} must be strictly decreasing"
+            ));
+        }
+    }
+
+    // Init mirrors `initial_params` start 0 deterministically with NO jitter
+    // and a single start: anchors at their fixed values; free items at
+    // `a_G = 1.0` / `a_S = 0.8` with cumulative-logit base-rate intercepts
+    // from the focal data. Focal distribution starts at the reference
+    // (`mu = 0`, `sigma = 1`, `tau = 1`).
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
+    let mut params: Vec<ItemParams> = Vec::with_capacity(n_items);
+    for i in 0..n_items {
+        if anchor[i] {
+            params.push(ItemParams {
+                a_g: fixed_a_general[i],
+                a_s: v.item_block[i].map(|_| fixed_a_specific[i]),
+                d: fixed_threshold[i * v.m1..(i + 1) * v.m1].to_vec(),
+            });
+        } else {
+            let mut freq = vec![1e-3f64; v.n_cat];
+            for p in 0..n_persons {
+                if is_obs(p, i) {
+                    freq[y[p * n_items + i]] += 1.0;
+                }
+            }
+            let tot: f64 = freq.iter().sum();
+            let mut d = vec![0.0f64; v.m1];
+            let mut cum = 0.0f64;
+            for k in (1..v.n_cat).rev() {
+                cum += freq[k] / tot;
+                let c = cum.clamp(1e-4, 1.0 - 1e-4);
+                d[k - 1] = (c / (1.0 - c)).ln();
+            }
+            params.push(ItemParams {
+                a_g: 1.0,
+                a_s: v.item_block[i].map(|_| 0.8),
+                d,
+            });
+        }
+    }
+    let mut mu = 0.0f64;
+    let mut sigma = 1.0f64;
+    let mut taus = vec![1.0f64; v.n_specific];
+
+    let (tg_std, wg) = gh_rule(cfg.q_general)?;
+    let (ts_std, ws) = gh_rule(cfg.q_specific)?;
+    let qg = tg_std.len();
+    let qs = ts_std.len();
+    let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    // Single focal group: every person belongs to group 0.
+    let group_id = vec![0usize; n_persons];
+
+    // EM loop mirrors `run_single_start_multigroup` with `n_groups == 1`:
+    // focal nodes `tg[t] = mu + sigma * tg_std[t]`,
+    // `ts[s][h] = tau[s] * ts_std[h]`; the EXISTING `e_step_multigroup`
+    // sweep is reused directly; convergence via `checked_em_loglik_change`
+    // with the same relative-tolerance rule.
+    let mut loglik_trace: Vec<f64> = Vec::new();
+    let mut converged = false;
+    let mut n_iter = 0usize;
+    let mut termination_reason = "max_iter_reached".to_string();
+    let mut final_loglik_change = f64::NAN;
+
+    loop {
+        let tg: Vec<f64> = tg_std.iter().map(|&x| mu + sigma * x).collect();
+        let ts_focal: Vec<Vec<f64>> = (0..v.n_specific)
+            .map(|s| ts_std.iter().map(|&x| taus[s] * x).collect())
+            .collect();
+        let tg_groups = vec![tg.clone()];
+        let ts_groups = vec![ts_focal.clone()];
+        let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec) = e_step_multigroup(
+            &v,
+            y,
+            observed,
+            &group_id,
+            1,
+            std::slice::from_ref(&params),
+            &tg_groups,
+            &ts_groups,
+            &log_wg,
+            &log_ws,
+            qg,
+            qs,
+            // FIPC predates the GPU E-step (#1931); always run the CPU sweep.
+            crate::Device::Cpu,
+        );
+        let previous = loglik_trace.last().copied();
+        let change = checked_em_loglik_change(ll, previous, n_iter)?;
+        loglik_trace.push(ll);
+        if let Some(change) = change {
+            let prev = previous.expect("change requires a previous log-likelihood");
+            final_loglik_change = change;
+            if final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
+                converged = true;
+                termination_reason = "tolerance_met".to_string();
+                break;
+            }
+        }
+        if n_iter == cfg.max_iter {
+            break;
+        }
+        // M-step, item parameters: ONLY free items via the existing
+        // `m_step_item`, with node coordinates built exactly like the
+        // free-item branch of `run_single_start_multigroup` for `g = 0`
+        // (stacked `(t, h)` with `node = t * qs + h` for block items;
+        // `tg_groups[0]` for general-only items). Anchors stay bit-exact.
+        for i in 0..n_items {
+            if anchor[i] {
+                continue;
+            }
+            let has_specific = v.item_block[i].is_some();
+            let (node_g, node_s): (Vec<f64>, Vec<f64>) = if has_specific {
+                let s = v.item_block[i].expect("block item has a block");
+                let mut gg = Vec::with_capacity(qg * qs);
+                let mut ss = Vec::with_capacity(qg * qs);
+                for t in 0..qg {
+                    for h in 0..qs {
+                        gg.push(tg[t]);
+                        ss.push(ts_focal[s][h]);
+                    }
+                }
+                (gg, ss)
+            } else {
+                (tg.clone(), vec![0.0; qg])
+            };
+            let mut packed = Vec::with_capacity(1 + has_specific as usize + v.m1);
+            packed.push(params[i].a_g);
+            if let Some(a_s) = params[i].a_s {
+                packed.push(a_s);
+            }
+            packed.extend_from_slice(&params[i].d);
+            let updated = m_step_item(
+                packed,
+                has_specific,
+                &node_g,
+                &node_s,
+                &counts[0][i],
+                v.n_cat,
+                cfg.ridge,
+                cfg.newton_iter,
+            );
+            params[i].a_g = updated[0];
+            if has_specific {
+                params[i].a_s = Some(updated[1]);
+                params[i].d = updated[2..].to_vec();
+            } else {
+                params[i].d = updated[1..].to_vec();
+            }
+        }
+        // M-step, focal distribution (ESTIMATED, not pinned): general
+        // `mu = mean EAP`, `var = mean posterior second moment - mu^2`
+        // (Bock-Aitkin/Bock-Zimowski moment update); specifics (when
+        // estimated) `tau^2 = mean posterior second moment at zero mean`.
+        // Mirrors the stage-2 focal update including the loud-`Err` (no
+        // clamping) style.
+        if w_acc[0] <= 0.0 || !w_acc[0].is_finite() {
+            return Err("focal group has no posterior mass".into());
+        }
+        let mean = s1_g[0] / w_acc[0];
+        let var = s2_g[0] / w_acc[0] - mean * mean;
+        if !mean.is_finite() || !var.is_finite() {
+            return Err("non-finite focal general moment update".into());
+        }
+        if var <= 0.0 {
+            return Err(format!(
+                "non-positive focal general variance update ({var:.6e})"
+            ));
+        }
+        mu = mean;
+        sigma = var.sqrt();
+        if cfg.estimate_specific_vars {
+            for s in 0..v.n_specific {
+                if w_spec[0][s] <= 0.0 || !w_spec[0][s].is_finite() {
+                    return Err(format!("focal specific-{s} has no posterior mass"));
+                }
+                let vrow = s2_spec[0][s] / w_spec[0][s];
+                if !vrow.is_finite() {
+                    return Err(format!("non-finite focal specific-{s} update"));
+                }
+                if vrow <= 0.0 {
+                    return Err(format!(
+                        "non-positive focal specific-{s} variance update ({vrow:.6e})"
+                    ));
+                }
+                taus[s] = vrow.sqrt();
+            }
+        }
+        n_iter += 1;
+    }
+
+    // Final EAP pass for theta_G on the FOCAL scale at the winning parameters
+    // (mirrors `fit_bifactor_grm`'s final EAP loop, but with general nodes
+    // `tg_focal[t] = mu + sigma * tg_std[t]` and specific nodes
+    // `tau[s] * ts_std[h]`; the weights stay the standard ones — the
+    // node-shift reparameterization keeps the weights, cf. Bock & Zimowski,
+    // 1997).
+    let tg_focal: Vec<f64> = tg_std.iter().map(|&x| mu + sigma * x).collect();
+    let ts_focal: Vec<Vec<f64>> = (0..v.n_specific)
+        .map(|s| ts_std.iter().map(|&x| taus[s] * x).collect())
+        .collect();
+    let mut tables: Vec<Vec<f64>> = Vec::with_capacity(n_items);
+    for (i, par) in params.iter().enumerate() {
+        match par.a_s {
+            Some(a_s) => {
+                let s = v.item_block[i].expect("block item has a block");
+                let mut lp = vec![0.0f64; qg * qs * v.n_cat];
+                for t in 0..qg {
+                    for h in 0..qs {
+                        let base = par.a_g * tg_focal[t] + a_s * ts_focal[s][h];
+                        let probs = grm_logprobs(base, &par.d);
+                        lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
+                            .copy_from_slice(&probs);
+                    }
+                }
+                tables.push(lp);
+            }
+            None => {
+                let mut lp = vec![0.0f64; qg * v.n_cat];
+                for t in 0..qg {
+                    let base = par.a_g * tg_focal[t];
+                    let probs = grm_logprobs(base, &par.d);
+                    lp[t * v.n_cat..(t + 1) * v.n_cat].copy_from_slice(&probs);
+                }
+                tables.push(lp);
+            }
+        }
+    }
+    let mut theta_g_eap = vec![0.0f64; n_persons];
+    let mut theta_g_sd = vec![0.0f64; n_persons];
+    let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
+    let mut log_i = vec![0.0f64; v.n_specific * qg];
+    let mut log_like_g = vec![0.0f64; qg];
+    let mut tmp_h = vec![0.0f64; qs];
+    for p in 0..n_persons {
+        let mut gen_log = log_wg.clone();
+        for &i in &v.general_only {
+            if !is_obs(p, i) {
+                continue;
+            }
+            let yc = y[p * n_items + i];
+            for t in 0..qg {
+                gen_log[t] += tables[i][t * n_cat + yc];
+            }
+        }
+        for (s, members) in v.blocks.iter().enumerate() {
+            for t in 0..qg {
+                for h in 0..qs {
+                    let mut acc = log_ws[h];
+                    for &i in members {
+                        if !is_obs(p, i) {
+                            continue;
+                        }
+                        let yc = y[p * n_items + i];
+                        acc += tables[i][(t * qs + h) * n_cat + yc];
+                    }
+                    block_acc[(s * qg + t) * qs + h] = acc;
+                }
+                for h in 0..qs {
+                    tmp_h[h] = block_acc[(s * qg + t) * qs + h];
+                }
+                log_i[s * qg + t] = log_sum_exp(&tmp_h);
+            }
+        }
+        for t in 0..qg {
+            let mut acc = gen_log[t];
+            for s in 0..v.n_specific {
+                acc += log_i[s * qg + t];
+            }
+            log_like_g[t] = acc;
+        }
+        let log_lp = log_sum_exp(&log_like_g);
+        let (mut m1, mut m2) = (0.0f64, 0.0f64);
+        for (t, &ll) in log_like_g.iter().enumerate() {
+            let post = (ll - log_lp).exp();
+            let theta = tg_focal[t];
+            m1 += post * theta;
+            m2 += post * theta * theta;
+        }
+        theta_g_eap[p] = m1;
+        theta_g_sd[p] = (m2 - m1 * m1).max(0.0).sqrt();
+    }
+
+    // Assemble dense outputs. NO reflection canonicalization and NO rescaling
+    // of the nodes: the fixed anchors pin the orientation (Kim, 2006, p. 362).
+    let mut a_general = vec![0.0f64; n_items];
+    let mut a_specific = vec![0.0f64; n_items];
+    let mut threshold = vec![0.0f64; n_items * v.m1];
+    for (i, par) in params.iter().enumerate() {
+        a_general[i] = par.a_g;
+        if let Some(a_s) = par.a_s {
+            a_specific[i] = a_s;
+        }
+        threshold[i * v.m1..(i + 1) * v.m1].copy_from_slice(&par.d);
+    }
+
+    let mut category_counts = vec![0usize; n_items * n_cat];
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            if is_obs(p, i) {
+                category_counts[i * n_cat + y[p * n_items + i]] += 1;
+            }
+        }
+    }
+
+    // Free item parameters (anchors are fixed, counted zero) plus estimated
+    // focal distribution parameters — mirrors the multigroup/stage-1
+    // counting.
+    let mut n_parameters = 0usize;
+    for i in 0..n_items {
+        if !anchor[i] {
+            n_parameters += 1 + v.item_block[i].is_some() as usize + v.m1;
+        }
+    }
+    n_parameters += 2;
+    if cfg.estimate_specific_vars {
+        n_parameters += v.n_specific;
+    }
+
+    Ok(BifactorFipcResult {
+        a_general,
+        a_specific,
+        threshold,
+        general_mean: mu,
+        general_sd: sigma,
+        specific_sd: taus,
+        theta_g_eap,
+        theta_g_sd,
+        category_counts,
+        loglik_trace,
+        n_iter,
+        converged,
+        termination_reason,
+        final_loglik_change,
         n_parameters,
     })
 }

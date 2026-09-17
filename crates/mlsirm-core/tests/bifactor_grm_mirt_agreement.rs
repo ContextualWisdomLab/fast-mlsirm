@@ -197,6 +197,7 @@ fn bifactor_grm_agrees_with_mirt_bfactor_graded() {
         seed: 0x51F1_5EED_2026_0916,
         newton_iter: 10,
         ridge: 1e-8,
+        device: mlsirm_core::Device::Cpu,
     };
     let fit = fit_bifactor_grm(
         &y,

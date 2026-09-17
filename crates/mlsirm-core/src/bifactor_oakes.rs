@@ -200,6 +200,10 @@ impl Stage1Provider {
             seed: 0,
             newton_iter: 1,
             ridge: 1e-8,
+            // The Oakes assembly's E-step reruns are exact f64 scalar work
+            // (the cross term needs analytic precision), never the f32 GPU
+            // kernels.
+            device: crate::Device::Cpu,
         };
         let v = validate(
             y,
@@ -314,6 +318,9 @@ impl PosteriorProvider for Stage1Provider {
             &self.log_ws,
             self.qg,
             self.qs,
+            &self.tg,
+            &self.ts,
+            crate::Device::Cpu,
         );
         let mut node_g = Vec::with_capacity(self.v.n_items);
         let mut node_s = Vec::with_capacity(self.v.n_items);

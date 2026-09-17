@@ -71,12 +71,12 @@ def test_poly_int_and_mask_rejects_non_2d_responses():
 
 def test_dif_rejects_2d_group_id():
     with pytest.raises(ValueError, match="group_id must be a non-empty 1-D array"):
-        dif_polytomous(_responses(4, 3, 2), np.zeros((4, 1)), n_cat=2)
+        dif_polytomous(_responses(4, 3, 2), np.zeros((4, 1)), n_cat=2, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
 
 
 def test_dif_rejects_non_numeric_group_id():
     with pytest.raises(ValueError, match="group_id must contain non-negative integers"):
-        dif_polytomous(_responses(4, 3, 2), np.array(["a", "b", "c", "d"]), n_cat=2)
+        dif_polytomous(_responses(4, 3, 2), np.array(["a", "b", "c", "d"]), n_cat=2, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
 
 
 # --- fit_polytomous ---
@@ -330,19 +330,19 @@ def test_cat_simulate_requires_core(monkeypatch):
 
 def test_dif_rejects_empty_items():
     with pytest.raises(ValueError, match="at least one person and one item"):
-        dif_polytomous(np.zeros((4, 0)), np.zeros(4, dtype=int), n_cat=2)
+        dif_polytomous(np.zeros((4, 0)), np.zeros(4, dtype=int), n_cat=2, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
 
 
 def test_dif_rejects_single_group():
     with pytest.raises(ValueError, match="DIF requires at least two groups"):
-        dif_polytomous(_responses(6, 3, 2), np.zeros(6, dtype=int), n_cat=2)
+        dif_polytomous(_responses(6, 3, 2), np.zeros(6, dtype=int), n_cat=2, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
 
 
 def test_dif_requires_core(monkeypatch):
     monkeypatch.setattr(polytomous, "_core_module", lambda: None)
     gid = np.arange(6) % 2
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
-        dif_polytomous(_responses(6, 3, 2), gid, n_cat=2)
+        dif_polytomous(_responses(6, 3, 2), gid, n_cat=2, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
 
 
 # --- u3 helpers ---
