@@ -12,5 +12,8 @@
 - Replace the WGSL zero-mass log-weight sentinel `-1e300` with an f32-representable
   `-1e37` so `create_shader_module` succeeds on Metal (WGSL rejects the abstract
   literal inside an `f32` comparison).
+- Re-enable the `mlsirm-core` default `gpu` feature on the PyO3 cdylib (it had been
+  disabled via `default-features = false` in a WIP salvage commit), so `device="gpu"`
+  again reaches the wgpu kernels instead of always falling back to CPU.
 - Extend study-precision CPU/GPU parity coverage with a q=481 leg and a wide-item
   q=241 Metal 2-D dispatch leg gated by `STAGE5_HIGH_Q=1`.
