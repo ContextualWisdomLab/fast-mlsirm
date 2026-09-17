@@ -127,6 +127,16 @@ pub struct MmleResult {
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
+    /// Machine-readable termination status: `converged`, `max_iter_reached`, or
+    /// `slope_diverged` — a slope pressed against the numerical safety rail
+    /// with the M-step still climbing. That is a Heywood-like boundary
+    /// solution (Bock & Aitkin, 1981, p. 457), reported, never an estimate.
+    pub termination_reason: String,
+    /// Per-item divergence flag, length `n_items`: true where the slope rests
+    /// on `SLOPE_DIVERGENCE_RAIL` with the final M-step still pushing
+    /// outward. When any entry is true, `converged` is false and
+    /// `termination_reason` is `slope_diverged`.
+    pub slope_diverged: Vec<bool>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -172,6 +182,13 @@ pub(crate) fn sigmoid_stable(x: f64) -> f64 {
 /// Calibrate a unidimensional 2PL by MMLE-EM under missing data.
 /// `y` and `observed` are row-major `n_persons * n_items`. Missing cells (where
 /// `observed[idx] == false`) are ignored.
+///
+/// Slope-divergence guard: the item M-step clamps to the crate-wide numerical
+/// safety rail `SLOPE_DIVERGENCE_RAIL` (see its documentation for the
+/// literature basis). A slope resting on the rail with the penalized M-step
+/// still pushing outward is reported through `MmleResult::slope_diverged`
+/// with `converged = false` and `termination_reason = "slope_diverged"`,
+/// never passed off as an estimate.
 pub fn fit_mmle_2pl(
     y: &[f64],
     observed: &[bool],
@@ -207,6 +224,10 @@ pub fn fit_mmle_2pl(
     let mut loglik_trace: Vec<f64> = Vec::new();
     let mut posterior = vec![0.0_f64; n_persons * q];
     let mut converged = false;
+    // Per-item divergence-rail engagement on the M-step that produced the
+    // current params (overwritten every EM iteration; the convergence check
+    // below runs after the M-step, so these are always current).
+    let mut pressed_rail = vec![false; n_items];
 
     for iteration in 0..cfg.max_iter {
         let mut log_p1 = vec![0.0_f64; q * n_items];
@@ -264,6 +285,9 @@ pub fn fit_mmle_2pl(
 
         for i in 0..n_items {
             let (mut ai, mut bi) = (a[i], b[i]);
+            // Fresh per EM iteration: a singular-Hessian break below must not
+            // inherit the previous iteration's engagement.
+            pressed_rail[i] = false;
             for _ in 0..cfg.newton_iter {
                 let (mut g_a, mut g_b, mut h_aa, mut h_bb, mut h_ab) = (0.0, 0.0, 0.0, 0.0, 0.0);
                 for (qi, &node) in GH_NODES.iter().enumerate() {
@@ -287,13 +311,16 @@ pub fn fit_mmle_2pl(
                 }
                 let da = (h_bb * g_a - h_ab * g_b) / det;
                 let db = (h_aa * g_b - h_ab * g_a) / det;
-                // Magnitude guard only. The lower end was 1e-3, which also made
-                // `a > 0` structurally unrepresentable: a reverse-keyed item was
-                // not estimated with a negative slope, it was floored and
-                // reported as 0.001, which reads as an item that measures
-                // nothing. The guard is now symmetric, so the bound constrains
-                // magnitude without constraining sign.
-                ai = (ai - da).clamp(-A_MAGNITUDE_BOUND, A_MAGNITUDE_BOUND);
+                // Divergence-rail engagement, not a measurement bound: record
+                // whether the unclamped Newton proposal lies beyond the rail so
+                // the final M-step can tell "still climbing at the rail" from
+                // "settled interior". The clamp is symmetric, so the rail caps
+                // magnitude without constraining sign — a reverse-keyed item
+                // keeps its negative slope (see `SLOPE_DIVERGENCE_RAIL`).
+                let raw = ai - da;
+                let clamped = raw.clamp(-SLOPE_DIVERGENCE_RAIL, SLOPE_DIVERGENCE_RAIL);
+                pressed_rail[i] = clamped != raw;
+                ai = clamped;
                 bi -= db;
                 if da.abs() + db.abs() < 1e-8 {
                     break;
@@ -323,6 +350,24 @@ pub fn fit_mmle_2pl(
 
     canonicalize_reflection(&mut a, &mut theta);
 
+    // Divergence report: at the rail AND still climbing on the final M-step.
+    // Canonicalization flips `(a, theta)` signs jointly, so magnitudes only —
+    // the rule is flip-invariant.
+    let slope_diverged: Vec<bool> = pressed_rail
+        .iter()
+        .zip(a.iter())
+        .map(|(&pressed, &slope)| pressed && slope.abs() >= SLOPE_DIVERGENCE_RAIL)
+        .collect();
+    let termination_reason = if slope_diverged.iter().any(|&d| d) {
+        converged = false;
+        "slope_diverged"
+    } else if converged {
+        "converged"
+    } else {
+        "max_iter_reached"
+    }
+    .to_string();
+
     let n_iter = loglik_trace.len();
     MmleResult {
         a,
@@ -331,13 +376,52 @@ pub fn fit_mmle_2pl(
         loglik_trace,
         n_iter,
         converged,
+        termination_reason,
+        slope_diverged,
     }
 }
 
-/// Largest slope magnitude the M-step will accept, on the natural scale. A
-/// numerical guard on the Newton step, not a model claim; it is symmetric so
-/// that it bounds magnitude without constraining sign.
-pub(crate) const A_MAGNITUDE_BOUND: f64 = 10.0;
+/// Numerical safety rail on slope magnitude, on the natural scale: the single
+/// crate-wide ceiling every slope M-step clamps to — here and in
+/// `crate::twopl`, `crate::mhrm`, `crate::testlet`, `crate::mixture` and
+/// `crate::mixed` — so one item does not have a different reachable range
+/// depending on which entry point fitted it.
+///
+/// The value carries NO measurement meaning, and no source states it as a
+/// ceiling on discrimination parameters. It is placed where the logistic is
+/// saturated to machine precision over the bulk of the latent distribution
+/// (`|a| = 30` gives `|eta| >= 36` already at `|theta| >= 1.2`, where
+/// `1 - sigmoid(36) < 2^-52`): expected counts and their gradients are
+/// numerically flat there, so no larger finite value is distinguishable as an
+/// optimum. A slope resting on the rail with the penalized M-step still pushing
+/// outward is therefore not an estimate but a Heywood-like boundary solution —
+/// infinite-slope degeneracy (Bock & Aitkin, 1981, p. 457), the same
+/// non-finite-maximum-likelihood failure degenerate response patterns produce
+/// (Bock & Aitkin, 1981, p. 454; Mislevy, 1985, p. 44). It is reported through
+/// the fitter's divergence flag with `converged = false`, never passed off as
+/// an estimate. That follows field practice for excessive,
+/// convergence-problem parameters — prior constraint (MAP estimation) rather
+/// than a substantive ceiling (Chalmers, 2012, pp. 14–15); the ridge penalties
+/// on these M-steps are that prior, and the flag fires only when even the
+/// penalized objective still climbs at the rail. The rail is symmetric, so it
+/// caps magnitude without constraining sign: a reverse-keyed item keeps its
+/// negative slope.
+///
+/// # References (APA 7th ed.)
+///
+/// Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
+/// item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
+/// 443–459. https://doi.org/10.1007/BF02293801
+///
+/// Chalmers, R. P. (2012). mirt: A multidimensional item response theory package
+/// for the R environment. *Journal of Statistical Software, 48*(6), 1–29.
+/// https://doi.org/10.18637/jss.v048.i06
+///
+/// Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+/// (ETS Research Report No. 85–33). Educational Testing Service.
+/// https://eric.ed.gov/?id=ED268138 (Published as Mislevy, 1986,
+/// *Psychometrika, 51*(2), 177–195.)
+pub(crate) const SLOPE_DIVERGENCE_RAIL: f64 = 30.0;
 
 /// Pin the reflection `(a, theta) -> (-a, -theta)` by requiring the
 /// largest-magnitude slope to be positive. `b` is invariant under the flip and

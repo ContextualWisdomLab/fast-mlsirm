@@ -1503,3 +1503,45 @@ fn mc_mhrm_recovery_500() {
     }
     println!("=== done ===");
 }
+
+/// Duplicate columns are perfectly locally dependent: their joint discrimination
+/// is unidentified (a Heywood-like boundary solution) and the Robbins-Monro
+/// steps keep pressing against the numerical safety rail. That must be REPORTED
+/// (a per-item flag plus non-convergence with a reason), never passed off as an
+/// estimate. The ordinary items — including the reverse-keyed one — stay silent.
+#[test]
+fn duplicate_columns_press_the_divergence_rail_and_are_reported() {
+    let (n, n_items) = (1000usize, 4usize);
+    let pattern = vec![1u8; n_items];
+    let a_true = [1.30, -1.10, 1.20];
+    let b_true = [0.10, -0.20, 0.30];
+    let mut rng = Lcg(1932);
+    let mut theta = vec![0.0f64; n];
+    for v in theta.iter_mut() {
+        *v = rng.normal();
+    }
+    let mut y = vec![0usize; n * n_items];
+    for p in 0..n {
+        for i in 0..3 {
+            let base = a_true[i] * theta[p] + b_true[i];
+            let prob = 1.0 / (1.0 + (-base).exp());
+            y[p * n_items + i] = if rng.next_f64() < prob { 1 } else { 0 };
+        }
+        y[p * n_items + 3] = y[p * n_items];
+    }
+    let cfg = MhrmConfig {
+        estimate_se: false,
+        seed: 1932,
+        ..MhrmConfig::default()
+    };
+    let res = fit_mhrm(&y, None, &pattern, n, n_items, 1, &cfg).unwrap();
+    assert_eq!(
+        res.slope_diverged,
+        vec![true, false, false, true],
+        "only the duplicate pair may press the rail: {:?}",
+        res.loading
+    );
+    assert!(!res.converged, "a fit resting on the rail is not converged");
+    assert_eq!(res.termination_reason, "slope_diverged");
+    assert!(res.loading.iter().all(|v| v.is_finite()));
+}

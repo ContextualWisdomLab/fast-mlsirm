@@ -81,9 +81,14 @@ use crate::twopl::{build_corr, chol_lower, flip_corr_dim, sigma_grad, sym_inv_lo
 const MHRM_MAX_DIMS: usize = 64;
 /// Maximum persons/items product guard on the response allocation.
 const MHRM_MAX_CELLS: usize = 200_000_000;
-/// Symmetric loading clamp (loadings are NOT floored positive — reverse-keyed / suppressor
-/// cross-loadings are representable; the reflection anchor fixes only the global per-dimension sign).
-const MHRM_A_BOUND: f64 = 10.0;
+/// Symmetric loading rail: the crate-wide numerical safety guard
+/// (`crate::mmle::SLOPE_DIVERGENCE_RAIL`), not a measurement claim. Loadings
+/// are NOT floored positive — reverse-keyed / suppressor cross-loadings are
+/// representable, and the rail caps magnitude symmetrically so they keep their
+/// sign; the reflection anchor fixes only the global per-dimension sign. A
+/// loading resting on the rail with the Robbins-Monro step still climbing is
+/// reported through `MhrmResult::slope_diverged`, never as an estimate.
+const MHRM_A_BOUND: f64 = crate::mmle::SLOPE_DIVERGENCE_RAIL;
 /// Maximum polytomous response categories (bounds the per-item softmax work).
 const MHRM_MAX_CAT: usize = 64;
 
@@ -227,8 +232,15 @@ pub struct MhrmResult {
     pub acceptance_rate: f64,
     pub n_cycles: usize,
     pub converged: bool,
-    /// `converged` or `max_cycles_reached`.
+    /// `converged`, `max_cycles_reached`, or `slope_diverged` — a loading
+    /// pressed against the numerical safety rail (`MHRM_A_BOUND`) with the
+    /// Robbins-Monro step still climbing: a Heywood-like boundary solution,
+    /// reported, never an estimate.
     pub termination_reason: String,
+    /// Per-item divergence flag, length `J`: true where a free loading rests
+    /// on the rail with the final RM cycle still pushing outward. When any
+    /// entry is true, `converged` is false.
+    pub slope_diverged: Vec<bool>,
     /// Windowed mean parameter change at termination.
     pub final_param_change: f64,
     /// `#{L_id = 1}` loadings `+ J * (n_cat - 1)` category parameters (`+ D(D-1)/2` free
@@ -671,6 +683,32 @@ fn validate(
 /// `y` is a row-major `n_persons * n_items` binary (`0/1`) response array; `observed` an optional
 /// row-major bool mask (missing dropped MAR). `loading_pattern` is a row-major `n_items * n_dims`
 /// 0/1 confirmatory pattern; every dimension needs a pure single-dimension anchor item.
+///
+/// Slope-divergence guard: the loading RM step clamps to the crate-wide numerical
+/// safety rail `crate::mmle::SLOPE_DIVERGENCE_RAIL` — a Heywood-like boundary
+/// solution (Bock & Aitkin, 1981, p. 457), degenerate-pattern non-finite ML
+/// (Bock & Aitkin, 1981, p. 454; Mislevy, 1985, p. 44), handled by prior
+/// constraint rather than a substantive ceiling (Chalmers, 2012, pp. 14–15).
+/// A loading resting on the rail with the final RM cycle still pushing outward
+/// is reported through `MhrmResult::slope_diverged` with `converged = false`
+/// and `termination_reason = "slope_diverged"`, never passed off as an
+/// estimate. See `crate::mmle::SLOPE_DIVERGENCE_RAIL` for the full literature
+/// basis.
+///
+/// # References (APA 7th ed.)
+///
+/// Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
+/// item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
+/// 443–459. https://doi.org/10.1007/BF02293801
+///
+/// Chalmers, R. P. (2012). mirt: A multidimensional item response theory package
+/// for the R environment. *Journal of Statistical Software, 48*(6), 1–29.
+/// https://doi.org/10.18637/jss.v048.i06
+///
+/// Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+/// (ETS Research Report No. 85–33). Educational Testing Service.
+/// https://eric.ed.gov/?id=ED268138 (Published as Mislevy, 1986,
+/// *Psychometrika, 51*(2), 177–195.)
 #[allow(clippy::too_many_arguments)]
 pub fn fit_mhrm(
     y: &[usize],
@@ -782,6 +820,11 @@ pub fn fit_mhrm(
     let mut c = cfg.proposal_sd;
     let mut converged = false;
     let mut n_cycles = 0usize;
+    // Per-item divergence-rail engagement on the RM step of the final executed
+    // cycle (overwritten every cycle): any outward push while pinned engages
+    // the clamp regardless of the decayed gain, so the last cycle tells "still
+    // climbing at the rail" from "settled interior".
+    let mut pressed_rail = vec![false; n_items];
     let mut final_change = 0.0f64;
     let mut acceptance_rate = 0.0f64;
     let mut recent: Vec<f64> = Vec::with_capacity(cfg.window);
@@ -889,9 +932,13 @@ pub fn fit_mhrm(
                 change2 += step * step;
             }
             // clamp only the SLOPE slots (0..|S_i|); the intercept/steps are unbounded
+            let mut hit_rail = false;
             for t in 0..li {
-                params[i][t] = params[i][t].clamp(-MHRM_A_BOUND, MHRM_A_BOUND);
+                let clamped = params[i][t].clamp(-MHRM_A_BOUND, MHRM_A_BOUND);
+                hit_rail |= clamped != params[i][t];
+                params[i][t] = clamped;
             }
+            pressed_rail[i] = hit_rail;
             // Louis observed-information accumulation over the convergence stage
             if cfg.estimate_se && k > cfg.burn_in {
                 for idx in 0..pi * pi {
@@ -1028,6 +1075,20 @@ pub fn fit_mhrm(
             }
         }
     }
+    // Divergence report: a free loading on the rail AND still climbing on the
+    // final RM cycle (magnitudes only — flip-invariant under the reflection
+    // canonicalization below; off-pattern slots are exactly 0.0).
+    let slope_diverged: Vec<bool> = (0..n_items)
+        .map(|i| {
+            pressed_rail[i]
+                && dims_of[i]
+                    .iter()
+                    .any(|&d| loading[i * n_dims + d].abs() >= MHRM_A_BOUND)
+        })
+        .collect();
+    if slope_diverged.iter().any(|&d| d) {
+        converged = false;
+    }
     let mut theta_eap = theta_sum
         .iter()
         .map(|v| v / theta_count as f64)
@@ -1115,12 +1176,15 @@ pub fn fit_mhrm(
         acceptance_rate,
         n_cycles,
         converged,
-        termination_reason: if converged {
+        termination_reason: if slope_diverged.iter().any(|&d| d) {
+            "slope_diverged"
+        } else if converged {
             "converged"
         } else {
             "max_cycles_reached"
         }
         .into(),
+        slope_diverged,
         final_param_change: final_change,
         n_parameters: n_free_loadings + n_items * n_free_cat + n_corr,
     })

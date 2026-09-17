@@ -364,11 +364,11 @@ fn mixture_private_singular_updates_and_empty_initialization_are_safe() {
     let zeros = vec![0.0; GH_NODES.len()];
     assert_eq!(
         newton_item_2pl(&zeros, &zeros, 1.0, 0.0, true, 3, 0.0, 0.0),
-        (1.0, 0.0)
+        (1.0, 0.0, false)
     );
     assert_eq!(
         newton_item_2pl(&zeros, &zeros, 1.0, 0.0, false, 3, 0.0, 0.0),
-        (1.0, 0.0)
+        (1.0, 0.0, false)
     );
     let initialized = init_mmle_like(&[0.0], &[false], 1, 1);
     assert_eq!(initialized, vec![0.0]);
@@ -519,4 +519,47 @@ fn ordinary_mixture_data_is_returned_unflipped() {
         "all-positive data must come back all-positive: {:?}",
         res.a
     );
+}
+
+/// Duplicate columns are perfectly locally dependent: their joint discrimination
+/// is unidentified (a Heywood-like boundary solution) and the penalized M-step
+/// keeps pressing against the numerical safety rail. That must be REPORTED (a
+/// per-(class, item) flag plus non-convergence with a reason), never passed off
+/// as an estimate. Single-class sanity pin: the flag vector is class-major, so
+/// with `C = 1` it lines up with the items.
+#[test]
+fn duplicate_columns_press_the_divergence_rail_and_are_reported() {
+    let (n, j) = (1000usize, 4usize);
+    let a_true = [1.30, -1.10, 1.20];
+    let b_true = [0.10, -0.20, 0.30];
+    let mut rng = TestRng(1932);
+    let theta: Vec<f64> = (0..n).map(|_| rng.normal()).collect();
+    let mut y = vec![0.0_f64; n * j];
+    for p in 0..n {
+        for i in 0..3 {
+            let eta = a_true[i] * theta[p] + b_true[i];
+            y[p * j + i] = rng.bern(1.0 / (1.0 + (-eta).exp()));
+        }
+        y[p * j + 3] = y[p * j];
+    }
+    let observed = vec![true; n * j];
+    let res = fit_mixture(
+        &y,
+        &observed,
+        n,
+        j,
+        1,
+        MixtureModel::TwoPl,
+        &MixtureConfig::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        res.slope_diverged,
+        vec![true, false, false, true],
+        "only the duplicate pair may press the rail: {:?}",
+        res.a
+    );
+    assert!(!res.converged, "a fit resting on the rail is not converged");
+    assert_eq!(res.termination_reason, "slope_diverged");
+    assert!(res.a.iter().all(|v| v.is_finite()));
 }

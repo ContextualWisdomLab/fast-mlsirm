@@ -198,19 +198,23 @@ const PARAM_BOUND: (f64, f64) = (-12.0, 12.0);
 /// constraining sign: a reverse-keyed item is estimated with a negative slope
 /// rather than floored.
 const SLOPE_BOUND: (f64, f64) = (-SLOPE_MAGNITUDE, SLOPE_MAGNITUDE);
-/// Largest slope magnitude the M-step accepts, on the natural scale. The same
-/// value `crate::twopl`, `crate::mhrm`, `crate::mmle`, `crate::testlet` and
-/// `crate::mixture` already use, so one item does not have a different
-/// reachable range depending on which entry point fitted it. It is a numerical
-/// guard chosen for consistency across the crate, not a value any source
-/// states; a slope resting on it is reported through
-/// [`MixedItemEstimate::at_bound`] rather than passed off as an estimate.
+/// Numerical safety rail on slope magnitude, on the natural scale: the alias
+/// this module uses for the crate-wide `crate::mmle::SLOPE_DIVERGENCE_RAIL`,
+/// so one item does not have a different reachable range depending on which
+/// entry point fitted it.
 ///
-/// This tightens the previous ceiling, which was `exp(4)` only because the old
-/// `log a` parametrization bounded the log scale at 4. A discrimination above
-/// 10 is a degenerate fit rather than a measurement, and it is now visible
-/// instead of silent.
-const SLOPE_MAGNITUDE: f64 = 10.0;
+/// The value carries NO measurement meaning, and no source states it as a
+/// ceiling on discrimination parameters (Bock & Aitkin, 1981, p. 457, treat
+/// infinite-slope boundary solutions as Heywood-like degeneracy, not as
+/// estimates; degenerate patterns give non-finite ML, Bock & Aitkin, 1981,
+/// p. 454; Mislevy, 1985, p. 44; field practice answers excessive,
+/// convergence-problem parameters with prior constraint, Chalmers, 2012,
+/// pp. 14–15 — see `crate::mmle::SLOPE_DIVERGENCE_RAIL` for the full basis).
+/// A slope resting on it with the M-step still pushing outward is reported
+/// through [`MixedItemEstimate::at_bound`], and forces `converged = false` with
+/// `termination_reason = "slope_diverged"`, rather than passed off as an
+/// estimate.
+const SLOPE_MAGNITUDE: f64 = crate::mmle::SLOPE_DIVERGENCE_RAIL;
 /// Optimizer bound on the `log a` slope of `Ideal` and `Ggum`. Those families
 /// absorb the reflection through their locations, so their slope sign carries
 /// no orientation information and is held positive for identification; this
@@ -892,8 +896,14 @@ fn m_step_item(
     grid: &Grid,
     counts: &[f64],
     max_steps: usize,
-) -> Vec<f64> {
+) -> (Vec<f64>, bool) {
     let mut params = start.to_vec();
+    // Divergence-rail engagement on the slope coordinate of the last accepted
+    // line-search step of this M-step call (see SLOPE_MAGNITUDE): the "still
+    // climbing at the rail" signal. Only the natural-scale slope rail counts — the log-slope bound
+    // of `Ideal`/`Ggum` is identification, and the spatial clamp below is
+    // disambiguated by magnitude (it holds `|v| <= 6`, far inside the rail).
+    let mut pressed_rail = false;
     for _ in 0..max_steps {
         let f0 = item_objective(spec, &params, grid, counts);
         let grad = numeric_gradient(spec, &params, grid, counts);
@@ -929,14 +939,18 @@ fn m_step_item(
         let directional = grad.iter().zip(&step).map(|(g, s)| g * s).sum::<f64>();
         let mut accepted = false;
         for _ in 0..24 {
-            let mut candidate: Vec<f64> = params
+            let raw: Vec<f64> = params
                 .iter()
                 .zip(&step)
                 .map(|(p, s)| p - alpha * s)
                 .collect();
+            let mut candidate = raw.clone();
             clamp_params(spec, &mut candidate, grid.latent_dim);
             let fc = item_objective(spec, &candidate, grid, counts);
             if fc.is_finite() && fc <= f0 - 1e-4 * alpha * directional {
+                if spec.kind.absorbs_reflection_in_slope() && !candidate.is_empty() {
+                    pressed_rail = candidate[0] != raw[0] && candidate[0].abs() >= SLOPE_MAGNITUDE;
+                }
                 params = candidate;
                 accepted = true;
                 break;
@@ -947,7 +961,7 @@ fn m_step_item(
             break;
         }
     }
-    params
+    (params, pressed_rail)
 }
 
 fn m_step(
@@ -956,13 +970,19 @@ fn m_step(
     grid: &Grid,
     counts: &[Vec<f64>],
     n_threads: usize,
-) -> Vec<Vec<f64>> {
+) -> (Vec<Vec<f64>>, Vec<bool>) {
     let n_items = specs.len();
     let workers = n_threads.min(n_items).max(1);
     if workers == 1 || n_items < 4 {
-        return (0..n_items)
-            .map(|i| m_step_item(&specs[i], &params[i], grid, &counts[i], 6))
+        let mut pressed = Vec::with_capacity(n_items);
+        let fitted = (0..n_items)
+            .map(|i| {
+                let (next, hit) = m_step_item(&specs[i], &params[i], grid, &counts[i], 6);
+                pressed.push(hit);
+                next
+            })
             .collect();
+        return (fitted, pressed);
     }
     let chunk = n_items.div_ceil(workers);
     let mut pieces = thread::scope(|scope| {
@@ -971,10 +991,15 @@ fn m_step(
             let start = worker * chunk;
             let end = (start + chunk).min(n_items);
             handles.push(scope.spawn(move || {
+                let mut pressed = Vec::with_capacity(end - start);
                 let fitted = (start..end)
-                    .map(|i| m_step_item(&specs[i], &params[i], grid, &counts[i], 6))
+                    .map(|i| {
+                        let (next, hit) = m_step_item(&specs[i], &params[i], grid, &counts[i], 6);
+                        pressed.push(hit);
+                        next
+                    })
                     .collect::<Vec<_>>();
-                (start, fitted)
+                (start, fitted, pressed)
             }));
         }
         handles
@@ -982,8 +1007,14 @@ fn m_step(
             .map(|h| h.join().expect("mixed M-step worker panicked"))
             .collect::<Vec<_>>()
     });
-    pieces.sort_by_key(|(start, _)| *start);
-    pieces.into_iter().flat_map(|(_, fitted)| fitted).collect()
+    pieces.sort_by_key(|(start, _, _)| *start);
+    let mut fitted_all = Vec::with_capacity(n_items);
+    let mut pressed_all = Vec::with_capacity(n_items);
+    for (_, fitted, pressed) in pieces {
+        fitted_all.extend(fitted);
+        pressed_all.extend(pressed);
+    }
+    (fitted_all, pressed_all)
 }
 
 fn public_estimate(spec: &MixedItemSpec, params: &[f64], latent_dim: usize) -> MixedItemEstimate {
@@ -1144,6 +1175,35 @@ fn contextualize_mixed_update(update: Result<f64, &'static str>) -> Result<f64, 
     }
 }
 
+/// Fit a bank of mixed-format items by marginal-ML EM over a tensor grid.
+/// `y` holds `0..n_categories` responses row-major (`observed = None` means
+/// fully observed); `specs` gives one [`MixedItemSpec`] per item.
+///
+/// Slope-divergence guard: the slope M-step clamps to the crate-wide numerical
+/// safety rail `SLOPE_MAGNITUDE` (`crate::mmle::SLOPE_DIVERGENCE_RAIL`) — a
+/// Heywood-like boundary solution (Bock & Aitkin, 1981, p. 457),
+/// degenerate-pattern non-finite ML (Bock & Aitkin, 1981, p. 454; Mislevy,
+/// 1985, p. 44), handled by prior constraint rather than a substantive ceiling
+/// (Chalmers, 2012, pp. 14–15). A slope resting on the rail with the M-step
+/// still pushing outward is reported through [`MixedItemEstimate::at_bound`]
+/// with `converged = false` and `termination_reason = "slope_diverged"`, never
+/// passed off as an estimate. See `crate::mmle::SLOPE_DIVERGENCE_RAIL` for
+/// the full literature basis.
+///
+/// # References (APA 7th ed.)
+///
+/// Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
+/// item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
+/// 443–459. https://doi.org/10.1007/BF02293801
+///
+/// Chalmers, R. P. (2012). mirt: A multidimensional item response theory package
+/// for the R environment. *Journal of Statistical Software, 48*(6), 1–29.
+/// https://doi.org/10.18637/jss.v048.i06
+///
+/// Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+/// (ETS Research Report No. 85–33). Educational Testing Service.
+/// https://eric.ed.gov/?id=ED268138 (Published as Mislevy, 1986,
+/// *Psychometrika, 51*(2), 177–195.)
 #[allow(clippy::too_many_arguments)]
 pub fn fit_mixed_items(
     y: &[usize],
@@ -1250,8 +1310,12 @@ pub fn fit_mixed_items(
     let mut converged = false;
     let mut termination_reason = "max_iter_reached".to_string();
     let mut completed = 0;
+    // Per-item divergence-rail engagement on the M-step that produced `params`
+    // (overwritten every EM iteration).
+    let mut pressed_rail = vec![false; n_items];
     for iteration in 1..=max_iter {
-        let candidate = m_step(specs, &params, &grid, &state.counts, n_threads);
+        let (candidate, candidate_pressed) =
+            m_step(specs, &params, &grid, &state.counts, n_threads);
         let candidate_tables = build_tables(specs, &candidate, &grid);
         let candidate_state = e_step(
             y,
@@ -1266,6 +1330,7 @@ pub fn fit_mixed_items(
         let change =
             contextualize_mixed_update(assess_loglik_update(state.loglik, candidate_state.loglik))?;
         params = candidate;
+        pressed_rail = candidate_pressed;
         tables = candidate_tables;
         state = candidate_state;
         trace.push(state.loglik);
@@ -1286,6 +1351,25 @@ pub fn fit_mixed_items(
         .collect();
     let mut theta_eap = theta_eap;
     canonicalize_bank_reflection(&mut items, &mut theta_eap);
+    // Divergence report: a slope on the rail AND still climbing on the final
+    // M-step (magnitudes only — flip-invariant under the canonicalization
+    // above). `at_bound` stays value-based; only a pressed slope rail forces
+    // non-convergence, so other bounds keep their existing meaning.
+    let slope_diverged =
+        specs
+            .iter()
+            .zip(&params)
+            .zip(pressed_rail.iter())
+            .any(|((spec, p), &pressed)| {
+                pressed
+                    && spec.kind.absorbs_reflection_in_slope()
+                    && !p.is_empty()
+                    && p[0].abs() >= SLOPE_MAGNITUDE
+            });
+    if slope_diverged {
+        converged = false;
+        termination_reason = "slope_diverged".to_string();
+    }
     Ok(MixedFit {
         items,
         theta_eap,

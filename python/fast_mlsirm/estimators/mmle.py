@@ -31,9 +31,37 @@ MAX_GAUSS_HERMITE_NODES = 100
 MAX_MMLE_FALLBACK_WORKSPACE_BYTES = 512 * 1024 * 1024
 
 
-_A_MAGNITUDE_BOUND = 10.0
-"""Largest slope magnitude the M-step accepts. A numerical guard on the Newton
-step, not a model claim, and symmetric so it does not constrain the sign."""
+_SLOPE_DIVERGENCE_RAIL = 30.0
+"""Numerical safety rail for slope magnitude (not a measurement claim).
+
+At ``|a| = 30`` the logistic is saturated to machine precision over
+``|theta| >= 1.2``, so no larger finite value is numerically distinguishable
+as an optimum; a slope resting on the rail with the penalized M-step still
+pushing outward is reported as diverged, never as an estimate. Symmetric so it
+preserves negative (reverse-keyed) slopes.
+
+Boundary solutions with infinite slopes are Heywood cases (Bock & Aitkin,
+1981, p. 457); ML gives non-finite values for degenerate patterns and Newton
+can fail (Bock & Aitkin, 1981, p. 454). ML yields infinite or implausible
+estimates in small samples (Mislevy, 1985, p. 44); priors pull extreme
+ill-determined values toward the center (Mislevy, 1985, p. 39). Prior
+constraints are used for excessive/convergence-problem parameters, MAP instead
+of ML (Chalmers, 2012, pp. 14–15).
+
+References
+----------
+Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
+item parameters: Application of an EM algorithm. Psychometrika, 46(4),
+443-459. https://doi.org/10.1007/BF02293801
+
+Mislevy, R. J. (1985). Bayes modal estimation in item response models (ETS
+Research Report No. 85-33). Educational Testing Service.
+https://eric.ed.gov/?id=ED268138
+
+Chalmers, R. P. (2012). mirt: A multidimensional item response theory package
+for the R environment. Journal of Statistical Software, 48(6), 1-29.
+https://doi.org/10.18637/jss.v048.i06
+"""
 
 
 def _sigmoid(x: np.ndarray) -> np.ndarray:
@@ -139,7 +167,9 @@ def fit_mmle_2pl(
     -------
     dict with keys: ``a`` (discrimination), ``b`` (difficulty/intercept, so that
     logit = a*theta + b), ``theta`` (EAP ability), ``loglik_trace``, ``n_iter``,
-    ``status``.
+    ``status``, ``slope_diverged`` (list of bool per item; True where the
+    penalized M-step was still pushing outward at the numerical safety rail,
+    i.e. the finite value is a rail stop, never an estimate).
     """
     validated_nodes = _validate_quadrature_node_count(n_nodes)
     if isinstance(max_iter, (bool, np.bool_)) or not isinstance(
@@ -180,6 +210,7 @@ def fit_mmle_2pl(
     nodes_sq = nodes * nodes
     loglik_trace: list[float] = []
     status = "max_iter_reached"
+    pressed = np.zeros(n_items, dtype=bool)
 
     for iteration in range(validated_max_iter):
         # ---- E-step: posterior over quadrature nodes per person ----
@@ -253,14 +284,11 @@ def fit_mmle_2pl(
                     valid
                 ]
 
-            ai -= da
-            bi -= db
-            # Magnitude guard only, symmetric so it bounds magnitude without
-            # constraining sign. The lower end was 1e-3, which also made a
-            # negative slope structurally unrepresentable: a reverse-keyed item
-            # was floored and reported as 0.001, indistinguishable from an item
-            # that measures nothing. Mirrors the Rust core.
-            ai = np.clip(ai, -_A_MAGNITUDE_BOUND, _A_MAGNITUDE_BOUND)
+            raw = ai - da
+            clipped = np.clip(raw, -_SLOPE_DIVERGENCE_RAIL, _SLOPE_DIVERGENCE_RAIL)
+            pressed[active] = clipped != raw
+            ai = clipped
+            bi = bi - db
 
             converged = (np.abs(da) + np.abs(db)) < 1e-8
             done = converged | ~valid
@@ -298,6 +326,13 @@ def fit_mmle_2pl(
         np.negative(a, out=a)
         np.negative(theta, out=theta)
 
+    # Divergence report is flip-invariant: canonicalization above flips the
+    # signs of all slopes jointly, so only magnitudes are consulted here.
+    at_rail = np.abs(a) >= _SLOPE_DIVERGENCE_RAIL
+    slope_diverged = pressed & at_rail
+    if bool(slope_diverged.any()) and status == "converged":
+        status = "slope_diverged"
+
     return {
         "a": a,
         "b": b,
@@ -305,4 +340,5 @@ def fit_mmle_2pl(
         "loglik_trace": loglik_trace,
         "n_iter": len(loglik_trace),
         "status": status,
+        "slope_diverged": [bool(v) for v in slope_diverged],
     }

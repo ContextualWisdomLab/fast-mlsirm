@@ -427,10 +427,13 @@ fn testlet_validate_rejects_malformed() {
     )
     .is_ok());
     assert_eq!(
-        choose_squarem_parameters(Some(vec![1.0]), vec![2.0]),
-        vec![1.0]
+        choose_squarem_parameters(Some((vec![1.0], vec![true])), (vec![2.0], vec![false])),
+        (vec![1.0], vec![true])
     );
-    assert_eq!(choose_squarem_parameters(None, vec![2.0]), vec![2.0]);
+    assert_eq!(
+        choose_squarem_parameters(None, (vec![2.0], vec![false])),
+        (vec![2.0], vec![false])
+    );
     assert_eq!(squarem_alpha(4.0, 1.0), -2.0);
     assert_eq!(squarem_alpha(1.0, 4.0), -1.0);
     assert_eq!(squarem_alpha(0.0, 0.0), -1.0);
@@ -627,4 +630,45 @@ fn ordinary_testlet_data_is_returned_unflipped() {
         "all-positive data must come back all-positive: {:?}",
         res.a
     );
+}
+
+/// Duplicate columns are perfectly locally dependent: their joint discrimination
+/// is unidentified (a Heywood-like boundary solution) and the penalized M-step
+/// keeps pressing against the numerical safety rail. That must be REPORTED (a
+/// per-item flag plus non-convergence with a reason), never passed off as an
+/// estimate. Every item is its own singleton testlet with the variance fixed at
+/// zero, so this is the exact-2PL reduction and the ordinary items — including
+/// the reverse-keyed one — stay silent.
+#[test]
+fn duplicate_columns_press_the_divergence_rail_and_are_reported() {
+    let (n, j, d_n) = (1000usize, 4usize, 4usize);
+    let tid = vec![0usize, 1, 2, 3];
+    let a_true = [1.30, -1.10, 1.20];
+    let beta_true = [0.10, -0.20, 0.30];
+    let mut rng = Lcg(1932);
+    let theta: Vec<f64> = (0..n).map(|_| rng.normal()).collect();
+    let mut y = vec![0.0_f64; n * j];
+    for p in 0..n {
+        for i in 0..3 {
+            let eta = a_true[i] * theta[p] + beta_true[i];
+            y[p * j + i] = rng.bern(1.0 / (1.0 + (-eta).exp()));
+        }
+        y[p * j + 3] = y[p * j];
+    }
+    let observed = vec![true; n * j];
+    let cfg = TestletConfig {
+        estimate_sigma: false,
+        init_sigma2: 0.0,
+        ..TestletConfig::default()
+    };
+    let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::TwoPl, &cfg).unwrap();
+    assert_eq!(
+        res.slope_diverged,
+        vec![true, false, false, true],
+        "only the duplicate pair may press the rail: {:?}",
+        res.a
+    );
+    assert!(!res.converged, "a fit resting on the rail is not converged");
+    assert_eq!(res.termination_reason, "slope_diverged");
+    assert!(res.a.iter().all(|v| v.is_finite()));
 }
