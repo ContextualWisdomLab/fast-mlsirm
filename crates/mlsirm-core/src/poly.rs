@@ -1666,6 +1666,19 @@ fn record_multigroup_em_status(
 /// Bock, R. D., & Zimowski, M. F. (1997). Multiple group IRT. In W. J. van der
 ///   Linden & R. K. Hambleton (Eds.), *Handbook of modern item response theory*
 ///   (pp. 433–448). Springer. https://doi.org/10.1007/978-1-4757-2691-6_25
+///
+/// No equation/page locator inside this chapter is claimed here (the docstring
+/// above cites no chapter-internal page or equation). #1927 full-text
+/// verification attempt (2026-09-17): unobtainable — absent from the
+/// maintainer's Zotero library and local paper cache, no open-access copy, and
+/// the Springer chapter page requires an institutional login the KW-library
+/// proxy route could not complete without browser automation this session;
+/// only the publisher's own chapter metadata (chapter 25, pp. 433-448) was
+/// independently confirmed via Springer's DOI record and WorldCat. The same
+/// reference-group multigroup calibration this chapter describes is
+/// independently verified, with page-level locators, in `bifactor_grm.rs`'s
+/// module docs via Cai, Yang, & Hansen (2011, Zotero `TNQ22C7T`) and Bock &
+/// Aitkin (1981).
 #[allow(clippy::too_many_arguments)]
 pub fn fit_poly_multigroup(
     y: &[usize],
