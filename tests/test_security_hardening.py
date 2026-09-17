@@ -1004,7 +1004,7 @@ def test_polytomous_dif_rejects_unsafe_group_labels_before_native(
 
     monkeypatch.setattr(polytomous, "_core_module", lambda: _RejectPolyDifCore())
     with pytest.raises(ValueError, match="group_id"):
-        polytomous.dif_polytomous(np.array([[0.0], [1.0]]), group_id, 2)
+        polytomous.dif_polytomous(np.array([[0.0], [1.0]]), group_id, 2, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
 
 
 @pytest.mark.parametrize(
@@ -1028,6 +1028,7 @@ def test_polytomous_dif_rejects_unsafe_studied_items_before_native(
             np.array([[0.0], [1.0]]),
             np.array([0, 1]),
             2,
+            model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05,
             studied_items=studied_items,
         )
 
@@ -1051,9 +1052,11 @@ def test_polytomous_dif_rejects_unsafe_controls_before_native(
 
     monkeypatch.setattr(polytomous, "_core_module", lambda: _RejectPolyDifCore())
     n_cat = kwargs.pop("n_cat", 2)
+    base = dict(model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
+    base.update(kwargs)
     with pytest.raises(ValueError, match=match):
         polytomous.dif_polytomous(
-            np.array([[0.0], [1.0]]), np.array([0, 1]), n_cat, **kwargs
+            np.array([[0.0], [1.0]]), np.array([0, 1]), n_cat, **base
         )
 
 def test_nominal_rejects_fractional_categories_before_native(monkeypatch):

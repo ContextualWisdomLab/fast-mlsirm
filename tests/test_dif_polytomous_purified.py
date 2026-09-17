@@ -16,6 +16,13 @@ from fast_mlsirm import dif_polytomous, dif_polytomous_purified
 N_CAT = 4
 SEED = 20_260_915
 THRESHOLDS = np.array([1.2, 0.0, -1.2])
+# Issue #1958: model/q_theta/max_iter/tol/fdr_q/max_rounds/min_anchor_items are
+# all required caller arguments now (no unsourced defaults) -- these are the
+# test suite's own arbitrary but explicit choices, not package defaults.
+REQUIRED = dict(
+    model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05,
+    max_rounds=3, min_anchor_items=4,
+)
 
 
 def _graded_draw(slope, shift, theta, rng):
@@ -52,7 +59,7 @@ def contaminated_data():
 def test_a_clean_bank_keeps_every_item_in_the_anchor(clean_data) -> None:
     responses, group = clean_data
 
-    report = dif_polytomous_purified(responses, group, N_CAT, model="gpcm")
+    report = dif_polytomous_purified(responses, group, N_CAT, **REQUIRED)
 
     assert report["n_anchor"] == responses.shape[1]
     assert report["anchor"].all()
@@ -64,7 +71,7 @@ def test_a_clean_bank_keeps_every_item_in_the_anchor(clean_data) -> None:
 def test_items_with_differential_functioning_leave_the_anchor(contaminated_data) -> None:
     responses, group = contaminated_data
 
-    report = dif_polytomous_purified(responses, group, N_CAT, model="gpcm")
+    report = dif_polytomous_purified(responses, group, N_CAT, **REQUIRED)
 
     assert not report["anchor"][2]
     assert not report["anchor"][5]
@@ -75,7 +82,10 @@ def test_the_unpurified_sweep_returns_no_anchor_at_all(contaminated_data) -> Non
     """The gap this function exists to close."""
     responses, group = contaminated_data
 
-    plain = dif_polytomous(responses, group, N_CAT, model="gpcm")
+    plain = dif_polytomous(
+        responses, group, N_CAT,
+        model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05,
+    )
 
     assert "anchor" not in plain
     assert "purify_termination_reason" not in plain
@@ -85,9 +95,8 @@ def test_the_anchor_floor_stops_the_loop_and_says_so() -> None:
     """Termination must be reported, not inferred from a small anchor."""
     responses, group = _two_group_data(600, {0: 1.5, 1: -1.5, 2: 1.5, 3: -1.5}, 6)
 
-    report = dif_polytomous_purified(
-        responses, group, N_CAT, model="gpcm", min_anchor_items=5
-    )
+    kwargs = dict(REQUIRED, min_anchor_items=5)
+    report = dif_polytomous_purified(responses, group, N_CAT, **kwargs)
 
     assert report["purify_termination_reason"] == "insufficient_anchor_items"
     assert not report["purify_converged"]
@@ -101,7 +110,7 @@ def test_the_anchor_floor_stops_the_loop_and_says_so() -> None:
 def test_the_plain_sweep_fields_are_all_still_returned(clean_data) -> None:
     responses, group = clean_data
 
-    report = dif_polytomous_purified(responses, group, N_CAT, model="gpcm")
+    report = dif_polytomous_purified(responses, group, N_CAT, **REQUIRED)
 
     for key in ("item", "lr", "df", "p_value", "flagged_bh", "effect_size"):
         assert key in report
@@ -112,10 +121,20 @@ def test_zero_rounds_reduces_to_the_unpurified_sweep(contaminated_data) -> None:
     """``max_rounds=0`` must do the initial sweep and stop, not skip it."""
     responses, group = contaminated_data
 
-    report = dif_polytomous_purified(
-        responses, group, N_CAT, model="gpcm", max_rounds=0
-    )
+    kwargs = dict(REQUIRED, max_rounds=0)
+    report = dif_polytomous_purified(responses, group, N_CAT, **kwargs)
 
     assert report["rounds"] == 0
     assert report["anchor"].all()
     assert np.isfinite(report["p_value"]).any()
+
+
+def test_missing_q_theta_or_model_raises(clean_data) -> None:
+    """Issue #1958: no unsourced default node count or model selection."""
+    responses, group = clean_data
+    without_q_theta = {k: v for k, v in REQUIRED.items() if k != "q_theta"}
+    with pytest.raises(TypeError):
+        dif_polytomous_purified(responses, group, N_CAT, **without_q_theta)
+    without_model = {k: v for k, v in REQUIRED.items() if k != "model"}
+    with pytest.raises(TypeError):
+        dif_polytomous_purified(responses, group, N_CAT, **without_model)
