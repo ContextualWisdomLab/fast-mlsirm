@@ -5,18 +5,6 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
-#### APA 7th docstring citation audit for the late-life reanalysis code path
-
-- Audit `python/fast_mlsirm/{polytomous,bifactor_grm,dif}.py` and the Rust
-  modules they call (`poly.rs`, `bifactor_grm.rs`, `two_tier_grm.rs`,
-  `quadrature.rs`, `dif.rs`, `linking.rs`) for the AGENTS.md rule requiring
-  an APA 7th in-text citation with a verified page/equation locator plus a
-  reference entry on every docstring implementing a method. No behavior or
-  docstring changes; gaps (64 of 74 audited public symbols) are recorded in
-  `docs/doctoring/apa7-docstring-audit-late-life-path.md` and filed as a
-  tracking issue for paper-by-paper follow-up.
-
-
 #### Single-group polytomous two-tier GRM with reduction over the specific tier (stage 4 of #1912)
 
 - Add a single-group full-information polytomous two-tier graded response
@@ -60,6 +48,27 @@
   (8.12s, final loglik -1246.539916) — `|loglik diff| = 0.000000`, well
   inside the 5e-3 tolerance.
 
+#### Verify Bock & Zimowski (1997) locators in bifactor/multigroup docs (#1927)
+
+- **Full-text verification attempted, chapter unobtainable.** Bock &
+  Zimowski (1997), *Multiple group IRT* (Handbook of Modern IRT, ch. 25,
+  pp. 433-448), cited in `crates/mlsirm-core/src/bifactor_grm.rs` and
+  `poly::fit_poly_multigroup`, is absent from the maintainer's Zotero
+  library and local paper cache, has no open-access copy, and the Springer
+  chapter page redirects to an institutional login; the KW library
+  (kupis.kw.ac.kr) document-delivery/e-book route could not be completed
+  because Chrome browser automation was unavailable this session. Only the
+  publisher's own chapter metadata (chapter 25, pp. 433-448) was
+  independently confirmed via Springer's DOI record and WorldCat.
+- **No internal locator needed correcting.** Both citation sites already
+  claimed no chapter-internal equation or page locator (the pooling claim
+  was labeled "conceptual"), so there was nothing unverifiable to remove.
+  Both comments now record the verification attempt and its outcome, and
+  point to the already page-verified Cai, Yang, & Hansen (2011, Zotero
+  `TNQ22C7T`) and Bock & Aitkin (1981) references — read in full — as the
+  independently verified sources for the same reference-group multigroup
+  pooling this chapter describes.
+
 #### Release cut 0.10.0
 
 - Project version is bumped to 0.10.0 in `pyproject.toml`, `crates/mlsirm-core`,
@@ -93,6 +102,29 @@
   directory again holds only genuinely unreleased notes.
 
 ### Fixed
+
+#### Graphify tooling investigation for #1847 and #1833
+
+- #1847: `to_json`'s node-count shrink guard refused a `cluster-only` write
+  on an unchanged graph after `build_from_json`'s ghost-merge pass
+  legitimately collapsed a manifest-derived duplicate node into its
+  AST-canonical twin (`crate:mlsirm-core` / `pkg_mlsirm_core`, zero
+  incident edges dropped). `build_from_json` now records the collapsed
+  count (`_ghost_dedup_count`); the shrink guard excuses a drop only when
+  fully explained by it. Upstream PR:
+  https://github.com/Graphify-Labs/graphify/pull/3623.
+- #1833: a workspace-only `Cargo.toml` (`[workspace]`, no `[package]`)
+  correctly emits no package node, but the extractor's zero-node detector
+  could not tell that apart from an unexplained failure and printed a
+  persistent warning every run. The manifest parser now marks this case
+  `skipped`, so the by-design exclusion is explicit instead of warning.
+  Upstream PR: https://github.com/Graphify-Labs/graphify/pull/3622.
+- No fast-mlsirm runtime, Cargo, or Python code changed — both issues were
+  tooling-only (Graphify artifact refresh/reviewability), confirmed via a
+  RED-then-GREEN regression test in the `seonghobae/graphify` fork before
+  the upstream PRs were opened.
+- Pinned install/rollback instructions for trying the fork fix locally are
+  recorded on fast-mlsirm#1833.
 
 #### Clippy lint triage for #1905
 
