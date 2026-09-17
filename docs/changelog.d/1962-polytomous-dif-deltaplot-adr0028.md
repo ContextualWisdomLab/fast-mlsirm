@@ -70,12 +70,11 @@
   default for one minor release.
 - All in-repo call sites (package, tests, docs, examples) that relied on a
   removed default were updated to pass the old value explicitly.
-
-## Deferred (not in this PR)
-
-- The PyO3 entry points backing `logistic_dif`/`logistic_dif_purified`
-  (`fdr_q`, `max_iter`) keep their own Rust-side defaults (`fast_mlsirm._core`
-  module functions, per `docs/api/renames-and-defaults-20260917.csv`'s
-  `pyo3` rows) — mirroring the Python-side default removal into the PyO3
-  binding is a separate, Rust-build-required change tracked for a follow-up
-  PR rather than done here (this PR is Python-only per its scope).
+- **Not yet mirrored on the PyO3 side (Python-only change; follow-up
+  needed).** The PyO3 entry points backing `logistic_dif`/
+  `logistic_dif_purified` (`fdr_q`, `max_iter`) keep their own Rust-side
+  defaults (`fast_mlsirm._core` module functions, per
+  `docs/api/renames-and-defaults-20260917.csv`'s `pyo3` rows) — mirroring
+  the Python-side default removal into the PyO3 binding is a separate,
+  Rust-build-required change tracked for a follow-up PR rather than done
+  here (this PR is Python-only per its scope).
