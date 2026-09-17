@@ -5,7 +5,7 @@ import pytest
 
 from fast_mlsirm import FitConfig, MLSIRMParams
 from fast_mlsirm.config import PenaltyConfig as _PenaltyConfig
-from fast_mlsirm.objective import model_flags, neg_loglik_and_grad, validate_factor_id
+from fast_mlsirm.objective import get_model_flags, neg_loglik_and_grad, validate_factor_id
 
 
 _ZERO_PENALTY = _PenaltyConfig(
@@ -37,7 +37,7 @@ def _reference_neg_loglik_and_grad(y, factors, params, config):
     production path, so it pins the objective, every gradient block, and every
     summation axis to the published formula rather than to prior code.
     """
-    free_alpha, uses_space = model_flags(config.normalized_model())
+    free_alpha, uses_space = get_model_flags(config.normalized_model())
     penalty = config.penalty
     eps = config.eps_distance
 
@@ -193,7 +193,7 @@ def test_neg_loglik_and_grad_matches_independent_reference():
 
 
 def _reference_penalty_only(params, config) -> float:
-    free_alpha, uses_space = model_flags(config.normalized_model())
+    free_alpha, uses_space = get_model_flags(config.normalized_model())
     penalty = config.penalty
     value = 0.5 * penalty.lambda_theta * float(np.vdot(params.theta, params.theta))
     value += 0.5 * penalty.lambda_b * float(np.vdot(params.b, params.b))
@@ -441,3 +441,42 @@ def test_objective_add_penalty_uses_space():
     )
     val = _add_penalty(params, penalty, free_alpha=True, uses_space=True)
     assert val > 0.0
+
+
+def test_get_model_flags_matches_old_model_flags_and_warns():
+    from fast_mlsirm.objective import model_flags
+
+    with pytest.deprecated_call():
+        old = model_flags("MLS2PLM")
+    assert old == get_model_flags("MLS2PLM")
+
+
+def test_compute_linear_predictor_requires_model_and_eps_distance():
+    from fast_mlsirm.objective import compute_linear_predictor
+
+    params = MLSIRMParams(
+        theta=np.zeros((1, 1)), alpha=np.zeros(1), b=np.zeros(1),
+        xi=np.zeros((1, 2)), zeta=np.zeros((1, 2)), tau=0.0,
+    )
+    with pytest.raises(TypeError):
+        compute_linear_predictor(params, np.array([0]))
+    with pytest.raises(TypeError):
+        compute_linear_predictor(params, np.array([0]), model="MLS2PLM")
+    with pytest.raises(TypeError):
+        compute_linear_predictor(params, np.array([0]), eps_distance=1e-8)
+
+
+def test_linear_predictor_alias_warns_and_matches_new_name():
+    from fast_mlsirm.objective import compute_linear_predictor, linear_predictor
+
+    params = MLSIRMParams(
+        theta=np.array([[0.5]]), alpha=np.array([0.2]), b=np.array([0.1]),
+        xi=np.array([[0.3, -0.1]]), zeta=np.array([[-0.2, 0.4]]), tau=0.1,
+    )
+    with pytest.deprecated_call():
+        old_eta, old_dist = linear_predictor(params, np.array([0]))
+    new_eta, new_dist = compute_linear_predictor(
+        params, np.array([0]), model="MLS2PLM", eps_distance=1e-8
+    )
+    assert np.allclose(old_eta, new_eta)
+    assert np.allclose(old_dist, new_dist)

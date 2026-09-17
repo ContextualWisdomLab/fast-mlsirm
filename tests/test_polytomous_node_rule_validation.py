@@ -61,6 +61,9 @@ def test_public_polytomous_fit_rejects_hostile_node_rule_without_stringification
             model=1,
             q=7,
             max_iter=1,
+            tol=1e-6,
+            xi_points=4000,
+            xi_seed=0x9E37_79B9_7F4A_7C15,
             node_rule=_HostileNodeRule(),
         )
 
@@ -73,5 +76,5 @@ def test_public_2pl_fit_rejects_hostile_node_rule_without_stringification() -> N
             model=1,
             q=7,
             max_iter=1,
-            node_rule=_HostileNodeRule(),
+            node_rule=_HostileNodeRule(), tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15
         )

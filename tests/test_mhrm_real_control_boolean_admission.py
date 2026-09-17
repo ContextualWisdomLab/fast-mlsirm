@@ -39,9 +39,13 @@ def test_boolean_real_controls_fail_before_response_or_native_work(
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
 
     controls = {
+        "model": 1,
         "max_cycles": 2,
         "burn_in": 1,
         "mh_steps": 1,
+        "target_accept": 0.3,
+        "tol": 1e-3,
+        "seed": 0x9E37_79B9_7F4A_7C15,
         control_name: boolean_value,
     }
     with pytest.raises(ValueError, match=rf"{control_name} must be a finite real scalar"):

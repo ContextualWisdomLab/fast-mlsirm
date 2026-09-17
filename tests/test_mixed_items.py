@@ -100,6 +100,7 @@ def test_mixed_dominance_bank_converges_and_cpu_threads_are_equivalent():
         item_models=["2pl", "grm", "gpcm", "nominal"],
         n_categories=[2, 3, 3, 3],
         q_theta=11,
+        q_xi=7,
         max_iter=80,
         tol=1e-5,
         require_convergence=True,
@@ -142,7 +143,7 @@ def test_expanded_response_families_jointly_converge_with_valid_constraints():
         max_iter=100,
         tol=1e-6,
         n_threads=2,
-        require_convergence=True,
+        require_convergence=True, q_xi=7
     )
 
     _assert_actual_convergence(fit, tol=1e-6, max_iter=100)
@@ -178,7 +179,7 @@ def test_homogeneous_two_pl_matches_existing_gpcm_binary_cell():
         max_iter=80,
         tol=1e-5,
         n_threads=2,
-        require_convergence=True,
+        require_convergence=True, q_xi=7
     )
     homogeneous = fit_polytomous(y, 2, "gpcm", q_theta=11, max_iter=80, tol=1e-5)
 
@@ -304,9 +305,9 @@ def test_item_parameter_constructor_preserves_pre_asymptote_positional_contract(
 def test_mixed_input_contract_and_required_convergence():
     y = np.tile([[0.0, 0.0], [1.0, 1.0]], (10, 1))
     with pytest.raises(ValueError, match="item_models length"):
-        fit_mixed_items(y, ["2pl"], [2, 2])
+        fit_mixed_items(y, ["2pl"], [2, 2], q_theta=21, q_xi=7, max_iter=100, tol=1e-5)
     with pytest.raises(ValueError, match="requires exactly 2 categories"):
-        fit_mixed_items(y, ["2pl", "2pl"], [3, 2])
+        fit_mixed_items(y, ["2pl", "2pl"], [3, 2], q_theta=21, q_xi=7, max_iter=100, tol=1e-5)
     with pytest.raises(RuntimeError, match="max_iter_reached"):
         fit_mixed_items(
             y,
@@ -315,7 +316,7 @@ def test_mixed_input_contract_and_required_convergence():
             q_theta=7,
             max_iter=1,
             tol=1e-14,
-            require_convergence=True,
+            require_convergence=True, q_xi=7
         )
 
     y[0, 0] = np.nan
@@ -327,6 +328,6 @@ def test_mixed_input_contract_and_required_convergence():
         max_iter=20,
         tol=1e-3,
         n_threads=1,
-        require_convergence=True,
+        require_convergence=True, q_xi=7
     )
     _assert_actual_convergence(fit, tol=1e-3, max_iter=20)

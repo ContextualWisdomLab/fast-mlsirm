@@ -118,13 +118,14 @@ class GpcmFit:
 def fit_gpcm(
     responses: np.ndarray,
     n_cat: int,
-    model: int | ExploratoryModel | ConfirmatoryModel = 1,
+    model: int | ExploratoryModel | ConfirmatoryModel,
     q: int = 21,
-    max_iter: int = 500,
-    tol: float = 1e-6,
+    *,
+    max_iter: int,
+    tol: float,
     node_rule: str = "gh",
-    xi_points: int = 4000,
-    xi_seed: int = 0x9E37_79B9_7F4A_7C15,
+    xi_points: int,
+    xi_seed: int,
 ) -> GpcmFit:
     """Fit the generalized partial credit model (compute in Rust; Muraki, 1992).
 
