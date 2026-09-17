@@ -5,6 +5,36 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
+#### Bifactor GRM observed-information standard errors (Oakes)
+
+Stage-3 standard errors for the single-group polytomous bifactor graded
+response model (stage 3 of #1912): `mlsirm_core::bifactor_oakes::
+bifactor_oakes_se` (with `BifactorOakesConfig`) returns the full
+item-parameter observed information, its inverse vcov, and standard errors
+via the Oakes (1999, eq. 6) identity, evaluated at given item parameters.
+The complete-data gradient and Hessian are analytic
+(`poly::grm_node_hessian`, cross-checked against central finite differences
+in tests); the cross term re-runs the Gibbons-Hedeker reduced E-step once
+per free parameter. The assembly is written behind a `PosteriorProvider`
+trait so the stage-2 multigroup calibration reuses it with group-specific
+E-steps. A non-positive-definite information matrix is reported with
+`positive_definite = false` and a `non_pd_reason`, while `vcov`/`se` are
+`None` — never a generalized inverse or any other substitute (#1912
+acceptance criterion 3). Python surface:
+`fast_mlsirm.bifactor_grm.bifactor_oakes_se` returning `BifactorOakesSe`
+(quadrature counts and the cross-term step are required caller arguments).
+Evidence: analytic-vs-finite-difference Q-Hessian agreement; Oakes
+information vs numerical Hessian of the exact marginal log-likelihood on a
+tiny problem; mean-SE vs empirical-SD agreement over 100 simulation
+replicates at recovery scale (worst 0.235, Monte Carlo noise ~7%);
+small-grid convergence stabilization; mirt `SE.type = "Oakes"`
+agreement on the committed fixture (SEs 8.4e-3, vcov 1.9e-2 at matched
+quadpts = 15); study-settings grid convergence at 121 vs. 241 Gauss-Hermite
+nodes per dimension (#1929's node-count cap removal made this grid
+reachable) — Oakes SEs agree to `maxRel|dSE| = 8.76e-9`, run once locally
+in `bifactor_oakes_calibration::study_settings_se_converges_at_121_vs_241_nodes`
+(`#[ignore]`d as long-running, ~46 min at `q=241`).
+
 #### GPU-parallel bifactor E-step and joint person bootstrap with caller-controlled stopping
 
 - Add a GPU-parallel E-step for the Bock-Aitkin bifactor GRM with
@@ -76,6 +106,23 @@
   `mirt::bfactor` with a two-tier specification on a committed fixture
   (slopes/intercepts/correlation/loglik agreement bands with measured values
   reported in the tests).
+
+#### Public API naming convention and unsourced-defaults policy (#1959)
+
+- **ADR-0028** (`docs/adr/0028-public-api-naming-and-defaults-policy.md`,
+  Proposed): one verb-first naming convention and one unsourced-defaults
+  policy (numerical-precision controls, decision thresholds, seeds, model
+  choice) for every public `fast_mlsirm` callable and PyO3 entry point.
+- `tools/inventory_public_api.py`: regenerates a full public-callable
+  inventory (`docs/api/inventory-YYYYMMDD.csv`) via static analysis, no Rust
+  build required.
+- `tools/classify_renames_and_defaults.py`: mechanically applies ADR-0028's
+  rules to the inventory, producing
+  `docs/api/renames-and-defaults-YYYYMMDD.csv` with a proposed name and a
+  per-default decision (`keep+source` / `require` / `change`) for every
+  callable, absorbing #1958/#1960's completed `dif_polytomous*` outcome.
+No code, name, or default changes in this PR (Phase 1, documentation only);
+per-module implementation is tracked in the sub-issues this PR opens.
 
 #### Fixed-item parameter calibration (FIPC) for polytomous GRM
 
@@ -265,6 +312,13 @@
 
 ### Fixed
 
+#### Fail-closed pytest outcomes
+
+- Escalate any pytest invocation with a skip, import-or-skip, skipif, xfail, or xpass outcome to a non-zero exit status via a session-level enforcement plugin, so a successful suite proves every collected evidence lane executed.
+- Count collection-time skips as well as setup/call/teardown skips, and fail closed when outcome accounting cannot be observed.
+- Review capability-gated non-executions through an explicit allowlist instead of rewriting capability-specific tests.
+- Treat unexpected passes as failures by default with strict xfail handling.
+
 #### Graphify tooling investigation for #1847 and #1833
 
 - #1847: `to_json`'s node-count shrink guard refused a `cluster-only` write
@@ -354,6 +408,22 @@
   (DIF): Logistic regression modeling as a unitary framework for binary and
   Likert-type (ordinal) item scores* (p. 27). Directorate of Human Resources
   Research and Evaluation, Department of National Defense.
+
+#### Stage-1 bifactor GRM mirt fixture regenerated with corrected category order (#1950)
+
+- `tests/fixtures/bifactor_grm_stage1/generate_mirt_fixture.R` compared the
+  simulated uniform draw against each graded-response boundary probability
+  with `u > p_k`, which reversed the intended category order (higher latent
+  trait produced *lower* observed categories). The nested-event identity
+  `P(Y >= k) = P(u < p_k)` requires `u < p_k`; regenerated `dataset.csv` and
+  `mirt_fixture.json` with the corrected rule and added a category-order
+  guard (`cor(theta_g, rowSums(resp)) > 0.3`) so a reversed rule fails fast
+  next time instead of only being caught by inspection.
+- `crates/mlsirm-core/tests/bifactor_grm_mirt_agreement.rs` still passes
+  unchanged: the Rust<->mirt comparison canonicalizes reflection per
+  dimension before comparing slopes/intercepts/log-likelihood, so it was
+  insensitive to the category-order bug and remains a valid agreement check
+  on the corrected fixture.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.10.0] - 2026-09-17
 

@@ -7,7 +7,7 @@ from collections.abc import Sequence
 import numpy as np
 import pytest
 
-from fast_mlsirm import bifactor_scoreability
+from fast_mlsirm import assess_bifactor_scoreability
 from fast_mlsirm.bifactor_scoreability import (
     MAX_BIFACTOR_FACTORS,
     MAX_BIFACTOR_WORK_UNITS,
@@ -34,7 +34,7 @@ def _uniquenesses() -> np.ndarray:
 
 def test_result_vectors_cannot_reenable_write_access():
     """Immutable results resist assignment and NumPy write-flag reactivation."""
-    result = bifactor_scoreability(_loadings(), _uniquenesses())
+    result = assess_bifactor_scoreability(_loadings(), _uniquenesses(), zero_tolerance=0.0)
     for vector in (
         result.ecv_ss,
         result.ecv_sg,
@@ -57,7 +57,7 @@ def test_oversized_object_ndarray_is_rejected_before_float_conversion():
     loadings = np.empty((n_items, MAX_BIFACTOR_FACTORS), dtype=object)
     uniquenesses = np.ones(n_items, dtype=np.float64)
     with pytest.raises(ValueError, match="work budget"):
-        bifactor_scoreability(loadings, uniquenesses)
+        assess_bifactor_scoreability(loadings, uniquenesses, zero_tolerance=0.0)
 
 
 class _OversizedNestedSequence(Sequence):
@@ -101,16 +101,20 @@ def test_oversized_nested_sequence_is_rejected_before_numpy_materialization():
     uniquenesses = np.ones(len(loadings), dtype=np.float64)
 
     with pytest.raises(ValueError, match="work budget"):
-        bifactor_scoreability(loadings, uniquenesses)
+        assess_bifactor_scoreability(loadings, uniquenesses, zero_tolerance=0.0)
 
 
 def test_nested_sequence_inspection_normalizes_caller_exceptions():
     """Untrusted sequence errors become stable package-owned shape errors."""
     with pytest.raises(ValueError, match="2-D item-by-factor matrix"):
-        bifactor_scoreability(_FailingNestedSequence(), _uniquenesses())
+        assess_bifactor_scoreability(
+        _FailingNestedSequence(), _uniquenesses(), zero_tolerance=0.0
+    )
 
 
 def test_shape_less_array_protocol_provider_uses_bounded_materialized_shape():
     """Non-sequence array protocols retain the post-materialization shape check."""
-    result = bifactor_scoreability(_ArrayProtocolProvider(), [0.60, 0.42])
+    result = assess_bifactor_scoreability(
+        _ArrayProtocolProvider(), [0.60, 0.42], zero_tolerance=0.0
+    )
     assert result.factor_item_counts == (2, 2)

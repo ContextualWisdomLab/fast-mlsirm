@@ -38,6 +38,7 @@ def test_bifactor_bootstrap_shapes_and_se() -> None:
         q_specific=11,
         n_jobs=2,
         base_seed=123,
+        ci_level=0.95,
         max_iter=25,
         tol=1e-3,
         n_starts=1,
@@ -97,6 +98,7 @@ def test_bifactor_bootstrap_reproducibility() -> None:
         q_general=11,
         q_specific=11,
         base_seed=42,
+        ci_level=0.95,
         max_iter=8,
         tol=1e-3,
         n_starts=1,
@@ -116,3 +118,36 @@ def test_bifactor_bootstrap_reproducibility() -> None:
         res_run2.replicate_threshold,
         atol=1e-12,
     )
+
+
+def test_base_seed_ci_level_max_iter_n_starts_tol_are_required() -> None:
+    """ADR-0028 (#1963): stochastic seed and precision controls have no default."""
+    n_persons, n_items, n_cat, n_specific = 40, 4, 3, 1
+    smap = np.zeros(n_items, dtype=np.int64)
+    rng = np.random.default_rng(999)
+    responses = rng.integers(0, n_cat, size=(n_persons, n_items)).astype(float)
+
+    base = dict(
+        responses=responses,
+        specific_map=smap,
+        n_cat=n_cat,
+        n_specific=n_specific,
+        n_replicates=4,
+        batch_size=4,
+        mc_stopping_ratio=0.001,
+        compute_budget_seconds=1200.0,
+        q_general=11,
+        q_specific=11,
+        base_seed=42,
+        ci_level=0.95,
+        max_iter=8,
+        tol=1e-3,
+        n_starts=1,
+    )
+    for missing in ("base_seed", "ci_level", "max_iter", "n_starts", "tol"):
+        kwargs = {k: v for k, v in base.items() if k != missing}
+        try:
+            run_bifactor_bootstrap(**kwargs)
+        except TypeError:
+            continue
+        raise AssertionError(f"expected TypeError when {missing!r} is omitted")

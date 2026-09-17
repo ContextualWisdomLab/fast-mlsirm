@@ -1171,7 +1171,7 @@ def test_unidimensional_polytomous_rejects_unsafe_int64_cast_before_native(
         warnings.simplefilter("error", RuntimeWarning)
         with pytest.raises(ValueError, match="n_cat"):
             polytomous.fit_polytomous(
-                np.array([[1e30]]), n_cat=10**40, q_theta=7, max_iter=1
+                np.array([[1e30]]), n_cat=10**40, model="grm", q_theta=7, max_iter=1, tol=1e-6
             )
 
 
@@ -1214,8 +1214,11 @@ def test_polytomous_fitters_reject_unsafe_budgets_before_native(
 
     monkeypatch.setattr(polytomous, "_core_module", lambda: _RejectPolytomousCore())
     function = getattr(polytomous, function_name)
+    extra = {"model": "grm", "tol": 1e-6}
+    if function_name == "fit_lsirm_polytomous":
+        extra["q_xi"] = 7
     with pytest.raises(ValueError, match="n_cat|max_iter"):
-        function(np.array([[0.0]]), q_theta=7, **kwargs)
+        function(np.array([[0.0]]), q_theta=7, **extra, **kwargs)
 
 
 @pytest.mark.parametrize(

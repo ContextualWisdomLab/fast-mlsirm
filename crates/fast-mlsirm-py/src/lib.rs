@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use mlsirm_core::agreement::{validate_scoring_with_thresholds as core_validate_scoring, ValidationThresholds};
+use mlsirm_core::agreement::{
+    validate_scoring_with_thresholds as core_validate_scoring, ValidationThresholds,
+};
 use mlsirm_core::equating::{
     analytic_see as core_analytic_see, bootstrap_see as core_bootstrap_see,
     circle_arc_equate as core_circle_arc_equate,
@@ -16,18 +18,13 @@ use mlsirm_core::fitstats::{
     benjamini_hochberg as core_benjamini_hochberg, chi2_sf as core_chi2_sf,
     cluster_moment_covariance as core_cluster_moment_covariance,
     factorized_multilevel_moments as core_factorized_multilevel_moments,
-    factorized_trait_moments as core_factorized_trait_moments,
-    infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
-    m2_cmle_rasch as core_m2_cmle_rasch, m2_rmsea2 as core_m2,
-    m2_rmsea2_structured as core_m2_structured, person_fit as core_person_fit,
-    poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2,
+    factorized_trait_moments as core_factorized_trait_moments, infit_outfit as core_infit_outfit,
+    leniency_residuals as core_leniency_residuals, m2_cmle_rasch as core_m2_cmle_rasch,
+    m2_rmsea2 as core_m2, m2_rmsea2_structured as core_m2_structured,
+    person_fit as core_person_fit, poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2,
     projected_m2 as core_projected_m2,
-    projected_m2_workspace_elements as core_projected_m2_workspace_elements,
-    s_x2 as core_s_x2, SX2Config, PROJECTED_M2_MAX_WORKSPACE_ELEMENTS,
-};
-use mlsirm_core::linking::{
-    irt_link as core_irt_link, link_fixed_item_parameters as core_link_fixed_item_parameters,
-    LinkMethod,
+    projected_m2_workspace_elements as core_projected_m2_workspace_elements, s_x2 as core_s_x2,
+    SX2Config, PROJECTED_M2_MAX_WORKSPACE_ELEMENTS,
 };
 use mlsirm_core::inference::{
     finite_difference_hessian as core_finite_difference_hessian,
@@ -36,19 +33,34 @@ use mlsirm_core::inference::{
     vcov_from_hessian as core_vcov_from_hessian,
 };
 use mlsirm_core::interaction_map::residual_interaction_map as core_residual_interaction_map;
+use mlsirm_core::jmle_opt::{
+    adam as core_jmle_adam, lbfgs as core_jmle_lbfgs, run_optimizer as core_jmle_run_optimizer,
+};
+use mlsirm_core::linking::{
+    irt_link as core_irt_link, link_fixed_item_parameters as core_link_fixed_item_parameters,
+    LinkMethod,
+};
+use mlsirm_core::marginal::{
+    fit_marginal_full as core_fit_marginal_full, Anchors, ItemCovariate, MarginalConfig,
+    PopulationSpec, XiRuleKind,
+};
+use mlsirm_core::nodes::XiRule;
 use mlsirm_core::sampling_design::{
     finite_population_achieved_proportion as core_finite_population_achieved_proportion,
     finite_population_proportion_design as core_finite_population_proportion_design,
     AllocationMethod as CoreAllocationMethod, SamplingStratum as CoreSamplingStratum,
     ACHIEVED_PROPORTION_SCHEMA_VERSION, SAMPLING_DESIGN_SCHEMA_VERSION,
 };
-use mlsirm_core::jmle_opt::{adam as core_jmle_adam, lbfgs as core_jmle_lbfgs, run_optimizer as core_jmle_run_optimizer};
-use mlsirm_core::marginal::{
-    fit_marginal_full as core_fit_marginal_full, Anchors, ItemCovariate, MarginalConfig,
-    PopulationSpec, XiRuleKind,
-};
-use mlsirm_core::nodes::XiRule;
 
+use mlsirm_core::bifactor_grm::{
+    fit_bifactor_grm as core_fit_bifactor_grm,
+    fit_bifactor_grm_fipc as core_fit_bifactor_grm_fipc,
+    fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup, BifactorFipcConfig,
+    BifactorGrmConfig, BifactorMultigroupConfig,
+};
+use mlsirm_core::bifactor_oakes::{
+    bifactor_oakes_se as core_bifactor_oakes_se, BifactorOakesConfig,
+};
 use mlsirm_core::cdm::{
     fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina, fit_ho_cdm as core_fit_ho_cdm,
     fit_ho_gdina as core_fit_ho_gdina, fit_seq_gdina as core_fit_seq_gdina,
@@ -103,12 +115,6 @@ use mlsirm_core::fitstats::{
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
-use mlsirm_core::bifactor_grm::{
-    fit_bifactor_grm as core_fit_bifactor_grm,
-    fit_bifactor_grm_fipc as core_fit_bifactor_grm_fipc,
-    fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup, BifactorFipcConfig,
-    BifactorGrmConfig, BifactorMultigroupConfig,
-};
 use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
@@ -161,8 +167,8 @@ use mlsirm_core::scoring::{
     cat_ability_mle_device as core_cat_ability_mle_device,
     cat_ability_standard_error_device as core_cat_ability_standard_error_device,
     cat_item_information_device as core_cat_item_information_device,
-    cat_select_item_device as core_cat_select_item_device,
     cat_next_item_device as core_cat_next_item_device,
+    cat_select_item_device as core_cat_select_item_device,
     eapsum_tables_device as core_eapsum_tables_device,
     empirical_reliability_device as core_empirical_reliability_device,
     plausible_values_device as core_plausible_values_device,
@@ -1576,6 +1582,114 @@ fn fit_bifactor_grm_multigroup(
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("best_start", res.best_start)?;
     out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Observed-information standard errors for the single-group polytomous
+/// bifactor graded response model via the Oakes (1999, eq. 6, p. 480)
+/// identity, evaluated at GIVEN item parameters (valid at every point, not
+/// only the MLE): `d^2 l/d xi d xi' = [d^2 Q/d xi' d xi' + d^2 Q/d xi' d xi]`.
+/// The E-step is the Gibbons-Hedeker reduced E-step (Gibbons et al., 2007,
+/// eq. 15); each item loads the general factor plus at most one specific
+/// (Gibbons et al., 2007, eq. 9). `a_specific` must be exactly `0.0` for
+/// general-only items; `threshold` is row-major `n_items * (n_cat - 1)`
+/// strictly decreasing per item. `q_general`/`q_specific`/`fd_step` are
+/// REQUIRED caller arguments (no defaults below the 121-node study floor;
+/// any `q >= 1` is accepted per #1929's quadrature-cap removal, with
+/// `require_gh_rule` guarding the allocation for absurd node counts —
+/// never a silent substitution). Returns a dict with
+/// `labels`, `information` (row-major `k x k`, always present), `vcov` /
+/// `se` (or `None` when the information is not positive definite — never a
+/// substitute), `positive_definite`, `non_pd_reason` (or `None`).
+///
+/// References (APA 7th ed.): Oakes, D. (1999). Direct calculation of the
+/// information matrix via the EM algorithm. *Journal of the Royal
+/// Statistical Society Series B: Statistical Methodology, 61*(2), 479-482.
+/// https://doi.org/10.1111/1467-9868.00188; Gibbons, R. D., et al. (2007).
+/// Full-information item bifactor analysis of graded response data.
+/// *Applied Psychological Measurement, 31*(1), 4-19.
+/// https://doi.org/10.1177/0146621606289485
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (a_general, a_specific, threshold, y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general, q_specific, fd_step))]
+fn bifactor_oakes_se(
+    py: Python<'_>,
+    a_general: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_general: usize,
+    q_specific: usize,
+    fd_step: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let y_slice = y.as_slice()?;
+    let obs_vec: Option<Vec<bool>> = match &observed {
+        Some(o) => Some(o.as_slice()?.to_vec()),
+        None => None,
+    };
+    let yy: Vec<usize> = y_slice
+        .iter()
+        .enumerate()
+        .map(|(idx, &v)| {
+            // Missing cells (masked out) may carry any negative placeholder
+            // (the Python wrapper sends 0); with no mask every cell is
+            // observed, so a negative category is a loud error — never a
+            // silent substitution to 0.
+            if v < 0 {
+                match obs_vec.as_ref() {
+                    None => {
+                        return Err(PyValueError::new_err(
+                            "y categories must be non-negative when observed is None",
+                        ));
+                    }
+                    Some(o) if !o[idx] => return Ok(0usize),
+                    _ => {}
+                }
+            }
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let smap: Vec<i32> = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            i32::try_from(v)
+                .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = BifactorOakesConfig {
+        q_general,
+        q_specific,
+        fd_step,
+    };
+    let res = core_bifactor_oakes_se(
+        a_general.as_slice()?,
+        a_specific.as_slice()?,
+        threshold.as_slice()?,
+        &yy,
+        obs_vec.as_deref(),
+        &smap,
+        n_persons,
+        n_items,
+        n_specific,
+        n_cat,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("labels", res.labels)?;
+    out.set_item("information", res.information)?;
+    out.set_item("vcov", res.vcov)?;
+    out.set_item("se", res.se)?;
+    out.set_item("positive_definite", res.positive_definite)?;
+    out.set_item("non_pd_reason", res.non_pd_reason)?;
     Ok(out.into())
 }
 
@@ -6837,7 +6951,10 @@ fn polytomous_predictions(
     )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
-    out.set_item("probabilities", PyArray1::from_vec(py, result.probabilities))?;
+    out.set_item(
+        "probabilities",
+        PyArray1::from_vec(py, result.probabilities),
+    )?;
     out.set_item("expected", PyArray1::from_vec(py, result.expected))?;
     Ok(out.into())
 }
@@ -7747,14 +7864,10 @@ fn m2_structured_stat(
     Ok(out.into())
 }
 
-
-
 /// Projected M2 quadratic form ownership entrypoint (dense residual / Delta / Xi).
 fn decode_m2_item_sets(values: &[i64], offsets: &[i64]) -> PyResult<Vec<Vec<usize>>> {
     if offsets.is_empty() || offsets[0] != 0 {
-        return Err(PyValueError::new_err(
-            "item-set offsets must start at zero",
-        ));
+        return Err(PyValueError::new_err("item-set offsets must start at zero"));
     }
     let final_offset = usize::try_from(*offsets.last().unwrap_or(&-1))
         .map_err(|_| PyValueError::new_err("item-set offsets must be non-negative"))?;
@@ -7912,11 +8025,13 @@ fn projected_m2(
         ));
     }
     if xi_arr.shape() != [s, s] {
-        return Err(PyValueError::new_err("xi must be residual_len x residual_len"));
+        return Err(PyValueError::new_err(
+            "xi must be residual_len x residual_len",
+        ));
     }
     let p = delta_arr.shape()[1];
-    let workspace_elements = core_projected_m2_workspace_elements(s, p)
-        .map_err(PyValueError::new_err)?;
+    let workspace_elements =
+        core_projected_m2_workspace_elements(s, p).map_err(PyValueError::new_err)?;
     if workspace_elements > PROJECTED_M2_MAX_WORKSPACE_ELEMENTS {
         return Err(PyValueError::new_err(
             "projected M2 workspace exceeds supported element budget",
@@ -9176,13 +9291,8 @@ fn cat_item_information(
     );
     let device = Device::parse(device)
         .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
-    core_cat_item_information_device(
-        &bank,
-        theta.as_slice()?,
-        xi_mean.as_slice()?,
-        device,
-    )
-    .map_err(PyValueError::new_err)
+    core_cat_item_information_device(&bank, theta.as_slice()?, xi_mean.as_slice()?, device)
+        .map_err(PyValueError::new_err)
 }
 
 /// Maximum-Fisher-information next-item selection with administered exclusion.
@@ -9285,16 +9395,21 @@ fn jmle_optimize_adam<'py>(
     learning_rate: f64,
     max_iter: usize,
     tolerance: f64,
-) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, String)> {
+) -> PyResult<(
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    String,
+)> {
     let x0_slice = x0.as_slice()?.to_vec();
     let mut obj_cb = |x: &[f64]| -> Result<(f64, Vec<f64>, f64), String> {
         let arr = PyArray1::from_slice(py, x);
         let out = objective
             .call1((arr,))
             .map_err(|e| format!("jmle objective failed: {e}"))?;
-        let (obj, grad, loglik): (f64, Vec<f64>, f64) = out
-            .extract()
-            .map_err(|e| format!("jmle objective must return (float, sequence[float], float): {e}"))?;
+        let (obj, grad, loglik): (f64, Vec<f64>, f64) = out.extract().map_err(|e| {
+            format!("jmle objective must return (float, sequence[float], float): {e}")
+        })?;
         Ok((obj, grad, loglik))
     };
     let (x, obj_t, ll_t, status) =
@@ -9318,16 +9433,21 @@ fn jmle_optimize_lbfgs<'py>(
     max_iter: usize,
     tolerance: f64,
     history: usize,
-) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, String)> {
+) -> PyResult<(
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    String,
+)> {
     let x0_slice = x0.as_slice()?.to_vec();
     let mut obj_cb = |x: &[f64]| -> Result<(f64, Vec<f64>, f64), String> {
         let arr = PyArray1::from_slice(py, x);
         let out = objective
             .call1((arr,))
             .map_err(|e| format!("jmle objective failed: {e}"))?;
-        let (obj, grad, loglik): (f64, Vec<f64>, f64) = out
-            .extract()
-            .map_err(|e| format!("jmle objective must return (float, sequence[float], float): {e}"))?;
+        let (obj, grad, loglik): (f64, Vec<f64>, f64) = out.extract().map_err(|e| {
+            format!("jmle objective must return (float, sequence[float], float): {e}")
+        })?;
         Ok((obj, grad, loglik))
     };
     let (x, obj_t, ll_t, status) =
@@ -9353,16 +9473,22 @@ fn jmle_optimize<'py>(
     learning_rate: f64,
     tolerance: f64,
     lbfgs_history: usize,
-) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, String, usize)> {
+) -> PyResult<(
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    String,
+    usize,
+)> {
     let x0_slice = x0.as_slice()?.to_vec();
     let mut obj_cb = |x: &[f64]| -> Result<(f64, Vec<f64>, f64), String> {
         let arr = PyArray1::from_slice(py, x);
         let out = objective
             .call1((arr,))
             .map_err(|e| format!("jmle objective failed: {e}"))?;
-        let (obj, grad, loglik): (f64, Vec<f64>, f64) = out
-            .extract()
-            .map_err(|e| format!("jmle objective must return (float, sequence[float], float): {e}"))?;
+        let (obj, grad, loglik): (f64, Vec<f64>, f64) = out.extract().map_err(|e| {
+            format!("jmle objective must return (float, sequence[float], float): {e}")
+        })?;
         Ok((obj, grad, loglik))
     };
     let (x, obj_t, ll_t, status, n_iter) = core_jmle_run_optimizer(
@@ -9886,7 +10012,6 @@ fn empirical_reliability(
     .map_err(PyValueError::new_err)
 }
 
-
 /// Chi-square upper-tail survival P(Chi2_df >= x).
 #[pyfunction]
 fn chi2_sf(x: f64, df: f64) -> f64 {
@@ -10003,16 +10128,17 @@ fn finite_population_proportion_design(
             "stratum population sizes and expected proportions must have equal length",
         ));
     }
-    let method = CoreAllocationMethod::parse(allocation_method).ok_or_else(|| {
-        PyValueError::new_err("allocation_method must be proportional or neyman")
-    })?;
+    let method = CoreAllocationMethod::parse(allocation_method)
+        .ok_or_else(|| PyValueError::new_err("allocation_method must be proportional or neyman"))?;
     let strata: Vec<CoreSamplingStratum> = stratum_population_sizes
         .into_iter()
         .zip(stratum_expected_proportions)
-        .map(|(population_size, expected_proportion)| CoreSamplingStratum {
-            population_size,
-            expected_proportion,
-        })
+        .map(
+            |(population_size, expected_proportion)| CoreSamplingStratum {
+                population_size,
+                expected_proportion,
+            },
+        )
         .collect();
     let result = core_finite_population_proportion_design(
         population_size,
@@ -10176,6 +10302,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_multigroup, m)?)?;
+    m.add_function(wrap_pyfunction!(bifactor_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_two_tier_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;

@@ -1,6 +1,7 @@
 pub mod agreement;
 pub mod bifactor_grm;
 pub mod bifactor_indices;
+pub mod bifactor_oakes;
 pub mod bifactor_recursion;
 pub mod cdm;
 pub mod classification;
@@ -40,6 +41,7 @@ pub mod poly_marginal;
 pub(crate) mod quadrature;
 pub mod rasch_cml;
 pub mod rating_range;
+pub mod regression;
 pub mod reliability;
 pub mod rsm;
 pub mod rt;

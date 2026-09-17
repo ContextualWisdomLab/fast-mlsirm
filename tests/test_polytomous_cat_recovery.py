@@ -91,7 +91,7 @@ def test_cat_recovers_theta_using_substantially_fewer_items_than_the_full_bank()
             probs = probs / probs.sum()
             responses[person, item] = rng.choice(N_CAT, p=probs)
 
-    bank = fit_polytomous(responses, n_cat=N_CAT, model="grm")
+    bank = fit_polytomous(responses, n_cat=N_CAT, model="grm", q_theta=21, max_iter=80, tol=1e-6)
     assert bank.converged
 
     cat_result = cat_simulate_polytomous(
