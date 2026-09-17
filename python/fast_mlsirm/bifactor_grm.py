@@ -138,8 +138,11 @@ class BifactorGrmFit:
     ``threshold`` the ``n_items x (n_cat-1)`` strictly decreasing boundary
     intercepts; ``theta_g_eap`` / ``theta_g_sd`` the general-factor EAP and
     posterior SD; ``category_counts`` the observed ``n_items x n_cat`` counts.
-    ``termination_reason`` is ``"tolerance_met"`` or ``"max_iter_reached"``;
-    ``best_start`` the winning start in ``0..n_starts``.
+    ``termination_reason`` is ``"tolerance_met"``, ``"max_iter_reached"``, or
+    ``"numerical_em_stall"`` (relative loglik change met ``tol`` while every
+    item parameter remained at its start — never reported as
+    ``tolerance_met``; see #1976); ``best_start`` the winning start in
+    ``0..n_starts``.
     """
 
     a_general: np.ndarray

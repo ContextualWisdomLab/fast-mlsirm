@@ -207,16 +207,26 @@ fn joint_post(@builtin(global_invocation_id) gid_inv: vec3<u32>) {
     let rem = idx % (dims.ns * dims.qg);
     let s = rem / dims.qg;
     let t = rem % dims.qg;
+    let base = ((p * dims.ns + s) * dims.qg + t) * dims.qs;
 
-    var others = genlog[p * dims.qg + t] - log_wg[t];
+    let base = ((p * dims.ns + s) * dims.qg + t) * dims.qs;
+    let lw = log_wg[t];
+    // Exactly-zero Gauss-Hermite mass at large q yields log_w = -inf; then
+    // genlog - log_w is NaN and poisons expected counts (#1976). Skip the node.
+    if (lw != lw || lw < -1e300) {
+        for (var h = 0u; h < dims.qs; h = h + 1u) {
+            joint[base + h] = 0.0;
+        }
+        return;
+    }
+    var others = genlog[p * dims.qg + t] - lw;
     for (var s2 = 0u; s2 < dims.ns; s2 = s2 + 1u) {
         if (s2 != s) {
             others = others + logi[(p * dims.ns + s2) * dims.qg + t];
         }
     }
-    let base = ((p * dims.ns + s) * dims.qg + t) * dims.qs;
     for (var h = 0u; h < dims.qs; h = h + 1u) {
-        joint[base + h] = exp(log_wg[t] + blockacc[base + h] + others - ll_buf[p]);
+        joint[base + h] = exp(lw + blockacc[base + h] + others - ll_buf[p]);
     }
 }
 
