@@ -27,7 +27,9 @@ from .irt_contract import validate_irt_response_matrix
 
 __all__ = [
     "PolytomousFit",
+    "PolyFipcFit",
     "fit_polytomous",
+    "fit_poly_fipc",
     "score_polytomous",
     "information_polytomous",
     "polytomous_category_probabilities",
@@ -2005,4 +2007,121 @@ def u3_cutoff_polytomous(
             int(n_rep),
             int(seed),
         )
+    )
+
+
+@dataclass
+class PolyFipcFit:
+    """Result of :func:`fit_poly_fipc`.
+
+    ``slope`` / ``cat_params`` cover all items with anchored entries
+    bit-identical to the fixed inputs (signs kept: no reflection
+    canonicalization). ``mu`` / ``sigma`` are the estimated focal latent
+    mean/SD. Remaining fields mirror :class:`PolytomousFit`.
+    """
+
+    slope: np.ndarray
+    cat_params: np.ndarray
+    mu: float
+    sigma: float
+    loglik: float
+    n_iter: int
+    converged: bool = False
+    termination_reason: str = "not_fitted"
+    loglik_trace: np.ndarray = field(
+        default_factory=lambda: np.empty(0, dtype=np.float64)
+    )
+    final_delta: float = np.nan
+    stopping_tolerance: float = np.nan
+
+
+def fit_poly_fipc(
+    responses: np.ndarray,
+    n_cat: int,
+    anchor: np.ndarray,
+    anchor_slope: np.ndarray,
+    anchor_cat_params: np.ndarray,
+    q_theta: int = 21,
+    max_iter: int = 200,
+    tol: float = 1e-6,
+) -> PolyFipcFit:
+    """Fixed-item calibration of a unidimensional GRM on focal data (Rust).
+
+    ``responses`` is a persons x items array of integer categories
+    ``0..n_cat-1``; ``NaN`` or ``-1`` marks a missing response. ``anchor``
+    is a length-``n_items`` boolean array pinning items at ``anchor_slope``
+    / ``anchor_cat_params`` (``n_items x (n_cat-1)``, strictly decreasing
+    per anchored row) from a reference calibration; the remaining items and
+    the focal ``N(mu, sigma^2)`` are estimated by MML-EM with the prior
+    updated after every M-step — the MWU-MEM method (Kim, 2006, eqs. 14-15,
+    pp. 361-362; Paek & Young, 2005). ``q_theta`` is a caller-owned
+    Gauss-Hermite count (one of 7, 11, 15, 21, 31, 41, 61, 81, 121).
+
+    References
+    ----------
+    Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+    methods. *Journal of Educational Measurement, 43*(4), 355–381.
+    https://doi.org/10.1111/j.1745-3984.2006.00021.x
+
+    Paek, I., & Young, M. J. (2005). Investigation of student growth recovery
+    in a fixed-item linking procedure with a fixed-person prior distribution
+    for mixed-format test data. *Applied Measurement in Education, 18*(2),
+    199–215. https://doi.org/10.1207/s15324818ame1802_4
+
+    Samejima, F. (1969). Estimation of latent ability using a response pattern
+    of graded scores. *Psychometrika, 34*(S1), 1–97.
+    https://doi.org/10.1007/BF03372160
+    """
+    validated_n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
+    validated_q_theta = _fit_quadrature_points(q_theta)
+    validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
+    validated_tol = _positive_real(tol, "tol")
+
+    y_int, observed = _poly_int_and_mask(responses, validated_n_cat)
+    n_persons, n_items = y_int.shape
+
+    anchor_arr = np.asarray(anchor, dtype=bool)
+    if anchor_arr.ndim != 1 or anchor_arr.shape[0] != n_items:
+        raise ValueError("anchor must be a 1-D boolean array of length n_items")
+    if not bool(anchor_arr.any()):
+        raise ValueError("at least one anchor item is required")
+    slope_arr = np.asarray(anchor_slope, dtype=np.float64)
+    cat_arr = np.asarray(anchor_cat_params, dtype=np.float64)
+    if slope_arr.shape != (n_items,):
+        raise ValueError("anchor_slope must be a 1-D array of length n_items")
+    if cat_arr.shape != (n_items, validated_n_cat - 1):
+        raise ValueError("anchor_cat_params must have shape (n_items, n_cat - 1)")
+    if not bool(np.isfinite(slope_arr).all()) or not bool(np.isfinite(cat_arr).all()):
+        raise ValueError("anchor parameters must be finite")
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_poly_fipc"):
+        raise RuntimeError("fit_poly_fipc requires the compiled Rust core")
+
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    res = core.fit_poly_fipc(
+        y_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        validated_n_cat,
+        anchor_arr.reshape(-1),
+        slope_arr.reshape(-1),
+        np.ascontiguousarray(cat_arr, dtype=np.float64),
+        obs_arg,
+        validated_q_theta,
+        validated_max_iter,
+        validated_tol,
+    )
+    return PolyFipcFit(
+        slope=np.asarray(res["slope"], dtype=np.float64),
+        cat_params=np.asarray(res["cat_params"], dtype=np.float64),
+        mu=float(res["mu"]),
+        sigma=float(res["sigma"]),
+        loglik=float(res["loglik"]),
+        n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+        termination_reason=str(res["termination_reason"]),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
+        final_delta=float(res["final_delta"]),
+        stopping_tolerance=float(res["stopping_tolerance"]),
     )

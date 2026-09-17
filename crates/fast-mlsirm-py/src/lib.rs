@@ -105,8 +105,9 @@ use mlsirm_core::fitstats::{
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::bifactor_grm::{
     fit_bifactor_grm as core_fit_bifactor_grm,
-    fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup, BifactorGrmConfig,
-    BifactorMultigroupConfig,
+    fit_bifactor_grm_fipc as core_fit_bifactor_grm_fipc,
+    fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup, BifactorFipcConfig,
+    BifactorGrmConfig, BifactorMultigroupConfig,
 };
 use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
@@ -125,7 +126,8 @@ use mlsirm_core::nominal::{fit_nominal as core_fit_nominal_model, NominalConfig}
 use mlsirm_core::parallel::parallel_analysis as core_parallel_analysis;
 use mlsirm_core::personfit_np::person_fit_np as core_person_fit_np;
 use mlsirm_core::poly::{
-    fit_nominal as core_fit_nominal, fit_poly_unidim as core_fit_poly_unidim,
+    fit_nominal as core_fit_nominal, fit_poly_fipc as core_fit_poly_fipc,
+    fit_poly_unidim as core_fit_poly_unidim,
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
     poly_cat_simulate as core_poly_cat_simulate, poly_dif_sweep as core_poly_dif,
     poly_information_curves as core_poly_information_curves,
@@ -1573,6 +1575,122 @@ fn fit_bifactor_grm_multigroup(
     out.set_item("termination_reason", res.termination_reason)?;
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("best_start", res.best_start)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Focal-group fixed-item parameter calibration (FIPC) for the polytomous
+/// bifactor graded response model (Rust compute path;
+/// `mlsirm_core::bifactor_grm::fit_bifactor_grm_fipc`). `anchor` (length
+/// `n_items`) pins items at `fixed_a_general` / `fixed_a_specific` /
+/// `fixed_threshold` (flat `n_items * (n_cat-1)`, row-major) from a reference
+/// calibration; the remaining items and the focal general mean/variance —
+/// plus the focal specific variances iff `estimate_specific_vars` — are
+/// estimated by MML-EM with the prior updated after every M-step (Kim, 2006,
+/// MWU-MEM; Paek & Young, 2005). Returns a dict with `a_general`,
+/// `a_specific`, `threshold`, `general_mean`, `general_sd`, `specific_sd`,
+/// `theta_g_eap` / `theta_g_sd` (focal scale), `category_counts`,
+/// `loglik_trace`, `n_iter`, `converged`, `termination_reason`,
+/// `final_loglik_change`, `n_parameters`.
+///
+/// References (APA 7th ed.):
+///   Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+///     methods. Journal of Educational Measurement, 43(4), 355-381.
+///     https://doi.org/10.1111/j.1745-3984.2006.00021.x
+///   Paek, I., & Young, M. J. (2005). Investigation of student growth recovery
+///     in a fixed-item linking procedure with a fixed-person prior
+///     distribution for mixed-format test data. Applied Measurement in
+///     Education, 18(2), 199-215. https://doi.org/10.1207/s15324818ame1802_4
+///   Gibbons, R. D., et al. (2007). Full-information item bifactor analysis of
+///     graded response data. Applied Psychological Measurement, 31(1), 4-19.
+///     https://doi.org/10.1177/0146621606289485
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, anchor, fixed_a_general, fixed_a_specific, fixed_threshold, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, newton_iter = 10, ridge = 1e-8, estimate_specific_vars = false))]
+fn fit_bifactor_grm_fipc(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_specific: usize,
+    n_cat: usize,
+    anchor: PyReadonlyArray1<'_, bool>,
+    fixed_a_general: PyReadonlyArray1<'_, f64>,
+    fixed_a_specific: PyReadonlyArray1<'_, f64>,
+    fixed_threshold: PyReadonlyArray1<'_, f64>,
+    q_general: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+    newton_iter: usize,
+    ridge: f64,
+    estimate_specific_vars: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let y_slice = y.as_slice()?;
+    let obs_vec: Option<Vec<bool>> = match &observed {
+        Some(o) => Some(o.as_slice()?.to_vec()),
+        None => None,
+    };
+    let yy: Vec<usize> = y_slice
+        .iter()
+        .enumerate()
+        .map(|(idx, &v)| {
+            if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) {
+                return Ok(0usize);
+            }
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let smap: Vec<i32> = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            i32::try_from(v)
+                .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = BifactorFipcConfig {
+        q_general,
+        q_specific,
+        max_iter,
+        tol,
+        newton_iter,
+        ridge,
+        estimate_specific_vars,
+    };
+    let res = core_fit_bifactor_grm_fipc(
+        &yy,
+        obs_vec.as_deref(),
+        &smap,
+        n_persons,
+        n_items,
+        n_specific,
+        n_cat,
+        anchor.as_slice()?,
+        fixed_a_general.as_slice()?,
+        fixed_a_specific.as_slice()?,
+        fixed_threshold.as_slice()?,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("a_general", res.a_general)?;
+    out.set_item("a_specific", res.a_specific)?;
+    out.set_item("threshold", res.threshold)?;
+    out.set_item("general_mean", res.general_mean)?;
+    out.set_item("general_sd", res.general_sd)?;
+    out.set_item("specific_sd", res.specific_sd)?;
+    out.set_item("theta_g_eap", res.theta_g_eap)?;
+    out.set_item("theta_g_sd", res.theta_g_sd)?;
+    out.set_item("category_counts", res.category_counts)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }
@@ -6761,7 +6879,87 @@ fn fit_poly_unidim(
     Ok(out.into())
 }
 
-/// Unidimensional nominal categories model fit (Rust compute path). Returns a
+/// Fixed-item parameter calibration (FIPC) for the unidimensional graded
+/// response model (Rust compute path; `mlsirm_core::poly::fit_poly_fipc`).
+/// `anchor` (length `n_items`) pins items at `anchor_slope` /
+/// `anchor_cat_params` (`n_items x (n_cat-1)`); the remaining items and the
+/// focal `N(mu, sigma^2)` are estimated by MML-EM with the prior updated
+/// after every M-step (Kim, 2006, MWU-MEM; Paek & Young, 2005). Returns a
+/// dict with `slope`, `cat_params` (all items; anchors echoed bit-exact),
+/// `mu`, `sigma`, `loglik`, `n_iter`, `converged`, `termination_reason`,
+/// `loglik_trace`, `final_delta`, `stopping_tolerance`.
+///
+/// References (APA 7th ed.):
+///   Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+///     methods. Journal of Educational Measurement, 43(4), 355-381.
+///     https://doi.org/10.1111/j.1745-3984.2006.00021.x
+///   Paek, I., & Young, M. J. (2005). Investigation of student growth recovery
+///     in a fixed-item linking procedure with a fixed-person prior
+///     distribution for mixed-format test data. Applied Measurement in
+///     Education, 18(2), 199-215. https://doi.org/10.1207/s15324818ame1802_4
+///   Samejima, F. (1969). Estimation of latent ability using a response
+///     pattern of graded scores. Psychometrika, 34(S1), 1-97.
+///     https://doi.org/10.1007/BF03372160
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, anchor, anchor_slope, anchor_cat_params, observed = None, q_theta = 21, max_iter = 200, tol = 1e-6))]
+fn fit_poly_fipc(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    anchor: PyReadonlyArray1<'_, bool>,
+    anchor_slope: PyReadonlyArray1<'_, f64>,
+    anchor_cat_params: PyReadonlyArray2<'_, f64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    q_theta: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
+    let anchor_vec = anchor.as_slice()?.to_vec();
+    let slope_vec = anchor_slope.as_slice()?.to_vec();
+    let cat_view = anchor_cat_params.as_array();
+    if cat_view.shape() != [n_items, n_cat - 1] {
+        return Err(PyValueError::new_err(
+            "anchor_cat_params must have shape (n_items, n_cat - 1)",
+        ));
+    }
+    let cat_nested: Vec<Vec<f64>> = cat_view
+        .rows()
+        .into_iter()
+        .map(|row| row.to_vec())
+        .collect();
+    let fit = core_fit_poly_fipc(
+        &yv,
+        obs,
+        n_persons,
+        n_items,
+        n_cat,
+        &anchor_vec,
+        &slope_vec,
+        &cat_nested,
+        q_theta,
+        max_iter,
+        tol,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("slope", fit.slope)?;
+    out.set_item("cat_params", fit.cat_params)?;
+    out.set_item("mu", fit.mu)?;
+    out.set_item("sigma", fit.sigma)?;
+    out.set_item("loglik", fit.loglik)?;
+    out.set_item("n_iter", fit.n_iter)?;
+    out.set_item("converged", fit.converged)?;
+    out.set_item("termination_reason", fit.termination_reason)?;
+    out.set_item("loglik_trace", fit.loglik_trace)?;
+    out.set_item("final_delta", fit.final_delta)?;
+    out.set_item("stopping_tolerance", fit.stopping_tolerance)?;
+    Ok(out.into())
+}
 /// dict with `scores` and `intercepts` (each `n_items` lists of `n_cat-1` free
 /// values, baseline `a_0=c_0=0`), plus `loglik`/`n_iter`.
 ///
@@ -9978,6 +10176,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_multigroup, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_bifactor_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_two_tier_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
@@ -10156,6 +10355,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(polytomous_predictions, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_poly_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal, m)?)?;
     m.add_function(wrap_pyfunction!(poly_person_fit, m)?)?;
     m.add_function(wrap_pyfunction!(poly_cat_simulate, m)?)?;
