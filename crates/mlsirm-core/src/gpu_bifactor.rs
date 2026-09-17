@@ -240,7 +240,8 @@ fn joint_post(
     let lw = log_wg[t];
     // Exactly-zero Gauss-Hermite mass at large q yields log_w = -inf; then
     // genlog - log_w is NaN and poisons expected counts (#1976). Skip the node.
-    if (lw != lw || lw < -1e300) {
+    // Use a finite f32 threshold (WGSL rejects abstract -1e300 as unrepresentable).
+    if (lw != lw || lw < -1e37) {
         for (var h = 0u; h < dims.qs; h = h + 1u) {
             joint[base + h] = 0.0;
         }
