@@ -5,6 +5,24 @@ name: Publish Package
 # tag. The canonical release-tag workflow dispatches this workflow explicitly
 # because events created with GITHUB_TOKEN do not recursively start ordinary
 # event-triggered workflows.
+#
+# Dual-path note (ADR-0029 / docs/orchestration/release-publish-contract.md):
+# This local workflow body remains the default execution path. Do NOT remove it
+# or switch callers to ContextualWisdomLab/.github until one full release has
+# succeeded via the central reusable workflow. A SEPARATE thin-wrapper PR will
+# pin `uses: ...@<exact-merged-sha>` after ContextualWisdomLab/.github lands
+# reusable workflows (expected central name: publish-package / equivalent —
+# align to whatever that PR ships). Exact SHA/path TBD — leave commented; do
+# not invent a live uses: that would fail CI:
+#
+# # jobs:
+# #   call-central:
+# #     uses: ContextualWisdomLab/.github/.github/workflows/<publish-package-or-shipped-name>.yml@<exact-sha>
+# #     with:
+# #       release_tag: ${{ inputs.release_tag }}
+# #       release_commit: ${{ inputs.release_commit }}
+# #       control_plane_commit: ${{ inputs.control_plane_commit }}
+# #     secrets: inherit
 
 on:
   workflow_dispatch:
@@ -313,7 +331,36 @@ jobs:
             echo "release $RELEASE_TAG is immutable; skipping GitHub asset upload"
             exit 0
           fi
-          gh release upload "$RELEASE_TAG" dist/* --repo "$REPOSITORY"
+          # Per-file upload: already-present assets also return HTTP 422
+          # (name already_exists / immutable). Treat those as success so
+          # retries after a partial attach remain green; other failures fail closed.
+          shopt -s nullglob
+          assets=(dist/*)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "no dist artifacts to attach" >&2
+            exit 1
+          fi
+          for asset in "${assets[@]}"; do
+            upload_log="$(mktemp)"
+            set +e
+            gh release upload "$RELEASE_TAG" "$asset" --repo "$REPOSITORY" >"$upload_log" 2>&1
+            status=$?
+            set -e
+            if [ "$status" -eq 0 ]; then
+              rm -f "$upload_log"
+              continue
+            fi
+            if grep -Eiq 'HTTP 422|already[_ ]exists|immutable|unprocessable' "$upload_log"; then
+              echo "skipping already-uploaded or immutable asset: $asset"
+              cat "$upload_log"
+              rm -f "$upload_log"
+              continue
+            fi
+            cat "$upload_log" >&2
+            rm -f "$upload_log"
+            echo "failed to attach release asset: $asset" >&2
+            exit 1
+          done
 
   publish-pypi:
     name: publish to PyPI
