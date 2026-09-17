@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "fast-mlsirm"
-version = "0.10.0"
+version = "0.11.1"
 description = "Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -47,6 +47,7 @@ python-source = "python"
 [tool.pytest.ini_options]
 pythonpath = [".", "python"]
 testpaths = ["tests"]
+xfail_strict = true
 
 [tool.interrogate]
 ignore-init-method = true

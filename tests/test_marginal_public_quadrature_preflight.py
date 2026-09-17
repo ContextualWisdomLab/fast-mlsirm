@@ -45,6 +45,7 @@ def test_spatial_q_xi_fails_before_array_coercion(
             model="MLSRM",
             latent_dim=1,
             q_xi=q_xi,  # type: ignore[arg-type]
+            q_theta=21, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0,
         )
 
     assert "caller-secret-q-xi" not in str(caught.value)
@@ -69,7 +70,7 @@ def test_unsupported_exact_q_xi_fails_before_array_coercion(
             object(),  # type: ignore[arg-type]
             model="MLSRM",
             latent_dim=3,
-            q_xi=10**200,
+            q_xi=10**200, q_theta=21, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 

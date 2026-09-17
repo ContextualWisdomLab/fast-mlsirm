@@ -62,10 +62,10 @@ def test_gpcm_recovers_true_theta_within_expected_rmse() -> None:
             )
             responses[person, item] = rng.choice(N_CAT, p=probs)
 
-    fit = fit_polytomous(responses, n_cat=N_CAT, model="gpcm", max_iter=80)
+    fit = fit_polytomous(responses, n_cat=N_CAT, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
     assert fit.converged
 
-    scored = score_polytomous(responses, fit)
+    scored = score_polytomous(responses, fit, q_theta=21)
     theta_eap = scored["theta_eap"]
     theta_sd = scored["theta_sd"]
 

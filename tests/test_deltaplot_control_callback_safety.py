@@ -12,6 +12,14 @@ from fast_mlsirm.config import MAX_MAX_ITER
 from fast_mlsirm.deltaplot import delta_plot
 
 
+_REQUIRED_DEFAULTS = {"alpha": 0.05, "max_iter": 10}
+
+
+def _with_required_defaults(kwargs: dict[str, object]) -> dict[str, object]:
+    """Fill in ADR-0028 required ``alpha``/``max_iter`` unless the test overrides them."""
+    return {**_REQUIRED_DEFAULTS, **kwargs}
+
+
 class _DataSentinel:
     """Fail if rejected controls permit response/group materialization."""
 
@@ -126,7 +134,7 @@ def test_rejects_executable_controls_before_callbacks_data_or_core(
         kwargs["extreme"] = "add"
 
     with pytest.raises(ValueError, match=message):
-        delta_plot(_DataSentinel(), _DataSentinel(), **kwargs)
+        delta_plot(_DataSentinel(), _DataSentinel(), **_with_required_defaults(kwargs))
 
     assert type(value).calls == 0
 
@@ -138,7 +146,7 @@ def test_rejects_tuple_subclass_before_indexing_data_or_core(monkeypatch):
     value.reset()
 
     with pytest.raises(ValueError, match="const_range must be an exact 2-tuple"):
-        delta_plot(_DataSentinel(), _DataSentinel(), const_range=value)
+        delta_plot(_DataSentinel(), _DataSentinel(), **_with_required_defaults({"const_range": value}))
 
     assert value.calls == 0
 
@@ -168,7 +176,7 @@ def test_invalid_exact_controls_fail_before_data_and_core(monkeypatch, kwargs, m
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
 
     with pytest.raises(ValueError, match=message):
-        delta_plot(_DataSentinel(), _DataSentinel(), **kwargs)
+        delta_plot(_DataSentinel(), _DataSentinel(), **_with_required_defaults(kwargs))
 
 
 @pytest.mark.parametrize(
@@ -187,7 +195,7 @@ def test_boolean_numeric_controls_fail_before_data_and_core(monkeypatch, kwargs)
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
 
     with pytest.raises(ValueError):
-        delta_plot(_DataSentinel(), _DataSentinel(), **kwargs)
+        delta_plot(_DataSentinel(), _DataSentinel(), **_with_required_defaults(kwargs))
 
 
 @pytest.mark.parametrize(
@@ -214,7 +222,7 @@ def test_unused_branch_hostiles_fail_before_data_and_core(
     kwargs = {**kwargs, field: hostile}
 
     with pytest.raises(ValueError, match=message):
-        delta_plot(_DataSentinel(), _DataSentinel(), **kwargs)
+        delta_plot(_DataSentinel(), _DataSentinel(), **_with_required_defaults(kwargs))
 
     assert type(hostile).calls == 0
 
@@ -226,7 +234,7 @@ def test_hostile_const_range_element_fails_before_indexing_callback(monkeypatch)
     hostile.reset()
 
     with pytest.raises(ValueError, match="const_range\\[0\\] must be a real number"):
-        delta_plot(_DataSentinel(), _DataSentinel(), const_range=(hostile, 0.999))
+        delta_plot(_DataSentinel(), _DataSentinel(), **_with_required_defaults({"const_range": (hostile, 0.999)}))
 
     assert hostile.calls == 0
 
@@ -245,7 +253,7 @@ def test_huge_builtin_integer_controls_fail_as_value_errors(monkeypatch, kwargs)
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
 
     with pytest.raises(ValueError):
-        delta_plot(_DataSentinel(), _DataSentinel(), **kwargs)
+        delta_plot(_DataSentinel(), _DataSentinel(), **_with_required_defaults(kwargs))
 
 
 class _FakeCore:
@@ -324,6 +332,8 @@ def test_unused_poison_const_range_fails_on_add_branch(monkeypatch):
         delta_plot(
             _DataSentinel(),
             _DataSentinel(),
+            alpha=0.05,
+            max_iter=10,
             extreme="add",
             nr_add=1,
             const_range="poison",

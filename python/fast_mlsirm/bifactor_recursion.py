@@ -17,6 +17,8 @@ References:
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 
 
@@ -37,7 +39,7 @@ def _load_bifactor_core():
                 return None
 
 
-def bifactor_lord_wingersky(
+def enumerate_bifactor_lord_wingersky(
     a_general: np.ndarray,
     a_specific: np.ndarray,
     thresholds: np.ndarray,
@@ -80,7 +82,7 @@ def bifactor_lord_wingersky(
     return flat.reshape(len(th_g), total_max_score + 1)
 
 
-def direct_enumeration_bifactor(
+def enumerate_bifactor_direct(
     a_general: np.ndarray,
     a_specific: np.ndarray,
     thresholds: np.ndarray,
@@ -112,3 +114,69 @@ def direct_enumeration_bifactor(
     )
     total_max_score = len(a_g) * (n_cat - 1)
     return flat.reshape(len(th_g), total_max_score + 1)
+
+
+def bifactor_lord_wingersky(
+    a_general: np.ndarray,
+    a_specific: np.ndarray,
+    thresholds: np.ndarray,
+    item_domains: np.ndarray,
+    n_cat: int,
+    n_domains: int,
+    theta_general: np.ndarray,
+    theta_specific: np.ndarray,
+    weights_specific: np.ndarray,
+) -> np.ndarray:
+    """Deprecated alias for :func:`enumerate_bifactor_lord_wingersky` (ADR-0028, #1963).
+
+    Kept for one minor release; emits :class:`DeprecationWarning`.
+    """
+    warnings.warn(
+        "bifactor_lord_wingersky is deprecated; use enumerate_bifactor_lord_wingersky instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return enumerate_bifactor_lord_wingersky(
+        a_general,
+        a_specific,
+        thresholds,
+        item_domains,
+        n_cat,
+        n_domains,
+        theta_general,
+        theta_specific,
+        weights_specific,
+    )
+
+
+def direct_enumeration_bifactor(
+    a_general: np.ndarray,
+    a_specific: np.ndarray,
+    thresholds: np.ndarray,
+    item_domains: np.ndarray,
+    n_cat: int,
+    n_domains: int,
+    theta_general: np.ndarray,
+    theta_specific: np.ndarray,
+    weights_specific: np.ndarray,
+) -> np.ndarray:
+    """Deprecated alias for :func:`enumerate_bifactor_direct` (ADR-0028, #1963).
+
+    Kept for one minor release; emits :class:`DeprecationWarning`.
+    """
+    warnings.warn(
+        "direct_enumeration_bifactor is deprecated; use enumerate_bifactor_direct instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return enumerate_bifactor_direct(
+        a_general,
+        a_specific,
+        thresholds,
+        item_domains,
+        n_cat,
+        n_domains,
+        theta_general,
+        theta_specific,
+        weights_specific,
+    )

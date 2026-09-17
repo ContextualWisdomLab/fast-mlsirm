@@ -56,6 +56,8 @@ from .sampling_design import (
 from .bifactor_recursion import (
     bifactor_lord_wingersky as bifactor_lord_wingersky,
     direct_enumeration_bifactor as direct_enumeration_bifactor,
+    enumerate_bifactor_direct as enumerate_bifactor_direct,
+    enumerate_bifactor_lord_wingersky as enumerate_bifactor_lord_wingersky,
 )
 from .bifactor_bootstrap import (
     BifactorBootstrapResult as BifactorBootstrapResult,
@@ -74,9 +76,9 @@ _install_icc_control_safety(_reliability)
 
 _install_dif_control_safety(_dif)
 for _dif_name in (
-    "logistic_dif",
-    "mantel_haenszel_dif_purified",
-    "logistic_dif_purified",
+    "detect_dif_logistic",
+    "detect_dif_mantel_haenszel_purified",
+    "detect_dif_logistic_purified",
 ):
     if hasattr(_legacy_init, _dif_name):
         setattr(_legacy_init, _dif_name, getattr(_dif, _dif_name))
@@ -147,6 +149,12 @@ from .bifactor_scoreability import (
 )
 from .bifactor_scoreability import (
     bifactor_scoreability_from_logit_slopes as bifactor_scoreability_from_logit_slopes,
+)
+from .bifactor_scoreability import (
+    assess_bifactor_scoreability as assess_bifactor_scoreability,
+)
+from .bifactor_scoreability import (
+    assess_bifactor_scoreability_from_logit_slopes as assess_bifactor_scoreability_from_logit_slopes,
 )
 from .irt_contract import (
     MIN_FACTOR_ANCHOR_ITEMS as MIN_FACTOR_ANCHOR_ITEMS,
@@ -237,6 +245,21 @@ from .rating_range import (
 from .rating_range import (
     paired_rating_range_evidence as paired_rating_range_evidence,
 )
+from .regression import (
+    chi2_sf_df1 as chi2_sf_df1,
+)
+from .regression import (
+    contrast as contrast,
+)
+from .regression import (
+    f_sf as f_sf,
+)
+from .regression import (
+    fit_ols_hc as fit_ols_hc,
+)
+from .regression import (
+    t_sf as t_sf,
+)
 from .rotation import (
     RotationCriterionInfo as RotationCriterionInfo,
 )
@@ -271,6 +294,8 @@ __all__ = list(_legacy_init.__all__) + [
     "BifactorScoreabilityResult",
     "bifactor_scoreability",
     "bifactor_scoreability_from_logit_slopes",
+    "assess_bifactor_scoreability",
+    "assess_bifactor_scoreability_from_logit_slopes",
     "RotationCriterionInfo",
     "RotationSolution",
     "available_rotation_criteria",
@@ -312,6 +337,11 @@ __all__ = list(_legacy_init.__all__) + [
     "validate_irt_experiment_readiness",
     "RatingRangeEvidence",
     "paired_rating_range_evidence",
+    "chi2_sf_df1",
+    "contrast",
+    "f_sf",
+    "fit_ols_hc",
+    "t_sf",
     "SAMPLING_DESIGN_SCHEMA_VERSION",
     "ACHIEVED_PROPORTION_SCHEMA_VERSION",
     "SamplingStratum",
@@ -321,6 +351,8 @@ __all__ = list(_legacy_init.__all__) + [
     "finite_population_achieved_proportion",
     "bifactor_lord_wingersky",
     "direct_enumeration_bifactor",
+    "enumerate_bifactor_lord_wingersky",
+    "enumerate_bifactor_direct",
     "BifactorBootstrapResult",
     "run_bifactor_bootstrap",
 ]

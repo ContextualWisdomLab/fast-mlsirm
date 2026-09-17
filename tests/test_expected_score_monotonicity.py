@@ -40,7 +40,7 @@ def _fit(slopes: np.ndarray):
         draw = rng.random((N_PERSONS, 1))
         columns.append((probabilities.cumsum(1) < draw).sum(1))
     responses = np.column_stack(columns)
-    return fit_polytomous(responses, n_cat=N_CAT, model="grm", q_theta=41, max_iter=200)
+    return fit_polytomous(responses, n_cat=N_CAT, model="grm", q_theta=41, max_iter=200, tol=1e-6)
 
 
 @pytest.fixture(scope="module")

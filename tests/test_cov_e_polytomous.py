@@ -85,11 +85,11 @@ def test_dif_rejects_non_numeric_group_id():
 def test_fit_polytomous_rejects_bad_q_theta():
     # #1929: no node-count cap; q_theta=12 is now accepted, only < 1 is not.
     with pytest.raises(ValueError, match="q_theta must be in 1"):
-        fit_polytomous(_responses(4, 2, 3), n_cat=3, q_theta=0)
+        fit_polytomous(_responses(4, 2, 3), n_cat=3, model="grm", q_theta=0, max_iter=80, tol=1e-6)
 
 
 def test_fit_polytomous_accepts_81_node_rule():
-    fit = fit_polytomous(_responses(6, 2, 3), n_cat=3, q_theta=81, max_iter=1)
+    fit = fit_polytomous(_responses(6, 2, 3), n_cat=3, model="grm", q_theta=81, max_iter=1, tol=1e-6)
     assert fit.slope.shape == (2,)
     assert np.isfinite(fit.loglik)
 
@@ -98,7 +98,7 @@ def test_fit_lsirm_accepts_81_node_xi_rule():
     # #1929: no node-count cap; 81 used to be rejected (outside the fixed
     # xi table) and is now a perfectly valid node count.
     fit = fit_lsirm_polytomous(
-        _responses(4, 2, 3), n_cat=3, q_theta=81, q_xi=81, max_iter=1
+        _responses(4, 2, 3), n_cat=3, model="grm", q_theta=81, q_xi=81, max_iter=1, tol=1e-5
     )
     assert np.isfinite(fit.loglik)
 
@@ -106,7 +106,7 @@ def test_fit_lsirm_accepts_81_node_xi_rule():
 def test_fit_polytomous_requires_core(monkeypatch):
     monkeypatch.setattr(polytomous, "_core_module", lambda: None)
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
-        fit_polytomous(_responses(5, 2, 2), n_cat=2)
+        fit_polytomous(_responses(5, 2, 2), n_cat=2, model="grm", q_theta=21, max_iter=80, tol=1e-6)
 
 
 # --- score_polytomous ---
@@ -116,34 +116,34 @@ def test_score_polytomous_rejects_bad_slope():
     fit = _grm_fit()
     fit.slope = np.zeros((2, 2))
     with pytest.raises(ValueError, match=r"fit\.slope must be a non-empty 1-D array"):
-        score_polytomous(_responses(), fit)
+        score_polytomous(_responses(), fit, q_theta=21)
 
 
 def test_score_polytomous_rejects_bad_cat_params():
     fit = _grm_fit()
     fit.cat_params = np.array([1.0, 2.0])
     with pytest.raises(ValueError, match=r"fit\.cat_params must be"):
-        score_polytomous(_responses(), fit)
+        score_polytomous(_responses(), fit, q_theta=21)
 
 
 def test_score_polytomous_rejects_bad_model():
     fit = _grm_fit()
     fit.model = "nope"
     with pytest.raises(ValueError, match=r"fit\.model must be one of"):
-        score_polytomous(_responses(), fit)
+        score_polytomous(_responses(), fit, q_theta=21)
 
 
 def test_score_polytomous_rejects_column_mismatch():
     fit = _grm_fit(n_items=2, n_cat=3)
     with pytest.raises(ValueError, match="column count must match"):
-        score_polytomous(_responses(6, 3, 3), fit)
+        score_polytomous(_responses(6, 3, 3), fit, q_theta=21)
 
 
 def test_score_polytomous_requires_core(monkeypatch):
     fit = _grm_fit(n_items=2, n_cat=3)
     monkeypatch.setattr(polytomous, "_core_module", lambda: None)
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
-        score_polytomous(_responses(6, 2, 3), fit)
+        score_polytomous(_responses(6, 2, 3), fit, q_theta=21)
 
 
 # --- information_polytomous ---
@@ -168,29 +168,29 @@ def test_information_polytomous_requires_core(monkeypatch):
 
 def test_fit_lsirm_rejects_bad_model():
     with pytest.raises(ValueError, match="model must be one of"):
-        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, model="nope")
+        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, model="nope", q_theta=11, q_xi=11, max_iter=60, tol=1e-5)
 
 
 def test_fit_lsirm_rejects_bad_latent_dim():
     with pytest.raises(ValueError, match=r"latent_dim must be an integer in 1\.\.3"):
-        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, latent_dim=4)
+        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, latent_dim=4, model="grm", q_theta=11, q_xi=11, max_iter=60, tol=1e-5)
 
 
 def test_fit_lsirm_rejects_bad_quadrature():
     # #1929: no node-count cap; q_xi=12 is now accepted, only < 1 is not.
     with pytest.raises(ValueError, match="q_theta and q_xi must be >= 1"):
-        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, q_xi=0)
+        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, model="grm", q_theta=11, q_xi=0, max_iter=60, tol=1e-5)
 
 
 def test_fit_lsirm_rejects_bad_tol():
     with pytest.raises(ValueError, match="tol must be finite"):
-        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, tol=0.0)
+        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, model="grm", q_theta=11, q_xi=11, max_iter=60, tol=0.0)
 
 
 def test_fit_lsirm_requires_core(monkeypatch):
     monkeypatch.setattr(polytomous, "_core_module", lambda: None)
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
-        fit_lsirm_polytomous(_responses(5, 2, 3), n_cat=3)
+        fit_lsirm_polytomous(_responses(5, 2, 3), n_cat=3, model="grm", q_theta=11, q_xi=11, max_iter=60, tol=1e-5)
 
 
 # --- polytomous_information_criteria: latent-space parameter count ---
@@ -227,14 +227,14 @@ def test_item_fit_requires_core(monkeypatch):
 def test_m2_rejects_column_mismatch():
     fit = _grm_fit(n_items=2, n_cat=3, converged=True)
     with pytest.raises(ValueError, match="column count must match"):
-        m2_polytomous(_responses(6, 3, 3), fit)
+        m2_polytomous(_responses(6, 3, 3), fit, q_theta=21)
 
 
 def test_m2_requires_core(monkeypatch):
     fit = _grm_fit(n_items=2, n_cat=3, converged=True)
     monkeypatch.setattr(polytomous, "_core_module", lambda: None)
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
-        m2_polytomous(_responses(6, 2, 3), fit)
+        m2_polytomous(_responses(6, 2, 3), fit, q_theta=21)
 
 
 def test_local_dependence_requires_core(monkeypatch):
@@ -250,13 +250,13 @@ def test_local_dependence_requires_core(monkeypatch):
 def test_fit_nominal_rejects_bad_q_theta():
     # #1929: no node-count cap; q_theta=12 is now accepted, only < 1 is not.
     with pytest.raises(ValueError, match="q_theta must be in 1"):
-        fit_nominal_polytomous(_responses(4, 2, 3), n_cat=3, q_theta=0)
+        fit_nominal_polytomous(_responses(4, 2, 3), n_cat=3, q_theta=0, max_iter=200, tol=1e-6)
 
 
 def test_fit_nominal_requires_core(monkeypatch):
     monkeypatch.setattr(polytomous, "_core_module", lambda: None)
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
-        fit_nominal_polytomous(_responses(5, 2, 3), n_cat=3)
+        fit_nominal_polytomous(_responses(5, 2, 3), n_cat=3, q_theta=21, max_iter=200, tol=1e-6)
 
 
 # --- person_fit_polytomous ---
