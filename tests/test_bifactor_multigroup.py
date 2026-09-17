@@ -229,3 +229,15 @@ def test_q_general_and_q_specific_are_required() -> None:
     y, group = _simulate(SEED)
     with pytest.raises(TypeError):
         fit_bifactor_grm_multigroup(y, group, SPECIFIC_MAP, N_CAT, N_SPECIFIC)
+
+
+def test_max_iter_n_starts_seed_and_tol_are_required() -> None:
+    """ADR-0028 (#1963): iteration/convergence/replicate/seed controls have no default."""
+    y, group = _simulate(SEED)
+    base = dict(q_general=7, q_specific=7, max_iter=500, tol=1e-5, n_starts=1, seed=SEED)
+    for missing in ("max_iter", "tol", "n_starts", "seed"):
+        kwargs = {k: v for k, v in base.items() if k != missing}
+        with pytest.raises(TypeError):
+            fit_bifactor_grm_multigroup(
+                y, group, SPECIFIC_MAP, N_CAT, N_SPECIFIC, **kwargs
+            )

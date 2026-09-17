@@ -140,7 +140,16 @@ def test_bifactor_fipc_recovers_shift() -> None:
 
     y_ref = _simulate_bifactor(101, 500, 0.0, 1.0)
     ref = fit_bifactor_grm(
-        y_ref, SPECIFIC_MAP, N_CAT, 2, q_general=21, q_specific=11, max_iter=300, tol=1e-5
+        y_ref,
+        SPECIFIC_MAP,
+        N_CAT,
+        2,
+        q_general=21,
+        q_specific=11,
+        max_iter=300,
+        tol=1e-5,
+        n_starts=1,
+        seed=0x9E37_79B9_7F4A_7C15,
     )
     assert ref.converged
     anchor = np.zeros(N_ITEMS, dtype=bool)

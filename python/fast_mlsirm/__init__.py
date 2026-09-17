@@ -56,6 +56,8 @@ from .sampling_design import (
 from .bifactor_recursion import (
     bifactor_lord_wingersky as bifactor_lord_wingersky,
     direct_enumeration_bifactor as direct_enumeration_bifactor,
+    enumerate_bifactor_direct as enumerate_bifactor_direct,
+    enumerate_bifactor_lord_wingersky as enumerate_bifactor_lord_wingersky,
 )
 from .bifactor_bootstrap import (
     BifactorBootstrapResult as BifactorBootstrapResult,
@@ -147,6 +149,12 @@ from .bifactor_scoreability import (
 )
 from .bifactor_scoreability import (
     bifactor_scoreability_from_logit_slopes as bifactor_scoreability_from_logit_slopes,
+)
+from .bifactor_scoreability import (
+    assess_bifactor_scoreability as assess_bifactor_scoreability,
+)
+from .bifactor_scoreability import (
+    assess_bifactor_scoreability_from_logit_slopes as assess_bifactor_scoreability_from_logit_slopes,
 )
 from .irt_contract import (
     MIN_FACTOR_ANCHOR_ITEMS as MIN_FACTOR_ANCHOR_ITEMS,
@@ -286,6 +294,8 @@ __all__ = list(_legacy_init.__all__) + [
     "BifactorScoreabilityResult",
     "bifactor_scoreability",
     "bifactor_scoreability_from_logit_slopes",
+    "assess_bifactor_scoreability",
+    "assess_bifactor_scoreability_from_logit_slopes",
     "RotationCriterionInfo",
     "RotationSolution",
     "available_rotation_criteria",
@@ -341,6 +351,8 @@ __all__ = list(_legacy_init.__all__) + [
     "finite_population_achieved_proportion",
     "bifactor_lord_wingersky",
     "direct_enumeration_bifactor",
+    "enumerate_bifactor_lord_wingersky",
+    "enumerate_bifactor_direct",
     "BifactorBootstrapResult",
     "run_bifactor_bootstrap",
 ]
