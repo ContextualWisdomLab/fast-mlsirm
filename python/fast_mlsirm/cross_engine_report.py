@@ -355,7 +355,7 @@ def render_conformance_report(manifest_json: str) -> tuple[str, str]:
         "<title>Cross-engine conformance evidence</title>",
         "</head>",
         "<body>",
-        "<main>",
+        '<main id="main-content" tabindex="-1">',
         "<h1>Cross-engine conformance evidence</h1>",
         f"<p>{escape(_DISCLAIMER, quote=True)}</p>",
         "<p>Exact values are shown in text; this report has no hover-only evidence.</p>",
