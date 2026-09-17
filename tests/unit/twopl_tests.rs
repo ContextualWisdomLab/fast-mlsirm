@@ -1737,9 +1737,17 @@ fn mc_corr_mirt_recovery_500() {
 /// keeps pressing against the numerical safety rail. That must be REPORTED (a
 /// per-item flag plus non-convergence with a reason), never passed off as an
 /// estimate. The ordinary items — including the reverse-keyed one — stay silent.
+///
+/// Calibration note (Air evidence): with the MMLE-sized N=1000 / ridge 1e-3
+/// fixture the confirmatory 2PL M-step settled interior at |a|≈25.7 (below
+/// `SLOPE_DIVERGENCE_RAIL` = 30), so `pressed & at_rail` stayed false. N=4000
+/// with a lighter ridge (still strictly positive) is the minimal setting that
+/// rests the duplicate pair on the rail without false-positiving the ordinary
+/// items — same paper contract as the MMLE duplicate fixture (Bock & Aitkin,
+/// 1981, p. 457; Mislevy, 1985, p. 44; Chalmers, 2012, pp. 14–15).
 #[test]
 fn duplicate_columns_press_the_divergence_rail_and_are_reported() {
-    let (n, n_items, n_dims) = (1000usize, 4usize, 1usize);
+    let (n, n_items, n_dims) = (4000usize, 4usize, 1usize);
     let pattern = vec![1u8; n_items];
     let a_true = [1.30, -1.10, 1.20];
     let b_true = [0.10, -0.20, 0.30];
@@ -1747,7 +1755,7 @@ fn duplicate_columns_press_the_divergence_rail_and_are_reported() {
     let thetas: Vec<f64> = (0..n).map(|_| rng.normal()).collect();
     let loading: Vec<f64> = vec![a_true[0], a_true[1], a_true[2], 0.0];
     let intercept: Vec<f64> = vec![b_true[0], b_true[1], b_true[2], 0.0];
-    let mut y = simulate(&loading, &intercept, &thetas, n, 3, n_dims, &mut rng);
+    let y = simulate(&loading, &intercept, &thetas, n, 3, n_dims, &mut rng);
     let mut full = vec![0.0f64; n * n_items];
     for p in 0..n {
         for i in 0..3 {
@@ -1756,16 +1764,12 @@ fn duplicate_columns_press_the_divergence_rail_and_are_reported() {
         full[p * n_items + 3] = full[p * n_items];
     }
     let observed = vec![true; n * n_items];
-    let res = fit_2pl(
-        &full,
-        &observed,
-        &pattern,
-        n,
-        n_items,
-        n_dims,
-        &TwoPlConfig::default(),
-    )
-    .unwrap();
+    let cfg = TwoPlConfig {
+        ridge_a: 1e-6,
+        ridge_b: 1e-6,
+        ..TwoPlConfig::default()
+    };
+    let res = fit_2pl(&full, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
     assert_eq!(
         res.slope_diverged,
         vec![true, false, false, true],
