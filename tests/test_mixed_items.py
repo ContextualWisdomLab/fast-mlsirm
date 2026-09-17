@@ -180,7 +180,7 @@ def test_homogeneous_two_pl_matches_existing_gpcm_binary_cell():
         n_threads=2,
         require_convergence=True,
     )
-    homogeneous = fit_polytomous(y, 2, "gpcm", q_theta=11, max_iter=80, tol=1e-5)
+    homogeneous = fit_polytomous(y, 2, model="gpcm", q_theta=11, max_iter=80, tol=1e-5)
 
     _assert_actual_convergence(mixed, tol=1e-5, max_iter=80)
     assert mixed.loglik == pytest.approx(homogeneous.loglik, abs=1e-6)

@@ -1295,7 +1295,7 @@ def test_fit_polytomous_api_recovers_and_validates():
             p[1:k - 1] = cum[:k - 2] - cum[1:k - 1]
             p[k - 1] = cum[k - 2]
             y[pp, i] = rng.choice(k, p=p / p.sum())
-    fit = fit_polytomous(y, k, model="grm")
+    fit = fit_polytomous(y, k, model="grm", q_theta=21, max_iter=80, tol=1e-6)
     assert fit.model == "grm" and np.isfinite(fit.loglik)
     assert fit.converged
     assert fit.termination_reason == "tolerance"
@@ -1310,15 +1310,15 @@ def test_fit_polytomous_api_recovers_and_validates():
 
     # validation
     with pytest.raises(ValueError):
-        fit_polytomous(y, k, model="nominal")       # unsupported model
+        fit_polytomous(y, k, model="nominal", q_theta=21, max_iter=80, tol=1e-6)       # unsupported model
     with pytest.raises(ValueError):
-        fit_polytomous(y.astype(float) + 0.5, k)    # non-integer categories
+        fit_polytomous(y.astype(float) + 0.5, k, model="grm", q_theta=21, max_iter=80, tol=1e-6)    # non-integer categories
     with pytest.raises(ValueError):
-        fit_polytomous(y, 2)                          # category out of range
+        fit_polytomous(y, 2, model="grm", q_theta=21, max_iter=80, tol=1e-6)                          # category out of range
     with pytest.raises(ValueError):
-        fit_polytomous(y, k, max_iter=0)
+        fit_polytomous(y, k, model="grm", q_theta=21, max_iter=0, tol=1e-6)
     with pytest.raises(ValueError):
-        fit_polytomous(y, k, tol=np.nan)
+        fit_polytomous(y, k, model="grm", q_theta=21, max_iter=80, tol=np.nan)
 
 
 def test_score_polytomous_recovers_theta():
@@ -1346,8 +1346,8 @@ def test_score_polytomous_recovers_theta():
         for pp in range(n_persons):
             y[pp, i] = rng.choice(k, p=p[pp])
 
-    fit = fit_polytomous(y, k, model="gpcm")
-    sc = score_polytomous(y, fit)
+    fit = fit_polytomous(y, k, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
+    sc = score_polytomous(y, fit, q_theta=21)
     assert sc["theta_eap"].shape == (n_persons,)
     assert np.all(sc["theta_sd"] > 0)
     assert np.corrcoef(theta_true, sc["theta_eap"])[0, 1] > 0.8
@@ -1376,7 +1376,7 @@ def test_score_polytomous_rejects_malformed_scoring_contract():
 
     fit.slope[0] = np.nan
     with pytest.raises(ValueError, match="finite"):
-        score_polytomous(np.array([[1.0]]), fit)
+        score_polytomous(np.array([[1.0]]), fit, q_theta=21)
 
 
 def test_grm_cell_rust_numpy_parity():
@@ -1450,7 +1450,7 @@ def test_information_polytomous_api():
         for pp in range(n_persons):
             y[pp, i] = rng.choice(k, p=p[pp])
 
-    fit = fit_polytomous(y, k, model="gpcm")
+    fit = fit_polytomous(y, k, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
     grid = np.linspace(-3, 3, 25)
     info = information_polytomous(fit, grid)
     assert info["item_info"].shape == (25, n_items)
@@ -1487,10 +1487,10 @@ def test_fit_polytomous_handles_missing_data():
                 continue
             y[pp, i] = rng.choice(k, p=p[pp])
 
-    fit = fit_polytomous(y, k, model="gpcm")
+    fit = fit_polytomous(y, k, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
     assert np.isfinite(fit.loglik)
     assert np.corrcoef(a_true, fit.slope)[0, 1] > 0.9
-    sc = score_polytomous(y, fit)
+    sc = score_polytomous(y, fit, q_theta=21)
     assert sc["theta_eap"].shape == (n_persons,) and np.all(np.isfinite(sc["theta_eap"]))
 
 
@@ -1526,7 +1526,7 @@ def test_fit_lsirm_polytomous_recovers_positions():
             pr = np.exp(category_logprobs(np.array([base]), scores, c_true[i])[0])
             y[p, i] = rng.choice(k, p=pr / pr.sum())
 
-    fit = fit_lsirm_polytomous(y, k, latent_dim=ld, model="gpcm", q_theta=7, q_xi=7, max_iter=30)
+    fit = fit_lsirm_polytomous(y, k, latent_dim=ld, model="gpcm", q_theta=7, q_xi=7, max_iter=30, tol=1e-5)
     assert fit.zeta.shape == (n_items, ld)
     assert fit.theta_eap.shape == (n_persons,) and fit.xi_eap.shape == (n_persons, ld)
     assert np.all(fit.theta_sd > 0) and np.isfinite(fit.loglik)
@@ -1566,7 +1566,7 @@ def test_polytomous_information_criteria():
         for pp in range(n_persons):
             y[pp, i] = rng.choice(k, p=p[pp])
 
-    fit = fit_polytomous(y, k, model="gpcm")
+    fit = fit_polytomous(y, k, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
     ic = polytomous_information_criteria(fit, n_persons)
     # slope (n_items) + intercepts (n_items*(K-1)) = n_items*K
     assert ic["n_parameters"] == n_items * k
@@ -1631,7 +1631,7 @@ def test_item_fit_polytomous_sx2():
         for pp in range(n_persons):
             y[pp, i] = rng.choice(k, p=p[pp])
 
-    fit = fit_polytomous(y, k, model="gpcm")
+    fit = fit_polytomous(y, k, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
     res = item_fit_polytomous(y, fit, q_theta=21)
     for key in ("statistic", "df", "p_value", "n_cells"):
         assert res[key].shape == (n_items,)
@@ -1691,8 +1691,8 @@ def test_m2_polytomous():
     # correctly specified (normal ability) -> good fit
     theta = rng.standard_normal(n)
     y = sim(theta, a, c, k)
-    fit = fit_polytomous(y, k, model="gpcm")
-    res = m2_polytomous(y, fit)
+    fit = fit_polytomous(y, k, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
+    res = m2_polytomous(y, fit, q_theta=21)
     # Q = j*(k-1) + C(j,2)*(k-1)^2 ; P = j*k ; df = Q - P
     q = j * (k - 1) + (j * (j - 1) // 2) * (k - 1) ** 2
     assert res["n_moments"] == q
@@ -1718,7 +1718,7 @@ def test_m2_polytomous():
     # strongly misspecified: fit the wrong item parameters -> M2 must reject
     bad = fit
     bad.slope = a * 3.0  # inflate discriminations far from the truth
-    res_bad = m2_polytomous(y, bad)
+    res_bad = m2_polytomous(y, bad, q_theta=21)
     assert res_bad["m2"] > res["m2"]
     assert res_bad["p_value"] < 0.05
     assert res_bad["cfi"] < res["cfi"]
@@ -1726,8 +1726,8 @@ def test_m2_polytomous():
 
     # validation: fewer than 3 items has non-positive df
     with pytest.raises((ValueError, RuntimeError)):
-        fit2 = fit_polytomous(y[:, :2], k, model="gpcm")
-        m2_polytomous(y[:, :2], fit2)
+        fit2 = fit_polytomous(y[:, :2], k, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
+        m2_polytomous(y[:, :2], fit2, q_theta=21)
 
 
 def test_m2_polytomous_rejects_nonconverged_calibration():
@@ -1838,7 +1838,7 @@ def test_local_dependence_polytomous():
     # locally independent -> calibrated (the reference is conservative)
     theta = rng.standard_normal(n)
     y = sim(theta, a, c, k)
-    fit = fit_polytomous(y, k, model="gpcm")
+    fit = fit_polytomous(y, k, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
     ld = local_dependence_polytomous(y, fit)
     n_pairs = j * (j - 1) // 2
     for key in ("item_i", "item_j", "x2", "g2", "p_value", "cramers_v", "max_abs_std_resid"):
@@ -1852,7 +1852,7 @@ def test_local_dependence_polytomous():
 
     # a strong shared testlet on items 0,1 -> that pair is strongly dependent
     dep = sim(theta, a, c, k, testlet=1.5 * rng.standard_normal(n))
-    fit_d = fit_polytomous(dep, k, model="gpcm")
+    fit_d = fit_polytomous(dep, k, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
     ld_d = local_dependence_polytomous(dep, fit_d)
     pair01 = next(idx for idx in range(n_pairs)
                   if (ld_d["item_i"][idx], ld_d["item_j"][idx]) == (0, 1))
@@ -1889,7 +1889,7 @@ def test_fit_nominal_polytomous():
         for pp in range(n):
             y[pp, i] = rng.choice(k, p=p[pp])
 
-    nom = fit_nominal_polytomous(y, k)
+    nom = fit_nominal_polytomous(y, k, q_theta=21, max_iter=200, tol=1e-6)
     assert nom.scores.shape == (j, k - 1)
     assert nom.intercepts.shape == (j, k - 1)
     assert np.isfinite(nom.loglik)
@@ -1901,17 +1901,17 @@ def test_fit_nominal_polytomous():
     assert np.all(np.diff(nom.loglik_trace) >= -1e-10)
 
     # nests the GPCM: at least as high a loglik, and linear recovered scores
-    gp = fit_polytomous(y, k, model="gpcm")
+    gp = fit_polytomous(y, k, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
     assert nom.loglik >= gp.loglik - 0.5
     ratio = nom.scores[:, 1] / nom.scores[:, 0]
     assert np.all(np.abs(ratio - 2.0) < 0.4)  # a_k ~ a*k
 
     with pytest.raises(ValueError):
-        fit_nominal_polytomous(y, 1)
+        fit_nominal_polytomous(y, 1, q_theta=21, max_iter=200, tol=1e-6)
     with pytest.raises(ValueError):
-        fit_nominal_polytomous(y.astype(float) + 0.5, k)  # non-integer categories
+        fit_nominal_polytomous(y.astype(float) + 0.5, k, q_theta=21, max_iter=200, tol=1e-6)  # non-integer categories
 
-    unfinished = fit_nominal_polytomous(y[:50], k, max_iter=1, tol=1e-12)
+    unfinished = fit_nominal_polytomous(y[:50], k, q_theta=21, max_iter=1, tol=1e-12)
     assert not unfinished.converged
     assert unfinished.termination_reason == "max_iter"
     assert unfinished.n_iter == 1
@@ -1928,10 +1928,10 @@ def test_fit_nominal_polytomous():
     )
     for bad in malformed:
         with pytest.raises(ValueError):
-            fit_nominal_polytomous(bad, k)
+            fit_nominal_polytomous(bad, k, q_theta=21, max_iter=200, tol=1e-6)
     for kwargs in ({"max_iter": 0}, {"tol": np.inf}, {"tol": -1.0}):
         with pytest.raises(ValueError):
-            fit_nominal_polytomous(y, k, **kwargs)
+            fit_nominal_polytomous(y, k, **{"q_theta": 21, "max_iter": 200, "tol": 1e-6, **kwargs})
 
 
 def test_person_fit_polytomous():
@@ -1964,7 +1964,7 @@ def test_person_fit_polytomous():
     # clean sample -> fit -> calibrated person fit
     theta = rng.standard_normal(n)
     y = np.array([sim_person(theta[p]) for p in range(n)])
-    fit = fit_polytomous(y, k, model="gpcm")
+    fit = fit_polytomous(y, k, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
     pf = person_fit_polytomous(y, fit)
     for key in ("lz", "lz_star", "theta_eap", "flagged"):
         assert len(pf[key]) == n
@@ -2316,7 +2316,7 @@ def test_sibtest_uniform():
     p = 1.0 / (1.0 + np.exp(-(1.3 * (theta[:, None] - b))))
     y = (rng.random((n, J)) < p).astype(float)
 
-    sib = sibtest(y, group)
+    sib = sibtest(y, group, fdr_q=0.05, j_min=5)
     mh = mantel_haenszel_dif(y, group)
     for key in ("beta_uni", "se_beta", "b_uni", "p_value", "alpha_ref", "alpha_focal",
                 "n_strata_used", "flagged_bh"):
@@ -2330,7 +2330,7 @@ def test_sibtest_uniform():
     assert sib["beta_uni"][4] * mh["std_p_dif"][4] < 0.0
 
     # swapping the group labels flips beta_uni and preserves its magnitude
-    sib_sw = sibtest(y, 1 - group)
+    sib_sw = sibtest(y, 1 - group, fdr_q=0.05, j_min=5)
     assert sib_sw["beta_uni"][4] < 0.0
     assert abs(sib_sw["beta_uni"][4] + sib["beta_uni"][4]) < 1e-9
 
@@ -2352,22 +2352,22 @@ def test_sibtest_uniform():
     # j_min is plumbed through: a stricter floor can only retain fewer strata, and at a floor high
     # enough to bite on this fixture it must retain strictly fewer (60 is too low to constrain a
     # 3000-person bank, so asserting on it would prove nothing)
-    strict = sibtest(y, group, j_min=250)
+    strict = sibtest(y, group, fdr_q=0.05, j_min=250)
     assert np.all(strict["n_strata_used"] <= sib["n_strata_used"])
     assert strict["n_strata_used"].sum() < sib["n_strata_used"].sum()
 
     # a constant item is undefined, not "no DIF"
     y2 = y.copy()
     y2[:, 7] = 1.0
-    deg = sibtest(y2, group)
+    deg = sibtest(y2, group, fdr_q=0.05, j_min=5)
     assert np.isnan(deg["beta_uni"][7]) and np.isnan(deg["p_value"][7])
     assert not deg["flagged_bh"][7]
 
     # validation
     with pytest.raises(ValueError):
-        sibtest(y[:, :2], group)
+        sibtest(y[:, :2], group, fdr_q=0.05, j_min=5)
     with pytest.raises(ValueError):
-        sibtest(y, group, j_min=1)
+        sibtest(y, group, fdr_q=0.05, j_min=1)
 
 
 def test_dif_purification():
@@ -2743,7 +2743,7 @@ def test_u3_person_fit_polytomous():
     assert np.all((finite >= 0.0) & (finite <= 1.0))
     assert not res0["flagged"].any()  # no cutoff -> nothing flagged
 
-    fit = fit_polytomous(y0, k, model="gpcm")
+    fit = fit_polytomous(y0, k, model="gpcm", q_theta=21, max_iter=80, tol=1e-6)
     cutoff = u3_cutoff_polytomous(fit, n_persons=n, alpha=0.05, n_rep=60, seed=7)
     assert 0.0 < cutoff < 1.0
     flagged0 = u3_person_fit_polytomous(y0, k, cutoff=cutoff)["flagged"]
@@ -6227,7 +6227,7 @@ def test_raju_area_unsigned_oracle():
     b_r = np.array([-0.3, 0.9, 1.1, -0.4])
     se = np.full(4, 0.1)
     cov = np.zeros(4)
-    res = raju_area(a_r, b_r, se, se, cov, a_f, b_f, se, se, cov)
+    res = raju_area(a_r, b_r, se, se, cov, a_f, b_f, se, se, cov, alpha=0.05)
     expect = [0.9140059278766983, 1.2023709167732664, 2.193856226242703, 1.6756394651297617]
     assert np.allclose(res["h"], expect, atol=1e-9)
     assert res["signed"] is False
@@ -6242,16 +6242,16 @@ def test_raju_area_signed_orientation_and_3pl():
     a_r, b_r = np.array([0.8]), np.array([-0.3])
     a_f, b_f = np.array([1.2]), np.array([0.5])
     se, cov = np.array([0.1]), np.array([0.0])
-    s = raju_area(a_r, b_r, se, se, cov, a_f, b_f, se, se, cov, signed=True)
+    s = raju_area(a_r, b_r, se, se, cov, a_f, b_f, se, se, cov, signed=True, alpha=0.05)
     assert abs(s["h"][0] - 0.8) < 1e-12
-    two = raju_area(a_r, b_r, se, se, cov, a_f, b_f, se, se, cov)
-    three = raju_area(a_r, b_r, se, se, cov, a_f, b_f, se, se, cov, guess=np.array([0.35]))
+    two = raju_area(a_r, b_r, se, se, cov, a_f, b_f, se, se, cov, alpha=0.05)
+    three = raju_area(a_r, b_r, se, se, cov, a_f, b_f, se, se, cov, guess=np.array([0.35]), alpha=0.05)
     assert abs(three["h"][0] - 0.65 * two["h"][0]) < 1e-12
     assert abs(three["se"][0] - 0.65 * two["se"][0]) < 1e-12
     assert abs(three["z"][0] - two["z"][0]) < 1e-12
     # Detection flag reads the crate dif_items: strong DIF must be flagged.
     tiny = np.array([0.01])
-    strong = raju_area(a_r, b_r, tiny, tiny, cov, a_f, b_f, tiny, tiny, cov, signed=True)
+    strong = raju_area(a_r, b_r, tiny, tiny, cov, a_f, b_f, tiny, tiny, cov, signed=True, alpha=0.05)
     assert list(strong["dif_items"]) == [0]
 
 
@@ -6259,17 +6259,17 @@ def test_raju_area_error_paths():
     ok, se, cov = np.array([1.0]), np.array([0.1]), np.array([0.0])
     b = np.array([0.0])
     with pytest.raises(ValueError, match="discriminations"):
-        raju_area(np.array([-1.0]), b, se, se, cov, ok, b, se, se, cov)
+        raju_area(np.array([-1.0]), b, se, se, cov, ok, b, se, se, cov, alpha=0.05)
     with pytest.raises(ValueError, match="alpha"):
         raju_area(ok, b, se, se, cov, ok, b, se, se, cov, alpha=0.0)
     with pytest.raises(ValueError, match="guessing"):
-        raju_area(ok, b, se, se, cov, ok, b, se, se, cov, guess=np.array([1.0]))
+        raju_area(ok, b, se, se, cov, ok, b, se, se, cov, guess=np.array([1.0]), alpha=0.05)
     with pytest.raises(ValueError, match="length"):
-        raju_area(ok, b, se, se, cov, np.array([1.0, 1.0]), b, se, se, cov)
+        raju_area(ok, b, se, se, cov, np.array([1.0, 1.0]), b, se, se, cov, alpha=0.05)
     with pytest.raises(ValueError, match="semi-definite"):
-        raju_area(ok, b, se, se, np.array([-0.011]), ok, b, se, se, cov)
+        raju_area(ok, b, se, se, np.array([-0.011]), ok, b, se, se, cov, alpha=0.05)
     with pytest.raises(ValueError, match="1-D"):
-        raju_area(np.ones((1, 1)), b, se, se, cov, ok, b, se, se, cov)
+        raju_area(np.ones((1, 1)), b, se, se, cov, ok, b, se, se, cov, alpha=0.05)
 
 
 class TestKlInformation:
@@ -7379,7 +7379,7 @@ class TestDeltaPlot:
         from fast_mlsirm import delta_plot
 
         resp, group = self._main_fixture()
-        r = delta_plot(resp, group)
+        r = delta_plot(resp, group, alpha=0.05, max_iter=10)
         assert abs(r.props[3, 0] - 0.625) < 1e-15
         assert abs(r.props[3, 1] - 0.225) < 1e-15
         assert abs(r.deltas[3, 0] - 11.7254425441425) < 1e-6
@@ -7395,11 +7395,11 @@ class TestDeltaPlot:
         from fast_mlsirm import delta_plot
 
         resp, group = self._main_fixture()
-        r3 = delta_plot(resp, group, purify="IPP3")
+        r3 = delta_plot(resp, group, purify="IPP3", alpha=0.05, max_iter=10)
         assert r3.n_iter == 2 and r3.converged
         assert list(r3.dif_items) == [3]
         assert abs(r3.thresholds[1] - 1.2874360054118958) < 1e-6
-        rf = delta_plot(resp, group, threshold="fixed", fixed_threshold=1.0)
+        rf = delta_plot(resp, group, threshold="fixed", fixed_threshold=1.0, alpha=0.05, max_iter=10)
         assert list(rf.dif_items) == [3, 7, 8]
 
     def test_input_validation(self):
@@ -7410,25 +7410,25 @@ class TestDeltaPlot:
 
         resp, group = self._main_fixture()
         with pytest.raises(ValueError):
-            delta_plot(resp[:, :1], group)
+            delta_plot(resp[:, :1], group, alpha=0.05, max_iter=10)
         with pytest.raises(ValueError):
-            delta_plot(resp, group[:-1])
+            delta_plot(resp, group[:-1], alpha=0.05, max_iter=10)
         with pytest.raises(ValueError):
-            delta_plot(resp + 0j, group)  # complex laundering
+            delta_plot(resp + 0j, group, alpha=0.05, max_iter=10)  # complex laundering
         bad = resp.copy()
         bad[0, 0] = 2.0
         with pytest.raises(ValueError):
-            delta_plot(bad, group)
+            delta_plot(bad, group, alpha=0.05, max_iter=10)
         with pytest.raises(ValueError):
-            delta_plot(resp, np.full_like(group, 2))
+            delta_plot(resp, np.full_like(group, 2), alpha=0.05, max_iter=10)
         with pytest.raises(ValueError):
-            delta_plot(resp, group, threshold="bogus")
+            delta_plot(resp, group, threshold="bogus", alpha=0.05, max_iter=10)
         with pytest.raises(ValueError):
-            delta_plot(resp, group, purify="IPP9")
+            delta_plot(resp, group, purify="IPP9", alpha=0.05, max_iter=10)
         with pytest.raises(ValueError):
-            delta_plot(resp, group, alpha=0.0)
+            delta_plot(resp, group, alpha=0.0, max_iter=10)
         with pytest.raises(ValueError):
-            delta_plot(resp, group, extreme="add", nr_add=0)
+            delta_plot(resp, group, extreme="add", nr_add=0, alpha=0.05, max_iter=10)
 
     def test_missing_and_add_mode(self):
         import numpy as np
@@ -7438,7 +7438,7 @@ class TestDeltaPlot:
         resp, group = self._main_fixture()
         miss = resp.copy()
         miss[0, 0] = np.nan
-        r = delta_plot(miss, group)
+        r = delta_plot(miss, group, alpha=0.05, max_iter=10)
         expect = resp[1:40, 0].sum() / 39.0
         assert abs(r.props[0, 0] - expect) < 1e-15
         # add-mode: exact-1 ref proportion becomes (sum+1)/(n+2)
@@ -7448,7 +7448,8 @@ class TestDeltaPlot:
         )
         g = np.array([0, 0, 0, 0, 1, 1, 1, 1])
         ra = delta_plot(
-            small, g, extreme="add", nr_add=1, threshold="fixed", fixed_threshold=9.9
+            small, g, extreme="add", nr_add=1, threshold="fixed", fixed_threshold=9.9,
+            alpha=0.05, max_iter=10,
         )
         assert abs(ra.adj_props[0, 0] - 5.0 / 6.0) < 1e-15
 

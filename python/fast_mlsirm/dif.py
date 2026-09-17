@@ -8,6 +8,7 @@ item response model is fitted. The numerical computation runs in Rust."""
 from __future__ import annotations
 
 import math
+import warnings
 
 import numpy as np
 
@@ -74,11 +75,12 @@ def _normalize_mh_controls(
     return normalized_exclude, normalized_fdr_q
 
 
-def mantel_haenszel_dif(
+def detect_dif_mantel_haenszel(
     responses: np.ndarray,
     group: np.ndarray,
+    *,
     exclude_studied_item: bool = False,
-    fdr_q: float = 0.05,
+    fdr_q: float,
 ) -> dict[str, np.ndarray]:
     """Mantel-Haenszel DIF sweep for dichotomous items (compute in Rust; Holland & Thayer, 1988).
 
@@ -169,6 +171,23 @@ def mantel_haenszel_dif(
     }
 
 
+def mantel_haenszel_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+    exclude_studied_item: bool = False,
+    fdr_q: float = 0.05,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_mantel_haenszel` (ADR-0028 rename)."""
+    warnings.warn(
+        "mantel_haenszel_dif is deprecated; use detect_dif_mantel_haenszel instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_mantel_haenszel(
+        responses, group, exclude_studied_item=exclude_studied_item, fdr_q=fdr_q
+    )
+
+
 def _dif_inputs(responses: np.ndarray, group: np.ndarray, fdr_q: float):
     """Validation shared by the two PURIFIED entry points.
 
@@ -196,13 +215,14 @@ def _dif_inputs(responses: np.ndarray, group: np.ndarray, fdr_q: float):
     return yf.astype(np.int64).reshape(-1), gf.astype(np.int64), int(n_persons), int(n_items)
 
 
-def mantel_haenszel_dif_purified(
+def detect_dif_mantel_haenszel_purified(
     responses: np.ndarray,
     group: np.ndarray,
+    *,
     exclude_studied_item: bool = False,
-    fdr_q: float = 0.05,
-    max_rounds: int = 3,
-    min_anchor_items: int = 4,
+    fdr_q: float,
+    max_rounds: int,
+    min_anchor_items: int,
 ) -> dict[str, np.ndarray]:
     """Mantel-Haenszel DIF with an ITERATIVELY PURIFIED matching criterion (compute in Rust; Candell &
     Drasgow, 1988; Clauser, Mazor & Hambleton, 1993).
@@ -257,14 +277,39 @@ def mantel_haenszel_dif_purified(
     return _mh_rows(res) | _purify_meta(res)
 
 
-def logistic_dif_purified(
+def mantel_haenszel_dif_purified(
     responses: np.ndarray,
     group: np.ndarray,
     exclude_studied_item: bool = False,
     fdr_q: float = 0.05,
-    max_iter: int = 50,
     max_rounds: int = 3,
     min_anchor_items: int = 4,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_mantel_haenszel_purified` (ADR-0028 rename)."""
+    warnings.warn(
+        "mantel_haenszel_dif_purified is deprecated; use detect_dif_mantel_haenszel_purified instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_mantel_haenszel_purified(
+        responses,
+        group,
+        exclude_studied_item=exclude_studied_item,
+        fdr_q=fdr_q,
+        max_rounds=max_rounds,
+        min_anchor_items=min_anchor_items,
+    )
+
+
+def detect_dif_logistic_purified(
+    responses: np.ndarray,
+    group: np.ndarray,
+    *,
+    exclude_studied_item: bool = False,
+    fdr_q: float,
+    max_iter: int,
+    max_rounds: int,
+    min_anchor_items: int,
 ) -> dict[str, np.ndarray]:
     """Zumbo logistic-regression DIF with an ITERATIVELY PURIFIED matching criterion (compute in Rust).
 
@@ -322,6 +367,32 @@ def logistic_dif_purified(
     return _logistic_rows(res) | _purify_meta(res)
 
 
+def logistic_dif_purified(
+    responses: np.ndarray,
+    group: np.ndarray,
+    exclude_studied_item: bool = False,
+    fdr_q: float = 0.05,
+    max_iter: int = 50,
+    max_rounds: int = 3,
+    min_anchor_items: int = 4,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_logistic_purified` (ADR-0028 rename)."""
+    warnings.warn(
+        "logistic_dif_purified is deprecated; use detect_dif_logistic_purified instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_logistic_purified(
+        responses,
+        group,
+        exclude_studied_item=exclude_studied_item,
+        fdr_q=fdr_q,
+        max_iter=max_iter,
+        max_rounds=max_rounds,
+        min_anchor_items=min_anchor_items,
+    )
+
+
 def _purify_meta(res) -> dict[str, np.ndarray]:
     """Extract the anchor-purification metadata from a Rust DIF result dict."""
     # `purify_converged`, not `converged`: the logistic rows already carry a PER-ITEM `converged` array
@@ -353,8 +424,9 @@ def _mh_rows(res) -> dict[str, np.ndarray]:
 def sibtest(
     responses: np.ndarray,
     group: np.ndarray,
-    fdr_q: float = 0.05,
-    j_min: int = 5,
+    *,
+    fdr_q: float,
+    j_min: int,
 ) -> dict[str, np.ndarray]:
     """Uniform SIBTEST for dichotomous items (compute in Rust; Shealy & Stout, 1993).
 
@@ -475,7 +547,8 @@ def raju_area(
     cov_ab_foc: np.ndarray,
     guess: np.ndarray | None = None,
     signed: bool = False,
-    alpha: float = 0.05,
+    *,
+    alpha: float,
 ) -> dict[str, np.ndarray]:
     """Raju's ICC-area DIF with signed/unsigned Z tests (compute in Rust; Raju, 1988, 1990).
 
@@ -582,12 +655,13 @@ def _logistic_rows(res) -> dict[str, np.ndarray]:
     }
 
 
-def logistic_dif(
+def detect_dif_logistic(
     responses: np.ndarray,
     group: np.ndarray,
+    *,
     exclude_studied_item: bool = False,
-    fdr_q: float = 0.05,
-    max_iter: int = 50,
+    fdr_q: float,
+    max_iter: int,
 ) -> dict[str, np.ndarray]:
     """Zumbo (1999) logistic-regression DIF for dichotomous items (compute in Rust; Swaminathan &
     Rogers, 1990).
@@ -708,7 +782,25 @@ def logistic_dif(
     }
 
 
-def mantel_smd_dif(
+def logistic_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+    exclude_studied_item: bool = False,
+    fdr_q: float = 0.05,
+    max_iter: int = 50,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_logistic` (ADR-0028 rename)."""
+    warnings.warn(
+        "logistic_dif is deprecated; use detect_dif_logistic instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_logistic(
+        responses, group, exclude_studied_item=exclude_studied_item, fdr_q=fdr_q, max_iter=max_iter
+    )
+
+
+def detect_dif_mantel_smd(
     responses: np.ndarray,
     group: np.ndarray,
 ) -> dict[str, np.ndarray]:
@@ -789,7 +881,20 @@ def mantel_smd_dif(
         "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
     }
 
-def gmh_dif(
+def mantel_smd_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_mantel_smd` (ADR-0028 rename)."""
+    warnings.warn(
+        "mantel_smd_dif is deprecated; use detect_dif_mantel_smd instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_mantel_smd(responses, group)
+
+
+def detect_dif_gmh(
     responses: np.ndarray,
     group: np.ndarray,
 ) -> dict[str, np.ndarray]:
@@ -871,11 +976,25 @@ def gmh_dif(
         "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
     }
 
-def breslow_day_dif(
+def gmh_dif(
     responses: np.ndarray,
     group: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_gmh` (ADR-0028 rename)."""
+    warnings.warn(
+        "gmh_dif is deprecated; use detect_dif_gmh instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_gmh(responses, group)
+
+
+def detect_dif_breslow_day(
+    responses: np.ndarray,
+    group: np.ndarray,
+    *,
     exclude_studied_item: bool = False,
-    fdr_q: float = 0.05,
+    fdr_q: float,
 ) -> dict[str, np.ndarray]:
     """Breslow-Day (1980, Eq. 4.30) odds-ratio homogeneity DIF test (compute in Rust).
 
@@ -953,3 +1072,39 @@ def breslow_day_dif(
         "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
         "flagged_bh": np.asarray(res["flagged_bh"], dtype=bool),
     }
+
+
+def breslow_day_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+    exclude_studied_item: bool = False,
+    fdr_q: float = 0.05,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_breslow_day` (ADR-0028 rename)."""
+    warnings.warn(
+        "breslow_day_dif is deprecated; use detect_dif_breslow_day instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_breslow_day(
+        responses, group, exclude_studied_item=exclude_studied_item, fdr_q=fdr_q
+    )
+
+
+# Deprecated aliases carry a terse ADR-0028 notice on their own docstring, but
+# callers (and this module's own docstring-content regression tests) still
+# rely on the full interpretation caveats -- append the renamed function's
+# docstring rather than discarding it.
+for _old_name, _new_name in (
+    ("mantel_haenszel_dif", "detect_dif_mantel_haenszel"),
+    ("mantel_haenszel_dif_purified", "detect_dif_mantel_haenszel_purified"),
+    ("logistic_dif_purified", "detect_dif_logistic_purified"),
+    ("logistic_dif", "detect_dif_logistic"),
+    ("mantel_smd_dif", "detect_dif_mantel_smd"),
+    ("gmh_dif", "detect_dif_gmh"),
+    ("breslow_day_dif", "detect_dif_breslow_day"),
+):
+    _old_fn = globals()[_old_name]
+    _new_fn = globals()[_new_name]
+    _old_fn.__doc__ = f"{_old_fn.__doc__}\n\n{_new_fn.__doc__}"
+del _old_name, _new_name, _old_fn, _new_fn
