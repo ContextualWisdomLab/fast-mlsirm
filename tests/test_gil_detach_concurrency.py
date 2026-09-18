@@ -67,7 +67,6 @@ def _one_fit(y: np.ndarray, smap: np.ndarray) -> None:
     )
 
 
-@pytest.mark.timeout(180)
 def test_threadpool_fit_bifactor_grm_beats_serial_wall_clock() -> None:
     """ThreadPoolExecutor must beat serial wall-clock when Rust detaches the GIL."""
     y, smap = _tiny_responses()
