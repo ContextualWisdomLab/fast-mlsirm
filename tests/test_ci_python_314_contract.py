@@ -24,13 +24,13 @@ def _python_gate_job_source() -> str:
 
 
 def test_python_job_runs_full_suite_on_supported_cpythons() -> None:
-    """Pull-request CI must execute the full fail-slow suite on supported CPythons."""
+    """Pull-request CI must execute the installed wheel without checkout shadowing."""
     python_job = _python_matrix_job_source()
 
     assert 'python-version: ["3.12", "3.14"]' in python_job
     assert "python-version: ${{ matrix.python-version }}" in python_job
     assert "fail-fast: false" in python_job
-    assert "- run: pytest" in python_job
+    assert "- run: pytest -o pythonpath=." in python_job
 
 
 def test_advertised_python_floor_matches_ci_and_dependency_lock() -> None:
