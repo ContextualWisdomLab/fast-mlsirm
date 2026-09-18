@@ -25,8 +25,13 @@
 //! paragraphs, but conditionally dependent within paragraphs," and (p. 425)
 //! that the bifactor restriction reduces the `s`-fold integral to a
 //! two-dimensional integral whose specific-dimension contributions multiply.
-//! Gibbons et al. (2007, pp. 5, 7–8) repeat the between-paragraph CI motive
-//! and the graded bifactor two-dimensional reduction. See
+//! Gibbons et al. (2007, p. 8) state that the bifactor restriction always
+//! results in a two-dimensional integral regardless of the number of
+//! dimensions. Gibbons et al. (2007, p. 9) state that the integral stays
+//! two-dimensional for both the binary and the graded bifactor models
+//! regardless of the number of subdomains. Together those two results make
+//! a per-block sub-pattern collapse an exact transformation of the reduced
+//! integral, not an approximation. See
 //! `docs/papers/2003-block-partial-pattern-source-check.md`.
 //!
 //! # References

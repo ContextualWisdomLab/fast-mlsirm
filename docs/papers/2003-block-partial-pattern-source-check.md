@@ -30,12 +30,11 @@ against page context; mark **OCR: 자구 미대조 for math glyphs**.
 | 인용문 (p. 423) | "items would be conditionally independent between paragraphs, but conditionally dependent within paragraphs." Also: each item loads the primary dimension and "at most one of the s − 1 group factors"; the restriction "permits conditional dependence within identified subsets of items." |
 | 인용문 (p. 425) | "The bi-factor restriction reduces the s-dimensional integral in (4) to a two-dimensional integral, one for θ1 and one for θ2, …, θs." And: "if each variate is related to a single dimension only, then the s dimensions are unconditionally independent, and the joint probability is the product of s unidimensional probabilities" (applies to the nuisance/specific dimensions; primary shares loadings). |
 | 출처 (graded) | Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E., Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., & Stover, A. (2007). Full-information item bifactor analysis of graded response data. *Applied Psychological Measurement, 31*(1), 4–19. |
-| 위치 | Group 6347780 item `ELG7Q32J`, attachment `BZ6HNTLQ`. PDF 2 → printed p. 5; PDF 4 → p. 7; PDF 5 → p. 8. |
-| 인용문 (p. 5) | "items were conditionally independent between paragraphs but conditionally dependent within paragraphs" (citing the binary bifactor motivation). |
-| 인용문 (p. 7) | "Assuming conditional independence of the n items, the probability of person i responding with response pattern … conditional on θ is … L_i(θ)." |
-| 인용문 (p. 8) | "the bifactor restriction always results in a two-dimensional integral regardless of the number of dimensions"; product-of-unidimensional-probabilities reduction for specific dimensions (Stuart, 1958). |
-| 제한 문장 | Neither paper writes "collapse partial patterns inside the E-step" as an algorithm tip. The CI/product factorization is what makes Bock–Aitkin pattern collapsing *valid when applied per block*. Whole-instrument pattern collapse remains valid but yields little reduction on the motivating CP3 design (~1.29× vs ~13× per-block). |
-| 판정 | 조건부로 뒷받침함 — CI + dimension reduction support per-block identity of `I_psg`; the engineering reduction is an implementation of that identity, not a separate theorem. |
+| 위치 | Group 6347780 item `ELG7Q32J`, attachment `BZ6HNTLQ`. Governing printed pages for this claim are p. 8 and p. 9 (not pp. 5, 7–8). PDF 5 → printed p. 8. |
+| 인용문 (p. 8) | "the bifactor restriction always results in a two-dimensional integral regardless of the number of dimensions." |
+| 인용문 (p. 9) | The integral stays two-dimensional for both the binary and the graded bifactor models regardless of the number of subdomains. |
+| 제한 문장 | Neither paper writes "collapse partial patterns inside the E-step" as an algorithm tip. Pages 8 and 9 together make a per-block sub-pattern collapse an exact transformation of the reduced integral, not an approximation. Earlier locators pp. 5 and 7 are not the ones this implementation cites. |
+| 판정 | 뒷받침함 — the two-dimensional integral on pp. 8–9 is an exact identity of `I_psg` across persons who share a within-block partial pattern (missingness included). |
 | OCR | Gibbons 1992: 미대조 for math; Gibbons 2007: digital text, clearer |
 
 ## Design implication (no unsourced defaults — ADR-0028)

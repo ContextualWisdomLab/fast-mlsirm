@@ -68,8 +68,10 @@
 //! `s` patterns rather than `N` persons. Under bifactor structure, `I_psg`
 //! depends on person `p` only through the **partial** response pattern on
 //! block `s` (missingness included): Gibbons and Hedeker (1992, pp. 423, 425)
-//! and Gibbons et al. (2007, pp. 5, 7–8) justify between-block conditional
-//! independence and the product factorization over specific-factor integrals.
+//! and Gibbons et al. (2007, pp. 8, 9) state that the bifactor restriction
+//! keeps the integral two-dimensional regardless of the number of dimensions
+//! and, for both the binary and graded models, regardless of the number of
+//! subdomains. That identity is exact, not an approximation.
 //! The CPU E-step therefore indexes unique within-block partial patterns once
 //! (data-fixed) and evaluates `block_acc` / `log_i` once per unique pattern
 //! per EM iteration — see [`crate::bifactor_block_patterns`]. Provenance
