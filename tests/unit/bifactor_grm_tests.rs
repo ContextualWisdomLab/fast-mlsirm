@@ -529,6 +529,218 @@ fn estep_gpu_matches_cpu_counts_and_loglik() {
 }
 
 // ---------------------------------------------------------------------------
+// #2003 precondition: response-pattern multiplicity is an exact E-step
+// invariant. Pattern reduction may reorder the person sum, so bit-identity
+// with a reduced path is not required — but duplicating every row must
+// scale loglik and expected counts by the multiplicity (exact for f64
+// because each person's contribution is added independently from 0.0 into
+// a fresh accumulator at this fixture size).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn estep_duplicate_persons_scale_loglik_and_counts() {
+    use super::{e_step, fill_logprob_tables, gh_rule, initial_params, validate};
+
+    let (y_once, n_once) = tiny_data();
+    let mut y_twice = y_once.clone();
+    y_twice.extend_from_slice(&y_once);
+    let n_twice = n_once * 2;
+
+    let cfg = valid_config();
+    let v_once = validate(
+        &y_once,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_once,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("single-copy fixture must validate");
+    let v_twice = validate(
+        &y_twice,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_twice,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("duplicated fixture must validate");
+
+    let (tg, wg) = gh_rule(7).expect("Q=7 rule must exist");
+    let (ts, ws) = gh_rule(7).expect("Q=7 rule must exist");
+    // Same start parameters for both (seeded from the single-copy layout).
+    let params = initial_params(&v_once, &y_once, None, cfg.seed, 0);
+    let tables = fill_logprob_tables(&v_once, &params, tg, ts, 7, 7);
+    let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+
+    let (ll_once, counts_once) = e_step(
+        &v_once,
+        &y_once,
+        None,
+        &tables,
+        &log_wg,
+        &log_ws,
+        7,
+        7,
+        tg,
+        ts,
+        crate::Device::Cpu,
+    );
+    let (ll_twice, counts_twice) = e_step(
+        &v_twice,
+        &y_twice,
+        None,
+        &tables,
+        &log_wg,
+        &log_ws,
+        7,
+        7,
+        tg,
+        ts,
+        crate::Device::Cpu,
+    );
+
+    assert!(
+        (ll_twice - 2.0 * ll_once).abs() <= 1e-12,
+        "duplicating every person must double observed-data loglik; \
+         once={ll_once}, twice={ll_twice}, 2*once={}",
+        2.0 * ll_once
+    );
+    assert_eq!(counts_once.len(), counts_twice.len());
+    let mut max_rel = 0.0f64;
+    for (co, ct) in counts_once.iter().zip(counts_twice.iter()) {
+        assert_eq!(co.len(), ct.len());
+        for (no, nt) in co.iter().zip(ct.iter()) {
+            assert_eq!(no.len(), nt.len());
+            for (&a, &b) in no.iter().zip(nt.iter()) {
+                let expected = 2.0 * a;
+                let denom = expected.abs().max(1.0);
+                max_rel = max_rel.max((b - expected).abs() / denom);
+            }
+        }
+    }
+    assert!(
+        max_rel <= 1e-12,
+        "duplicating every person must double expected counts; max rel err={max_rel:.3e}"
+    );
+}
+
+/// Shared block-local response subvectors yield identical block contributions
+/// to the reduced E-step. This is the algebraic fact #2003 exploits: for a
+/// fixed parameter table, `log_i[s][g]` depends only on the responses (and
+/// missingness) on items in block `s`, not on other blocks.
+///
+/// The helper below mirrors `e_step`'s block loop at
+/// `crates/mlsirm-core/src/bifactor_grm.rs` (block accumulation through
+/// `log_sum_exp` over specific nodes). When #2003 lands a shared cache, keep
+/// this assertion and delete the mirror.
+#[test]
+fn estep_shared_block_subvector_yields_identical_log_i() {
+    use super::{
+        fill_logprob_tables, gh_rule, initial_params, log_sum_exp, validate,
+    };
+
+    // Two persons share block-0 responses [1, 2] but differ on block 1.
+    // A third person differs on block 0 so the test is not vacuous.
+    // A fourth person covers remaining category cells so validation passes
+    // (every declared category must be observed on every item).
+    let n_persons = 4usize;
+    let y: Vec<usize> = vec![
+        1, 2, 0, 1, // p0
+        1, 2, 2, 0, // p1 — same block 0 as p0
+        0, 0, 1, 2, // p2 — different block 0
+        2, 1, 0, 2, // p3 — category coverage only
+    ];
+    let cfg = valid_config();
+    let v = validate(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("shared-block fixture must validate");
+    let (tg, wg) = gh_rule(7).expect("Q=7 rule must exist");
+    let (ts, ws) = gh_rule(7).expect("Q=7 rule must exist");
+    let qg = tg.len();
+    let qs = ts.len();
+    let params = initial_params(&v, &y, None, cfg.seed, 0);
+    let tables = fill_logprob_tables(&v, &params, tg, ts, qg, qs);
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+
+    let block_log_i = |person: usize, block: usize| -> Vec<f64> {
+        let members = &v.blocks[block];
+        let mut out = vec![0.0f64; qg];
+        let mut tmp_h = vec![0.0f64; qs];
+        for g in 0..qg {
+            for h in 0..qs {
+                let mut acc = log_ws[h];
+                for &i in members {
+                    let yc = y[person * TINY_N_ITEMS + i];
+                    acc += tables[i][(g * qs + h) * TINY_N_CAT + yc];
+                }
+                tmp_h[h] = acc;
+            }
+            out[g] = log_sum_exp(&tmp_h);
+        }
+        out
+    };
+
+    let p0_b0 = block_log_i(0, 0);
+    let p1_b0 = block_log_i(1, 0);
+    let p2_b0 = block_log_i(2, 0);
+    assert_eq!(
+        p0_b0, p1_b0,
+        "persons sharing block-0 responses must share log_i[0]; \
+         this is the #2003 pattern-reduction precondition"
+    );
+    assert_ne!(
+        p0_b0, p2_b0,
+        "a distinct block-0 subvector must produce a distinct log_i[0]"
+    );
+
+    // Missingness is part of the pattern identity (#2003 acceptance).
+    let mut observed = vec![true; n_persons * TINY_N_ITEMS];
+    // Mask item 0 for person 0 only — breaks the shared block-0 pattern.
+    observed[0] = false;
+    let block_log_i_masked = |person: usize| -> Vec<f64> {
+        let members = &v.blocks[0];
+        let mut out = vec![0.0f64; qg];
+        let mut tmp_h = vec![0.0f64; qs];
+        for g in 0..qg {
+            for h in 0..qs {
+                let mut acc = log_ws[h];
+                for &i in members {
+                    if !observed[person * TINY_N_ITEMS + i] {
+                        continue;
+                    }
+                    let yc = y[person * TINY_N_ITEMS + i];
+                    acc += tables[i][(g * qs + h) * TINY_N_CAT + yc];
+                }
+                tmp_h[h] = acc;
+            }
+            out[g] = log_sum_exp(&tmp_h);
+        }
+        out
+    };
+    let masked0 = block_log_i_masked(0);
+    let masked1 = block_log_i_masked(1);
+    assert_ne!(
+        masked0, masked1,
+        "identical category codes with different missing masks are distinct patterns"
+    );
+    let _ = wg; // weights unused beyond log_ws; keep gh_rule paired.
+}
+
+// ---------------------------------------------------------------------------
 // #1976: zero Gauss-Hermite prior mass must not NaN-poison E-step counts;
 // a fit that never leaves its start must not report tolerance_met.
 // ---------------------------------------------------------------------------
