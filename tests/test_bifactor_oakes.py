@@ -151,10 +151,11 @@ def test_non_pd_information_is_flagged_not_substituted() -> None:
 def test_rejects_out_of_range_caller_arguments() -> None:
     y = _simulate(SEED)
     fit = _fit(y)
+    # #1929: no node-count cap; q_general=5 is now accepted, only < 1 is not.
     with pytest.raises(ValueError):
         bifactor_oakes_se(
             fit.a_general, fit.a_specific, fit.threshold, y, SPECIFIC_MAP,
-            N_CAT, N_SPECIFIC, q_general=5, q_specific=7, fd_step=1e-5,
+            N_CAT, N_SPECIFIC, q_general=0, q_specific=7, fd_step=1e-5,
         )
     with pytest.raises(ValueError):
         bifactor_oakes_se(
