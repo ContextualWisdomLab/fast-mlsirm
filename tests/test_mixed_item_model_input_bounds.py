@@ -87,7 +87,7 @@ def test_public_mixed_fit_rejects_hostile_model_object_without_callbacks() -> No
             _tiny_responses(),
             ["2pl", _HostileModelName()],
             [2, 2],
-            max_iter=1,
+            max_iter=1, q_theta=21, q_xi=7, tol=1e-5
         )
 
 

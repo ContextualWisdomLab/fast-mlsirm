@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "fast-mlsirm"
-version = "0.9.1"
+version = "0.11.4"
 description = "Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -43,10 +43,15 @@ features = ["pyo3/extension-module"]
 manifest-path = "crates/fast-mlsirm-py/Cargo.toml"
 module-name = "fast_mlsirm._core"
 python-source = "python"
+# Maturin mixed layouts with manifest-path under crates/ can emit
+# License-File: LICENSE in PKG-INFO while omitting the file from the sdist
+# (PyO3/maturin#2531). Explicit sdist include keeps PyPI upload valid.
+include = [{ path = "LICENSE", format = "sdist" }]
 
 [tool.pytest.ini_options]
 pythonpath = [".", "python"]
 testpaths = ["tests"]
+xfail_strict = true
 
 [tool.interrogate]
 ignore-init-method = true

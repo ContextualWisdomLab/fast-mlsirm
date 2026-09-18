@@ -116,11 +116,11 @@ pub fn fit_facets(
         }
     }
     for (idx, &cat) in y.iter().enumerate() {
-        if observed.map_or(true, |o| o[idx]) && cat >= n_cat {
+        if observed.is_none_or(|o| o[idx]) && cat >= n_cat {
             return Err("response category out of range 0..n_cat-1".into());
         }
     }
-    let is_obs = |p: usize, pair: usize| observed.map_or(true, |o| o[p * n_pairs + pair]);
+    let is_obs = |p: usize, pair: usize| observed.is_none_or(|o| o[p * n_pairs + pair]);
     for i in 0..n_items {
         if !(0..n_persons)
             .any(|p| (0..n_raters).any(|j| is_obs(p, i * n_raters + j)))

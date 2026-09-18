@@ -1030,7 +1030,7 @@ pub fn owen_cat(
                 continue;
             }
             let dist = (b[i] - mu).abs();
-            if best.map_or(true, |(bd, _)| dist < bd) {
+            if best.is_none_or(|(bd, _)| dist < bd) {
                 best = Some((dist, i));
             }
         }
@@ -1205,7 +1205,7 @@ pub fn ccat_select(
         None => {
             let mut best: Option<(f64, usize)> = None;
             for g in 0..n_groups {
-                if eligible[g] && best.map_or(true, |(bd, _)| discrepancy[g] > bd) {
+                if eligible[g] && best.is_none_or(|(bd, _)| discrepancy[g] > bd) {
                     best = Some((discrepancy[g], g));
                 }
             }
@@ -1253,7 +1253,7 @@ pub fn ccat_select(
     // keeps the lowest index on ties.
     let mut best: Option<(f64, usize)> = None;
     for i in 0..n {
-        if groups[i] == group && !administered[i] && best.map_or(true, |(bi, _)| info[i] > bi) {
+        if groups[i] == group && !administered[i] && best.is_none_or(|(bi, _)| info[i] > bi) {
             best = Some((info[i], i));
         }
     }
@@ -1399,7 +1399,7 @@ pub fn epv_select(
     // Unadministered argmin; strict < keeps the lowest index on ties.
     let mut best: Option<(f64, usize)> = None;
     for i in 0..n {
-        if !administered[i] && best.map_or(true, |(be, _)| epv[i] < be) {
+        if !administered[i] && best.is_none_or(|(be, _)| epv[i] < be) {
             best = Some((epv[i], i));
         }
     }
@@ -1889,7 +1889,7 @@ pub fn flexilevel_administer(
     if n_persons == 0 || n_items == 0 {
         return Err("flexilevel_administer: n_persons and n_items must be positive".into());
     }
-    if n_items < 3 || n_items % 2 == 0 {
+    if n_items < 3 || n_items.is_multiple_of(2) {
         return Err(format!(
             "flexilevel_administer: n_items must be odd and >= 3 (got {n_items})"
         ));
@@ -1906,7 +1906,7 @@ pub fn flexilevel_administer(
             n_items
         ));
     }
-    let n = (n_items + 1) / 2;
+    let n = n_items.div_ceil(2);
     let median = (n - 1) as i64; // column of Lord index 0
     let mut items = Vec::with_capacity(n_persons * n);
     let mut number_right = Vec::with_capacity(n_persons);
@@ -1965,7 +1965,7 @@ pub fn flexilevel_administer(
 /// ability of interest; `p.len()` = N must be odd and >= 3.
 pub fn flexilevel_score_distribution(p: &[f64]) -> Result<FlexilevelDistResult, String> {
     let n_items = p.len();
-    if n_items < 3 || n_items % 2 == 0 {
+    if n_items < 3 || n_items.is_multiple_of(2) {
         return Err(format!(
             "flexilevel_score_distribution: p must have odd length >= 3 (got {n_items})"
         ));
@@ -1977,7 +1977,7 @@ pub fn flexilevel_score_distribution(p: &[f64]) -> Result<FlexilevelDistResult, 
             ));
         }
     }
-    let n = (n_items + 1) / 2;
+    let n = n_items.div_ceil(2);
     let median = (n - 1) as i64;
     // p_v over Lord indices, stored on a dense offset grid [-n, n].
     let width = 2 * n + 1;

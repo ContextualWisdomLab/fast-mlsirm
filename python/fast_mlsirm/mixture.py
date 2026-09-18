@@ -100,11 +100,12 @@ class MixtureFit:
 def fit_mixture(
     responses: np.ndarray,
     n_classes: int = 2,
-    model: str = "rasch",
-    n_starts: int = 1,
-    max_iter: int = 500,
-    tol: float = 1e-6,
-    seed: int = 0x2545F491,
+    *,
+    model: str,
+    n_starts: int,
+    max_iter: int,
+    tol: float,
+    seed: int,
 ) -> MixtureFit:
     """Fit a mixed Rasch / mixture-IRT model (compute in Rust; Rost, 1990).
 

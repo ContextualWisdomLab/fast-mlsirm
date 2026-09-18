@@ -100,7 +100,7 @@ def test_ksirt_rejects_hostile_kernel_before_data_or_core(
     _forbid_core(monkeypatch)
 
     with pytest.raises(ValueError, match="kernel must be gaussian, quadratic, or uniform"):
-        ksirt.ksirt_analysis(_ResponseSentinel(), kernel=_HostileKernel("gaussian"))
+        ksirt.analyze_ksirt(_ResponseSentinel(), kernel=_HostileKernel("gaussian"), nevalpoints=51)
 
 
 def test_ksirt_rejects_hostile_nevalpoints_before_data_or_core(
@@ -110,7 +110,7 @@ def test_ksirt_rejects_hostile_nevalpoints_before_data_or_core(
     _forbid_core(monkeypatch)
 
     with pytest.raises(ValueError, match="nevalpoints must be an integer"):
-        ksirt.ksirt_analysis(_ResponseSentinel(), nevalpoints=_HostileInteger(51))
+        ksirt.analyze_ksirt(_ResponseSentinel(), nevalpoints=_HostileInteger(51))
 
 
 def test_ksirt_rejects_array_provider_responses_without_callbacks(
@@ -120,7 +120,7 @@ def test_ksirt_rejects_array_provider_responses_without_callbacks(
     _forbid_core(monkeypatch)
 
     with pytest.raises(ValueError, match="responses must be a numeric array"):
-        ksirt.ksirt_analysis(_HostileArrayProvider())
+        ksirt.analyze_ksirt(_HostileArrayProvider(), nevalpoints=51)
 
 
 def test_ksirt_rejects_array_provider_bandwidth_without_callbacks(
@@ -131,7 +131,7 @@ def test_ksirt_rejects_array_provider_bandwidth_without_callbacks(
     responses = np.array([[0.0], [1.0]], dtype=np.float64)
 
     with pytest.raises(ValueError, match="bandwidth must be a numeric array"):
-        ksirt.ksirt_analysis(responses, bandwidth=_HostileArrayProvider())
+        ksirt.analyze_ksirt(responses, nevalpoints=51, bandwidth=_HostileArrayProvider())
 
 
 def test_ksirt_rejects_complex_responses_before_real_narrowing_or_core(
@@ -142,7 +142,7 @@ def test_ksirt_rejects_complex_responses_before_real_narrowing_or_core(
     responses = np.array([[0.0 + 1.0j], [1.0 + 0.0j]], dtype=np.complex128)
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
-        ksirt.ksirt_analysis(responses)
+        ksirt.analyze_ksirt(responses, nevalpoints=51)
 
 
 def test_ksirt_rejects_complex_bandwidth_before_real_narrowing_or_core(
@@ -154,7 +154,7 @@ def test_ksirt_rejects_complex_bandwidth_before_real_narrowing_or_core(
     bandwidth = np.array([0.5 + 1.0j], dtype=np.complex128)
 
     with pytest.raises(ValueError, match="bandwidth must be real-valued"):
-        ksirt.ksirt_analysis(responses, bandwidth=bandwidth)
+        ksirt.analyze_ksirt(responses, nevalpoints=51, bandwidth=bandwidth)
 
 
 def test_ksirt_rejects_object_responses_without_numeric_callbacks(
@@ -168,7 +168,7 @@ def test_ksirt_rejects_object_responses_without_numeric_callbacks(
     )
 
     with pytest.raises(ValueError, match="responses must be a numeric array"):
-        ksirt.ksirt_analysis(responses)
+        ksirt.analyze_ksirt(responses, nevalpoints=51)
 
 
 def test_ksirt_rejects_object_bandwidth_without_numeric_callbacks(
@@ -180,7 +180,7 @@ def test_ksirt_rejects_object_bandwidth_without_numeric_callbacks(
     bandwidth = np.array([_HostileNumber()], dtype=object)
 
     with pytest.raises(ValueError, match="bandwidth must be a numeric array"):
-        ksirt.ksirt_analysis(responses, bandwidth=bandwidth)
+        ksirt.analyze_ksirt(responses, nevalpoints=51, bandwidth=bandwidth)
 
 
 def test_ksirt_preserves_concrete_numpy_integer_grid_size(
@@ -190,7 +190,7 @@ def test_ksirt_preserves_concrete_numpy_integer_grid_size(
     captured: dict[str, object] = {}
     monkeypatch.setattr(fitstats, "_core_module", lambda: _core_fixture(captured))
 
-    result = ksirt.ksirt_analysis(
+    result = ksirt.analyze_ksirt(
         np.array([[0.0], [1.0]], dtype=np.float32),
         nevalpoints=np.int64(3),
         bandwidth=np.array([0.5], dtype=np.float32),
@@ -209,7 +209,7 @@ def test_ksirt_preserves_builtin_sequence_evidence(
     captured: dict[str, object] = {}
     monkeypatch.setattr(fitstats, "_core_module", lambda: _core_fixture(captured))
 
-    result = ksirt.ksirt_analysis(
+    result = ksirt.analyze_ksirt(
         [[np.int16(0)], [np.float32(1.0)]],
         nevalpoints=3,
         bandwidth=(np.float32(0.5),),

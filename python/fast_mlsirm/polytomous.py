@@ -14,6 +14,7 @@ adjacent-category) is available for partial-credit scoring.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import warnings
 
 import numpy as np
 
@@ -27,22 +28,26 @@ from .irt_contract import validate_irt_response_matrix
 
 __all__ = [
     "PolytomousFit",
+    "PolyFipcFit",
     "fit_polytomous",
+    "fit_poly_fipc",
     "score_polytomous",
     "information_polytomous",
+    "compute_information_polytomous",
     "polytomous_category_probabilities",
+    "predict_category_probabilities_polytomous",
     "polytomous_expected_response",
+    "predict_expected_response_polytomous",
     "PolyLsirmFit",
     "fit_lsirm_polytomous",
     "polytomous_information_criteria",
+    "compute_information_criteria_polytomous",
 ]
 
 VALID_POLY_MODELS = {"grm", "gpcm"}
 MAX_POLY_QUADRATURE_POINTS = 4_096
 MAX_POLY_BOOTSTRAP_REPLICATES = 10_000
 MAX_POLY_CAT_ITEMS = 10_000
-_SUPPORTED_FIT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41, 61, 81)
-_SUPPORTED_XI_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
 _NUMPY_INTEGER_SCALAR_TYPES = (
     np.int8,
     np.int16,
@@ -87,16 +92,23 @@ def _quadrature_points(value) -> int:
 
 
 def _fit_quadrature_points(value) -> int:
-    """Return one exact supported calibration Gauss-Hermite node count."""
+    """Return one exact calibration Gauss-Hermite node count.
+
+    #1929: no fixed-table cap; the Rust core generates any n >= 1 rule on
+    demand (Golub & Welsch, 1969). The upper bound here is the package's
+    shared quadrature-point resource budget (``MAX_POLY_QUADRATURE_POINTS``),
+    not a rule-table restriction — matching the q_nuisance/q_specific
+    validation elsewhere in this module.
+    """
     value_type = type(value)
     if value_type is int:
         validated = value
     elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
         validated = int(value)
     else:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61, 81")
-    if validated not in _SUPPORTED_FIT_QUADRATURE_POINTS:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41, 61, 81")
+        raise ValueError("q_theta must be an integer >= 1")
+    if not 1 <= validated <= MAX_POLY_QUADRATURE_POINTS:
+        raise ValueError(f"q_theta must be in 1..={MAX_POLY_QUADRATURE_POINTS}")
     return validated
 
 
@@ -108,9 +120,9 @@ def _fit_xi_quadrature_points(value) -> int:
     elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
         validated = int(value)
     else:
-        raise ValueError("q_xi must be one of 7, 11, 15, 21, 31, 41")
-    if validated not in _SUPPORTED_XI_QUADRATURE_POINTS:
-        raise ValueError("q_xi must be one of 7, 11, 15, 21, 31, 41")
+        raise ValueError("q_xi must be an integer >= 1")
+    if not 1 <= validated <= MAX_POLY_QUADRATURE_POINTS:
+        raise ValueError(f"q_xi must be in 1..={MAX_POLY_QUADRATURE_POINTS}")
     return validated
 
 
@@ -223,7 +235,7 @@ def _polytomous_predictions(
     return probabilities, expected
 
 
-def polytomous_category_probabilities(
+def predict_category_probabilities_polytomous(
     fit: PolytomousFit,
     theta: np.ndarray,
 ) -> np.ndarray:
@@ -231,9 +243,442 @@ def polytomous_category_probabilities(
     return _polytomous_predictions(fit, theta)[0]
 
 
-def polytomous_expected_response(fit: PolytomousFit, theta: np.ndarray) -> np.ndarray:
+def polytomous_category_probabilities(
+    fit: PolytomousFit,
+    theta: np.ndarray,
+) -> np.ndarray:
+    """Deprecated alias for :func:`predict_category_probabilities_polytomous` (ADR-0028 rename)."""
+    warnings.warn(
+        "polytomous_category_probabilities is deprecated; "
+        "use predict_category_probabilities_polytomous instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return predict_category_probabilities_polytomous(fit, theta)
+
+
+def predict_expected_response_polytomous(fit: PolytomousFit, theta: np.ndarray) -> np.ndarray:
     """Return ``E[Y | theta, item]`` as a persons x items matrix."""
     return _polytomous_predictions(fit, theta)[1]
+
+
+def polytomous_expected_response(fit: PolytomousFit, theta: np.ndarray) -> np.ndarray:
+    """Deprecated alias for :func:`predict_expected_response_polytomous` (ADR-0028 rename)."""
+    warnings.warn(
+        "polytomous_expected_response is deprecated; "
+        "use predict_expected_response_polytomous instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return predict_expected_response_polytomous(fit, theta)
+
+
+def _validated_monotonicity_grid(theta: np.ndarray) -> np.ndarray:
+    """A strictly ascending finite 1-D grid of at least two points."""
+    grid = np.asarray(theta, dtype=np.float64)
+    if grid.ndim != 1:
+        raise ValueError("theta must be a 1-D grid")
+    if grid.size < 2:
+        raise ValueError("theta must hold at least two points to have a slope")
+    if not np.all(np.isfinite(grid)):
+        raise ValueError("theta must be finite")
+    if not np.all(np.diff(grid) > 0.0):
+        raise ValueError("theta must be strictly ascending")
+    return grid
+
+
+@dataclass(frozen=True)
+class ExpectedScoreMonotonicity:
+    """Where and by how much an expected-total-score curve decreases.
+
+    ``theta`` is the grid the curve was evaluated on, ascending, and
+    ``expected_total`` the curve itself. ``total_decrease`` is the sum of the
+    magnitudes of the downward steps; ``decreasing_intervals`` holds one
+    ``(start, end)`` pair per maximal run of consecutive downward steps, in
+    theta units. ``monotone`` is true exactly when both are empty/zero.
+    """
+
+    theta: np.ndarray
+    expected_total: np.ndarray
+    total_decrease: float
+    decreasing_intervals: tuple[tuple[float, float], ...]
+    monotone: bool
+
+
+def check_expected_total_score_monotonicity(
+    fit: PolytomousFit,
+    theta: np.ndarray,
+) -> ExpectedScoreMonotonicity:
+    """Report where the expected total score decreases over a caller's grid.
+
+    ``theta`` is evaluated as given: the grid is the caller's measurement
+    decision, not this function's, because which region of the trait matters
+    depends on where the respondents are.
+
+    **Only two statistics are reported, and the omissions are deliberate.**
+    Under grid refinement the count of decreasing points diverges and the
+    largest single decrease goes to zero, so neither describes the curve -- they
+    describe the grid. ``total_decrease`` converges to the integral of the
+    negative part of the derivative, and the intervals converge to the region
+    where it is negative. A count and a maximum are what a Mokken monotonicity
+    summary reports, but those are sample statistics on grouped-respondent
+    proportions with a sampling distribution (van der Ark, 2007, p. 5, eq. 3),
+    which a grid evaluation of a fitted model does not have. They are not the
+    same quantities under the same names.
+
+    **Why a decrease means what it means.** For a unidimensional graded model
+    the expected total score is increasing in ``theta`` whenever every slope is
+    positive; the conclusion traces to Samejima (1972) through Hemker, Sijtsma
+    and Molenaar. The derivation is a one-line consequence a reader can check:
+    ``dE[T]/dtheta = sum_i a_i * (sum_k sigmoid'(a_i*theta + beta_ik))``, a
+    positive-weighted combination of the slopes, so a decrease requires a
+    negative ``a_i``. No source states the derivative in that form, so it is
+    shown rather than cited.
+
+    **Two things this diagnostic is not.** It is not a hypothesis test: no
+    sampling distribution is claimed and no published bootstrap or delta-method
+    statement about the monotonicity of an estimated expected-score curve
+    appears to exist. And it must not be read through stochastic-ordering
+    results: the graded model has neither the monotone likelihood ratio
+    property nor guaranteed stochastic ordering of the latent by the total
+    score (van der Ark, 2007, p. 3), so that literature would attach a property
+    this model does not have.
+
+    References
+    ----------
+    Samejima, F. (1972). A general model for free-response data.
+    *Psychometrika Monograph Supplement, 37*(4, Pt. 2).
+
+    Samejima, F. (1969). Estimation of latent ability using a response
+    pattern of graded scores. *Psychometrika Monograph Supplement, 17*.
+    Chapter 5 gives the graded operating characteristics: the cumulative
+    form with a discrimination and per-bound difficulties (eqs. 5-1-5-4).
+
+    Lord, F. M. (1980). *Applications of item response theory to practical
+    testing problems*. Chapter 4: the regression of score on ability
+    (eq. 4-2), number-right true score (eq. 4-5, increasing in ability when
+    each item response function is), and the test characteristic function
+    (eq. 4-9).
+
+    van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
+    Statistical Software, 20*(11), 1-19. https://doi.org/10.18637/jss.v020.i11
+    Manifest monotonicity is defined on grouped rest-score proportions
+    (p. 5, eq. 3) with per-comparison significance tests; stochastic
+    ordering of the latent trait by the sum score fails for polytomous
+    models generally (p. 3; Hemker et al., 1997).
+
+    Hemker, B. T., Sijtsma, K., Molenaar, I. W., & Junker, B. W. (1996).
+    Polytomous IRT models and monotone likelihood ratio of the total
+    score. *Psychometrika, 61*, 679-693.
+
+    Hemker, B. T., Sijtsma, K., Molenaar, I. W., & Junker, B. W. (1997).
+    Stochastic ordering using the latent trait and the sum score in
+    polytomous IRT models. *Psychometrika, 62*, 331-347.
+    """
+    grid = _validated_monotonicity_grid(theta)
+    expected_total = predict_expected_response_polytomous(fit, grid).sum(axis=1)
+    return _decrease_report(grid, expected_total)
+
+
+def expected_total_score_monotonicity(
+    fit: PolytomousFit,
+    theta: np.ndarray,
+) -> ExpectedScoreMonotonicity:
+    """Deprecated alias for :func:`check_expected_total_score_monotonicity` (ADR-0028 rename)."""
+    warnings.warn(
+        "expected_total_score_monotonicity is deprecated; "
+        "use check_expected_total_score_monotonicity instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return check_expected_total_score_monotonicity(fit, theta)
+
+
+def _decrease_report(
+    grid: np.ndarray, expected_total: np.ndarray
+) -> ExpectedScoreMonotonicity:
+    """Shared reduction from a curve to the two grid-stable statistics."""
+    step = np.diff(expected_total)
+    falling = step < 0.0
+    total_decrease = float(-step[falling].sum()) if falling.any() else 0.0
+
+    intervals: list[tuple[float, float]] = []
+    start: int | None = None
+    for index, is_falling in enumerate(falling):
+        if is_falling and start is None:
+            start = index
+        elif not is_falling and start is not None:
+            intervals.append((float(grid[start]), float(grid[index])))
+            start = None
+    if start is not None:
+        intervals.append((float(grid[start]), float(grid[-1])))
+
+    return ExpectedScoreMonotonicity(
+        theta=grid,
+        expected_total=expected_total,
+        total_decrease=total_decrease,
+        decreasing_intervals=tuple(intervals),
+        monotone=not intervals,
+    )
+
+
+def check_focal_expected_total_score_monotonicity(
+    fit,
+    dimension: int,
+    theta: np.ndarray,
+    q_nuisance: int,
+) -> ExpectedScoreMonotonicity:
+    """Monotonicity of the expected total score along one dimension of a
+    multidimensional graded fit, with the other dimensions integrated out.
+
+    ``fit`` is a :class:`~fast_mlsirm.grm.GrmFit`; ``dimension`` selects the
+    focal trait; ``theta`` is the caller's grid on it. ``q_nuisance`` is a
+    required, caller-chosen Gauss-Hermite node count in ``1..=4096`` — no
+    default is offered, because no accuracy target is on file to source one
+    against (Project rule, issue #1929). The lower bound
+    is exact (an ``n``-node Gauss rule exists for every ``n >= 1``;
+    Golub & Welsch, 1969) and the upper bound reuses this package's
+    quadrature-point budget (``MAX_POLY_QUADRATURE_POINTS``), not a new
+    constant. Returns the same report
+    as :func:`expected_total_score_monotonicity`, with the same two grid-stable
+    statistics and the same omissions.
+
+    **The nuisance integral collapses to one dimension, exactly.** The model is
+    compensatory, so item ``i``'s linear predictor splits as
+    ``a_if * theta_f + sum_{d != f} a_id * theta_d``. Under the fitted prior
+    ``theta ~ MVN(0, I)`` the second term is a linear combination of
+    independent standard normals, hence normal with variance
+    ``sigma_i^2 = sum_{d != f} a_id^2``. So marginalizing over any number of
+    nuisance dimensions is a single one-dimensional Gaussian integral per item,
+    evaluated here on a ``q_nuisance``-node Gauss-Hermite rule. This is a
+    property of the compensatory form and the independent prior, not an
+    approximation that improves with more dimensions.
+
+    **The monotonicity conclusion survives the marginalization**, and the step
+    that carries it is Leibniz's rule — differentiating under the integral sign,
+    elementary real analysis rather than a psychometric proposition, which is
+    why no psychometric citation is attached to it. Differentiating gives
+    ``dE[T]/dtheta_f = sum_i a_if * E_z[sum_k sigmoid'(a_if*theta_f + z +
+    beta_ik)]``, again a positive-weighted combination of the FOCAL slopes, so
+    a decrease still requires some ``a_if < 0``. Note what that does not say: it
+    constrains the focal column only, and an item loading negatively on a
+    nuisance dimension does not make this curve decrease.
+
+    No source states the multidimensional case, so this is presented as a
+    derivation rather than as received theory. The scope contrast is
+    verified: stochastic ordering of the latent trait by the sum score is a
+    dichotomous-scores result that fails for polytomous models generally
+    (van der Ark, 2007, p. 3; Hemker et al., 1997). The orthogonal-factor
+    integration has the same structure elsewhere: under independent
+    ``N(0, 1)`` factors the bifactor pattern integral stays two-dimensional
+    no matter how many specific factors the scale has (Gibbons et al., 2007,
+    eqs. 12-14).
+
+    References
+    ----------
+    Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E.,
+    Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., &
+    Stover, A. (2007). Full-information item bifactor analysis of graded
+    response data. *Applied Psychological Measurement, 31*(1), 4-19.
+    https://doi.org/10.1177/0146621606289485
+    The bifactor restriction collapses the s-fold integral to one general
+    plus one specific dimension (eq. 12); the Gauss-Hermite quadrature
+    form is eq. 14; the orthogonal-basis assumption is stated on pp. 8-9.
+
+    van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
+    Statistical Software, 20*(11), 1-19. https://doi.org/10.18637/jss.v020.i11
+
+    Hemker, B. T., Sijtsma, K., Molenaar, I. W., & Junker, B. W. (1997).
+    Stochastic ordering using the latent trait and the sum score in
+    polytomous IRT models. *Psychometrika, 62*, 331-347.
+    """
+    grid = _validated_monotonicity_grid(theta)
+    if not hasattr(fit, "slope") or not hasattr(fit, "threshold"):
+        raise TypeError("fit must expose slope and threshold arrays")
+    slope = np.asarray(fit.slope, dtype=np.float64)
+    if slope.ndim != 2:
+        raise ValueError("fit.slope must be an n_items x n_dims matrix")
+    if not np.all(np.isfinite(slope)):
+        raise ValueError("fit.slope must be finite")
+    n_items, n_dims = slope.shape
+    focal = _bounded_integer(dimension, "dimension", 0, n_dims - 1)
+    nodes_requested = _bounded_integer(
+        q_nuisance, "q_nuisance", 1, MAX_POLY_QUADRATURE_POINTS
+    )
+
+    threshold = np.asarray(fit.threshold, dtype=np.float64)
+    if threshold.ndim != 2 or threshold.shape[0] != n_items:
+        raise ValueError("fit.threshold must be n_items x (n_cat - 1)")
+    if not np.all(np.isfinite(threshold)):
+        raise ValueError("fit.threshold must be finite")
+
+    nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
+    weights = weights / weights.sum()
+
+    nuisance_sd = np.sqrt(
+        np.square(slope).sum(axis=1) - np.square(slope[:, focal])
+    )
+    unit_slope = np.ones(1, dtype=np.float64)
+
+    expected_total = np.zeros(grid.size, dtype=np.float64)
+    for item in range(n_items):
+        base = slope[item, focal] * grid[:, None] + nuisance_sd[item] * nodes[None, :]
+        cell = PolytomousFit(
+            model="grm",
+            slope=unit_slope,
+            cat_params=threshold[item : item + 1],
+            loglik=float("nan"),
+            n_iter=0,
+            converged=True,
+            termination_reason="marginalized",
+        )
+        expected = predict_expected_response_polytomous(cell, base.reshape(-1))
+        expected_total += (expected.reshape(base.shape) * weights[None, :]).sum(axis=1)
+
+    return _decrease_report(grid, expected_total)
+
+
+def check_bifactor_expected_total_score_monotonicity(
+    fit,
+    theta: np.ndarray,
+    q_specific: int,
+) -> ExpectedScoreMonotonicity:
+    """Monotonicity of the expected total score along the general factor of
+    a fitted bifactor GRM, with each item's specific factor integrated out.
+
+    ``fit`` is a :class:`~fast_mlsirm.bifactor_grm.BifactorGrmFit` (or any
+    object exposing the same ``a_general``, ``a_specific``, and ``threshold``
+    fields); the general factor is always the focal dimension, matching the
+    bifactor model's role for it (Gibbons et al., 2007). ``theta`` is the
+    caller's grid on the general factor. ``q_specific`` is a required,
+    caller-chosen Gauss-Hermite node count in ``1..=4096`` — no default is
+    offered, because no accuracy target is on file to source one against
+    (Project rule, issue #1929). The lower bound is exact (an
+    ``n``-node Gauss rule exists for every ``n >= 1``; Golub & Welsch, 1969)
+    and the upper bound reuses this package's quadrature-point budget
+    (``MAX_POLY_QUADRATURE_POINTS``), not a new constant. Returns the same
+    report as :func:`expected_total_score_monotonicity`.
+
+    **Why one node count integrates every item's specific factor.** In the
+    bifactor pattern each item loads the general factor plus at most one
+    specific factor (Gibbons et al., 2007, eq. 9), so the joint response
+    probability's ``s``-fold integral (eq. 10) collapses to a single
+    two-dimensional integral per specific-factor block under the orthogonal
+    ``N(0, 1)`` prior -- one dimension for the general factor, one for that
+    block's specific factor (eqs. 11-12, extended to the graded case in eqs.
+    13-14, with eq. 8 giving the Gauss-Hermite approximation form). That
+    two-dimensional reduction is for the *joint* probability of a whole
+    response pattern, where items sharing a block are correlated through
+    their common specific factor. The expected total score does not need
+    that joint structure: expectation is linear, so
+    ``E[T | theta_G] = sum_i E_{theta_Si}[score_i(theta_G, theta_Si)]``
+    holds term by term regardless of which items share a specific factor.
+    Each term is therefore exactly the item's own one-dimensional
+    Gauss-Hermite integral over its specific factor -- the same collapse
+    :func:`focal_expected_total_score_monotonicity` uses for a general
+    multidimensional graded fit, specialized to the bifactor loading
+    pattern (at most one nonzero non-focal slope per item). A general-only
+    item (``a_specific == 0``) needs no marginalization: the quadrature
+    still runs, contributing exactly its unmarginalized value because the
+    weights sum to one.
+
+    References
+    ----------
+    Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E.,
+    Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., &
+    Stover, A. (2007). Full-information item bifactor analysis of graded
+    response data. *Applied Psychological Measurement, 31*(1), 4-19.
+    https://doi.org/10.1177/0146621606289485
+    Eq. 8 (p. 7) is the Gauss-Hermite approximation to the marginal
+    response-pattern probability; eq. 9 (p. 7) is the bifactor linear
+    predictor restricting each item to the general factor plus at most one
+    specific factor; eq. 10 (p. 7) is the unrestricted ``s``-fold integral;
+    eqs. 11-12 (p. 8) are Stuart's (1958) and Gibbons and Hedeker's (1992)
+    two-dimensional reduction under the orthogonal-normal basis; eqs. 13-14
+    (p. 8) extend it to the graded response model.
+
+    Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature
+    rules. *Mathematics of Computation, 23*(106), 221-230.
+    https://doi.org/10.1090/S0025-5718-69-99647-1
+    """
+    grid = _validated_monotonicity_grid(theta)
+    if not hasattr(fit, "a_general") or not hasattr(fit, "a_specific"):
+        raise TypeError("fit must expose a_general and a_specific arrays")
+    if not hasattr(fit, "threshold"):
+        raise TypeError("fit must expose a threshold array")
+    a_general = np.asarray(fit.a_general, dtype=np.float64)
+    a_specific = np.asarray(fit.a_specific, dtype=np.float64)
+    if a_general.ndim != 1 or a_general.size == 0:
+        raise ValueError("fit.a_general must be a non-empty 1-D array")
+    if a_specific.shape != a_general.shape:
+        raise ValueError("fit.a_specific must have the same shape as fit.a_general")
+    if not np.all(np.isfinite(a_general)) or not np.all(np.isfinite(a_specific)):
+        raise ValueError("fit.a_general and fit.a_specific must be finite")
+    n_items = a_general.shape[0]
+
+    nodes_requested = _bounded_integer(
+        q_specific, "q_specific", 1, MAX_POLY_QUADRATURE_POINTS
+    )
+
+    threshold = np.asarray(fit.threshold, dtype=np.float64)
+    if threshold.ndim != 2 or threshold.shape[0] != n_items:
+        raise ValueError("fit.threshold must be n_items x (n_cat - 1)")
+    if not np.all(np.isfinite(threshold)):
+        raise ValueError("fit.threshold must be finite")
+
+    nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
+    weights = weights / weights.sum()
+    unit_slope = np.ones(1, dtype=np.float64)
+
+    expected_total = np.zeros(grid.size, dtype=np.float64)
+    for item in range(n_items):
+        base = (
+            a_general[item] * grid[:, None] + a_specific[item] * nodes[None, :]
+        )
+        cell = PolytomousFit(
+            model="grm",
+            slope=unit_slope,
+            cat_params=threshold[item : item + 1],
+            loglik=float("nan"),
+            n_iter=0,
+            converged=True,
+            termination_reason="marginalized",
+        )
+        expected = predict_expected_response_polytomous(cell, base.reshape(-1))
+        expected_total += (expected.reshape(base.shape) * weights[None, :]).sum(axis=1)
+
+    return _decrease_report(grid, expected_total)
+
+
+def focal_expected_total_score_monotonicity(
+    fit,
+    dimension: int,
+    theta: np.ndarray,
+    q_nuisance: int,
+) -> ExpectedScoreMonotonicity:
+    """Deprecated alias for :func:`check_focal_expected_total_score_monotonicity` (ADR-0028 rename)."""
+    warnings.warn(
+        "focal_expected_total_score_monotonicity is deprecated; "
+        "use check_focal_expected_total_score_monotonicity instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return check_focal_expected_total_score_monotonicity(fit, dimension, theta, q_nuisance)
+
+
+def bifactor_expected_total_score_monotonicity(
+    fit,
+    theta: np.ndarray,
+    q_specific: int,
+) -> ExpectedScoreMonotonicity:
+    """Deprecated alias for :func:`check_bifactor_expected_total_score_monotonicity` (ADR-0028 rename)."""
+    warnings.warn(
+        "bifactor_expected_total_score_monotonicity is deprecated; "
+        "use check_bifactor_expected_total_score_monotonicity instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return check_bifactor_expected_total_score_monotonicity(fit, theta, q_specific)
 
 
 def _core_module():
@@ -306,10 +751,11 @@ def _nonnegative_integer_vector(values, name: str) -> np.ndarray:
 def fit_polytomous(
     responses: np.ndarray,
     n_cat: int,
-    model: str = "grm",
-    q_theta: int = 21,
-    max_iter: int = 80,
-    tol: float = 1e-6,
+    *,
+    model: str,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
 ) -> PolytomousFit:
     """Fit a unidimensional GRM or GPCM by marginal MLE (compute in Rust).
 
@@ -320,6 +766,13 @@ def fit_polytomous(
     convergence fields describe the observed-data likelihood at the returned
     parameter state; reaching ``max_iter`` is reported as nonconvergence.
     ``n_cat`` is limited to 2..64 and ``max_iter`` to 1..100,000.
+
+    Slopes are UNCONSTRAINED, so a reverse-keyed item is returned with a
+    negative ``slope`` rather than being floored at zero. Because
+    ``(a, theta) -> (-a, -theta)`` leaves the likelihood unchanged, the sign of
+    the slope vector as a whole is fixed by convention: the largest-magnitude
+    slope is returned positive. Trait scores from :func:`score_polytomous` are
+    on that same orientation.
 
     References
     ----------
@@ -388,7 +841,8 @@ def fit_polytomous(
 def score_polytomous(
     responses: np.ndarray,
     fit: PolytomousFit,
-    q_theta: int = 21,
+    *,
+    q_theta: int,
 ) -> dict[str, np.ndarray]:
     """EAP trait scores for polytomous responses given a fitted model (compute
     in Rust). ``responses`` is persons x items of integer categories; ``fit`` is
@@ -451,7 +905,7 @@ def score_polytomous(
     }
 
 
-def information_polytomous(
+def compute_information_polytomous(
     fit: PolytomousFit,
     theta: np.ndarray,
 ) -> dict[str, np.ndarray]:
@@ -507,6 +961,19 @@ def information_polytomous(
     return {"item_info": item_info, "test_info": item_info.sum(axis=1)}
 
 
+def information_polytomous(
+    fit: PolytomousFit,
+    theta: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`compute_information_polytomous` (ADR-0028 rename)."""
+    warnings.warn(
+        "information_polytomous is deprecated; use compute_information_polytomous instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_information_polytomous(fit, theta)
+
+
 @dataclass
 class PolyLsirmFit:
     """Result of :func:`fit_lsirm_polytomous` — a latent-space polytomous LSIRM.
@@ -533,11 +1000,12 @@ def fit_lsirm_polytomous(
     responses: np.ndarray,
     n_cat: int,
     latent_dim: int = 2,
-    model: str = "grm",
-    q_theta: int = 11,
-    q_xi: int = 11,
-    max_iter: int = 60,
-    tol: float = 1e-5,
+    *,
+    model: str,
+    q_theta: int,
+    q_xi: int,
+    max_iter: int,
+    tol: float,
 ) -> PolyLsirmFit:
     """Fit a latent-space polytomous LSIRM (GRM/GPCM cell in an interaction map)
     by marginal EM — all compute in the Rust core (``poly_marginal``). The
@@ -557,9 +1025,7 @@ def fit_lsirm_polytomous(
         validated_q_xi = _fit_xi_quadrature_points(q_xi)
     except ValueError as exc:
         raise ValueError(
-            "q_theta/q_xi must be one of the supported rules; "
-            "q_theta must be one of 7, 11, 15, 21, 31, 41, 61, 81; "
-            "q_xi must be one of 7, 11, 15, 21, 31, 41"
+            "q_theta and q_xi must be >= 1"
         ) from exc
     validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
     validated_tol = _positive_real(tol, "tol")
@@ -594,7 +1060,7 @@ def fit_lsirm_polytomous(
     )
 
 
-def polytomous_information_criteria(fit, n_persons: int) -> dict[str, float]:
+def compute_information_criteria_polytomous(fit, n_persons: int) -> dict[str, float]:
     """Return relative model-selection indices for a polytomous fit.
 
     Information criteria have been studied for selecting among polytomous IRT
@@ -657,11 +1123,23 @@ def polytomous_information_criteria(fit, n_persons: int) -> dict[str, float]:
     }
 
 
-def item_fit_polytomous(
+def polytomous_information_criteria(fit, n_persons: int) -> dict[str, float]:
+    """Deprecated alias for :func:`compute_information_criteria_polytomous` (ADR-0028 rename)."""
+    warnings.warn(
+        "polytomous_information_criteria is deprecated; "
+        "use compute_information_criteria_polytomous instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_information_criteria_polytomous(fit, n_persons)
+
+
+def compute_item_fit_polytomous(
     responses: np.ndarray,
     fit: PolytomousFit,
-    q_theta: int = 21,
-    min_expected: float = 1.0,
+    *,
+    q_theta: int,
+    min_expected: float,
 ) -> dict[str, np.ndarray]:
     """Generalized S-X² item-fit statistic for an ordered polytomous fit
     (compute in Rust). Groups persons by summed score, compares observed to
@@ -723,10 +1201,28 @@ def item_fit_polytomous(
     }
 
 
-def m2_polytomous(
+def item_fit_polytomous(
     responses: np.ndarray,
     fit: PolytomousFit,
     q_theta: int = 21,
+    min_expected: float = 1.0,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`compute_item_fit_polytomous` (ADR-0028 rename)."""
+    warnings.warn(
+        "item_fit_polytomous is deprecated; use compute_item_fit_polytomous instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_item_fit_polytomous(
+        responses, fit, q_theta=q_theta, min_expected=min_expected
+    )
+
+
+def m2_polytomous(
+    responses: np.ndarray,
+    fit: PolytomousFit,
+    *,
+    q_theta: int,
 ) -> dict[str, float]:
     """Polytomous M2 limited-information goodness-of-fit for a fitted GRM/GPCM
     (compute in Rust). Extends the binary M2 to ordered categories via the
@@ -790,10 +1286,11 @@ def m2_polytomous(
             else int(v) for k, v in res.items()}
 
 
-def local_dependence_polytomous(
+def diagnose_local_dependence_polytomous(
     responses: np.ndarray,
     fit: PolytomousFit,
-    q_theta: int = 21,
+    *,
+    q_theta: int,
 ) -> dict[str, np.ndarray]:
     """Item-pair local-dependence diagnostics for a fitted GRM/GPCM (compute in
     Rust; Chen & Thissen, 1997). For every item pair it compares the observed
@@ -855,6 +1352,21 @@ def local_dependence_polytomous(
     }
 
 
+def local_dependence_polytomous(
+    responses: np.ndarray,
+    fit: PolytomousFit,
+    q_theta: int = 21,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`diagnose_local_dependence_polytomous` (ADR-0028 rename)."""
+    warnings.warn(
+        "local_dependence_polytomous is deprecated; "
+        "use diagnose_local_dependence_polytomous instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return diagnose_local_dependence_polytomous(responses, fit, q_theta=q_theta)
+
+
 @dataclass
 class NominalFit:
     """Result of :func:`fit_nominal_polytomous`. ``scores`` and ``intercepts``
@@ -881,9 +1393,10 @@ class NominalFit:
 def fit_nominal_polytomous(
     responses: np.ndarray,
     n_cat: int,
-    q_theta: int = 21,
-    max_iter: int = 200,
-    tol: float = 1e-6,
+    *,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
 ) -> NominalFit:
     """Fit the unidimensional nominal categories model by marginal MLE (compute
     in Rust; Bock, 1972; Thissen, Cai & Bock, 2010). Each item has a free scoring
@@ -949,13 +1462,14 @@ def fit_nominal_polytomous(
     )
 
 
-def person_fit_polytomous(
+def compute_person_fit_polytomous(
     responses: np.ndarray,
     fit: PolytomousFit,
-    q_theta: int = 21,
+    *,
+    q_theta: int,
     prior_mean: float = 0.0,
     prior_sd: float = 1.0,
-    flag_threshold: float = -1.645,
+    flag_threshold: float,
 ) -> dict[str, np.ndarray]:
     """Person-fit statistics for polytomous responses under a fitted GRM/GPCM
     (compute in Rust). Returns the standardized log-likelihood ``lz`` (Drasgow,
@@ -1018,15 +1532,40 @@ def person_fit_polytomous(
     }
 
 
-def cat_simulate_polytomous(
-    true_theta: np.ndarray,
+def person_fit_polytomous(
+    responses: np.ndarray,
     fit: PolytomousFit,
     q_theta: int = 21,
-    se_threshold: float = 0.3,
+    prior_mean: float = 0.0,
+    prior_sd: float = 1.0,
+    flag_threshold: float = -1.645,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`compute_person_fit_polytomous` (ADR-0028 rename)."""
+    warnings.warn(
+        "person_fit_polytomous is deprecated; use compute_person_fit_polytomous instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_person_fit_polytomous(
+        responses,
+        fit,
+        q_theta=q_theta,
+        prior_mean=prior_mean,
+        prior_sd=prior_sd,
+        flag_threshold=flag_threshold,
+    )
+
+
+def simulate_cat_polytomous(
+    true_theta: np.ndarray,
+    fit: PolytomousFit,
+    *,
+    q_theta: int,
+    se_threshold: float,
     min_items: int = 5,
     max_items: int = 30,
     adaptive: bool = True,
-    seed: int = 0,
+    seed: int,
 ) -> dict[str, np.ndarray]:
     """Simulate a polytomous computerized adaptive test over a fitted GRM/GPCM
     item bank (compute in Rust; Dodd, De Ayala & Koch, 1995). For each true trait
@@ -1085,16 +1624,44 @@ def cat_simulate_polytomous(
     }
 
 
-def dif_polytomous(
+def cat_simulate_polytomous(
+    true_theta: np.ndarray,
+    fit: PolytomousFit,
+    q_theta: int = 21,
+    se_threshold: float = 0.3,
+    min_items: int = 5,
+    max_items: int = 30,
+    adaptive: bool = True,
+    seed: int = 0,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`simulate_cat_polytomous` (ADR-0028 rename)."""
+    warnings.warn(
+        "cat_simulate_polytomous is deprecated; use simulate_cat_polytomous instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return simulate_cat_polytomous(
+        true_theta,
+        fit,
+        q_theta=q_theta,
+        se_threshold=se_threshold,
+        min_items=min_items,
+        max_items=max_items,
+        adaptive=adaptive,
+        seed=seed,
+    )
+
+
+def detect_dif_polytomous(
     responses: np.ndarray,
     group_id: np.ndarray,
     n_cat: int,
-    model: str = "gpcm",
+    model: str,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
+    fdr_q: float,
     studied_items: np.ndarray | None = None,
-    q_theta: int = 21,
-    max_iter: int = 200,
-    tol: float = 1e-5,
-    fdr_q: float = 0.05,
 ) -> dict[str, np.ndarray]:
     """Likelihood-ratio DIF sweep for polytomous items via a two-group marginal-EM
     fit (compute in Rust; Thissen, Steinberg & Wainer, 1993). Group 0 is the
@@ -1117,11 +1684,20 @@ def dif_polytomous(
     non-negative integers; densified internally, so non-contiguous or 1-based
     codes are fine).
     ``studied_items`` limits the sweep to those column indices (default: all
-    items). ``model`` is ``"grm"`` or ``"gpcm"``; GPCM is recommended when focal
-    groups have sparse extreme categories (GRM thresholds can become disordered
-    on a rarely used category). This is the parametric IRT-LR approach; for an
-    observed-score alternative that needs no multi-group calibration see the
-    ordinal-logistic DIF of Zumbo (1999).
+    items). ``model`` is ``"grm"`` or ``"gpcm"`` -- a required caller choice, not
+    defaulted: the two models disagree on sparse extreme categories (GRM
+    thresholds can become disordered there) and neither is a documented default
+    for this package's own study measurement models (issue #1958), so silently
+    picking one on the caller's behalf would misrepresent which model was fit.
+    ``q_theta``, ``max_iter``, ``tol``, ``fdr_q``, ``max_rounds`` (on
+    :func:`dif_polytomous_purified`), and ``min_anchor_items`` are likewise all
+    required caller arguments with no default: no accuracy, convergence, or
+    FDR-level target is on file in this repository to source a default value
+    against for any of them (the same quadrature-node rule as #1929, extended
+    here to the sibling tuning constants because guessing one arbitrary number
+    is no more defensible than guessing another). This is the parametric IRT-LR
+    approach; for an observed-score alternative that needs no multi-group
+    calibration see the ordinal-logistic DIF of Zumbo (1999).
 
     References (APA 7th ed.):
         Thissen, D., Steinberg, L., & Wainer, H. (1993). Detection of
@@ -1201,7 +1777,429 @@ def dif_polytomous(
     }
 
 
-def u3_person_fit_polytomous(
+def dif_polytomous(
+    responses: np.ndarray,
+    group_id: np.ndarray,
+    n_cat: int,
+    model: str,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
+    fdr_q: float,
+    studied_items: np.ndarray | None = None,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_polytomous` (ADR-0028 rename)."""
+    warnings.warn(
+        "dif_polytomous is deprecated; use detect_dif_polytomous instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_polytomous(
+        responses,
+        group_id,
+        n_cat,
+        model=model,
+        q_theta=q_theta,
+        max_iter=max_iter,
+        tol=tol,
+        fdr_q=fdr_q,
+        studied_items=studied_items,
+    )
+
+
+def _benjamini_hochberg(p_values: np.ndarray, fdr_q: float) -> np.ndarray:
+    """Benjamini-Hochberg over the CONVERGED items only.
+
+    A non-converged augmented fit has a ``NaN`` p-value. Including it would
+    inflate the number of tests and weaken the threshold for every other item,
+    so it is excluded from the correction and left unflagged -- the same
+    treatment :func:`dif_polytomous` gives it, stated here because excluding a
+    test from a multiplicity correction changes what the correction means.
+    """
+    from . import fitstats
+
+    p = np.asarray(p_values, dtype=np.float64)
+    decisions = np.zeros(p.size, dtype=bool)
+    finite = np.isfinite(p)
+    if finite.any():
+        decisions[finite] = fitstats.benjamini_hochberg(p[finite], fdr_q)
+    return decisions
+
+
+def detect_dif_polytomous_purified(
+    responses: np.ndarray,
+    group_id: np.ndarray,
+    n_cat: int,
+    model: str,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
+    fdr_q: float,
+    max_rounds: int,
+    min_anchor_items: int,
+) -> dict[str, np.ndarray]:
+    """Iteratively purified :func:`dif_polytomous`, and the anchor-eligible set.
+
+    ``model``, ``q_theta``, ``max_iter``, ``tol``, ``fdr_q``, ``max_rounds``, and
+    ``min_anchor_items`` are all required caller arguments with no default (issue
+    #1958): none has an accuracy, convergence, or FDR-level target on file in
+    this repository to source a default value against, the same reasoning
+    :func:`focal_expected_total_score_monotonicity` already applies to
+    ``q_nuisance`` under #1929. ``fdr_q`` is conventionally set at the
+    illustrative level used throughout Benjamini & Hochberg (1995); the
+    purification loop itself -- rebuild the anchor from currently unflagged
+    items, repeat -- is Candell & Drasgow's (1988), but neither source states a
+    specific round count, so ``max_rounds`` is not defaulted from it.
+
+    :func:`dif_polytomous` tests every studied item against **all** other items
+    as the anchor, once. Items with DIF are therefore part of the anchor that
+    every other item is judged against. Purification rebuilds the anchor from
+    the currently unflagged items -- each item is tested against
+    ``anchor UNION {itself}``, the same rule the dichotomous purified functions
+    use -- and repeats until the flagged set stabilizes, the anchor would fall
+    below ``min_anchor_items``, or ``max_rounds`` is reached.
+
+    Returns everything :func:`dif_polytomous` returns, plus ``anchor`` (bool per
+    item), ``n_anchor``, ``rounds`` (purification rounds after the initial
+    full-test sweep; ``0`` means none were applied), ``purify_converged``, and
+    ``purify_termination_reason`` (``"stable_flag_set"``,
+    ``"max_rounds_reached"``, or ``"insufficient_anchor_items"``).
+
+    **Check the reason before using the anchor.** On
+    ``"insufficient_anchor_items"`` the returned ``anchor`` is the screened set
+    that fell below ``min_anchor_items`` -- it is reported rather than replaced
+    by the previous, larger one, because returning the larger set would present
+    a failed purification as a clean bank. So ``n_anchor`` can be smaller than
+    ``min_anchor_items``, and that combination means the bank could not support
+    the loop, not that few items are invariant. The reported per-item statistics
+    are from the last completed sweep (against the previous anchor); the
+    sub-floor candidate is not re-swept because the floor guards a
+    too-short criterion.
+
+    **The removal criterion differs from the dichotomous functions, and the
+    difference is forced.** Those drop an item from the anchor on PRACTICAL
+    significance -- ETS class B or C -- because the Mantel-Haenszel chi-square
+    is over-powered at large N. No comparable calibrated class exists for this
+    sweep: the Jodoin-Gierl bands are stated on a one-degree-of-freedom uniform
+    pseudo-R-squared increment computed as a Zumbo-Thomas weighted-least-squares
+    partition, on dichotomous three-parameter items in 40-item tests, none of
+    which describes a polytomous likelihood-ratio statistic. Removal here is
+    therefore on ``flagged_bh`` alone, which makes this loop MORE aggressive at
+    large N than its dichotomous counterpart, not less. ``effect_size`` is
+    returned unchanged and uninterpreted; it carries no class.
+
+    **The returned p-values are conditional on a data-dependent selection.**
+    The anchor is chosen from the same data then tested against it, so they are
+    not guaranteed super-uniform under the null and Benjamini-Hochberg does not
+    control the FDR at ``fdr_q`` for a purified sweep. Treat ``flagged_bh`` as a
+    screening device. Purification reduces rather than removes criterion
+    contamination and can fail outright when DIF is unbalanced in direction.
+
+    References (APA 7th ed.):
+        Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking
+            metrics and assessing item bias in item response theory. *Applied
+            Psychological Measurement, 12*(3), 253-260.
+            https://doi.org/10.1177/014662168801200304
+        Thissen, D., Steinberg, L., & Wainer, H. (1993). Detection of
+            differential item functioning using the parameters of item response
+            models. In P. W. Holland & H. Wainer (Eds.), *Differential item
+            functioning* (pp. 67-113). Lawrence Erlbaum.
+    """
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_items = int(y.shape[1])
+    rounds_cap = _bounded_integer(max_rounds, "max_rounds", 0, 50)
+    floor = _bounded_integer(min_anchor_items, "min_anchor_items", 1, max(n_items, 1))
+
+    def sweep(anchor: np.ndarray) -> dict[str, np.ndarray]:
+        """One full sweep, each item tested against ``anchor UNION {itself}``."""
+        result = {
+            "item": np.arange(n_items, dtype=np.int64),
+            "lr": np.full(n_items, np.nan),
+            "df": np.zeros(n_items, dtype=np.int64),
+            "p_value": np.full(n_items, np.nan),
+            "flagged_bh": np.zeros(n_items, dtype=bool),
+            "effect_size": np.full(n_items, np.nan),
+        }
+        for item in range(n_items):
+            columns = np.flatnonzero(anchor | (np.arange(n_items) == item))
+            local = int(np.flatnonzero(columns == item)[0])
+            one = detect_dif_polytomous(
+                y[:, columns],
+                group_id,
+                n_cat,
+                model=model,
+                studied_items=np.array([local], dtype=np.int64),
+                q_theta=q_theta,
+                max_iter=max_iter,
+                tol=tol,
+                fdr_q=fdr_q,
+            )
+            for key in ("lr", "df", "p_value", "effect_size"):
+                result[key][item] = one[key][0]
+        # Multiplicity is controlled ACROSS items, so Benjamini-Hochberg is
+        # applied to the assembled sweep rather than to each one-item call,
+        # where it would be a no-op.
+        result["flagged_bh"] = _benjamini_hochberg(result["p_value"], fdr_q)
+        return result
+
+    anchor = np.ones(n_items, dtype=bool)
+    report = sweep(anchor)
+    flagged = report["flagged_bh"].copy()
+    rounds = 0
+    reason = "stable_flag_set"
+
+    while rounds < rounds_cap:
+        candidate = ~flagged
+        if int(candidate.sum()) < floor:
+            # Report the screened set even though it is below the floor. The
+            # floor means "too few items remain to run another sweep against",
+            # not "the flags were wrong", and returning the previous, larger
+            # anchor would present a failed purification as a clean bank --
+            # the most permissive possible answer, delivered silently.
+            anchor = candidate
+            reason = "insufficient_anchor_items"
+            break
+        if np.array_equal(candidate, anchor):
+            reason = "stable_flag_set"
+            break
+        anchor = candidate
+        report = sweep(anchor)
+        rounds += 1
+        if np.array_equal(report["flagged_bh"], flagged):
+            reason = "stable_flag_set"
+            break
+        flagged = report["flagged_bh"].copy()
+    else:
+        if rounds_cap > 0 and not np.array_equal(~flagged, anchor):
+            reason = "max_rounds_reached"
+
+    report["anchor"] = anchor
+    report["n_anchor"] = int(anchor.sum())
+    report["rounds"] = rounds
+    report["purify_converged"] = reason == "stable_flag_set"
+    report["purify_termination_reason"] = reason
+    return report
+
+
+def detect_dif_anchor_sets_polytomous(
+    responses: np.ndarray,
+    group_id: np.ndarray,
+    n_cat: int,
+    model: str,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
+    fdr_q: float,
+    max_rounds: int,
+    min_anchor_items: int,
+    reference_group: int | None = None,
+) -> dict:
+    """Anchor-eligible set per focal group, and the intersection across them.
+
+    ``model``, ``q_theta``, ``max_iter``, ``tol``, ``fdr_q``, ``max_rounds``, and
+    ``min_anchor_items`` are all required caller arguments with no default,
+    passed straight through to :func:`dif_polytomous_purified` per focal group;
+    see that function's docstring for why none is defaulted (issue #1958).
+
+    :func:`dif_polytomous_purified` estimates one latent distribution per group
+    and returns a single anchor set for the whole comparison. That is the right
+    object when every group is calibrated together, and the wrong one when the
+    question is which items are invariant against EACH focal group separately
+    -- an item can be invariant against one focal group and not another, and a
+    pooled sweep can leave it in the anchor because the effects partly cancel.
+
+    Each focal group is therefore purified against the reference on its own
+    two-group subset, and ``intersection`` is the set eligible against all of
+    them: the anchor a fixed-item calibration can defend for every group at
+    once.
+
+    ``reference_group`` defaults to the smallest label present. Returns
+    ``reference_group``; ``focal_groups`` (the caller's own labels, in order);
+    ``per_group``, a dict from focal label to that group's full
+    :func:`dif_polytomous_purified` report; ``anchor_by_group``, a
+    ``n_focal x n_items`` boolean matrix; ``intersection`` and
+    ``n_intersection``; and ``intersection_trustworthy`` with
+    ``untrustworthy_groups``.
+
+    **A failed purification does not silently narrow the intersection.** If a
+    group's loop ended on ``insufficient_anchor_items`` or ran out of rounds,
+    its anchor set is not a converged answer, and intersecting it would let a
+    failure masquerade as a strict result -- a smaller anchor looks more
+    conservative while actually being less supported. The intersection is still
+    computed, because a caller may want to inspect it, but
+    ``intersection_trustworthy`` is ``False`` and ``untrustworthy_groups``
+    names the groups responsible. Check it before using the result.
+
+    Every caveat on :func:`dif_polytomous_purified` applies per group, and one
+    compounds here: each group's anchor is selected from that group's own data,
+    so the intersection is a selection over selections and its error rate is
+    further from nominal than any single sweep's.
+
+    **Cost.** Each purification round fits one two-group model per item, and
+    that happens once per focal group, so the work is roughly
+    ``n_focal_groups * n_items * (rounds + 1)`` marginal-EM fits. On a large
+    bank with several focal groups this is minutes rather than seconds; lower
+    ``max_rounds`` or ``q_theta`` if that matters more than the last round of
+    refinement.
+
+    References (APA 7th ed.):
+        Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking
+            metrics and assessing item bias in item response theory. *Applied
+            Psychological Measurement, 12*(3), 253-260.
+            https://doi.org/10.1177/014662168801200304
+            (the *iterative backward* anchor class this loop follows per
+            group: start from all other items, exclude flagged items, repeat).
+        Kopf, J., Zeileis, A., & Strobl, C. (2015). Anchor selection strategies
+            for DIF analysis: Review, assessment, and new approaches.
+            *Educational and Psychological Measurement, 75*(1), 22-56.
+            https://doi.org/10.1177/0013164414529792
+            (p. 2: "[e]xcluding DIF items from the anchor by using iterative
+            steps may not solve the problem when the test contains many DIF
+            items" -- the reason a single pooled anchor is checked per focal
+            group here rather than assumed adequate for all of them at once;
+            pp. 9-10 review the *all-other* anchor class this loop's per-item
+            auxiliary test is built on).
+        Woods, C. M. (2009). Empirical selection of anchors for tests of
+            differential item functioning. *Applied Psychological Measurement,
+            33*(1), 42-57. https://doi.org/10.1177/0146621607314044
+            (originated the rank-based, no-prior-knowledge anchor selection
+            this and :func:`dif_polytomous_purified` build on; a constant
+            anchor from the resulting ranking outperformed the all-other
+            method "in the majority of the simulated settings," per Kopf
+            et al., 2015, p. 9, quoting Woods, 2009, p. 53).
+
+        Per-group anchor sets and their intersection are this function's own
+        extension to more than two groups, not a design taken verbatim from
+        the sources above: none of them evaluates more than one focal group
+        against a shared reference, so none states the risk this function
+        guards against directly -- that a pooled, multi-group sweep can average
+        away DIF that is present against one focal group and absent against
+        another. That risk follows from the same two-group contamination logic
+        the sources do state (an anchor is only as trustworthy as the pairwise
+        comparison it was purified on).
+    """
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    labels = _nonnegative_integer_vector(group_id, "group_id")
+    if labels.size != y.shape[0]:
+        raise ValueError("group_id must have one entry per person")
+    present = np.unique(labels)
+    if present.size < 2:
+        raise ValueError("group_id must contain at least two distinct groups")
+
+    if reference_group is None:
+        reference = int(present[0])
+    else:
+        reference = _bounded_integer(reference_group, "reference_group", 0, int(present[-1]))
+        if reference not in present:
+            raise ValueError("reference_group must be a group label present in group_id")
+    focal_groups = [int(label) for label in present if int(label) != reference]
+
+    per_group: dict[int, dict] = {}
+    anchor_by_group = np.ones((len(focal_groups), int(y.shape[1])), dtype=bool)
+    untrustworthy: list[int] = []
+    for row, focal in enumerate(focal_groups):
+        keep = (labels == reference) | (labels == focal)
+        report = detect_dif_polytomous_purified(
+            y[keep],
+            np.where(labels[keep] == reference, 0, 1),
+            n_cat,
+            model=model,
+            q_theta=q_theta,
+            max_iter=max_iter,
+            tol=tol,
+            fdr_q=fdr_q,
+            max_rounds=max_rounds,
+            min_anchor_items=min_anchor_items,
+        )
+        per_group[focal] = report
+        anchor_by_group[row] = report["anchor"]
+        if not report["purify_converged"]:
+            untrustworthy.append(focal)
+
+    intersection = np.logical_and.reduce(anchor_by_group, axis=0)
+    return {
+        "reference_group": reference,
+        "focal_groups": focal_groups,
+        "per_group": per_group,
+        "anchor_by_group": anchor_by_group,
+        "intersection": intersection,
+        "n_intersection": int(intersection.sum()),
+        "intersection_trustworthy": not untrustworthy,
+        "untrustworthy_groups": untrustworthy,
+    }
+
+
+def dif_polytomous_purified(
+    responses: np.ndarray,
+    group_id: np.ndarray,
+    n_cat: int,
+    model: str,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
+    fdr_q: float,
+    max_rounds: int,
+    min_anchor_items: int,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_polytomous_purified` (ADR-0028 rename)."""
+    warnings.warn(
+        "dif_polytomous_purified is deprecated; use detect_dif_polytomous_purified instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_polytomous_purified(
+        responses,
+        group_id,
+        n_cat,
+        model=model,
+        q_theta=q_theta,
+        max_iter=max_iter,
+        tol=tol,
+        fdr_q=fdr_q,
+        max_rounds=max_rounds,
+        min_anchor_items=min_anchor_items,
+    )
+
+
+def dif_polytomous_anchor_sets(
+    responses: np.ndarray,
+    group_id: np.ndarray,
+    n_cat: int,
+    model: str,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
+    fdr_q: float,
+    max_rounds: int,
+    min_anchor_items: int,
+    reference_group: int | None = None,
+) -> dict:
+    """Deprecated alias for :func:`detect_dif_anchor_sets_polytomous` (ADR-0028 rename)."""
+    warnings.warn(
+        "dif_polytomous_anchor_sets is deprecated; use detect_dif_anchor_sets_polytomous instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_anchor_sets_polytomous(
+        responses,
+        group_id,
+        n_cat,
+        model=model,
+        q_theta=q_theta,
+        max_iter=max_iter,
+        tol=tol,
+        fdr_q=fdr_q,
+        max_rounds=max_rounds,
+        min_anchor_items=min_anchor_items,
+        reference_group=reference_group,
+    )
+
+
+def compute_u3_person_fit_polytomous(
     responses: np.ndarray,
     n_cat: int,
     cutoff: float | None = None,
@@ -1255,12 +2253,13 @@ def u3_person_fit_polytomous(
     }
 
 
-def u3_cutoff_polytomous(
+def compute_u3_cutoff_polytomous(
     fit: PolytomousFit,
     n_persons: int,
-    alpha: float = 0.05,
-    n_rep: int = 200,
-    seed: int = 0,
+    *,
+    alpha: float,
+    n_rep: int,
+    seed: int,
 ) -> float:
     """Simulated ``1 - alpha`` critical value for :func:`u3_person_fit_polytomous`
     (compute in Rust; Emons, 2008, used simulated critical values). A parametric
@@ -1297,4 +2296,152 @@ def u3_cutoff_polytomous(
             int(n_rep),
             int(seed),
         )
+    )
+
+
+def u3_person_fit_polytomous(
+    responses: np.ndarray,
+    n_cat: int,
+    cutoff: float | None = None,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`compute_u3_person_fit_polytomous` (ADR-0028 rename)."""
+    warnings.warn(
+        "u3_person_fit_polytomous is deprecated; use compute_u3_person_fit_polytomous instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_u3_person_fit_polytomous(responses, n_cat, cutoff)
+
+
+def u3_cutoff_polytomous(
+    fit: PolytomousFit,
+    n_persons: int,
+    alpha: float = 0.05,
+    n_rep: int = 200,
+    seed: int = 0,
+) -> float:
+    """Deprecated alias for :func:`compute_u3_cutoff_polytomous` (ADR-0028 rename)."""
+    warnings.warn(
+        "u3_cutoff_polytomous is deprecated; use compute_u3_cutoff_polytomous instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_u3_cutoff_polytomous(fit, n_persons, alpha=alpha, n_rep=n_rep, seed=seed)
+
+
+@dataclass
+class PolyFipcFit:
+    """Result of :func:`fit_poly_fipc`.
+
+    ``slope`` / ``cat_params`` cover all items with anchored entries
+    bit-identical to the fixed inputs (signs kept: no reflection
+    canonicalization). ``mu`` / ``sigma`` are the estimated focal latent
+    mean/SD. Remaining fields mirror :class:`PolytomousFit`.
+    """
+
+    slope: np.ndarray
+    cat_params: np.ndarray
+    mu: float
+    sigma: float
+    loglik: float
+    n_iter: int
+    converged: bool = False
+    termination_reason: str = "not_fitted"
+    loglik_trace: np.ndarray = field(
+        default_factory=lambda: np.empty(0, dtype=np.float64)
+    )
+    final_delta: float = np.nan
+    stopping_tolerance: float = np.nan
+
+
+def fit_poly_fipc(
+    responses: np.ndarray,
+    n_cat: int,
+    anchor: np.ndarray,
+    anchor_slope: np.ndarray,
+    anchor_cat_params: np.ndarray,
+    *,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
+) -> PolyFipcFit:
+    """Fixed-item calibration of a unidimensional GRM on focal data (Rust).
+
+    ``responses`` is a persons x items array of integer categories
+    ``0..n_cat-1``; ``NaN`` or ``-1`` marks a missing response. ``anchor``
+    is a length-``n_items`` boolean array pinning items at ``anchor_slope``
+    / ``anchor_cat_params`` (``n_items x (n_cat-1)``, strictly decreasing
+    per anchored row) from a reference calibration; the remaining items and
+    the focal ``N(mu, sigma^2)`` are estimated by MML-EM with the prior
+    updated after every M-step — the MWU-MEM method (Kim, 2006, eqs. 14-15,
+    pp. 361-362; Paek & Young, 2005). ``q_theta`` is a caller-owned
+    Gauss-Hermite count (one of 7, 11, 15, 21, 31, 41, 61, 81, 121).
+
+    References
+    ----------
+    Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+    methods. *Journal of Educational Measurement, 43*(4), 355–381.
+    https://doi.org/10.1111/j.1745-3984.2006.00021.x
+
+    Paek, I., & Young, M. J. (2005). Investigation of student growth recovery
+    in a fixed-item linking procedure with a fixed-person prior distribution
+    for mixed-format test data. *Applied Measurement in Education, 18*(2),
+    199–215. https://doi.org/10.1207/s15324818ame1802_4
+
+    Samejima, F. (1969). Estimation of latent ability using a response pattern
+    of graded scores. *Psychometrika, 34*(S1), 1–97.
+    https://doi.org/10.1007/BF03372160
+    """
+    validated_n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
+    validated_q_theta = _fit_quadrature_points(q_theta)
+    validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
+    validated_tol = _positive_real(tol, "tol")
+
+    y_int, observed = _poly_int_and_mask(responses, validated_n_cat)
+    n_persons, n_items = y_int.shape
+
+    anchor_arr = np.asarray(anchor, dtype=bool)
+    if anchor_arr.ndim != 1 or anchor_arr.shape[0] != n_items:
+        raise ValueError("anchor must be a 1-D boolean array of length n_items")
+    if not bool(anchor_arr.any()):
+        raise ValueError("at least one anchor item is required")
+    slope_arr = np.asarray(anchor_slope, dtype=np.float64)
+    cat_arr = np.asarray(anchor_cat_params, dtype=np.float64)
+    if slope_arr.shape != (n_items,):
+        raise ValueError("anchor_slope must be a 1-D array of length n_items")
+    if cat_arr.shape != (n_items, validated_n_cat - 1):
+        raise ValueError("anchor_cat_params must have shape (n_items, n_cat - 1)")
+    if not bool(np.isfinite(slope_arr).all()) or not bool(np.isfinite(cat_arr).all()):
+        raise ValueError("anchor parameters must be finite")
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_poly_fipc"):
+        raise RuntimeError("fit_poly_fipc requires the compiled Rust core")
+
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    res = core.fit_poly_fipc(
+        y_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        validated_n_cat,
+        anchor_arr.reshape(-1),
+        slope_arr.reshape(-1),
+        np.ascontiguousarray(cat_arr, dtype=np.float64),
+        obs_arg,
+        validated_q_theta,
+        validated_max_iter,
+        validated_tol,
+    )
+    return PolyFipcFit(
+        slope=np.asarray(res["slope"], dtype=np.float64),
+        cat_params=np.asarray(res["cat_params"], dtype=np.float64),
+        mu=float(res["mu"]),
+        sigma=float(res["sigma"]),
+        loglik=float(res["loglik"]),
+        n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+        termination_reason=str(res["termination_reason"]),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
+        final_delta=float(res["final_delta"]),
+        stopping_tolerance=float(res["stopping_tolerance"]),
     )
