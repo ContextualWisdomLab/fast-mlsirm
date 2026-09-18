@@ -48,7 +48,7 @@ jobs:
       - run: python -m pip install --no-deps --no-build-isolation .
       - name: Verify Rust core is the resolved default backend
         run: python -c "import fast_mlsirm._core as c; from fast_mlsirm.backend import resolve_backend; from fast_mlsirm import FitConfig; assert hasattr(c, 'neg_loglik_and_grad'); assert resolve_backend(FitConfig().backend) == 'rust'; print('rust primary OK')"
-      - run: pytest
+      - run: pytest -o pythonpath=.
 
   python:
     name: python
