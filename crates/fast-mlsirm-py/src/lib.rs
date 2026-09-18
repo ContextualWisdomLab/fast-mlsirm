@@ -1667,25 +1667,32 @@ fn bifactor_oakes_se(
                 .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
         })
         .collect::<PyResult<_>>()?;
+    // Own array buffers before detach — PyReadonlyArray borrows require the GIL.
+    let a_g = a_general.as_slice()?.to_vec();
+    let a_s = a_specific.as_slice()?.to_vec();
+    let thr = threshold.as_slice()?.to_vec();
     let cfg = BifactorOakesConfig {
         q_general,
         q_specific,
         fd_step,
     };
-    let res = core_bifactor_oakes_se(
-        a_general.as_slice()?,
-        a_specific.as_slice()?,
-        threshold.as_slice()?,
-        &yy,
-        obs_vec.as_deref(),
-        &smap,
-        n_persons,
-        n_items,
-        n_specific,
-        n_cat,
-        &cfg,
-    )
-    .map_err(PyValueError::new_err)?;
+    let res = py
+        .detach(|| {
+            core_bifactor_oakes_se(
+                &a_g,
+                &a_s,
+                &thr,
+                &yy,
+                obs_vec.as_deref(),
+                &smap,
+                n_persons,
+                n_items,
+                n_specific,
+                n_cat,
+                &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("labels", res.labels)?;
     out.set_item("information", res.information)?;
@@ -1769,6 +1776,11 @@ fn fit_bifactor_grm_fipc(
                 .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
         })
         .collect::<PyResult<_>>()?;
+    // Own array buffers before detach — PyReadonlyArray borrows require the GIL.
+    let anchor_vec = anchor.as_slice()?.to_vec();
+    let fixed_ag = fixed_a_general.as_slice()?.to_vec();
+    let fixed_as = fixed_a_specific.as_slice()?.to_vec();
+    let fixed_thr = fixed_threshold.as_slice()?.to_vec();
     let cfg = BifactorFipcConfig {
         q_general,
         q_specific,
@@ -1778,21 +1790,24 @@ fn fit_bifactor_grm_fipc(
         ridge,
         estimate_specific_vars,
     };
-    let res = core_fit_bifactor_grm_fipc(
-        &yy,
-        obs_vec.as_deref(),
-        &smap,
-        n_persons,
-        n_items,
-        n_specific,
-        n_cat,
-        anchor.as_slice()?,
-        fixed_a_general.as_slice()?,
-        fixed_a_specific.as_slice()?,
-        fixed_threshold.as_slice()?,
-        &cfg,
-    )
-    .map_err(PyValueError::new_err)?;
+    let res = py
+        .detach(|| {
+            core_fit_bifactor_grm_fipc(
+                &yy,
+                obs_vec.as_deref(),
+                &smap,
+                n_persons,
+                n_items,
+                n_specific,
+                n_cat,
+                &anchor_vec,
+                &fixed_ag,
+                &fixed_as,
+                &fixed_thr,
+                &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("a_general", res.a_general)?;
     out.set_item("a_specific", res.a_specific)?;
@@ -1909,19 +1924,22 @@ fn fit_two_tier_grm(
         newton_iter: 10,
         ridge: 1e-8,
     };
-    let res = core_fit_two_tier_grm(
-        &yy,
-        obs_vec.as_deref(),
-        &pmap,
-        &smap,
-        n_persons,
-        n_items,
-        n_primary,
-        n_specific,
-        n_cat,
-        &cfg,
-    )
-    .map_err(PyValueError::new_err)?;
+    let res = py
+        .detach(|| {
+            core_fit_two_tier_grm(
+                &yy,
+                obs_vec.as_deref(),
+                &pmap,
+                &smap,
+                n_persons,
+                n_items,
+                n_primary,
+                n_specific,
+                n_cat,
+                &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("a_primary", res.a_primary)?;
     out.set_item("a_specific", res.a_specific)?;
@@ -2010,28 +2028,36 @@ fn two_tier_oakes_se(
         })
         .collect::<PyResult<_>>()?;
     let pmap = primary_map.as_slice()?.to_vec();
+    // Own array buffers before detach — PyReadonlyArray borrows require the GIL.
+    let a_p = a_primary.as_slice()?.to_vec();
+    let a_s = a_specific.as_slice()?.to_vec();
+    let thr = threshold.as_slice()?.to_vec();
+    let phi_vec = phi.as_slice()?.to_vec();
     let cfg = TwoTierOakesConfig {
         q_primary,
         q_specific,
         fd_step,
     };
-    let res = core_two_tier_oakes_se(
-        a_primary.as_slice()?,
-        a_specific.as_slice()?,
-        threshold.as_slice()?,
-        phi.as_slice()?,
-        &yy,
-        obs_vec.as_deref(),
-        &pmap,
-        &smap,
-        n_persons,
-        n_items,
-        n_primary,
-        n_specific,
-        n_cat,
-        &cfg,
-    )
-    .map_err(PyValueError::new_err)?;
+    let res = py
+        .detach(|| {
+            core_two_tier_oakes_se(
+                &a_p,
+                &a_s,
+                &thr,
+                &phi_vec,
+                &yy,
+                obs_vec.as_deref(),
+                &pmap,
+                &smap,
+                n_persons,
+                n_items,
+                n_primary,
+                n_specific,
+                n_cat,
+                &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("labels", res.labels)?;
     out.set_item("information", res.information)?;
