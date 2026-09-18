@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2025-02-12 - Item Bank Report Tabular-Nums and Row Scopes
+**Learning:** Tables displaying item bank timeline and evidence information without `font-variant-numeric: tabular-nums` can cause vertical jitter with numbers, and missing `scope="row"` headers makes navigating via screen readers difficult.
+**Action:** When adding or updating data tables in HTML reports, always ensure numerical cell formatting applies `font-variant-numeric: tabular-nums;` and that row headers explicitly use `<th scope="row">` instead of `<td>` for better screen reader contextualization.
