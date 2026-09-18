@@ -31,7 +31,7 @@ def test_oversized_exact_rsm_response_array_fails_before_materialization(monkeyp
         ValueError,
         match=r"responses exceed the 20000000-cell RSM evidence budget",
     ):
-        fit_rsm(responses, n_cat=2)
+        fit_rsm(responses, n_cat=2, q_theta=41, max_iter=500, tol=1e-6)
 
 
 def test_one_dimensional_broadcast_fails_before_dense_materialization(monkeypatch):
@@ -47,7 +47,7 @@ def test_one_dimensional_broadcast_fails_before_dense_materialization(monkeypatc
         ValueError,
         match=r"responses must be a 2-D persons x items array",
     ):
-        fit_rsm(responses, n_cat=2)
+        fit_rsm(responses, n_cat=2, q_theta=41, max_iter=500, tol=1e-6)
 
 
 def test_flat_builtin_response_fails_before_dense_materialization(monkeypatch):
@@ -60,7 +60,7 @@ def test_flat_builtin_response_fails_before_dense_materialization(monkeypatch):
         ValueError,
         match=r"responses must be a 2-D persons x items array",
     ):
-        fit_rsm(responses, n_cat=2)
+        fit_rsm(responses, n_cat=2, q_theta=41, max_iter=500, tol=1e-6)
 
 
 def test_one_item_broadcast_fails_before_dense_materialization(monkeypatch):
@@ -76,7 +76,7 @@ def test_one_item_broadcast_fails_before_dense_materialization(monkeypatch):
         ValueError,
         match=r"responses must contain at least one person and at least two item columns",
     ):
-        fit_rsm(responses, n_cat=2)
+        fit_rsm(responses, n_cat=2, q_theta=41, max_iter=500, tol=1e-6)
 
 
 def test_one_item_builtin_rows_fail_before_dense_materialization(monkeypatch):
@@ -89,7 +89,7 @@ def test_one_item_builtin_rows_fail_before_dense_materialization(monkeypatch):
         ValueError,
         match=r"responses must contain at least one person and at least two item columns",
     ):
-        fit_rsm(responses, n_cat=2)
+        fit_rsm(responses, n_cat=2, q_theta=41, max_iter=500, tol=1e-6)
 
 
 def test_oversized_exact_numpy_row_fails_before_sequence_materialization(monkeypatch):
@@ -105,7 +105,7 @@ def test_oversized_exact_numpy_row_fails_before_sequence_materialization(monkeyp
         ValueError,
         match=r"responses exceed the 20000000-cell RSM evidence budget",
     ):
-        fit_rsm([row], n_cat=2)
+        fit_rsm([row], n_cat=2, q_theta=41, max_iter=500, tol=1e-6)
 
 
 def test_empty_row_fanout_hits_structural_budget_before_materialization(monkeypatch):
@@ -118,7 +118,7 @@ def test_empty_row_fanout_hits_structural_budget_before_materialization(monkeypa
         ValueError,
         match=r"responses exceed the 4-node RSM structural evidence budget",
     ):
-        fit_rsm([[], [], [], [], []], n_cat=2)
+        fit_rsm([[], [], [], [], []], n_cat=2, q_theta=41, max_iter=500, tol=1e-6)
 
 
 def test_structural_budget_preserves_valid_small_matrix(monkeypatch):

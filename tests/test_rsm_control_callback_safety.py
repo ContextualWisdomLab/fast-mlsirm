@@ -125,7 +125,7 @@ def test_n_cat_subclass_rejected_without_callbacks_or_data_work() -> None:
     """Reject hostile category counts before callbacks or response access."""
     _HostileInt.reset()
     with pytest.raises(TypeError, match="n_cat must be an integer >= 2"):
-        fit_rsm(_ResponseSentinel(), n_cat=_HostileInt(3))
+        fit_rsm(_ResponseSentinel(), n_cat=_HostileInt(3), q_theta=41, max_iter=500, tol=1e-6)
     assert _HostileInt.callbacks == 0
 
 
@@ -133,11 +133,11 @@ def test_q_theta_untrusted_values_rejected_without_hash_or_numeric_callbacks() -
     """Reject hostile quadrature controls before hashing or numeric callbacks."""
     _HostileInt.reset()
     _HashTrap.callbacks = 0
-    with pytest.raises(ValueError, match="q_theta must be one of"):
-        fit_rsm(_ResponseSentinel(), n_cat=3, q_theta=_HostileInt(7))
+    with pytest.raises(ValueError, match="q_theta must be an integer"):
+        fit_rsm(_ResponseSentinel(), n_cat=3, q_theta=_HostileInt(7), max_iter=500, tol=1e-6)
     assert _HostileInt.callbacks == 0
-    with pytest.raises(ValueError, match="q_theta must be one of"):
-        fit_rsm(_ResponseSentinel(), n_cat=3, q_theta=_HashTrap())
+    with pytest.raises(ValueError, match="q_theta must be an integer"):
+        fit_rsm(_ResponseSentinel(), n_cat=3, q_theta=_HashTrap(), max_iter=500, tol=1e-6)
     assert _HashTrap.callbacks == 0
 
 
@@ -145,7 +145,7 @@ def test_max_iter_subclass_rejected_without_callbacks_or_data_work() -> None:
     """Reject hostile iteration limits before callbacks or response access."""
     _HostileInt.reset()
     with pytest.raises(ValueError, match="max_iter must be an integer"):
-        fit_rsm(_ResponseSentinel(), n_cat=3, max_iter=_HostileInt(10))
+        fit_rsm(_ResponseSentinel(), n_cat=3, max_iter=_HostileInt(10), q_theta=41, tol=1e-6)
     assert _HostileInt.callbacks == 0
 
 
@@ -153,7 +153,7 @@ def test_tol_subclass_rejected_without_callbacks_or_data_work() -> None:
     """Reject hostile tolerances before callbacks or response access."""
     _HostileFloat.reset()
     with pytest.raises(ValueError, match="tol must be finite and > 0"):
-        fit_rsm(_ResponseSentinel(), n_cat=3, tol=_HostileFloat(1e-6))
+        fit_rsm(_ResponseSentinel(), n_cat=3, tol=_HostileFloat(1e-6), q_theta=41, max_iter=500)
     assert _HostileFloat.callbacks == 0
 
 
@@ -181,6 +181,6 @@ def test_existing_numpy_scalar_compatibility_is_preserved() -> None:
 def test_numpy_integer_contract_remains_narrow_for_n_cat_and_max_iter() -> None:
     """Keep the deliberate NumPy integer admission contract narrow."""
     with pytest.raises(TypeError, match="n_cat must be an integer >= 2"):
-        fit_rsm(_ResponseSentinel(), n_cat=np.int64(3))
+        fit_rsm(_ResponseSentinel(), n_cat=np.int64(3), q_theta=41, max_iter=500, tol=1e-6)
     with pytest.raises(ValueError, match="max_iter must be an integer"):
-        fit_rsm(_ResponseSentinel(), n_cat=3, max_iter=np.int64(10))
+        fit_rsm(_ResponseSentinel(), n_cat=3, max_iter=np.int64(10), q_theta=41, tol=1e-6)

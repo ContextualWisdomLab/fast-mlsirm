@@ -161,7 +161,7 @@ fn validate(
     if !cfg.start_spread.is_finite() || cfg.start_spread < 0.0 {
         return Err("start_spread must be finite and non-negative".into());
     }
-    if !cfg.pi_floor.is_finite() || !(0.0 < cfg.pi_floor && cfg.pi_floor < 1.0 / n_classes as f64) {
+    if !(cfg.pi_floor.is_finite() && 0.0 < cfg.pi_floor && cfg.pi_floor < 1.0 / n_classes as f64) {
         return Err("pi_floor must be finite and in (0, 1/n_classes)".into());
     }
     if n_classes > u32::MAX as usize {
@@ -264,7 +264,12 @@ fn newton_item_2pl(
             }
             let da = (h_bb * g_a - h_ab * g_b) / det;
             let db = (h_aa * g_b - h_ab * g_a) / det;
-            ai = (ai - da).clamp(1e-3, 10.0);
+            // Magnitude guard only; symmetric, so it does not also impose
+            // `a > 0` and floor a reverse-keyed item (see `crate::mmle`).
+            ai = (ai - da).clamp(
+                -crate::mmle::A_MAGNITUDE_BOUND,
+                crate::mmle::A_MAGNITUDE_BOUND,
+            );
             bi -= db;
             if da.abs() + db.abs() < 1e-8 {
                 break;
@@ -476,6 +481,13 @@ fn run_em(
     if !converged {
         loglik_trace.push(final_ll);
     }
+
+    // Pin the reflection `(a, theta) -> (-a, -theta)`, applied across ALL classes
+    // at once: they share one ability scale, so the orientation is a property of
+    // the solution and not of any single class. The cell is `a*theta + b`, so `b`
+    // is an intercept and is invariant, as are `pi`, `class_posterior` and
+    // `map_class`. A no-op under `Rasch`, where every slope is pinned at 1.0.
+    crate::mmle::canonicalize_reflection(&mut a, &mut theta);
 
     let k = if fix_slope { 1 } else { 2 };
     MixtureResult {

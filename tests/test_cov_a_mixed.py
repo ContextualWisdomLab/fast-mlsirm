@@ -88,7 +88,7 @@ def test_fit_mixed_family_marshalling_paths_warn():
             _mixed_data(),
             ["2pl", "rasch", "3pl", "nominal", "grm"],
             n_categories=[2, 2, 2, 3, 3],
-            max_iter=5, q_theta=7, q_xi=7, latent_dim=2,
+            max_iter=5, q_theta=7, q_xi=7, latent_dim=2, tol=1e-5
         )
     models = {it.model for it in fit.items}
     assert "nominal" in models  # slope=None branch
@@ -102,7 +102,7 @@ def test_fit_mixed_valid_mask_with_missing_cell_warns():
     mask[10, 0] = False  # forces the observed.all()==False marshalling branch
     with pytest.warns(RuntimeWarning):
         fit_mixed_items(
-            y, "2pl", mask=mask, max_iter=5, q_theta=7, q_xi=7, latent_dim=1
+            y, "2pl", mask=mask, max_iter=5, q_theta=7, q_xi=7, latent_dim=1, tol=1e-5
         )
 
 
@@ -110,61 +110,62 @@ def test_fit_mixed_require_convergence_raises():
     with pytest.raises(RuntimeError):
         fit_mixed_items(
             _binary(), "rasch", max_iter=1, q_theta=7, q_xi=7,
-            latent_dim=1, require_convergence=True,
+            latent_dim=1, require_convergence=True, tol=1e-5
         )
 
 
 def test_fit_mixed_requires_rust_core():
     with patch("fast_mlsirm._core", object()):
         with pytest.raises(RuntimeError):
-            fit_mixed_items(_binary(), "2pl", q_theta=7, q_xi=7)
+            fit_mixed_items(_binary(), "2pl", q_theta=7, q_xi=7, max_iter=100, tol=1e-5)
 
 
 def test_fit_mixed_rejects_non_2d():
     with pytest.raises(ValueError):
-        fit_mixed_items(np.zeros(4), "2pl")
+        fit_mixed_items(np.zeros(4), "2pl", q_theta=21, q_xi=7, max_iter=100, tol=1e-5)
 
 
 def test_fit_mixed_rejects_empty():
     with pytest.raises(ValueError):
-        fit_mixed_items(np.zeros((0, 4)), "2pl")
+        fit_mixed_items(np.zeros((0, 4)), "2pl", q_theta=21, q_xi=7, max_iter=100, tol=1e-5)
 
 
 def test_fit_mixed_rejects_mask_shape_and_non_finite():
     with pytest.raises(ValueError):
-        fit_mixed_items(_binary(), "2pl", mask=np.ones((2, 2), dtype=bool))
+        fit_mixed_items(_binary(), "2pl", mask=np.ones((2, 2), dtype=bool), q_theta=21, q_xi=7, max_iter=100, tol=1e-5)
     y = _binary()
     y[5, 0] = np.nan
     with pytest.raises(ValueError):
-        fit_mixed_items(y, "2pl", mask=np.ones_like(y, dtype=bool))
+        fit_mixed_items(y, "2pl", mask=np.ones_like(y, dtype=bool), q_theta=21, q_xi=7, max_iter=100, tol=1e-5)
 
 
 def test_fit_mixed_rejects_negative_or_non_integer_values():
     y = _binary()
     y[5, 0] = -2.0
     with pytest.raises(ValueError):
-        fit_mixed_items(y, "2pl")
+        fit_mixed_items(y, "2pl", q_theta=21, q_xi=7, max_iter=100, tol=1e-5)
     y2 = _binary()
     y2[5, 0] = 0.5
     with pytest.raises(ValueError):
-        fit_mixed_items(y2, "2pl")
+        fit_mixed_items(y2, "2pl", q_theta=21, q_xi=7, max_iter=100, tol=1e-5)
 
 
 def test_fit_mixed_rejects_bad_hyperparameters():
     y = _binary()
     for ld in (0, 4, 1.5):
         with pytest.raises(ValueError):
-            fit_mixed_items(y, "2pl", latent_dim=ld)
+            fit_mixed_items(y, "2pl", latent_dim=ld, q_theta=21, q_xi=7, max_iter=100, tol=1e-5)
+    # #1929: no node-count cap; q_theta/q_xi=8 are now accepted, only < 1 is not.
     with pytest.raises(ValueError):
-        fit_mixed_items(y, "2pl", q_theta=8)
+        fit_mixed_items(y, "2pl", q_theta=0, q_xi=7, max_iter=100, tol=1e-5)
     with pytest.raises(ValueError):
-        fit_mixed_items(y, "2pl", q_xi=8)
+        fit_mixed_items(y, "2pl", q_xi=0, q_theta=21, max_iter=100, tol=1e-5)
     for mi in (0, 1.5):
         with pytest.raises(ValueError):
-            fit_mixed_items(y, "2pl", max_iter=mi)
+            fit_mixed_items(y, "2pl", max_iter=mi, q_theta=21, q_xi=7, tol=1e-5)
     for tol in (0.0, np.inf):
         with pytest.raises(ValueError):
-            fit_mixed_items(y, "2pl", tol=tol)
+            fit_mixed_items(y, "2pl", tol=tol, q_theta=21, q_xi=7, max_iter=100)
     for nt in (-1, 1.5):
         with pytest.raises(ValueError):
-            fit_mixed_items(y, "2pl", n_threads=nt)
+            fit_mixed_items(y, "2pl", n_threads=nt, q_theta=21, q_xi=7, max_iter=100, tol=1e-5)

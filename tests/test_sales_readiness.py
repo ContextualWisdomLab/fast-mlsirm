@@ -86,8 +86,16 @@ def _write_required_policy_files(root: Path) -> None:
         _touch(root / relative)
     token_docs = {
         "README.md": """
+        fast-mlsirm
+        Project Status
+        """,
+        "docs/commercial_readiness.md": """
         Commercial Readiness
-        Enterprise Sales Readiness
+        Seller Acceptance Checklist
+        Enterprise Sales Gate
+        Security
+        Support
+        Release Gate
         scripts/release_acceptance.py
         scripts/sales_readiness.py
         scripts/build_release_evidence_index.py
@@ -96,14 +104,8 @@ def _write_required_policy_files(root: Path) -> None:
         scripts/build_pr_queue_governance.py
         scripts/build_figma_evidence_sync.py
         """,
-        "docs/commercial_readiness.md": """
-        Seller Acceptance Checklist
-        Enterprise Sales Gate
-        Security
-        Support
-        Release Gate
-        """,
         "docs/enterprise_sales_readiness.md": """
+        Enterprise Sales Readiness
         KRW 2,000,000,000
         Procurement Evidence
         Customer Acceptance Evidence
@@ -322,6 +324,37 @@ def test_sales_readiness_passes_with_20b_product_evidence(tmp_path):
     assert "20b:figma_code_connect_disabled" in check_names
 
 
+def test_sales_readiness_fails_when_readme_leaks_internal_commercial_language(
+    tmp_path,
+):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    readme = repo_root / "README.md"
+    readme.write_text(
+        readme.read_text(encoding="utf-8") + "\n## Commercial Readiness\n",
+        encoding="utf-8",
+    )
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=False,
+        check_import=False,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    failed = {check["name"] for check in manifest["failed_checks"]}
+    assert "public_boundary:README.md" in failed
+
+
 def test_sales_readiness_fails_when_20b_artifact_is_missing(tmp_path):
     module = _load_sales_readiness()
     acceptance = _write_acceptance(tmp_path)
@@ -442,18 +475,10 @@ def _write_buyer_packet_manifest(
     zip_sha: str | None = None,
     report_sha: str | None = None,
 ) -> Path:
-    payload_zip = tmp_path / "buyer_evidence_payload.zip"
-    with zipfile.ZipFile(payload_zip, "w") as payload:
-        payload.writestr("acceptance/acceptance_summary.json", "{}")
-    actual_payload_sha = hashlib.sha256(payload_zip.read_bytes()).hexdigest()
-
-    packet_zip = tmp_path / "fast_mlsirm_buyer_evidence_packet.zip"
+    packet_zip = tmp_path / "buyer_packet.zip"
     with zipfile.ZipFile(packet_zip, "w") as packet:
         packet.writestr("buyer_evidence_manifest.json", "{}")
-    actual_packet_sha = hashlib.sha256(packet_zip.read_bytes()).hexdigest()
-    packet_digest = tmp_path / "fast_mlsirm_buyer_evidence_packet.sha256"
-    packet_digest.write_text(actual_packet_sha + "\n", encoding="ascii")
-
+    actual_sha = hashlib.sha256(packet_zip.read_bytes()).hexdigest()
     html_report = tmp_path / "buyer_evidence_report.html"
     html_report.write_text("<!doctype html><title>Buyer Evidence Review</title>", encoding="utf-8")
     actual_report_sha = hashlib.sha256(html_report.read_bytes()).hexdigest()
@@ -473,12 +498,8 @@ def _write_buyer_packet_manifest(
         },
         "report_file": str(html_report),
         "report_sha256": report_sha or actual_report_sha,
-        "payload_zip_file": str(payload_zip),
-        "payload_zip_sha256": zip_sha or actual_payload_sha,
-        "zip_file": str(payload_zip),
-        "zip_sha256": zip_sha or actual_payload_sha,
-        "packet_file": str(packet_zip),
-        "packet_sha256_file": str(packet_digest),
+        "zip_file": str(packet_zip),
+        "zip_sha256": zip_sha or actual_sha,
     }
     path = tmp_path / "buyer_evidence_manifest.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -668,7 +689,6 @@ def test_sales_readiness_validates_required_buyer_packet(tmp_path):
     check_names = {check["name"] for check in manifest["checks"]}
     assert "buyer_packet:coverage" in check_names
     assert "buyer_packet:zip_sha256" in check_names
-    assert "buyer_packet:packet_sha256" in check_names
     assert "buyer_packet:html_report_sha256" in check_names
 
 

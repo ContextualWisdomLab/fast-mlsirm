@@ -9,7 +9,7 @@ import numpy as np
 from .config import FitConfig, _trusted_integer
 from .irt_contract import fit_irt_experiment, validate_irt_experiment_readiness
 from .math import sigmoid, standardize
-from .objective import linear_predictor, model_flags, prepare_response, validate_factor_id
+from .objective import compute_linear_predictor, get_model_flags, prepare_response, validate_factor_id
 from .types import (
     DimensionalityDiagnostics,
     FitDiagnostics,
@@ -52,7 +52,7 @@ def predict_proba(
     sub = _subset_params(params, persons, items)
     if items is not None:
         factors = factors[np.asarray(items, dtype=np.int64)]
-    eta, _ = linear_predictor(sub, factors, model=model)
+    eta, _ = compute_linear_predictor(sub, factors, model=model, eps_distance=1e-8)
     return sigmoid(eta)
 
 
@@ -1197,7 +1197,7 @@ def _fixed_candidate_probabilities(
 
 def _parameter_count(params: MLSIRMParams, model: str) -> int:
     """Count the free parameters a model variant estimates for ``params``."""
-    free_alpha, uses_space = model_flags(model)
+    free_alpha, uses_space = get_model_flags(model)
     count = params.theta.size + params.b.size
     if free_alpha:
         count += params.alpha.size

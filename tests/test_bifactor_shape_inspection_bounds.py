@@ -7,7 +7,7 @@ from collections.abc import Iterator
 import numpy as np
 import pytest
 
-from fast_mlsirm import bifactor_scoreability
+from fast_mlsirm import assess_bifactor_scoreability
 
 
 class _GuardedShape:
@@ -63,9 +63,10 @@ def test_loadings_shape_rejects_after_third_dimension_without_fourth_request() -
     shape = _GuardedShape((4, 3, 2), request_limit=3)
 
     with pytest.raises(ValueError, match="2-D item-by-factor matrix"):
-        bifactor_scoreability(
+        assess_bifactor_scoreability(
             _AdvertisedArrayLike(shape),
             _valid_uniquenesses(),
+            zero_tolerance=0.0,
         )
 
     assert shape.requests == 3
@@ -76,9 +77,10 @@ def test_uniqueness_shape_rejects_after_second_dimension_without_third_request()
     shape = _GuardedShape((4, 1), request_limit=2)
 
     with pytest.raises(ValueError, match="1-D item vector"):
-        bifactor_scoreability(
+        assess_bifactor_scoreability(
             _valid_loadings(),
             _AdvertisedArrayLike(shape),
+            zero_tolerance=0.0,
         )
 
     assert shape.requests == 2
@@ -95,9 +97,10 @@ class _FailingShape:
 def test_shape_iteration_failure_is_stable_and_non_reflective() -> None:
     """Ordinary shape-iteration failures become bounded package errors."""
     with pytest.raises(ValueError) as exc_info:
-        bifactor_scoreability(
+        assess_bifactor_scoreability(
             _AdvertisedArrayLike(_FailingShape()),
             _valid_uniquenesses(),
+            zero_tolerance=0.0,
         )
 
     message = str(exc_info.value)
@@ -116,7 +119,8 @@ class _InterruptingShape:
 def test_shape_inspection_preserves_process_control_signals() -> None:
     """Bounded validation must not swallow process-control signals."""
     with pytest.raises(KeyboardInterrupt):
-        bifactor_scoreability(
+        assess_bifactor_scoreability(
             _AdvertisedArrayLike(_InterruptingShape()),
             _valid_uniquenesses(),
+            zero_tolerance=0.0,
         )

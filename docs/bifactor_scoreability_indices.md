@@ -18,8 +18,8 @@ There is no NumPy formula fallback for this post-fit diagnostic.
 ```python
 import numpy as np
 from fast_mlsirm import (
-    bifactor_scoreability,
-    bifactor_scoreability_from_logit_slopes,
+    assess_bifactor_scoreability,
+    assess_bifactor_scoreability_from_logit_slopes,
 )
 
 loadings = np.asarray(
@@ -33,10 +33,11 @@ loadings = np.asarray(
 )
 uniquenesses = 1.0 - np.square(loadings).sum(axis=1)
 
-result = bifactor_scoreability(
+result = assess_bifactor_scoreability(
     loadings,
     uniquenesses,
     general_factor=0,
+    zero_tolerance=0.0,
 )
 
 print(result.ecv_sg)
@@ -45,9 +46,11 @@ print(result.construct_replicability)
 ```
 
 For fitted orthogonal logistic-IRT slopes, use
-`bifactor_scoreability_from_logit_slopes`. The Rust core applies the logistic
-latent-response residual variance `pi^2 / 3` in overflow-resistant scaled
-coordinates.
+`assess_bifactor_scoreability_from_logit_slopes`. The Rust core applies the
+logistic latent-response residual variance `pi^2 / 3` in overflow-resistant
+scaled coordinates. (`bifactor_scoreability` /
+`bifactor_scoreability_from_logit_slopes` remain available as deprecated
+aliases for one minor release; ADR-0028, #1963.)
 
 ## Input contract
 

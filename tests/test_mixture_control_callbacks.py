@@ -90,7 +90,7 @@ def test_hostile_scalar_controls_fail_before_callbacks_and_core(monkeypatch):
     )
     for kwargs, field in cases:
         with pytest.raises(ValueError, match=field):
-            mixture.fit_mixture(_RESPONSES, **kwargs)
+            mixture.fit_mixture(_RESPONSES, **{"model": "rasch", "n_starts": 1, "max_iter": 500, "tol": 1e-6, "seed": 0x2545F491, **kwargs})
 
 
 def test_invalid_exact_controls_fail_before_core(monkeypatch):
@@ -109,7 +109,7 @@ def test_invalid_exact_controls_fail_before_core(monkeypatch):
     )
     for kwargs, field in cases:
         with pytest.raises(ValueError, match=field):
-            mixture.fit_mixture(_RESPONSES, **kwargs)
+            mixture.fit_mixture(_RESPONSES, **{"model": "rasch", "n_starts": 1, "max_iter": 500, "tol": 1e-6, "seed": 0x2545F491, **kwargs})
 
 
 def test_genuine_numpy_controls_are_normalized_before_native_dispatch(monkeypatch):
@@ -156,6 +156,6 @@ def test_existing_model_aliases_remain_supported(monkeypatch):
     monkeypatch.setattr(fitstats, "_core_module", lambda: CapturingCore())
     aliases = ("rasch", "Rasch", "RASCH", "2pl", "2PL", "twopl", "TwoPl")
     for alias in aliases:
-        mixture.fit_mixture(_RESPONSES, model=alias)
+        mixture.fit_mixture(_RESPONSES, model=alias, n_starts=1, max_iter=500, tol=1e-6, seed=0x2545F491)
 
     assert tuple(captured) == aliases

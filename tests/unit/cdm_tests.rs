@@ -1461,6 +1461,8 @@ fn qval_true_q_validates_to_itself() {
 /// over-specified singles (one spurious attribute added) is corrected back to
 /// the truth, and exactly the mis-specified items are flagged.
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn qval_corrects_over_and_under_specification() {
     let (k, n_items, n) = (3usize, 15usize, 4000usize);
     let truth = canonical_q3();

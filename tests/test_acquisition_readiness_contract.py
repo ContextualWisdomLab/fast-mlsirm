@@ -62,10 +62,6 @@ def test_generic_profile_activates_all_acquisition_validators_without_20b(
     """The generic gate is complete, price-neutral, and separately identified."""
     module = _load_sales_readiness()
     called: dict[str, dict[str, object]] = {}
-    acceptance_path = tmp_path / "acceptance_summary.json"
-    # run_sales_readiness reads source identity before dispatching the validators;
-    # keep this orchestration test on a syntactically valid, source-neutral object.
-    acceptance_path.write_text("{}\n", encoding="utf-8")
 
     def stub(name):
         def validator(*args, **kwargs):
@@ -77,6 +73,7 @@ def test_generic_profile_activates_all_acquisition_validators_without_20b(
     for name in (
         "_validate_required_files",
         "_validate_doc_tokens",
+        "_validate_public_description_boundary",
         "_validate_acceptance_summary",
         "_validate_dist",
         "_validate_buyer_packet",
@@ -95,7 +92,7 @@ def test_generic_profile_activates_all_acquisition_validators_without_20b(
 
     args = argparse.Namespace(
         repo_root=str(tmp_path),
-        acceptance=str(acceptance_path),
+        acceptance=str(tmp_path / "acceptance_summary.json"),
         out=str(tmp_path / "sales_readiness_manifest.json"),
         dist=None,
         require_rust=False,
