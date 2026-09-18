@@ -505,6 +505,79 @@ fn general_only_without_prior(gen_log: f64, log_w: f64) -> Option<f64> {
     Some(gen_log - log_w)
 }
 
+/// Section timings for the CPU bifactor E-step nest audit (#2004).
+///
+/// Enabled only while [`enable_estep_nest_profile`] is active; production
+/// callers leave profiling off so the person sweep pays one predictable
+/// branch on the cold flag.
+#[derive(Clone, Debug, Default)]
+pub struct EstepNestProfile {
+    /// Nanoseconds in general-only item accumulation across all persons.
+    pub gen_only_ns: u128,
+    /// Nanoseconds in per-block `block_acc` + per-`g` `log_sum_exp`.
+    pub block_acc_ns: u128,
+    /// Nanoseconds in posterior / expected-count accumulation.
+    pub posterior_ns: u128,
+    /// Persons processed in the timed sweep.
+    pub n_persons: usize,
+}
+
+std::thread_local! {
+    static ESTEP_NEST_PROFILE: std::cell::RefCell<Option<EstepNestProfile>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Start accumulating [`EstepNestProfile`] on this thread (resets prior values).
+pub fn enable_estep_nest_profile() {
+    ESTEP_NEST_PROFILE.with(|slot| {
+        *slot.borrow_mut() = Some(EstepNestProfile::default());
+    });
+}
+
+/// Take the accumulated profile, disabling further timing on this thread.
+pub fn take_estep_nest_profile() -> Option<EstepNestProfile> {
+    ESTEP_NEST_PROFILE.with(|slot| slot.borrow_mut().take())
+}
+
+/// Accumulate one person's block contribution into `block_acc` / `log_i`.
+///
+/// Kept as a single helper so the single-group, multigroup, EAP, and FIPC
+/// nests stay bit-identical. Observed `(item, category)` lookups remain
+/// inside the `(g, h)` nest: a defect-A hoist was measured as a regression
+/// on the common `observed = None` path (#2004 microbench).
+#[inline]
+fn accumulate_person_block<F: Fn(usize, usize) -> bool>(
+    members: &[usize],
+    p: usize,
+    n_items: usize,
+    n_cat: usize,
+    y: &[usize],
+    is_obs: F,
+    tables: &[Vec<f64>],
+    log_ws: &[f64],
+    qg: usize,
+    qs: usize,
+    block_row: &mut [f64],
+    tmp_h: &mut [f64],
+    log_i_row: &mut [f64],
+) {
+    for g in 0..qg {
+        for h in 0..qs {
+            let mut acc = log_ws[h];
+            for &i in members {
+                if !is_obs(p, i) {
+                    continue;
+                }
+                let yc = y[p * n_items + i];
+                acc += tables[i][(g * qs + h) * n_cat + yc];
+            }
+            block_row[g * qs + h] = acc;
+        }
+        tmp_h.copy_from_slice(&block_row[g * qs..(g + 1) * qs]);
+        log_i_row[g] = log_sum_exp(tmp_h);
+    }
+}
+
 /// True when every item's slopes and thresholds are bit-identical to `start`
 /// (the EM surface never left the initializer). Used to refuse `tolerance_met`
 /// on a numerically frozen start (#1976).
@@ -538,11 +611,19 @@ fn refuse_tolerance_on_frozen_start(
 /// counts per item (`counts[i][node][k]`, `node = g * qs + h` for block
 /// items, `node = g` for general-only items).
 ///
+/// When `accumulate_counts` is `false`, only the observed-data loglik is
+/// computed and `counts` is empty — used by
+/// [`bifactor_grm_marginal_loglik`], where expected counts are unused
+/// (#2004 measured: posterior/count fill was ~2/3 of the CPU E-step on a
+/// CP3-shaped profile workload).
+///
 /// When `device` is `Gpu`/`Auto` and a compatible adapter exists, the
 /// person sweep runs in the WGSL `f32` kernels
 /// ([`crate::gpu_bifactor::e_step_reduced_gpu`]); otherwise — including the
 /// marginal-loglik oracle path, which always passes `Cpu` — the `f64`
-/// scalar sweep below runs.
+/// scalar sweep below runs. The GPU path always returns counts (the
+/// shader fills them); callers that pass `accumulate_counts = false`
+/// therefore stay on the CPU loglik-only path.
 #[allow(clippy::too_many_arguments)]
 // `tg`/`ts` feed only the cfg-gated GPU branch (group moments); the CPU
 // sweep below needs tables and log-weights alone.
@@ -559,10 +640,13 @@ pub(crate) fn e_step(
     tg: &[f64],
     ts: &[f64],
     device: crate::Device,
+    accumulate_counts: bool,
 ) -> (f64, Vec<Vec<Vec<f64>>>) {
     #[cfg(all(feature = "gpu", not(coverage)))]
     {
-        if device == crate::Device::Gpu || device == crate::Device::Auto {
+        if accumulate_counts
+            && (device == crate::Device::Gpu || device == crate::Device::Auto)
+        {
             // Small host-side staging wrappers (no table data is duplicated
             // beyond this Vec-of-Vec shell): the GPU path flattens them.
             let tables_wrapped = vec![tables.to_vec()];
@@ -613,23 +697,27 @@ pub(crate) fn e_step(
             }
         }
     }
-    if device == crate::Device::Gpu {
+    if accumulate_counts && device == crate::Device::Gpu {
         eprintln!(
             "fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found; \
              falling back to CPU implementation."
         );
     }
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
-    let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
-    for (i, par) in tables.iter().enumerate() {
-        let _ = par;
-        let n_nodes = if v.item_block[i].is_some() {
-            qg * qs
-        } else {
-            qg
-        };
-        counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
-    }
+    let mut counts: Vec<Vec<Vec<f64>>> = if accumulate_counts {
+        let mut c = Vec::with_capacity(v.n_items);
+        for (i, _par) in tables.iter().enumerate() {
+            let n_nodes = if v.item_block[i].is_some() {
+                qg * qs
+            } else {
+                qg
+            };
+            c.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+        }
+        c
+    } else {
+        Vec::new()
+    };
     // Per-person scratch.
     let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
     let mut log_i = vec![0.0f64; v.n_specific * qg];
@@ -637,10 +725,16 @@ pub(crate) fn e_step(
     let mut log_like_g = vec![0.0f64; qg];
     let mut post_g = vec![0.0f64; qg];
     let mut tmp_h = vec![0.0f64; qs];
+    let profiling = ESTEP_NEST_PROFILE.with(|slot| slot.borrow().is_some());
 
     let mut loglik = 0.0f64;
     for p in 0..v.n_persons {
         // General-only log-likelihood per general node.
+        let t_gen0 = if profiling {
+            Some(std::time::Instant::now())
+        } else {
+            None
+        };
         gen_log.copy_from_slice(log_wg);
         for &i in &v.general_only {
             if !is_obs(p, i) {
@@ -652,28 +746,52 @@ pub(crate) fn e_step(
                 gen_log[g] += lp[g * v.n_cat + yc];
             }
         }
-        // Block accumulations: sum of item log-probs per (s, g, h).
-        for (s, members) in v.blocks.iter().enumerate() {
-            for g in 0..qg {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * v.n_items + i];
-                        acc += tables[i][(g * qs + h) * v.n_cat + yc];
-                    }
-                    block_acc[(s * qg + g) * qs + h] = acc;
+        if let Some(t0) = t_gen0 {
+            let dt = t0.elapsed().as_nanos();
+            ESTEP_NEST_PROFILE.with(|slot| {
+                if let Some(prof) = slot.borrow_mut().as_mut() {
+                    prof.gen_only_ns += dt;
                 }
-            }
-            for g in 0..qg {
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * qg + g) * qs + h];
-                }
-                log_i[s * qg + g] = log_sum_exp(&tmp_h);
-            }
+            });
         }
+        // Block accumulations: sum of item log-probs per (s, g, h).
+        let t_blk0 = if profiling {
+            Some(std::time::Instant::now())
+        } else {
+            None
+        };
+        for (s, members) in v.blocks.iter().enumerate() {
+            let row = &mut block_acc[s * qg * qs..(s + 1) * qg * qs];
+            let log_row = &mut log_i[s * qg..(s + 1) * qg];
+            accumulate_person_block(
+                members,
+                p,
+                v.n_items,
+                v.n_cat,
+                y,
+                is_obs,
+                tables,
+                log_ws,
+                qg,
+                qs,
+                row,
+                &mut tmp_h,
+                log_row,
+            );
+        }
+        if let Some(t0) = t_blk0 {
+            let dt = t0.elapsed().as_nanos();
+            ESTEP_NEST_PROFILE.with(|slot| {
+                if let Some(prof) = slot.borrow_mut().as_mut() {
+                    prof.block_acc_ns += dt;
+                }
+            });
+        }
+        let t_post0 = if profiling {
+            Some(std::time::Instant::now())
+        } else {
+            None
+        };
         for g in 0..qg {
             let mut acc = gen_log[g];
             for s in 0..v.n_specific {
@@ -683,52 +801,64 @@ pub(crate) fn e_step(
         }
         let log_lp = log_sum_exp(&log_like_g);
         loglik += log_lp;
-        for g in 0..qg {
-            post_g[g] = (log_like_g[g] - log_lp).exp();
-        }
-        // General-only expected counts share the marginal general posterior.
-        for &i in &v.general_only {
-            if !is_obs(p, i) {
-                continue;
-            }
-            let yc = y[p * v.n_items + i];
+        if accumulate_counts {
             for g in 0..qg {
-                counts[i][g][yc] += post_g[g];
+                post_g[g] = (log_like_g[g] - log_lp).exp();
             }
-        }
-        // Block items: joint (g, h) posterior marginalizing the other blocks.
-        for (s, members) in v.blocks.iter().enumerate() {
-            let any_obs = members.iter().any(|&i| is_obs(p, i));
-            if !any_obs {
-                continue;
-            }
-            for g in 0..qg {
-                // Sum of the OTHER blocks' log-integrals at g.
-                // Skip exactly-zero prior mass: `gen_log - log_wg` is NaN when
-                // both are -inf and would poison every item's expected counts.
-                let Some(mut others) = general_only_without_prior(gen_log[g], log_wg[g]) else {
+            // General-only expected counts share the marginal general posterior.
+            for &i in &v.general_only {
+                if !is_obs(p, i) {
                     continue;
-                };
-                for s2 in 0..v.n_specific {
-                    if s2 != s {
-                        others += log_i[s2 * qg + g];
-                    }
                 }
-                for h in 0..qs {
-                    let log_post = log_wg[g] + block_acc[(s * qg + g) * qs + h] + others - log_lp;
-                    let post = log_post.exp();
-                    if !post.is_finite() {
+                let yc = y[p * v.n_items + i];
+                for g in 0..qg {
+                    counts[i][g][yc] += post_g[g];
+                }
+            }
+            // Block items: joint (g, h) posterior marginalizing the other blocks.
+            for (s, members) in v.blocks.iter().enumerate() {
+                let any_obs = members.iter().any(|&i| is_obs(p, i));
+                if !any_obs {
+                    continue;
+                }
+                for g in 0..qg {
+                    // Sum of the OTHER blocks' log-integrals at g.
+                    // Skip exactly-zero prior mass: `gen_log - log_wg` is NaN when
+                    // both are -inf and would poison every item's expected counts.
+                    let Some(mut others) = general_only_without_prior(gen_log[g], log_wg[g]) else {
                         continue;
+                    };
+                    for s2 in 0..v.n_specific {
+                        if s2 != s {
+                            others += log_i[s2 * qg + g];
+                        }
                     }
-                    for &i in members {
-                        if !is_obs(p, i) {
+                    for h in 0..qs {
+                        let log_post =
+                            log_wg[g] + block_acc[(s * qg + g) * qs + h] + others - log_lp;
+                        let post = log_post.exp();
+                        if !post.is_finite() {
                             continue;
                         }
-                        let yc = y[p * v.n_items + i];
-                        counts[i][g * qs + h][yc] += post;
+                        for &i in members {
+                            if !is_obs(p, i) {
+                                continue;
+                            }
+                            let yc = y[p * v.n_items + i];
+                            counts[i][g * qs + h][yc] += post;
+                        }
                     }
                 }
             }
+        }
+        if let Some(t0) = t_post0 {
+            let dt = t0.elapsed().as_nanos();
+            ESTEP_NEST_PROFILE.with(|slot| {
+                if let Some(prof) = slot.borrow_mut().as_mut() {
+                    prof.posterior_ns += dt;
+                    prof.n_persons += 1;
+                }
+            });
         }
     }
     (loglik, counts)
@@ -926,7 +1056,7 @@ fn run_single_start(
     loop {
         let tables = fill_logprob_tables(v, &params, tg, ts, qg, qs);
         let (ll, counts) = e_step(
-            v, y, observed, &tables, log_wg, log_ws, qg, qs, tg, ts, cfg.device,
+            v, y, observed, &tables, log_wg, log_ws, qg, qs, tg, ts, cfg.device, true,
         );
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
@@ -1085,23 +1215,23 @@ pub fn fit_bifactor_grm(
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
-            for g in 0..qg {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * n_items + i];
-                        acc += tables[i][(g * qs + h) * n_cat + yc];
-                    }
-                    block_acc[(s * qg + g) * qs + h] = acc;
-                }
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * qg + g) * qs + h];
-                }
-                log_i[s * qg + g] = log_sum_exp(&tmp_h);
-            }
+            let row = &mut block_acc[s * qg * qs..(s + 1) * qg * qs];
+            let log_row = &mut log_i[s * qg..(s + 1) * qg];
+            accumulate_person_block(
+                members,
+                p,
+                n_items,
+                n_cat,
+                y,
+                is_obs,
+                &tables,
+                &log_ws,
+                qg,
+                qs,
+                row,
+                &mut tmp_h,
+                log_row,
+            );
         }
         for g in 0..qg {
             let mut acc = gen_log[g];
@@ -1252,6 +1382,8 @@ pub fn bifactor_grm_marginal_loglik(
         ts,
         // Exactness oracle: always the f64 CPU sweep.
         crate::Device::Cpu,
+        // Loglik-only: skip expected-count fill (#2004 measured hotspot).
+        false,
     )
     .0)
 }
@@ -1947,25 +2079,23 @@ fn e_step_multigroup(
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
-            for t in 0..qg {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * v.n_items + i];
-                        acc += tables[i][(t * qs + h) * v.n_cat + yc];
-                    }
-                    block_acc[(s * qg + t) * qs + h] = acc;
-                }
-            }
-            for t in 0..qg {
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * qg + t) * qs + h];
-                }
-                log_i[s * qg + t] = log_sum_exp(&tmp_h);
-            }
+            let row = &mut block_acc[s * qg * qs..(s + 1) * qg * qs];
+            let log_row = &mut log_i[s * qg..(s + 1) * qg];
+            accumulate_person_block(
+                members,
+                p,
+                v.n_items,
+                v.n_cat,
+                y,
+                is_obs,
+                tables,
+                log_ws,
+                qg,
+                qs,
+                row,
+                &mut tmp_h,
+                log_row,
+            );
         }
         for t in 0..qg {
             let mut acc = gen_log[t];
@@ -2582,23 +2712,23 @@ pub fn fit_bifactor_grm_multigroup(
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
-            for t in 0..qg {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * n_items + i];
-                        acc += tables[i][(t * qs + h) * n_cat + yc];
-                    }
-                    block_acc[(s * qg + t) * qs + h] = acc;
-                }
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * qg + t) * qs + h];
-                }
-                log_i[s * qg + t] = log_sum_exp(&tmp_h);
-            }
+            let row = &mut block_acc[s * qg * qs..(s + 1) * qg * qs];
+            let log_row = &mut log_i[s * qg..(s + 1) * qg];
+            accumulate_person_block(
+                members,
+                p,
+                n_items,
+                n_cat,
+                y,
+                is_obs,
+                tables,
+                &log_ws,
+                qg,
+                qs,
+                row,
+                &mut tmp_h,
+                log_row,
+            );
         }
         for t in 0..qg {
             let mut acc = gen_log[t];
@@ -3262,23 +3392,23 @@ pub fn fit_bifactor_grm_fipc(
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
-            for t in 0..qg {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * n_items + i];
-                        acc += tables[i][(t * qs + h) * n_cat + yc];
-                    }
-                    block_acc[(s * qg + t) * qs + h] = acc;
-                }
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * qg + t) * qs + h];
-                }
-                log_i[s * qg + t] = log_sum_exp(&tmp_h);
-            }
+            let row = &mut block_acc[s * qg * qs..(s + 1) * qg * qs];
+            let log_row = &mut log_i[s * qg..(s + 1) * qg];
+            accumulate_person_block(
+                members,
+                p,
+                n_items,
+                n_cat,
+                y,
+                is_obs,
+                &tables,
+                &log_ws,
+                qg,
+                qs,
+                row,
+                &mut tmp_h,
+                log_row,
+            );
         }
         for t in 0..qg {
             let mut acc = gen_log[t];
