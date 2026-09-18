@@ -665,3 +665,178 @@ fn dense_quadrature_fit_never_claims_tolerance_at_start_slopes() {
         assert_eq!(fit.termination_reason, "numerical_em_stall");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Block partial-pattern collapse (#2003).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn block_partial_patterns_collapse_duplicates_and_separate_missingness() {
+    // Two specific blocks of two items; duplicate rows + one MAR mask variant.
+    let n_persons = 8usize;
+    let n_items = 4usize;
+    let n_cat = 3usize;
+    let blocks = [vec![0usize, 1], vec![2usize, 3]];
+    let general_only: Vec<usize> = Vec::new();
+    // Persons 0..3 share [0,1 | 2,0]; 4..5 share [1,1 | 0,0]; 6 unique;
+    // 7 matches 0 on observed categories but misses item 1 → distinct pattern.
+    let rows: [[usize; 4]; 8] = [
+        [0, 1, 2, 0],
+        [0, 1, 2, 0],
+        [0, 1, 2, 0],
+        [0, 1, 2, 0],
+        [1, 1, 0, 0],
+        [1, 1, 0, 0],
+        [2, 2, 1, 1],
+        [0, 1, 2, 0],
+    ];
+    let mut y = Vec::with_capacity(n_persons * n_items);
+    for row in rows {
+        y.extend_from_slice(&row);
+    }
+    let mut observed = vec![true; n_persons * n_items];
+    observed[7 * n_items + 1] = false;
+
+    let prov = crate::bifactor_block_patterns::block_pattern_collapse_provenance(
+        &y,
+        Some(&observed),
+        n_persons,
+        n_items,
+        n_cat,
+        &blocks,
+        &general_only,
+    )
+    .expect("provenance");
+    assert_eq!(prov.n_persons, n_persons);
+    assert_eq!(prov.n_persons_per_block, vec![n_persons, n_persons]);
+    // Block 0: [0,1] x4, [1,1] x2, [2,2] x1, [0, MISSING] x1 → 4 unique.
+    assert_eq!(prov.n_unique_patterns_per_block[0], 4);
+    // Block 1: [2,0] x5 (persons 0-3 and 7), [0,0] x2, [1,1] x1 → 3 unique.
+    assert_eq!(prov.n_unique_patterns_per_block[1], 3);
+    assert!(
+        prov.n_unique_patterns_per_block[0] < prov.n_persons_per_block[0],
+        "duplicates must reduce unique count"
+    );
+}
+
+#[test]
+fn collapsed_e_step_matches_personwise_aggregates() {
+    // Tiny bifactor; duplicate patterns so collapse is active.
+    let n_persons = 6usize;
+    let n_items = 4usize;
+    let n_specific = 2usize;
+    let n_cat = 3usize;
+    let specific_map = [0i32, 0, 1, 1];
+    let rows: [[usize; 4]; 6] = [
+        [0, 1, 2, 0],
+        [0, 1, 2, 0],
+        [0, 1, 2, 0],
+        [1, 2, 0, 1],
+        [1, 2, 0, 1],
+        [2, 0, 1, 2],
+    ];
+    let mut y = Vec::with_capacity(n_persons * n_items);
+    for row in rows {
+        y.extend_from_slice(&row);
+    }
+    let cfg = BifactorGrmConfig {
+        q_general: 7,
+        q_specific: 7,
+        max_iter: 1,
+        tol: 1.0,
+        n_starts: 1,
+        seed: 0,
+        newton_iter: 1,
+        ridge: 1.0,
+        device: crate::Device::Cpu,
+    };
+    let v = super::validate(
+        &y,
+        None,
+        &specific_map,
+        n_persons,
+        n_items,
+        n_specific,
+        n_cat,
+        &cfg,
+    )
+    .expect("validate");
+    let (tg, wg) = super::gh_rule(7).expect("gh");
+    let (ts, ws) = super::gh_rule(7).expect("gh");
+    let qg = tg.len();
+    let qs = ts.len();
+    let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    let a_g = vec![1.0, 0.8, 1.1, 0.9];
+    let a_s = vec![0.7, 0.6, 0.5, 0.8];
+    let thr = vec![0.5, -0.5, 0.4, -0.6, 0.3, -0.7, 0.2, -0.8];
+    let params = super::pack_params(&v, &a_g, &a_s, &thr);
+    let tables = super::fill_logprob_tables(&v, &params, tg, ts, qg, qs);
+
+    let (ll_c, counts_c) = super::e_step(
+        &v,
+        &y,
+        None,
+        &tables,
+        &log_wg,
+        &log_ws,
+        qg,
+        qs,
+        tg,
+        ts,
+        crate::Device::Cpu,
+    );
+    let (ll_p, counts_p) = super::e_step_personwise_reference(
+        &v, &y, None, &tables, &log_wg, &log_ws, qg, qs,
+    );
+    // Measured on this fixture: relative loglik gap and max |count| gap stay
+    // under these bounds (associative reordering of the same finite sums).
+    let rel = (ll_c - ll_p).abs() / (1.0 + ll_p.abs());
+    assert!(
+        rel <= 1e-12,
+        "loglik rel gap {rel} (collapsed={ll_c}, personwise={ll_p})"
+    );
+    let mut max_abs = 0.0f64;
+    for i in 0..n_items {
+        for node in 0..counts_c[i].len() {
+            for k in 0..n_cat {
+                max_abs = max_abs.max((counts_c[i][node][k] - counts_p[i][node][k]).abs());
+            }
+        }
+    }
+    assert!(
+        max_abs <= 1e-10,
+        "max |count| gap {max_abs} exceeds measured fixture bound 1e-10"
+    );
+}
+
+#[test]
+fn all_unique_patterns_provenance_reports_no_reduction() {
+    let n_persons = 4usize;
+    let n_items = 4usize;
+    let n_cat = 3usize;
+    let blocks = [vec![0usize, 1], vec![2usize, 3]];
+    let general_only: Vec<usize> = Vec::new();
+    let rows: [[usize; 4]; 4] = [
+        [0, 0, 0, 0],
+        [0, 1, 0, 1],
+        [1, 0, 1, 0],
+        [1, 1, 1, 1],
+    ];
+    let mut y = Vec::with_capacity(n_persons * n_items);
+    for row in rows {
+        y.extend_from_slice(&row);
+    }
+    let prov = crate::bifactor_block_patterns::block_pattern_collapse_provenance(
+        &y,
+        None,
+        n_persons,
+        n_items,
+        n_cat,
+        &blocks,
+        &general_only,
+    )
+    .expect("provenance");
+    assert_eq!(prov.n_unique_patterns_per_block, vec![n_persons, n_persons]);
+}
+
