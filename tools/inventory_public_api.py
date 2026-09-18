@@ -119,9 +119,8 @@ def collect_python_rows() -> list[dict]:
             continue
         try:
             # modname is safely derived from pkgutil.walk_packages over the internal fast_mlsirm package.
-            mod = importlib.import_module(
-                modname
-            )  # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
+            # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
+            mod = importlib.import_module(modname)  # fmt: skip
         except Exception:
             continue
         for name in sorted(vars(mod)):
