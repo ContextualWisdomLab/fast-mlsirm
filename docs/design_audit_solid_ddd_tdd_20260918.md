@@ -167,8 +167,7 @@ sampled bifactor → two-tier reduction test
 | **0001** | Domain-neutral measurement; no hosted runtime | **Yes** — no product HTTP/ORM in core |
 | **0002** | Rust owns production numerics; GPU ⊂ Rust device | **Yes** |
 | **0027** | `bifactor_grm` + `gpu_bifactor` + bootstrap; CPU reference | **Yes** (direct GPU call is intentional) |
-| **0028** | Verb-first public names; **no unsourced defaults** | **Policy**, not module layout; bifactor `q_*` /
-  `max_iter` / `tol` already required at Python edge (#1963) |
+| **0028** | Verb-first public names; **no unsourced defaults** | **Policy**, not module layout; bifactor `q_*` / `max_iter` / `tol` already required at Python edge (#1963) |
 
 ### Ubiquitous language
 
