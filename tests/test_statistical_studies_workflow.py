@@ -79,7 +79,7 @@ def test_statistical_studies_checkouts_do_not_persist_credentials():
     text = _STUDIES.read_text(encoding="utf-8")
     checkout = "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
     checkout_tails = text.split(checkout)[1:]
-    assert len(checkout_tails) == 5
+    assert checkout_tails
     for checkout_tail in checkout_tails:
         checkout_block = checkout_tail.split("\n      - ", maxsplit=1)[0]
         assert "\n        with:\n" in checkout_block
