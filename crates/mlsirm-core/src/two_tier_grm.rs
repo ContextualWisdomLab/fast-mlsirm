@@ -262,6 +262,10 @@ pub struct TwoTierGrmConfig {
     pub newton_iter: usize,
     /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
     pub ridge: f64,
+    /// Person-axis chunk count for the CPU E-step (#2002); see bifactor.
+    pub e_step_n_chunks: usize,
+    /// Local rayon pool size for the CPU E-step (#2002).
+    pub e_step_n_threads: usize,
 }
 
 // No `Default` impl: `q_primary`/`q_specific` are quadrature node counts
@@ -364,6 +368,12 @@ pub(crate) fn validate(
     }
     if !cfg.ridge.is_finite() || cfg.ridge <= 0.0 {
         return Err("ridge must be finite and positive".into());
+    }
+    if cfg.e_step_n_chunks < 1 {
+        return Err("e_step_n_chunks must be >= 1".into());
+    }
+    if cfg.e_step_n_threads < 1 {
+        return Err("e_step_n_threads must be >= 1".into());
     }
     let n_cells = n_persons
         .checked_mul(n_items)
@@ -839,30 +849,35 @@ pub(crate) fn e_step(
     ts: &[f64],
     n_grid: usize,
     qs: usize,
-) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
+    e_step_n_chunks: usize,
+    e_step_n_threads: usize,
+) -> Result<(f64, Vec<Vec<Vec<f64>>>, Vec<f64>), String> {
     let p = v.n_primary;
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
-    let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
-    for i in 0..v.n_items {
-        let n_nodes = if v.item_block[i].is_some() {
-            n_grid * qs
-        } else {
-            n_grid
-        };
-        counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
-    }
-    // Per-person scratch: O(n_grid) for primary marginals + O(S * qs) for
-    // the active primary node's specific-tier block (not O(S * n_grid * qs)).
-    let mut log_i = vec![0.0f64; v.n_specific * n_grid];
-    let mut gen_log = vec![0.0f64; n_grid];
-    let mut log_like_g = vec![0.0f64; n_grid];
-    let mut post_g = vec![0.0f64; n_grid];
-    let mut tmp_h = vec![0.0f64; qs];
-    let mut block_acc_g = vec![0.0f64; v.n_specific * qs];
-    let mut s_bar_sum = vec![0.0f64; p * p];
+    let partials = crate::estep_parallel::map_person_chunks(
+        v.n_persons,
+        e_step_n_chunks,
+        e_step_n_threads,
+        |p_start, p_end| {
+            let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
+            for i in 0..v.n_items {
+                let n_nodes = if v.item_block[i].is_some() {
+                    n_grid * qs
+                } else {
+                    n_grid
+                };
+                counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+            }
+            let mut log_i = vec![0.0f64; v.n_specific * n_grid];
+            let mut gen_log = vec![0.0f64; n_grid];
+            let mut log_like_g = vec![0.0f64; n_grid];
+            let mut post_g = vec![0.0f64; n_grid];
+            let mut tmp_h = vec![0.0f64; qs];
+            let mut block_acc_g = vec![0.0f64; v.n_specific * qs];
+            let mut s_bar_sum = vec![0.0f64; p * p];
+            let mut loglik = 0.0f64;
+            for pp in p_start..p_end {
 
-    let mut loglik = 0.0f64;
-    for pp in 0..v.n_persons {
         // Pass 1: person marginal per primary node (specific-free + block
         // integrals), without storing per-(g,h) tables.
         gen_log.copy_from_slice(log_w);
@@ -958,8 +973,36 @@ pub(crate) fn e_step(
                 }
             }
         }
+    
+            }
+            (loglik, counts, s_bar_sum)
+        },
+    )?;
+    let mut loglik = 0.0f64;
+    let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
+    for i in 0..v.n_items {
+        let n_nodes = if v.item_block[i].is_some() {
+            n_grid * qs
+        } else {
+            n_grid
+        };
+        counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
     }
-    (loglik, counts, s_bar_sum)
+    let mut s_bar_sum = vec![0.0f64; p * p];
+    for (ll, part_counts, part_s) in partials {
+        loglik += ll;
+        for (dst, src) in counts.iter_mut().zip(part_counts.iter()) {
+            for (dn, sn) in dst.iter_mut().zip(src.iter()) {
+                for (d, s) in dn.iter_mut().zip(sn.iter()) {
+                    *d += *s;
+                }
+            }
+        }
+        for (d, s) in s_bar_sum.iter_mut().zip(part_s.iter()) {
+            *d += *s;
+        }
+    }
+    Ok((loglik, counts, s_bar_sum))
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item — the
@@ -1348,7 +1391,7 @@ fn run_single_start(
         let phi_inv = chol_inverse(&l, p);
         let log_w = reweighted_log_weights(log_w0, coords, &phi_inv, logdet, p);
         let (ll, counts, s_bar_sum) =
-            e_step(v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs);
+            e_step(v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs, cfg.e_step_n_chunks, cfg.e_step_n_threads)?;
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
@@ -1731,6 +1774,8 @@ pub fn two_tier_grm_marginal_loglik(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     };
     let v = validate(
         y,
@@ -1772,8 +1817,19 @@ fn reduced_loglik(
     let params = pack_params(v, a_primary, a_specific, thresholds);
     let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
     Ok(e_step(
-        v, y, observed, &params, &log_w, &log_ws, &coords, ts, n_grid, qs,
-    )
+        v,
+        y,
+        observed,
+        &params,
+        &log_w,
+        &log_ws,
+        &coords,
+        ts,
+        n_grid,
+        qs,
+        1,
+        1,
+    )?
     .0)
 }
 
@@ -1823,6 +1879,8 @@ pub fn two_tier_grm_marginal_loglik_brute(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     };
     let v = validate(
         y,

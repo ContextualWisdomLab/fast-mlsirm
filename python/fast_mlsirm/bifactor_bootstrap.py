@@ -204,6 +204,8 @@ def _fit_single_replicate(
                 n_starts=n_starts,
                 seed=rep_seed,
                 device=device,
+                e_step_n_chunks=1,
+                e_step_n_threads=1,
             )
             a_g = np.asarray(fit.a_general, dtype=np.float64)
             a_s = np.asarray(fit.a_specific, dtype=np.float64)
@@ -232,6 +234,8 @@ def _fit_single_replicate(
             seed=rep_seed,
             estimate_specific_vars=estimate_specific_vars,
             device=device,
+            e_step_n_chunks=1,
+            e_step_n_threads=1,
         )
         # Multigroup arrays are (n_groups, ...): the bootstrap resamples
         # persons, so per-replicate summaries keep the group axis.
