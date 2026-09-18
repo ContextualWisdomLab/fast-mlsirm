@@ -229,7 +229,7 @@ tbody th { font-weight: normal; }
 tbody tr { transition: background-color 0.15s ease-in-out; }
 tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
 code, pre { font-family: ui-monospace, monospace; }
-pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
+pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 .empty-state { font-style: italic; color: var(--muted); }
 @media (max-width: 640px) { .details-grid { grid-template-columns: 1fr; } .details-grid dd { margin-bottom: 8px; } }
 @media (prefers-reduced-motion: reduce) {
