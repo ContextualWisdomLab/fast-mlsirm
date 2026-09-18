@@ -33,7 +33,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
-import pytest
 
 from fast_mlsirm.bifactor_grm import fit_bifactor_grm
 
