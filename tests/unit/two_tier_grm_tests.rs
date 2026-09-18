@@ -250,6 +250,8 @@ fn valid_config() -> TwoTierGrmConfig {
         seed: 42,
         newton_iter: 3,
         ridge: 1e-8,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     }
 }
 

@@ -164,6 +164,8 @@ impl Provider {
             seed: 0,
             newton_iter: 1,
             ridge: 1e-8,
+            e_step_n_chunks: 1,
+            e_step_n_threads: 1,
         };
         let v = validate(
             y,
@@ -320,7 +322,9 @@ impl Provider {
             &self.ts,
             self.n_grid,
             self.qs,
-        );
+            1,
+            1,
+        )?;
         if !ll.is_finite() {
             return Err("non-finite loglik in Oakes E-step".into());
         }

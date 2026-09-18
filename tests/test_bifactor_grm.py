@@ -68,7 +68,9 @@ def _fit(y: np.ndarray, **overrides):
         "seed": SEED,
     }
     kwargs.update(overrides)
-    return fit_bifactor_grm(y, SPECIFIC_MAP, N_CAT, N_SPECIFIC, **kwargs)
+    return fit_bifactor_grm(y, SPECIFIC_MAP, N_CAT, N_SPECIFIC, **kwargs,
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
 
 
 def test_fit_returns_identified_shaped_result() -> None:
@@ -134,7 +136,9 @@ def test_rejects_out_of_range_caller_arguments() -> None:
             tol=1e-5,
             n_starts=1,
             seed=SEED,
-        )
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
+    )
     with pytest.raises(ValueError):
         fit_bifactor_grm(
             y,
@@ -147,14 +151,18 @@ def test_rejects_out_of_range_caller_arguments() -> None:
             tol=1e-5,
             n_starts=1,
             seed=SEED,
-        )
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
+    )
 
 
 def test_q_general_and_q_specific_are_required() -> None:
     """RED test for #1929: no unsourced defaults exist for the node counts."""
     y = _simulate(SEED)
     with pytest.raises(TypeError):
-        fit_bifactor_grm(y, SPECIFIC_MAP, N_CAT, N_SPECIFIC)
+        fit_bifactor_grm(y, SPECIFIC_MAP, N_CAT, N_SPECIFIC,
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
 
 
 def test_max_iter_n_starts_seed_and_tol_are_required() -> None:
@@ -164,7 +172,9 @@ def test_max_iter_n_starts_seed_and_tol_are_required() -> None:
     for missing in ("max_iter", "tol", "n_starts", "seed"):
         kwargs = {k: v for k, v in base.items() if k != missing}
         with pytest.raises(TypeError):
-            fit_bifactor_grm(y, SPECIFIC_MAP, N_CAT, N_SPECIFIC, **kwargs)
+            fit_bifactor_grm(y, SPECIFIC_MAP, N_CAT, N_SPECIFIC, **kwargs,
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
 
 
 def test_deprecated_positional_default_removed_for_fipc() -> None:
@@ -256,6 +266,8 @@ def test_issue_1976_dense_q_never_tolerance_met_at_start_slopes() -> None:
         tol=1e-6,
         n_starts=1,
         seed=20260917,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
     if fit.termination_reason == "tolerance_met":
         assert fit.converged

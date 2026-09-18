@@ -132,6 +132,8 @@ fn valid_config() -> BifactorGrmConfig {
         newton_iter: 3,
         ridge: 1e-8,
         device: crate::Device::Cpu,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     }
 }
 
@@ -501,11 +503,15 @@ fn estep_gpu_matches_cpu_counts_and_loglik() {
     let (ll_cpu, counts_cpu) = e_step(
         &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
         crate::Device::Cpu,
-    );
+        1,
+        1,
+    ).expect("e_step");
     let (ll_gpu, counts_gpu) = e_step(
         &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
         crate::Device::Gpu,
-    );
+        1,
+        1,
+    ).expect("e_step");
 
     assert!(
         (ll_cpu - ll_gpu).abs() <= 1e-3,
@@ -573,7 +579,9 @@ fn zero_prior_weight_nodes_do_not_nan_estep_counts() {
         tg,
         ts,
         crate::Device::Cpu,
-    );
+        1,
+        1,
+    ).expect("e_step");
     assert!(ll.is_finite(), "observed-data loglik must stay finite; got {ll}");
     for (i, item_counts) in counts.iter().enumerate() {
         for (node, cat) in item_counts.iter().enumerate() {
@@ -638,6 +646,8 @@ fn dense_quadrature_fit_never_claims_tolerance_at_start_slopes() {
         newton_iter: 5,
         ridge: 1e-4,
         device: crate::Device::Cpu,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     };
     let fit = fit_bifactor_grm(
         &y,
@@ -663,5 +673,200 @@ fn dense_quadrature_fit_never_claims_tolerance_at_start_slopes() {
             "parameters frozen at start must not report converged"
         );
         assert_eq!(fit.termination_reason, "numerical_em_stall");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// #2002: deterministic person-chunked CPU E-step reduction.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn estep_chunked_is_bit_identical_across_thread_counts() {
+    // Same `e_step_n_chunks` must yield a bit-identical association tree
+    // regardless of the local rayon pool size (Higham, 2002, §§4.1–4.2;
+    // issue #2002).
+    use super::{e_step, fill_logprob_tables, gh_rule, initial_params, validate};
+
+    let (y, n_persons) = tiny_data();
+    let cfg = valid_config();
+    let v = validate(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("tiny fixture must validate");
+    let (tg, wg) = gh_rule(7).expect("Q=7");
+    let (ts, ws) = gh_rule(7).expect("Q=7");
+    let params = initial_params(&v, &y, None, cfg.seed, 0);
+    let tables = fill_logprob_tables(&v, &params, tg, ts, 7, 7);
+    let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+
+    let run = |n_chunks: usize, n_threads: usize| {
+        e_step(
+            &v,
+            &y,
+            None,
+            &tables,
+            &log_wg,
+            &log_ws,
+            7,
+            7,
+            tg,
+            ts,
+            crate::Device::Cpu,
+            n_chunks,
+            n_threads,
+        )
+        .expect("e_step")
+    };
+
+    let (ll_a, counts_a) = run(4, 1);
+    let (ll_b, counts_b) = run(4, 8);
+    assert_eq!(
+        ll_a.to_bits(),
+        ll_b.to_bits(),
+        "loglik must be bit-identical across thread counts at fixed n_chunks"
+    );
+    for (ca, cb) in counts_a.iter().zip(counts_b.iter()) {
+        for (na, nb) in ca.iter().zip(cb.iter()) {
+            for (&a, &b) in na.iter().zip(nb.iter()) {
+                assert_eq!(a.to_bits(), b.to_bits());
+            }
+        }
+    }
+
+    // Two independent runs at the same (chunks, threads) must also match.
+    let (ll_c, counts_c) = run(4, 8);
+    assert_eq!(ll_b.to_bits(), ll_c.to_bits());
+    for (cb, cc) in counts_b.iter().zip(counts_c.iter()) {
+        for (nb, nc) in cb.iter().zip(cc.iter()) {
+            for (&b, &c) in nb.iter().zip(nc.iter()) {
+                assert_eq!(b.to_bits(), c.to_bits());
+            }
+        }
+    }
+}
+
+#[test]
+fn estep_single_chunk_matches_repeat_run_bit_identically() {
+    use super::{e_step, fill_logprob_tables, gh_rule, initial_params, validate};
+
+    let (y, n_persons) = tiny_data();
+    let cfg = valid_config();
+    let v = validate(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("tiny fixture must validate");
+    let (tg, wg) = gh_rule(7).expect("Q=7");
+    let (ts, ws) = gh_rule(7).expect("Q=7");
+    let params = initial_params(&v, &y, None, cfg.seed, 0);
+    let tables = fill_logprob_tables(&v, &params, tg, ts, 7, 7);
+    let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    let (ll1, c1) = e_step(
+        &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
+        crate::Device::Cpu, 1, 1,
+    )
+    .expect("e_step");
+    let (ll2, c2) = e_step(
+        &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
+        crate::Device::Cpu, 1, 4,
+    )
+    .expect("e_step");
+    assert_eq!(ll1.to_bits(), ll2.to_bits());
+    for (a, b) in c1.iter().zip(c2.iter()) {
+        for (na, nb) in a.iter().zip(b.iter()) {
+            for (&x, &y) in na.iter().zip(nb.iter()) {
+                assert_eq!(x.to_bits(), y.to_bits());
+            }
+        }
+    }
+}
+
+#[test]
+fn fit_records_e_step_chunk_provenance() {
+    let (y, n_persons) = tiny_data();
+    let cfg = BifactorGrmConfig {
+        e_step_n_chunks: 3,
+        e_step_n_threads: 2,
+        ..valid_config()
+    };
+    let fit = fit_bifactor_grm(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("fit");
+    assert_eq!(fit.e_step_n_chunks, 3);
+    assert_eq!(fit.e_step_n_threads, 2);
+}
+
+#[test]
+fn fit_same_chunks_bit_identical_across_thread_counts() {
+    let (y, n_persons) = tiny_data();
+    let base = BifactorGrmConfig {
+        max_iter: 8,
+        n_starts: 1,
+        e_step_n_chunks: 4,
+        ..valid_config()
+    };
+    let fit1 = fit_bifactor_grm(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &BifactorGrmConfig {
+            e_step_n_threads: 1,
+            ..base
+        },
+    )
+    .expect("fit threads=1");
+    let fit2 = fit_bifactor_grm(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &BifactorGrmConfig {
+            e_step_n_threads: 4,
+            ..base
+        },
+    )
+    .expect("fit threads=4");
+    assert_eq!(fit1.loglik_trace.len(), fit2.loglik_trace.len());
+    for (a, b) in fit1.loglik_trace.iter().zip(fit2.loglik_trace.iter()) {
+        assert_eq!(a.to_bits(), b.to_bits(), "EM loglik trace must match bit-for-bit");
+    }
+    for (a, b) in fit1.a_general.iter().zip(fit2.a_general.iter()) {
+        assert_eq!(a.to_bits(), b.to_bits());
+    }
+    for (a, b) in fit1.a_specific.iter().zip(fit2.a_specific.iter()) {
+        assert_eq!(a.to_bits(), b.to_bits());
+    }
+    for (a, b) in fit1.threshold.iter().zip(fit2.threshold.iter()) {
+        assert_eq!(a.to_bits(), b.to_bits());
     }
 }
