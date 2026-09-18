@@ -63,3 +63,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Python's default `json.loads` accepts non-finite values (NaN, Infinity) and handles excessively large numbers by evaluating them to `inf`, which can cause Denial of Service (DoS) (CWE-400), cache poisoning, or downstream logical errors.
 **Learning:** To guarantee safe, bounded JSON handling in security contexts, we must always enforce rigorous object parsing bounds.
 **Prevention:** Whenever using `json.loads` to deserialize untrusted JSON in Python, strictly supply `parse_constant` and `parse_float` hooks that explicitly reject non-finite inputs to ensure standard JSON compliance.
+## 2024-05-19 - Resolve Semgrep SAST Findings
+**Vulnerability:** Semgrep flags dynamic `globals()` usage as a potential code execution vulnerability (`dangerous-globals-use`) and dynamic `importlib.import_module` as an arbitrary code loading risk (`non-literal-import`).
+**Learning:** Python's dynamic reflection features can trigger CI blockers. While sometimes false positives (like internal inventory scripts), they are dangerous in production code.
+**Prevention:** Avoid dynamic `globals()` lookups. Map keys to specific function or class references explicitly. For necessary dynamic imports in tooling scripts, apply inline `# nosemgrep: <rule-name>` annotations to suppress SAST failures safely.
