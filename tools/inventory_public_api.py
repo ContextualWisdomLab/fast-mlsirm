@@ -118,6 +118,8 @@ def collect_python_rows() -> list[dict]:
         if any(part.startswith("_") for part in modname.split(".")):
             continue
         try:
+            if not modname.startswith("fast_mlsirm."):
+                continue
             mod = importlib.import_module(modname)
         except Exception:
             continue
