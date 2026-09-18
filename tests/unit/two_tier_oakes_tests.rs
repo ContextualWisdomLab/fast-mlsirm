@@ -76,13 +76,17 @@ fn returns_finite_information_on_tiny_case() {
 /// Air / study-settings memory probe: one streaming E-step at q=241, P=2
 /// (full product GH grid; no silent node cap). Prefer fit max_iter=1 over
 /// full Oakes (Oakes repeats E-step k+1 times).
-/// Run on Air: cargo test -p mlsirm-core two_tier_q241_rss_probe -- --ignored --nocapture
+///
+/// `n_persons` is kept modest (24): streaming peak RSS is dominated by the
+/// primary×specific grid scratch/counts, not N (persons are processed
+/// sequentially). Larger N only inflates wall-clock on shared Air.
+/// Run on Air: cargo test -p mlsirm-core two_tier_q241_rss_probe --release -- --ignored --nocapture
 #[test]
 #[ignore]
 fn two_tier_q241_rss_probe() {
     use crate::two_tier_grm::{fit_two_tier_grm, TwoTierGrmConfig};
     use std::process::Command;
-    let n_persons = 120usize;
+    let n_persons = 24usize;
     let n_items = 8usize;
     let n_primary = 2usize;
     let n_specific = 2usize;
