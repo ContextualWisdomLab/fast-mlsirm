@@ -1734,17 +1734,81 @@ fn two_tier_grm_marginal_loglik(
     q_primary: usize,
     q_specific: usize,
 ) -> PyResult<f64> {
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows"))?;
     let y_slice = y.as_slice()?;
-    let obs_vec: Option<Vec<bool>> = match &observed {
-        Some(o) => Some(o.as_slice()?.to_vec()),
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    let obs_slice = match &observed {
+        Some(o) => {
+            let slice = o.as_slice()?;
+            if slice.len() != n_cells {
+                return Err(PyValueError::new_err(
+                    "observed must have length n_persons * n_items",
+                ));
+            }
+            Some(slice)
+        }
         None => None,
     };
+    let primary_cells = n_items
+        .checked_mul(n_primary)
+        .ok_or_else(|| PyValueError::new_err("n_items * n_primary overflows"))?;
+    let pmap_slice = primary_map.as_slice()?;
+    if pmap_slice.len() != primary_cells {
+        return Err(PyValueError::new_err(
+            "primary_map must have length n_items * n_primary (row-major)",
+        ));
+    }
+    let smap_slice = specific_map.as_slice()?;
+    if smap_slice.len() != n_items {
+        return Err(PyValueError::new_err(
+            "specific_map must have length n_items",
+        ));
+    }
+    let a_p_slice = a_primary.as_slice()?;
+    if a_p_slice.len() != primary_cells {
+        return Err(PyValueError::new_err(
+            "a_primary must have length n_items * n_primary",
+        ));
+    }
+    let a_s_slice = a_specific.as_slice()?;
+    if a_s_slice.len() != n_items {
+        return Err(PyValueError::new_err(
+            "a_specific must have length n_items",
+        ));
+    }
+    let m1 = n_cat
+        .checked_sub(1)
+        .ok_or_else(|| PyValueError::new_err("n_cat must be >= 2"))?;
+    let thr_cells = n_items
+        .checked_mul(m1)
+        .ok_or_else(|| PyValueError::new_err("n_items * (n_cat - 1) overflows"))?;
+    let thr_slice = threshold.as_slice()?;
+    if thr_slice.len() != thr_cells {
+        return Err(PyValueError::new_err(
+            "thresholds must have length n_items * (n_cat - 1)",
+        ));
+    }
+    let phi_cells = n_primary
+        .checked_mul(n_primary)
+        .ok_or_else(|| PyValueError::new_err("n_primary * n_primary overflows"))?;
+    let phi_slice = phi.as_slice()?;
+    if phi_slice.len() != phi_cells {
+        return Err(PyValueError::new_err(
+            "phi must have length n_primary * n_primary",
+        ));
+    }
     let yy: Vec<usize> = y_slice
         .iter()
         .enumerate()
         .map(|(idx, &v)| {
             if v < 0 {
-                match obs_vec.as_ref() {
+                match obs_slice {
                     None => {
                         return Err(PyValueError::new_err(
                             "y categories must be non-negative when observed is None",
@@ -1758,19 +1822,19 @@ fn two_tier_grm_marginal_loglik(
                 .map_err(|_| PyValueError::new_err("y categories must be non-negative"))
         })
         .collect::<PyResult<_>>()?;
-    let smap: Vec<i32> = specific_map
-        .as_slice()?
+    let smap: Vec<i32> = smap_slice
         .iter()
         .map(|&v| {
             i32::try_from(v)
                 .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
         })
         .collect::<PyResult<_>>()?;
-    let pmap = primary_map.as_slice()?.to_vec();
-    let a_p = a_primary.as_slice()?.to_vec();
-    let a_s = a_specific.as_slice()?.to_vec();
-    let thr = threshold.as_slice()?.to_vec();
-    let phi_vec = phi.as_slice()?.to_vec();
+    let pmap = pmap_slice.to_vec();
+    let a_p = a_p_slice.to_vec();
+    let a_s = a_s_slice.to_vec();
+    let thr = thr_slice.to_vec();
+    let phi_vec = phi_slice.to_vec();
+    let obs_vec: Option<Vec<bool>> = obs_slice.map(|slice| slice.to_vec());
     py.detach(|| {
         core_two_tier_grm_marginal_loglik(
             &a_p,

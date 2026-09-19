@@ -237,7 +237,7 @@ def fit_two_tier_grm(
     loading items); ``specific_map`` is a length-``n_items`` integer array
     with ``-1`` for specific-free items and ``0..n_specific-1`` otherwise
     (every specific factor needs at least two items). Alternatively pass
-    ``specific_columns=None`` and supply ``specific_columns`` (Cai, 2010,
+    ``specific_map=None`` and supply ``specific_columns`` (Cai, 2010,
     eq. 1, p. 586) instead; at most one non-zero entry per item row is
     enforced before the Rust fitter runs.
     ``q_primary``/``q_specific`` are required Gauss-Hermite node counts
