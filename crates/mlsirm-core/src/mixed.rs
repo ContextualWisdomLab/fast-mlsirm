@@ -946,11 +946,12 @@ fn m_step_item(
                 .collect();
             let mut candidate = raw.clone();
             clamp_params(spec, &mut candidate, grid.latent_dim);
+            if spec.kind.absorbs_reflection_in_slope() && !candidate.is_empty() {
+                pressed_rail |=
+                    candidate[0] != raw[0] && candidate[0].abs() >= SLOPE_MAGNITUDE;
+            }
             let fc = item_objective(spec, &candidate, grid, counts);
             if fc.is_finite() && fc <= f0 - 1e-4 * alpha * directional {
-                if spec.kind.absorbs_reflection_in_slope() && !candidate.is_empty() {
-                    pressed_rail = candidate[0] != raw[0] && candidate[0].abs() >= SLOPE_MAGNITUDE;
-                }
                 params = candidate;
                 accepted = true;
                 break;
