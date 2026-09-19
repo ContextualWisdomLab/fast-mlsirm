@@ -74,6 +74,8 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_and_parity() -> None:
         max_iter=10,
         tol=1e-3,
         n_starts=1,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
 
     t0 = time.perf_counter()
@@ -156,6 +158,8 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_q121() -> None:
         max_iter=15,
         tol=1e-3,
         n_starts=1,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
 
     t0 = time.perf_counter()

@@ -42,6 +42,8 @@ def _fit_kw(**over):
         max_iter=10,
         tol=1e-3,
         n_starts=1,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
     kw.update(over)
     return kw
@@ -143,6 +145,8 @@ def test_bootstrap_argument_validation():
         max_iter=3,
         tol=1e-3,
         n_starts=1,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
     bad_cases = [
         {"n_replicates": 0},
@@ -171,6 +175,8 @@ def test_bootstrap_argument_validation():
         {"q_specific": 11.5},
         {"q_specific": True},
         {"n_starts": 0},
+        {"e_step_n_chunks": 0},
+        {"e_step_n_threads": 0},
     ]
     for bad in bad_cases:
         kwargs = dict(good)
@@ -202,6 +208,8 @@ def test_cpu_gpu_bootstrap_replicate_parity():
         max_iter=8,
         tol=1e-3,
         n_starts=1,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
     res_cpu = run_bifactor_bootstrap(**kwargs, device="cpu")
     res_gpu = run_bifactor_bootstrap(**kwargs, device="gpu")
