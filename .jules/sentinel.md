@@ -59,3 +59,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+## 2026-09-18 - [문자열 기반 JSON 파싱 중 JSON 깊이 검증 언더플로우 취약점 수정]
+**Vulnerability:** `python/fast_mlsirm/rubric/candidates.py`의 `_validate_raw_json_depth` 함수가 JSON 구조의 최대 깊이를 검증할 때, 매칭되지 않은 닫는 괄호(`]`, `}`)를 만났을 때 깊이 카운터(`depth`)가 음수로 떨어지는 것을 방지하지 않았습니다. 공격자가 의도적으로 닫는 괄호를 초기에 다수 삽입하여 카운터를 음수로 만든 후, 허용된 최대 깊이를 초과하는 매우 깊은 구조를 전달하면, 깊이 한계를 우회하여 `json.loads`에 도달할 수 있으며 이는 RecursionError 및 DoS 공격으로 이어질 수 있습니다.
+**Learning:** 문자열을 스캐닝하여 수동으로 깊이를 검사할 때, 닫는 구문은 반드시 카운터가 0을 초과할 때만 차감되어야 합니다. 그렇지 않으면 카운터 조작(언더플로우)으로 인해 한계 검사가 완전히 무력화될 수 있습니다.
+**Prevention:** 닫는 괄호 등을 처리하여 깊이를 감소시키는 로직을 구현할 때, 항상 깊이 카운터가 0 아래로 내려가지 않도록(underflow) `depth > 0`과 같은 조건 검사를 추가해야 합니다.
