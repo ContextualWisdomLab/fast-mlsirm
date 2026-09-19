@@ -138,9 +138,7 @@ def detect_dif_mantel_haenszel(
         raise ValueError("responses must contain at least one person and one item")
     yf = np.asarray(y, dtype=np.float64)
     if not np.all(np.isin(yf, (0.0, 1.0))):
-        raise ValueError(
-            "responses must be 0 or 1 (Mantel-Haenszel is for dichotomous items)"
-        )
+        raise ValueError("responses must be 0 or 1 (Mantel-Haenszel is for dichotomous items)")
     g = np.asarray(group)
     if g.ndim != 1 or g.shape[0] != n_persons:
         raise ValueError("group must be a length-n_persons 1-D array")
@@ -205,9 +203,7 @@ def _dif_inputs(responses: np.ndarray, group: np.ndarray, fdr_q: float):
         raise ValueError("responses must contain at least one person and one item")
     yf = np.asarray(y, dtype=np.float64)
     if not np.all(np.isin(yf, (0.0, 1.0))):
-        raise ValueError(
-            "responses must be 0 or 1 (observed-score DIF is for dichotomous items)"
-        )
+        raise ValueError("responses must be 0 or 1 (observed-score DIF is for dichotomous items)")
     g = np.asarray(group)
     if g.ndim != 1 or g.shape[0] != n_persons:
         raise ValueError("group must be a length-n_persons 1-D array")
@@ -216,12 +212,7 @@ def _dif_inputs(responses: np.ndarray, group: np.ndarray, fdr_q: float):
         raise ValueError("group labels must be 0 (reference) or 1 (focal)")
     if not np.isfinite(fdr_q) or not 0 < fdr_q <= 1:
         raise ValueError("fdr_q must be finite and in (0, 1]")
-    return (
-        yf.astype(np.int64).reshape(-1),
-        gf.astype(np.int64),
-        int(n_persons),
-        int(n_items),
-    )
+    return yf.astype(np.int64).reshape(-1), gf.astype(np.int64), int(n_persons), int(n_items)
 
 
 def detect_dif_mantel_haenszel_purified(
@@ -277,19 +268,11 @@ def detect_dif_mantel_haenszel_purified(
 
     core = _core_module()
     if core is None or not hasattr(core, "mantel_haenszel_dif_purified"):
-        raise RuntimeError(
-            "mantel_haenszel_dif_purified requires the compiled Rust core"
-        )
+        raise RuntimeError("mantel_haenszel_dif_purified requires the compiled Rust core")
     yy, gg, n_persons, n_items = _dif_inputs(responses, group, fdr_q)
     res = core.mantel_haenszel_dif_purified(
-        yy,
-        gg,
-        n_persons,
-        n_items,
-        bool(exclude_studied_item),
-        float(fdr_q),
-        int(max_rounds),
-        int(min_anchor_items),
+        yy, gg, n_persons, n_items, bool(exclude_studied_item), float(fdr_q),
+        int(max_rounds), int(min_anchor_items),
     )
     return _mh_rows(res) | _purify_meta(res)
 
@@ -378,15 +361,8 @@ def detect_dif_logistic_purified(
         raise RuntimeError("logistic_dif_purified requires the compiled Rust core")
     yy, gg, n_persons, n_items = _dif_inputs(responses, group, fdr_q)
     res = core.logistic_dif_purified(
-        yy,
-        gg,
-        n_persons,
-        n_items,
-        bool(exclude_studied_item),
-        float(fdr_q),
-        int(max_iter),
-        int(max_rounds),
-        int(min_anchor_items),
+        yy, gg, n_persons, n_items, bool(exclude_studied_item), float(fdr_q),
+        int(max_iter), int(max_rounds), int(min_anchor_items),
     )
     return _logistic_rows(res) | _purify_meta(res)
 
@@ -626,7 +602,6 @@ def raju_area(
     core = _core_module()
     if core is None or not hasattr(core, "raju_area"):
         raise RuntimeError("raju_area requires the compiled Rust core")
-
     def _vec(v, name: str) -> np.ndarray:
         """Coerce ``v`` to a contiguous 1-D float64 array or raise ``ValueError``."""
         arr = np.asarray(v, dtype=np.float64)
@@ -646,18 +621,7 @@ def raju_area(
         "se_b_foc",
         "cov_ab_foc",
     )
-    vals = (
-        a_ref,
-        b_ref,
-        se_a_ref,
-        se_b_ref,
-        cov_ab_ref,
-        a_foc,
-        b_foc,
-        se_a_foc,
-        se_b_foc,
-        cov_ab_foc,
-    )
+    vals = (a_ref, b_ref, se_a_ref, se_b_ref, cov_ab_ref, a_foc, b_foc, se_a_foc, se_b_foc, cov_ab_foc)
     arrs = [_vec(v, name) for v, name in zip(vals, names)]
     g = None
     if guess is not None:
@@ -783,9 +747,7 @@ def detect_dif_logistic(
         raise ValueError("responses must contain at least one person and one item")
     yf = np.asarray(y, dtype=np.float64)
     if not np.all(np.isin(yf, (0.0, 1.0))):
-        raise ValueError(
-            "responses must be 0 or 1 (logistic-regression DIF is for dichotomous items)"
-        )
+        raise ValueError("responses must be 0 or 1 (logistic-regression DIF is for dichotomous items)")
     g = np.asarray(group)
     if g.ndim != 1 or g.shape[0] != n_persons:
         raise ValueError("group must be a length-n_persons 1-D array")
@@ -834,11 +796,7 @@ def logistic_dif(
         stacklevel=2,
     )
     return detect_dif_logistic(
-        responses,
-        group,
-        exclude_studied_item=exclude_studied_item,
-        fdr_q=fdr_q,
-        max_iter=max_iter,
+        responses, group, exclude_studied_item=exclude_studied_item, fdr_q=fdr_q, max_iter=max_iter
     )
 
 
@@ -922,7 +880,6 @@ def detect_dif_mantel_smd(
         "smd": np.asarray(res["smd"], dtype=np.float64),
         "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
     }
-
 
 def mantel_smd_dif(
     responses: np.ndarray,
@@ -1018,7 +975,6 @@ def detect_dif_gmh(
         "df": np.asarray(res["df"], dtype=np.int64),
         "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
     }
-
 
 def gmh_dif(
     responses: np.ndarray,
@@ -1148,7 +1104,7 @@ for _old_name, _new_name in (
     ("gmh_dif", "detect_dif_gmh"),
     ("breslow_day_dif", "detect_dif_breslow_day"),
 ):
-    _old_fn = globals()[_old_name]  # nosemgrep: python.lang.security.dangerous-globals-use.dangerous-globals-use # fmt: skip
-    _new_fn = globals()[_new_name]  # nosemgrep: python.lang.security.dangerous-globals-use.dangerous-globals-use # fmt: skip
+    _old_fn = globals()[_old_name]
+    _new_fn = globals()[_new_name]
     _old_fn.__doc__ = f"{_old_fn.__doc__}\n\n{_new_fn.__doc__}"
 del _old_name, _new_name, _old_fn, _new_fn
