@@ -42,7 +42,11 @@ def test_rendered_report_uses_tabular_numerals_without_opacity_transitions(tmp_p
     assert "font-variant-numeric: tabular-nums;" in body_rule
 
     bar_row_rule = _rule_body(style, ".bar-row")
-    assert "transition:" not in bar_row_rule
+    # The hover background already changes; the transition only eases it. What
+    # this rule must never transition is opacity, which is how peer-dimming
+    # gets reintroduced, so pin the property list rather than banning motion.
+    assert "transition: background-color 0.15s ease-in-out;" in bar_row_rule
+    assert bar_row_rule.count("transition:") == 1
     assert "opacity:" not in bar_row_rule
     assert "padding: 4px 8px;" in bar_row_rule
     assert "border-radius: 4px;" in bar_row_rule
