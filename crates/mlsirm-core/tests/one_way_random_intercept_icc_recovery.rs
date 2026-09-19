@@ -49,6 +49,10 @@ fn bias_within_monte_carlo_uncertainty(estimates: &[f64], truth: f64) -> (f64, f
     (bias, monte_carlo_standard_error, accepted)
 }
 
+fn ratio_only_recovery_accepts(icc_estimates: &[f64]) -> bool {
+    bias_within_monte_carlo_uncertainty(icc_estimates, TRUE_ICC).2
+}
+
 #[test]
 fn bias_acceptance_does_not_replace_monte_carlo_uncertainty_with_an_absolute_floor() {
     let truth = 2.0 / 3.0;
@@ -78,10 +82,30 @@ fn bias_acceptance_does_not_replace_monte_carlo_uncertainty_with_an_absolute_flo
 }
 
 #[test]
+fn ratio_only_recovery_rejects_proportionally_wrong_variance_components() {
+    let icc_estimates = [TRUE_ICC; 8];
+    let between_estimates = [TRUE_BETWEEN_VARIANCE * 2.0; 8];
+    let within_estimates = [TRUE_WITHIN_VARIANCE * 2.0; 8];
+
+    let ratio_only_accepted = ratio_only_recovery_accepts(&icc_estimates);
+    let between_accepted =
+        bias_within_monte_carlo_uncertainty(&between_estimates, TRUE_BETWEEN_VARIANCE).2;
+    let within_accepted =
+        bias_within_monte_carlo_uncertainty(&within_estimates, TRUE_WITHIN_VARIANCE).2;
+
+    assert!(ratio_only_accepted, "witness must preserve the ICC ratio exactly");
+    assert!(!between_accepted && !within_accepted, "witness must miss both component truths");
+    assert!(
+        !ratio_only_accepted,
+        "scientific recovery must not accept the ICC ratio while both variance components are wrong"
+    );
+}
+
+#[test]
 fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_uncertainty() {
     let mut rng = DeterministicNormal::new(0x5eed_1234_5678_9abc);
     let attempted = REPLICATIONS;
-    let mut estimates = Vec::with_capacity(REPLICATIONS);
+    let mut icc_estimates = Vec::with_capacity(REPLICATIONS);
     let mut failed = 0_usize;
     let mut first_failure = None;
 
@@ -100,7 +124,7 @@ fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_u
         }
 
         match one_way_random_intercept_icc(&cluster_ids, &outcomes) {
-            Ok(result) => estimates.push(result.icc),
+            Ok(result) => icc_estimates.push(result.icc),
             Err(error) => {
                 failed += 1;
                 if first_failure.is_none() {
@@ -110,7 +134,7 @@ fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_u
         }
     }
 
-    let recovered = estimates.len();
+    let recovered = icc_estimates.len();
     assert_eq!(
         attempted,
         recovered + failed,
@@ -126,19 +150,19 @@ fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_u
     );
 
     let replication_count = recovered as f64;
-    let mean = estimates.iter().sum::<f64>() / replication_count;
+    let mean = icc_estimates.iter().sum::<f64>() / replication_count;
     let bias = mean - TRUE_ICC;
-    let rmse = (estimates
+    let rmse = (icc_estimates
         .iter()
         .map(|estimate| (estimate - TRUE_ICC).powi(2))
         .sum::<f64>()
         / replication_count)
         .sqrt();
     let (_, monte_carlo_standard_error, accepted) =
-        bias_within_monte_carlo_uncertainty(&estimates, TRUE_ICC);
+        bias_within_monte_carlo_uncertainty(&icc_estimates, TRUE_ICC);
 
     assert!(
-        accepted,
+        ratio_only_recovery_accepts(&icc_estimates) && accepted,
         "absolute bias {bias} exceeds 3*MCSE={}; attempted={attempted}, recovered={recovered}, failed={failed}",
         3.0 * monte_carlo_standard_error
     );
