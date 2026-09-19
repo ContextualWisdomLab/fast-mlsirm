@@ -233,6 +233,29 @@ def test_progress_callback_once_per_em_iter() -> None:
     assert silent.n_iter == fit.n_iter
 
 
+def test_progress_callback_does_not_change_fit() -> None:
+    """Opt-in progress must not alter estimates, stopping, or quadrature (#2021)."""
+    y = _simulate(SEED)
+    silent = _fit(y)
+    reports: list[object] = []
+
+    def on_progress(report: object) -> None:
+        reports.append(report)
+
+    with_progress = _fit(y, progress=on_progress)
+    assert reports, "progress callback must fire at least once"
+    assert silent.n_iter == with_progress.n_iter
+    assert silent.converged == with_progress.converged
+    assert silent.termination_reason == with_progress.termination_reason
+    np.testing.assert_allclose(
+        silent.loglik_trace, with_progress.loglik_trace, rtol=0.0, atol=0.0
+    )
+    np.testing.assert_allclose(silent.a_primary, with_progress.a_primary)
+    np.testing.assert_allclose(silent.a_specific, with_progress.a_specific)
+    np.testing.assert_allclose(silent.threshold, with_progress.threshold)
+    np.testing.assert_allclose(silent.phi, with_progress.phi)
+
+
 def test_progress_none_rejects_non_callable() -> None:
     y = _simulate(SEED)
     with pytest.raises(TypeError, match="progress must be a callable"):
