@@ -89,6 +89,12 @@ const MHRM_MAX_CELLS: usize = 200_000_000;
 /// loading resting on the rail with the Robbins-Monro step still climbing is
 /// reported through `MhrmResult::slope_diverged`, never as an estimate.
 const MHRM_A_BOUND: f64 = crate::mmle::SLOPE_DIVERGENCE_RAIL;
+
+#[inline]
+fn clamp_mhrm_loading(proposed_loading: f64) -> (f64, bool) {
+    let clamped_loading = proposed_loading.clamp(-MHRM_A_BOUND, MHRM_A_BOUND);
+    (clamped_loading, clamped_loading != proposed_loading)
+}
 /// Maximum polytomous response categories (bounds the per-item softmax work).
 const MHRM_MAX_CAT: usize = 64;
 
@@ -934,9 +940,10 @@ pub fn fit_mhrm(
             // clamp only the SLOPE slots (0..|S_i|); the intercept/steps are unbounded
             let mut hit_rail = false;
             for t in 0..li {
-                let clamped = params[i][t].clamp(-MHRM_A_BOUND, MHRM_A_BOUND);
-                hit_rail |= clamped != params[i][t];
-                params[i][t] = clamped;
+                let (clamped_loading, loading_hit_rail) =
+                    clamp_mhrm_loading(params[i][t]);
+                params[i][t] = clamped_loading;
+                hit_rail |= loading_hit_rail;
             }
             pressed_rail[i] = hit_rail;
             // Louis observed-information accumulation over the convergence stage
