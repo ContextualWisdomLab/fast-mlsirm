@@ -1,17 +1,19 @@
-# Red `python` gate from lanes another job owns
+# Red `python` gate from capability lanes another job owns
 
 ## Fixed
 
-- The fail-closed outcome gate (`tests/conftest.py`, Issue #1732) escalated an
-  otherwise-green `python` matrix run to a failure on every pull request:
-  6,977 tests passed and 8 skipped, and the eight were environmental rather
-  than anything a PR could change. `python` is a required context, so this
-  blocked merges repository-wide.
-- Seven were GPU tests skipping because the `python` matrix has no Vulkan
-  adapter, and one was `tests/test_fuzz_properties.py` failing to import
-  because that matrix installs `requirements/ci.txt` without `atheris`.
-- Both lanes are allowlisted with the job that actually owns their evidence.
-  GPU parity is not waived: `gpu-smoke` installs a software Vulkan adapter,
-  runs the explicit parity test, and fails the build when the JUnit report
-  contains any skip. Coverage-guided fuzzing stays with the `fuzz` job, which
-  installs the `.[fuzz]` extra and runs the Atheris harnesses directly.
+- The fail-closed outcome gate (`tests/conftest.py`, Issue #1732) escalated
+  capability-gated skips in the ordinary `python` matrix. The first repair
+  over-broadly allowed the whole high-q module and incorrectly described the
+  Atheris harnesses as evidence for a separate Hypothesis module.
+- The allowlist now names six exact high-q pytest nodes instead of a module
+  glob. `gpu-smoke` installs a software Vulkan adapter, sets
+  `STAGE5_HIGH_Q=1`, executes those six nodes plus the existing marginal GPU
+  parity node, and fails when its JUnit evidence contains any skip.
+- `tests/test_fuzz_properties.py` is no longer allowlisted. The `fuzz` job
+  installs the `.[fuzz]` dependencies, executes that Hypothesis module
+  directly, and rejects collection-time or runtime skips before running the
+  separately owned Atheris harnesses.
+- `test_allowlisted_capability_nodes_have_exact_ci_owners` prevents a future
+  module glob, owner-name substitution, or allowlisted node without an
+  executable CI command.
