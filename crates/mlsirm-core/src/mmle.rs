@@ -389,12 +389,12 @@ pub fn fit_mmle_2pl(
 ///
 /// The value carries NO measurement meaning, and no source states it as a
 /// ceiling on discrimination parameters. It is placed where the logistic is
-/// saturated to machine precision over the bulk of the latent distribution
-/// (`|a| = 30` gives `|eta| >= 36` already at `|theta| >= 1.2`, where
-/// `1 - sigmoid(36) < 2^-52`): expected counts and their gradients are
-/// numerically flat there, so no larger finite value is distinguishable as an
-/// optimum. A slope resting on the rail with the penalized M-step still pushing
-/// outward is therefore not an estimate but a Heywood-like boundary solution —
+/// saturated to machine precision whenever the complete linear predictor
+/// reaches that range (`|a * theta + b| >= 36` gives
+/// `1 - sigmoid(36) < 2^-52`). Because the intercept is unrestricted, a slope
+/// at the rail alone does not imply saturation at every node. A slope resting
+/// on the rail with the penalized M-step still pushing outward is therefore
+/// not an estimate but a Heywood-like boundary solution —
 /// infinite-slope degeneracy (Bock & Aitkin, 1981, p. 457), the same
 /// non-finite-maximum-likelihood failure degenerate response patterns produce
 /// (Bock & Aitkin, 1981, p. 454; Mislevy, 1985, p. 44). It is reported through
