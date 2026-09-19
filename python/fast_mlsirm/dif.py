@@ -1095,11 +1095,8 @@ def breslow_day_dif(
 # callers (and this module's own docstring-content regression tests) still
 # rely on the full interpretation caveats -- append the renamed function's
 # docstring rather than discarding it.
-# The pairs name the function objects directly rather than indexing globals()
-# by string. Both forms read the same literal table, but the indirect one trips
-# the dangerous-globals-use SAST rule, which cannot see that the keys are
-# literals three lines above; referencing the functions removes the lookup
-# entirely and lets a typo fail at import instead of at runtime.
+# Bind aliases by object identity (not globals()[name]) so Semgrep
+# dangerous-globals-use does not fire on this static docstring merge.
 for _old_fn, _new_fn in (
     (mantel_haenszel_dif, detect_dif_mantel_haenszel),
     (mantel_haenszel_dif_purified, detect_dif_mantel_haenszel_purified),
