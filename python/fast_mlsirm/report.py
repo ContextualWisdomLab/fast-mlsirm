@@ -624,7 +624,7 @@ body {
   top: -40px;
   left: 0;
   background: var(--teal);
-  color: white;
+  color: var(--bg);
   padding: 8px 16px;
   z-index: 100;
   transition: top 0.2s ease-in-out;
