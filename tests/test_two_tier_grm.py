@@ -196,3 +196,45 @@ def test_unobserved_category_fails_loudly() -> None:
     y[:, 0] = np.clip(y[:, 0], 0, N_CAT - 2)  # drop the top category
     with pytest.raises(ValueError, match="never observed"):
         _fit(y)
+
+
+def test_progress_callback_once_per_em_iter() -> None:
+    """Opt-in progress fires once per E-step; silent default unchanged (#2021).
+
+    Bock & Aitkin (1981, p. 445 eqs. 5–6; p. 447 E-step): marginal loglik is
+    already computed each EM cycle for convergence — the callback exports it.
+    """
+    from fast_mlsirm.em_progress import EmIterationProgress
+
+    y = _simulate(SEED)
+    reports: list[EmIterationProgress] = []
+
+    def on_progress(report: EmIterationProgress) -> None:
+        reports.append(report)
+
+    fit = _fit(y, max_iter=8, tol=1e-12, progress=on_progress)
+    assert len(reports) == len(fit.loglik_trace)
+    assert [r.iteration for r in reports] == list(range(len(reports)))
+    assert all(r.start == 0 for r in reports)
+    assert reports[0].delta_loglik is None
+    for i, report in enumerate(reports):
+        assert report.loglik == pytest.approx(float(fit.loglik_trace[i]))
+        if i == 0:
+            assert report.delta_loglik is None
+        else:
+            assert report.delta_loglik == pytest.approx(
+                float(fit.loglik_trace[i] - fit.loglik_trace[i - 1])
+            )
+
+    # Silent default: omitting progress leaves the fitted result unchanged.
+    silent = _fit(y, max_iter=8, tol=1e-12)
+    np.testing.assert_array_equal(silent.a_primary, fit.a_primary)
+    np.testing.assert_array_equal(silent.loglik_trace, fit.loglik_trace)
+    assert silent.n_iter == fit.n_iter
+
+
+def test_progress_none_rejects_non_callable() -> None:
+    y = _simulate(SEED)
+    with pytest.raises(TypeError, match="progress must be a callable"):
+        _fit(y, progress=object())
+

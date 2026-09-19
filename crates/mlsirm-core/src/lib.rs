@@ -8,6 +8,7 @@ pub mod classification;
 pub mod crm;
 pub mod detect;
 pub mod dif;
+pub mod em_progress;
 pub mod equating;
 pub mod exposure;
 pub mod facets;
