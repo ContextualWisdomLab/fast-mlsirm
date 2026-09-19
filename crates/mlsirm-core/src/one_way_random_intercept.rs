@@ -9,8 +9,18 @@
 //! ONE WAY ANOVA random-effects contract: for `J` clusters and `N` observations,
 //! `sigma_between^2 = max(0, (MSB - MSW) / n0)`, `sigma_within^2 = MSW`, and
 //! `n0 = (N - sum_j(n_j^2) / N) / (J - 1)`. The ICC is the between component
-//! divided by total variance. NIST identifies Searle, Casella, and McCulloch
-//! (1992), chapter 3, as a reference for the one-way random classification.
+//! divided by total variance.
+//!
+//! Primary-literature scope was checked against Plante and Plante (2026,
+//! section 5.1), who formulate the one-way unbalanced random-effects model as
+//! an overall mean plus an independent random group effect and independent
+//! within-group error, and define the corresponding between- and within-group
+//! sums of squares. That paper supports the one-way unbalanced model and its
+//! independence assumptions; it does not serve as the source of this specific
+//! method-of-moments `n0` estimator. Shrout and Fleiss (1979) provide the
+//! psychometric one-way random-effects ICC interpretation for exchangeable
+//! random judges/replicates. The numerical `n0` contract implemented here is
+//! the NIST Dataplot contract stated above.
 //!
 //! # References
 //!
@@ -18,9 +28,13 @@
 //! Dataplot reference manual.
 //! https://www.itl.nist.gov/div898/software/dataplot/refman1/auxillar/onewayan.htm
 //!
-//! Searle, S. R., Casella, G., & McCulloch, C. E. (1992). *Variance components*.
-//! Wiley. Chapter 3. (Bibliographic scope verified through the NIST reference;
-//! this implementation does not claim an equation locator from uninspected text.)
+//! Plante, A., & Plante, M. (2026). Non-negative Gaussian estimation of
+//! variance components in random effects models. *Canadian Journal of
+//! Statistics*, e70051. https://doi.org/10.1002/cjs.70051
+//!
+//! Shrout, P. E., & Fleiss, J. L. (1979). Intraclass correlations: Uses in
+//! assessing rater reliability. *Psychological Bulletin, 86*(2), 420-428.
+//! https://doi.org/10.1037/0033-2909.86.2.420
 
 use std::collections::BTreeMap;
 
@@ -56,8 +70,8 @@ pub struct OneWayRandomInterceptIcc {
 /// # Errors
 ///
 /// Returns an error for empty or length-mismatched input, non-finite outcomes,
-/// fewer than two clusters, non-positive within-cluster residual degrees of freedom,
-/// numerical overflow, or degenerate zero total variance.
+/// exactly constant outcomes, fewer than two clusters, non-positive within-cluster
+/// residual degrees of freedom, numerical overflow, or degenerate zero total variance.
 pub fn one_way_random_intercept_icc(
     cluster_ids: &[u64],
     outcomes: &[f64],
@@ -67,6 +81,9 @@ pub fn one_way_random_intercept_icc(
     }
     if outcomes.iter().any(|value| !value.is_finite()) {
         return Err("outcomes must be finite".into());
+    }
+    if outcomes.iter().all(|value| *value == outcomes[0]) {
+        return Err("one-way ICC requires positive total variance".into());
     }
 
     let mut clusters: BTreeMap<u64, Vec<f64>> = BTreeMap::new();
