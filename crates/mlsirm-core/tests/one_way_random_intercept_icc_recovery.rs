@@ -5,6 +5,8 @@ const CLUSTERS_PER_REPLICATION: usize = 120;
 const TRUE_BETWEEN_VARIANCE: f64 = 2.0;
 const TRUE_WITHIN_VARIANCE: f64 = 1.0;
 const TRUE_ICC: f64 = TRUE_BETWEEN_VARIANCE / (TRUE_BETWEEN_VARIANCE + TRUE_WITHIN_VARIANCE);
+const MAX_ICC_RMSE: f64 = 0.08;
+const MAX_COMPONENT_RELATIVE_RMSE: f64 = 0.20;
 
 struct DeterministicNormal {
     state: u64,
@@ -49,8 +51,38 @@ fn bias_within_monte_carlo_uncertainty(estimates: &[f64], truth: f64) -> (f64, f
     (bias, monte_carlo_standard_error, accepted)
 }
 
-fn ratio_only_recovery_accepts(icc_estimates: &[f64]) -> bool {
-    bias_within_monte_carlo_uncertainty(icc_estimates, TRUE_ICC).2
+fn root_mean_squared_error(estimates: &[f64], truth: f64) -> f64 {
+    (estimates
+        .iter()
+        .map(|estimate| (estimate - truth).powi(2))
+        .sum::<f64>()
+        / estimates.len() as f64)
+        .sqrt()
+}
+
+fn recovery_accepts_all_estimands(
+    icc_estimates: &[f64],
+    between_estimates: &[f64],
+    within_estimates: &[f64],
+) -> bool {
+    let icc_bias_accepted = bias_within_monte_carlo_uncertainty(icc_estimates, TRUE_ICC).2;
+    let between_bias_accepted =
+        bias_within_monte_carlo_uncertainty(between_estimates, TRUE_BETWEEN_VARIANCE).2;
+    let within_bias_accepted =
+        bias_within_monte_carlo_uncertainty(within_estimates, TRUE_WITHIN_VARIANCE).2;
+
+    let icc_rmse = root_mean_squared_error(icc_estimates, TRUE_ICC);
+    let between_relative_rmse =
+        root_mean_squared_error(between_estimates, TRUE_BETWEEN_VARIANCE) / TRUE_BETWEEN_VARIANCE;
+    let within_relative_rmse =
+        root_mean_squared_error(within_estimates, TRUE_WITHIN_VARIANCE) / TRUE_WITHIN_VARIANCE;
+
+    icc_bias_accepted
+        && between_bias_accepted
+        && within_bias_accepted
+        && icc_rmse < MAX_ICC_RMSE
+        && between_relative_rmse < MAX_COMPONENT_RELATIVE_RMSE
+        && within_relative_rmse < MAX_COMPONENT_RELATIVE_RMSE
 }
 
 #[test]
@@ -87,25 +119,24 @@ fn ratio_only_recovery_rejects_proportionally_wrong_variance_components() {
     let between_estimates = [TRUE_BETWEEN_VARIANCE * 2.0; 8];
     let within_estimates = [TRUE_WITHIN_VARIANCE * 2.0; 8];
 
-    let ratio_only_accepted = ratio_only_recovery_accepts(&icc_estimates);
-    let between_accepted =
-        bias_within_monte_carlo_uncertainty(&between_estimates, TRUE_BETWEEN_VARIANCE).2;
-    let within_accepted =
-        bias_within_monte_carlo_uncertainty(&within_estimates, TRUE_WITHIN_VARIANCE).2;
+    let ratio_only_accepted = bias_within_monte_carlo_uncertainty(&icc_estimates, TRUE_ICC).2;
+    let all_estimands_accepted =
+        recovery_accepts_all_estimands(&icc_estimates, &between_estimates, &within_estimates);
 
     assert!(ratio_only_accepted, "witness must preserve the ICC ratio exactly");
-    assert!(!between_accepted && !within_accepted, "witness must miss both component truths");
     assert!(
-        !ratio_only_accepted,
-        "scientific recovery must not accept the ICC ratio while both variance components are wrong"
+        !all_estimands_accepted,
+        "scientific recovery must reject a correct ratio when both component scales are wrong"
     );
 }
 
 #[test]
-fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_uncertainty() {
+fn one_way_random_intercept_icc_recovers_known_variance_components_and_ratio() {
     let mut rng = DeterministicNormal::new(0x5eed_1234_5678_9abc);
     let attempted = REPLICATIONS;
     let mut icc_estimates = Vec::with_capacity(REPLICATIONS);
+    let mut between_estimates = Vec::with_capacity(REPLICATIONS);
+    let mut within_estimates = Vec::with_capacity(REPLICATIONS);
     let mut failed = 0_usize;
     let mut first_failure = None;
 
@@ -124,7 +155,11 @@ fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_u
         }
 
         match one_way_random_intercept_icc(&cluster_ids, &outcomes) {
-            Ok(result) => icc_estimates.push(result.icc),
+            Ok(result) => {
+                icc_estimates.push(result.icc);
+                between_estimates.push(result.between_variance);
+                within_estimates.push(result.within_variance);
+            }
             Err(error) => {
                 failed += 1;
                 if first_failure.is_none() {
@@ -135,6 +170,8 @@ fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_u
     }
 
     let recovered = icc_estimates.len();
+    assert_eq!(between_estimates.len(), recovered);
+    assert_eq!(within_estimates.len(), recovered);
     assert_eq!(
         attempted,
         recovered + failed,
@@ -149,25 +186,48 @@ fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_u
         "scientific acceptance requires a complete recovery denominator"
     );
 
-    let replication_count = recovered as f64;
-    let mean = icc_estimates.iter().sum::<f64>() / replication_count;
-    let bias = mean - TRUE_ICC;
-    let rmse = (icc_estimates
-        .iter()
-        .map(|estimate| (estimate - TRUE_ICC).powi(2))
-        .sum::<f64>()
-        / replication_count)
-        .sqrt();
-    let (_, monte_carlo_standard_error, accepted) =
+    let (icc_bias, icc_mcse, icc_bias_accepted) =
         bias_within_monte_carlo_uncertainty(&icc_estimates, TRUE_ICC);
+    let (between_bias, between_mcse, between_bias_accepted) =
+        bias_within_monte_carlo_uncertainty(&between_estimates, TRUE_BETWEEN_VARIANCE);
+    let (within_bias, within_mcse, within_bias_accepted) =
+        bias_within_monte_carlo_uncertainty(&within_estimates, TRUE_WITHIN_VARIANCE);
+
+    let icc_rmse = root_mean_squared_error(&icc_estimates, TRUE_ICC);
+    let between_relative_rmse =
+        root_mean_squared_error(&between_estimates, TRUE_BETWEEN_VARIANCE) / TRUE_BETWEEN_VARIANCE;
+    let within_relative_rmse =
+        root_mean_squared_error(&within_estimates, TRUE_WITHIN_VARIANCE) / TRUE_WITHIN_VARIANCE;
 
     assert!(
-        ratio_only_recovery_accepts(&icc_estimates) && accepted,
-        "absolute bias {bias} exceeds 3*MCSE={}; attempted={attempted}, recovered={recovered}, failed={failed}",
-        3.0 * monte_carlo_standard_error
+        icc_bias_accepted,
+        "ICC bias {icc_bias} exceeds 3*MCSE={}; attempted={attempted}, recovered={recovered}, failed={failed}",
+        3.0 * icc_mcse
     );
     assert!(
-        rmse < 0.08,
-        "RMSE {rmse} exceeds the true-parameter recovery threshold; attempted={attempted}, recovered={recovered}, failed={failed}"
+        between_bias_accepted,
+        "between-variance bias {between_bias} exceeds 3*MCSE={}; attempted={attempted}, recovered={recovered}, failed={failed}",
+        3.0 * between_mcse
+    );
+    assert!(
+        within_bias_accepted,
+        "within-variance bias {within_bias} exceeds 3*MCSE={}; attempted={attempted}, recovered={recovered}, failed={failed}",
+        3.0 * within_mcse
+    );
+    assert!(
+        icc_rmse < MAX_ICC_RMSE,
+        "ICC RMSE {icc_rmse} exceeds {MAX_ICC_RMSE}; attempted={attempted}, recovered={recovered}, failed={failed}"
+    );
+    assert!(
+        between_relative_rmse < MAX_COMPONENT_RELATIVE_RMSE,
+        "between-variance relative RMSE {between_relative_rmse} exceeds {MAX_COMPONENT_RELATIVE_RMSE}; attempted={attempted}, recovered={recovered}, failed={failed}"
+    );
+    assert!(
+        within_relative_rmse < MAX_COMPONENT_RELATIVE_RMSE,
+        "within-variance relative RMSE {within_relative_rmse} exceeds {MAX_COMPONENT_RELATIVE_RMSE}; attempted={attempted}, recovered={recovered}, failed={failed}"
+    );
+    assert!(
+        recovery_accepts_all_estimands(&icc_estimates, &between_estimates, &within_estimates),
+        "joint recovery acceptance must require every returned estimand"
     );
 }
