@@ -141,6 +141,39 @@ def _is_dataclass(node: ast.ClassDef) -> bool:
     return False
 
 
+def _annotation_root_name(annotation: ast.expr) -> str:
+    """Return the outer annotation name used by dataclass constructor semantics."""
+    while isinstance(annotation, ast.Subscript):
+        annotation = annotation.value
+    if isinstance(annotation, ast.Name):
+        return annotation.id
+    if isinstance(annotation, ast.Attribute):
+        return annotation.attr
+    return ""
+
+
+def _dataclass_field_participates_in_init(statement: ast.AnnAssign) -> bool:
+    """Whether an annotated dataclass field participates in generated ``__init__``."""
+    if _annotation_root_name(statement.annotation) == "ClassVar":
+        return False
+    value = statement.value
+    if not isinstance(value, ast.Call):
+        return True
+    target = value.func
+    if isinstance(target, ast.Name):
+        call_name = target.id
+    elif isinstance(target, ast.Attribute):
+        call_name = target.attr
+    else:
+        call_name = ""
+    if call_name != "field":
+        return True
+    for keyword in value.keywords:
+        if keyword.arg == "init" and isinstance(keyword.value, ast.Constant):
+            return keyword.value.value is not False
+    return True
+
+
 def _ast_class_params(node: ast.ClassDef) -> str:
     """Project explicit or dataclass-generated constructors without importing the module."""
     for statement in node.body:
@@ -153,9 +186,9 @@ def _ast_class_params(node: ast.ClassDef) -> str:
     for statement in node.body:
         if not isinstance(statement, ast.AnnAssign) or not isinstance(statement.target, ast.Name):
             continue
-        name = statement.target.id
-        if name.startswith("_"):
+        if not _dataclass_field_participates_in_init(statement):
             continue
+        name = statement.target.id
         default = _ast_default(statement.value)
         parts.append(f"{name}={default}" if default else name)
     return ", ".join(parts)
