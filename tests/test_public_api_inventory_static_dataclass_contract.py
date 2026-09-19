@@ -41,3 +41,23 @@ def test_static_dataclass_projection_matches_rag_anchor_constructor_contract() -
         "perturbation_specification_fingerprint, perturbation_run_fingerprint, "
         "perturbation_kind, _anchor_token=None"
     )
+
+
+def test_static_dataclass_projection_respects_classvar_initvar_and_field_init() -> None:
+    inventory = _inventory_tool()
+    tree = ast.parse(
+        """
+@dataclass(frozen=True)
+class Contract:
+    schema_version: ClassVar[str] = "v1"
+    value: str
+    derived: str = field(init=False)
+    generated: str = field(default_factory=str)
+    _token: InitVar[object | None] = None
+"""
+    )
+    contract = next(node for node in tree.body if isinstance(node, ast.ClassDef))
+
+    assert inventory._ast_class_params(contract) == (
+        'value, generated=<factory>, _token=None'
+    )
