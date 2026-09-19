@@ -44,6 +44,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0025](0025-finite-population-achieved-proportion.md) | Proposed | Rust terminates a complete one-stratum SRSWOR design with the achieved proportion, design variance, and Wang/Konijn exact interval. |
 | [0026](0026-public-polytomous-prediction-boundary.md) | Proposed | Expose Rust-owned GRM/GPCM category probabilities and expected responses through the public Python boundary. |
 | [0028](0028-public-api-naming-and-defaults-policy.md) | Proposed | One verb-first naming convention and one unsourced-defaults policy (precision controls, decision thresholds, seeds, model choice) for every public `fast_mlsirm` callable and PyO3 entry point. |
+| [0029](0029-central-release-publish-gap-guard.md) | Proposed | Keep local release-tag/publish-pypi bodies as default; document central dual-path contract; add idempotent PyPI gap-guard; cut over only after one successful central release. |
 | [0100](0100-adaptive-contextual-orchestrator-default.md) | Accepted | contextual-orchestrator adaptive mode is the injected LLM-judge default while transport ownership stays upstream. |
 
 ## ADR completeness rule
