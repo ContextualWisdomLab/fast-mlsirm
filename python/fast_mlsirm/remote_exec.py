@@ -521,8 +521,8 @@ class LoopbackExecutor:
     ) -> tuple[RemoteJobOutcome, ...]:
         if not isinstance(envelopes, Sequence):
             raise TypeError("envelopes must be a sequence")
-        outcomes: list[RemoteJobOutcome] = []
-        for envelope in envelopes:
+        envelope_batch = tuple(envelopes)
+        for envelope in envelope_batch:
             if type(envelope) is not RemoteJobEnvelope:
                 raise TypeError("each envelope must be a RemoteJobEnvelope")
             if not worker_manifest.compatible_with(envelope.manifest):
@@ -530,12 +530,16 @@ class LoopbackExecutor:
                     "worker manifest is incompatible with envelope cohort "
                     f"(run_id={envelope.run_id!r}, unit_index={envelope.unit_index})"
                 )
+
+        outcomes: list[RemoteJobOutcome] = []
+        for envelope in envelope_batch:
             unit_seed = envelope.unit_seed()
             started = time.perf_counter()
             try:
                 result = handler(envelope, unit_seed)
             except Exception as exc:  # handler failures are recorded, not raised
                 elapsed = time.perf_counter() - started
+                failure_message = str(exc)
                 outcomes.append(
                     RemoteJobOutcome(
                         run_id=envelope.run_id,
@@ -544,7 +548,11 @@ class LoopbackExecutor:
                         family=envelope.family,
                         delivery_state=RemoteJobDeliveryState.FAILED,
                         result=None,
-                        error_message=str(exc) or type(exc).__name__,
+                        error_message=(
+                            failure_message
+                            if failure_message.strip()
+                            else type(exc).__name__
+                        ),
                         provenance=local_worker_provenance(
                             worker_manifest,
                             requested_device=requested_device,
@@ -572,4 +580,4 @@ class LoopbackExecutor:
                     ),
                 )
             )
-        return tuple(outcomes)
+        return tuple(sorted(outcomes, key=lambda outcome: outcome.unit_index))
