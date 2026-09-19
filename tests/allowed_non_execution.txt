@@ -39,16 +39,18 @@ tests/test_wle_control_admission.py::test_score_wle_rejects_lossy_longdouble_con
 # escalates an otherwise-green run: 6977 passed, 8 skipped, and the required
 # `python` check fails on every PR for reasons no PR can fix.
 #
-# GPU parity is NOT waived here. The `gpu-smoke` job installs a software Vulkan
-# adapter, runs the explicit GPU parity test, and then fails the build if the
-# JUnit report contains any skip ("Reject skipped GPU evidence" in ci.yml). The
-# `python` matrix has no adapter, so the same tests can only skip there.
-tests/test_bifactor_gpu_high_q.py::* # GPU adapter absent in the `python` matrix; enforced non-skipped by the gpu-smoke job (reviewed 2026-09-18)
-tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely # GPU adapter absent in the `python` matrix; this exact test is the gpu-smoke job's non-skippable evidence (reviewed 2026-09-18)
-tests/test_bifactor_bootstrap_benchmark.py::test_joint_bootstrap_cpu_vs_gpu_wall_time_q121 # wall-clock CPU-vs-GPU comparison needs an adapter; gpu-smoke owns GPU evidence (reviewed 2026-09-18)
+# GPU and study-precision evidence is NOT waived here. The `gpu-smoke` job
+# installs a software Vulkan adapter, sets STAGE5_HIGH_Q=1, executes every
+# exact node below, and rejects any skip in its JUnit evidence. The `python`
+# matrix has neither that adapter nor the opt-in study setting.
+tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q121 # GPU adapter + STAGE5_HIGH_Q owned by gpu-smoke (reviewed 2026-09-20)
+tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241 # GPU adapter + STAGE5_HIGH_Q owned by gpu-smoke (reviewed 2026-09-20)
+tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q481 # GPU adapter + STAGE5_HIGH_Q owned by gpu-smoke (reviewed 2026-09-20)
+tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241_wide_items_metal_workgroups # GPU adapter + STAGE5_HIGH_Q owned by gpu-smoke (reviewed 2026-09-20)
+tests/test_bifactor_gpu_high_q.py::test_bifactor_cpu_q121_vs_q241_agree # STAGE5_HIGH_Q study evidence owned by gpu-smoke (reviewed 2026-09-20)
+tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely # GPU adapter absent in the `python` matrix; exact non-skipped evidence owned by gpu-smoke (reviewed 2026-09-20)
+tests/test_bifactor_bootstrap_benchmark.py::test_joint_bootstrap_cpu_vs_gpu_wall_time_q121 # GPU adapter + STAGE5_HIGH_Q owned by gpu-smoke (reviewed 2026-09-20)
 #
-# Coverage-guided fuzzing is owned by the `fuzz` job, which installs the
-# `.[fuzz]` extra and runs the Atheris harnesses directly. The `python` matrix
-# installs requirements/ci.txt without atheris, so this module cannot import
-# there and reports as a collection skip.
-tests/test_fuzz_properties.py # atheris absent in the `python` matrix; the fuzz job installs .[fuzz] and runs the harnesses (reviewed 2026-09-18)
+# `tests/test_fuzz_properties.py` is Hypothesis evidence, not an Atheris
+# harness. The `fuzz` job installs `.[fuzz]`, executes this pytest module,
+# and rejects any collection/runtime skip; it therefore needs no allowlist row.
