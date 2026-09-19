@@ -199,6 +199,18 @@ jobs:
             echo "CHANGELOG section for $RELEASE_VERSION is empty" >&2
             exit 1
           fi
+      - name: Keep internal monetary targets out of the public release notes
+        # The CHANGELOG section becomes the GitHub release body, which is a
+        # public distribution surface like the PyPI description. Naming what an
+        # entry removed is legitimate; restating the internal figure itself is
+        # the leak. v0.11.4 shipped with the amount spelled out before this ran.
+        run: |
+          set -euo pipefail
+          if grep -nEi 'KRW[[:space:]]*[0-9][0-9,]{6,}|[0-9]+[[:space:]]*(billion|B)[[:space:]]+(product|deal|contract)' release_notes.md; then
+            echo "release notes name an internal monetary target; describe the gate without the figure" >&2
+            exit 1
+          fi
+
       - name: Cap the release body below the GitHub release-body limit
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
