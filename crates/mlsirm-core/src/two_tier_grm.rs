@@ -827,6 +827,10 @@ fn item_cat_logprob(
 /// at a time) rather than `n_specific * n_grid * q_specific`. Finite sums
 /// are associative, so the numerical value matches the materialised-table
 /// path up to ordinary floating-point roundoff order.
+///
+/// Block partial-pattern collapse (#2003) is landed for bifactor GRM; the
+/// same Bock–Aitkin / Gibbons–Hedeker basis applies here, but adapting it to
+/// this streaming layout is deferred so the bifactor path can land first.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn e_step(
     v: &Validated,

@@ -1,4 +1,5 @@
 pub mod agreement;
+pub mod bifactor_block_patterns;
 pub mod bifactor_grm;
 pub mod bifactor_indices;
 pub mod bifactor_oakes;

@@ -61,6 +61,23 @@
 //! exactly how the ordered-threshold constraint is maintained WITHOUT an
 //! explicit reparametrization — see `grm.rs`).
 //!
+//! # Block partial-pattern collapse (#2003)
+//!
+//! Bock and Aitkin (1981, pp. 445, 448) show the MML likelihood depends on the
+//! data through distinct score-pattern frequencies `r_l`, with computation over
+//! `s` patterns rather than `N` persons. Under bifactor structure, `I_psg`
+//! depends on person `p` only through the **partial** response pattern on
+//! block `s` (missingness included): Gibbons and Hedeker (1992, pp. 423, 425)
+//! and Gibbons et al. (2007, pp. 8, 9) state that the bifactor restriction
+//! keeps the integral two-dimensional regardless of the number of dimensions
+//! and, for both the binary and graded models, regardless of the number of
+//! subdomains. That identity is exact, not an approximation.
+//! The CPU E-step therefore indexes unique within-block partial patterns once
+//! (data-fixed) and evaluates `block_acc` / `log_i` once per unique pattern
+//! per EM iteration — see [`crate::bifactor_block_patterns`]. Provenance
+//! records measured before/after unique counts (ADR-0028: no unsourced
+//! reduction defaults).
+//!
 //! # Identification and reflection
 //!
 //! Unit trait variances fix the slope scale on every dimension; ordered
@@ -112,6 +129,11 @@
 //!
 //! # References (APA 7th ed.)
 //!
+//! Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
+//! item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
+//! 443–459. https://doi.org/10.1007/BF02293801 (pp. 445, 448: pattern-frequency
+//! EM; verified locators in `docs/papers/2003-block-partial-pattern-source-check.md`)
+//!
 //! Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E., Bhaumik,
 //! D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., & Stover, A. (2007).
 //! Full-information item bifactor analysis of graded response data. *Applied
@@ -129,11 +151,12 @@
 //! Samejima, F. (1969). Estimation of latent ability using a response pattern
 //! of graded scores. *Psychometrika, 34*(S1), 1-97.
 //! https://doi.org/10.1007/BF03372160
-//!
-//! Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
-//! item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
-//! 443-459. https://doi.org/10.1007/BF02293801
 
+use crate::bifactor_block_patterns::{
+    build_block_partial_pattern_index, BlockPartialPatternIndex, BlockPatternCollapseProvenance,
+    PATTERN_MISSING,
+};
+pub use crate::bifactor_block_patterns::block_pattern_collapse_provenance;
 use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
 
 // NOTE (stage-1 review fix-up, updated #1929): this module imposes no magic
@@ -200,6 +223,10 @@ pub struct BifactorGrmResult {
     pub best_start: usize,
     /// `sum_i (1 + has_specific(i) + (n_cat - 1))` free item parameters.
     pub n_parameters: usize,
+    /// Measured block partial-pattern collapse counts (before = `n_persons`
+    /// per block; after = unique patterns). Built from the response matrix
+    /// once at fit start (#2003; ADR-0028).
+    pub block_pattern_collapse: BlockPatternCollapseProvenance,
 }
 
 /// Validated problem structure shared by the fitter and the public
@@ -619,10 +646,94 @@ pub(crate) fn e_step(
              falling back to CPU implementation."
         );
     }
+    let patterns = build_block_partial_pattern_index(
+        y,
+        observed,
+        v.n_persons,
+        v.n_items,
+        v.n_cat,
+        &v.blocks,
+        &v.general_only,
+    )
+    .expect("n_cat validated before E-step; pattern sentinel must fit");
+    e_step_cpu_collapsed(v, y, observed, tables, log_wg, log_ws, qg, qs, &patterns)
+}
+
+/// Fill per-pattern `gen_log` / `block_acc` / `log_i` caches for one table set.
+///
+/// Layout: `gen_log_cache[k * qg + g]`, `block_acc_cache[s][(k * qg + g) * qs + h]`,
+/// `log_i_cache[s][k * qg + g]`.
+fn fill_pattern_caches(
+    v: &Validated,
+    tables: &[Vec<f64>],
+    log_wg: &[f64],
+    log_ws: &[f64],
+    qg: usize,
+    qs: usize,
+    patterns: &BlockPartialPatternIndex,
+) -> (Vec<f64>, Vec<Vec<f64>>, Vec<Vec<f64>>) {
+    let n_gen = patterns.general_only.patterns.len();
+    let mut gen_log_cache = vec![0.0f64; n_gen * qg];
+    for (k, pat) in patterns.general_only.patterns.iter().enumerate() {
+        for g in 0..qg {
+            let mut acc = log_wg[g];
+            for (m, &i) in v.general_only.iter().enumerate() {
+                let byte = pat[m];
+                if byte == PATTERN_MISSING {
+                    continue;
+                }
+                acc += tables[i][g * v.n_cat + byte as usize];
+            }
+            gen_log_cache[k * qg + g] = acc;
+        }
+    }
+    let mut block_acc_cache = Vec::with_capacity(v.n_specific);
+    let mut log_i_cache = Vec::with_capacity(v.n_specific);
+    let mut tmp_h = vec![0.0f64; qs];
+    for (s, members) in v.blocks.iter().enumerate() {
+        let n_pat = patterns.blocks[s].patterns.len();
+        let mut block_acc = vec![0.0f64; n_pat * qg * qs];
+        let mut log_i = vec![0.0f64; n_pat * qg];
+        for (k, pat) in patterns.blocks[s].patterns.iter().enumerate() {
+            for g in 0..qg {
+                for h in 0..qs {
+                    let mut acc = log_ws[h];
+                    for (m, &i) in members.iter().enumerate() {
+                        let byte = pat[m];
+                        if byte == PATTERN_MISSING {
+                            continue;
+                        }
+                        acc += tables[i][(g * qs + h) * v.n_cat + byte as usize];
+                    }
+                    block_acc[(k * qg + g) * qs + h] = acc;
+                }
+                for h in 0..qs {
+                    tmp_h[h] = block_acc[(k * qg + g) * qs + h];
+                }
+                log_i[k * qg + g] = log_sum_exp(&tmp_h);
+            }
+        }
+        block_acc_cache.push(block_acc);
+        log_i_cache.push(log_i);
+    }
+    (gen_log_cache, block_acc_cache, log_i_cache)
+}
+
+/// CPU E-step with block partial-pattern collapse (#2003).
+fn e_step_cpu_collapsed(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    tables: &[Vec<f64>],
+    log_wg: &[f64],
+    log_ws: &[f64],
+    qg: usize,
+    qs: usize,
+    patterns: &BlockPartialPatternIndex,
+) -> (f64, Vec<Vec<Vec<f64>>>) {
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
     let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
-    for (i, par) in tables.iter().enumerate() {
-        let _ = par;
+    for i in 0..v.n_items {
         let n_nodes = if v.item_block[i].is_some() {
             qg * qs
         } else {
@@ -630,29 +741,119 @@ pub(crate) fn e_step(
         };
         counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
     }
-    // Per-person scratch.
+    let (gen_log_cache, block_acc_cache, log_i_cache) =
+        fill_pattern_caches(v, tables, log_wg, log_ws, qg, qs, patterns);
+
+    let mut log_like_g = vec![0.0f64; qg];
+    let mut post_g = vec![0.0f64; qg];
+    let mut loglik = 0.0f64;
+    for p in 0..v.n_persons {
+        let gk = patterns.general_only.person_to_pattern[p];
+        for g in 0..qg {
+            let mut acc = gen_log_cache[gk * qg + g];
+            for s in 0..v.n_specific {
+                let pk = patterns.blocks[s].person_to_pattern[p];
+                acc += log_i_cache[s][pk * qg + g];
+            }
+            log_like_g[g] = acc;
+        }
+        let log_lp = log_sum_exp(&log_like_g);
+        loglik += log_lp;
+        for g in 0..qg {
+            post_g[g] = (log_like_g[g] - log_lp).exp();
+        }
+        for &i in &v.general_only {
+            if !is_obs(p, i) {
+                continue;
+            }
+            let yc = y[p * v.n_items + i];
+            for g in 0..qg {
+                counts[i][g][yc] += post_g[g];
+            }
+        }
+        for (s, members) in v.blocks.iter().enumerate() {
+            let pk = patterns.blocks[s].person_to_pattern[p];
+            let any_obs = patterns.blocks[s].patterns[pk]
+                .iter()
+                .any(|&b| b != PATTERN_MISSING);
+            if !any_obs {
+                continue;
+            }
+            for g in 0..qg {
+                let Some(mut others) =
+                    general_only_without_prior(gen_log_cache[gk * qg + g], log_wg[g])
+                else {
+                    continue;
+                };
+                for s2 in 0..v.n_specific {
+                    if s2 != s {
+                        let pk2 = patterns.blocks[s2].person_to_pattern[p];
+                        others += log_i_cache[s2][pk2 * qg + g];
+                    }
+                }
+                for h in 0..qs {
+                    let log_post = log_wg[g]
+                        + block_acc_cache[s][(pk * qg + g) * qs + h]
+                        + others
+                        - log_lp;
+                    let post = log_post.exp();
+                    if !post.is_finite() {
+                        continue;
+                    }
+                    for (m, &i) in members.iter().enumerate() {
+                        let byte = patterns.blocks[s].patterns[pk][m];
+                        if byte == PATTERN_MISSING {
+                            continue;
+                        }
+                        counts[i][g * qs + h][byte as usize] += post;
+                    }
+                }
+            }
+        }
+    }
+    (loglik, counts)
+}
+
+/// Person-wise CPU E-step retained as the numerical reference for #2003 tests.
+#[cfg(test)]
+pub(crate) fn e_step_personwise_reference(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    tables: &[Vec<f64>],
+    log_wg: &[f64],
+    log_ws: &[f64],
+    qg: usize,
+    qs: usize,
+) -> (f64, Vec<Vec<Vec<f64>>>) {
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
+    let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
+    for i in 0..v.n_items {
+        let n_nodes = if v.item_block[i].is_some() {
+            qg * qs
+        } else {
+            qg
+        };
+        counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+    }
     let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
     let mut log_i = vec![0.0f64; v.n_specific * qg];
     let mut gen_log = vec![0.0f64; qg];
     let mut log_like_g = vec![0.0f64; qg];
     let mut post_g = vec![0.0f64; qg];
     let mut tmp_h = vec![0.0f64; qs];
-
     let mut loglik = 0.0f64;
     for p in 0..v.n_persons {
-        // General-only log-likelihood per general node.
         gen_log.copy_from_slice(log_wg);
         for &i in &v.general_only {
             if !is_obs(p, i) {
                 continue;
             }
             let yc = y[p * v.n_items + i];
-            let lp = &tables[i];
             for g in 0..qg {
-                gen_log[g] += lp[g * v.n_cat + yc];
+                gen_log[g] += tables[i][g * v.n_cat + yc];
             }
         }
-        // Block accumulations: sum of item log-probs per (s, g, h).
         for (s, members) in v.blocks.iter().enumerate() {
             for g in 0..qg {
                 for h in 0..qs {
@@ -666,8 +867,6 @@ pub(crate) fn e_step(
                     }
                     block_acc[(s * qg + g) * qs + h] = acc;
                 }
-            }
-            for g in 0..qg {
                 for h in 0..qs {
                     tmp_h[h] = block_acc[(s * qg + g) * qs + h];
                 }
@@ -686,7 +885,6 @@ pub(crate) fn e_step(
         for g in 0..qg {
             post_g[g] = (log_like_g[g] - log_lp).exp();
         }
-        // General-only expected counts share the marginal general posterior.
         for &i in &v.general_only {
             if !is_obs(p, i) {
                 continue;
@@ -696,16 +894,12 @@ pub(crate) fn e_step(
                 counts[i][g][yc] += post_g[g];
             }
         }
-        // Block items: joint (g, h) posterior marginalizing the other blocks.
         for (s, members) in v.blocks.iter().enumerate() {
             let any_obs = members.iter().any(|&i| is_obs(p, i));
             if !any_obs {
                 continue;
             }
             for g in 0..qg {
-                // Sum of the OTHER blocks' log-integrals at g.
-                // Skip exactly-zero prior mass: `gen_log - log_wg` is NaN when
-                // both are -inf and would poison every item's expected counts.
                 let Some(mut others) = general_only_without_prior(gen_log[g], log_wg[g]) else {
                     continue;
                 };
@@ -1064,49 +1258,33 @@ pub fn fit_bifactor_grm(
     let _ = n_succeeded;
     let params = outcome.params;
 
+    // Data-fixed partial-pattern index (Bock & Aitkin 1981 pattern EM applied
+    // per bifactor block; #2003). Built once for EAP + provenance.
+    let pattern_index = build_block_partial_pattern_index(
+        y,
+        observed,
+        n_persons,
+        n_items,
+        n_cat,
+        &v.blocks,
+        &v.general_only,
+    )?;
+
     // Final EAP pass for theta_G at the winning parameters.
     let tables = fill_logprob_tables(&v, &params, tg, ts, qg, qs);
     let mut theta_g_eap = vec![0.0f64; n_persons];
     let mut theta_g_sd = vec![0.0f64; n_persons];
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
-    let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
-    let mut log_i = vec![0.0f64; v.n_specific * qg];
+    let (gen_log_cache, _block_acc_cache, log_i_cache) =
+        fill_pattern_caches(&v, &tables, &log_wg, &log_ws, qg, qs, &pattern_index);
     let mut log_like_g = vec![0.0f64; qg];
-    let mut tmp_h = vec![0.0f64; qs];
     for p in 0..n_persons {
-        let mut gen_log = log_wg.clone();
-        for &i in &v.general_only {
-            if !is_obs(p, i) {
-                continue;
-            }
-            let yc = y[p * n_items + i];
-            for g in 0..qg {
-                gen_log[g] += tables[i][g * n_cat + yc];
-            }
-        }
-        for (s, members) in v.blocks.iter().enumerate() {
-            for g in 0..qg {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * n_items + i];
-                        acc += tables[i][(g * qs + h) * n_cat + yc];
-                    }
-                    block_acc[(s * qg + g) * qs + h] = acc;
-                }
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * qg + g) * qs + h];
-                }
-                log_i[s * qg + g] = log_sum_exp(&tmp_h);
-            }
-        }
+        let gk = pattern_index.general_only.person_to_pattern[p];
         for g in 0..qg {
-            let mut acc = gen_log[g];
+            let mut acc = gen_log_cache[gk * qg + g];
             for s in 0..v.n_specific {
-                acc += log_i[s * qg + g];
+                let pk = pattern_index.blocks[s].person_to_pattern[p];
+                acc += log_i_cache[s][pk * qg + g];
             }
             log_like_g[g] = acc;
         }
@@ -1185,6 +1363,7 @@ pub fn fit_bifactor_grm(
         final_loglik_change: outcome.final_loglik_change,
         best_start,
         n_parameters,
+        block_pattern_collapse: pattern_index.provenance,
     })
 }
 
@@ -1900,6 +2079,17 @@ fn e_step_multigroup(
         );
     }
 
+    let patterns = build_block_partial_pattern_index(
+        y,
+        observed,
+        v.n_persons,
+        v.n_items,
+        v.n_cat,
+        &v.blocks,
+        &v.general_only,
+    )
+    .expect("n_cat validated before E-step; pattern sentinel must fit");
+
     let mut counts: Vec<Vec<Vec<Vec<f64>>>> = Vec::with_capacity(n_groups);
     for g in 0..n_groups {
         let _ = g;
@@ -1924,107 +2114,92 @@ fn e_step_multigroup(
     // block-wise MAR with `estimate_specific_vars`).
     let mut w_spec = vec![vec![0.0f64; v.n_specific]; n_groups];
 
-    let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
-    let mut log_i = vec![0.0f64; v.n_specific * qg];
-    let mut gen_log = vec![0.0f64; qg];
     let mut log_like_g = vec![0.0f64; qg];
     let mut post_g = vec![0.0f64; qg];
-    let mut tmp_h = vec![0.0f64; qs];
-
     let mut loglik = 0.0f64;
-    for p in 0..v.n_persons {
-        let g = group_id[p];
-        let tables = &tables_groups[g];
-        gen_log.copy_from_slice(log_wg);
-        for &i in &v.general_only {
-            if !is_obs(p, i) {
+
+    // Pattern caches depend on per-group tables; process one group at a time.
+    for g in 0..n_groups {
+        let (gen_log_cache, block_acc_cache, log_i_cache) = fill_pattern_caches(
+            v,
+            &tables_groups[g],
+            log_wg,
+            log_ws,
+            qg,
+            qs,
+            &patterns,
+        );
+        for p in 0..v.n_persons {
+            if group_id[p] != g {
                 continue;
             }
-            let yc = y[p * v.n_items + i];
-            let lp = &tables[i];
+            let gk = patterns.general_only.person_to_pattern[p];
             for t in 0..qg {
-                gen_log[t] += lp[t * v.n_cat + yc];
-            }
-        }
-        for (s, members) in v.blocks.iter().enumerate() {
-            for t in 0..qg {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * v.n_items + i];
-                        acc += tables[i][(t * qs + h) * v.n_cat + yc];
-                    }
-                    block_acc[(s * qg + t) * qs + h] = acc;
+                let mut acc = gen_log_cache[gk * qg + t];
+                for s in 0..v.n_specific {
+                    let pk = patterns.blocks[s].person_to_pattern[p];
+                    acc += log_i_cache[s][pk * qg + t];
                 }
+                log_like_g[t] = acc;
+            }
+            let log_lp = log_sum_exp(&log_like_g);
+            loglik += log_lp;
+            for t in 0..qg {
+                post_g[t] = (log_like_g[t] - log_lp).exp();
             }
             for t in 0..qg {
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * qg + t) * qs + h];
-                }
-                log_i[s * qg + t] = log_sum_exp(&tmp_h);
+                w_acc[g] += post_g[t];
+                s1_g[g] += post_g[t] * tg_groups[g][t];
+                s2_g[g] += post_g[t] * tg_groups[g][t] * tg_groups[g][t];
             }
-        }
-        for t in 0..qg {
-            let mut acc = gen_log[t];
-            for s in 0..v.n_specific {
-                acc += log_i[s * qg + t];
-            }
-            log_like_g[t] = acc;
-        }
-        let log_lp = log_sum_exp(&log_like_g);
-        loglik += log_lp;
-        for t in 0..qg {
-            post_g[t] = (log_like_g[t] - log_lp).exp();
-        }
-        // General moments (common-scale nodes) for the group M-step.
-        for t in 0..qg {
-            w_acc[g] += post_g[t];
-            s1_g[g] += post_g[t] * tg_groups[g][t];
-            s2_g[g] += post_g[t] * tg_groups[g][t] * tg_groups[g][t];
-        }
-        for &i in &v.general_only {
-            if !is_obs(p, i) {
-                continue;
-            }
-            let yc = y[p * v.n_items + i];
-            for t in 0..qg {
-                counts[g][i][t][yc] += post_g[t];
-            }
-        }
-        for (s, members) in v.blocks.iter().enumerate() {
-            let any_obs = members.iter().any(|&i| is_obs(p, i));
-            if !any_obs {
-                continue;
-            }
-            for t in 0..qg {
-                let Some(mut others) = general_only_without_prior(gen_log[t], log_wg[t]) else {
+            for &i in &v.general_only {
+                if !is_obs(p, i) {
                     continue;
-                };
-                for s2 in 0..v.n_specific {
-                    if s2 != s {
-                        others += log_i[s2 * qg + t];
-                    }
                 }
-                for h in 0..qs {
-                    let log_post =
-                        log_wg[t] + block_acc[(s * qg + t) * qs + h] + others - log_lp;
-                    let post = log_post.exp();
-                    if !post.is_finite() {
+                let yc = y[p * v.n_items + i];
+                for t in 0..qg {
+                    counts[g][i][t][yc] += post_g[t];
+                }
+            }
+            for (s, members) in v.blocks.iter().enumerate() {
+                let pk = patterns.blocks[s].person_to_pattern[p];
+                let any_obs = patterns.blocks[s].patterns[pk]
+                    .iter()
+                    .any(|&b| b != PATTERN_MISSING);
+                if !any_obs {
+                    continue;
+                }
+                for t in 0..qg {
+                    let Some(mut others) =
+                        general_only_without_prior(gen_log_cache[gk * qg + t], log_wg[t])
+                    else {
                         continue;
+                    };
+                    for s2 in 0..v.n_specific {
+                        if s2 != s {
+                            let pk2 = patterns.blocks[s2].person_to_pattern[p];
+                            others += log_i_cache[s2][pk2 * qg + t];
+                        }
                     }
-                    // Specific moments at zero mean for the variance M-step.
-                    let ts = ts_groups[g][s][h];
-                    w_spec[g][s] += post;
-                    s2_spec[g][s] += post * ts * ts;
-                    for &i in members {
-                        if !is_obs(p, i) {
+                    for h in 0..qs {
+                        let log_post = log_wg[t]
+                            + block_acc_cache[s][(pk * qg + t) * qs + h]
+                            + others
+                            - log_lp;
+                        let post = log_post.exp();
+                        if !post.is_finite() {
                             continue;
                         }
-                        let yc = y[p * v.n_items + i];
-                        counts[g][i][t * qs + h][yc] += post;
+                        let ts = ts_groups[g][s][h];
+                        w_spec[g][s] += post;
+                        s2_spec[g][s] += post * ts * ts;
+                        for (m, &i) in members.iter().enumerate() {
+                            let byte = patterns.blocks[s].patterns[pk][m];
+                            if byte == PATTERN_MISSING {
+                                continue;
+                            }
+                            counts[g][i][t * qs + h][byte as usize] += post;
+                        }
                     }
                 }
             }
@@ -2564,46 +2739,39 @@ pub fn fit_bifactor_grm_multigroup(
     }
     let mut theta_g_eap = vec![0.0f64; n_persons];
     let mut theta_g_sd = vec![0.0f64; n_persons];
-    let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
-    let mut log_i = vec![0.0f64; v.n_specific * qg];
+    let pattern_index = build_block_partial_pattern_index(
+        y,
+        observed,
+        n_persons,
+        n_items,
+        n_cat,
+        &v.blocks,
+        &v.general_only,
+    )?;
     let mut log_like_g = vec![0.0f64; qg];
-    let mut tmp_h = vec![0.0f64; qs];
+    // Per-group pattern caches (tables differ by group nodes/params).
+    let mut caches: Vec<(Vec<f64>, Vec<Vec<f64>>, Vec<Vec<f64>>)> =
+        Vec::with_capacity(n_groups);
+    for g in 0..n_groups {
+        caches.push(fill_pattern_caches(
+            &v,
+            &tables_groups[g],
+            &log_wg,
+            &log_ws,
+            qg,
+            qs,
+            &pattern_index,
+        ));
+    }
     for p in 0..n_persons {
         let g = group_id[p];
-        let tables = &tables_groups[g];
-        let mut gen_log = log_wg.clone();
-        for &i in &v.general_only {
-            if !is_obs(p, i) {
-                continue;
-            }
-            let yc = y[p * n_items + i];
-            for t in 0..qg {
-                gen_log[t] += tables[i][t * n_cat + yc];
-            }
-        }
-        for (s, members) in v.blocks.iter().enumerate() {
-            for t in 0..qg {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * n_items + i];
-                        acc += tables[i][(t * qs + h) * n_cat + yc];
-                    }
-                    block_acc[(s * qg + t) * qs + h] = acc;
-                }
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * qg + t) * qs + h];
-                }
-                log_i[s * qg + t] = log_sum_exp(&tmp_h);
-            }
-        }
+        let (ref gen_log_cache, _, ref log_i_cache) = caches[g];
+        let gk = pattern_index.general_only.person_to_pattern[p];
         for t in 0..qg {
-            let mut acc = gen_log[t];
+            let mut acc = gen_log_cache[gk * qg + t];
             for s in 0..v.n_specific {
-                acc += log_i[s * qg + t];
+                let pk = pattern_index.blocks[s].person_to_pattern[p];
+                acc += log_i_cache[s][pk * qg + t];
             }
             log_like_g[t] = acc;
         }
@@ -3246,44 +3414,25 @@ pub fn fit_bifactor_grm_fipc(
     }
     let mut theta_g_eap = vec![0.0f64; n_persons];
     let mut theta_g_sd = vec![0.0f64; n_persons];
-    let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
-    let mut log_i = vec![0.0f64; v.n_specific * qg];
+    let pattern_index = build_block_partial_pattern_index(
+        y,
+        observed,
+        n_persons,
+        n_items,
+        n_cat,
+        &v.blocks,
+        &v.general_only,
+    )?;
+    let (gen_log_cache, _block_acc_cache, log_i_cache) =
+        fill_pattern_caches(&v, &tables, &log_wg, &log_ws, qg, qs, &pattern_index);
     let mut log_like_g = vec![0.0f64; qg];
-    let mut tmp_h = vec![0.0f64; qs];
     for p in 0..n_persons {
-        let mut gen_log = log_wg.clone();
-        for &i in &v.general_only {
-            if !is_obs(p, i) {
-                continue;
-            }
-            let yc = y[p * n_items + i];
-            for t in 0..qg {
-                gen_log[t] += tables[i][t * n_cat + yc];
-            }
-        }
-        for (s, members) in v.blocks.iter().enumerate() {
-            for t in 0..qg {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * n_items + i];
-                        acc += tables[i][(t * qs + h) * n_cat + yc];
-                    }
-                    block_acc[(s * qg + t) * qs + h] = acc;
-                }
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * qg + t) * qs + h];
-                }
-                log_i[s * qg + t] = log_sum_exp(&tmp_h);
-            }
-        }
+        let gk = pattern_index.general_only.person_to_pattern[p];
         for t in 0..qg {
-            let mut acc = gen_log[t];
+            let mut acc = gen_log_cache[gk * qg + t];
             for s in 0..v.n_specific {
-                acc += log_i[s * qg + t];
+                let pk = pattern_index.blocks[s].person_to_pattern[p];
+                acc += log_i_cache[s][pk * qg + t];
             }
             log_like_g[t] = acc;
         }
