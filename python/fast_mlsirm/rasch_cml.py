@@ -206,8 +206,9 @@ def _trusted_positive_tolerance(value: float, *, name: str = "tol") -> float:
 
 def fit_rasch_cml(
     responses: np.ndarray,
-    max_iter: int = 100,
-    tol: float = 1e-8,
+    *,
+    max_iter: int,
+    tol: float,
 ) -> dict[str, np.ndarray]:
     """Fit the dichotomous Rasch model by conditional maximum likelihood (compute in Rust; Andersen,
     1970, 1972).
@@ -248,8 +249,9 @@ def fit_rasch_cml(
 def andersen_lr_test(
     responses: np.ndarray,
     group: np.ndarray,
-    max_iter: int = 100,
-    tol: float = 1e-8,
+    *,
+    max_iter: int,
+    tol: float,
 ) -> dict[str, float]:
     """Andersen's (1973) conditional likelihood-ratio test of Rasch fit (compute in Rust).
 

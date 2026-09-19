@@ -1,7 +1,7 @@
 # Copyright (c) 2026 ContextualWisdomLab. All rights reserved.
 # SPDX-License-Identifier: MIT
 
-"""CPU/GPU E-step parity at study-precision quadrature grids (121/241 nodes).
+"""CPU/GPU E-step parity at study-precision quadrature grids (121/241/481 nodes).
 
 The maintainer standard (issue #1929) requires study settings to use at least
 121 Gauss-Hermite nodes per dimension, with larger counts (241, 481, ...)
@@ -15,11 +15,17 @@ smoke-test grids of ``tests/test_bifactor_gpu.py`` — and that the CPU fit at
 convergence, mirroring the ``#[ignore]``d
 ``bifactor_grm_121_vs_241_nodes_agree`` Rust regression).
 
+The q=241 / q=481 legs also exercise the Metal/WebGPU workgroup-dimension
+split in ``gpu_bifactor``: Apple Metal rejects 1-D dispatches above 65535
+workgroups (AC late-life bootstrap at q=241 hit 141573 on
+``reduce_counts_blk``), so the host factors the grid across x/y/z from the
+adapter's ``max_compute_workgroups_per_dimension``.
+
 Runtime note: ``q_general * q_specific`` grids (14,641 nodes at 121;
-58,081 at 241) make these fits orders of magnitude heavier than the smoke
-tests, so they are gated behind ``STAGE5_HIGH_Q=1`` (mirroring the Rust
-``#[ignore]`` convention for slow node-count regressions) and use a tiny
-fixture (48 persons, 6 items, 2 specific blocks) with few EM iterations.
+58,081 at 241; 231,361 at 481) make these fits orders of magnitude heavier
+than the smoke tests, so they are gated behind ``STAGE5_HIGH_Q=1`` (mirroring
+the Rust ``#[ignore]`` convention for slow node-count regressions) and use a
+tiny fixture (48 persons, 6 items, 2 specific blocks) with few EM iterations.
 Run with ``STAGE5_HIGH_Q=1 pytest tests/test_bifactor_gpu_high_q.py -s`` to
 execute and print the measured wall times for the PR record.
 
@@ -148,6 +154,59 @@ def test_bifactor_gpu_parity_q241(capfd):
 
     slope_diff, threshold_diff, loglik_diff = _report(
         "single q=241", t1 - t0, t2 - t1, fit_cpu, fit_gpu
+    )
+
+    assert fit_cpu.converged == fit_gpu.converged
+    assert fit_cpu.n_iter == fit_gpu.n_iter
+    assert fit_cpu.best_start == fit_gpu.best_start
+    assert slope_diff <= SLOPE_ATOL
+    assert threshold_diff <= THRESHOLD_ATOL
+    assert loglik_diff <= LOGLIK_ATOL
+
+
+@needs_high_q
+def test_bifactor_gpu_parity_q481(capfd):
+    """CPU and GPU E-steps agree within f32 tolerance at q=481 per dim."""
+    responses, smap, _ = _fixture()
+    kw = _fit_kwargs(481)
+
+    t0 = time.perf_counter()
+    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu")
+    t1 = time.perf_counter()
+    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
+    t2 = time.perf_counter()
+
+    slope_diff, threshold_diff, loglik_diff = _report(
+        "single q=481", t1 - t0, t2 - t1, fit_cpu, fit_gpu
+    )
+
+    assert fit_cpu.converged == fit_gpu.converged
+    assert fit_cpu.n_iter == fit_gpu.n_iter
+    assert fit_cpu.best_start == fit_gpu.best_start
+    assert slope_diff <= SLOPE_ATOL
+    assert threshold_diff <= THRESHOLD_ATOL
+    assert loglik_diff <= LOGLIK_ATOL
+
+
+@needs_high_q
+def test_bifactor_gpu_parity_q241_wide_items_metal_workgroups(capfd):
+    """q=241 with enough items to force x/y workgroup split on Metal.
+
+    AC late-life multigroup bootstrap failed with dispatch [141573,1,1] on
+    ``reduce_counts_blk``. A 26-item × 241×241×3 grid needs ~70815 workgroups
+    (>65535), so this leg exercises the runtime 2-D factoring path.
+    """
+    responses, smap, _ = _fixture(n_persons=32, n_items=26, n_cat=3, seed=20260918)
+    kw = _fit_kwargs(241, max_iter=4)
+
+    t0 = time.perf_counter()
+    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu")
+    t1 = time.perf_counter()
+    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
+    t2 = time.perf_counter()
+
+    slope_diff, threshold_diff, loglik_diff = _report(
+        "wide q=241 (Metal 2-D dispatch)", t1 - t0, t2 - t1, fit_cpu, fit_gpu
     )
 
     assert fit_cpu.converged == fit_gpu.converged

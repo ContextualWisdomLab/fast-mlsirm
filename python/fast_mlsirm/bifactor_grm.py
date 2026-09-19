@@ -138,8 +138,11 @@ class BifactorGrmFit:
     ``threshold`` the ``n_items x (n_cat-1)`` strictly decreasing boundary
     intercepts; ``theta_g_eap`` / ``theta_g_sd`` the general-factor EAP and
     posterior SD; ``category_counts`` the observed ``n_items x n_cat`` counts.
-    ``termination_reason`` is ``"tolerance_met"`` or ``"max_iter_reached"``;
-    ``best_start`` the winning start in ``0..n_starts``.
+    ``termination_reason`` is ``"tolerance_met"``, ``"max_iter_reached"``, or
+    ``"numerical_em_stall"`` (relative loglik change met ``tol`` while every
+    item parameter remained at its start — never reported as
+    ``tolerance_met``; see #1976); ``best_start`` the winning start in
+    ``0..n_starts``.
     """
 
     a_general: np.ndarray
@@ -166,10 +169,10 @@ def fit_bifactor_grm(
     n_specific: int,
     q_general: int,
     q_specific: int,
-    max_iter: int = 500,
-    tol: float = 1e-6,
-    n_starts: int = 1,
-    seed: int = 0x9E37_79B9_7F4A_7C15,
+    max_iter: int,
+    tol: float,
+    n_starts: int,
+    seed: int,
     device: str = "cpu",
 ) -> BifactorGrmFit:
     """Fit the single-group polytomous bifactor GRM (compute in Rust).
@@ -183,6 +186,11 @@ def fit_bifactor_grm(
     demand via Golub & Welsch, 1969 — no fixed-table cap, issue #1929); no
     default is offered, because no accuracy target is on file to source one
     against (Project rule, issue #1929).
+    ``max_iter`` and ``tol`` are required caller arguments (ADR-0028, #1963):
+    iteration/convergence precision controls with no documented
+    convergence-criterion source in this repository. ``n_starts`` and
+    ``seed`` are likewise required (ADR-0028, #1963): a replicate count and a
+    stochastic seed must not ship an unsourced default.
     ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik.
     ``device`` selects the E-step sweep: ``'cpu'`` runs the ``f64`` scalar
     sweep; ``'gpu'`` runs the WGSL ``f32`` person-parallel sweep and falls
@@ -534,10 +542,10 @@ def fit_bifactor_grm_fipc(
     fixed_a_general: np.ndarray,
     fixed_a_specific: np.ndarray,
     fixed_threshold: np.ndarray,
+    max_iter: int,
+    tol: float,
     q_general: int = 21,
     q_specific: int = 11,
-    max_iter: int = 500,
-    tol: float = 1e-6,
     newton_iter: int = 10,
     ridge: float = 1e-8,
     estimate_specific_vars: bool = False,

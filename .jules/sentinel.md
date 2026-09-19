@@ -59,8 +59,3 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
-
-## 2026-09-17 - Semgrep False Positive on Internal Dynamic Imports
-**Vulnerability:** `importlib.import_module(modname)`과 같이 동적인 문자열을 사용한 모듈 임포트가 Semgrep의 `non-literal-import` 룰에 의해 보안 취약점(Medium+)으로 탐지됨.
-**Learning:** `modname`이 사용자의 신뢰할 수 없는 입력이 아닌, `pkgutil.walk_packages`와 같은 내부 패키지 구조 탐색 로직을 통해 생성된 안전한 값임에도 불구하고 SAST 도구는 이를 구별하지 못해 오탐(False Positive)을 발생시킴.
-**Prevention:** 내부 패키지 리플렉션 등의 목적으로 동적 임포트가 반드시 필요한 경우, 해당 입력값이 안전하다는 명확한 주석과 함께 `# nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import`를 추가하여 의도된 억제(Suppression)임을 기록해야 함.

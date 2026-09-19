@@ -73,7 +73,7 @@ def test_rsm_rejects_lossy_longdouble_tolerance_before_response_work() -> None:
 
     _ResponseSentinel.calls = 0
     with pytest.raises(ValueError, match="tol must be finite and > 0"):
-        fit_rsm(_ResponseSentinel(), n_cat=3, tol=_lossy_longdouble())
+        fit_rsm(_ResponseSentinel(), n_cat=3, tol=_lossy_longdouble(), q_theta=41, max_iter=500)
     assert _ResponseSentinel.calls == 0
 
 
@@ -82,7 +82,7 @@ def test_rsm_rejects_lossy_integer_tolerance_before_response_work() -> None:
 
     _ResponseSentinel.calls = 0
     with pytest.raises(ValueError, match="tol must be finite and > 0"):
-        fit_rsm(_ResponseSentinel(), n_cat=3, tol=2**53 + 1)
+        fit_rsm(_ResponseSentinel(), n_cat=3, tol=2**53 + 1, q_theta=41, max_iter=500)
     assert _ResponseSentinel.calls == 0
 
 
@@ -91,7 +91,7 @@ def test_rsm_exact_longdouble_tolerance_reaches_rust_as_builtin_float() -> None:
 
     core = _FakeCore()
     with patch("fast_mlsirm.fitstats._core_module", return_value=core):
-        fit_rsm(_responses(), n_cat=3, tol=np.longdouble(0.5))
+        fit_rsm(_responses(), n_cat=3, tol=np.longdouble(0.5), q_theta=41, max_iter=500)
 
     assert core.tol == 0.5
     assert type(core.tol) is float

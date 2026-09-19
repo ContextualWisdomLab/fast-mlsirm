@@ -16,7 +16,7 @@ def test_fit_rasch_cml_rejects_complex_responses_before_lossy_cast() -> None:
     )
 
     with pytest.raises(ValueError, match="responses must be complete 0/1"):
-        fit_rasch_cml(responses)
+        fit_rasch_cml(responses, max_iter=100, tol=1e-8)
 
 
 def test_andersen_lr_rejects_complex_groups_before_lossy_cast() -> None:
@@ -28,4 +28,4 @@ def test_andersen_lr_rejects_complex_groups_before_lossy_cast() -> None:
     group = np.array([0.0 + 1.0j, 0.0, 1.0, 1.0], dtype=np.complex128)
 
     with pytest.raises(ValueError, match="group labels must be finite non-negative integers"):
-        andersen_lr_test(responses, group)
+        andersen_lr_test(responses, group, max_iter=100, tol=1e-8)

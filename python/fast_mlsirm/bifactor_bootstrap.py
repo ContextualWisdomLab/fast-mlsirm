@@ -294,16 +294,17 @@ def run_bifactor_bootstrap(
     compute_budget_seconds: float,
     q_general: int,
     q_specific: int,
+    *,
+    base_seed: int,
+    ci_level: float,
+    max_iter: int,
+    n_starts: int,
+    tol: float,
     group_ids: np.ndarray | None = None,
     n_groups: int = 1,
     anchor_mask: np.ndarray | None = None,
     n_jobs: int = -1,
-    base_seed: int = 42,
     device: str = "cpu",
-    ci_level: float = 0.95,
-    max_iter: int = 500,
-    tol: float = 1e-6,
-    n_starts: int = 1,
     estimate_specific_vars: bool = False,
 ) -> BifactorBootstrapResult:
     """Run joint person bootstrap replications with parallel workers.
@@ -334,13 +335,23 @@ def run_bifactor_bootstrap(
         n_groups: Number of groups.
         anchor_mask: Optional multigroup anchor mask (``None`` = all common).
         n_jobs: Number of parallel workers (-1 for all logical cores).
-        base_seed: Master seed for deterministic replication.
+        base_seed: Master seed for deterministic replication. Required,
+            keyword-only caller argument (ADR-0028, #1963): a stochastic
+            routine must not ship a default seed.
         device: 'cpu', 'gpu', or 'auto' execution device.
         ci_level: Nominal level of the reported percentile intervals and of
             the endpoints monitored by the stopping rule (0 < level < 1).
-        max_iter: Max EM iterations per replicate.
-        tol: Convergence tolerance.
-        n_starts: EM starts per replicate (deterministic from the replicate seed).
+            Required, keyword-only (ADR-0028, #1963): a decision-threshold
+            cutoff with no cited source in this repository.
+        max_iter: Max EM iterations per replicate. Required, keyword-only
+            (ADR-0028, #1963): an iteration/convergence precision control
+            with no documented convergence-criterion source.
+        tol: Convergence tolerance. Required, keyword-only (ADR-0028, #1963):
+            same reasoning as ``max_iter``.
+        n_starts: EM starts per replicate (deterministic from the replicate
+            seed). Required, keyword-only (ADR-0028, #1963): a
+            replicate/bootstrap/draw count with no Monte-Carlo-error
+            justification on file.
         estimate_specific_vars: Multigroup focal specific-variance estimation.
 
     Returns:

@@ -187,10 +187,10 @@ def fit_two_tier_grm(
     n_specific: int,
     q_primary: int,
     q_specific: int,
-    max_iter: int = 500,
-    tol: float = 1e-6,
-    n_starts: int = 1,
-    seed: int = 0x9E37_79B9_7F4A_7C15,
+    max_iter: int,
+    tol: float,
+    n_starts: int,
+    seed: int,
 ) -> TwoTierGrmFit:
     """Fit the single-group polytomous two-tier GRM (compute in Rust).
 
@@ -340,4 +340,144 @@ def fit_two_tier_grm(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+    )
+
+
+@dataclass
+class TwoTierOakesSe:
+    """Observed-information standard errors for the two-tier GRM.
+
+    ``labels`` free-parameter names; ``information`` always present ``k x k``;
+    ``vcov``/``se`` are ``None`` when the information is not positive
+    definite (never substituted).
+
+    Implementation basis: Oakes, D. (1999). Direct calculation of the
+    information matrix via the EM algorithm. *Journal of the Royal
+    Statistical Society Series B: Statistical Methodology, 61*(2), 479-482.
+    https://doi.org/10.1111/1467-9868.00188 (eq. 6, p. 480); Cai, L., Yang,
+    J. S., & Hansen, M. (2011). Generalized full-information item bifactor
+    analysis. *Psychological Methods, 16*(3), 221-248.
+    https://doi.org/10.1037/a0023350 (eq. 6, p. 227).
+    """
+
+    labels: list
+    information: np.ndarray
+    vcov: np.ndarray | None
+    se: np.ndarray | None
+    positive_definite: bool
+    non_pd_reason: str | None
+
+
+def two_tier_oakes_se(
+    a_primary: np.ndarray,
+    a_specific: np.ndarray,
+    threshold: np.ndarray,
+    phi: np.ndarray,
+    responses: np.ndarray,
+    primary_map: np.ndarray,
+    specific_map: np.ndarray,
+    n_cat: int,
+    n_primary: int,
+    n_specific: int,
+    q_primary: int,
+    q_specific: int,
+    fd_step: float,
+) -> TwoTierOakesSe:
+    """Observed-information SEs via Oakes (1999, eq. 6, p. 480) at given
+    two-tier parameters (valid at every point, not only the MLE).
+
+    ``q_primary``/``q_specific``/``fd_step`` are REQUIRED (no defaults;
+    ADR-0028 / #1929). Non-PD information returns ``se=None``.
+
+    Implementation basis: Oakes (1999, eq. 6, p. 480); Cai et al. (2011,
+    eq. 6, p. 227); Gibbons et al. (2007, eq. 15).
+    """
+
+    n_cat_int = _finite_integer_control(n_cat, "n_cat")
+    if n_cat_int < 2:
+        raise ValueError("n_cat must be >= 2")
+    n_primary_int = _finite_integer_control(n_primary, "n_primary")
+    if n_primary_int < 1:
+        raise ValueError("n_primary must be >= 1")
+    n_specific_int = _finite_integer_control(n_specific, "n_specific")
+    if n_specific_int < 1:
+        raise ValueError("n_specific must be >= 1")
+    q_primary_int = _finite_integer_control(q_primary, "q_primary")
+    if q_primary_int < 1:
+        raise ValueError("q_primary must be >= 1")
+    q_specific_int = _finite_integer_control(q_specific, "q_specific")
+    if q_specific_int < 1:
+        raise ValueError("q_specific must be >= 1")
+    fd_float = _positive_real_control(fd_step, "fd_step")
+
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    y = y.astype(np.float64, copy=False)
+    n_persons, n_items = y.shape
+
+    pmap = np.asarray(primary_map)
+    if pmap.ndim != 2 or pmap.shape != (n_items, n_primary_int):
+        raise ValueError("primary_map must be an n_items x n_primary boolean array")
+    pmap_bool = np.asarray(pmap, dtype=bool)
+
+    smap = np.asarray(specific_map)
+    if smap.ndim != 1 or smap.shape[0] != n_items:
+        raise ValueError("specific_map must be a 1-D array of length n_items")
+    smap_int = smap.astype(np.int64, copy=False)
+
+    ag = np.asarray(a_primary, dtype=np.float64)
+    if ag.shape != (n_items, n_primary_int):
+        raise ValueError("a_primary must have shape (n_items, n_primary)")
+    as_ = np.asarray(a_specific, dtype=np.float64)
+    if as_.shape != (n_items,):
+        raise ValueError("a_specific must have length n_items")
+    th = np.asarray(threshold, dtype=np.float64)
+    if th.shape != (n_items, n_cat_int - 1):
+        raise ValueError("threshold must have shape (n_items, n_cat - 1)")
+    ph = np.asarray(phi, dtype=np.float64)
+    if ph.shape != (n_primary_int, n_primary_int):
+        raise ValueError("phi must have shape (n_primary, n_primary)")
+
+    observed = np.isfinite(y) & (y >= 0)
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "two_tier_oakes_se"):
+        raise RuntimeError("two_tier_oakes_se requires the compiled Rust core")
+
+    yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
+    res = core.two_tier_oakes_se(
+        ag.reshape(-1),
+        as_.reshape(-1),
+        th.reshape(-1),
+        ph.reshape(-1),
+        yy,
+        observed.reshape(-1),
+        pmap_bool.reshape(-1),
+        smap_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_primary_int),
+        int(n_specific_int),
+        int(n_cat_int),
+        int(q_primary_int),
+        int(q_specific_int),
+        float(fd_float),
+    )
+    labels = [str(v) for v in res["labels"]]
+    k = len(labels)
+    information = np.asarray(res["information"], dtype=np.float64).reshape(k, k)
+    vcov_raw = res["vcov"]
+    se_raw = res["se"]
+    vcov = None if vcov_raw is None else np.asarray(vcov_raw, dtype=np.float64).reshape(k, k)
+    se = None if se_raw is None else np.asarray(se_raw, dtype=np.float64)
+    reason_raw = res["non_pd_reason"]
+    return TwoTierOakesSe(
+        labels=labels,
+        information=information,
+        vcov=vcov,
+        se=se,
+        positive_definite=bool(res["positive_definite"]),
+        non_pd_reason=None if reason_raw is None else str(reason_raw),
     )

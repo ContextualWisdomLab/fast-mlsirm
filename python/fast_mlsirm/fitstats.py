@@ -31,7 +31,7 @@ import numpy as np
 from .estimators.marginal import _gh, _xi_grid
 from .backend import normalize_device
 from .math import sigmoid
-from .objective import linear_predictor, prepare_response, validate_factor_id
+from .objective import compute_linear_predictor, prepare_response, validate_factor_id
 
 MAX_PERSON_FIT_REPLICATES = 10_000
 MAX_PERSON_FIT_WORK_CELLS = 200_000_000
@@ -1133,7 +1133,7 @@ def dimensionality_residuals(
     if theta.ndim != 2:
         raise ValueError("params.theta must be a 2-D array")
     d_of_i = validate_factor_id(factor_id, y.shape[1], theta.shape[1])
-    eta, _ = linear_predictor(params, d_of_i, model=model, eps_distance=eps_value)
+    eta, _ = compute_linear_predictor(params, d_of_i, model=model, eps_distance=eps_value)
     if eta.shape != y.shape:
         raise ValueError("parameter dimensions must match responses and factor_id")
     if not np.all(np.isfinite(eta)):

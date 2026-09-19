@@ -152,9 +152,9 @@ class BifactorMultigroupFit:
     to ``0`` / ``1``); ``specific_sd`` is ``n_groups x n_specific`` (``[0]``
     all ``1``). ``theta_g_eap`` / ``theta_g_sd`` are length ``n_persons`` on
     the common (reference) scale; ``group_category_counts`` is ``n_groups x
-    n_items x n_cat``. ``termination_reason`` is ``"tolerance_met"`` or
-    ``"max_iter_reached"``; ``best_start`` the winning start in
-    ``0..n_starts``.
+    n_items x n_cat``. ``termination_reason`` is ``"tolerance_met"``,
+    ``"max_iter_reached"``, or ``"numerical_em_stall"`` (see #1976);
+    ``best_start`` the winning start in ``0..n_starts``.
     """
 
     a_general: np.ndarray
@@ -188,10 +188,10 @@ def fit_bifactor_grm_multigroup(
     *,
     q_general: int,
     q_specific: int,
-    max_iter: int = 500,
-    tol: float = 1e-6,
-    n_starts: int = 1,
-    seed: int = 0x9E37_79B9_7F4A_7C15,
+    max_iter: int,
+    tol: float,
+    n_starts: int,
+    seed: int,
     estimate_specific_vars: bool = False,
     device: str = "cpu",
 ) -> BifactorMultigroupFit:
@@ -211,6 +211,11 @@ def fit_bifactor_grm_multigroup(
     generated on demand via Golub & Welsch, 1969 — no fixed-table cap,
     issue #1929); no default is offered, because no accuracy
     target is on file to source one against (Project rule, issue #1929).
+    ``max_iter`` and ``tol`` are required caller arguments (ADR-0028, #1963):
+    iteration/convergence precision controls with no documented
+    convergence-criterion source in this repository. ``n_starts`` and
+    ``seed`` are likewise required (ADR-0028, #1963): a replicate count and a
+    stochastic seed must not ship an unsourced default.
     ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik.
     ``device`` selects the E-step sweep: ``'cpu'`` runs the ``f64`` scalar
     sweep; ``'gpu'`` runs the WGSL ``f32`` person-parallel sweep and falls

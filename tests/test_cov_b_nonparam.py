@@ -87,13 +87,13 @@ def test_parallel_analysis_requires_core(monkeypatch):
 
 def test_ksirt_requires_core(monkeypatch):
     _patch_core_none(monkeypatch)
-    with pytest.raises(RuntimeError, match="ksirt_analysis requires the compiled Rust core"):
-        ksirt.ksirt_analysis(np.zeros((5, 3)))
+    with pytest.raises(RuntimeError, match="analyze_ksirt requires the compiled Rust core"):
+        ksirt.analyze_ksirt(np.zeros((5, 3)), nevalpoints=51)
 
 
 def test_ksirt_rejects_too_few_persons():
     with pytest.raises(ValueError, match="at least 2 persons"):
-        ksirt.ksirt_analysis(np.zeros((1, 3)))
+        ksirt.analyze_ksirt(np.zeros((1, 3)), nevalpoints=51)
 
 
 # -- crm ---------------------------------------------------------------------
@@ -111,12 +111,12 @@ def test_crm_requires_core(monkeypatch):
 def test_mixture_requires_core(monkeypatch):
     _patch_core_none(monkeypatch)
     with pytest.raises(RuntimeError, match="fit_mixture requires the compiled Rust core"):
-        mixture.fit_mixture(np.zeros((4, 3)))
+        mixture.fit_mixture(np.zeros((4, 3)), model='rasch', n_starts=1, max_iter=500, tol=1e-6, seed=0x2545F491)
 
 
 def test_mixture_rejects_non_integer_n_classes():
     with pytest.raises(ValueError, match="n_classes must be an integer"):
-        mixture.fit_mixture(np.zeros((4, 3)), n_classes=2.5)
+        mixture.fit_mixture(np.zeros((4, 3)), n_classes=2.5, model='rasch', n_starts=1, max_iter=500, tol=1e-6, seed=0x2545F491)
 
 
 # -- rt ----------------------------------------------------------------------
