@@ -415,7 +415,7 @@ def _render_html(report: EssayFacetsCalibrationReport, title: str) -> str:
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             '<meta http-equiv="Content-Security-Policy" '
-            f'content="{escape(_content_security_policy(), quote=True)}">',
+            f'content="{escape(_content_security_policy(_css()), quote=True)}">',
             f"<title>{escape(title)}</title>",
             f"<style>{_css()}</style>",
             "</head>",
