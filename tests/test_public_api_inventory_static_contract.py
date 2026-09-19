@@ -99,3 +99,30 @@ class Contract:
     assert inventory._ast_class_params(contract) == (
         "value, generated=<factory>, _token=None"
     )
+
+def test_static_dataclass_projection_respects_disabled_generated_initializer() -> None:
+    inventory = _inventory_tool()
+    tree = ast.parse(
+        """
+@dataclass(init=False)
+class Contract:
+    value: str
+"""
+    )
+    contract = next(node for node in tree.body if isinstance(node, ast.ClassDef))
+
+    assert inventory._ast_class_params(contract) == ""
+
+
+def test_static_dataclass_field_without_default_remains_required() -> None:
+    inventory = _inventory_tool()
+    tree = ast.parse(
+        """
+@dataclass
+class Contract:
+    value: str = field(repr=False)
+"""
+    )
+    contract = next(node for node in tree.body if isinstance(node, ast.ClassDef))
+
+    assert inventory._ast_class_params(contract) == "value"
