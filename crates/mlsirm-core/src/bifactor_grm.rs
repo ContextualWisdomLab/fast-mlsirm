@@ -54,12 +54,18 @@
 //!
 //! where `G_pg` is the general-only item likelihood at node `g`. The E-step
 //! cost is `O(Q_G * sum_s Q_S * |block_s|)` per person instead of
-//! `O(Q_G * Q_S^S * n_items)`. The M-step is a per-item finite-difference-
-//! Hessian Newton over `[a_G, a_S?, d_1..d_{K-1}]`, byte-for-byte the ascent
-//! of `grm::fit_grm`'s item step (ridge = Hessian conditioning only, NOT a
-//! prior; backtracking line search REJECTS non-finite objectives, which is
-//! exactly how the ordered-threshold constraint is maintained WITHOUT an
-//! explicit reparametrization — see `grm.rs`).
+//! `O(Q_G * Q_S^S * n_items)`. The M-step is a per-item Newton step over
+//! `[a_G, a_S?, d_1..d_{K-1}]` using the **analytic** expected complete-data
+//! gradient and Hessian at the fixed E-step counts (Bock & Aitkin, 1981,
+//! pp. 445, 448; Gibbons et al., 2007, eq. 9 and Appendix A4–A6): one node
+//! sweep builds `(f, g, H)` via [`crate::poly::grm_node_hessian`] chained
+//! through `η = a_G t_G + a_S t_S + d` (the same Term-A algebra as
+//! [`crate::bifactor_oakes::q_hessian_analytic`] / Oakes, 1999, eq. 6). Ridge
+//! remains Hessian conditioning only, NOT a prior; backtracking line search
+//! REJECTS non-finite objectives, which is exactly how the ordered-threshold
+//! constraint is maintained WITHOUT an explicit reparametrization — see
+//! `grm.rs`. Finite differences are retained only as a test cross-check
+//! (#2030), never in the production Newton path.
 //!
 //! # Identification and reflection
 //!
@@ -133,8 +139,14 @@
 //! Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
 //! item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
 //! 443-459. https://doi.org/10.1007/BF02293801
+//!
+//! Oakes, D. (1999). Direct calculation of the information matrix via the EM
+//! algorithm. *Journal of the Royal Statistical Society Series B: Statistical
+//! Methodology, 61*(2), 479-482. https://doi.org/10.1111/1467-9868.00188
 
-use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
+use crate::poly::{grm_logprobs, grm_node_gradient, grm_node_hessian, solve_small};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Instant;
 
 // NOTE (stage-1 review fix-up, updated #1929): this module imposes no magic
 // size caps. Upper bounds without a documented origin (a previous revision
@@ -734,9 +746,88 @@ pub(crate) fn e_step(
     (loglik, counts)
 }
 
+/// Optional M-step node-sweep counters (#2030 / #2022 contract). When
+/// [`enable_mstep_sweep_counters`] is on, every `item_neg_ll_*` entry records
+/// its class; production Newton never increments `fd` after the analytic
+/// Hessian lands.
+static MSTEP_SWEEP_ENABLED: AtomicBool = AtomicBool::new(false);
+static MSTEP_SWEEP_BASE: AtomicU64 = AtomicU64::new(0);
+static MSTEP_SWEEP_FD: AtomicU64 = AtomicU64::new(0);
+static MSTEP_SWEEP_LINESEARCH: AtomicU64 = AtomicU64::new(0);
+static MSTEP_SWEEP_NEWTON: AtomicU64 = AtomicU64::new(0);
+static PHASE_NS_FILL: AtomicU64 = AtomicU64::new(0);
+static PHASE_NS_ESTEP: AtomicU64 = AtomicU64::new(0);
+static PHASE_NS_MSTEP: AtomicU64 = AtomicU64::new(0);
+
+/// Enable or disable bifactor item M-step sweep counters (tests / recount).
+pub fn enable_mstep_sweep_counters(on: bool) {
+    MSTEP_SWEEP_ENABLED.store(on, Ordering::Relaxed);
+}
+
+/// Reset bifactor item M-step sweep counters to zero.
+pub fn reset_mstep_sweep_counters() {
+    MSTEP_SWEEP_BASE.store(0, Ordering::Relaxed);
+    MSTEP_SWEEP_FD.store(0, Ordering::Relaxed);
+    MSTEP_SWEEP_LINESEARCH.store(0, Ordering::Relaxed);
+    MSTEP_SWEEP_NEWTON.store(0, Ordering::Relaxed);
+    PHASE_NS_FILL.store(0, Ordering::Relaxed);
+    PHASE_NS_ESTEP.store(0, Ordering::Relaxed);
+    PHASE_NS_MSTEP.store(0, Ordering::Relaxed);
+}
+
+/// `(base, fd, linesearch, newton_steps)` since the last reset.
+pub fn mstep_sweep_counters() -> (u64, u64, u64, u64) {
+    (
+        MSTEP_SWEEP_BASE.load(Ordering::Relaxed),
+        MSTEP_SWEEP_FD.load(Ordering::Relaxed),
+        MSTEP_SWEEP_LINESEARCH.load(Ordering::Relaxed),
+        MSTEP_SWEEP_NEWTON.load(Ordering::Relaxed),
+    )
+}
+
+/// `(fill_logprob_tables_ns, e_step_ns, m_step_ns)` accumulated while counters
+/// are enabled (#2030 phase recount; ratios only).
+pub fn mstep_phase_ns() -> (u64, u64, u64) {
+    (
+        PHASE_NS_FILL.load(Ordering::Relaxed),
+        PHASE_NS_ESTEP.load(Ordering::Relaxed),
+        PHASE_NS_MSTEP.load(Ordering::Relaxed),
+    )
+}
+
+#[inline]
+fn bump_sweep(kind: SweepKind) {
+    if !MSTEP_SWEEP_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    match kind {
+        SweepKind::Base => {
+            MSTEP_SWEEP_BASE.fetch_add(1, Ordering::Relaxed);
+        }
+        SweepKind::Fd => {
+            MSTEP_SWEEP_FD.fetch_add(1, Ordering::Relaxed);
+        }
+        SweepKind::LineSearch => {
+            MSTEP_SWEEP_LINESEARCH.fetch_add(1, Ordering::Relaxed);
+        }
+        SweepKind::Newton => {
+            MSTEP_SWEEP_NEWTON.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SweepKind {
+    Base,
+    Fd,
+    LineSearch,
+    Newton,
+}
+
 /// Negative expected complete-data log-lik and gradient for ONE item.
 /// `params = [a_G, (a_S?), d_1..d_{K-1}]`; `node_g[node]` / `node_s[node]`
 /// hold the latent coordinates (`node_s` ignored for general-only items).
+/// Used by Armijo line search (value only) and the FD Hessian test oracle.
 fn item_neg_ll_grad(
     params: &[f64],
     has_specific: bool,
@@ -769,42 +860,147 @@ fn item_neg_ll_grad(
     (-ll, grad.iter().map(|g| -g).collect())
 }
 
-/// Newton M-step for one item — the `grm::fit_grm` ascent restricted to the
-/// bifactor linear predictor (FD Hessian, ridge conditioning, backtracking;
-/// non-finite rejection keeps `d` strictly ordered).
+/// Negative expected complete-data log-lik, gradient, and analytic Hessian
+/// for ONE bifactor GRM item in a single node sweep.
+///
+/// At fixed E-step expected counts (Bock & Aitkin, 1981, pp. 445, 448;
+/// Gibbons et al., 2007, Appendix A4–A6), the complete-data criterion
+/// separates per item. Per node the GRM cell Hessian
+/// ([`grm_node_hessian`]) is chained through
+/// `η = a_G · t_G + a_S · t_S + d` (Gibbons et al., 2007, eq. 9); second
+/// derivatives of `η` vanish, so only first-order chain terms appear — the
+/// same Term-A algebra as [`crate::bifactor_oakes::q_hessian_analytic`]
+/// (Oakes, 1999, eq. 6), specialised to one item and signed for
+/// minimisation of `-Q`.
+///
+/// When `record_base` is true and sweep counters are enabled, increments the
+/// Base class (Newton evaluation).
+pub(crate) fn item_neg_ll_grad_hess(
+    params: &[f64],
+    has_specific: bool,
+    node_g: &[f64],
+    node_s: &[f64],
+    counts: &[Vec<f64>],
+    record_base: bool,
+) -> (f64, Vec<f64>, Vec<Vec<f64>>) {
+    if record_base {
+        bump_sweep(SweepKind::Base);
+    }
+    let np = params.len();
+    let off = if has_specific { 2 } else { 1 };
+    let beta = &params[off..];
+    let mut ll = 0.0f64;
+    let mut grad = vec![0.0f64; np];
+    let mut hess = vec![vec![0.0f64; np]; np];
+    for (node, cnt) in counts.iter().enumerate() {
+        let (tg, ts) = (node_g[node], if has_specific { node_s[node] } else { 0.0 });
+        let base = if has_specific {
+            params[0] * tg + params[1] * ts
+        } else {
+            params[0] * tg
+        };
+        let lp = grm_logprobs(base, beta);
+        ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+        let (g_base, g_thr) = grm_node_gradient(base, beta, cnt);
+        grad[0] += g_base * tg;
+        if has_specific {
+            grad[1] += g_base * ts;
+        }
+        for (j, gj) in g_thr.iter().enumerate() {
+            grad[off + j] += gj;
+        }
+        let (grand, row_sums, mat) = grm_node_hessian(base, beta, cnt);
+        hess[0][0] += tg * tg * grand;
+        if has_specific {
+            hess[1][1] += ts * ts * grand;
+            let cross = tg * ts * grand;
+            hess[0][1] += cross;
+            hess[1][0] += cross;
+        }
+        for (j, rj) in row_sums.iter().enumerate() {
+            let dj = off + j;
+            let cg = tg * rj;
+            hess[0][dj] += cg;
+            hess[dj][0] += cg;
+            if has_specific {
+                let cs = ts * rj;
+                hess[1][dj] += cs;
+                hess[dj][1] += cs;
+            }
+            for (l, hjl) in mat[j].iter().enumerate() {
+                hess[dj][off + l] += hjl;
+            }
+        }
+    }
+    for row in &mut hess {
+        for h in row.iter_mut() {
+            *h = -*h;
+        }
+    }
+    (-ll, grad.iter().map(|g| -g).collect(), hess)
+}
+
+/// Forward finite-difference Hessian of [`item_neg_ll_grad`] — test oracle
+/// only (#2030). Each column re-enters the full node grid; production Newton
+/// must not call this.
+pub(crate) fn item_neg_ll_fd_hessian(
+    params: &[f64],
+    has_specific: bool,
+    node_g: &[f64],
+    node_s: &[f64],
+    counts: &[Vec<f64>],
+    h: f64,
+) -> (Vec<f64>, Vec<Vec<f64>>) {
+    let np = params.len();
+    let (f0, g) = {
+        bump_sweep(SweepKind::Base);
+        item_neg_ll_grad(params, has_specific, node_g, node_s, counts, 0)
+    };
+    let _ = f0;
+    let mut hess = vec![vec![0.0f64; np]; np];
+    for j in 0..np {
+        let mut pj = params.to_vec();
+        pj[j] += h;
+        bump_sweep(SweepKind::Fd);
+        let (_f2, gj) = item_neg_ll_grad(&pj, has_specific, node_g, node_s, counts, 0);
+        for r in 0..np {
+            hess[r][j] = (gj[r] - g[r]) / h;
+        }
+    }
+    for r in 0..np {
+        for c in 0..r {
+            let avg = 0.5 * (hess[r][c] + hess[c][r]);
+            hess[r][c] = avg;
+            hess[c][r] = avg;
+        }
+    }
+    (g, hess)
+}
+
+/// Newton M-step for one item — analytic Hessian (one node sweep per Newton
+/// evaluation), ridge conditioning, Armijo backtracking; non-finite
+/// rejection keeps `d` strictly ordered (#2030).
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::needless_range_loop)] // finite-difference Hessian is inherently indexed (mirrors `grm.rs`)
 fn m_step_item(
     mut params: Vec<f64>,
     has_specific: bool,
     node_g: &[f64],
     node_s: &[f64],
     counts: &[Vec<f64>],
-    n_cat: usize,
+    _n_cat: usize,
     ridge: f64,
     n_newton: usize,
 ) -> Vec<f64> {
     let np = params.len();
     for _ in 0..n_newton {
-        let (f0, g) = item_neg_ll_grad(&params, has_specific, node_g, node_s, counts, n_cat);
+        bump_sweep(SweepKind::Newton);
+        let (f0, g, mut hess) =
+            item_neg_ll_grad_hess(&params, has_specific, node_g, node_s, counts, true);
         let grad_norm = g.iter().map(|x| x * x).sum::<f64>().sqrt();
         if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
             break;
         }
-        let h = 1e-5;
-        let mut hess = vec![vec![0.0f64; np]; np];
-        for j in 0..np {
-            let mut pj = params.clone();
-            pj[j] += h;
-            let (_f2, gj) = item_neg_ll_grad(&pj, has_specific, node_g, node_s, counts, n_cat);
-            for r in 0..np {
-                hess[r][j] = (gj[r] - g[r]) / h;
-            }
-        }
         for r in 0..np {
-            for c in 0..np {
-                hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
-            }
             hess[r][r] += ridge;
         }
         let mut step = solve_small(hess, g.clone());
@@ -829,8 +1025,9 @@ fn m_step_item(
                 .zip(&step)
                 .map(|(value, direction)| value - alpha * direction)
                 .collect();
+            bump_sweep(SweepKind::LineSearch);
             let (candidate_f, _) =
-                item_neg_ll_grad(&candidate, has_specific, node_g, node_s, counts, n_cat);
+                item_neg_ll_grad(&candidate, has_specific, node_g, node_s, counts, 0);
             if candidate_f.is_finite() && candidate_f <= f0 - 1e-4 * alpha * directional {
                 params = candidate;
                 accepted = true;
@@ -924,10 +1121,19 @@ fn run_single_start(
     let mut final_loglik_change = f64::NAN;
 
     loop {
+        let phase_on = MSTEP_SWEEP_ENABLED.load(Ordering::Relaxed);
+        let t_fill = phase_on.then(Instant::now);
         let tables = fill_logprob_tables(v, &params, tg, ts, qg, qs);
+        if let Some(t0) = t_fill {
+            PHASE_NS_FILL.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+        let t_estep = phase_on.then(Instant::now);
         let (ll, counts) = e_step(
             v, y, observed, &tables, log_wg, log_ws, qg, qs, tg, ts, cfg.device,
         );
+        if let Some(t0) = t_estep {
+            PHASE_NS_ESTEP.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
@@ -943,6 +1149,7 @@ fn run_single_start(
         if n_iter == cfg.max_iter {
             break;
         }
+        let t_mstep = phase_on.then(Instant::now);
         for i in 0..v.n_items {
             let has_specific = v.item_block[i].is_some();
             let mut packed = Vec::with_capacity(1 + has_specific as usize + v.m1);
@@ -968,6 +1175,9 @@ fn run_single_start(
             } else {
                 params[i].d = updated[1..].to_vec();
             }
+        }
+        if let Some(t0) = t_mstep {
+            PHASE_NS_MSTEP.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
         }
         n_iter += 1;
     }
