@@ -57,10 +57,12 @@ pub struct OneWayRandomInterceptIcc {
 
 /// Estimate a one-way random-intercept ICC from finite outcomes and opaque cluster IDs.
 ///
-/// The reduction order is canonicalized by cluster ID and then by `f64::total_cmp`
-/// within each cluster. Consequently a row permutation with the same IDs and values
-/// produces the same binary64 result; no parallel or hash-map reduction is used in
-/// this deterministic CPU reference path.
+/// A deterministic minimum-value anchor is subtracted before any grand or cluster
+/// reduction. Variance components are location invariant, so this preserves the
+/// estimand while preventing a large common location from contaminating binary64
+/// mean and sum-of-squares arithmetic. The centered values are then canonicalized
+/// by cluster ID and `f64::total_cmp`; a row permutation with the same IDs and
+/// represented values therefore produces the same binary64 result.
 ///
 /// This function is **not** a design classifier. Cross-classified,
 /// multiple-membership, time-varying, or otherwise non-one-way structures must be
@@ -71,7 +73,8 @@ pub struct OneWayRandomInterceptIcc {
 ///
 /// Returns an error for empty or length-mismatched input, non-finite outcomes,
 /// exactly constant outcomes, fewer than two clusters, non-positive within-cluster
-/// residual degrees of freedom, numerical overflow, or degenerate zero total variance.
+/// residual degrees of freedom, numerical overflow (including centering overflow),
+/// or degenerate zero total variance.
 pub fn one_way_random_intercept_icc(
     cluster_ids: &[u64],
     outcomes: &[f64],
@@ -86,9 +89,18 @@ pub fn one_way_random_intercept_icc(
         return Err("one-way ICC requires positive total variance".into());
     }
 
+    let anchor = outcomes
+        .iter()
+        .copied()
+        .min_by(f64::total_cmp)
+        .expect("non-empty outcomes were validated above");
     let mut clusters: BTreeMap<u64, Vec<f64>> = BTreeMap::new();
     for (&cluster_id, &outcome) in cluster_ids.iter().zip(outcomes) {
-        clusters.entry(cluster_id).or_default().push(outcome);
+        let centered = outcome - anchor;
+        if !centered.is_finite() {
+            return Err("outcome centering overflowed binary64".into());
+        }
+        clusters.entry(cluster_id).or_default().push(centered);
     }
     let cluster_count = clusters.len();
     let sample_size = outcomes.len();
