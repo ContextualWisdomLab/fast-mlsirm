@@ -289,7 +289,7 @@ class TestJudgePanelGrmRecovery:
         ]
         spec = validate_judge_construct(criterion_ids, n_categories=4)
         matrix = project_judge_results_to_matrix(results, spec)
-        fit = grm.fit_grm(matrix.astype(float), n_cat=4)
+        fit = grm.fit_grm(matrix.astype(float), n_cat=4, model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
         slope_rmse = float(np.sqrt(np.mean((fit.slope[:, 0] - true_slopes) ** 2)))
         estimated_theta = np.asarray(fit.theta).reshape(-1)

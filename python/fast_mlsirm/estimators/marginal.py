@@ -11,9 +11,10 @@ reference. Any change here must be mirrored in the Rust core (and vice versa).
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 
-SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 MAX_FACTOR_DIMENSIONS = 64
 MAX_GPCM_CATEGORIES = 256
 MAX_MARGINAL_WORKING_SET = 100_000_000
@@ -240,9 +241,9 @@ def _preflight_xi_node_count(
 
     Non-spatial models own a single placeholder node and ignore tensor/QMC
     controls so hostile ``q_xi`` objects never execute. Tensor GH rules require
-    an exact built-in integer from :data:`SUPPORTED_Q` and bound the product
-    grid with :func:`_bounded_tensor_node_count`. QMC/MC rules require exact
-    integer ``xi_points`` and never inspect ``q_xi``.
+    an exact built-in integer ``q_xi >= 1`` (#1929: no node-count cap) and
+    bound the product grid with :func:`_bounded_tensor_node_count`. QMC/MC
+    rules require exact integer ``xi_points`` and never inspect ``q_xi``.
     """
     if type(uses_space) is not bool:
         raise ValueError("uses_space must be a boolean")
@@ -260,8 +261,8 @@ def _preflight_xi_node_count(
         raise ValueError("q_xi must be an exact built-in integer")
     if type(latent_dim) is not int or isinstance(latent_dim, bool):
         raise ValueError("latent_dim must be an exact built-in integer")
-    if q_xi not in SUPPORTED_Q:
-        raise ValueError(f"unsupported quadrature size {q_xi}; supported: {list(SUPPORTED_Q)}")
+    if q_xi < 1:
+        raise ValueError(f"q_xi must be >= 1; got {q_xi}")
     if latent_dim < 1:
         raise ValueError("latent_dim must be a positive integer")
     count = _bounded_tensor_node_count(q_xi, latent_dim, limit=_MAX_TENSOR_XI_NODES)
@@ -274,8 +275,9 @@ def _preflight_xi_node_count(
 
 def _gh(q: int) -> tuple[np.ndarray, np.ndarray]:
     """Return ``q``-point probabilists' Gauss-Hermite nodes and unit-sum weights."""
-    if q not in SUPPORTED_Q:
-        raise ValueError(f"unsupported quadrature size {q}; supported: {SUPPORTED_Q}")
+    # #1929: no node-count cap; hermegauss handles any q >= 1 natively.
+    if q < 1:
+        raise ValueError(f"q must be >= 1; got {q}")
     nodes, weights = np.polynomial.hermite_e.hermegauss(q)
     return nodes, weights / weights.sum()
 
@@ -686,23 +688,24 @@ def fit_marginal_numpy(
     y: np.ndarray,
     observed: np.ndarray,
     factor_id: np.ndarray,
-    model: str = "MLS2PLM",
+    *,
+    model: str,
     n_dims: int | None = None,
     latent_dim: int = 2,
     pop: dict | None = None,
-    q_theta: int = 21,
-    q_xi: int = 11,
-    q_u: int = 15,
-    max_iter: int = 200,
-    tol: float = 1e-5,
-    m_steps: int = 4,
+    q_theta: int,
+    q_xi: int,
+    q_u: int,
+    max_iter: int,
+    tol: float,
+    m_steps: int,
     init_zeta_radius: float = 0.5,
     init_sigma_u: float = 0.3,
-    eps_distance: float = 1e-8,
+    eps_distance: float,
     penalty: dict | None = None,
     xi_rule: str = "gh",
-    xi_points: int = 256,
-    xi_seed: int = 0,
+    xi_points: int,
+    xi_seed: int,
     anchors: dict | None = None,
     zero_inflation: bool = False,
     covariate: dict | None = None,
@@ -1420,11 +1423,12 @@ def score_eap(
     b: np.ndarray,
     zeta: np.ndarray,
     tau: float,
-    model: str = "MLS2PLM",
+    *,
+    model: str,
     n_dims: int | None = None,
-    q_theta: int = 21,
-    q_xi: int = 11,
-    eps_distance: float = 1e-8,
+    q_theta: int,
+    q_xi: int,
+    eps_distance: float,
 ) -> dict:
     """EAP scoring of response vectors with **frozen** item parameters.
 
@@ -1505,7 +1509,7 @@ def score_eap(
     }
 
 
-def category_logprobs(base, scores, intercepts):
+def compute_category_logprobs(base, scores, intercepts):
     """Unified scoring-function log category probabilities — the NumPy parity
     reference for the forthcoming Rust GPCM/nominal cell (see
     ``docs/papers/gpcm-nominal-design-spec.md``).
@@ -1537,7 +1541,20 @@ def category_logprobs(base, scores, intercepts):
     return psi - log_z[..., None]
 
 
-def gpcm_node_gradient(base, scores, intercepts, counts):
+def category_logprobs(base, scores, intercepts):
+    """Deprecated alias for :func:`compute_category_logprobs`.
+
+    .. deprecated:: (ADR-0028) use :func:`compute_category_logprobs` instead.
+    """
+    warnings.warn(
+        "category_logprobs is deprecated, use compute_category_logprobs instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_category_logprobs(base, scores, intercepts)
+
+
+def compute_gpcm_node_gradient(base, scores, intercepts, counts):
     """Analytic gradient of the expected complete-data multinomial log-likelihood
     at one quadrature node for the unified GPCM/nominal cell — the parity
     reference for the Rust M-step (``docs/papers/gpcm-nominal-design-spec.md``).
@@ -1557,13 +1574,26 @@ def gpcm_node_gradient(base, scores, intercepts, counts):
     """
     scores = np.asarray(scores, dtype=np.float64)
     counts = np.asarray(counts, dtype=np.float64)
-    p = np.exp(category_logprobs(base, scores, intercepts))
+    p = np.exp(compute_category_logprobs(base, scores, intercepts))
     n = counts.sum()
     resid = counts - n * p
     g_intercepts = resid[1:]
     g_base = float(np.dot(scores, resid))
     g_scores = resid[1:] * np.asarray(base, dtype=np.float64)
     return g_intercepts, g_base, g_scores
+
+
+def gpcm_node_gradient(base, scores, intercepts, counts):
+    """Deprecated alias for :func:`compute_gpcm_node_gradient`.
+
+    .. deprecated:: (ADR-0028) use :func:`compute_gpcm_node_gradient` instead.
+    """
+    warnings.warn(
+        "gpcm_node_gradient is deprecated, use compute_gpcm_node_gradient instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_gpcm_node_gradient(base, scores, intercepts, counts)
 
 
 def _gpcm_item_negll_grad(params, theta_nodes, r_counts):
@@ -1575,7 +1605,7 @@ def _gpcm_item_negll_grad(params, theta_nodes, r_counts):
     intercepts = np.concatenate([[0.0], params[1:]])
     a = np.exp(params[0])
     base = a * np.asarray(theta_nodes, dtype=np.float64)
-    lp = category_logprobs(base, scores, intercepts)  # (n_node, K)
+    lp = compute_category_logprobs(base, scores, intercepts)  # (n_node, K)
     # Optimized: replace np.sum(A * B) with np.vdot(A, B) to avoid intermediate array allocation
     ll = float(np.vdot(r_counts, lp))
     p = np.exp(lp)
@@ -1612,12 +1642,12 @@ def _gpcm_m_step_item(params0, theta_nodes, r_counts, n_newton=10):
     return p
 
 
-def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
+def fit_gpcm_numpy(y, n_cat, *, q_theta, max_iter, tol):
     """Unidimensional GPCM marginal MLE via Bock-Aitkin EM — the
     NumPy parity reference for the polytomous cell of the forthcoming Rust
     kernel (``docs/papers/gpcm-nominal-design-spec.md``). Validates the unified
-    softmax cell (:func:`category_logprobs`) and residual gradient
-    (:func:`gpcm_node_gradient`) in a full EM loop before the Rust port.
+    softmax cell (:func:`compute_category_logprobs`) and residual gradient
+    (:func:`compute_gpcm_node_gradient`) in a full EM loop before the Rust port.
 
     ``y`` is persons x items with integer categories ``0..n_cat-1`` (complete
     data). ``theta ~ N(0, 1)`` on a ``q_theta``-node Gauss-Hermite grid. The
@@ -1698,7 +1728,7 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
     def estep(current_params):
         """Return the posterior over ability nodes for the GPCM EM E-step."""
         item_lp = [
-            category_logprobs(
+            compute_category_logprobs(
                 np.exp(current_params[i, 0]) * nodes,
                 scores,
                 np.concatenate([[0.0], current_params[i, 1:]]),
@@ -1754,7 +1784,7 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
     }
 
 
-def grm_category_logprobs(base, thresholds):
+def compute_grm_category_logprobs(base, thresholds):
     """NumPy parity reference for the Rust GRM cumulative-logit cell
     (``mlsirm_core::poly::grm_logprobs``). ``thresholds`` are the ``K-1``
     cumulative boundary intercepts ``beta_k`` (ordered decreasing);
@@ -1791,3 +1821,16 @@ def grm_category_logprobs(base, thresholds):
         )
     out[..., kb] = ls[..., kb - 1]                      # P(Y=K-1)
     return out
+
+
+def grm_category_logprobs(base, thresholds):
+    """Deprecated alias for :func:`compute_grm_category_logprobs`.
+
+    .. deprecated:: (ADR-0028) use :func:`compute_grm_category_logprobs` instead.
+    """
+    warnings.warn(
+        "grm_category_logprobs is deprecated, use compute_grm_category_logprobs instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_grm_category_logprobs(base, thresholds)

@@ -357,7 +357,7 @@ pub(crate) fn item_score_info(
             let mut hobs = vec![0.0f64; pi * pi];
             let mut x = vec![0.0f64; pi];
             for p in 0..n_persons {
-                if !observed.map_or(true, |o| o[p * n_items + i]) {
+                if !observed.is_none_or(|o| o[p * n_items + i]) {
                     continue;
                 }
                 let mut base = params_i[li];
@@ -395,7 +395,7 @@ pub(crate) fn item_score_info(
             let mut sc = vec![0.0f64; pi];
             let mut u = vec![0.0f64; pi];
             for p in 0..n_persons {
-                if !observed.map_or(true, |o| o[p * n_items + i]) {
+                if !observed.is_none_or(|o| o[p * n_items + i]) {
                     continue;
                 }
                 let mut base = 0.0;
@@ -581,7 +581,7 @@ fn validate(
     }
     for p in 0..n_persons {
         for i in 0..n_items {
-            let seen = observed.map_or(true, |o| o[p * n_items + i]);
+            let seen = observed.is_none_or(|o| o[p * n_items + i]);
             if seen && y[p * n_items + i] >= n_cat {
                 return Err(format!(
                     "responses must be in 0..{n_cat} where observed; found {}",
@@ -598,7 +598,7 @@ fn validate(
             let mut seen = vec![false; n_cat];
             let mut any = false;
             for p in 0..n_persons {
-                if observed.map_or(true, |o| o[p * n_items + i]) {
+                if observed.is_none_or(|o| o[p * n_items + i]) {
                     any = true;
                     seen[y[p * n_items + i]] = true;
                 }
@@ -691,7 +691,7 @@ pub fn fit_mhrm(
         cfg,
     )?;
 
-    let seen = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let seen = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     let dims_of: Vec<Vec<usize>> = (0..n_items)
         .map(|i| {
             (0..n_dims)
@@ -995,12 +995,11 @@ pub fn fit_mhrm(
         // Report the same windowed statistic that defines convergence. Returning only the most
         // recent stochastic step can exceed `tol` even when the window mean legitimately converged.
         final_change = recent.iter().sum::<f64>() / recent.len() as f64;
-        if k > cfg.burn_in && recent.len() == cfg.window {
-            if final_change < cfg.tol {
+        if k > cfg.burn_in && recent.len() == cfg.window
+            && final_change < cfg.tol {
                 converged = true;
                 break;
             }
-        }
     }
 
     // ---- assemble outputs ----

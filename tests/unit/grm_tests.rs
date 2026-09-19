@@ -221,6 +221,8 @@ fn grm_objective_dims_map_pinned_at_d4() {
 }
 
 // build a D=2 confirmatory GRM design (items 0,1 pure dim0; 2,3 pure dim1; item 4 cross-loader).
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn design_d2(n_cat: usize) -> (Vec<u8>, usize, Vec<f64>, Vec<f64>) {
     let n_dims = 2usize;
     let m1 = n_cat - 1;
@@ -246,6 +248,8 @@ fn design_d2(n_cat: usize) -> (Vec<u8>, usize, Vec<f64>, Vec<f64>) {
 /// anchor is positively keyed, so canonicalization preserves the cross-loader's sign). Recovered
 /// thresholds must stay STRICTLY ordered on every item. Baseline structural checks + per-dim EAP.
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn grm_recovers_d2_with_negative_cross_loader() {
     let (n_dims, n_cat) = (2usize, 3usize);
     let m1 = n_cat - 1;
@@ -310,6 +314,8 @@ fn grm_recovers_d2_with_negative_cross_loader() {
 /// co-loader on the same dimension ends NEGATIVE (whole-dimension flip), and the thresholds are
 /// UNCHANGED and still ordered (the flip touches only slopes + theta, never betas).
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn grm_reflection_fires_on_negative_anchor() {
     let (n_dims, n_cat) = (2usize, 3usize);
     let m1 = n_cat - 1;
@@ -641,7 +647,8 @@ fn grm_validation_sampling_rules_and_missing_paths() {
     .is_err());
     assert!(validate(&y, None, &[], 4, 2, 0, 2, &base).is_err());
     assert!(validate(&y, None, &[1; 8], 4, 2, 4, 2, &base).is_err());
-    assert!(validate(&y, None, &pattern, 4, 2, 1, 2, &GrmConfig { q: 3, ..base }).is_err());
+    // #1929: no node-count cap; q=3 is now accepted, only q=0 is rejected.
+    assert!(validate(&y, None, &pattern, 4, 2, 1, 2, &GrmConfig { q: 0, ..base }).is_err());
     let halton = GrmConfig {
         xi_rule: XiRuleKind::Halton,
         xi_points: 4,

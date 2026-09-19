@@ -31,6 +31,11 @@ MAX_GAUSS_HERMITE_NODES = 100
 MAX_MMLE_FALLBACK_WORKSPACE_BYTES = 512 * 1024 * 1024
 
 
+_A_MAGNITUDE_BOUND = 10.0
+"""Largest slope magnitude the M-step accepts. A numerical guard on the Newton
+step, not a model claim, and symmetric so it does not constrain the sign."""
+
+
 def _sigmoid(x: np.ndarray) -> np.ndarray:
     """Logistic sigmoid with the exponent clipped to ``[-35, 35]`` for stability."""
     return 1.0 / (1.0 + np.exp(-np.clip(x, -35.0, 35.0)))
@@ -115,12 +120,12 @@ def fit_mmle_2pl(
     y: np.ndarray,
     observed: np.ndarray,
     *,
-    n_nodes: int = 41,
-    max_iter: int = 500,
-    tol: float = 1e-6,
+    n_nodes: int,
+    max_iter: int,
+    tol: float,
     ridge_a: float = 1e-3,
     ridge_b: float = 1e-3,
-    seed: int = 1,
+    seed: int,
 ) -> dict[str, object]:
     """Calibrate a unidimensional 2PL by MMLE-EM under missing data.
 
@@ -250,7 +255,12 @@ def fit_mmle_2pl(
 
             ai -= da
             bi -= db
-            ai = np.clip(ai, 1e-3, 10.0)
+            # Magnitude guard only, symmetric so it bounds magnitude without
+            # constraining sign. The lower end was 1e-3, which also made a
+            # negative slope structurally unrepresentable: a reverse-keyed item
+            # was floored and reported as 0.001, indistinguishable from an item
+            # that measures nothing. Mirrors the Rust core.
+            ai = np.clip(ai, -_A_MAGNITUDE_BOUND, _A_MAGNITUDE_BOUND)
 
             converged = (np.abs(da) + np.abs(db)) < 1e-8
             done = converged | ~valid
@@ -270,6 +280,23 @@ def fit_mmle_2pl(
     # Optimization: Replace element-wise multiply and axis reduction with dense matrix multiplication
     # to avoid intermediate array allocation
     theta = posterior @ nodes
+
+    # Pin the reflection (a, theta) -> (-a, -theta), which holds a*theta -- hence
+    # the logit, every b, and the likelihood -- fixed, so the sign of the
+    # solution as a whole is not identified by the data. Require the
+    # largest-magnitude slope to be positive: the anchor convention shared with
+    # the Rust core and with the graded, partial-credit and multidimensional
+    # fitters, so all of them agree on the same data. b is invariant under the
+    # flip and is not touched. Without this the sign would rest on
+    # initialization, which the two backends do not share -- Rust starts every
+    # item at exactly a = 1, this reference at 1 + 0.01 * N(0, 1) -- so the
+    # parity contract could not guarantee it.
+    if a.size and a[np.argmax(np.abs(a))] < 0.0:
+        # In place, so the EAP projection above remains the only assignment to
+        # `theta` — the allocation-bounded shape that
+        # tests/test_mmle_eap_projection_contract.py pins.
+        np.negative(a, out=a)
+        np.negative(theta, out=theta)
 
     return {
         "a": a,

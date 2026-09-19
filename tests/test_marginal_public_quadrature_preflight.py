@@ -45,6 +45,7 @@ def test_spatial_q_xi_fails_before_array_coercion(
             model="MLSRM",
             latent_dim=1,
             q_xi=q_xi,  # type: ignore[arg-type]
+            q_theta=21, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0,
         )
 
     assert "caller-secret-q-xi" not in str(caught.value)
@@ -60,14 +61,16 @@ def test_unsupported_exact_q_xi_fails_before_array_coercion(
 
     monkeypatch.setattr(marginal.np, "asarray", forbidden_asarray)
 
-    with pytest.raises(ValueError, match="unsupported quadrature size"):
+    # #1929: no node-count cap; an astronomical q_xi is now caught by the
+    # overflow-safe tensor-grid-size bound instead of a fixed-table lookup.
+    with pytest.raises(ValueError, match="tensor-grid limit"):
         marginal.fit_marginal_numpy(
             object(),  # type: ignore[arg-type]
             object(),  # type: ignore[arg-type]
             object(),  # type: ignore[arg-type]
             model="MLSRM",
             latent_dim=3,
-            q_xi=10**200,
+            q_xi=10**200, q_theta=21, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 

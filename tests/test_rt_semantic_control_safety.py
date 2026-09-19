@@ -114,7 +114,7 @@ def test_fit_speed_accuracy_rejects_integer_subclass_q_before_callback(
     _HostileInt.calls = 0
     responses, times, a, b, alpha, beta = _inputs()
 
-    with pytest.raises(ValueError, match="q must be one of"):
+    with pytest.raises(ValueError, match="q must be an integer"):
         fit_speed_accuracy(
             responses,
             times,
@@ -135,7 +135,7 @@ def test_fit_speed_accuracy_rejects_fractional_q_without_truncation(
     _install_bomb_core(monkeypatch)
     responses, times, a, b, alpha, beta = _inputs()
 
-    with pytest.raises(ValueError, match="q must be one of"):
+    with pytest.raises(ValueError, match="q must be an integer"):
         fit_speed_accuracy(responses, times, a, b, alpha, beta, q=21.9)  # type: ignore[arg-type]
 
 

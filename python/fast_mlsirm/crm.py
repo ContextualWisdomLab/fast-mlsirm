@@ -10,7 +10,6 @@ import numpy as np
 from .config import MAX_MAX_ITER
 
 
-_SUPPORTED_Q_THETA = (7, 11, 15, 21, 31, 41)
 _MAX_CRM_RESPONSE_CELLS = 20_000_000
 _MAX_CRM_RESPONSE_STRUCTURAL_NODES = 2 * _MAX_CRM_RESPONSE_CELLS
 _NUMPY_INTEGER_TYPES = tuple(
@@ -232,9 +231,11 @@ def fit_crm(
     """
     from .fitstats import _core_module
 
+    # #1929: no node-count cap; the Rust core generates any n >= 1 rule on
+    # demand (Golub & Welsch, 1969) and guards allocation overflow.
     q_theta_value = _trusted_integer(q_theta, "q_theta")
-    if q_theta_value not in _SUPPORTED_Q_THETA:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, or 41")
+    if q_theta_value < 1:
+        raise ValueError("q_theta must be >= 1")
     max_iter_value = _trusted_integer(max_iter, "max_iter")
     if not 1 <= max_iter_value <= MAX_MAX_ITER:
         raise ValueError(f"max_iter must be in 1..={MAX_MAX_ITER}")
