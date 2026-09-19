@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2024-05-30 - Skip link accessibility for structural containers
+**Learning:** When implementing "skip to content" links, the target container (e.g., `<main>`) must explicitly include `tabindex="-1"` to allow programmatic keyboard focus. Additionally, `main:focus:not(:focus-visible){outline:none;}` should be added to prevent mouse clicks from triggering unexpected outlines while preserving fallback focus indicators.
+**Action:** Always ensure target containers for skip links have `tabindex="-1"` and proper focus state CSS to handle both mouse clicks and keyboard navigation smoothly.
