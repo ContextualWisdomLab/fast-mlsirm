@@ -34,11 +34,12 @@ MAX_MMLE_FALLBACK_WORKSPACE_BYTES = 512 * 1024 * 1024
 _SLOPE_DIVERGENCE_RAIL = 30.0
 """Numerical safety rail for slope magnitude (not a measurement claim).
 
-At ``|a| = 30`` the logistic is saturated to machine precision over
-``|theta| >= 1.2``, so no larger finite value is numerically distinguishable
-as an optimum; a slope resting on the rail with the penalized M-step still
-pushing outward is reported as diverged, never as an estimate. Symmetric so it
-preserves negative (reverse-keyed) slopes.
+The logistic is saturated to machine precision when the complete linear
+predictor reaches ``|a * theta + b| >= 36``. Because ``b`` is unrestricted, a
+rail slope alone does not imply saturation at every latent node. A slope
+resting on the rail with the penalized M-step still pushing outward is reported
+as diverged, never as an estimate. Symmetric so it preserves negative
+(reverse-keyed) slopes.
 
 Boundary solutions with infinite slopes are Heywood cases (Bock & Aitkin,
 1981, p. 457); ML gives non-finite values for degenerate patterns and Newton
@@ -330,7 +331,7 @@ def fit_mmle_2pl(
     # signs of all slopes jointly, so only magnitudes are consulted here.
     at_rail = np.abs(a) >= _SLOPE_DIVERGENCE_RAIL
     slope_diverged = pressed & at_rail
-    if bool(slope_diverged.any()) and status == "converged":
+    if bool(slope_diverged.any()):
         status = "slope_diverged"
 
     return {
