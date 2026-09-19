@@ -179,11 +179,18 @@ write_json_value <- function(con, x, indent) {
       cat("\n", file = con, sep = "")
     }
     cat(pad, "]", file = con, sep = "")
+  } else if (is.character(x)) {
+    encoded_values <- paste0(
+      "\"", gsub("\"", "\\\"", x, fixed = TRUE), "\""
+    )
+    if (length(encoded_values) > 1L) {
+      cat("[", paste(encoded_values, collapse = ", "), "]", sep = "", file = con)
+    } else {
+      cat(encoded_values, file = con, sep = "")
+    }
   } else if (length(x) > 1L) {
     cat("[", paste(format(x, scientific = FALSE, digits = 15L), collapse = ", "), "]",
       sep = "", file = con)
-  } else if (is.character(x)) {
-    cat("\"", gsub("\"", "\\\"", x, fixed = TRUE), "\"", sep = "", file = con)
   } else if (is.logical(x)) {
     cat(tolower(as.character(x)), file = con, sep = "")
   } else {
