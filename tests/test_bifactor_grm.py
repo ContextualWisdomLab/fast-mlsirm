@@ -208,3 +208,60 @@ def test_non_convergence_is_reported_not_substituted() -> None:
     fit = _fit(y, max_iter=1, tol=1e-12)
     assert not fit.converged
     assert fit.termination_reason == "max_iter_reached"
+
+
+def test_issue_1976_dense_q_never_tolerance_met_at_start_slopes() -> None:
+    """#1976: q>=421 previously reported tolerance_met with a_general at 1.0."""
+    smap = np.array([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, -1], dtype=np.int64)
+    n, j, k = 340, 13, 4
+
+    def _simulate(seed: int) -> np.ndarray:
+        rng = np.random.default_rng(seed)
+        a_g = rng.uniform(0.8, 2.5, j)
+        a_s = np.where(smap >= 0, rng.uniform(0.5, 1.5, j), 0.0)
+        thr = np.sort(rng.normal(0, 1.2, (j, k - 1)), axis=1)[:, ::-1]
+        tg = rng.standard_normal(n)
+        ts = rng.standard_normal((n, 3))
+        y = np.zeros((n, j), dtype=np.int64)
+        for i in range(j):
+            eta = a_g[i] * tg + (a_s[i] * ts[:, smap[i]] if smap[i] >= 0 else 0.0)
+            cum = 1.0 / (1.0 + np.exp(-(eta[:, None] + thr[i][None, :])))
+            p = np.column_stack(
+                [
+                    1.0 - cum[:, 0],
+                    cum[:, 0] - cum[:, 1],
+                    cum[:, 1] - cum[:, 2],
+                    cum[:, 2],
+                ]
+            )
+            y[:, i] = np.sum(rng.random(n)[:, None] > np.cumsum(p, axis=1), axis=1)
+        return y
+
+    y = None
+    for seed in range(8, 40):
+        cand = _simulate(seed)
+        if all(len(np.unique(cand[:, i])) == k for i in range(j)):
+            y = cand
+            break
+    assert y is not None, "no simulation seed with all categories observed"
+
+    fit = fit_bifactor_grm(
+        y,
+        smap,
+        n_cat=4,
+        n_specific=3,
+        q_general=481,
+        q_specific=481,
+        max_iter=2000,
+        tol=1e-6,
+        n_starts=1,
+        seed=20260917,
+    )
+    if fit.termination_reason == "tolerance_met":
+        assert fit.converged
+        assert not np.allclose(fit.a_general, 1.0), (
+            "tolerance_met must not leave a_general at the start"
+        )
+    elif np.allclose(fit.a_general, 1.0):
+        assert not fit.converged
+        assert fit.termination_reason == "numerical_em_stall"

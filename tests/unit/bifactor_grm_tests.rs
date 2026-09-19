@@ -527,3 +527,141 @@ fn estep_gpu_matches_cpu_counts_and_loglik() {
         "expected counts must agree within f32 envelope; got max|diff|={max_diff:.3e}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// #1976: zero Gauss-Hermite prior mass must not NaN-poison E-step counts;
+// a fit that never leaves its start must not report tolerance_met.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn zero_prior_weight_nodes_do_not_nan_estep_counts() {
+    use super::{e_step, fill_logprob_tables, gh_rule, initial_params, validate};
+
+    let (y, n_persons) = tiny_data();
+    let cfg = valid_config();
+    let v = validate(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("tiny fixture must validate");
+    let (tg, wg) = gh_rule(7).expect("Q=7 rule must exist");
+    let (ts, ws) = gh_rule(7).expect("Q=7 rule must exist");
+    let params = initial_params(&v, &y, None, cfg.seed, 0);
+    let tables = fill_logprob_tables(&v, &params, tg, ts, 7, 7);
+    let mut log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    // Inject exactly-zero prior mass at both tails (the large-q Golub–Welsch
+    // failure mode from #1976).
+    log_wg[0] = f64::NEG_INFINITY;
+    log_wg[6] = f64::NEG_INFINITY;
+
+    let (ll, counts) = e_step(
+        &v,
+        &y,
+        None,
+        &tables,
+        &log_wg,
+        &log_ws,
+        7,
+        7,
+        tg,
+        ts,
+        crate::Device::Cpu,
+    );
+    assert!(ll.is_finite(), "observed-data loglik must stay finite; got {ll}");
+    for (i, item_counts) in counts.iter().enumerate() {
+        for (node, cat) in item_counts.iter().enumerate() {
+            for (k, &c) in cat.iter().enumerate() {
+                assert!(
+                    c.is_finite(),
+                    "count[{i}][{node}][{k}] must be finite; got {c}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn refuse_tolerance_reclassifies_bit_identical_start() {
+    use super::{refuse_tolerance_on_frozen_start, ItemParams};
+
+    let start = vec![ItemParams {
+        a_g: 1.0,
+        a_s: Some(0.8),
+        d: vec![1.0, -1.0],
+    }];
+    let frozen = start.clone();
+    let mut converged = true;
+    let mut reason = "tolerance_met".to_string();
+    refuse_tolerance_on_frozen_start(&mut converged, &mut reason, &frozen, &start);
+    assert!(!converged);
+    assert_eq!(reason, "numerical_em_stall");
+
+    let mut moved = start.clone();
+    moved[0].a_g = 1.5;
+    converged = true;
+    reason = "tolerance_met".to_string();
+    refuse_tolerance_on_frozen_start(&mut converged, &mut reason, &moved, &start);
+    assert!(converged);
+    assert_eq!(reason, "tolerance_met");
+}
+
+#[test]
+fn dense_quadrature_fit_never_claims_tolerance_at_start_slopes() {
+    // Compact #1976-shaped design (13 items / 3 specifics / 4 cats). q=421 is
+    // where Golub–Welsch produces exactly-zero prior weights; the pre-fix
+    // path reported tolerance_met with a_general still at 1.0.
+    let n_persons = 60usize;
+    let n_items = 13usize;
+    let n_specific = 3usize;
+    let n_cat = 4usize;
+    let specific_map: [i32; 13] = [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, -1];
+    let mut y = vec![0usize; n_persons * n_items];
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            y[p * n_items + i] = (p + 3 * i) % n_cat;
+        }
+    }
+    let cfg = BifactorGrmConfig {
+        q_general: 421,
+        q_specific: 421,
+        max_iter: 12,
+        tol: 1e-6,
+        n_starts: 1,
+        seed: 20260917,
+        newton_iter: 5,
+        ridge: 1e-4,
+        device: crate::Device::Cpu,
+    };
+    let fit = fit_bifactor_grm(
+        &y,
+        None,
+        &specific_map,
+        n_persons,
+        n_items,
+        n_specific,
+        n_cat,
+        &cfg,
+    )
+    .expect("dense-q fit must return a result");
+    if fit.termination_reason == "tolerance_met" {
+        assert!(fit.converged);
+        assert!(
+            fit.a_general.iter().any(|&a| a != 1.0),
+            "tolerance_met must not leave a_general at the 1.0 start; got {:?}",
+            &fit.a_general[..3]
+        );
+    } else if fit.a_general.iter().all(|&a| a == 1.0) {
+        assert!(
+            !fit.converged,
+            "parameters frozen at start must not report converged"
+        );
+        assert_eq!(fit.termination_reason, "numerical_em_stall");
+    }
+}

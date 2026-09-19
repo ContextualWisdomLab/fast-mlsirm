@@ -4,7 +4,8 @@
 //! NumPy layout, delegates to the core, and marshals results into Python dicts.
 
 use mlsirm_core::regression::{
-    chi2_sf_df1, f_sf, fit_ols_hc, linear_contrast, t_sf, HcType, OlsFit,
+    chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc, linear_contrast,
+    slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
 };
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -92,6 +93,68 @@ fn py_linear_contrast(
     contrast_dict(py, result)
 }
 
+#[pyfunction(name = "xwz_e_design_row")]
+fn py_xwz_e_design_row(py: Python<'_>, x: f64, w: f64, z: f64, e: f64) -> Py<PyArray1<f64>> {
+    let row = xwz_e_design_row(x, w, z, e);
+    PyArray1::from_slice(py, &row).into()
+}
+
+#[pyfunction(name = "design_row_dot")]
+fn py_design_row_dot(row: PyReadonlyArray1<'_, f64>, beta: PyReadonlyArray1<'_, f64>) -> PyResult<f64> {
+    design_row_dot(row.as_slice()?, beta.as_slice()?).map_err(PyValueError::new_err)
+}
+
+#[pyfunction(
+    name = "conditional_slope",
+    signature = (beta, vcov, focal, x, w, z, e, df)
+)]
+fn py_conditional_slope(
+    py: Python<'_>,
+    beta: PyReadonlyArray1<'_, f64>,
+    vcov: PyReadonlyArray1<'_, f64>,
+    focal: &str,
+    x: f64,
+    w: f64,
+    z: f64,
+    e: f64,
+    df: f64,
+) -> PyResult<Py<PyDict>> {
+    let result = conditional_slope(
+        beta.as_slice()?,
+        vcov.as_slice()?,
+        focal,
+        x,
+        w,
+        z,
+        e,
+        df,
+    )
+    .map_err(PyValueError::new_err)?;
+    contrast_dict(py, result)
+}
+
+#[pyfunction(name = "slope_difference")]
+fn py_slope_difference(
+    py: Python<'_>,
+    beta: PyReadonlyArray1<'_, f64>,
+    vcov: PyReadonlyArray1<'_, f64>,
+    focal: &str,
+    probes_a: (f64, f64, f64, f64),
+    probes_b: (f64, f64, f64, f64),
+    df: f64,
+) -> PyResult<Py<PyDict>> {
+    let result = slope_difference(
+        beta.as_slice()?,
+        vcov.as_slice()?,
+        focal,
+        probes_a,
+        probes_b,
+        df,
+    )
+    .map_err(PyValueError::new_err)?;
+    contrast_dict(py, result)
+}
+
 #[pyfunction(name = "chi2_sf_df1")]
 fn py_chi2_sf_df1(q: f64) -> f64 {
     chi2_sf_df1(q)
@@ -110,8 +173,13 @@ fn py_t_sf(t: f64, df: f64) -> f64 {
 #[pymodule]
 #[pyo3(name = "_regression_core")]
 fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("XWZ_E_K", XWZ_E_K)?;
     m.add_function(wrap_pyfunction!(py_fit_ols_hc, m)?)?;
     m.add_function(wrap_pyfunction!(py_linear_contrast, m)?)?;
+    m.add_function(wrap_pyfunction!(py_xwz_e_design_row, m)?)?;
+    m.add_function(wrap_pyfunction!(py_design_row_dot, m)?)?;
+    m.add_function(wrap_pyfunction!(py_conditional_slope, m)?)?;
+    m.add_function(wrap_pyfunction!(py_slope_difference, m)?)?;
     m.add_function(wrap_pyfunction!(py_chi2_sf_df1, m)?)?;
     m.add_function(wrap_pyfunction!(py_f_sf, m)?)?;
     m.add_function(wrap_pyfunction!(py_t_sf, m)?)?;

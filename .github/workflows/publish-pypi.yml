@@ -5,6 +5,24 @@ name: Publish Package
 # tag. The canonical release-tag workflow dispatches this workflow explicitly
 # because events created with GITHUB_TOKEN do not recursively start ordinary
 # event-triggered workflows.
+#
+# Dual-path note (ADR-0029 / docs/orchestration/release-publish-contract.md):
+# This local workflow body remains the default execution path. Do NOT remove it
+# or switch callers to ContextualWisdomLab/.github until one full release has
+# succeeded via the central reusable workflow. A SEPARATE thin-wrapper PR will
+# pin `uses: ...@<exact-merged-sha>` after ContextualWisdomLab/.github lands
+# reusable workflows (expected central name: publish-package / equivalent —
+# align to whatever that PR ships). Exact SHA/path TBD — leave commented; do
+# not invent a live uses: that would fail CI:
+#
+# # jobs:
+# #   call-central:
+# #     uses: ContextualWisdomLab/.github/.github/workflows/<publish-package-or-shipped-name>.yml@<exact-sha>
+# #     with:
+# #       release_tag: ${{ inputs.release_tag }}
+# #       release_commit: ${{ inputs.release_commit }}
+# #       control_plane_commit: ${{ inputs.control_plane_commit }}
+# #     secrets: inherit
 
 on:
   workflow_dispatch:
@@ -127,6 +145,67 @@ jobs:
           command: sdist
           maturin-version: v1.14.1
           args: --out dist
+      # Historical release tags predate the pyproject include workaround for
+      # maturin omitting LICENSE from mixed-layout sdists while still writing
+      # License-File metadata. Inject the checked-out LICENSE when missing so
+      # already-cut tags remain publishable without retagging.
+      - name: Ensure LICENSE is present in the sdist
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import io
+          import sys
+          import tarfile
+          from pathlib import Path
+
+          dist = Path("dist")
+          archives = sorted(dist.glob("*.tar.gz"))
+          if len(archives) != 1:
+              raise SystemExit(f"expected exactly one sdist archive, found {archives!r}")
+          archive = archives[0]
+          license_path = Path("LICENSE")
+          if not license_path.is_file():
+              raise SystemExit("checked-out release source is missing LICENSE")
+          license_bytes = license_path.read_bytes()
+
+          with tarfile.open(archive, "r:gz") as reader:
+              names = reader.getnames()
+              members = reader.getmembers()
+              file_members = {
+                  member.name: reader.extractfile(member).read()
+                  for member in members
+                  if member.isfile()
+              }
+
+          roots = {name.split("/", 1)[0] for name in names if name}
+          if len(roots) != 1:
+              raise SystemExit(f"sdist must have a single top-level directory, found {sorted(roots)!r}")
+          root = next(iter(roots))
+          license_member = f"{root}/LICENSE"
+          if license_member in file_members:
+              if file_members[license_member] != license_bytes:
+                  raise SystemExit("sdist LICENSE content does not match checked-out LICENSE")
+              print(f"{archive.name} already contains {license_member}")
+              sys.exit(0)
+
+          rebuilt = archive.with_suffix(archive.suffix + ".rewritten")
+          with tarfile.open(archive, "r:gz") as reader, tarfile.open(rebuilt, "w:gz") as writer:
+              for member in members:
+                  payload = reader.extractfile(member) if member.isfile() else None
+                  writer.addfile(member, payload)
+              info = tarfile.TarInfo(name=license_member)
+              info.size = len(license_bytes)
+              info.mode = 0o644
+              writer.addfile(info, io.BytesIO(license_bytes))
+
+          rebuilt.replace(archive)
+          with tarfile.open(archive, "r:gz") as reader:
+              if license_member not in reader.getnames():
+                  raise SystemExit(f"failed to inject {license_member} into {archive.name}")
+          print(f"injected {license_member} into {archive.name}")
+          PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dist-sdist
@@ -240,7 +319,48 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
-        run: gh release upload "$RELEASE_TAG" dist/* --repo "${{ github.repository }}"
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Immutable GitHub Releases reject later asset uploads (HTTP 422).
+          # Skip cleanly so a PyPI-only republish of an already-cut release is
+          # not forced into an overall workflow FAILURE by an unrecoverable
+          # asset sink, while still failing closed for mutable releases.
+          immutable="$(gh api "repos/$REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.immutable // false')"
+          if [ "$immutable" = "true" ]; then
+            echo "release $RELEASE_TAG is immutable; skipping GitHub asset upload"
+            exit 0
+          fi
+          # Per-file upload: already-present assets also return HTTP 422
+          # (name already_exists / immutable). Treat those as success so
+          # retries after a partial attach remain green; other failures fail closed.
+          shopt -s nullglob
+          assets=(dist/*)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "no dist artifacts to attach" >&2
+            exit 1
+          fi
+          for asset in "${assets[@]}"; do
+            upload_log="$(mktemp)"
+            set +e
+            gh release upload "$RELEASE_TAG" "$asset" --repo "$REPOSITORY" >"$upload_log" 2>&1
+            status=$?
+            set -e
+            if [ "$status" -eq 0 ]; then
+              rm -f "$upload_log"
+              continue
+            fi
+            if grep -Eiq 'HTTP 422|already[_ ]exists|immutable|unprocessable' "$upload_log"; then
+              echo "skipping already-uploaded or immutable asset: $asset"
+              cat "$upload_log"
+              rm -f "$upload_log"
+              continue
+            fi
+            cat "$upload_log" >&2
+            rm -f "$upload_log"
+            echo "failed to attach release asset: $asset" >&2
+            exit 1
+          done
 
   publish-pypi:
     name: publish to PyPI
@@ -263,3 +383,6 @@ jobs:
         with:
           password: ${{ secrets.PIPY_TOKEN }}
           attestations: false
+          # Partial publishes (wheels accepted, sdist rejected) must be
+          # retryable without failing on already-uploaded filenames.
+          skip-existing: true

@@ -429,6 +429,82 @@ pub(crate) fn dispatch_count(total: usize) -> u32 {
     total.div_ceil(WORKGROUP_SIZE as usize) as u32
 }
 
+/// Factor a 1-D workgroup count into `(x, y, z)` so each axis stays within the
+/// adapter's `max_compute_workgroups_per_dimension` (65535 on Apple Metal /
+/// WebGPU). Extra threads from ceiling padding are skipped by the shader's
+/// `idx >= total` guard. Returns `None` when even a full 3-D grid cannot cover
+/// `n_groups` (caller falls back to CPU).
+pub(crate) fn dispatch_workgroups_nd(n_groups: u32, max_per_dim: u32) -> Option<(u32, u32, u32)> {
+    let n = n_groups.max(1);
+    if max_per_dim == 0 {
+        return None;
+    }
+    if n <= max_per_dim {
+        return Some((n, 1, 1));
+    }
+    let max = u64::from(max_per_dim);
+    let need = u64::from(n);
+    let x = max;
+    let y_needed = need.div_ceil(x);
+    if y_needed <= max {
+        return Some((max_per_dim, y_needed as u32, 1));
+    }
+    let y = max;
+    let z_needed = need.div_ceil(x.checked_mul(y)?);
+    if z_needed <= max {
+        return Some((max_per_dim, max_per_dim, z_needed as u32));
+    }
+    None
+}
+
+/// True when an `f32` storage buffer of `len` elements fits the adapter's
+/// `max_buffer_size` and `max_storage_buffer_binding_size` (queried at runtime;
+/// no hardcoded byte caps).
+pub(crate) fn storage_buffer_fits(limits: &wgpu::Limits, len: usize) -> bool {
+    let Some(bytes) = len.checked_mul(std::mem::size_of::<f32>()) else {
+        return false;
+    };
+    bytes as u64 <= limits.max_buffer_size
+        && bytes <= limits.max_storage_buffer_binding_size as usize
+}
+
+#[cfg(test)]
+mod dispatch_nd_tests {
+    use super::dispatch_workgroups_nd;
+
+    #[test]
+    fn one_dimensional_when_under_limit() {
+        assert_eq!(dispatch_workgroups_nd(100, 65535), Some((100, 1, 1)));
+        assert_eq!(dispatch_workgroups_nd(65535, 65535), Some((65535, 1, 1)));
+    }
+
+    #[test]
+    fn two_dimensional_covers_metal_bifactor_blk_counts() {
+        // AC late-life q=241 multigroup bootstrap: reduce_counts_blk needed
+        // 141573 workgroups on x alone and Metal rejected it.
+        let (x, y, z) = dispatch_workgroups_nd(141_573, 65_535).expect("fits 2-D");
+        assert!(x <= 65_535 && y <= 65_535 && z == 1);
+        assert!(u64::from(x) * u64::from(y) * u64::from(z) >= 141_573);
+    }
+
+    #[test]
+    fn three_dimensional_when_needed() {
+        let max = 10u32;
+        let n = max * max + 1;
+        let (x, y, z) = dispatch_workgroups_nd(n, max).expect("fits 3-D");
+        assert_eq!((x, y), (max, max));
+        assert!(z >= 2 && z <= max);
+        assert!(u64::from(x) * u64::from(y) * u64::from(z) >= u64::from(n));
+    }
+
+    #[test]
+    fn none_when_beyond_cube() {
+        let max = 2u32;
+        let beyond = max * max * max + 1;
+        assert_eq!(dispatch_workgroups_nd(beyond, max), None);
+    }
+}
+
 /// GPGPU evaluation of the penalized negative log-likelihood and its gradient.
 ///
 /// Returns `None` when no compatible GPU adapter can be initialized, signalling

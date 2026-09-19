@@ -102,7 +102,13 @@
 //! fitter returns `Err` naming the item and category instead of imputing.
 //! Non-convergence at `max_iter` is reported via `converged == false` with
 //! `termination_reason == "max_iter_reached"` — never filled with a
-//! substitute (#1912 acceptance criterion 3).
+//! substitute (#1912 acceptance criterion 3). A relative loglik change that
+//! meets `tol` while every item parameter remains bit-identical to the
+//! initializer is reported as `converged == false` with
+//! `termination_reason == "numerical_em_stall"` instead of `tolerance_met`
+//! (#1976: exactly-zero Gauss-Hermite weights at large `q` previously
+//! formed `(-inf) - (-inf)` in the joint posterior, poisoned E-step counts
+//! with NaN, froze the M-step, and false-converged on a flat surface).
 //!
 //! # References (APA 7th ed.)
 //!
@@ -485,6 +491,49 @@ fn log_sum_exp(xs: &[f64]) -> f64 {
     mx + acc.ln()
 }
 
+/// Strip the quadrature prior from `gen_log = log_w + general-only` at one
+/// node. Returns `None` when the prior weight is non-finite (exactly-zero
+/// Gauss-Hermite mass appears at large `q` under Golub–Welsch), so callers
+/// can skip the node instead of evaluating `(-inf) - (-inf)` and writing
+/// NaN expected counts that freeze the M-step while the relative loglik
+/// change still trips `tolerance_met` (#1976).
+#[inline]
+fn general_only_without_prior(gen_log: f64, log_w: f64) -> Option<f64> {
+    if !log_w.is_finite() {
+        return None;
+    }
+    Some(gen_log - log_w)
+}
+
+/// True when every item's slopes and thresholds are bit-identical to `start`
+/// (the EM surface never left the initializer). Used to refuse `tolerance_met`
+/// on a numerically frozen start (#1976).
+fn params_unchanged_from_start(current: &[ItemParams], start: &[ItemParams]) -> bool {
+    if current.len() != start.len() {
+        return false;
+    }
+    current.iter().zip(start.iter()).all(|(a, b)| {
+        a.a_g == b.a_g
+            && a.a_s == b.a_s
+            && a.d.len() == b.d.len()
+            && a.d.iter().zip(b.d.iter()).all(|(x, y)| x == y)
+    })
+}
+
+/// Reclassify a relative-change stop that fired with parameters still at the
+/// start as a numerical EM stall (never `tolerance_met`).
+fn refuse_tolerance_on_frozen_start(
+    converged: &mut bool,
+    termination_reason: &mut String,
+    current: &[ItemParams],
+    start: &[ItemParams],
+) {
+    if *converged && params_unchanged_from_start(current, start) {
+        *converged = false;
+        *termination_reason = "numerical_em_stall".to_string();
+    }
+}
+
 /// One reduced E-step sweep: observed-data loglik plus expected category
 /// counts per item (`counts[i][node][k]`, `node = g * qs + h` for block
 /// items, `node = g` for general-only items).
@@ -655,7 +704,11 @@ pub(crate) fn e_step(
             }
             for g in 0..qg {
                 // Sum of the OTHER blocks' log-integrals at g.
-                let mut others = gen_log[g] - log_wg[g];
+                // Skip exactly-zero prior mass: `gen_log - log_wg` is NaN when
+                // both are -inf and would poison every item's expected counts.
+                let Some(mut others) = general_only_without_prior(gen_log[g], log_wg[g]) else {
+                    continue;
+                };
                 for s2 in 0..v.n_specific {
                     if s2 != s {
                         others += log_i[s2 * qg + g];
@@ -664,6 +717,9 @@ pub(crate) fn e_step(
                 for h in 0..qs {
                     let log_post = log_wg[g] + block_acc[(s * qg + g) * qs + h] + others - log_lp;
                     let post = log_post.exp();
+                    if !post.is_finite() {
+                        continue;
+                    }
                     for &i in members {
                         if !is_obs(p, i) {
                             continue;
@@ -836,6 +892,7 @@ fn run_single_start(
     start: usize,
 ) -> Result<SingleStartOutcome, String> {
     let mut params = initial_params(v, y, observed, cfg.seed, start);
+    let start_params = params.clone();
     // Latent coordinates per expected-count node.
     let mut node_g: Vec<Vec<f64>> = Vec::with_capacity(v.n_items);
     let mut node_s: Vec<Vec<f64>> = Vec::with_capacity(v.n_items);
@@ -914,6 +971,12 @@ fn run_single_start(
         }
         n_iter += 1;
     }
+    refuse_tolerance_on_frozen_start(
+        &mut converged,
+        &mut termination_reason,
+        &params,
+        &start_params,
+    );
     Ok(SingleStartOutcome {
         params,
         loglik_trace,
@@ -1937,7 +2000,9 @@ fn e_step_multigroup(
                 continue;
             }
             for t in 0..qg {
-                let mut others = gen_log[t] - log_wg[t];
+                let Some(mut others) = general_only_without_prior(gen_log[t], log_wg[t]) else {
+                    continue;
+                };
                 for s2 in 0..v.n_specific {
                     if s2 != s {
                         others += log_i[s2 * qg + t];
@@ -1947,6 +2012,9 @@ fn e_step_multigroup(
                     let log_post =
                         log_wg[t] + block_acc[(s * qg + t) * qs + h] + others - log_lp;
                     let post = log_post.exp();
+                    if !post.is_finite() {
+                        continue;
+                    }
                     // Specific moments at zero mean for the variance M-step.
                     let ts = ts_groups[g][s][h];
                     w_spec[g][s] += post;
@@ -1994,6 +2062,7 @@ fn run_single_start_multigroup(
         start,
         cfg.estimate_specific_vars,
     );
+    let start_params_groups = params_groups.clone();
     // Latent coordinates per expected-count node (rebuilt when mus/sigmas/
     // taus move): node_g[node]/node_s[node] parallel `counts[g][i]`.
     // No pre-allocation from `max_iter`: it is caller-owned and unbounded
@@ -2190,6 +2259,15 @@ fn run_single_start_multigroup(
             }
         }
         n_iter += 1;
+    }
+    if converged
+        && params_groups
+            .iter()
+            .zip(start_params_groups.iter())
+            .all(|(cur, start)| params_unchanged_from_start(cur, start))
+    {
+        converged = false;
+        termination_reason = "numerical_em_stall".to_string();
     }
     Ok(MultiStartOutcome {
         params_groups,

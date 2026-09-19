@@ -86,8 +86,16 @@ def _write_required_policy_files(root: Path) -> None:
         _touch(root / relative)
     token_docs = {
         "README.md": """
+        fast-mlsirm
+        Project Status
+        """,
+        "docs/commercial_readiness.md": """
         Commercial Readiness
-        Enterprise Sales Readiness
+        Seller Acceptance Checklist
+        Enterprise Sales Gate
+        Security
+        Support
+        Release Gate
         scripts/release_acceptance.py
         scripts/sales_readiness.py
         scripts/build_release_evidence_index.py
@@ -96,14 +104,8 @@ def _write_required_policy_files(root: Path) -> None:
         scripts/build_pr_queue_governance.py
         scripts/build_figma_evidence_sync.py
         """,
-        "docs/commercial_readiness.md": """
-        Seller Acceptance Checklist
-        Enterprise Sales Gate
-        Security
-        Support
-        Release Gate
-        """,
         "docs/enterprise_sales_readiness.md": """
+        Enterprise Sales Readiness
         KRW 2,000,000,000
         Procurement Evidence
         Customer Acceptance Evidence
@@ -320,6 +322,37 @@ def test_sales_readiness_passes_with_20b_product_evidence(tmp_path):
     assert manifest["require_20b_product"] is True
     check_names = {check["name"] for check in manifest["checks"]}
     assert "20b:figma_code_connect_disabled" in check_names
+
+
+def test_sales_readiness_fails_when_readme_leaks_internal_commercial_language(
+    tmp_path,
+):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    readme = repo_root / "README.md"
+    readme.write_text(
+        readme.read_text(encoding="utf-8") + "\n## Commercial Readiness\n",
+        encoding="utf-8",
+    )
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=False,
+        check_import=False,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    failed = {check["name"] for check in manifest["failed_checks"]}
+    assert "public_boundary:README.md" in failed
 
 
 def test_sales_readiness_fails_when_20b_artifact_is_missing(tmp_path):

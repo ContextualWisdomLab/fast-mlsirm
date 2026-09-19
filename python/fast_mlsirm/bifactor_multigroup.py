@@ -152,9 +152,9 @@ class BifactorMultigroupFit:
     to ``0`` / ``1``); ``specific_sd`` is ``n_groups x n_specific`` (``[0]``
     all ``1``). ``theta_g_eap`` / ``theta_g_sd`` are length ``n_persons`` on
     the common (reference) scale; ``group_category_counts`` is ``n_groups x
-    n_items x n_cat``. ``termination_reason`` is ``"tolerance_met"`` or
-    ``"max_iter_reached"``; ``best_start`` the winning start in
-    ``0..n_starts``.
+    n_items x n_cat``. ``termination_reason`` is ``"tolerance_met"``,
+    ``"max_iter_reached"``, or ``"numerical_em_stall"`` (see #1976);
+    ``best_start`` the winning start in ``0..n_starts``.
     """
 
     a_general: np.ndarray

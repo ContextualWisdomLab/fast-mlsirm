@@ -127,3 +127,54 @@ fn rejects_rank_deficient_and_bad_hat() {
     assert!(fit_ols(&x, &y, 2, 2).is_err());
     assert!(HcType::parse("HC9").is_err());
 }
+
+#[test]
+fn conditional_slope_weights_match_aiken_west_xz() {
+    // Synthetic 2-way X×Z interaction inside the 10-column XWZ+E layout:
+    // dY/dX | Z=z = bX + bXZ*z  (W=E=0).
+    let w_x = conditional_slope_weights("X", 0.0, 0.0, 1.5, 0.0).unwrap();
+    assert_close(w_x[1], 1.0, 0.0);
+    assert_close(w_x[6], 1.5, 0.0);
+    assert!(w_x.iter().enumerate().all(|(i, v)| i == 1 || i == 6 || *v == 0.0));
+
+    let w_z = conditional_slope_weights("Z", 2.0, -1.0, 0.0, 0.0).unwrap();
+    assert_close(w_z[3], 1.0, 0.0);
+    assert_close(w_z[6], 2.0, 0.0);
+    assert_close(w_z[7], -1.0, 0.0);
+    assert_close(w_z[9], 2.0 * -1.0, 0.0);
+
+    let row = xwz_e_design_row(1.0, 2.0, 3.0, 4.0);
+    assert_eq!(
+        row,
+        [1.0, 1.0, 2.0, 3.0, 4.0, 2.0, 3.0, 6.0, 4.0, 6.0]
+    );
+    let beta = vec![0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    assert_close(design_row_dot(&row, &beta).unwrap(), 1.5, 1e-12);
+}
+
+#[test]
+fn slope_difference_equals_weight_difference_contrast() {
+    let mut beta = vec![0.0_f64; XWZ_E_K];
+    beta[1] = -0.3;
+    beta[8] = -0.05;
+    let mut vcov = vec![0.0_f64; XWZ_E_K * XWZ_E_K];
+    for i in 0..XWZ_E_K {
+        vcov[i * XWZ_E_K + i] = 0.01;
+    }
+    let se = 2.0;
+    let got = slope_difference(
+        &beta,
+        &vcov,
+        "X",
+        (0.0, 0.0, 0.0, se),
+        (0.0, 0.0, 0.0, -se),
+        100.0,
+    )
+    .unwrap();
+    assert_close(got.estimate, beta[8] * 2.0 * se, 1e-12);
+    let mut dx = vec![0.0_f64; XWZ_E_K];
+    dx[8] = 2.0 * se;
+    let refc = linear_contrast(&beta, &vcov, &dx, 100.0).unwrap();
+    assert_close(got.estimate, refc.estimate, 1e-12);
+    assert_close(got.se, refc.se, 1e-12);
+}
