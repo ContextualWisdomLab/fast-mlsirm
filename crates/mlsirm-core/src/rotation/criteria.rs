@@ -543,18 +543,160 @@ fn tandem(l: &[f64], rows: usize, factors: usize, first: bool) -> CriterionEvalu
     CriterionEvaluation { value, gradient }
 }
 
+/// Return the floor base-two exponent of a finite positive binary64 value.
+///
+/// This is derived from the encoded exponent/significand and therefore does not
+/// call a platform transcendental or logarithm implementation.
+fn binary_exponent_positive(value: f64) -> i32 {
+    const FRACTION_MASK: u64 = 0x000f_ffff_ffff_ffff;
+    debug_assert!(value.is_finite() && value > 0.0);
+
+    let bits = value.to_bits();
+    let exponent_field = ((bits >> 52) & 0x7ff) as i32;
+    if exponent_field == 0 {
+        let fraction = bits & FRACTION_MASK;
+        let bit_index = 63_i32 - fraction.leading_zeros() as i32;
+        bit_index - 1074
+    } else {
+        exponent_field - 1023
+    }
+}
+
+/// Construct an exact finite binary64 power of two for exponents -1023..=1023.
+///
+/// The -1023 endpoint is subnormal; every other supported exponent is encoded as
+/// a normal value. Oblimax uses this only as an exact range-conditioning scale.
+fn exact_power_of_two(exponent: i32) -> f64 {
+    debug_assert!((-1023..=1023).contains(&exponent));
+    if exponent == -1023 {
+        f64::from_bits(1_u64 << 51)
+    } else {
+        f64::from_bits(((exponent + 1023) as u64) << 52)
+    }
+}
+
+/// Evaluate the natural logarithm using a fixed binary64 operator sequence.
+///
+/// The input must be finite and strictly positive. The implementation normalizes
+/// the IEEE-754 significand with exact power-of-two scaling and evaluates the
+/// `atanh` series with a fixed 24-term Kahan-compensated reduction. Unlike
+/// `f64::ln`, this criterion-local reference does not delegate to a
+/// platform-dependent transcendental implementation.
+fn deterministic_ln_positive(value: f64) -> Option<f64> {
+    const FRACTION_MASK: u64 = 0x000f_ffff_ffff_ffff;
+    const LN_2: f64 = f64::from_bits(0x3fe6_2e42_fefa_39ef);
+    const SQRT_2: f64 = f64::from_bits(0x3ff6_a09e_667f_3bcd);
+
+    if !value.is_finite() || value <= 0.0 {
+        return None;
+    }
+
+    let bits = value.to_bits();
+    let exponent_field = ((bits >> 52) & 0x7ff) as i32;
+    let fraction = bits & FRACTION_MASK;
+    let (mut mantissa, mut exponent) = if exponent_field == 0 {
+        let bit_index = 63_i32 - fraction.leading_zeros() as i32;
+        let shift = 52_i32 - bit_index;
+        let normalized_fraction = (fraction << shift as u32) & FRACTION_MASK;
+        (
+            f64::from_bits((1023_u64 << 52) | normalized_fraction),
+            bit_index - 1074,
+        )
+    } else {
+        (
+            f64::from_bits((1023_u64 << 52) | fraction),
+            exponent_field - 1023,
+        )
+    };
+
+    if mantissa > SQRT_2 {
+        mantissa *= 0.5;
+        exponent += 1;
+    }
+
+    let y = (mantissa - 1.0) / (mantissa + 1.0);
+    let y_squared = y * y;
+    let mut term = y;
+    let mut sum = 0.0;
+    let mut correction = 0.0;
+    let mut denominator = 1.0;
+    for _ in 0..24 {
+        let addend = term / denominator;
+        let adjusted = addend - correction;
+        let next = sum + adjusted;
+        correction = (next - sum) - adjusted;
+        sum = next;
+        term *= y_squared;
+        denominator += 2.0;
+    }
+
+    Some(2.0 * sum + exponent as f64 * LN_2)
+}
+
 fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
-    let sum2: f64 = l.iter().map(|x| x * x).sum();
-    let sum4: f64 = l.iter().map(|x| x.powi(4)).sum();
-    if sum2 <= 0.0 || sum4 <= 0.0 {
+    let max_abs = l.iter().copied().map(f64::abs).fold(0.0, f64::max);
+    if max_abs == 0.0 {
         return Err("oblimax requires nonzero loadings".into());
     }
+
+    // Condition the loading range with one exact power-of-two multiplier before
+    // forming second/fourth moments. This preserves the represented significands
+    // while preventing a scale-equivalent finite matrix from failing merely
+    // because raw fourth moments overflow or underflow binary64.
+    let scale_exponent = (-binary_exponent_positive(max_abs)).clamp(-1023, 1023);
+    let scale = exact_power_of_two(scale_exponent);
+    let mut sum2 = 0.0;
+    let mut sum4 = 0.0;
+    let mut equal_support_square = None;
+    let mut equal_magnitude_supports = true;
+    for x in l.iter().copied() {
+        let normalized = x * scale;
+        let square = normalized * normalized;
+        if square > 0.0 {
+            if let Some(reference) = equal_support_square {
+                equal_magnitude_supports &= square.to_bits() == reference.to_bits();
+            } else {
+                equal_support_square = Some(square);
+            }
+        }
+        sum2 += square;
+        sum4 += square * square;
+    }
+    if sum2 <= 0.0 || sum4 <= 0.0 || !sum2.is_finite() || !sum4.is_finite() {
+        return Err("oblimax requires nonzero representable loading moments".into());
+    }
+
+    // Form the scale-free fourth/second-moment ratio before taking the logarithm.
+    // This preserves Oblimax's exact common-power-of-two scale identity instead
+    // of assembling two large logarithms and subtracting nearly equal exponents.
+    let normalized_moment_ratio = (sum4 / sum2) / sum2;
+    let log_normalized_moment_ratio = deterministic_ln_positive(normalized_moment_ratio)
+        .ok_or_else(|| "oblimax normalized moment ratio must remain finite and positive".to_string())?;
+    // For an exact equal-magnitude nonzero support manifold, the mathematical
+    // fourth/second-moment ratio is the represented common square. Reconstructing
+    // it as sum4/sum2 can round one ULP away when three or more equal supports are
+    // accumulated, which creates a false nonzero gradient at an exact stationary
+    // point. Preserve that identity without changing the established ratio route
+    // for non-equal supports.
+    let moment_ratio = match (equal_magnitude_supports, equal_support_square) {
+        (true, Some(square)) => square,
+        _ => sum4 / sum2,
+    };
     let gradient = l
         .iter()
-        .map(|x| -(4.0 * x.powi(3) / sum4 - 4.0 * x / sum2))
+        .map(|x| {
+            let normalized = *x * scale;
+            let square = normalized * normalized;
+            // Factor the analytic derivative around the moment ratio instead of
+            // subtracting two independently rounded reciprocal terms. Exact
+            // equal-magnitude represented supports retain their stationary zero.
+            let normalized_gradient =
+                (4.0 * normalized / sum2) * (1.0 - square / moment_ratio);
+            normalized_gradient * scale
+        })
         .collect();
     Ok(CriterionEvaluation {
-        value: -(sum4.ln() - 2.0 * sum2.ln()),
+        value: -log_normalized_moment_ratio,
         gradient,
     })
 }
@@ -683,6 +825,33 @@ mod tests {
                 numeric
             );
         }
+    }
+
+    #[test]
+    fn deterministic_log_handles_domain_and_binary64_edges() {
+        assert_eq!(deterministic_ln_positive(1.0), Some(0.0));
+        assert_eq!(
+            deterministic_ln_positive(2.0).map(f64::to_bits),
+            Some(0x3fe6_2e42_fefa_39ef)
+        );
+        assert!(deterministic_ln_positive(f64::from_bits(1))
+            .expect("smallest positive subnormal is in-domain")
+            .is_finite());
+        for value in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(deterministic_ln_positive(value), None);
+        }
+    }
+
+    #[test]
+    fn oblimax_range_conditioner_covers_binary64_exponent_edges() {
+        assert_eq!(binary_exponent_positive(f64::from_bits(1)), -1074);
+        assert_eq!(binary_exponent_positive(f64::MIN_POSITIVE), -1022);
+        assert_eq!(binary_exponent_positive(1.0), 0);
+        assert_eq!(binary_exponent_positive(f64::MAX), 1023);
+        assert_eq!(exact_power_of_two(-1023).to_bits(), 1_u64 << 51);
+        assert_eq!(exact_power_of_two(-1022), f64::MIN_POSITIVE);
+        assert_eq!(exact_power_of_two(0), 1.0);
+        assert_eq!(exact_power_of_two(1023).to_bits(), 0x7fe0_0000_0000_0000);
     }
 
     #[test]
