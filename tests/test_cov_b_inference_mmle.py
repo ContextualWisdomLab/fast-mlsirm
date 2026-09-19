@@ -188,9 +188,8 @@ def test_fit_mmle_2pl_newton_exhausts_inner_iterations():
     assert np.all(np.isfinite(a))
     assert float(np.max(np.abs(a))) < slope_divergence_rail
     assert float(np.max(np.abs(a))) > 5.0
-    assert out.get("status") != "slope_diverged"
-    if "slope_diverged" in out:
-        assert not any(out["slope_diverged"])
+    assert out["status"] != "slope_diverged"
+    assert not any(out["slope_diverged"])
 
 
 # -- objective.py ------------------------------------------------------------
