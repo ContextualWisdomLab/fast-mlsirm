@@ -6,8 +6,16 @@
 from __future__ import annotations
 
 import json
+import os
+import socket
 
 import pytest
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    LIBRARY_VERSION = version("fast-mlsirm")
+except PackageNotFoundError:
+    LIBRARY_VERSION = "0.11.4"
 
 from fast_mlsirm.remote_exec import (
     CohortMismatchError,
@@ -15,6 +23,7 @@ from fast_mlsirm.remote_exec import (
     FORBIDDEN_REMOTE_JOB_FAMILIES,
     INDEX_SEED_STEP,
     LoopbackExecutor,
+    OutcomeCommitLedger,
     RemoteJobDeliveryState,
     RemoteJobEnvelope,
     RemoteJobFamily,
@@ -22,6 +31,7 @@ from fast_mlsirm.remote_exec import (
     RemoteRunManifest,
     RemoteWorkerProvenance,
     SEED_DERIVATION_RULE,
+    SubprocessExecutor,
     admit_remote_job_family,
     derive_index_seed,
     envelope_fingerprint,
@@ -35,7 +45,7 @@ _SHA_C = "c" * 64
 def _manifest(*, payload_sha256: str = _SHA, source_sha256: str = _SHA_B) -> RemoteRunManifest:
     return RemoteRunManifest(
         schema_version="1.0",
-        library_version="0.11.4",
+        library_version=LIBRARY_VERSION,
         source_sha256=source_sha256,
         seed_derivation_rule=SEED_DERIVATION_RULE,
         float_path=ExecutionFloatPath.F64,
@@ -258,11 +268,14 @@ def test_remote_job_outcome_validates_failed_state() -> None:
         hostname="host",
         architecture="arm64",
         operating_system="Darwin",
-        library_version="0.11.4",
+        library_version=LIBRARY_VERSION,
         source_sha256=_SHA_B,
         requested_device="cpu",
         effective_device="cpu",
         wall_clock_seconds=0.01,
+        worker_host="host",
+        worker_pid=4242,
+        cross_host_execution=False,
     )
     with pytest.raises(ValueError, match="failed outcomes require"):
         RemoteJobOutcome(
@@ -274,4 +287,76 @@ def test_remote_job_outcome_validates_failed_state() -> None:
             result=None,
             error_message=None,
             provenance=provenance,
+            input_identity_sha256=_SHA,
+            output_identity_sha256=None,
+            envelope_fingerprint=_SHA,
+            driver_host="host",
+            driver_pid=1111,
         )
+
+
+def test_subprocess_executor_runs_real_simulate_in_child_process() -> None:
+    """Criterion 1+2: real library call in a different OS process with explicit host."""
+    manifest = _manifest()
+    envelope = _envelope(
+        family=RemoteJobFamily.MC_REPLICATE,
+        unit_index=0,
+        base_seed=20260920,
+        manifest=manifest,
+    )
+    driver_pid = os.getpid()
+    driver_host = socket.gethostname()
+    worker_host = driver_host
+    ledger = OutcomeCommitLedger()
+    executor = SubprocessExecutor(worker_host, ledger=ledger, driver_host=driver_host)
+
+    outcomes = executor.run_batch((envelope,), worker_manifest=manifest)
+    assert len(outcomes) == 1
+    outcome = outcomes[0]
+    assert outcome.delivery_state is RemoteJobDeliveryState.COMPLETED
+    assert outcome.provenance.worker_host == worker_host
+    assert outcome.provenance.worker_pid != driver_pid
+    assert outcome.provenance.cross_host_execution is False
+    assert outcome.provenance.library_version == LIBRARY_VERSION
+    assert type(outcome.result) is dict
+    assert outcome.result["library_function"] == "fast_mlsirm.simulate"
+    assert outcome.input_identity_sha256 == envelope_fingerprint(envelope)
+    assert outcome.output_identity_sha256 is not None
+    assert ledger.successful_count(envelope_fingerprint(envelope)) == 1
+
+
+def test_subprocess_executor_retry_does_not_record_second_success() -> None:
+    """Criterion 3: replay of the same envelope fingerprint commits at most once."""
+    manifest = _manifest()
+    envelope = _envelope(
+        family=RemoteJobFamily.MC_REPLICATE,
+        unit_index=1,
+        base_seed=77,
+        manifest=manifest,
+    )
+    fingerprint = envelope_fingerprint(envelope)
+    ledger = OutcomeCommitLedger()
+    executor = SubprocessExecutor(socket.gethostname(), ledger=ledger)
+
+    first = executor.run_batch((envelope,), worker_manifest=manifest)[0]
+    second = executor.run_batch((envelope,), worker_manifest=manifest)[0]
+
+    assert first.delivery_state is RemoteJobDeliveryState.COMPLETED
+    assert second.delivery_state is RemoteJobDeliveryState.COMPLETED
+    assert second is first
+    assert ledger.successful_count(fingerprint) == 1
+
+
+def test_subprocess_executor_records_input_output_and_version_identity() -> None:
+    """Criterion 4: outcome carries input identity, output identity, and package version."""
+    manifest = _manifest()
+    envelope = _envelope(family=RemoteJobFamily.MC_REPLICATE, unit_index=2, manifest=manifest)
+    outcome = SubprocessExecutor(socket.gethostname()).run_batch(
+        (envelope,),
+        worker_manifest=manifest,
+    )[0]
+
+    assert outcome.envelope_fingerprint == envelope_fingerprint(envelope)
+    assert outcome.input_identity_sha256 == envelope_fingerprint(envelope)
+    assert outcome.output_identity_sha256 is not None
+    assert outcome.provenance.library_version == manifest.library_version
