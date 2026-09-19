@@ -569,7 +569,7 @@ def _content_security_policy() -> str:
     css_bytes = _css().encode("utf-8")
     sha256 = hashlib.sha256(css_bytes).digest()
     b64 = base64.b64encode(sha256).decode("ascii")
-    return f"default-src 'none'; style-src 'sha256-{b64}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    return f"default-src 'none'; style-src 'sha256-{b64}'; style-src-attr 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _css() -> str:
