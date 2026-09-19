@@ -1,4 +1,4 @@
-use mlsirm_core::reliability::one_way_random_intercept_icc;
+use mlsirm_core::one_way_random_intercept::one_way_random_intercept_icc;
 
 #[test]
 fn unbalanced_one_way_random_intercept_icc_matches_hand_calculation() {
