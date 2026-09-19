@@ -178,13 +178,16 @@ def test_loopback_executor_records_handler_failure_without_aborting_batch() -> N
     assert outcomes[1].result is None
 
 
-def test_loopback_executor_records_empty_handler_error_without_aborting_batch() -> None:
-    """An exception without message still becomes one failed outcome."""
+@pytest.mark.parametrize("exception_message", ["", "  \t"])
+def test_loopback_executor_records_blank_handler_error_without_aborting_batch(
+    exception_message: str,
+) -> None:
+    """An exception without meaningful text still becomes one failed outcome."""
     manifest = _manifest()
 
     def handler(envelope: RemoteJobEnvelope, unit_seed: int) -> int:
         del envelope, unit_seed
-        raise RuntimeError()
+        raise RuntimeError(exception_message)
 
     outcomes = LoopbackExecutor().run_batch(
         (_envelope(manifest=manifest),),
@@ -196,6 +199,45 @@ def test_loopback_executor_records_empty_handler_error_without_aborting_batch() 
     assert outcomes[0].delivery_state is RemoteJobDeliveryState.FAILED
     assert outcomes[0].error_message == "RuntimeError"
     assert outcomes[0].result is None
+
+
+def test_loopback_executor_preflights_entire_batch_before_handler_execution() -> None:
+    """A later cohort mismatch cannot leave earlier handler side effects."""
+    worker_manifest = _manifest(source_sha256=_SHA_B)
+    incompatible_manifest = _manifest(source_sha256=_SHA_C)
+    handled_indices: list[int] = []
+
+    def handler(envelope: RemoteJobEnvelope, unit_seed: int) -> int:
+        del unit_seed
+        handled_indices.append(envelope.unit_index)
+        return envelope.unit_index
+
+    with pytest.raises(CohortMismatchError, match="incompatible with envelope cohort"):
+        LoopbackExecutor().run_batch(
+            (
+                _envelope(unit_index=0, manifest=worker_manifest),
+                _envelope(unit_index=1, manifest=incompatible_manifest),
+            ),
+            handler,
+            worker_manifest=worker_manifest,
+        )
+
+    assert handled_indices == []
+
+
+def test_loopback_executor_returns_outcomes_in_unit_index_order() -> None:
+    """Outcome ordering follows the backend contract, not caller input order."""
+    manifest = _manifest()
+    outcomes = LoopbackExecutor().run_batch(
+        tuple(
+            _envelope(unit_index=unit_index, manifest=manifest)
+            for unit_index in (2, 0, 1)
+        ),
+        lambda envelope, unit_seed: (envelope.unit_index, unit_seed),
+        worker_manifest=manifest,
+    )
+
+    assert [outcome.unit_index for outcome in outcomes] == [0, 1, 2]
 
 
 def test_payload_ref_must_match_manifest_payload_sha256() -> None:
