@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import inspect
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -68,3 +71,39 @@ def test_expected_raw_requires_q_specific() -> None:
     fit = _fit(y)
     with pytest.raises(TypeError):
         expected_raw_two_tier_grm(fit, SPECIFIC_MAP)  # type: ignore[call-arg]
+
+
+def test_expected_raw_two_tier_grm_is_lord_wingersky_eap_plugin_not_joint_posterior_mean() -> None:
+    """Lord-Wingersky conditional expected raw at the primary EAP plug-in.
+
+    ``expected_raw_two_tier_grm`` fixes primary coordinates at
+    ``fit.theta_p_eap``, integrates each item-block specific factor at
+    ``q_specific`` nodes, and returns the Lord-Wingersky conditional expected
+    raw total on the observed category scale. This estimand is **not** the mean
+    of the joint posterior of the primary dimensions (G, W): the scorer does
+    not accept ``phi`` and does not reintegrate ``fit.phi`` over primaries.
+    """
+    sig = inspect.signature(expected_raw_two_tier_grm)
+    assert "phi" not in sig.parameters
+    assert set(sig.parameters) == {"fit", "specific_map", "q_specific"}
+
+    y = _simulate(SEED + 2)
+    fit = _fit(y)
+    scores = expected_raw_two_tier_grm(fit, SPECIFIC_MAP, q_specific=21)
+
+    fit_phi_perturbed = replace(
+        fit,
+        phi=np.array([[1.0, 0.95], [0.95, 1.0]], dtype=np.float64),
+    )
+    scores_phi = expected_raw_two_tier_grm(
+        fit_phi_perturbed, SPECIFIC_MAP, q_specific=21
+    )
+    np.testing.assert_allclose(scores, scores_phi)
+
+    fit_theta_shifted = replace(
+        fit, theta_p_eap=fit.theta_p_eap + np.array([0.15, -0.1])
+    )
+    scores_theta = expected_raw_two_tier_grm(
+        fit_theta_shifted, SPECIFIC_MAP, q_specific=21
+    )
+    assert not np.allclose(scores, scores_theta)
