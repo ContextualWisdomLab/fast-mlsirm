@@ -118,6 +118,11 @@ def collect_python_rows() -> list[dict]:
         if any(part.startswith("_") for part in modname.split(".")):
             continue
         try:
+            # modname comes from pkgutil.walk_packages over fast_mlsirm.__path__,
+            # so the only importable values are this package's own installed
+            # submodules. There is no caller-supplied input on this path, and
+            # this file is a repository tool that is not shipped in the wheel.
+            # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
             mod = importlib.import_module(modname)
         except Exception:
             continue
