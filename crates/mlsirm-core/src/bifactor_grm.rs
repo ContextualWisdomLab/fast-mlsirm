@@ -890,6 +890,7 @@ fn run_single_start(
     qg: usize,
     qs: usize,
     start: usize,
+    progress: &mut Option<&mut crate::em_progress::EmProgressCallback<'_>>,
 ) -> Result<SingleStartOutcome, String> {
     let mut params = initial_params(v, y, observed, cfg.seed, start);
     let start_params = params.clone();
@@ -931,6 +932,16 @@ fn run_single_start(
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
+        // Export the already-computed marginal loglik (Bock & Aitkin, 1981,
+        // p. 445 eqs. 5–6; p. 447 E-step). No extra quadrature.
+        if let Some(cb) = progress.as_deref_mut() {
+            cb(crate::em_progress::EmIterationProgress {
+                iteration: n_iter,
+                loglik: ll,
+                delta_loglik: change,
+                start,
+            });
+        }
         if let Some(change) = change {
             let prev = previous.expect("change requires a previous log-likelihood");
             final_loglik_change = change;
@@ -1006,6 +1017,43 @@ pub fn fit_bifactor_grm(
     n_cat: usize,
     cfg: &BifactorGrmConfig,
 ) -> Result<BifactorGrmResult, String> {
+    fit_bifactor_grm_with_progress(
+        y,
+        observed,
+        specific_map,
+        n_persons,
+        n_items,
+        n_specific,
+        n_cat,
+        cfg,
+        None,
+    )
+}
+
+/// [`fit_bifactor_grm`] with an optional per-E-step progress sink.
+///
+/// When `progress` is `Some`, it is invoked once after each E-step with the
+/// already-computed observed-data marginal log-likelihood and its change
+/// versus the previous iteration (Bock & Aitkin, 1981, p. 445 eqs. 5–6;
+/// p. 447 E-step; p. 448). `None` is bit-identical to [`fit_bifactor_grm`].
+///
+/// # References (APA 7th ed.)
+///
+/// Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation
+/// of item parameters: Application of an EM algorithm. *Psychometrika,
+/// 46*(4), 443–459. https://doi.org/10.1007/BF02293801 (full text read)
+#[allow(clippy::too_many_arguments)]
+pub fn fit_bifactor_grm_with_progress(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_specific: usize,
+    n_cat: usize,
+    cfg: &BifactorGrmConfig,
+    mut progress: Option<&mut crate::em_progress::EmProgressCallback<'_>>,
+) -> Result<BifactorGrmResult, String> {
     let v = validate(
         y,
         observed,
@@ -1033,7 +1081,7 @@ pub fn fit_bifactor_grm(
     let mut n_succeeded = 0usize;
     for start in 0..cfg.n_starts {
         match run_single_start(
-            &v, y, observed, cfg, tg, ts, &log_wg, &log_ws, qg, qs, start,
+            &v, y, observed, cfg, tg, ts, &log_wg, &log_ws, qg, qs, start, &mut progress,
         ) {
             Ok(outcome) => {
                 n_succeeded += 1;

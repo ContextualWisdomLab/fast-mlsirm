@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- Opt-in `progress` callback on `fit_two_tier_grm` / `fit_bifactor_grm` exporting
+  per-E-step marginal loglik / Δloglik (Bock & Aitkin, 1981, pp. 445, 447–448;
+  #2021). Default remains silent.
+
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 
