@@ -71,6 +71,14 @@ fn invalid_or_unidentified_inputs_fail_closed() {
 }
 
 #[test]
+fn unbalanced_exact_constant_binary64_outcomes_fail_closed_before_aggregation() {
+    let error = one_way_random_intercept_icc(&[1_u64, 1, 2, 2, 2], &[0.1; 5])
+        .expect_err("exactly constant outcomes have zero total variance");
+
+    assert_eq!(error, "one-way ICC requires positive total variance");
+}
+
+#[test]
 fn binary64_overflow_paths_fail_closed() {
     assert!(
         one_way_random_intercept_icc(
