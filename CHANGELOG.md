@@ -5,20 +5,81 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 
-#### Release cut 0.11.3
+#### Release cut 0.11.4
 
-- Project version is bumped to 0.11.3 in `pyproject.toml`, `crates/mlsirm-core`,
+- Project version is bumped to 0.11.4 in `pyproject.toml`, `crates/mlsirm-core`,
   and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
-  `[0.11.3] - 2026-09-18` release section, headlined by the bifactor GPU E-step
-  Metal/WebGPU workgroup-dimension split (#1987): dispatches are factored across
-  `(x, y, z)` from runtime adapter limits, WGSL uses an f32-representable
-  zero-mass sentinel, and the PyO3 cdylib again enables the `gpu` default feature.
-- This cut removes the standing predecessor note `release-0.11.2-cut.md`, whose
-  substance is permanently recorded in the `[0.11.2] - 2026-09-18` section and
+  `[0.11.4] - 2026-09-18` release section, headlined by the PyPI package-description
+  boundary repair (#1993): `README.md` no longer carries internal commercial-boundary
+  vocabulary or repo-relative links that 404 on the registry page, so the corrected
+  immutable description can ship after the 0.11.3 page. The section also folds the
+  two-tier / multi-primary Oakes SE and streaming E-step memory work (#1992) and the
+  support-policy / bifactor quadrature test repairs that cleared red `main`.
+- This cut removes the standing predecessor note `release-0.11.3-cut.md`, whose
+  substance is permanently recorded in the `[0.11.3] - 2026-09-18` section and
   in git history.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
+
+## [0.11.4] - 2026-09-18
+
+### Added
+
+#### Two-tier / multi-primary Oakes SE and streaming E-step memory (#1992)
+
+- Add `two_tier_oakes_se` (Rust + PyO3 + Python) for confirmatory multi-primary
+  / G+W method-factor GRM observed-information SEs via Oakes (1999, eq. 6,
+  p. 480), with the same fail-loud non-PD contract as `bifactor_oakes_se`.
+- Stream the two-tier E-step / EAP / M-step over the full product Gauss–Hermite
+  primary grid without materializing per-item `n_grid * q_specific * n_cat`
+  log-prob tables or `n_grid * q_specific * n_primary` node tensors (#1992
+  memory), keeping caller-controlled node counts (no silent caps; #1929).
+- mirt 1.46.1 Oakes cross-check fixture on the stage-4 dataset
+  (`seed=20260917`, `quadpts=15`).
+
+### Changed
+
+#### README public-description boundary (#1993)
+
+- `README.md` is the PyPI `long_description`, so it no longer carries internal
+  commercial-boundary vocabulary. The `Commercial Readiness` section — with the
+  enterprise sales gate, the KRW 2,000,000,000 product gate, buyer packet,
+  procurement due-diligence, PR queue governance, Figma evidence sync links, and
+  the multi-step evidence build transcript — is replaced by a `Project Status`
+  section that states scope, release verification, and the security, support,
+  changelog, and ADR entry points. The same evidence machinery is unchanged and
+  stays documented in `docs/commercial_readiness.md` and
+  `docs/release_acceptance.md`.
+- Repo-relative README links now resolve to absolute GitHub URLs. Only `LICENSE`
+  and the Python sources ship in the distribution, so `docs/`, `SECURITY.md`,
+  `SUPPORT.md`, and `CHANGELOG.md` links were dead on the PyPI project page.
+
+### Fixed
+
+#### README public-description boundary (#1993)
+
+- `scripts/sales_readiness.py` gained a `public_boundary:README.md` check that
+  fails the gate when internal commercial, procurement, buyer, or monetary-target
+  vocabulary reappears in the published package description. The required
+  commercial tokens it used to demand from `README.md` are now required in
+  `docs/commercial_readiness.md` and `docs/enterprise_sales_readiness.md`, where
+  that language belongs.
+
+#### Red main: support-policy version and a stale quadrature assertion (#1993)
+
+- `SECURITY.md` and `SUPPORT.md` still named `0.10.x` as the supported pre-1.0
+  line after the 0.11 releases, so
+  `tests/test_support_policy_version_contract.py` failed on `main` and blocked
+  every PR's `python` check. Both now name `0.11.x`.
+- `tests/test_bifactor_oakes.py::test_rejects_out_of_range_caller_arguments`
+  still asserted that `q_general=5` is rejected. #1929 deliberately removed the
+  Gauss-Hermite node-count cap — `SUPPORTED_Q` membership became a plain
+  `q >= 1` check — and updated the same assertion in
+  `tests/test_bifactor_grm.py` and `tests/test_bifactor_multigroup.py` but
+  missed this file. The case now uses `q_general=0`, which is still invalid,
+  and carries the same `#1929` note as its siblings.
 
 
 ## [0.11.3] - 2026-09-18
