@@ -945,6 +945,7 @@ pub fn fit_2pl(
 
         // M-step: per-item (n_i+1)-dim Newton with ridge + backtracking line search.
         for i in 0..n_items {
+            pressed_rail[i] = false;
             let dims = &dims_of[i];
             let ni = dims.len();
             let ni_off = i * n_nodes;
@@ -1024,7 +1025,7 @@ pub fn fit_2pl(
                 } else {
                     // No move was possible: rail hits during the failed search
                     // still mean the M-step is pressing outward.
-                    pressed_rail[i] |= hit_rail;
+                    pressed_rail[i] = hit_rail;
                 }
                 if should_stop_item_newton(accepted, moved) {
                     break;
