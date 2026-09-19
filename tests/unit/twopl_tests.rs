@@ -1169,7 +1169,7 @@ fn mc_mirt_recovery_500() {
                         if pattern[i * n_dims + d] == 0 {
                             assert_eq!(v, 0.0, "unloaded exactly zero");
                         } else {
-                            assert!(v.is_finite() && v.abs() <= 10.0, "loading in bound");
+                            assert!(v.is_finite() && v.abs() <= MIRT_A_BOUND, "loading in bound");
                             let e = v - loading[i * n_dims + d];
                             lnum += e * e;
                             lden += 1.0;
@@ -1310,7 +1310,7 @@ fn mc_qmc_mirt_recovery_500() {
                         if pattern[i * n_dims + d] == 0 {
                             assert_eq!(v, 0.0, "unloaded exactly zero");
                         } else {
-                            assert!(v.is_finite() && v.abs() <= 10.0, "loading in bound");
+                            assert!(v.is_finite() && v.abs() <= MIRT_A_BOUND, "loading in bound");
                             let e = v - loading[i * n_dims + d];
                             lnum += e * e;
                             lden += 1.0;
@@ -1679,7 +1679,7 @@ fn mc_corr_mirt_recovery_500() {
                         if pattern[i * n_dims + dd] == 0 {
                             assert_eq!(v, 0.0);
                         } else {
-                            assert!(v.is_finite() && v.abs() <= 10.0);
+                            assert!(v.is_finite() && v.abs() <= MIRT_A_BOUND);
                             let e = v - loading[i * n_dims + dd];
                             lnum += e * e;
                             lden += 1.0;
@@ -1730,4 +1730,53 @@ fn mc_corr_mirt_recovery_500() {
             }
         }
     }
+}
+
+/// Duplicate columns are perfectly locally dependent: their joint discrimination
+/// is unidentified (a Heywood-like boundary solution) and the penalized M-step
+/// keeps pressing against the numerical safety rail. That must be REPORTED (a
+/// per-item flag plus non-convergence with a reason), never passed off as an
+/// estimate. The ordinary items — including the reverse-keyed one — stay silent.
+///
+/// Calibration note (Air evidence): with the MMLE-sized N=1000 / ridge 1e-3
+/// fixture the confirmatory 2PL M-step settled interior at |a|≈25.7 (below
+/// `SLOPE_DIVERGENCE_RAIL` = 30), so `pressed & at_rail` stayed false. N=4000
+/// with a lighter ridge (still strictly positive) is the minimal setting that
+/// rests the duplicate pair on the rail without false-positiving the ordinary
+/// items — same paper contract as the MMLE duplicate fixture (Bock & Aitkin,
+/// 1981, p. 457; Mislevy, 1985, p. 44; Chalmers, 2012, pp. 14–15).
+#[test]
+fn duplicate_columns_press_the_divergence_rail_and_are_reported() {
+    let (n, n_items, n_dims) = (4000usize, 4usize, 1usize);
+    let pattern = vec![1u8; n_items];
+    let a_true = [1.30, -1.10, 1.20];
+    let b_true = [0.10, -0.20, 0.30];
+    let mut rng = Lcg(1932);
+    let thetas: Vec<f64> = (0..n).map(|_| rng.normal()).collect();
+    let loading: Vec<f64> = vec![a_true[0], a_true[1], a_true[2], 0.0];
+    let intercept: Vec<f64> = vec![b_true[0], b_true[1], b_true[2], 0.0];
+    let y = simulate(&loading, &intercept, &thetas, n, 3, n_dims, &mut rng);
+    let mut full = vec![0.0f64; n * n_items];
+    for p in 0..n {
+        for i in 0..3 {
+            full[p * n_items + i] = y[p * 3 + i];
+        }
+        full[p * n_items + 3] = full[p * n_items];
+    }
+    let observed = vec![true; n * n_items];
+    let cfg = TwoPlConfig {
+        ridge_a: 1e-6,
+        ridge_b: 1e-6,
+        ..TwoPlConfig::default()
+    };
+    let res = fit_2pl(&full, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
+    assert_eq!(
+        res.slope_diverged,
+        vec![true, false, false, true],
+        "only the duplicate pair may press the rail: {:?}",
+        res.loading
+    );
+    assert!(!res.converged, "a fit resting on the rail is not converged");
+    assert_eq!(res.termination_reason, "slope_diverged");
+    assert!(res.loading.iter().all(|v| v.is_finite()));
 }

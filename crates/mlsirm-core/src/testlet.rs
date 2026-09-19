@@ -111,8 +111,15 @@ pub struct TestletResult {
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
-    /// Machine-readable termination status: `converged` or `max_iter_reached`.
+    /// Machine-readable termination status: `converged`, `max_iter_reached`,
+    /// or `slope_diverged` — a slope pressed against the numerical safety rail
+    /// (`crate::mmle::SLOPE_DIVERGENCE_RAIL`) with the M-step still climbing:
+    /// a Heywood-like boundary solution, reported, never an estimate.
     pub termination_reason: String,
+    /// Per-item divergence flag, length `J`: true where the slope rests on the
+    /// rail with the final M-step still pushing outward. When any entry is
+    /// true, `converged` is false.
+    pub slope_diverged: Vec<bool>,
     /// Absolute change between the final two evaluated marginal log-likelihoods.
     pub final_loglik_change: f64,
     /// `(TwoPl? 2J : J) + D`.
@@ -377,7 +384,10 @@ fn full_estep(
 /// One M-step from the expected counts: per-item 2-D Newton on the effective node
 /// `z = t_g - sigma_d*u_h` (verbatim `fit_mmle_2pl` arithmetic; `fix_slope` holds
 /// `a = 1`) and the closed-form testlet-variance update
-/// `sigma^2_d <- sigma^2_d * mean_j E[u_d^2 | y_j]`. Returns the new `(a, beta, sigma2)`.
+/// `sigma^2_d <- sigma^2_d * mean_j E[u_d^2 | y_j]`. Returns the new
+/// `(a, beta, sigma2)` plus per-item divergence-rail engagement on the final
+/// Newton pass (see `crate::mmle::SLOPE_DIVERGENCE_RAIL`; false for every
+/// item under `fix_slope`, where the slope is pinned at 1).
 #[allow(clippy::too_many_arguments)]
 fn m_step(
     ctx: &Ctx,
@@ -390,12 +400,13 @@ fn m_step(
     multi: &[bool],
     fix_slope: bool,
     cfg: &TestletConfig,
-) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<bool>) {
     let (j, d_n, qt, qg) = (ctx.j, ctx.d_n, ctx.qt, ctx.qg);
     let idx3 = |i: usize, g: usize, h: usize| (i * qt + g) * qg + h;
     let mut a = a.to_vec();
     let mut beta = beta.to_vec();
     let mut sigma2 = sigma2.to_vec();
+    let mut pressed_rail = vec![false; j];
     for i in 0..j {
         let sd = sigma2[ctx.testlet_id[i]].sqrt();
         let (mut ai, mut bi) = (a[i], beta[i]);
@@ -450,12 +461,17 @@ fn m_step(
                 // matrix nonsingular for every valid item.
                 let da = (h_bb * g_a - h_ab * g_b) / det;
                 let db = (h_aa * g_b - h_ab * g_a) / det;
-                // Magnitude guard only; symmetric, so it does not also impose
-                // `a > 0` and floor a reverse-keyed item (see `crate::mmle`).
-                ai = (ai - da).clamp(
-                    -crate::mmle::A_MAGNITUDE_BOUND,
-                    crate::mmle::A_MAGNITUDE_BOUND,
+                // Divergence-rail clamp (see
+                // `crate::mmle::SLOPE_DIVERGENCE_RAIL`): symmetric, so it
+                // caps magnitude without imposing `a > 0` and without flooring
+                // a reverse-keyed item.
+                let raw = ai - da;
+                let clamped = raw.clamp(
+                    -crate::mmle::SLOPE_DIVERGENCE_RAIL,
+                    crate::mmle::SLOPE_DIVERGENCE_RAIL,
                 );
+                pressed_rail[i] = clamped != raw;
+                ai = clamped;
                 bi -= db;
                 if da.abs() + db.abs() < 1e-8 {
                     break;
@@ -472,10 +488,16 @@ fn m_step(
             }
         }
     }
-    (a, beta, sigma2)
+    (a, beta, sigma2, pressed_rail)
 }
 
-fn choose_squarem_parameters(extrapolated: Option<Vec<f64>>, two_step_em: Vec<f64>) -> Vec<f64> {
+/// Pick the SQUAREM-extrapolated params when accepted, else the two plain EM
+/// steps. The divergence-rail flags travel with the params they were computed
+/// from, so both ride in the same selection.
+fn choose_squarem_parameters(
+    extrapolated: Option<(Vec<f64>, Vec<bool>)>,
+    two_step_em: (Vec<f64>, Vec<bool>),
+) -> (Vec<f64>, Vec<bool>) {
     extrapolated.unwrap_or(two_step_em)
 }
 
@@ -496,6 +518,32 @@ fn squarem_alpha(sr: f64, sv: f64) -> f64 {
 /// The variance-component EM converges only linearly, so when `estimate_sigma` is on the
 /// fit is accelerated with SQUAREM (Varadhan & Roland, 2008; monotone, with a plain-EM
 /// fallback). Precise `sigma^2_d` may still want a generous `max_iter`.
+///
+/// Slope-divergence guard: the item M-step clamps to the crate-wide numerical
+/// safety rail `crate::mmle::SLOPE_DIVERGENCE_RAIL` — a Heywood-like boundary
+/// solution (Bock & Aitkin, 1981, p. 457), degenerate-pattern non-finite ML
+/// (Bock & Aitkin, 1981, p. 454; Mislevy, 1985, p. 44), handled by prior
+/// constraint rather than a substantive ceiling (Chalmers, 2012, pp. 14–15).
+/// A slope resting on the rail with the penalized M-step still pushing outward
+/// is reported through `TestletResult::slope_diverged` with `converged = false`
+/// and `termination_reason = "slope_diverged"`, never passed off as an
+/// estimate. See `crate::mmle::SLOPE_DIVERGENCE_RAIL` for the full literature
+/// basis.
+///
+/// # References (APA 7th ed.)
+///
+/// Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
+/// item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
+/// 443–459. https://doi.org/10.1007/BF02293801
+///
+/// Chalmers, R. P. (2012). mirt: A multidimensional item response theory package
+/// for the R environment. *Journal of Statistical Software, 48*(6), 1–29.
+/// https://doi.org/10.18637/jss.v048.i06
+///
+/// Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+/// (ETS Research Report No. 85–33). Educational Testing Service.
+/// https://eric.ed.gov/?id=ED268138 (Published as Mislevy, 1986,
+/// *Psychometrika, 51*(2), 177–195.)
 #[allow(clippy::too_many_arguments)]
 pub fn fit_testlet(
     y: &[f64],
@@ -553,6 +601,11 @@ pub fn fit_testlet(
     // reduction bit-exact with fit_mmle_2pl).
     let use_squarem = cfg.estimate_sigma && multi.iter().any(|&m| m);
 
+    // Divergence-rail engagement from the M-step that produced the current
+    // params (updated everywhere the params are, in both the SQUAREM and the
+    // plain-EM path; the converged breaks below read the E-step of the current
+    // params, whose flags these are).
+    let mut pressed_rail = vec![false; j];
     if use_squarem {
         let len = 2 * j + d_n;
         let pack = |a: &[f64], b: &[f64], s: &[f64]| -> Vec<f64> {
@@ -567,9 +620,14 @@ pub fn fit_testlet(
         };
         let project = |p: &mut [f64]| {
             for ai in p.iter_mut().take(j) {
+                // Divergence-rail clamp (see
+                // `crate::mmle::SLOPE_DIVERGENCE_RAIL`). The projection
+                // carries no gradient information; the stabilizing M-step that
+                // follows an accepted projection supplies the engagement
+                // signal, so this stays a pure clamp.
                 *ai = ai.clamp(
-                    -crate::mmle::A_MAGNITUDE_BOUND,
-                    crate::mmle::A_MAGNITUDE_BOUND,
+                    -crate::mmle::SLOPE_DIVERGENCE_RAIL,
+                    crate::mmle::SLOPE_DIVERGENCE_RAIL,
                 );
             }
             for d in 0..d_n {
@@ -604,19 +662,20 @@ pub fn fit_testlet(
             // remains, take one plain EM step and evaluate it on the next loop so
             // n_iter never exceeds the public max_iter contract.
             if cfg.max_iter - n_iter < 2 {
-                let (a1, b1, s1) = m_step(
+                let (a1, b1, s1, pr1) = m_step(
                     &ctx, &a0, &b0, &s0, &ni0, &ri0, &su0, &multi, fix_slope, cfg,
                 );
                 params = pack(&a1, &b1, &s1);
+                pressed_rail = pr1;
                 continue;
             }
             // Two plain EM steps.
-            let (a1, b1, s1) = m_step(
+            let (a1, b1, s1, _pr1) = m_step(
                 &ctx, &a0, &b0, &s0, &ni0, &ri0, &su0, &multi, fix_slope, cfg,
             );
             let p1 = pack(&a1, &b1, &s1);
             let (_l1, ni1, ri1, su1, _) = full_estep(&ctx, &a1, &b1, &s1);
-            let (a2, b2, s2) = m_step(
+            let (a2, b2, s2, pr2) = m_step(
                 &ctx, &a1, &b1, &s1, &ni1, &ri1, &su1, &multi, fix_slope, cfg,
             );
             let p2 = pack(&a2, &b2, &s2);
@@ -642,12 +701,16 @@ pub fn fit_testlet(
             // degenerate SQUAREM direction (`sv <= 1e-300`) the extrapolated point is
             // deliberately rejected and the two plain EM steps are retained.
             let extrapolated = (sv > 1e-300 && lc.is_finite() && lc >= l0).then(|| {
-                let (a3, b3, s3) = m_step(
+                let (a3, b3, s3, pr3) = m_step(
                     &ctx, &an, &bn, &sn, &nic, &ric, &suc, &multi, fix_slope, cfg,
                 );
-                pack(&a3, &b3, &s3)
+                (pack(&a3, &b3, &s3), pr3)
             });
-            params = choose_squarem_parameters(extrapolated, p2);
+            // The flags travel with the params they were computed from: the
+            // stabilizing M-step after the projection, or the plain steps.
+            let (next_params, next_pressed) = choose_squarem_parameters(extrapolated, (p2, pr2));
+            params = next_params;
+            pressed_rail = next_pressed;
             n_iter += 2;
         }
         let (fa, fb, fs) = unpack(&params);
@@ -666,12 +729,13 @@ pub fn fit_testlet(
                     break;
                 }
             }
-            let (na, nb, ns) = m_step(
+            let (na, nb, ns, npr) = m_step(
                 &ctx, &a, &beta, &sigma2, &ni, &ri, &su, &multi, fix_slope, cfg,
             );
             a = na;
             beta = nb;
             sigma2 = ns;
+            pressed_rail = npr;
         }
     }
 
@@ -688,18 +752,30 @@ pub fn fit_testlet(
         .windows(2)
         .last()
         .map_or(f64::INFINITY, |pair| (pair[1] - pair[0]).abs());
-    let termination_reason = if converged {
-        "converged"
-    } else {
-        "max_iter_reached"
-    };
-
     // Pin the reflection `(a, theta) -> (-a, -theta)`. `beta` is the intercept
     // and is invariant; `sigma2` is a variance of a symmetric testlet effect and
     // is invariant; `b = -beta/a` is on theta's scale, so it flips with the
     // slope and is derived AFTER the flip. A no-op under `Rasch`, where every
     // slope is pinned at 1.0.
     crate::mmle::canonicalize_reflection(&mut a, &mut theta);
+
+    // Divergence report: at the rail AND still climbing on the final M-step
+    // (magnitudes only — flip-invariant under the joint reflection above).
+    let slope_diverged: Vec<bool> = pressed_rail
+        .iter()
+        .zip(a.iter())
+        .map(|(&pressed, &slope)| pressed && slope.abs() >= crate::mmle::SLOPE_DIVERGENCE_RAIL)
+        .collect();
+    if slope_diverged.iter().any(|&d| d) {
+        converged = false;
+    }
+    let termination_reason = if slope_diverged.iter().any(|&d| d) {
+        "slope_diverged"
+    } else if converged {
+        "converged"
+    } else {
+        "max_iter_reached"
+    };
     let b: Vec<f64> = (0..j).map(|i| -beta[i] / a[i]).collect();
     let k = if fix_slope { 1 } else { 2 };
     // Only FREELY-estimated testlet variances count: singletons are pinned to 0
@@ -720,6 +796,7 @@ pub fn fit_testlet(
         n_iter,
         converged,
         termination_reason: termination_reason.to_string(),
+        slope_diverged,
         final_loglik_change,
         n_parameters: k * j + n_free_sigma,
     })

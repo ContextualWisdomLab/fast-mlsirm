@@ -103,10 +103,15 @@ const MIRT_MAX_DIMS: usize = 3;
 /// Maximum latent dimensions for the Halton/MonteCarlo rules (= `HALTON_PRIMES.len()` in `nodes`,
 /// the Halton axis cap; also the sole guard for the MonteCarlo builder, which has no internal cap).
 const MIRT_MAX_DIMS_QMC: usize = 6;
-/// Symmetric loading bound. Loadings are NOT floored positive: confirmatory MIRT routinely
-/// has opposite-sign loadings on a shared dimension (reverse-keyed items, suppressor
-/// cross-loadings). The per-dimension reflection anchor fixes only the global sign.
-const MIRT_A_BOUND: f64 = 10.0;
+/// Symmetric loading rail: the crate-wide numerical safety guard
+/// (`crate::mmle::SLOPE_DIVERGENCE_RAIL`), not a measurement claim. Loadings
+/// are NOT floored positive: confirmatory MIRT routinely has opposite-sign
+/// loadings on a shared dimension (reverse-keyed items, suppressor
+/// cross-loadings), and the rail caps magnitude symmetrically so those keep
+/// their sign. The per-dimension reflection anchor fixes only the global sign.
+/// A loading resting on the rail with the M-step still climbing is reported
+/// through `TwoPlResult::slope_diverged`, never as an estimate.
+const MIRT_A_BOUND: f64 = crate::mmle::SLOPE_DIVERGENCE_RAIL;
 
 /// Configuration for [`fit_2pl`].
 #[derive(Clone, Copy, Debug)]
@@ -176,8 +181,15 @@ pub struct TwoPlResult {
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
-    /// Machine-readable termination status: `converged` or `max_iter_reached`.
+    /// Machine-readable termination status: `converged`, `max_iter_reached`,
+    /// or `slope_diverged` — a loading pressed against the numerical safety
+    /// rail (`MIRT_A_BOUND`) with the M-step still climbing: a Heywood-like
+    /// boundary solution, reported, never an estimate.
     pub termination_reason: String,
+    /// Per-item divergence flag, length `J`: true where a free loading rests
+    /// on the rail with the final M-step still pushing outward. When any entry
+    /// is true, `converged` is false.
+    pub slope_diverged: Vec<bool>,
     /// Absolute change between the final two evaluated marginal log-likelihoods.
     pub final_loglik_change: f64,
     /// `#{L_id = 1}` loadings `+ J` intercepts `+ D(D-1)/2` correlations (when estimated).
@@ -717,6 +729,32 @@ fn reflect_mirt_dimensions(
 /// `y`/`observed` are row-major `N*J` (`y` in `{0,1}` where observed; missing cells dropped
 /// under MAR); `loading_pattern` is row-major `J*D` in `{0,1}`. Returns `Err` on malformed or
 /// rotationally-underidentified input.
+///
+/// Slope-divergence guard: the loading M-step clamps to the crate-wide numerical
+/// safety rail `crate::mmle::SLOPE_DIVERGENCE_RAIL` — a Heywood-like boundary
+/// solution (Bock & Aitkin, 1981, p. 457), degenerate-pattern non-finite ML
+/// (Bock & Aitkin, 1981, p. 454; Mislevy, 1985, p. 44), handled by prior
+/// constraint rather than a substantive ceiling (Chalmers, 2012, pp. 14–15).
+/// A loading resting on the rail with the penalized M-step still pushing
+/// outward is reported through `TwoPlResult::slope_diverged` with
+/// `converged = false` and `termination_reason = "slope_diverged"`, never
+/// passed off as an estimate. See `crate::mmle::SLOPE_DIVERGENCE_RAIL` for
+/// the full literature basis.
+///
+/// # References (APA 7th ed.)
+///
+/// Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
+/// item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
+/// 443–459. https://doi.org/10.1007/BF02293801
+///
+/// Chalmers, R. P. (2012). mirt: A multidimensional item response theory package
+/// for the R environment. *Journal of Statistical Software, 48*(6), 1–29.
+/// https://doi.org/10.18637/jss.v048.i06
+///
+/// Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+/// (ETS Research Report No. 85–33). Educational Testing Service.
+/// https://eric.ed.gov/?id=ED268138 (Published as Mislevy, 1986,
+/// *Psychometrika, 51*(2), 177–195.)
 #[allow(clippy::too_many_arguments)]
 pub fn fit_2pl(
     y: &[f64],
@@ -819,6 +857,11 @@ pub fn fit_2pl(
     } else {
         Vec::new()
     };
+    // Per-item divergence-rail engagement on the M-step that produced the
+    // current loadings (overwritten every EM iteration; the convergence check
+    // below runs before the M-step, so on a converged break these are the flags
+    // from the M-step that produced the returned loadings).
+    let mut pressed_rail = vec![false; n_items];
 
     for _ in 0..cfg.max_iter {
         if cfg.estimate_corr {
@@ -902,6 +945,7 @@ pub fn fit_2pl(
 
         // M-step: per-item (n_i+1)-dim Newton with ridge + backtracking line search.
         for i in 0..n_items {
+            pressed_rail[i] = false;
             let dims = &dims_of[i];
             let ni = dims.len();
             let ni_off = i * n_nodes;
@@ -938,10 +982,17 @@ pub fn fit_2pl(
                 // Backtracking: halve until the penalized item objective does not decrease.
                 let mut step = 1.0f64;
                 let mut accepted = false;
+                // Whether any proposal on this Newton pass wanted a loading
+                // beyond the divergence rail (see MIRT_A_BOUND): the "still
+                // climbing at the rail" signal.
+                let mut hit_rail = false;
                 let (mut a_new, mut b_new) = (a.clone(), b);
                 for _ in 0..20 {
                     for k in 0..ni {
-                        a_new[k] = (a[k] + step * delta[k]).clamp(-MIRT_A_BOUND, MIRT_A_BOUND);
+                        let raw = a[k] + step * delta[k];
+                        let clamped = raw.clamp(-MIRT_A_BOUND, MIRT_A_BOUND);
+                        hit_rail |= clamped != raw;
+                        a_new[k] = clamped;
                     }
                     b_new = b + step * delta[ni];
                     let q1 = item_obj(
@@ -970,6 +1021,11 @@ pub fn fit_2pl(
                 if accepted {
                     a = a_new;
                     b = b_new;
+                    pressed_rail[i] = hit_rail;
+                } else {
+                    // No move was possible: rail hits during the failed search
+                    // still mean the M-step is pressing outward.
+                    pressed_rail[i] = hit_rail;
                 }
                 if should_stop_item_newton(accepted, moved) {
                     break;
@@ -1111,6 +1167,20 @@ pub fn fit_2pl(
     let l = loglik_trace.len();
     let final_loglik_change = (loglik_trace[l - 1] - loglik_trace[l - 2]).abs();
     let n_parameters = n_free_loadings + n_items + if cfg.estimate_corr { n_off } else { 0 };
+    // Divergence report: a free loading on the rail AND still climbing on the
+    // final M-step (magnitudes only — flip-invariant under the reflection
+    // above; off-pattern slots are exactly 0.0 and never at the rail).
+    let slope_diverged: Vec<bool> = (0..n_items)
+        .map(|i| {
+            pressed_rail[i]
+                && dims_of[i]
+                    .iter()
+                    .any(|&d| loading[i * n_dims + d].abs() >= MIRT_A_BOUND)
+        })
+        .collect();
+    if slope_diverged.iter().any(|&d| d) {
+        converged = false;
+    }
     Ok(TwoPlResult {
         loading,
         intercept,
@@ -1120,12 +1190,15 @@ pub fn fit_2pl(
         loglik_trace,
         n_iter,
         converged,
-        termination_reason: if converged {
+        termination_reason: if slope_diverged.iter().any(|&d| d) {
+            "slope_diverged"
+        } else if converged {
             "converged"
         } else {
             "max_iter_reached"
         }
         .into(),
+        slope_diverged,
         final_loglik_change,
         n_parameters,
     })

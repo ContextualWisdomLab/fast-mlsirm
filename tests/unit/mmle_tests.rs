@@ -217,3 +217,40 @@ fn a_reverse_keyed_item_recovers_its_negative_slope() {
         );
     }
 }
+
+/// Duplicate columns are perfectly locally dependent: their joint discrimination
+/// is unidentified (a Heywood-like boundary solution) and the penalized M-step
+/// keeps pressing against the numerical safety rail. That must be REPORTED (a
+/// per-item flag plus non-convergence with a reason), never passed off as an
+/// estimate. The ordinary items — including the reverse-keyed one — stay silent.
+#[test]
+fn duplicate_columns_press_the_divergence_rail_and_are_reported() {
+    let (n_persons, n_items) = (1000usize, 4usize);
+    let a_true = [1.30, -1.10, 1.20];
+    let b_true = [0.10, -0.20, 0.30];
+    let mut rng = Lcg(1932);
+    let theta: Vec<f64> = (0..n_persons).map(|_| rng.normal()).collect();
+    let mut y = vec![0.0_f64; n_persons * n_items];
+    for p in 0..n_persons {
+        for i in 0..3 {
+            let eta = a_true[i] * theta[p] + b_true[i];
+            y[p * n_items + i] = if rng.next_f64() < 1.0 / (1.0 + (-eta).exp()) {
+                1.0
+            } else {
+                0.0
+            };
+        }
+        y[p * n_items + 3] = y[p * n_items];
+    }
+    let observed = vec![true; n_persons * n_items];
+    let res = fit_mmle_2pl(&y, &observed, n_persons, n_items, &MmleConfig::default());
+    assert_eq!(
+        res.slope_diverged,
+        vec![true, false, false, true],
+        "only the duplicate pair may press the rail: {:?}",
+        res.a
+    );
+    assert!(!res.converged, "a fit resting on the rail is not converged");
+    assert_eq!(res.termination_reason, "slope_diverged");
+    assert!(res.a.iter().all(|v| v.is_finite()));
+}

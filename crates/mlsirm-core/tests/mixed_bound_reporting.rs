@@ -102,3 +102,49 @@ fn a_weak_but_interior_item_is_not_reported_at_the_bound() {
         at_bound[1]
     );
 }
+
+/// Duplicate columns are perfectly locally dependent: their joint discrimination
+/// is unidentified (a Heywood-like boundary solution) and the M-step keeps
+/// pressing against the numerical safety rail. The pair must be REPORTED through
+/// `at_bound` (never passed off as estimates), the fit must not claim
+/// convergence, and the ordinary items — including the reverse-keyed one — stay
+/// silent.
+#[test]
+fn duplicate_columns_are_reported_at_the_slope_rail_not_as_estimates() {
+    let n_persons = 1_000usize;
+    let n_items = 4usize;
+    let mut rng = Lcg(SEED);
+    let specs: Vec<MixedItemSpec> = (0..n_items)
+        .map(|_| MixedItemSpec {
+            kind: MixedItemKind::TwoPl,
+            n_categories: 2,
+        })
+        .collect();
+    let slopes = [1.30, -1.10, 1.20];
+    let mut y = vec![0usize; n_persons * n_items];
+    for person in 0..n_persons {
+        let theta = rng.standard_normal();
+        for (item, &slope) in slopes.iter().enumerate() {
+            let p = 1.0 / (1.0 + (-(slope * theta + 0.1)).exp());
+            y[person * n_items + item] = usize::from(rng.uniform() < p);
+        }
+        y[person * n_items + 3] = y[person * n_items];
+    }
+    let fit = fit_mixed_items(&y, None, n_persons, n_items, &specs, 1, 21, 3, 500, 1e-6, 1)
+        .expect("mixed fit on duplicate-column data must return, flagged");
+    for (index, item) in fit.items.iter().enumerate() {
+        let flagged = item.at_bound.contains(&"slope");
+        assert_eq!(
+            flagged,
+            index == 0 || index == 3,
+            "item {index}: only the duplicate pair may rest on the rail, got {:?}",
+            item.at_bound
+        );
+        assert!(
+            item.slope.is_some_and(|s| s.is_finite()),
+            "item {index}: a reported slope must stay finite"
+        );
+    }
+    assert!(!fit.converged, "a fit resting on the rail is not converged");
+    assert_eq!(fit.termination_reason, "slope_diverged");
+}

@@ -121,6 +121,16 @@ pub struct MixtureResult {
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
+    /// Machine-readable termination status: `converged`, `max_iter_reached`,
+    /// or `slope_diverged` — a slope pressed against the numerical safety rail
+    /// (`crate::mmle::SLOPE_DIVERGENCE_RAIL`) with the M-step still climbing:
+    /// a Heywood-like boundary solution, reported, never an estimate.
+    pub termination_reason: String,
+    /// Per-(class, item) divergence flag, class-major `slope_diverged[c*J + i]`
+    /// in canonical class order: true where the slope rests on the rail with
+    /// the final M-step still pushing outward. When any entry is true,
+    /// `converged` is false.
+    pub slope_diverged: Vec<bool>,
     /// `C*(k*J) + (C-1)`, `k = 2` (TwoPl) | `1` (Rasch).
     pub n_parameters: usize,
 }
@@ -226,8 +236,14 @@ fn newton_item_2pl(
     newton_iter: usize,
     ridge_a: f64,
     ridge_b: f64,
-) -> (f64, f64) {
+) -> (f64, f64, bool) {
     let (mut ai, mut bi) = (a0, b0);
+    // Divergence-rail engagement on the final Newton pass (see
+    // `crate::mmle::SLOPE_DIVERGENCE_RAIL`). Overwritten every pass, so the
+    // returned value tells "still climbing at the rail" from "settled
+    // interior". Under `fix_slope` the slope is pinned at 1 and can never
+    // press the rail.
+    let mut pressed_rail = false;
     for _ in 0..newton_iter {
         let (mut g_a, mut g_b, mut h_aa, mut h_bb, mut h_ab) = (0.0, 0.0, 0.0, 0.0, 0.0);
         for (qi, &node) in GH_NODES.iter().enumerate() {
@@ -264,19 +280,23 @@ fn newton_item_2pl(
             }
             let da = (h_bb * g_a - h_ab * g_b) / det;
             let db = (h_aa * g_b - h_ab * g_a) / det;
-            // Magnitude guard only; symmetric, so it does not also impose
-            // `a > 0` and floor a reverse-keyed item (see `crate::mmle`).
-            ai = (ai - da).clamp(
-                -crate::mmle::A_MAGNITUDE_BOUND,
-                crate::mmle::A_MAGNITUDE_BOUND,
+            // Divergence-rail clamp (see `crate::mmle::SLOPE_DIVERGENCE_RAIL`):
+            // symmetric, so it caps magnitude without imposing `a > 0` and
+            // without flooring a reverse-keyed item.
+            let raw = ai - da;
+            let clamped = raw.clamp(
+                -crate::mmle::SLOPE_DIVERGENCE_RAIL,
+                crate::mmle::SLOPE_DIVERGENCE_RAIL,
             );
+            pressed_rail = clamped != raw;
+            ai = clamped;
             bi -= db;
             if da.abs() + db.abs() < 1e-8 {
                 break;
             }
         }
     }
-    (ai, bi)
+    (ai, bi, pressed_rail)
 }
 
 /// Marginal-ML item-proportion init identical to `fit_mmle_2pl` (a = 1, b = logit of
@@ -336,6 +356,11 @@ fn run_em(
     let mut converged = false;
     let mut n_iter = 0usize;
     let mut post = vec![0.0f64; cq];
+    // Per-(class, item) divergence-rail engagement on the M-step that produced
+    // the current params (overwritten every EM iteration; the convergence check
+    // below runs before the M-step, so on a converged break these are the flags
+    // from the M-step that produced the returned params).
+    let mut pressed_rail = vec![false; n_classes * n_items];
 
     let build_tables = |a: &[f64], b: &[f64], log_p1: &mut [f64], log_p0: &mut [f64]| {
         for c in 0..n_classes {
@@ -425,7 +450,7 @@ fn run_em(
         for c in 0..n_classes {
             for i in 0..n_items {
                 let base = (c * n_items + i) * q;
-                let (ai, bi) = newton_item_2pl(
+                let (ai, bi, pressed) = newton_item_2pl(
                     &n_cnt[base..base + q],
                     &r_cnt[base..base + q],
                     a[c * n_items + i],
@@ -437,6 +462,7 @@ fn run_em(
                 );
                 a[c * n_items + i] = ai;
                 b[c * n_items + i] = bi;
+                pressed_rail[c * n_items + i] = pressed;
             }
         }
         let nf = n_persons as f64;
@@ -489,6 +515,23 @@ fn run_em(
     // `map_class`. A no-op under `Rasch`, where every slope is pinned at 1.0.
     crate::mmle::canonicalize_reflection(&mut a, &mut theta);
 
+    // Divergence report: at the rail AND still climbing on the final M-step
+    // (magnitudes only — flip-invariant under the joint reflection above).
+    let slope_diverged: Vec<bool> = pressed_rail
+        .iter()
+        .zip(a.iter())
+        .map(|(&pressed, &slope)| pressed && slope.abs() >= crate::mmle::SLOPE_DIVERGENCE_RAIL)
+        .collect();
+    let termination_reason = if slope_diverged.iter().any(|&d| d) {
+        converged = false;
+        "slope_diverged"
+    } else if converged {
+        "converged"
+    } else {
+        "max_iter_reached"
+    }
+    .to_string();
+
     let k = if fix_slope { 1 } else { 2 };
     MixtureResult {
         model,
@@ -502,6 +545,8 @@ fn run_em(
         loglik_trace,
         n_iter,
         converged,
+        termination_reason,
+        slope_diverged,
         n_parameters: n_classes * (k * n_items) + (n_classes - 1),
     }
 }
@@ -529,9 +574,12 @@ fn canonical_order(res: MixtureResult) -> MixtureResult {
         inv[old] = new_pos;
     }
     let (mut a2, mut b2, mut pi2) = (vec![0.0; res.a.len()], vec![0.0; res.b.len()], vec![0.0; c]);
+    let mut sd2 = vec![false; res.slope_diverged.len()];
     for (new_pos, &old) in order.iter().enumerate() {
         a2[new_pos * j..(new_pos + 1) * j].copy_from_slice(&res.a[old * j..(old + 1) * j]);
         b2[new_pos * j..(new_pos + 1) * j].copy_from_slice(&res.b[old * j..(old + 1) * j]);
+        sd2[new_pos * j..(new_pos + 1) * j]
+            .copy_from_slice(&res.slope_diverged[old * j..(old + 1) * j]);
         pi2[new_pos] = res.pi[old];
     }
     let n = res.map_class.len();
@@ -552,6 +600,7 @@ fn canonical_order(res: MixtureResult) -> MixtureResult {
         pi: pi2,
         class_posterior: cp2,
         map_class: map2,
+        slope_diverged: sd2,
         ..res
     }
 }
@@ -563,6 +612,32 @@ fn canonical_order(res: MixtureResult) -> MixtureResult {
 /// [`crate::mmle::fit_mmle_2pl`]. For `C >= 2` the fit runs
 /// `cfg.n_starts` restarts (start 0 is a deterministic warm start) and keeps the run
 /// with the highest final log-likelihood. Classes are returned in canonical order.
+///
+/// Slope-divergence guard: the item M-step clamps to the crate-wide numerical
+/// safety rail `crate::mmle::SLOPE_DIVERGENCE_RAIL` — a Heywood-like boundary
+/// solution (Bock & Aitkin, 1981, p. 457), degenerate-pattern non-finite ML
+/// (Bock & Aitkin, 1981, p. 454; Mislevy, 1985, p. 44), handled by prior
+/// constraint rather than a substantive ceiling (Chalmers, 2012, pp. 14–15).
+/// A slope resting on the rail with the penalized M-step still pushing outward
+/// is reported through `MixtureResult::slope_diverged` (class-major, canonical
+/// order) with `converged = false` and `termination_reason = "slope_diverged"`,
+/// never passed off as an estimate. See `crate::mmle::SLOPE_DIVERGENCE_RAIL`
+/// for the full literature basis.
+///
+/// # References (APA 7th ed.)
+///
+/// Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
+/// item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
+/// 443–459. https://doi.org/10.1007/BF02293801
+///
+/// Chalmers, R. P. (2012). mirt: A multidimensional item response theory package
+/// for the R environment. *Journal of Statistical Software, 48*(6), 1–29.
+/// https://doi.org/10.18637/jss.v048.i06
+///
+/// Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+/// (ETS Research Report No. 85–33). Educational Testing Service.
+/// https://eric.ed.gov/?id=ED268138 (Published as Mislevy, 1986,
+/// *Psychometrika, 51*(2), 177–195.)
 pub fn fit_mixture(
     y: &[f64],
     observed: &[bool],

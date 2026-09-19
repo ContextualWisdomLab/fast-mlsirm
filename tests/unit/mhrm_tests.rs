@@ -1503,3 +1503,20 @@ fn mc_mhrm_recovery_500() {
     }
     println!("=== done ===");
 }
+
+#[test]
+fn mhrm_loading_rail_reports_only_outward_overflow() {
+    assert_eq!(
+        clamp_mhrm_loading(MHRM_A_BOUND + 1.0),
+        (MHRM_A_BOUND, true)
+    );
+    assert_eq!(
+        clamp_mhrm_loading(-MHRM_A_BOUND - 1.0),
+        (-MHRM_A_BOUND, true)
+    );
+    assert_eq!(
+        clamp_mhrm_loading(MHRM_A_BOUND),
+        (MHRM_A_BOUND, false)
+    );
+    assert_eq!(clamp_mhrm_loading(8.436371920098184), (8.436371920098184, false));
+}

@@ -964,7 +964,8 @@ fn fit_ho_gdina(
 /// with `loading` (row-major `n_items * n_dims`, `0` off-pattern), `intercept`, `theta`
 /// (`n_persons * n_dims` EAP), `n_dims`, `corr` (row-major `n_dims * n_dims`, identity when not
 /// estimated), `loglik_trace`, `n_iter`, `converged`, `termination_reason`,
-/// `final_loglik_change`, `n_parameters`.
+/// `final_loglik_change`, `slope_diverged` (per-item divergence flags),
+/// `n_parameters`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, q = 21, estimate_corr = false, max_iter = 500, tol = 1e-6, node_rule = "gh", xi_points = 4000, xi_seed = 0x9E37_79B9_7F4A_7C15))]
@@ -1029,6 +1030,7 @@ fn fit_2pl(
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
     out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("slope_diverged", res.slope_diverged)?;
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
@@ -1051,7 +1053,8 @@ fn fit_2pl(
 /// `n_items * (n_cat - 1)` GPCM step intercepts; EMPTY for the 2PL), `n_cat`, `theta`
 /// (`n_persons * n_dims` trait EAP), `n_dims`, `corr`, `se_loading`/`se_intercept`/`se_step` (Louis
 /// observed-information SEs; empty when `estimate_se = false`), `acceptance_rate`, `n_cycles`,
-/// `converged`, `termination_reason`, `final_param_change`, `n_parameters`.
+/// `converged`, `termination_reason`, `final_param_change`, `slope_diverged`
+/// (per-item divergence flags), `n_parameters`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, max_cycles = 2000, burn_in = 200, mh_steps = 5, proposal_sd = 1.0, target_accept = 0.30, tol = 1e-3, seed = 0x9E37_79B9_7F4A_7C15, estimate_se = true, estimate_corr = false, model = "2pl", n_cat = 2))]
@@ -1150,6 +1153,7 @@ fn fit_mhrm(
     out.set_item("n_cycles", res.n_cycles)?;
     out.set_item("converged", res.converged)?;
     out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("slope_diverged", res.slope_diverged)?;
     out.set_item("final_param_change", res.final_param_change)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
@@ -4679,7 +4683,8 @@ fn separation_reliability(
 /// 1990). `y`/`observed` are row-major `n_persons * n_items`; `model` is "rasch" or
 /// "2pl". `n_classes` latent classes each get their own item parameters. Returns a dict
 /// with `a`/`b` (class-major `C*J`), `pi` (`C`), `class_posterior` (`N*C`), `map_class`
-/// (`N`), `theta` (`N`), `loglik_trace`, `n_iter`, `converged`, `n_parameters`.
+/// (`N`), `theta` (`N`), `loglik_trace`, `n_iter`, `converged`, `termination_reason`,
+/// `slope_diverged` (per-(class, item) divergence flags, class-major), `n_parameters`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, n_persons, n_items, n_classes, model = "rasch", n_starts = 1, max_iter = 500, tol = 1e-6, seed = 0x2545F491))]
@@ -4734,6 +4739,8 @@ fn fit_mixture(
     out.set_item("loglik_trace", res.loglik_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("slope_diverged", res.slope_diverged)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }
@@ -4799,7 +4806,8 @@ fn fit_lltm(
 /// `testlet_id[i]` is item `i`'s testlet in `0..n_testlets`; `model` is "rasch" or
 /// "2pl". Returns a dict with `a`/`b`/`beta` (per item), `sigma2` (per testlet — the
 /// local-dependence estimand), `theta`, `loglik_trace`, `n_iter`, `converged`,
-/// `n_parameters`.
+/// `termination_reason`, `final_loglik_change`, `slope_diverged` (per-item
+/// divergence flags), `n_parameters`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, testlet_id, n_persons, n_items, n_testlets, model = "rasch", max_iter = 500, tol = 1e-6, q_gamma = 21, estimate_sigma = true, init_sigma2 = 0.5))]
@@ -4870,6 +4878,7 @@ fn fit_testlet(
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
     out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("slope_diverged", res.slope_diverged)?;
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())

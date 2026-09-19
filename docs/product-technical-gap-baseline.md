@@ -980,6 +980,13 @@ erDiagram
 5. **Subprocess Timeout & Watchdog (Issue #1460, #1461, #1462 / PR #1460)**: Release scripts and worker processes bound to non-hanging watchdog timeouts. (*Resolved and Merged*).
 6. **Finite-Population Sampling Artifacts (Issue #1453, #1454 / PR #1445)**: Stratified allocation powered by $O(N \log N)$ bounded algorithms and lossless inclusion-probability contracts. (*Resolved and Merged*).
 7. **External Validation Preregistered Profiles (Issue #1443, #1446 / PR #1444)**: Preregistered profile replay verifying transportability and fairness evidence. (*Resolved and Merged*).
+8. **MH-RM Slope-Divergence Evidence (Issue #1932 / PR #1957)**: The shared
+   `30.0` numerical rail and fail-closed result contract remain Proposed. Hosted
+   CI falsified the former duplicate-column fixture at the interior loading
+   `8.436371920098184`; identical columns violate local independence but do not
+   alone prove infinite marginal discrimination. Exact positive/negative
+   overflow and interior non-engagement contracts now own the MH-RM boundary.
+   (*Draft; exact-head Rust CI pending*).
 
 ### 21.2 Buyer-Perceived Product & UX Gaps ($20B Enterprise Benchmark)
 1. **Interactive Storybook & Design Token Uniformity**: Centralized Design Token architecture (CSS custom properties, WCAG 2.1 AAA contrast, keyboard focus indicators, tabular numerals) matching Figma specifications (`docs/figma_product_design_packet.md`).

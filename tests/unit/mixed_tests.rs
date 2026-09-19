@@ -247,8 +247,12 @@ fn mixed_item_line_search_stops_at_a_clamped_boundary() {
     for node in 0..grid.cell() {
         counts[node * 2] = 1.0;
     }
-    let fitted = m_step_item(&spec, &[12.0], &grid, &counts, 1);
+    let (fitted, pressed) = m_step_item(&spec, &[12.0], &grid, &counts, 1);
     assert_eq!(fitted, vec![12.0]);
+    assert!(
+        !pressed,
+        "a fixed-slope family never presses the slope rail"
+    );
 }
 
 #[test]
@@ -490,8 +494,9 @@ fn mixed_fit_validation_and_helper_boundaries() {
     let grid = build_grid(&[binary.clone()], 1, 7, 7).unwrap();
     let params = vec![initial_params(&binary, &[0.5, 0.5], 0, 1, 0)];
     let counts = vec![vec![f64::NAN; grid.cell() * 2]];
-    let fitted = m_step(&[binary], &params, &grid, &counts, 1);
+    let (fitted, pressed) = m_step(&[binary], &params, &grid, &counts, 1);
     assert_eq!(fitted.len(), 1);
+    assert_eq!(pressed.len(), 1);
 
     let binary = MixedItemSpec {
         kind: MixedItemKind::TwoPl,
@@ -500,7 +505,7 @@ fn mixed_fit_validation_and_helper_boundaries() {
     let grid = build_grid(&[binary.clone()], 1, 7, 7).unwrap();
     let initial = initial_params(&binary, &[0.5, 0.5], 0, 1, 0);
     let zero_counts = vec![0.0; grid.cell() * 2];
-    let stationary = m_step_item(&binary, &initial, &grid, &zero_counts, 6);
+    let (stationary, _) = m_step_item(&binary, &initial, &grid, &zero_counts, 6);
     assert_eq!(stationary.len(), initial.len());
 }
 
