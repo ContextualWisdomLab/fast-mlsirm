@@ -940,7 +940,9 @@ fn e_step_device(
     zi: Option<(f64, &[bool])>,
 ) -> EStep {
     match device {
-        Device::Cpu => e_step(tables, resp, factor_id, config, pop, ctx, grids, zi),
+        Device::Cpu | Device::Split { .. } => {
+            e_step(tables, resp, factor_id, config, pop, ctx, grids, zi)
+        }
         Device::Gpu | Device::Auto => {
             #[cfg(all(feature = "gpu", not(coverage)))]
             {

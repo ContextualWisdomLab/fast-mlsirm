@@ -1349,6 +1349,16 @@ fn parse_device(name: &str) -> PyResult<mlsirm_core::Device> {
     })
 }
 
+fn parse_bifactor_device(
+    name: &str,
+    n_persons: usize,
+    split_at_person: Option<usize>,
+) -> PyResult<mlsirm_core::Device> {
+    mlsirm_core::bifactor_grm::parse_bifactor_device(name, n_persons, split_at_person).map_err(
+        |e| PyValueError::new_err(e),
+    )
+}
+
 /// Single-group polytomous bifactor graded response model (Gibbons et al., 2007;
 /// Gibbons & Hedeker, 1992; Samejima, 1969;
 /// `mlsirm_core::bifactor_grm::fit_bifactor_grm`). Each item's `n_cat` ORDERED
@@ -1370,7 +1380,7 @@ fn parse_device(name: &str) -> PyResult<mlsirm_core::Device> {
 /// `converged = False` instead of substituting values.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu"))]
+#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu", split_at_person = None))]
 fn fit_bifactor_grm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1387,6 +1397,7 @@ fn fit_bifactor_grm(
     n_starts: usize,
     seed: u64,
     device: &str,
+    split_at_person: Option<usize>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
@@ -1425,7 +1436,7 @@ fn fit_bifactor_grm(
         // Python and out of #1929's quadrature-node scope.
         newton_iter: 10,
         ridge: 1e-8,
-        device: parse_device(device)?,
+        device: parse_bifactor_device(device, n_persons, split_at_person)?,
     };
     let res = py
         .detach(|| {
@@ -1455,6 +1466,20 @@ fn fit_bifactor_grm(
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("best_start", res.best_start)?;
     out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("effective_device", res.effective_device)?;
+    let shard_dicts: Vec<pyo3::Bound<'_, pyo3::types::PyDict>> = res
+        .estep_shards
+        .iter()
+        .map(|s| {
+            let d = pyo3::types::PyDict::new(py);
+            d.set_item("shard_index", s.shard_index)?;
+            d.set_item("device", &s.device)?;
+            d.set_item("person_start", s.person_start)?;
+            d.set_item("person_end", s.person_end)?;
+            Ok(d)
+        })
+        .collect::<PyResult<_>>()?;
+    out.set_item("estep_shards", shard_dicts)?;
     Ok(out.into())
 }
 

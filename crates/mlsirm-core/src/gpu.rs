@@ -401,11 +401,19 @@ pub(crate) fn read_mapped(buffer: &wgpu::Buffer) -> Option<Vec<f32>> {
 /// `staging_dst` was created by [`staging_buffer`]. Returns `None` when the
 /// device poll or any mapping fails, signalling the caller to fall back to
 /// the CPU implementation rather than yielding partial results.
-pub(crate) fn submit_and_readback(
+/// GPU readback in flight after [`submit_readback`]; completion is polled via
+/// [`try_complete_readback`] or [`wait_readback`].
+pub(crate) struct PendingGpuReadback {
+    staging: Vec<wgpu::Buffer>,
+}
+
+/// Submit GPU work and begin MAP_READ on staging buffers without blocking the
+/// caller thread (enables same-host CPU shards to run concurrently).
+pub(crate) fn submit_readback(
     ctx: &GpuContext,
     encoder: wgpu::CommandEncoder,
     copies: &[(&wgpu::Buffer, &wgpu::Buffer, usize)],
-) -> Option<Vec<Vec<f32>>> {
+) -> PendingGpuReadback {
     let mut cmd = encoder;
     for (src, dst, len) in copies {
         cmd.copy_buffer_to_buffer(
@@ -417,12 +425,46 @@ pub(crate) fn submit_and_readback(
         );
     }
     ctx.queue.submit(Some(cmd.finish()));
-    let staging: Vec<&wgpu::Buffer> = copies.iter().map(|(_, dst, _)| *dst).collect();
+    let staging: Vec<wgpu::Buffer> = copies.iter().map(|(_, dst, _)| (*dst).clone()).collect();
     for s in &staging {
         s.slice(..).map_async(wgpu::MapMode::Read, |_| {});
     }
-    ctx.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
-    staging.iter().map(|s| read_mapped(s)).collect()
+    PendingGpuReadback { staging }
+}
+
+/// Non-blocking poll for mapped readback buffers.
+pub(crate) fn try_complete_readback(
+    ctx: &GpuContext,
+    pending: &PendingGpuReadback,
+) -> Option<Vec<Vec<f32>>> {
+    ctx.device.poll(wgpu::PollType::Poll).ok()?;
+    let mut out = Vec::with_capacity(pending.staging.len());
+    for s in &pending.staging {
+        out.push(read_mapped(s)?);
+    }
+    Some(out)
+}
+
+/// Block until every staging buffer in `pending` is mapped and readable.
+pub(crate) fn wait_readback(
+    ctx: &GpuContext,
+    pending: &PendingGpuReadback,
+) -> Option<Vec<Vec<f32>>> {
+    loop {
+        if let Some(values) = try_complete_readback(ctx, pending) {
+            return Some(values);
+        }
+        ctx.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+    }
+}
+
+pub(crate) fn submit_and_readback(
+    ctx: &GpuContext,
+    encoder: wgpu::CommandEncoder,
+    copies: &[(&wgpu::Buffer, &wgpu::Buffer, usize)],
+) -> Option<Vec<Vec<f32>>> {
+    let pending = submit_readback(ctx, encoder, copies);
+    wait_readback(ctx, &pending)
 }
 
 pub(crate) fn dispatch_count(total: usize) -> u32 {
