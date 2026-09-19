@@ -237,11 +237,6 @@ def _doublet_blocks(specific_map: np.ndarray) -> list[list[int]]:
     return blocks
 
 
-def _specific_column_counts(specific_columns: np.ndarray) -> np.ndarray:
-    """Count non-zero specific-factor loadings per item row (eq. 1 columns)."""
-    return np.count_nonzero(specific_columns, axis=1)
-
-
 def _g2_fixture() -> tuple[
     np.ndarray,
     np.ndarray,
@@ -316,18 +311,59 @@ def test_g1_reversed_alpha_is_non_finite() -> None:
 
 
 def test_g2_eq15_unreduced_matches_reduced_on_identical_nodes() -> None:
-    """G2: eq. (15), p. 589 — (p+S) sum equals factored (p+1) marginal."""
+    """G2: eq. (15), p. 589 — paper unreduced sum vs crate reduced marginal."""
     y, a_p, a_s, thr, phi, pmap, smap = _g2_fixture()
     q_primary, q_specific = 5, 5
+    n_persons, n_items = y.shape
+    n_primary = a_p.shape[1]
+    n_specific = int(np.max(smap) + 1)
+    n_cat = thr.shape[1] + 1
     full = _cai2010_marginal_loglik_unreduced(
         y, a_p, a_s, thr, phi, pmap, smap, q_primary, q_specific
     )
-    reduced = _cai2010_marginal_loglik_reduced(
+    reduced_numpy = _cai2010_marginal_loglik_reduced(
         y, a_p, a_s, thr, phi, pmap, smap, q_primary, q_specific
     )
-    assert np.isfinite(full) and np.isfinite(reduced)
-    gap = abs(full - reduced)
-    assert gap <= 1e-9, f"eq.(15) reorder gap {gap:.3e} (full={full}, reduced={reduced})"
+    assert np.isfinite(full) and np.isfinite(reduced_numpy)
+    numpy_gap = abs(full - reduced_numpy)
+    assert numpy_gap <= 1e-9, (
+        f"eq.(15) NumPy reorder gap {numpy_gap:.3e} "
+        f"(full={full}, reduced_numpy={reduced_numpy})"
+    )
+
+    try:
+        from fast_mlsirm import _core
+    except Exception:  # pragma: no cover
+        pytest.skip("compiled core not available")
+    if not hasattr(_core, "two_tier_grm_marginal_loglik"):  # pragma: no cover
+        pytest.skip("core built without two_tier_grm_marginal_loglik")
+
+    observed = np.ones(n_persons * n_items, dtype=bool)
+    rust_reduced = float(
+        _core.two_tier_grm_marginal_loglik(
+            a_p.reshape(-1),
+            a_s.reshape(-1),
+            thr.reshape(-1),
+            phi.reshape(-1),
+            y.astype(np.int64).reshape(-1),
+            observed,
+            pmap.reshape(-1),
+            smap.reshape(-1),
+            n_persons,
+            n_items,
+            n_primary,
+            n_specific,
+            n_cat,
+            q_primary,
+            q_specific,
+        )
+    )
+    assert np.isfinite(rust_reduced)
+    crate_gap = abs(full - rust_reduced)
+    assert crate_gap <= 1e-9, (
+        f"eq.(15) paper-vs-crate gap {crate_gap:.3e} "
+        f"(full={full}, rust_reduced={rust_reduced})"
+    )
 
 
 def test_g3_eq1_pattern_accepts_and_restores_four_doublets() -> None:
@@ -363,22 +399,6 @@ def test_g3_eq1_pattern_accepts_and_restores_four_doublets() -> None:
     assert bool(np.all(np.isfinite(fit.a_specific)))
 
 
-def _encode_specific_map_from_columns(specific_columns: np.ndarray) -> np.ndarray:
-    """Map eq. (1) specific columns to ``specific_map``; one non-zero per row."""
-    counts = _specific_column_counts(specific_columns)
-    if bool(np.any(counts > 1)):
-        raise ValueError(
-            "Cai (2010) eq. (1) allows at most one specific factor per item"
-        )
-    n_items = specific_columns.shape[0]
-    out = np.full(n_items, -1, dtype=np.int64)
-    for i in range(n_items):
-        nz = np.flatnonzero(specific_columns[i])
-        if nz.size == 1:
-            out[i] = int(nz[0])
-    return out
-
-
 def test_g3_rejects_two_specific_factors_on_one_item() -> None:
     """Eq. (1) permits at most one specific loading per item (p. 586)."""
     bad_specific = np.array(
@@ -394,9 +414,25 @@ def test_g3_rejects_two_specific_factors_on_one_item() -> None:
         ],
         dtype=np.int64,
     )
-    counts = _specific_column_counts(bad_specific)
+    counts = np.count_nonzero(bad_specific, axis=1)
     assert counts[0] == 2
     assert not bool(np.all(counts <= 1))
 
+    primary_map = _cai2010_eq1_primary_map()
+    y = np.zeros((4, primary_map.shape[0]), dtype=np.int64)
     with pytest.raises(ValueError, match="at most one specific"):
-        _encode_specific_map_from_columns(bad_specific)
+        fit_two_tier_grm(
+            y,
+            primary_map,
+            None,
+            n_cat=3,
+            n_primary=2,
+            n_specific=4,
+            q_primary=5,
+            q_specific=5,
+            max_iter=1,
+            tol=1e-4,
+            n_starts=1,
+            seed=2040,
+            specific_columns=bad_specific,
+        )

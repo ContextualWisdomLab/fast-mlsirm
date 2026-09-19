@@ -178,10 +178,44 @@ class TwoTierGrmFit:
     n_parameters: int
 
 
+def encode_specific_map_from_columns(specific_columns: np.ndarray) -> np.ndarray:
+    """Map Cai (2010) eq. (1) specific-factor columns to ``specific_map``.
+
+    Each item row must have at most one non-zero entry (p. 586). Rows with
+    no specific loading encode as ``-1`` (specific-free).
+
+    Raises
+    ------
+    ValueError
+        If any item row has two or more non-zero specific columns.
+
+    References (APA 7th ed.)
+    ------------------------
+    Cai, L. (2010). A two-tier full-information item factor analysis model
+    with applications. *Psychometrika, 75*(4), 581-612.
+    https://doi.org/10.1007/s11336-010-9178-0 (eq. 1, p. 586).
+    """
+    cols = np.asarray(specific_columns)
+    if cols.ndim != 2:
+        raise ValueError("specific_columns must be a 2-D n_items x n_specific array")
+    counts = np.count_nonzero(cols, axis=1)
+    if bool(np.any(counts > 1)):
+        raise ValueError(
+            "Cai (2010) eq. (1) allows at most one specific factor per item"
+        )
+    n_items = cols.shape[0]
+    out = np.full(n_items, -1, dtype=np.int64)
+    for i in range(n_items):
+        nz = np.flatnonzero(cols[i])
+        if nz.size == 1:
+            out[i] = int(nz[0])
+    return out
+
+
 def fit_two_tier_grm(
     responses: np.ndarray,
     primary_map: np.ndarray,
-    specific_map: np.ndarray,
+    specific_map: np.ndarray | None,
     n_cat: int,
     n_primary: int,
     n_specific: int,
@@ -191,6 +225,8 @@ def fit_two_tier_grm(
     tol: float,
     n_starts: int,
     seed: int,
+    *,
+    specific_columns: np.ndarray | None = None,
 ) -> TwoTierGrmFit:
     """Fit the single-group polytomous two-tier GRM (compute in Rust).
 
@@ -200,7 +236,10 @@ def fit_two_tier_grm(
     free confirmatory primary slopes (each primary needs at least two
     loading items); ``specific_map`` is a length-``n_items`` integer array
     with ``-1`` for specific-free items and ``0..n_specific-1`` otherwise
-    (every specific factor needs at least two items).
+    (every specific factor needs at least two items). Alternatively pass
+    ``specific_map=None`` and supply ``specific_columns`` (Cai, 2010,
+    eq. 1, p. 586) instead; at most one non-zero entry per item row is
+    enforced before the Rust fitter runs.
     ``q_primary``/``q_specific`` are required Gauss-Hermite node counts
     (any ``int >= 1``; #1929 removed the fixed-table cap, so any node count
     the Rust core's arbitrary-``n`` Golub-Welsch quadrature resolves is
@@ -260,18 +299,27 @@ def fit_two_tier_grm(
         raise ValueError("primary_map must be an n_items x n_primary boolean array")
     pmap_bool = np.asarray(pmap, dtype=bool)
 
-    smap = np.asarray(specific_map)
-    if smap.ndim != 1 or smap.shape[0] != n_items:
-        raise ValueError("specific_map must be a 1-D array of length n_items")
-    if smap.dtype.kind == "f":
-        if not bool(np.isfinite(smap).all()):
-            raise ValueError("specific_map entries must be finite integers")
-        if bool((smap != np.floor(smap)).any()):
-            raise ValueError("specific_map entries must be integers")
-    try:
-        smap_int = smap.astype(np.int64, copy=False)
-    except (TypeError, ValueError):
-        raise ValueError("specific_map entries must be integers") from None
+    if specific_columns is not None:
+        if specific_map is not None:
+            raise ValueError("pass only one of specific_map or specific_columns")
+        smap_int = encode_specific_map_from_columns(specific_columns)
+        if smap_int.shape[0] != n_items:
+            raise ValueError("specific_columns must have n_items rows")
+    else:
+        if specific_map is None:
+            raise ValueError("specific_map is required when specific_columns is omitted")
+        smap = np.asarray(specific_map)
+        if smap.ndim != 1 or smap.shape[0] != n_items:
+            raise ValueError("specific_map must be a 1-D array of length n_items")
+        if smap.dtype.kind == "f":
+            if not bool(np.isfinite(smap).all()):
+                raise ValueError("specific_map entries must be finite integers")
+            if bool((smap != np.floor(smap)).any()):
+                raise ValueError("specific_map entries must be integers")
+        try:
+            smap_int = smap.astype(np.int64, copy=False)
+        except (TypeError, ValueError):
+            raise ValueError("specific_map entries must be integers") from None
     if bool((smap_int < -1).any()) or bool((smap_int >= n_specific_int).any()):
         raise ValueError(
             "specific_map entries must be -1 (specific-free) or in "

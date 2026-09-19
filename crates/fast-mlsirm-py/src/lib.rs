@@ -118,7 +118,10 @@ use mlsirm_core::fitstats::{
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
-use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
+use mlsirm_core::two_tier_grm::{
+    fit_two_tier_grm as core_fit_two_tier_grm,
+    two_tier_grm_marginal_loglik as core_two_tier_grm_marginal_loglik, TwoTierGrmConfig,
+};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
     gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, phi_lambda as core_phi_lambda,
@@ -1701,6 +1704,157 @@ fn bifactor_oakes_se(
     out.set_item("positive_definite", res.positive_definite)?;
     out.set_item("non_pd_reason", res.non_pd_reason)?;
     Ok(out.into())
+}
+
+/// Reduced-dimension marginal log-likelihood for the confirmatory two-tier GRM
+/// at fixed parameters (`mlsirm_core::two_tier_grm::two_tier_grm_marginal_loglik`).
+/// Evaluates Cai (2010) eq. (15) second line (Gibbons et al., 2007, eq. 15
+/// dimension reduction) on the supplied Gauss-Hermite node counts.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    a_primary, a_specific, threshold, phi, y, observed, primary_map, specific_map,
+    n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific
+))]
+fn two_tier_grm_marginal_loglik(
+    py: Python<'_>,
+    a_primary: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    phi: PyReadonlyArray1<'_, f64>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    primary_map: PyReadonlyArray1<'_, bool>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+) -> PyResult<f64> {
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows"))?;
+    let y_slice = y.as_slice()?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    let obs_slice = match &observed {
+        Some(o) => {
+            let slice = o.as_slice()?;
+            if slice.len() != n_cells {
+                return Err(PyValueError::new_err(
+                    "observed must have length n_persons * n_items",
+                ));
+            }
+            Some(slice)
+        }
+        None => None,
+    };
+    let primary_cells = n_items
+        .checked_mul(n_primary)
+        .ok_or_else(|| PyValueError::new_err("n_items * n_primary overflows"))?;
+    let pmap_slice = primary_map.as_slice()?;
+    if pmap_slice.len() != primary_cells {
+        return Err(PyValueError::new_err(
+            "primary_map must have length n_items * n_primary (row-major)",
+        ));
+    }
+    let smap_slice = specific_map.as_slice()?;
+    if smap_slice.len() != n_items {
+        return Err(PyValueError::new_err(
+            "specific_map must have length n_items",
+        ));
+    }
+    let a_p_slice = a_primary.as_slice()?;
+    if a_p_slice.len() != primary_cells {
+        return Err(PyValueError::new_err(
+            "a_primary must have length n_items * n_primary",
+        ));
+    }
+    let a_s_slice = a_specific.as_slice()?;
+    if a_s_slice.len() != n_items {
+        return Err(PyValueError::new_err(
+            "a_specific must have length n_items",
+        ));
+    }
+    let m1 = n_cat
+        .checked_sub(1)
+        .ok_or_else(|| PyValueError::new_err("n_cat must be >= 2"))?;
+    let thr_cells = n_items
+        .checked_mul(m1)
+        .ok_or_else(|| PyValueError::new_err("n_items * (n_cat - 1) overflows"))?;
+    let thr_slice = threshold.as_slice()?;
+    if thr_slice.len() != thr_cells {
+        return Err(PyValueError::new_err(
+            "thresholds must have length n_items * (n_cat - 1)",
+        ));
+    }
+    let phi_cells = n_primary
+        .checked_mul(n_primary)
+        .ok_or_else(|| PyValueError::new_err("n_primary * n_primary overflows"))?;
+    let phi_slice = phi.as_slice()?;
+    if phi_slice.len() != phi_cells {
+        return Err(PyValueError::new_err(
+            "phi must have length n_primary * n_primary",
+        ));
+    }
+    let yy: Vec<usize> = y_slice
+        .iter()
+        .enumerate()
+        .map(|(idx, &v)| {
+            if v < 0 {
+                match obs_slice {
+                    None => {
+                        return Err(PyValueError::new_err(
+                            "y categories must be non-negative when observed is None",
+                        ));
+                    }
+                    Some(o) if !o[idx] => return Ok(0usize),
+                    _ => {}
+                }
+            }
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let smap: Vec<i32> = smap_slice
+        .iter()
+        .map(|&v| {
+            i32::try_from(v)
+                .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+        })
+        .collect::<PyResult<_>>()?;
+    let pmap = pmap_slice.to_vec();
+    let a_p = a_p_slice.to_vec();
+    let a_s = a_s_slice.to_vec();
+    let thr = thr_slice.to_vec();
+    let phi_vec = phi_slice.to_vec();
+    let obs_vec: Option<Vec<bool>> = obs_slice.map(|slice| slice.to_vec());
+    py.detach(|| {
+        core_two_tier_grm_marginal_loglik(
+            &a_p,
+            &a_s,
+            &thr,
+            &phi_vec,
+            &yy,
+            obs_vec.as_deref(),
+            &pmap,
+            &smap,
+            n_persons,
+            n_items,
+            n_primary,
+            n_specific,
+            n_cat,
+            q_primary,
+            q_specific,
+        )
+    })
+    .map_err(PyValueError::new_err)
 }
 
 /// Focal-group fixed-item parameter calibration (FIPC) for the polytomous
@@ -10436,6 +10590,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bifactor_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_two_tier_grm, m)?)?;
+    m.add_function(wrap_pyfunction!(two_tier_grm_marginal_loglik, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
