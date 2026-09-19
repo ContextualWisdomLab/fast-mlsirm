@@ -32,7 +32,11 @@ from fast_mlsirm.remote_exec import (
 _SHA = "a" * 64
 _SHA_B = "b" * 64
 _SHA_C = "c" * 64
-DEFAULT_REMOTE_SSH_HOST = "seonghobae@192.168.68.15"
+DEFAULT_REMOTE_SSH_HOST = "seongho@192.168.68.3"
+DEFAULT_REMOTE_INTERPRETER = os.environ.get(
+    "FAST_MLSIRM_REMOTE_INTERPRETER",
+    "/data/orca/workspaces/fmls-2048-remote-exec-s1/.venv/bin/python3.12",
+)
 
 
 def _manifest() -> RemoteRunManifest:
@@ -90,13 +94,19 @@ def test_two_host_mc_replicate_over_ssh_when_reachable() -> None:
     if not reachable:
         pytest.skip(f"SSH host not reachable for two-host probe ({remote_host}): {detail}")
 
+    remote_interpreter = os.environ.get(
+        "FAST_MLSIRM_REMOTE_INTERPRETER",
+        DEFAULT_REMOTE_INTERPRETER,
+    )
     import_check = subprocess.run(
         [
             "ssh",
             "-o",
+            "StrictHostKeyChecking=accept-new",
+            "-o",
             "BatchMode=yes",
             remote_host,
-            "python3",
+            remote_interpreter,
             "-c",
             "import fast_mlsirm; print(fast_mlsirm.__version__)",
         ],
@@ -116,6 +126,7 @@ def test_two_host_mc_replicate_over_ssh_when_reachable() -> None:
     manifest = envelope.manifest
     executor = SubprocessExecutor(
         remote_host,
+        remote_interpreter=remote_interpreter,
         ledger=OutcomeCommitLedger(),
         driver_host=driver_host,
     )

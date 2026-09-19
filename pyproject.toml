@@ -36,6 +36,7 @@ fuzz = ["atheris>=2.3", "hypothesis>=6"]
 
 [project.scripts]
 fast-mlsirm = "fast_mlsirm.cli:main"
+fast-mlsirm-remote-worker = "fast_mlsirm.remote_worker:main"
 
 [tool.maturin]
 bindings = "pyo3"
