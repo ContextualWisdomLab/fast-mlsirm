@@ -59,3 +59,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+## 2026-09-17 - Semgrep Non-Literal Import Findings in Dynamic Inventory Scripts
+**Vulnerability:** Semgrep flagged `importlib.import_module(modname)` with `python.lang.security.audit.non-literal-import.non-literal-import` due to dynamic module loading.
+**Learning:** Internal inventory tools that traverse their own package directory (`pkgutil.walk_packages`) trigger dynamic loading rules. Because the input is purely local and constrained to the repository codebase, it is a safe pattern but still raises CI violations.
+**Prevention:** Use an explicit `# nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import` inline comment to suppress the false positive and allow the SAST CI check to pass.
