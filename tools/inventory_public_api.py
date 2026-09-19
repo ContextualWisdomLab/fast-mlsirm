@@ -101,6 +101,7 @@ def _ast_default(node: ast.expr | None) -> str:
                     return "<factory>"
                 if keyword.arg == "default":
                     return ast.unparse(keyword.value)
+            return ""
     return ast.unparse(node)
 
 
@@ -141,6 +142,25 @@ def _is_dataclass(node: ast.ClassDef) -> bool:
     return False
 
 
+def _dataclass_generates_initializer(node: ast.ClassDef) -> bool:
+    """Whether the dataclass decorator enables its generated initializer."""
+    for decorator in node.decorator_list:
+        if not isinstance(decorator, ast.Call):
+            continue
+        target = decorator.func
+        is_dataclass_decorator = (
+            isinstance(target, ast.Name) and target.id == "dataclass"
+        ) or (
+            isinstance(target, ast.Attribute) and target.attr == "dataclass"
+        )
+        if not is_dataclass_decorator:
+            continue
+        for keyword in decorator.keywords:
+            if keyword.arg == "init" and isinstance(keyword.value, ast.Constant):
+                return keyword.value.value is not False
+    return True
+
+
 def _annotation_root_name(annotation: ast.expr) -> str:
     """Return the outer annotation name used by dataclass constructor semantics."""
     while isinstance(annotation, ast.Subscript):
@@ -179,7 +199,7 @@ def _ast_class_params(node: ast.ClassDef) -> str:
     for statement in node.body:
         if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)) and statement.name == "__init__":
             return _ast_function_params(statement)
-    if not _is_dataclass(node):
+    if not _is_dataclass(node) or not _dataclass_generates_initializer(node):
         return ""
 
     parts: list[str] = []
@@ -274,7 +294,7 @@ def collect_python_rows() -> list[dict]:
                 visit(name, obj)
             continue
 
-        tree = ast.parse(py_file.read_text(), filename=str(py_file))
+        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
         for statement in tree.body:
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 visit_static(module_name, statement)
