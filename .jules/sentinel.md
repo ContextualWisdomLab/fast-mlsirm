@@ -63,3 +63,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** The `json.loads` call in `llm_judge._response_object` was not explicitly protected against non-finite float strings, allowing `NaN`, `Infinity`, or extremely large scientific notation (e.g., `1e999`) to be deserialized as Python `inf` or `nan` floats.
 **Learning:** Python's standard `json.loads` library has permissive defaults. It parses non-standard constants (like `NaN` and `Infinity`) unless expressly denied via `parse_constant`, and safely converts large exponential scientific notation values to floats, overflowing them to `inf` instead of rejecting them.
 **Prevention:** Always combine `parse_constant` (to block explicit constants) and `parse_float` (using `math.isfinite` to block overflow conversion) when parsing untrusted JSON inputs into systems that assume clean, finite scalar structures.
+## 2025-02-24 - Semgrep SAST Warnings Addressed
+**Vulnerability:** Semgrep CI failed due to two warnings: `dangerous-globals-use` in `python/fast_mlsirm/dif.py` and `non-literal-import` in `tools/inventory_public_api.py`.
+**Learning:** `globals()` usage inside loops with dynamic keys is flagged as dangerous. Also, using `importlib.import_module` with untrusted/dynamic input is risky.
+**Prevention:** Avoid `globals()` by mapping strings to explicit function references. Secure dynamic imports by adding explicit whitelist checks (e.g., `if not modname.startswith('fast_mlsirm.'): continue`).
