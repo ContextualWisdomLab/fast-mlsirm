@@ -1,10 +1,39 @@
 """Essay-specific adapters for the shared provider-neutral scoring contracts."""
 
+from functools import wraps
+from inspect import signature
+from typing import Any, Callable
+
 from . import contracts as _contracts
 from ._integer_safety import install as _install_integer_safety
+from ._integer_safety import _nonnegative_integer as _safe_nonnegative_integer
 
 _install_integer_safety(_contracts)
-del _contracts, _install_integer_safety
+
+
+def _integer_safe_factory(
+    factory: Callable[..., Any],
+    integer_limits: tuple[tuple[str, int], ...],
+) -> Callable[..., Any]:
+    """Seal public integer inputs before implementation code can observe them."""
+    factory_signature = signature(factory)
+
+    @wraps(factory)
+    def guarded(*args: Any, **kwargs: Any) -> Any:
+        """Normalize trusted integers before invoking one supported essay factory."""
+        bound = factory_signature.bind(*args, **kwargs)
+        for name, maximum in integer_limits:
+            if name in bound.arguments:
+                bound.arguments[name] = _safe_nonnegative_integer(
+                    bound.arguments[name],
+                    name,
+                    maximum,
+                )
+        _install_integer_safety(_contracts)
+        return factory(*bound.args, **bound.kwargs)
+
+    return guarded
+
 
 from .calibration_reporting import (
     MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS as MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS,
@@ -35,12 +64,10 @@ from .contracts import (
 )
 from .contracts import MAX_ESSAY_RESPONSE_UNITS as MAX_ESSAY_RESPONSE_UNITS
 from .contracts import MAX_ESSAY_REVIEW_FLAGS as MAX_ESSAY_REVIEW_FLAGS
-from .contracts import build_essay_prompt as build_essay_prompt
-from .contracts import (
-    build_essay_response_evidence as build_essay_response_evidence,
-)
+from .contracts import build_essay_prompt as _build_essay_prompt
+from .contracts import build_essay_response_evidence as _build_essay_response_evidence
 from .contracts import build_essay_scoring_request as build_essay_scoring_request
-from .contracts import build_essay_submission as build_essay_submission
+from .contracts import build_essay_submission as _build_essay_submission
 from .contracts import score_essay_request as score_essay_request
 from .report_html import (
     render_essay_score_report_html as render_essay_score_report_html,
@@ -62,6 +89,28 @@ from .validation_reporting import (
 from .validation_reporting import EssayValidationMetric as EssayValidationMetric
 from .validation_reporting import (
     build_essay_validation_evidence_report as build_essay_validation_evidence_report,
+)
+
+build_essay_prompt = _integer_safe_factory(
+    _build_essay_prompt,
+    (
+        ("maximum_response_characters", MAX_ESSAY_RESPONSE_CHARACTERS),
+        ("maximum_response_units", MAX_ESSAY_RESPONSE_UNITS),
+    ),
+)
+build_essay_response_evidence = _integer_safe_factory(
+    _build_essay_response_evidence,
+    (
+        ("start_offset", MAX_ESSAY_RESPONSE_CHARACTERS),
+        ("end_offset", MAX_ESSAY_RESPONSE_CHARACTERS),
+    ),
+)
+build_essay_submission = _integer_safe_factory(
+    _build_essay_submission,
+    (
+        ("response_character_count", MAX_ESSAY_RESPONSE_CHARACTERS),
+        ("response_unit_count", MAX_ESSAY_RESPONSE_UNITS),
+    ),
 )
 
 __all__ = [
