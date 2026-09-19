@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -45,6 +46,12 @@ def _initialize_git_repo(repo_root: Path) -> None:
         text=True,
     )
     subprocess.run(
+        ["git", "-C", str(repo_root), "add", "."],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
         [
             "git",
             "-C",
@@ -54,7 +61,6 @@ def _initialize_git_repo(repo_root: Path) -> None:
             "-c",
             "user.email=fast-mlsirm-test@example.invalid",
             "commit",
-            "--allow-empty",
             "--quiet",
             "-m",
             "source provenance fixture",
@@ -65,10 +71,22 @@ def _initialize_git_repo(repo_root: Path) -> None:
     )
 
 
+def _source_commit(tmp_path: Path) -> str:
+    return subprocess.run(
+        ["git", "-C", str(tmp_path / "repo"), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 def _write_acceptance(tmp_path: Path) -> Path:
-    artifacts = tmp_path / "acceptance" / "artifacts"
+    source_commit = _source_commit(tmp_path)
+    acceptance_dir = tmp_path / "acceptance"
+    artifacts = acceptance_dir / "artifacts"
     summary = {
         "status": "ok",
+        "source_commit": source_commit,
         "steps": [
             {
                 "command": "simulate",
@@ -83,8 +101,24 @@ def _write_acceptance(tmp_path: Path) -> Path:
             },
         ],
     }
-    path = tmp_path / "acceptance" / "acceptance_summary.json"
+    summary["artifact_sha256"] = {
+        Path(path).resolve().relative_to(acceptance_dir.resolve()).as_posix(): hashlib.sha256(
+            Path(path).read_bytes()
+        ).hexdigest()
+        for step in summary["steps"]
+        for path in step["files"].values()
+    }
+    path = acceptance_dir / "acceptance_summary.json"
     _write(path, json.dumps(summary))
+    return path
+
+
+def _write_sales_readiness(tmp_path: Path) -> Path:
+    path = tmp_path / "acceptance" / "sales_readiness_manifest.json"
+    _write(
+        path,
+        json.dumps({"status": "ok", "source_commit": _source_commit(tmp_path)}),
+    )
     return path
 
 
@@ -102,9 +136,10 @@ def _write_benchmark_report(tmp_path: Path) -> Path:
         json.dumps(
             {
                 "status": "ok",
+                "source_commit": _source_commit(tmp_path),
                 "budget_ok": True,
                 "html_report_file": str(html),
-                "html_report_sha256": "abc123",
+                "html_report_sha256": hashlib.sha256(html.read_bytes()).hexdigest(),
             }
         ),
     )
@@ -120,8 +155,9 @@ def _write_release_evidence_index(tmp_path: Path) -> Path:
         json.dumps(
             {
                 "status": "ok",
+                "source_commit": _source_commit(tmp_path),
                 "html_report_file": str(html),
-                "html_report_sha256": "abc123",
+                "html_report_sha256": hashlib.sha256(html.read_bytes()).hexdigest(),
             }
         ),
     )
@@ -136,8 +172,7 @@ def test_build_buyer_packet_creates_manifest_and_zip(tmp_path):
     _write_repo_evidence(repo, module)
     _write_dist(dist)
     acceptance = _write_acceptance(tmp_path)
-    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
-    _write(sales, json.dumps({"status": "ok"}))
+    sales = _write_sales_readiness(tmp_path)
     args = argparse.Namespace(
         repo_root=str(repo),
         acceptance=str(acceptance),
@@ -162,10 +197,29 @@ def test_build_buyer_packet_creates_manifest_and_zip(tmp_path):
     assert "Buyer Evidence Review" in html
     assert 'http-equiv="Content-Security-Policy"' in html
     assert 'role="region" aria-label="Required evidence coverage table" tabindex="0"' in html
-    assert "Packet ZIP SHA256" in html
-    assert manifest["zip_sha256"] in html
-    with zipfile.ZipFile(manifest["zip_file"]) as packet:
+    assert "Payload ZIP SHA256" in html
+    assert manifest["payload_zip_sha256"] in html
+
+    payload_zip = Path(manifest["zip_file"])
+    assert payload_zip.name == "buyer_evidence_payload.zip"
+    with zipfile.ZipFile(payload_zip) as payload:
+        payload_names = set(payload.namelist())
+    assert "buyer_evidence_manifest.json" not in payload_names
+    assert "buyer_evidence_report.html" not in payload_names
+    assert "acceptance/acceptance_summary.json" in payload_names
+    assert "sales/sales_readiness_manifest.json" in payload_names
+    assert any(name.endswith(".whl") for name in payload_names)
+    assert any(name.endswith(".tar.gz") for name in payload_names)
+
+    packet_file = Path(manifest["packet_file"])
+    digest_file = Path(manifest["packet_sha256_file"])
+    with zipfile.ZipFile(packet_file) as packet:
         names = set(packet.namelist())
+        embedded_manifest = packet.read("buyer_evidence_manifest.json")
+        embedded_report = packet.read("buyer_evidence_report.html")
+    assert embedded_manifest == (out / "buyer_evidence_manifest.json").read_bytes()
+    assert embedded_report == report.read_bytes()
+    assert digest_file.read_text(encoding="ascii").strip() == module._sha256(packet_file)
     assert "buyer_evidence_manifest.json" in names
     assert "buyer_evidence_report.html" in names
     assert "acceptance/acceptance_summary.json" in names
@@ -184,8 +238,7 @@ def test_build_buyer_packet_can_include_benchmark_report(tmp_path):
     _write_repo_evidence(repo, module)
     _write_dist(dist)
     acceptance = _write_acceptance(tmp_path)
-    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
-    _write(sales, json.dumps({"status": "ok"}))
+    sales = _write_sales_readiness(tmp_path)
     benchmark_report = _write_benchmark_report(tmp_path)
     args = argparse.Namespace(
         repo_root=str(repo),
@@ -200,10 +253,40 @@ def test_build_buyer_packet_can_include_benchmark_report(tmp_path):
     manifest = module.build_packet(args)
 
     assert manifest["coverage"]["benchmark_report"] is True
-    with zipfile.ZipFile(manifest["zip_file"]) as packet:
+    with zipfile.ZipFile(manifest["packet_file"]) as packet:
         names = set(packet.namelist())
     assert "benchmark/benchmark_report.json" in names
     assert "benchmark/benchmark_report.html" in names
+
+
+def test_build_buyer_packet_rejects_tampered_benchmark_html(tmp_path):
+    module = _load_packet_builder()
+    repo = tmp_path / "repo"
+    dist = tmp_path / "dist"
+    out = tmp_path / "packet"
+    _write_repo_evidence(repo, module)
+    _write_dist(dist)
+    acceptance = _write_acceptance(tmp_path)
+    sales = _write_sales_readiness(tmp_path)
+    benchmark_report = _write_benchmark_report(tmp_path)
+    benchmark = json.loads(benchmark_report.read_text(encoding="utf-8"))
+    Path(benchmark["html_report_file"]).write_text("tampered", encoding="utf-8")
+    args = argparse.Namespace(
+        repo_root=str(repo),
+        acceptance=str(acceptance),
+        sales_readiness=str(sales),
+        dist=str(dist),
+        out=str(out),
+        contract_value_krw=2_000_000_000,
+        benchmark_report=str(benchmark_report),
+    )
+
+    try:
+        module.build_packet(args)
+    except RuntimeError as exc:
+        assert "benchmark HTML SHA256 does not match benchmark_report.json" in str(exc)
+    else:
+        raise AssertionError("tampered benchmark HTML should fail buyer packet collection")
 
 
 def test_build_buyer_packet_can_include_release_evidence_index(tmp_path):
@@ -214,8 +297,7 @@ def test_build_buyer_packet_can_include_release_evidence_index(tmp_path):
     _write_repo_evidence(repo, module)
     _write_dist(dist)
     acceptance = _write_acceptance(tmp_path)
-    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
-    _write(sales, json.dumps({"status": "ok"}))
+    sales = _write_sales_readiness(tmp_path)
     release_index = _write_release_evidence_index(tmp_path)
     args = argparse.Namespace(
         repo_root=str(repo),
@@ -230,10 +312,40 @@ def test_build_buyer_packet_can_include_release_evidence_index(tmp_path):
     manifest = module.build_packet(args)
 
     assert manifest["coverage"]["release_evidence_index"] is True
-    with zipfile.ZipFile(manifest["zip_file"]) as packet:
+    with zipfile.ZipFile(manifest["packet_file"]) as packet:
         names = set(packet.namelist())
     assert "release/release_evidence_index.json" in names
     assert "release/release_evidence_index.html" in names
+
+
+def test_build_buyer_packet_rejects_tampered_release_evidence_html(tmp_path):
+    module = _load_packet_builder()
+    repo = tmp_path / "repo"
+    dist = tmp_path / "dist"
+    out = tmp_path / "packet"
+    _write_repo_evidence(repo, module)
+    _write_dist(dist)
+    acceptance = _write_acceptance(tmp_path)
+    sales = _write_sales_readiness(tmp_path)
+    release_index = _write_release_evidence_index(tmp_path)
+    release = json.loads(release_index.read_text(encoding="utf-8"))
+    Path(release["html_report_file"]).write_text("tampered", encoding="utf-8")
+    args = argparse.Namespace(
+        repo_root=str(repo),
+        acceptance=str(acceptance),
+        sales_readiness=str(sales),
+        dist=str(dist),
+        out=str(out),
+        contract_value_krw=2_000_000_000,
+        release_evidence_index=str(release_index),
+    )
+
+    try:
+        module.build_packet(args)
+    except RuntimeError as exc:
+        assert "release evidence HTML SHA256 does not match release_evidence_index.json" in str(exc)
+    else:
+        raise AssertionError("tampered release evidence HTML should fail buyer packet collection")
 
 
 def test_build_buyer_packet_fails_without_source_distribution(tmp_path):
@@ -244,8 +356,7 @@ def test_build_buyer_packet_fails_without_source_distribution(tmp_path):
     _write_repo_evidence(repo, module)
     _write(dist / "fast_mlsirm-0.1.0-py3-none-any.whl", "wheel")
     acceptance = _write_acceptance(tmp_path)
-    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
-    _write(sales, json.dumps({"status": "ok"}))
+    sales = _write_sales_readiness(tmp_path)
     args = argparse.Namespace(
         repo_root=str(repo),
         acceptance=str(acceptance),

@@ -1,11 +1,13 @@
-# KRW 2,000,000,000 Product Readiness
+# Legacy 20B compatibility evidence
 
 ## Position
 
-This document defines the extra product evidence required before presenting
-`fast-mlsirm` as a KRW 2,000,000,000 enterprise procurement candidate.
-It extends `docs/enterprise_sales_readiness.md`; it is not a valuation
-guarantee, regulated-use approval, or promise that a buyer will close.
+This document preserves the extra product evidence required by the deprecated
+compatibility profile `--require-20b-product`, including the historical
+`KRW 2,000,000,000` procurement scenario. It is not the current readiness gate,
+a valuation guarantee, regulated-use approval, or promise that a buyer will
+close. It is deprecated compatibility evidence for older automation. New
+automation must use `--require-acquisition-readiness`.
 
 The sellable unit remains the local Python/Rust MLSIRM package plus buyer
 evidence. It is not split into a new library or submodule because the current
@@ -16,8 +18,8 @@ its own release cadence and consumers.
 
 ## Buyer-Facing Product Standard
 
-A KRW 2,000,000,000 candidate must show all of the following on the exact
-commit and artifact being offered:
+A candidate using the legacy compatibility profile must show all of the
+following on the exact commit and artifact being offered:
 
 - release acceptance evidence from `scripts/release_acceptance.py`;
 - enterprise sales evidence from `scripts/sales_readiness.py`;
@@ -79,8 +81,8 @@ implementation activity.
 
 ## Go/No-Go
 
-The candidate is a `go` for KRW 2,000,000,000 product-readiness review only
-when:
+The candidate is a `go` for the deprecated KRW 2,000,000,000 compatibility
+review only when:
 
 - `scripts/sales_readiness.py --require-20b-product` exits with status `ok`;
 - every required product, design, analytics, and demo artifact exists;
@@ -133,6 +135,9 @@ when:
   generated release index before a release candidate is positioned as complete;
 - the Figma design packet declares `code_connect: false`;
 - the package acceptance evidence still passes the normal enterprise gate.
+
+This compatibility result does not establish a valuation or replace the
+current `--require-acquisition-readiness` evidence-completeness gate.
 
 ## Non-Goals
 

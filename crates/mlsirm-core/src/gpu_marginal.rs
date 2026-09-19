@@ -28,6 +28,12 @@ use wgpu::util::DeviceExt;
 use crate::ModelConfig;
 
 const WORKGROUP_SIZE: u32 = 64;
+const ESTEP_STORAGE_BINDINGS_PER_STAGE: u32 = 8;
+const SCORE_STORAGE_BINDINGS_PER_STAGE: u32 = 3;
+const REQUIRED_STORAGE_BINDINGS_PER_STAGE: u32 = ESTEP_STORAGE_BINDINGS_PER_STAGE;
+const REQUIRED_UNIFORM_BINDINGS_PER_STAGE: u32 = 1;
+const REQUIRED_COMBINED_BINDINGS_PER_STAGE: u32 =
+    REQUIRED_STORAGE_BINDINGS_PER_STAGE + REQUIRED_UNIFORM_BINDINGS_PER_STAGE;
 /// Compile-time bound for the per-invocation streaming buffers; validated at
 /// dispatch (q_theta <= 41 by table construction).
 const MAX_QT: usize = 41;
@@ -45,6 +51,18 @@ struct Uniforms {
     /// person has exactly one context (single/multigroup).
     all_ctx: u32,
     _pad: u32,
+    logp1_off: u32,
+    c0_off: u32,
+    t_logw_off: u32,
+    x_logw_off: u32,
+    ctx_of_person_off: u32,
+    pos_off_off: u32,
+    pos_items_off: u32,
+    miss_off_off: u32,
+    miss_items_off: u32,
+    _pad1: u32,
+    _pad2: u32,
+    _pad3: u32,
 }
 
 const SHADER: &str = r#"
@@ -57,44 +75,47 @@ struct Uniforms {
     n_x: u32,
     all_ctx: u32,
     _pad: u32,
+    logp1_off: u32,
+    c0_off: u32,
+    t_logw_off: u32,
+    x_logw_off: u32,
+    ctx_of_person_off: u32,
+    pos_off_off: u32,
+    pos_items_off: u32,
+    miss_off_off: u32,
+    miss_items_off: u32,
+    _pad1: u32,
+    _pad2: u32,
+    _pad3: u32,
 };
 
 @group(0) @binding(0) var<uniform> U: Uniforms;
-@group(0) @binding(1) var<storage, read> logp0: array<f32>;
-@group(0) @binding(2) var<storage, read> logp1: array<f32>;
-@group(0) @binding(3) var<storage, read> c0: array<f32>;
-@group(0) @binding(4) var<storage, read> t_logw: array<f32>;
-@group(0) @binding(5) var<storage, read> x_logw: array<f32>;
-@group(0) @binding(6) var<storage, read> factor_id: array<u32>;
-@group(0) @binding(7) var<storage, read> ctx_of_person: array<u32>;
-@group(0) @binding(8) var<storage, read> pos_off: array<u32>;
-@group(0) @binding(9) var<storage, read> pos_items: array<u32>;
-@group(0) @binding(10) var<storage, read> miss_off: array<u32>;
-@group(0) @binding(11) var<storage, read> miss_items: array<u32>;
-@group(0) @binding(12) var<storage, read_write> logz: array<f32>;
-@group(0) @binding(13) var<storage, read_write> lp: array<f32>;
-@group(0) @binding(14) var<storage, read> w_outer: array<f32>;
-@group(0) @binding(15) var<storage, read_write> out_acc: array<f32>;
-@group(0) @binding(16) var<storage, read> item_off: array<u32>;
-@group(0) @binding(17) var<storage, read> item_persons: array<u32>;
+@group(0) @binding(1) var<storage, read> f32_ro: array<f32>;
+@group(0) @binding(2) var<storage, read> u32_ro: array<u32>;
+@group(0) @binding(3) var<storage, read_write> logz: array<f32>;
+@group(0) @binding(4) var<storage, read_write> lp: array<f32>;
+@group(0) @binding(5) var<storage, read> w_outer: array<f32>;
+@group(0) @binding(6) var<storage, read_write> out_acc: array<f32>;
+@group(0) @binding(7) var<storage, read> item_off: array<u32>;
+@group(0) @binding(8) var<storage, read> item_persons: array<u32>;
 
 const MAX_QT: u32 = 41u;
 
 fn cell_l(p: u32, s: u32, d: u32, t: u32, x: u32) -> f32 {
     let cell = U.q_t * U.n_x;
-    var v = c0[(s * U.n_dims + d) * cell + t * U.n_x + x];
-    for (var j = pos_off[p]; j < pos_off[p + 1u]; j = j + 1u) {
-        let i = pos_items[j];
-        if (factor_id[i] == d) {
+    var v = f32_ro[U.c0_off + (s * U.n_dims + d) * cell + t * U.n_x + x];
+    for (var j = u32_ro[U.pos_off_off + p]; j < u32_ro[U.pos_off_off + p + 1u]; j = j + 1u) {
+        let i = u32_ro[U.pos_items_off + j];
+        if (u32_ro[i] == d) {
             let idx = (s * U.n_items + i) * cell + t * U.n_x + x;
-            v = v + logp1[idx] - logp0[idx];
+            v = v + f32_ro[U.logp1_off + idx] - f32_ro[idx];
         }
     }
-    for (var j = miss_off[p]; j < miss_off[p + 1u]; j = j + 1u) {
-        let i = miss_items[j];
-        if (factor_id[i] == d) {
+    for (var j = u32_ro[U.miss_off_off + p]; j < u32_ro[U.miss_off_off + p + 1u]; j = j + 1u) {
+        let i = u32_ro[U.miss_items_off + j];
+        if (u32_ro[i] == d) {
             let idx = (s * U.n_items + i) * cell + t * U.n_x + x;
-            v = v - logp0[idx];
+            v = v - f32_ro[idx];
         }
     }
     return v;
@@ -107,19 +128,19 @@ fn lp_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (idx >= total) { return; }
     let p = idx / U.n_ctx;
     let s = idx % U.n_ctx;
-    if (U.all_ctx == 0u && ctx_of_person[p] != s) { return; }
+    if (U.all_ctx == 0u && u32_ro[U.ctx_of_person_off + p] != s) { return; }
 
     // per-x accumulator for sum_d logz — streamed, then lse over x.
     var mx = -3.4e38;
     var sx = 0.0;
     for (var x = 0u; x < U.n_x; x = x + 1u) {
-        var sum_d = x_logw[x];
+        var sum_d = f32_ro[U.x_logw_off + x];
         for (var d = 0u; d < U.n_dims; d = d + 1u) {
             // online log-sum-exp over t
             var m = -3.4e38;
             var acc = 0.0;
             for (var t = 0u; t < U.q_t; t = t + 1u) {
-                let v = t_logw[t] + cell_l(p, s, d, t, x);
+                let v = f32_ro[U.t_logw_off + t] + cell_l(p, s, d, t, x);
                 if (v > m) {
                     acc = acc * exp(m - v) + 1.0;
                     m = v;
@@ -155,16 +176,16 @@ fn nbar_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     var acc = 0.0;
     for (var p = 0u; p < U.n_persons; p = p + 1u) {
-        if (U.all_ctx == 0u && ctx_of_person[p] != s) { continue; }
+        if (U.all_ctx == 0u && u32_ro[U.ctx_of_person_off + p] != s) { continue; }
         let w = w_outer[s * U.n_persons + p];
         if (w < 1e-14) { continue; }
-        var sum_d = x_logw[x];
+        var sum_d = f32_ro[U.x_logw_off + x];
         for (var dd = 0u; dd < U.n_dims; dd = dd + 1u) {
             sum_d = sum_d + logz[((p * U.n_ctx + s) * U.n_dims + dd) * U.n_x + x];
         }
         let px = exp(sum_d - lp[p * U.n_ctx + s]);
         let lz = logz[((p * U.n_ctx + s) * U.n_dims + d) * U.n_x + x];
-        let pt = exp(t_logw[t] + cell_l(p, s, d, t, x) - lz);
+        let pt = exp(f32_ro[U.t_logw_off + t] + cell_l(p, s, d, t, x) - lz);
         acc = acc + w * px * pt;
     }
     out_acc[idx] = acc;
@@ -183,21 +204,21 @@ fn item_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = rem / cell;
     let t = (rem % cell) / U.n_x;
     let x = (rem % cell) % U.n_x;
-    let d = factor_id[i];
+    let d = u32_ro[i];
 
     var acc = 0.0;
     for (var j = item_off[i]; j < item_off[i + 1u]; j = j + 1u) {
         let p = item_persons[j];
-        if (U.all_ctx == 0u && ctx_of_person[p] != s) { continue; }
+        if (U.all_ctx == 0u && u32_ro[U.ctx_of_person_off + p] != s) { continue; }
         let w = w_outer[s * U.n_persons + p];
         if (w < 1e-14) { continue; }
-        var sum_d = x_logw[x];
+        var sum_d = f32_ro[U.x_logw_off + x];
         for (var dd = 0u; dd < U.n_dims; dd = dd + 1u) {
             sum_d = sum_d + logz[((p * U.n_ctx + s) * U.n_dims + dd) * U.n_x + x];
         }
         let px = exp(sum_d - lp[p * U.n_ctx + s]);
         let lz = logz[((p * U.n_ctx + s) * U.n_dims + d) * U.n_x + x];
-        let pt = exp(t_logw[t] + cell_l(p, s, d, t, x) - lz);
+        let pt = exp(f32_ro[U.t_logw_off + t] + cell_l(p, s, d, t, x) - lz);
         acc = acc + w * px * pt;
     }
     out_acc[idx] = acc;
@@ -213,6 +234,8 @@ struct GpuContext {
     layout: wgpu::BindGroupLayout,
     pipeline_score: wgpu::ComputePipeline,
     score_layout: wgpu::BindGroupLayout,
+    max_storage_buffer_binding_size: u64,
+    max_buffer_size: u64,
 }
 
 static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
@@ -228,22 +251,26 @@ fn context() -> Option<&'static GpuContext> {
                 }))
                 .ok()?;
             let adapter_limits = adapter.limits();
-            // The score layout binds 18 storage buffers (bindings 1..=18) plus a
-            // uniform at binding 0. An adapter that cannot satisfy that count
-            // (e.g. a software rasterizer capped at 16) would otherwise pass
-            // device creation and only panic later at pipeline creation, so fall
-            // back to the f64 CPU reference here instead -- matching the guards
-            // already present in gpu_eapsum and gpu_plausible.
-            if adapter_limits.max_storage_buffers_per_shader_stage < 18
-                || adapter_limits.max_uniform_buffers_per_shader_stage < 1
+            // The packed marginal layout deliberately keeps every compute stage
+            // below the controlled software-Vulkan storage and combined binding
+            // budgets. Binding-size limits are checked per workload before
+            // buffers are created; a workload that exceeds them falls back to
+            // the f64 CPU reference instead of panicking during validation.
+            if adapter_limits.max_storage_buffers_per_shader_stage
+                < REQUIRED_STORAGE_BINDINGS_PER_STAGE
+                || adapter_limits.max_uniform_buffers_per_shader_stage
+                    < REQUIRED_UNIFORM_BINDINGS_PER_STAGE
+                || adapter_limits.max_buffers_and_acceleration_structures_per_shader_stage
+                    < REQUIRED_COMBINED_BINDINGS_PER_STAGE
             {
                 return None;
             }
+            let max_storage_buffer_binding_size =
+                u64::from(adapter_limits.max_storage_buffer_binding_size);
+            let max_buffer_size = adapter_limits.max_buffer_size;
             let (device, queue) =
                 pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
                     label: Some("mlsirm-marginal-gpgpu"),
-                    // The adapter's real limits: the 18-binding layout and the
-                    // large logz buffer exceed the downlevel defaults.
                     required_limits: adapter_limits,
                     ..Default::default()
                 }))
@@ -252,14 +279,14 @@ fn context() -> Option<&'static GpuContext> {
                 label: Some("mlsirm-marginal-estep"),
                 source: wgpu::ShaderSource::Wgsl(SHADER.into()),
             });
-            let entries: Vec<wgpu::BindGroupLayoutEntry> = (0..18)
+            let entries: Vec<wgpu::BindGroupLayoutEntry> = (0..9)
                 .map(|binding| wgpu::BindGroupLayoutEntry {
                     binding,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: if binding == 0 {
                             wgpu::BufferBindingType::Uniform
-                        } else if matches!(binding, 12 | 13 | 15) {
+                        } else if matches!(binding, 3 | 4 | 6) {
                             wgpu::BufferBindingType::Storage { read_only: false }
                         } else {
                             wgpu::BufferBindingType::Storage { read_only: true }
@@ -293,14 +320,15 @@ fn context() -> Option<&'static GpuContext> {
                 label: Some("mlsirm-score"),
                 source: wgpu::ShaderSource::Wgsl(SCORE_SHADER.into()),
             });
-            let score_entries: Vec<wgpu::BindGroupLayoutEntry> = (0..19)
+            debug_assert_eq!(SCORE_STORAGE_BINDINGS_PER_STAGE, 3);
+            let score_entries: Vec<wgpu::BindGroupLayoutEntry> = (0..4)
                 .map(|binding| wgpu::BindGroupLayoutEntry {
                     binding,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: if binding == 0 {
                             wgpu::BufferBindingType::Uniform
-                        } else if binding >= 15 {
+                        } else if binding == 3 {
                             wgpu::BufferBindingType::Storage { read_only: false }
                         } else {
                             wgpu::BufferBindingType::Storage { read_only: true }
@@ -337,6 +365,8 @@ fn context() -> Option<&'static GpuContext> {
                 device,
                 queue,
                 layout,
+                max_storage_buffer_binding_size,
+                max_buffer_size,
             })
         })
         .as_ref()
@@ -393,6 +423,36 @@ fn storage(device: &wgpu::Device, data: &[u8], usage: wgpu::BufferUsages) -> wgp
     })
 }
 
+fn binding_bytes<T>(len: usize) -> Option<u64> {
+    let len = u64::try_from(len).ok()?;
+    len.checked_mul(u64::try_from(std::mem::size_of::<T>()).ok()?)
+}
+
+fn storage_binding_fits(ctx: &GpuContext, bytes: u64) -> bool {
+    let padded = bytes.max(4);
+    padded <= ctx.max_storage_buffer_binding_size && padded <= ctx.max_buffer_size
+}
+
+fn append_f64_as_f32(arena: &mut Vec<f32>, values: &[f64]) -> Option<u32> {
+    let offset = u32::try_from(arena.len()).ok()?;
+    arena.extend(values.iter().map(|&value| value as f32));
+    Some(offset)
+}
+
+fn append_u32(arena: &mut Vec<u32>, values: &[u32]) -> Option<u32> {
+    let offset = u32::try_from(arena.len()).ok()?;
+    arena.extend_from_slice(values);
+    Some(offset)
+}
+
+fn append_usize_as_u32(arena: &mut Vec<u32>, values: &[usize]) -> Option<u32> {
+    let offset = u32::try_from(arena.len()).ok()?;
+    for &value in values {
+        arena.push(u32::try_from(value).ok()?);
+    }
+    Some(offset)
+}
+
 /// Run one full E-step on the GPU.
 ///
 /// `w_outer_fn` is called after the lp pass with the downloaded `lp` values
@@ -414,66 +474,70 @@ pub(crate) fn e_step_gpu(
     }
     let cell = q_t * n_x;
 
+    let mut f32_ro_host = Vec::new();
+    let logp0_off = append_f64_as_f32(&mut f32_ro_host, inputs.logp0)?;
+    debug_assert_eq!(logp0_off, 0);
+    let logp1_off = append_f64_as_f32(&mut f32_ro_host, inputs.logp1)?;
+    let c0_off = append_f64_as_f32(&mut f32_ro_host, inputs.c0)?;
+    let t_logw_off = append_f64_as_f32(&mut f32_ro_host, inputs.t_logw)?;
+    let x_logw_off = append_f64_as_f32(&mut f32_ro_host, inputs.x_logw)?;
+
+    let mut u32_ro_host = Vec::new();
+    let factor_id_off = append_usize_as_u32(&mut u32_ro_host, inputs.factor_id)?;
+    debug_assert_eq!(factor_id_off, 0);
+    let ctx_of_person_off = append_u32(&mut u32_ro_host, inputs.ctx_of_person)?;
+    let pos_off_off = append_u32(&mut u32_ro_host, inputs.pos_off)?;
+    let pos_items_off = append_u32(&mut u32_ro_host, inputs.pos_items)?;
+    let miss_off_off = append_u32(&mut u32_ro_host, inputs.miss_off)?;
+    let miss_items_off = append_u32(&mut u32_ro_host, inputs.miss_items)?;
+
     let uniforms = Uniforms {
-        n_persons: n_persons as u32,
-        n_items: n_items as u32,
-        n_dims: n_dims as u32,
-        n_ctx: n_ctx as u32,
-        q_t: q_t as u32,
-        n_x: n_x as u32,
+        n_persons: u32::try_from(n_persons).ok()?,
+        n_items: u32::try_from(n_items).ok()?,
+        n_dims: u32::try_from(n_dims).ok()?,
+        n_ctx: u32::try_from(n_ctx).ok()?,
+        q_t: u32::try_from(q_t).ok()?,
+        n_x: u32::try_from(n_x).ok()?,
         all_ctx: inputs.all_ctx as u32,
         _pad: 0,
+        logp1_off,
+        c0_off,
+        t_logw_off,
+        x_logw_off,
+        ctx_of_person_off,
+        pos_off_off,
+        pos_items_off,
+        miss_off_off,
+        miss_items_off,
+        _pad1: 0,
+        _pad2: 0,
+        _pad3: 0,
     };
     let device = &ctx.device;
     let queue = &ctx.queue;
 
+    let f32_ro_bytes = binding_bytes::<f32>(f32_ro_host.len())?;
+    let u32_ro_bytes = binding_bytes::<u32>(u32_ro_host.len())?;
+    let logz_size = binding_bytes::<f32>(n_persons.checked_mul(n_ctx)?.checked_mul(n_dims)?.checked_mul(n_x)?)?;
+    let lp_size = binding_bytes::<f32>(n_persons.checked_mul(n_ctx)?)?;
+    if !storage_binding_fits(ctx, f32_ro_bytes)
+        || !storage_binding_fits(ctx, u32_ro_bytes)
+        || !storage_binding_fits(ctx, logz_size)
+        || !storage_binding_fits(ctx, lp_size)
+    {
+        return None;
+    }
+
     use wgpu::BufferUsages as BU;
     let u_buf = storage(device, bytemuck::bytes_of(&uniforms), BU::UNIFORM);
-    let logp0 = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inputs.logp0)),
-        BU::STORAGE,
-    );
-    let logp1 = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inputs.logp1)),
-        BU::STORAGE,
-    );
-    let c0 = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inputs.c0)),
-        BU::STORAGE,
-    );
-    let t_logw = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inputs.t_logw)),
-        BU::STORAGE,
-    );
-    let x_logw = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inputs.x_logw)),
-        BU::STORAGE,
-    );
-    let fid: Vec<u32> = inputs.factor_id.iter().map(|&d| d as u32).collect();
-    let fid_buf = storage(device, bytemuck::cast_slice(&fid), BU::STORAGE);
-    let ctx_person = storage(
-        device,
-        bytemuck::cast_slice(inputs.ctx_of_person),
-        BU::STORAGE,
-    );
-    let pos_off = storage(device, bytemuck::cast_slice(inputs.pos_off), BU::STORAGE);
-    let pos_items = storage(device, bytemuck::cast_slice(inputs.pos_items), BU::STORAGE);
-    let miss_off = storage(device, bytemuck::cast_slice(inputs.miss_off), BU::STORAGE);
-    let miss_items = storage(device, bytemuck::cast_slice(inputs.miss_items), BU::STORAGE);
-
-    let logz_size = (n_persons * n_ctx * n_dims * n_x * 4) as u64;
+    let f32_ro = storage(device, bytemuck::cast_slice(&f32_ro_host), BU::STORAGE);
+    let u32_ro = storage(device, bytemuck::cast_slice(&u32_ro_host), BU::STORAGE);
     let logz = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("logz"),
         size: logz_size,
         usage: BU::STORAGE,
         mapped_at_creation: false,
     });
-    let lp_size = (n_persons * n_ctx * 4) as u64;
     let lp = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("lp"),
         size: lp_size,
@@ -498,23 +562,14 @@ pub(crate) fn e_step_gpu(
                 item_persons: &wgpu::Buffer| {
         let entries = [
             (0, &u_buf),
-            (1, &logp0),
-            (2, &logp1),
-            (3, &c0),
-            (4, &t_logw),
-            (5, &x_logw),
-            (6, &fid_buf),
-            (7, &ctx_person),
-            (8, &pos_off),
-            (9, &pos_items),
-            (10, &miss_off),
-            (11, &miss_items),
-            (12, &logz),
-            (13, &lp),
-            (14, w_outer),
-            (15, out_acc),
-            (16, item_off),
-            (17, item_persons),
+            (1, &f32_ro),
+            (2, &u32_ro),
+            (3, &logz),
+            (4, &lp),
+            (5, w_outer),
+            (6, out_acc),
+            (7, item_off),
+            (8, item_persons),
         ]
         .map(
             |(binding, buffer): (u32, &wgpu::Buffer)| wgpu::BindGroupEntry {
@@ -536,7 +591,7 @@ pub(crate) fn e_step_gpu(
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&ctx.pipeline_lp);
         pass.set_bind_group(0, &bg, &[]);
-        let total = (n_persons * n_ctx) as u32;
+        let total = u32::try_from(n_persons.checked_mul(n_ctx)?).ok()?;
         pass.dispatch_workgroups(total.div_ceil(WORKGROUP_SIZE), 1, 1);
     }
     let lp_read = device.create_buffer(&wgpu::BufferDescriptor {
@@ -559,45 +614,57 @@ pub(crate) fn e_step_gpu(
     // Cluster posteriors (or all-ones) computed on the host in f64.
     let w_outer_host = w_outer_fn(&lp_host);
     debug_assert_eq!(w_outer_host.len(), n_ctx * n_persons);
-    let w_outer = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(&w_outer_host)),
-        BU::STORAGE,
-    );
+    let w_outer_bytes = binding_bytes::<f32>(w_outer_host.len())?;
+    if !storage_binding_fits(ctx, w_outer_bytes) {
+        return None;
+    }
+    let w_outer_f32 = as_f32(&w_outer_host);
+    let w_outer = storage(device, bytemuck::cast_slice(&w_outer_f32), BU::STORAGE);
 
     let run_reduce = |pipeline: &wgpu::ComputePipeline,
                       total: usize,
-                      item_off: &wgpu::Buffer,
-                      item_persons: &wgpu::Buffer|
+                      item_off_host: &[u32],
+                      item_persons_host: &[u32]|
      -> Option<Vec<f64>> {
-        let out_size = (total * 4) as u64;
+        let out_size = binding_bytes::<f32>(total)?;
+        let item_off_size = binding_bytes::<u32>(item_off_host.len())?;
+        let item_persons_size = binding_bytes::<u32>(item_persons_host.len())?;
+        if !storage_binding_fits(ctx, out_size)
+            || !storage_binding_fits(ctx, item_off_size)
+            || !storage_binding_fits(ctx, item_persons_size)
+        {
+            return None;
+        }
         let out = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("acc-out"),
-            size: out_size,
+            size: out_size.max(4),
             usage: BU::STORAGE | BU::COPY_SRC,
             mapped_at_creation: false,
         });
-        let bg = bind(&w_outer, &out, item_off, item_persons);
+        let item_off = storage(device, bytemuck::cast_slice(item_off_host), BU::STORAGE);
+        let item_persons = storage(device, bytemuck::cast_slice(item_persons_host), BU::STORAGE);
+        let bg = bind(&w_outer, &out, &item_off, &item_persons);
         let mut encoder = device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_compute_pass(&Default::default());
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups((total as u32).div_ceil(WORKGROUP_SIZE), 1, 1);
+            let total_u32 = u32::try_from(total).ok()?;
+            pass.dispatch_workgroups(total_u32.div_ceil(WORKGROUP_SIZE), 1, 1);
         }
         let read = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("acc-read"),
-            size: out_size,
+            size: out_size.max(4),
             usage: BU::MAP_READ | BU::COPY_DST,
             mapped_at_creation: false,
         });
-        encoder.copy_buffer_to_buffer(&out, 0, &read, 0, out_size);
+        encoder.copy_buffer_to_buffer(&out, 0, &read, 0, out_size.max(4));
         queue.submit([encoder.finish()]);
         read.slice(..).map_async(wgpu::MapMode::Read, |_| {});
         device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
         let view = read.slice(..).get_mapped_range().ok()?;
         let floats: &[f32] = bytemuck::cast_slice(&view);
-        let host: Vec<f64> = floats.iter().map(|&v| v as f64).collect();
+        let host: Vec<f64> = floats.iter().take(total).map(|&v| v as f64).collect();
         drop(view);
         read.unmap();
         Some(host)
@@ -606,39 +673,29 @@ pub(crate) fn e_step_gpu(
     // --- Pass 2: nbar ---
     let nbar = run_reduce(
         &ctx.pipeline_nbar,
-        n_ctx * n_dims * cell,
-        &dummy_u32,
-        &dummy_u32,
+        n_ctx.checked_mul(n_dims)?.checked_mul(cell)?,
+        &[0u32, 0u32],
+        &[0u32, 0u32],
     )?;
 
     // --- Pass 3: rbar (item-major positives) ---
-    let ipo = storage(
-        device,
-        bytemuck::cast_slice(inputs.item_pos_off),
-        BU::STORAGE,
-    );
-    let ipp = storage(
-        device,
-        bytemuck::cast_slice(inputs.item_pos_persons),
-        BU::STORAGE,
-    );
-    let rbar = run_reduce(&ctx.pipeline_item, n_ctx * n_items * cell, &ipo, &ipp)?;
+    let rbar = run_reduce(
+        &ctx.pipeline_item,
+        n_ctx.checked_mul(n_items)?.checked_mul(cell)?,
+        inputs.item_pos_off,
+        inputs.item_pos_persons,
+    )?;
 
     // --- Pass 4: mbar (item-major missing) — skipped when nothing is missing.
     let mbar = if inputs.item_miss_persons.is_empty() {
-        vec![0.0; n_ctx * n_items * cell]
+        vec![0.0; n_ctx.checked_mul(n_items)?.checked_mul(cell)?]
     } else {
-        let imo = storage(
-            device,
-            bytemuck::cast_slice(inputs.item_miss_off),
-            BU::STORAGE,
-        );
-        let imp = storage(
-            device,
-            bytemuck::cast_slice(inputs.item_miss_persons),
-            BU::STORAGE,
-        );
-        run_reduce(&ctx.pipeline_item, n_ctx * n_items * cell, &imo, &imp)?
+        run_reduce(
+            &ctx.pipeline_item,
+            n_ctx.checked_mul(n_items)?.checked_mul(cell)?,
+            inputs.item_miss_off,
+            inputs.item_miss_persons,
+        )?
     };
 
     Some(GpuEStepOutputs {
@@ -666,43 +723,44 @@ struct SU {
     n_x: u32,
     _p0: u32,
     _p1: u32,
+    logp1_off: u32,
+    c0_off: u32,
+    t_logw_off: u32,
+    x_logw_off: u32,
+    t_nodes_off: u32,
+    x_grid_off: u32,
+    prior_mean_off: u32,
+    prior_sd_off: u32,
+    pos_off_off: u32,
+    pos_items_off: u32,
+    miss_off_off: u32,
+    miss_items_off: u32,
+    theta_sd_off: u32,
+    xi_eap_off: u32,
+    loglik_off: u32,
+    _p2: u32,
 };
 
 @group(0) @binding(0) var<uniform> U: SU;
-@group(0) @binding(1) var<storage, read> logp0: array<f32>;
-@group(0) @binding(2) var<storage, read> logp1: array<f32>;
-@group(0) @binding(3) var<storage, read> c0: array<f32>;
-@group(0) @binding(4) var<storage, read> t_logw: array<f32>;
-@group(0) @binding(5) var<storage, read> x_logw: array<f32>;
-@group(0) @binding(6) var<storage, read> t_nodes: array<f32>;
-@group(0) @binding(7) var<storage, read> x_grid: array<f32>;
-@group(0) @binding(8) var<storage, read> prior_mean: array<f32>;
-@group(0) @binding(9) var<storage, read> prior_sd: array<f32>;
-@group(0) @binding(10) var<storage, read> factor_id: array<u32>;
-@group(0) @binding(11) var<storage, read> pos_off: array<u32>;
-@group(0) @binding(12) var<storage, read> pos_items: array<u32>;
-@group(0) @binding(13) var<storage, read> miss_off: array<u32>;
-@group(0) @binding(14) var<storage, read> miss_items: array<u32>;
-@group(0) @binding(15) var<storage, read_write> theta_eap: array<f32>;
-@group(0) @binding(16) var<storage, read_write> theta_sd: array<f32>;
-@group(0) @binding(17) var<storage, read_write> xi_eap: array<f32>;
-@group(0) @binding(18) var<storage, read_write> loglik: array<f32>;
+@group(0) @binding(1) var<storage, read> f32_ro: array<f32>;
+@group(0) @binding(2) var<storage, read> u32_ro: array<u32>;
+@group(0) @binding(3) var<storage, read_write> outputs: array<f32>;
 
 fn cell_l(p: u32, d: u32, t: u32, x: u32) -> f32 {
     let cell = U.q_t * U.n_x;
-    var v = c0[d * cell + t * U.n_x + x];
-    for (var j = pos_off[p]; j < pos_off[p + 1u]; j = j + 1u) {
-        let i = pos_items[j];
-        if (factor_id[i] == d) {
+    var v = f32_ro[U.c0_off + d * cell + t * U.n_x + x];
+    for (var j = u32_ro[U.pos_off_off + p]; j < u32_ro[U.pos_off_off + p + 1u]; j = j + 1u) {
+        let i = u32_ro[U.pos_items_off + j];
+        if (u32_ro[i] == d) {
             let idx = i * cell + t * U.n_x + x;
-            v = v + logp1[idx] - logp0[idx];
+            v = v + f32_ro[U.logp1_off + idx] - f32_ro[idx];
         }
     }
-    for (var j = miss_off[p]; j < miss_off[p + 1u]; j = j + 1u) {
-        let i = miss_items[j];
-        if (factor_id[i] == d) {
+    for (var j = u32_ro[U.miss_off_off + p]; j < u32_ro[U.miss_off_off + p + 1u]; j = j + 1u) {
+        let i = u32_ro[U.miss_items_off + j];
+        if (u32_ro[i] == d) {
             let idx = i * cell + t * U.n_x + x;
-            v = v - logp0[idx];
+            v = v - f32_ro[idx];
         }
     }
     return v;
@@ -717,12 +775,12 @@ fn score_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
     var mx = -3.4e38;
     var sx = 0.0;
     for (var x = 0u; x < U.n_x; x = x + 1u) {
-        var sum_d = x_logw[x];
+        var sum_d = f32_ro[U.x_logw_off + x];
         for (var d = 0u; d < U.n_dims; d = d + 1u) {
             var m = -3.4e38;
             var acc = 0.0;
             for (var t = 0u; t < U.q_t; t = t + 1u) {
-                let v = t_logw[t] + cell_l(p, d, t, x);
+                let v = f32_ro[U.t_logw_off + t] + cell_l(p, d, t, x);
                 if (v > m) { acc = acc * exp(m - v) + 1.0; m = v; } else { acc = acc + exp(v - m); }
             }
             sum_d = sum_d + (m + log(acc));
@@ -730,7 +788,7 @@ fn score_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
         if (sum_d > mx) { sx = sx * exp(mx - sum_d) + 1.0; mx = sum_d; } else { sx = sx + exp(sum_d - mx); }
     }
     let lp = mx + log(sx);
-    loglik[p] = lp;
+    outputs[U.loglik_off + p] = lp;
 
     // pass B: posterior moments
     var te: array<f32, 8u>;
@@ -740,12 +798,12 @@ fn score_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
     for (var k = 0u; k < U.latent_dim; k = k + 1u) { xe[k] = 0.0; }
     for (var x = 0u; x < U.n_x; x = x + 1u) {
         var zbuf: array<f32, 8u>;
-        var sum_d = x_logw[x];
+        var sum_d = f32_ro[U.x_logw_off + x];
         for (var d = 0u; d < U.n_dims; d = d + 1u) {
             var m = -3.4e38;
             var acc = 0.0;
             for (var t = 0u; t < U.q_t; t = t + 1u) {
-                let v = t_logw[t] + cell_l(p, d, t, x);
+                let v = f32_ro[U.t_logw_off + t] + cell_l(p, d, t, x);
                 if (v > m) { acc = acc * exp(m - v) + 1.0; m = v; } else { acc = acc + exp(v - m); }
             }
             let z = m + log(acc);
@@ -754,24 +812,25 @@ fn score_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
         let px = exp(sum_d - lp);
         for (var k = 0u; k < U.latent_dim; k = k + 1u) {
-            xe[k] = xe[k] + px * x_grid[x * U.latent_dim + k];
+            xe[k] = xe[k] + px * f32_ro[U.x_grid_off + x * U.latent_dim + k];
         }
         for (var d = 0u; d < U.n_dims; d = d + 1u) {
             for (var t = 0u; t < U.q_t; t = t + 1u) {
-                let theta = prior_mean[d] + prior_sd[d] * t_nodes[t];
-                let pt = exp(t_logw[t] + cell_l(p, d, t, x) - zbuf[d]);
+                let theta = f32_ro[U.prior_mean_off + d]
+                    + f32_ro[U.prior_sd_off + d] * f32_ro[U.t_nodes_off + t];
+                let pt = exp(f32_ro[U.t_logw_off + t] + cell_l(p, d, t, x) - zbuf[d]);
                 te[d] = te[d] + px * pt * theta;
                 tm2[d] = tm2[d] + px * pt * theta * theta;
             }
         }
     }
     for (var d = 0u; d < U.n_dims; d = d + 1u) {
-        theta_eap[p * U.n_dims + d] = te[d];
+        outputs[p * U.n_dims + d] = te[d];
         let vv = tm2[d] - te[d] * te[d];
-        theta_sd[p * U.n_dims + d] = sqrt(max(vv, 0.0));
+        outputs[U.theta_sd_off + p * U.n_dims + d] = sqrt(max(vv, 0.0));
     }
     for (var k = 0u; k < U.latent_dim; k = k + 1u) {
-        xi_eap[p * U.latent_dim + k] = xe[k];
+        outputs[U.xi_eap_off + p * U.latent_dim + k] = xe[k];
     }
 }
 "#;
@@ -787,6 +846,22 @@ struct ScoreUniforms {
     n_x: u32,
     _p0: u32,
     _p1: u32,
+    logp1_off: u32,
+    c0_off: u32,
+    t_logw_off: u32,
+    x_logw_off: u32,
+    t_nodes_off: u32,
+    x_grid_off: u32,
+    prior_mean_off: u32,
+    prior_sd_off: u32,
+    pos_off_off: u32,
+    pos_items_off: u32,
+    miss_off_off: u32,
+    miss_items_off: u32,
+    theta_sd_off: u32,
+    xi_eap_off: u32,
+    loglik_off: u32,
+    _p2: u32,
 }
 
 /// Flattened inputs for `score_eap_gpu` (built CPU-side, reusing the same
@@ -832,98 +907,90 @@ pub(crate) fn score_eap_gpu(inp: &GpuScoreInputs<'_>) -> Option<GpuScoreOutputs>
     let queue = &ctx.queue;
     use wgpu::BufferUsages as BU;
 
+    let mut f32_ro_host = Vec::new();
+    let logp0_off = append_f64_as_f32(&mut f32_ro_host, inp.logp0)?;
+    debug_assert_eq!(logp0_off, 0);
+    let logp1_off = append_f64_as_f32(&mut f32_ro_host, inp.logp1)?;
+    let c0_off = append_f64_as_f32(&mut f32_ro_host, inp.c0)?;
+    let t_logw_off = append_f64_as_f32(&mut f32_ro_host, inp.t_logw)?;
+    let x_logw_off = append_f64_as_f32(&mut f32_ro_host, inp.x_logw)?;
+    let t_nodes_off = append_f64_as_f32(&mut f32_ro_host, inp.t_nodes)?;
+    let x_grid_off = append_f64_as_f32(&mut f32_ro_host, inp.x_grid)?;
+    let prior_mean_off = append_f64_as_f32(&mut f32_ro_host, inp.prior_mean)?;
+    let prior_sd_off = append_f64_as_f32(&mut f32_ro_host, inp.prior_sd)?;
+
+    let mut u32_ro_host = Vec::new();
+    let factor_id_off = append_usize_as_u32(&mut u32_ro_host, inp.factor_id)?;
+    debug_assert_eq!(factor_id_off, 0);
+    let pos_off_off = append_u32(&mut u32_ro_host, inp.pos_off)?;
+    let pos_items_off = append_u32(&mut u32_ro_host, inp.pos_items)?;
+    let miss_off_off = append_u32(&mut u32_ro_host, inp.miss_off)?;
+    let miss_items_off = append_u32(&mut u32_ro_host, inp.miss_items)?;
+
+    let theta_eap_len = inp.n_persons.checked_mul(inp.n_dims)?;
+    let theta_sd_off = u32::try_from(theta_eap_len).ok()?;
+    let xi_eap_len = inp.n_persons.checked_mul(inp.latent_dim)?;
+    let xi_eap_off = u32::try_from(theta_eap_len.checked_add(theta_eap_len)?).ok()?;
+    let loglik_off = u32::try_from(
+        theta_eap_len
+            .checked_add(theta_eap_len)?
+            .checked_add(xi_eap_len)?,
+    )
+    .ok()?;
+    let output_len = usize::try_from(loglik_off).ok()?.checked_add(inp.n_persons)?;
+
     let uniforms = ScoreUniforms {
-        n_persons: inp.n_persons as u32,
-        n_items: inp.n_items as u32,
-        n_dims: inp.n_dims as u32,
-        latent_dim: inp.latent_dim as u32,
-        q_t: inp.q_t as u32,
-        n_x: inp.n_x as u32,
+        n_persons: u32::try_from(inp.n_persons).ok()?,
+        n_items: u32::try_from(inp.n_items).ok()?,
+        n_dims: u32::try_from(inp.n_dims).ok()?,
+        latent_dim: u32::try_from(inp.latent_dim).ok()?,
+        q_t: u32::try_from(inp.q_t).ok()?,
+        n_x: u32::try_from(inp.n_x).ok()?,
         _p0: 0,
         _p1: 0,
+        logp1_off,
+        c0_off,
+        t_logw_off,
+        x_logw_off,
+        t_nodes_off,
+        x_grid_off,
+        prior_mean_off,
+        prior_sd_off,
+        pos_off_off,
+        pos_items_off,
+        miss_off_off,
+        miss_items_off,
+        theta_sd_off,
+        xi_eap_off,
+        loglik_off,
+        _p2: 0,
     };
-    let u_buf = storage(device, bytemuck::bytes_of(&uniforms), BU::UNIFORM);
-    let logp0 = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inp.logp0)),
-        BU::STORAGE,
-    );
-    let logp1 = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inp.logp1)),
-        BU::STORAGE,
-    );
-    let c0 = storage(device, bytemuck::cast_slice(&as_f32(inp.c0)), BU::STORAGE);
-    let t_logw = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inp.t_logw)),
-        BU::STORAGE,
-    );
-    let x_logw = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inp.x_logw)),
-        BU::STORAGE,
-    );
-    let t_nodes = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inp.t_nodes)),
-        BU::STORAGE,
-    );
-    let x_grid = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inp.x_grid)),
-        BU::STORAGE,
-    );
-    let prior_mean = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inp.prior_mean)),
-        BU::STORAGE,
-    );
-    let prior_sd = storage(
-        device,
-        bytemuck::cast_slice(&as_f32(inp.prior_sd)),
-        BU::STORAGE,
-    );
-    let fid: Vec<u32> = inp.factor_id.iter().map(|&d| d as u32).collect();
-    let fid_buf = storage(device, bytemuck::cast_slice(&fid), BU::STORAGE);
-    let pos_off = storage(device, bytemuck::cast_slice(inp.pos_off), BU::STORAGE);
-    let pos_items = storage(device, bytemuck::cast_slice(inp.pos_items), BU::STORAGE);
-    let miss_off = storage(device, bytemuck::cast_slice(inp.miss_off), BU::STORAGE);
-    let miss_items = storage(device, bytemuck::cast_slice(inp.miss_items), BU::STORAGE);
 
-    let mk_out = |n: usize| {
-        device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("score-out"),
-            size: (n.max(1) * 4) as u64,
-            usage: BU::STORAGE | BU::COPY_SRC,
-            mapped_at_creation: false,
-        })
-    };
-    let theta_eap = mk_out(inp.n_persons * inp.n_dims);
-    let theta_sd = mk_out(inp.n_persons * inp.n_dims);
-    let xi_eap = mk_out(inp.n_persons * inp.latent_dim);
-    let loglik = mk_out(inp.n_persons);
+    let f32_ro_bytes = binding_bytes::<f32>(f32_ro_host.len())?;
+    let u32_ro_bytes = binding_bytes::<u32>(u32_ro_host.len())?;
+    let output_bytes = binding_bytes::<f32>(output_len)?;
+    if !storage_binding_fits(ctx, f32_ro_bytes)
+        || !storage_binding_fits(ctx, u32_ro_bytes)
+        || !storage_binding_fits(ctx, output_bytes)
+    {
+        return None;
+    }
+
+    let u_buf = storage(device, bytemuck::bytes_of(&uniforms), BU::UNIFORM);
+    let f32_ro = storage(device, bytemuck::cast_slice(&f32_ro_host), BU::STORAGE);
+    let u32_ro = storage(device, bytemuck::cast_slice(&u32_ro_host), BU::STORAGE);
+    let outputs = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("score-outputs"),
+        size: output_bytes.max(4),
+        usage: BU::STORAGE | BU::COPY_SRC,
+        mapped_at_creation: false,
+    });
 
     let entries = [
         (0, &u_buf),
-        (1, &logp0),
-        (2, &logp1),
-        (3, &c0),
-        (4, &t_logw),
-        (5, &x_logw),
-        (6, &t_nodes),
-        (7, &x_grid),
-        (8, &prior_mean),
-        (9, &prior_sd),
-        (10, &fid_buf),
-        (11, &pos_off),
-        (12, &pos_items),
-        (13, &miss_off),
-        (14, &miss_items),
-        (15, &theta_eap),
-        (16, &theta_sd),
-        (17, &xi_eap),
-        (18, &loglik),
+        (1, &f32_ro),
+        (2, &u32_ro),
+        (3, &outputs),
     ]
     .map(
         |(binding, buffer): (u32, &wgpu::Buffer)| wgpu::BindGroupEntry {
@@ -941,35 +1008,47 @@ pub(crate) fn score_eap_gpu(inp: &GpuScoreInputs<'_>) -> Option<GpuScoreOutputs>
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&ctx.pipeline_score);
         pass.set_bind_group(0, &bg, &[]);
-        pass.dispatch_workgroups((inp.n_persons as u32).div_ceil(WORKGROUP_SIZE), 1, 1);
+        let n_persons = u32::try_from(inp.n_persons).ok()?;
+        pass.dispatch_workgroups(n_persons.div_ceil(WORKGROUP_SIZE), 1, 1);
     }
+    let read = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("score-read"),
+        size: output_bytes.max(4),
+        usage: BU::MAP_READ | BU::COPY_DST,
+        mapped_at_creation: false,
+    });
+    encoder.copy_buffer_to_buffer(&outputs, 0, &read, 0, output_bytes.max(4));
     queue.submit([encoder.finish()]);
-
-    let read = |buf: &wgpu::Buffer, n: usize| -> Option<Vec<f64>> {
-        let sz = (n.max(1) * 4) as u64;
-        let rb = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("score-read"),
-            size: sz,
-            usage: BU::MAP_READ | BU::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let mut enc = device.create_command_encoder(&Default::default());
-        enc.copy_buffer_to_buffer(buf, 0, &rb, 0, sz);
-        queue.submit([enc.finish()]);
-        rb.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-        device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
-        let view = rb.slice(..).get_mapped_range().ok()?;
-        let floats: &[f32] = bytemuck::cast_slice(&view);
-        let host: Vec<f64> = floats.iter().take(n).map(|&v| v as f64).collect();
-        drop(view);
-        rb.unmap();
-        Some(host)
-    };
+    read.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+    device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+    let view = read.slice(..).get_mapped_range().ok()?;
+    let floats: &[f32] = bytemuck::cast_slice(&view);
+    let theta_eap = floats[..theta_eap_len]
+        .iter()
+        .map(|&value| value as f64)
+        .collect();
+    let theta_sd_start = usize::try_from(theta_sd_off).ok()?;
+    let theta_sd = floats[theta_sd_start..theta_sd_start + theta_eap_len]
+        .iter()
+        .map(|&value| value as f64)
+        .collect();
+    let xi_eap_start = usize::try_from(xi_eap_off).ok()?;
+    let xi_eap = floats[xi_eap_start..xi_eap_start + xi_eap_len]
+        .iter()
+        .map(|&value| value as f64)
+        .collect();
+    let loglik_start = usize::try_from(loglik_off).ok()?;
+    let loglik = floats[loglik_start..loglik_start + inp.n_persons]
+        .iter()
+        .map(|&value| value as f64)
+        .collect();
+    drop(view);
+    read.unmap();
 
     Some(GpuScoreOutputs {
-        theta_eap: read(&theta_eap, inp.n_persons * inp.n_dims)?,
-        theta_sd: read(&theta_sd, inp.n_persons * inp.n_dims)?,
-        xi_eap: read(&xi_eap, inp.n_persons * inp.latent_dim)?,
-        loglik: read(&loglik, inp.n_persons)?,
+        theta_eap,
+        theta_sd,
+        xi_eap,
+        loglik,
     })
 }

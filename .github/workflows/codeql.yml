@@ -2,17 +2,27 @@ name: CodeQL
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  # Keep one authoritative run per PR/ref so predecessor heads do not retain
+  # scarce hosted-runner queue capacity after the reviewed source changes.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze-actions:
     # Branch protection requires a deterministic Actions-language CodeQL check
-    # on PRs. Default setup remains the repository's code-scanning upload owner.
+    # on active PRs. Lifecycle events also enter this workflow so Draft/closed
+    # transitions cancel stale work and Ready can reacquire evidence without
+    # source churn. Default setup remains the code-scanning upload owner.
+    if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
     name: Analyze (actions)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
@@ -30,7 +40,7 @@ jobs:
     # Retain a no-upload advanced diagnostic only for explicit operator runs.
     if: github.event_name == 'workflow_dispatch'
     name: Analyze (python)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write

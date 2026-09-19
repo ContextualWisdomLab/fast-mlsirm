@@ -14,7 +14,7 @@ security posture, test strategy, and operability artifacts. Pair with root
 | MMLE / multigroup / multilevel design | Population structures, quadrature, EAP | `docs/mmle_marginal_lsirm_design.md` |
 | Multilevel / multi-membership / temporal contracts | Atomistic-fallacy guards, longitudinal occasions | `python/fast_mlsirm/multilevel/`, `docs/doctoring/multilevel_longitudinal_measurement.md` |
 | Doctoring (APA 7th) | Paper and standard citations for shipped claims | `docs/doctoring/` |
-| Commercial readiness | Buyer packet / 20B product narrative gates | `docs/20b_product_readiness.md`, `docs/commercial_readiness.md` |
+| Commercial readiness | Acquisition/commercial readiness evidence gate plus deprecated 20B compatibility evidence | `docs/commercial_readiness.md`, `docs/enterprise_sales_readiness.md`, `docs/20b_product_readiness.md` |
 | Security | Bounded JSON, hostile control rejection, Strix/CodeQL CI | `SECURITY.md`, `docs/bounded_json_input_security.md` |
 | Changelog fragments | Authoritative unreleased notes | `docs/changelog.d/`, `/CHANGELOG.md` |
 

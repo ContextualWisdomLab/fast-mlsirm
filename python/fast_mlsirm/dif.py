@@ -997,7 +997,6 @@ def detect_dif_breslow_day(
     fdr_q: float,
 ) -> dict[str, np.ndarray]:
     """Breslow-Day (1980, Eq. 4.30) odds-ratio homogeneity DIF test (compute in Rust).
-
     The classical NON-UNIFORM DIF companion to :func:`mantel_haenszel_dif`: MH tests whether a
     common odds ratio differs from 1; this tests whether a COMMON odds ratio is tenable at all
     across the matching-score strata. Per stratum, the fitted reference-correct count ``A_k`` is
@@ -1094,17 +1093,16 @@ def breslow_day_dif(
 # Deprecated aliases carry a terse ADR-0028 notice on their own docstring, but
 # callers (and this module's own docstring-content regression tests) still
 # rely on the full interpretation caveats -- append the renamed function's
-# docstring rather than discarding it.
-for _old_name, _new_name in (
-    ("mantel_haenszel_dif", "detect_dif_mantel_haenszel"),
-    ("mantel_haenszel_dif_purified", "detect_dif_mantel_haenszel_purified"),
-    ("logistic_dif_purified", "detect_dif_logistic_purified"),
-    ("logistic_dif", "detect_dif_logistic"),
-    ("mantel_smd_dif", "detect_dif_mantel_smd"),
-    ("gmh_dif", "detect_dif_gmh"),
-    ("breslow_day_dif", "detect_dif_breslow_day"),
+# docstring rather than discarding it. Bind the function objects directly so
+# no namespace lookup can be influenced by dynamic names.
+for _old_fn, _new_fn in (
+    (mantel_haenszel_dif, detect_dif_mantel_haenszel),
+    (mantel_haenszel_dif_purified, detect_dif_mantel_haenszel_purified),
+    (logistic_dif_purified, detect_dif_logistic_purified),
+    (logistic_dif, detect_dif_logistic),
+    (mantel_smd_dif, detect_dif_mantel_smd),
+    (gmh_dif, detect_dif_gmh),
+    (breslow_day_dif, detect_dif_breslow_day),
 ):
-    _old_fn = globals()[_old_name]
-    _new_fn = globals()[_new_name]
     _old_fn.__doc__ = f"{_old_fn.__doc__}\n\n{_new_fn.__doc__}"
-del _old_name, _new_name, _old_fn, _new_fn
+del _old_fn, _new_fn
