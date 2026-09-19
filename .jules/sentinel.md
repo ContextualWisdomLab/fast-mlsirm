@@ -68,3 +68,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Semgrep flags `importlib.import_module(modname)` as a potential vulnerability (non-literal import) because it allows untrusted input to load arbitrary code.
 **Learning:** In our tools, we use `pkgutil.walk_packages` over our own `fast_mlsirm` package, so the input is intrinsically trusted (the packages we wrote).
 **Prevention:** Use `# nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import` to suppress the false positive warning where we know the module name being dynamically imported is strictly constrained to our own codebase.
+## 2024-05-27 - Insecure JSON Float Deserialization
+**Vulnerability:** Python's default `json.loads` accepts non-standard large floats (e.g., `1e9999`) which silently parse as infinity (`inf`).
+**Learning:** This is an insecure deserialization vector. Python's default behavior is overly permissive. When taking untrusted user input, using `parse_constant` hook to reject non-finite literals (like `NaN`, `Infinity`) is not enough, as large floats can still result in `inf` being returned. This can lead to JSON smuggling, logic bugs, or cache poisoning.
+**Prevention:** When using `json.loads` to deserialize untrusted JSON in Python, always explicitly provide an `object_pairs_hook` to reject duplicate keys, a `parse_constant` hook to reject non-finite literals, and a `parse_float` hook to prevent excessively large numbers from silently becoming `inf`.

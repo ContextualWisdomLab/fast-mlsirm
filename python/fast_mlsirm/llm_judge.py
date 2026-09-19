@@ -60,6 +60,18 @@ def _reject_float_nonfinite(value: str) -> float:
     return f_val
 
 
+def _reject_nonfinite(literal: str) -> None:
+    raise JudgeFormatError("judge response contains a non-finite numeric value")
+
+
+def _reject_float_nonfinite(value: str) -> float:
+    import math
+    f_val = float(value)
+    if not math.isfinite(f_val):
+        raise JudgeFormatError("judge response contains a non-finite numeric value")
+    return f_val
+
+
 def _category_count(value: Any) -> int:
     if (
         type(value) is not int

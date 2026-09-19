@@ -911,6 +911,14 @@ def _reject_float_nonfinite(value: str) -> float:
     return f_val
 
 
+def _reject_float_nonfinite(value: str) -> float:
+    import math
+    f_val = float(value)
+    if not math.isfinite(f_val):
+        raise ValueError(f"manifest JSON contains unsupported constant: {value}")
+    return f_val
+
+
 def _validate_raw_manifest_depth(content: str) -> None:
     """Reject JSON strings whose nesting depth exceeds the maximum budget."""
     depth = 0

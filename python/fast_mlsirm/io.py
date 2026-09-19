@@ -312,6 +312,13 @@ def _load_json_bounded(
             raise ValueError(f"{source} contains a non-finite JSON numeric value")
         return f_val
 
+    def reject_float_nonfinite(value: str) -> float:
+        import math
+        f_val = float(value)
+        if not math.isfinite(f_val):
+            raise ValueError(f"{source} contains a non-finite JSON numeric value")
+        return f_val
+
     kwargs = {
         "parse_constant": (
             reject_nonfinite_constant if parse_constant is None else parse_constant

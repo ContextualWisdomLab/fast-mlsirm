@@ -97,6 +97,14 @@ def _reject_float_nonfinite(value: str) -> float:
     return f_val
 
 
+def _reject_float_nonfinite(value: str) -> float:
+    import math
+    f_val = float(value)
+    if not math.isfinite(f_val):
+        raise _NonFiniteJsonNumber
+    return f_val
+
+
 def _validate_raw_json_depth(content: str) -> None:
     """Reject string JSON whose nesting depth exceeds the maximum budget."""
     depth = 0
