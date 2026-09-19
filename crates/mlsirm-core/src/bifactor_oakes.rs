@@ -309,7 +309,7 @@ impl PosteriorProvider for Stage1Provider {
     fn posterior_at(&self, packed: &[f64]) -> Result<OakesPosterior, String> {
         let params = self.unpack(packed);
         let tables = fill_logprob_tables(&self.v, &params, &self.tg, &self.ts, self.qg, self.qs);
-        let (_, counts) = e_step(
+        let (_, counts, _) = e_step(
             &self.v,
             &self.y,
             self.observed.as_deref(),

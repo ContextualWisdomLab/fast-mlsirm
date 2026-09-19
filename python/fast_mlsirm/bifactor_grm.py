@@ -174,6 +174,7 @@ def fit_bifactor_grm(
     n_starts: int,
     seed: int,
     device: str = "cpu",
+    split_at_person: int | None = None,
 ) -> BifactorGrmFit:
     """Fit the single-group polytomous bifactor GRM (compute in Rust).
 
@@ -195,7 +196,9 @@ def fit_bifactor_grm(
     ``device`` selects the E-step sweep: ``'cpu'`` runs the ``f64`` scalar
     sweep; ``'gpu'`` runs the WGSL ``f32`` person-parallel sweep and falls
     back to CPU (with a warning) when no GPU adapter is available; ``'auto'``
-    prefers GPU without warning. Anything else raises ``ValueError``.
+    prefers GPU without warning; ``'split'`` runs the #2001 L3 same-host
+    CPU+GPU person partition (``split_at_person`` defaults to ``n_persons // 2``).
+    Anything else raises ``ValueError``.
     Out-of-range caller arguments raise ``ValueError`` (never clamped, and —
     per the no-magic-caps rule — upper-bounded only where a real constraint
     exists); unobserved categories raise; ``max_iter`` exhaustion returns
@@ -230,9 +233,18 @@ def fit_bifactor_grm(
         "cpu",
         "gpu",
         "auto",
+        "split",
     ):
-        raise ValueError(f"device must be one of 'cpu', 'gpu', 'auto'; got {device!r}")
+        raise ValueError(
+            f"device must be one of 'cpu', 'gpu', 'auto', 'split'; got {device!r}"
+        )
     device_str = device.strip().lower()
+    if split_at_person is not None:
+        split_at_int = _finite_integer_control(split_at_person, "split_at_person")
+        if split_at_int < 1:
+            raise ValueError("split_at_person must be >= 1")
+    else:
+        split_at_int = None
 
     y = np.asarray(responses)
     if np.iscomplexobj(y):
@@ -294,6 +306,7 @@ def fit_bifactor_grm(
         int(n_starts_int),
         int(seed_int),
         device_str,
+        split_at_int,
     )
     return BifactorGrmFit(
         a_general=np.asarray(res["a_general"], dtype=np.float64),
