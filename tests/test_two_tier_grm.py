@@ -196,3 +196,17 @@ def test_unobserved_category_fails_loudly() -> None:
     y[:, 0] = np.clip(y[:, 0], 0, N_CAT - 2)  # drop the top category
     with pytest.raises(ValueError, match="never observed"):
         _fit(y)
+
+
+def test_log_progress_default_off_does_not_change_fit() -> None:
+    y = _simulate(SEED)
+    off = _fit(y, log_progress=False)
+    on = _fit(y, log_progress=True)
+    assert off.n_iter == on.n_iter
+    assert off.converged == on.converged
+    assert off.termination_reason == on.termination_reason
+    np.testing.assert_allclose(off.loglik_trace, on.loglik_trace, rtol=0.0, atol=0.0)
+    np.testing.assert_allclose(off.a_primary, on.a_primary)
+    np.testing.assert_allclose(off.a_specific, on.a_specific)
+    np.testing.assert_allclose(off.threshold, on.threshold)
+    np.testing.assert_allclose(off.phi, on.phi)

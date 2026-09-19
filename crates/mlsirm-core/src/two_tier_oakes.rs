@@ -164,6 +164,7 @@ impl Provider {
             seed: 0,
             newton_iter: 1,
             ridge: 1e-8,
+            log_progress: false,
         };
         let v = validate(
             y,

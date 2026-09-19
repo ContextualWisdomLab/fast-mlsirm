@@ -153,6 +153,7 @@ fn two_tier_with_single_primary_matches_bifactor_fit() {
             seed: 0x9E37_79B9_7F4A_7C15,
             newton_iter: 10,
             ridge: 1e-8,
+            log_progress: false,
         },
     )
     .expect("two-tier P=1 fit must succeed");

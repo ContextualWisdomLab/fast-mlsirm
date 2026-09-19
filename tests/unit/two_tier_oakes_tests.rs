@@ -121,6 +121,7 @@ fn two_tier_q241_rss_probe() {
         seed: 20260918,
         newton_iter: 5,
         ridge: 1e-8,
+        log_progress: false,
     };
     let rss = |pid: u32| -> u64 {
         let out = Command::new("ps")

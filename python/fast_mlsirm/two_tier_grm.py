@@ -191,6 +191,7 @@ def fit_two_tier_grm(
     tol: float,
     n_starts: int,
     seed: int,
+    log_progress: bool = False,
 ) -> TwoTierGrmFit:
     """Fit the single-group polytomous two-tier GRM (compute in Rust).
 
@@ -208,7 +209,10 @@ def fit_two_tier_grm(
     to source one against (Project rule, issue #1929). Study settings use
     >= 121 nodes per dimension (chosen by precision convergence, e.g. 121
     vs 241 agreement).
-    ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik. Out-of-range caller arguments raise ``ValueError``
+    ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik.
+    ``log_progress`` (default ``False``) writes each EM iteration's index
+    and observed-data log-likelihood delta to stderr without changing
+    estimates, stopping, or quadrature. Out-of-range caller arguments raise ``ValueError``
     (never clamped, and — per the no-magic-caps rule — upper-bounded only
     where a real constraint exists); unobserved categories raise;
     ``max_iter`` exhaustion returns ``converged=False`` instead of
@@ -309,6 +313,7 @@ def fit_two_tier_grm(
         float(tol_float),
         int(n_starts_int),
         int(seed_int),
+        bool(log_progress),
     )
     return TwoTierGrmFit(
         a_primary=np.asarray(res["a_primary"], dtype=np.float64).reshape(

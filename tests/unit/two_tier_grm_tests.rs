@@ -250,6 +250,7 @@ fn valid_config() -> TwoTierGrmConfig {
         seed: 42,
         newton_iter: 3,
         ridge: 1e-8,
+        log_progress: false,
     }
 }
 
@@ -536,4 +537,47 @@ fn non_convergence_is_reported_not_substituted() {
         fit.termination_reason, "max_iter_reached",
         "termination reason must say max_iter_reached"
     );
+}
+
+#[test]
+fn log_progress_default_off_does_not_change_fit() {
+    let (y, n_persons) = tiny_data();
+    let mut cfg_off = valid_config();
+    cfg_off.log_progress = false;
+    let mut cfg_on = valid_config();
+    cfg_on.log_progress = true;
+    let off = fit_two_tier_grm(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg_off,
+    )
+    .expect("default-off fit must succeed");
+    let on = fit_two_tier_grm(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg_on,
+    )
+    .expect("log_progress fit must succeed");
+    assert_eq!(off.n_iter, on.n_iter);
+    assert_eq!(off.converged, on.converged);
+    assert_eq!(off.termination_reason, on.termination_reason);
+    assert_eq!(off.loglik_trace, on.loglik_trace);
+    assert_eq!(off.a_primary, on.a_primary);
+    assert_eq!(off.a_specific, on.a_specific);
+    assert_eq!(off.threshold, on.threshold);
+    assert_eq!(off.phi, on.phi);
 }

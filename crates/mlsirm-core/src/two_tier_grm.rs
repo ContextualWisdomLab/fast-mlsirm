@@ -262,6 +262,11 @@ pub struct TwoTierGrmConfig {
     pub newton_iter: usize,
     /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
     pub ridge: f64,
+    /// When `true`, each EM iteration writes the iteration index and the
+    /// observed-data log-likelihood delta to stderr (`two_tier_grm
+    /// em_progress ...`). Default-off at every call site; enabling this
+    /// flag must not change estimates, stopping, or quadrature.
+    pub log_progress: bool,
 }
 
 // No `Default` impl: `q_primary`/`q_specific` are quadrature node counts
@@ -1352,6 +1357,16 @@ fn run_single_start(
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
+        if cfg.log_progress {
+            match change {
+                Some(delta) => eprintln!(
+                    "two_tier_grm em_progress start={start} iter={n_iter} loglik_delta={delta:.12e}"
+                ),
+                None => eprintln!(
+                    "two_tier_grm em_progress start={start} iter={n_iter} loglik_delta=init loglik={ll:.12e}"
+                ),
+            }
+        }
         if let Some(change) = change {
             let prev = previous.expect("change requires a previous log-likelihood");
             final_loglik_change = change;
@@ -1731,6 +1746,7 @@ pub fn two_tier_grm_marginal_loglik(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        log_progress: false,
     };
     let v = validate(
         y,
@@ -1823,6 +1839,7 @@ pub fn two_tier_grm_marginal_loglik_brute(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        log_progress: false,
     };
     let v = validate(
         y,
