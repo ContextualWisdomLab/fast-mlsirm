@@ -31,6 +31,48 @@ impl DeterministicNormal {
     }
 }
 
+fn bias_within_monte_carlo_uncertainty(estimates: &[f64], truth: f64) -> (f64, f64, bool) {
+    let replication_count = estimates.len() as f64;
+    let mean = estimates.iter().sum::<f64>() / replication_count;
+    let bias = mean - truth;
+    let sampling_variance = estimates
+        .iter()
+        .map(|estimate| (estimate - mean).powi(2))
+        .sum::<f64>()
+        / (replication_count - 1.0);
+    let monte_carlo_standard_error = (sampling_variance / replication_count).sqrt();
+    let accepted = bias.abs() <= (3.0 * monte_carlo_standard_error).max(0.03);
+    (bias, monte_carlo_standard_error, accepted)
+}
+
+#[test]
+fn bias_acceptance_does_not_replace_monte_carlo_uncertainty_with_an_absolute_floor() {
+    let truth = 2.0 / 3.0;
+    let estimates = [
+        truth + 0.019,
+        truth + 0.021,
+        truth + 0.019,
+        truth + 0.021,
+        truth + 0.019,
+        truth + 0.021,
+        truth + 0.019,
+        truth + 0.021,
+    ];
+    let (bias, monte_carlo_standard_error, accepted) =
+        bias_within_monte_carlo_uncertainty(&estimates, truth);
+
+    assert!(bias.abs() < 0.03, "witness must remain below the legacy floor");
+    assert!(
+        bias.abs() > 3.0 * monte_carlo_standard_error,
+        "witness must be outside the declared 3*MCSE acceptance region"
+    );
+    assert!(
+        !accepted,
+        "bias {bias} is outside 3*MCSE={}; an unrelated absolute floor must not accept it",
+        3.0 * monte_carlo_standard_error
+    );
+}
+
 #[test]
 fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_uncertainty() {
     let mut rng = DeterministicNormal::new(0x5eed_1234_5678_9abc);
@@ -66,15 +108,11 @@ fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_u
         .sum::<f64>()
         / replication_count)
         .sqrt();
-    let sampling_variance = estimates
-        .iter()
-        .map(|estimate| (estimate - mean).powi(2))
-        .sum::<f64>()
-        / (replication_count - 1.0);
-    let monte_carlo_standard_error = (sampling_variance / replication_count).sqrt();
+    let (_, monte_carlo_standard_error, accepted) =
+        bias_within_monte_carlo_uncertainty(&estimates, TRUE_ICC);
 
     assert!(
-        bias.abs() <= (3.0 * monte_carlo_standard_error).max(0.03),
+        accepted,
         "absolute bias {bias} exceeds Monte Carlo acceptance; MCSE={monte_carlo_standard_error}"
     );
     assert!(
