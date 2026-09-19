@@ -115,6 +115,8 @@ def collect_python_rows() -> list[dict]:
     for _finder, modname, _ispkg in pkgutil.walk_packages(
         fast_mlsirm.__path__, prefix="fast_mlsirm."
     ):
+        if not modname.startswith('fast_mlsirm.'):
+            continue
         if any(part.startswith("_") for part in modname.split(".")):
             continue
         try:
