@@ -770,6 +770,18 @@ To satisfy the standard of a multi-billion dollar enterprise-grade foundational 
 | **TRD-TECH-005** | Enterprise Compliance | CSAP / SOC 2 Type II controls; PII tokenization preserving longitudinal linkage without data loss. | Enterprise Audit |
 | **TRD-TECH-006** | Test & Doc Coverage | 100% test coverage, 100% docstring coverage, true-parameter RMSE recovery tests against ground truth. | Release Quality Gate |
 
+### 19.3 Exact-head gap evidence: polytomous bifactor uncertainty
+
+PR #1921 exposes `compute_oakes_se` but the Rust bifactor GRM result and PyO3
+contract contain no category-count observed-information output. The earlier
+test asserted non-null standard errors that the implementation never assigned.
+This is an implementation gap, not a passing mathematical oracle. The repaired
+contract defaults point estimation to `compute_oakes_se=False` and raises
+`NotImplementedError` for an affirmative request. Status remains **Proposed**
+until a Rust-owned category-count Oakes kernel has RED recovery/calibration
+tests, finite positive slope and threshold uncertainty, conditioning evidence,
+and integrated CI GREEN on the exact head.
+
 ---
 
 ## 20. Architecture Blueprints & UML System Design

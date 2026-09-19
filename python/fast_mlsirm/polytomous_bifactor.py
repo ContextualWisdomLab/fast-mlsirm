@@ -79,7 +79,7 @@ def fit_polytomous_bifactor(
     qmc_draws: int = 5000,
     seed: int = 0x9E37_79B9_7F4A_7C15,
     slope_bound: float | None = None,
-    compute_oakes_se: bool = True,
+    compute_oakes_se: bool = False,
 ) -> PolytomousBifactorFit:
     """Fit a polytomous bifactor Graded Response Model via QMCEM.
 
@@ -100,7 +100,10 @@ def fit_polytomous_bifactor(
         qmc_draws: Number of Quasi-Monte Carlo Halton integration draws.
         seed: Random seed for deterministic Halton sequence shift.
         slope_bound: Optional upper bound |a_id| <= slope_bound on discrimination magnitude.
-        compute_oakes_se: Whether to compute Oakes observed information standard errors.
+        compute_oakes_se: Request Oakes observed-information standard errors. The
+            polytomous bifactor likelihood does not yet expose the category-count
+            derivatives required by Oakes' identity, so ``True`` fails closed
+            instead of returning a fit with missing or fabricated uncertainty.
 
     Returns:
         PolytomousBifactorFit containing estimated slopes, thresholds, group moments,
@@ -118,6 +121,12 @@ def fit_polytomous_bifactor(
 
     if n_cat < 2:
         raise ValueError("n_cat must be >= 2")
+
+    if compute_oakes_se:
+        raise NotImplementedError(
+            "polytomous bifactor Oakes standard errors require a Rust-owned "
+            "category-count information kernel; no validated implementation is available"
+        )
 
     if group_ids is not None:
         g_arr = np.asarray(group_ids, dtype=np.int64)

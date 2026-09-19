@@ -81,7 +81,21 @@ def test_bifactor_lord_wingersky_matches_direct_enumeration() -> None:
     assert max_diff <= 1e-12, f"Lord-Wingersky max diff {max_diff} exceeded 1e-12"
 
 
-def test_fit_polytomous_bifactor_multiple_group_and_oakes_se() -> None:
+def test_polytomous_bifactor_oakes_se_fails_closed() -> None:
+    """Do not report uncomputed Oakes standard errors as a successful fit."""
+    responses = np.zeros((4, 2), dtype=np.int64)
+    loading_pattern = np.ones((2, 1), dtype=np.uint8)
+
+    with pytest.raises(NotImplementedError, match="polytomous bifactor Oakes"):
+        fit_polytomous_bifactor(
+            responses=responses,
+            loading_pattern=loading_pattern,
+            n_cat=2,
+            compute_oakes_se=True,
+        )
+
+
+def test_fit_polytomous_bifactor_multiple_group() -> None:
     """Fit a 16-item, 4-category, 6-dimension bifactor model with 2 groups.
 
     Structure: G + 4 specific domains + W method factor on items 0, 4, 8, 12.
@@ -89,8 +103,7 @@ def test_fit_polytomous_bifactor_multiple_group_and_oakes_se() -> None:
         - QMCEM convergence
         - Reference group 0 fixed at N(0, I)
         - Focal group 1 moments freely estimated
-        - Oakes standard errors computed for all 16 items without missing values
-        - Information matrix positive definiteness
+        - Unsupported Oakes standard errors remain absent when explicitly disabled
     """
     n_persons = 200
     n_items = 16
@@ -123,7 +136,7 @@ def test_fit_polytomous_bifactor_multiple_group_and_oakes_se() -> None:
         max_iter=30,
         tol=1e-4,
         qmc_draws=500,
-        compute_oakes_se=True,
+        compute_oakes_se=False,
     )
 
     assert isinstance(fit, PolytomousBifactorFit)
@@ -144,20 +157,9 @@ def test_fit_polytomous_bifactor_multiple_group_and_oakes_se() -> None:
     assert np.all(np.isfinite(fit.group_means[1]))
     assert np.all(fit.group_variances[1] > 0.0)
 
-    # Oakes standard errors must exist for all 16 items without NaNs
-    assert fit.oakes_se_slope is not None
-    assert fit.oakes_se_slope.shape == (16, 6)
-    assert np.all(np.isfinite(fit.oakes_se_slope))
-    assert np.all(fit.oakes_se_slope >= 0.0)
-
-    assert fit.oakes_se_threshold is not None
-    assert fit.oakes_se_threshold.shape == (16, 3)
-    assert np.all(np.isfinite(fit.oakes_se_threshold))
-    assert np.all(fit.oakes_se_threshold > 0.0)
-
-    # Minimum eigenvalue must be positive (positive-definite information matrix)
-    if fit.min_eigenvalue is not None:
-        assert fit.min_eigenvalue > 0.0
+    assert fit.oakes_se_slope is None
+    assert fit.oakes_se_threshold is None
+    assert fit.min_eigenvalue is None
 
 
 def test_bifactor_slope_sensitivity_monotonic_loglik() -> None:

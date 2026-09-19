@@ -1,6 +1,6 @@
 # ADR-0027: GPU-Parallel Polytomous Bifactor QMCEM, 2-Stage Lord-Wingersky Recursion, and 390-Replicate Joint Person Bootstrap
 
-Status: Accepted  
+Status: Proposed
 Date: 2026-09-16  
 Supersedes: none  
 Superseded by: none
@@ -21,7 +21,7 @@ Prior to this decision, `fast-mlsirm` supported bifactor scoreability indices an
 - **Hardware-Parallel Throughput**: 390-replicate person bootstrap estimation must achieve $\ge 5\times$ throughput scaling on multicore hardware without Python GIL contention.
 - **Reproducibility & Parity**: CPU and GPU executions, as well as deterministic replicate seeds, must produce parameter estimates matching within $10^{-6}$.
 - **Methodological Scope Integrity**: Maintain simple-structure and structured bifactor contracts in dedicated modules (`bifactor_recursion` and `bifactor_grm`) without mutating existing general multidimensional contracts in place.
-- **Identification & Standardization**: Enforce reference group standard normal constraints ($\mu_0 = 0, \sigma_0^2 = 1$) while freely estimating focal group distributions and computing observed information standard errors via Oakes' identity.
+- **Identification & Standardization**: Enforce reference group standard normal constraints ($\mu_0 = 0, \sigma_0^2 = 1$) while freely estimating focal group distributions. Polytomous uncertainty is not releasable until its category-count Oakes derivatives are implemented in Rust and calibrated.
 
 ## Ownership and dependency direction
 
@@ -35,7 +35,7 @@ We implement and verify the following components:
 1. **Rust Numerical Kernels (`crates/mlsirm-core`)**:
    - `bifactor_recursion.rs`: Implements two-stage Lord-Wingersky recursion for polytomous bifactor models. Stage 1 computes within-domain score distributions conditional on the general and specific factors and integrates over the specific factor. Stage 2 convolves across independent domains conditional on the general factor.
    - `bifactor_grm.rs`: Implements Quasi-Monte Carlo EM (QMCEM) using deterministic shifted Halton sequences for joint estimation of discrimination slopes, ordered category thresholds, and multiple-group latent mean/variance vectors.
-   - **Oakes Observed Information Matrix**: Implements Louis/Oakes numerical derivatives of conditional expectations to yield standard errors for all item parameters without requiring complete inversion of full Hessian matrices.
+   - **Oakes Observed Information Matrix (proposed)**: Extend the Rust information kernel to polytomous category counts and validate its covariance calibration. Until that owner work exists, `compute_oakes_se=True` fails closed; the estimator never returns missing values under an affirmative uncertainty request.
    - **Slope Bounding & Monotonicity Sensitivity**: Implements box-constrained Newton steps for discrimination parameters ($|a_{id}| \le M$), verifying monotonic non-decrease in log-likelihood across increasing bound values ($[4, 6, 8, 10]$).
 
 2. **GIL-Free PyO3 Extension (`crates/fast-mlsirm-py`)**:
@@ -50,8 +50,8 @@ We implement and verify the following components:
 ## Invariants / acceptance evidence
 
 1. **Recursion Precision**: On a 257-point grid $[-8.0, 8.0]$ with step $0.0625$, the maximum absolute difference between `bifactor_lord_wingersky` and `direct_enumeration_bifactor` is $\le 10^{-12}$ (`test_bifactor_lord_wingersky_matches_direct_enumeration`).
-2. **Multiple-Group Identification**: Group 0 moments are strictly fixed to $\mu = 0, \sigma^2 = 1$, while focal group moments are freely estimated (`test_fit_polytomous_bifactor_multiple_group_and_oakes_se`).
-3. **Oakes Standard Errors**: Standard errors for all slopes and thresholds are strictly finite, positive, and free of missing/NaN values.
+2. **Multiple-Group Identification**: Group 0 moments are strictly fixed to $\mu = 0, \sigma^2 = 1$, while focal group moments are freely estimated (`test_fit_polytomous_bifactor_multiple_group`).
+3. **Oakes Standard Errors**: Proposed, not accepted. The current exact-head contract proves an explicit `NotImplementedError` for an affirmative request. Acceptance requires Rust-owned category-count derivatives, finite positive slope/threshold uncertainty, positive-definite diagnostics, and recovery/calibration evidence.
 4. **Monotonic Sensitivity**: Log-likelihood is monotonically non-decreasing as slope upper bounds increase across $\{4.0, 6.0, 8.0, 10.0\}$ (`test_bifactor_slope_sensitivity_monotonic_loglik`).
 5. **Bootstrap Throughput & Convergence**: A 390-replicate run completes in under 6 seconds on modern multicore hardware with $\ge 95\%$ convergence and parameter parity within $10^{-6}$ (`test_390_replicate_joint_bootstrap_throughput_and_parity`).
 
@@ -67,17 +67,18 @@ We implement and verify the following components:
 
 - High-throughput capability for large-scale replication studies and bootstrap standard error estimation.
 - Exact score distributions for complex multi-domain tests without numerical instability.
-- Complete type safety and memory management through Rust ownership and GIL detachment.
+- Rust ownership and GIL detachment for the implemented numerical paths.
 
 ### Costs / risks
 
 - High QMC draw counts ($> 10,000$) increase per-iteration CPU time; mitigated by deterministic Halton sampling and adaptive convergence tolerances.
 - Multiple-group estimation requires sufficient person counts per focal group ($\ge 50$) to ensure well-conditioned group variance updates.
+- Polytomous bifactor Oakes uncertainty is unavailable; callers must explicitly disable it and must not present point estimates as uncertainty-qualified results.
 
 ## Alternatives considered
 
 - **Multiprocessing via `ProcessPoolExecutor`**: Rejected due to high memory footprint and IPC serialization cost for large response matrices. Using `py.detach` with native thread pooling achieved zero-overhead concurrency.
-- **Numerical Hessian Finite Differences**: Rejected for standard errors due to $O(P^2)$ likelihood evaluation scaling; Oakes' formula leverages EM conditional expectations and converges significantly faster.
+- **Numerical Hessian Finite Differences**: Not selected as a substitute because $O(P^2)$ likelihood evaluation and uncalibrated curvature would not prove valid uncertainty. The Rust Oakes category-count kernel remains required.
 
 ## Security and privacy implications
 
@@ -86,10 +87,8 @@ We implement and verify the following components:
 
 ## Verification and release evidence
 
-- Rust unit and integration test suite: 10/10 tests passed (`cargo test --package mlsirm-core --lib bifactor`).
-- Clippy workspace audit: 0 errors across all targets with `[lints.clippy]` handling of test indexing.
-- Python pytest suite: 6/6 tests passed including 390-replicate benchmark.
-- CodeGraph graph index synchronized (`codegraph sync`).
+- Exact PR head verification remains pending; queued, skipped, or failed jobs are not acceptance evidence.
+- The fail-closed Oakes contract is independently executable without the compiled extension and prevents fabricated or missing standard errors from being reported as success.
 
 ## Research and standards basis
 
