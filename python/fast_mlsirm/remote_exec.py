@@ -20,16 +20,20 @@ are rejected at envelope admission and must not be queued remotely.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 import hashlib
 import json
+import os
 import platform
 import re
 import socket
+import subprocess
+import sys
 import time
 import unicodedata
+from pathlib import Path
 from typing import Protocol
 
 REMOTE_EXEC_SCHEMA_VERSION = "1.0"
@@ -344,11 +348,23 @@ class RemoteWorkerProvenance:
     requested_device: str
     effective_device: str
     wall_clock_seconds: float
+    worker_host: str
+    worker_pid: int
+    cross_host_execution: bool
 
     def __post_init__(self) -> None:
         if type(self) is not RemoteWorkerProvenance:
             raise ValueError("RemoteWorkerProvenance must be an exact package record")
         object.__setattr__(self, "hostname", _text(self.hostname, "hostname", maximum=128))
+        object.__setattr__(
+            self,
+            "worker_host",
+            _text(self.worker_host, "worker_host", maximum=128),
+        )
+        if type(self.worker_pid) is not int or isinstance(self.worker_pid, bool) or self.worker_pid <= 0:
+            raise ValueError("worker_pid must be a positive integer")
+        if type(self.cross_host_execution) is not bool:
+            raise ValueError("cross_host_execution must be a boolean")
         object.__setattr__(
             self,
             "architecture",
@@ -397,6 +413,9 @@ class RemoteWorkerProvenance:
             "requested_device": self.requested_device,
             "effective_device": self.effective_device,
             "wall_clock_seconds": self.wall_clock_seconds,
+            "worker_host": self.worker_host,
+            "worker_pid": self.worker_pid,
+            "cross_host_execution": self.cross_host_execution,
         }
 
 
@@ -412,6 +431,11 @@ class RemoteJobOutcome:
     result: object | None
     error_message: str | None
     provenance: RemoteWorkerProvenance
+    input_identity_sha256: str
+    output_identity_sha256: str | None
+    envelope_fingerprint: str
+    driver_host: str
+    driver_pid: int
 
     def __post_init__(self) -> None:
         if type(self) is not RemoteJobOutcome:
@@ -433,11 +457,32 @@ class RemoteJobOutcome:
                 "delivery_state",
             ),
         )
+        object.__setattr__(
+            self,
+            "input_identity_sha256",
+            _fingerprint(self.input_identity_sha256, "input_identity_sha256"),
+        )
+        object.__setattr__(
+            self,
+            "envelope_fingerprint",
+            _fingerprint(self.envelope_fingerprint, "envelope_fingerprint"),
+        )
+        if self.output_identity_sha256 is not None:
+            object.__setattr__(
+                self,
+                "output_identity_sha256",
+                _fingerprint(self.output_identity_sha256, "output_identity_sha256"),
+            )
+        object.__setattr__(self, "driver_host", _text(self.driver_host, "driver_host", maximum=128))
+        if type(self.driver_pid) is not int or isinstance(self.driver_pid, bool) or self.driver_pid <= 0:
+            raise ValueError("driver_pid must be a positive integer")
         if type(self.provenance) is not RemoteWorkerProvenance:
             raise ValueError("provenance must be a RemoteWorkerProvenance")
         if self.delivery_state is RemoteJobDeliveryState.COMPLETED:
             if self.error_message is not None:
                 raise ValueError("completed outcomes must not carry error_message")
+            if self.output_identity_sha256 is None:
+                raise ValueError("completed outcomes require output_identity_sha256")
         elif self.delivery_state is RemoteJobDeliveryState.FAILED:
             if type(self.error_message) is not str or not self.error_message.strip():
                 raise ValueError("failed outcomes require a non-empty error_message")
@@ -453,6 +498,11 @@ class RemoteJobOutcome:
             "result": self.result,
             "error_message": self.error_message,
             "provenance": self.provenance.to_dict(),
+            "input_identity_sha256": self.input_identity_sha256,
+            "output_identity_sha256": self.output_identity_sha256,
+            "envelope_fingerprint": self.envelope_fingerprint,
+            "driver_host": self.driver_host,
+            "driver_pid": self.driver_pid,
         }
 
 
@@ -481,8 +531,13 @@ def local_worker_provenance(
     requested_device: str,
     effective_device: str,
     wall_clock_seconds: float,
+    worker_host: str | None = None,
+    worker_pid: int | None = None,
+    cross_host_execution: bool = False,
 ) -> RemoteWorkerProvenance:
     """Build provenance for the current interpreter process."""
+    host = worker_host or socket.gethostname()
+    pid = worker_pid if worker_pid is not None else os.getpid()
     return RemoteWorkerProvenance(
         hostname=socket.gethostname(),
         architecture=platform.machine(),
@@ -492,6 +547,99 @@ def local_worker_provenance(
         requested_device=requested_device,
         effective_device=effective_device,
         wall_clock_seconds=wall_clock_seconds,
+        worker_host=host,
+        worker_pid=pid,
+        cross_host_execution=cross_host_execution,
+    )
+
+
+def result_identity_sha256(result: object) -> str:
+    """Return a stable SHA-256 digest for one JSON-serializable remote result."""
+    payload = json.dumps(
+        result,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+class OutcomeCommitLedger:
+    """At-most-once successful outcome commit keyed by envelope fingerprint."""
+
+    def __init__(self) -> None:
+        self._successful: dict[str, RemoteJobOutcome] = {}
+
+    def successful_count(self, fingerprint: str) -> int:
+        """Return how many successful outcomes were committed for ``fingerprint``."""
+        return 1 if fingerprint in self._successful else 0
+
+    def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None:
+        """Return the committed successful outcome for ``fingerprint``, if any."""
+        return self._successful.get(fingerprint)
+
+    def commit_success(self, fingerprint: str, outcome: RemoteJobOutcome) -> RemoteJobOutcome:
+        """Commit one successful outcome or return the prior commit without re-recording."""
+        if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
+            raise ValueError("commit_success requires a completed outcome")
+        existing = self._successful.get(fingerprint)
+        if existing is not None:
+            return existing
+        self._successful[fingerprint] = outcome
+        return outcome
+
+
+def _is_ssh_worker_host(worker_host: str) -> bool:
+    """Return whether ``worker_host`` names an SSH destination (``user@host``)."""
+    return "@" in worker_host
+
+
+def _worker_subprocess_env() -> Mapping[str, str]:
+    """Return environment for worker subprocesses with package import path preserved."""
+    env = os.environ.copy()
+    import fast_mlsirm
+
+    package_root = str(Path(fast_mlsirm.__file__).resolve().parent.parent)
+    existing = env.get("PYTHONPATH", "")
+    if existing:
+        if package_root not in existing.split(os.pathsep):
+            env["PYTHONPATH"] = os.pathsep.join([package_root, existing])
+    else:
+        env["PYTHONPATH"] = package_root
+    return env
+
+
+def _invoke_worker_process(
+    payload: str,
+    *,
+    worker_host: str,
+) -> subprocess.CompletedProcess[str]:
+    """Run ``fast_mlsirm.remote_worker`` locally or over SSH for ``worker_host``."""
+    if _is_ssh_worker_host(worker_host):
+        return subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                "-o",
+                "BatchMode=yes",
+                worker_host,
+                "python3",
+                "-m",
+                "fast_mlsirm.remote_worker",
+            ],
+            input=payload,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    return subprocess.run(
+        [sys.executable, "-m", "fast_mlsirm.remote_worker"],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_worker_subprocess_env(),
     )
 
 
@@ -534,6 +682,7 @@ class LoopbackExecutor:
         outcomes: list[RemoteJobOutcome] = []
         for envelope in envelope_batch:
             unit_seed = envelope.unit_seed()
+            fingerprint = envelope_fingerprint(envelope)
             started = time.perf_counter()
             try:
                 result = handler(envelope, unit_seed)
@@ -559,6 +708,11 @@ class LoopbackExecutor:
                             effective_device=effective_device,
                             wall_clock_seconds=elapsed,
                         ),
+                        input_identity_sha256=fingerprint,
+                        output_identity_sha256=None,
+                        envelope_fingerprint=fingerprint,
+                        driver_host=socket.gethostname(),
+                        driver_pid=os.getpid(),
                     )
                 )
                 continue
@@ -578,6 +732,343 @@ class LoopbackExecutor:
                         effective_device=effective_device,
                         wall_clock_seconds=elapsed,
                     ),
+                    input_identity_sha256=fingerprint,
+                    output_identity_sha256=result_identity_sha256(result),
+                    envelope_fingerprint=fingerprint,
+                    driver_host=socket.gethostname(),
+                    driver_pid=os.getpid(),
                 )
             )
         return tuple(sorted(outcomes, key=lambda outcome: outcome.unit_index))
+
+
+class SubprocessExecutor:
+    """Subprocess L4 backend that dispatches legal families to real library calls."""
+
+    _MAX_WORKER_STDOUT_BYTES = 1_048_576
+
+    def __init__(
+        self,
+        worker_host: str,
+        *,
+        ledger: OutcomeCommitLedger | None = None,
+        driver_host: str | None = None,
+    ) -> None:
+        self.worker_host = _text(worker_host, "worker_host", maximum=128)
+        self._ledger = ledger or OutcomeCommitLedger()
+        self._driver_host = driver_host or socket.gethostname()
+        self._driver_pid = os.getpid()
+
+    def run_batch(
+        self,
+        envelopes: Sequence[RemoteJobEnvelope],
+        *,
+        worker_manifest: RemoteRunManifest,
+        requested_device: str = "cpu",
+        effective_device: str = "cpu",
+    ) -> tuple[RemoteJobOutcome, ...]:
+        if not isinstance(envelopes, Sequence):
+            raise TypeError("envelopes must be a sequence")
+        envelope_batch = tuple(envelopes)
+        for envelope in envelope_batch:
+            if type(envelope) is not RemoteJobEnvelope:
+                raise TypeError("each envelope must be a RemoteJobEnvelope")
+            if not worker_manifest.compatible_with(envelope.manifest):
+                raise CohortMismatchError(
+                    "worker manifest is incompatible with envelope cohort "
+                    f"(run_id={envelope.run_id!r}, unit_index={envelope.unit_index})"
+                )
+
+        outcomes: list[RemoteJobOutcome] = []
+        for envelope in envelope_batch:
+            fingerprint = envelope_fingerprint(envelope)
+            cached = self._ledger.committed_success(fingerprint)
+            if cached is not None:
+                outcomes.append(cached)
+                continue
+            outcome = self._execute_one(
+                envelope,
+                worker_manifest=worker_manifest,
+                requested_device=requested_device,
+                effective_device=effective_device,
+                fingerprint=fingerprint,
+            )
+            if outcome.delivery_state is RemoteJobDeliveryState.COMPLETED:
+                outcome = self._ledger.commit_success(fingerprint, outcome)
+            outcomes.append(outcome)
+        return tuple(sorted(outcomes, key=lambda outcome: outcome.unit_index))
+
+    def _execute_one(
+        self,
+        envelope: RemoteJobEnvelope,
+        *,
+        worker_manifest: RemoteRunManifest,
+        requested_device: str,
+        effective_device: str,
+        fingerprint: str,
+    ) -> RemoteJobOutcome:
+        unit_seed = envelope.unit_seed()
+        started = time.perf_counter()
+        payload = json.dumps(
+            {
+                "envelope": envelope.to_dict(),
+                "worker_host": self.worker_host,
+                "requested_device": requested_device,
+                "effective_device": effective_device,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        try:
+            completed = _invoke_worker_process(payload, worker_host=self.worker_host)
+        except OSError as exc:
+            elapsed = time.perf_counter() - started
+            return RemoteJobOutcome(
+                run_id=envelope.run_id,
+                unit_index=envelope.unit_index,
+                unit_seed=unit_seed,
+                family=envelope.family,
+                delivery_state=RemoteJobDeliveryState.FAILED,
+                result=None,
+                error_message=str(exc),
+                provenance=local_worker_provenance(
+                    worker_manifest,
+                    requested_device=requested_device,
+                    effective_device=effective_device,
+                    wall_clock_seconds=elapsed,
+                    worker_host=self.worker_host,
+                    worker_pid=os.getpid(),
+                    cross_host_execution=False,
+                ),
+                input_identity_sha256=fingerprint,
+                output_identity_sha256=None,
+                envelope_fingerprint=fingerprint,
+                driver_host=self._driver_host,
+                driver_pid=self._driver_pid,
+            )
+
+        elapsed = time.perf_counter() - started
+        if completed.returncode != 0:
+            stderr = (completed.stderr or "").strip()
+            message = stderr or f"remote worker exited with code {completed.returncode}"
+            return RemoteJobOutcome(
+                run_id=envelope.run_id,
+                unit_index=envelope.unit_index,
+                unit_seed=unit_seed,
+                family=envelope.family,
+                delivery_state=RemoteJobDeliveryState.FAILED,
+                result=None,
+                error_message=message,
+                provenance=local_worker_provenance(
+                    worker_manifest,
+                    requested_device=requested_device,
+                    effective_device=effective_device,
+                    wall_clock_seconds=elapsed,
+                    worker_host=self.worker_host,
+                    worker_pid=os.getpid(),
+                    cross_host_execution=False,
+                ),
+                input_identity_sha256=fingerprint,
+                output_identity_sha256=None,
+                envelope_fingerprint=fingerprint,
+                driver_host=self._driver_host,
+                driver_pid=self._driver_pid,
+            )
+
+        stdout = completed.stdout or ""
+        if len(stdout.encode("utf-8")) > self._MAX_WORKER_STDOUT_BYTES:
+            return RemoteJobOutcome(
+                run_id=envelope.run_id,
+                unit_index=envelope.unit_index,
+                unit_seed=unit_seed,
+                family=envelope.family,
+                delivery_state=RemoteJobDeliveryState.FAILED,
+                result=None,
+                error_message="remote worker stdout exceeded bound",
+                provenance=local_worker_provenance(
+                    worker_manifest,
+                    requested_device=requested_device,
+                    effective_device=effective_device,
+                    wall_clock_seconds=elapsed,
+                    worker_host=self.worker_host,
+                    worker_pid=os.getpid(),
+                    cross_host_execution=False,
+                ),
+                input_identity_sha256=fingerprint,
+                output_identity_sha256=None,
+                envelope_fingerprint=fingerprint,
+                driver_host=self._driver_host,
+                driver_pid=self._driver_pid,
+            )
+
+        try:
+            worker_payload = json.loads(stdout)
+        except json.JSONDecodeError as exc:
+            return RemoteJobOutcome(
+                run_id=envelope.run_id,
+                unit_index=envelope.unit_index,
+                unit_seed=unit_seed,
+                family=envelope.family,
+                delivery_state=RemoteJobDeliveryState.FAILED,
+                result=None,
+                error_message=f"remote worker returned invalid JSON: {exc}",
+                provenance=local_worker_provenance(
+                    worker_manifest,
+                    requested_device=requested_device,
+                    effective_device=effective_device,
+                    wall_clock_seconds=elapsed,
+                    worker_host=self.worker_host,
+                    worker_pid=os.getpid(),
+                    cross_host_execution=False,
+                ),
+                input_identity_sha256=fingerprint,
+                output_identity_sha256=None,
+                envelope_fingerprint=fingerprint,
+                driver_host=self._driver_host,
+                driver_pid=self._driver_pid,
+            )
+
+        if type(worker_payload) is not dict:
+            return RemoteJobOutcome(
+                run_id=envelope.run_id,
+                unit_index=envelope.unit_index,
+                unit_seed=unit_seed,
+                family=envelope.family,
+                delivery_state=RemoteJobDeliveryState.FAILED,
+                result=None,
+                error_message="remote worker payload must be a mapping",
+                provenance=local_worker_provenance(
+                    worker_manifest,
+                    requested_device=requested_device,
+                    effective_device=effective_device,
+                    wall_clock_seconds=elapsed,
+                    worker_host=self.worker_host,
+                    worker_pid=os.getpid(),
+                    cross_host_execution=False,
+                ),
+                input_identity_sha256=fingerprint,
+                output_identity_sha256=None,
+                envelope_fingerprint=fingerprint,
+                driver_host=self._driver_host,
+                driver_pid=self._driver_pid,
+            )
+
+        worker_pid = worker_payload.get("worker_pid")
+        worker_hostname = worker_payload.get("hostname")
+        if type(worker_pid) is not int or isinstance(worker_pid, bool) or worker_pid <= 0:
+            return RemoteJobOutcome(
+                run_id=envelope.run_id,
+                unit_index=envelope.unit_index,
+                unit_seed=unit_seed,
+                family=envelope.family,
+                delivery_state=RemoteJobDeliveryState.FAILED,
+                result=None,
+                error_message="remote worker payload missing worker_pid",
+                provenance=local_worker_provenance(
+                    worker_manifest,
+                    requested_device=requested_device,
+                    effective_device=effective_device,
+                    wall_clock_seconds=elapsed,
+                    worker_host=self.worker_host,
+                    worker_pid=os.getpid(),
+                    cross_host_execution=False,
+                ),
+                input_identity_sha256=fingerprint,
+                output_identity_sha256=None,
+                envelope_fingerprint=fingerprint,
+                driver_host=self._driver_host,
+                driver_pid=self._driver_pid,
+            )
+        if type(worker_hostname) is not str or not worker_hostname.strip():
+            return RemoteJobOutcome(
+                run_id=envelope.run_id,
+                unit_index=envelope.unit_index,
+                unit_seed=unit_seed,
+                family=envelope.family,
+                delivery_state=RemoteJobDeliveryState.FAILED,
+                result=None,
+                error_message="remote worker payload missing hostname",
+                provenance=local_worker_provenance(
+                    worker_manifest,
+                    requested_device=requested_device,
+                    effective_device=effective_device,
+                    wall_clock_seconds=elapsed,
+                    worker_host=self.worker_host,
+                    worker_pid=os.getpid(),
+                    cross_host_execution=False,
+                ),
+                input_identity_sha256=fingerprint,
+                output_identity_sha256=None,
+                envelope_fingerprint=fingerprint,
+                driver_host=self._driver_host,
+                driver_pid=self._driver_pid,
+            )
+
+        if worker_payload.get("delivery_state") == RemoteJobDeliveryState.FAILED.value:
+            error_message = worker_payload.get("error_message")
+            if type(error_message) is not str or not error_message.strip():
+                error_message = "remote worker failed without error_message"
+            return RemoteJobOutcome(
+                run_id=envelope.run_id,
+                unit_index=envelope.unit_index,
+                unit_seed=unit_seed,
+                family=envelope.family,
+                delivery_state=RemoteJobDeliveryState.FAILED,
+                result=None,
+                error_message=error_message,
+                provenance=RemoteWorkerProvenance(
+                    hostname=worker_hostname,
+                    architecture=str(worker_payload.get("architecture", platform.machine())),
+                    operating_system=str(worker_payload.get("operating_system", platform.system())),
+                    library_version=str(
+                        worker_payload.get("library_version", worker_manifest.library_version)
+                    ),
+                    source_sha256=worker_manifest.source_sha256,
+                    requested_device=requested_device,
+                    effective_device=effective_device,
+                    wall_clock_seconds=float(worker_payload.get("wall_clock_seconds", elapsed)),
+                    worker_host=self.worker_host,
+                    worker_pid=worker_pid,
+                    cross_host_execution=worker_hostname != self._driver_host,
+                ),
+                input_identity_sha256=fingerprint,
+                output_identity_sha256=None,
+                envelope_fingerprint=fingerprint,
+                driver_host=self._driver_host,
+                driver_pid=self._driver_pid,
+            )
+
+        result = worker_payload.get("result")
+        output_identity = worker_payload.get("output_identity_sha256")
+        if type(output_identity) is not str:
+            output_identity = result_identity_sha256(result)
+        return RemoteJobOutcome(
+            run_id=envelope.run_id,
+            unit_index=envelope.unit_index,
+            unit_seed=unit_seed,
+            family=envelope.family,
+            delivery_state=RemoteJobDeliveryState.COMPLETED,
+            result=result,
+            error_message=None,
+            provenance=RemoteWorkerProvenance(
+                hostname=worker_hostname,
+                architecture=str(worker_payload.get("architecture", platform.machine())),
+                operating_system=str(worker_payload.get("operating_system", platform.system())),
+                library_version=str(
+                    worker_payload.get("library_version", worker_manifest.library_version)
+                ),
+                source_sha256=worker_manifest.source_sha256,
+                requested_device=requested_device,
+                effective_device=effective_device,
+                wall_clock_seconds=float(worker_payload.get("wall_clock_seconds", elapsed)),
+                worker_host=self.worker_host,
+                worker_pid=worker_pid,
+                cross_host_execution=worker_hostname != self._driver_host,
+            ),
+            input_identity_sha256=fingerprint,
+            output_identity_sha256=output_identity,
+            envelope_fingerprint=fingerprint,
+            driver_host=self._driver_host,
+            driver_pid=self._driver_pid,
+        )
