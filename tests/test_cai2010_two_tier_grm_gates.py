@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 from numpy.polynomial.hermite_e import hermegauss
 
-from fast_mlsirm.two_tier_grm import encode_specific_map_from_columns, fit_two_tier_grm
+from fast_mlsirm.two_tier_grm import fit_two_tier_grm
 
 
 def _gh(q: int) -> tuple[np.ndarray, np.ndarray]:
@@ -418,5 +418,21 @@ def test_g3_rejects_two_specific_factors_on_one_item() -> None:
     assert counts[0] == 2
     assert not bool(np.all(counts <= 1))
 
+    primary_map = _cai2010_eq1_primary_map()
+    y = np.zeros((4, primary_map.shape[0]), dtype=np.int64)
     with pytest.raises(ValueError, match="at most one specific"):
-        encode_specific_map_from_columns(bad_specific)
+        fit_two_tier_grm(
+            y,
+            primary_map,
+            None,
+            n_cat=3,
+            n_primary=2,
+            n_specific=4,
+            q_primary=5,
+            q_specific=5,
+            max_iter=1,
+            tol=1e-4,
+            n_starts=1,
+            seed=2040,
+            specific_columns=bad_specific,
+        )
