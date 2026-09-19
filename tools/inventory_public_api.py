@@ -4,9 +4,11 @@
 Inventories every public callable exported by ``python/fast_mlsirm``
 (top-level package surface, ``_legacy_init.py`` re-exports, and every
 submodule) plus the PyO3 entry points compiled from
-``crates/fast-mlsirm-py``. Static analysis only: does not require a built
-Rust extension (a stub ``fast_mlsirm._core`` module is injected so the
-Python package still imports) and does not invoke cargo/maturin.
+``crates/fast-mlsirm-py``. Repository module discovery is static: the tool
+imports only the fixed ``fast_mlsirm`` package surface after installing a
+stub ``fast_mlsirm._core`` and parses any otherwise-unloaded submodule from
+source instead of importing a discovered module name. It does not require a
+built Rust extension and does not invoke cargo/maturin.
 
 Usage:
     python tools/inventory_public_api.py [--date YYYYMMDD]
@@ -15,10 +17,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
 import csv
-import importlib
 import inspect
-import pkgutil
 import re
 import sys
 import types
@@ -27,6 +28,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PY_ROOT = REPO_ROOT / "python"
+PACKAGE_ROOT = PY_ROOT / "fast_mlsirm"
 RUST_SRC = REPO_ROOT / "crates" / "fast-mlsirm-py" / "src"
 FIELDS = ["source", "current_name", "module", "kind", "parameters"]
 
@@ -68,10 +70,101 @@ def _format_params(sig: inspect.Signature) -> str:
     return ", ".join(parts)
 
 
+def _module_name(py_file: Path) -> str:
+    """Return the import name represented by one source file under ``PY_ROOT``."""
+    relative = py_file.relative_to(PY_ROOT).with_suffix("")
+    parts = list(relative.parts)
+    if parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def _is_public_module(module_name: str) -> bool:
+    """Whether a discovered source module is public by package naming convention."""
+    parts = module_name.split(".")[1:]
+    return bool(parts) and all(not part.startswith("_") for part in parts)
+
+
+def _ast_default(node: ast.expr | None) -> str:
+    """Render a source default closely enough for the API inventory contract."""
+    if node is None:
+        return ""
+    if isinstance(node, ast.Call):
+        func_name = ""
+        if isinstance(node.func, ast.Name):
+            func_name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            func_name = node.func.attr
+        if func_name == "field":
+            for keyword in node.keywords:
+                if keyword.arg == "default_factory":
+                    return "<factory>"
+                if keyword.arg == "default":
+                    return ast.unparse(keyword.value)
+    return ast.unparse(node)
+
+
+def _ast_function_params(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+    """Project a Python function declaration into the inventory parameter format."""
+    args = node.args
+    positional = [*args.posonlyargs, *args.args]
+    defaults: list[ast.expr | None] = [None] * (len(positional) - len(args.defaults)) + list(
+        args.defaults
+    )
+    parts: list[str] = []
+    for argument, default in zip(positional, defaults, strict=True):
+        if argument.arg == "self":
+            continue
+        rendered_default = _ast_default(default)
+        parts.append(
+            f"{argument.arg}={rendered_default}" if rendered_default else argument.arg
+        )
+    if args.vararg is not None:
+        parts.append(f"*{args.vararg.arg}")
+    for argument, default in zip(args.kwonlyargs, args.kw_defaults, strict=True):
+        rendered_default = _ast_default(default)
+        parts.append(
+            f"{argument.arg}={rendered_default}" if rendered_default else argument.arg
+        )
+    if args.kwarg is not None:
+        parts.append(f"**{args.kwarg.arg}")
+    return ", ".join(parts)
+
+
+def _is_dataclass(node: ast.ClassDef) -> bool:
+    for decorator in node.decorator_list:
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if isinstance(target, ast.Name) and target.id == "dataclass":
+            return True
+        if isinstance(target, ast.Attribute) and target.attr == "dataclass":
+            return True
+    return False
+
+
+def _ast_class_params(node: ast.ClassDef) -> str:
+    """Project explicit or dataclass-generated constructors without importing the module."""
+    for statement in node.body:
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)) and statement.name == "__init__":
+            return _ast_function_params(statement)
+    if not _is_dataclass(node):
+        return ""
+
+    parts: list[str] = []
+    for statement in node.body:
+        if not isinstance(statement, ast.AnnAssign) or not isinstance(statement.target, ast.Name):
+            continue
+        name = statement.target.id
+        if name.startswith("_"):
+            continue
+        default = _ast_default(statement.value)
+        parts.append(f"{name}={default}" if default else name)
+    return ", ".join(parts)
+
+
 def collect_python_rows() -> list[dict]:
     sys.path.insert(0, str(PY_ROOT))
     _install_core_stub()
-    import fast_mlsirm  # noqa: F401  (import after path/stub setup)
+    import fast_mlsirm  # noqa: F401  (fixed package import after path/stub setup)
 
     rows: list[dict] = []
     seen: set[tuple[str, str]] = set()
@@ -104,34 +197,54 @@ def collect_python_rows() -> list[dict]:
             }
         )
 
-    # Top-level package surface (includes _legacy_init re-exports pulled
-    # into fast_mlsirm/__init__.py).
+    def visit_static(module_name: str, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> None:
+        if node.name.startswith("_"):
+            return
+        key = (module_name, node.name)
+        if key in seen:
+            return
+        seen.add(key)
+        kind = "class" if isinstance(node, ast.ClassDef) else "function"
+        params = _ast_class_params(node) if isinstance(node, ast.ClassDef) else _ast_function_params(node)
+        rows.append(
+            {
+                "source": "python",
+                "current_name": node.name,
+                "module": module_name,
+                "kind": kind,
+                "parameters": params,
+            }
+        )
+
+    # Top-level package surface includes explicit re-exports from private
+    # implementation modules. This import target is fixed, never discovered
+    # from caller-controlled data.
     for name in sorted(dir(fast_mlsirm)):
         visit(name, getattr(fast_mlsirm, name))
 
-    # Every submodule's own public names, since not everything reaches the
-    # top-level namespace (e.g. polytomous.py helpers used internally by
-    # other public functions but still importable/public by convention).
-    for _finder, modname, _ispkg in pkgutil.walk_packages(
-        fast_mlsirm.__path__, prefix="fast_mlsirm."
-    ):
-        if any(part.startswith("_") for part in modname.split(".")):
+    # Enumerate repository-owned module paths from the filesystem. If a
+    # module was already loaded by the fixed package import, inspect that
+    # object. Otherwise parse its top-level declarations instead of
+    # executing a discovered module name.
+    for py_file in sorted(PACKAGE_ROOT.rglob("*.py")):
+        module_name = _module_name(py_file)
+        if not _is_public_module(module_name):
             continue
-        try:
-            # modname comes only from pkgutil.walk_packages(fast_mlsirm.__path__),
-            # never from user input — bound to this package's submodules.
-            if not modname.startswith("fast_mlsirm."):
-                continue
-            mod = importlib.import_module(modname)  # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
-        except Exception:
+        loaded_module = sys.modules.get(module_name)
+        if loaded_module is not None:
+            for name in sorted(vars(loaded_module)):
+                if name.startswith("_"):
+                    continue
+                obj = getattr(loaded_module, name)
+                if getattr(obj, "__module__", None) != module_name:
+                    continue
+                visit(name, obj)
             continue
-        for name in sorted(vars(mod)):
-            if name.startswith("_"):
-                continue
-            obj = getattr(mod, name)
-            if getattr(obj, "__module__", None) != modname:
-                continue  # skip names imported from elsewhere; own module only
-            visit(name, obj)
+
+        tree = ast.parse(py_file.read_text(), filename=str(py_file))
+        for statement in tree.body:
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                visit_static(module_name, statement)
 
     rows.sort(key=lambda r: (r["module"], r["current_name"]))
     return rows
