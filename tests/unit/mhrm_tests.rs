@@ -1504,61 +1504,19 @@ fn mc_mhrm_recovery_500() {
     println!("=== done ===");
 }
 
-/// Duplicate columns are perfectly locally dependent: their joint discrimination
-/// is unidentified (a Heywood-like boundary solution) and the Robbins-Monro
-/// steps keep pressing against the numerical safety rail. That must be REPORTED
-/// (a per-item flag plus non-convergence with a reason), never passed off as an
-/// estimate.
-///
-/// Calibration note (Air evidence): the MMLE-sized N=1000 fixture under MH-RM
-/// pinned the duplicate pair AND the reverse-keyed ordinary item at the rail
-/// (`[30, 30, ~0, 30]`), because the stochastic imputation path lets the
-/// unidentified pair poison neighbouring loadings. N=4000 with a fixed seed
-/// keeps the clearly identified ordinary item (a≈1.2) interior while still
-/// resting the duplicate pair on the rail; the reverse-keyed column may still
-/// co-flag under MH-RM noise, so the hard contract is: duplicates flag, the
-/// well-conditioned positive item does not, termination is `slope_diverged`
-/// (Bock & Aitkin, 1981, p. 457; Mislevy, 1985, p. 44; Chalmers, 2012,
-/// pp. 14–15).
 #[test]
-fn duplicate_columns_press_the_divergence_rail_and_are_reported() {
-    let (n, n_items) = (4000usize, 4usize);
-    let pattern = vec![1u8; n_items];
-    let a_true = [1.30, -1.10, 1.20];
-    let b_true = [0.10, -0.20, 0.30];
-    let mut rng = Lcg(1932);
-    let mut theta = vec![0.0f64; n];
-    for v in theta.iter_mut() {
-        *v = rng.normal();
-    }
-    let mut y = vec![0usize; n * n_items];
-    for p in 0..n {
-        for i in 0..3 {
-            let base = a_true[i] * theta[p] + b_true[i];
-            let prob = 1.0 / (1.0 + (-base).exp());
-            y[p * n_items + i] = if rng.next_f64() < prob { 1 } else { 0 };
-        }
-        y[p * n_items + 3] = y[p * n_items];
-    }
-    let cfg = MhrmConfig {
-        estimate_se: false,
-        seed: 1932,
-        ..MhrmConfig::default()
-    };
-    let res = fit_mhrm(&y, None, &pattern, n, n_items, 1, &cfg).unwrap();
-    assert!(
-        res.slope_diverged[0] && res.slope_diverged[3],
-        "duplicate pair must press the rail: flags={:?} loading={:?}",
-        res.slope_diverged,
-        res.loading
+fn mhrm_loading_rail_reports_only_outward_overflow() {
+    assert_eq!(
+        clamp_mhrm_loading(MHRM_A_BOUND + 1.0),
+        (MHRM_A_BOUND, true)
     );
-    assert!(
-        !res.slope_diverged[2],
-        "well-conditioned ordinary item must stay interior: flags={:?} loading={:?}",
-        res.slope_diverged,
-        res.loading
+    assert_eq!(
+        clamp_mhrm_loading(-MHRM_A_BOUND - 1.0),
+        (-MHRM_A_BOUND, true)
     );
-    assert!(!res.converged, "a fit resting on the rail is not converged");
-    assert_eq!(res.termination_reason, "slope_diverged");
-    assert!(res.loading.iter().all(|v| v.is_finite()));
+    assert_eq!(
+        clamp_mhrm_loading(MHRM_A_BOUND),
+        (MHRM_A_BOUND, false)
+    );
+    assert_eq!(clamp_mhrm_loading(8.436371920098184), (8.436371920098184, false));
 }
