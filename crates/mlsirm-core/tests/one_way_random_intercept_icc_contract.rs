@@ -61,6 +61,36 @@ fn row_permutations_preserve_the_exact_reference_result() {
 }
 
 #[test]
+fn representable_location_shift_preserves_exact_variance_component_result() {
+    let cluster_ids = [10_u64, 10, 20, 20, 20, 30, 30];
+    let outcomes = [1.0, 2.0, 4.0, 5.0, 6.0, 9.0, 10.0];
+    let location_shift = 2_f64.powi(52);
+    let shifted = outcomes.map(|value| value + location_shift);
+
+    for (&original, &translated) in outcomes.iter().zip(&shifted) {
+        assert_eq!((translated - location_shift).to_bits(), original.to_bits());
+    }
+
+    let reference = one_way_random_intercept_icc(&cluster_ids, &outcomes).expect("reference");
+    let translated =
+        one_way_random_intercept_icc(&cluster_ids, &shifted).expect("translated reference");
+
+    assert_eq!(reference.icc.to_bits(), translated.icc.to_bits());
+    assert_eq!(
+        reference.between_variance.to_bits(),
+        translated.between_variance.to_bits()
+    );
+    assert_eq!(
+        reference.within_variance.to_bits(),
+        translated.within_variance.to_bits()
+    );
+    assert_eq!(
+        reference.effective_cluster_size_n0.to_bits(),
+        translated.effective_cluster_size_n0.to_bits()
+    );
+}
+
+#[test]
 fn invalid_or_unidentified_inputs_fail_closed() {
     assert!(one_way_random_intercept_icc(&[], &[]).is_err());
     assert!(one_way_random_intercept_icc(&[1_u64], &[]).is_err());
