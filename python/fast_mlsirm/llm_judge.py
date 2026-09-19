@@ -408,11 +408,28 @@ def _validate_raw_json_depth(content: str) -> None:
 def _response_object(raw: str, *, required_fields: set[str]) -> dict[str, Any]:
     text = raw.strip()
     _validate_raw_json_depth(text)
+
+    def reject_nonfinite_constant(_literal: str) -> None:
+        raise JudgeFormatError("judge response JSON contains non-finite numbers")
+
+    def reject_float_nonfinite(value: str) -> float:
+        f_val = float(value)
+        if not math.isfinite(f_val):
+            raise JudgeFormatError("judge response JSON contains non-finite numbers")
+        return f_val
+
     try:
-        value = json.loads(text, object_pairs_hook=_duplicate_free_object)
+        value = json.loads(
+            text,
+            object_pairs_hook=_duplicate_free_object,
+            parse_constant=reject_nonfinite_constant,
+            parse_float=reject_float_nonfinite,
+        )
     except _DuplicateJsonKeyError as exc:
         raise JudgeFormatError("judge response contains duplicate JSON object keys") from exc
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, ValueError) as exc:
+        if isinstance(exc, ValueError) and not isinstance(exc, json.JSONDecodeError) and "non-finite" in str(exc):
+            raise exc
         raise JudgeFormatError("judge response JSON is invalid") from exc
     if not isinstance(value, dict):
         raise JudgeFormatError("judge response must be a JSON object")
