@@ -67,6 +67,18 @@ def test_discovered_submodule_is_parsed_without_import_side_effects(
     } in rows
 
 
+
+def test_static_enum_projection_preserves_inherited_constructor_contract() -> None:
+    """An unloaded public Enum keeps the runtime-derived variadic signature."""
+    inventory = _inventory_tool()
+    visibility = _class_named(
+        REPO_ROOT / "python" / "fast_mlsirm" / "scoring" / "rag.py",
+        "RAGCandidateVisibility",
+    )
+
+    assert inventory._ast_class_params(visibility) == "*values"
+
+
 def test_static_dataclass_projection_matches_rag_anchor_constructor_contract() -> None:
     inventory = _inventory_tool()
     anchor = _class_named(
