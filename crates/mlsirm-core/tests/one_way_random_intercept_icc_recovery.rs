@@ -1,6 +1,6 @@
 use mlsirm_core::one_way_random_intercept::one_way_random_intercept_icc;
 
-const REPLICATIONS: usize = 64;
+const REPLICATIONS: usize = 256;
 const CLUSTERS_PER_REPLICATION: usize = 120;
 const TRUE_BETWEEN_VARIANCE: f64 = 2.0;
 const TRUE_WITHIN_VARIANCE: f64 = 1.0;
@@ -84,6 +84,17 @@ fn root_mean_squared_error_monte_carlo_standard_error(estimates: &[f64], truth: 
     mse_monte_carlo_standard_error / (2.0 * rmse)
 }
 
+fn rmse_upper_bound(estimates: &[f64], truth: f64) -> (f64, f64, f64) {
+    let rmse = root_mean_squared_error(estimates, truth);
+    let monte_carlo_standard_error =
+        root_mean_squared_error_monte_carlo_standard_error(estimates, truth);
+    (
+        rmse,
+        monte_carlo_standard_error,
+        rmse + 3.0 * monte_carlo_standard_error,
+    )
+}
+
 fn recovery_accepts_all_estimands(
     icc_estimates: &[f64],
     between_estimates: &[f64],
@@ -95,18 +106,18 @@ fn recovery_accepts_all_estimands(
     let within_bias_accepted =
         bias_within_monte_carlo_uncertainty(within_estimates, TRUE_WITHIN_VARIANCE).2;
 
-    let icc_rmse = root_mean_squared_error(icc_estimates, TRUE_ICC);
-    let between_relative_rmse =
-        root_mean_squared_error(between_estimates, TRUE_BETWEEN_VARIANCE) / TRUE_BETWEEN_VARIANCE;
-    let within_relative_rmse =
-        root_mean_squared_error(within_estimates, TRUE_WITHIN_VARIANCE) / TRUE_WITHIN_VARIANCE;
+    let (_, _, icc_rmse_upper_bound) = rmse_upper_bound(icc_estimates, TRUE_ICC);
+    let (_, _, between_rmse_upper_bound) =
+        rmse_upper_bound(between_estimates, TRUE_BETWEEN_VARIANCE);
+    let (_, _, within_rmse_upper_bound) =
+        rmse_upper_bound(within_estimates, TRUE_WITHIN_VARIANCE);
 
     icc_bias_accepted
         && between_bias_accepted
         && within_bias_accepted
-        && icc_rmse < MAX_ICC_RMSE
-        && between_relative_rmse < MAX_COMPONENT_RELATIVE_RMSE
-        && within_relative_rmse < MAX_COMPONENT_RELATIVE_RMSE
+        && icc_rmse_upper_bound < MAX_ICC_RMSE
+        && between_rmse_upper_bound / TRUE_BETWEEN_VARIANCE < MAX_COMPONENT_RELATIVE_RMSE
+        && within_rmse_upper_bound / TRUE_WITHIN_VARIANCE < MAX_COMPONENT_RELATIVE_RMSE
 }
 
 #[test]
@@ -168,17 +179,16 @@ fn rmse_acceptance_accounts_for_monte_carlo_uncertainty_near_threshold() {
     ];
     let between_estimates = [TRUE_BETWEEN_VARIANCE; 8];
     let within_estimates = [TRUE_WITHIN_VARIANCE; 8];
-    let point_rmse = root_mean_squared_error(&icc_estimates, TRUE_ICC);
-    let rmse_mcse =
-        root_mean_squared_error_monte_carlo_standard_error(&icc_estimates, TRUE_ICC);
+    let (point_rmse, rmse_mcse, rmse_upper_bound) = rmse_upper_bound(&icc_estimates, TRUE_ICC);
 
     assert!(
         point_rmse < MAX_ICC_RMSE,
         "witness must pass the legacy point-only RMSE gate"
     );
     assert!(
-        point_rmse + 3.0 * rmse_mcse > MAX_ICC_RMSE,
-        "witness uncertainty must cross the declared RMSE target"
+        rmse_upper_bound > MAX_ICC_RMSE,
+        "witness uncertainty must cross the declared RMSE target: point={point_rmse}, 3*MCSE={}, upper={rmse_upper_bound}",
+        3.0 * rmse_mcse
     );
     assert!(
         !recovery_accepts_all_estimands(&icc_estimates, &between_estimates, &within_estimates),
@@ -249,11 +259,14 @@ fn one_way_random_intercept_icc_recovers_known_variance_components_and_ratio() {
     let (within_bias, within_mcse, within_bias_accepted) =
         bias_within_monte_carlo_uncertainty(&within_estimates, TRUE_WITHIN_VARIANCE);
 
-    let icc_rmse = root_mean_squared_error(&icc_estimates, TRUE_ICC);
-    let between_relative_rmse =
-        root_mean_squared_error(&between_estimates, TRUE_BETWEEN_VARIANCE) / TRUE_BETWEEN_VARIANCE;
-    let within_relative_rmse =
-        root_mean_squared_error(&within_estimates, TRUE_WITHIN_VARIANCE) / TRUE_WITHIN_VARIANCE;
+    let (icc_rmse, icc_rmse_mcse, icc_rmse_upper_bound) =
+        rmse_upper_bound(&icc_estimates, TRUE_ICC);
+    let (between_rmse, between_rmse_mcse, between_rmse_upper_bound) =
+        rmse_upper_bound(&between_estimates, TRUE_BETWEEN_VARIANCE);
+    let (within_rmse, within_rmse_mcse, within_rmse_upper_bound) =
+        rmse_upper_bound(&within_estimates, TRUE_WITHIN_VARIANCE);
+    let between_relative_rmse_upper_bound = between_rmse_upper_bound / TRUE_BETWEEN_VARIANCE;
+    let within_relative_rmse_upper_bound = within_rmse_upper_bound / TRUE_WITHIN_VARIANCE;
 
     assert!(
         icc_bias_accepted,
@@ -271,19 +284,22 @@ fn one_way_random_intercept_icc_recovers_known_variance_components_and_ratio() {
         3.0 * within_mcse
     );
     assert!(
-        icc_rmse < MAX_ICC_RMSE,
-        "ICC RMSE {icc_rmse} exceeds {MAX_ICC_RMSE}; attempted={attempted}, recovered={recovered}, failed={failed}"
+        icc_rmse_upper_bound < MAX_ICC_RMSE,
+        "ICC RMSE upper bound {icc_rmse_upper_bound} exceeds {MAX_ICC_RMSE}; point={icc_rmse}, 3*MCSE={}, attempted={attempted}, recovered={recovered}, failed={failed}",
+        3.0 * icc_rmse_mcse
     );
     assert!(
-        between_relative_rmse < MAX_COMPONENT_RELATIVE_RMSE,
-        "between-variance relative RMSE {between_relative_rmse} exceeds {MAX_COMPONENT_RELATIVE_RMSE}; attempted={attempted}, recovered={recovered}, failed={failed}"
+        between_relative_rmse_upper_bound < MAX_COMPONENT_RELATIVE_RMSE,
+        "between-variance relative RMSE upper bound {between_relative_rmse_upper_bound} exceeds {MAX_COMPONENT_RELATIVE_RMSE}; point={between_rmse}, 3*MCSE={}, attempted={attempted}, recovered={recovered}, failed={failed}",
+        3.0 * between_rmse_mcse
     );
     assert!(
-        within_relative_rmse < MAX_COMPONENT_RELATIVE_RMSE,
-        "within-variance relative RMSE {within_relative_rmse} exceeds {MAX_COMPONENT_RELATIVE_RMSE}; attempted={attempted}, recovered={recovered}, failed={failed}"
+        within_relative_rmse_upper_bound < MAX_COMPONENT_RELATIVE_RMSE,
+        "within-variance relative RMSE upper bound {within_relative_rmse_upper_bound} exceeds {MAX_COMPONENT_RELATIVE_RMSE}; point={within_rmse}, 3*MCSE={}, attempted={attempted}, recovered={recovered}, failed={failed}",
+        3.0 * within_rmse_mcse
     );
     assert!(
         recovery_accepts_all_estimands(&icc_estimates, &between_estimates, &within_estimates),
-        "joint recovery acceptance must require every returned estimand"
+        "joint recovery acceptance must require every returned estimand with Monte Carlo uncertainty"
     );
 }
