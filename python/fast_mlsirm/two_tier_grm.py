@@ -481,3 +481,76 @@ def two_tier_oakes_se(
         positive_definite=bool(res["positive_definite"]),
         non_pd_reason=None if reason_raw is None else str(reason_raw),
     )
+
+
+def expected_raw_two_tier_grm(
+    fit: TwoTierGrmFit,
+    specific_map: np.ndarray,
+    q_specific: int,
+) -> np.ndarray:
+    """Plug-in expected raw totals for a fitted two-tier GRM (compute in Rust).
+
+    Returns length-``n_persons`` expected raw scores on the observed category
+    scale (0 .. ``n_items * (n_cat - 1)``). Primary coordinates are fixed at
+    ``fit.theta_p_eap``; each item-block specific factor is integrated out
+    with ``q_specific`` Gauss-Hermite nodes. This is the two-tier analogue of
+    ``bifactor_lord_wingersky`` + ``dist @ scores`` used for bifactor FIPC
+    person scores — **expected raw**, not latent primary EAP.
+
+    The adopted emotionality G+4+W pattern is represented as ``n_primary=2``
+    (G, W) plus ``n_specific`` orthogonal specifics. ``fit.phi`` may freely
+    estimate ``Phi(G, W)`` under ``fit_two_tier_grm``; scoring treats the
+    supplied primary EAP columns as plug-in coordinates and does not
+    reintegrate ``Phi`` (same contract as bifactor expected-raw scoring at
+    ``theta_g_eap``).
+
+    ``q_specific`` is REQUIRED (no default; ADR-0028 / #1929).
+
+    Implementation basis: Lord, F. M., & Wingersky, M. S. (1984). Comparison
+    of IRT true-score and equipercentile observed-score "equatings."
+    *Applied Psychological Measurement, 8*(4), 453-461.
+    https://doi.org/10.1177/014662168400800409; Gibbons, R. D., & Hedeker,
+    D. R. (1992). Full-information item bi-factor analysis. *Psychometrika,
+    57*(3), 423-436. https://doi.org/10.1007/BF02295430; Cai, L., Yang, J.
+    S., & Hansen, M. (2011). Generalized full-information item bifactor
+    analysis. *Psychological Methods, 16*(3), 221-248.
+    https://doi.org/10.1037/a0023350.
+    """
+    q_specific_int = _finite_integer_control(q_specific, "q_specific")
+    if q_specific_int < 1:
+        raise ValueError("q_specific must be >= 1")
+
+    n_primary = int(fit.n_primary)
+    n_specific = int(fit.n_specific)
+    n_cat = int(fit.n_cat)
+    n_items = int(fit.a_specific.shape[0])
+
+    smap = np.asarray(specific_map)
+    if smap.ndim != 1 or smap.shape[0] != n_items:
+        raise ValueError("specific_map must be a 1-D array of length n_items")
+    smap_int = smap.astype(np.int64, copy=False)
+
+    theta = np.asarray(fit.theta_p_eap, dtype=np.float64)
+    if theta.ndim != 2 or theta.shape[1] != n_primary:
+        raise ValueError("fit.theta_p_eap must have shape (n_persons, n_primary)")
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "two_tier_expected_raw"):
+        raise RuntimeError("expected_raw_two_tier_grm requires the compiled Rust core")
+
+    return np.asarray(
+        core.two_tier_expected_raw(
+            np.asarray(fit.a_primary, dtype=np.float64).reshape(-1),
+            np.asarray(fit.a_specific, dtype=np.float64).reshape(-1),
+            np.asarray(fit.threshold, dtype=np.float64).reshape(-1),
+            theta.reshape(-1),
+            smap_int.reshape(-1),
+            int(n_cat),
+            int(n_primary),
+            int(n_specific),
+            int(q_specific_int),
+        ),
+        dtype=np.float64,
+    )

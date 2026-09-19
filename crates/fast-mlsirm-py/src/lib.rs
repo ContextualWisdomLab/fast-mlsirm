@@ -119,6 +119,9 @@ use mlsirm_core::fitstats::{
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
+use mlsirm_core::two_tier_recursion::{
+    two_tier_expected_raw_at_q as core_two_tier_expected_raw_at_q, TwoTierItemParams,
+};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
     gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, phi_lambda as core_phi_lambda,
@@ -223,7 +226,7 @@ use mlsirm_core::{
     neg_loglik_and_grad_device as core_neg_loglik_and_grad_device, Device, ModelConfig, ModelType,
     Params, PenaltyConfig,
 };
-use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
+use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods, ToPyArray};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -2066,6 +2069,64 @@ fn two_tier_oakes_se(
     out.set_item("positive_definite", res.positive_definite)?;
     out.set_item("non_pd_reason", res.non_pd_reason)?;
     Ok(out.into())
+}
+
+/// Plug-in expected raw total scores for a fitted two-tier GRM (Lord-Wingersky, 1984).
+///
+/// ``theta_p_eap`` is row-major ``n_persons * n_primary`` primary coordinates
+/// (typically ``TwoTierGrmFit.theta_p_eap``). ``specific_map`` uses ``-1`` for
+/// specific-free items. ``q_specific`` is a required Gauss-Hermite node count.
+/// Primary correlations ``Phi`` are not reintegrated at scoring time; the
+/// caller's primary coordinates are treated as fixed plug-in values, matching
+/// the bifactor expected-raw contract.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn two_tier_expected_raw<'py>(
+    py: Python<'py>,
+    a_primary: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    theta_p_eap: PyReadonlyArray1<'_, f64>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_cat: usize,
+    n_primary: usize,
+    n_specific: usize,
+    q_specific: usize,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let n_items = a_specific.len();
+    let params = TwoTierItemParams {
+        a_primary: a_primary.as_slice()?.to_vec(),
+        a_specific: a_specific.as_slice()?.to_vec(),
+        thresholds: threshold.as_slice()?.to_vec(),
+        specific_map: specific_map
+            .as_slice()?
+            .iter()
+            .map(|&v| v as i32)
+            .collect(),
+        n_primary,
+        n_specific,
+        n_cat,
+    };
+    if params.a_primary.len() != n_items * n_primary {
+        return Err(PyValueError::new_err(
+            "a_primary length must be n_items * n_primary",
+        ));
+    }
+    let m1 = n_cat.saturating_sub(1);
+    if params.thresholds.len() != n_items * m1 {
+        return Err(PyValueError::new_err(
+            "threshold length must be n_items * (n_cat - 1)",
+        ));
+    }
+    let th = theta_p_eap.as_slice()?;
+    if th.len() % n_primary != 0 {
+        return Err(PyValueError::new_err(
+            "theta_p_eap length must be a multiple of n_primary",
+        ));
+    }
+    let out = core_two_tier_expected_raw_at_q(&params, th, q_specific)
+        .map_err(PyValueError::new_err)?;
+    Ok(out.to_pyarray(py))
 }
 
 /// Confirmatory MULTIDIMENSIONAL generalized partial credit model fit (Muraki, 1992;
@@ -10437,6 +10498,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_two_tier_grm, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_oakes_se, m)?)?;
+    m.add_function(wrap_pyfunction!(two_tier_expected_raw, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;
