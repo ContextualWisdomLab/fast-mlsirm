@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import builtins
 import csv
 import inspect
 import re
@@ -172,6 +173,13 @@ def _annotation_root_name(annotation: ast.expr) -> str:
     return ""
 
 
+
+def _is_builtin_exception_base(base: ast.expr) -> bool:
+    """Whether an AST base names one of Python's built-in exception classes."""
+    candidate = getattr(builtins, _annotation_root_name(base), None)
+    return isinstance(candidate, type) and issubclass(candidate, BaseException)
+
+
 def _dataclass_field_participates_in_init(statement: ast.AnnAssign) -> bool:
     """Whether an annotated dataclass field participates in generated ``__init__``."""
     if _annotation_root_name(statement.annotation) == "ClassVar":
@@ -201,6 +209,8 @@ def _ast_class_params(node: ast.ClassDef) -> str:
             return _ast_function_params(statement)
     if any(_annotation_root_name(base) == "Enum" for base in node.bases):
         return "*values"
+    if any(_is_builtin_exception_base(base) for base in node.bases):
+        return "<no-signature>"
     if not _is_dataclass(node) or not _dataclass_generates_initializer(node):
         return ""
 
