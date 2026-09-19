@@ -79,6 +79,18 @@ def test_static_enum_projection_preserves_inherited_constructor_contract() -> No
     assert inventory._ast_class_params(visibility) == "*values"
 
 
+
+def test_static_builtin_exception_projection_preserves_unknown_signature() -> None:
+    """An unloaded public built-in exception subclass keeps the runtime marker."""
+    inventory = _inventory_tool()
+    report_error = _class_named(
+        REPO_ROOT / "python" / "fast_mlsirm" / "rubric" / "item_bank_report.py",
+        "ItemBankReportError",
+    )
+
+    assert inventory._ast_class_params(report_error) == "<no-signature>"
+
+
 def test_static_dataclass_projection_matches_rag_anchor_constructor_contract() -> None:
     inventory = _inventory_tool()
     anchor = _class_named(
