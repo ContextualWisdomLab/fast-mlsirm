@@ -59,3 +59,8 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+
+## 2026-09-18 - [오탐지된 Semgrep 보안 경고 억제 및 False Positive 검토]
+**Vulnerability:** 실제 취약점이 아님에도 불구하고 `python/fast_mlsirm/dif.py`에서 `globals()`의 위험한 사용 경고가 발생했고, `tools/inventory_public_api.py`에서 `importlib.import_module()`에 대한 동적 모듈 로딩 경고가 발생했습니다.
+**Learning:** `dif.py`의 `globals()` 사용은 내부적으로 고정된 문자열 튜플을 사용하여 하위 호환성을 위해 함수를 할당하는 용도이므로 공격자가 값을 제어할 수 없는 안전한 패턴이었습니다. 마찬가지로 `inventory_public_api.py`의 동적 모듈 로딩도 내부 모듈 계층(pkgutil.walk_packages)에서만 추출된 모듈 이름을 대상으로 하기 때문에 안전합니다. 이처럼 외부의 제어가 불가능한 내부용 코딩 패턴은 보안 취약점이 아님에도 CI에서 차단되는 상황이 발생했습니다.
+**Prevention:** Semgrep과 같은 정적 분석 도구에서 안전한 패턴이 취약점으로 탐지될 경우, `# nosemgrep: <rule-id>` 주석을 사용하여 명시적으로 억제해야 합니다. 또한, 억제 주석이 `ruff format`과 같은 자동화 포맷터에 의해 다른 줄로 분리되거나 제거되지 않도록 `# fmt: skip` 주석과 함께 사용해야 함을 명심해야 합니다.

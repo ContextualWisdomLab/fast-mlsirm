@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2026-09-18 - 🎨 Palette: Cross-Engine Report HTML Accessibility
+**Learning:** HTML-based reports require accessible skip-to-content links, responsive data table containers, and clear semantic identification of row headers to meet standard web accessibility guidelines. The `cross_engine_report.py` lacked these essential patterns.
+**Action:** Always inject `skip-link` logic with `<main id="main-content" tabindex="-1">`, define a `table-scroll` wrapping div for data tables, and update table generation logic to use `<th scope="row">` for initial cell rendering. Ensure a safe `unsafe-inline` style CSP is applied for embedded CSS.

@@ -11,7 +11,7 @@ from .cross_engine_conformance import ConformanceInventory
 _CSP = (
     "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; "
     "img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; "
-    "style-src 'none'"
+    "style-src 'unsafe-inline'"
 )
 _DISCLAIMER = (
     "Numerical conformance evidence is not construct validity, fairness, or "
@@ -29,19 +29,31 @@ def _text(value: object | None) -> str:
 
 def _header_row(labels: tuple[str, ...]) -> str:
     """Render semantic column headers."""
-    return "<tr>" + "".join(
-        f'<th scope="col">{escape(label, quote=True)}</th>' for label in labels
-    ) + "</tr>"
+    return (
+        "<tr>"
+        + "".join(
+            f'<th scope="col">{escape(label, quote=True)}</th>' for label in labels
+        )
+        + "</tr>"
+    )
 
 
 def _data_row(values: tuple[object | None, ...]) -> str:
     """Render one escaped table row."""
-    return "<tr>" + "".join(f"<td>{_text(value)}</td>" for value in values) + "</tr>"
+    if not values:
+        return "<tr></tr>"
+    cells = [f'<th scope="row">{_text(values[0])}</th>']
+    cells.extend(f"<td>{_text(value)}</td>" for value in values[1:])
+    return "<tr>" + "".join(cells) + "</tr>"
 
 
 def _key_value_table(caption: str, rows: tuple[tuple[str, object | None], ...]) -> str:
     """Render an accessible two-column key/value table."""
-    rendered = ["<table>", f"<caption>{escape(caption, quote=True)}</caption>"]
+    rendered = [
+        f'<div class="table-scroll" tabindex="0" role="region" aria-label="{escape(caption, quote=True)}">',
+        "<table>",
+        f"<caption>{escape(caption, quote=True)}</caption>",
+    ]
     rendered.append(_header_row(("Field", "Exact value")))
     for label, value in rows:
         rendered.append(
@@ -51,6 +63,7 @@ def _key_value_table(caption: str, rows: tuple[tuple[str, object | None], ...]) 
             "</tr>"
         )
     rendered.append("</table>")
+    rendered.append("</div>")
     return "\n".join(rendered)
 
 
@@ -106,7 +119,9 @@ def _render_run_provenance(manifest: dict[str, object]) -> str:
 def _render_capabilities(manifest: dict[str, object]) -> str:
     """Render one exact row per advertised capability."""
     capabilities = manifest["capabilities"]
-    if type(capabilities) is not list:  # defensive; strict replay should make this unreachable
+    if (
+        type(capabilities) is not list
+    ):  # defensive; strict replay should make this unreachable
         raise ValueError("capabilities must be a canonical list")
     labels = (
         "Capability",
@@ -119,7 +134,12 @@ def _render_capabilities(manifest: dict[str, object]) -> str:
         "Comparison scope",
         "Evidence rows",
     )
-    rows = ["<table>", "<caption>Capability coverage</caption>", _header_row(labels)]
+    rows = [
+        '<div class="table-scroll" tabindex="0" role="region" aria-label="Capability coverage">',
+        "<table>",
+        "<caption>Capability coverage</caption>",
+        _header_row(labels),
+    ]
     for capability in capabilities:
         if type(capability) is not dict:
             raise ValueError("capability must be a canonical dictionary")
@@ -142,6 +162,7 @@ def _render_capabilities(manifest: dict[str, object]) -> str:
             )
         )
     rows.append("</table>")
+    rows.append("</div>")
     return "\n".join(rows)
 
 
@@ -168,6 +189,7 @@ def _render_evidence(manifest: dict[str, object]) -> str:
         "Limitation",
     )
     rows = [
+        '<div class="table-scroll" tabindex="0" role="region" aria-label="Capability × engine conformance evidence">',
         "<table>",
         "<caption>Capability × engine conformance evidence</caption>",
         _header_row(labels),
@@ -231,6 +253,7 @@ def _render_evidence(manifest: dict[str, object]) -> str:
                 )
             )
     rows.append("</table>")
+    rows.append("</div>")
     if evidence_count == 0:
         rows.insert(
             0,
@@ -242,7 +265,9 @@ def _render_evidence(manifest: dict[str, object]) -> str:
 def _long_form_rows(manifest: dict[str, object]) -> list[dict[str, object | None]]:
     """Flatten canonical capability/evidence records without numerical reinterpretation."""
     capabilities = manifest["capabilities"]
-    if type(capabilities) is not list:  # defensive; strict replay should make this unreachable
+    if (
+        type(capabilities) is not list
+    ):  # defensive; strict replay should make this unreachable
         raise ValueError("capabilities must be a canonical list")
     provenance = {
         "inventory_fingerprint": manifest["inventory_fingerprint"],
@@ -339,12 +364,15 @@ def render_conformance_report(manifest_json: str) -> tuple[str, str]:
     """
     inventory = ConformanceInventory.from_json(manifest_json)
     manifest = inventory.to_manifest()
-    canonical_json = json.dumps(
-        manifest,
-        ensure_ascii=False,
-        sort_keys=True,
-        indent=2,
-    ) + "\n"
+    canonical_json = (
+        json.dumps(
+            manifest,
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+        )
+        + "\n"
+    )
     body = [
         "<!doctype html>",
         '<html lang="en">',
@@ -352,26 +380,43 @@ def render_conformance_report(manifest_json: str) -> tuple[str, str]:
         '<meta charset="utf-8">',
         f'<meta http-equiv="Content-Security-Policy" content="{escape(_CSP, quote=True)}">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        "<style>",
+        "body { font-family: system-ui, sans-serif; line-height: 1.5; margin: 0; }",
+        "main { max-width: 72rem; margin: auto; padding: 1.25rem; }",
+        "main:focus:not(:focus-visible) { outline: none; }",
+        "main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }",
+        ".skip-link { position: absolute; left: .5rem; top: -3rem; padding: .5rem; background: Canvas; color: CanvasText; transition: top 0.2s ease-in-out; text-decoration: none; font-weight: bold; z-index: 100; }",
+        ".skip-link:focus, .skip-link:focus-visible { top: .5rem; outline: 3px solid Highlight; outline-offset: 2px; }",
+        ".table-scroll { overflow-x: auto; margin-block: 1rem; }",
+        ".table-scroll:focus:not(:focus-visible) { outline: none; }",
+        ".table-scroll:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }",
+        "table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }",
+        "thead th, tbody th, td { border: 1px solid currentColor; padding: .5rem; text-align: left; }",
+        "tbody th { font-weight: normal; }",
+        "caption { text-align: left; font-weight: bold; margin-bottom: .5rem; }",
+        "@media (prefers-reduced-motion: reduce) { .skip-link { transition: none; } }",
+        "</style>",
         "<title>Cross-engine conformance evidence</title>",
         "</head>",
         "<body>",
-        "<main>",
+        '<a class="skip-link" href="#main-content">Skip to report content</a>',
+        '<main id="main-content" tabindex="-1">',
         "<h1>Cross-engine conformance evidence</h1>",
         f"<p>{escape(_DISCLAIMER, quote=True)}</p>",
         "<p>Exact values are shown in text; this report has no hover-only evidence.</p>",
-        "<section aria-labelledby=\"inventory-provenance\">",
+        '<section aria-labelledby="inventory-provenance">',
         '<h2 id="inventory-provenance">Inventory provenance</h2>',
         _render_inventory_provenance(manifest),
         "</section>",
-        "<section aria-labelledby=\"run-provenance\">",
+        '<section aria-labelledby="run-provenance">',
         '<h2 id="run-provenance">Run provenance</h2>',
         _render_run_provenance(manifest),
         "</section>",
-        "<section aria-labelledby=\"capability-coverage\">",
+        '<section aria-labelledby="capability-coverage">',
         '<h2 id="capability-coverage">Capability coverage</h2>',
         _render_capabilities(manifest),
         "</section>",
-        "<section aria-labelledby=\"engine-evidence\">",
+        '<section aria-labelledby="engine-evidence">',
         '<h2 id="engine-evidence">Capability × engine evidence</h2>',
         _render_evidence(manifest),
         "</section>",
