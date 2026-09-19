@@ -30,8 +30,11 @@
 - **No behavior change for well-conditioned fits.** The clamp is a no-op
   unless an M-step proposal would leave the rail, so interior trajectories —
   including every standard recovery fixture — are untouched. Only fits that
-  used to pin silently at `10.0` now travel to the rail and report divergence
-  (e.g. perfectly locally dependent duplicate columns).
+  used to pin silently at `10.0` now travel to the rail and report divergence.
+  Identical response columns alone are not treated as proof of infinite
+  discrimination: although they violate local independence, each column can
+  still have an interior marginal slope. MH-RM reports divergence only when an
+  actual update exceeds the rail, including symmetrically for negative slopes.
 - **References.** Bock, R. D., & Aitkin, M. (1981). Marginal maximum
   likelihood estimation of item parameters: Application of an EM algorithm.
   *Psychometrika, 46*(4), 443–459. https://doi.org/10.1007/BF02293801 —
