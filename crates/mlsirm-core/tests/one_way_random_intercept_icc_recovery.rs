@@ -32,6 +32,10 @@ impl DeterministicNormal {
 }
 
 fn bias_within_monte_carlo_uncertainty(estimates: &[f64], truth: f64) -> (f64, f64, bool) {
+    assert!(
+        estimates.len() >= 2,
+        "Monte Carlo bias acceptance requires at least two recovered replications"
+    );
     let replication_count = estimates.len() as f64;
     let mean = estimates.iter().sum::<f64>() / replication_count;
     let bias = mean - truth;
@@ -41,7 +45,7 @@ fn bias_within_monte_carlo_uncertainty(estimates: &[f64], truth: f64) -> (f64, f
         .sum::<f64>()
         / (replication_count - 1.0);
     let monte_carlo_standard_error = (sampling_variance / replication_count).sqrt();
-    let accepted = bias.abs() <= (3.0 * monte_carlo_standard_error).max(0.03);
+    let accepted = bias.abs() <= 3.0 * monte_carlo_standard_error;
     (bias, monte_carlo_standard_error, accepted)
 }
 
@@ -76,7 +80,10 @@ fn bias_acceptance_does_not_replace_monte_carlo_uncertainty_with_an_absolute_flo
 #[test]
 fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_uncertainty() {
     let mut rng = DeterministicNormal::new(0x5eed_1234_5678_9abc);
+    let attempted = REPLICATIONS;
     let mut estimates = Vec::with_capacity(REPLICATIONS);
+    let mut failed = 0_usize;
+    let mut first_failure = None;
 
     for _ in 0..REPLICATIONS {
         let mut cluster_ids = Vec::new();
@@ -92,14 +99,33 @@ fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_u
             }
         }
 
-        estimates.push(
-            one_way_random_intercept_icc(&cluster_ids, &outcomes)
-                .expect("identified generated one-way random-intercept design")
-                .icc,
-        );
+        match one_way_random_intercept_icc(&cluster_ids, &outcomes) {
+            Ok(result) => estimates.push(result.icc),
+            Err(error) => {
+                failed += 1;
+                if first_failure.is_none() {
+                    first_failure = Some(error);
+                }
+            }
+        }
     }
 
-    let replication_count = REPLICATIONS as f64;
+    let recovered = estimates.len();
+    assert_eq!(
+        attempted,
+        recovered + failed,
+        "every attempted replication must be accounted for"
+    );
+    assert_eq!(
+        failed, 0,
+        "true-parameter recovery failed: attempted={attempted}, recovered={recovered}, failed={failed}, first_failure={first_failure:?}"
+    );
+    assert_eq!(
+        recovered, attempted,
+        "scientific acceptance requires a complete recovery denominator"
+    );
+
+    let replication_count = recovered as f64;
     let mean = estimates.iter().sum::<f64>() / replication_count;
     let bias = mean - TRUE_ICC;
     let rmse = (estimates
@@ -113,10 +139,11 @@ fn one_way_random_intercept_icc_recovers_known_variance_ratio_with_monte_carlo_u
 
     assert!(
         accepted,
-        "absolute bias {bias} exceeds Monte Carlo acceptance; MCSE={monte_carlo_standard_error}"
+        "absolute bias {bias} exceeds 3*MCSE={}; attempted={attempted}, recovered={recovered}, failed={failed}",
+        3.0 * monte_carlo_standard_error
     );
     assert!(
         rmse < 0.08,
-        "RMSE {rmse} exceeds the true-parameter recovery threshold"
+        "RMSE {rmse} exceeds the true-parameter recovery threshold; attempted={attempted}, recovered={recovered}, failed={failed}"
     );
 }
