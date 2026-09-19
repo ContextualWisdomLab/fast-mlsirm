@@ -498,11 +498,11 @@ fn estep_gpu_matches_cpu_counts_and_loglik() {
     let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
     let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
 
-    let (ll_cpu, counts_cpu) = e_step(
+    let (ll_cpu, counts_cpu, _) = e_step(
         &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
         crate::Device::Cpu,
     );
-    let (ll_gpu, counts_gpu) = e_step(
+    let (ll_gpu, counts_gpu, _) = e_step(
         &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
         crate::Device::Gpu,
     );
@@ -561,7 +561,7 @@ fn zero_prior_weight_nodes_do_not_nan_estep_counts() {
     log_wg[0] = f64::NEG_INFINITY;
     log_wg[6] = f64::NEG_INFINITY;
 
-    let (ll, counts) = e_step(
+    let (ll, counts, _) = e_step(
         &v,
         &y,
         None,
