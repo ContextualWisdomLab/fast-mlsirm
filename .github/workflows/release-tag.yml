@@ -1,5 +1,22 @@
 name: Release Tag
 
+# Dual-path note (ADR-0029 / docs/orchestration/release-publish-contract.md):
+# This local workflow body remains the default execution path. Do NOT remove it
+# or switch callers to ContextualWisdomLab/.github until one full release has
+# succeeded via the central reusable workflow. A SEPARATE thin-wrapper PR will
+# pin `uses: ...@<exact-merged-sha>` after ContextualWisdomLab/.github lands
+# reusable workflows (expected: release-tag + publish-package naming — align
+# to whatever that PR ships). Exact SHA/path TBD — leave commented; do not
+# invent a live uses: that would fail CI:
+#
+# # jobs:
+# #   call-central:
+# #     uses: ContextualWisdomLab/.github/.github/workflows/<release-tag-or-shipped-name>.yml@<exact-sha>
+# #     with:
+# #       release_version: ${{ inputs.release_version }}
+# #       release_commit: ${{ inputs.release_commit }}
+# #     secrets: inherit
+
 on:
   workflow_dispatch:
     inputs:
