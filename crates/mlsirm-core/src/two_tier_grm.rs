@@ -1315,6 +1315,17 @@ struct SingleStartOutcome {
     final_loglik_change: f64,
 }
 
+enum SingleStartError {
+    Numerical(String),
+    ProgressCancelled,
+}
+
+impl From<String> for SingleStartError {
+    fn from(error: String) -> Self {
+        Self::Numerical(error)
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_single_start(
     v: &Validated,
@@ -1329,7 +1340,7 @@ fn run_single_start(
     qs: usize,
     start: usize,
     progress: &mut Option<&mut crate::em_progress::EmProgressCallback<'_>>,
-) -> Result<SingleStartOutcome, String> {
+) -> Result<SingleStartOutcome, SingleStartError> {
     let p = v.n_primary;
     let (mut params, mut z_phi) = initial_params(v, y, observed, cfg.seed, start);
 
@@ -1357,12 +1368,16 @@ fn run_single_start(
         // p. 445 eqs. 5–6; p. 447 E-step recomputes P_l each cycle). No extra
         // quadrature — this is the same value used for the tolerance check.
         if let Some(cb) = progress.as_deref_mut() {
-            cb(crate::em_progress::EmIterationProgress {
+            if cb(crate::em_progress::EmIterationProgress {
                 iteration: n_iter,
                 loglik: ll,
                 delta_loglik: change,
                 start,
-            });
+            })
+            .is_break()
+            {
+                return Err(SingleStartError::ProgressCancelled);
+            }
         }
         if let Some(change) = change {
             let prev = previous.expect("change requires a previous log-likelihood");
@@ -1501,7 +1516,8 @@ pub fn fit_two_tier_grm(
 /// When `progress` is `Some`, it is invoked once after each E-step with the
 /// already-computed observed-data marginal log-likelihood and its change
 /// versus the previous iteration (Bock & Aitkin, 1981, p. 445 eqs. 5–6;
-/// p. 447 E-step; p. 448). `None` is bit-identical to [`fit_two_tier_grm`].
+/// p. 447 E-step; p. 448). Returning `ControlFlow::Break` cancels the entire
+/// multi-start fit. `None` is bit-identical to [`fit_two_tier_grm`].
 ///
 /// # References (APA 7th ed.)
 ///
@@ -1577,7 +1593,10 @@ pub fn fit_two_tier_grm_with_progress(
                     best_start = start;
                 }
             }
-            Err(e) => {
+            Err(SingleStartError::ProgressCancelled) => {
+                return Err("progress callback cancelled fit".to_string());
+            }
+            Err(SingleStartError::Numerical(e)) => {
                 if first_error.is_none() {
                     first_error = Some(format!("start {start}: {e}"));
                 }

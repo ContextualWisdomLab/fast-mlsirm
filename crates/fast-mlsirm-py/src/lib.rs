@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 
 use mlsirm_core::agreement::{
     validate_scoring_with_thresholds as core_validate_scoring, ValidationThresholds,
@@ -1449,33 +1450,39 @@ fn fit_bifactor_grm(
             })
             .map_err(PyValueError::new_err)?,
         Some(cb) => {
-            // Hold the GIL so the opt-in progress callback can run without
-            // detach/reattach; silent default still uses the detach path.
+            let cb = cb.unbind();
             let mut cb_err: Option<PyErr> = None;
-            let mut rust_cb = |report: EmIterationProgress| {
-                if cb_err.is_some() {
-                    return;
-                }
-                if let Err(e) = cb.call1((
-                    report.iteration,
-                    report.loglik,
-                    report.delta_loglik,
-                    report.start,
-                )) {
-                    cb_err = Some(e);
-                }
-            };
-            let fit_res = core_fit_bifactor_grm_with_progress(
-                &yy,
-                obs_vec.as_deref(),
-                &smap,
-                n_persons,
-                n_items,
-                n_specific,
-                n_cat,
-                &cfg,
-                Some(&mut rust_cb),
-            );
+            let fit_res = py.detach(|| {
+                let mut rust_cb = |report: EmIterationProgress| {
+                    match Python::attach(|py| {
+                        cb.bind(py)
+                            .call1((
+                                report.iteration,
+                                report.loglik,
+                                report.delta_loglik,
+                                report.start,
+                            ))
+                            .map(|_| ())
+                    }) {
+                        Ok(_) => ControlFlow::Continue(()),
+                        Err(e) => {
+                            cb_err = Some(e);
+                            ControlFlow::Break(())
+                        }
+                    }
+                };
+                core_fit_bifactor_grm_with_progress(
+                    &yy,
+                    obs_vec.as_deref(),
+                    &smap,
+                    n_persons,
+                    n_items,
+                    n_specific,
+                    n_cat,
+                    &cfg,
+                    Some(&mut rust_cb),
+                )
+            });
             if let Some(e) = cb_err {
                 return Err(e);
             }
@@ -1984,35 +1991,41 @@ fn fit_two_tier_grm(
             })
             .map_err(PyValueError::new_err)?,
         Some(cb) => {
-            // Hold the GIL so the opt-in progress callback can run without
-            // detach/reattach; silent default still uses the detach path.
+            let cb = cb.unbind();
             let mut cb_err: Option<PyErr> = None;
-            let mut rust_cb = |report: EmIterationProgress| {
-                if cb_err.is_some() {
-                    return;
-                }
-                if let Err(e) = cb.call1((
-                    report.iteration,
-                    report.loglik,
-                    report.delta_loglik,
-                    report.start,
-                )) {
-                    cb_err = Some(e);
-                }
-            };
-            let fit_res = core_fit_two_tier_grm_with_progress(
-                &yy,
-                obs_vec.as_deref(),
-                &pmap,
-                &smap,
-                n_persons,
-                n_items,
-                n_primary,
-                n_specific,
-                n_cat,
-                &cfg,
-                Some(&mut rust_cb),
-            );
+            let fit_res = py.detach(|| {
+                let mut rust_cb = |report: EmIterationProgress| {
+                    match Python::attach(|py| {
+                        cb.bind(py)
+                            .call1((
+                                report.iteration,
+                                report.loglik,
+                                report.delta_loglik,
+                                report.start,
+                            ))
+                            .map(|_| ())
+                    }) {
+                        Ok(_) => ControlFlow::Continue(()),
+                        Err(e) => {
+                            cb_err = Some(e);
+                            ControlFlow::Break(())
+                        }
+                    }
+                };
+                core_fit_two_tier_grm_with_progress(
+                    &yy,
+                    obs_vec.as_deref(),
+                    &pmap,
+                    &smap,
+                    n_persons,
+                    n_items,
+                    n_primary,
+                    n_specific,
+                    n_cat,
+                    &cfg,
+                    Some(&mut rust_cb),
+                )
+            });
             if let Some(e) = cb_err {
                 return Err(e);
             }

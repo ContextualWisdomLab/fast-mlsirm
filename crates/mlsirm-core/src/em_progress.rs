@@ -13,6 +13,8 @@
 //! recomputes pattern marginals `P_l` each cycle; p. 448 notes the
 //! procedure satisfies the marginal likelihood equations)
 
+use std::ops::ControlFlow;
+
 /// One EM E-step's already-computed observed-data marginal log-likelihood.
 ///
 /// `iteration` is the 0-based index of completed E-step evaluations within
@@ -31,4 +33,7 @@ pub struct EmIterationProgress {
 }
 
 /// Optional mutable progress sink; `None` keeps the fitter silent.
-pub type EmProgressCallback<'a> = dyn FnMut(EmIterationProgress) + 'a;
+///
+/// Returning [`ControlFlow::Break`] cancels the entire multi-start fit before
+/// another E-step or start is evaluated.
+pub type EmProgressCallback<'a> = dyn FnMut(EmIterationProgress) -> ControlFlow<()> + 'a;
