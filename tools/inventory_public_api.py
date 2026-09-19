@@ -199,6 +199,8 @@ def _ast_class_params(node: ast.ClassDef) -> str:
     for statement in node.body:
         if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)) and statement.name == "__init__":
             return _ast_function_params(statement)
+    if any(_annotation_root_name(base) == "Enum" for base in node.bases):
+        return "*values"
     if not _is_dataclass(node) or not _dataclass_generates_initializer(node):
         return ""
 
