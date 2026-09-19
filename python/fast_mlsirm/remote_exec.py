@@ -544,7 +544,7 @@ class LoopbackExecutor:
                         family=envelope.family,
                         delivery_state=RemoteJobDeliveryState.FAILED,
                         result=None,
-                        error_message=str(exc),
+                        error_message=str(exc) or type(exc).__name__,
                         provenance=local_worker_provenance(
                             worker_manifest,
                             requested_device=requested_device,
