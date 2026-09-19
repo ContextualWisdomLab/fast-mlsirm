@@ -60,6 +60,30 @@ fn root_mean_squared_error(estimates: &[f64], truth: f64) -> f64 {
         .sqrt()
 }
 
+fn root_mean_squared_error_monte_carlo_standard_error(estimates: &[f64], truth: f64) -> f64 {
+    assert!(
+        estimates.len() >= 2,
+        "RMSE Monte Carlo uncertainty requires at least two recovered replications"
+    );
+    let replication_count = estimates.len() as f64;
+    let squared_errors: Vec<f64> = estimates
+        .iter()
+        .map(|estimate| (estimate - truth).powi(2))
+        .collect();
+    let mean_squared_error = squared_errors.iter().sum::<f64>() / replication_count;
+    let rmse = mean_squared_error.sqrt();
+    if rmse == 0.0 {
+        return 0.0;
+    }
+    let squared_error_variance = squared_errors
+        .iter()
+        .map(|squared_error| (squared_error - mean_squared_error).powi(2))
+        .sum::<f64>()
+        / (replication_count - 1.0);
+    let mse_monte_carlo_standard_error = (squared_error_variance / replication_count).sqrt();
+    mse_monte_carlo_standard_error / (2.0 * rmse)
+}
+
 fn recovery_accepts_all_estimands(
     icc_estimates: &[f64],
     between_estimates: &[f64],
@@ -127,6 +151,38 @@ fn ratio_only_recovery_rejects_proportionally_wrong_variance_components() {
     assert!(
         !all_estimands_accepted,
         "scientific recovery must reject a correct ratio when both component scales are wrong"
+    );
+}
+
+#[test]
+fn rmse_acceptance_accounts_for_monte_carlo_uncertainty_near_threshold() {
+    let icc_estimates = [
+        TRUE_ICC,
+        TRUE_ICC + 0.1,
+        TRUE_ICC,
+        TRUE_ICC + 0.1,
+        TRUE_ICC,
+        TRUE_ICC + 0.1,
+        TRUE_ICC,
+        TRUE_ICC + 0.1,
+    ];
+    let between_estimates = [TRUE_BETWEEN_VARIANCE; 8];
+    let within_estimates = [TRUE_WITHIN_VARIANCE; 8];
+    let point_rmse = root_mean_squared_error(&icc_estimates, TRUE_ICC);
+    let rmse_mcse =
+        root_mean_squared_error_monte_carlo_standard_error(&icc_estimates, TRUE_ICC);
+
+    assert!(
+        point_rmse < MAX_ICC_RMSE,
+        "witness must pass the legacy point-only RMSE gate"
+    );
+    assert!(
+        point_rmse + 3.0 * rmse_mcse > MAX_ICC_RMSE,
+        "witness uncertainty must cross the declared RMSE target"
+    );
+    assert!(
+        !recovery_accepts_all_estimands(&icc_estimates, &between_estimates, &within_estimates),
+        "scientific acceptance must reject a point RMSE whose 3*MCSE upper bound crosses the target"
     );
 }
 
