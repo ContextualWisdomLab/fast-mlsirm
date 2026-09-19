@@ -178,6 +178,26 @@ def test_loopback_executor_records_handler_failure_without_aborting_batch() -> N
     assert outcomes[1].result is None
 
 
+def test_loopback_executor_records_empty_handler_error_without_aborting_batch() -> None:
+    """An exception without message still becomes one failed outcome."""
+    manifest = _manifest()
+
+    def handler(envelope: RemoteJobEnvelope, unit_seed: int) -> int:
+        del envelope, unit_seed
+        raise RuntimeError()
+
+    outcomes = LoopbackExecutor().run_batch(
+        (_envelope(manifest=manifest),),
+        handler,
+        worker_manifest=manifest,
+    )
+
+    assert len(outcomes) == 1
+    assert outcomes[0].delivery_state is RemoteJobDeliveryState.FAILED
+    assert outcomes[0].error_message == "RuntimeError"
+    assert outcomes[0].result is None
+
+
 def test_payload_ref_must_match_manifest_payload_sha256() -> None:
     manifest = _manifest(payload_sha256=_SHA)
     with pytest.raises(ValueError, match="payload_ref must equal manifest.payload_sha256"):
