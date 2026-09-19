@@ -11,9 +11,10 @@
   `SLOPE_DIVERGENCE_RAIL = 30.0` (canonical home: `crate::mmle`; the other
   modules alias it, so one item no longer has a different reachable range
   depending on which entry point fitted it). The value carries no measurement
-  meaning: at `|a| = 30` the logistic is saturated to machine precision over
-  the bulk of the latent distribution, so no larger finite value is
-  distinguishable as an optimum.
+  meaning: once the complete linear predictor reaches
+  `|a * theta + b| >= 36`, the logistic is saturated to machine precision.
+  The unrestricted intercept means a rail slope alone does not imply
+  saturation at every latent node.
 - **Divergence is reported, never passed off as an estimate.** A slope resting
   on the rail with its M-step still pushing outward — a Heywood-like boundary
   solution — now forces non-convergence with a reason instead of clamping
