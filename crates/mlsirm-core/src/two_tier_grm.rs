@@ -35,8 +35,8 @@
 //! identification, `diag(tau)` diagonal; eq. 3, p. 586, is Cai's own
 //! unit-variance scaling in which the primaries are correlated with unit
 //! variances and the specifics are "similarly scaled, mutually
-//! uncorrelated, and uncorrelated with the primary factors") — see also
-//! (Chalmers, 2026, mirt `bfactor`
+//! uncorrelated, and uncorrelated with the primary factors"; Chalmers,
+//! 2026, mirt `bfactor`
 //! documentation, "Details" section: "the secondary latent traits are
 //! assumed to be orthogonal to all traits and have a fixed variance of 1,
 //! while the primary traits can be organized to vary and covary with other
