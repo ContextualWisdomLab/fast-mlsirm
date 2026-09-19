@@ -17,10 +17,11 @@ from fast_mlsirm.estimators.marginal import (
     _pca_align,
     _xi_grid,
     _xi_nodes,
-    category_logprobs,
+    compute_category_logprobs,
+    compute_gpcm_node_gradient,
     fit_gpcm_numpy,
     fit_marginal_numpy,
-    grm_category_logprobs,
+    compute_grm_category_logprobs,
     score_eap,
 )
 
@@ -36,9 +37,10 @@ def _binary(n_persons, n_items, seed=0):
 # --- quadrature-node helpers ---
 
 
-def test_gh_rejects_unsupported_quadrature():
-    with pytest.raises(ValueError, match="unsupported quadrature size"):
-        _gh(9)
+def test_gh_rejects_zero_quadrature():
+    # #1929: no node-count cap; q=9 is now accepted, only q < 1 is rejected.
+    with pytest.raises(ValueError, match="q must be >= 1"):
+        _gh(0)
 
 
 def test_xi_grid_rejects_oversized_tensor():
@@ -88,7 +90,7 @@ def test_fit_marginal_rejects_oversized_working_set():
     with pytest.raises(ValueError, match="marginal working set"):
         fit_marginal_numpy(
             y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1,
-            latent_dim=1, q_theta=7, xi_rule="qmc", xi_points=100_000,
+            latent_dim=1, q_theta=7, xi_rule="qmc", xi_points=100_000, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_seed=0
         )
 
 
@@ -96,7 +98,7 @@ def test_fit_marginal_rejects_unidim_model_with_multiple_dims():
     y, observed = _binary(6, 2)
     with pytest.raises(ValueError, match="unidimensional models require n_dims == 1"):
         fit_marginal_numpy(
-            y, observed, np.array([0, 1]), model="ULS2PLM", n_dims=2, latent_dim=1
+            y, observed, np.array([0, 1]), model="ULS2PLM", n_dims=2, latent_dim=1, q_theta=21, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -104,7 +106,7 @@ def test_fit_marginal_rejects_factor_id_out_of_range():
     y, observed = _binary(6, 2)
     with pytest.raises(ValueError, match="factor_id values must be in"):
         fit_marginal_numpy(
-            y, observed, np.array([0, 1]), model="MLS2PLM", n_dims=1, latent_dim=1
+            y, observed, np.array([0, 1]), model="MLS2PLM", n_dims=1, latent_dim=1, q_theta=21, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -112,7 +114,7 @@ def test_fit_marginal_rejects_bad_latent_dim():
     y, observed = _binary(6, 2)
     with pytest.raises(ValueError, match="1 <= latent_dim <= 3"):
         fit_marginal_numpy(
-            y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1, latent_dim=4
+            y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1, latent_dim=4, q_theta=21, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -121,7 +123,7 @@ def test_fit_marginal_rejects_non_binary_observed():
     observed = np.ones_like(y, dtype=bool)
     with pytest.raises(ValueError, match="observed responses must be 0 or 1"):
         fit_marginal_numpy(
-            y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1, latent_dim=1
+            y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1, latent_dim=1, q_theta=21, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -130,7 +132,7 @@ def test_fit_marginal_singlefree_requires_anchors():
     with pytest.raises(ValueError, match="singlefree \\(FIPC\\) requires anchors"):
         fit_marginal_numpy(
             y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1,
-            latent_dim=1, pop={"kind": "singlefree"},
+            latent_dim=1, pop={"kind": "singlefree"}, q_theta=21, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -140,7 +142,7 @@ def test_fit_marginal_covariate_rejects_multilevel():
         fit_marginal_numpy(
             y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1, latent_dim=1,
             pop={"kind": "multilevel", "cluster_id": np.zeros(6, int), "n_clusters": 1},
-            covariate={"w": np.zeros((1, 2))},
+            covariate={"w": np.zeros((1, 2))}, q_theta=21, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -149,7 +151,7 @@ def test_fit_marginal_single_context_covariate_is_collinear():
     with pytest.raises(ValueError, match="collinear with b"):
         fit_marginal_numpy(
             y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1, latent_dim=1,
-            covariate={"w": np.zeros(2)},
+            covariate={"w": np.zeros(2)}, q_theta=21, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -158,7 +160,7 @@ def test_fit_marginal_rejects_bad_group_id():
     with pytest.raises(ValueError, match="group_id values must be in"):
         fit_marginal_numpy(
             y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1, latent_dim=1,
-            pop={"kind": "multigroup", "group_id": np.array([0, 0, 2, 0]), "n_groups": 2},
+            pop={"kind": "multigroup", "group_id": np.array([0, 0, 2, 0]), "n_groups": 2}, q_theta=21, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -167,7 +169,7 @@ def test_fit_marginal_rejects_bad_cluster_id():
     with pytest.raises(ValueError, match="cluster_id values must be in"):
         fit_marginal_numpy(
             y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1, latent_dim=1,
-            pop={"kind": "multilevel", "cluster_id": np.array([0, 0, 3, 0]), "n_clusters": 2},
+            pop={"kind": "multilevel", "cluster_id": np.array([0, 0, 3, 0]), "n_clusters": 2}, q_theta=21, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -182,7 +184,7 @@ def test_fit_marginal_rejects_anchors_with_no_fixed_items():
     with pytest.raises(ValueError, match="anchors must fix at least one item"):
         fit_marginal_numpy(
             y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1,
-            latent_dim=1, anchors=anchors,
+            latent_dim=1, anchors=anchors, q_theta=21, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -197,7 +199,7 @@ def test_fit_marginal_singlefree_requires_two_anchors_per_dim():
     with pytest.raises(ValueError, match="at least two fixed anchor items per"):
         fit_marginal_numpy(
             y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1,
-            latent_dim=1, pop={"kind": "singlefree"}, anchors=anchors,
+            latent_dim=1, pop={"kind": "singlefree"}, anchors=anchors, q_theta=21, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -213,7 +215,7 @@ def test_fit_marginal_rejects_nonfinite_anchor_tau():
     with pytest.raises(ValueError, match="anchor tau must be finite"):
         fit_marginal_numpy(
             y, observed, np.array([0, 0]), model="MLS2PLM", n_dims=1,
-            latent_dim=1, anchors=anchors,
+            latent_dim=1, anchors=anchors, q_theta=21, q_xi=11, q_u=15, max_iter=200, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -224,7 +226,7 @@ def test_fit_marginal_latent_dim_three_init_runs():
     y, observed = _binary(6, 3, seed=1)
     res = fit_marginal_numpy(
         y, observed, np.array([0, 0, 0]), model="MLS2PLM", n_dims=1,
-        latent_dim=3, q_theta=7, q_xi=7, max_iter=1,
+        latent_dim=3, q_theta=7, q_xi=7, max_iter=1, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     assert res["zeta"].shape == (3, 3)
 
@@ -239,7 +241,7 @@ def test_fit_marginal_anchors_without_tau_skip_branch():
     }
     res = fit_marginal_numpy(
         y, observed, np.array([0, 0]), model="ULS2PLM", n_dims=1,
-        latent_dim=1, q_theta=7, q_xi=7, max_iter=1, anchors=anchors,
+        latent_dim=1, q_theta=7, q_xi=7, max_iter=1, anchors=anchors, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     np.testing.assert_allclose(res["b"], anchors["b"])
 
@@ -249,7 +251,7 @@ def test_fit_marginal_zero_inflation_single_not_converged_final_pass():
     y[:4] = 0.0  # structural-zero rows
     res = fit_marginal_numpy(
         y, observed, np.array([0, 0, 0, 0]), model="MLSRM", n_dims=1,
-        latent_dim=1, q_theta=7, q_xi=7, max_iter=1, zero_inflation=True,
+        latent_dim=1, q_theta=7, q_xi=7, max_iter=1, zero_inflation=True, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     assert res["pi_zero"] > 0.0
     assert res["zero_responsibility"].shape == (10,)
@@ -263,7 +265,7 @@ def test_fit_marginal_zero_inflation_multilevel_not_converged_final_pass():
     res = fit_marginal_numpy(
         y, observed, np.array([0, 0, 0, 0]), model="MLS2PLM", n_dims=1,
         latent_dim=1, q_theta=7, q_xi=7, q_u=7, max_iter=1, zero_inflation=True,
-        pop={"kind": "multilevel", "cluster_id": cluster_id, "n_clusters": 3},
+        pop={"kind": "multilevel", "cluster_id": cluster_id, "n_clusters": 3}, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     assert res["zero_responsibility"].shape == (12,)
     assert res["u_eap"].shape == (3,)
@@ -278,7 +280,7 @@ def test_fit_marginal_covariate_distance_m_step_runs():
         y, observed, np.array([0, 1, 0, 1]), model="MLS2PLM", n_dims=2,
         latent_dim=2, q_theta=7, q_xi=7, max_iter=2,
         pop={"kind": "multigroup", "group_id": group_id, "n_groups": 2},
-        covariate={"w": w, "init_delta": 0.0},
+        covariate={"w": w, "init_delta": 0.0}, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     assert np.isfinite(res["delta"])
 
@@ -291,7 +293,7 @@ def test_fit_marginal_covariate_no_interaction_m_step_runs():
         y, observed, np.array([0, 1, 0, 1]), model="MIRT", n_dims=2,
         latent_dim=2, q_theta=7, q_xi=7, max_iter=2,
         pop={"kind": "multigroup", "group_id": group_id, "n_groups": 2},
-        covariate={"w": w, "init_delta": 0.0},
+        covariate={"w": w, "init_delta": 0.0}, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     assert np.isfinite(res["delta"])
 
@@ -316,7 +318,7 @@ def test_score_eap_scores_response_vectors():
     result = score_eap(
         y, observed, np.array([0, 0, 1, 1]),
         alpha=np.zeros(4), b=np.zeros(4), zeta=np.zeros((4, 2)), tau=0.0,
-        model="MLS2PLM", q_theta=7, q_xi=7,
+        model="MLS2PLM", q_theta=7, q_xi=7, eps_distance=1e-8
     )
     assert result["theta_eap"].shape == (5, 2)
     assert result["xi_eap"].shape == (5, 2)
@@ -329,7 +331,7 @@ def test_score_eap_no_space_model_scores_vectors():
     result = score_eap(
         y, observed, np.array([0, 0, 0]),
         alpha=np.zeros(3), b=np.zeros(3), zeta=np.zeros((3, 1)), tau=0.0,
-        model="MIRT", n_dims=1, q_theta=7,
+        model="MIRT", n_dims=1, q_theta=7, q_xi=11, eps_distance=1e-8
     )
     assert result["theta_eap"].shape == (4, 1)
     assert result["xi_eap"].shape == (4, 1)
@@ -340,7 +342,7 @@ def test_score_eap_rejects_non_1d_factor_id():
     with pytest.raises(ValueError, match="factor_id must be a non-empty 1-D array"):
         score_eap(
             y, observed, np.zeros((2, 2)), alpha=np.zeros(2), b=np.zeros(2),
-            zeta=np.zeros((2, 1)), tau=0.0, model="MIRT",
+            zeta=np.zeros((2, 1)), tau=0.0, model="MIRT", q_theta=21, q_xi=11, eps_distance=1e-8
         )
 
 
@@ -349,7 +351,7 @@ def test_score_eap_rejects_non_numeric_factor_id():
     with pytest.raises(ValueError, match="factor_id must contain integer values"):
         score_eap(
             y, observed, np.array(["a", "b"], dtype=object), alpha=np.zeros(2),
-            b=np.zeros(2), zeta=np.zeros((2, 1)), tau=0.0, model="MIRT",
+            b=np.zeros(2), zeta=np.zeros((2, 1)), tau=0.0, model="MIRT", q_theta=21, q_xi=11, eps_distance=1e-8
         )
 
 
@@ -358,26 +360,48 @@ def test_score_eap_rejects_non_integer_factor_id():
     with pytest.raises(ValueError, match="finite non-negative integers"):
         score_eap(
             y, observed, np.array([0.5, 1.5]), alpha=np.zeros(2), b=np.zeros(2),
-            zeta=np.zeros((2, 1)), tau=0.0, model="MIRT",
+            zeta=np.zeros((2, 1)), tau=0.0, model="MIRT", q_theta=21, q_xi=11, eps_distance=1e-8
         )
 
 
-# --- category_logprobs / grm_category_logprobs guards ---
+# --- compute_category_logprobs / compute_grm_category_logprobs guards ---
 
 
 def test_category_logprobs_rejects_mismatched_lengths():
     with pytest.raises(ValueError, match="1-D arrays of equal length K"):
-        category_logprobs(0.0, [0.0, 1.0], [0.0])
+        compute_category_logprobs(0.0, [0.0, 1.0], [0.0])
 
 
 def test_category_logprobs_rejects_single_category():
     with pytest.raises(ValueError, match="need at least K=2 categories"):
-        category_logprobs(0.0, [0.0], [0.0])
+        compute_category_logprobs(0.0, [0.0], [0.0])
 
 
 def test_grm_category_logprobs_rejects_bad_thresholds():
     with pytest.raises(ValueError, match="1-D array of length K-1"):
-        grm_category_logprobs(np.array([0.0]), np.array([[1.0]]))
+        compute_grm_category_logprobs(np.array([0.0]), np.array([[1.0]]))
+
+
+def test_deprecated_aliases_warn_and_match_new_names():
+    from fast_mlsirm.estimators.marginal import (
+        category_logprobs,
+        gpcm_node_gradient,
+        grm_category_logprobs,
+    )
+
+    with pytest.deprecated_call():
+        old = category_logprobs(0.5, [0.0, 1.0], [0.0, 0.2])
+    assert np.allclose(old, compute_category_logprobs(0.5, [0.0, 1.0], [0.0, 0.2]))
+
+    with pytest.deprecated_call():
+        old_g = gpcm_node_gradient(0.5, [0.0, 1.0], [0.0, 0.2], [3.0, 7.0])
+    new_g = compute_gpcm_node_gradient(0.5, [0.0, 1.0], [0.0, 0.2], [3.0, 7.0])
+    for a, b in zip(old_g, new_g):
+        assert np.allclose(a, b)
+
+    with pytest.deprecated_call():
+        old_t = grm_category_logprobs(np.array([0.5]), np.array([1.0, -1.0]))
+    assert np.allclose(old_t, compute_grm_category_logprobs(np.array([0.5]), np.array([1.0, -1.0])))
 
 
 # --- fit_gpcm_numpy guards ---
@@ -385,12 +409,12 @@ def test_grm_category_logprobs_rejects_bad_thresholds():
 
 def test_fit_gpcm_numpy_rejects_non_numeric_responses():
     with pytest.raises(ValueError, match="responses must be a numeric 2-D array"):
-        fit_gpcm_numpy([["a", "b"], ["c", "d"]], 2)
+        fit_gpcm_numpy([["a", "b"], ["c", "d"]], 2, q_theta=21, max_iter=80, tol=1e-6)
 
 
 def test_fit_gpcm_numpy_rejects_bad_q_theta():
     with pytest.raises(ValueError, match="q_theta must be an integer >= 1"):
-        fit_gpcm_numpy(np.zeros((4, 2)), 2, q_theta=0)
+        fit_gpcm_numpy(np.zeros((4, 2)), 2, q_theta=0, max_iter=80, tol=1e-6)
 
 
 # --- additional NumPy EM edge branches ---
@@ -400,7 +424,7 @@ def test_fit_marginal_infers_n_dims_from_factor_id():
     y, observed = _binary(6, 3, seed=8)
     res = fit_marginal_numpy(
         y, observed, np.array([0, 1, 1]), model="MLS2PLM",
-        latent_dim=1, q_theta=7, q_xi=7, max_iter=1,
+        latent_dim=1, q_theta=7, q_xi=7, max_iter=1, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     assert res["theta_eap"].shape == (6, 2)
 
@@ -412,7 +436,7 @@ def test_fit_marginal_multigroup_skips_empty_group_population_update():
     res = fit_marginal_numpy(
         y, observed, np.array([0, 0]), model="ULS2PLM", n_dims=1, latent_dim=1,
         q_theta=7, q_xi=7, max_iter=2,
-        pop={"kind": "multigroup", "group_id": np.array([0, 0, 0, 2, 2, 2]), "n_groups": 3},
+        pop={"kind": "multigroup", "group_id": np.array([0, 0, 0, 2, 2, 2]), "n_groups": 3}, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     assert res["mu"].shape == (3, 1)
 
@@ -426,7 +450,7 @@ def test_fit_marginal_zero_weight_covariate_skips_delta_update():
         y, observed, np.array([0, 1, 0, 1]), model="MLS2PLM", n_dims=2,
         latent_dim=2, q_theta=7, q_xi=7, max_iter=2,
         pop={"kind": "multigroup", "group_id": group_id, "n_groups": 2},
-        covariate={"w": np.zeros((2, 4)), "init_delta": 0.0},
+        covariate={"w": np.zeros((2, 4)), "init_delta": 0.0}, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     assert res["delta"] == 0.0
 
@@ -444,7 +468,7 @@ def test_fit_marginal_mirt_item_reaches_optimum_within_m_steps():
     observed = np.ones_like(y, dtype=bool)
     res = fit_marginal_numpy(
         y, observed, np.zeros(n_items, dtype=int), model="MIRT", n_dims=1,
-        latent_dim=1, q_theta=7, q_xi=7, max_iter=60, m_steps=12, tol=1e-6,
+        latent_dim=1, q_theta=7, q_xi=7, max_iter=60, m_steps=12, tol=1e-6, q_u=15, eps_distance=1e-8, xi_points=256, xi_seed=0
     )
     assert res["n_iter"] > 0
 

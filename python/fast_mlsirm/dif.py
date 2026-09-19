@@ -8,6 +8,7 @@ item response model is fitted. The numerical computation runs in Rust."""
 from __future__ import annotations
 
 import math
+import warnings
 
 import numpy as np
 
@@ -74,11 +75,12 @@ def _normalize_mh_controls(
     return normalized_exclude, normalized_fdr_q
 
 
-def mantel_haenszel_dif(
+def detect_dif_mantel_haenszel(
     responses: np.ndarray,
     group: np.ndarray,
+    *,
     exclude_studied_item: bool = False,
-    fdr_q: float = 0.05,
+    fdr_q: float,
 ) -> dict[str, np.ndarray]:
     """Mantel-Haenszel DIF sweep for dichotomous items (compute in Rust; Holland & Thayer, 1988).
 
@@ -169,6 +171,23 @@ def mantel_haenszel_dif(
     }
 
 
+def mantel_haenszel_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+    exclude_studied_item: bool = False,
+    fdr_q: float = 0.05,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_mantel_haenszel` (ADR-0028 rename)."""
+    warnings.warn(
+        "mantel_haenszel_dif is deprecated; use detect_dif_mantel_haenszel instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_mantel_haenszel(
+        responses, group, exclude_studied_item=exclude_studied_item, fdr_q=fdr_q
+    )
+
+
 def _dif_inputs(responses: np.ndarray, group: np.ndarray, fdr_q: float):
     """Validation shared by the two PURIFIED entry points.
 
@@ -196,13 +215,14 @@ def _dif_inputs(responses: np.ndarray, group: np.ndarray, fdr_q: float):
     return yf.astype(np.int64).reshape(-1), gf.astype(np.int64), int(n_persons), int(n_items)
 
 
-def mantel_haenszel_dif_purified(
+def detect_dif_mantel_haenszel_purified(
     responses: np.ndarray,
     group: np.ndarray,
+    *,
     exclude_studied_item: bool = False,
-    fdr_q: float = 0.05,
-    max_rounds: int = 3,
-    min_anchor_items: int = 4,
+    fdr_q: float,
+    max_rounds: int,
+    min_anchor_items: int,
 ) -> dict[str, np.ndarray]:
     """Mantel-Haenszel DIF with an ITERATIVELY PURIFIED matching criterion (compute in Rust; Candell &
     Drasgow, 1988; Clauser, Mazor & Hambleton, 1993).
@@ -257,26 +277,63 @@ def mantel_haenszel_dif_purified(
     return _mh_rows(res) | _purify_meta(res)
 
 
-def logistic_dif_purified(
+def mantel_haenszel_dif_purified(
     responses: np.ndarray,
     group: np.ndarray,
     exclude_studied_item: bool = False,
     fdr_q: float = 0.05,
-    max_iter: int = 50,
     max_rounds: int = 3,
     min_anchor_items: int = 4,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_mantel_haenszel_purified` (ADR-0028 rename)."""
+    warnings.warn(
+        "mantel_haenszel_dif_purified is deprecated; use detect_dif_mantel_haenszel_purified instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_mantel_haenszel_purified(
+        responses,
+        group,
+        exclude_studied_item=exclude_studied_item,
+        fdr_q=fdr_q,
+        max_rounds=max_rounds,
+        min_anchor_items=min_anchor_items,
+    )
+
+
+def detect_dif_logistic_purified(
+    responses: np.ndarray,
+    group: np.ndarray,
+    *,
+    exclude_studied_item: bool = False,
+    fdr_q: float,
+    max_iter: int,
+    max_rounds: int,
+    min_anchor_items: int,
 ) -> dict[str, np.ndarray]:
     """Zumbo logistic-regression DIF with an ITERATIVELY PURIFIED matching criterion (compute in Rust).
 
     The same purification loop as :func:`mantel_haenszel_dif_purified`, with the anchor decided by
-    ``jg_class`` (the Jodoin-Gierl class of the 2-df omnibus test). Unlike the Mantel-Haenszel variant
-    this detects crossing DIF, so a non-uniform item is removed from the criterion too.
+    ``flagged_bh`` (the Benjamini-Hochberg-adjusted 2-df omnibus ``chi2_total`` test).
+
+    **Fixed in #1941: the anchor now actually shrinks.** The criterion was previously ``jg_class``
+    (the Jodoin-Gierl class of the omnibus test), which #1880 retired to ``"U"`` ("not applicable")
+    for every item, so the purification loop could never fire: the anchor never shrank (``n_anchor``
+    stayed at its initial size and ``rounds`` stayed ``0``) regardless of uniform or crossing DIF in
+    the data. No calibrated practical-significance class survives for this statistic — the same
+    reasoning :func:`fast_mlsirm.polytomous.dif_polytomous_purified` already applies: Jodoin and
+    Gierl's (2001) bands are stated on a 1-df Zumbo-Thomas weighted-least-squares partition this
+    package does not compute, not on the 2-df Nagelkerke ``delta_r2`` this package reports — so
+    ``flagged_bh`` is used directly rather than a guessed replacement class. This makes the anchor
+    MORE aggressive at large N than :func:`mantel_haenszel_dif_purified`'s practical-significance
+    (ETS class B/C) screen, not less.
 
     Returns everything :func:`logistic_dif` returns — including its PER-ITEM ``converged`` array, one
     flag per item's IRLS fit — plus ``anchor``, ``n_anchor``, ``rounds``, and the scalar
     ``purify_converged`` and ``purify_termination_reason`` for the purification loop itself. The
     per-item and loop-level diagnostics are deliberately named differently because they answer
-    different questions.
+    different questions. ``jg_class`` itself is untouched by this fix and remains ``"U"`` for every
+    item.
 
     IMPORTANT — the anchor is selected from the SAME data that is then tested against it, so the returned
     p-values are conditional on a data-dependent selection: they are not guaranteed super-uniform under
@@ -285,10 +342,17 @@ def logistic_dif_purified(
     than removes criterion contamination and can fail outright when DIF is unbalanced in direction
     (Wang & Su, 2004).
 
-    Reference (APA 7th ed.):
+    References (APA 7th ed.):
+        Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking metrics and assessing
+            item bias in item response theory. *Applied Psychological Measurement, 12*(3), 253-260.
+            https://doi.org/10.1177/014662168801200304
         French, B. F., & Maller, S. J. (2007). Iterative purification and effect size use with logistic
             regression for differential item functioning detection. *Educational and Psychological
             Measurement, 67*(3), 373-393. https://doi.org/10.1177/0013164406294781
+        Zumbo, B. D. (1999). *A handbook on the theory and methods of differential item functioning
+            (DIF): Logistic regression modeling as a unitary framework for binary and Likert-type
+            (ordinal) item scores* (p. 27). Directorate of Human Resources Research and Evaluation,
+            Department of National Defense.
     """
     from .fitstats import _core_module
 
@@ -301,6 +365,32 @@ def logistic_dif_purified(
         int(max_iter), int(max_rounds), int(min_anchor_items),
     )
     return _logistic_rows(res) | _purify_meta(res)
+
+
+def logistic_dif_purified(
+    responses: np.ndarray,
+    group: np.ndarray,
+    exclude_studied_item: bool = False,
+    fdr_q: float = 0.05,
+    max_iter: int = 50,
+    max_rounds: int = 3,
+    min_anchor_items: int = 4,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_logistic_purified` (ADR-0028 rename)."""
+    warnings.warn(
+        "logistic_dif_purified is deprecated; use detect_dif_logistic_purified instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_logistic_purified(
+        responses,
+        group,
+        exclude_studied_item=exclude_studied_item,
+        fdr_q=fdr_q,
+        max_iter=max_iter,
+        max_rounds=max_rounds,
+        min_anchor_items=min_anchor_items,
+    )
 
 
 def _purify_meta(res) -> dict[str, np.ndarray]:
@@ -334,8 +424,9 @@ def _mh_rows(res) -> dict[str, np.ndarray]:
 def sibtest(
     responses: np.ndarray,
     group: np.ndarray,
-    fdr_q: float = 0.05,
-    j_min: int = 5,
+    *,
+    fdr_q: float,
+    j_min: int,
 ) -> dict[str, np.ndarray]:
     """Uniform SIBTEST for dichotomous items (compute in Rust; Shealy & Stout, 1993).
 
@@ -456,7 +547,8 @@ def raju_area(
     cov_ab_foc: np.ndarray,
     guess: np.ndarray | None = None,
     signed: bool = False,
-    alpha: float = 0.05,
+    *,
+    alpha: float,
 ) -> dict[str, np.ndarray]:
     """Raju's ICC-area DIF with signed/unsigned Z tests (compute in Rust; Raju, 1988, 1990).
 
@@ -563,12 +655,13 @@ def _logistic_rows(res) -> dict[str, np.ndarray]:
     }
 
 
-def logistic_dif(
+def detect_dif_logistic(
     responses: np.ndarray,
     group: np.ndarray,
+    *,
     exclude_studied_item: bool = False,
-    fdr_q: float = 0.05,
-    max_iter: int = 50,
+    fdr_q: float,
+    max_iter: int,
 ) -> dict[str, np.ndarray]:
     """Zumbo (1999) logistic-regression DIF for dichotomous items (compute in Rust; Swaminathan &
     Rogers, 1990).
@@ -585,11 +678,40 @@ def logistic_dif(
     - ``chi2_uniform`` / ``p_uniform`` (1 df) tests ``b2`` *assuming* ``b3 = 0``; it is a descriptive
       follow-up, is NOT the group term of the full model, and is not interpretable when non-uniform DIF
       is present. Component p-values are unadjusted.
-    - ``delta_r2`` is the Nagelkerke pseudo-R² change ``R2(M2) - R2(M0)`` (Zumbo's effect size), and
-      ``jg_class`` classifies it by Jodoin & Gierl (2001): ``"A"`` negligible (< 0.035), ``"B"`` moderate,
-      ``"C"`` large (>= 0.070) — forced to ``"A"`` when the omnibus test is not BH-significant, and
-      ``"U"`` when undefined. ``delta_r2_uniform`` is an uncalibrated descriptive value with no class.
-      (The older Zumbo & Thomas, 1997 cut-offs of 0.13/0.26 are much more conservative.)
+    - ``delta_r2`` is the Nagelkerke pseudo-R² change ``R2(M2) - R2(M0)`` (Zumbo's effect size) and
+      ``delta_r2_uniform`` is ``R2(M1) - R2(M0)``; both are reported as DESCRIPTIVE numbers only.
+      ``jg_class`` is always ``"U"`` ("not applicable") — see "Fixed in #1880" below for why no
+      letter is defended for either quantity.
+
+      **Fixed in #1880: the Jodoin & Gierl (2001) letter class is retired, not repointed.**
+      Jodoin & Gierl calibrate their ``.035``/``.070`` bands (p. 335) on a Zumbo-Thomas
+      weighted-least-squares (Pratt-Pregibon) partition (p. 333), not on the Nagelkerke pseudo-R²
+      this package computes, and additionally state those bands on the ONE-df uniform increment,
+      not the 2-df omnibus this package previously lettered. Both mismatches would need fixing
+      together, but the replacement statistic is itself UNDERDETERMINED by the source: eq. 4 does
+      not say whether its correlation is taken against the observed response or the working
+      response of the IRLS linearization, nor on which scale the standardized coefficient is
+      computed, and both choices change the number (p. 333). A package cannot letter a quantity it
+      cannot compute, so ``jg_class`` reports ``"U"`` unconditionally instead of a class that would
+      carry no external referent. Prefer ``delta_r2`` / ``delta_r2_uniform`` directly to any letter.
+
+      The bands are additionally scoped to Jodoin & Gierl's own simulation: DICHOTOMOUS responses
+      generated from a 3PL model (pp. 337, 339) on 40-item tests (pp. 336-337); nothing in the
+      paper licenses them for the polytomous logistic-regression sweep (see PR #1890), which is a
+      second, independent reason no letter is available there either. The bands are anchored to
+      SIBTEST's ``.059``/``.088`` via a cubic regression (p. 335), NOT to a Cohen norm, so ``.035``
+      must not be read as "3.5% of variance is a small effect" (pp. 345-346) even where the
+      underlying quantity were available. The non-uniform extension is in the original itself
+      (p. 336) but rests on two items and is called provisional (pp. 346-347); the procedures
+      become conservative at large balanced samples and underpowered at unequal group sizes
+      (pp. 346-347).
+
+      Zumbo (1999, p. 27) states an older, SEPARATE convention (``0.13``/``0.26``) as a Cohen-style
+      cut applied directly to the SAME Nagelkerke omnibus quantity this package computes, which
+      Jodoin & Gierl supersede rather than adopt for their own bands (p. 334); it is not restored
+      here because this package does not ship a letter class calibrated on a source it has not
+      independently verified end to end, and ``0.13`` was itself credited historically to the
+      unobtainable Zumbo & Thomas (1997) working paper rather than to Zumbo (1999) directly.
 
     Items whose fits fail (separation, a rank-deficient design, no convergence) report ``NaN``
     statistics with ``converged=False`` and are never flagged. As with Mantel-Haenszel, the studied item
@@ -660,7 +782,25 @@ def logistic_dif(
     }
 
 
-def mantel_smd_dif(
+def logistic_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+    exclude_studied_item: bool = False,
+    fdr_q: float = 0.05,
+    max_iter: int = 50,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_logistic` (ADR-0028 rename)."""
+    warnings.warn(
+        "logistic_dif is deprecated; use detect_dif_logistic instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_logistic(
+        responses, group, exclude_studied_item=exclude_studied_item, fdr_q=fdr_q, max_iter=max_iter
+    )
+
+
+def detect_dif_mantel_smd(
     responses: np.ndarray,
     group: np.ndarray,
 ) -> dict[str, np.ndarray]:
@@ -741,7 +881,20 @@ def mantel_smd_dif(
         "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
     }
 
-def gmh_dif(
+def mantel_smd_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_mantel_smd` (ADR-0028 rename)."""
+    warnings.warn(
+        "mantel_smd_dif is deprecated; use detect_dif_mantel_smd instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_mantel_smd(responses, group)
+
+
+def detect_dif_gmh(
     responses: np.ndarray,
     group: np.ndarray,
 ) -> dict[str, np.ndarray]:
@@ -823,11 +976,25 @@ def gmh_dif(
         "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
     }
 
-def breslow_day_dif(
+def gmh_dif(
     responses: np.ndarray,
     group: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_gmh` (ADR-0028 rename)."""
+    warnings.warn(
+        "gmh_dif is deprecated; use detect_dif_gmh instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_gmh(responses, group)
+
+
+def detect_dif_breslow_day(
+    responses: np.ndarray,
+    group: np.ndarray,
+    *,
     exclude_studied_item: bool = False,
-    fdr_q: float = 0.05,
+    fdr_q: float,
 ) -> dict[str, np.ndarray]:
     """Breslow-Day (1980, Eq. 4.30) odds-ratio homogeneity DIF test (compute in Rust).
 
@@ -905,3 +1072,39 @@ def breslow_day_dif(
         "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
         "flagged_bh": np.asarray(res["flagged_bh"], dtype=bool),
     }
+
+
+def breslow_day_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+    exclude_studied_item: bool = False,
+    fdr_q: float = 0.05,
+) -> dict[str, np.ndarray]:
+    """Deprecated alias for :func:`detect_dif_breslow_day` (ADR-0028 rename)."""
+    warnings.warn(
+        "breslow_day_dif is deprecated; use detect_dif_breslow_day instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return detect_dif_breslow_day(
+        responses, group, exclude_studied_item=exclude_studied_item, fdr_q=fdr_q
+    )
+
+
+# Deprecated aliases carry a terse ADR-0028 notice on their own docstring, but
+# callers (and this module's own docstring-content regression tests) still
+# rely on the full interpretation caveats -- append the renamed function's
+# docstring rather than discarding it.
+for _old_name, _new_name in (
+    ("mantel_haenszel_dif", "detect_dif_mantel_haenszel"),
+    ("mantel_haenszel_dif_purified", "detect_dif_mantel_haenszel_purified"),
+    ("logistic_dif_purified", "detect_dif_logistic_purified"),
+    ("logistic_dif", "detect_dif_logistic"),
+    ("mantel_smd_dif", "detect_dif_mantel_smd"),
+    ("gmh_dif", "detect_dif_gmh"),
+    ("breslow_day_dif", "detect_dif_breslow_day"),
+):
+    _old_fn = globals()[_old_name]
+    _new_fn = globals()[_new_name]
+    _old_fn.__doc__ = f"{_old_fn.__doc__}\n\n{_new_fn.__doc__}"
+del _old_name, _new_name, _old_fn, _new_fn

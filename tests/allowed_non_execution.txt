@@ -1,0 +1,35 @@
+# Reviewed allowlist of legitimate non-executed outcomes.
+#
+# Each line records one exact pytest node ID (or a trailing-`*` glob for a
+# parametrized family) that may end as skip/xfail/xpass without failing the
+# session verdict. Every entry carries a `# reason (reviewed <date>)`
+# rationale naming the capability gate. Never add a bare `*`.
+#
+# Seeded from real full-suite runs on macOS arm64 (Python 3.14.5, compiled
+# Rust core present, no extended-precision longdouble, Metal GPU present):
+# `pytest -q -p seeddump` over the whole tests/ root (25-min bounded), plus a
+# follow-up pass that ran every file containing a skip/xfail site to
+# completion, then deduplicated. tests/test_paper_features.py could not finish
+# in the time budget (heavy MHRM/QMC recovery fits); its 84 in-function skip
+# sites were instead audited statically (AST): every guard is a compiled-core
+# availability check, all 57 gated core attributes exist in the installed
+# extension, and the file has no module-level skip, skipif, importorskip,
+# fixture skip, TestCase, or xfail construct -- so it contributes no entries.
+# Anything not listed here escalates an otherwise-green run to TESTS_FAILED.
+
+tests/test_ata_target_evidence_safety.py::test_wider_real_target_info_must_not_round_silently # extended-precision gate: platform longdouble has no precision beyond float64 (reviewed 2026-09-17)
+tests/test_cdm_response_admission.py::test_cdm_fits_reject_extended_precision_that_collapses_to_binary* # extended-precision gate: platform longdouble collapses to float64 for fit_cdm/fit_gdina params (reviewed 2026-09-17)
+tests/test_classification_cutscore_preflight.py::test_extended_precision_cut_outside_float_range_is_stable_value_error # extended-precision gate: platform longdouble does not extend float64 range (reviewed 2026-09-17)
+tests/test_fitstats_sx2_control_callback_safety.py::test_sx2_rejects_lossy_longdouble_real_control # extended-precision gate: platform longdouble has no precision beyond float64 (reviewed 2026-09-17)
+tests/test_gtheory_control_coercion.py::test_huge_finite_longdouble_control_raises_value_error_not_overflow # extended-precision gate: platform longdouble has no precision beyond float64 (reviewed 2026-09-17)
+tests/test_gtheory_cut_lossless.py::test_phi_lambda_rejects_lossy_longdouble_cut_before_native_discovery # extended-precision gate: platform longdouble has no precision beyond float64 (reviewed 2026-09-17)
+tests/test_multilevel_crossed_response_contract.py::test_extended_precision_real_evidence_must_not_round_silently # extended-precision gate: platform longdouble has no precision beyond float64 (reviewed 2026-09-17)
+tests/test_parallel_analysis_data_conversion.py::test_lossy_longdouble_matrix_is_rejected_before_native_discovery # extended-precision gate: platform longdouble has no precision beyond float64 (reviewed 2026-09-17)
+tests/test_population_label_int64_roundtrip.py::test_population_labels_preserve_extended_precision_int64_upper_boundary # extended-precision gate: platform longdouble has no additional precision on this platform (reviewed 2026-09-17)
+tests/test_rasch_cml_native_boundary.py::test_andersen_numpy_longdouble_group_array_preserves_identity # extended-precision gate: platform long double is not wider than float64 (reviewed 2026-09-17)
+tests/test_rasch_cml_native_boundary.py::test_andersen_preserves_distinct_longdouble_group_identity # extended-precision gate: platform long double is not wider than float64 (reviewed 2026-09-17)
+tests/test_rasch_cml_native_boundary.py::test_rasch_cml_rejects_lossy_extended_precision_tolerance_before_core # extended-precision gate: platform long double is not wider than float64 (reviewed 2026-09-17)
+tests/test_rsm_lossless_tolerance.py::test_rsm_rejects_lossy_longdouble_tolerance_before_response_work # extended-precision gate: platform long double is not wider than float64 (reviewed 2026-09-17)
+tests/test_twopl_control_callback_safety.py::test_fit_2pl_rejects_lossy_longdouble_tolerance_before_response_work # extended-precision gate: platform longdouble has no additional precision on this platform (reviewed 2026-09-17)
+tests/test_twopl_response_admission.py::test_fit_2pl_rejects_extended_precision_value_that_would_round_to_binary_response # extended-precision gate: platform longdouble has no additional precision on this platform (reviewed 2026-09-17)
+tests/test_wle_control_admission.py::test_score_wle_rejects_lossy_longdouble_control_before_data # extended-precision gate: platform long double is not wider than binary64 (reviewed 2026-09-17)

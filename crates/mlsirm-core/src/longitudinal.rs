@@ -141,7 +141,7 @@ fn validate_inputs(
             let value = ar_coefficient.ok_or_else(|| {
                 "stationary_autoregressive requires an AR coefficient".to_string()
             })?;
-            if !value.is_finite() || !(-1.0 < value && value < 1.0) {
+            if !(value.is_finite() && -1.0 < value && value < 1.0) {
                 return Err(
                     "AR coefficient must be finite and strictly between -1 and 1".to_string(),
                 );

@@ -298,7 +298,7 @@ pub fn subscores(x: &[Vec<f64>], groups: &[usize]) -> Result<SubscoreResult, Str
         let px = r_stxt * alpha_total;
         let psx = alpha[k] + t * t * (1.0 - r * r);
         for (name, v) in [("PRMSE_s", ps), ("PRMSE_x", px), ("PRMSE_sx", psx)] {
-            if !v.is_finite() || v < 0.0 || v > 1.0 + 1e-9 {
+            if !v.is_finite() || !(0.0..=1.0 + 1e-9).contains(&v) {
                 return Err(format!(
                     "computed {name} = {v:.6} outside [0, 1]; the sample \
                      moments are inconsistent with the CTT assumptions"
