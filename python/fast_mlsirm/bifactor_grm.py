@@ -160,6 +160,8 @@ class BifactorGrmFit:
     final_loglik_change: float
     best_start: int
     n_parameters: int
+    e_step_n_chunks: int
+    e_step_n_threads: int
 
 
 def fit_bifactor_grm(
@@ -173,6 +175,8 @@ def fit_bifactor_grm(
     tol: float,
     n_starts: int,
     seed: int,
+    e_step_n_chunks: int,
+    e_step_n_threads: int,
     device: str = "cpu",
 ) -> BifactorGrmFit:
     """Fit the single-group polytomous bifactor GRM (compute in Rust).
@@ -192,6 +196,13 @@ def fit_bifactor_grm(
     ``seed`` are likewise required (ADR-0028, #1963): a replicate count and a
     stochastic seed must not ship an unsourced default.
     ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik.
+    ``e_step_n_chunks`` and ``e_step_n_threads`` are required (ADR-0028 /
+    issue #2002): the CPU E-step partitions persons into a fixed number of
+    chunks whose boundaries depend only on ``n_persons`` and
+    ``e_step_n_chunks``, then folds chunk partials in chunk-index order on a
+    local rayon pool of size ``e_step_n_threads`` (never a global pool). The
+    same chunk count yields bit-identical results across thread counts;
+    both values are recorded on the fit for provenance.
     ``device`` selects the E-step sweep: ``'cpu'`` runs the ``f64`` scalar
     sweep; ``'gpu'`` runs the WGSL ``f32`` person-parallel sweep and falls
     back to CPU (with a warning) when no GPU adapter is available; ``'auto'``
@@ -224,6 +235,12 @@ def fit_bifactor_grm(
     n_starts_int = _finite_integer_control(n_starts, "n_starts")
     if n_starts_int < 1:
         raise ValueError("n_starts must be >= 1")
+    e_step_n_chunks_int = _finite_integer_control(e_step_n_chunks, "e_step_n_chunks")
+    if e_step_n_chunks_int < 1:
+        raise ValueError("e_step_n_chunks must be >= 1")
+    e_step_n_threads_int = _finite_integer_control(e_step_n_threads, "e_step_n_threads")
+    if e_step_n_threads_int < 1:
+        raise ValueError("e_step_n_threads must be >= 1")
     tol_float = _positive_real_control(tol, "tol")
     seed_int = _u64_seed(seed)
     if not isinstance(device, str) or device.strip().lower() not in (
@@ -294,6 +311,8 @@ def fit_bifactor_grm(
         int(n_starts_int),
         int(seed_int),
         device_str,
+        e_step_n_chunks=int(e_step_n_chunks_int),
+        e_step_n_threads=int(e_step_n_threads_int),
     )
     return BifactorGrmFit(
         a_general=np.asarray(res["a_general"], dtype=np.float64),
@@ -315,6 +334,8 @@ def fit_bifactor_grm(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+        e_step_n_chunks=int(res["e_step_n_chunks"]),
+        e_step_n_threads=int(res["e_step_n_threads"]),
     )
 
 

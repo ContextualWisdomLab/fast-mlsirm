@@ -204,6 +204,8 @@ impl Stage1Provider {
             // (the cross term needs analytic precision), never the f32 GPU
             // kernels.
             device: crate::Device::Cpu,
+            e_step_n_chunks: 1,
+            e_step_n_threads: 1,
         };
         let v = validate(
             y,
@@ -321,7 +323,9 @@ impl PosteriorProvider for Stage1Provider {
             &self.tg,
             &self.ts,
             crate::Device::Cpu,
-        );
+            1,
+            1,
+        )?;
         let mut node_g = Vec::with_capacity(self.v.n_items);
         let mut node_s = Vec::with_capacity(self.v.n_items);
         for i in 0..self.v.n_items {
