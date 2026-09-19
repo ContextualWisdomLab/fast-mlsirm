@@ -19,8 +19,8 @@
 //!
 //! Cai, L. (2010). A two-tier full-information item factor analysis model
 //! with applications. *Psychometrika, 75*(4), 581-612.
-//! https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text not
-//! accessible — no equation locator is drawn from it)
+//! https://doi.org/10.1007/s11336-010-9178-0 (full text read: eq. 1-2
+//! p. 586, eq. 8 p. 588, eq. 11-12 and 15 p. 589, eq. 16 p. 590)
 //!
 //! Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E., Bhaumik,
 //! D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., & Stover, A. (2007).

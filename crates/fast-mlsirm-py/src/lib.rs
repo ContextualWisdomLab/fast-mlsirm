@@ -1828,7 +1828,7 @@ fn fit_bifactor_grm_fipc(
 }
 
 /// Single-group polytomous two-tier graded response model (Cai, 2010,
-/// abstract read; Cai, Yang, & Hansen, 2011, eq. 6-7, full text read;
+/// eq. 11-12, p. 589, full text read; Cai, Yang, & Hansen, 2011, eq. 6-7;
 /// `mlsirm_core::two_tier_grm::fit_two_tier_grm`). Each item's `n_cat` ORDERED categories load a caller-supplied subset of
 /// the `n_primary` correlated primary dimensions (`a_primary`, row-major
 /// `n_items * n_primary`, unconstrained, `0` at fixed pattern positions)
@@ -1858,8 +1858,9 @@ fn fit_bifactor_grm_fipc(
 ///
 /// Cai, L. (2010). A two-tier full-information item factor analysis model
 /// with applications. *Psychometrika, 75*(4), 581-612.
-/// https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text not
-/// accessible — no equation locator is drawn from it)
+/// https://doi.org/10.1007/s11336-010-9178-0 (full text read: eq. 1-2
+/// p. 586, eq. 8-9 p. 588, eq. 11-12 and 15 p. 589, eq. 16 p. 590,
+/// Appendix A p. 609)
 ///
 /// Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
 /// item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
