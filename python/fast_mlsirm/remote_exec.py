@@ -609,12 +609,20 @@ def _worker_subprocess_env() -> Mapping[str, str]:
     return env
 
 
+def _worker_module_command(interpreter: str) -> list[str]:
+    """Return argv to run ``fast_mlsirm.remote_worker`` with ``interpreter``."""
+    normalized = _text(interpreter, "remote_interpreter", maximum=512)
+    return [normalized, "-m", "fast_mlsirm.remote_worker"]
+
+
 def _invoke_worker_process(
     payload: str,
     *,
     worker_host: str,
+    remote_interpreter: str,
 ) -> subprocess.CompletedProcess[str]:
     """Run ``fast_mlsirm.remote_worker`` locally or over SSH for ``worker_host``."""
+    worker_command = _worker_module_command(remote_interpreter)
     if _is_ssh_worker_host(worker_host):
         return subprocess.run(
             [
@@ -624,9 +632,7 @@ def _invoke_worker_process(
                 "-o",
                 "BatchMode=yes",
                 worker_host,
-                "python3",
-                "-m",
-                "fast_mlsirm.remote_worker",
+                *worker_command,
             ],
             input=payload,
             capture_output=True,
@@ -634,7 +640,7 @@ def _invoke_worker_process(
             check=False,
         )
     return subprocess.run(
-        [sys.executable, "-m", "fast_mlsirm.remote_worker"],
+        worker_command,
         input=payload,
         capture_output=True,
         text=True,
@@ -751,10 +757,18 @@ class SubprocessExecutor:
         self,
         worker_host: str,
         *,
+        remote_interpreter: str | None = None,
         ledger: OutcomeCommitLedger | None = None,
         driver_host: str | None = None,
     ) -> None:
         self.worker_host = _text(worker_host, "worker_host", maximum=128)
+        if remote_interpreter is None:
+            if _is_ssh_worker_host(self.worker_host):
+                raise ValueError(
+                    "remote_interpreter is required when worker_host is an SSH destination"
+                )
+            remote_interpreter = sys.executable
+        self.remote_interpreter = _text(remote_interpreter, "remote_interpreter", maximum=512)
         self._ledger = ledger or OutcomeCommitLedger()
         self._driver_host = driver_host or socket.gethostname()
         self._driver_pid = os.getpid()
@@ -821,7 +835,11 @@ class SubprocessExecutor:
             separators=(",", ":"),
         )
         try:
-            completed = _invoke_worker_process(payload, worker_host=self.worker_host)
+            completed = _invoke_worker_process(
+                payload,
+                worker_host=self.worker_host,
+                remote_interpreter=self.remote_interpreter,
+            )
         except OSError as exc:
             elapsed = time.perf_counter() - started
             return RemoteJobOutcome(
