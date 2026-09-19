@@ -15,7 +15,8 @@
 //! # References
 //!
 //! National Institute of Standards and Technology. (n.d.). *One way ANOVA*.
-//! Dataplot reference manual. https://www.itl.nist.gov/div898/software/dataplot/refman1/auxillar/onewayan.htm
+//! Dataplot reference manual.
+//! https://www.itl.nist.gov/div898/software/dataplot/refman1/auxillar/onewayan.htm
 //!
 //! Searle, S. R., Casella, G., & McCulloch, C. E. (1992). *Variance components*.
 //! Wiley. Chapter 3. (Bibliographic scope verified through the NIST reference;
@@ -78,7 +79,9 @@ pub fn one_way_random_intercept_icc(
         return Err("one-way ICC requires at least two clusters".into());
     }
     if sample_size <= cluster_count {
-        return Err("one-way ICC requires positive within-cluster residual degrees of freedom".into());
+        return Err(
+            "one-way ICC requires positive within-cluster residual degrees of freedom".into(),
+        );
     }
 
     for values in clusters.values_mut() {
@@ -117,39 +120,21 @@ pub fn one_way_random_intercept_icc(
             sum_of_squares_within += within_delta * within_delta;
         }
     }
-    if !sum_of_squares_between.is_finite()
-        || !sum_of_squares_within.is_finite()
-        || !sum_cluster_size_squared.is_finite()
-    {
-        return Err("ANOVA sufficient statistics overflowed binary64".into());
+    if !sum_of_squares_between.is_finite() || !sum_of_squares_within.is_finite() {
+        return Err("ANOVA sums of squares overflowed binary64".into());
     }
 
     let mean_square_between = sum_of_squares_between / (j - 1.0);
     let mean_square_within = sum_of_squares_within / (n - j);
     let effective_cluster_size_n0 = (n - sum_cluster_size_squared / n) / (j - 1.0);
-    if !mean_square_between.is_finite()
-        || !mean_square_within.is_finite()
-        || !effective_cluster_size_n0.is_finite()
-        || effective_cluster_size_n0 <= 0.0
-    {
-        return Err("one-way ANOVA variance components are not finite and identified".into());
-    }
-
     let between_variance =
         ((mean_square_between - mean_square_within) / effective_cluster_size_n0).max(0.0);
     let within_variance = mean_square_within;
     let total_variance = between_variance + within_variance;
-    if !between_variance.is_finite()
-        || !within_variance.is_finite()
-        || !total_variance.is_finite()
-        || total_variance <= 0.0
-    {
-        return Err("one-way ICC requires positive finite total variance".into());
+    if total_variance <= 0.0 {
+        return Err("one-way ICC requires positive total variance".into());
     }
     let icc = between_variance / total_variance;
-    if !icc.is_finite() {
-        return Err("one-way ICC is not finite".into());
-    }
 
     Ok(OneWayRandomInterceptIcc {
         icc,

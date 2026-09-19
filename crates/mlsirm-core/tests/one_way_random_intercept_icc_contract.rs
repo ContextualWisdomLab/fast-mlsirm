@@ -16,6 +16,25 @@ fn unbalanced_one_way_random_intercept_icc_matches_hand_calculation() {
 }
 
 #[test]
+fn nist_random_effects_fixture_matches_published_variance_components() {
+    // NIST Dataplot ONE WAY ANOVA, Program 2 (2023-09-27): five groups,
+    // MSB = 36.933333, MSW = 1.8, between component = 11.711111,
+    // and ICC = 86.68% after display rounding.
+    let cluster_ids = [1_u64, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5];
+    let outcomes = [
+        74.0, 76.0, 75.0, 68.0, 71.0, 72.0, 75.0, 77.0, 77.0, 72.0, 74.0, 73.0,
+        79.0, 81.0, 79.0,
+    ];
+
+    let result = one_way_random_intercept_icc(&cluster_ids, &outcomes).expect("NIST fixture");
+
+    assert_eq!(result.effective_cluster_size_n0.to_bits(), 3.0_f64.to_bits());
+    assert!((result.within_variance - 1.8).abs() < 1e-12);
+    assert!((result.between_variance - 11.711_111_111_111_11).abs() < 1e-12);
+    assert!((result.icc - 0.866_776_315_789_473_7).abs() < 1e-12);
+}
+
+#[test]
 fn row_permutations_preserve_the_exact_reference_result() {
     let cluster_ids = [10_u64, 10, 20, 20, 20, 30, 30];
     let outcomes = [1.0, 2.0, 4.0, 5.0, 6.0, 9.0, 10.0];
@@ -43,12 +62,39 @@ fn row_permutations_preserve_the_exact_reference_result() {
 
 #[test]
 fn invalid_or_unidentified_inputs_fail_closed() {
+    assert!(one_way_random_intercept_icc(&[], &[]).is_err());
     assert!(one_way_random_intercept_icc(&[1_u64], &[]).is_err());
-    assert!(one_way_random_intercept_icc(&[1_u64], &[1.0, 2.0]).is_err());
     assert!(one_way_random_intercept_icc(&[1_u64, 2], &[1.0, f64::NAN]).is_err());
     assert!(one_way_random_intercept_icc(&[1_u64, 1], &[1.0, 2.0]).is_err());
     assert!(one_way_random_intercept_icc(&[1_u64, 2], &[1.0, 2.0]).is_err());
     assert!(one_way_random_intercept_icc(&[1_u64, 1, 2, 2], &[3.0, 3.0, 3.0, 3.0]).is_err());
+}
+
+#[test]
+fn binary64_overflow_paths_fail_closed() {
+    assert!(
+        one_way_random_intercept_icc(
+            &[1_u64, 1, 2],
+            &[f64::MAX, f64::MAX, 0.0],
+        )
+        .is_err()
+    );
+    assert!(
+        one_way_random_intercept_icc(
+            &[1_u64, 1, 2, 2],
+            &[-1.0e200, 1.0e200, -1.0, 1.0],
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn zero_within_variance_yields_unit_icc_when_between_variance_is_positive() {
+    let result = one_way_random_intercept_icc(&[1_u64, 1, 2, 2], &[1.0, 1.0, 2.0, 2.0])
+        .expect("identified no-residual-noise case");
+
+    assert_eq!(result.within_variance.to_bits(), 0.0_f64.to_bits());
+    assert_eq!(result.icc.to_bits(), 1.0_f64.to_bits());
 }
 
 #[test]
