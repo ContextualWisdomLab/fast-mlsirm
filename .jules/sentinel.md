@@ -59,7 +59,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
-## 2026-09-19 - [JSON 깊이 검증 언더플로우 취약점 (JSON Depth Validation Underflow DoS)]
-**Vulnerability:** JSON 깊이 검증 로직에서 닫는 괄호(`]`, `}`)가 나오는 경우 `depth -= 1`을 수행하는데, 이때 `depth`가 0 이하로 내려갈 수 있는 언더플로우 취약점이 발생했습니다. 공격자가 닫는 괄호를 많이 넣고 깊은 구조를 파싱하도록 유도하면 최대 깊이 검증을 우회하여 DoS를 유발할 수 있습니다.
-**Learning:** 음수 카운터를 이용한 검증 우회.
-**Prevention:** `depth -= 1` 수행 시 항상 `if depth > 0:`을 확인하여 음수가 되지 않도록 보호합니다.
+## 2026-09-19 - [Malformed JSON depth preflight counter hardening]
+**Problem:** Several raw-text JSON depth preflights decremented their nesting counter below zero after an unmatched `]` or `}` and could therefore undercount a later deeply nested suffix.
+**Evidence boundary:** Such a prefix is already invalid JSON. Current evidence proves that the manual preflight previously admitted a suffix one level above its configured budget; it does not prove that CPython `json.loads` traverses that suffix or reaches `RecursionError` instead of raising `JSONDecodeError`. Do not classify this mechanism alone as a demonstrated CRITICAL/HIGH DoS.
+**Prevention:** Keep the counter saturated at zero and pin every production preflight with unmatched-close-plus-limit+1 regression cases that require the bounded depth error before `json.loads`. Preserve separate valid-JSON MAX/MAX+1, strings/escapes, duplicate-member, and non-finite-number contracts.
