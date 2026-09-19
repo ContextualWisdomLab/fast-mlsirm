@@ -178,6 +178,40 @@ class TwoTierGrmFit:
     n_parameters: int
 
 
+def encode_specific_map_from_columns(specific_columns: np.ndarray) -> np.ndarray:
+    """Map Cai (2010) eq. (1) specific-factor columns to ``specific_map``.
+
+    Each item row must have at most one non-zero entry (p. 586). Rows with
+    no specific loading encode as ``-1`` (specific-free).
+
+    Raises
+    ------
+    ValueError
+        If any item row has two or more non-zero specific columns.
+
+    References (APA 7th ed.)
+    ------------------------
+    Cai, L. (2010). A two-tier full-information item factor analysis model
+    with applications. *Psychometrika, 75*(4), 581-612.
+    https://doi.org/10.1007/s11336-010-9178-0 (eq. 1, p. 586).
+    """
+    cols = np.asarray(specific_columns)
+    if cols.ndim != 2:
+        raise ValueError("specific_columns must be a 2-D n_items x n_specific array")
+    counts = np.count_nonzero(cols, axis=1)
+    if bool(np.any(counts > 1)):
+        raise ValueError(
+            "Cai (2010) eq. (1) allows at most one specific factor per item"
+        )
+    n_items = cols.shape[0]
+    out = np.full(n_items, -1, dtype=np.int64)
+    for i in range(n_items):
+        nz = np.flatnonzero(cols[i])
+        if nz.size == 1:
+            out[i] = int(nz[0])
+    return out
+
+
 def fit_two_tier_grm(
     responses: np.ndarray,
     primary_map: np.ndarray,
