@@ -481,3 +481,188 @@ def two_tier_oakes_se(
         positive_definite=bool(res["positive_definite"]),
         non_pd_reason=None if reason_raw is None else str(reason_raw),
     )
+
+
+@dataclass(frozen=True)
+class TwoTierExpectedTotalGivenPrimary:
+    """Expected raw total ``E[T | theta_focal]`` after integrating nuisance traits.
+
+    ``theta_focal`` is the caller grid (or per-person focal EAPs); ``expected_total``
+    matches it elementwise. Nuisance traits (non-focal primaries with nonzero
+    item loadings, plus each item's specific factor when present) are integrated
+    as independent ``N(0, 1)`` Gauss-Hermite dimensions — matching the late-life
+    G+4+W manuscript contract ``E[T|G]`` with W and S1..S4 as nuisances under
+    the orthogonal mirt identification (not substituting ``theta_p_eap`` for
+    raw scores, and not using ``Phi`` conditional ``W|G`` in this path).
+    """
+
+    theta_focal: np.ndarray
+    expected_total: np.ndarray
+    focal_primary: int
+    q_nuisance: int
+    n_items: int
+    prior: str
+
+
+def expected_total_score_two_tier_given_primary(
+    a_primary: np.ndarray,
+    a_specific: np.ndarray,
+    threshold: np.ndarray,
+    specific_map: np.ndarray,
+    theta_focal: np.ndarray,
+    *,
+    focal_primary: int,
+    q_nuisance: int,
+) -> TwoTierExpectedTotalGivenPrimary:
+    """Expected raw total given one two-tier primary, nuisances integrated out.
+
+    Linearity of expectation: ``E[T|theta_f] = sum_i E[Y_i|theta_f]``. Each
+    item's conditional expectation marginalizes independent standard-normal
+    nuisances on a product Gauss-Hermite rule with ``q_nuisance`` nodes per
+    nuisance dimension (required; no default — issue #1929).
+
+    For adopted emotionality G+4+W: ``focal_primary=0`` (G); non-crossed items
+    integrate one specific; wording-crossed items integrate ``(S_d, W)`` in 2-D
+    (primary column 1). Reverse-keyed items are carried by unconstrained
+    slopes already stored on the fit.
+
+    Parameters
+    ----------
+    a_primary
+        ``n_items x n_primary`` primary slopes (zeros at fixed pattern cells).
+    a_specific
+        Length-``n_items`` specific slopes (``0`` when specific-free).
+    threshold
+        ``n_items x (n_cat-1)`` GRM boundary intercepts.
+    specific_map
+        Length-``n_items`` map (``-1`` specific-free, else ``0..n_specific-1``).
+    theta_focal
+        Finite 1-D focal trait values (grid or person EAPs).
+    focal_primary
+        Column index of the conditioned primary (``0`` for G).
+    q_nuisance
+        Gauss-Hermite nodes per nuisance dimension in ``1..=4096``.
+    """
+    from .polytomous import (
+        MAX_POLY_QUADRATURE_POINTS,
+        PolytomousFit,
+        _bounded_integer,
+        predict_expected_response_polytomous,
+    )
+
+    ap = np.asarray(a_primary, dtype=np.float64)
+    asp = np.asarray(a_specific, dtype=np.float64)
+    th = np.asarray(threshold, dtype=np.float64)
+    smap = np.asarray(specific_map, dtype=np.int64)
+    grid = np.asarray(theta_focal, dtype=np.float64)
+
+    if ap.ndim != 2 or ap.shape[0] == 0:
+        raise ValueError("a_primary must be a non-empty n_items x n_primary array")
+    n_items, n_primary = ap.shape
+    if asp.shape != (n_items,):
+        raise ValueError("a_specific must have shape (n_items,)")
+    if smap.shape != (n_items,):
+        raise ValueError("specific_map must have shape (n_items,)")
+    if th.ndim != 2 or th.shape[0] != n_items:
+        raise ValueError("threshold must be n_items x (n_cat-1)")
+    if not np.all(np.isfinite(ap)) or not np.all(np.isfinite(asp)) or not np.all(
+        np.isfinite(th)
+    ):
+        raise ValueError("a_primary, a_specific, and threshold must be finite")
+    if grid.ndim != 1 or grid.size < 1:
+        raise ValueError("theta_focal must be a non-empty 1-D array")
+    if not np.all(np.isfinite(grid)):
+        raise ValueError("theta_focal must be finite")
+
+    focal = _bounded_integer(focal_primary, "focal_primary", 0, n_primary - 1)
+    q = _bounded_integer(q_nuisance, "q_nuisance", 1, MAX_POLY_QUADRATURE_POINTS)
+
+    nodes_1d, weights_1d = np.polynomial.hermite_e.hermegauss(q)
+    weights_1d = weights_1d / weights_1d.sum()
+    unit_slope = np.ones(1, dtype=np.float64)
+    expected_total = np.zeros(grid.size, dtype=np.float64)
+
+    for item in range(n_items):
+        a_f = float(ap[item, focal])
+        # Independent N(0,1) nuisance loadings on this item (non-focal primaries + specific).
+        nuisance_coefs: list[float] = []
+        for p in range(n_primary):
+            if p == focal:
+                continue
+            coef = float(ap[item, p])
+            if coef != 0.0:
+                nuisance_coefs.append(coef)
+        if int(smap[item]) >= 0 and float(asp[item]) != 0.0:
+            nuisance_coefs.append(float(asp[item]))
+
+        cell = PolytomousFit(
+            model="grm",
+            slope=unit_slope,
+            cat_params=th[item : item + 1],
+            loglik=float("nan"),
+            n_iter=0,
+            converged=True,
+            termination_reason="marginalized",
+        )
+
+        if not nuisance_coefs:
+            base = a_f * grid
+            expected_total += predict_expected_response_polytomous(
+                cell, base.reshape(-1)
+            ).ravel()
+            continue
+
+        n_nuis = len(nuisance_coefs)
+        # Product Gauss-Hermite over nuisance_coefs (1-D or 2-D for G+4+W crossed).
+        if n_nuis == 1:
+            mesh = nodes_1d.reshape(1, -1)
+            wmesh = weights_1d.copy()
+        else:
+            grids = np.meshgrid(*([nodes_1d] * n_nuis), indexing="ij")
+            mesh = np.stack([g.ravel() for g in grids], axis=0)  # (n_nuis, n_nodes)
+            w_grids = np.meshgrid(*([weights_1d] * n_nuis), indexing="ij")
+            wmesh = np.prod([w.ravel() for w in w_grids], axis=0)
+            wmesh = wmesh / wmesh.sum()
+
+        # base[g, node] = a_f * G[g] + sum_k a_k * z_k[node]
+        offset = np.zeros(mesh.shape[1], dtype=np.float64)
+        for k, coef in enumerate(nuisance_coefs):
+            offset += coef * mesh[k]
+        base = a_f * grid[:, None] + offset[None, :]
+        expected = predict_expected_response_polytomous(cell, base.reshape(-1))
+        expected_total += (
+            expected.reshape(base.shape) * wmesh[None, :]
+        ).sum(axis=1)
+
+    return TwoTierExpectedTotalGivenPrimary(
+        theta_focal=grid.copy(),
+        expected_total=expected_total,
+        focal_primary=int(focal),
+        q_nuisance=int(q),
+        n_items=int(n_items),
+        prior="independent_N01_nuisance_product_GH",
+    )
+
+
+def expected_total_score_two_tier_from_fit(
+    fit: TwoTierGrmFit,
+    theta_focal: np.ndarray,
+    *,
+    focal_primary: int,
+    q_nuisance: int,
+    specific_map: np.ndarray,
+) -> TwoTierExpectedTotalGivenPrimary:
+    """Wrapper over :func:`expected_total_score_two_tier_given_primary` for a fit.
+
+    ``specific_map`` is required because :class:`TwoTierGrmFit` does not store
+    the confirmatory specific assignment used at fit time.
+    """
+    return expected_total_score_two_tier_given_primary(
+        fit.a_primary,
+        fit.a_specific,
+        fit.threshold,
+        specific_map,
+        theta_focal,
+        focal_primary=focal_primary,
+        q_nuisance=q_nuisance,
+    )
