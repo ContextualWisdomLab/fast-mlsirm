@@ -1391,14 +1391,7 @@ pub fn fit_two_tier_grm_fipc(
                 .last()
                 .map(|w| w[1] - w[0]);
             format!(
-                "{error}; fixed_eval_ll={fixed_ll:.6e}, fixed_eval_delta={}, "
-                    "fixed_eval_trace={fixed_loglik_trace:?}, "
-                    "remapped_eval_trace={loglik_trace:?}, "
-                    "fixed_eval_primary_m1={fixed_m1:?}, "
-                    "fixed_eval_primary_m2={fixed_m2:?}, "
-                    "fixed_eval_specific_m2={fixed_specific_m2:?}, "
-                    "last_prior_mean={:?}, last_prior_covariance={:?}, "
-                    "last_prior_specific_sd={:?}",
+                "{error}; fixed_eval_ll={fixed_ll:.6e}, fixed_eval_delta={}, fixed_eval_trace={fixed_loglik_trace:?}, remapped_eval_trace={loglik_trace:?}, fixed_eval_primary_m1={fixed_m1:?}, fixed_eval_primary_m2={fixed_m2:?}, fixed_eval_specific_m2={fixed_specific_m2:?}, last_prior_mean={:?}, last_prior_covariance={:?}, last_prior_specific_sd={:?}",
                 fixed_change
                     .map(|value| format!("{value:.6e}"))
                     .unwrap_or_else(|| "n/a".to_string()),
