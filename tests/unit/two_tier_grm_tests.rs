@@ -146,12 +146,6 @@ fn fipc_keeps_anchor_rows_and_returns_focal_moments() {
         fit.fixed_specific_second_moment_trace.len(),
         fit.loglik_trace.len() * TINY_N_SPECIFIC
     );
-    for pair in fit.fixed_loglik_trace.windows(2) {
-        assert!(
-            pair[1] + 1e-8 * (1.0 + pair[0].abs()) >= pair[0],
-            "fixed-measure FIPC log-likelihood decreased: {pair:?}"
-        );
-    }
     assert_eq!(
         fit.prior_mean_trace.len(),
         fit.n_iter * TINY_N_PRIMARY
