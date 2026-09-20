@@ -910,7 +910,7 @@ pub(crate) fn e_step(
     observed: Option<&[bool]>,
     params: &[ItemParams],
     log_w: &[f64],
-    log_ws: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
     coords: &[f64],
     ts: &[f64],
     n_grid: usize,
@@ -954,7 +954,7 @@ pub(crate) fn e_step(
         for (s, members) in v.blocks.iter().enumerate() {
             for g in 0..n_grid {
                 for h in 0..qs {
-                    let mut acc = log_ws[h];
+                    let mut acc = log_ws_by_specific[s][h];
                     for &i in members {
                         if !is_obs(pp, i) {
                             continue;
@@ -1005,7 +1005,7 @@ pub(crate) fn e_step(
             }
             for g in 0..n_grid {
                 for h in 0..qs {
-                    let mut acc = log_ws[h];
+                    let mut acc = log_ws_by_specific[s][h];
                     for &i in members {
                         if !is_obs(pp, i) {
                             continue;
@@ -1181,6 +1181,43 @@ fn fipc_primary_coords(base: &[f64], mean: &[f64], chol: &[f64], p: usize, n_gri
     coords
 }
 
+/// Reweight a standard-normal GH rule after mapping its nodes to a focal
+/// normal distribution. The density ratio keeps transformed nodes and their
+/// integration weights consistent, including non-unit specific-factor SDs.
+fn fipc_affine_log_weights(
+    base: &[f64],
+    log_base: &[f64],
+    transformed: &[f64],
+    center: &[f64],
+    precision: &[f64],
+    logdet: f64,
+    dim: usize,
+) -> Vec<f64> {
+    let n = log_base.len();
+    let mut out = vec![0.0; n];
+    for g in 0..n {
+        let mut reference_quad = 0.0;
+        let mut target_quad = 0.0;
+        for i in 0..dim {
+            let z = base[g * dim + i];
+            let x = transformed[g * dim + i] - center[i];
+            reference_quad += z * z;
+            for j in 0..dim {
+                target_quad += x * precision[i * dim + j]
+                    * (transformed[g * dim + j] - center[j]);
+            }
+        }
+        out[g] = log_base[g] - 0.5 * (logdet + target_quad - reference_quad);
+    }
+    out
+}
+
+fn fipc_specific_log_weights(base: &[f64], log_base: &[f64], scaled: &[f64], sd: f64) -> Vec<f64> {
+    let logdet = 2.0 * sd.ln();
+    let precision = [1.0 / (sd * sd)];
+    fipc_affine_log_weights(base, log_base, scaled, &[0.0], &precision, logdet, 1)
+}
+
 /// Fit a focal group with fixed item anchors under the two-tier GRM.
 ///
 /// This is the two-tier analogue of the bifactor FIPC implementation: the
@@ -1294,14 +1331,15 @@ pub fn fit_two_tier_grm_fipc(
         let ts_by_specific: Vec<Vec<f64>> = (0..n_specific)
             .map(|s| ts_std.iter().map(|&x| x * specific_sd[s]).collect())
             .collect();
-        let ts = &ts_by_specific[0];
-        // The affine transform maps standard GH nodes to N(mean, covariance),
-        // so its Jacobian is already represented by the transformed nodes;
-        // the standard GH weights remain unchanged (MWU-MEM reparameterization).
-        let _ = logdet;
-        let log_w = log_w0.clone();
+        let log_ws_by_specific: Vec<Vec<f64>> = (0..n_specific)
+            .map(|s| fipc_specific_log_weights(ts_std, &log_ws, &ts_by_specific[s], specific_sd[s]))
+            .collect();
+        let phi_inv = chol_inverse(&chol, n_primary);
+        let log_w = fipc_affine_log_weights(
+            &base_coords, &log_w0, &coords, &mean, &phi_inv, logdet, n_primary,
+        );
         let (ll, counts, sum_primary, sum_primary2, sum_specific2, specific_mass, _, _) =
-            e_step_fipc(&v, y, observed, &params, &log_w, &log_ws, &coords, &ts_by_specific, n_grid, ts.len());
+            e_step_fipc(&v, y, observed, &params, &log_w, &log_ws_by_specific, &coords, &ts_by_specific, n_grid, ts_std.len());
         let previous = loglik_trace.last().copied();
         if let Some(change) = checked_em_loglik_change(ll, previous, n_iter)? {
             final_loglik_change = change;
@@ -1317,7 +1355,7 @@ pub fn fit_two_tier_grm_fipc(
             if anchor[i] { continue; }
             let free = &v.free_primaries[i];
             let has_specific = v.item_block[i].is_some();
-            let mut node_g = Vec::with_capacity(if has_specific { n_grid * ts.len() } else { n_grid });
+            let mut node_g = Vec::with_capacity(if has_specific { n_grid * ts_std.len() } else { n_grid });
             let mut node_s = Vec::with_capacity(node_g.capacity());
             if has_specific {
                 let specific = ts_by_specific[v.item_block[i].expect("specific item has a block")].as_slice();
@@ -1329,7 +1367,7 @@ pub fn fit_two_tier_grm_fipc(
             for &d in free { packed.push(params[i].a_p[d]); }
             if let Some(a_s) = params[i].a_s { packed.push(a_s); }
             packed.extend_from_slice(&params[i].d);
-            let updated = m_step_item(packed, free, has_specific, &node_g, &node_s, n_primary, n_grid, ts.len(), &counts[i], n_cat, cfg.ridge, cfg.newton_iter);
+            let updated = m_step_item(packed, free, has_specific, &node_g, &node_s, n_primary, n_grid, ts_std.len(), &counts[i], n_cat, cfg.ridge, cfg.newton_iter);
             for (slot, &d) in free.iter().enumerate() { params[i].a_p[d] = updated[slot]; }
             if has_specific { params[i].a_s = Some(updated[free.len()]); params[i].d = updated[free.len() + 1..].to_vec(); }
             else { params[i].d = updated[free.len()..].to_vec(); }
@@ -1355,9 +1393,14 @@ pub fn fit_two_tier_grm_fipc(
     let ts_by_specific: Vec<Vec<f64>> = (0..n_specific)
         .map(|s| ts_std.iter().map(|&x| x * specific_sd[s]).collect())
         .collect();
-    let _ = logdet;
-    let log_w = log_w0.clone();
-    let (_, _, _, _, _, _, theta_p_eap, theta_p_sd) = e_step_fipc(&v, y, observed, &params, &log_w, &log_ws, &coords, &ts_by_specific, n_grid, ts_std.len());
+    let log_ws_by_specific: Vec<Vec<f64>> = (0..n_specific)
+        .map(|s| fipc_specific_log_weights(ts_std, &log_ws, &ts_by_specific[s], specific_sd[s]))
+        .collect();
+    let phi_inv = chol_inverse(&chol, n_primary);
+    let log_w = fipc_affine_log_weights(
+        &base_coords, &log_w0, &coords, &mean, &phi_inv, logdet, n_primary,
+    );
+    let (_, _, _, _, _, _, theta_p_eap, theta_p_sd) = e_step_fipc(&v, y, observed, &params, &log_w, &log_ws_by_specific, &coords, &ts_by_specific, n_grid, ts_std.len());
     let mut a_primary = vec![0.0; n_items * n_primary];
     let mut a_specific = vec![0.0; n_items];
     let mut threshold = vec![0.0; n_items * v.m1];
