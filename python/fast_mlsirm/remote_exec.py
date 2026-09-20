@@ -29,6 +29,7 @@ import os
 import platform
 import re
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -589,6 +590,103 @@ class OutcomeCommitLedger:
         return outcome
 
 
+class OutcomeCommitStore(Protocol):
+    """Successful-outcome store shared by remote execution backends."""
+
+    def successful_count(self, fingerprint: str) -> int: ...
+
+    def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None: ...
+
+    def commit_success(self, fingerprint: str, outcome: RemoteJobOutcome) -> RemoteJobOutcome: ...
+
+
+class SQLiteOutcomeCommitLedger:
+    """Durable, atomic successful-outcome ledger backed by SQLite.
+
+    A future Valkey Streams transport can implement :class:`OutcomeCommitStore`
+    without changing executors. SQLite is the local durable adapter.
+    """
+
+    def __init__(self, database: str | Path) -> None:
+        self._database = Path(database)
+        self._database.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS successful_outcomes "
+                "(fingerprint TEXT PRIMARY KEY, outcome_json TEXT NOT NULL)"
+            )
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self._database, timeout=30.0)
+
+    def successful_count(self, fingerprint: str) -> int:
+        """Return whether one successful outcome is durably committed."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) FROM successful_outcomes WHERE fingerprint = ?",
+                (key,),
+            ).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None:
+        """Return the durable successful outcome for ``fingerprint``, if any."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT outcome_json FROM successful_outcomes WHERE fingerprint = ?",
+                (key,),
+            ).fetchone()
+        return None if row is None else _outcome_from_dict(json.loads(row[0]))
+
+    def commit_success(self, fingerprint: str, outcome: RemoteJobOutcome) -> RemoteJobOutcome:
+        """Atomically commit the first success and return the durable winner."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
+            raise ValueError("commit_success requires a completed outcome")
+        payload = json.dumps(
+            outcome.to_dict(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO successful_outcomes (fingerprint, outcome_json) "
+                "VALUES (?, ?)",
+                (key, payload),
+            )
+            row = connection.execute(
+                "SELECT outcome_json FROM successful_outcomes WHERE fingerprint = ?",
+                (key,),
+            ).fetchone()
+        if row is None:  # pragma: no cover - SQLite transaction invariant
+            raise RuntimeError("successful outcome commit was not persisted")
+        return _outcome_from_dict(json.loads(row[0]))
+
+
+def _outcome_from_dict(payload: object) -> RemoteJobOutcome:
+    """Restore one package-produced outcome from durable JSON."""
+    if type(payload) is not dict or type(payload.get("provenance")) is not dict:
+        raise ValueError("stored outcome must be a package outcome mapping")
+    provenance = payload["provenance"]
+    return RemoteJobOutcome(
+        run_id=payload["run_id"],
+        unit_index=payload["unit_index"],
+        unit_seed=payload["unit_seed"],
+        family=payload["family"],
+        delivery_state=payload["delivery_state"],
+        result=payload["result"],
+        error_message=payload["error_message"],
+        provenance=RemoteWorkerProvenance(**provenance),
+        input_identity_sha256=payload["input_identity_sha256"],
+        output_identity_sha256=payload["output_identity_sha256"],
+        envelope_fingerprint=payload["envelope_fingerprint"],
+        driver_host=payload["driver_host"],
+        driver_pid=payload["driver_pid"],
+    )
+
+
 def _is_ssh_worker_host(worker_host: str) -> bool:
     """Return whether ``worker_host`` names an SSH destination (``user@host``)."""
     return "@" in worker_host
@@ -758,7 +856,7 @@ class SubprocessExecutor:
         worker_host: str,
         *,
         remote_interpreter: str | None = None,
-        ledger: OutcomeCommitLedger | None = None,
+        ledger: OutcomeCommitStore | None = None,
         driver_host: str | None = None,
     ) -> None:
         self.worker_host = _text(worker_host, "worker_host", maximum=128)

@@ -31,6 +31,7 @@ from fast_mlsirm.remote_exec import (
     RemoteRunManifest,
     RemoteWorkerProvenance,
     SEED_DERIVATION_RULE,
+    SQLiteOutcomeCommitLedger,
     SubprocessExecutor,
     admit_remote_job_family,
     derive_index_seed,
@@ -345,6 +346,32 @@ def test_subprocess_executor_retry_does_not_record_second_success() -> None:
     assert second.delivery_state is RemoteJobDeliveryState.COMPLETED
     assert second is first
     assert ledger.successful_count(fingerprint) == 1
+
+
+def test_sqlite_ledger_deduplicates_success_across_executor_processes(tmp_path) -> None:
+    """A restarted driver must reuse the first durable success for one envelope."""
+    manifest = _manifest()
+    envelope = _envelope(
+        family=RemoteJobFamily.MC_REPLICATE,
+        unit_index=1,
+        base_seed=77,
+        manifest=manifest,
+    )
+    fingerprint = envelope_fingerprint(envelope)
+    database = tmp_path / "remote-outcomes.sqlite3"
+
+    first = SubprocessExecutor(
+        socket.gethostname(),
+        ledger=SQLiteOutcomeCommitLedger(database),
+    ).run_batch((envelope,), worker_manifest=manifest)[0]
+    second_ledger = SQLiteOutcomeCommitLedger(database)
+    second = SubprocessExecutor(
+        socket.gethostname(),
+        ledger=second_ledger,
+    ).run_batch((envelope,), worker_manifest=manifest)[0]
+
+    assert second == first
+    assert second_ledger.successful_count(fingerprint) == 1
 
 
 def test_subprocess_executor_records_input_output_and_version_identity() -> None:
