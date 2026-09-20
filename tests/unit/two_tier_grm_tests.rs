@@ -29,9 +29,58 @@
 //! https://doi.org/10.1177/0146621606289485
 
 use crate::two_tier_grm::{
-    fit_two_tier_grm, fit_two_tier_grm_fipc, two_tier_grm_marginal_loglik,
-    two_tier_grm_marginal_loglik_brute, TwoTierFipcConfig, TwoTierGrmConfig,
+    build_primary_grid, fipc_primary_coords, fit_two_tier_grm, fit_two_tier_grm_fipc, gh_rule,
+    two_tier_grm_marginal_loglik, two_tier_grm_marginal_loglik_brute, TwoTierFipcConfig,
+    TwoTierGrmConfig,
 };
+
+#[test]
+fn fipc_direct_quadrature_preserves_nonzero_mean_covariance_and_specific_sd() {
+    // MWU-MEM/EAP integrates after mapping standard-normal nodes into the
+    // focal prior, so the original GH weights remain the discrete measure.
+    let (nodes, weights) = gh_rule(7).expect("Q=7 rule must exist");
+    let (base, log_weights) = build_primary_grid(nodes, weights, 2, nodes.len() * nodes.len());
+    let mean = [1.5, -0.7];
+    let chol = [1.6, 0.0, 0.4, 1.3];
+    let coords = fipc_primary_coords(&base, &mean, &chol, 2, nodes.len() * nodes.len());
+    let weights: Vec<f64> = log_weights.iter().map(|value| value.exp()).collect();
+
+    assert!((weights.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+    for d in 0..2 {
+        let actual = weights
+            .iter()
+            .enumerate()
+            .map(|(g, weight)| weight * coords[g * 2 + d])
+            .sum::<f64>();
+        assert!((actual - mean[d]).abs() < 1e-12, "mean[{d}] = {actual}");
+    }
+    let expected_cov = [[2.56, 0.64], [0.64, 1.85]];
+    for row in 0..2 {
+        for col in 0..2 {
+            let actual = weights
+                .iter()
+                .enumerate()
+                .map(|(g, weight)| {
+                    let x = coords[g * 2 + row] - mean[row];
+                    let y = coords[g * 2 + col] - mean[col];
+                    weight * x * y
+                })
+                .sum::<f64>();
+            assert!(
+                (actual - expected_cov[row][col]).abs() < 1e-11,
+                "covariance[{row},{col}] = {actual}"
+            );
+        }
+    }
+
+    let specific_sd = 1.7;
+    let specific_variance = weights
+        .iter()
+        .zip(nodes.iter().copied())
+        .map(|(weight, node)| weight * (specific_sd * node).powi(2))
+        .sum::<f64>();
+    assert!((specific_variance - specific_sd * specific_sd).abs() < 1e-12);
+}
 
 #[test]
 fn fipc_keeps_anchor_rows_and_returns_focal_moments() {

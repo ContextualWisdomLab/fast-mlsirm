@@ -96,14 +96,12 @@
 //! The E-step cost is `O(Q_P^P * sum_s Q_S * |block_s|)` per person instead
 //! of `O(Q_P^P * Q_S^S * n_items)`.
 //!
-//! The primary grid is FIXED independent Gauss-Hermite nodes; the primary
-//! correlation enters through density-ratio reweighting,
-//! `W_g(Phi) = w_g^0 * N(z_g; 0, Phi) / N(z_g; 0, Phi = I)`, which is the
-//! change-of-density identity
-//! `log W_g = log w_g^0 - [log|Phi| + z_g'(Phi^{-1} - I)z_g]/2`
-//! (implementation choice: the grid never moves, so the fixed-grid EM
-//! monotonicity contract of stage 1 is preserved exactly; at `Phi = I` the
-//! weights are bitwise the plain Gauss-Hermite weights).
+//! The primary grid is obtained by mapping independent standard-normal
+//! Gauss-Hermite nodes through the focal mean and Cholesky factor. The mapped
+//! nodes use the unchanged standard-normal weights, which is direct quadrature
+//! under the focal prior. This avoids mixing transformed-node coordinates with
+//! a density-ratio measure and keeps the E-step and observed-data likelihood on
+//! the same discrete measure, including nonzero means and non-unit variances.
 //!
 //! # Memory (exact blocked product-grid evaluation; #1992)
 //!
@@ -1181,42 +1179,6 @@ fn fipc_primary_coords(base: &[f64], mean: &[f64], chol: &[f64], p: usize, n_gri
     coords
 }
 
-/// Reweight a standard-normal GH rule after mapping its nodes to a focal
-/// normal distribution. The density ratio keeps transformed nodes and their
-/// integration weights consistent, including non-unit specific-factor SDs.
-fn fipc_affine_log_weights(
-    log_base: &[f64],
-    transformed: &[f64],
-    center: &[f64],
-    precision: &[f64],
-    logdet: f64,
-    dim: usize,
-) -> Vec<f64> {
-    let n = log_base.len();
-    let mut out = vec![0.0; n];
-    for g in 0..n {
-        let mut reference_quad = 0.0;
-        let mut target_quad = 0.0;
-        for i in 0..dim {
-            let transformed_x = transformed[g * dim + i];
-            let x = transformed_x - center[i];
-            reference_quad += transformed_x * transformed_x;
-            for j in 0..dim {
-                target_quad += x * precision[i * dim + j]
-                    * (transformed[g * dim + j] - center[j]);
-            }
-        }
-        out[g] = log_base[g] - 0.5 * (logdet + target_quad - reference_quad);
-    }
-    out
-}
-
-fn fipc_specific_log_weights(log_base: &[f64], scaled: &[f64], sd: f64) -> Vec<f64> {
-    let logdet = 2.0 * sd.ln();
-    let precision = [1.0 / (sd * sd)];
-    fipc_affine_log_weights(log_base, scaled, &[0.0], &precision, logdet, 1)
-}
-
 /// Fit a focal group with fixed item anchors under the two-tier GRM.
 ///
 /// This is the two-tier analogue of the bifactor FIPC implementation: the
@@ -1324,19 +1286,18 @@ pub fn fit_two_tier_grm_fipc(
     let mut final_loglik_change = f64::NAN;
 
     loop {
-        let (chol, logdet) = cholesky_lower(&covariance, n_primary)
+        let (chol, _) = cholesky_lower(&covariance, n_primary)
             .ok_or_else(|| format!("focal primary covariance became non-PD at iteration {n_iter}"))?;
         let coords = fipc_primary_coords(&base_coords, &mean, &chol, n_primary, n_grid);
         let ts_by_specific: Vec<Vec<f64>> = (0..n_specific)
             .map(|s| ts_std.iter().map(|&x| x * specific_sd[s]).collect())
             .collect();
+        // The affine maps change node locations, not the probability measure:
+        // these are direct standard-normal GH rules under the focal prior.
         let log_ws_by_specific: Vec<Vec<f64>> = (0..n_specific)
-            .map(|s| fipc_specific_log_weights(&log_ws, &ts_by_specific[s], specific_sd[s]))
+            .map(|_| log_ws.clone())
             .collect();
-        let phi_inv = chol_inverse(&chol, n_primary);
-        let log_w = fipc_affine_log_weights(
-            &log_w0, &coords, &mean, &phi_inv, logdet, n_primary,
-        );
+        let log_w = log_w0.clone();
         let (ll, counts, sum_primary, sum_primary2, sum_specific2, specific_mass, _, _) =
             e_step_fipc(&v, y, observed, &params, &log_w, &log_ws_by_specific, &coords, &ts_by_specific, n_grid, ts_std.len());
         let previous = loglik_trace.last().copied();
@@ -1387,18 +1348,16 @@ pub fn fit_two_tier_grm_fipc(
         }
         n_iter += 1;
     }
-    let (chol, logdet) = cholesky_lower(&covariance, n_primary).ok_or_else(|| "final focal primary covariance is not positive-definite".to_string())?;
+    let (chol, _) = cholesky_lower(&covariance, n_primary).ok_or_else(|| "final focal primary covariance is not positive-definite".to_string())?;
     let coords = fipc_primary_coords(&base_coords, &mean, &chol, n_primary, n_grid);
     let ts_by_specific: Vec<Vec<f64>> = (0..n_specific)
         .map(|s| ts_std.iter().map(|&x| x * specific_sd[s]).collect())
         .collect();
+    // Keep the final EAP pass on exactly the same direct-quadrature measure.
     let log_ws_by_specific: Vec<Vec<f64>> = (0..n_specific)
-        .map(|s| fipc_specific_log_weights(&log_ws, &ts_by_specific[s], specific_sd[s]))
+        .map(|_| log_ws.clone())
         .collect();
-    let phi_inv = chol_inverse(&chol, n_primary);
-    let log_w = fipc_affine_log_weights(
-        &log_w0, &coords, &mean, &phi_inv, logdet, n_primary,
-    );
+    let log_w = log_w0.clone();
     let (_, _, _, _, _, _, theta_p_eap, theta_p_sd) = e_step_fipc(&v, y, observed, &params, &log_w, &log_ws_by_specific, &coords, &ts_by_specific, n_grid, ts_std.len());
     let mut a_primary = vec![0.0; n_items * n_primary];
     let mut a_specific = vec![0.0; n_items];
