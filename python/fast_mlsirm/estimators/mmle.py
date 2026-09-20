@@ -116,6 +116,25 @@ def gauss_hermite_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
     return nodes, weights
 
 
+def equal_probability_normal_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
+    """Equal-probability mid-bin normal quantiles for a standard-normal prior.
+
+    For ``n_nodes = n``, nodes are ``norm.ppf((arange(1, n+1) - 0.5) / n)`` with
+    uniform weights ``1/n``. This is the bifactor FIPC study integration rule
+    (``qnorm((seq_len(n) - 0.5) / n)`` with weight ``1/n``); it is not
+    Gauss-Hermite quadrature and does not assert a general quadrature-accuracy
+    guarantee beyond that study convention.
+    """
+    if n_nodes < 1:
+        raise ValueError("n_nodes must be >= 1")
+    from scipy.stats import norm
+
+    probs = (np.arange(1, n_nodes + 1, dtype=np.float64) - 0.5) / n_nodes
+    nodes = norm.ppf(probs)
+    weights = np.full(n_nodes, 1.0 / n_nodes, dtype=np.float64)
+    return nodes, weights
+
+
 def fit_mmle_2pl(
     y: np.ndarray,
     observed: np.ndarray,
