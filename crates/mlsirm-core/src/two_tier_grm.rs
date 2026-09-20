@@ -262,9 +262,18 @@ pub struct TwoTierGrmConfig {
     pub newton_iter: usize,
     /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
     pub ridge: f64,
-    /// Person-axis chunk count for the CPU E-step (#2002); see bifactor.
+    /// Person-axis chunk count for the CPU E-step (#2002 / #2074).
+    ///
+    /// Boundaries depend only on `n_persons` and this count (never on the
+    /// thread count). Person contributions are independent under
+    /// Bock–Aitkin pattern-frequency accumulation (Bock & Aitkin, 1981)
+    /// and the Gibbons–Hedeker reduced integral after conditioning on the
+    /// primary node (Gibbons et al., 2007, eq. 15; Cai et al., 2011, p. 221
+    /// naming Gibbons & Hedeker, 1992). Issue-stated 1992 page locators were
+    /// not re-verified against a full-text PDF in the #2074 dispatch.
     pub e_step_n_chunks: usize,
-    /// Local rayon pool size for the CPU E-step (#2002).
+    /// Local rayon pool size for the CPU E-step (#2002 / #2074).
+    /// Never uses Rayon's global pool (`ThreadPoolBuilder::build` only).
     pub e_step_n_threads: usize,
 }
 
@@ -304,6 +313,10 @@ pub struct TwoTierGrmResult {
     /// `sum_i (k_i + has_specific(i) + (n_cat - 1)) + P*(P-1)/2` free
     /// parameters, where `k_i` is item `i`'s free primary-slope count.
     pub n_parameters: usize,
+    /// Person-axis chunk count used by the CPU E-step (#2002 / #2074).
+    pub e_step_n_chunks: usize,
+    /// Local rayon pool size used by the CPU E-step (#2002 / #2074).
+    pub e_step_n_threads: usize,
 }
 
 /// Validated problem structure shared by the fitter and the public
@@ -1720,6 +1733,8 @@ pub fn fit_two_tier_grm(
         final_loglik_change: outcome.final_loglik_change,
         best_start,
         n_parameters,
+        e_step_n_chunks: cfg.e_step_n_chunks,
+        e_step_n_threads: cfg.e_step_n_threads,
     })
 }
 
