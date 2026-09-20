@@ -1,0 +1,121 @@
+{
+  "artifact": "cpu_gpu_concurrent_live_mba",
+  "schema": "cpu_gpu_concurrent_live/v1",
+  "pass_gate": "n_compared > 0 and parity_holds",
+  "passed": true,
+  "host": "Seonghoui-MacBookAir.local",
+  "machine": "arm64",
+  "python": "3.14.7",
+  "fast_mlsirm_version": "0.11.4",
+  "fast_mlsirm_path": "/Users/seonghobae/late-life-compute/venv-fmls-0114/lib/python3.14/site-packages/fast_mlsirm/__init__.py",
+  "device": {
+    "cpu": "host_cpu",
+    "gpu_requested": "gpu",
+    "backend_expected": "wgpu\u2192Metal on Darwin arm64",
+    "system_profiler": [
+      "Chipset Model: Apple M5",
+      "Type: GPU",
+      "Vendor: Apple (0x106b)",
+      "Metal Support: Metal 4",
+      "Display Type: Built-in Liquid Retina Display",
+      "Connection Type: Internal"
+    ],
+    "not_llvmpipe": true
+  },
+  "memory": {
+    "hw_memsize_gb": 32.0,
+    "vm_swapusage": "total = 61440.00M  used = 60834.12M  free = 605.88M  (encrypted)"
+  },
+  "fixture": {
+    "n_cat": 3,
+    "n_specific": 2,
+    "q_general": 5,
+    "q_specific": 5,
+    "max_iter": 5,
+    "tol": 0.001,
+    "n_starts": 1,
+    "seed": 20260920,
+    "n_persons": 16,
+    "n_items": 4,
+    "api": "fast_mlsirm.bifactor_grm.fit_bifactor_grm",
+    "bench_path_mirrored": "tests/test_bifactor_gpu.py",
+    "note": "TINY identical input; concurrent Barrier(2); NOT A4; no new cargo"
+  },
+  "timing": {
+    "wall_clock_start_utc": "2026-09-20T16:10:28.182011+00:00",
+    "wall_clock_end_utc": "2026-09-20T16:10:28.421872+00:00",
+    "overlap": {
+      "mono_overlap_wall_s": 0.23812,
+      "cpu_mono_interval": [
+        3281089.814323166,
+        3281089.838802541
+      ],
+      "gpu_mono_interval": [
+        3281089.794064916,
+        3281090.027620541
+      ],
+      "simultaneous": true,
+      "simultaneous_interval_s": 0.024479
+    },
+    "cpu_wall_s": 0.024479,
+    "gpu_wall_s": 0.233556
+  },
+  "arms": {
+    "cpu": {
+      "ok": true,
+      "device_requested": "cpu",
+      "wall_clock_start": "2026-09-20T16:10:28.208256+00:00",
+      "wall_clock_end": "2026-09-20T16:10:28.232736+00:00",
+      "mono_start": 3281089.814323166,
+      "mono_end": 3281089.838802541,
+      "wall_s": 0.024479,
+      "converged": false,
+      "n_iter": 5,
+      "loglik": -65.26145389243662,
+      "error": null
+    },
+    "gpu": {
+      "ok": true,
+      "device_requested": "gpu",
+      "wall_clock_start": "2026-09-20T16:10:28.187996+00:00",
+      "wall_clock_end": "2026-09-20T16:10:28.421560+00:00",
+      "mono_start": 3281089.794064916,
+      "mono_end": 3281090.027620541,
+      "wall_s": 0.233556,
+      "converged": false,
+      "n_iter": 5,
+      "loglik": -65.26145434379578,
+      "error": null
+    }
+  },
+  "numeric_equality": {
+    "atol": 0.001,
+    "n_compared": 17,
+    "n_exceeded": 0,
+    "parity_holds": true,
+    "parts": [
+      {
+        "name": "a_general",
+        "n": 4,
+        "max_abs": 3.3036472446568155e-07
+      },
+      {
+        "name": "a_specific",
+        "n": 4,
+        "max_abs": 1.5330219804710055e-07
+      },
+      {
+        "name": "threshold",
+        "n": 8,
+        "max_abs": 2.8867978818514217e-07
+      },
+      {
+        "name": "loglik",
+        "n": 1,
+        "max_abs": 4.513591562727015e-07
+      }
+    ]
+  },
+  "a4_restarted": false,
+  "mac_large_build": false
+}
