@@ -661,6 +661,21 @@ def envelope_fingerprint(envelope: RemoteJobEnvelope) -> str:
     ).hexdigest()
 
 
+def payload_identity_sha256(payload: Mapping[str, object]) -> str:
+    """Return the canonical JSON identity for one remote numerical payload."""
+    if not isinstance(payload, Mapping):
+        raise TypeError("payload must be a mapping")
+    return hashlib.sha256(
+        json.dumps(
+            dict(payload),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 class LoopbackExecutor:
     """In-process L4 stand-in that validates cohort identity and runs handlers."""
 
@@ -780,10 +795,13 @@ class SubprocessExecutor:
         worker_manifest: RemoteRunManifest,
         requested_device: str = "cpu",
         effective_device: str = "cpu",
+        payload: Mapping[str, object] | None = None,
     ) -> tuple[RemoteJobOutcome, ...]:
         if not isinstance(envelopes, Sequence):
             raise TypeError("envelopes must be a sequence")
         envelope_batch = tuple(envelopes)
+        if payload is not None:
+            payload_sha256 = payload_identity_sha256(payload)
         for envelope in envelope_batch:
             if type(envelope) is not RemoteJobEnvelope:
                 raise TypeError("each envelope must be a RemoteJobEnvelope")
@@ -792,6 +810,16 @@ class SubprocessExecutor:
                     "worker manifest is incompatible with envelope cohort "
                     f"(run_id={envelope.run_id!r}, unit_index={envelope.unit_index})"
                 )
+            if envelope.family is not RemoteJobFamily.MC_REPLICATE:
+                if payload is None:
+                    raise ValueError(
+                        f"payload is required for {envelope.family.value}"
+                    )
+                if payload_sha256 != envelope.manifest.payload_sha256:
+                    raise CohortMismatchError(
+                        "payload identity is incompatible with envelope cohort "
+                        f"(run_id={envelope.run_id!r}, unit_index={envelope.unit_index})"
+                    )
 
         outcomes: list[RemoteJobOutcome] = []
         for envelope in envelope_batch:
@@ -806,6 +834,7 @@ class SubprocessExecutor:
                 requested_device=requested_device,
                 effective_device=effective_device,
                 fingerprint=fingerprint,
+                payload=payload,
             )
             if outcome.delivery_state is RemoteJobDeliveryState.COMPLETED:
                 outcome = self._ledger.commit_success(fingerprint, outcome)
@@ -820,6 +849,7 @@ class SubprocessExecutor:
         requested_device: str,
         effective_device: str,
         fingerprint: str,
+        payload: Mapping[str, object] | None,
     ) -> RemoteJobOutcome:
         unit_seed = envelope.unit_seed()
         started = time.perf_counter()
@@ -829,6 +859,7 @@ class SubprocessExecutor:
                 "worker_host": self.worker_host,
                 "requested_device": requested_device,
                 "effective_device": effective_device,
+                "payload": None if payload is None else dict(payload),
             },
             ensure_ascii=False,
             sort_keys=True,

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import socket
@@ -70,6 +71,13 @@ def _envelope(
         payload_ref=man.payload_sha256,
         manifest=man,
     )
+
+
+def _payload_manifest(payload: dict[str, object]) -> RemoteRunManifest:
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return _manifest(payload_sha256=hashlib.sha256(encoded).hexdigest())
 
 
 def test_derive_index_seed_matches_bifactor_bootstrap_golden_step() -> None:
@@ -360,3 +368,67 @@ def test_subprocess_executor_records_input_output_and_version_identity() -> None
     assert outcome.input_identity_sha256 == envelope_fingerprint(envelope)
     assert outcome.output_identity_sha256 is not None
     assert outcome.provenance.library_version == manifest.library_version
+
+
+@pytest.mark.parametrize(
+    ("family", "payload", "library_function"),
+    [
+        (
+            RemoteJobFamily.FIT_RESTART,
+            {
+                "responses": [[0, 1], [1, 0], [1, 1], [0, 0]],
+                "factor_id": [0, 0],
+                "config": {
+                    "model": "MLS2PLM",
+                    "latent_dim": 1,
+                    "optimizer": "adam",
+                    "max_iter": 1,
+                    "n_restarts": 1,
+                    "backend": "rust",
+                    "rust_device": "cpu",
+                },
+            },
+            "fast_mlsirm.fit",
+        ),
+        (
+            RemoteJobFamily.SCORING_PERSON,
+            {
+                "a": [1.0, 1.2, 0.8],
+                "b": [-0.5, 0.0, 0.5],
+                "responses": [[1, 1, 0]],
+            },
+            "fast_mlsirm.score_wle",
+        ),
+    ],
+)
+def test_subprocess_executor_runs_real_fit_and_score_calls(
+    family: RemoteJobFamily,
+    payload: dict[str, object],
+    library_function: str,
+) -> None:
+    """L4 acceptance: subprocess families invoke production fit/score APIs."""
+    manifest = _payload_manifest(payload)
+    envelope = _envelope(family=family, unit_index=0, manifest=manifest)
+
+    outcome = SubprocessExecutor(socket.gethostname()).run_batch(
+        (envelope,), worker_manifest=manifest, payload=payload
+    )[0]
+
+    assert outcome.delivery_state is RemoteJobDeliveryState.COMPLETED
+    assert outcome.result["library_function"] == library_function
+    assert outcome.input_identity_sha256 == envelope_fingerprint(envelope)
+    assert outcome.output_identity_sha256 is not None
+    assert outcome.provenance.library_version == manifest.library_version
+
+
+def test_subprocess_executor_rejects_payload_identity_mismatch() -> None:
+    payload = {"a": [1.0], "b": [0.0], "responses": [[1]]}
+    manifest = _payload_manifest(payload)
+    envelope = _envelope(family=RemoteJobFamily.SCORING_PERSON, manifest=manifest)
+
+    with pytest.raises(CohortMismatchError, match="payload identity"):
+        SubprocessExecutor(socket.gethostname()).run_batch(
+            (envelope,),
+            worker_manifest=manifest,
+            payload={**payload, "responses": [[0]]},
+        )

@@ -13,16 +13,21 @@ import socket
 import sys
 import time
 
+import numpy as np
+
 from importlib.metadata import PackageNotFoundError, version
 
-from .config import MLS2PLMConfig
+from ._fit_public import fit
+from .config import FitConfig, MLS2PLMConfig
 from .remote_exec import (
     RemoteJobDeliveryState,
     RemoteJobEnvelope,
     RemoteJobFamily,
+    payload_identity_sha256,
     result_identity_sha256,
 )
 from .simulation import simulate
+from .wle import score_wle
 
 
 def _library_version() -> str:
@@ -53,14 +58,67 @@ def execute_mc_replicate(unit_seed: int) -> dict[str, object]:
     }
 
 
-def execute_envelope(envelope: RemoteJobEnvelope) -> dict[str, object]:
+def execute_fit_restart(payload: dict[str, object], unit_seed: int) -> dict[str, object]:
+    """Run one production ``fit`` restart from a JSON payload."""
+    config_values = dict(payload.get("config", {}))
+    config_values["seed"] = unit_seed
+    result = fit(
+        np.asarray(payload["responses"], dtype=np.uint8),
+        np.asarray(payload["factor_id"], dtype=np.int64),
+        FitConfig(**config_values),
+    )
+    parameter_bytes = b"".join(
+        np.asarray(value).tobytes()
+        for value in (
+            result.params.theta,
+            result.params.alpha,
+            result.params.b,
+            result.params.xi,
+            result.params.zeta,
+        )
+    )
+    return {
+        "family": RemoteJobFamily.FIT_RESTART.value,
+        "library_function": "fast_mlsirm.fit",
+        "objective": float(result.objective),
+        "convergence_status": result.convergence_status,
+        "n_iter": int(result.n_iter),
+        "parameter_sha256": hashlib.sha256(parameter_bytes).hexdigest(),
+    }
+
+
+def execute_scoring_person(payload: dict[str, object]) -> dict[str, object]:
+    """Run one production ``score_wle`` person shard from a JSON payload."""
+    result = score_wle(
+        np.asarray(payload["a"], dtype=np.float64),
+        np.asarray(payload["b"], dtype=np.float64),
+        np.asarray(payload["responses"], dtype=np.float64),
+    )
+    return {
+        "family": RemoteJobFamily.SCORING_PERSON.value,
+        "library_function": "fast_mlsirm.score_wle",
+        "theta": result["theta"].tolist(),
+        "se": result["se"].tolist(),
+        "boundary": result["boundary"].tolist(),
+    }
+
+
+def execute_envelope(
+    envelope: RemoteJobEnvelope, payload: object = None
+) -> dict[str, object]:
     """Dispatch one envelope to the production library function for its family."""
     unit_seed = envelope.unit_seed()
     if envelope.family is RemoteJobFamily.MC_REPLICATE:
         return execute_mc_replicate(unit_seed)
-    raise ValueError(
-        f"subprocess worker supports mc_replicate only in this slice; got {envelope.family.value!r}"
-    )
+    if type(payload) is not dict:
+        raise ValueError(f"payload is required for {envelope.family.value}")
+    if payload_identity_sha256(payload) != envelope.manifest.payload_sha256:
+        raise ValueError("payload identity does not match envelope manifest")
+    if envelope.family is RemoteJobFamily.FIT_RESTART:
+        return execute_fit_restart(payload, unit_seed)
+    if envelope.family is RemoteJobFamily.SCORING_PERSON:
+        return execute_scoring_person(payload)
+    raise ValueError(f"unsupported remote family {envelope.family.value!r}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -85,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         envelope = RemoteJobEnvelope.from_dict(request["envelope"])
-        result = execute_envelope(envelope)
+        result = execute_envelope(envelope, request.get("payload"))
     except Exception as exc:  # worker failures are serialized, not raised to driver
         print(
             json.dumps(
