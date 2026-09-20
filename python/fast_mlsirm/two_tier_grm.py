@@ -488,12 +488,17 @@ class TwoTierExpectedTotalGivenPrimary:
     """Expected raw total ``E[T | theta_focal]`` after integrating nuisance traits.
 
     ``theta_focal`` is the caller grid (or per-person focal EAPs); ``expected_total``
-    matches it elementwise. Nuisance traits (non-focal primaries with nonzero
-    item loadings, plus each item's specific factor when present) are integrated
-    as independent ``N(0, 1)`` Gauss-Hermite dimensions — matching the late-life
-    G+4+W manuscript contract ``E[T|G]`` with W and S1..S4 as nuisances under
-    the orthogonal mirt identification (not substituting ``theta_p_eap`` for
-    raw scores, and not using ``Phi`` conditional ``W|G`` in this path).
+    matches it elementwise.
+
+    **Prior contract (explicit, fail-closed).** This path integrates non-focal
+    primaries and specifics as *independent* standardized Gaussians
+    (``nuisance_prior="independent_standardized"``) with caller-supplied
+    reference mean/sd (default 0/1). It does **not** implement
+    ``Phi``-conditional ``W|G``. Callers whose ``Phi`` is not identity must not
+    use :func:`expected_total_score_two_tier_from_fit` (it fails closed); use
+    the parameter form only after acknowledging the independent-nuisance
+    research identification (adopted orthogonal mirt G+4+W), never by treating
+    an estimated ``Phi ≈ I`` as a substitute for that model.
     """
 
     theta_focal: np.ndarray
@@ -502,6 +507,26 @@ class TwoTierExpectedTotalGivenPrimary:
     q_nuisance: int
     n_items: int
     prior: str
+    nuisance_mean: float
+    nuisance_sd: float
+
+
+def _require_identity_phi(phi: np.ndarray, *, atol: float = 0.0) -> None:
+    """Fail closed unless ``phi`` is exactly the identity (unit diagonal, zero off)."""
+    p = np.asarray(phi, dtype=np.float64)
+    if p.ndim != 2 or p.shape[0] != p.shape[1]:
+        raise ValueError("phi must be a square primary correlation matrix")
+    eye = np.eye(p.shape[0], dtype=np.float64)
+    if not np.allclose(p, eye, atol=atol, rtol=0.0):
+        raise ValueError(
+            "expected_total_score_two_tier_from_fit requires Phi == I (orthogonal "
+            "primary identification). Correlated Phi would need conditional "
+            "nuisance integration (not implemented); do not pass estimated "
+            "Phi≈I as a research-model substitute. Use "
+            "expected_total_score_two_tier_given_primary with explicit "
+            "nuisance_prior='independent_standardized' only when the research "
+            "model itself is orthogonal."
+        )
 
 
 def expected_total_score_two_tier_given_primary(
@@ -513,35 +538,30 @@ def expected_total_score_two_tier_given_primary(
     *,
     focal_primary: int,
     q_nuisance: int,
+    nuisance_prior: str,
+    nuisance_mean: float = 0.0,
+    nuisance_sd: float = 1.0,
 ) -> TwoTierExpectedTotalGivenPrimary:
     """Expected raw total given one two-tier primary, nuisances integrated out.
 
     Linearity of expectation: ``E[T|theta_f] = sum_i E[Y_i|theta_f]``. Each
-    item's conditional expectation marginalizes independent standard-normal
-    nuisances on a product Gauss-Hermite rule with ``q_nuisance`` nodes per
-    nuisance dimension (required; no default — issue #1929).
+    item's conditional expectation marginalizes independent Gaussian nuisances
+    on a product Gauss-Hermite rule with ``q_nuisance`` nodes per nuisance
+    dimension (required; no default — issue #1929).
 
-    For adopted emotionality G+4+W: ``focal_primary=0`` (G); non-crossed items
-    integrate one specific; wording-crossed items integrate ``(S_d, W)`` in 2-D
-    (primary column 1). Reverse-keyed items are carried by unconstrained
-    slopes already stored on the fit.
+    For adopted emotionality G+4+W under orthogonal identification:
+    ``focal_primary=0`` (G); non-crossed items integrate one specific; wording-
+    crossed items integrate ``(S_d, W)`` jointly (primary column 1). Reverse-
+    keyed items are carried by unconstrained (possibly negative) slopes.
 
     Parameters
     ----------
-    a_primary
-        ``n_items x n_primary`` primary slopes (zeros at fixed pattern cells).
-    a_specific
-        Length-``n_items`` specific slopes (``0`` when specific-free).
-    threshold
-        ``n_items x (n_cat-1)`` GRM boundary intercepts.
-    specific_map
-        Length-``n_items`` map (``-1`` specific-free, else ``0..n_specific-1``).
-    theta_focal
-        Finite 1-D focal trait values (grid or person EAPs).
-    focal_primary
-        Column index of the conditioned primary (``0`` for G).
-    q_nuisance
-        Gauss-Hermite nodes per nuisance dimension in ``1..=4096``.
+    nuisance_prior
+        Must be ``"independent_standardized"``. Required so callers cannot
+        silently assume independence under a correlated ``Phi``.
+    nuisance_mean, nuisance_sd
+        Reference Gaussian location/scale for every nuisance dimension
+        (research fixed-reference distribution; default mean 0, sd 1).
     """
     from .polytomous import (
         MAX_POLY_QUADRATURE_POINTS,
@@ -549,6 +569,16 @@ def expected_total_score_two_tier_given_primary(
         _bounded_integer,
         predict_expected_response_polytomous,
     )
+
+    if nuisance_prior != "independent_standardized":
+        raise ValueError(
+            "nuisance_prior must be 'independent_standardized' (explicit orthogonal "
+            "nuisance contract); Phi-conditional nuisance is not implemented"
+        )
+    mu = float(nuisance_mean)
+    sigma = float(nuisance_sd)
+    if not np.isfinite(mu) or not np.isfinite(sigma) or sigma <= 0.0:
+        raise ValueError("nuisance_mean must be finite and nuisance_sd must be finite and > 0")
 
     ap = np.asarray(a_primary, dtype=np.float64)
     asp = np.asarray(a_specific, dtype=np.float64)
@@ -563,12 +593,17 @@ def expected_total_score_two_tier_given_primary(
         raise ValueError("a_specific must have shape (n_items,)")
     if smap.shape != (n_items,):
         raise ValueError("specific_map must have shape (n_items,)")
-    if th.ndim != 2 or th.shape[0] != n_items:
-        raise ValueError("threshold must be n_items x (n_cat-1)")
+    if th.ndim != 2 or th.shape[0] != n_items or th.shape[1] < 1:
+        raise ValueError("threshold must be n_items x (n_cat-1) with n_cat>=2")
     if not np.all(np.isfinite(ap)) or not np.all(np.isfinite(asp)) or not np.all(
         np.isfinite(th)
     ):
         raise ValueError("a_primary, a_specific, and threshold must be finite")
+    # GRM category support: boundaries strictly decreasing per item.
+    if np.any(np.diff(th, axis=1) >= 0.0):
+        raise ValueError(
+            "threshold rows must be strictly decreasing (GRM category support)"
+        )
     if grid.ndim != 1 or grid.size < 1:
         raise ValueError("theta_focal must be a non-empty 1-D array")
     if not np.all(np.isfinite(grid)):
@@ -579,12 +614,13 @@ def expected_total_score_two_tier_given_primary(
 
     nodes_1d, weights_1d = np.polynomial.hermite_e.hermegauss(q)
     weights_1d = weights_1d / weights_1d.sum()
+    # Map probabilists' Hermite nodes to N(mu, sigma^2).
+    nodes_1d = mu + sigma * nodes_1d
     unit_slope = np.ones(1, dtype=np.float64)
     expected_total = np.zeros(grid.size, dtype=np.float64)
 
     for item in range(n_items):
         a_f = float(ap[item, focal])
-        # Independent N(0,1) nuisance loadings on this item (non-focal primaries + specific).
         nuisance_coefs: list[float] = []
         for p in range(n_primary):
             if p == focal:
@@ -613,18 +649,16 @@ def expected_total_score_two_tier_given_primary(
             continue
 
         n_nuis = len(nuisance_coefs)
-        # Product Gauss-Hermite over nuisance_coefs (1-D or 2-D for G+4+W crossed).
         if n_nuis == 1:
             mesh = nodes_1d.reshape(1, -1)
             wmesh = weights_1d.copy()
         else:
             grids = np.meshgrid(*([nodes_1d] * n_nuis), indexing="ij")
-            mesh = np.stack([g.ravel() for g in grids], axis=0)  # (n_nuis, n_nodes)
+            mesh = np.stack([g.ravel() for g in grids], axis=0)
             w_grids = np.meshgrid(*([weights_1d] * n_nuis), indexing="ij")
             wmesh = np.prod([w.ravel() for w in w_grids], axis=0)
             wmesh = wmesh / wmesh.sum()
 
-        # base[g, node] = a_f * G[g] + sum_k a_k * z_k[node]
         offset = np.zeros(mesh.shape[1], dtype=np.float64)
         for k, coef in enumerate(nuisance_coefs):
             offset += coef * mesh[k]
@@ -640,7 +674,9 @@ def expected_total_score_two_tier_given_primary(
         focal_primary=int(focal),
         q_nuisance=int(q),
         n_items=int(n_items),
-        prior="independent_N01_nuisance_product_GH",
+        prior="independent_standardized",
+        nuisance_mean=mu,
+        nuisance_sd=sigma,
     )
 
 
@@ -651,12 +687,16 @@ def expected_total_score_two_tier_from_fit(
     focal_primary: int,
     q_nuisance: int,
     specific_map: np.ndarray,
+    nuisance_mean: float = 0.0,
+    nuisance_sd: float = 1.0,
 ) -> TwoTierExpectedTotalGivenPrimary:
-    """Wrapper over :func:`expected_total_score_two_tier_given_primary` for a fit.
+    """Fit wrapper that fails closed unless ``fit.phi`` is exactly identity.
 
-    ``specific_map`` is required because :class:`TwoTierGrmFit` does not store
-    the confirmatory specific assignment used at fit time.
+    Research G+4+W expected-raw uses orthogonal primary identification
+    (``Phi = I``). Correlated ``Phi`` requires conditional nuisance work that
+    this API does not silently approximate.
     """
+    _require_identity_phi(fit.phi, atol=0.0)
     return expected_total_score_two_tier_given_primary(
         fit.a_primary,
         fit.a_specific,
@@ -665,4 +705,7 @@ def expected_total_score_two_tier_from_fit(
         theta_focal,
         focal_primary=focal_primary,
         q_nuisance=q_nuisance,
+        nuisance_prior="independent_standardized",
+        nuisance_mean=nuisance_mean,
+        nuisance_sd=nuisance_sd,
     )
