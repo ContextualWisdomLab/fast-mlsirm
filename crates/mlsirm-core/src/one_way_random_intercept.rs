@@ -77,6 +77,7 @@ pub struct OneWayRandomInterceptIcc {
 /// a represented non-zero ANOVA deviation whose square underflows binary64,
 /// a positive ANOVA sum of squares whose mean square underflows binary64,
 /// a positive method-of-moments between component whose `n0` scaling underflows,
+/// a positive variance component absorbed while composing total variance,
 /// or degenerate zero total variance.
 pub fn one_way_random_intercept_icc(
     cluster_ids: &[u64],
@@ -190,6 +191,11 @@ pub fn one_way_random_intercept_icc(
     let total_variance = between_variance + within_variance;
     if total_variance <= 0.0 {
         return Err("one-way ICC requires positive total variance".into());
+    }
+    if (between_variance > 0.0 && total_variance == within_variance)
+        || (within_variance > 0.0 && total_variance == between_variance)
+    {
+        return Err("ANOVA total variance lost positive component in binary64".into());
     }
     let icc = between_variance / total_variance;
 
