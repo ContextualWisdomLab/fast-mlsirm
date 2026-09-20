@@ -63,7 +63,8 @@ def test_equal_probability_normal_nodes_match_pinned_mid_bin_quantiles(
     expected_nodes, expected_weight = _EQPROB_NORMAL_NODES[n_nodes]
     nodes, weights = equal_probability_normal_nodes(n_nodes)
 
-    np.testing.assert_allclose(nodes, expected_nodes, rtol=0.0, atol=0.0)
+    # Pins are mpmath-derived float64 oracles; SciPy norm.ppf may differ by 1 ULP.
+    np.testing.assert_array_max_ulp(nodes, expected_nodes, maxulp=1)
     np.testing.assert_allclose(weights, expected_weight)
     assert np.all(np.isfinite(nodes))
     assert np.all(weights > 0.0)
