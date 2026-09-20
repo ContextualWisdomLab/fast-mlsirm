@@ -687,6 +687,197 @@ def _outcome_from_dict(payload: object) -> RemoteJobOutcome:
     )
 
 
+def _valkey_text(value: object) -> str:
+    """Normalize redis-py text responses without accepting other coercions."""
+    if type(value) is bytes:
+        return value.decode("utf-8")
+    if type(value) is str:
+        return value
+    raise ValueError("Valkey stream fields must be UTF-8 text")
+
+
+class ValkeyStreamsOutcomeStore:
+    """Outcome store using a Valkey consumer group and pending-entry reclaim.
+
+    The injected client follows redis-py's synchronous Streams API. This keeps
+    the core package dependency-free while allowing either ``redis`` or
+    ``valkey`` clients at the deployment boundary.
+    """
+
+    def __init__(
+        self,
+        client: object,
+        *,
+        stream: str,
+        group: str,
+        consumer: str,
+        min_idle_ms: int = 60_000,
+        batch_size: int = 100,
+        block_ms: int = 1_000,
+    ) -> None:
+        self._client = client
+        self._stream = _text(stream, "stream")
+        self._group = _text(group, "group")
+        self._consumer = _text(consumer, "consumer")
+        self._min_idle_ms = _non_negative_int(min_idle_ms, "min_idle_ms")
+        self._batch_size = _non_negative_int(batch_size, "batch_size")
+        self._block_ms = _non_negative_int(block_ms, "block_ms")
+        if self._batch_size == 0:
+            raise ValueError("batch_size must be > 0")
+        self._successful: dict[str, RemoteJobOutcome] = {}
+        try:
+            client.xgroup_create(self._stream, self._group, id="0", mkstream=True)
+        except Exception as exc:
+            if "BUSYGROUP" not in str(exc):
+                raise
+
+    def _drain(self) -> None:
+        claimed = self._client.xautoclaim(
+            self._stream,
+            self._group,
+            self._consumer,
+            self._min_idle_ms,
+            "0-0",
+            count=self._batch_size,
+        )
+        records = list(claimed[1]) if claimed else []
+        fresh = self._client.xreadgroup(
+            self._group,
+            self._consumer,
+            {self._stream: ">"},
+            count=self._batch_size,
+            block=self._block_ms,
+        )
+        for _stream, messages in fresh:
+            records.extend(messages)
+        records.sort(
+            key=lambda record: tuple(
+                int(part) for part in _valkey_text(record[0]).split("-")
+            )
+        )
+        for record_id, raw_fields in records:
+            fields = {
+                _valkey_text(key): _valkey_text(value)
+                for key, value in raw_fields.items()
+            }
+            fingerprint = _fingerprint(fields.get("fingerprint"), "fingerprint")
+            outcome = _outcome_from_dict(json.loads(fields["outcome"]))
+            if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
+                raise ValueError("Valkey outcome stream accepts completed outcomes only")
+            if outcome.envelope_fingerprint != fingerprint:
+                raise ValueError("Valkey outcome fingerprint does not match its payload")
+            self._successful[fingerprint] = outcome
+            self._client.xack(self._stream, self._group, record_id)
+
+    def successful_count(self, fingerprint: str) -> int:
+        """Return whether a completed record exists for ``fingerprint``."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        self._drain()
+        return int(key in self._successful)
+
+    def consume_available(self) -> Mapping[str, RemoteJobOutcome]:
+        """Consume one reclaimed/new batch and return its last-record winners."""
+        self._drain()
+        return self._successful.copy()
+
+    def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None:
+        """Consume available records and return the last record for the key."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        self._drain()
+        return self._successful.get(key)
+
+    def commit_success(
+        self, fingerprint: str, outcome: RemoteJobOutcome
+    ) -> RemoteJobOutcome:
+        """Append a completed outcome; later stream records supersede earlier ones."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
+            raise ValueError("commit_success requires a completed outcome")
+        if outcome.envelope_fingerprint != key:
+            raise ValueError("outcome fingerprint does not match commit key")
+        self._client.xadd(
+            self._stream,
+            {
+                "fingerprint": key,
+                "outcome": json.dumps(
+                    outcome.to_dict(),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            },
+        )
+        self._successful[key] = outcome
+        return outcome
+
+
+class ValkeyStreamsBackend:
+    """Remote backend that publishes envelopes and consumes Valkey outcomes."""
+
+    def __init__(
+        self,
+        client: object,
+        *,
+        jobs_stream: str,
+        outcomes_stream: str,
+        group: str,
+        consumer: str,
+        min_idle_ms: int = 60_000,
+        block_ms: int = 1_000,
+    ) -> None:
+        self._client = client
+        self._jobs_stream = _text(jobs_stream, "jobs_stream")
+        self._outcomes = ValkeyStreamsOutcomeStore(
+            client,
+            stream=outcomes_stream,
+            group=group,
+            consumer=consumer,
+            min_idle_ms=min_idle_ms,
+            block_ms=block_ms,
+        )
+
+    def run_batch(
+        self,
+        envelopes: Sequence[RemoteJobEnvelope],
+        *,
+        worker_manifest: RemoteRunManifest,
+        requested_device: str = "cpu",
+        effective_device: str = "cpu",
+    ) -> tuple[RemoteJobOutcome, ...]:
+        del requested_device, effective_device
+        envelope_batch = tuple(envelopes)
+        for envelope in envelope_batch:
+            if type(envelope) is not RemoteJobEnvelope:
+                raise TypeError("each envelope must be a RemoteJobEnvelope")
+            if not worker_manifest.compatible_with(envelope.manifest):
+                raise CohortMismatchError(
+                    "worker manifest is incompatible with envelope cohort"
+                )
+        for envelope in envelope_batch:
+            fingerprint = envelope_fingerprint(envelope)
+            self._client.xadd(
+                self._jobs_stream,
+                {
+                    "fingerprint": fingerprint,
+                    "envelope": json.dumps(
+                        envelope.to_dict(),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                },
+            )
+        committed = self._outcomes.consume_available()
+        outcomes = []
+        for envelope in envelope_batch:
+            fingerprint = envelope_fingerprint(envelope)
+            outcome = committed.get(fingerprint)
+            if outcome is None:
+                raise TimeoutError(f"no Valkey outcome available for {fingerprint}")
+            outcomes.append(outcome)
+        return tuple(sorted(outcomes, key=lambda outcome: outcome.unit_index))
+
+
 def _is_ssh_worker_host(worker_host: str) -> bool:
     """Return whether ``worker_host`` names an SSH destination (``user@host``)."""
     return "@" in worker_host
