@@ -7,6 +7,8 @@ const TRUE_WITHIN_VARIANCE: f64 = 1.0;
 const TRUE_ICC: f64 = TRUE_BETWEEN_VARIANCE / (TRUE_BETWEEN_VARIANCE + TRUE_WITHIN_VARIANCE);
 const MAX_ICC_RMSE: f64 = 0.08;
 const MAX_COMPONENT_RELATIVE_RMSE: f64 = 0.20;
+const MAX_ICC_ABSOLUTE_BIAS: f64 = MAX_ICC_RMSE / 2.0;
+const MAX_COMPONENT_RELATIVE_BIAS: f64 = MAX_COMPONENT_RELATIVE_RMSE / 2.0;
 
 struct DeterministicNormal {
     state: u64,
@@ -33,10 +35,18 @@ impl DeterministicNormal {
     }
 }
 
-fn bias_within_monte_carlo_uncertainty(estimates: &[f64], truth: f64) -> (f64, f64, bool) {
+fn bias_with_monte_carlo_upper_bound(
+    estimates: &[f64],
+    truth: f64,
+    max_absolute_bias: f64,
+) -> (f64, f64, f64, bool) {
     assert!(
         estimates.len() >= 2,
         "Monte Carlo bias acceptance requires at least two recovered replications"
+    );
+    assert!(
+        max_absolute_bias.is_finite() && max_absolute_bias > 0.0,
+        "practical bias target must be finite and positive"
     );
     let replication_count = estimates.len() as f64;
     let mean = estimates.iter().sum::<f64>() / replication_count;
@@ -47,8 +57,9 @@ fn bias_within_monte_carlo_uncertainty(estimates: &[f64], truth: f64) -> (f64, f
         .sum::<f64>()
         / (replication_count - 1.0);
     let monte_carlo_standard_error = (sampling_variance / replication_count).sqrt();
-    let accepted = bias.abs() <= 3.0 * monte_carlo_standard_error;
-    (bias, monte_carlo_standard_error, accepted)
+    let upper_bound = bias.abs() + 3.0 * monte_carlo_standard_error;
+    let accepted = upper_bound < max_absolute_bias;
+    (bias, monte_carlo_standard_error, upper_bound, accepted)
 }
 
 fn root_mean_squared_error(estimates: &[f64], truth: f64) -> f64 {
@@ -100,11 +111,24 @@ fn recovery_accepts_all_estimands(
     between_estimates: &[f64],
     within_estimates: &[f64],
 ) -> bool {
-    let icc_bias_accepted = bias_within_monte_carlo_uncertainty(icc_estimates, TRUE_ICC).2;
-    let between_bias_accepted =
-        bias_within_monte_carlo_uncertainty(between_estimates, TRUE_BETWEEN_VARIANCE).2;
-    let within_bias_accepted =
-        bias_within_monte_carlo_uncertainty(within_estimates, TRUE_WITHIN_VARIANCE).2;
+    let icc_bias_accepted = bias_with_monte_carlo_upper_bound(
+        icc_estimates,
+        TRUE_ICC,
+        MAX_ICC_ABSOLUTE_BIAS,
+    )
+    .3;
+    let between_bias_accepted = bias_with_monte_carlo_upper_bound(
+        between_estimates,
+        TRUE_BETWEEN_VARIANCE,
+        TRUE_BETWEEN_VARIANCE * MAX_COMPONENT_RELATIVE_BIAS,
+    )
+    .3;
+    let within_bias_accepted = bias_with_monte_carlo_upper_bound(
+        within_estimates,
+        TRUE_WITHIN_VARIANCE,
+        TRUE_WITHIN_VARIANCE * MAX_COMPONENT_RELATIVE_BIAS,
+    )
+    .3;
 
     let (_, _, icc_rmse_upper_bound) = rmse_upper_bound(icc_estimates, TRUE_ICC);
     let (_, _, between_rmse_upper_bound) =
@@ -121,34 +145,6 @@ fn recovery_accepts_all_estimands(
 }
 
 #[test]
-fn bias_acceptance_does_not_replace_monte_carlo_uncertainty_with_an_absolute_floor() {
-    let truth = 2.0 / 3.0;
-    let estimates = [
-        truth + 0.019,
-        truth + 0.021,
-        truth + 0.019,
-        truth + 0.021,
-        truth + 0.019,
-        truth + 0.021,
-        truth + 0.019,
-        truth + 0.021,
-    ];
-    let (bias, monte_carlo_standard_error, accepted) =
-        bias_within_monte_carlo_uncertainty(&estimates, truth);
-
-    assert!(bias.abs() < 0.03, "witness must remain below the legacy floor");
-    assert!(
-        bias.abs() > 3.0 * monte_carlo_standard_error,
-        "witness must be outside the declared 3*MCSE acceptance region"
-    );
-    assert!(
-        !accepted,
-        "bias {bias} is outside 3*MCSE={}; an unrelated absolute floor must not accept it",
-        3.0 * monte_carlo_standard_error
-    );
-}
-
-#[test]
 fn practical_bias_inside_declared_budget_must_not_fail_only_because_mcse_is_small() {
     let truth = TRUE_ICC;
     let estimates = [
@@ -161,12 +157,15 @@ fn practical_bias_inside_declared_budget_must_not_fail_only_because_mcse_is_smal
         truth + 0.019,
         truth + 0.021,
     ];
-    let (bias, monte_carlo_standard_error, accepted) =
-        bias_within_monte_carlo_uncertainty(&estimates, truth);
-    let practical_bias_budget = MAX_ICC_RMSE / 2.0;
+    let (bias, monte_carlo_standard_error, upper_bound, accepted) =
+        bias_with_monte_carlo_upper_bound(&estimates, truth, MAX_ICC_ABSOLUTE_BIAS);
 
     assert!(
-        bias.abs() + 3.0 * monte_carlo_standard_error < practical_bias_budget,
+        bias.abs() > 3.0 * monte_carlo_standard_error,
+        "witness must expose the predecessor zero-bias significance rule"
+    );
+    assert!(
+        upper_bound < MAX_ICC_ABSOLUTE_BIAS,
         "witness must remain inside the predeclared practical bias budget after Monte Carlo uncertainty"
     );
     assert!(
@@ -176,12 +175,48 @@ fn practical_bias_inside_declared_budget_must_not_fail_only_because_mcse_is_smal
 }
 
 #[test]
+fn practical_bias_budget_remains_uncertainty_aware_near_the_boundary() {
+    let truth = TRUE_ICC;
+    let estimates = [
+        truth + 0.01,
+        truth + 0.05,
+        truth + 0.01,
+        truth + 0.05,
+        truth + 0.01,
+        truth + 0.05,
+        truth + 0.01,
+        truth + 0.05,
+    ];
+    let (bias, monte_carlo_standard_error, upper_bound, accepted) =
+        bias_with_monte_carlo_upper_bound(&estimates, truth, MAX_ICC_ABSOLUTE_BIAS);
+
+    assert!(
+        bias.abs() < MAX_ICC_ABSOLUTE_BIAS,
+        "point bias alone must remain inside the project target"
+    );
+    assert!(
+        upper_bound > MAX_ICC_ABSOLUTE_BIAS,
+        "3*MCSE must push the conservative bias bound outside the target"
+    );
+    assert!(
+        !accepted,
+        "Monte Carlo uncertainty must remain binding near the practical bias boundary; bias={bias}, 3*MCSE={}, upper={upper_bound}",
+        3.0 * monte_carlo_standard_error
+    );
+}
+
+#[test]
 fn ratio_only_recovery_rejects_proportionally_wrong_variance_components() {
     let icc_estimates = [TRUE_ICC; 8];
     let between_estimates = [TRUE_BETWEEN_VARIANCE * 2.0; 8];
     let within_estimates = [TRUE_WITHIN_VARIANCE * 2.0; 8];
 
-    let ratio_only_accepted = bias_within_monte_carlo_uncertainty(&icc_estimates, TRUE_ICC).2;
+    let ratio_only_accepted = bias_with_monte_carlo_upper_bound(
+        &icc_estimates,
+        TRUE_ICC,
+        MAX_ICC_ABSOLUTE_BIAS,
+    )
+    .3;
     let all_estimands_accepted =
         recovery_accepts_all_estimands(&icc_estimates, &between_estimates, &within_estimates);
 
@@ -279,12 +314,20 @@ fn one_way_random_intercept_icc_recovers_known_variance_components_and_ratio() {
         "scientific acceptance requires a complete recovery denominator"
     );
 
-    let (icc_bias, icc_mcse, icc_bias_accepted) =
-        bias_within_monte_carlo_uncertainty(&icc_estimates, TRUE_ICC);
-    let (between_bias, between_mcse, between_bias_accepted) =
-        bias_within_monte_carlo_uncertainty(&between_estimates, TRUE_BETWEEN_VARIANCE);
-    let (within_bias, within_mcse, within_bias_accepted) =
-        bias_within_monte_carlo_uncertainty(&within_estimates, TRUE_WITHIN_VARIANCE);
+    let (icc_bias, icc_mcse, icc_bias_upper_bound, icc_bias_accepted) =
+        bias_with_monte_carlo_upper_bound(&icc_estimates, TRUE_ICC, MAX_ICC_ABSOLUTE_BIAS);
+    let (between_bias, between_mcse, between_bias_upper_bound, between_bias_accepted) =
+        bias_with_monte_carlo_upper_bound(
+            &between_estimates,
+            TRUE_BETWEEN_VARIANCE,
+            TRUE_BETWEEN_VARIANCE * MAX_COMPONENT_RELATIVE_BIAS,
+        );
+    let (within_bias, within_mcse, within_bias_upper_bound, within_bias_accepted) =
+        bias_with_monte_carlo_upper_bound(
+            &within_estimates,
+            TRUE_WITHIN_VARIANCE,
+            TRUE_WITHIN_VARIANCE * MAX_COMPONENT_RELATIVE_BIAS,
+        );
 
     let (icc_rmse, icc_rmse_mcse, icc_rmse_upper_bound) =
         rmse_upper_bound(&icc_estimates, TRUE_ICC);
@@ -297,17 +340,17 @@ fn one_way_random_intercept_icc_recovers_known_variance_components_and_ratio() {
 
     assert!(
         icc_bias_accepted,
-        "ICC bias {icc_bias} exceeds 3*MCSE={}; attempted={attempted}, recovered={recovered}, failed={failed}",
+        "ICC bias upper bound {icc_bias_upper_bound} exceeds project target {MAX_ICC_ABSOLUTE_BIAS}; point={icc_bias}, 3*MCSE={}, attempted={attempted}, recovered={recovered}, failed={failed}",
         3.0 * icc_mcse
     );
     assert!(
         between_bias_accepted,
-        "between-variance bias {between_bias} exceeds 3*MCSE={}; attempted={attempted}, recovered={recovered}, failed={failed}",
+        "between-variance bias upper bound {between_bias_upper_bound} exceeds relative project target {MAX_COMPONENT_RELATIVE_BIAS}; point={between_bias}, 3*MCSE={}, attempted={attempted}, recovered={recovered}, failed={failed}",
         3.0 * between_mcse
     );
     assert!(
         within_bias_accepted,
-        "within-variance bias {within_bias} exceeds 3*MCSE={}; attempted={attempted}, recovered={recovered}, failed={failed}",
+        "within-variance bias upper bound {within_bias_upper_bound} exceeds relative project target {MAX_COMPONENT_RELATIVE_BIAS}; point={within_bias}, 3*MCSE={}, attempted={attempted}, recovered={recovered}, failed={failed}",
         3.0 * within_mcse
     );
     assert!(
@@ -327,6 +370,6 @@ fn one_way_random_intercept_icc_recovers_known_variance_components_and_ratio() {
     );
     assert!(
         recovery_accepts_all_estimands(&icc_estimates, &between_estimates, &within_estimates),
-        "joint recovery acceptance must require every returned estimand with Monte Carlo uncertainty"
+        "joint recovery acceptance must require every returned estimand with practical accuracy targets and Monte Carlo uncertainty"
     );
 }
