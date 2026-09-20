@@ -1,0 +1,6 @@
+generated=2026-09-20T17:48:44Z
+air: Mac cargo HOLD honored (reused b43cdd43 _core)
+s1: /data/orca/workspaces/fmls-hetero-unified build; df:
+/dev/sda1       916G  793G   78G   92% /
+/dev/sda2       1.9T  1.6T  241G   87% /data
+m1: brew python@3.12 only; no maturin

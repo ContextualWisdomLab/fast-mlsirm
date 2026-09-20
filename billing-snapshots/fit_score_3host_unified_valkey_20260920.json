@@ -1,0 +1,185 @@
+{
+  "generated_at_utc": "2026-09-20T17:48:13Z",
+  "label": "generic path validation — 3-host fit/score on unified splice + real Valkey 8.1.10; NOT manuscript-complete",
+  "unified_splice_sha": "c9da70bbcf47e7339d78ed92183ac05a7fcbeca7",
+  "bases": {
+    "fit_score_pr_2072": "b43cdd43994656ba581253ccd27acc1fa683ea8d",
+    "valkey_pr_2073": "6a7fa66119bd895662c11d4e1fc7ce45a031d4cb"
+  },
+  "library_version_baseline_note": "0.11.4 = baseline label only; evidence uses unified splice under /data + reused darwin core",
+  "broker_product": {
+    "product_name": "valkey",
+    "server_name": "valkey",
+    "valkey_version": "8.1.10",
+    "redis_version": "7.2.4",
+    "executable_inside_container": "/usr/local/bin/valkey-server",
+    "binary_version_string": "Valkey server v=8.1.10",
+    "image": "valkey/valkey:8-alpine",
+    "image_digest": "valkey/valkey@sha256:d2e18f3410b6f616de1417f570fa55261af2898b9c5b2cfb6781ce2373ea43d1",
+    "image_id": "sha256:fee6a73c9364ef88905e9c1805c3afb7f584af721696af00a4a60e6a8bcb3a49",
+    "host_port": 16382,
+    "url": "redis://192.168.68.3:16382/0",
+    "not_redis_alpine": true
+  },
+  "per_host": {
+    "air": {
+      "python": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2001-l4-fit-score-wire/.venv/bin/python",
+      "native_core_sha256": "a93bae5c2d5b65b6c1faebdf061df66d7ceb19598683daa0d419d231b2ead9df",
+      "python_abi": "cpython-312-darwin",
+      "unified_splice_sha": "c9da70bbcf47e7339d78ed92183ac05a7fcbeca7",
+      "native_origin": "reused b43cdd43 darwin _core (Mac cargo HOLD)"
+    },
+    "s1": {
+      "python": "/data/orca/workspaces/fmls-hetero-unified/.venv/bin/python",
+      "native_core_sha256": "b3e04d1c2f29af84a4e0f29eb7e73ed4545503a4ec2982fe8ace7052d787e2b0",
+      "python_abi": "cpython-312-linux-x86_64",
+      "unified_splice_sha": "c9da70bbcf47e7339d78ed92183ac05a7fcbeca7",
+      "build_path": "/data/orca/workspaces/fmls-hetero-unified",
+      "native_origin": "cargo/maturin release on s1 /data isolated venv"
+    },
+    "m1": {
+      "python": "/tmp/fmls-hetero-unified/.venv/bin/python",
+      "native_core_sha256": "a93bae5c2d5b65b6c1faebdf061df66d7ceb19598683daa0d419d231b2ead9df",
+      "python_abi": "cpython-312-darwin-arm64",
+      "unified_splice_sha": "c9da70bbcf47e7339d78ed92183ac05a7fcbeca7",
+      "native_origin": "copied Air darwin _core; brew python@3.12 only (no maturin)"
+    }
+  },
+  "fit_payload_sha256": "38bba40463b0086a501ca34ac50659d7b5252806e1b4c5f7a20a78b5a12bcd18",
+  "score_payload_sha256": "568db92b347a3048859273fa765ed65654da8a59137c9c2be8d7c1b8818fde92",
+  "run_id": "hetero_fit3_8f7e4bcc",
+  "results": {
+    "fit_air": {
+      "host": "air",
+      "family": "fit_restart",
+      "unit_index": 0,
+      "delivery_state": "completed",
+      "result": {
+        "convergence_status": "max_iter_reached",
+        "family": "fit_restart",
+        "library_function": "fast_mlsirm.fit",
+        "n_iter": 1,
+        "objective": 3.7243283832656355,
+        "parameter_sha256": "8ee8b1e11e4e8d3a62e612b27552e2f0cfbe0c4a5d6daf9299e3359f4e6cf444"
+      },
+      "error_message": null,
+      "output_identity_sha256": "51acf49b203fab4165344d256c2da568ff529a59f924f9a2f6a3d0bae0841667",
+      "fingerprint": "6f8a578b42d197872a1e9b12a7f71fa4370305336d71fd9b0fcdbeeaa66c3ba1",
+      "elapsed_s": 0.37421354092657566
+    },
+    "score_s1": {
+      "host": "s1",
+      "family": "scoring_person",
+      "unit_index": 1,
+      "delivery_state": "completed",
+      "result": {
+        "boundary": [
+          false
+        ],
+        "family": "scoring_person",
+        "library_function": "fast_mlsirm.score_wle",
+        "se": [
+          1.2404633178232698
+        ],
+        "theta": [
+          0.6605627061799169
+        ]
+      },
+      "error_message": null,
+      "output_identity_sha256": "884555f6b59c90a46b602d0cae12d997b48cecf32b1e8597e8759fd7857a702c",
+      "fingerprint": "ae408ebc96c447c92f418632b5b15489686cb9d092e59dbb3496f1d408b184b7",
+      "elapsed_s": 1.1666636248119175
+    },
+    "fit_m1": {
+      "host": "m1",
+      "family": "fit_restart",
+      "unit_index": 2,
+      "delivery_state": "completed",
+      "result": {
+        "convergence_status": "max_iter_reached",
+        "family": "fit_restart",
+        "library_function": "fast_mlsirm.fit",
+        "n_iter": 1,
+        "objective": 3.7772372479474736,
+        "parameter_sha256": "5163a2985c46038f9446d37f555f676f94e7027aaab729a9d0167339ee0da7f1"
+      },
+      "error_message": null,
+      "output_identity_sha256": "bb96533d608cd0e2f19eb04989464bf658643f05d1d6ba7513698606e07eae8a",
+      "fingerprint": "8db600ca8cd0e5fe28848f159fd6d7a96fa75b277caa06afb387ae05f997cf55",
+      "elapsed_s": 1.2723644580692053
+    },
+    "fit_air_dedup_s1": {
+      "host": "s1",
+      "family": "fit_restart",
+      "unit_index": 0,
+      "delivery_state": "completed",
+      "result": {
+        "convergence_status": "max_iter_reached",
+        "family": "fit_restart",
+        "library_function": "fast_mlsirm.fit",
+        "n_iter": 1,
+        "objective": 3.7243283832656355,
+        "parameter_sha256": "8ee8b1e11e4e8d3a62e612b27552e2f0cfbe0c4a5d6daf9299e3359f4e6cf444"
+      },
+      "error_message": null,
+      "output_identity_sha256": "51acf49b203fab4165344d256c2da568ff529a59f924f9a2f6a3d0bae0841667",
+      "fingerprint": "6f8a578b42d197872a1e9b12a7f71fa4370305336d71fd9b0fcdbeeaa66c3ba1",
+      "elapsed_s": 0.010090583935379982
+    },
+    "score_s1_dedup_m1": {
+      "host": "m1",
+      "family": "scoring_person",
+      "unit_index": 1,
+      "delivery_state": "completed",
+      "result": {
+        "boundary": [
+          false
+        ],
+        "family": "scoring_person",
+        "library_function": "fast_mlsirm.score_wle",
+        "se": [
+          1.2404633178232698
+        ],
+        "theta": [
+          0.6605627061799169
+        ]
+      },
+      "error_message": null,
+      "output_identity_sha256": "884555f6b59c90a46b602d0cae12d997b48cecf32b1e8597e8759fd7857a702c",
+      "fingerprint": "ae408ebc96c447c92f418632b5b15489686cb9d092e59dbb3496f1d408b184b7",
+      "elapsed_s": 0.010595500003546476
+    },
+    "fit_m1_dedup_air": {
+      "host": "air",
+      "family": "fit_restart",
+      "unit_index": 2,
+      "delivery_state": "completed",
+      "result": {
+        "convergence_status": "max_iter_reached",
+        "family": "fit_restart",
+        "library_function": "fast_mlsirm.fit",
+        "n_iter": 1,
+        "objective": 3.7772372479474736,
+        "parameter_sha256": "5163a2985c46038f9446d37f555f676f94e7027aaab729a9d0167339ee0da7f1"
+      },
+      "error_message": null,
+      "output_identity_sha256": "bb96533d608cd0e2f19eb04989464bf658643f05d1d6ba7513698606e07eae8a",
+      "fingerprint": "8db600ca8cd0e5fe28848f159fd6d7a96fa75b277caa06afb387ae05f997cf55",
+      "elapsed_s": 0.010126917157322168
+    }
+  },
+  "checks": {
+    "fit_air_completed": true,
+    "score_s1_completed": true,
+    "fit_m1_completed": true,
+    "fit_library_function": true,
+    "score_library_function": true,
+    "valkey_product_is_valkey": true,
+    "dedup_fit0_air_s1": true,
+    "dedup_score_s1_m1": true,
+    "dedup_fit2_m1_air": true,
+    "air_m1_native_core_match": true,
+    "s1_native_core_present": true
+  },
+  "PASS": true
+}
