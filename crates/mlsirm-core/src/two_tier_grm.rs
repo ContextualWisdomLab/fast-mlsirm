@@ -1208,6 +1208,10 @@ fn fipc_affine_log_weights(
         }
         out[g] = log_base[g] - 0.5 * (logdet + target_quad - reference_quad);
     }
+    let normalizer = log_sum_exp(&out);
+    for weight in &mut out {
+        *weight -= normalizer;
+    }
     out
 }
 
