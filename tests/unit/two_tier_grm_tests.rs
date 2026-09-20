@@ -158,6 +158,15 @@ fn fipc_keeps_anchor_rows_and_returns_focal_moments() {
         fit.prior_specific_sd_trace.len(),
         fit.n_iter * TINY_N_SPECIFIC
     );
+    // The deterministic tiny fixture is intentionally non-unit focal data;
+    // at least one accepted prior update must move away from the zero start.
+    assert!(
+        fit.prior_mean_trace
+            .iter()
+            .any(|value| value.abs() > 1e-6),
+        "prior mean remained exactly at zero: {:?}",
+        fit.prior_mean_trace
+    );
     assert_eq!(
         fit.n_accepted_prior_steps + fit.n_rollback_full,
         fit.n_iter

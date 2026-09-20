@@ -1512,6 +1512,9 @@ pub fn fit_two_tier_grm_fipc(
             let mut accepted = false;
             while alpha >= 1e-6 {
                 for i in 0..n_items {
+                    if anchor[i] {
+                        continue;
+                    }
                     for j in 0..params[i].a_p.len() {
                         params[i].a_p[j] = previous_params[i].a_p[j]
                             + alpha * (target_params[i].a_p[j] - previous_params[i].a_p[j]);
