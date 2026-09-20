@@ -21,6 +21,7 @@ are rejected at envelope admission and must not be queued remotely.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import closing
 from dataclasses import dataclass
 from enum import Enum
 import hashlib
@@ -603,6 +604,10 @@ class OutcomeCommitStore(Protocol):
 class SQLiteOutcomeCommitLedger:
     """Durable, atomic successful-outcome ledger backed by SQLite.
 
+    This deduplicates successful outcome commits; workers may still compute the
+    same envelope more than once. A shared database file coordinates processes
+    on one host, not workers on multiple hosts.
+
     A future Valkey Streams transport can implement :class:`OutcomeCommitStore`
     without changing executors. SQLite is the local durable adapter.
     """
@@ -610,7 +615,7 @@ class SQLiteOutcomeCommitLedger:
     def __init__(self, database: str | Path) -> None:
         self._database = Path(database)
         self._database.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS successful_outcomes "
                 "(fingerprint TEXT PRIMARY KEY, outcome_json TEXT NOT NULL)"
@@ -622,7 +627,7 @@ class SQLiteOutcomeCommitLedger:
     def successful_count(self, fingerprint: str) -> int:
         """Return whether one successful outcome is durably committed."""
         key = _fingerprint(fingerprint, "fingerprint")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT COUNT(*) FROM successful_outcomes WHERE fingerprint = ?",
                 (key,),
@@ -632,7 +637,7 @@ class SQLiteOutcomeCommitLedger:
     def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None:
         """Return the durable successful outcome for ``fingerprint``, if any."""
         key = _fingerprint(fingerprint, "fingerprint")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT outcome_json FROM successful_outcomes WHERE fingerprint = ?",
                 (key,),
@@ -650,7 +655,7 @@ class SQLiteOutcomeCommitLedger:
             sort_keys=True,
             separators=(",", ":"),
         )
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 "INSERT OR IGNORE INTO successful_outcomes (fingerprint, outcome_json) "
                 "VALUES (?, ?)",
