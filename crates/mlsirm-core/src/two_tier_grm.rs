@@ -1412,6 +1412,10 @@ pub fn fit_two_tier_grm_fipc(
         }
         loglik_trace.push(ll);
         if n_iter == cfg.max_iter { break; }
+        let previous_params = params.clone();
+        let previous_mean = mean.clone();
+        let previous_covariance = covariance.clone();
+        let previous_specific_sd = specific_sd.clone();
         for i in 0..n_items {
             if anchor[i] { continue; }
             let free = &v.free_primaries[i];
@@ -1445,6 +1449,104 @@ pub fn fit_two_tier_grm_fipc(
                 let variance = sum_specific2[s] / specific_mass[s];
                 if !variance.is_finite() || variance <= 0.0 { return Err(format!("non-positive focal specific-{s} variance update ({variance:.6e})")); }
                 specific_sd[s] = variance.sqrt();
+            }
+        }
+        // The direct-GH reparameterization keeps standard weights but moves
+        // the support after each focal-prior update. Item sufficient
+        // statistics were formed on the pre-update support, so accept the
+        // prior update only when its remapped observed-data objective does not
+        // regress; backtracking keeps the adopted direct-GH target intact.
+        let candidate_ll = {
+            let candidate_chol = cholesky_lower(&covariance, n_primary);
+            candidate_chol.map(|(candidate_chol, _)| {
+                let candidate_coords = fipc_primary_coords(
+                    &base_coords,
+                    &mean,
+                    &candidate_chol,
+                    n_primary,
+                    n_grid,
+                );
+                let candidate_ts: Vec<Vec<f64>> = (0..n_specific)
+                    .map(|s| ts_std.iter().map(|&x| x * specific_sd[s]).collect())
+                    .collect();
+                let candidate_weights: Vec<Vec<f64>> = (0..n_specific)
+                    .map(|_| log_ws.clone())
+                    .collect();
+                e_step_fipc(
+                    &v,
+                    y,
+                    observed,
+                    &params,
+                    &log_w0,
+                    &candidate_weights,
+                    &candidate_coords,
+                    &candidate_ts,
+                    n_grid,
+                    ts_std.len(),
+                )
+                .0
+            })
+        };
+        let acceptance_tolerance = 32.0 * f64::EPSILON * (1.0 + ll.abs());
+        if candidate_ll.is_none_or(|value| value < ll - acceptance_tolerance) {
+            let target_mean = mean.clone();
+            let target_covariance = covariance.clone();
+            let target_specific_sd = specific_sd.clone();
+            let mut alpha = 0.5;
+            let mut accepted = false;
+            while alpha >= 1e-6 {
+                for d in 0..n_primary {
+                    mean[d] = previous_mean[d] + alpha * (target_mean[d] - previous_mean[d]);
+                }
+                for j in 0..n_primary * n_primary {
+                    covariance[j] = previous_covariance[j]
+                        + alpha * (target_covariance[j] - previous_covariance[j]);
+                }
+                for s in 0..n_specific {
+                    specific_sd[s] = previous_specific_sd[s]
+                        + alpha * (target_specific_sd[s] - previous_specific_sd[s]);
+                }
+                let Some((candidate_chol, _)) = cholesky_lower(&covariance, n_primary) else {
+                    alpha *= 0.5;
+                    continue;
+                };
+                let candidate_coords = fipc_primary_coords(
+                    &base_coords,
+                    &mean,
+                    &candidate_chol,
+                    n_primary,
+                    n_grid,
+                );
+                let candidate_ts: Vec<Vec<f64>> = (0..n_specific)
+                    .map(|s| ts_std.iter().map(|&x| x * specific_sd[s]).collect())
+                    .collect();
+                let candidate_weights: Vec<Vec<f64>> = (0..n_specific)
+                    .map(|_| log_ws.clone())
+                    .collect();
+                let remapped_ll = e_step_fipc(
+                    &v,
+                    y,
+                    observed,
+                    &params,
+                    &log_w0,
+                    &candidate_weights,
+                    &candidate_coords,
+                    &candidate_ts,
+                    n_grid,
+                    ts_std.len(),
+                )
+                .0;
+                if remapped_ll.is_finite() && remapped_ll >= ll - acceptance_tolerance {
+                    accepted = true;
+                    break;
+                }
+                alpha *= 0.5;
+            }
+            if !accepted {
+                params = previous_params;
+                mean = previous_mean;
+                covariance = previous_covariance;
+                specific_sd = previous_specific_sd;
             }
         }
         prior_mean_trace.extend_from_slice(&mean);
