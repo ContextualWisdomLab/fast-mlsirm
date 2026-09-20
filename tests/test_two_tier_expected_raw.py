@@ -71,6 +71,8 @@ def test_matches_bifactor_monotonicity_when_no_extra_primary() -> None:
     smap = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
     ap = a_g.reshape(-1, 1)
     grid = np.linspace(-3.0, 3.0, 17)
+    # Scalar N(0,1) broadcast: all specifics share the same reference — basis is
+    # the bifactor helper's unit-normal specific prior (documented producer case).
     got = _call(ap, a_s, th, smap, grid, q=21)
 
     class _BF:
@@ -81,12 +83,13 @@ def test_matches_bifactor_monotonicity_when_no_extra_primary() -> None:
     ref = check_bifactor_expected_total_score_monotonicity(_BF(), grid, q_specific=21)
     assert np.allclose(got.expected_total, ref.expected_total, atol=1e-10, rtol=0.0)
     assert got.prior == _PRIOR
-    assert got.nuisance_mean == 0.0
-    assert got.nuisance_sd == 1.0
+    assert np.allclose(got.primary_ref_mean, [0.0])
+    assert np.allclose(got.primary_ref_sd, [1.0])
+    assert np.allclose(got.specific_ref_mean, np.zeros(3))
+    assert np.allclose(got.specific_ref_sd, np.ones(3))
 
 
 def test_wording_cross_loads_change_curve_vs_specific_only() -> None:
-    """Crossed W loadings must alter E[T|G] vs integrating only specifics."""
     a_g = np.array([1.0, 1.0, 1.0, 1.0])
     a_w = np.array([0.0, 0.0, 0.8, 0.8])
     a_s = np.array([0.5, 0.5, 0.5, 0.5])
@@ -100,7 +103,6 @@ def test_wording_cross_loads_change_curve_vs_specific_only() -> None:
 
 
 def test_person_eap_points_accepted_without_ascending_grid() -> None:
-    """Person G EAP vectors need not be sorted (unlike monotonicity helpers)."""
     ap = np.array([[1.0, 0.4], [1.1, 0.0]])
     asp = np.array([0.5, 0.6])
     th = np.array([[0.5, -0.5], [0.2, -0.8]])
@@ -123,7 +125,6 @@ def test_category_support_rejects_nondecreasing_thresholds() -> None:
 
 
 def test_reverse_keyed_negative_g_slope_reverses_total_trend() -> None:
-    """Negative a_G (reverse key) must decrease E[T|G] as G increases."""
     th = np.array([[1.5, 0.0, -1.5], [1.5, 0.0, -1.5]])
     smap = np.array([-1, -1], dtype=np.int64)
     asp = np.zeros(2)
@@ -131,32 +132,57 @@ def test_reverse_keyed_negative_g_slope_reverses_total_trend() -> None:
     forward = _call(np.array([[1.2], [1.2]]), asp, th, smap, grid, q=15)
     reverse = _call(np.array([[1.2], [-1.2]]), asp, th, smap, grid, q=15)
     assert np.all(np.diff(forward.expected_total) > 0.0)
-    # Mixed: one reverse item pulls the total slope down vs all-forward.
     assert reverse.expected_total[-1] < forward.expected_total[-1]
     assert reverse.expected_total[0] > forward.expected_total[0]
 
 
-def test_nuisance_reference_mean_sd_shift_curve() -> None:
-    ap = np.array([[1.0], [1.0]])
-    asp = np.array([0.8, 0.8])
+def test_per_dimension_ref_sd_changes_integral_vs_scalar_bundle() -> None:
+    """Distinct W vs S reference variances must not be silently scalar-bundled."""
+    ap = np.array([[1.0, 0.8]])  # G, W
+    asp = np.array([0.6])
+    # Asymmetric thresholds so scale changes move E[Y|G].
+    th = np.array([[2.0, 0.5, -0.5]])
+    smap = np.array([0], dtype=np.int64)
+    grid = np.array([1.0])
+    # Scalar broadcast: W and S both N(0,1) — only valid when producer fixes both to 1.
+    scalar = _call(ap, asp, th, smap, grid, q=21)
+    distinct = _call(
+        ap,
+        asp,
+        th,
+        smap,
+        grid,
+        q=21,
+        primary_ref_mean=np.array([0.0, 0.0]),
+        primary_ref_sd=np.array([1.0, 0.5]),
+        specific_ref_mean=np.array([0.0]),
+        specific_ref_sd=np.array([1.5]),
+    )
+    assert not np.allclose(scalar.expected_total, distinct.expected_total)
+    assert distinct.primary_ref_sd[1] == pytest.approx(0.5)
+    assert distinct.specific_ref_sd[0] == pytest.approx(1.5)
+
+
+def test_ref_distribution_rejects_bad_shape_nan_nonpositive() -> None:
+    ap = np.array([[1.0, 0.4], [1.0, 0.0]])
+    asp = np.array([0.5, 0.5])
     th = np.array([[1.0, 0.0, -1.0], [1.0, 0.0, -1.0]])
-    smap = np.array([0, 0], dtype=np.int64)
+    smap = np.array([0, 1], dtype=np.int64)
     grid = np.array([0.0])
-    base = _call(ap, asp, th, smap, grid, q=21)
-    shifted = _call(ap, asp, th, smap, grid, q=21, nuisance_mean=1.0, nuisance_sd=0.5)
-    assert not np.allclose(base.expected_total, shifted.expected_total)
-    assert shifted.nuisance_mean == 1.0
-    assert shifted.nuisance_sd == 0.5
-    with pytest.raises(ValueError):
-        _call(ap, asp, th, smap, grid, q=5, nuisance_sd=0.0)
+    with pytest.raises(ValueError, match="primary_ref_sd"):
+        _call(ap, asp, th, smap, grid, q=5, primary_ref_sd=np.array([1.0]))  # want 2
+    with pytest.raises(ValueError, match="specific_ref_mean"):
+        _call(ap, asp, th, smap, grid, q=5, specific_ref_mean=np.array([0.0, 0.0, 0.0]))
+    with pytest.raises(ValueError, match="finite"):
+        _call(ap, asp, th, smap, grid, q=5, primary_ref_mean=np.array([0.0, np.nan]))
+    with pytest.raises(ValueError, match="> 0"):
+        _call(ap, asp, th, smap, grid, q=5, specific_ref_sd=np.array([1.0, -0.1]))
+    with pytest.raises(ValueError, match="> 0"):
+        _call(ap, asp, th, smap, grid, q=5, primary_ref_sd=0.0)
 
 
 def _g4w_16_fixture() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """16-item emotionality-like G+4+W simple structure (4 cats, reverse keys).
-
-    Domain blocks of 4 items; wording-crossed indices match late-life style
-    {4,5,6,9,12,14,15}; reverse keys on items 2,7,11,13 (negative a_G).
-    """
+    """16-item emotionality-like G+4+W example fixture (not a universal contract)."""
     n_items = 16
     wording = {4, 5, 6, 9, 12, 14, 15}
     reverse = {2, 7, 11, 13}
@@ -176,17 +202,14 @@ def _g4w_16_fixture() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 def test_g4w_16_item_quantitative_bounds_and_wording_effect() -> None:
     ap, a_s, th, smap = _g4w_16_fixture()
     grid = np.linspace(-3.0, 3.0, 13)
+    # Producer case: all nuisance refs fixed at N(0,1) — scalar broadcast documented.
     out = _call(ap, a_s, th, smap, grid, q=15)
-    # 16 items × categories {0,1,2,3} ⇒ total in [0, 48]
     assert out.n_items == 16
     assert np.all(out.expected_total >= 0.0 - 1e-9)
     assert np.all(out.expected_total <= 48.0 + 1e-9)
-    # Midpoint at G=0 under symmetric thresholds + balanced reverse set.
     assert out.expected_total[grid == 0.0][0] == pytest.approx(24.0, abs=1e-8)
-    # Wording cross must move the curve relative to W=0.
     no_w = _call(np.column_stack([ap[:, 0], np.zeros(16)]), a_s, th, smap, grid, q=15)
     assert float(np.max(np.abs(out.expected_total - no_w.expected_total))) > 0.05
-    # Reverse keys (negative a_G) compress the high-G total vs all-forward signs.
     ap_fwd = ap.copy()
     ap_fwd[:, 0] = np.abs(ap_fwd[:, 0])
     fwd = _call(ap_fwd, a_s, th, smap, grid, q=15)
@@ -194,9 +217,27 @@ def test_g4w_16_item_quantitative_bounds_and_wording_effect() -> None:
     assert out.expected_total[0] > fwd.expected_total[0]
 
 
+def test_g4w_distinct_w_vs_s_reference_variances() -> None:
+    ap, a_s, th, smap = _g4w_16_fixture()
+    grid = np.array([-1.0, 0.0, 1.0])
+    unit = _call(ap, a_s, th, smap, grid, q=11)
+    # W tighter than specifics — must differ from all-unit scalar broadcast.
+    mixed = _call(
+        ap,
+        a_s,
+        th,
+        smap,
+        grid,
+        q=11,
+        primary_ref_mean=np.zeros(2),
+        primary_ref_sd=np.array([1.0, 0.4]),
+        specific_ref_mean=np.zeros(4),
+        specific_ref_sd=np.array([1.2, 0.9, 1.1, 1.3]),
+    )
+    assert not np.allclose(unit.expected_total, mixed.expected_total)
+
+
 def test_monte_carlo_reference_two_nuisance_item() -> None:
-    """Independent GH product agrees with MC under N(0,1)×N(0,1) nuisances."""
-    # Single wording-crossed item: G + W + S.
     a_g, a_w, a_s = 1.0, 0.7, 0.5
     th = np.array([[1.0, 0.0, -1.0]])
     g0 = 0.5
@@ -209,7 +250,6 @@ def test_monte_carlo_reference_two_nuisance_item() -> None:
         np.array([g0]),
         q=q,
     )
-
     rng = np.random.default_rng(20260921)
     n_mc = 80_000
     w = rng.normal(size=n_mc)
@@ -228,7 +268,7 @@ def test_monte_carlo_reference_two_nuisance_item() -> None:
     assert gh.expected_total[0] == pytest.approx(mc, abs=0.02)
 
 
-def _stub_fit(*, phi: np.ndarray) -> TwoTierGrmFit:
+def _stub_fit(*, phi: np.ndarray, n_specific: int = 1) -> TwoTierGrmFit:
     ap = np.array([[1.0, 0.0], [1.0, 0.4]])
     asp = np.array([0.5, 0.5])
     th = np.array([[1.0, 0.0, -1.0], [1.0, 0.0, -1.0]])
@@ -242,7 +282,7 @@ def _stub_fit(*, phi: np.ndarray) -> TwoTierGrmFit:
         category_counts=np.ones((2, 4), dtype=np.int64),
         n_cat=4,
         n_primary=2,
-        n_specific=1,
+        n_specific=n_specific,
         loglik_trace=np.array([0.0]),
         n_iter=1,
         converged=True,
@@ -253,7 +293,7 @@ def _stub_fit(*, phi: np.ndarray) -> TwoTierGrmFit:
     )
 
 
-def test_from_fit_fail_closed_when_phi_not_identity() -> None:
+def test_from_fit_dual_gates_phi_and_consumer_identification() -> None:
     smap = np.array([0, 0], dtype=np.int64)
     grid = np.array([0.0, 1.0])
     ok = expected_total_score_two_tier_from_fit(
@@ -262,25 +302,52 @@ def test_from_fit_fail_closed_when_phi_not_identity() -> None:
         focal_primary=0,
         q_nuisance=9,
         specific_map=smap,
+        orthogonal_primary_identification=True,
     )
     assert ok.prior == _PRIOR
 
-    phi_corr = np.array([[1.0, 0.2], [0.2, 1.0]])
-    with pytest.raises(ValueError, match="Phi == I"):
+    with pytest.raises(ValueError, match="orthogonal_primary_identification"):
         expected_total_score_two_tier_from_fit(
-            _stub_fit(phi=phi_corr),
+            _stub_fit(phi=np.eye(2)),
             grid,
             focal_primary=0,
             q_nuisance=9,
             specific_map=smap,
+            orthogonal_primary_identification=False,
         )
-    # Near-identity must still fail closed (no silent Phi≈I substitute).
-    phi_near = np.array([[1.0, 1e-8], [1e-8, 1.0]])
-    with pytest.raises(ValueError, match="Phi == I"):
+    with pytest.raises(TypeError):
         expected_total_score_two_tier_from_fit(
-            _stub_fit(phi=phi_near),
+            _stub_fit(phi=np.eye(2)),
             grid,
             focal_primary=0,
             q_nuisance=9,
             specific_map=smap,
+        )  # type: ignore[call-arg]
+
+    with pytest.raises(ValueError, match="Phi == I"):
+        expected_total_score_two_tier_from_fit(
+            _stub_fit(phi=np.array([[1.0, 0.2], [0.2, 1.0]])),
+            grid,
+            focal_primary=0,
+            q_nuisance=9,
+            specific_map=smap,
+            orthogonal_primary_identification=True,
+        )
+    with pytest.raises(ValueError, match="Phi == I"):
+        expected_total_score_two_tier_from_fit(
+            _stub_fit(phi=np.array([[1.0, 1e-8], [1e-8, 1.0]])),
+            grid,
+            focal_primary=0,
+            q_nuisance=9,
+            specific_map=smap,
+            orthogonal_primary_identification=True,
+        )
+    with pytest.raises(ValueError, match="fit.n_specific"):
+        expected_total_score_two_tier_from_fit(
+            _stub_fit(phi=np.eye(2), n_specific=3),
+            grid,
+            focal_primary=0,
+            q_nuisance=9,
+            specific_map=smap,
+            orthogonal_primary_identification=True,
         )
