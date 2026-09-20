@@ -568,11 +568,14 @@ def _as_specific_map_int64(
     n_items: int,
     n_specific: int | None = None,
 ) -> np.ndarray:
-    """Validate ``specific_map`` before ``int64`` cast (no silent truncation).
+    """Validate ``specific_map`` before ``int64`` cast (no silent truncation/wrap).
 
     Rejects non-finite floats and non-integral values such as ``0.5`` before
-    ``astype(np.int64)``. Entries must be ``-1`` (specific-free) or ``>= 0``;
-    when ``n_specific`` is given, also require ``< n_specific``.
+    ``astype(np.int64)``. Also rejects unsigned / oversized values that cannot
+    be represented in ``int64`` without wraparound (e.g. ``uint64`` max → ``-1``,
+    ``2**63`` → ``int64`` min). Entries must be ``-1`` (specific-free) or
+    integers in ``0..2**63-1``; when ``n_specific`` is given, also
+    ``< n_specific``.
     """
     smap = np.asarray(specific_map)
     if smap.ndim != 1 or smap.shape[0] != n_items:
@@ -584,20 +587,39 @@ def _as_specific_map_int64(
             raise ValueError("specific_map entries must be integers")
     elif smap.dtype.kind not in ("b", "i", "u"):
         raise ValueError("specific_map entries must be integers")
-    try:
-        smap_int = smap.astype(np.int64, copy=False)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("specific_map entries must be integers") from exc
-    if bool((smap_int < -1).any()):
-        raise ValueError(
-            "specific_map entries must be -1 (specific-free) or >= 0"
-        )
-    if n_specific is not None:
-        if bool((smap_int >= int(n_specific)).any()):
+
+    # Pre-cast range check via Python int (no dtype wraparound).
+    i64_max = int(np.iinfo(np.int64).max)
+    for x in smap.ravel():
+        try:
+            iv = int(x)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("specific_map entries must be integers") from exc
+        if iv < -1 or iv > i64_max:
+            raise ValueError(
+                "specific_map entries must be -1 (specific-free) or integers "
+                f"in 0..{i64_max} without wrapping into int64"
+            )
+        if n_specific is not None and iv >= int(n_specific):
             raise ValueError(
                 "specific_map entries must be -1 (specific-free) or in "
                 f"0..{int(n_specific) - 1}"
             )
+
+    try:
+        smap_int = smap.astype(np.int64, copy=False)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("specific_map entries must be integers") from exc
+    # Post-cast sentinel/range (defensive; pre-cast already enforced).
+    if bool((smap_int < -1).any()):
+        raise ValueError(
+            "specific_map entries must be -1 (specific-free) or >= 0"
+        )
+    if n_specific is not None and bool((smap_int >= int(n_specific)).any()):
+        raise ValueError(
+            "specific_map entries must be -1 (specific-free) or in "
+            f"0..{int(n_specific) - 1}"
+        )
     return smap_int
 
 

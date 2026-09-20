@@ -363,11 +363,56 @@ def test_specific_map_rejects_noninteger_before_int64_cast() -> None:
         _call(ap, asp, th, np.array([0.5, 0.0]), grid, q=5)
     with pytest.raises(ValueError, match="finite"):
         _call(ap, asp, th, np.array([0.0, np.nan]), grid, q=5)
-    with pytest.raises(ValueError, match="specific-free"):
+    with pytest.raises(ValueError, match="specific-free|without wrapping"):
         _call(ap, asp, th, np.array([-2, 0]), grid, q=5)
     # Valid ints still accepted (including float dtype that is integral).
     out = _call(ap, asp, th, np.array([0.0, 0.0]), grid, q=5)
     assert out.n_items == 2
+
+
+def test_specific_map_rejects_uint64_wraparound_boundaries() -> None:
+    """uint64 max / 2**63 must not wrap into int64 sentinels or negatives."""
+    from fast_mlsirm.two_tier_grm import (
+        _as_specific_map_int64,
+        expected_total_score_two_tier_from_fit,
+    )
+
+    u64_max = np.array([np.iinfo(np.uint64).max], dtype=np.uint64)
+    two63 = np.array([np.uint64(2**63)], dtype=np.uint64)
+    # Reproduce the wrap that the pre-cast gate must block.
+    assert u64_max.astype(np.int64)[0] == np.int64(-1)
+    assert two63.astype(np.int64)[0] == np.iinfo(np.int64).min
+
+    with pytest.raises(ValueError, match="without wrapping|int64"):
+        _as_specific_map_int64(u64_max, n_items=1)
+    with pytest.raises(ValueError, match="without wrapping|int64"):
+        _as_specific_map_int64(two63, n_items=1)
+
+    ap = np.array([[1.0]])
+    asp = np.array([0.0])
+    th = np.array([[1.0, 0.0, -1.0]])
+    grid = np.array([0.0])
+    with pytest.raises(ValueError, match="without wrapping|int64"):
+        _call(ap, asp, th, u64_max, grid, q=5)
+    with pytest.raises(ValueError, match="without wrapping|int64"):
+        _call(ap, asp, th, two63, grid, q=5)
+
+    # from_fit path uses the same helper.
+    fit = _stub_fit(phi=np.eye(2), n_specific=1)
+    # Stub has 2 items — need length-2 map for from_fit.
+    u64_pair = np.array([0, np.iinfo(np.uint64).max], dtype=np.uint64)
+    with pytest.raises(ValueError, match="without wrapping|int64"):
+        expected_total_score_two_tier_from_fit(
+            fit,
+            grid,
+            focal_primary=0,
+            q_nuisance=5,
+            specific_map=u64_pair,
+            orthogonal_primary_identification=True,
+        )
+    # Boundary just inside int64 max is fine when within n_specific.
+    ok_u = np.array([0], dtype=np.uint64)
+    assert _as_specific_map_int64(ok_u, n_items=1, n_specific=1)[0] == 0
 
 
 def test_collapsed_gh_matches_product_meshgrid_reference() -> None:
