@@ -7,6 +7,7 @@ caller-supplied subset of latent dimensions while the remaining coordinates
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from itertools import product as iterproduct
 
@@ -15,6 +16,8 @@ import numpy as np
 from .estimators.marginal import compute_grm_category_logprobs
 
 __all__ = ["compute_expected_graded_item_score"]
+
+_INTEGRATION_WEIGHT_TOLERANCE = 1e-12
 
 
 def _expected_category_score_from_linear_predictor(
@@ -29,6 +32,23 @@ def _expected_category_score_from_linear_predictor(
     probs = np.exp(log_probs)
     scores = np.arange(probs.size, dtype=np.float64)
     return float((probs * scores).sum())
+
+
+def _validate_integration_axis_weights(weights: np.ndarray, axis_index: int) -> None:
+    """Reject integration weights that are not a probability measure on one axis."""
+    label = f"integration_weights[{axis_index}]"
+    if np.any(weights < 0.0):
+        raise ValueError(f"{label} must be non-negative")
+    weight_sum = math.fsum(float(weight) for weight in weights)
+    if not math.isfinite(weight_sum):
+        raise ValueError(f"{label} must sum to one")
+    if not math.isclose(
+        weight_sum,
+        1.0,
+        rel_tol=0.0,
+        abs_tol=_INTEGRATION_WEIGHT_TOLERANCE,
+    ):
+        raise ValueError(f"{label} must sum to one within tolerance")
 
 
 def compute_expected_graded_item_score(
@@ -46,8 +66,10 @@ def compute_expected_graded_item_score(
     (for example a plugged general factor). Each integrated column is replaced
     in turn by the corresponding caller-supplied nodes; when more than one
     column is integrated, the quadrature runs on the Cartesian product with
-    product weights. Nodes are used as given — the caller is responsible for
-    any prior scaling.
+    product weights. Each integrated axis carries its own probability measure:
+    weights must be finite, non-negative, and sum to one within a tight
+    absolute tolerance; invalid axes fail closed with no silent renormalization.
+    Nodes are used as given — the caller is responsible for any prior scaling.
 
     Category probabilities use :func:`~fast_mlsirm.estimators.marginal.compute_grm_category_logprobs`
     on the item linear predictor.
@@ -69,7 +91,10 @@ def compute_expected_graded_item_score(
         as ``integrate_columns``.
     integration_weights:
         One finite 1-D weight array per integrated column, aligned with
-        ``integration_nodes``.
+        ``integration_nodes``. Each array is an independent discrete
+        probability measure over that axis (non-negative entries summing to
+        one). Multi-axis integration uses the product measure on the Cartesian
+        product of node grids.
 
     Returns
     -------
@@ -118,8 +143,11 @@ def compute_expected_graded_item_score(
             raise ValueError(
                 f"integration_weights[{index}] must be a 1-D array matching its nodes"
             )
-        if not np.all(np.isfinite(nodes)) or not np.all(np.isfinite(weights)):
-            raise ValueError("integration nodes and weights must be finite")
+        if not np.all(np.isfinite(nodes)):
+            raise ValueError("integration nodes must be finite")
+        if not np.all(np.isfinite(weights)):
+            raise ValueError(f"integration_weights[{index}] must be finite")
+        _validate_integration_axis_weights(weights, index)
         node_arrays.append(nodes)
         weight_arrays.append(weights)
 

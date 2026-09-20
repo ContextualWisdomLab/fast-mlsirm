@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from fast_mlsirm.estimators.marginal import compute_grm_category_logprobs
 from fast_mlsirm.graded_item import compute_expected_graded_item_score
@@ -91,3 +92,39 @@ def test_non_integrated_column_stays_at_fixed_value() -> None:
 
     assert shifted != baseline
     assert shifted == _hand_one_column(1, shifted_theta)
+
+
+def _call_with_weights(weights: np.ndarray) -> float:
+    return compute_expected_graded_item_score(
+        SLOPE,
+        THRESHOLDS,
+        THETA,
+        integrate_columns=(1,),
+        integration_nodes=(NODES,),
+        integration_weights=(weights,),
+    )
+
+
+def test_valid_normalized_weights_return_score_in_category_range() -> None:
+    result = _call_with_weights(WEIGHTS)
+    max_category = THRESHOLDS.size
+    assert 0.0 <= result <= max_category
+
+
+@pytest.mark.parametrize(
+    ("weights", "match"),
+    [
+        (np.array([-0.10, 1.10]), "must be non-negative"),
+        (np.array([0.0, 0.0]), "must sum to one"),
+        (np.array([0.10, 0.10]), "must sum to one"),
+        (np.array([0.80, 0.80]), "must sum to one"),
+        (np.array([0.35, np.nan]), "must be finite"),
+        (np.array([0.35, np.inf]), "must be finite"),
+    ],
+)
+def test_integration_weights_fail_closed_on_invalid_probability_measure(
+    weights: np.ndarray,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        _call_with_weights(weights)
