@@ -1,9 +1,9 @@
 {
   "artifact": "cpu_gpu_concurrent_live_mba",
-  "schema": "cpu_gpu_concurrent_live/v2",
-  "schema_notes": "v2: selected adapter (not hardcoded not_llvmpipe); shape/finite/count checks; separate overlap_verdict; span_wall_s replaces mono_overlap_wall_s; call-time overlap \u2260 HW kernel concurrency; converged=false blocks research/speed claims",
-  "reinforces_commit": "2a8b7f0b0ac2d8313f32d62c9bc76cc433f5c4b0",
-  "pass_gate": "n_compared > 0 and parity_holds and shapes_equal and all_compared_finite and selected adapter not_llvmpipe",
+  "schema": "cpu_gpu_concurrent_live/v3",
+  "schema_notes": "v3: host_gpu_inventory renamed (was selected_adapter); library_wgpu_selection explicitly unverified; pass_gate is numeric parity only \u2014 inventory must not satisfy not_llvmpipe/adapter identity",
+  "reinforces_commit": "686dcab53543baf307d798908b9f05d4b5c8b036",
+  "pass_gate": "n_compared > 0 and parity_holds and shapes_equal and all_compared_finite",
   "passed": true,
   "host": "Seonghoui-MacBookAir.local",
   "machine": "arm64",
@@ -13,30 +13,44 @@
   "device": {
     "cpu": "host_cpu",
     "gpu_requested": "gpu",
-    "backend_expected": "wgpu\u2192Metal on Darwin arm64",
-    "selected_adapter_name": "Apple M5",
-    "selected_adapter_vendor": "Apple (0x106b)",
-    "selected_adapter_type": "GPU",
-    "selected_adapter_metal_support": "Metal 4",
-    "selected_adapter_bus": "Built-In",
-    "selected_adapter_gpu_cores": "10",
-    "selected_from": "system_profiler SPDisplaysDataType (first Type: GPU block)",
-    "not_llvmpipe": true,
-    "llvmpipe_rejection_basis": "name/vendor/Metal strings inspected; llvmpipe/lavapipe/swiftshader absent and Apple/Metal markers present",
-    "system_profiler_gpu_lines": [
-      "Chipset Model: Apple M5",
-      "Type: GPU",
-      "Bus: Built-In",
-      "Total Number of Cores: 10",
-      "Vendor: Apple (0x106b)",
-      "Metal Support: Metal 4",
-      "Display Type: Built-in Liquid Retina Display",
-      "Connection Type: Internal"
-    ]
+    "backend_expected": "wgpu\u2192Metal on Darwin arm64 (expected, not verified)",
+    "host_gpu_inventory": {
+      "inventory_adapter_name": "Apple M5",
+      "inventory_adapter_vendor": "Apple (0x106b)",
+      "inventory_adapter_type": "GPU",
+      "inventory_adapter_metal_support": "Metal 4",
+      "inventory_adapter_bus": "Built-In",
+      "inventory_adapter_gpu_cores": "10",
+      "inventory_from": "system_profiler SPDisplaysDataType (first Type: GPU block)",
+      "inventory_looks_like_llvmpipe": false,
+      "inventory_note": "Host GPU inventory only. Does NOT identify the adapter actually selected by fast-mlsirm/wgpu.",
+      "system_profiler_gpu_lines": [
+        "Chipset Model: Apple M5",
+        "Type: GPU",
+        "Bus: Built-In",
+        "Total Number of Cores: 10",
+        "Vendor: Apple (0x106b)",
+        "Metal Support: Metal 4",
+        "Display Type: Built-in Liquid Retina Display",
+        "Connection Type: Internal"
+      ]
+    },
+    "library_wgpu_selection": {
+      "status": "unverified",
+      "reason": "installed fast-mlsirm has no public adapter/backend diagnostic API; wgpu Python package not required/installed for this wheel path",
+      "core_gpuish_attrs": [
+        "py_stradaptive_administer"
+      ],
+      "fast_mlsirm_version": "0.11.4",
+      "needs": "generic observability: adapter name + backend from wgpu AdapterInfo or library diagnostic logs at GPU context init",
+      "gpu_arm_fallback_warning_observed": false,
+      "gpu_arm_warnings": [],
+      "note": "Absence of CPU-fallback warning is NOT proof of Metal adapter identity; adapter name/backend remain unverified without diagnostic API."
+    }
   },
   "memory": {
     "hw_memsize_gb": 32.0,
-    "vm_swapusage": "total = 56320.00M  used = 54775.56M  free = 1544.44M  (encrypted)"
+    "vm_swapusage": "total = 56320.00M  used = 55267.00M  free = 1053.00M  (encrypted)"
   },
   "fixture": {
     "n_cat": 3,
@@ -51,29 +65,29 @@
     "n_items": 4,
     "api": "fast_mlsirm.bifactor_grm.fit_bifactor_grm",
     "bench_path_mirrored": "tests/test_bifactor_gpu.py",
-    "note": "TINY identical input; concurrent Barrier(2); NOT A4; no new cargo"
+    "note": "TINY identical input; concurrent Barrier(2); NOT A4; no new cargo; smoke only"
   },
   "timing": {
-    "wall_clock_start_utc": "2026-09-20T16:55:04.081483+00:00",
-    "wall_clock_end_utc": "2026-09-20T16:55:04.207153+00:00",
+    "wall_clock_start_utc": "2026-09-20T17:29:12.753076+00:00",
+    "wall_clock_end_utc": "2026-09-20T17:29:12.886929+00:00",
     "overlap_timing": {
-      "span_wall_s": 0.125236,
+      "span_wall_s": 0.133581,
       "cpu_mono_interval": [
-        3283765.677441666,
-        3283765.687627583
+        3285814.339526208,
+        3285814.350092875
       ],
       "gpu_mono_interval": [
-        3283765.675746208,
-        3283765.800482708
+        3285814.336892375,
+        3285814.470082375
       ],
-      "simultaneous_interval_s": 0.010186
+      "simultaneous_interval_s": 0.010567
     },
-    "cpu_wall_s": 0.010186,
-    "gpu_wall_s": 0.124736
+    "cpu_wall_s": 0.010567,
+    "gpu_wall_s": 0.13319
   },
   "overlap_verdict": {
     "call_time_intervals_overlap": true,
-    "simultaneous_interval_s": 0.010186,
+    "simultaneous_interval_s": 0.010567,
     "basis": "perf_counter intervals of Barrier-synced fit_bifactor_grm calls",
     "interpretation": "call-time interval overlap measures Barrier-synced Python thread wall intervals only; it does NOT prove hardware kernel concurrency on Metal/wgpu",
     "hardware_kernel_concurrency_claimed": false
@@ -82,27 +96,29 @@
     "cpu": {
       "ok": true,
       "device_requested": "cpu",
-      "wall_clock_start": "2026-09-20T16:55:04.083894+00:00",
-      "wall_clock_end": "2026-09-20T16:55:04.094082+00:00",
-      "mono_start": 3283765.677441666,
-      "mono_end": 3283765.687627583,
-      "wall_s": 0.010186,
+      "wall_clock_start": "2026-09-20T17:29:12.756214+00:00",
+      "wall_clock_end": "2026-09-20T17:29:12.766782+00:00",
+      "mono_start": 3285814.339526208,
+      "mono_end": 3285814.350092875,
+      "wall_s": 0.010567,
       "converged": false,
       "n_iter": 5,
       "loglik": -65.26145389243662,
+      "warnings": [],
       "error": null
     },
     "gpu": {
       "ok": true,
       "device_requested": "gpu",
-      "wall_clock_start": "2026-09-20T16:55:04.082198+00:00",
-      "wall_clock_end": "2026-09-20T16:55:04.206945+00:00",
-      "mono_start": 3283765.675746208,
-      "mono_end": 3283765.800482708,
-      "wall_s": 0.124736,
+      "wall_clock_start": "2026-09-20T17:29:12.753579+00:00",
+      "wall_clock_end": "2026-09-20T17:29:12.886772+00:00",
+      "mono_start": 3285814.336892375,
+      "mono_end": 3285814.470082375,
+      "wall_s": 0.13319,
       "converged": false,
       "n_iter": 5,
       "loglik": -65.26145434379578,
+      "warnings": [],
       "error": null
     }
   },
@@ -212,7 +228,7 @@
     "any_arm_converged_false": true,
     "research_claim_allowed": false,
     "speed_claim_allowed": false,
-    "reason": "max_iter=5 smoke fixture; arms report converged=false \u2014 no research inference and no speed/throughput claim from this artifact",
+    "reason": "max_iter=5 smoke; converged=false \u2014 no research/speed claim; do not treat as research-complete compute path",
     "smoke_only": true
   },
   "a4_restarted": false,
