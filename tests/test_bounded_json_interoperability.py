@@ -47,3 +47,8 @@ def test_read_json_object_uses_same_strict_value_semantics(tmp_path: Path) -> No
     nonfinite.write_text('{"value":NaN}', encoding="utf-8")
     with pytest.raises(ValueError, match="non-finite JSON numeric value"):
         read_json_object(nonfinite)
+
+def test_parse_json_bounded_rejects_float_overflow() -> None:
+    """Direct bounded parsing must reject floats that overflow to Infinity."""
+    with pytest.raises(ValueError, match="non-finite JSON numeric value"):
+        parse_json_bounded('{"value":1e999}')

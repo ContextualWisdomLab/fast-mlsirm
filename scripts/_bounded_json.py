@@ -9,6 +9,7 @@ then delegates syntax and value construction to :mod:`json`.
 from __future__ import annotations
 
 import json
+import math
 import os
 import stat
 from pathlib import Path
@@ -132,12 +133,20 @@ def _reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _reject_float_nonfinite(value: str) -> float:
+    f_val = float(value)
+    if not math.isfinite(f_val):
+        raise ValueError(_NONFINITE_NUMBER_ERROR)
+    return f_val
+
+
 def _loads_interoperable_json(content: str) -> Any:
     """Decode one JSON value using unambiguous RFC-compatible semantics."""
     return json.loads(
         content,
         object_pairs_hook=_reject_duplicate_members,
         parse_constant=_reject_nonfinite_constant,
+        parse_float=_reject_float_nonfinite,
     )
 
 
