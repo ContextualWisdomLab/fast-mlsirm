@@ -33,3 +33,22 @@ tests/test_rsm_lossless_tolerance.py::test_rsm_rejects_lossy_longdouble_toleranc
 tests/test_twopl_control_callback_safety.py::test_fit_2pl_rejects_lossy_longdouble_tolerance_before_response_work # extended-precision gate: platform longdouble has no additional precision on this platform (reviewed 2026-09-17)
 tests/test_twopl_response_admission.py::test_fit_2pl_rejects_extended_precision_value_that_would_round_to_binary_response # extended-precision gate: platform longdouble has no additional precision on this platform (reviewed 2026-09-17)
 tests/test_wle_control_admission.py::test_score_wle_rejects_lossy_longdouble_control_before_data # extended-precision gate: platform long double is not wider than binary64 (reviewed 2026-09-17)
+
+# Lanes whose evidence is enforced by a dedicated CI job rather than by the
+# `python` matrix, reviewed 2026-09-18. Without these the fail-closed gate
+# escalates an otherwise-green run: 6977 passed, 8 skipped, and the required
+# `python` check fails on every PR for reasons no PR can fix.
+#
+# GPU parity is NOT waived here. The `gpu-smoke` job installs a software Vulkan
+# adapter, runs the explicit GPU parity test, and then fails the build if the
+# JUnit report contains any skip ("Reject skipped GPU evidence" in ci.yml). The
+# `python` matrix has no adapter, so the same tests can only skip there.
+tests/test_bifactor_gpu_high_q.py::* # GPU adapter absent in the `python` matrix; enforced non-skipped by the gpu-smoke job (reviewed 2026-09-18)
+tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely # GPU adapter absent in the `python` matrix; this exact test is the gpu-smoke job's non-skippable evidence (reviewed 2026-09-18)
+tests/test_bifactor_bootstrap_benchmark.py::test_joint_bootstrap_cpu_vs_gpu_wall_time_q121 # wall-clock CPU-vs-GPU comparison needs an adapter; gpu-smoke owns GPU evidence (reviewed 2026-09-18)
+#
+# Coverage-guided fuzzing is owned by the `fuzz` job, which installs the
+# `.[fuzz]` extra and runs the Atheris harnesses directly. The `python` matrix
+# installs requirements/ci.txt without atheris, so this module cannot import
+# there and reports as a collection skip.
+tests/test_fuzz_properties.py # atheris absent in the `python` matrix; the fuzz job installs .[fuzz] and runs the harnesses (reviewed 2026-09-18)
