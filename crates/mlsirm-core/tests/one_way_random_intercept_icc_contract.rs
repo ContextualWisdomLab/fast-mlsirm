@@ -132,6 +132,32 @@ fn positive_within_dispersion_must_not_underflow_into_unit_icc() {
 }
 
 #[test]
+fn positive_within_sum_of_squares_must_not_underflow_during_mean_square_division() {
+    let residual = 2_f64.powi(-537);
+    let center = 2_f64.powi(-530);
+    let cluster_ids = [1_u64, 1, 1, 1, 1, 2, 2, 2, 2, 2];
+    let outcomes = [
+        -residual,
+        0.0,
+        0.0,
+        0.0,
+        residual,
+        center - residual,
+        center,
+        center,
+        center,
+        center + residual,
+    ];
+
+    assert_eq!((residual * residual).to_bits(), f64::from_bits(1).to_bits());
+
+    let error = one_way_random_intercept_icc(&cluster_ids, &outcomes).expect_err(
+        "positive represented within sum of squares must fail closed if MSW rounds to zero",
+    );
+    assert_eq!(error, "ANOVA mean square underflowed binary64");
+}
+
+#[test]
 fn binary64_overflow_paths_fail_closed() {
     assert!(
         one_way_random_intercept_icc(
