@@ -20,6 +20,7 @@ from importlib.metadata import PackageNotFoundError, version
 from ._fit_public import fit
 from .bifactor_grm import bifactor_oakes_se
 from .config import FitConfig, MLS2PLMConfig
+from .fipc_group_score import execute_fipc_group_person_score_payload
 from .polytomous import fit_poly_fipc
 from .regression import contrast, fit_ols_hc
 from .remote_exec import (
@@ -187,6 +188,16 @@ def execute_fipc(payload: dict[str, object]) -> dict[str, object]:
     }
 
 
+def execute_fipc_group_person_score(payload: dict[str, object]) -> dict[str, object]:
+    """Run FIPC group person EAP + expected-raw + optional reference moments.
+
+    Kim (2006) FIPC identification: anchors pin the bank to the reference
+    metric; focal ``N(mu, sigma^2)`` is free. Not the #2077 two-tier
+    ``E[T|theta_f]`` nuisance-integrated curve API.
+    """
+    return execute_fipc_group_person_score_payload(payload)
+
+
 def execute_two_tier(payload: dict[str, object], unit_seed: int) -> dict[str, object]:
     """Run ``fit_two_tier_grm`` for one whole-call two-tier family unit."""
     fit = fit_two_tier_grm(
@@ -255,6 +266,8 @@ def execute_envelope(
         return execute_regression_contrasts(payload)
     if envelope.family is RemoteJobFamily.FIPC:
         return execute_fipc(payload)
+    if envelope.family is RemoteJobFamily.FIPC_GROUP_PERSON_SCORE:
+        return execute_fipc_group_person_score(payload)
     if envelope.family is RemoteJobFamily.TWO_TIER:
         return execute_two_tier(payload, unit_seed)
     raise ValueError(f"unsupported remote family {envelope.family.value!r}")

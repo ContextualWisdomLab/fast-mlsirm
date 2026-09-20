@@ -66,6 +66,7 @@ class RemoteJobFamily(str, Enum):
     REGRESSION_CONTRASTS = "regression_contrasts"
     EM_M_STEP = "em_m_step"
     FIPC = "fipc"
+    FIPC_GROUP_PERSON_SCORE = "fipc_group_person_score"
     TWO_TIER = "two_tier"
 
 
@@ -77,6 +78,7 @@ INTERNALLY_UNSHARDABLE_REMOTE_JOB_FAMILIES: frozenset[str] = frozenset(
         "regression_contrasts",
         "em_m_step",
         "fipc",
+        "fipc_group_person_score",
         "two_tier",
     }
 )

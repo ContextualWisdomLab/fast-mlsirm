@@ -151,6 +151,14 @@ def _fipc_payload() -> dict[str, object]:
     }
 
 
+def _fipc_group_person_score_payload() -> dict[str, object]:
+    """Whole-call FIPC group person-score payload (optional reference moments)."""
+    payload = _fipc_payload()
+    payload["reference_mu"] = 0.0
+    payload["reference_sigma"] = 1.0
+    return payload
+
+
 def _two_tier_payload() -> dict[str, object]:
     rng = np.random.default_rng(20260920)
     n_persons, n_items, n_cat = 40, 4, 3
@@ -194,6 +202,7 @@ FAMILY_PAYLOADS: tuple[
     (RemoteJobFamily.SE_DERIVATIVES, _se_derivatives_payload),
     (RemoteJobFamily.REGRESSION_CONTRASTS, _regression_contrasts_payload),
     (RemoteJobFamily.FIPC, _fipc_payload),
+    (RemoteJobFamily.FIPC_GROUP_PERSON_SCORE, _fipc_group_person_score_payload),
     (RemoteJobFamily.TWO_TIER, _two_tier_payload),
 )
 
