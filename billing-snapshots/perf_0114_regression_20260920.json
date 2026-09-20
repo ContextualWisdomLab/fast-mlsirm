@@ -1,8 +1,8 @@
 {
-  "captured_at": "2026-09-20T17:00:00+09:00",
+  "captured_at": "2026-09-20T17:41:25+09:00",
   "repository": "https://github.com/ContextualWisdomLab/fast-mlsirm",
-  "fix_head": "8aa6a29bbcaf210b90e862b1523396590834d2a2",
-  "fix_head_url": "https://github.com/ContextualWisdomLab/fast-mlsirm/commit/8aa6a29bbcaf210b90e862b1523396590834d2a2",
+  "fix_head": "8bd3eed79852bd4cbaef52d01a0785e5a9e7ac69",
+  "fix_head_url": "https://github.com/ContextualWisdomLab/fast-mlsirm/commit/8bd3eed79852bd4cbaef52d01a0785e5a9e7ac69",
   "pull_request": "https://github.com/ContextualWisdomLab/fast-mlsirm/pull/2070",
   "versions": {
     "previous_immutable_release": {
@@ -22,7 +22,7 @@
     "python": "Python 3.12.13",
     "device": "cpu",
     "cargo_build_jobs": 2,
-    "load_average_after_runs": [9.36, 10.61, 11.62],
+    "load_average_after_runs": [15.71, 15.32, 14.46],
     "protected_a4_pid_touched": false
   },
   "workload": {
@@ -51,36 +51,59 @@
     "/usr/bin/time -lp env CARGO_BUILD_JOBS=2 cargo test --release -p mlsirm-core --test two_tier_reduces_to_bifactor -- --exact two_tier_with_single_primary_matches_bifactor_fit",
     "for i in 1 2 3; do /usr/bin/time -lp env CARGO_BUILD_JOBS=2 cargo test --release -p mlsirm-core --test two_tier_reduces_to_bifactor -- --exact two_tier_with_single_primary_matches_bifactor_fit; done"
   ],
-  "measurements": {
+  "provenance": {
     "v0.11.3": {
-      "warm_wall_seconds": [1.93, 2.16],
-      "median_wall_seconds": 2.045,
-      "warm_user_seconds": [1.42, 1.44],
-      "peak_rss_bytes": [44761736, 45138592]
+      "head": "426b2726f2ea2d6dfb1da3def7fe161968d4cc3c",
+      "source_tree_sha256": "768816e81704bb4999864857ca1c0f09dcdae1ed91e0d47f842da73fb63dafc4",
+      "binary_sha256": "9828a01f80b1e48df21029feb454aa28f3d243fafe49f6c171accc08a4af8966",
+      "raw_time_log": "/tmp/pr2070-v113-20260920.log",
+      "raw_time_log_sha256": "7487cec4046112b9998bbae8b677aa593d056497a885d723ff141b2ddbc81ad9"
     },
     "v0.11.4": {
-      "warm_wall_seconds": [3.68, 3.76, 4.26],
-      "median_wall_seconds": 3.76,
-      "warm_user_seconds": [2.86, 3.07, 3.07],
-      "peak_rss_bytes": [44745376, 45253280, 45384352]
+      "head": "e44b52d851596910dc7a8fa3f174f2aff03872fa",
+      "source_tree_sha256": "1093c90bca6af59b1aafcd0b7d26f4566c12c3337b29b8d00a58fa6ab8fd65b3",
+      "binary_sha256": "16bc550a3ae272e8aeafbb19fcaad33d7e0c040d6bf49ee1436e50d26b5ac9b2",
+      "raw_time_log": "/tmp/pr2070-v114-20260920.log",
+      "raw_time_log_sha256": "c66a814082ce6cfa266f8d15390754a5aef9c09472e13f3f007b732fb7b3cee5"
     },
     "fix": {
-      "warm_wall_seconds": [1.69, 1.97, 2.23],
-      "median_wall_seconds": 1.97,
-      "warm_user_seconds": [1.41, 1.43, 1.49],
-      "peak_rss_bytes": [45007496, 45400736, 45564576],
-      "speedup_vs_v0.11.4": 1.91,
-      "speedup_vs_v0.11.3": 1.04
+      "head": "8bd3eed79852bd4cbaef52d01a0785e5a9e7ac69",
+      "source_tree_sha256": "8424cf86fc3068949419198253aa5a1d522f02f229fbc7e452cf386e7703f269",
+      "binary_sha256": "fa63955937a8ce6932ed59214a386187c1586d143320829e19e13fb2128dd932",
+      "raw_time_log": "/tmp/pr2070-fix-20260920.log",
+      "raw_time_log_sha256": "eca64cfe755b6a9b28c61ad2ad8d87f86cc12bdea6e5739e2596aae8fd320c2c"
+    }
+  },
+  "measurements": {
+    "v0.11.3": {
+      "warm_wall_seconds": [1.56, 2.12, 1.75],
+      "median_wall_seconds": 1.75,
+      "warm_user_seconds": [1.21, 1.49, 1.46],
+      "peak_rss_bytes": [69894144, 69828608, 69632000]
+    },
+    "v0.11.4": {
+      "warm_wall_seconds": [18.08, 16.19, 15.02],
+      "median_wall_seconds": 16.19,
+      "warm_user_seconds": [9.61, 9.57, 9.56],
+      "peak_rss_bytes": [67698688, 69910528, 69910528]
+    },
+    "fix": {
+      "warm_wall_seconds": [1.55, 1.65, 1.61],
+      "median_wall_seconds": 1.61,
+      "warm_user_seconds": [1.42, 1.42, 1.37],
+      "peak_rss_bytes": [70287360, 69861376, 69828608]
     }
   },
   "phase_and_hotspot_conclusion": {
     "e_step_and_final_eap": "v0.11.4 moved GRM category-log-probability construction into person x item x primary-node x specific-node loops and repeated block evaluation in the E-step count pass. The fix fills the single-primary table once per sweep and once for final EAP, then reuses it across persons.",
     "m_step": "The fix leaves the 0.11.4 streamed M-step coordinate path unchanged. Full-fit recovery to the v0.11.3 envelope therefore isolates the measured regression to E-step/final-EAP probability recomputation, not M-step arithmetic.",
     "allocations": "v0.11.4 allocated one GRM category Vec per inner-loop lookup. The fix allocates one dense category table per item per sweep only for one primary dimension; multi-primary fits retain streaming to avoid exponential product-grid table growth.",
-    "threads": "The workload is the CPU scalar path with CARGO_BUILD_JOBS=2 used only for compilation; fitting remains single-threaded. No GPU probe or CPU-GPU transfer occurs.",
+    "threads": "The workload is the CPU scalar path. CARGO_BUILD_JOBS=2 limits Cargo compilation jobs only; it does not enable or configure fit parallelism. The measured fit remains single-threaded. No GPU probe or CPU-GPU transfer occurs.",
     "n_plus_one": true,
     "response_pattern_recomputation": "The fixture has 500 persons but only 64 unique patterns in each three-item block. The fix removes parameter-only probability recomputation across all persons; block-pattern posterior collapse remains separate work and is not claimed here."
   },
+  "scope": "This is one local CPU fixture with 500 persons, 6 items, and 15 x 11 quadrature nodes. It is regression evidence for this path, not evidence that full research-setting performance is solved. The host load was elevated during capture, so the raw timings are reported without a derived speedup claim.",
+  "workflow_note": "A rerun registration or 10/10 note records intent only; it is not a successful check result.",
   "numerical_verification": {
     "single_primary_bifactor_equivalence": "passed; existing maximum parameter gap 1e-9 and log-likelihood gap 1e-6 gates unchanged",
     "multi_primary_mirt_agreement": "passed on streamed branch",
