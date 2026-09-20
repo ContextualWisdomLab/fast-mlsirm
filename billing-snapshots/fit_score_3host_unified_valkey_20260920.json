@@ -181,5 +181,19 @@
     "air_m1_native_core_match": true,
     "s1_native_core_present": true
   },
-  "PASS": true
+  "PASS": true,
+  "claim_level": "DEV/experimental path validation — NOT immutable release; NOT manuscript-complete",
+  "install_provenance": {
+    "s1": "manual copy of cargo-target/release/libfast_mlsirm_core.so into site-packages after raced editable wheel failure; NOT claimed as identical pip wheel install",
+    "air_m1": "reused preexisting b43cdd43 darwin _core.so (Mac cargo HOLD); Python sources from unified splice c9da70bb",
+    "mixed_native_note": "air/m1 darwin core sha a93bae5c… (b43cdd43 build); s1 linux core sha b3e04d1c… (s1 release build of same Rust sources). Explicitly mixed ABI artifacts across hosts.",
+    "mergeable_branch": "seonghobae/fmls-hetero-unified-c9da70bb",
+    "bases": {
+      "fit_score_pr_2072": "b43cdd43994656ba581253ccd27acc1fa683ea8d",
+      "valkey_pr_2073": "6a7fa66119bd895662c11d4e1fc7ce45a031d4cb"
+    },
+    "reproducible_wheel_path_wip": "/data/orca/workspaces/fmls-hetero-unified/wheels via maturin build --release (kicked; see maturin_wheel.log)"
+  },
+  "valkey_bind": "192.168.68.3:16382 only (LAN-restricted; not 0.0.0.0)",
+  "amended_at_utc": "2026-09-20T17:50:58Z"
 }
