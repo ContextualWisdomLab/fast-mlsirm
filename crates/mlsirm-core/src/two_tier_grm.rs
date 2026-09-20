@@ -1622,9 +1622,10 @@ pub fn fit_two_tier_grm_fipc(
                 mean = previous_mean;
                 covariance = previous_covariance;
                 specific_sd = previous_specific_sd;
+                // After restore, borrow the restored state (previous_* were moved).
                 let mut mean_alpha = 0.5;
                 while mean_alpha >= 1e-6 {
-                    let candidate_mean: Vec<f64> = previous_mean
+                    let candidate_mean: Vec<f64> = mean
                         .iter()
                         .zip(&target_mean)
                         .map(|(&old, &target)| old + mean_alpha * (target - old))
@@ -1639,8 +1640,8 @@ pub fn fit_two_tier_grm_fipc(
                         &log_ws,
                         ts_std,
                         &candidate_mean,
-                        &previous_covariance,
-                        &previous_specific_sd,
+                        &covariance,
+                        &specific_sd,
                         n_grid,
                     );
                     if mean_ll.is_some_and(|value| {
