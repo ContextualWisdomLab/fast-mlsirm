@@ -21,7 +21,7 @@ except PackageNotFoundError:
 from fast_mlsirm.remote_exec import (
     CohortMismatchError,
     ExecutionFloatPath,
-    FORBIDDEN_REMOTE_JOB_FAMILIES,
+    INTERNALLY_UNSHARDABLE_REMOTE_JOB_FAMILIES,
     INDEX_SEED_STEP,
     LoopbackExecutor,
     OutcomeCommitLedger,
@@ -34,6 +34,7 @@ from fast_mlsirm.remote_exec import (
     SEED_DERIVATION_RULE,
     SubprocessExecutor,
     admit_remote_job_family,
+    admit_remote_job_internal_shard,
     derive_index_seed,
     envelope_fingerprint,
 )
@@ -102,10 +103,23 @@ def test_legal_job_families_accepted(family: RemoteJobFamily) -> None:
     assert admit_remote_job_family(family.value) is family
 
 
-@pytest.mark.parametrize("forbidden", sorted(FORBIDDEN_REMOTE_JOB_FAMILIES))
-def test_forbidden_job_families_rejected(forbidden: str) -> None:
-    with pytest.raises(ValueError, match="not a legal remote split unit"):
-        admit_remote_job_family(forbidden)
+@pytest.mark.parametrize(
+    "family", sorted(INTERNALLY_UNSHARDABLE_REMOTE_JOB_FAMILIES)
+)
+def test_sequential_families_allow_whole_call_remote_placement(family: str) -> None:
+    admitted = admit_remote_job_family(family)
+    envelope = _envelope(family=admitted)
+
+    assert envelope.family.value == family
+    assert RemoteJobEnvelope.from_dict(envelope.to_dict()) == envelope
+
+
+@pytest.mark.parametrize(
+    "family", sorted(INTERNALLY_UNSHARDABLE_REMOTE_JOB_FAMILIES)
+)
+def test_sequential_families_reject_internal_sharding(family: str) -> None:
+    with pytest.raises(ValueError, match="cannot be sharded inside one call"):
+        admit_remote_job_internal_shard(family)
 
 
 def test_envelope_round_trip_json_is_stable() -> None:

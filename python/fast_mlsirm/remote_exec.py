@@ -53,14 +53,21 @@ _MAX_RUN_ID = 128
 
 
 class RemoteJobFamily(str, Enum):
-    """Numerical families that admit index-derived-seed remote split units."""
+    """Numerical families that admit whole-call remote placement."""
 
     FIT_RESTART = "fit_restart"
     SCORING_PERSON = "scoring_person"
     MC_REPLICATE = "mc_replicate"
+    SE_DERIVATIVES = "se_derivatives"
+    REGRESSION_CONTRASTS = "regression_contrasts"
+    EM_M_STEP = "em_m_step"
+    FIPC = "fipc"
+    TWO_TIER = "two_tier"
 
 
-FORBIDDEN_REMOTE_JOB_FAMILIES: frozenset[str] = frozenset(
+# These families may run remotely as complete calls. Only partitioning their
+# sequential internals across workers is disallowed.
+INTERNALLY_UNSHARDABLE_REMOTE_JOB_FAMILIES: frozenset[str] = frozenset(
     {
         "se_derivatives",
         "regression_contrasts",
@@ -143,17 +150,12 @@ def derive_index_seed(base_seed: int, unit_index: int) -> int:
 
 
 def admit_remote_job_family(value: object) -> RemoteJobFamily:
-    """Normalize one job family and reject unsplittable families fail-closed."""
+    """Normalize a family for placement of one complete call on a remote worker."""
     if type(value) is RemoteJobFamily:
         return value
     if type(value) is not str:
         raise ValueError("job family must be a RemoteJobFamily or string")
     normalized = _text(value, "job family", maximum=64).lower()
-    if normalized in FORBIDDEN_REMOTE_JOB_FAMILIES:
-        raise ValueError(
-            f"job family {normalized!r} is not a legal remote split unit "
-            f"(forbidden: {sorted(FORBIDDEN_REMOTE_JOB_FAMILIES)})"
-        )
     try:
         return RemoteJobFamily(normalized)
     except ValueError as exc:
@@ -161,6 +163,16 @@ def admit_remote_job_family(value: object) -> RemoteJobFamily:
         raise ValueError(
             f"job family {normalized!r} must be one of {legal}"
         ) from exc
+
+
+def admit_remote_job_internal_shard(value: object) -> RemoteJobFamily:
+    """Reject families whose sequential internals must remain inside one call."""
+    family = admit_remote_job_family(value)
+    if family.value in INTERNALLY_UNSHARDABLE_REMOTE_JOB_FAMILIES:
+        raise ValueError(
+            f"job family {family.value!r} cannot be sharded inside one call"
+        )
+    return family
 
 
 @dataclass(frozen=True, slots=True)
