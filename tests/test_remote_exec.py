@@ -8,8 +8,10 @@ from __future__ import annotations
 import json
 import multiprocessing
 import os
+import queue
 import socket
 import sqlite3
+import time
 
 import pytest
 from importlib.metadata import PackageNotFoundError, version
@@ -94,6 +96,46 @@ def _commit_sqlite_candidate(database: str, candidate: str, start, result_queue)
     start.wait()
     committed = SQLiteOutcomeCommitLedger(database).commit_success(fingerprint, outcome)
     result_queue.put(committed.to_dict())
+
+
+def _stall(stop) -> None:
+    stop.wait()
+
+
+def _collect_process_results(processes, result_queue, *, timeout: float):
+    deadline = time.monotonic() + timeout
+    try:
+        try:
+            results = [
+                result_queue.get(timeout=max(0, deadline - time.monotonic()))
+                for _ in processes
+            ]
+        except queue.Empty as error:
+            raise TimeoutError("child process did not return a result") from error
+        for process in processes:
+            process.join(max(0, deadline - time.monotonic()))
+            if process.is_alive():
+                raise TimeoutError("child process did not exit")
+            assert process.exitcode == 0
+        return results
+    finally:
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+        cleanup_deadline = time.monotonic() + 2
+        for process in processes:
+            if process.pid is not None:
+                process.join(max(0, cleanup_deadline - time.monotonic()))
+        for process in processes:
+            if process.is_alive():
+                process.kill()
+        kill_deadline = time.monotonic() + 2
+        for process in processes:
+            if process.is_alive():
+                process.join(max(0, kill_deadline - time.monotonic()))
+            assert not process.is_alive()
+        result_queue.close()
+        result_queue.join_thread()
 
 
 def _manifest(*, payload_sha256: str = _SHA, source_sha256: str = _SHA_B) -> RemoteRunManifest:
@@ -409,15 +451,12 @@ def test_sqlite_ledger_deduplicates_success_across_executor_processes(tmp_path) 
 
     first_process = context.Process(target=_run_sqlite_executor, args=(str(database), results))
     first_process.start()
-    first_process.join(30)
-    assert first_process.exitcode == 0
-    first = results.get(timeout=5)
+    first = _collect_process_results((first_process,), results, timeout=30)[0]
 
+    results = context.Queue()
     resumed_process = context.Process(target=_run_sqlite_executor, args=(str(database), results))
     resumed_process.start()
-    resumed_process.join(30)
-    assert resumed_process.exitcode == 0
-    assert results.get(timeout=5) == first
+    assert _collect_process_results((resumed_process,), results, timeout=30)[0] == first
     assert SQLiteOutcomeCommitLedger(database).successful_count(first["envelope_fingerprint"]) == 1
 
 
@@ -436,16 +475,27 @@ def test_sqlite_ledger_concurrent_writers_return_one_first_success(tmp_path) -> 
     for writer in writers:
         writer.start()
     start.set()
-    for writer in writers:
-        writer.join(30)
-        assert writer.exitcode == 0
-
-    committed = [results.get(timeout=5), results.get(timeout=5)]
+    committed = _collect_process_results(writers, results, timeout=30)
     assert committed[0] == committed[1]
     assert committed[0]["result"]["candidate"] in {"a", "b"}
     assert SQLiteOutcomeCommitLedger(database).successful_count(
         committed[0]["envelope_fingerprint"]
     ) == 1
+
+
+def test_sqlite_process_cleanup_reaps_a_stalled_child() -> None:
+    context = multiprocessing.get_context("spawn")
+    stop = context.Event()
+    results = context.Queue()
+    child = context.Process(target=_stall, args=(stop,))
+    child.start()
+    started = time.monotonic()
+
+    with pytest.raises(TimeoutError, match="did not return a result"):
+        _collect_process_results((child,), results, timeout=0.2)
+
+    assert time.monotonic() - started < 5
+    assert not child.is_alive()
 
 
 def test_sqlite_ledger_closes_connections_after_repeated_calls(tmp_path, monkeypatch) -> None:
