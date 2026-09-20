@@ -63,3 +63,11 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`). This bypasses literal checks and can introduce invalid float states.
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed Python's float limits silently become `inf` when parsed by default.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts string representations to floats and validates them using `math.isfinite()`. Ensure the necessary modules like `math` are imported at the top level to avoid overhead in the parsing hot-path.
+## 2026-09-20 - Fix Semgrep SAST vulnerabilities (dangerous-globals-use, non-literal-import)
+**Vulnerability:** The Semgrep CI check identified two Medium+ SAST vulnerabilities:
+1. `dangerous-globals-use` in `fast_mlsirm/dif.py`: Dynamic dictionary lookups via `globals()` with string keys are flagged as a potential code execution vector.
+2. `non-literal-import` in `tools/inventory_public_api.py`: Dynamic module imports via `importlib.import_module()` based on untrusted/unconstrained string input can lead to arbitrary code execution.
+**Learning:** Security analysis tools like Semgrep strictly enforce best practices. In `dif.py`, `globals()` isn't necessary when we can reference the functions directly in a loop. In internal scripts, dynamic imports are sometimes necessary, but they must be properly sandboxed/whitelisted to prove they only act on expected internal code.
+**Prevention:**
+1. Avoid `globals()` where possible. If mapping strings to functions is needed, construct an explicit `dict` containing the allowed function references.
+2. For dynamic imports, implement an explicit prefix/whitelist check (e.g., `modname.startswith("fast_mlsirm.")`) before calling `importlib.import_module()` to assure the static analyzer the input is bounded to safe paths.
