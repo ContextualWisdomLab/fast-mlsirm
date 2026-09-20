@@ -13,8 +13,9 @@ from itertools import product as iterproduct
 import numpy as np
 
 from .estimators.marginal import compute_grm_category_logprobs
+from .estimators.mmle import equal_probability_normal_nodes
 
-__all__ = ["compute_expected_graded_item_score"]
+__all__ = ["compute_expected_graded_item_score", "expected_graded_scale_score"]
 
 
 def _expected_category_score_from_linear_predictor(
@@ -142,3 +143,109 @@ def compute_expected_graded_item_score(
             thresholds_arr,
         )
     return expected
+
+
+def expected_graded_scale_score(
+    slopes: np.ndarray,
+    thresholds: np.ndarray,
+    theta: np.ndarray,
+    integrate_columns: Sequence[Sequence[int]],
+    factor_variances: np.ndarray,
+    *,
+    n_nodes: int,
+) -> float:
+    """Return the expected total graded scale score ``E[T | G]`` after integration.
+
+    Builds equal-probability standard-normal quadrature with
+    :func:`~fast_mlsirm.estimators.mmle.equal_probability_normal_nodes`,
+    scales integrated dimensions by ``sqrt(factor_variances[d])`` (mean zero),
+    and sums per-item expectations from
+    :func:`~fast_mlsirm.graded_item.compute_expected_graded_item_score`.
+    Non-integrated coordinates of ``theta`` (for example a plugged general
+    factor) remain fixed at caller-supplied values.
+
+    Parameters
+    ----------
+    slopes:
+        ``(n_items, n_dims)`` item discrimination matrix.
+    thresholds:
+        ``(n_items, K - 1)`` cumulative boundary intercepts; every row must
+        have the same number of thresholds.
+    theta:
+        Fixed latent vector with non-integrated coordinates already set.
+    integrate_columns:
+        Per-item column indices to replace with scaled quadrature nodes.
+    factor_variances:
+        ``(n_dims,)`` latent factor **variances** (not standard deviations).
+        Integrated columns use nodes ``sqrt(factor_variances[d]) * z`` where
+        ``z`` are the standard-normal equal-probability nodes.
+    n_nodes:
+        Number of equal-probability quadrature nodes per integrated dimension.
+        Required with no default; callers choose precision for their study.
+
+    Returns
+    -------
+    float
+        ``sum_i E[Y_i | G]`` after integrating the requested columns for
+        each item.
+    """
+    slopes_arr = np.asarray(slopes, dtype=np.float64)
+    if slopes_arr.ndim != 2 or slopes_arr.shape[0] == 0:
+        raise ValueError("slopes must be a non-empty 2-D array")
+    if not np.all(np.isfinite(slopes_arr)):
+        raise ValueError("slopes must be finite")
+
+    n_items, n_dims = slopes_arr.shape
+
+    theta_arr = np.asarray(theta, dtype=np.float64)
+    if theta_arr.ndim != 1 or theta_arr.shape != (n_dims,):
+        raise ValueError("theta must be a 1-D array with length n_dims")
+    if not np.all(np.isfinite(theta_arr)):
+        raise ValueError("theta must be finite")
+
+    thresholds_arr = np.asarray(thresholds, dtype=np.float64)
+    if thresholds_arr.ndim != 2 or thresholds_arr.shape[0] != n_items:
+        raise ValueError("thresholds must be a 2-D array with shape (n_items, K-1)")
+    if thresholds_arr.shape[1] < 1:
+        raise ValueError("thresholds must have at least one boundary per item")
+    if not np.all(np.isfinite(thresholds_arr)):
+        raise ValueError("thresholds must be finite")
+
+    variances = np.asarray(factor_variances, dtype=np.float64)
+    if variances.ndim != 1 or variances.shape != (n_dims,):
+        raise ValueError("factor_variances must be a 1-D array with length n_dims")
+    if not np.all(np.isfinite(variances)):
+        raise ValueError("factor_variances must be finite")
+    if np.any(variances < 0.0):
+        raise ValueError("factor_variances must be non-negative")
+
+    if len(integrate_columns) != n_items:
+        raise ValueError("integrate_columns must have one entry per item")
+
+    if isinstance(n_nodes, (bool, np.bool_)) or not isinstance(n_nodes, (int, np.integer)):
+        raise ValueError("n_nodes must be a positive integer")
+    validated_nodes = int(n_nodes)
+    if validated_nodes < 1:
+        raise ValueError("n_nodes must be >= 1")
+
+    base_nodes, base_weights = equal_probability_normal_nodes(validated_nodes)
+
+    scaled_by_column: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+    for column in range(n_dims):
+        scale = float(np.sqrt(variances[column]))
+        scaled_by_column[column] = (base_nodes * scale, base_weights.copy())
+
+    total = 0.0
+    for item_index in range(n_items):
+        columns = [int(column) for column in integrate_columns[item_index]]
+        item_nodes = tuple(scaled_by_column[column][0] for column in columns)
+        item_weights = tuple(scaled_by_column[column][1] for column in columns)
+        total += compute_expected_graded_item_score(
+            slopes_arr[item_index],
+            thresholds_arr[item_index],
+            theta_arr,
+            columns,
+            item_nodes,
+            item_weights,
+        )
+    return total
