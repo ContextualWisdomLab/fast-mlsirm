@@ -4,8 +4,11 @@
 reads completed outcomes through a consumer group. `ValkeyStreamsOutcomeStore`
 first reclaims idle pending records with `XAUTOCLAIM`, then reads new records
 with `XREADGROUP`, validates the fingerprint against the serialized outcome,
-and acknowledges each accepted record with `XACK`. When multiple accepted
-records carry the same envelope fingerprint, the greatest stream ID wins.
+and acknowledges each accepted record with `XACK`. Durable lookup uses a
+companion hash at ``{stream}:committed`` with ``HSETNX`` so the first
+successful outcome matches the SQLite ledger contract across process restarts
+and consumer-group members. ``run_batch`` drains until an explicit deadline
+instead of a single batch.
 
 The adapter accepts a synchronous redis-py-compatible client supplied by the
 host application; fast-mlsirm does not add a Valkey client dependency. The
