@@ -185,6 +185,18 @@ fn zero_within_variance_yields_unit_icc_when_between_variance_is_positive() {
 }
 
 #[test]
+fn clusterwise_constant_decimal_values_preserve_exact_zero_within_variance() {
+    let result = one_way_random_intercept_icc(
+        &[1_u64, 1, 1, 2, 2, 2],
+        &[0.1, 0.1, 0.1, 0.2, 0.2, 0.2],
+    )
+    .expect("clusterwise constants define exact zero within variance");
+
+    assert_eq!(result.within_variance.to_bits(), 0.0_f64.to_bits());
+    assert_eq!(result.icc.to_bits(), 1.0_f64.to_bits());
+}
+
+#[test]
 fn negative_method_of_moments_between_component_is_bounded_at_zero() {
     let cluster_ids = [1_u64, 1, 2, 2, 3, 3];
     let outcomes = [-1.0, 1.0, -1.0, 1.0, -1.0, 1.0];
