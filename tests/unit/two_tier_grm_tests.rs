@@ -28,10 +28,12 @@
 //! Psychological Measurement, 31*(1), 4-19.
 //! https://doi.org/10.1177/0146621606289485
 
+use crate::em_progress::EmIterationProgress;
 use crate::two_tier_grm::{
-    fit_two_tier_grm, two_tier_grm_marginal_loglik, two_tier_grm_marginal_loglik_brute,
-    TwoTierGrmConfig,
+    fit_two_tier_grm, fit_two_tier_grm_with_progress, two_tier_grm_marginal_loglik,
+    two_tier_grm_marginal_loglik_brute, TwoTierGrmConfig,
 };
+use std::ops::ControlFlow;
 
 // ---------------------------------------------------------------------------
 // Shared tiny two-tier problem: 10 items, P = 2 primaries in simple
@@ -536,4 +538,83 @@ fn non_convergence_is_reported_not_substituted() {
         fit.termination_reason, "max_iter_reached",
         "termination reason must say max_iter_reached"
     );
+}
+
+#[test]
+fn progress_callback_does_not_change_fit() {
+    let (y, n_persons) = tiny_data();
+    let cfg = valid_config();
+    let silent = fit_two_tier_grm(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("silent fit must succeed");
+    let mut reports = Vec::<EmIterationProgress>::new();
+    let mut on_progress = |report: EmIterationProgress| {
+        reports.push(report);
+        ControlFlow::Continue(())
+    };
+    let with_progress = fit_two_tier_grm_with_progress(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+        Some(&mut on_progress),
+    )
+    .expect("progress fit must succeed");
+    assert!(!reports.is_empty(), "progress callback must fire at least once");
+    assert_eq!(silent.n_iter, with_progress.n_iter);
+    assert_eq!(silent.converged, with_progress.converged);
+    assert_eq!(silent.termination_reason, with_progress.termination_reason);
+    assert_eq!(silent.loglik_trace, with_progress.loglik_trace);
+    assert_eq!(silent.a_primary, with_progress.a_primary);
+    assert_eq!(silent.a_specific, with_progress.a_specific);
+    assert_eq!(silent.threshold, with_progress.threshold);
+    assert_eq!(silent.phi, with_progress.phi);
+}
+
+#[test]
+fn progress_callback_can_cancel_before_later_iterations_or_starts() {
+    let (y, n_persons) = tiny_data();
+    let cfg = TwoTierGrmConfig {
+        n_starts: 3,
+        ..valid_config()
+    };
+    let mut reports = 0usize;
+    let mut cancel = |_report: EmIterationProgress| {
+        reports += 1;
+        ControlFlow::Break(())
+    };
+
+    let err = fit_two_tier_grm_with_progress(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+        Some(&mut cancel),
+    )
+    .expect_err("callback cancellation must abort the whole multi-start fit");
+
+    assert_eq!(reports, 1, "no later iteration or start may run");
+    assert_eq!(err, "progress callback cancelled fit");
 }

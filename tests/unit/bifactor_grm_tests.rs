@@ -25,8 +25,10 @@
 
 use crate::bifactor_grm::{
     bifactor_grm_marginal_loglik, bifactor_grm_marginal_loglik_brute, fit_bifactor_grm,
-    BifactorGrmConfig,
+    fit_bifactor_grm_with_progress, BifactorGrmConfig,
 };
+use crate::em_progress::EmIterationProgress;
+use std::ops::ControlFlow;
 
 // ---------------------------------------------------------------------------
 // Dimension-reduction exactness (tiny model, Q = 7).
@@ -458,6 +460,36 @@ fn non_convergence_is_reported_not_substituted() {
         "trace must hold the initial and one updated loglik; got {}",
         fit.loglik_trace.len()
     );
+}
+
+#[test]
+fn progress_callback_can_cancel_before_later_iterations_or_starts() {
+    let (y, n_persons) = tiny_data();
+    let cfg = BifactorGrmConfig {
+        n_starts: 3,
+        ..valid_config()
+    };
+    let mut reports = 0usize;
+    let mut cancel = |_report: EmIterationProgress| {
+        reports += 1;
+        ControlFlow::Break(())
+    };
+
+    let err = fit_bifactor_grm_with_progress(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+        Some(&mut cancel),
+    )
+    .expect_err("callback cancellation must abort the whole multi-start fit");
+
+    assert_eq!(reports, 1, "no later iteration or start may run");
+    assert_eq!(err, "progress callback cancelled fit");
 }
 
 // ---------------------------------------------------------------------------
