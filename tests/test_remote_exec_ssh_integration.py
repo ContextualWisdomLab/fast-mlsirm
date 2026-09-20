@@ -32,11 +32,7 @@ from fast_mlsirm.remote_exec import (
 _SHA = "a" * 64
 _SHA_B = "b" * 64
 _SHA_C = "c" * 64
-DEFAULT_REMOTE_SSH_HOST = "seongho@192.168.68.3"
-DEFAULT_REMOTE_INTERPRETER = os.environ.get(
-    "FAST_MLSIRM_REMOTE_INTERPRETER",
-    "/data/orca/workspaces/fmls-2048-remote-exec-s1/.venv/bin/python3.12",
-)
+_SSH_PROBE_TIMEOUT_SECONDS = 20.0
 
 
 def _manifest() -> RemoteRunManifest:
@@ -64,22 +60,27 @@ def _envelope() -> RemoteJobEnvelope:
 
 
 def _ssh_reachable(remote_host: str) -> tuple[bool, str]:
-    probe = subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "StrictHostKeyChecking=accept-new",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=8",
-            remote_host,
-            "hostname",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        probe = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=8",
+                "--",
+                remote_host,
+                "hostname",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_SSH_PROBE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"ssh probe timed out after {_SSH_PROBE_TIMEOUT_SECONDS:.0f}s"
     if probe.returncode != 0:
         detail = (probe.stderr or probe.stdout or "").strip()
         return False, detail or f"ssh exited {probe.returncode}"
@@ -89,31 +90,42 @@ def _ssh_reachable(remote_host: str) -> tuple[bool, str]:
 @pytest.mark.integration
 def test_two_host_mc_replicate_over_ssh_when_reachable() -> None:
     """Run one legal mc_replicate unit on a second host when SSH credentials exist."""
-    remote_host = os.environ.get("FAST_MLSIRM_REMOTE_SSH_HOST", DEFAULT_REMOTE_SSH_HOST)
+    remote_host = os.environ.get("FAST_MLSIRM_REMOTE_SSH_HOST")
+    remote_interpreter = os.environ.get("FAST_MLSIRM_REMOTE_INTERPRETER")
+    if not remote_host or not remote_interpreter:
+        pytest.skip(
+            "set FAST_MLSIRM_REMOTE_SSH_HOST and FAST_MLSIRM_REMOTE_INTERPRETER "
+            "to run the two-host SSH integration probe"
+        )
+
     reachable, detail = _ssh_reachable(remote_host)
     if not reachable:
         pytest.skip(f"SSH host not reachable for two-host probe ({remote_host}): {detail}")
 
-    remote_interpreter = os.environ.get(
-        "FAST_MLSIRM_REMOTE_INTERPRETER",
-        DEFAULT_REMOTE_INTERPRETER,
-    )
-    import_check = subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "StrictHostKeyChecking=accept-new",
-            "-o",
-            "BatchMode=yes",
-            remote_host,
-            remote_interpreter,
-            "-c",
-            "import fast_mlsirm; print(fast_mlsirm.__version__)",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        import_check = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                "-o",
+                "BatchMode=yes",
+                "--",
+                remote_host,
+                remote_interpreter,
+                "-c",
+                "import fast_mlsirm; print(fast_mlsirm.__version__)",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_SSH_PROBE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.skip(
+            f"SSH import probe timed out after {_SSH_PROBE_TIMEOUT_SECONDS:.0f}s "
+            f"on {remote_host}"
+        )
     if import_check.returncode != 0:
         pytest.fail(
             "SSH host reachable but fast_mlsirm import failed: "
@@ -136,7 +148,7 @@ def test_two_host_mc_replicate_over_ssh_when_reachable() -> None:
     assert outcome.driver_host == driver_host
     assert outcome.driver_pid == driver_pid
     assert outcome.provenance.worker_host == remote_host
-    assert outcome.provenance.worker_pid != driver_pid
+    assert type(outcome.provenance.worker_pid) is int and outcome.provenance.worker_pid > 0
     assert outcome.provenance.cross_host_execution is True
     assert outcome.provenance.hostname != driver_host
     assert outcome.result["library_function"] == "fast_mlsirm.simulate"

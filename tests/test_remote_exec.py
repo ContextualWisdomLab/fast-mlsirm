@@ -525,3 +525,113 @@ def test_subprocess_executor_rejects_payload_identity_mismatch() -> None:
             worker_manifest=manifest,
             payload={**payload, "responses": [[0]]},
         )
+
+
+def _fake_completed_worker(stdout: str, *, returncode: int = 0):
+    class _Completed:
+        def __init__(self) -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+
+    return _Completed()
+
+
+def test_subprocess_executor_fails_closed_on_worker_library_version_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reported worker library_version must match the cohort manifest."""
+    import fast_mlsirm.remote_exec as remote_exec
+
+    manifest = _manifest()
+    envelope = _envelope(family=RemoteJobFamily.MC_REPLICATE, unit_index=0, manifest=manifest)
+    worker_payload = {
+        "delivery_state": RemoteJobDeliveryState.COMPLETED.value,
+        "result": {"ok": True},
+        "worker_pid": 4242,
+        "hostname": "remote-worker",
+        "architecture": "arm64",
+        "operating_system": "Darwin",
+        "library_version": "0.0.1",
+        "wall_clock_seconds": 0.01,
+    }
+    monkeypatch.setattr(
+        remote_exec,
+        "_invoke_worker_process",
+        lambda *args, **kwargs: _fake_completed_worker(json.dumps(worker_payload)),
+    )
+
+    outcome = SubprocessExecutor(socket.gethostname()).run_batch(
+        (envelope,),
+        worker_manifest=manifest,
+    )[0]
+
+    assert outcome.delivery_state is RemoteJobDeliveryState.FAILED
+    assert "library_version" in (outcome.error_message or "")
+    assert outcome.provenance.library_version == manifest.library_version
+
+
+def test_subprocess_executor_fails_closed_on_unknown_delivery_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing/unknown delivery_state must not become a committed success."""
+    import fast_mlsirm.remote_exec as remote_exec
+
+    manifest = _manifest()
+    envelope = _envelope(family=RemoteJobFamily.MC_REPLICATE, unit_index=1, manifest=manifest)
+    worker_payload = {
+        "worker_pid": 4242,
+        "hostname": "remote-worker",
+        "architecture": "arm64",
+        "operating_system": "Darwin",
+        "library_version": LIBRARY_VERSION,
+        "wall_clock_seconds": 0.01,
+    }
+    monkeypatch.setattr(
+        remote_exec,
+        "_invoke_worker_process",
+        lambda *args, **kwargs: _fake_completed_worker(json.dumps(worker_payload)),
+    )
+
+    outcome = SubprocessExecutor(socket.gethostname(), ledger=OutcomeCommitLedger()).run_batch(
+        (envelope,),
+        worker_manifest=manifest,
+    )[0]
+
+    assert outcome.delivery_state is RemoteJobDeliveryState.FAILED
+    assert "delivery_state" in (outcome.error_message or "")
+    assert outcome.output_identity_sha256 is None
+
+
+def test_subprocess_executor_fails_closed_on_non_finite_wall_clock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-finite wall_clock_seconds must return FAILED without aborting the batch."""
+    import fast_mlsirm.remote_exec as remote_exec
+
+    manifest = _manifest()
+    envelope = _envelope(family=RemoteJobFamily.MC_REPLICATE, unit_index=2, manifest=manifest)
+    worker_payload = {
+        "delivery_state": RemoteJobDeliveryState.COMPLETED.value,
+        "result": {"ok": True},
+        "worker_pid": 4242,
+        "hostname": "remote-worker",
+        "architecture": "arm64",
+        "operating_system": "Darwin",
+        "library_version": LIBRARY_VERSION,
+        "wall_clock_seconds": float("inf"),
+    }
+    monkeypatch.setattr(
+        remote_exec,
+        "_invoke_worker_process",
+        lambda *args, **kwargs: _fake_completed_worker(json.dumps(worker_payload)),
+    )
+
+    outcome = SubprocessExecutor(socket.gethostname()).run_batch(
+        (envelope,),
+        worker_manifest=manifest,
+    )[0]
+
+    assert outcome.delivery_state is RemoteJobDeliveryState.FAILED
+    assert "wall_clock_seconds" in (outcome.error_message or "")
+

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import hashlib
 import json
 import socket
@@ -172,19 +173,28 @@ def _two_tier_payload() -> dict[str, object]:
     }
 
 
-FAMILY_PAYLOADS: tuple[tuple[RemoteJobFamily, dict[str, object] | None], ...] = (
-    (RemoteJobFamily.MC_REPLICATE, None),
-    (RemoteJobFamily.FIT_RESTART, _fit_payload(max_iter=1)),
-    (RemoteJobFamily.SCORING_PERSON, {
+def _scoring_person_payload() -> dict[str, object]:
+    return {
         "a": [1.0, 1.2, 0.8],
         "b": [-0.5, 0.0, 0.5],
         "responses": [[1, 1, 0]],
-    }),
-    (RemoteJobFamily.EM_M_STEP, _fit_payload(max_iter=1)),
-    (RemoteJobFamily.SE_DERIVATIVES, _se_derivatives_payload()),
-    (RemoteJobFamily.REGRESSION_CONTRASTS, _regression_contrasts_payload()),
-    (RemoteJobFamily.FIPC, _fipc_payload()),
-    (RemoteJobFamily.TWO_TIER, _two_tier_payload()),
+    }
+
+
+# Lazy factories keep collection green when fast_mlsirm._core is unavailable
+# (FIPC payload construction calls fit_polytomous at import time otherwise).
+FAMILY_PAYLOADS: tuple[
+    tuple[RemoteJobFamily, Callable[[], dict[str, object] | None]],
+    ...,
+] = (
+    (RemoteJobFamily.MC_REPLICATE, lambda: None),
+    (RemoteJobFamily.FIT_RESTART, lambda: _fit_payload(max_iter=1)),
+    (RemoteJobFamily.SCORING_PERSON, _scoring_person_payload),
+    (RemoteJobFamily.EM_M_STEP, lambda: _fit_payload(max_iter=1)),
+    (RemoteJobFamily.SE_DERIVATIVES, _se_derivatives_payload),
+    (RemoteJobFamily.REGRESSION_CONTRASTS, _regression_contrasts_payload),
+    (RemoteJobFamily.FIPC, _fipc_payload),
+    (RemoteJobFamily.TWO_TIER, _two_tier_payload),
 )
 
 
@@ -194,12 +204,13 @@ def test_remote_job_family_enum_is_family_complete() -> None:
     assert handled == set(RemoteJobFamily)
 
 
-@pytest.mark.parametrize(("family", "payload"), FAMILY_PAYLOADS)
+@pytest.mark.parametrize(("family", "payload_factory"), FAMILY_PAYLOADS)
 def test_execute_envelope_handles_every_family(
     family: RemoteJobFamily,
-    payload: dict[str, object] | None,
+    payload_factory,
 ) -> None:
     pytest.importorskip("fast_mlsirm._core")
+    payload = payload_factory()
     manifest = _manifest() if payload is None else _payload_manifest(payload)
     envelope = _envelope(family=family, payload_manifest=manifest)
     result = execute_envelope(envelope, payload)
@@ -207,13 +218,14 @@ def test_execute_envelope_handles_every_family(
     assert type(result["library_function"]) is str
 
 
-@pytest.mark.parametrize(("family", "payload"), FAMILY_PAYLOADS)
+@pytest.mark.parametrize(("family", "payload_factory"), FAMILY_PAYLOADS)
 def test_local_and_subprocess_outcomes_match_for_family(
     family: RemoteJobFamily,
-    payload: dict[str, object] | None,
+    payload_factory,
 ) -> None:
     """Local in-process execution and SubprocessExecutor agree on output identity."""
     pytest.importorskip("fast_mlsirm._core")
+    payload = payload_factory()
     manifest = _manifest() if payload is None else _payload_manifest(payload)
     envelope = _envelope(family=family, payload_manifest=manifest)
     local_result = execute_envelope(envelope, payload)
