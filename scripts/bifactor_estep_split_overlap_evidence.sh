@@ -14,11 +14,12 @@ mkdir -p "$(dirname "$OUT")"
 {
   echo "# bifactor E-step split overlap evidence (PR #2043)"
   echo "# captured: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  echo "# command: cargo test --manifest-path crates/mlsirm-core/Cargo.toml --lib measure_concurrent_split_estep_vs_cpu_reference -- --nocapture"
+  echo "# git_head: $(git rev-parse HEAD)"
+  echo "# command: cargo test --manifest-path crates/mlsirm-core/Cargo.toml --lib measure_concurrent_split_estep_vs_cpu_reference -- --ignored --nocapture"
   echo "# host: $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown)"
   echo "# metal: $(system_profiler SPDisplaysDataType 2>/dev/null | awk '/Metal Support/ {print $3, $4; exit}')"
   echo
-  cargo test --manifest-path crates/mlsirm-core/Cargo.toml --lib measure_concurrent_split_estep_vs_cpu_reference -- --nocapture
+  cargo test --manifest-path crates/mlsirm-core/Cargo.toml --lib measure_concurrent_split_estep_vs_cpu_reference -- --ignored --nocapture
 } 2>&1 | tee "$OUT"
 
 echo "Wrote $OUT"

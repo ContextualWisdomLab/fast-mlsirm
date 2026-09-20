@@ -222,7 +222,9 @@ fn max_count_abs_diff(a: &[Vec<Vec<f64>>], b: &[Vec<Vec<f64>>]) -> f64 {
 }
 
 /// Manual overlap + parity evidence for PR #2043 (not a CI gate).
+/// Excluded from default `cargo test`; run with `-- --ignored`.
 #[test]
+#[ignore = "manual PR #2043 overlap evidence; not a default-suite gate"]
 fn measure_concurrent_split_estep_vs_cpu_reference() {
     use std::time::Instant;
 

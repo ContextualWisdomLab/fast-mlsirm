@@ -1,9 +1,10 @@
 //! Same-host CPU+GPU concurrent bifactor E-step person split (#2001 L3).
 //!
 //! Persons are partitioned into disjoint shards; each shard runs on one device.
-//! Partial log-likelihoods and expected counts merge in fixed ascending
-//! `person_start` order using `f64` accumulation so the result does not depend
-//! on shard count or completion order.
+//! Partials merge in fixed ascending `person_start` order: per-person `f64`
+//! log-likelihood terms concatenate in that person order (bit-exact across
+//! shard counts), while expected-count tensors sum commutatively after the
+//! same sort so their totals do not depend on completion order.
 
 use crate::bifactor_grm::{log_sum_exp, general_only_without_prior, Validated};
 

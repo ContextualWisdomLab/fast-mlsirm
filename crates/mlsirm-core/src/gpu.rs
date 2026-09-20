@@ -433,14 +433,32 @@ pub(crate) fn submit_readback(
 }
 
 /// Non-blocking poll for mapped readback buffers.
+///
+/// Acquires mapped views for every staging buffer before unmapping any of
+/// them. A partial ready set returns `None` without calling `Buffer::unmap`,
+/// so a later poll can still complete the same [`PendingGpuReadback`].
 pub(crate) fn try_complete_readback(
     ctx: &GpuContext,
     pending: &PendingGpuReadback,
 ) -> Option<Vec<Vec<f32>>> {
     ctx.device.poll(wgpu::PollType::Poll).ok()?;
-    let mut out = Vec::with_capacity(pending.staging.len());
+    let mut views = Vec::with_capacity(pending.staging.len());
     for s in &pending.staging {
-        out.push(read_mapped(s)?);
+        match s.slice(..).get_mapped_range() {
+            Ok(view) => views.push(view),
+            Err(_) => {
+                // Drop acquired views without unmap so remaining maps stay valid.
+                drop(views);
+                return None;
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(views.len());
+    for (s, view) in pending.staging.iter().zip(views.into_iter()) {
+        let values: Vec<f32> = bytemuck::cast_slice::<u8, f32>(&view).to_vec();
+        drop(view);
+        s.unmap();
+        out.push(values);
     }
     Some(out)
 }

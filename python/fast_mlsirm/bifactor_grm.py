@@ -142,7 +142,8 @@ class BifactorGrmFit:
     ``"numerical_em_stall"`` (relative loglik change met ``tol`` while every
     item parameter remained at its start — never reported as
     ``tolerance_met``; see #1976); ``best_start`` the winning start in
-    ``0..n_starts``.
+    ``0..n_starts``. ``effective_device`` / ``estep_shards`` carry #2001 L3
+    E-step provenance when the Rust core returns them (else ``None``).
     """
 
     a_general: np.ndarray
@@ -160,6 +161,8 @@ class BifactorGrmFit:
     final_loglik_change: float
     best_start: int
     n_parameters: int
+    effective_device: str | None = None
+    estep_shards: list | None = None
 
 
 def fit_bifactor_grm(
@@ -328,6 +331,12 @@ def fit_bifactor_grm(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+        effective_device=(
+            str(res["effective_device"]) if res.get("effective_device") is not None else None
+        ),
+        estep_shards=(
+            list(res["estep_shards"]) if res.get("estep_shards") is not None else None
+        ),
     )
 
 
