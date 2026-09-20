@@ -1039,8 +1039,17 @@ def _worker_subprocess_env() -> Mapping[str, str]:
 
 
 def _worker_module_command(interpreter: str) -> list[str]:
-    """Return argv to run ``fast_mlsirm.remote_worker`` with ``interpreter``."""
+    """Return argv to run ``fast_mlsirm.remote_worker`` with ``interpreter``.
+
+    When ``FAST_MLSIRM_WORKER_ENTRY`` is set to an absolute script path, run that
+    script instead of ``-m fast_mlsirm.remote_worker``. Hosts without a built
+    ``_core`` extension can use a stub entry that imports only the remote worker
+    surface (``mc_replicate`` / ``simulate``) for path validation.
+    """
     normalized = _text(interpreter, "remote_interpreter", maximum=512)
+    entry = os.environ.get("FAST_MLSIRM_WORKER_ENTRY")
+    if entry:
+        return [normalized, _text(entry, "FAST_MLSIRM_WORKER_ENTRY", maximum=1024)]
     return [normalized, "-m", "fast_mlsirm.remote_worker"]
 
 
