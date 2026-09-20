@@ -711,8 +711,17 @@ def expected_total_score_two_tier_given_primary(
     focal = _bounded_integer(focal_primary, "focal_primary", 0, n_primary - 1)
     q = _bounded_integer(q_nuisance, "q_nuisance", 1, MAX_POLY_QUADRATURE_POINTS)
 
+    # When n_specific is not supplied by the fit wrapper, derive from the map.
+    # Fail closed on huge representable indices that would allocate max(map)+1
+    # reference vectors (confirmatory: at most one distinct specific id per item
+    # ⇒ derived n_specific cannot exceed n_items).
     n_specific = int(smap.max()) + 1 if np.any(smap >= 0) else 0
-
+    if n_specific > n_items:
+        raise ValueError(
+            "specific_map implies n_specific="
+            f"{n_specific} > n_items={n_items}; pass a dense 0..K-1 map "
+            "or use from_fit (which supplies fit.n_specific)"
+        )
     p_mean = _as_ref_mean(primary_ref_mean, n_primary, "primary_ref_mean")
     p_sd = _as_ref_sd(primary_ref_sd, n_primary, "primary_ref_sd")
     s_mean = _as_ref_mean(specific_ref_mean, n_specific, "specific_ref_mean")

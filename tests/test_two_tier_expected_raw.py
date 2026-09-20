@@ -371,7 +371,13 @@ def test_specific_map_rejects_noninteger_before_int64_cast() -> None:
 
 
 def test_specific_map_rejects_uint64_wraparound_boundaries() -> None:
-    """uint64 max / 2**63 must not wrap into int64 sentinels or negatives."""
+    """Reject values that would wrap under int64 cast (not that INT64_MAX is allowed).
+
+    Numpy ``uint64.astype(int64)`` wraps: ``uint64.max → -1`` and ``2**63 →
+    INT64_MIN``. This test asserts the pre-cast gate rejects those inputs so
+    they cannot be misread as the specific-free sentinel or a negative index.
+    It does **not** claim ``INT64_MAX`` itself is a valid specific id.
+    """
     from fast_mlsirm.two_tier_grm import (
         _as_specific_map_int64,
         expected_total_score_two_tier_from_fit,
@@ -379,7 +385,7 @@ def test_specific_map_rejects_uint64_wraparound_boundaries() -> None:
 
     u64_max = np.array([np.iinfo(np.uint64).max], dtype=np.uint64)
     two63 = np.array([np.uint64(2**63)], dtype=np.uint64)
-    # Reproduce the wrap that the pre-cast gate must block.
+    # Document the wrap the pre-cast gate must block (astype alone is unsafe).
     assert u64_max.astype(np.int64)[0] == np.int64(-1)
     assert two63.astype(np.int64)[0] == np.iinfo(np.int64).min
 
@@ -397,9 +403,7 @@ def test_specific_map_rejects_uint64_wraparound_boundaries() -> None:
     with pytest.raises(ValueError, match="without wrapping|int64"):
         _call(ap, asp, th, two63, grid, q=5)
 
-    # from_fit path uses the same helper.
     fit = _stub_fit(phi=np.eye(2), n_specific=1)
-    # Stub has 2 items — need length-2 map for from_fit.
     u64_pair = np.array([0, np.iinfo(np.uint64).max], dtype=np.uint64)
     with pytest.raises(ValueError, match="without wrapping|int64"):
         expected_total_score_two_tier_from_fit(
@@ -410,9 +414,19 @@ def test_specific_map_rejects_uint64_wraparound_boundaries() -> None:
             specific_map=u64_pair,
             orthogonal_primary_identification=True,
         )
-    # Boundary just inside int64 max is fine when within n_specific.
     ok_u = np.array([0], dtype=np.uint64)
     assert _as_specific_map_int64(ok_u, n_items=1, n_specific=1)[0] == 0
+
+
+def test_specific_map_rejects_sparse_index_inflating_n_specific() -> None:
+    """Omit-fit path must not allocate max(map)+1 when max >= n_items."""
+    ap = np.array([[1.0], [1.0]])
+    asp = np.array([0.5, 0.5])
+    th = np.array([[1.0, 0.0, -1.0], [1.0, 0.0, -1.0]])
+    grid = np.array([0.0])
+    # Representable int64 index 100 with only 2 items ⇒ derived n_specific=101.
+    with pytest.raises(ValueError, match="n_specific=101 > n_items=2"):
+        _call(ap, asp, th, np.array([0, 100], dtype=np.int64), grid, q=5)
 
 
 def test_collapsed_gh_matches_product_meshgrid_reference() -> None:
