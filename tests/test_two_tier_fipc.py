@@ -12,6 +12,8 @@ import numpy as np
 import pytest
 from fast_mlsirm.two_tier_fipc import (
     execute_two_tier_fipc_group_person_score_payload,
+    fit_and_score_two_tier_fipc_group_persons,
+    fit_two_tier_grm_fipc,
     score_two_tier_fipc_group_persons,
     two_tier_reference_expected_score_moments,
 )
@@ -195,4 +197,77 @@ def test_fit_without_orthogonal_id_confirmation_fails_closed() -> None:
     with pytest.raises(ValueError, match="orthogonal_primary_identification"):
         score_two_tier_fipc_group_persons(
             RESPONSES, fit, SPECIFIC_MAP, ANCHOR, q_primary=5, q_specific=5
+        )
+
+
+def test_estimator_to_score_path_uses_rust_fit_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    fit = _fit()
+    calls: list[tuple[object, ...]] = []
+
+    class _Core:
+        @staticmethod
+        def fit_two_tier_grm_fipc(*args: object) -> dict[str, object]:
+            calls.append(args)
+            return {
+                "a_primary": fit.a_primary,
+                "a_specific": fit.a_specific,
+                "threshold": fit.threshold,
+                "phi": fit.phi,
+                "primary_mean": np.array([0.65, -0.25]),
+                "primary_sd": np.array([1.2, 0.8]),
+                "specific_sd": np.array([1.1, 0.7]),
+                "theta_p_eap": np.zeros((RESPONSES.shape[0], 2)),
+                "theta_p_sd": np.ones((RESPONSES.shape[0], 2)),
+                "category_counts": np.zeros((6, 4), dtype=np.int64),
+                "loglik_trace": np.array([-10.0]),
+                "n_iter": 3,
+                "converged": True,
+                "termination_reason": "tolerance_met",
+                "final_loglik_change": 1e-8,
+                "n_parameters": 20,
+                "orthogonal_primary_identification": True,
+            }
+
+    monkeypatch.setattr("fast_mlsirm.fitstats._core_module", lambda: _Core())
+    result = fit_and_score_two_tier_fipc_group_persons(
+        RESPONSES,
+        np.asarray(fit.a_primary != 0.0),
+        SPECIFIC_MAP,
+        4,
+        2,
+        2,
+        ANCHOR,
+        fit.a_primary,
+        fit.a_specific,
+        fit.threshold,
+        q_primary=5,
+        q_specific=5,
+        max_iter=20,
+        tol=1e-6,
+    )
+    assert len(calls) == 1
+    assert result.fit.primary_mean.tolist() == pytest.approx([0.65, -0.25])
+    assert result.theta_primary_eap.shape == (RESPONSES.shape[0], 2)
+    assert np.all(np.isfinite(result.expected_raw))
+
+
+def test_estimator_symbol_absence_is_explicitly_gated(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("fast_mlsirm.fitstats._core_module", lambda: object())
+    fit = _fit()
+    with pytest.raises(RuntimeError, match="fit_two_tier_grm_fipc"):
+        fit_two_tier_grm_fipc(
+            RESPONSES,
+            np.asarray(fit.a_primary != 0.0),
+            SPECIFIC_MAP,
+            4,
+            2,
+            2,
+            ANCHOR,
+            fit.a_primary,
+            fit.a_specific,
+            fit.threshold,
+            q_primary=5,
+            q_specific=5,
+            max_iter=20,
+            tol=1e-6,
         )

@@ -271,6 +271,191 @@ class TwoTierFipcGroupPersonScores:
     fit: object
 
 
+@dataclass(frozen=True)
+class TwoTierGrmFipcFit:
+    """Python-side representation of the Rust two-tier FIPC result."""
+
+    a_primary: np.ndarray
+    a_specific: np.ndarray
+    threshold: np.ndarray
+    phi: np.ndarray
+    primary_mean: np.ndarray
+    primary_sd: np.ndarray
+    specific_sd: np.ndarray
+    theta_p_eap: np.ndarray
+    theta_p_sd: np.ndarray
+    category_counts: np.ndarray
+    n_cat: int
+    n_primary: int
+    n_specific: int
+    loglik_trace: np.ndarray
+    n_iter: int
+    converged: bool
+    termination_reason: str
+    final_loglik_change: float
+    n_parameters: int
+    orthogonal_primary_identification: bool
+
+
+def fit_two_tier_grm_fipc(
+    responses: np.ndarray,
+    primary_map: np.ndarray,
+    specific_map: np.ndarray,
+    n_cat: int,
+    n_primary: int,
+    n_specific: int,
+    anchor: np.ndarray,
+    fixed_a_primary: np.ndarray,
+    fixed_a_specific: np.ndarray,
+    fixed_threshold: np.ndarray,
+    *,
+    q_primary: int,
+    q_specific: int,
+    max_iter: int,
+    tol: float,
+    newton_iter: int = 10,
+    ridge: float = 1e-8,
+    estimate_specific_vars: bool = False,
+    orthogonal_primary_identification: bool = True,
+) -> TwoTierGrmFipcFit:
+    """Fit two-tier FIPC in the Rust core and adapt its result for scoring.
+
+    This is intentionally gated on the future ``fit_two_tier_grm_fipc`` PyO3
+    symbol.  Until that estimator is available, callers receive a clear
+    runtime error instead of a metadata-only or single-group substitute.
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    estimator = None if core is None else getattr(core, "fit_two_tier_grm_fipc", None)
+    if estimator is None:
+        raise RuntimeError("fit_two_tier_grm_fipc requires the compiled Rust core")
+    if orthogonal_primary_identification is not True:
+        raise ValueError("two-tier FIPC scoring requires orthogonal_primary_identification=True")
+
+    y = np.asarray(responses, dtype=np.float64)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    observed = np.isfinite(y) & (y >= 0.0)
+    y_int = np.zeros_like(y, dtype=np.int64)
+    if np.any(observed):
+        values = y[observed]
+        if np.any(values != np.floor(values)) or np.any(values >= n_cat):
+            raise ValueError(f"observed responses must be integer categories in 0..{n_cat - 1}")
+        y_int[observed] = values.astype(np.int64)
+    pmap = np.asarray(primary_map, dtype=bool)
+    smap = np.asarray(specific_map, dtype=np.int64)
+    anchor_arr = np.asarray(anchor, dtype=bool)
+    fixed_primary = np.asarray(fixed_a_primary, dtype=np.float64)
+    fixed_specific = np.asarray(fixed_a_specific, dtype=np.float64)
+    fixed_threshold_arr = np.asarray(fixed_threshold, dtype=np.float64)
+    if pmap.shape != (n_items, n_primary):
+        raise ValueError("primary_map must be an n_items x n_primary array")
+    if smap.shape != (n_items,) or anchor_arr.shape != (n_items,):
+        raise ValueError("specific_map and anchor must have length n_items")
+    if fixed_primary.shape != (n_items, n_primary):
+        raise ValueError("fixed_a_primary must have shape (n_items, n_primary)")
+    if fixed_specific.shape != (n_items,):
+        raise ValueError("fixed_a_specific must have shape (n_items,)")
+    if fixed_threshold_arr.shape != (n_items, n_cat - 1):
+        raise ValueError("fixed_threshold must have shape (n_items, n_cat - 1)")
+    result = estimator(
+        y_int.reshape(-1),
+        observed.reshape(-1),
+        pmap.reshape(-1),
+        smap,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_cat,
+        anchor_arr,
+        fixed_primary.reshape(-1),
+        fixed_specific,
+        fixed_threshold_arr.reshape(-1),
+        q_primary,
+        q_specific,
+        max_iter,
+        tol,
+        newton_iter,
+        ridge,
+        estimate_specific_vars,
+        orthogonal_primary_identification,
+    )
+    required = (
+        "a_primary", "a_specific", "threshold", "phi", "primary_mean", "primary_sd",
+        "specific_sd", "theta_p_eap", "theta_p_sd", "category_counts", "n_iter",
+        "converged", "termination_reason", "final_loglik_change", "n_parameters",
+        "orthogonal_primary_identification",
+    )
+    missing = [name for name in required if name not in result]
+    if missing:
+        raise RuntimeError(f"fit_two_tier_grm_fipc result missing required fields: {missing}")
+    return TwoTierGrmFipcFit(
+        a_primary=np.asarray(result["a_primary"], dtype=np.float64).reshape(n_items, n_primary),
+        a_specific=np.asarray(result["a_specific"], dtype=np.float64),
+        threshold=np.asarray(result["threshold"], dtype=np.float64).reshape(n_items, n_cat - 1),
+        phi=np.asarray(result["phi"], dtype=np.float64).reshape(n_primary, n_primary),
+        primary_mean=np.asarray(result["primary_mean"], dtype=np.float64),
+        primary_sd=np.asarray(result["primary_sd"], dtype=np.float64),
+        specific_sd=np.asarray(result["specific_sd"], dtype=np.float64),
+        theta_p_eap=np.asarray(result["theta_p_eap"], dtype=np.float64).reshape(n_persons, n_primary),
+        theta_p_sd=np.asarray(result["theta_p_sd"], dtype=np.float64).reshape(n_persons, n_primary),
+        category_counts=np.asarray(result["category_counts"], dtype=np.int64).reshape(n_items, n_cat),
+        n_cat=int(n_cat),
+        n_primary=int(n_primary),
+        n_specific=int(n_specific),
+        loglik_trace=np.asarray(result.get("loglik_trace", []), dtype=np.float64),
+        n_iter=int(result["n_iter"]),
+        converged=bool(result["converged"]),
+        termination_reason=str(result["termination_reason"]),
+        final_loglik_change=float(result["final_loglik_change"]),
+        n_parameters=int(result["n_parameters"]),
+        orthogonal_primary_identification=bool(result["orthogonal_primary_identification"]),
+    )
+
+
+def fit_and_score_two_tier_fipc_group_persons(
+    responses: np.ndarray,
+    primary_map: np.ndarray,
+    specific_map: np.ndarray,
+    n_cat: int,
+    n_primary: int,
+    n_specific: int,
+    anchor: np.ndarray,
+    fixed_a_primary: np.ndarray,
+    fixed_a_specific: np.ndarray,
+    fixed_threshold: np.ndarray,
+    *,
+    q_primary: int,
+    q_specific: int,
+    max_iter: int,
+    tol: float,
+    newton_iter: int = 10,
+    ridge: float = 1e-8,
+    estimate_specific_vars: bool = False,
+    reference_primary_mean: object = 0.0,
+    reference_primary_sd: object = 1.0,
+    reference_specific_mean: object = 0.0,
+    reference_specific_sd: object = 1.0,
+) -> TwoTierFipcGroupPersonScores:
+    """Run the real Rust estimator, then score its focal responses."""
+    fit = fit_two_tier_grm_fipc(
+        responses, primary_map, specific_map, n_cat, n_primary, n_specific, anchor,
+        fixed_a_primary, fixed_a_specific, fixed_threshold, q_primary=q_primary,
+        q_specific=q_specific, max_iter=max_iter, tol=tol, newton_iter=newton_iter,
+        ridge=ridge, estimate_specific_vars=estimate_specific_vars,
+    )
+    return score_two_tier_fipc_group_persons(
+        responses, fit, specific_map, anchor, q_primary=q_primary, q_specific=q_specific,
+        focal_primary_mean=fit.primary_mean, focal_primary_sd=fit.primary_sd,
+        focal_specific_sd=fit.specific_sd, reference_primary_mean=reference_primary_mean,
+        reference_primary_sd=reference_primary_sd, reference_specific_mean=reference_specific_mean,
+        reference_specific_sd=reference_specific_sd,
+    )
+
+
 def two_tier_reference_expected_score_moments(
     fit,
     specific_map: np.ndarray,
