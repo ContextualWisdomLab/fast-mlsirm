@@ -158,13 +158,19 @@ fn fipc_keeps_anchor_rows_and_returns_focal_moments() {
         fit.prior_specific_sd_trace.len(),
         fit.n_iter * TINY_N_SPECIFIC
     );
-    // The deterministic tiny fixture is intentionally non-unit focal data;
-    // at least one accepted prior update must move away from the zero start.
+    // The deterministic fixture has a non-unit focal target near [0.65, -0.35];
+    // require material movement toward it, not merely a counter increment.
+    let initial_distance = (0.65f64 * 0.65 + 0.35 * 0.35).sqrt();
+    let closest_distance = fit
+        .prior_mean_trace
+        .chunks_exact(TINY_N_PRIMARY)
+        .map(|mean| {
+            ((mean[0] - 0.65).powi(2) + (mean[1] + 0.35).powi(2)).sqrt()
+        })
+        .fold(f64::INFINITY, f64::min);
     assert!(
-        fit.prior_mean_trace
-            .iter()
-            .any(|value| value.abs() > 1e-6),
-        "prior mean remained exactly at zero: {:?}",
+        closest_distance < initial_distance * 0.95,
+        "prior mean did not materially approach fixture target: {:?}",
         fit.prior_mean_trace
     );
     assert_eq!(

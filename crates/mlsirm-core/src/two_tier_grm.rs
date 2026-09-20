@@ -1205,6 +1205,47 @@ fn fipc_primary_coords(base: &[f64], mean: &[f64], chol: &[f64], p: usize, n_gri
     coords
 }
 
+#[allow(clippy::too_many_arguments)]
+fn direct_fipc_loglik(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    base_coords: &[f64],
+    log_w0: &[f64],
+    log_ws: &[f64],
+    ts_std: &[f64],
+    mean: &[f64],
+    covariance: &[f64],
+    specific_sd: &[f64],
+    n_grid: usize,
+) -> Option<f64> {
+    let (chol, _) = cholesky_lower(covariance, mean.len())?;
+    let coords = fipc_primary_coords(base_coords, mean, &chol, mean.len(), n_grid);
+    let ts_by_specific: Vec<Vec<f64>> = specific_sd
+        .iter()
+        .map(|&sd| ts_std.iter().map(|&x| x * sd).collect())
+        .collect();
+    let log_ws_by_specific: Vec<Vec<f64>> = (0..specific_sd.len())
+        .map(|_| log_ws.to_vec())
+        .collect();
+    Some(
+        e_step_fipc(
+            v,
+            y,
+            observed,
+            params,
+            log_w0,
+            &log_ws_by_specific,
+            &coords,
+            &ts_by_specific,
+            n_grid,
+            ts_std.len(),
+        )
+        .0,
+    )
+}
+
 /// Evaluate one FIPC state on the initial standard-normal GH histogram.
 ///
 /// FIPC's production E-step maps the nodes as the focal moments change. This
@@ -1581,12 +1622,44 @@ pub fn fit_two_tier_grm_fipc(
                 mean = previous_mean;
                 covariance = previous_covariance;
                 specific_sd = previous_specific_sd;
+                let mut mean_alpha = 0.5;
+                while mean_alpha >= 1e-6 {
+                    let candidate_mean: Vec<f64> = previous_mean
+                        .iter()
+                        .zip(&target_mean)
+                        .map(|(&old, &target)| old + mean_alpha * (target - old))
+                        .collect();
+                    let mean_ll = direct_fipc_loglik(
+                        &v,
+                        y,
+                        observed,
+                        &params,
+                        &base_coords,
+                        &log_w0,
+                        &log_ws,
+                        ts_std,
+                        &candidate_mean,
+                        &previous_covariance,
+                        &previous_specific_sd,
+                        n_grid,
+                    );
+                    if mean_ll.is_some_and(|value| {
+                        value.is_finite() && value >= ll - acceptance_tolerance
+                    }) {
+                        mean = candidate_mean;
+                        accepted = true;
+                        break;
+                    }
+                    mean_alpha *= 0.5;
+                }
+            }
+            if accepted {
+                n_accepted_prior_steps += 1;
+                consecutive_rollback = 0;
+            } else {
                 rolled_back = true;
                 n_rollback_full += 1;
                 consecutive_rollback += 1;
-            } else {
-                n_accepted_prior_steps += 1;
-                consecutive_rollback = 0;
             }
         } else {
             n_accepted_prior_steps += 1;
