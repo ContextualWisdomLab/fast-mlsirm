@@ -35,6 +35,9 @@ from .wle import score_wle
 
 
 def _library_version() -> str:
+    override = os.environ.get("FAST_MLSIRM_LIBRARY_VERSION")
+    if override:
+        return override
     try:
         return version("fast-mlsirm")
     except PackageNotFoundError:

@@ -5,7 +5,7 @@
 
 Issue #2001 L4 slice: job envelopes and an in-process loopback executor for
 independent split units that may later be dispatched across a heterogenous
-worker pool. Valkey/Redis transport is intentionally out of scope here.
+worker pool. Valkey Streams outcome store is included for hetero path validation (unified #2072 fit/score + #2073 transport splice).
 
 Legal remote split families (inventory comment-5742475833, table C):
 
@@ -33,6 +33,7 @@ import os
 import platform
 import re
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -605,6 +606,433 @@ class OutcomeCommitLedger:
         return outcome
 
 
+class OutcomeCommitStore(Protocol):
+    """Successful-outcome store shared by remote execution backends."""
+
+    def successful_count(self, fingerprint: str) -> int: ...
+
+    def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None: ...
+
+    def commit_success(self, fingerprint: str, outcome: RemoteJobOutcome) -> RemoteJobOutcome: ...
+
+
+class SQLiteOutcomeCommitLedger:
+    """Durable, atomic successful-outcome ledger backed by SQLite.
+
+    A future Valkey Streams transport can implement :class:`OutcomeCommitStore`
+    without changing executors. SQLite is the local durable adapter.
+    """
+
+    def __init__(self, database: str | Path) -> None:
+        self._database = Path(database)
+        self._database.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS successful_outcomes "
+                "(fingerprint TEXT PRIMARY KEY, outcome_json TEXT NOT NULL)"
+            )
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self._database, timeout=30.0)
+
+    def successful_count(self, fingerprint: str) -> int:
+        """Return whether one successful outcome is durably committed."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) FROM successful_outcomes WHERE fingerprint = ?",
+                (key,),
+            ).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None:
+        """Return the durable successful outcome for ``fingerprint``, if any."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT outcome_json FROM successful_outcomes WHERE fingerprint = ?",
+                (key,),
+            ).fetchone()
+        return None if row is None else _outcome_from_dict(json.loads(row[0]))
+
+    def commit_success(self, fingerprint: str, outcome: RemoteJobOutcome) -> RemoteJobOutcome:
+        """Atomically commit the first success and return the durable winner."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
+            raise ValueError("commit_success requires a completed outcome")
+        payload = json.dumps(
+            outcome.to_dict(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO successful_outcomes (fingerprint, outcome_json) "
+                "VALUES (?, ?)",
+                (key, payload),
+            )
+            row = connection.execute(
+                "SELECT outcome_json FROM successful_outcomes WHERE fingerprint = ?",
+                (key,),
+            ).fetchone()
+        if row is None:  # pragma: no cover - SQLite transaction invariant
+            raise RuntimeError("successful outcome commit was not persisted")
+        return _outcome_from_dict(json.loads(row[0]))
+
+
+def _outcome_from_dict(payload: object) -> RemoteJobOutcome:
+    """Restore one package-produced outcome from durable JSON."""
+    if type(payload) is not dict or type(payload.get("provenance")) is not dict:
+        raise ValueError("stored outcome must be a package outcome mapping")
+    provenance = payload["provenance"]
+    return RemoteJobOutcome(
+        run_id=payload["run_id"],
+        unit_index=payload["unit_index"],
+        unit_seed=payload["unit_seed"],
+        family=payload["family"],
+        delivery_state=payload["delivery_state"],
+        result=payload["result"],
+        error_message=payload["error_message"],
+        provenance=RemoteWorkerProvenance(**provenance),
+        input_identity_sha256=payload["input_identity_sha256"],
+        output_identity_sha256=payload["output_identity_sha256"],
+        envelope_fingerprint=payload["envelope_fingerprint"],
+        driver_host=payload["driver_host"],
+        driver_pid=payload["driver_pid"],
+    )
+
+
+def _valkey_text(value: object) -> str:
+    """Normalize redis-py text responses without accepting other coercions."""
+    if type(value) is bytes:
+        return value.decode("utf-8")
+    if type(value) is str:
+        return value
+    raise ValueError("Valkey stream fields must be UTF-8 text")
+
+
+class ValkeyStreamsOutcomeStore:
+    """Outcome store using a Valkey consumer group and pending-entry reclaim.
+
+    The injected client follows redis-py's synchronous Streams API. This keeps
+    the core package dependency-free while allowing either ``redis`` or
+    ``valkey`` clients at the deployment boundary. Stream delivery is separate
+    from the durable ``{stream}:committed`` hash, which mirrors the SQLite
+    first-success contract across process restarts and consumer-group members.
+    """
+
+    def __init__(
+        self,
+        client: object,
+        *,
+        stream: str,
+        group: str,
+        consumer: str,
+        min_idle_ms: int = 60_000,
+        batch_size: int = 100,
+        block_ms: int = 1_000,
+    ) -> None:
+        self._client = client
+        self._stream = _text(stream, "stream")
+        self._committed_key = f"{self._stream}:committed"
+        self._group = _text(group, "group")
+        self._consumer = _text(consumer, "consumer")
+        self._min_idle_ms = _non_negative_int(min_idle_ms, "min_idle_ms")
+        self._batch_size = _non_negative_int(batch_size, "batch_size")
+        self._block_ms = _non_negative_int(block_ms, "block_ms")
+        if self._batch_size == 0:
+            raise ValueError("batch_size must be > 0")
+        try:
+            client.xgroup_create(self._stream, self._group, id="0", mkstream=True)
+        except Exception as exc:
+            if "BUSYGROUP" not in str(exc):
+                raise
+
+    @staticmethod
+    def _serialize_outcome(outcome: RemoteJobOutcome) -> str:
+        return json.dumps(
+            outcome.to_dict(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    def _committed_outcome(self, fingerprint: str) -> RemoteJobOutcome | None:
+        key = _fingerprint(fingerprint, "fingerprint")
+        stored = self._client.hget(self._committed_key, key)
+        if stored is None:
+            return None
+        return _outcome_from_dict(json.loads(_valkey_text(stored)))
+
+    def _persist_committed(
+        self, fingerprint: str, outcome: RemoteJobOutcome
+    ) -> RemoteJobOutcome:
+        key = _fingerprint(fingerprint, "fingerprint")
+        payload = self._serialize_outcome(outcome)
+        self._client.hsetnx(self._committed_key, key, payload)
+        stored = self._client.hget(self._committed_key, key)
+        if stored is None:  # pragma: no cover - hash write invariant
+            raise RuntimeError("successful outcome commit was not persisted")
+        return _outcome_from_dict(json.loads(_valkey_text(stored)))
+
+    def _block_ms_for_read(self, deadline: float | None) -> int | None:
+        """Return BLOCK milliseconds, or ``None`` to omit BLOCK (non-blocking).
+
+        Redis/Valkey treat ``BLOCK 0`` as wait-forever. Non-blocking reads must
+        omit the BLOCK option entirely; blocking reads must be capped to any
+        remaining wait deadline.
+        """
+        if self._block_ms == 0:
+            return None
+        if deadline is None:
+            return self._block_ms
+        remaining_ms = int((deadline - time.monotonic()) * 1000)
+        if remaining_ms <= 0:
+            return None
+        return min(self._block_ms, remaining_ms)
+
+    def _xreadgroup(self, *, count: int, block_ms: int | None):
+        """Issue XREADGROUP; omit BLOCK when ``block_ms`` is ``None``."""
+        streams = {self._stream: ">"}
+        if block_ms is None:
+            return self._client.xreadgroup(
+                self._group,
+                self._consumer,
+                streams,
+                count,
+            )
+        return self._client.xreadgroup(
+            self._group,
+            self._consumer,
+            streams,
+            count,
+            block_ms,
+        )
+
+    @staticmethod
+    def _deadline_exceeded(deadline: float | None) -> bool:
+        return deadline is not None and time.monotonic() >= deadline
+
+    def _accept_records(
+        self, records: Sequence[tuple[object, dict[object, object]]]
+    ) -> None:
+        """Persist and ACK one batch in stream-id order."""
+        ordered = sorted(
+            records,
+            key=lambda record: tuple(
+                int(part) for part in _valkey_text(record[0]).split("-")
+            ),
+        )
+        for record_id, raw_fields in ordered:
+            fields = {
+                _valkey_text(key): _valkey_text(value)
+                for key, value in raw_fields.items()
+            }
+            fingerprint = _fingerprint(fields.get("fingerprint"), "fingerprint")
+            outcome = _outcome_from_dict(json.loads(fields["outcome"]))
+            if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
+                raise ValueError("Valkey outcome stream accepts completed outcomes only")
+            if outcome.envelope_fingerprint != fingerprint:
+                raise ValueError("Valkey outcome fingerprint does not match its payload")
+            self._persist_committed(fingerprint, outcome)
+            self._client.xack(self._stream, self._group, record_id)
+
+    def _drain(self, *, deadline: float | None = None) -> None:
+        """Claim then read new records in bounded batches with mid persist/ACK.
+
+        Each XAUTOCLAIM / XREADGROUP batch is persisted and acknowledged before
+        the next fetch so a deadline exit cannot leave a large in-memory backlog
+        uncommitted. Claim and fresh loops re-check the remaining deadline so a
+        stream that keeps receiving messages cannot hang past ``deadline``.
+        """
+        start_id = "0-0"
+        while True:
+            if self._deadline_exceeded(deadline):
+                return
+            claimed = self._client.xautoclaim(
+                self._stream,
+                self._group,
+                self._consumer,
+                self._min_idle_ms,
+                start_id,
+                count=self._batch_size,
+            )
+            next_id = _valkey_text(claimed[0]) if claimed else "0-0"
+            batch = list(claimed[1]) if claimed else []
+            if batch:
+                self._accept_records(batch)
+            # XAUTOCLAIM may return a short/empty batch while the PEL cursor
+            # still has later entries (e.g. ineligible idle time). Advance
+            # until the server reports cursor 0-0.
+            if next_id == "0-0":
+                break
+            start_id = next_id
+
+        block_ms = self._block_ms_for_read(deadline)
+        while True:
+            if self._deadline_exceeded(deadline):
+                return
+            fresh = self._xreadgroup(count=self._batch_size, block_ms=block_ms)
+            # Never pass BLOCK 0: that is infinite wait on Redis/Valkey.
+            # Follow-up reads omit BLOCK; only the first read in this drain may block.
+            block_ms = None
+            if not fresh:
+                break
+            batch: list[tuple[object, dict[object, object]]] = []
+            for _stream, messages in fresh:
+                batch.extend(messages)
+            if batch:
+                self._accept_records(batch)
+
+    def successful_count(self, fingerprint: str) -> int:
+        """Return whether a completed record exists for ``fingerprint``."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        if self._committed_outcome(key) is not None:
+            return 1
+        self._drain()
+        return int(self._committed_outcome(key) is not None)
+
+    def consume_available(self) -> Mapping[str, RemoteJobOutcome]:
+        """Consume reclaimed/new stream records and return durable winners."""
+        self._drain()
+        raw = self._client.hgetall(self._committed_key)
+        return {
+            _valkey_text(fingerprint): _outcome_from_dict(json.loads(_valkey_text(payload)))
+            for fingerprint, payload in raw.items()
+        }
+
+    def wait_for_committed(
+        self,
+        fingerprints: Sequence[str],
+        *,
+        deadline: float,
+    ) -> Mapping[str, RemoteJobOutcome]:
+        """Drain/claim until ``deadline`` or every fingerprint is durably committed.
+
+        After the wait loop exits, perform one final hash lookup so a drain that
+        persisted the last needed fingerprint at/after the deadline does not
+        report a false timeout.
+        """
+        needed = {_fingerprint(fingerprint, "fingerprint") for fingerprint in fingerprints}
+        found: dict[str, RemoteJobOutcome] = {}
+        while needed - found.keys() and time.monotonic() < deadline:
+            for fingerprint in list(needed - found.keys()):
+                outcome = self._committed_outcome(fingerprint)
+                if outcome is not None:
+                    found[fingerprint] = outcome
+            if len(found) == len(needed):
+                break
+            self._drain(deadline=deadline)
+        for fingerprint in list(needed - found.keys()):
+            outcome = self._committed_outcome(fingerprint)
+            if outcome is not None:
+                found[fingerprint] = outcome
+        return found
+
+    def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None:
+        """Return the durable successful outcome for ``fingerprint``, if any."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        existing = self._committed_outcome(key)
+        if existing is not None:
+            return existing
+        self._drain()
+        return self._committed_outcome(key)
+
+    def commit_success(
+        self, fingerprint: str, outcome: RemoteJobOutcome
+    ) -> RemoteJobOutcome:
+        """Append one completed outcome and atomically commit the first success."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
+            raise ValueError("commit_success requires a completed outcome")
+        if outcome.envelope_fingerprint != key:
+            raise ValueError("outcome fingerprint does not match commit key")
+        self._client.xadd(
+            self._stream,
+            {
+                "fingerprint": key,
+                "outcome": self._serialize_outcome(outcome),
+            },
+        )
+        return self._persist_committed(key, outcome)
+
+
+class ValkeyStreamsBackend:
+    """Remote backend that publishes envelopes and consumes Valkey outcomes."""
+
+    def __init__(
+        self,
+        client: object,
+        *,
+        jobs_stream: str,
+        outcomes_stream: str,
+        group: str,
+        consumer: str,
+        min_idle_ms: int = 60_000,
+        block_ms: int = 1_000,
+        wait_timeout_s: float = 60.0,
+    ) -> None:
+        self._client = client
+        self._jobs_stream = _text(jobs_stream, "jobs_stream")
+        if wait_timeout_s <= 0:
+            raise ValueError("wait_timeout_s must be > 0")
+        self._wait_timeout_s = float(wait_timeout_s)
+        self._outcomes = ValkeyStreamsOutcomeStore(
+            client,
+            stream=outcomes_stream,
+            group=group,
+            consumer=consumer,
+            min_idle_ms=min_idle_ms,
+            block_ms=block_ms,
+        )
+
+    def run_batch(
+        self,
+        envelopes: Sequence[RemoteJobEnvelope],
+        *,
+        worker_manifest: RemoteRunManifest,
+        requested_device: str = "cpu",
+        effective_device: str = "cpu",
+    ) -> tuple[RemoteJobOutcome, ...]:
+        requested = _text(requested_device, "requested_device", maximum=32)
+        effective = _text(effective_device, "effective_device", maximum=32)
+        envelope_batch = tuple(envelopes)
+        for envelope in envelope_batch:
+            if type(envelope) is not RemoteJobEnvelope:
+                raise TypeError("each envelope must be a RemoteJobEnvelope")
+            if not worker_manifest.compatible_with(envelope.manifest):
+                raise CohortMismatchError(
+                    "worker manifest is incompatible with envelope cohort"
+                )
+        for envelope in envelope_batch:
+            fingerprint = envelope_fingerprint(envelope)
+            self._client.xadd(
+                self._jobs_stream,
+                {
+                    "fingerprint": fingerprint,
+                    "envelope": json.dumps(
+                        envelope.to_dict(),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    "requested_device": requested,
+                    "effective_device": effective,
+                },
+            )
+        deadline = time.monotonic() + self._wait_timeout_s
+        fingerprints = tuple(envelope_fingerprint(envelope) for envelope in envelope_batch)
+        committed = self._outcomes.wait_for_committed(fingerprints, deadline=deadline)
+        outcomes = []
+        for envelope in envelope_batch:
+            fingerprint = envelope_fingerprint(envelope)
+            outcome = committed.get(fingerprint)
+            if outcome is None:
+                raise TimeoutError(f"no Valkey outcome available for {fingerprint}")
+            outcomes.append(outcome)
+        return tuple(sorted(outcomes, key=lambda outcome: outcome.unit_index))
+
 def _is_ssh_worker_host(worker_host: str) -> bool:
     """Return whether ``worker_host`` names an SSH destination (``user@host``)."""
     return "@" in worker_host
@@ -626,8 +1054,17 @@ def _worker_subprocess_env() -> Mapping[str, str]:
 
 
 def _worker_module_command(interpreter: str) -> list[str]:
-    """Return argv to run ``fast_mlsirm.remote_worker`` with ``interpreter``."""
+    """Return argv to run ``fast_mlsirm.remote_worker`` with ``interpreter``.
+
+    When ``FAST_MLSIRM_WORKER_ENTRY`` is set to an absolute script path, run that
+    script instead of ``-m fast_mlsirm.remote_worker``. Hosts without a built
+    ``_core`` extension can use a stub entry that imports only the remote worker
+    surface (``mc_replicate`` / ``simulate``) for path validation.
+    """
     normalized = _text(interpreter, "remote_interpreter", maximum=512)
+    entry = os.environ.get("FAST_MLSIRM_WORKER_ENTRY")
+    if entry:
+        return [normalized, _text(entry, "FAST_MLSIRM_WORKER_ENTRY", maximum=1024)]
     return [normalized, "-m", "fast_mlsirm.remote_worker"]
 
 
@@ -860,7 +1297,7 @@ class SubprocessExecutor:
         worker_host: str,
         *,
         remote_interpreter: str | None = None,
-        ledger: OutcomeCommitLedger | None = None,
+        ledger: OutcomeCommitStore | None = None,
         driver_host: str | None = None,
     ) -> None:
         self.worker_host = _text(worker_host, "worker_host", maximum=128)
