@@ -4,15 +4,39 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from scipy.stats import norm
 
 from fast_mlsirm.estimators.mmle import (
     equal_probability_normal_nodes,
     gauss_hermite_nodes,
 )
 
-# Standard-normal mid-bin quantiles q = Phi^{-1}((i - 0.5)/n), i = 1..n, pinned
-# independently (mpmath erfinv, 80 dps) and stored at float64 resolution.
-_EQPROB_NORMAL_NODES: dict[int, tuple[np.ndarray, float]] = {
+# Independent mpmath oracle pins (80 dps, antisymmetric float64 storage).
+# Generator (run once when refreshing literals):
+#
+#     import mpmath
+#     import numpy as np
+#     from mpmath import erfinv, sqrt
+#
+#     mpmath.mp.dps = 80
+#
+#     def antisymmetric_pins(n: int) -> np.ndarray:
+#         pins = np.zeros(n, dtype=np.float64)
+#         if n % 2 == 1:
+#             pins[(n + 1) // 2 - 1] = 0.0
+#         for idx in range(1, n + 1):
+#             if (idx - 0.5) / n <= 0.5:
+#                 continue
+#             val = float(sqrt(2) * erfinv(2 * mpmath.mpf((idx - 0.5) / n) - 1))
+#             pins[idx - 1] = val
+#             pins[n - idx] = -val
+#         return pins
+#
+# SciPy ``norm.ppf`` is the implementation contract (bit-exact). Pins are a
+# high-precision Φ^{-1} oracle stored at float64; ``assert_array_max_ulp`` is
+# the wrong gate because ppf is not correctly-rounded and independent rounding
+# of positive/mirror halves can differ by many ULPs while |Δ| stays ~1e-14.
+_MPMATH_ORACLE_PINS: dict[int, tuple[np.ndarray, float]] = {
     1: (np.array([0.0], dtype=np.float64), 1.0),
     2: (
         np.array(
@@ -24,11 +48,11 @@ _EQPROB_NORMAL_NODES: dict[int, tuple[np.ndarray, float]] = {
     5: (
         np.array(
             [
-                -1.2815515655446004,
-                -0.5244005127080409,
+                -1.2815515655446006,
+                -0.5244005127080407,
                 0.0,
                 0.5244005127080407,
-                1.2815515655446004,
+                1.2815515655446006,
             ],
             dtype=np.float64,
         ),
@@ -37,17 +61,17 @@ _EQPROB_NORMAL_NODES: dict[int, tuple[np.ndarray, float]] = {
     11: (
         np.array(
             [
-                -1.6906216295848977,
-                -1.0968035620935128,
+                -1.6906216295848986,
+                -1.0968035620935133,
                 -0.7478585947633022,
-                -0.4727891209922674,
-                -0.22988411757923205,
+                -0.4727891209922672,
+                -0.2298841175792322,
                 0.0,
                 0.2298841175792322,
                 0.4727891209922672,
                 0.7478585947633022,
-                1.0968035620935128,
-                1.6906216295848988,
+                1.0968035620935133,
+                1.6906216295848986,
             ],
             dtype=np.float64,
         ),
@@ -55,16 +79,24 @@ _EQPROB_NORMAL_NODES: dict[int, tuple[np.ndarray, float]] = {
     ),
 }
 
+_CONTRACT_N_NODES = sorted(
+    set(range(1, 65)) | {81, 121, 241},
+)
 
-@pytest.mark.parametrize("n_nodes", sorted(_EQPROB_NORMAL_NODES))
-def test_equal_probability_normal_nodes_match_pinned_mid_bin_quantiles(
+
+@pytest.mark.parametrize("n_nodes", _CONTRACT_N_NODES)
+def test_equal_probability_normal_nodes_match_scipy_mid_bin_quantiles(
     n_nodes: int,
 ) -> None:
-    expected_nodes, expected_weight = _EQPROB_NORMAL_NODES[n_nodes]
+    """Implementation delegates to SciPy; nodes must be bit-exact vs norm.ppf."""
     nodes, weights = equal_probability_normal_nodes(n_nodes)
+    probs = (np.arange(1, n_nodes + 1, dtype=np.float64) - 0.5) / n_nodes
+    expected_nodes = norm.ppf(probs)
+    expected_weight = 1.0 / n_nodes
 
-    # Pins are mpmath-derived float64 oracles; SciPy norm.ppf may differ by 1 ULP.
-    np.testing.assert_array_max_ulp(nodes, expected_nodes, maxulp=1)
+    assert nodes.dtype == np.float64
+    assert weights.dtype == np.float64
+    np.testing.assert_array_equal(nodes, expected_nodes)
     np.testing.assert_allclose(weights, expected_weight)
     assert np.all(np.isfinite(nodes))
     assert np.all(weights > 0.0)
@@ -79,6 +111,20 @@ def test_equal_probability_normal_nodes_match_pinned_mid_bin_quantiles(
     for odd_power in (1, 3, 5):
         moment = float(np.sum(weights * nodes**odd_power))
         assert moment == pytest.approx(0.0, abs=1e-14)
+
+
+@pytest.mark.parametrize("n_nodes", sorted(_MPMATH_ORACLE_PINS))
+def test_equal_probability_normal_nodes_within_mpmath_oracle_tolerance(
+    n_nodes: int,
+) -> None:
+    """High-precision Φ^{-1} pins tolerate float64/scipy rounding, not ULP counts."""
+    expected_nodes, expected_weight = _MPMATH_ORACLE_PINS[n_nodes]
+    nodes, weights = equal_probability_normal_nodes(n_nodes)
+
+    eps = np.finfo(np.float64).eps
+    per_node_atol = np.maximum(1e-15, 4.0 * eps * np.abs(expected_nodes))
+    assert np.all(np.abs(nodes - expected_nodes) <= per_node_atol)
+    np.testing.assert_allclose(weights, expected_weight)
 
 
 def test_equal_probability_normal_nodes_differs_from_gauss_hermite() -> None:
