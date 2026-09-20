@@ -64,3 +64,8 @@ errors for governance and procurement evidence.
 **Vulnerability:** JSON의 최대 중첩 깊이를 검사하는 로직(`_validate_raw_json_depth`, `_validate_json_depth` 등)에서 닫는 괄호(`]`, `}`)를 만났을 때 깊이 카운터(`depth`)가 0 이하로 내려가는지 확인하지 않았습니다. 공격자가 매칭되지 않는 닫는 괄호들을 대량으로 포함하여 카운터를 인위적으로 언더플로우시킨 뒤, 다시 대량의 여는 괄호를 추가하는 방식으로 깊이 제한을 우회하여 `json.loads` 호출 시 `RecursionError`를 유발(DoS)할 수 있었습니다.
 **Learning:** 수동으로 중첩 깊이를 계산하여 검증할 때는 여는 괄호와 닫는 괄호의 매칭뿐만 아니라, 카운터가 비정상적인 값(0 미만)이 되는지 보호해야 합니다.
 **Prevention:** `elif char in "]}":`를 `elif char in "]}" and depth:` (혹은 `depth > 0`)으로 변경하여 `depth` 카운터가 0 이하로 언더플로우되지 않도록 방어해야 합니다.
+
+## 2026-09-20 - [Semgrep 오탐(False Positive) 억제]
+**Vulnerability:** 안전한 내부 스크립트에서의 동적 모듈 로딩이나 문서화를 위한 `globals()` 접근 등, 악용 가능성이 없는 코드에 대해 Semgrep이 SAST 취약점(예: `dangerous-globals-use`, `non-literal-import`)으로 오탐하는 문제가 있었습니다.
+**Learning:** 코드베이스의 안전성이 보장된 특정 영역에서 발생하는 오탐은 개발 워크플로우를 차단하지 않도록 적절히 억제(suppress)해야 합니다.
+**Prevention:** 코드를 수정하기 전, 문제의 코드가 안전한 맥락에서 실행되는지 확인하십시오. 오탐임이 확실한 경우 문제 코드의 같은 줄에 `# nosemgrep: <rule-id> # fmt: skip` 주석을 추가하여 분석 도구의 경고를 억제하고 동시에 코드 포매터(ruff format)에 의해 주석이 다음 줄로 분리되는 현상을 방지하십시오.
