@@ -173,6 +173,12 @@ fn fipc_keeps_anchor_rows_and_returns_focal_moments() {
         "prior mean did not materially approach fixture target: {:?}",
         fit.prior_mean_trace
     );
+    for mean in fit.prior_mean_trace.chunks_exact(TINY_N_PRIMARY) {
+        assert!(
+            (0.0..=0.65).contains(&mean[0]) && (-0.35..=0.0).contains(&mean[1]),
+            "prior mean overshot non-unit fixture bounds: {mean:?}"
+        );
+    }
     assert_eq!(
         fit.n_accepted_prior_steps + fit.n_rollback_full,
         fit.n_iter

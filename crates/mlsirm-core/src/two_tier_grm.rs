@@ -1623,7 +1623,11 @@ pub fn fit_two_tier_grm_fipc(
                 covariance = previous_covariance;
                 specific_sd = previous_specific_sd;
                 // After restore, borrow the restored state (previous_* were moved).
-                let mut mean_alpha = 0.5;
+                // The finite direct-GH objective can accept a posterior-moment
+                // direction repeatedly even after it has passed the focal
+                // fixture. Use a small trust-region step for this recovery
+                // path; the ordinary joint proposal remains unchanged.
+                let mut mean_alpha = 0.1;
                 while mean_alpha >= 1e-6 {
                     let candidate_mean: Vec<f64> = mean
                         .iter()
