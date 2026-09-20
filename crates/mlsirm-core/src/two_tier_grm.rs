@@ -910,7 +910,7 @@ pub(crate) fn e_step(
     observed: Option<&[bool]>,
     params: &[ItemParams],
     log_w: &[f64],
-    log_ws_by_specific: &[Vec<f64>],
+    log_ws: &[f64],
     coords: &[f64],
     ts: &[f64],
     n_grid: usize,
@@ -954,7 +954,7 @@ pub(crate) fn e_step(
         for (s, members) in v.blocks.iter().enumerate() {
             for g in 0..n_grid {
                 for h in 0..qs {
-                    let mut acc = log_ws_by_specific[s][h];
+                    let mut acc = log_ws[h];
                     for &i in members {
                         if !is_obs(pp, i) {
                             continue;
@@ -1005,7 +1005,7 @@ pub(crate) fn e_step(
             }
             for g in 0..n_grid {
                 for h in 0..qs {
-                    let mut acc = log_ws_by_specific[s][h];
+                    let mut acc = log_ws[h];
                     for &i in members {
                         if !is_obs(pp, i) {
                             continue;
@@ -1050,7 +1050,7 @@ fn e_step_fipc(
     observed: Option<&[bool]>,
     params: &[ItemParams],
     log_w: &[f64],
-    log_ws: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
     coords: &[f64],
     ts_by_specific: &[Vec<f64>],
     n_grid: usize,
@@ -1098,7 +1098,7 @@ fn e_step_fipc(
         for (s, members) in v.blocks.iter().enumerate() {
             for g in 0..n_grid {
                 for h in 0..qs {
-                    let mut acc = log_ws[h];
+                    let mut acc = log_ws_by_specific[s][h];
                     for &i in members {
                         if is_obs(pp, i) {
                             acc += item_cat_logprob_fipc(v, params, coords, ts_by_specific, i, g, h, y[pp * v.n_items + i]);
@@ -1145,7 +1145,7 @@ fn e_step_fipc(
             if !members.iter().any(|&i| is_obs(pp, i)) { continue; }
             for g in 0..n_grid {
                 for h in 0..qs {
-                    let mut acc = log_ws[h];
+                    let mut acc = log_ws_by_specific[s][h];
                     for &i in members {
                         if is_obs(pp, i) {
                             acc += item_cat_logprob_fipc(v, params, coords, ts_by_specific, i, g, h, y[pp * v.n_items + i]);
