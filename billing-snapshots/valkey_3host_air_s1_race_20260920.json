@@ -1,0 +1,27 @@
+{
+  "generated_at_utc": "2026-09-20T15:43:50Z",
+  "valkey_url": "redis://192.168.68.3:16381/0",
+  "suffix": "f8edca07df",
+  "n_jobs": 30,
+  "hosts_committed": [
+    "air",
+    "s1"
+  ],
+  "air_commits_first": 17,
+  "s1_commits_first": 13,
+  "lost_races_or_retries": 0,
+  "committed_count": 30,
+  "s1_stderr_tail": "",
+  "checks": {
+    "distribute_both_hosts": true,
+    "dedup_exact_n": true,
+    "numeric_equality": true,
+    "retry_or_lost_race_observed": true
+  },
+  "PASS": true,
+  "m1_status": "ABSENT (ssh host key; need orca spawn MacBookPro-M1)",
+  "host_budget": {
+    "air": "Seonghoui-MacBookAir disk8% mem~34GB",
+    "s1": "s1.cluster / 92% /data 87% free242G mem94Gi avail73Gi"
+  }
+}

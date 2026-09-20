@@ -1,0 +1,15 @@
+{
+  "generated_at_utc": "2026-09-20T16:05:27Z",
+  "label": "communications/transport deliberate fail\u2192retry (NOT psychometric compute)",
+  "valkey_url": "redis://192.168.68.3:16381/0",
+  "suffix": "f52c020f77",
+  "checks": {
+    "crash_left_pending": true,
+    "xautoclaim_recovered": true,
+    "first_commit_wins": true,
+    "duplicate_hsetnx_rejected": true,
+    "stored_host": "retry-host",
+    "numeric_value_equal_42": true
+  },
+  "PASS": true
+}

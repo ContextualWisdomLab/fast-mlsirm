@@ -1,0 +1,278 @@
+{
+  "schema": "hetero_accept_release_ledger/v1",
+  "generated_at_utc": "2026-09-20T15:13:28Z",
+  "run": "run_812ab0f36dc8",
+  "lead_handle": "term_b8605c0d-a438-4d6e-9f28-7b7cc5ab55d2",
+  "dispatch": "ctx_2ef0539e8699",
+  "task": "task_2c5661a18675",
+  "audits_used": {
+    "air": "/tmp/air-fmls-screen-audit.json",
+    "named": "/tmp/named-session-audit.json"
+  },
+  "constraints": [
+    "NO A4 restart",
+    "Preserve dirty/unpushed",
+    "No delete on declaration alone",
+    "Keep Valkey/#2043 evidence WTs until accepted",
+    "Draft split \u2260 release pin"
+  ],
+  "summary": {
+    "KEEP": 9,
+    "RELEASE_CANDIDATE": 5
+  },
+  "entries": [
+    {
+      "handle": "term_330e7637-aef8-40dc-a55a-1ea00723e695",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2001-remote-family-policy",
+      "name": "fmls-2001-remote-family-policy",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2001-remote-family-policy",
+        "head": "9cb68d33e5a31bebc481f17ce5bb8e0d295ee288",
+        "head_short": "9cb68d33",
+        "dirty": false,
+        "porcelain": [],
+        "unpushed": null
+      },
+      "decision": "RELEASE_CANDIDATE",
+      "reason": "Clean idle hetero sibling WT; candidate after settle check (no delete on declaration alone)"
+    },
+    {
+      "handle": "term_b35837e1-7b21-4d64-bb52-ecb3553f5278",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2001-valkey-transport",
+      "name": "fmls-2001-valkey-transport",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2001-valkey-transport",
+        "head": "74ecd9f90cdb2675ae4c858d07200d6edb7ce3a4",
+        "head_short": "74ecd9f9",
+        "dirty": false,
+        "porcelain": [],
+        "unpushed": 0
+      },
+      "decision": "KEEP",
+      "reason": "Evidence/active PR WT or dirty/unpushed \u2014 preserve until PR accepted"
+    },
+    {
+      "handle": "term_18750374-61c7-483f-9aba-b6394e89bec1",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2071-timeout-reap",
+      "name": "fmls-2071-timeout-reap",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2071-timeout-reap",
+        "head": "9aa25819d79bf9e3e5158c37988f2693e0532ed0",
+        "head_short": "9aa25819",
+        "dirty": false,
+        "porcelain": [],
+        "unpushed": null
+      },
+      "decision": "KEEP",
+      "reason": "#2071 merge ownership retained; draft/CI repair pending"
+    },
+    {
+      "handle": "term_53231c6b-d94c-4b1c-8ad2-b2051574f4f0",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2072-shard-guard-callsite",
+      "name": "fmls-2072-shard-guard-callsite",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2072-shard-guard-callsite",
+        "head": "99c228a8f50aa8f2a9b1f95f3cc3c3edace9e781",
+        "head_short": "99c228a8",
+        "dirty": false,
+        "porcelain": [],
+        "unpushed": null
+      },
+      "decision": "RELEASE_CANDIDATE",
+      "reason": "Clean idle hetero sibling WT; candidate after settle check (no delete on declaration alone)"
+    },
+    {
+      "handle": "term_8e3d2412-1cc3-4e9c-8cb4-560cab3390bc",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2072-family-fit-equivalence",
+      "name": "fmls-2072-family-fit-equivalence",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2072-family-fit-equivalence",
+        "head": "99c228a8f50aa8f2a9b1f95f3cc3c3edace9e781",
+        "head_short": "99c228a8",
+        "dirty": false,
+        "porcelain": [],
+        "unpushed": null
+      },
+      "decision": "RELEASE_CANDIDATE",
+      "reason": "Clean idle hetero sibling WT; candidate after settle check (no delete on declaration alone)"
+    },
+    {
+      "handle": "term_501dce63-10b7-4c74-9982-a7c03e2d28dc",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2073-isolated-valkey-daemon",
+      "name": "fmls-2073-isolated-valkey-daemon",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2073-isolated-valkey-daemon",
+        "head": "99c228a8f50aa8f2a9b1f95f3cc3c3edace9e781",
+        "head_short": "99c228a8",
+        "dirty": false,
+        "porcelain": [],
+        "unpushed": null
+      },
+      "decision": "KEEP",
+      "reason": "Evidence/active PR WT or dirty/unpushed \u2014 preserve until PR accepted"
+    },
+    {
+      "handle": "term_2b4f9dbd-4d10-4240-9c94-6dcdbb651970",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2071-hosted-ci-review",
+      "name": "fmls-2071-hosted-ci-review",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2071-hosted-ci-review",
+        "head": "99c228a8f50aa8f2a9b1f95f3cc3c3edace9e781",
+        "head_short": "99c228a8",
+        "dirty": false,
+        "porcelain": [],
+        "unpushed": null
+      },
+      "decision": "KEEP",
+      "reason": "#2071 merge ownership retained; draft/CI repair pending"
+    },
+    {
+      "handle": "term_27574334-393c-4f3e-971b-055dd52b31bd",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2073-isolated-valkey-v2",
+      "name": "fmls-2073-isolated-valkey-v2",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2073-valkey-daemon-fix",
+        "head": "3c3d17be12129718abd05868c25bc301af4360c2",
+        "head_short": "3c3d17be",
+        "dirty": false,
+        "porcelain": [],
+        "unpushed": 0
+      },
+      "decision": "KEEP",
+      "reason": "Evidence/active PR WT or dirty/unpushed \u2014 preserve until PR accepted"
+    },
+    {
+      "handle": "term_57c1c1da-6aef-4937-9244-b9ddeddddb72",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2072-shard-guard-callsite-v2",
+      "name": "fmls-2072-shard-guard-callsite-v2",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2072-shard-guard-callsite-v2",
+        "head": "b43cdd43994656ba581253ccd27acc1fa683ea8d",
+        "head_short": "b43cdd43",
+        "dirty": false,
+        "porcelain": [],
+        "unpushed": null
+      },
+      "decision": "RELEASE_CANDIDATE",
+      "reason": "Clean idle hetero sibling WT; candidate after settle check (no delete on declaration alone)"
+    },
+    {
+      "handle": "term_30c60efb-0247-4dc7-8a6c-efc29ddb2ac9",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2072-family-fit-equiv-v2",
+      "name": "fmls-2072-family-fit-equiv-v2",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2072-family-fit-equiv-v2",
+        "head": "99c228a8f50aa8f2a9b1f95f3cc3c3edace9e781",
+        "head_short": "99c228a8",
+        "dirty": true,
+        "porcelain": [
+          "M pyproject.toml",
+          "?? docs/orchestration/remote-family-io-equivalence-2072.md",
+          "?? python/fast_mlsirm/remote_exec.py",
+          "?? python/fast_mlsirm/remote_worker.py",
+          "?? tests/test_remote_exec.py",
+          "?? tests/test_remote_exec_family_equivalence.py",
+          "?? tests/test_remote_exec_ssh_integration.py"
+        ],
+        "unpushed": null
+      },
+      "decision": "KEEP",
+      "reason": "Evidence/active PR WT or dirty/unpushed \u2014 preserve until PR accepted"
+    },
+    {
+      "handle": "term_c6e11d80-fd4b-490d-87a4-9bee80a9d6f0",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2071-hosted-ci-review-v2",
+      "name": "fmls-2071-hosted-ci-review-v2",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "pr-2071-head",
+        "head": "9aa25819d79bf9e3e5158c37988f2693e0532ed0",
+        "head_short": "9aa25819",
+        "dirty": false,
+        "porcelain": [],
+        "unpushed": null
+      },
+      "decision": "KEEP",
+      "reason": "#2071 merge ownership retained; draft/CI repair pending"
+    },
+    {
+      "handle": "term_de4806ce-b3ba-4f3c-b019-7ae77d18fec3",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2073-prbody-daemon-evidence",
+      "name": "fmls-2073-prbody-daemon-evidence",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2073-block0-drain-fix",
+        "head": "74ecd9f90cdb2675ae4c858d07200d6edb7ce3a4",
+        "head_short": "74ecd9f9",
+        "dirty": true,
+        "porcelain": [
+          "?? plans/fmls-2073-hetero-status-74ecd9f9.md",
+          "?? plans/fmls-2073-pytest-74ecd9f9.txt"
+        ],
+        "unpushed": 0
+      },
+      "decision": "KEEP",
+      "reason": "Evidence/active PR WT or dirty/unpushed \u2014 preserve until PR accepted"
+    },
+    {
+      "handle": "term_2fde9895-dc8b-4812-8486-a1276a9edace",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2072-push-shard-then-fit",
+      "name": "fmls-2072-push-shard-then-fit",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2072-push-shard-then-fit",
+        "head": "99c228a8f50aa8f2a9b1f95f3cc3c3edace9e781",
+        "head_short": "99c228a8",
+        "dirty": false,
+        "porcelain": [],
+        "unpushed": null
+      },
+      "decision": "RELEASE_CANDIDATE",
+      "reason": "Clean idle hetero sibling WT; candidate after settle check (no delete on declaration alone)"
+    },
+    {
+      "handle": "term_6555d7b0-1c59-4019-8d8f-e50f2743c1e4",
+      "path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2043-semgrep-l3-verify",
+      "name": "fmls-2043-semgrep-l3-verify",
+      "screen_status": "running",
+      "git": {
+        "exists": true,
+        "branch": "seonghobae/fmls-2043-semgrep-l3-verify",
+        "head": "c1571ef7804746382b74c1afb8a858c3b74f19fc",
+        "head_short": "c1571ef7",
+        "dirty": true,
+        "porcelain": [
+          "M docs/orchestration/bifactor-estep-split-overlap-2043-environment.txt",
+          " M docs/orchestration/bifactor-estep-split-overlap-2043-timestamps.txt",
+          "?? billing-snapshots/"
+        ],
+        "unpushed": null
+      },
+      "decision": "KEEP",
+      "reason": "Evidence/active PR WT or dirty/unpushed \u2014 preserve until PR accepted"
+    }
+  ]
+}

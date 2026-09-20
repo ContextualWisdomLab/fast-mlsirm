@@ -1,0 +1,11 @@
+# host budget 2026-09-20T15:37:58Z
+hostname: Seonghoui-MacBookAir.local
+platform: arm64 26.5.1
+/dev/disk3s1s1   926Gi    16Gi   208Gi     8%    459k  2.2G    0%   /
+memory_pressure: The system has 34359738368 (2097152 pages with a page size of 16384).
+
+Stats: 
+Pages free: 4222 
+Pages purgeable: 5 
+orca_hosts: local + MacBookPro-M1 (10.6.0.3)
+s1: ABSENT from orca host list / ssh config

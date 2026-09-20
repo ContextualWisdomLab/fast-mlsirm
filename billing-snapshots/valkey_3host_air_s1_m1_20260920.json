@@ -1,0 +1,31 @@
+{
+  "generated_at_utc": "2026-09-20T15:57:08Z",
+  "valkey_url": "redis://192.168.68.3:16381/0",
+  "suffix": "71b6ad6549",
+  "n_jobs": 36,
+  "hosts_committed": [
+    "air",
+    "m1",
+    "s1"
+  ],
+  "first_commits_by_host": {
+    "air": 11,
+    "m1": 10,
+    "s1": 15
+  },
+  "lost_races_or_retries": 0,
+  "committed_count": 36,
+  "s1_stderr_tail": "",
+  "m1_stderr_tail": "/Users/seonghobae/.bashrc: line 24: pyenv: command not found\n/Users/seonghobae/.bashrc: line 28: pyenv: command not found\n/Users/seonghobae/.bashrc: line 35: jenv: command not found\n",
+  "checks": {
+    "distribute_three_hosts": true,
+    "dedup_exact_n": true,
+    "numeric_equality": true
+  },
+  "PASS": true,
+  "host_budget": {
+    "air": "MBA disk8% mem~34GB",
+    "s1": "s1 /92% /data free242G mem avail73Gi",
+    "m1": "Seonghoui-MacBookPro-2.local via ssh 10.6.0.3"
+  }
+}
