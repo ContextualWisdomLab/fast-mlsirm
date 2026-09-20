@@ -374,6 +374,9 @@ pub struct TwoTierFipcResult {
     pub termination_reason: String,
     pub final_loglik_change: f64,
     pub n_parameters: usize,
+    pub n_accepted_prior_steps: usize,
+    pub n_rollback_full: usize,
+    pub consecutive_rollback: usize,
 }
 
 /// Validated problem structure shared by the fitter and the public
@@ -1350,6 +1353,10 @@ pub fn fit_two_tier_grm_fipc(
     let mut termination_reason = "max_iter_reached".to_string();
     let mut final_loglik_change = f64::NAN;
     let mut rolled_back = false;
+    let mut n_accepted_prior_steps = 0;
+    let mut n_rollback_full = 0;
+    let mut consecutive_rollback = 0;
+    const MAX_CONSECUTIVE_ROLLBACKS: usize = 3;
 
     loop {
         let (chol, _) = cholesky_lower(&covariance, n_primary)
@@ -1556,12 +1563,24 @@ pub fn fit_two_tier_grm_fipc(
                 covariance = previous_covariance;
                 specific_sd = previous_specific_sd;
                 rolled_back = true;
+                n_rollback_full += 1;
+                consecutive_rollback += 1;
+            } else {
+                n_accepted_prior_steps += 1;
+                consecutive_rollback = 0;
             }
+        } else {
+            n_accepted_prior_steps += 1;
+            consecutive_rollback = 0;
         }
         prior_mean_trace.extend_from_slice(&mean);
         prior_covariance_trace.extend_from_slice(&covariance);
         prior_specific_sd_trace.extend_from_slice(&specific_sd);
         n_iter += 1;
+        if consecutive_rollback >= MAX_CONSECUTIVE_ROLLBACKS {
+            termination_reason = "prior_update_stalled".to_string();
+            break;
+        }
     }
     let (chol, _) = cholesky_lower(&covariance, n_primary).ok_or_else(|| "final focal primary covariance is not positive-definite".to_string())?;
     let coords = fipc_primary_coords(&base_coords, &mean, &chol, n_primary, n_grid);
@@ -1588,7 +1607,7 @@ pub fn fit_two_tier_grm_fipc(
     for i in 0..n_items { if !anchor[i] { n_parameters += v.free_primaries[i].len() + usize::from(v.item_block[i].is_some()) + v.m1; } }
     if cfg.estimate_specific_vars { n_parameters += n_specific; }
     let primary_sd = (0..n_primary).map(|d| covariance[d * n_primary + d].max(0.0).sqrt()).collect();
-    Ok(TwoTierFipcResult { a_primary, a_specific, threshold, primary_mean: mean, primary_cov: covariance, primary_sd, specific_sd, theta_p_eap, theta_p_sd, category_counts, loglik_trace, fixed_loglik_trace, fixed_primary_first_moment_trace, fixed_primary_second_moment_trace, fixed_specific_second_moment_trace, prior_mean_trace, prior_covariance_trace, prior_specific_sd_trace, n_iter, converged, termination_reason, final_loglik_change, n_parameters })
+    Ok(TwoTierFipcResult { a_primary, a_specific, threshold, primary_mean: mean, primary_cov: covariance, primary_sd, specific_sd, theta_p_eap, theta_p_sd, category_counts, loglik_trace, fixed_loglik_trace, fixed_primary_first_moment_trace, fixed_primary_second_moment_trace, fixed_specific_second_moment_trace, prior_mean_trace, prior_covariance_trace, prior_specific_sd_trace, n_iter, converged, termination_reason, final_loglik_change, n_parameters, n_accepted_prior_steps, n_rollback_full, consecutive_rollback })
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item — the

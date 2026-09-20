@@ -1035,6 +1035,9 @@ fn fit_2pl(
     out.set_item("termination_reason", res.termination_reason)?;
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("n_accepted_prior_steps", res.n_accepted_prior_steps)?;
+    out.set_item("n_rollback_full", res.n_rollback_full)?;
+    out.set_item("consecutive_rollback", res.consecutive_rollback)?;
     Ok(out.into())
 }
 

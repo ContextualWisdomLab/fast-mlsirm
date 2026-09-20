@@ -25,3 +25,9 @@ Anchored item rows remain bit-for-bit fixed. Non-unit focal priors are represent
 only by mapped primary nodes and scaled specific nodes, never by density-ratio
 weights. Final scoring repeats the same direct-GH mapping and standard weights,
 so reported EAPs use the measure used during fitting.
+
+To prevent an otherwise unbounded direct-GH retry loop, three consecutive full
+rollbacks terminate with `termination_reason="prior_update_stalled"` and
+`converged=false`. The result reports accepted prior steps, full rollback count,
+and the final rollback streak; these counters are diagnostic only and do not
+change the strict likelihood guard or tolerance.
