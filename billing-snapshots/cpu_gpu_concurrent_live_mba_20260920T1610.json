@@ -1,7 +1,9 @@
 {
   "artifact": "cpu_gpu_concurrent_live_mba",
-  "schema": "cpu_gpu_concurrent_live/v1",
-  "pass_gate": "n_compared > 0 and parity_holds",
+  "schema": "cpu_gpu_concurrent_live/v2",
+  "schema_notes": "v2: selected adapter (not hardcoded not_llvmpipe); shape/finite/count checks; separate overlap_verdict; span_wall_s replaces mono_overlap_wall_s; call-time overlap \u2260 HW kernel concurrency; converged=false blocks research/speed claims",
+  "reinforces_commit": "2a8b7f0b0ac2d8313f32d62c9bc76cc433f5c4b0",
+  "pass_gate": "n_compared > 0 and parity_holds and shapes_equal and all_compared_finite and selected adapter not_llvmpipe",
   "passed": true,
   "host": "Seonghoui-MacBookAir.local",
   "machine": "arm64",
@@ -12,19 +14,29 @@
     "cpu": "host_cpu",
     "gpu_requested": "gpu",
     "backend_expected": "wgpu\u2192Metal on Darwin arm64",
-    "system_profiler": [
+    "selected_adapter_name": "Apple M5",
+    "selected_adapter_vendor": "Apple (0x106b)",
+    "selected_adapter_type": "GPU",
+    "selected_adapter_metal_support": "Metal 4",
+    "selected_adapter_bus": "Built-In",
+    "selected_adapter_gpu_cores": "10",
+    "selected_from": "system_profiler SPDisplaysDataType (first Type: GPU block)",
+    "not_llvmpipe": true,
+    "llvmpipe_rejection_basis": "name/vendor/Metal strings inspected; llvmpipe/lavapipe/swiftshader absent and Apple/Metal markers present",
+    "system_profiler_gpu_lines": [
       "Chipset Model: Apple M5",
       "Type: GPU",
+      "Bus: Built-In",
+      "Total Number of Cores: 10",
       "Vendor: Apple (0x106b)",
       "Metal Support: Metal 4",
       "Display Type: Built-in Liquid Retina Display",
       "Connection Type: Internal"
-    ],
-    "not_llvmpipe": true
+    ]
   },
   "memory": {
     "hw_memsize_gb": 32.0,
-    "vm_swapusage": "total = 61440.00M  used = 60834.12M  free = 605.88M  (encrypted)"
+    "vm_swapusage": "total = 56320.00M  used = 54775.56M  free = 1544.44M  (encrypted)"
   },
   "fixture": {
     "n_cat": 3,
@@ -42,33 +54,39 @@
     "note": "TINY identical input; concurrent Barrier(2); NOT A4; no new cargo"
   },
   "timing": {
-    "wall_clock_start_utc": "2026-09-20T16:10:28.182011+00:00",
-    "wall_clock_end_utc": "2026-09-20T16:10:28.421872+00:00",
-    "overlap": {
-      "mono_overlap_wall_s": 0.23812,
+    "wall_clock_start_utc": "2026-09-20T16:55:04.081483+00:00",
+    "wall_clock_end_utc": "2026-09-20T16:55:04.207153+00:00",
+    "overlap_timing": {
+      "span_wall_s": 0.125236,
       "cpu_mono_interval": [
-        3281089.814323166,
-        3281089.838802541
+        3283765.677441666,
+        3283765.687627583
       ],
       "gpu_mono_interval": [
-        3281089.794064916,
-        3281090.027620541
+        3283765.675746208,
+        3283765.800482708
       ],
-      "simultaneous": true,
-      "simultaneous_interval_s": 0.024479
+      "simultaneous_interval_s": 0.010186
     },
-    "cpu_wall_s": 0.024479,
-    "gpu_wall_s": 0.233556
+    "cpu_wall_s": 0.010186,
+    "gpu_wall_s": 0.124736
+  },
+  "overlap_verdict": {
+    "call_time_intervals_overlap": true,
+    "simultaneous_interval_s": 0.010186,
+    "basis": "perf_counter intervals of Barrier-synced fit_bifactor_grm calls",
+    "interpretation": "call-time interval overlap measures Barrier-synced Python thread wall intervals only; it does NOT prove hardware kernel concurrency on Metal/wgpu",
+    "hardware_kernel_concurrency_claimed": false
   },
   "arms": {
     "cpu": {
       "ok": true,
       "device_requested": "cpu",
-      "wall_clock_start": "2026-09-20T16:10:28.208256+00:00",
-      "wall_clock_end": "2026-09-20T16:10:28.232736+00:00",
-      "mono_start": 3281089.814323166,
-      "mono_end": 3281089.838802541,
-      "wall_s": 0.024479,
+      "wall_clock_start": "2026-09-20T16:55:04.083894+00:00",
+      "wall_clock_end": "2026-09-20T16:55:04.094082+00:00",
+      "mono_start": 3283765.677441666,
+      "mono_end": 3283765.687627583,
+      "wall_s": 0.010186,
       "converged": false,
       "n_iter": 5,
       "loglik": -65.26145389243662,
@@ -77,11 +95,11 @@
     "gpu": {
       "ok": true,
       "device_requested": "gpu",
-      "wall_clock_start": "2026-09-20T16:10:28.187996+00:00",
-      "wall_clock_end": "2026-09-20T16:10:28.421560+00:00",
-      "mono_start": 3281089.794064916,
-      "mono_end": 3281090.027620541,
-      "wall_s": 0.233556,
+      "wall_clock_start": "2026-09-20T16:55:04.082198+00:00",
+      "wall_clock_end": "2026-09-20T16:55:04.206945+00:00",
+      "mono_start": 3283765.675746208,
+      "mono_end": 3283765.800482708,
+      "wall_s": 0.124736,
       "converged": false,
       "n_iter": 5,
       "loglik": -65.26145434379578,
@@ -93,28 +111,109 @@
     "n_compared": 17,
     "n_exceeded": 0,
     "parity_holds": true,
+    "shapes_equal": true,
+    "all_compared_finite": true,
+    "shape_finite_checks": [
+      {
+        "name": "a_general",
+        "cpu_shape": [
+          4
+        ],
+        "gpu_shape": [
+          4
+        ],
+        "shapes_equal": true,
+        "cpu_size": 4,
+        "gpu_size": 4,
+        "cpu_finite_count": 4,
+        "gpu_finite_count": 4,
+        "compared_finite_count": 4,
+        "all_finite_cpu": true,
+        "all_finite_gpu": true
+      },
+      {
+        "name": "a_specific",
+        "cpu_shape": [
+          4
+        ],
+        "gpu_shape": [
+          4
+        ],
+        "shapes_equal": true,
+        "cpu_size": 4,
+        "gpu_size": 4,
+        "cpu_finite_count": 4,
+        "gpu_finite_count": 4,
+        "compared_finite_count": 4,
+        "all_finite_cpu": true,
+        "all_finite_gpu": true
+      },
+      {
+        "name": "threshold",
+        "cpu_shape": [
+          4,
+          2
+        ],
+        "gpu_shape": [
+          4,
+          2
+        ],
+        "shapes_equal": true,
+        "cpu_size": 8,
+        "gpu_size": 8,
+        "cpu_finite_count": 8,
+        "gpu_finite_count": 8,
+        "compared_finite_count": 8,
+        "all_finite_cpu": true,
+        "all_finite_gpu": true
+      },
+      {
+        "name": "loglik",
+        "cpu_shape": [],
+        "gpu_shape": [],
+        "shapes_equal": true,
+        "cpu_size": 1,
+        "gpu_size": 1,
+        "cpu_finite_count": 1,
+        "gpu_finite_count": 1,
+        "compared_finite_count": 1,
+        "all_finite_cpu": true,
+        "all_finite_gpu": true
+      }
+    ],
     "parts": [
       {
         "name": "a_general",
         "n": 4,
-        "max_abs": 3.3036472446568155e-07
+        "max_abs": 3.3036472446568155e-07,
+        "n_exceeded_atol": 0
       },
       {
         "name": "a_specific",
         "n": 4,
-        "max_abs": 1.5330219804710055e-07
+        "max_abs": 1.5330219804710055e-07,
+        "n_exceeded_atol": 0
       },
       {
         "name": "threshold",
         "n": 8,
-        "max_abs": 2.8867978818514217e-07
+        "max_abs": 2.8867978818514217e-07,
+        "n_exceeded_atol": 0
       },
       {
         "name": "loglik",
         "n": 1,
-        "max_abs": 4.513591562727015e-07
+        "max_abs": 4.513591562727015e-07,
+        "n_exceeded_atol": 0
       }
     ]
+  },
+  "claim_policy": {
+    "any_arm_converged_false": true,
+    "research_claim_allowed": false,
+    "speed_claim_allowed": false,
+    "reason": "max_iter=5 smoke fixture; arms report converged=false \u2014 no research inference and no speed/throughput claim from this artifact",
+    "smoke_only": true
   },
   "a4_restarted": false,
   "mac_large_build": false
