@@ -254,6 +254,7 @@ def main() -> int:
             results.append(("deadline_drain_multi_batch_raw_stream", f"FAIL {exc}"))
 
         # --- empty-stream deadline (must not hang on BLOCK 0) ---
+        # Watchdog thread fails closed if wait_for_committed exceeds upper bound.
         empty_stream = f"fast-mlsirm:ev:{suffix}:empty"
         empty_group = f"fast-mlsirm-ev-{suffix}-empty"
         owned.extend([empty_stream, f"{empty_stream}:committed"])
@@ -265,16 +266,120 @@ def main() -> int:
             block_ms=100,
         )
         missing_fp = _completed(99, {"x": 1}).envelope_fingerprint
+        wait_s = 0.4
+        upper_s = 2.0
+        done_empty = threading.Event()
+        watchdog_fired = threading.Event()
+        empty_result: dict[str, object] = {}
+
+        def _empty_watchdog() -> None:
+            if not done_empty.wait(timeout=upper_s + 0.5):
+                watchdog_fired.set()
+
+        watchdog = threading.Thread(target=_empty_watchdog, daemon=True)
+        watchdog.start()
         t0 = time.monotonic()
-        deadline = t0 + 0.4
-        found = store_empty.wait_for_committed((missing_fp,), deadline=deadline)
+        deadline = t0 + wait_s
+        try:
+            found = store_empty.wait_for_committed((missing_fp,), deadline=deadline)
+            empty_result["found"] = found
+        finally:
+            done_empty.set()
         elapsed = time.monotonic() - t0
+        watchdog.join(timeout=1.0)
         results.append(
             (
                 "empty_stream_deadline",
                 "PASS"
-                if found == {} and 0.3 <= elapsed <= 2.0
-                else f"FAIL found={found!r} elapsed={elapsed:.3f}",
+                if (
+                    not watchdog_fired.is_set()
+                    and empty_result.get("found") == {}
+                    and wait_s - 0.1 <= elapsed <= upper_s
+                )
+                else (
+                    f"FAIL found={empty_result.get('found')!r} elapsed={elapsed:.3f} "
+                    f"watchdog={watchdog_fired.is_set()}"
+                ),
+            )
+        )
+
+        # --- final lookup after drain past deadline (no false timeout) ---
+        late_stream = f"fast-mlsirm:ev:{suffix}:late"
+        late_group = f"fast-mlsirm-ev-{suffix}-late"
+        owned.extend([late_stream, f"{late_stream}:committed"])
+        late_outcome = _completed(98, {"late": True})
+        ValkeyStreamsOutcomeStore(
+            client, stream=late_stream, group=late_group, consumer="seed", block_ms=50
+        )
+        client.xadd(late_stream, _record(late_outcome))
+
+        class _SlowPersistStore(ValkeyStreamsOutcomeStore):
+            def _accept_records(self, records):  # type: ignore[no-untyped-def]
+                time.sleep(0.12)
+                return super()._accept_records(records)
+
+        store_late = _SlowPersistStore(
+            client,
+            stream=late_stream,
+            group=late_group,
+            consumer="driver",
+            batch_size=10,
+            block_ms=50,
+            min_idle_ms=0,
+        )
+        late_deadline = time.monotonic() + 0.05
+        late_found = store_late.wait_for_committed(
+            (late_outcome.envelope_fingerprint,), deadline=late_deadline
+        )
+        results.append(
+            (
+                "final_lookup_after_deadline_drain",
+                "PASS"
+                if late_found.get(late_outcome.envelope_fingerprint) == late_outcome
+                else f"FAIL found={set(late_found)!r}",
+            )
+        )
+
+        # --- bounded drain under continuous XADD (deadline must win) ---
+        flood_stream = f"fast-mlsirm:ev:{suffix}:flood"
+        flood_group = f"fast-mlsirm-ev-{suffix}-flood"
+        owned.extend([flood_stream, f"{flood_stream}:committed"])
+        ValkeyStreamsOutcomeStore(
+            client, stream=flood_stream, group=flood_group, consumer="seed", block_ms=50
+        )
+        stop_flood = threading.Event()
+
+        def _flood() -> None:
+            n = 0
+            while not stop_flood.is_set():
+                oc = _completed(300 + (n % 50), {"flood": n})
+                client.xadd(flood_stream, _record(oc))
+                n += 1
+                time.sleep(0.005)
+
+        flood_thread = threading.Thread(target=_flood, daemon=True)
+        flood_thread.start()
+        store_flood = ValkeyStreamsOutcomeStore(
+            client,
+            stream=flood_stream,
+            group=flood_group,
+            consumer="driver",
+            batch_size=2,
+            block_ms=50,
+            min_idle_ms=0,
+        )
+        flood_wait = 0.25
+        flood_t0 = time.monotonic()
+        store_flood._drain(deadline=flood_t0 + flood_wait)
+        flood_elapsed = time.monotonic() - flood_t0
+        stop_flood.set()
+        flood_thread.join(timeout=2.0)
+        results.append(
+            (
+                "bounded_drain_under_flood",
+                "PASS"
+                if flood_elapsed <= flood_wait + 0.75
+                else f"FAIL elapsed={flood_elapsed:.3f}",
             )
         )
 

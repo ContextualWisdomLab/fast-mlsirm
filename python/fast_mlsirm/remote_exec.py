@@ -794,44 +794,21 @@ class ValkeyStreamsOutcomeStore:
             block_ms,
         )
 
-    def _drain(self, *, deadline: float | None = None) -> None:
-        records: list[tuple[object, dict[object, object]]] = []
-        start_id = "0-0"
-        while True:
-            claimed = self._client.xautoclaim(
-                self._stream,
-                self._group,
-                self._consumer,
-                self._min_idle_ms,
-                start_id,
-                count=self._batch_size,
-            )
-            next_id = _valkey_text(claimed[0]) if claimed else "0-0"
-            batch = list(claimed[1]) if claimed else []
-            records.extend(batch)
-            # XAUTOCLAIM may return a short/empty batch while the PEL cursor
-            # still has later entries (e.g. ineligible idle time). Advance
-            # until the server reports cursor 0-0.
-            if next_id == "0-0":
-                break
-            start_id = next_id
+    @staticmethod
+    def _deadline_exceeded(deadline: float | None) -> bool:
+        return deadline is not None and time.monotonic() >= deadline
 
-        fresh = self._xreadgroup(
-            count=self._batch_size,
-            block_ms=self._block_ms_for_read(deadline),
-        )
-        while fresh:
-            for _stream, messages in fresh:
-                records.extend(messages)
-            # Never pass BLOCK 0: that is infinite wait on Redis/Valkey.
-            fresh = self._xreadgroup(count=self._batch_size, block_ms=None)
-
-        records.sort(
+    def _accept_records(
+        self, records: Sequence[tuple[object, dict[object, object]]]
+    ) -> None:
+        """Persist and ACK one batch in stream-id order."""
+        ordered = sorted(
+            records,
             key=lambda record: tuple(
                 int(part) for part in _valkey_text(record[0]).split("-")
-            )
+            ),
         )
-        for record_id, raw_fields in records:
+        for record_id, raw_fields in ordered:
             fields = {
                 _valkey_text(key): _valkey_text(value)
                 for key, value in raw_fields.items()
@@ -844,6 +821,53 @@ class ValkeyStreamsOutcomeStore:
                 raise ValueError("Valkey outcome fingerprint does not match its payload")
             self._persist_committed(fingerprint, outcome)
             self._client.xack(self._stream, self._group, record_id)
+
+    def _drain(self, *, deadline: float | None = None) -> None:
+        """Claim then read new records in bounded batches with mid persist/ACK.
+
+        Each XAUTOCLAIM / XREADGROUP batch is persisted and acknowledged before
+        the next fetch so a deadline exit cannot leave a large in-memory backlog
+        uncommitted. Claim and fresh loops re-check the remaining deadline so a
+        stream that keeps receiving messages cannot hang past ``deadline``.
+        """
+        start_id = "0-0"
+        while True:
+            if self._deadline_exceeded(deadline):
+                return
+            claimed = self._client.xautoclaim(
+                self._stream,
+                self._group,
+                self._consumer,
+                self._min_idle_ms,
+                start_id,
+                count=self._batch_size,
+            )
+            next_id = _valkey_text(claimed[0]) if claimed else "0-0"
+            batch = list(claimed[1]) if claimed else []
+            if batch:
+                self._accept_records(batch)
+            # XAUTOCLAIM may return a short/empty batch while the PEL cursor
+            # still has later entries (e.g. ineligible idle time). Advance
+            # until the server reports cursor 0-0.
+            if next_id == "0-0":
+                break
+            start_id = next_id
+
+        block_ms = self._block_ms_for_read(deadline)
+        while True:
+            if self._deadline_exceeded(deadline):
+                return
+            fresh = self._xreadgroup(count=self._batch_size, block_ms=block_ms)
+            # Never pass BLOCK 0: that is infinite wait on Redis/Valkey.
+            # Follow-up reads omit BLOCK; only the first read in this drain may block.
+            block_ms = None
+            if not fresh:
+                break
+            batch: list[tuple[object, dict[object, object]]] = []
+            for _stream, messages in fresh:
+                batch.extend(messages)
+            if batch:
+                self._accept_records(batch)
 
     def successful_count(self, fingerprint: str) -> int:
         """Return whether a completed record exists for ``fingerprint``."""
@@ -868,7 +892,12 @@ class ValkeyStreamsOutcomeStore:
         *,
         deadline: float,
     ) -> Mapping[str, RemoteJobOutcome]:
-        """Drain/claim until ``deadline`` or every fingerprint is durably committed."""
+        """Drain/claim until ``deadline`` or every fingerprint is durably committed.
+
+        After the wait loop exits, perform one final hash lookup so a drain that
+        persisted the last needed fingerprint at/after the deadline does not
+        report a false timeout.
+        """
         needed = {_fingerprint(fingerprint, "fingerprint") for fingerprint in fingerprints}
         found: dict[str, RemoteJobOutcome] = {}
         while needed - found.keys() and time.monotonic() < deadline:
@@ -879,6 +908,10 @@ class ValkeyStreamsOutcomeStore:
             if len(found) == len(needed):
                 break
             self._drain(deadline=deadline)
+        for fingerprint in list(needed - found.keys()):
+            outcome = self._committed_outcome(fingerprint)
+            if outcome is not None:
+                found[fingerprint] = outcome
         return found
 
     def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None:

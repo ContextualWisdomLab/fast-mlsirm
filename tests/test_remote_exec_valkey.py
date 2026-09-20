@@ -161,13 +161,96 @@ def test_valkey_wait_for_committed_empty_stream_respects_deadline() -> None:
         client, stream="outcomes", group="drivers", consumer="d1", block_ms=50
     )
     fingerprint = _completed_outcome(40, {"missing": True}).envelope_fingerprint
-    deadline = time.monotonic() + 0.05
+    wait_s = 0.05
+    started = time.monotonic()
+    deadline = started + wait_s
 
     found = store.wait_for_committed((fingerprint,), deadline=deadline)
+    elapsed = time.monotonic() - started
 
     assert found == {}
-    assert time.monotonic() >= deadline
+    assert elapsed >= wait_s
+    # Upper bound: must not hang well past the deadline (BLOCK 0 / unbounded drain).
+    assert elapsed <= wait_s + 0.5
     assert all(block != 0 for block in client.xreadgroup_blocks)
+
+
+def test_valkey_wait_for_committed_final_lookup_after_drain_past_deadline() -> None:
+    """Last drain may persist after the deadline; return that fingerprint, not timeout."""
+
+    class PersistThenStall(FakeValkey):
+        def __init__(self) -> None:
+            super().__init__()
+            self._served = False
+
+        def xreadgroup(self, groupname, consumername, streams, count, block=None):
+            self.commands.append("XREADGROUP")
+            self.xreadgroup_blocks.append(block)
+            name = next(iter(streams))
+            if self.streams.get(name) and not self._served:
+                self._served = True
+                entries = self.streams[name][:count]
+                self.streams[name] = self.streams[name][len(entries) :]
+                time.sleep(0.08)
+                return [(name, entries)] if entries else []
+            return []
+
+    client = PersistThenStall()
+    outcome = _completed_outcome(41, {"late": True})
+    client.streams["outcomes"] = [("1-0", _record(outcome))]
+    store = ValkeyStreamsOutcomeStore(
+        client, stream="outcomes", group="drivers", consumer="d1", block_ms=10
+    )
+    deadline = time.monotonic() + 0.05
+
+    found = store.wait_for_committed((outcome.envelope_fingerprint,), deadline=deadline)
+
+    assert found == {outcome.envelope_fingerprint: outcome}
+    assert client.acked == ["1-0"]
+
+
+def test_valkey_drain_respects_deadline_under_endless_fresh_stream() -> None:
+    """Fresh XREADGROUP batches must stop at the deadline even if messages keep arriving."""
+
+    class EndlessFresh(FakeValkey):
+        def __init__(self) -> None:
+            super().__init__()
+            self.reads = 0
+            self._template = _record(_completed_outcome(200, {"n": 0}))
+
+        def xreadgroup(self, groupname, consumername, streams, count, block=None):
+            self.commands.append("XREADGROUP")
+            self.xreadgroup_blocks.append(block)
+            self.reads += 1
+            if self.reads > 40:
+                raise AssertionError(f"unbounded fresh drain: {self.reads} reads")
+            # Simulate continuous arrivals without burning LoopbackExecutor each time.
+            time.sleep(0.02)
+            fields = dict(self._template)
+            return [("outcomes", [(f"{self.reads}-0", fields)])]
+
+    client = EndlessFresh()
+    store = ValkeyStreamsOutcomeStore(
+        client,
+        stream="outcomes",
+        group="drivers",
+        consumer="d1",
+        batch_size=1,
+        block_ms=10,
+    )
+    wait_s = 0.15
+    started = time.monotonic()
+    deadline = started + wait_s
+
+    store._drain(deadline=deadline)
+    elapsed = time.monotonic() - started
+
+    assert elapsed <= wait_s + 0.35
+    assert 1 <= client.reads <= 20
+    assert len(client.acked) == client.reads
+    # Same template fingerprint → HSETNX keeps a single durable winner.
+    assert len(client.hashes.get("outcomes:committed", {})) == 1
+    assert 0 not in client.xreadgroup_blocks
 
 
 def test_valkey_backend_publishes_envelope_and_consumes_completed_outcome() -> None:
