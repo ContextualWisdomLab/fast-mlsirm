@@ -116,6 +116,24 @@ def gauss_hermite_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
     return nodes, weights
 
 
+def equal_probability_normal_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
+    """Equal-probability quadrature nodes/weights for a standard-normal N(0, 1) prior.
+
+    Nodes are the inverse CDF at midpoints of ``n_nodes`` equal probability bins:
+    ``norm.ppf((arange(1, n+1) - 0.5) / n)`` with uniform weights ``1/n``. This
+    matches the study rule ``qnorm((seq_len(n) - 0.5) / n)`` with weight ``1/n``
+    used in bifactor FIPC convergence analyses.
+    """
+    if n_nodes < 1:
+        raise ValueError("n_nodes must be >= 1")
+    from scipy.stats import norm
+
+    probs = (np.arange(1, n_nodes + 1, dtype=np.float64) - 0.5) / n_nodes
+    nodes = norm.ppf(probs)
+    weights = np.full(n_nodes, 1.0 / n_nodes, dtype=np.float64)
+    return nodes, weights
+
+
 def fit_mmle_2pl(
     y: np.ndarray,
     observed: np.ndarray,
