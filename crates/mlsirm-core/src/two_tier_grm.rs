@@ -1349,6 +1349,7 @@ pub fn fit_two_tier_grm_fipc(
     let mut n_iter = 0;
     let mut termination_reason = "max_iter_reached".to_string();
     let mut final_loglik_change = f64::NAN;
+    let mut rolled_back = false;
 
     loop {
         let (chol, _) = cholesky_lower(&covariance, n_primary)
@@ -1404,12 +1405,17 @@ pub fn fit_two_tier_grm_fipc(
             )
         })? {
             final_loglik_change = change;
-            if change <= cfg.tol * (1.0 + previous.expect("previous loglik exists").abs()) {
+            // A rejected combined update restores the prior iteration state;
+            // its next LL is flat by construction, not evidence of convergence.
+            if !rolled_back
+                && change <= cfg.tol * (1.0 + previous.expect("previous loglik exists").abs())
+            {
                 converged = true;
                 termination_reason = "tolerance_met".to_string();
                 break;
             }
         }
+        rolled_back = false;
         loglik_trace.push(ll);
         if n_iter == cfg.max_iter { break; }
         let previous_params = params.clone();
@@ -1488,7 +1494,9 @@ pub fn fit_two_tier_grm_fipc(
             })
         };
         let acceptance_tolerance = 32.0 * f64::EPSILON * (1.0 + ll.abs());
-        if candidate_ll.is_none_or(|value| value < ll - acceptance_tolerance) {
+        if !candidate_ll.is_some_and(|value| {
+            value.is_finite() && value >= ll - acceptance_tolerance
+        }) {
             let target_mean = mean.clone();
             let target_covariance = covariance.clone();
             let target_specific_sd = specific_sd.clone();
@@ -1547,6 +1555,7 @@ pub fn fit_two_tier_grm_fipc(
                 mean = previous_mean;
                 covariance = previous_covariance;
                 specific_sd = previous_specific_sd;
+                rolled_back = true;
             }
         }
         prior_mean_trace.extend_from_slice(&mean);

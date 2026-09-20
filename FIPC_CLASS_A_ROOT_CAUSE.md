@@ -16,6 +16,11 @@ state together. This keeps E-statistics, the item M-step, prior moments, and
 the scoring/EAP pass on one coordinate system and leaves the strict LL guard
 unchanged.
 
+Non-finite candidate LLs are rejected explicitly before line search; NaN is not
+allowed through comparison semantics. A complete rollback is marked as a
+non-convergent iteration, so the flat LL produced by restoring the prior state
+cannot be mistaken for EM convergence on the following pass.
+
 Anchored item rows remain bit-for-bit fixed. Non-unit focal priors are represented
 only by mapped primary nodes and scaled specific nodes, never by density-ratio
 weights. Final scoring repeats the same direct-GH mapping and standard weights,
