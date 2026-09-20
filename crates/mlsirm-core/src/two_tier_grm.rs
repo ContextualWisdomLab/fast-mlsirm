@@ -1507,9 +1507,25 @@ pub fn fit_two_tier_grm_fipc(
             let target_mean = mean.clone();
             let target_covariance = covariance.clone();
             let target_specific_sd = specific_sd.clone();
+            let target_params = params.clone();
             let mut alpha = 0.5;
             let mut accepted = false;
             while alpha >= 1e-6 {
+                for i in 0..n_items {
+                    for j in 0..params[i].a_p.len() {
+                        params[i].a_p[j] = previous_params[i].a_p[j]
+                            + alpha * (target_params[i].a_p[j] - previous_params[i].a_p[j]);
+                    }
+                    params[i].a_s = match (previous_params[i].a_s, target_params[i].a_s) {
+                        (Some(previous), Some(target)) => Some(previous + alpha * (target - previous)),
+                        (None, None) => None,
+                        _ => target_params[i].a_s,
+                    };
+                    for j in 0..params[i].d.len() {
+                        params[i].d[j] = previous_params[i].d[j]
+                            + alpha * (target_params[i].d[j] - previous_params[i].d[j]);
+                    }
+                }
                 for d in 0..n_primary {
                     mean[d] = previous_mean[d] + alpha * (target_mean[d] - previous_mean[d]);
                 }

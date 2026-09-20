@@ -158,6 +158,15 @@ fn fipc_keeps_anchor_rows_and_returns_focal_moments() {
         fit.prior_specific_sd_trace.len(),
         fit.n_iter * TINY_N_SPECIFIC
     );
+    assert_eq!(
+        fit.n_accepted_prior_steps + fit.n_rollback_full,
+        fit.n_iter
+    );
+    assert!(fit.consecutive_rollback <= 3);
+    if fit.termination_reason == "prior_update_stalled" {
+        assert!(!fit.converged);
+        assert_eq!(fit.consecutive_rollback, 3);
+    }
 }
 
 #[test]

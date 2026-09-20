@@ -26,6 +26,13 @@ only by mapped primary nodes and scaled specific nodes, never by density-ratio
 weights. Final scoring repeats the same direct-GH mapping and standard weights,
 so reported EAPs use the measure used during fitting.
 
+When a full prior update fails the direct-GH likelihood check, backtracking now
+interpolates the free item parameters and focal prior together from the previous
+accepted state. Shrinking only the prior while retaining the full item M-step
+candidate tested an inconsistent pair and caused every trial to roll back; the
+joint step preserves the E-step/M-step coordinate relationship while allowing a
+small monotone update toward the non-unit focal fixture.
+
 To prevent an otherwise unbounded direct-GH retry loop, three consecutive full
 rollbacks terminate with `termination_reason="prior_update_stalled"` and
 `converged=false`. The result reports accepted prior steps, full rollback count,
