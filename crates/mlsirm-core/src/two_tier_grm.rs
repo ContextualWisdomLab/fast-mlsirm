@@ -1185,7 +1185,6 @@ fn fipc_primary_coords(base: &[f64], mean: &[f64], chol: &[f64], p: usize, n_gri
 /// normal distribution. The density ratio keeps transformed nodes and their
 /// integration weights consistent, including non-unit specific-factor SDs.
 fn fipc_affine_log_weights(
-    base: &[f64],
     log_base: &[f64],
     transformed: &[f64],
     center: &[f64],
@@ -1199,9 +1198,9 @@ fn fipc_affine_log_weights(
         let mut reference_quad = 0.0;
         let mut target_quad = 0.0;
         for i in 0..dim {
-            let z = base[g * dim + i];
-            let x = transformed[g * dim + i] - center[i];
-            reference_quad += z * z;
+            let transformed_x = transformed[g * dim + i];
+            let x = transformed_x - center[i];
+            reference_quad += transformed_x * transformed_x;
             for j in 0..dim {
                 target_quad += x * precision[i * dim + j]
                     * (transformed[g * dim + j] - center[j]);
@@ -1212,10 +1211,10 @@ fn fipc_affine_log_weights(
     out
 }
 
-fn fipc_specific_log_weights(base: &[f64], log_base: &[f64], scaled: &[f64], sd: f64) -> Vec<f64> {
+fn fipc_specific_log_weights(log_base: &[f64], scaled: &[f64], sd: f64) -> Vec<f64> {
     let logdet = 2.0 * sd.ln();
     let precision = [1.0 / (sd * sd)];
-    fipc_affine_log_weights(base, log_base, scaled, &[0.0], &precision, logdet, 1)
+    fipc_affine_log_weights(log_base, scaled, &[0.0], &precision, logdet, 1)
 }
 
 /// Fit a focal group with fixed item anchors under the two-tier GRM.
@@ -1332,11 +1331,11 @@ pub fn fit_two_tier_grm_fipc(
             .map(|s| ts_std.iter().map(|&x| x * specific_sd[s]).collect())
             .collect();
         let log_ws_by_specific: Vec<Vec<f64>> = (0..n_specific)
-            .map(|s| fipc_specific_log_weights(ts_std, &log_ws, &ts_by_specific[s], specific_sd[s]))
+            .map(|s| fipc_specific_log_weights(&log_ws, &ts_by_specific[s], specific_sd[s]))
             .collect();
         let phi_inv = chol_inverse(&chol, n_primary);
         let log_w = fipc_affine_log_weights(
-            &base_coords, &log_w0, &coords, &mean, &phi_inv, logdet, n_primary,
+            &log_w0, &coords, &mean, &phi_inv, logdet, n_primary,
         );
         let (ll, counts, sum_primary, sum_primary2, sum_specific2, specific_mass, _, _) =
             e_step_fipc(&v, y, observed, &params, &log_w, &log_ws_by_specific, &coords, &ts_by_specific, n_grid, ts_std.len());
@@ -1394,11 +1393,11 @@ pub fn fit_two_tier_grm_fipc(
         .map(|s| ts_std.iter().map(|&x| x * specific_sd[s]).collect())
         .collect();
     let log_ws_by_specific: Vec<Vec<f64>> = (0..n_specific)
-        .map(|s| fipc_specific_log_weights(ts_std, &log_ws, &ts_by_specific[s], specific_sd[s]))
+        .map(|s| fipc_specific_log_weights(&log_ws, &ts_by_specific[s], specific_sd[s]))
         .collect();
     let phi_inv = chol_inverse(&chol, n_primary);
     let log_w = fipc_affine_log_weights(
-        &base_coords, &log_w0, &coords, &mean, &phi_inv, logdet, n_primary,
+        &log_w0, &coords, &mean, &phi_inv, logdet, n_primary,
     );
     let (_, _, _, _, _, _, theta_p_eap, theta_p_sd) = e_step_fipc(&v, y, observed, &params, &log_w, &log_ws_by_specific, &coords, &ts_by_specific, n_grid, ts_std.len());
     let mut a_primary = vec![0.0; n_items * n_primary];
