@@ -6,8 +6,12 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
+import queue
 import socket
+import sqlite3
+import time
 
 import pytest
 from importlib.metadata import PackageNotFoundError, version
@@ -31,6 +35,7 @@ from fast_mlsirm.remote_exec import (
     RemoteRunManifest,
     RemoteWorkerProvenance,
     SEED_DERIVATION_RULE,
+    SQLiteOutcomeCommitLedger,
     SubprocessExecutor,
     admit_remote_job_family,
     derive_index_seed,
@@ -40,6 +45,97 @@ from fast_mlsirm.remote_exec import (
 _SHA = "a" * 64
 _SHA_B = "b" * 64
 _SHA_C = "c" * 64
+
+
+def _run_sqlite_executor(database: str, result_queue) -> None:
+    manifest = _manifest()
+    envelope = _envelope(
+        family=RemoteJobFamily.MC_REPLICATE,
+        unit_index=1,
+        base_seed=77,
+        manifest=manifest,
+    )
+    outcome = SubprocessExecutor(
+        socket.gethostname(),
+        ledger=SQLiteOutcomeCommitLedger(database),
+    ).run_batch((envelope,), worker_manifest=manifest)[0]
+    result_queue.put(outcome.to_dict())
+
+
+def _commit_sqlite_candidate(database: str, candidate: str, start, result_queue) -> None:
+    manifest = _manifest()
+    envelope = _envelope(manifest=manifest)
+    fingerprint = envelope_fingerprint(envelope)
+    outcome = RemoteJobOutcome(
+        run_id=envelope.run_id,
+        unit_index=envelope.unit_index,
+        unit_seed=derive_index_seed(envelope.base_seed, envelope.unit_index),
+        family=envelope.family,
+        delivery_state=RemoteJobDeliveryState.COMPLETED,
+        result={"candidate": candidate},
+        error_message=None,
+        provenance=RemoteWorkerProvenance(
+            hostname=socket.gethostname(),
+            architecture="test",
+            operating_system="test",
+            library_version=manifest.library_version,
+            source_sha256=manifest.source_sha256,
+            requested_device="cpu",
+            effective_device="cpu",
+            wall_clock_seconds=0.0,
+            worker_host=socket.gethostname(),
+            worker_pid=os.getpid(),
+            cross_host_execution=False,
+        ),
+        input_identity_sha256=fingerprint,
+        output_identity_sha256=_SHA_C,
+        envelope_fingerprint=fingerprint,
+        driver_host=socket.gethostname(),
+        driver_pid=os.getpid(),
+    )
+    start.wait()
+    committed = SQLiteOutcomeCommitLedger(database).commit_success(fingerprint, outcome)
+    result_queue.put(committed.to_dict())
+
+
+def _stall(stop) -> None:
+    stop.wait()
+
+
+def _collect_process_results(processes, result_queue, *, timeout: float):
+    deadline = time.monotonic() + timeout
+    try:
+        try:
+            results = [
+                result_queue.get(timeout=max(0, deadline - time.monotonic()))
+                for _ in processes
+            ]
+        except queue.Empty as error:
+            raise TimeoutError("child process did not return a result") from error
+        for process in processes:
+            process.join(max(0, deadline - time.monotonic()))
+            if process.is_alive():
+                raise TimeoutError("child process did not exit")
+            assert process.exitcode == 0
+        return results
+    finally:
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+        cleanup_deadline = time.monotonic() + 2
+        for process in processes:
+            if process.pid is not None:
+                process.join(max(0, cleanup_deadline - time.monotonic()))
+        for process in processes:
+            if process.is_alive():
+                process.kill()
+        kill_deadline = time.monotonic() + 2
+        for process in processes:
+            if process.is_alive():
+                process.join(max(0, kill_deadline - time.monotonic()))
+            assert not process.is_alive()
+        result_queue.close()
+        result_queue.join_thread()
 
 
 def _manifest(*, payload_sha256: str = _SHA, source_sha256: str = _SHA_B) -> RemoteRunManifest:
@@ -345,6 +441,89 @@ def test_subprocess_executor_retry_does_not_record_second_success() -> None:
     assert second.delivery_state is RemoteJobDeliveryState.COMPLETED
     assert second is first
     assert ledger.successful_count(fingerprint) == 1
+
+
+def test_sqlite_ledger_deduplicates_success_across_executor_processes(tmp_path) -> None:
+    """A new driver process must reuse the success left by an exited driver."""
+    database = tmp_path / "remote-outcomes.sqlite3"
+    context = multiprocessing.get_context("spawn")
+    results = context.Queue()
+
+    first_process = context.Process(target=_run_sqlite_executor, args=(str(database), results))
+    first_process.start()
+    first = _collect_process_results((first_process,), results, timeout=30)[0]
+
+    results = context.Queue()
+    resumed_process = context.Process(target=_run_sqlite_executor, args=(str(database), results))
+    resumed_process.start()
+    assert _collect_process_results((resumed_process,), results, timeout=30)[0] == first
+    assert SQLiteOutcomeCommitLedger(database).successful_count(first["envelope_fingerprint"]) == 1
+
+
+def test_sqlite_ledger_concurrent_writers_return_one_first_success(tmp_path) -> None:
+    database = tmp_path / "remote-outcomes.sqlite3"
+    context = multiprocessing.get_context("spawn")
+    start = context.Event()
+    results = context.Queue()
+    writers = [
+        context.Process(
+            target=_commit_sqlite_candidate,
+            args=(str(database), candidate, start, results),
+        )
+        for candidate in ("a", "b")
+    ]
+    for writer in writers:
+        writer.start()
+    start.set()
+    committed = _collect_process_results(writers, results, timeout=30)
+    assert committed[0] == committed[1]
+    assert committed[0]["result"]["candidate"] in {"a", "b"}
+    assert SQLiteOutcomeCommitLedger(database).successful_count(
+        committed[0]["envelope_fingerprint"]
+    ) == 1
+
+
+def test_sqlite_process_cleanup_reaps_a_stalled_child() -> None:
+    context = multiprocessing.get_context("spawn")
+    stop = context.Event()
+    results = context.Queue()
+    child = context.Process(target=_stall, args=(stop,))
+    child.start()
+    started = time.monotonic()
+
+    with pytest.raises(TimeoutError, match="did not return a result"):
+        _collect_process_results((child,), results, timeout=0.2)
+
+    assert time.monotonic() - started < 5
+    assert not child.is_alive()
+
+
+def test_sqlite_ledger_closes_connections_after_repeated_calls(tmp_path, monkeypatch) -> None:
+    from fast_mlsirm import remote_exec
+
+    opened = []
+    connect = sqlite3.connect
+
+    def tracked_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(remote_exec.sqlite3, "connect", tracked_connect)
+    ledger = SQLiteOutcomeCommitLedger(tmp_path / "remote-outcomes.sqlite3")
+    for _ in range(3):
+        assert ledger.successful_count(_SHA) == 0
+        assert ledger.committed_success(_SHA) is None
+    manifest = _manifest()
+    envelope = _envelope(manifest=manifest)
+    SubprocessExecutor(socket.gethostname(), ledger=ledger).run_batch(
+        (envelope,), worker_manifest=manifest
+    )
+
+    assert opened
+    for connection in opened:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            connection.execute("SELECT 1")
 
 
 def test_subprocess_executor_records_input_output_and_version_identity() -> None:
