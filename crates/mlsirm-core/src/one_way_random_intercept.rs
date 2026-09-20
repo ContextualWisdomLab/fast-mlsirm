@@ -74,7 +74,7 @@ pub struct OneWayRandomInterceptIcc {
 /// Returns an error for empty or length-mismatched input, non-finite outcomes,
 /// exactly constant outcomes, fewer than two clusters, non-positive within-cluster
 /// residual degrees of freedom, numerical overflow (including centering overflow),
-/// a represented non-zero within-cluster deviation whose square underflows binary64,
+/// a represented non-zero ANOVA deviation whose square underflows binary64,
 /// a positive within sum of squares whose mean square underflows binary64, or
 /// degenerate zero total variance.
 pub fn one_way_random_intercept_icc(
@@ -149,7 +149,11 @@ pub fn one_way_random_intercept_icc(
             cluster_total / cluster_size
         };
         let between_delta = cluster_mean - grand_mean;
-        sum_of_squares_between += cluster_size * between_delta * between_delta;
+        let between_square = between_delta * between_delta;
+        if between_delta != 0.0 && between_square == 0.0 {
+            return Err("ANOVA squared deviation underflowed binary64".into());
+        }
+        sum_of_squares_between += cluster_size * between_square;
         for &value in values {
             let within_delta = value - cluster_mean;
             let within_square = within_delta * within_delta;
