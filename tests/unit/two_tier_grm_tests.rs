@@ -29,9 +29,61 @@
 //! https://doi.org/10.1177/0146621606289485
 
 use crate::two_tier_grm::{
-    fit_two_tier_grm, two_tier_grm_marginal_loglik, two_tier_grm_marginal_loglik_brute,
-    TwoTierGrmConfig,
+    fit_two_tier_grm, fit_two_tier_grm_fipc, two_tier_grm_marginal_loglik,
+    two_tier_grm_marginal_loglik_brute, TwoTierFipcConfig, TwoTierGrmConfig,
 };
+
+#[test]
+fn fipc_keeps_anchor_rows_and_returns_focal_moments() {
+    let (a_primary, a_specific, thresholds, _) = tiny_params();
+    let n_persons = 60;
+    let mut y = vec![0usize; n_persons * TINY_N_ITEMS];
+    for p in 0..n_persons {
+        for i in 0..TINY_N_ITEMS {
+            y[p * TINY_N_ITEMS + i] = (p + i) % TINY_N_CAT;
+        }
+    }
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let fit = fit_two_tier_grm_fipc(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &anchors,
+        &a_primary,
+        &a_specific,
+        &thresholds,
+        &TwoTierFipcConfig {
+            q_primary: 7,
+            q_specific: 7,
+            max_iter: 2,
+            tol: 1e-5,
+            newton_iter: 2,
+            ridge: 1e-8,
+            estimate_specific_vars: false,
+        },
+    )
+    .expect("two-tier FIPC real-fit path must accept a valid anchored fit");
+    for &i in &[0usize, 7] {
+        assert_eq!(
+            &fit.a_primary[i * TINY_N_PRIMARY..(i + 1) * TINY_N_PRIMARY],
+            &a_primary[i * TINY_N_PRIMARY..(i + 1) * TINY_N_PRIMARY]
+        );
+        assert_eq!(fit.a_specific[i], a_specific[i]);
+        assert_eq!(
+            &fit.threshold[i * (TINY_N_CAT - 1)..(i + 1) * (TINY_N_CAT - 1)],
+            &thresholds[i * (TINY_N_CAT - 1)..(i + 1) * (TINY_N_CAT - 1)]
+        );
+    }
+    assert_eq!(fit.primary_mean.len(), TINY_N_PRIMARY);
+    assert_eq!(fit.primary_cov.len(), TINY_N_PRIMARY * TINY_N_PRIMARY);
+    assert!(fit.loglik_trace.iter().all(|value| value.is_finite()));
+}
 
 // ---------------------------------------------------------------------------
 // Shared tiny two-tier problem: 10 items, P = 2 primaries in simple

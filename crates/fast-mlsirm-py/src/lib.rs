@@ -118,7 +118,11 @@ use mlsirm_core::fitstats::{
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
-use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
+use mlsirm_core::two_tier_grm::{
+    fit_two_tier_grm as core_fit_two_tier_grm,
+    fit_two_tier_grm_fipc as core_fit_two_tier_grm_fipc,
+    TwoTierFipcConfig, TwoTierGrmConfig,
+};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
     gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, phi_lambda as core_phi_lambda,
@@ -1954,6 +1958,69 @@ fn fit_two_tier_grm(
     out.set_item("termination_reason", res.termination_reason)?;
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("best_start", res.best_start)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Focal-group fixed-item parameter calibration (FIPC) for the two-tier GRM.
+/// Anchored rows are pinned to the supplied reference parameters; free rows
+/// and focal primary moments are estimated by MWU-MEM/Bock-Aitkin EM.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, anchor, fixed_a_primary, fixed_a_specific, fixed_threshold, q_primary = 21, q_specific = 11, max_iter = 500, tol = 1e-6, newton_iter = 10, ridge = 1e-8, estimate_specific_vars = false))]
+fn fit_two_tier_grm_fipc(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    primary_map: PyReadonlyArray1<'_, bool>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    anchor: PyReadonlyArray1<'_, bool>,
+    fixed_a_primary: PyReadonlyArray1<'_, f64>,
+    fixed_a_specific: PyReadonlyArray1<'_, f64>,
+    fixed_threshold: PyReadonlyArray1<'_, f64>,
+    q_primary: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+    newton_iter: usize,
+    ridge: f64,
+    estimate_specific_vars: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let y_slice = y.as_slice()?;
+    let obs_vec = observed.as_ref().map(|o| o.as_slice().map(|v| v.to_vec())).transpose()?;
+    let yy: Vec<usize> = y_slice.iter().enumerate().map(|(idx, &v)| {
+        if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) { return Ok(0); }
+        usize::try_from(v).map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+    }).collect::<PyResult<_>>()?;
+    let pmap = primary_map.as_slice()?.to_vec();
+    let smap: Vec<i32> = specific_map.as_slice()?.iter().map(|&v| i32::try_from(v).map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))).collect::<PyResult<_>>()?;
+    let anchor_vec = anchor.as_slice()?.to_vec();
+    let fixed_p = fixed_a_primary.as_slice()?.to_vec();
+    let fixed_s = fixed_a_specific.as_slice()?.to_vec();
+    let fixed_d = fixed_threshold.as_slice()?.to_vec();
+    let cfg = TwoTierFipcConfig { q_primary, q_specific, max_iter, tol, newton_iter, ridge, estimate_specific_vars };
+    let res = py.detach(|| core_fit_two_tier_grm_fipc(&yy, obs_vec.as_deref(), &pmap, &smap, n_persons, n_items, n_primary, n_specific, n_cat, &anchor_vec, &fixed_p, &fixed_s, &fixed_d, &cfg)).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("a_primary", res.a_primary)?;
+    out.set_item("a_specific", res.a_specific)?;
+    out.set_item("threshold", res.threshold)?;
+    out.set_item("primary_mean", res.primary_mean)?;
+    out.set_item("primary_cov", res.primary_cov)?;
+    out.set_item("primary_sd", res.primary_sd)?;
+    out.set_item("specific_sd", res.specific_sd)?;
+    out.set_item("theta_p_eap", res.theta_p_eap)?;
+    out.set_item("theta_p_sd", res.theta_p_sd)?;
+    out.set_item("category_counts", res.category_counts)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }
@@ -10436,6 +10503,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bifactor_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_two_tier_grm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_two_tier_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;

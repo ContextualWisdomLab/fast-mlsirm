@@ -302,6 +302,59 @@ pub struct TwoTierGrmResult {
     pub n_parameters: usize,
 }
 
+/// Configuration for focal-group fixed-item parameter calibration (FIPC) of
+/// the two-tier GRM.  The primary item map and the anchored item parameters
+/// identify the focal latent scale; the focal primary moments are updated by
+/// the MWU-MEM/Bock-Aitkin moment step (Kim, 2006).
+#[derive(Clone, Copy, Debug)]
+pub struct TwoTierFipcConfig {
+    pub q_primary: usize,
+    pub q_specific: usize,
+    pub max_iter: usize,
+    pub tol: f64,
+    pub newton_iter: usize,
+    pub ridge: f64,
+    /// Estimate the focal specific-factor SDs instead of fixing them at 1.
+    pub estimate_specific_vars: bool,
+}
+
+impl Default for TwoTierFipcConfig {
+    fn default() -> Self {
+        Self {
+            q_primary: 21,
+            q_specific: 11,
+            max_iter: 500,
+            tol: 1e-6,
+            newton_iter: 10,
+            ridge: 1e-8,
+            estimate_specific_vars: false,
+        }
+    }
+}
+
+/// Result of [`fit_two_tier_grm_fipc`].  Anchored item rows are copied
+/// bit-for-bit from the fixed inputs.  No reflection or rescaling is applied:
+/// the fixed anchors define the focal orientation and primary scale.
+#[derive(Clone, Debug)]
+pub struct TwoTierFipcResult {
+    pub a_primary: Vec<f64>,
+    pub a_specific: Vec<f64>,
+    pub threshold: Vec<f64>,
+    pub primary_mean: Vec<f64>,
+    pub primary_cov: Vec<f64>,
+    pub primary_sd: Vec<f64>,
+    pub specific_sd: Vec<f64>,
+    pub theta_p_eap: Vec<f64>,
+    pub theta_p_sd: Vec<f64>,
+    pub category_counts: Vec<usize>,
+    pub loglik_trace: Vec<f64>,
+    pub n_iter: usize,
+    pub converged: bool,
+    pub termination_reason: String,
+    pub final_loglik_change: f64,
+    pub n_parameters: usize,
+}
+
 /// Validated problem structure shared by the fitter and the public
 /// marginal-loglik entry points.
 pub(crate) struct Validated {
@@ -810,6 +863,29 @@ fn item_cat_logprob(
     grm_logprobs(base, &par.d)[cat]
 }
 
+#[inline]
+fn item_cat_logprob_fipc(
+    v: &Validated,
+    params: &[ItemParams],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    i: usize,
+    g: usize,
+    h: usize,
+    cat: usize,
+) -> f64 {
+    let par = &params[i];
+    let prim = item_primary_base(v, par, coords, g, i);
+    let base = match par.a_s {
+        Some(a_s) => {
+            let s = v.item_block[i].expect("specific item has a block");
+            prim + a_s * ts_by_specific[s][h]
+        }
+        None => prim,
+    };
+    grm_logprobs(base, &par.d)[cat]
+}
+
 /// One reduced E-step sweep (Gibbons et al., 2007, eq. 15: the person
 /// marginal factored per primary node): observed-data loglik, expected
 /// category counts per item (`counts[i][node][k]`, `node = g * qs + h` for
@@ -960,6 +1036,343 @@ pub(crate) fn e_step(
         }
     }
     (loglik, counts, s_bar_sum)
+}
+
+/// FIPC E-step with posterior moments for a focal primary distribution.  The
+/// caller supplies the fixed product grid after the current affine transform
+/// and the specific grid after its current scale transform.  Keeping this
+/// separate from `e_step` preserves the zero-mean/unit-variance contract of
+/// the ordinary two-tier fitter.
+#[allow(clippy::too_many_arguments)]
+fn e_step_fipc(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws: &[f64],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+) -> (
+    f64,
+    Vec<Vec<Vec<f64>>>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+) {
+    let p = v.n_primary;
+    let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
+    let mut counts = Vec::with_capacity(v.n_items);
+    for i in 0..v.n_items {
+        let nodes = if v.item_block[i].is_some() { n_grid * qs } else { n_grid };
+        counts.push(vec![vec![0.0; v.n_cat]; nodes]);
+    }
+    let mut log_i = vec![0.0; v.n_specific * n_grid];
+    let mut gen_log = vec![0.0; n_grid];
+    let mut log_like_g = vec![0.0; n_grid];
+    let mut post_g = vec![0.0; n_grid];
+    let mut tmp_h = vec![0.0; qs];
+    let mut block_acc_g = vec![0.0; v.n_specific * qs];
+    let mut sum_primary = vec![0.0; p];
+    let mut sum_primary2 = vec![0.0; p * p];
+    let mut sum_specific2 = vec![0.0; v.n_specific];
+    let mut specific_mass = vec![0.0; v.n_specific];
+    let mut person_eap = vec![0.0; v.n_persons * p];
+    let mut person_sd = vec![0.0; v.n_persons * p];
+    let mut loglik = 0.0;
+
+    for pp in 0..v.n_persons {
+        gen_log.copy_from_slice(log_w);
+        for &i in &v.specific_free {
+            if !is_obs(pp, i) { continue; }
+            let yc = y[pp * v.n_items + i];
+            for g in 0..n_grid {
+                gen_log[g] += item_cat_logprob_fipc(v, params, coords, ts_by_specific, i, g, 0, yc);
+            }
+        }
+        for (s, members) in v.blocks.iter().enumerate() {
+            for g in 0..n_grid {
+                for h in 0..qs {
+                    let mut acc = log_ws[h];
+                    for &i in members {
+                        if is_obs(pp, i) {
+                            acc += item_cat_logprob_fipc(v, params, coords, ts_by_specific, i, g, h, y[pp * v.n_items + i]);
+                        }
+                    }
+                    tmp_h[h] = acc;
+                }
+                log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+            }
+        }
+        for g in 0..n_grid {
+            let mut acc = gen_log[g];
+            for s in 0..v.n_specific { acc += log_i[s * n_grid + g]; }
+            log_like_g[g] = acc;
+        }
+        let log_lp = log_sum_exp(&log_like_g);
+        loglik += log_lp;
+        for g in 0..n_grid { post_g[g] = (log_like_g[g] - log_lp).exp(); }
+        for d in 0..p {
+            let mut m1 = 0.0;
+            let mut m2 = 0.0;
+            for g in 0..n_grid {
+                let t = coords[g * p + d];
+                m1 += post_g[g] * t;
+                m2 += post_g[g] * t * t;
+            }
+            person_eap[pp * p + d] = m1;
+            person_sd[pp * p + d] = (m2 - m1 * m1).max(0.0).sqrt();
+            sum_primary[d] += m1;
+        }
+        for j in 0..p {
+            for k in 0..p {
+                let mut m = 0.0;
+                for g in 0..n_grid { m += post_g[g] * coords[g * p + j] * coords[g * p + k]; }
+                sum_primary2[j * p + k] += m;
+            }
+        }
+        for &i in &v.specific_free {
+            if !is_obs(pp, i) { continue; }
+            let yc = y[pp * v.n_items + i];
+            for g in 0..n_grid { counts[i][g][yc] += post_g[g]; }
+        }
+        for (s, members) in v.blocks.iter().enumerate() {
+            if !members.iter().any(|&i| is_obs(pp, i)) { continue; }
+            for g in 0..n_grid {
+                for h in 0..qs {
+                    let mut acc = log_ws[h];
+                    for &i in members {
+                        if is_obs(pp, i) {
+                            acc += item_cat_logprob_fipc(v, params, coords, ts_by_specific, i, g, h, y[pp * v.n_items + i]);
+                        }
+                    }
+                    block_acc_g[s * qs + h] = acc;
+                }
+                let mut others = gen_log[g] - log_w[g];
+                for s2 in 0..v.n_specific { if s2 != s { others += log_i[s2 * n_grid + g]; } }
+                for h in 0..qs {
+                    let post = (log_w[g] + block_acc_g[s * qs + h] + others - log_lp).exp();
+                    specific_mass[s] += post;
+                    sum_specific2[s] += post * ts_by_specific[s][h] * ts_by_specific[s][h];
+                    for &i in members {
+                        if is_obs(pp, i) { counts[i][g * qs + h][y[pp * v.n_items + i]] += post; }
+                    }
+                }
+            }
+        }
+    }
+    (loglik, counts, sum_primary, sum_primary2, sum_specific2, specific_mass, person_eap, person_sd)
+}
+
+fn fipc_primary_coords(base: &[f64], mean: &[f64], chol: &[f64], p: usize, n_grid: usize) -> Vec<f64> {
+    let mut coords = vec![0.0; base.len()];
+    for g in 0..n_grid {
+        for i in 0..p {
+            let mut value = 0.0;
+            for j in 0..=i { value += chol[i * p + j] * base[g * p + j]; }
+            coords[g * p + i] = mean[i] + value;
+        }
+    }
+    coords
+}
+
+/// Fit a focal group with fixed item anchors under the two-tier GRM.
+///
+/// This is the two-tier analogue of the bifactor FIPC implementation: the
+/// primary loading map is fixed, selected item rows are held at the reference
+/// calibration, and the remaining item parameters are updated by MML-EM. The
+/// focal primary mean/covariance and (optionally) specific variances are
+/// updated from posterior moments after each E-step, as in MWU-MEM (Kim,
+/// 2006, eqs. 14-15). The ordinary [`fit_two_tier_grm`] path is intentionally
+/// untouched and retains its zero-mean correlation-scale contract.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_two_tier_grm_fipc(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    anchor: &[bool],
+    fixed_a_primary: &[f64],
+    fixed_a_specific: &[f64],
+    fixed_threshold: &[f64],
+    cfg: &TwoTierFipcConfig,
+) -> Result<TwoTierFipcResult, String> {
+    let validation_cfg = TwoTierGrmConfig {
+        q_primary: cfg.q_primary,
+        q_specific: cfg.q_specific,
+        max_iter: cfg.max_iter,
+        tol: cfg.tol,
+        n_starts: 1,
+        seed: 0,
+        newton_iter: cfg.newton_iter,
+        ridge: cfg.ridge,
+    };
+    let v = validate(y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, &validation_cfg)?;
+    if anchor.len() != n_items { return Err("anchor must have length n_items".into()); }
+    if !anchor.iter().any(|&a| a) { return Err("at least one anchored item is required to identify the focal scale".into()); }
+    if fixed_a_primary.len() != n_items * n_primary {
+        return Err("fixed_a_primary must have length n_items * n_primary".into());
+    }
+    if fixed_a_specific.len() != n_items { return Err("fixed_a_specific must have length n_items".into()); }
+    if fixed_threshold.len() != n_items * v.m1 {
+        return Err("fixed_threshold must have length n_items * (n_cat - 1)".into());
+    }
+    if [fixed_a_primary, fixed_a_specific, fixed_threshold].concat().iter().any(|x| !x.is_finite()) {
+        return Err("fixed anchor parameters must be finite".into());
+    }
+    for i in 0..n_items {
+        if v.item_block[i].is_none() && fixed_a_specific[i] != 0.0 {
+            return Err(format!("fixed_a_specific[{i}] must be exactly 0.0 for specific-free items"));
+        }
+        if anchor[i] {
+            for d in 0..n_primary {
+                if !primary_map[i * n_primary + d] && fixed_a_primary[i * n_primary + d] != 0.0 {
+                    return Err(format!("fixed_a_primary[{i},{d}] must be exactly 0.0 at fixed pattern positions"));
+                }
+            }
+            let row = &fixed_threshold[i * v.m1..(i + 1) * v.m1];
+            if row.windows(2).any(|w| w[0] <= w[1]) {
+                return Err(format!("fixed thresholds of anchor item {i} must be strictly decreasing"));
+            }
+        }
+    }
+
+    let (tz, wz) = gh_rule(cfg.q_primary)?;
+    let (ts_std, ws) = gh_rule(cfg.q_specific)?;
+    let n_grid = v.grid_size;
+    let (base_coords, log_w0) = build_primary_grid(tz, wz, n_primary, n_grid);
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
+    let mut params = Vec::with_capacity(n_items);
+    for i in 0..n_items {
+        if anchor[i] {
+            params.push(ItemParams {
+                a_p: fixed_a_primary[i * n_primary..(i + 1) * n_primary].to_vec(),
+                a_s: v.item_block[i].map(|_| fixed_a_specific[i]),
+                d: fixed_threshold[i * v.m1..(i + 1) * v.m1].to_vec(),
+            });
+        } else {
+            let mut freq = vec![1e-3; n_cat];
+            for p in 0..n_persons { if is_obs(p, i) { freq[y[p * n_items + i]] += 1.0; } }
+            let total: f64 = freq.iter().sum();
+            let mut d = vec![0.0; v.m1];
+            let mut cum = 0.0;
+            for k in (1..n_cat).rev() {
+                cum += freq[k] / total;
+                let c = cum.clamp(1e-4, 1.0 - 1e-4);
+                d[k - 1] = (c / (1.0 - c)).ln();
+            }
+            let mut a_p = vec![0.0; n_primary];
+            for &dim in &v.free_primaries[i] { a_p[dim] = 1.0; }
+            params.push(ItemParams { a_p, a_s: v.item_block[i].map(|_| 0.8), d });
+        }
+    }
+    let mut mean = vec![0.0; n_primary];
+    let mut covariance = vec![0.0; n_primary * n_primary];
+    for d in 0..n_primary { covariance[d * n_primary + d] = 1.0; }
+    let mut specific_sd = vec![1.0; n_specific];
+    let mut loglik_trace = Vec::new();
+    let mut converged = false;
+    let mut n_iter = 0;
+    let mut termination_reason = "max_iter_reached".to_string();
+    let mut final_loglik_change = f64::NAN;
+
+    loop {
+        let (chol, logdet) = cholesky_lower(&covariance, n_primary)
+            .ok_or_else(|| format!("focal primary covariance became non-PD at iteration {n_iter}"))?;
+        let coords = fipc_primary_coords(&base_coords, &mean, &chol, n_primary, n_grid);
+        let ts_by_specific: Vec<Vec<f64>> = (0..n_specific)
+            .map(|s| ts_std.iter().map(|&x| x * specific_sd[s]).collect())
+            .collect();
+        let ts = &ts_by_specific[0];
+        // The affine transform maps standard GH nodes to N(mean, covariance),
+        // so its Jacobian is already represented by the transformed nodes;
+        // the standard GH weights remain unchanged (MWU-MEM reparameterization).
+        let _ = logdet;
+        let log_w = log_w0.clone();
+        let (ll, counts, sum_primary, sum_primary2, sum_specific2, specific_mass, _, _) =
+            e_step_fipc(&v, y, observed, &params, &log_w, &log_ws, &coords, &ts_by_specific, n_grid, ts.len());
+        let previous = loglik_trace.last().copied();
+        if let Some(change) = checked_em_loglik_change(ll, previous, n_iter)? {
+            final_loglik_change = change;
+            if change <= cfg.tol * (1.0 + previous.expect("previous loglik exists").abs()) {
+                converged = true;
+                termination_reason = "tolerance_met".to_string();
+                break;
+            }
+        }
+        loglik_trace.push(ll);
+        if n_iter == cfg.max_iter { break; }
+        for i in 0..n_items {
+            if anchor[i] { continue; }
+            let free = &v.free_primaries[i];
+            let has_specific = v.item_block[i].is_some();
+            let mut node_g = Vec::with_capacity(if has_specific { n_grid * ts.len() } else { n_grid });
+            let mut node_s = Vec::with_capacity(node_g.capacity());
+            if has_specific {
+                let specific = ts_by_specific[v.item_block[i].expect("specific item has a block")].as_slice();
+                for g in 0..n_grid { for &s in specific { node_g.extend_from_slice(&coords[g * n_primary..(g + 1) * n_primary]); node_s.push(s); } }
+            } else {
+                for g in 0..n_grid { node_g.extend_from_slice(&coords[g * n_primary..(g + 1) * n_primary]); node_s.push(0.0); }
+            }
+            let mut packed = Vec::with_capacity(free.len() + usize::from(has_specific) + v.m1);
+            for &d in free { packed.push(params[i].a_p[d]); }
+            if let Some(a_s) = params[i].a_s { packed.push(a_s); }
+            packed.extend_from_slice(&params[i].d);
+            let updated = m_step_item(packed, free, has_specific, &node_g, &node_s, n_primary, n_grid, ts.len(), &counts[i], n_cat, cfg.ridge, cfg.newton_iter);
+            for (slot, &d) in free.iter().enumerate() { params[i].a_p[d] = updated[slot]; }
+            if has_specific { params[i].a_s = Some(updated[free.len()]); params[i].d = updated[free.len() + 1..].to_vec(); }
+            else { params[i].d = updated[free.len()..].to_vec(); }
+        }
+        let mass = n_persons as f64;
+        for d in 0..n_primary { mean[d] = sum_primary[d] / mass; }
+        for j in 0..n_primary { for k in 0..n_primary {
+            covariance[j * n_primary + k] = sum_primary2[j * n_primary + k] / mass - mean[j] * mean[k];
+        }}
+        for d in 0..n_primary { covariance[d * n_primary + d] += 1e-10; }
+        if cfg.estimate_specific_vars {
+            for s in 0..n_specific {
+                if specific_mass[s] <= 0.0 { return Err(format!("focal specific-{s} has no posterior mass")); }
+                let variance = sum_specific2[s] / specific_mass[s];
+                if !variance.is_finite() || variance <= 0.0 { return Err(format!("non-positive focal specific-{s} variance update ({variance:.6e})")); }
+                specific_sd[s] = variance.sqrt();
+            }
+        }
+        n_iter += 1;
+    }
+    let (chol, logdet) = cholesky_lower(&covariance, n_primary).ok_or_else(|| "final focal primary covariance is not positive-definite".to_string())?;
+    let coords = fipc_primary_coords(&base_coords, &mean, &chol, n_primary, n_grid);
+    let ts_by_specific: Vec<Vec<f64>> = (0..n_specific)
+        .map(|s| ts_std.iter().map(|&x| x * specific_sd[s]).collect())
+        .collect();
+    let _ = logdet;
+    let log_w = log_w0.clone();
+    let (_, _, _, _, _, _, theta_p_eap, theta_p_sd) = e_step_fipc(&v, y, observed, &params, &log_w, &log_ws, &coords, &ts_by_specific, n_grid, ts_std.len());
+    let mut a_primary = vec![0.0; n_items * n_primary];
+    let mut a_specific = vec![0.0; n_items];
+    let mut threshold = vec![0.0; n_items * v.m1];
+    let mut category_counts = vec![0usize; n_items * n_cat];
+    for (i, par) in params.iter().enumerate() {
+        a_primary[i * n_primary..(i + 1) * n_primary].copy_from_slice(&par.a_p);
+        if let Some(a_s) = par.a_s { a_specific[i] = a_s; }
+        threshold[i * v.m1..(i + 1) * v.m1].copy_from_slice(&par.d);
+        for p in 0..n_persons { if is_obs(p, i) { category_counts[i * n_cat + y[p * n_items + i]] += 1; } }
+    }
+    let mut n_parameters = n_primary + n_primary * (n_primary + 1) / 2;
+    for i in 0..n_items { if !anchor[i] { n_parameters += v.free_primaries[i].len() + usize::from(v.item_block[i].is_some()) + v.m1; } }
+    if cfg.estimate_specific_vars { n_parameters += n_specific; }
+    let primary_sd = (0..n_primary).map(|d| covariance[d * n_primary + d].max(0.0).sqrt()).collect();
+    Ok(TwoTierFipcResult { a_primary, a_specific, threshold, primary_mean: mean, primary_cov: covariance, primary_sd, specific_sd, theta_p_eap, theta_p_sd, category_counts, loglik_trace, n_iter, converged, termination_reason, final_loglik_change, n_parameters })
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item — the
