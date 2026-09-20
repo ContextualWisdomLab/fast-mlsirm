@@ -1,24 +1,53 @@
 #!/usr/bin/env python3
-"""Reproduce Valkey transport defects from PR #2073 head against an isolated daemon."""
+"""Isolated localhost Valkey daemon evidence for PR #2073 outcome-store contracts.
+
+Requires FAST_MLSIRM_VALKEY_URL pointing at a disposable localhost daemon.
+Creates only UUID-suffixed keys and deletes them in finally; never mutates
+pre-existing Redis data.
+"""
 
 from __future__ import annotations
 
-import inspect
+import importlib.util
 import json
 import os
 import sys
+import threading
+import time
+import types
 import uuid
+from pathlib import Path
 
-import redis
 
-from fast_mlsirm.remote_exec import (
-    RemoteJobDeliveryState,
+def _bootstrap_remote_exec() -> None:
+    """Load ``fast_mlsirm.remote_exec`` without requiring the compiled ``_core``."""
+    if getattr(sys.modules.get("fast_mlsirm"), "_stub_remote", False):
+        return
+    root = Path(__file__).resolve().parents[1]
+    pkg_dir = root / "python" / "fast_mlsirm"
+    pkg = types.ModuleType("fast_mlsirm")
+    pkg.__path__ = [str(pkg_dir)]
+    pkg.__file__ = str(pkg_dir / "__init__.py")
+    pkg._stub_remote = True
+    sys.modules["fast_mlsirm"] = pkg
+    path = pkg_dir / "remote_exec.py"
+    spec = importlib.util.spec_from_file_location("fast_mlsirm.remote_exec", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["fast_mlsirm.remote_exec"] = mod
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+
+
+_bootstrap_remote_exec()
+
+import redis  # noqa: E402
+
+from fast_mlsirm.remote_exec import (  # noqa: E402
     ValkeyStreamsBackend,
     ValkeyStreamsOutcomeStore,
 )
 
-# Import test helpers from the suite (script is run from repo root).
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tests"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
 from test_remote_exec import _envelope, _manifest  # noqa: E402
 
 
@@ -38,60 +67,162 @@ def _record(outcome) -> dict[str, str]:
     }
 
 
+def _cleanup(client: redis.Redis, suffix: str, names: list[str]) -> None:
+    for key in client.scan_iter(f"fast-mlsirm:*{suffix}*"):
+        client.delete(key)
+    for name in names:
+        client.delete(name)
+
+
 def main() -> int:
-    url = os.environ.get("FAST_MLSIRM_VALKEY_URL", "redis://127.0.0.1:16380/0")
+    url = os.environ.get("FAST_MLSIRM_VALKEY_URL")
+    if not url:
+        print("FAIL: FAST_MLSIRM_VALKEY_URL is required")
+        return 2
+    if "127.0.0.1" not in url and "localhost" not in url:
+        print("FAIL: refusing non-localhost Valkey URL")
+        return 2
+
     client = redis.Redis.from_url(url, decode_responses=True)
-    suffix = uuid.uuid4().hex[:8]
-    stream = f"fast-mlsirm:repro:outcomes:{suffix}"
-    group = f"fast-mlsirm-repro-{suffix}"
-    results: list[str] = []
+    client.ping()
+    suffix = uuid.uuid4().hex[:10]
+    results: list[tuple[str, str]] = []
+    owned: list[str] = []
 
     try:
+        # --- restart lookup recovery (HSETNX durable hash) ---
+        stream = f"fast-mlsirm:ev:{suffix}:restart"
+        group = f"fast-mlsirm-ev-{suffix}-restart"
+        owned.extend([stream, f"{stream}:committed"])
         outcome = _completed(1, {"attempt": 1})
         fp = outcome.envelope_fingerprint
-
-        # Defect 1: ACK'd outcomes are not visible to a fresh store in the same group.
         store1 = ValkeyStreamsOutcomeStore(
-            client, stream=stream, group=group, consumer="driver-a", block_ms=100
+            client, stream=stream, group=group, consumer="driver-a", block_ms=50
         )
         store1.commit_success(fp, outcome)
-        got1 = store1.committed_success(fp)
         store2 = ValkeyStreamsOutcomeStore(
-            client, stream=stream, group=group, consumer="driver-b", block_ms=100
+            client, stream=stream, group=group, consumer="driver-b", block_ms=50
         )
-        got2 = store2.committed_success(fp)
-        if got1 is not None and got2 is None:
-            results.append("DEFECT1 restart_recovery: fresh consumer cannot read ACK'd outcome")
-        elif got1 is not None and got2 is not None:
-            results.append("DEFECT1 restart_recovery: PASS")
+        got = store2.committed_success(fp)
+        results.append(
+            (
+                "restart_lookup_recovery",
+                "PASS" if got == outcome else f"FAIL got={got!r}",
+            )
+        )
 
-        # Defect 3: concurrent commit_success should match SQLite first-success contract.
-        stream_dup = f"{stream}:dup"
-        group_dup = f"{group}-dup"
+        # --- first-success atomicity (HSETNX) via concurrent connections/threads ---
+        stream_dup = f"fast-mlsirm:ev:{suffix}:hsetnx"
+        group_dup = f"fast-mlsirm-ev-{suffix}-hsetnx"
+        owned.extend([stream_dup, f"{stream_dup}:committed"])
         first = _completed(2, {"winner": "first"})
         second = _completed(2, {"winner": "second"})
         fp2 = first.envelope_fingerprint
-        store_a = ValkeyStreamsOutcomeStore(
-            client, stream=stream_dup, group=group_dup, consumer="a", block_ms=50
+        ValkeyStreamsOutcomeStore(
+            client, stream=stream_dup, group=group_dup, consumer="seed", block_ms=50
         )
-        store_b = ValkeyStreamsOutcomeStore(
-            client, stream=stream_dup, group=group_dup, consumer="b", block_ms=50
-        )
-        winner_a = store_a.commit_success(fp2, first)
-        winner_b = store_b.commit_success(fp2, second)
-        if winner_a.result != winner_b.result:
-            results.append(
-                "DEFECT3 duplicate_commit: divergent winners "
-                f"{winner_a.result!r} vs {winner_b.result!r}"
-            )
-        else:
-            results.append("DEFECT3 duplicate_commit: PASS (same winner returned)")
+        barrier = threading.Barrier(2)
+        winners: list[dict | None] = [None, None]
+        errors: list[BaseException] = []
 
-        # Defect 4: run_batch drains only one consume_available batch.
-        jobs = f"{stream}:jobs"
-        outcomes = f"{stream}:batch-out"
-        batch_group = f"{group}-batch"
-        envs = [_envelope(unit_index=i) for i in range(3)]
+        def _race(index: int, consumer: str, outcome_obj) -> None:
+            try:
+                local = redis.Redis.from_url(url, decode_responses=True)
+                store = ValkeyStreamsOutcomeStore(
+                    local,
+                    stream=stream_dup,
+                    group=group_dup,
+                    consumer=consumer,
+                    block_ms=50,
+                )
+                barrier.wait()
+                winner = store.commit_success(outcome_obj.envelope_fingerprint, outcome_obj)
+                winners[index] = winner.to_dict()
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=_race, args=(0, "proc-a", first)),
+            threading.Thread(target=_race, args=(1, "proc-b", second)),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        durable = client.hget(f"{stream_dup}:committed", fp2)
+        durable_result = json.loads(durable)["result"] if durable else None
+        same = (
+            winners[0] is not None
+            and winners[1] is not None
+            and winners[0]["result"] == winners[1]["result"]
+        )
+        results.append(
+            (
+                "first_success_atomicity_hsetnx",
+                "PASS"
+                if not errors
+                and same
+                and durable_result in ({"winner": "first"}, {"winner": "second"})
+                else f"FAIL winners={winners!r} durable={durable_result!r} errors={errors!r}",
+            )
+        )
+
+        # --- concurrent consumers: barrier-synced drains on distinct connections ---
+        stream_cc = f"fast-mlsirm:ev:{suffix}:concurrent"
+        group_cc = f"fast-mlsirm-ev-{suffix}-concurrent"
+        owned.extend([stream_cc, f"{stream_cc}:committed"])
+        ValkeyStreamsOutcomeStore(
+            client, stream=stream_cc, group=group_cc, consumer="seed", block_ms=50
+        )
+        outcomes_cc = [_completed(100 + i, {"c": i}) for i in range(16)]
+        for oc in outcomes_cc:
+            client.xadd(stream_cc, _record(oc))
+        barrier_cc = threading.Barrier(2)
+        seen: list[set[str]] = [set(), set()]
+
+        def _drain_consumer(index: int, consumer: str) -> None:
+            local = redis.Redis.from_url(url, decode_responses=True)
+            store = ValkeyStreamsOutcomeStore(
+                local,
+                stream=stream_cc,
+                group=group_cc,
+                consumer=consumer,
+                batch_size=2,
+                block_ms=200,
+            )
+            barrier_cc.wait()
+            seen[index] = set(store.consume_available())
+
+        threads = [
+            threading.Thread(target=_drain_consumer, args=(0, "consumer-a")),
+            threading.Thread(target=_drain_consumer, args=(1, "consumer-b")),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        all_fps = {oc.envelope_fingerprint for oc in outcomes_cc}
+        results.append(
+            (
+                "concurrent_consumers",
+                "PASS"
+                if (seen[0] | seen[1]) == all_fps and seen[0] and seen[1]
+                else f"FAIL a={len(seen[0])} b={len(seen[1])} union={len(seen[0]|seen[1])}",
+            )
+        )
+
+        # --- raw stream > batch_size (no pre-HSETNX) + deadline drain ---
+        jobs = f"fast-mlsirm:ev:{suffix}:jobs"
+        outcomes = f"fast-mlsirm:ev:{suffix}:batch"
+        batch_group = f"fast-mlsirm-ev-{suffix}-batch"
+        owned.extend([jobs, outcomes, f"{outcomes}:committed"])
+        envs = [_envelope(unit_index=i) for i in range(5)]
+        ValkeyStreamsOutcomeStore(
+            client, stream=outcomes, group=batch_group, consumer="seed", block_ms=50
+        )
+        for env in envs:
+            done = _completed(env.unit_index, {"idx": env.unit_index})
+            client.xadd(outcomes, _record(done))
         backend = ValkeyStreamsBackend(
             client,
             jobs_stream=jobs,
@@ -99,53 +230,142 @@ def main() -> int:
             group=batch_group,
             consumer="driver",
             block_ms=50,
+            wait_timeout_s=5.0,
+            min_idle_ms=0,
         )
-        for env in envs:
-            done = _completed(env.unit_index, {"idx": env.unit_index})
-            ValkeyStreamsOutcomeStore(
-                client,
-                stream=outcomes,
-                group=batch_group,
-                consumer="worker",
-                block_ms=50,
-            ).commit_success(done.envelope_fingerprint, done)
+        backend._outcomes = ValkeyStreamsOutcomeStore(
+            client,
+            stream=outcomes,
+            group=batch_group,
+            consumer="driver",
+            batch_size=2,
+            block_ms=50,
+            min_idle_ms=0,
+        )
         try:
-            backend.run_batch(tuple(envs), worker_manifest=_manifest())
-            results.append("DEFECT4 batch_drain: PASS (all outcomes returned)")
-        except TimeoutError as exc:
-            results.append(f"DEFECT4 batch_drain: {exc}")
-
-        # Defect 5: requested/effective device dropped from ValkeyStreamsBackend.run_batch.
-        sig = inspect.signature(ValkeyStreamsBackend.run_batch)
-        params = sig.parameters
-        if "requested_device" not in params or "effective_device" not in params:
-            results.append("DEFECT5 device_params: missing from run_batch signature")
-        else:
-            source = inspect.getsource(ValkeyStreamsBackend.run_batch)
-            if "del requested_device, effective_device" in source:
-                results.append(
-                    "DEFECT5 device_params: run_batch discards requested/effective device"
+            got_batch = backend.run_batch(tuple(envs), worker_manifest=_manifest())
+            results.append(
+                (
+                    "deadline_drain_multi_batch_raw_stream",
+                    "PASS" if len(got_batch) == 5 else f"FAIL n={len(got_batch)}",
                 )
-            else:
-                results.append("DEFECT5 device_params: PASS")
+            )
+        except Exception as exc:  # noqa: BLE001 - evidence table wants the error
+            results.append(("deadline_drain_multi_batch_raw_stream", f"FAIL {exc}"))
+
+        # --- empty-stream deadline (must not hang on BLOCK 0) ---
+        empty_stream = f"fast-mlsirm:ev:{suffix}:empty"
+        empty_group = f"fast-mlsirm-ev-{suffix}-empty"
+        owned.extend([empty_stream, f"{empty_stream}:committed"])
+        store_empty = ValkeyStreamsOutcomeStore(
+            client,
+            stream=empty_stream,
+            group=empty_group,
+            consumer="driver",
+            block_ms=100,
+        )
+        missing_fp = _completed(99, {"x": 1}).envelope_fingerprint
+        t0 = time.monotonic()
+        deadline = t0 + 0.4
+        found = store_empty.wait_for_committed((missing_fp,), deadline=deadline)
+        elapsed = time.monotonic() - t0
+        results.append(
+            (
+                "empty_stream_deadline",
+                "PASS"
+                if found == {} and 0.3 <= elapsed <= 2.0
+                else f"FAIL found={found!r} elapsed={elapsed:.3f}",
+            )
+        )
+
+        # --- mid-pending ineligible then eligible (XAUTOCLAIM min_idle) ---
+        pend_stream = f"fast-mlsirm:ev:{suffix}:pending"
+        pend_group = f"fast-mlsirm-ev-{suffix}-pending"
+        owned.extend([pend_stream, f"{pend_stream}:committed"])
+        ready = _completed(50, {"idle": "ready"})
+        ValkeyStreamsOutcomeStore(
+            client, stream=pend_stream, group=pend_group, consumer="seed", block_ms=50
+        )
+        client.xadd(pend_stream, _record(ready))
+        client.xreadgroup(
+            pend_group, "consumer-old", {pend_stream: ">"}, count=10, block=10
+        )
+        fresh_high = ValkeyStreamsOutcomeStore(
+            client,
+            stream=pend_stream,
+            group=pend_group,
+            consumer="consumer-new",
+            block_ms=50,
+            min_idle_ms=60_000,
+        )
+        before = fresh_high.consume_available()
+        fresh_low = ValkeyStreamsOutcomeStore(
+            client,
+            stream=pend_stream,
+            group=pend_group,
+            consumer="consumer-new",
+            block_ms=50,
+            min_idle_ms=0,
+        )
+        after = fresh_low.consume_available()
+        results.append(
+            (
+                "pending_idle_ineligible_then_eligible",
+                "PASS"
+                if ready.envelope_fingerprint not in before
+                and ready.envelope_fingerprint in after
+                else f"FAIL before={set(before)!r} after={set(after)!r}",
+            )
+        )
+
+        # --- device-field preservation on published job envelopes ---
+        jobs_dev = f"fast-mlsirm:ev:{suffix}:jobs-dev"
+        out_dev = f"fast-mlsirm:ev:{suffix}:out-dev"
+        group_dev = f"fast-mlsirm-ev-{suffix}-dev"
+        owned.extend([jobs_dev, out_dev, f"{out_dev}:committed"])
+        env = _envelope(unit_index=70)
+        done = _completed(70, {"device": True})
+        ValkeyStreamsOutcomeStore(
+            client, stream=out_dev, group=group_dev, consumer="seed", block_ms=50
+        )
+        client.xadd(out_dev, _record(done))
+        backend_dev = ValkeyStreamsBackend(
+            client,
+            jobs_stream=jobs_dev,
+            outcomes_stream=out_dev,
+            group=group_dev,
+            consumer="driver",
+            block_ms=50,
+            wait_timeout_s=3.0,
+            min_idle_ms=0,
+        )
+        backend_dev.run_batch(
+            (env,),
+            worker_manifest=_manifest(),
+            requested_device="gpu",
+            effective_device="cpu",
+        )
+        entries = client.xrange(jobs_dev)
+        fields = entries[0][1] if entries else {}
+        results.append(
+            (
+                "device_field_preservation",
+                "PASS"
+                if fields.get("requested_device") == "gpu"
+                and fields.get("effective_device") == "cpu"
+                else f"FAIL fields={fields!r}",
+            )
+        )
 
     finally:
-        for key in client.scan_iter(f"fast-mlsirm:*{suffix}*"):
-            client.delete(key)
-        for name in (
-            stream,
-            f"{stream}:committed",
-            f"{stream}:dup",
-            f"{stream}:dup:committed",
-            f"{stream}:jobs",
-            f"{stream}:batch-out",
-            f"{stream}:batch-out:committed",
-        ):
-            client.delete(name)
+        _cleanup(client, suffix, owned)
 
-    print("\n".join(results))
-    defects = [line for line in results if "DEFECT" in line and "PASS" not in line]
-    return 1 if defects else 0
+    width = max(len(name) for name, _ in results)
+    for name, status in results:
+        print(f"{name:<{width}}  {status}")
+    failed = [name for name, status in results if not status.startswith("PASS")]
+    print(f"summary  {len(results) - len(failed)}/{len(results)} PASS")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
