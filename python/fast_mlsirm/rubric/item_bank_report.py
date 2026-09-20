@@ -473,6 +473,7 @@ def render_item_bank_report_html(
         "body{font-family:system-ui,sans-serif;line-height:1.5;margin:0;}"
         "main{max-width:72rem;margin:auto;padding:1.25rem;}"
         ".skip-link{position:absolute;left:.5rem;top:.5rem;padding:.5rem;}"
+        "main:focus:not(:focus-visible){outline:none;}"
         ":focus-visible{outline:3px solid currentColor;outline-offset:2px;}"
         "table{border-collapse:collapse;width:100%;margin-block:1rem;}"
         "th,td{border:1px solid currentColor;padding:.5rem;text-align:left;}"
