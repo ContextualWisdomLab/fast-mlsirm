@@ -1,0 +1,20 @@
+{
+  "generated_at_utc": "2026-09-20T17:14:17Z",
+  "status": "BLOCKED",
+  "air_fit_score_artifact": "billing-snapshots/fit_score_air_unified_b43cdd43_20260920.json",
+  "air_fit_score_PASS": true,
+  "air_build_sha": "b43cdd43994656ba581253ccd27acc1fa683ea8d",
+  "first_failure_for_multi_host_unified_fit_score": {
+    "s1_deployed_tree": "/home/seongho/fmls-hetero (from #2073) has execute_fit_restart count=0 (mc_replicate only)",
+    "s1_native_core": "ABSENT",
+    "m1_native_core": "ABSENT",
+    "s1_maturin": "NOT_ON_PATH (cargo present at /usr/bin/cargo)",
+    "policy": "Mac cargo/maturin HOLD; do not overwrite research venvs"
+  },
+  "needed_for_NEXT": [
+    "Single immutable git SHA wheel/core for darwin-arm64 AND linux-x86_64 including #2072 fit/score worker + #2073 Valkey ledger",
+    "Deploy that build to air/s1/m1 without clobbering research venvs",
+    "Then re-run SubprocessExecutor fit/score distribute + single-host equality"
+  ],
+  "handoff_request": "LEAD/root: provision unified multi-arch build or authorize s1 maturin develop of b43cdd43(+Valkey) under /tmp"
+}

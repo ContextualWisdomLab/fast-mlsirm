@@ -1,0 +1,90 @@
+{
+  "generated_at_utc": "2026-09-20T17:12:58Z",
+  "label": "generic path validation \u2014 single-host Air fit/score on immutable b43cdd43; NOT manuscript-complete",
+  "build": {
+    "git_sha": "b43cdd43994656ba581253ccd27acc1fa683ea8d",
+    "library_version": "0.11.4",
+    "native_core_sha256": "a93bae5c2d5b65b6c1faebdf061df66d7ceb19598683daa0d419d231b2ead9df",
+    "host": "Seonghoui-MacBookAir.local",
+    "python": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2001-l4-fit-score-wire/.venv/bin/python"
+  },
+  "fit_payload_sha256": "38bba40463b0086a501ca34ac50659d7b5252806e1b4c5f7a20a78b5a12bcd18",
+  "score_payload_sha256": "568db92b347a3048859273fa765ed65654da8a59137c9c2be8d7c1b8818fde92",
+  "fit_run1": {
+    "delivery_state": "completed",
+    "result": {
+      "convergence_status": "max_iter_reached",
+      "family": "fit_restart",
+      "library_function": "fast_mlsirm.fit",
+      "n_iter": 1,
+      "objective": 3.7243283832656355,
+      "parameter_sha256": "8ee8b1e11e4e8d3a62e612b27552e2f0cfbe0c4a5d6daf9299e3359f4e6cf444"
+    },
+    "error_message": null,
+    "output_identity_sha256": "51acf49b203fab4165344d256c2da568ff529a59f924f9a2f6a3d0bae0841667",
+    "fingerprint": "4b723d2cee843bae0210a95a2dc77d975abc9f072f8491499ff30cbca4f38e3d"
+  },
+  "fit_run2_ledger_dedup": {
+    "delivery_state": "completed",
+    "result": {
+      "convergence_status": "max_iter_reached",
+      "family": "fit_restart",
+      "library_function": "fast_mlsirm.fit",
+      "n_iter": 1,
+      "objective": 3.7243283832656355,
+      "parameter_sha256": "8ee8b1e11e4e8d3a62e612b27552e2f0cfbe0c4a5d6daf9299e3359f4e6cf444"
+    },
+    "error_message": null,
+    "output_identity_sha256": "51acf49b203fab4165344d256c2da568ff529a59f924f9a2f6a3d0bae0841667",
+    "fingerprint": "4b723d2cee843bae0210a95a2dc77d975abc9f072f8491499ff30cbca4f38e3d"
+  },
+  "score_run1": {
+    "delivery_state": "completed",
+    "result": {
+      "boundary": [
+        false
+      ],
+      "family": "scoring_person",
+      "library_function": "fast_mlsirm.score_wle",
+      "se": [
+        1.2404633178232698
+      ],
+      "theta": [
+        0.6605627061799169
+      ]
+    },
+    "error_message": null,
+    "output_identity_sha256": "884555f6b59c90a46b602d0cae12d997b48cecf32b1e8597e8759fd7857a702c",
+    "fingerprint": "1824f6b20f3af57b32b5071778295f320a769f1d17a2f135e728159598f6d21d"
+  },
+  "score_run2_ledger_dedup": {
+    "delivery_state": "completed",
+    "result": {
+      "boundary": [
+        false
+      ],
+      "family": "scoring_person",
+      "library_function": "fast_mlsirm.score_wle",
+      "se": [
+        1.2404633178232698
+      ],
+      "theta": [
+        0.6605627061799169
+      ]
+    },
+    "error_message": null,
+    "output_identity_sha256": "884555f6b59c90a46b602d0cae12d997b48cecf32b1e8597e8759fd7857a702c",
+    "fingerprint": "1824f6b20f3af57b32b5071778295f320a769f1d17a2f135e728159598f6d21d"
+  },
+  "checks": {
+    "fit_completed": true,
+    "score_completed": true,
+    "fit_numeric_equality_output_identity": true,
+    "score_numeric_equality_output_identity": true,
+    "fit_library_function": true,
+    "score_library_function": true
+  },
+  "PASS": true,
+  "multi_host_fit_score_status": "BLOCKED_pending_unified_linux_darwin_wheels_same_SHA",
+  "first_failure_log": null
+}
