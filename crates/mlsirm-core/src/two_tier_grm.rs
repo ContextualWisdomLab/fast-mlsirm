@@ -107,8 +107,10 @@
 //!
 //! # Memory (exact blocked product-grid evaluation; #1992)
 //!
-//! Category log-probs and M-step node coordinates are evaluated on the fly
-//! over the full primary product Gauss–Hermite grid (Golub & Welsch, 1969;
+//! For the single-primary specialization, category log-probs are filled once
+//! per E-step and reused across persons. Multi-primary fits and M-step node
+//! coordinates stay streamed over the full primary product Gauss–Hermite grid
+//! (Golub & Welsch, 1969;
 //! node counts remain caller-controlled with no silent cap — #1929;
 //! Lesaffre & Spiessens, 2001, warn that low `Q` can bias results). The
 //! specific-tier scratch is `O(n_specific * q_specific)` per active primary
@@ -786,10 +788,33 @@ fn item_primary_base(v: &Validated, par: &ItemParams, coords: &[f64], g: usize, 
     prim
 }
 
-/// Category log-prob for item `i` at primary node `g` and specific node `h`
-/// (`h` ignored / `t_s = 0` for specific-free items). Evaluates Cai et al.
-/// (2011, eq. 6–7, p. 227) on the fly so the E-step never materializes a
-/// full `n_grid * q_specific * n_cat` table per item (#1992 memory).
+fn fill_logprob_tables(
+    v: &Validated,
+    params: &[ItemParams],
+    coords: &[f64],
+    ts: &[f64],
+    n_grid: usize,
+    qs: usize,
+) -> Vec<Vec<f64>> {
+    params
+        .iter()
+        .enumerate()
+        .map(|(i, par)| {
+            let h_count = if par.a_s.is_some() { qs } else { 1 };
+            let mut table = vec![0.0; n_grid * h_count * v.n_cat];
+            for g in 0..n_grid {
+                let primary = item_primary_base(v, par, coords, g, i);
+                for h in 0..h_count {
+                    let base = primary + par.a_s.map_or(0.0, |a_s| a_s * ts[h]);
+                    table[(g * h_count + h) * v.n_cat..(g * h_count + h + 1) * v.n_cat]
+                        .copy_from_slice(&grm_logprobs(base, &par.d));
+                }
+            }
+            table
+        })
+        .collect()
+}
+
 #[inline]
 fn item_cat_logprob(
     v: &Validated,
@@ -802,12 +827,8 @@ fn item_cat_logprob(
     cat: usize,
 ) -> f64 {
     let par = &params[i];
-    let prim = item_primary_base(v, par, coords, g, i);
-    let base = match par.a_s {
-        Some(a_s) => prim + a_s * ts[h],
-        None => prim,
-    };
-    grm_logprobs(base, &par.d)[cat]
+    let primary = item_primary_base(v, par, coords, g, i);
+    grm_logprobs(primary + par.a_s.map_or(0.0, |a_s| a_s * ts[h]), &par.d)[cat]
 }
 
 /// One reduced E-step sweep (Gibbons et al., 2007, eq. 15: the person
@@ -822,11 +843,11 @@ fn item_cat_logprob(
 /// The primary product Gauss–Hermite grid (Golub & Welsch, 1969) is still
 /// fully summed — node counts remain caller-controlled with no silent cap
 /// (#1929; Lesaffre & Spiessens, 2001, warn that low `Q` can bias results).
-/// Category log-probs are evaluated on the fly, and the specific-tier
-/// scratch `block_acc` is sized `n_specific * q_specific` (one primary node
-/// at a time) rather than `n_specific * n_grid * q_specific`. Finite sums
-/// are associative, so the numerical value matches the materialised-table
-/// path up to ordinary floating-point roundoff order.
+/// Single-primary category log-probs are filled once per sweep and reused
+/// across persons; multi-primary fits retain streamed evaluation. The
+/// specific-tier scratch `block_acc` remains sized
+/// `n_specific * q_specific` (one primary node at a time) rather than
+/// `n_specific * n_grid * q_specific`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn e_step(
     v: &Validated,
@@ -860,11 +881,12 @@ pub(crate) fn e_step(
     let mut tmp_h = vec![0.0f64; qs];
     let mut block_acc_g = vec![0.0f64; v.n_specific * qs];
     let mut s_bar_sum = vec![0.0f64; p * p];
+    let tables = (v.n_primary == 1)
+        .then(|| fill_logprob_tables(v, params, coords, ts, n_grid, qs));
 
     let mut loglik = 0.0f64;
     for pp in 0..v.n_persons {
-        // Pass 1: person marginal per primary node (specific-free + block
-        // integrals), without storing per-(g,h) tables.
+        // Pass 1: person marginal per primary node (specific-free + block integrals).
         gen_log.copy_from_slice(log_w);
         for &i in &v.specific_free {
             if !is_obs(pp, i) {
@@ -872,7 +894,10 @@ pub(crate) fn e_step(
             }
             let yc = y[pp * v.n_items + i];
             for g in 0..n_grid {
-                gen_log[g] += item_cat_logprob(v, params, coords, ts, i, g, 0, yc);
+                gen_log[g] += tables.as_ref().map_or_else(
+                    || item_cat_logprob(v, params, coords, ts, i, g, 0, yc),
+                    |tables| tables[i][g * v.n_cat + yc],
+                );
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
@@ -884,7 +909,10 @@ pub(crate) fn e_step(
                             continue;
                         }
                         let yc = y[pp * v.n_items + i];
-                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        acc += tables.as_ref().map_or_else(
+                            || item_cat_logprob(v, params, coords, ts, i, g, h, yc),
+                            |tables| tables[i][(g * qs + h) * v.n_cat + yc],
+                        );
                     }
                     tmp_h[h] = acc;
                 }
@@ -935,7 +963,10 @@ pub(crate) fn e_step(
                             continue;
                         }
                         let yc = y[pp * v.n_items + i];
-                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        acc += tables.as_ref().map_or_else(
+                            || item_cat_logprob(v, params, coords, ts, i, g, h, yc),
+                            |tables| tables[i][(g * qs + h) * v.n_cat + yc],
+                        );
                     }
                     block_acc_g[s * qs + h] = acc;
                 }
@@ -1528,13 +1559,14 @@ pub fn fit_two_tier_grm(
     let phi = phi_from_z(&outcome.z_phi, p);
 
     // Final EAP pass for the primary tier at the winning parameters.
-    // Streaming (same blocked GH product as the E-step; #1992): no full
-    // log-prob tables, and specific-tier scratch is O(S * qs) per primary
-    // node rather than O(S * n_grid * qs).
+    // Same blocked GH product as the E-step; single-primary probabilities are
+    // reused across persons and specific-tier scratch stays O(S * qs).
     let (l, logdet) = cholesky_lower(&phi, p)
         .ok_or_else(|| "winning primary correlation is non-PD".to_string())?;
     let phi_inv = chol_inverse(&l, p);
     let log_w = reweighted_log_weights(&log_w0, &coords, &phi_inv, logdet, p);
+    let tables = (v.n_primary == 1)
+        .then(|| fill_logprob_tables(&v, &params, &coords, ts, n_grid, qs));
     let mut theta_p_eap = vec![0.0f64; n_persons * p];
     let mut theta_p_sd = vec![0.0f64; n_persons * p];
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * n_items + i]);
@@ -1549,7 +1581,10 @@ pub fn fit_two_tier_grm(
             }
             let yc = y[pp * n_items + i];
             for g in 0..n_grid {
-                gen_log[g] += item_cat_logprob(&v, &params, &coords, ts, i, g, 0, yc);
+                gen_log[g] += tables.as_ref().map_or_else(
+                    || item_cat_logprob(&v, &params, &coords, ts, i, g, 0, yc),
+                    |tables| tables[i][g * n_cat + yc],
+                );
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
@@ -1561,7 +1596,10 @@ pub fn fit_two_tier_grm(
                             continue;
                         }
                         let yc = y[pp * n_items + i];
-                        acc += item_cat_logprob(&v, &params, &coords, ts, i, g, h, yc);
+                        acc += tables.as_ref().map_or_else(
+                            || item_cat_logprob(&v, &params, &coords, ts, i, g, h, yc),
+                            |tables| tables[i][(g * qs + h) * n_cat + yc],
+                        );
                     }
                     tmp_h[h] = acc;
                 }
