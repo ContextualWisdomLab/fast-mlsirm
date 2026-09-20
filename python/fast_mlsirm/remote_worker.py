@@ -189,11 +189,12 @@ def execute_fipc(payload: dict[str, object]) -> dict[str, object]:
 
 
 def execute_fipc_group_person_score(payload: dict[str, object]) -> dict[str, object]:
-    """Run FIPC group person EAP + expected-raw + optional reference moments.
+    """Run 1-D poly-GRM FIPC group person EAP + expected-raw (+ optional ref moments).
 
-    Kim (2006) FIPC identification: anchors pin the bank to the reference
-    metric; focal ``N(mu, sigma^2)`` is free. Not the #2077 two-tier
-    ``E[T|theta_f]`` nuisance-integrated curve API.
+    Kim (2006) FIPC: anchors pin the bank to the reference metric; focal
+    ``N(mu, sigma^2)`` is free and **is** the EAP prior. Reference moments use
+    the anchor-item bank only. Not G+4+W / two-tier and not #2077
+    ``E[T|theta_f]`` nuisance-integrated curves.
     """
     return execute_fipc_group_person_score_payload(payload)
 
