@@ -117,12 +117,13 @@ def gauss_hermite_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 def equal_probability_normal_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
-    """Equal-probability quadrature nodes/weights for a standard-normal N(0, 1) prior.
+    """Equal-probability mid-bin normal quantiles for a standard-normal prior.
 
-    Nodes are the inverse CDF at midpoints of ``n_nodes`` equal probability bins:
-    ``norm.ppf((arange(1, n+1) - 0.5) / n)`` with uniform weights ``1/n``. This
-    matches the study rule ``qnorm((seq_len(n) - 0.5) / n)`` with weight ``1/n``
-    used in bifactor FIPC convergence analyses.
+    For ``n_nodes = n``, nodes are ``norm.ppf((arange(1, n+1) - 0.5) / n)`` with
+    uniform weights ``1/n``. This is the bifactor FIPC study integration rule
+    (``qnorm((seq_len(n) - 0.5) / n)`` with weight ``1/n``); it is not
+    Gauss-Hermite quadrature and does not assert a general quadrature-accuracy
+    guarantee beyond that study convention.
     """
     if n_nodes < 1:
         raise ValueError("n_nodes must be >= 1")
