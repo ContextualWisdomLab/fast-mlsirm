@@ -1,0 +1,15 @@
+{
+  "generated_at_utc": "2026-09-20T18:02:50Z",
+  "relabels_artifact": "fit_score_3host_unified_valkey_20260920.json",
+  "prior_PASS_reclassified_as": "TRANSPORT_DISPATCH_SMOKE_ONLY",
+  "not_claims": [
+    "NOT research fit convergence",
+    "NOT speed win",
+    "NOT manuscript/release",
+    "n_iter=1 / max_iter_reached fixtures are communications/dispatch only"
+  ],
+  "reason": "Root msg_8d96b088fb79: fits n_iter=1/max_iter_reached + s1 score n=1",
+  "prior_unified_splice_sha": "c9da70bbcf47e7339d78ed92183ac05a7fcbeca7",
+  "prior_claim_level": "DEV/experimental path validation — NOT immutable release; NOT manuscript-complete",
+  "next_evidence": "billing-snapshots/fit_score_single_vs_3host_parity_wheel_20260920.json"
+}

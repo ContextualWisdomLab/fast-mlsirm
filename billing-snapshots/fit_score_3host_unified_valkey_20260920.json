@@ -207,5 +207,9 @@
     "installed_core_sha256": "c200b9abbe1b131d77f0348e6d18211e3e8bb850ab0057d4148d25b020e627ab",
     "installed_core_path": "/data/orca/workspaces/fmls-hetero-unified/.venv/lib/python3.12/site-packages/fast_mlsirm/_core.cpython-312-x86_64-linux-gnu.so",
     "status": "COMPLETE_linux_cp312"
-  }
+  },
+  "RECLASSIFIED": "TRANSPORT_DISPATCH_SMOKE_ONLY",
+  "reclassified_at_utc": "2026-09-20T18:02:50Z",
+  "reclassify_see": "fit_score_3host_RELABEL_transport_smoke_20260920.json",
+  "PASS_means": "transport/dispatch smoke only — NOT research convergence"
 }

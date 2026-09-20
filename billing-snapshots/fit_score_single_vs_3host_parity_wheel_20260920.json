@@ -1,0 +1,224 @@
+{
+  "generated_at_utc": "2026-09-20T18:05:32Z",
+  "label": "TRANSPORT/DISPATCH parity — s1 clean-wheel baseline vs Valkey 3-host; NOT research convergence",
+  "links_prior_transport_smoke": "billing-snapshots/fit_score_3host_RELABEL_transport_smoke_20260920.json",
+  "does_not_overwrite": "billing-snapshots/fit_score_3host_unified_valkey_20260920.json",
+  "fixture_note": "max_iter=1 dispatch smoke only; research convergence fixture NOT claimed here",
+  "wheel_fresh_install": {
+    "sha256": "5ebcf7391b21278699ba58c2f38d22accbae333330ae9b878935212b79797041",
+    "core_sha256": "c200b9abbe1b131d77f0348e6d18211e3e8bb850ab0057d4148d25b020e627ab"
+  },
+  "unified_splice_sha": "c9da70bbcf47e7339d78ed92183ac05a7fcbeca7",
+  "broker_product": {
+    "server_name": "valkey",
+    "valkey_version": "8.1.10",
+    "bind": "192.168.68.3:16382",
+    "protected_mode": "no (LAN-only publish)"
+  },
+  "hosts": {
+    "air": {
+      "worker_host": "Seonghoui-MacBookAir.local",
+      "remote_interpreter": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2001-l4-fit-score-wire/.venv/bin/python",
+      "worker_entry": null,
+      "core": "reused-darwin-experimental"
+    },
+    "s1": {
+      "worker_host": "seongho@192.168.68.3",
+      "remote_interpreter": "/data/orca/workspaces/fmls-hetero-unified/.venv/bin/python",
+      "worker_entry": "/data/orca/workspaces/fmls-hetero-unified/worker_entry.py",
+      "core": "clean-wheel-c200b9abbe1b"
+    },
+    "m1": {
+      "worker_host": "seonghobae@10.6.0.3",
+      "remote_interpreter": "/tmp/fmls-hetero-unified/.venv/bin/python",
+      "worker_entry": "/tmp/fmls-hetero-unified/worker_entry.py",
+      "core": "reused-darwin-experimental"
+    }
+  },
+  "baseline_s1_clean_wheel": {
+    "fit": {
+      "delivery_state": "completed",
+      "result": {
+        "convergence_status": "max_iter_reached",
+        "family": "fit_restart",
+        "library_function": "fast_mlsirm.fit",
+        "n_iter": 1,
+        "objective": 3.7243283832656355,
+        "parameter_sha256": "8ee8b1e11e4e8d3a62e612b27552e2f0cfbe0c4a5d6daf9299e3359f4e6cf444"
+      },
+      "error_message": null,
+      "output_identity_sha256": "51acf49b203fab4165344d256c2da568ff529a59f924f9a2f6a3d0bae0841667",
+      "fingerprint": "6f70b0046eea2691cad8510b2048263709e13edec271c89a1632f1a11c5870c2",
+      "elapsed_s": 1.1164455409161747
+    },
+    "score": {
+      "delivery_state": "completed",
+      "result": {
+        "boundary": [
+          false
+        ],
+        "family": "scoring_person",
+        "library_function": "fast_mlsirm.score_wle",
+        "se": [
+          1.2404633178232698
+        ],
+        "theta": [
+          0.6605627061799169
+        ]
+      },
+      "error_message": null,
+      "output_identity_sha256": "884555f6b59c90a46b602d0cae12d997b48cecf32b1e8597e8759fd7857a702c",
+      "fingerprint": "0ef2aa37300adf403d38204dc4fb25e1ad669c997a44d427e42eacf116a5caaa",
+      "elapsed_s": 0.8853500420227647
+    }
+  },
+  "distributed_valkey_3host": {
+    "fit_unit0_s1": {
+      "delivery_state": "completed",
+      "result": {
+        "convergence_status": "max_iter_reached",
+        "family": "fit_restart",
+        "library_function": "fast_mlsirm.fit",
+        "n_iter": 1,
+        "objective": 3.7243283832656355,
+        "parameter_sha256": "8ee8b1e11e4e8d3a62e612b27552e2f0cfbe0c4a5d6daf9299e3359f4e6cf444"
+      },
+      "error_message": null,
+      "output_identity_sha256": "51acf49b203fab4165344d256c2da568ff529a59f924f9a2f6a3d0bae0841667",
+      "fingerprint": "b271556fa9f5778ddf3df3278d87c2d84c7d70c968fa4c892c6f23c01cd71319",
+      "elapsed_s": 1.3064996250905097
+    },
+    "score_unit1_air": {
+      "delivery_state": "completed",
+      "result": {
+        "boundary": [
+          false
+        ],
+        "family": "scoring_person",
+        "library_function": "fast_mlsirm.score_wle",
+        "se": [
+          1.2404633178232698
+        ],
+        "theta": [
+          0.6605627061799169
+        ]
+      },
+      "error_message": null,
+      "output_identity_sha256": "884555f6b59c90a46b602d0cae12d997b48cecf32b1e8597e8759fd7857a702c",
+      "fingerprint": "2b4ffe62b26879ece554de9c853951fce2232cc9f3d518d37cdd58467e1e3be6",
+      "elapsed_s": 0.29216008307412267
+    },
+    "fit_unit2_m1": {
+      "delivery_state": "completed",
+      "result": {
+        "convergence_status": "max_iter_reached",
+        "family": "fit_restart",
+        "library_function": "fast_mlsirm.fit",
+        "n_iter": 1,
+        "objective": 3.7772372479474736,
+        "parameter_sha256": "5163a2985c46038f9446d37f555f676f94e7027aaab729a9d0167339ee0da7f1"
+      },
+      "error_message": null,
+      "output_identity_sha256": "bb96533d608cd0e2f19eb04989464bf658643f05d1d6ba7513698606e07eae8a",
+      "fingerprint": "9cac608c57a6afdfee5e61f878a08ff67b2bad6570c63daaf1c786d1f286a4a7",
+      "elapsed_s": 2.1152156251482666
+    },
+    "fit_unit0_dedup_air": {
+      "delivery_state": "completed",
+      "result": {
+        "convergence_status": "max_iter_reached",
+        "family": "fit_restart",
+        "library_function": "fast_mlsirm.fit",
+        "n_iter": 1,
+        "objective": 3.7243283832656355,
+        "parameter_sha256": "8ee8b1e11e4e8d3a62e612b27552e2f0cfbe0c4a5d6daf9299e3359f4e6cf444"
+      },
+      "error_message": null,
+      "output_identity_sha256": "51acf49b203fab4165344d256c2da568ff529a59f924f9a2f6a3d0bae0841667",
+      "fingerprint": "b271556fa9f5778ddf3df3278d87c2d84c7d70c968fa4c892c6f23c01cd71319",
+      "elapsed_s": 0.011127749923616648
+    },
+    "score_unit1_dedup_m1": {
+      "delivery_state": "completed",
+      "result": {
+        "boundary": [
+          false
+        ],
+        "family": "scoring_person",
+        "library_function": "fast_mlsirm.score_wle",
+        "se": [
+          1.2404633178232698
+        ],
+        "theta": [
+          0.6605627061799169
+        ]
+      },
+      "error_message": null,
+      "output_identity_sha256": "884555f6b59c90a46b602d0cae12d997b48cecf32b1e8597e8759fd7857a702c",
+      "fingerprint": "2b4ffe62b26879ece554de9c853951fce2232cc9f3d518d37cdd58467e1e3be6",
+      "elapsed_s": 0.009337999857962132
+    },
+    "score_unit1_s1_for_abi_parity": {
+      "delivery_state": "completed",
+      "result": {
+        "boundary": [
+          false
+        ],
+        "family": "scoring_person",
+        "library_function": "fast_mlsirm.score_wle",
+        "se": [
+          1.2404633178232698
+        ],
+        "theta": [
+          0.6605627061799169
+        ]
+      },
+      "error_message": null,
+      "output_identity_sha256": "884555f6b59c90a46b602d0cae12d997b48cecf32b1e8597e8759fd7857a702c",
+      "fingerprint": "0e3d36b8ba81462c3c95e287b170e8aaa6d411f8fcf2231d217916ee0fdd0933",
+      "elapsed_s": 0.9125897078774869
+    }
+  },
+  "reclaim_dedup": {
+    "fit_unit0_third_s1": {
+      "delivery_state": "completed",
+      "result": {
+        "convergence_status": "max_iter_reached",
+        "family": "fit_restart",
+        "library_function": "fast_mlsirm.fit",
+        "n_iter": 1,
+        "objective": 3.7243283832656355,
+        "parameter_sha256": "8ee8b1e11e4e8d3a62e612b27552e2f0cfbe0c4a5d6daf9299e3359f4e6cf444"
+      },
+      "error_message": null,
+      "output_identity_sha256": "51acf49b203fab4165344d256c2da568ff529a59f924f9a2f6a3d0bae0841667",
+      "fingerprint": "b271556fa9f5778ddf3df3278d87c2d84c7d70c968fa4c892c6f23c01cd71319",
+      "elapsed_s": 0.009583958890289068
+    }
+  },
+  "agreement": {
+    "fit_unit0_baseline_vs_dist_s1": true,
+    "score_unit1_baseline_vs_s1_dist_same_abi": true,
+    "score_unit1_baseline_s1_vs_dist_air_cross_abi": true,
+    "dedup_fit0": true,
+    "dedup_score1": true,
+    "reclaim_third": true
+  },
+  "failure_records": [],
+  "failure_count": 0,
+  "checks": {
+    "baseline_fit_completed": true,
+    "baseline_score_completed": true,
+    "dist_fit_s1_completed": true,
+    "dist_score_air_completed": true,
+    "dist_fit_m1_completed": true,
+    "clean_wheel_fit_parity": true,
+    "clean_wheel_score_parity_same_abi": true,
+    "dedup_fit": true,
+    "dedup_score": true,
+    "reclaim_lookup": true,
+    "valkey_product": true
+  },
+  "PASS": true,
+  "owner_track2_note": "HETERO owns FIPC age-group person score / reference-distribution API+consumer link next (not #2077 curves)"
+}
