@@ -149,6 +149,33 @@ fn bias_acceptance_does_not_replace_monte_carlo_uncertainty_with_an_absolute_flo
 }
 
 #[test]
+fn practical_bias_inside_declared_budget_must_not_fail_only_because_mcse_is_small() {
+    let truth = TRUE_ICC;
+    let estimates = [
+        truth + 0.019,
+        truth + 0.021,
+        truth + 0.019,
+        truth + 0.021,
+        truth + 0.019,
+        truth + 0.021,
+        truth + 0.019,
+        truth + 0.021,
+    ];
+    let (bias, monte_carlo_standard_error, accepted) =
+        bias_within_monte_carlo_uncertainty(&estimates, truth);
+    let practical_bias_budget = MAX_ICC_RMSE / 2.0;
+
+    assert!(
+        bias.abs() + 3.0 * monte_carlo_standard_error < practical_bias_budget,
+        "witness must remain inside the predeclared practical bias budget after Monte Carlo uncertainty"
+    );
+    assert!(
+        accepted,
+        "a precisely estimated small bias inside the practical budget must not be rejected merely for being many MCSE from zero"
+    );
+}
+
+#[test]
 fn ratio_only_recovery_rejects_proportionally_wrong_variance_components() {
     let icc_estimates = [TRUE_ICC; 8];
     let between_estimates = [TRUE_BETWEEN_VARIANCE * 2.0; 8];
