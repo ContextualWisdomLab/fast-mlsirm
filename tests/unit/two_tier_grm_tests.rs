@@ -132,6 +132,95 @@ fn fipc_keeps_anchor_rows_and_returns_focal_moments() {
     assert_eq!(fit.primary_mean.len(), TINY_N_PRIMARY);
     assert_eq!(fit.primary_cov.len(), TINY_N_PRIMARY * TINY_N_PRIMARY);
     assert!(fit.loglik_trace.iter().all(|value| value.is_finite()));
+    assert_eq!(fit.fixed_loglik_trace.len(), fit.loglik_trace.len());
+    assert!(fit.fixed_loglik_trace.iter().all(|value| value.is_finite()));
+    assert_eq!(
+        fit.fixed_primary_first_moment_trace.len(),
+        fit.loglik_trace.len() * TINY_N_PRIMARY
+    );
+    assert_eq!(
+        fit.fixed_primary_second_moment_trace.len(),
+        fit.loglik_trace.len() * TINY_N_PRIMARY * TINY_N_PRIMARY
+    );
+    assert_eq!(
+        fit.fixed_specific_second_moment_trace.len(),
+        fit.loglik_trace.len() * TINY_N_SPECIFIC
+    );
+    assert_eq!(
+        fit.prior_mean_trace.len(),
+        fit.n_iter * TINY_N_PRIMARY
+    );
+    assert_eq!(
+        fit.prior_covariance_trace.len(),
+        fit.n_iter * TINY_N_PRIMARY * TINY_N_PRIMARY
+    );
+    assert_eq!(
+        fit.prior_specific_sd_trace.len(),
+        fit.n_iter * TINY_N_SPECIFIC
+    );
+}
+
+#[test]
+fn fipc_consumer_shape_records_fixed_eval_trace_for_both_seeded_inputs() {
+    const N_PERSONS: usize = 180;
+    const N_ITEMS: usize = 6;
+    const N_PRIMARY: usize = 2;
+    const N_SPECIFIC: usize = 1;
+    const N_CAT: usize = 3;
+    const PRIMARY_MAP: [bool; N_ITEMS * N_PRIMARY] = [
+        true, false, true, false, true, false, false, true, false, true, false, true,
+    ];
+    const SPECIFIC_MAP: [i32; N_ITEMS] = [0, 0, 0, 0, 0, 0];
+    const ANCHOR: [bool; N_ITEMS] = [true, true, true, false, false, false];
+    let fixed_a_primary = vec![
+        1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0,
+    ];
+    let fixed_a_specific = vec![0.7; N_ITEMS];
+    let fixed_threshold = vec![1.0, -1.0].repeat(N_ITEMS);
+
+    for mut seed in [20_260_921_u64, 20_260_922_u64] {
+        let mut y = vec![0usize; N_PERSONS * N_ITEMS];
+        for value in &mut y {
+            // Deterministic xorshift stream keeps this regression independent
+            // of an external RNG while preserving both consumer seeds.
+            seed ^= seed << 7;
+            seed ^= seed >> 9;
+            *value = (seed as usize) % N_CAT;
+        }
+        let fit = fit_two_tier_grm_fipc(
+            &y,
+            None,
+            &PRIMARY_MAP,
+            &SPECIFIC_MAP,
+            N_PERSONS,
+            N_ITEMS,
+            N_PRIMARY,
+            N_SPECIFIC,
+            N_CAT,
+            &ANCHOR,
+            &fixed_a_primary,
+            &fixed_a_specific,
+            &fixed_threshold,
+            &TwoTierFipcConfig {
+                q_primary: 7,
+                q_specific: 7,
+                max_iter: 1,
+                tol: 1e-5,
+                newton_iter: 2,
+                ridge: 1e-8,
+                estimate_specific_vars: false,
+            },
+        )
+        .expect("consumer-shaped FIPC fit must expose fixed evaluation evidence");
+        assert_eq!(fit.fixed_loglik_trace.len(), fit.loglik_trace.len());
+        assert!(fit.fixed_loglik_trace[0].is_finite());
+        assert_eq!(fit.fixed_primary_first_moment_trace.len(), N_PRIMARY);
+        assert_eq!(
+            fit.fixed_primary_second_moment_trace.len(),
+            N_PRIMARY * N_PRIMARY
+        );
+        assert_eq!(fit.fixed_specific_second_moment_trace.len(), N_SPECIFIC);
+    }
 }
 
 // ---------------------------------------------------------------------------

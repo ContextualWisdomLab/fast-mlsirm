@@ -346,6 +346,29 @@ pub struct TwoTierFipcResult {
     pub theta_p_sd: Vec<f64>,
     pub category_counts: Vec<usize>,
     pub loglik_trace: Vec<f64>,
+    /// Diagnostic observed-data LL evaluated on one frozen standard-normal GH
+    /// node/weight measure for every iteration. This is intentionally separate
+    /// from `loglik_trace`, whose direct-GH E-step remaps nodes as the focal
+    /// moments change; it is used to distinguish a true E/M regression from a
+    /// changing finite-quadrature objective.
+    pub fixed_loglik_trace: Vec<f64>,
+    /// Frozen-measure E-step first moments, flattened by iteration then primary
+    /// dimension. These are diagnostic sufficient statistics, not fit outputs.
+    pub fixed_primary_first_moment_trace: Vec<f64>,
+    /// Frozen-measure E-step second moments, flattened by iteration then matrix
+    /// row-major index. These are diagnostic sufficient statistics.
+    pub fixed_primary_second_moment_trace: Vec<f64>,
+    /// Frozen-measure E-step specific-factor second moments, flattened by
+    /// iteration then specific factor.
+    pub fixed_specific_second_moment_trace: Vec<f64>,
+    /// Prior mean updates after each successful M-step, flattened by iteration
+    /// then primary dimension.
+    pub prior_mean_trace: Vec<f64>,
+    /// Prior covariance updates after each successful M-step, flattened by
+    /// iteration then row-major matrix index.
+    pub prior_covariance_trace: Vec<f64>,
+    /// Prior specific-factor SD updates after each successful M-step.
+    pub prior_specific_sd_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
     pub termination_reason: String,
@@ -1179,6 +1202,41 @@ fn fipc_primary_coords(base: &[f64], mean: &[f64], chol: &[f64], p: usize, n_gri
     coords
 }
 
+/// Evaluate one FIPC state on the initial standard-normal GH histogram.
+///
+/// FIPC's production E-step maps the nodes as the focal moments change. This
+/// second pass deliberately does not: it freezes both node locations and
+/// weights, making consecutive entries comparable as a diagnostic objective.
+/// The returned moments are the unnormalised sums accumulated over persons,
+/// matching the sufficient statistics consumed by the prior updates.
+#[allow(clippy::too_many_arguments)]
+fn fixed_fipc_e_step(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    base_coords: &[f64],
+    log_w0: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    ts_std: &[f64],
+    n_grid: usize,
+    qs: usize,
+) -> (f64, Vec<f64>, Vec<f64>, Vec<f64>) {
+    let (loglik, _, sum_primary, sum_primary2, sum_specific2, _, _, _) = e_step_fipc(
+        v,
+        y,
+        observed,
+        params,
+        log_w0,
+        log_ws_by_specific,
+        base_coords,
+        &vec![ts_std.to_vec(); v.n_specific],
+        n_grid,
+        qs,
+    );
+    (loglik, sum_primary, sum_primary2, sum_specific2)
+}
+
 /// Fit a focal group with fixed item anchors under the two-tier GRM.
 ///
 /// This is the two-tier analogue of the bifactor FIPC implementation: the
@@ -1280,6 +1338,13 @@ pub fn fit_two_tier_grm_fipc(
     for d in 0..n_primary { covariance[d * n_primary + d] = 1.0; }
     let mut specific_sd = vec![1.0; n_specific];
     let mut loglik_trace = Vec::new();
+    let mut fixed_loglik_trace = Vec::new();
+    let mut fixed_primary_first_moment_trace = Vec::new();
+    let mut fixed_primary_second_moment_trace = Vec::new();
+    let mut fixed_specific_second_moment_trace = Vec::new();
+    let mut prior_mean_trace = Vec::new();
+    let mut prior_covariance_trace = Vec::new();
+    let mut prior_specific_sd_trace = Vec::new();
     let mut converged = false;
     let mut n_iter = 0;
     let mut termination_reason = "max_iter_reached".to_string();
@@ -1298,10 +1363,53 @@ pub fn fit_two_tier_grm_fipc(
             .map(|_| log_ws.clone())
             .collect();
         let log_w = log_w0.clone();
+        let fixed_log_ws_by_specific: Vec<Vec<f64>> = (0..n_specific)
+            .map(|_| log_ws.clone())
+            .collect();
+        let (fixed_ll, fixed_m1, fixed_m2, fixed_specific_m2) = fixed_fipc_e_step(
+            &v,
+            y,
+            observed,
+            &params,
+            &base_coords,
+            &log_w0,
+            &fixed_log_ws_by_specific,
+            ts_std,
+            n_grid,
+            ts_std.len(),
+        );
+        fixed_loglik_trace.push(fixed_ll);
+        fixed_primary_first_moment_trace.extend_from_slice(&fixed_m1);
+        fixed_primary_second_moment_trace.extend_from_slice(&fixed_m2);
+        fixed_specific_second_moment_trace.extend_from_slice(&fixed_specific_m2);
         let (ll, counts, sum_primary, sum_primary2, sum_specific2, specific_mass, _, _) =
             e_step_fipc(&v, y, observed, &params, &log_w, &log_ws_by_specific, &coords, &ts_by_specific, n_grid, ts_std.len());
         let previous = loglik_trace.last().copied();
-        if let Some(change) = checked_em_loglik_change(ll, previous, n_iter)? {
+        if let Some(change) = checked_em_loglik_change(ll, previous, n_iter).map_err(|error| {
+            let fixed_change = fixed_loglik_trace
+                .windows(2)
+                .last()
+                .map(|w| w[1] - w[0]);
+            format!(
+                "{error}; fixed_eval_ll={fixed_ll:.6e}, fixed_eval_delta={}, "
+                    "fixed_eval_trace={fixed_loglik_trace:?}, "
+                    "remapped_eval_trace={loglik_trace:?}, "
+                    "fixed_eval_primary_m1={fixed_m1:?}, "
+                    "fixed_eval_primary_m2={fixed_m2:?}, "
+                    "fixed_eval_specific_m2={fixed_specific_m2:?}, "
+                    "last_prior_mean={:?}, last_prior_covariance={:?}, "
+                    "last_prior_specific_sd={:?}",
+                fixed_change
+                    .map(|value| format!("{value:.6e}"))
+                    .unwrap_or_else(|| "n/a".to_string()),
+                prior_mean_trace.rchunks(n_primary).next().unwrap_or(&[]),
+                prior_covariance_trace
+                    .rchunks(n_primary * n_primary)
+                    .next()
+                    .unwrap_or(&[]),
+                prior_specific_sd_trace.rchunks(n_specific).next().unwrap_or(&[]),
+            )
+        })? {
             final_loglik_change = change;
             if change <= cfg.tol * (1.0 + previous.expect("previous loglik exists").abs()) {
                 converged = true;
@@ -1346,6 +1454,9 @@ pub fn fit_two_tier_grm_fipc(
                 specific_sd[s] = variance.sqrt();
             }
         }
+        prior_mean_trace.extend_from_slice(&mean);
+        prior_covariance_trace.extend_from_slice(&covariance);
+        prior_specific_sd_trace.extend_from_slice(&specific_sd);
         n_iter += 1;
     }
     let (chol, _) = cholesky_lower(&covariance, n_primary).ok_or_else(|| "final focal primary covariance is not positive-definite".to_string())?;
@@ -1373,7 +1484,7 @@ pub fn fit_two_tier_grm_fipc(
     for i in 0..n_items { if !anchor[i] { n_parameters += v.free_primaries[i].len() + usize::from(v.item_block[i].is_some()) + v.m1; } }
     if cfg.estimate_specific_vars { n_parameters += n_specific; }
     let primary_sd = (0..n_primary).map(|d| covariance[d * n_primary + d].max(0.0).sqrt()).collect();
-    Ok(TwoTierFipcResult { a_primary, a_specific, threshold, primary_mean: mean, primary_cov: covariance, primary_sd, specific_sd, theta_p_eap, theta_p_sd, category_counts, loglik_trace, n_iter, converged, termination_reason, final_loglik_change, n_parameters })
+    Ok(TwoTierFipcResult { a_primary, a_specific, threshold, primary_mean: mean, primary_cov: covariance, primary_sd, specific_sd, theta_p_eap, theta_p_sd, category_counts, loglik_trace, fixed_loglik_trace, fixed_primary_first_moment_trace, fixed_primary_second_moment_trace, fixed_specific_second_moment_trace, prior_mean_trace, prior_covariance_trace, prior_specific_sd_trace, n_iter, converged, termination_reason, final_loglik_change, n_parameters })
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item — the

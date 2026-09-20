@@ -2017,6 +2017,22 @@ fn fit_two_tier_grm_fipc(
     out.set_item("theta_p_sd", res.theta_p_sd)?;
     out.set_item("category_counts", res.category_counts)?;
     out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("fixed_loglik_trace", res.fixed_loglik_trace)?;
+    out.set_item(
+        "fixed_primary_first_moment_trace",
+        res.fixed_primary_first_moment_trace,
+    )?;
+    out.set_item(
+        "fixed_primary_second_moment_trace",
+        res.fixed_primary_second_moment_trace,
+    )?;
+    out.set_item(
+        "fixed_specific_second_moment_trace",
+        res.fixed_specific_second_moment_trace,
+    )?;
+    out.set_item("prior_mean_trace", res.prior_mean_trace)?;
+    out.set_item("prior_covariance_trace", res.prior_covariance_trace)?;
+    out.set_item("prior_specific_sd_trace", res.prior_specific_sd_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
     out.set_item("termination_reason", res.termination_reason)?;
