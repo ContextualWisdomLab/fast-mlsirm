@@ -760,7 +760,41 @@ class ValkeyStreamsOutcomeStore:
             raise RuntimeError("successful outcome commit was not persisted")
         return _outcome_from_dict(json.loads(_valkey_text(stored)))
 
-    def _drain(self) -> None:
+    def _block_ms_for_read(self, deadline: float | None) -> int | None:
+        """Return BLOCK milliseconds, or ``None`` to omit BLOCK (non-blocking).
+
+        Redis/Valkey treat ``BLOCK 0`` as wait-forever. Non-blocking reads must
+        omit the BLOCK option entirely; blocking reads must be capped to any
+        remaining wait deadline.
+        """
+        if self._block_ms == 0:
+            return None
+        if deadline is None:
+            return self._block_ms
+        remaining_ms = int((deadline - time.monotonic()) * 1000)
+        if remaining_ms <= 0:
+            return None
+        return min(self._block_ms, remaining_ms)
+
+    def _xreadgroup(self, *, count: int, block_ms: int | None):
+        """Issue XREADGROUP; omit BLOCK when ``block_ms`` is ``None``."""
+        streams = {self._stream: ">"}
+        if block_ms is None:
+            return self._client.xreadgroup(
+                self._group,
+                self._consumer,
+                streams,
+                count,
+            )
+        return self._client.xreadgroup(
+            self._group,
+            self._consumer,
+            streams,
+            count,
+            block_ms,
+        )
+
+    def _drain(self, *, deadline: float | None = None) -> None:
         records: list[tuple[object, dict[object, object]]] = []
         start_id = "0-0"
         while True:
@@ -772,29 +806,25 @@ class ValkeyStreamsOutcomeStore:
                 start_id,
                 count=self._batch_size,
             )
+            next_id = _valkey_text(claimed[0]) if claimed else "0-0"
             batch = list(claimed[1]) if claimed else []
             records.extend(batch)
-            if not batch or len(batch) < self._batch_size:
+            # XAUTOCLAIM may return a short/empty batch while the PEL cursor
+            # still has later entries (e.g. ineligible idle time). Advance
+            # until the server reports cursor 0-0.
+            if next_id == "0-0":
                 break
-            start_id = _valkey_text(claimed[0])
+            start_id = next_id
 
-        fresh = self._client.xreadgroup(
-            self._group,
-            self._consumer,
-            {self._stream: ">"},
+        fresh = self._xreadgroup(
             count=self._batch_size,
-            block=self._block_ms,
+            block_ms=self._block_ms_for_read(deadline),
         )
         while fresh:
             for _stream, messages in fresh:
                 records.extend(messages)
-            fresh = self._client.xreadgroup(
-                self._group,
-                self._consumer,
-                {self._stream: ">"},
-                count=self._batch_size,
-                block=0,
-            )
+            # Never pass BLOCK 0: that is infinite wait on Redis/Valkey.
+            fresh = self._xreadgroup(count=self._batch_size, block_ms=None)
 
         records.sort(
             key=lambda record: tuple(
@@ -848,7 +878,7 @@ class ValkeyStreamsOutcomeStore:
                     found[fingerprint] = outcome
             if len(found) == len(needed):
                 break
-            self._drain()
+            self._drain(deadline=deadline)
         return found
 
     def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None:

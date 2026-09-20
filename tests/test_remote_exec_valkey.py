@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 
 import pytest
@@ -26,6 +27,9 @@ class FakeValkey:
         self.acked: list[str] = []
         self.hashes: dict[str, dict[str, str]] = {}
         self.commands: list[str] = []
+        self.xreadgroup_blocks: list[int | None] = []
+        # Optional scripted XAUTOCLAIM replies: (next_id, claimed_records).
+        self.xautoclaim_script: list[tuple[str, list[tuple[str, dict[str, str]]]]] = []
 
     def xgroup_create(self, name, groupname, id="0", mkstream=False):
         self.commands.append("XGROUP CREATE")
@@ -38,12 +42,20 @@ class FakeValkey:
 
     def xautoclaim(self, name, groupname, consumername, min_idle_time, start_id, count):
         self.commands.append("XAUTOCLAIM")
+        if self.xautoclaim_script:
+            next_id, claimed = self.xautoclaim_script.pop(0)
+            return (next_id, claimed, [])
         claimed, self.pending = self.pending[:count], self.pending[count:]
-        next_id = claimed[-1][0] if claimed else start_id
+        next_id = "0-0" if not self.pending else (claimed[-1][0] if claimed else start_id)
         return (next_id, claimed, [])
 
-    def xreadgroup(self, groupname, consumername, streams, count, block):
+    def xreadgroup(self, groupname, consumername, streams, count, block=None):
         self.commands.append("XREADGROUP")
+        self.xreadgroup_blocks.append(block)
+        if block == 0:
+            raise AssertionError(
+                "BLOCK 0 is infinite wait on Redis/Valkey; omit BLOCK instead"
+            )
         name = next(iter(streams))
         entries = self.streams.get(name, [])[:count]
         self.streams[name] = self.streams.get(name, [])[len(entries) :]
@@ -97,6 +109,65 @@ def test_valkey_store_reclaims_reads_acks_and_keeps_first_success() -> None:
     assert client.commands.count("XAUTOCLAIM") >= 1
     assert "XREADGROUP" in client.commands
     assert client.acked == ["1-0", "2-0"]
+    # Follow-up reads must omit BLOCK (None), never pass BLOCK 0.
+    assert None in client.xreadgroup_blocks
+    assert 0 not in client.xreadgroup_blocks
+
+
+def test_valkey_store_continues_xautoclaim_until_cursor_zero() -> None:
+    client = FakeValkey()
+    early = _completed_outcome(21, {"phase": "ineligible-skip"})
+    late = _completed_outcome(22, {"phase": "eligible"})
+    client.xautoclaim_script = [
+        ("1-0", []),
+        ("0-0", [("2-0", _record(late))]),
+    ]
+    store = ValkeyStreamsOutcomeStore(
+        client, stream="outcomes", group="drivers", consumer="d1", batch_size=1, block_ms=0
+    )
+
+    assert store.committed_success(late.envelope_fingerprint) == late
+    assert store.committed_success(early.envelope_fingerprint) is None
+    assert client.commands.count("XAUTOCLAIM") >= 2
+    assert client.acked == ["2-0"]
+
+
+def test_valkey_store_drains_multi_batch_stream_without_block_zero() -> None:
+    client = FakeValkey()
+    outcomes = [_completed_outcome(i, {"idx": i}) for i in range(30, 33)]
+    client.streams["outcomes"] = [
+        (f"{i}-0", _record(outcome)) for i, outcome in enumerate(outcomes, start=1)
+    ]
+    store = ValkeyStreamsOutcomeStore(
+        client,
+        stream="outcomes",
+        group="drivers",
+        consumer="d1",
+        batch_size=1,
+        block_ms=50,
+    )
+
+    available = store.consume_available()
+
+    assert set(available) == {outcome.envelope_fingerprint for outcome in outcomes}
+    assert client.xreadgroup_blocks[0] == 50
+    assert client.xreadgroup_blocks[1:] == [None] * (len(client.xreadgroup_blocks) - 1)
+    assert 0 not in client.xreadgroup_blocks
+
+
+def test_valkey_wait_for_committed_empty_stream_respects_deadline() -> None:
+    client = FakeValkey()
+    store = ValkeyStreamsOutcomeStore(
+        client, stream="outcomes", group="drivers", consumer="d1", block_ms=50
+    )
+    fingerprint = _completed_outcome(40, {"missing": True}).envelope_fingerprint
+    deadline = time.monotonic() + 0.05
+
+    found = store.wait_for_committed((fingerprint,), deadline=deadline)
+
+    assert found == {}
+    assert time.monotonic() >= deadline
+    assert all(block != 0 for block in client.xreadgroup_blocks)
 
 
 def test_valkey_backend_publishes_envelope_and_consumes_completed_outcome() -> None:
