@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "ContextualWisdomLab" }]
-dependencies = ["numpy>=1.24"]
+dependencies = ["numpy>=1.24", "scipy>=1.11"]
 keywords = ["irt", "psychometrics", "latent-space", "mlsirm", "pyo3"]
 classifiers = [
     "Development Status :: 3 - Alpha",
