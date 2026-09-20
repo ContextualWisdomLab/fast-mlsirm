@@ -1,0 +1,205 @@
+{
+  "generated_at_utc": "2026-09-20T16:49:38Z",
+  "label": "generic fast_mlsirm remote/Valkey path validation \u2014 NOT research model complete",
+  "valkey_url": "redis://192.168.68.3:16381/0",
+  "valkey_server": {
+    "redis_version": "7.4.11",
+    "os": "Linux 5.19.0-1028-lowlatency x86_64",
+    "tcp_port": 6379
+  },
+  "library_git_sha": "74ecd9f90cdb2675ae4c858d07200d6edb7ce3a4",
+  "per_host_library_sha_note": "workers report PackageNotFound library_version=0+unknown; source tree SHA is library_git_sha above; Air also has linked _core from fit-score WT",
+  "fixed_inputs": {
+    "family": "mc_replicate",
+    "n_persons": 24,
+    "items_per_dim": 4,
+    "base_seed": 20260920,
+    "run_id": "hetero_lib_cf0b4f5e",
+    "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source_sha256": "9201cb1405b770c8423d56e178b734818df2e020d2c14e549889fb6a041a04f6",
+    "seed_derivation_rule": "index_golden_ratio_v1"
+  },
+  "hosts": {
+    "air": {
+      "label": "air",
+      "worker_host": "local-air",
+      "remote_interpreter": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2001-l4-fit-score-wire/.venv/bin/python",
+      "worker_entry": null,
+      "elapsed_s": 1.186764415819198,
+      "outcomes": [
+        {
+          "unit_index": 0,
+          "delivery_state": "completed",
+          "envelope_fingerprint": "6ad6a919a6dfd64f9dc5c3e2914b1971ba84cced67f3649be0c585856df102c1",
+          "result": {
+            "family": "mc_replicate",
+            "library_function": "fast_mlsirm.simulate",
+            "n_items": 4,
+            "n_persons": 24,
+            "response_sha256": "669114ddd7534fc210b1338f00bb5e0484aaeed9d77b8dabad58657d2c5b3a10"
+          },
+          "error_message": null,
+          "worker_host_cfg": "local-air"
+        },
+        {
+          "unit_index": 1,
+          "delivery_state": "completed",
+          "envelope_fingerprint": "0b0978d73bda4a5504b137e38b72bcc7abb375bf653541015561f48bfe53eb68",
+          "result": {
+            "family": "mc_replicate",
+            "library_function": "fast_mlsirm.simulate",
+            "n_items": 4,
+            "n_persons": 24,
+            "response_sha256": "f2f03499e5238c3057afb467346dd3b740b7a04732fbd7f506cf8be749cea620"
+          },
+          "error_message": null,
+          "worker_host_cfg": "local-air"
+        },
+        {
+          "unit_index": 2,
+          "delivery_state": "completed",
+          "envelope_fingerprint": "92fed5aa31cc554a025d2d8b92d91db4990063fb51a148cd39daef9ad85cc4cc",
+          "result": {
+            "family": "mc_replicate",
+            "library_function": "fast_mlsirm.simulate",
+            "n_items": 4,
+            "n_persons": 24,
+            "response_sha256": "23d24e3fff91e3fbda81f2f8dae5628edcf1f8a528b7af95891aaa7334fb127d"
+          },
+          "error_message": null,
+          "worker_host_cfg": "local-air"
+        }
+      ],
+      "completed": 3,
+      "failed": 0
+    },
+    "s1": {
+      "label": "s1",
+      "worker_host": "seongho@192.168.68.3",
+      "remote_interpreter": "python3",
+      "worker_entry": "/home/seongho/fmls-hetero/scripts/hetero_remote_worker_entry.py",
+      "elapsed_s": 3.1826858329586685,
+      "outcomes": [
+        {
+          "unit_index": 3,
+          "delivery_state": "completed",
+          "envelope_fingerprint": "cb8d6e75bdf8095e85d2fb986e5f772e05488f3fe8c2c03d9e6edb37bcb585de",
+          "result": {
+            "family": "mc_replicate",
+            "library_function": "fast_mlsirm.simulate",
+            "n_items": 4,
+            "n_persons": 24,
+            "response_sha256": "bf7e1a0bc6d160f1e16e7b65e87fdbb3c7b618424ef906a06a81afe3397ea044"
+          },
+          "error_message": null,
+          "worker_host_cfg": "seongho@192.168.68.3"
+        },
+        {
+          "unit_index": 4,
+          "delivery_state": "completed",
+          "envelope_fingerprint": "a4f41c6e1b24507e1695394a9cc6e1b60b63a4deb634ec18583261c0ead3f508",
+          "result": {
+            "family": "mc_replicate",
+            "library_function": "fast_mlsirm.simulate",
+            "n_items": 4,
+            "n_persons": 24,
+            "response_sha256": "63a939ae68e7bea53bbc807388bc17ddc8ec498143bc680a8b9ed4f35a515f1b"
+          },
+          "error_message": null,
+          "worker_host_cfg": "seongho@192.168.68.3"
+        },
+        {
+          "unit_index": 5,
+          "delivery_state": "completed",
+          "envelope_fingerprint": "3c59d745e7b6972d1da738b2175edd7576fe1eb8214769a67d17cfd9200f5ca6",
+          "result": {
+            "family": "mc_replicate",
+            "library_function": "fast_mlsirm.simulate",
+            "n_items": 4,
+            "n_persons": 24,
+            "response_sha256": "eb42ece72bbb82d0cb2a7039fbfea43092a9c62281e7116bb5fd45706c07b314"
+          },
+          "error_message": null,
+          "worker_host_cfg": "seongho@192.168.68.3"
+        }
+      ],
+      "completed": 3,
+      "failed": 0
+    },
+    "m1": {
+      "label": "m1",
+      "worker_host": "seonghobae@10.6.0.3",
+      "remote_interpreter": "/tmp/fmls-hetero/.venv/bin/python",
+      "worker_entry": "/tmp/fmls-hetero/scripts/hetero_remote_worker_entry.py",
+      "elapsed_s": 2.906006125267595,
+      "outcomes": [
+        {
+          "unit_index": 6,
+          "delivery_state": "completed",
+          "envelope_fingerprint": "6c0c52f8ddb4dbb49ae8b113e127cab21637017603f0f8edb532d0d05e6bfa76",
+          "result": {
+            "family": "mc_replicate",
+            "library_function": "fast_mlsirm.simulate",
+            "n_items": 4,
+            "n_persons": 24,
+            "response_sha256": "b1fc7c21246ed03442e72a319e0972890ae6e4f8e23024dfeb7995f956e393d7"
+          },
+          "error_message": null,
+          "worker_host_cfg": "seonghobae@10.6.0.3"
+        },
+        {
+          "unit_index": 7,
+          "delivery_state": "completed",
+          "envelope_fingerprint": "33970b7e480f19459a1e88f95a556f6144874a417155e63f2796d905845e039e",
+          "result": {
+            "family": "mc_replicate",
+            "library_function": "fast_mlsirm.simulate",
+            "n_items": 4,
+            "n_persons": 24,
+            "response_sha256": "3bbe75ce03229130397a2365f85ec443589f9c4644cfe3c4a1ad268bac9e22eb"
+          },
+          "error_message": null,
+          "worker_host_cfg": "seonghobae@10.6.0.3"
+        },
+        {
+          "unit_index": 8,
+          "delivery_state": "completed",
+          "envelope_fingerprint": "fca1918d701733f255a8ea333ed7ff41bc141b52449063082de14739e8c18900",
+          "result": {
+            "family": "mc_replicate",
+            "library_function": "fast_mlsirm.simulate",
+            "n_items": 4,
+            "n_persons": 24,
+            "response_sha256": "203fef6b0a595ab9a09296891e8db4e88d7f05594b337fbb4cc6a6fdc4554c61"
+          },
+          "error_message": null,
+          "worker_host_cfg": "seonghobae@10.6.0.3"
+        }
+      ],
+      "completed": 3,
+      "failed": 0
+    }
+  },
+  "fail_reclaim_dedup": {
+    "fingerprint": "f2fe51e92ffa70bf5b828808800109fee52e5497c761ff5db20922bf2d33be7c",
+    "first_attempt_error": "[Errno 2] No such file or directory: '/nonexistent/python-hetero'",
+    "first_attempt_state": "failed",
+    "reclaim_state": "completed",
+    "reclaim_result": {
+      "family": "mc_replicate",
+      "library_function": "fast_mlsirm.simulate",
+      "n_items": 4,
+      "n_persons": 24,
+      "response_sha256": "3772fb35bb50aff3f6ff0de5210618ed7001458023c1c772a748511023643f38"
+    },
+    "dedup_same_result": true,
+    "dedup_same_fingerprint": true,
+    "PASS": true
+  },
+  "checks": {
+    "all_nine_completed": true,
+    "all_library_function_simulate": true,
+    "fail_reclaim_dedup_pass": true
+  },
+  "PASS": true
+}
