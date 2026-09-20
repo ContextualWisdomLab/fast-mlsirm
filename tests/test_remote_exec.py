@@ -61,11 +61,12 @@ def _envelope(
     family: RemoteJobFamily = RemoteJobFamily.MC_REPLICATE,
     unit_index: int = 3,
     base_seed: int = 20260917,
+    run_id: str = "cp3_bootstrap_001",
     manifest: RemoteRunManifest | None = None,
 ) -> RemoteJobEnvelope:
     man = manifest or _manifest()
     return RemoteJobEnvelope(
-        run_id="cp3_bootstrap_001",
+        run_id=run_id,
         family=family,
         unit_index=unit_index,
         base_seed=base_seed,
@@ -120,6 +121,83 @@ def test_sequential_families_allow_whole_call_remote_placement(family: str) -> N
 def test_sequential_families_reject_internal_sharding(family: str) -> None:
     with pytest.raises(ValueError, match="cannot be sharded inside one call"):
         admit_remote_job_internal_shard(family)
+
+
+@pytest.mark.parametrize(
+    "family", sorted(INTERNALLY_UNSHARDABLE_REMOTE_JOB_FAMILIES)
+)
+def test_internal_shard_guard_blocks_loopback_batch_bypass(family: str) -> None:
+    """Whole-call admission cannot bypass the executor batch shard gate."""
+    admitted = RemoteJobFamily(family)
+    manifest = _manifest()
+    envelopes = tuple(
+        _envelope(family=admitted, unit_index=index, manifest=manifest)
+        for index in range(2)
+    )
+    handled: list[int] = []
+
+    def handler(envelope: RemoteJobEnvelope, unit_seed: int) -> int:
+        del unit_seed
+        handled.append(envelope.unit_index)
+        return envelope.unit_index
+
+    with pytest.raises(ValueError, match="cannot be sharded inside one call"):
+        LoopbackExecutor().run_batch(
+            envelopes,
+            handler,
+            worker_manifest=manifest,
+        )
+
+    assert handled == []
+
+
+@pytest.mark.parametrize(
+    "family", sorted(INTERNALLY_UNSHARDABLE_REMOTE_JOB_FAMILIES)
+)
+def test_internal_shard_guard_blocks_subprocess_batch_bypass(family: str) -> None:
+    """Subprocess dispatch reuses the same batch shard gate as loopback."""
+    admitted = RemoteJobFamily(family)
+    manifest = _manifest()
+    envelopes = tuple(
+        _envelope(family=admitted, unit_index=index, manifest=manifest)
+        for index in range(2)
+    )
+
+    with pytest.raises(ValueError, match="cannot be sharded inside one call"):
+        SubprocessExecutor(socket.gethostname()).run_batch(
+            envelopes,
+            worker_manifest=manifest,
+            payload={"placeholder": True},
+        )
+
+
+def test_internal_shard_guard_allows_distinct_whole_calls() -> None:
+    """Separate run ids remain valid whole-call placements for sequential families."""
+    manifest = _manifest()
+    envelopes = tuple(
+        _envelope(
+            family=RemoteJobFamily.TWO_TIER,
+            unit_index=0,
+            manifest=manifest,
+            run_id=f"two_tier_run_{index}",
+        )
+        for index in range(2)
+    )
+    handled: list[str] = []
+
+    def handler(envelope: RemoteJobEnvelope, unit_seed: int) -> str:
+        del unit_seed
+        handled.append(envelope.run_id)
+        return envelope.run_id
+
+    outcomes = LoopbackExecutor().run_batch(
+        envelopes,
+        handler,
+        worker_manifest=manifest,
+    )
+
+    assert len(outcomes) == 2
+    assert handled == ["two_tier_run_0", "two_tier_run_1"]
 
 
 def test_envelope_round_trip_json_is_stable() -> None:

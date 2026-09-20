@@ -13,9 +13,13 @@ Legal remote split families (inventory comment-5742475833, table C):
 - ``scoring_person`` — embarrassingly parallel person scoring shards
 - ``mc_replicate`` — bootstrap / Monte Carlo replicate units
 
-Sequential or unsplittable families — standard errors and derivatives,
-regression/contrast OLS, EM M-step iterations, FIPC, and two-tier GRM —
-are rejected at envelope admission and must not be queued remotely.
+Sequential families — standard errors and derivatives, regression/contrast
+OLS, EM M-step iterations, FIPC, and two-tier GRM — may run remotely as one
+complete call but must not be partitioned across index-derived split units.
+``admit_remote_job_internal_shard`` call sites:
+
+- ``LoopbackExecutor.run_batch`` batch preflight
+- ``SubprocessExecutor.run_batch`` batch preflight
 """
 
 from __future__ import annotations
@@ -688,6 +692,16 @@ def payload_identity_sha256(payload: Mapping[str, object]) -> str:
     ).hexdigest()
 
 
+def _preflight_internal_shard_batch(envelopes: Sequence[RemoteJobEnvelope]) -> None:
+    """Reject batches that partition one run/family across multiple split units."""
+    unit_counts: dict[tuple[str, str], int] = {}
+    for envelope in envelopes:
+        key = (envelope.run_id, envelope.family.value)
+        unit_counts[key] = unit_counts.get(key, 0) + 1
+        if unit_counts[key] > 1:
+            admit_remote_job_internal_shard(envelope.family)
+
+
 class LoopbackExecutor:
     """In-process L4 stand-in that validates cohort identity and runs handlers."""
 
@@ -711,6 +725,7 @@ class LoopbackExecutor:
                     "worker manifest is incompatible with envelope cohort "
                     f"(run_id={envelope.run_id!r}, unit_index={envelope.unit_index})"
                 )
+        _preflight_internal_shard_batch(envelope_batch)
 
         outcomes: list[RemoteJobOutcome] = []
         for envelope in envelope_batch:
@@ -812,11 +827,13 @@ class SubprocessExecutor:
         if not isinstance(envelopes, Sequence):
             raise TypeError("envelopes must be a sequence")
         envelope_batch = tuple(envelopes)
-        if payload is not None:
-            payload_sha256 = payload_identity_sha256(payload)
         for envelope in envelope_batch:
             if type(envelope) is not RemoteJobEnvelope:
                 raise TypeError("each envelope must be a RemoteJobEnvelope")
+        _preflight_internal_shard_batch(envelope_batch)
+        if payload is not None:
+            payload_sha256 = payload_identity_sha256(payload)
+        for envelope in envelope_batch:
             if not worker_manifest.compatible_with(envelope.manifest):
                 raise CohortMismatchError(
                     "worker manifest is incompatible with envelope cohort "
