@@ -1259,10 +1259,10 @@ fn fixed_fipc_e_step(
     y: &[usize],
     observed: Option<&[bool]>,
     params: &[ItemParams],
-    base_coords: &[f64],
-    log_w0: &[f64],
+    coords: &[f64],
+    log_w: &[f64],
     log_ws_by_specific: &[Vec<f64>],
-    ts_std: &[f64],
+    ts_by_specific: &[Vec<f64>],
     n_grid: usize,
     qs: usize,
 ) -> (f64, Vec<f64>, Vec<f64>, Vec<f64>) {
@@ -1271,10 +1271,10 @@ fn fixed_fipc_e_step(
         y,
         observed,
         params,
-        log_w0,
+        log_w,
         log_ws_by_specific,
-        base_coords,
-        &vec![ts_std.to_vec(); v.n_specific],
+        coords,
+        ts_by_specific,
         n_grid,
         qs,
     );
@@ -1420,10 +1420,10 @@ pub fn fit_two_tier_grm_fipc(
             y,
             observed,
             &params,
-            &base_coords,
-            &log_w0,
-            &fixed_log_ws_by_specific,
-            ts_std,
+            &coords,
+            &log_w,
+            &log_ws_by_specific,
+            &ts_by_specific,
             n_grid,
             ts_std.len(),
         );
@@ -1649,7 +1649,10 @@ pub fn fit_two_tier_grm_fipc(
                         n_grid,
                     );
                     if mean_ll.is_some_and(|value| {
-                        value.is_finite() && value >= ll - acceptance_tolerance
+                        value.is_finite()
+                            && value >= ll - acceptance_tolerance
+                            && value > fixed_ll
+                                + 32.0 * f64::EPSILON * (1.0 + fixed_ll.abs())
                     }) {
                         mean = candidate_mean;
                         accepted = true;

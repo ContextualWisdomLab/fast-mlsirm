@@ -158,6 +158,13 @@ fn fipc_keeps_anchor_rows_and_returns_focal_moments() {
         fit.prior_specific_sd_trace.len(),
         fit.n_iter * TINY_N_SPECIFIC
     );
+    assert!(
+        fit.fixed_loglik_trace
+            .windows(2)
+            .any(|pair| pair[1] > pair[0] + 32.0 * f64::EPSILON * (1.0 + pair[0].abs())),
+        "fixed-measure LL never improved: {:?}",
+        fit.fixed_loglik_trace
+    );
     // The deterministic fixture has a non-unit focal target near [0.65, -0.35];
     // require material movement toward it, not merely a counter increment.
     let initial_distance = (0.65f64 * 0.65 + 0.35 * 0.35).sqrt();
