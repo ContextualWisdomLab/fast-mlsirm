@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import importlib
 import inspect
 import pkgutil
 import re
@@ -118,7 +117,7 @@ def collect_python_rows() -> list[dict]:
         if any(part.startswith("_") for part in modname.split(".")):
             continue
         try:
-            mod = importlib.import_module(modname)
+            mod = pkgutil.resolve_name(modname)
         except Exception:
             continue
         for name in sorted(vars(mod)):

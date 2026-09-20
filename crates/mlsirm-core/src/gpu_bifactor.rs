@@ -86,6 +86,7 @@ pub(crate) struct ReducedEstepInputs<'a> {
 #[cfg_attr(any(not(feature = "gpu"), coverage), allow(dead_code))]
 pub(crate) struct ReducedEstepOutputs {
     pub loglik: f64,
+    pub per_person_loglik: Vec<f64>,
     pub counts: Vec<f64>,
     pub counts_stride_nodes: usize,
     pub w_acc: Vec<f64>,
@@ -93,6 +94,52 @@ pub(crate) struct ReducedEstepOutputs {
     pub s2_g: Vec<f64>,
     pub s2_spec: Vec<f64>,
     pub w_spec: Vec<f64>,
+}
+
+/// Metadata to decode a [`crate::gpu::PendingGpuReadback`] from
+/// [`e_step_reduced_gpu_submit`].
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) struct ReducedEstepGpuMeta {
+    pub ng: usize,
+    pub ni: usize,
+    pub ns: usize,
+    pub nc: usize,
+    pub qg: usize,
+    pub qs: usize,
+    pub stride: usize,
+    pub person_start: usize,
+    pub person_end: usize,
+}
+
+/// Build [`ReducedEstepInputs`] for a disjoint person sub-range of `full`.
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) fn slice_reduced_estep_inputs<'a>(
+    full: &'a ReducedEstepInputs<'a>,
+    person_start: usize,
+    person_end: usize,
+) -> ReducedEstepInputs<'a> {
+    let ni = full.n_items;
+    let row = person_start * ni;
+    let row_end = person_end * ni;
+    ReducedEstepInputs {
+        y: &full.y[row..row_end],
+        observed: full.observed.map(|o| &o[row..row_end]),
+        group_id: full.group_id.map(|g| &g[person_start..person_end]),
+        n_persons: person_end - person_start,
+        n_items: full.n_items,
+        n_specific: full.n_specific,
+        n_cat: full.n_cat,
+        qg: full.qg,
+        qs: full.qs,
+        n_groups: full.n_groups,
+        tables_groups: full.tables_groups,
+        item_block: full.item_block,
+        blocks: full.blocks,
+        tg_groups: full.tg_groups,
+        ts_groups: full.ts_groups,
+        log_wg: full.log_wg,
+        log_ws: full.log_ws,
+    }
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
@@ -391,11 +438,22 @@ const MIN_STORAGE_BUFFERS: u32 = 20;
 /// caller falls back to the `f64` CPU sweep over the same tables.
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
+    let (pending, meta) = e_step_reduced_gpu_submit(inputs, 0, inputs.n_persons)?;
+    complete_reduced_gpu_submit(&pending, &meta)
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) fn e_step_reduced_gpu_submit(
+    inputs: &ReducedEstepInputs,
+    person_start: usize,
+    person_end: usize,
+) -> Option<(crate::gpu::PendingGpuReadback, ReducedEstepGpuMeta)> {
     use crate::gpu::{
         dispatch_count, dispatch_workgroups_nd, output_buffer, staging_buffer, storage_buffer_fits,
-        storage_entry, submit_and_readback,
+        storage_entry, submit_readback,
     };
 
+    let sliced = slice_reduced_estep_inputs(inputs, person_start, person_end);
     let ctx = GpuContext::get()?;
     if ctx.adapter_storage_buffers() < MIN_STORAGE_BUFFERS {
         return None;
@@ -404,90 +462,88 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let limits = device.limits();
     let max_wg = limits.max_compute_workgroups_per_dimension;
 
-    let np = inputs.n_persons;
-    let ni = inputs.n_items;
-    let ns = inputs.n_specific;
-    let nc = inputs.n_cat;
-    let qg = inputs.qg;
-    let qs = inputs.qs;
-    let ng = inputs.n_groups;
+    let np = sliced.n_persons;
+    if np == 0 {
+        return None;
+    }
+    let ni = sliced.n_items;
+    let ns = sliced.n_specific;
+    let nc = sliced.n_cat;
+    let qg = sliced.qg;
+    let qs = sliced.qs;
+    let ng = sliced.n_groups;
     let stride = qg * qs;
 
-    // Fail closed on storage binding budget before allocating (Metal/WebGPU
-    // report these at runtime; never hardcode a byte cap).
     let buffer_lens = [
-        np * ni,                 // yobs as i32 — sized separately below
-        np * qg,                 // genlog / postg
-        np * ns * qg,            // logi
-        np * ns * qg * qs,       // blockacc / joint
-        np,                      // ll
-        np * ns,                 // anyobs
-        ng * ni * stride * nc,   // counts
-        ng * (3 + 2 * ns),       // moments
+        np * ni,
+        np * qg,
+        np * ns * qg,
+        np * ns * qg * qs,
+        np,
+        np * ns,
+        ng * ni * stride * nc,
+        ng * (3 + 2 * ns),
     ];
     for &len in &buffer_lens[1..] {
         if !storage_buffer_fits(&limits, len) {
             return None;
         }
     }
-    // yobs is i32; reuse the f32-sized check with equal element width.
     if !storage_buffer_fits(&limits, buffer_lens[0]) {
         return None;
     }
 
-    // y/observed packed as i32 (-1 = missing).
     let mut yobs = vec![-1i32; np * ni];
     for p in 0..np {
         for i in 0..ni {
-            let obs = inputs.observed.map_or(true, |o| o[p * ni + i]);
+            let obs = sliced.observed.map_or(true, |o| o[p * ni + i]);
             if obs {
-                yobs[p * ni + i] = inputs.y[p * ni + i] as i32;
+                yobs[p * ni + i] = sliced.y[p * ni + i] as i32;
             }
         }
     }
     let mut gid = vec![0u32; np];
-    if let Some(g) = inputs.group_id {
+    if let Some(g) = sliced.group_id {
         for (p, &v) in g.iter().enumerate() {
             gid[p] = v as u32;
         }
     }
 
-    // Flattened logprob tables with per-(group, item) offsets.
     let mut tab_off = vec![0u32; ng * ni];
     let mut tables: Vec<f32> = Vec::new();
     for g in 0..ng {
         for i in 0..ni {
             tab_off[g * ni + i] = tables.len() as u32;
-            tables.extend(inputs.tables_groups[g][i].iter().map(|&v| v as f32));
+            tables.extend(sliced.tables_groups[g][i].iter().map(|&v| v as f32));
         }
     }
     if !storage_buffer_fits(&limits, tables.len()) {
         return None;
     }
     let mut block_of = vec![-1i32; ni];
-    for (i, b) in inputs.item_block.iter().enumerate() {
+    for (i, b) in sliced.item_block.iter().enumerate() {
         block_of[i] = b.map_or(-1, |s| s as i32);
     }
     let mut blk_off = vec![0u32; ns + 1];
     let mut blk_members: Vec<u32> = Vec::new();
-    for (s, members) in inputs.blocks.iter().enumerate() {
+    for (s, members) in sliced.blocks.iter().enumerate() {
         blk_off[s] = blk_members.len() as u32;
         blk_members.extend(members.iter().map(|&i| i as u32));
     }
     blk_off[ns] = blk_members.len() as u32;
 
-    let tg: Vec<f32> = inputs
+    let tg: Vec<f32> = sliced
         .tg_groups
         .iter()
         .flat_map(|v| v.iter().map(|&x| x as f32))
         .collect();
-    let ts: Vec<f32> = inputs
+    let ts: Vec<f32> = sliced
         .ts_groups
         .iter()
         .flat_map(|vv| vv.iter().flat_map(|v| v.iter().map(|&x| x as f32)))
         .collect();
-    let log_wg: Vec<f32> = inputs.log_wg.iter().map(|&x| x as f32).collect();
-    let log_ws: Vec<f32> = inputs.log_ws.iter().map(|&x| x as f32).collect();
+    let log_wg: Vec<f32> = sliced.log_wg.iter().map(|&x| x as f32).collect();
+    let log_ws: Vec<f32> = sliced.log_ws.iter().map(|&x| x as f32).collect();
 
     let dims: [u32; 8] = [
         np as u32,
@@ -674,10 +730,6 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let pl_mg = make("reduce_moments_g");
     let pl_ms = make("reduce_moments_s");
 
-    // One compute pass per kernel so storage writes are visible downstream.
-    // Factor each 1-D workgroup count into x/y/z against the adapter's
-    // max_compute_workgroups_per_dimension (65535 on Apple Metal) so study-
-    // scale q×item×category grids (e.g. AC late-life q=241) do not panic.
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     for (pipeline, groups) in [
@@ -702,7 +754,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let ll_staging = staging_buffer(device, "ll_read", np);
     let counts_staging = staging_buffer(device, "counts_read", ng * ni * stride * nc);
     let moments_staging = staging_buffer(device, "moments_read", ng * (3 + 2 * ns));
-    let read = submit_and_readback(
+    let pending = submit_readback(
         ctx,
         encoder,
         &[
@@ -710,16 +762,55 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
             (&counts_buf, &counts_staging, ng * ni * stride * nc),
             (&moments_buf, &moments_staging, ng * (3 + 2 * ns)),
         ],
-    )?;
+    );
+    Some((
+        pending,
+        ReducedEstepGpuMeta {
+            ng,
+            ni,
+            ns,
+            nc,
+            qg,
+            qs,
+            stride,
+            person_start,
+            person_end,
+        },
+    ))
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) fn complete_reduced_gpu_submit(
+    pending: &crate::gpu::PendingGpuReadback,
+    meta: &ReducedEstepGpuMeta,
+) -> Option<ReducedEstepOutputs> {
+    let ctx = GpuContext::get()?;
+    decode_reduced_estep_readback(ctx, pending, meta)
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn decode_reduced_estep_readback(
+    ctx: &GpuContext,
+    pending: &crate::gpu::PendingGpuReadback,
+    meta: &ReducedEstepGpuMeta,
+) -> Option<ReducedEstepOutputs> {
+    use crate::gpu::wait_readback;
+
+    let read = wait_readback(ctx, pending)?;
     let mut iter = read.into_iter();
     let ll_vec = iter.next()?;
     let counts_vec = iter.next()?;
     let moments_vec = iter.next()?;
 
-    let mut loglik = 0.0;
-    for &v in &ll_vec {
-        loglik += f64::from(v);
-    }
+    let ReducedEstepGpuMeta {
+        ng,
+        ns,
+        stride,
+        ..
+    } = *meta;
+
+    let per_person_loglik: Vec<f64> = ll_vec.iter().map(|&v| f64::from(v)).collect();
+    let loglik = per_person_loglik.iter().sum();
     let row = 3 + 2 * ns;
     let mut w_acc = vec![0.0; ng];
     let mut s1_g = vec![0.0; ng];
@@ -738,6 +829,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
 
     Some(ReducedEstepOutputs {
         loglik,
+        per_person_loglik,
         counts: counts_vec.into_iter().map(f64::from).collect(),
         counts_stride_nodes: stride,
         w_acc,
