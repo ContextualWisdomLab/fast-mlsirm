@@ -158,6 +158,37 @@ fn positive_within_sum_of_squares_must_not_underflow_during_mean_square_division
 }
 
 #[test]
+fn positive_between_dispersion_must_not_underflow_into_zero_icc() {
+    let within_residual = 2_f64.powi(-530);
+    let mean_separation = 2_f64.powi(-537);
+    let cluster_ids = [1_u64, 1, 2, 2];
+    let outcomes = [
+        0.0,
+        2.0 * within_residual,
+        mean_separation,
+        2.0 * within_residual + mean_separation,
+    ];
+
+    let first_mean = within_residual;
+    let second_mean = within_residual + mean_separation;
+    let grand_mean = within_residual + mean_separation / 2.0;
+    let first_between_delta = first_mean - grand_mean;
+    let second_between_delta = second_mean - grand_mean;
+
+    assert_ne!(first_mean.to_bits(), second_mean.to_bits());
+    assert_ne!(first_between_delta.to_bits(), 0.0_f64.to_bits());
+    assert_ne!(second_between_delta.to_bits(), 0.0_f64.to_bits());
+    assert_eq!((first_between_delta * first_between_delta).to_bits(), 0.0_f64.to_bits());
+    assert_eq!((second_between_delta * second_between_delta).to_bits(), 0.0_f64.to_bits());
+    assert!(within_residual * within_residual > 0.0);
+
+    let error = one_way_random_intercept_icc(&cluster_ids, &outcomes).expect_err(
+        "represented between-cluster dispersion must fail closed if squaring underflows binary64",
+    );
+    assert_eq!(error, "ANOVA squared deviation underflowed binary64");
+}
+
+#[test]
 fn binary64_overflow_paths_fail_closed() {
     assert!(
         one_way_random_intercept_icc(
