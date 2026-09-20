@@ -1,0 +1,27 @@
+{
+  "generated_at_utc": "2026-09-20T18:00:13Z",
+  "claim_level": "reproducible linux wheel build under /data \u2014 NOT multi-arch release; NOT manuscript",
+  "unified_splice_sha": "c9da70bbcf47e7339d78ed92183ac05a7fcbeca7",
+  "mergeable_branch": "seonghobae/fmls-hetero-unified-c9da70bb",
+  "draft_pr": 2078,
+  "wheel": {
+    "path": "/data/orca/workspaces/fmls-hetero-unified/wheels/fast_mlsirm-0.11.4-cp312-cp312-manylinux_2_35_x86_64.whl",
+    "sha256": "5ebcf7391b21278699ba58c2f38d22accbae333330ae9b878935212b79797041",
+    "filename": "fast_mlsirm-0.11.4-cp312-cp312-manylinux_2_35_x86_64.whl",
+    "size_bytes": 5888910,
+    "build_cmd": "maturin build --release --interpreter .venv/bin/python3.12 --out wheels (from pyproject root)",
+    "interpreter": "cpython-3.12.11",
+    "platform": "manylinux_2_35_x86_64"
+  },
+  "installed_core": {
+    "path": "/data/orca/workspaces/fmls-hetero-unified/.venv/lib/python3.12/site-packages/fast_mlsirm/_core.cpython-312-x86_64-linux-gnu.so",
+    "sha256": "c200b9abbe1b131d77f0348e6d18211e3e8bb850ab0057d4148d25b020e627ab",
+    "via": "pip install --force-reinstall <wheel>"
+  },
+  "valkey_bind": "192.168.68.3:16382 only",
+  "explicit_non_claims": [
+    "NOT darwin wheel yet (Mac cargo HOLD)",
+    "NOT manuscript/release immutable multi-host consume",
+    "Prior 3-host PASS used experimental manual .so on s1 and reused darwin cores"
+  ]
+}

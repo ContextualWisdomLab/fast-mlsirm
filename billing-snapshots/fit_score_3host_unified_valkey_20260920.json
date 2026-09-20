@@ -195,12 +195,17 @@
     "reproducible_wheel_path_wip": "/data/orca/workspaces/fmls-hetero-unified/wheels via maturin build --release (kicked; see maturin_wheel.log)"
   },
   "valkey_bind": "192.168.68.3:16382 only (LAN-restricted; not 0.0.0.0)",
-  "amended_at_utc": "2026-09-20T17:58:31Z",
+  "amended_at_utc": "2026-09-20T18:00:43Z",
   "reproducible_wheel": {
     "path": "/data/orca/workspaces/fmls-hetero-unified/wheels/fast_mlsirm-0.11.4-cp312-cp312-manylinux_2_35_x86_64.whl",
     "sha256": "5ebcf7391b21278699ba58c2f38d22accbae333330ae9b878935212b79797041",
+    "filename": "fast_mlsirm-0.11.4-cp312-cp312-manylinux_2_35_x86_64.whl",
+    "size_bytes": 5888910,
+    "build_cmd": "maturin build --release --interpreter .venv/bin/python3.12 --out wheels (from pyproject root)",
     "interpreter": "cpython-3.12.11",
-    "built_from_unified_splice": "c9da70bb",
-    "note": "Clean maturin build from pyproject after experimental manual .so path; linux-x86_64 only so far"
+    "platform": "manylinux_2_35_x86_64",
+    "installed_core_sha256": "c200b9abbe1b131d77f0348e6d18211e3e8bb850ab0057d4148d25b020e627ab",
+    "installed_core_path": "/data/orca/workspaces/fmls-hetero-unified/.venv/lib/python3.12/site-packages/fast_mlsirm/_core.cpython-312-x86_64-linux-gnu.so",
+    "status": "COMPLETE_linux_cp312"
   }
 }
