@@ -139,11 +139,15 @@ pub fn one_way_random_intercept_icc(
         let cluster_size = values.len() as f64;
         sum_cluster_size_squared += cluster_size * cluster_size;
 
-        let mut cluster_total = 0.0_f64;
-        for &value in values {
-            cluster_total += value;
-        }
-        let cluster_mean = cluster_total / cluster_size;
+        let cluster_mean = if values.iter().all(|value| *value == values[0]) {
+            values[0]
+        } else {
+            let mut cluster_total = 0.0_f64;
+            for &value in values {
+                cluster_total += value;
+            }
+            cluster_total / cluster_size
+        };
         let between_delta = cluster_mean - grand_mean;
         sum_of_squares_between += cluster_size * between_delta * between_delta;
         for &value in values {
