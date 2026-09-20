@@ -351,3 +351,62 @@ def test_from_fit_dual_gates_phi_and_consumer_identification() -> None:
             specific_map=smap,
             orthogonal_primary_identification=True,
         )
+
+
+def test_specific_map_rejects_noninteger_before_int64_cast() -> None:
+    """Fractional / non-finite maps must fail closed (no silent truncation)."""
+    ap = np.array([[1.0], [1.0]])
+    asp = np.array([0.5, 0.5])
+    th = np.array([[1.0, 0.0, -1.0], [1.0, 0.0, -1.0]])
+    grid = np.array([0.0])
+    with pytest.raises(ValueError, match="integers"):
+        _call(ap, asp, th, np.array([0.5, 0.0]), grid, q=5)
+    with pytest.raises(ValueError, match="finite"):
+        _call(ap, asp, th, np.array([0.0, np.nan]), grid, q=5)
+    with pytest.raises(ValueError, match="specific-free"):
+        _call(ap, asp, th, np.array([-2, 0]), grid, q=5)
+    # Valid ints still accepted (including float dtype that is integral).
+    out = _call(ap, asp, th, np.array([0.0, 0.0]), grid, q=5)
+    assert out.n_items == 2
+
+
+def test_collapsed_gh_matches_product_meshgrid_reference() -> None:
+    """Adopted 1-D collapse agrees with explicit product mesh at q=21."""
+    a_g, a_w, a_s = 1.1, 0.8, 0.6
+    th = np.array([[1.5, 0.0, -1.2]])
+    grid = np.linspace(-2.0, 2.0, 9)
+    q = 21
+    got = _call(
+        np.array([[a_g, a_w]]),
+        np.array([a_s]),
+        th,
+        np.array([0], dtype=np.int64),
+        grid,
+        q=q,
+        primary_ref_mean=np.array([0.0, 0.1]),
+        primary_ref_sd=np.array([1.0, 0.7]),
+        specific_ref_mean=np.array([0.2]),
+        specific_ref_sd=np.array([1.3]),
+    )
+    unit_nodes, unit_w = np.polynomial.hermite_e.hermegauss(q)
+    unit_w = unit_w / unit_w.sum()
+    w_nodes = 0.1 + 0.7 * unit_nodes
+    s_nodes = 0.2 + 1.3 * unit_nodes
+    Ww, Ss = np.meshgrid(w_nodes, s_nodes, indexing="ij")
+    ww, ss = np.meshgrid(unit_w, unit_w, indexing="ij")
+    wmesh = (ww * ss).ravel()
+    wmesh = wmesh / wmesh.sum()
+    offset = (a_w * Ww + a_s * Ss).ravel()
+    base = a_g * grid[:, None] + offset[None, :]
+    cell = PolytomousFit(
+        model="grm",
+        slope=np.ones(1),
+        cat_params=th,
+        loglik=float("nan"),
+        n_iter=0,
+        converged=True,
+        termination_reason="mesh_ref",
+    )
+    expected = predict_expected_response_polytomous(cell, base.reshape(-1))
+    mesh_total = (expected.reshape(base.shape) * wmesh[None, :]).sum(axis=1)
+    assert np.allclose(got.expected_total, mesh_total, atol=1e-9, rtol=0.0)

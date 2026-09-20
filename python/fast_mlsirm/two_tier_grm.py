@@ -562,6 +562,45 @@ def _as_ref_sd(value: object, n: int, name: str) -> np.ndarray:
     return out
 
 
+def _as_specific_map_int64(
+    specific_map: object,
+    *,
+    n_items: int,
+    n_specific: int | None = None,
+) -> np.ndarray:
+    """Validate ``specific_map`` before ``int64`` cast (no silent truncation).
+
+    Rejects non-finite floats and non-integral values such as ``0.5`` before
+    ``astype(np.int64)``. Entries must be ``-1`` (specific-free) or ``>= 0``;
+    when ``n_specific`` is given, also require ``< n_specific``.
+    """
+    smap = np.asarray(specific_map)
+    if smap.ndim != 1 or smap.shape[0] != n_items:
+        raise ValueError("specific_map must be a 1-D array of length n_items")
+    if smap.dtype.kind == "f":
+        if not bool(np.isfinite(smap).all()):
+            raise ValueError("specific_map entries must be finite integers")
+        if bool((smap != np.floor(smap)).any()):
+            raise ValueError("specific_map entries must be integers")
+    elif smap.dtype.kind not in ("b", "i", "u"):
+        raise ValueError("specific_map entries must be integers")
+    try:
+        smap_int = smap.astype(np.int64, copy=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("specific_map entries must be integers") from exc
+    if bool((smap_int < -1).any()):
+        raise ValueError(
+            "specific_map entries must be -1 (specific-free) or >= 0"
+        )
+    if n_specific is not None:
+        if bool((smap_int >= int(n_specific)).any()):
+            raise ValueError(
+                "specific_map entries must be -1 (specific-free) or in "
+                f"0..{int(n_specific) - 1}"
+            )
+    return smap_int
+
+
 def expected_total_score_two_tier_given_primary(
     a_primary: np.ndarray,
     a_specific: np.ndarray,
@@ -580,9 +619,12 @@ def expected_total_score_two_tier_given_primary(
     """Expected raw total given one two-tier primary, nuisances integrated out.
 
     Linearity of expectation: ``E[T|theta_f] = sum_i E[Y_i|theta_f]``. Each
-    item's conditional expectation marginalizes independent Gaussian nuisances
-    on a product Gauss-Hermite rule with ``q_nuisance`` nodes per nuisance
-    dimension (required; no default — issue #1929).
+    item's conditional expectation marginalizes independent Gaussian nuisances.
+    Because those nuisances enter only through the linear predictor
+    ``L = sum_k a_k Z_k`` and independent Gaussians yield
+    ``L ~ N(sum a_k mu_k, sum (a_k sigma_k)^2)``, the product rule collapses to
+    a single 1-D Gauss-Hermite integral with ``q_nuisance`` nodes (required; no
+    default — issue #1929). This avoids ``q^n`` meshgrid allocation.
 
     Reference distributions are **per primary / per specific dimension**. A
     scalar mean/sd broadcasts identical values across dimensions (producer
@@ -610,6 +652,7 @@ def expected_total_score_two_tier_given_primary(
         _bounded_integer,
         predict_expected_response_polytomous,
     )
+    from ._polytomous_prediction_admission import _raise_if_oversized_prediction_grid
 
     if nuisance_prior != "independent_standardized":
         raise ValueError(
@@ -620,7 +663,6 @@ def expected_total_score_two_tier_given_primary(
     ap = np.asarray(a_primary, dtype=np.float64)
     asp = np.asarray(a_specific, dtype=np.float64)
     th = np.asarray(threshold, dtype=np.float64)
-    smap = np.asarray(specific_map, dtype=np.int64)
     grid = np.asarray(theta_focal, dtype=np.float64)
 
     if ap.ndim != 2 or ap.shape[0] == 0:
@@ -628,8 +670,7 @@ def expected_total_score_two_tier_given_primary(
     n_items, n_primary = ap.shape
     if asp.shape != (n_items,):
         raise ValueError("a_specific must have shape (n_items,)")
-    if smap.shape != (n_items,):
-        raise ValueError("specific_map must have shape (n_items,)")
+    smap = _as_specific_map_int64(specific_map, n_items=n_items)
     if th.ndim != 2 or th.shape[0] != n_items or th.shape[1] < 1:
         raise ValueError("threshold must be n_items x (n_cat-1) with n_cat>=2")
     if not np.all(np.isfinite(ap)) or not np.all(np.isfinite(asp)) or not np.all(
@@ -644,15 +685,11 @@ def expected_total_score_two_tier_given_primary(
         raise ValueError("theta_focal must be a non-empty 1-D array")
     if not np.all(np.isfinite(grid)):
         raise ValueError("theta_focal must be finite")
-    if np.any(smap < -1):
-        raise ValueError("specific_map entries must be -1 or >= 0")
 
     focal = _bounded_integer(focal_primary, "focal_primary", 0, n_primary - 1)
     q = _bounded_integer(q_nuisance, "q_nuisance", 1, MAX_POLY_QUADRATURE_POINTS)
 
     n_specific = int(smap.max()) + 1 if np.any(smap >= 0) else 0
-    if np.any(smap >= n_specific):
-        raise ValueError("specific_map indices exceed derived n_specific")
 
     p_mean = _as_ref_mean(primary_ref_mean, n_primary, "primary_ref_mean")
     p_sd = _as_ref_sd(primary_ref_sd, n_primary, "primary_ref_sd")
@@ -664,9 +701,13 @@ def expected_total_score_two_tier_given_primary(
     unit_slope = np.ones(1, dtype=np.float64)
     expected_total = np.zeros(grid.size, dtype=np.float64)
 
+    # Independent Gaussian nuisances enter only through the linear predictor
+    # L = sum_k a_k Z_k. For independent Z_k ~ N(mu_k, sigma_k^2),
+    # L ~ N(sum a_k mu_k, sum (a_k sigma_k)^2), so the product GH meshgrid
+    # collapses to a single 1-D GH axis (exact continuous integral; finite-q
+    # product vs collapse agree to ~1e-10 at q=21 in measured fixtures).
     for item in range(n_items):
         a_f = float(ap[item, focal])
-        # (coef, mean, sd) for each independent nuisance on this item.
         nuisance: list[tuple[float, float, float]] = []
         for p in range(n_primary):
             if p == focal:
@@ -697,28 +738,19 @@ def expected_total_score_two_tier_given_primary(
             ).ravel()
             continue
 
-        node_axes = [
-            mu + sigma * unit_nodes for (_, mu, sigma) in nuisance
-        ]
-        if len(nuisance) == 1:
-            mesh = node_axes[0].reshape(1, -1)
-            wmesh = unit_weights.copy()
-        else:
-            grids = np.meshgrid(*node_axes, indexing="ij")
-            mesh = np.stack([g.ravel() for g in grids], axis=0)
-            w_grids = np.meshgrid(
-                *([unit_weights] * len(nuisance)), indexing="ij"
-            )
-            wmesh = np.prod([w.ravel() for w in w_grids], axis=0)
-            wmesh = wmesh / wmesh.sum()
-
-        offset = np.zeros(mesh.shape[1], dtype=np.float64)
-        for k, (coef, _, _) in enumerate(nuisance):
-            offset += coef * mesh[k]
-        base = a_f * grid[:, None] + offset[None, :]
+        mu_L = 0.0
+        var_L = 0.0
+        for coef, mu, sigma in nuisance:
+            mu_L += coef * mu
+            var_L += (coef * sigma) ** 2
+        sd_L = float(np.sqrt(var_L))
+        nodes = mu_L + sd_L * unit_nodes
+        # Guard prediction budget before allocating the (n_grid x q) grid.
+        _raise_if_oversized_prediction_grid(int(grid.size) * int(q))
+        base = a_f * grid[:, None] + nodes[None, :]
         expected = predict_expected_response_polytomous(cell, base.reshape(-1))
         expected_total += (
-            expected.reshape(base.shape) * wmesh[None, :]
+            expected.reshape(base.shape) * unit_weights[None, :]
         ).sum(axis=1)
 
     return TwoTierExpectedTotalGivenPrimary(
@@ -766,7 +798,10 @@ def expected_total_score_two_tier_from_fit(
         )
     if int(fit.n_primary) != int(np.asarray(fit.a_primary).shape[1]):
         raise ValueError("fit.n_primary inconsistent with a_primary shape")
-    smap = np.asarray(specific_map, dtype=np.int64)
+    n_items = int(np.asarray(fit.a_primary).shape[0])
+    smap = _as_specific_map_int64(
+        specific_map, n_items=n_items, n_specific=int(fit.n_specific)
+    )
     n_specific = int(smap.max()) + 1 if np.any(smap >= 0) else 0
     if n_specific != int(fit.n_specific):
         raise ValueError(
@@ -778,7 +813,7 @@ def expected_total_score_two_tier_from_fit(
         fit.a_primary,
         fit.a_specific,
         fit.threshold,
-        specific_map,
+        smap,
         theta_focal,
         focal_primary=focal_primary,
         q_nuisance=q_nuisance,

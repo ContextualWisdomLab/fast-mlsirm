@@ -1,0 +1,11 @@
+{
+  "artifact": "pr2077_meshgrid_collapse_diag",
+  "math": "Independent Z_k~N(mu_k,sigma_k^2) enter only via L=sum a_k Z_k; L~N(sum a_k mu_k, sum (a_k sigma_k)^2). GRM E[Y|eta] depends on eta=a_f*G+L only => product GH collapses to 1-D GH.",
+  "cases": [
+    {"case":"2d_unit","q":21,"mesh_cells":441,"col_nodes":21,"max_abs_mesh_vs_col":7.45e-11,"t_mesh_s":0.00252,"t_col_s":0.001258,"peak_mesh_kib":129.5,"peak_col_kib":14.0,"speedup":2.0},
+    {"case":"2d_distinct","q":21,"mesh_cells":441,"col_nodes":21,"max_abs_mesh_vs_col":5.15e-11,"speedup":2.15},
+    {"case":"3d_unit","q":15,"mesh_cells":3375,"col_nodes":15,"max_abs_mesh_vs_col":2.67e-09,"peak_mesh_kib":826.5,"peak_col_kib":10.4,"speedup":4.4}
+  ],
+  "verdict": "adopt_collapse",
+  "also": "prediction-cell budget checked via _raise_if_oversized_prediction_grid before (n_grid*q) allocation; no q^n meshgrid remains"
+}
