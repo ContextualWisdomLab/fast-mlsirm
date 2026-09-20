@@ -157,7 +157,8 @@ def test_internal_shard_guard_blocks_loopback_batch_bypass(family: str) -> None:
 def test_internal_shard_guard_blocks_subprocess_batch_bypass(family: str) -> None:
     """Subprocess dispatch reuses the same batch shard gate as loopback."""
     admitted = RemoteJobFamily(family)
-    manifest = _manifest()
+    payload = {"placeholder": True}
+    manifest = _payload_manifest(payload)
     envelopes = tuple(
         _envelope(family=admitted, unit_index=index, manifest=manifest)
         for index in range(2)
@@ -167,7 +168,7 @@ def test_internal_shard_guard_blocks_subprocess_batch_bypass(family: str) -> Non
         SubprocessExecutor(socket.gethostname()).run_batch(
             envelopes,
             worker_manifest=manifest,
-            payload={"placeholder": True},
+            payload=payload,
         )
 
 

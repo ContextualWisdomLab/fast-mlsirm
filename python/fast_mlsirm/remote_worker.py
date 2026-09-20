@@ -18,7 +18,10 @@ import numpy as np
 from importlib.metadata import PackageNotFoundError, version
 
 from ._fit_public import fit
+from .bifactor_grm import bifactor_oakes_se
 from .config import FitConfig, MLS2PLMConfig
+from .polytomous import fit_poly_fipc
+from .regression import contrast, fit_ols_hc
 from .remote_exec import (
     RemoteJobDeliveryState,
     RemoteJobEnvelope,
@@ -27,6 +30,7 @@ from .remote_exec import (
     result_identity_sha256,
 )
 from .simulation import simulate
+from .two_tier_grm import fit_two_tier_grm
 from .wle import score_wle
 
 
@@ -58,15 +62,7 @@ def execute_mc_replicate(unit_seed: int) -> dict[str, object]:
     }
 
 
-def execute_fit_restart(payload: dict[str, object], unit_seed: int) -> dict[str, object]:
-    """Run one production ``fit`` restart from a JSON payload."""
-    config_values = dict(payload.get("config", {}))
-    config_values["seed"] = unit_seed
-    result = fit(
-        np.asarray(payload["responses"], dtype=np.uint8),
-        np.asarray(payload["factor_id"], dtype=np.int64),
-        FitConfig(**config_values),
-    )
+def _fit_record(result: object, *, family: RemoteJobFamily) -> dict[str, object]:
     parameter_bytes = b"".join(
         np.asarray(value).tobytes()
         for value in (
@@ -78,11 +74,144 @@ def execute_fit_restart(payload: dict[str, object], unit_seed: int) -> dict[str,
         )
     )
     return {
-        "family": RemoteJobFamily.FIT_RESTART.value,
+        "family": family.value,
         "library_function": "fast_mlsirm.fit",
         "objective": float(result.objective),
         "convergence_status": result.convergence_status,
         "n_iter": int(result.n_iter),
+        "parameter_sha256": hashlib.sha256(parameter_bytes).hexdigest(),
+    }
+
+
+def execute_fit_restart(payload: dict[str, object], unit_seed: int) -> dict[str, object]:
+    """Run one production ``fit`` restart from a JSON payload."""
+    config_values = dict(payload.get("config", {}))
+    config_values["seed"] = unit_seed
+    result = fit(
+        np.asarray(payload["responses"], dtype=np.uint8),
+        np.asarray(payload["factor_id"], dtype=np.int64),
+        FitConfig(**config_values),
+    )
+    return _fit_record(result, family=RemoteJobFamily.FIT_RESTART)
+
+
+def execute_em_m_step(payload: dict[str, object], unit_seed: int) -> dict[str, object]:
+    """Run one EM/JMLE iteration via ``fit`` with caller-owned ``max_iter=1``."""
+    config_values = dict(payload.get("config", {}))
+    config_values["seed"] = unit_seed
+    config_values["max_iter"] = 1
+    result = fit(
+        np.asarray(payload["responses"], dtype=np.uint8),
+        np.asarray(payload["factor_id"], dtype=np.int64),
+        FitConfig(**config_values),
+    )
+    return _fit_record(result, family=RemoteJobFamily.EM_M_STEP)
+
+
+def execute_se_derivatives(payload: dict[str, object]) -> dict[str, object]:
+    """Run ``bifactor_oakes_se`` for one whole-call SE/derivative family unit."""
+    res = bifactor_oakes_se(
+        np.asarray(payload["a_general"], dtype=np.float64),
+        np.asarray(payload["a_specific"], dtype=np.float64),
+        np.asarray(payload["threshold"], dtype=np.float64),
+        np.asarray(payload["responses"], dtype=np.int64),
+        np.asarray(payload["specific_map"], dtype=np.int64),
+        int(payload["n_cat"]),
+        int(payload["n_specific"]),
+        q_general=int(payload["q_general"]),
+        q_specific=int(payload["q_specific"]),
+        fd_step=float(payload["fd_step"]),
+    )
+    information_sha256 = hashlib.sha256(res.information.tobytes()).hexdigest()
+    se_sha256 = (
+        hashlib.sha256(res.se.tobytes()).hexdigest()
+        if res.se is not None
+        else None
+    )
+    return {
+        "family": RemoteJobFamily.SE_DERIVATIVES.value,
+        "library_function": "fast_mlsirm.bifactor_grm.bifactor_oakes_se",
+        "positive_definite": bool(res.positive_definite),
+        "label_count": len(res.labels),
+        "information_sha256": information_sha256,
+        "se_sha256": se_sha256,
+        "non_pd_reason": res.non_pd_reason,
+    }
+
+
+def execute_regression_contrasts(payload: dict[str, object]) -> dict[str, object]:
+    """Run ``fit_ols_hc`` + ``contrast`` for one regression/contrast family unit."""
+    x = np.asarray(payload["x"], dtype=np.float64)
+    y = np.asarray(payload["y"], dtype=np.float64)
+    fit_result = fit_ols_hc(x, y, hc=str(payload.get("hc", "HC3")))
+    contrast_result = contrast(
+        fit_result["beta"],
+        fit_result["vcov"],
+        np.asarray(payload["contrast_vector"], dtype=np.float64),
+        df=float(payload["df"]),
+    )
+    return {
+        "family": RemoteJobFamily.REGRESSION_CONTRASTS.value,
+        "library_function": "fast_mlsirm.regression.contrast",
+        "estimate": contrast_result["estimate"],
+        "se": contrast_result["se"],
+        "wald_chi2": contrast_result["wald_chi2"],
+        "p_chi2": contrast_result["p_chi2"],
+        "beta_sha256": hashlib.sha256(fit_result["beta"].tobytes()).hexdigest(),
+    }
+
+
+def execute_fipc(payload: dict[str, object]) -> dict[str, object]:
+    """Run ``fit_poly_fipc`` for one whole-call FIPC family unit."""
+    fit = fit_poly_fipc(
+        np.asarray(payload["responses"], dtype=np.int64),
+        int(payload["n_cat"]),
+        np.asarray(payload["anchor"], dtype=bool),
+        np.asarray(payload["anchor_slope"], dtype=np.float64),
+        np.asarray(payload["anchor_cat_params"], dtype=np.float64),
+        q_theta=int(payload["q_theta"]),
+        max_iter=int(payload["max_iter"]),
+        tol=float(payload["tol"]),
+    )
+    parameter_bytes = b"".join(
+        np.asarray(value).tobytes()
+        for value in (fit.slope, fit.cat_params, np.array([fit.mu, fit.sigma]))
+    )
+    return {
+        "family": RemoteJobFamily.FIPC.value,
+        "library_function": "fast_mlsirm.polytomous.fit_poly_fipc",
+        "converged": bool(fit.converged),
+        "mu": float(fit.mu),
+        "sigma": float(fit.sigma),
+        "parameter_sha256": hashlib.sha256(parameter_bytes).hexdigest(),
+    }
+
+
+def execute_two_tier(payload: dict[str, object], unit_seed: int) -> dict[str, object]:
+    """Run ``fit_two_tier_grm`` for one whole-call two-tier family unit."""
+    fit = fit_two_tier_grm(
+        np.asarray(payload["responses"], dtype=np.int64),
+        np.asarray(payload["primary_map"], dtype=bool),
+        np.asarray(payload["specific_map"], dtype=np.int64),
+        int(payload["n_cat"]),
+        int(payload["n_primary"]),
+        int(payload["n_specific"]),
+        int(payload["q_primary"]),
+        int(payload["q_specific"]),
+        int(payload["max_iter"]),
+        float(payload["tol"]),
+        int(payload["n_starts"]),
+        unit_seed,
+    )
+    parameter_bytes = b"".join(
+        np.asarray(value).tobytes()
+        for value in (fit.a_primary, fit.a_specific, fit.threshold, fit.phi)
+    )
+    return {
+        "family": RemoteJobFamily.TWO_TIER.value,
+        "library_function": "fast_mlsirm.two_tier_grm.fit_two_tier_grm",
+        "converged": bool(fit.converged),
+        "final_loglik_change": float(fit.final_loglik_change),
         "parameter_sha256": hashlib.sha256(parameter_bytes).hexdigest(),
     }
 
@@ -116,8 +245,18 @@ def execute_envelope(
         raise ValueError("payload identity does not match envelope manifest")
     if envelope.family is RemoteJobFamily.FIT_RESTART:
         return execute_fit_restart(payload, unit_seed)
+    if envelope.family is RemoteJobFamily.EM_M_STEP:
+        return execute_em_m_step(payload, unit_seed)
     if envelope.family is RemoteJobFamily.SCORING_PERSON:
         return execute_scoring_person(payload)
+    if envelope.family is RemoteJobFamily.SE_DERIVATIVES:
+        return execute_se_derivatives(payload)
+    if envelope.family is RemoteJobFamily.REGRESSION_CONTRASTS:
+        return execute_regression_contrasts(payload)
+    if envelope.family is RemoteJobFamily.FIPC:
+        return execute_fipc(payload)
+    if envelope.family is RemoteJobFamily.TWO_TIER:
+        return execute_two_tier(payload, unit_seed)
     raise ValueError(f"unsupported remote family {envelope.family.value!r}")
 
 
