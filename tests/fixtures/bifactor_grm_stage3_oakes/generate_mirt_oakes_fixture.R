@@ -10,15 +10,11 @@
 # Oakes SEs / the full 40x40 vcov (with dimnames) / log-likelihood to
 # mirt_oakes_fixture.json (committed).
 #
-# Orientation note (verified by reading the stage-1 generator script): that
-# script samples categories as `as.integer(u > p1) + ...`, i.e. Y counts
-# #{u > P(Y>=k)}, which generates category-REVERSED data relative to its
-# documented model (correct inversion sampling counts #{u < P(Y>=k)}).
-# Both estimators fit the same committed data, so the implementation
-# comparison is unaffected; only the nominal "true" parameters do not
-# generate the data as documented. This script compares at mirt's MLE (the
-# Oakes, 1999, eq. 6 identity holds at every parameter point), so
-# orientation is irrelevant here. Flagged to the stage-1 lane separately.
+# Orientation note: stage-1 `dataset.csv` was corrected in 0781051b to
+# inversion sampling `as.integer(u < p1) + ...` (matching P(Y>=k)). An earlier
+# oracle (f7cd5450) was fit on the pre-correction reversed coding and became
+# stale; regenerate this fixture whenever the stage-1 dataset changes
+# (issue #2024). This script compares at mirt's MLE (Oakes, 1999, eq. 6).
 #
 # Intercept mapping (same as the stage-1 agreement test, verified against
 # the mirt fit, not assumed): mirt's graded `d_k` columns are the SAME
@@ -183,11 +179,18 @@ write_json_value <- function(con, x, indent) {
       cat("\n", file = con, sep = "")
     }
     cat(pad, "]", file = con, sep = "")
+  } else if (is.character(x)) {
+    encoded_values <- paste0(
+      "\"", gsub("\"", "\\\"", x, fixed = TRUE), "\""
+    )
+    if (length(encoded_values) > 1L) {
+      cat("[", paste(encoded_values, collapse = ", "), "]", sep = "", file = con)
+    } else {
+      cat(encoded_values, file = con, sep = "")
+    }
   } else if (length(x) > 1L) {
     cat("[", paste(format(x, scientific = FALSE, digits = 15L), collapse = ", "), "]",
       sep = "", file = con)
-  } else if (is.character(x)) {
-    cat("\"", gsub("\"", "\\\"", x, fixed = TRUE), "\"", sep = "", file = con)
   } else if (is.logical(x)) {
     cat(tolower(as.character(x)), file = con, sep = "")
   } else {
