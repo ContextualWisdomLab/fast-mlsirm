@@ -1,0 +1,96 @@
+{
+  "generated_at_utc": "2026-09-20T16:53:34Z",
+  "amends_artifact": "billing-snapshots/valkey_library_3host_mc_replicate_20260920.json",
+  "claim_level": "isolated DEV smoke \u2014 NOT manuscript library complete; NOT unified immutable build",
+  "broker_product": {
+    "product_name": "Redis",
+    "not_valkey_binary": true,
+    "image": "redis:7-alpine",
+    "image_id": "sha256:f84b0c4678011602b9b98c227a4dcd5468bf8b088b02fdd4165cb7758bad8058",
+    "image_digest": "redis@sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7",
+    "redis_version_inside_container": "7.4.11",
+    "executable_inside_container": "/data/redis-server",
+    "host_s1_redis_server_path": "/usr/bin/redis-server",
+    "host_s1_redis_server_version": "6.0.16",
+    "note": "Evidence broker was disposable Docker redis:7-alpine, not an installed Valkey server binary.",
+    "server_name_field": "Redis (INFO server has no valkey_version; product is redis:7-alpine container)",
+    "valkey_version": null,
+    "torn_down_after_verify": true,
+    "not_research_valkey_service_shutdown": true
+  },
+  "per_host": {
+    "air": {
+      "role": "driver + local SubprocessExecutor worker",
+      "hostname": "Seonghoui-MacBookAir.local",
+      "python": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2001-l4-fit-score-wire/.venv/bin/python",
+      "python_abi": "cpython-312-darwin",
+      "source_git_sha_valkey_wt_at_run": "74ecd9f90cdb2675ae4c858d07200d6edb7ce3a4",
+      "native_core_path": "/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-2001-l4-fit-score-wire/python/fast_mlsirm/_core.cpython-312-darwin.so",
+      "native_core_sha256": "a93bae5c2d5b65b6c1faebdf061df66d7ceb19598683daa0d419d231b2ead9df",
+      "native_core_origin": "linked/copied from fmls-2001-l4-fit-score-wire WT (mixed #2072 native + #2073 Python sources)",
+      "package_metadata": "fast-mlsirm may resolve from editable install; worker override FAST_MLSIRM_LIBRARY_VERSION=0.11.4"
+    },
+    "s1": {
+      "role": "SSH SubprocessExecutor worker via hetero_remote_worker_entry stub (no _core)",
+      "hostname": "s1.cluster.seonghobae.me",
+      "python": "python3 (3.10.12)",
+      "python_abi": "cpython-310-linux-x86_64",
+      "deploy_tree": "/home/seongho/fmls-hetero",
+      "deploy_tree_files_sha256": "948a588b7db75feb2df9541d3fde31ab570c2c34bc4e12ca6fd8feffbddb64ca",
+      "native_core": "ABSENT",
+      "native_core_detail": "ABSENT",
+      "library_git_sha_synced_from": "74ecd9f9 (+ local uncommitted entry patches at run; later pushed as 6a7fa661)"
+    },
+    "m1": {
+      "role": "SSH SubprocessExecutor worker via hetero_remote_worker_entry stub (no _core)",
+      "hostname": "Seonghoui-MacBookPro-2.local",
+      "python": "/tmp/fmls-hetero/.venv/bin/python (3.13)",
+      "python_abi": "cpython-313-darwin-arm64",
+      "deploy_tree": "/tmp/fmls-hetero",
+      "deploy_tree_files_sha256": "981d27a63aae07c6f8a77c425bec05fe2d707e5348655a2e31940280e1fb55aa",
+      "native_core": "ABSENT",
+      "native_core_detail": "ABSENT"
+    }
+  },
+  "explicit_non_claims": [
+    "NOT a unified immutable fast-mlsirm build across hosts",
+    "NOT Valkey-server product proof (Redis container used)",
+    "NOT manuscript / research-model numeric complete",
+    "mixed #2072 native _core on Air with #2073 Python remote_exec path"
+  ],
+  "fixed_input_payload": {
+    "replaced_placeholder": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "canonical_json": {
+      "family": "mc_replicate",
+      "library_function": "fast_mlsirm.simulate",
+      "MLS2PLMConfig": {
+        "n_persons": 24,
+        "n_dims": 1,
+        "items_per_dim": 4,
+        "latent_dim": 1,
+        "gamma": 1.0,
+        "base_seed": 20260920,
+        "seed_derivation_rule": "index_golden_ratio_v1",
+        "units": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "manifest": {
+        "schema_version": "1.0",
+        "library_version": "0.11.4",
+        "float_path": "f64",
+        "source_git_sha_at_run": "74ecd9f90cdb2675ae4c858d07200d6edb7ce3a4"
+      }
+    },
+    "payload_sha256": "a735fcc1cbe11f6adb30308123a04d473bf9284a322834ddd348cd7270b13406"
+  },
+  "amended_at_utc": "2026-09-20T17:09:36Z"
+}

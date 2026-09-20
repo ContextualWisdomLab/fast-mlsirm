@@ -15,9 +15,11 @@
     "items_per_dim": 4,
     "base_seed": 20260920,
     "run_id": "hetero_lib_cf0b4f5e",
-    "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "payload_sha256": "a735fcc1cbe11f6adb30308123a04d473bf9284a322834ddd348cd7270b13406",
     "source_sha256": "9201cb1405b770c8423d56e178b734818df2e020d2c14e549889fb6a041a04f6",
-    "seed_derivation_rule": "index_golden_ratio_v1"
+    "seed_derivation_rule": "index_golden_ratio_v1",
+    "payload_sha256_placeholder_legacy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "payload_sha256_definition": "sha256(canonical_json of family+MLS2PLMConfig+manifest keys used in evidence)"
   },
   "hosts": {
     "air": {
@@ -201,5 +203,7 @@
     "all_library_function_simulate": true,
     "fail_reclaim_dedup_pass": true
   },
-  "PASS": true
+  "PASS": true,
+  "see_also_product_hash_amend": "billing-snapshots/valkey_library_3host_product_hash_amend_20260920.json",
+  "claim_level": "isolated DEV smoke / simulate-scope only \u2014 NOT manuscript library complete"
 }
