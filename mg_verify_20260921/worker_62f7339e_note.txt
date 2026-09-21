@@ -1,0 +1,26 @@
+## CO correction 2026-09-21T04:15Z — recovery claim below withdrawn
+
+Exact Air provider transcript `3942ce70-f94f-432e-9794-a645f4483e17.jsonl` last modified 03:34:15.556452Z ends `turn_ended`, status `error`, error `[unavailable] PING timed out`. Terminal connectivity and runtime lastError=null do not prove provider recovery. The recovered/no-successor claims below are historical and rejected. Clean worktree findings remain valid. Before replacement, inspect child tools and fence the old owner; no blind re-PING loop.
+
+# W MG verification — 2026-09-21T04:13Z (READ-ONLY, no Air changes)
+
+## Exact handle + ownership
+- Terminal: `term_62f7339e-5034-43f1-87fe-19edef2a19fe` (tab a5daf4a5, leaf 8e4cbfbf)
+- Dispatch: `ctx_c311ec6ce1c1` / task `task_24b3080c8e16` / run `run_812ab0f36dc8` (creator `ctx_6c115004bac6`)
+- Agent: cursor on MacBookAir (env `87567e14-15c2-4f05-b379-c1758687d961`), WT new-top-level `fmls-mg-expected-raw`, base `main`
+
+## Liveness @04:13:49Z (no provider error)
+- terminal status=running, connected=true, writable=true, orphaned=false, title "Cursor ready", agentWait=null
+- observation=live (exactWorker), projection liveness=live/fresh; lastError=null, lastFailure=null, failureCount=0
+- Last output ~04:06Z (~7 min before check): heartbeat sent; active work = MG expected-raw consume path vs BifactorMultigroupFit a_general shape (helpers + checkpoint schema); tools observed = Grepping (2 greps, one 299ms Interrupted); last dispatch heartbeat 03:28:25Z
+- Prior 0323Z PING failure is RECOVERED — terminal answers worker-show/worker-read now
+
+## Air worktree (ssh, read-only; files in this dir)
+- Path (Air): `/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-mg-expected-raw`
+- Branch `seonghobae/fmls-mg-expected-raw`, HEAD `99c228a8f50aa8f2a9b1f95f3cc3c3edace9e781`, working tree CLEAN
+- `git diff --binary` + `--cached` = empty (13-byte marker file only) — missing preserved diff = genuinely zero local edits, verified directly, not assumed
+- Files: `air_status_head.txt`, `air_last_commit.txt`, `air_diff_binary.patch`
+
+## Handoff recommendation
+- NO successor needed: owner `ctx_c311ec6ce1c1` / `term_62f7339e-...` stays; CO/root only re-PINGs
+- Do not spawn/implement/close tools; s1 shared venv untouched; E (`term84af046d`) and AC (`term3cded168`) ownership unchanged

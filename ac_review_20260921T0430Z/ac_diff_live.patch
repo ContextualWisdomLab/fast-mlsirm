@@ -1,0 +1,705 @@
+diff --git a/crates/fast-mlsirm-py/src/lib.rs b/crates/fast-mlsirm-py/src/lib.rs
+index 607a97c03..b4815d828 100644
+--- a/crates/fast-mlsirm-py/src/lib.rs
++++ b/crates/fast-mlsirm-py/src/lib.rs
+@@ -56,7 +56,7 @@ use mlsirm_core::bifactor_grm::{
+     fit_bifactor_grm as core_fit_bifactor_grm,
+     fit_bifactor_grm_fipc as core_fit_bifactor_grm_fipc,
+     fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup, BifactorFipcConfig,
+-    BifactorGrmConfig, BifactorMultigroupConfig,
++    BifactorGrmConfig, BifactorMultigroupConfig, SlopePrior,
+ };
+ use mlsirm_core::bifactor_oakes::{
+     bifactor_oakes_se as core_bifactor_oakes_se, BifactorOakesConfig,
+@@ -1370,7 +1370,7 @@ fn parse_device(name: &str) -> PyResult<mlsirm_core::Device> {
+ /// `converged = False` instead of substituting values.
+ #[pyfunction]
+ #[allow(clippy::too_many_arguments)]
+-#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu"))]
++#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu", slope_prior_mu = None, slope_prior_sd = None))]
+ fn fit_bifactor_grm(
+     py: Python<'_>,
+     y: PyReadonlyArray1<'_, i64>,
+@@ -1387,6 +1387,8 @@ fn fit_bifactor_grm(
+     n_starts: usize,
+     seed: u64,
+     device: &str,
++    slope_prior_mu: Option<f64>,
++    slope_prior_sd: Option<f64>,
+ ) -> PyResult<Py<pyo3::types::PyDict>> {
+     let y_slice = y.as_slice()?;
+     let obs_vec: Option<Vec<bool>> = match &observed {
+@@ -1414,6 +1416,12 @@ fn fit_bifactor_grm(
+                 .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+         })
+         .collect::<PyResult<_>>()?;
++    let slope_prior = match (slope_prior_mu, slope_prior_sd) {
++        (None, None) => SlopePrior::None,
++        (Some(mu), Some(sd)) => SlopePrior::Lognormal { mu, sd },
++        _ => return Err(PyValueError::new_err("slope_prior_mu and slope_prior_sd must be provided together")),
++    };
++    slope_prior.validate().map_err(PyValueError::new_err)?;
+     let cfg = BifactorGrmConfig {
+         q_general,
+         q_specific,
+@@ -1425,6 +1433,7 @@ fn fit_bifactor_grm(
+         // Python and out of #1929's quadrature-node scope.
+         newton_iter: 10,
+         ridge: 1e-8,
++        slope_prior,
+         device: parse_device(device)?,
+     };
+     let res = py
+@@ -1482,7 +1491,7 @@ fn fit_bifactor_grm(
+ /// `n_groups == 1` this bit-reproduces `fit_bifactor_grm`.
+ #[pyfunction]
+ #[allow(clippy::too_many_arguments)]
+-#[pyo3(signature = (y, observed, group_id, n_groups, specific_map, n_persons, n_items, n_specific, n_cat, anchor = None, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, estimate_specific_vars = false, device = "cpu"))]
++#[pyo3(signature = (y, observed, group_id, n_groups, specific_map, n_persons, n_items, n_specific, n_cat, anchor = None, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, estimate_specific_vars = false, device = "cpu", slope_prior_mu = None, slope_prior_sd = None))]
+ fn fit_bifactor_grm_multigroup(
+     py: Python<'_>,
+     y: PyReadonlyArray1<'_, i64>,
+@@ -1503,6 +1512,8 @@ fn fit_bifactor_grm_multigroup(
+     seed: u64,
+     estimate_specific_vars: bool,
+     device: &str,
++    slope_prior_mu: Option<f64>,
++    slope_prior_sd: Option<f64>,
+ ) -> PyResult<Py<pyo3::types::PyDict>> {
+     let y_slice = y.as_slice()?;
+     let obs_vec: Option<Vec<bool>> = match &observed {
+@@ -1540,6 +1551,12 @@ fn fit_bifactor_grm_multigroup(
+         Some(a) => Some(a.as_slice()?.to_vec()),
+         None => None,
+     };
++    let slope_prior = match (slope_prior_mu, slope_prior_sd) {
++        (None, None) => SlopePrior::None,
++        (Some(mu), Some(sd)) => SlopePrior::Lognormal { mu, sd },
++        _ => return Err(PyValueError::new_err("slope_prior_mu and slope_prior_sd must be provided together")),
++    };
++    slope_prior.validate().map_err(PyValueError::new_err)?;
+     let cfg = BifactorMultigroupConfig {
+         q_general,
+         q_specific,
+@@ -1548,6 +1565,7 @@ fn fit_bifactor_grm_multigroup(
+         n_starts,
+         seed,
+         estimate_specific_vars,
++        slope_prior,
+         device: parse_device(device)?,
+         ..BifactorMultigroupConfig::default()
+     };
+diff --git a/crates/mlsirm-core/src/bifactor_grm.rs b/crates/mlsirm-core/src/bifactor_grm.rs
+index ca97c4f20..ed9016bee 100644
+--- a/crates/mlsirm-core/src/bifactor_grm.rs
++++ b/crates/mlsirm-core/src/bifactor_grm.rs
+@@ -57,9 +57,11 @@
+ //! `O(Q_G * Q_S^S * n_items)`. The M-step is a per-item finite-difference-
+ //! Hessian Newton over `[a_G, a_S?, d_1..d_{K-1}]`, byte-for-byte the ascent
+ //! of `grm::fit_grm`'s item step (ridge = Hessian conditioning only, NOT a
+-//! prior; backtracking line search REJECTS non-finite objectives, which is
+-//! exactly how the ordered-threshold constraint is maintained WITHOUT an
+-//! explicit reparametrization — see `grm.rs`).
++//! parameter prior; an optional caller-supplied lognormal MAP prior on
++//! `|a|` may be layered on top — see [`SlopePrior`]; backtracking line
++//! search REJECTS non-finite objectives, which is exactly how the ordered-
++//! threshold constraint is maintained WITHOUT an explicit reparametrization
++//! — see `grm.rs`).
+ //!
+ //! # Identification and reflection
+ //!
+@@ -146,6 +148,70 @@ use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
+ // real-valued controls, and checked arithmetic that turns size overflow
+ // into `Err` instead of a panic.
+ 
++/// Optional MAP prior on free item slopes for bifactor GRM M-steps.
++///
++/// `None` is plain MML (no slope prior). `Lognormal { mu, sd }` places a
++/// lognormal density on `|a|` for every free general and specific slope
++/// (`log|a| ~ N(mu, sd^2)`), so reverse-keyed unconstrained slopes keep their
++/// sign while the prior regularizes magnitude. Threshold intercepts are
++/// never penalized. Numeric `(mu, sd)` are caller-owned: this crate does not
++/// ship research-specific default values.
++///
++/// Basis: Chalmers, R. P. (2012). mirt: A multidimensional item response
++/// theory package for the R environment. *Journal of Statistical Software,
++/// 48*(6). https://doi.org/10.18637/jss.v048.i06 (lognormal discrimination
++/// priors via `priorType = "lnorm"`); applied here to `|a|` so the crate's
++/// unconstrained-slope contract (#1879) remains intact.
++#[derive(Clone, Copy, Debug, Default, PartialEq)]
++pub enum SlopePrior {
++    /// No slope prior (default MML).
++    #[default]
++    None,
++    /// Lognormal prior on `|a|` with mean `mu` and SD `sd` on the log scale.
++    Lognormal {
++        /// Mean of `log|a|`.
++        mu: f64,
++        /// SD of `log|a|` (must be finite and `> 0`).
++        sd: f64,
++    },
++}
++
++impl SlopePrior {
++    /// Validate caller-owned prior hyperparameters (loud `Err`, never clamp).
++    pub fn validate(self) -> Result<(), String> {
++        match self {
++            SlopePrior::None => Ok(()),
++            SlopePrior::Lognormal { mu, sd } => {
++                if !mu.is_finite() {
++                    return Err("slope_prior_mu must be finite".into());
++                }
++                if !sd.is_finite() || sd <= 0.0 {
++                    return Err("slope_prior_sd must be finite and positive".into());
++                }
++                Ok(())
++            }
++        }
++    }
++}
++
++/// Add `-log p(|a|)` and its derivative for `a ~` sign-preserving lognormal
++/// on `|a|` (`log|a| ~ N(mu, sd^2)`). Uses `|a| = max(|a|, 1e-12)` only to
++/// keep `ln` finite at the origin; the prior still drives estimates away from
++/// zero. Constants independent of `a` are omitted (Newton compares deltas).
++fn add_lnorm_abs_slope_prior(a: f64, mu: f64, sd: f64, nll: &mut f64, grad_a: &mut f64) {
++    if a == 0.0 {
++        // Zero is outside the signed-support extension. Keep the objective
++        // infinite so every line-search candidate at the boundary rejects.
++        *nll = f64::INFINITY;
++        return;
++    }
++    let u = a.abs();
++    let z = (u.ln() - mu) / sd;
++    *nll += u.ln() + 0.5 * z * z;
++    // d/da = (1 + z / sd) / a, retaining the sign of an unconstrained slope.
++    *grad_a += (1.0 + z / sd) / a;
++}
++
+ /// Configuration for [`fit_bifactor_grm`]. Every field is caller-owned and
+ /// range-validated; nothing is clamped.
+ #[derive(Clone, Copy, Debug)]
+@@ -164,6 +230,8 @@ pub struct BifactorGrmConfig {
+     pub newton_iter: usize,
+     /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
+     pub ridge: f64,
++    /// Optional MAP prior on free slopes (`|a|`); see [`SlopePrior`].
++    pub slope_prior: SlopePrior,
+     /// Compute device for the E-step sweep: `Cpu` runs the `f64` scalar
+     /// sweep; `Gpu`/`Auto` run the WGSL `f32` person-parallel sweep when a
+     /// compatible adapter exists and fall back to CPU otherwise (`Gpu`
+@@ -230,6 +298,7 @@ pub(crate) fn validate(
+     n_cat: usize,
+     cfg: &BifactorGrmConfig,
+ ) -> Result<Validated, String> {
++    cfg.slope_prior.validate()?;
+     if n_persons < 1 || n_items < 1 {
+         return Err("n_persons and n_items must be >= 1".into());
+     }
+@@ -744,6 +813,7 @@ fn item_neg_ll_grad(
+     node_s: &[f64],
+     counts: &[Vec<f64>],
+     _n_cat: usize,
++    slope_prior: SlopePrior,
+ ) -> (f64, Vec<f64>) {
+     let off = if has_specific { 2 } else { 1 };
+     let beta = &params[off..];
+@@ -766,7 +836,19 @@ fn item_neg_ll_grad(
+             grad[off + j] += gj;
+         }
+     }
+-    (-ll, grad.iter().map(|g| -g).collect())
++    let mut nll = -ll;
++    let mut out_grad: Vec<f64> = grad.iter().map(|g| -g).collect();
++    if let SlopePrior::Lognormal { mu, sd } = slope_prior {
++        let mut prior_grad = 0.0;
++        add_lnorm_abs_slope_prior(params[0], mu, sd, &mut nll, &mut prior_grad);
++        out_grad[0] += prior_grad;
++        if has_specific {
++            let mut prior_grad = 0.0;
++            add_lnorm_abs_slope_prior(params[1], mu, sd, &mut nll, &mut prior_grad);
++            out_grad[1] += prior_grad;
++        }
++    }
++    (nll, out_grad)
+ }
+ 
+ /// Newton M-step for one item — the `grm::fit_grm` ascent restricted to the
+@@ -783,10 +865,19 @@ fn m_step_item(
+     n_cat: usize,
+     ridge: f64,
+     n_newton: usize,
++    slope_prior: SlopePrior,
+ ) -> Vec<f64> {
+     let np = params.len();
+     for _ in 0..n_newton {
+-        let (f0, g) = item_neg_ll_grad(&params, has_specific, node_g, node_s, counts, n_cat);
++        let (f0, g) = item_neg_ll_grad(
++            &params,
++            has_specific,
++            node_g,
++            node_s,
++            counts,
++            n_cat,
++            slope_prior,
++        );
+         let grad_norm = g.iter().map(|x| x * x).sum::<f64>().sqrt();
+         if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
+             break;
+@@ -796,7 +887,15 @@ fn m_step_item(
+         for j in 0..np {
+             let mut pj = params.clone();
+             pj[j] += h;
+-            let (_f2, gj) = item_neg_ll_grad(&pj, has_specific, node_g, node_s, counts, n_cat);
++            let (_f2, gj) = item_neg_ll_grad(
++                &pj,
++                has_specific,
++                node_g,
++                node_s,
++                counts,
++                n_cat,
++                slope_prior,
++            );
+             for r in 0..np {
+                 hess[r][j] = (gj[r] - g[r]) / h;
+             }
+@@ -829,8 +928,15 @@ fn m_step_item(
+                 .zip(&step)
+                 .map(|(value, direction)| value - alpha * direction)
+                 .collect();
+-            let (candidate_f, _) =
+-                item_neg_ll_grad(&candidate, has_specific, node_g, node_s, counts, n_cat);
++            let (candidate_f, _) = item_neg_ll_grad(
++                &candidate,
++                has_specific,
++                node_g,
++                node_s,
++                counts,
++                n_cat,
++                slope_prior,
++            );
+             if candidate_f.is_finite() && candidate_f <= f0 - 1e-4 * alpha * directional {
+                 params = candidate;
+                 accepted = true;
+@@ -960,6 +1066,7 @@ fn run_single_start(
+                 v.n_cat,
+                 cfg.ridge,
+                 cfg.newton_iter,
++                cfg.slope_prior,
+             );
+             params[i].a_g = updated[0];
+             if has_specific {
+@@ -1220,6 +1327,7 @@ pub fn bifactor_grm_marginal_loglik(
+         seed: 0,
+         newton_iter: 1,
+         ridge: 1.0,
++        slope_prior: SlopePrior::None,
+         device: crate::Device::Cpu,
+     };
+     let v = validate(
+@@ -1288,6 +1396,7 @@ pub fn bifactor_grm_marginal_loglik_brute(
+         seed: 0,
+         newton_iter: 1,
+         ridge: 1.0,
++        slope_prior: SlopePrior::None,
+         device: crate::Device::Cpu,
+     };
+     let v = validate(
+@@ -1537,6 +1646,8 @@ pub struct BifactorMultigroupConfig {
+     pub newton_iter: usize,
+     /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
+     pub ridge: f64,
++    /// Optional MAP prior on free slopes (`|a|`); see [`SlopePrior`].
++    pub slope_prior: SlopePrior,
+     /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
+     pub estimate_specific_vars: bool,
+     /// Compute device for the E-step sweep (see [`BifactorGrmConfig::device`]).
+@@ -1554,6 +1665,7 @@ impl Default for BifactorMultigroupConfig {
+             seed: 0x9E37_79B9_7F4A_7C15,
+             newton_iter: 10,
+             ridge: 1e-8,
++            slope_prior: SlopePrior::None,
+             estimate_specific_vars: false,
+             device: crate::Device::Cpu,
+         }
+@@ -1628,6 +1740,7 @@ fn validate_multigroup_cfg(cfg: &BifactorMultigroupConfig) -> Result<(), String>
+     if !cfg.ridge.is_finite() || cfg.ridge <= 0.0 {
+         return Err("ridge must be finite and positive".into());
+     }
++    cfg.slope_prior.validate()?;
+     Ok(())
+ }
+ 
+@@ -2162,6 +2275,9 @@ fn run_single_start_multigroup(
+                     v.n_cat,
+                     cfg.ridge,
+                     cfg.newton_iter,
++                    // Common anchor items define the linked scale; a prior is
++                    // only for free item slopes and must not move anchors.
++                    SlopePrior::None,
+                 );
+                 for g in 0..n_groups {
+                     params_groups[g][i].a_g = updated[0];
+@@ -2203,6 +2319,7 @@ fn run_single_start_multigroup(
+                         v.n_cat,
+                         cfg.ridge,
+                         cfg.newton_iter,
++                        cfg.slope_prior,
+                     );
+                     params_groups[g][i].a_g = updated[0];
+                     if has_specific {
+@@ -2347,6 +2464,7 @@ pub fn fit_bifactor_grm_multigroup(
+             seed: cfg.seed,
+             newton_iter: cfg.newton_iter,
+             ridge: cfg.ridge,
++            slope_prior: cfg.slope_prior,
+             device: cfg.device,
+         };
+         let single = fit_bifactor_grm(
+@@ -2390,6 +2508,7 @@ pub fn fit_bifactor_grm_multigroup(
+         seed: cfg.seed,
+         newton_iter: cfg.newton_iter,
+         ridge: cfg.ridge,
++        slope_prior: cfg.slope_prior,
+         device: cfg.device,
+     };
+     let v = validate(
+@@ -2968,6 +3087,7 @@ pub fn fit_bifactor_grm_fipc(
+         seed: 0x9E37_79B9_7F4A_7C15,
+         newton_iter: cfg.newton_iter,
+         ridge: cfg.ridge,
++        slope_prior: SlopePrior::None,
+         // FIPC (#1912 stage-2b) predates the GPU E-step (#1931, stage 5) and
+         // has no device knob of its own; this reused single-group validator
+         // only checks shapes/blocks, never runs the E-step, so the device
+@@ -3157,6 +3277,7 @@ pub fn fit_bifactor_grm_fipc(
+                 v.n_cat,
+                 cfg.ridge,
+                 cfg.newton_iter,
++                SlopePrior::None,
+             );
+             params[i].a_g = updated[0];
+             if has_specific {
+diff --git a/crates/mlsirm-core/src/bifactor_oakes.rs b/crates/mlsirm-core/src/bifactor_oakes.rs
+index 214dad4fd..2649b9c47 100644
+--- a/crates/mlsirm-core/src/bifactor_oakes.rs
++++ b/crates/mlsirm-core/src/bifactor_oakes.rs
+@@ -200,6 +200,7 @@ impl Stage1Provider {
+             seed: 0,
+             newton_iter: 1,
+             ridge: 1e-8,
++            slope_prior: crate::bifactor_grm::SlopePrior::None,
+             // The Oakes assembly's E-step reruns are exact f64 scalar work
+             // (the cross term needs analytic precision), never the f32 GPU
+             // kernels.
+diff --git a/crates/mlsirm-core/tests/bifactor_fipc_tests.rs b/crates/mlsirm-core/tests/bifactor_fipc_tests.rs
+index 39f73a4d0..c19dcded4 100644
+--- a/crates/mlsirm-core/tests/bifactor_fipc_tests.rs
++++ b/crates/mlsirm-core/tests/bifactor_fipc_tests.rs
+@@ -168,6 +168,7 @@ fn ref_config() -> BifactorGrmConfig {
+         seed: 0x9E37_79B9_7F4A_7C15,
+         newton_iter: 10,
+         ridge: 1e-8,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+         device: mlsirm_core::Device::Cpu,
+     }
+ }
+@@ -293,6 +294,7 @@ fn bifactor_fipc_matches_concurrent_at_true_anchors() {
+             seed: 0x9E37_79B9_7F4A_7C15,
+             newton_iter: 10,
+             ridge: 1e-8,
++            slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+             estimate_specific_vars: false,
+             device: mlsirm_core::Device::Cpu,
+         },
+diff --git a/crates/mlsirm-core/tests/bifactor_grm_mirt_agreement.rs b/crates/mlsirm-core/tests/bifactor_grm_mirt_agreement.rs
+index 9bc505298..6da0e4cc5 100644
+--- a/crates/mlsirm-core/tests/bifactor_grm_mirt_agreement.rs
++++ b/crates/mlsirm-core/tests/bifactor_grm_mirt_agreement.rs
+@@ -197,6 +197,7 @@ fn bifactor_grm_agrees_with_mirt_bfactor_graded() {
+         seed: 0x51F1_5EED_2026_0916,
+         newton_iter: 10,
+         ridge: 1e-8,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+         device: mlsirm_core::Device::Cpu,
+     };
+     let fit = fit_bifactor_grm(
+diff --git a/crates/mlsirm-core/tests/bifactor_grm_recovery.rs b/crates/mlsirm-core/tests/bifactor_grm_recovery.rs
+index 48ea2c16c..1bb7f6a80 100644
+--- a/crates/mlsirm-core/tests/bifactor_grm_recovery.rs
++++ b/crates/mlsirm-core/tests/bifactor_grm_recovery.rs
+@@ -161,6 +161,7 @@ fn fit_config() -> BifactorGrmConfig {
+         seed: 0x9E37_79B9_7F4A_7C15,
+         newton_iter: 10,
+         ridge: 1e-8,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+         device: mlsirm_core::Device::Cpu,
+     }
+ }
+diff --git a/crates/mlsirm-core/tests/bifactor_multigroup_free_anchor.rs b/crates/mlsirm-core/tests/bifactor_multigroup_free_anchor.rs
+index 75dfe63f7..b20ab5b7d 100644
+--- a/crates/mlsirm-core/tests/bifactor_multigroup_free_anchor.rs
++++ b/crates/mlsirm-core/tests/bifactor_multigroup_free_anchor.rs
+@@ -55,6 +55,7 @@ fn cfg() -> BifactorMultigroupConfig {
+         seed: 20_260_918,
+         newton_iter: 10,
+         ridge: 1e-8,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+         device: mlsirm_core::Device::Cpu,
+         estimate_specific_vars: false,
+     }
+diff --git a/crates/mlsirm-core/tests/bifactor_multigroup_recovery.rs b/crates/mlsirm-core/tests/bifactor_multigroup_recovery.rs
+index cff40eadb..376ed3407 100644
+--- a/crates/mlsirm-core/tests/bifactor_multigroup_recovery.rs
++++ b/crates/mlsirm-core/tests/bifactor_multigroup_recovery.rs
+@@ -156,6 +156,7 @@ fn multigroup_recovers_group_shifts_and_shared_items() {
+         seed: 0x9E37_79B9_7F4A_7C15,
+         newton_iter: 10,
+         ridge: 1e-8,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+         device: mlsirm_core::Device::Cpu,
+         estimate_specific_vars: false,
+     };
+diff --git a/crates/mlsirm-core/tests/bifactor_multigroup_reflection.rs b/crates/mlsirm-core/tests/bifactor_multigroup_reflection.rs
+index e0b77f71b..1683e62aa 100644
+--- a/crates/mlsirm-core/tests/bifactor_multigroup_reflection.rs
++++ b/crates/mlsirm-core/tests/bifactor_multigroup_reflection.rs
+@@ -113,6 +113,7 @@ fn multigroup_means_follow_the_general_reflection() {
+         seed: SEED,
+         newton_iter: 10,
+         ridge: 1e-8,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+         device: mlsirm_core::Device::Cpu,
+         estimate_specific_vars: false,
+     };
+diff --git a/crates/mlsirm-core/tests/bifactor_multigroup_single_group.rs b/crates/mlsirm-core/tests/bifactor_multigroup_single_group.rs
+index 8d844102c..4481b698d 100644
+--- a/crates/mlsirm-core/tests/bifactor_multigroup_single_group.rs
++++ b/crates/mlsirm-core/tests/bifactor_multigroup_single_group.rs
+@@ -99,6 +99,7 @@ fn single_group_multigroup_matches_stage1_exactly() {
+         seed: 20_260_916,
+         newton_iter: 10,
+         ridge: 1e-8,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+         device: mlsirm_core::Device::Cpu,
+     };
+     let single = fit_bifactor_grm(
+@@ -122,6 +123,7 @@ fn single_group_multigroup_matches_stage1_exactly() {
+         seed: 20_260_916,
+         newton_iter: 10,
+         ridge: 1e-8,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+         device: mlsirm_core::Device::Cpu,
+         estimate_specific_vars: false,
+     };
+@@ -227,6 +229,7 @@ fn uncapped_start_budget_is_accepted() {
+         seed: 20_260_922,
+         newton_iter: 10,
+         ridge: 1e-8,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+         device: mlsirm_core::Device::Cpu,
+         estimate_specific_vars: false,
+     };
+diff --git a/crates/mlsirm-core/tests/bifactor_oakes_calibration.rs b/crates/mlsirm-core/tests/bifactor_oakes_calibration.rs
+index 42a9aeb7a..25df62043 100644
+--- a/crates/mlsirm-core/tests/bifactor_oakes_calibration.rs
++++ b/crates/mlsirm-core/tests/bifactor_oakes_calibration.rs
+@@ -194,6 +194,7 @@ fn se_matches_empirical_sd_over_simulation_replicates() {
+         seed: 0, // overridden per replicate below
+         newton_iter: 10,
+         ridge: 1e-8,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+         device: mlsirm_core::Device::Cpu,
+     };
+     let oakes_cfg = BifactorOakesConfig {
+@@ -344,7 +345,8 @@ fn estimates_stabilize_as_grid_grows_within_supported_cap() {
+             n_starts: 3,
+             seed: 777,
+             newton_iter: 10,
+-            ridge: 1e-8,
++        ridge: 1e-8,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+             device: mlsirm_core::Device::Cpu,
+         };
+         let fit = fit_bifactor_grm(
+@@ -442,7 +444,8 @@ fn study_settings_se_converges_at_121_vs_241_nodes() {
+             n_starts: 3,
+             seed: 777,
+             newton_iter: 10,
+-            ridge: 1e-8,
++        ridge: 1e-8,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+             device: mlsirm_core::Device::Cpu,
+         };
+         let fit = fit_bifactor_grm(
+diff --git a/crates/mlsirm-core/tests/two_tier_reduces_to_bifactor.rs b/crates/mlsirm-core/tests/two_tier_reduces_to_bifactor.rs
+index 3b9b763da..5ddf05afd 100644
+--- a/crates/mlsirm-core/tests/two_tier_reduces_to_bifactor.rs
++++ b/crates/mlsirm-core/tests/two_tier_reduces_to_bifactor.rs
+@@ -124,6 +124,7 @@ fn two_tier_with_single_primary_matches_bifactor_fit() {
+             seed: 0x9E37_79B9_7F4A_7C15,
+             newton_iter: 10,
+             ridge: 1e-8,
++            slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+             device: mlsirm_core::Device::Cpu,
+         },
+     )
+diff --git a/python/fast_mlsirm/bifactor_grm.py b/python/fast_mlsirm/bifactor_grm.py
+index 4522d499e..0786b8278 100644
+--- a/python/fast_mlsirm/bifactor_grm.py
++++ b/python/fast_mlsirm/bifactor_grm.py
+@@ -174,6 +174,8 @@ def fit_bifactor_grm(
+     n_starts: int,
+     seed: int,
+     device: str = "cpu",
++    slope_prior_mu: float | None = None,
++    slope_prior_sd: float | None = None,
+ ) -> BifactorGrmFit:
+     """Fit the single-group polytomous bifactor GRM (compute in Rust).
+ 
+@@ -233,6 +235,15 @@ def fit_bifactor_grm(
+     ):
+         raise ValueError(f"device must be one of 'cpu', 'gpu', 'auto'; got {device!r}")
+     device_str = device.strip().lower()
++    if (slope_prior_mu is None) != (slope_prior_sd is None):
++        raise ValueError("slope_prior_mu and slope_prior_sd must be provided together")
++    if slope_prior_mu is not None:
++        slope_prior_mu = float(slope_prior_mu)
++        slope_prior_sd = float(slope_prior_sd)
++        if not np.isfinite(slope_prior_mu):
++            raise ValueError("slope_prior_mu must be finite")
++        if not np.isfinite(slope_prior_sd) or slope_prior_sd <= 0:
++            raise ValueError("slope_prior_sd must be finite and positive")
+ 
+     y = np.asarray(responses)
+     if np.iscomplexobj(y):
+@@ -294,6 +305,8 @@ def fit_bifactor_grm(
+         int(n_starts_int),
+         int(seed_int),
+         device_str,
++        slope_prior_mu,
++        slope_prior_sd,
+     )
+     return BifactorGrmFit(
+         a_general=np.asarray(res["a_general"], dtype=np.float64),
+diff --git a/python/fast_mlsirm/bifactor_multigroup.py b/python/fast_mlsirm/bifactor_multigroup.py
+index 5b76f84c9..585b58973 100644
+--- a/python/fast_mlsirm/bifactor_multigroup.py
++++ b/python/fast_mlsirm/bifactor_multigroup.py
+@@ -194,6 +194,8 @@ def fit_bifactor_grm_multigroup(
+     seed: int,
+     estimate_specific_vars: bool = False,
+     device: str = "cpu",
++    slope_prior_mu: float | None = None,
++    slope_prior_sd: float | None = None,
+ ) -> BifactorMultigroupFit:
+     """Fit the multiple-group polytomous bifactor GRM (compute in Rust).
+ 
+@@ -253,6 +255,15 @@ def fit_bifactor_grm_multigroup(
+     seed_int = _u64_seed(seed)
+     if not isinstance(estimate_specific_vars, bool):
+         raise ValueError("estimate_specific_vars must be a bool")
++    if (slope_prior_mu is None) != (slope_prior_sd is None):
++        raise ValueError("slope_prior_mu and slope_prior_sd must be provided together")
++    if slope_prior_mu is not None:
++        slope_prior_mu = float(slope_prior_mu)
++        slope_prior_sd = float(slope_prior_sd)
++        if not np.isfinite(slope_prior_mu):
++            raise ValueError("slope_prior_mu must be finite")
++        if not np.isfinite(slope_prior_sd) or slope_prior_sd <= 0:
++            raise ValueError("slope_prior_sd must be finite and positive")
+ 
+     y = np.asarray(responses)
+     if np.iscomplexobj(y):
+@@ -369,6 +380,8 @@ def fit_bifactor_grm_multigroup(
+         int(seed_int),
+         bool(estimate_specific_vars),
+         device_str,
++        slope_prior_mu,
++        slope_prior_sd,
+     )
+     return BifactorMultigroupFit(
+         a_general=np.asarray(res["a_general"], dtype=np.float64).reshape(
+diff --git a/tests/unit/bifactor_grm_tests.rs b/tests/unit/bifactor_grm_tests.rs
+index 5dafe6c9c..8460d4fda 100644
+--- a/tests/unit/bifactor_grm_tests.rs
++++ b/tests/unit/bifactor_grm_tests.rs
+@@ -25,7 +25,7 @@
+ 
+ use crate::bifactor_grm::{
+     bifactor_grm_marginal_loglik, bifactor_grm_marginal_loglik_brute, fit_bifactor_grm,
+-    BifactorGrmConfig,
++    add_lnorm_abs_slope_prior, BifactorGrmConfig, SlopePrior,
+ };
+ 
+ // ---------------------------------------------------------------------------
+@@ -131,10 +131,49 @@ fn valid_config() -> BifactorGrmConfig {
+         seed: 42,
+         newton_iter: 3,
+         ridge: 1e-8,
++        slope_prior: SlopePrior::None,
+         device: crate::Device::Cpu,
+     }
+ }
+ 
++#[test]
++fn lnorm_abs_slope_prior_has_signed_support_and_jacobian() {
++    let (a, mu, sd, h) = (-1.7, 0.2, 0.8, 1e-6);
++    let mut nll = 0.0;
++    let mut grad = 0.0;
++    add_lnorm_abs_slope_prior(a, mu, sd, &mut nll, &mut grad);
++    let mut plus = 0.0;
++    let mut minus = 0.0;
++    let mut ignored_grad = 0.0;
++    add_lnorm_abs_slope_prior(a + h, mu, sd, &mut plus, &mut ignored_grad);
++    add_lnorm_abs_slope_prior(a - h, mu, sd, &mut minus, &mut ignored_grad);
++    let fd = (plus - minus) / (2.0 * h);
++    assert!(nll.is_finite());
++    assert!((grad - fd).abs() < 1e-6, "analytic={grad}, fd={fd}");
++}
++
++#[test]
++fn lnorm_abs_slope_prior_keeps_zero_outside_support() {
++    let mut nll = 0.0;
++    let mut grad = 0.0;
++    add_lnorm_abs_slope_prior(0.0, 0.0, 1.0, &mut nll, &mut grad);
++    assert!(nll.is_infinite() && nll.is_sign_positive());
++    assert_eq!(grad, 0.0);
++}
++
++#[test]
++fn slope_prior_rejects_invalid_hyperparameters() {
++    assert!(SlopePrior::Lognormal { mu: f64::NAN, sd: 1.0 }
++        .validate()
++        .is_err());
++    assert!(SlopePrior::Lognormal { mu: 0.0, sd: 0.0 }
++        .validate()
++        .is_err());
++    assert!(SlopePrior::Lognormal { mu: 0.0, sd: f64::INFINITY }
++        .validate()
++        .is_err());
++}
++
+ fn valid_data() -> (Vec<usize>, usize) {
+     tiny_data()
+ }
+@@ -637,6 +676,7 @@ fn dense_quadrature_fit_never_claims_tolerance_at_start_slopes() {
+         seed: 20260917,
+         newton_iter: 5,
+         ridge: 1e-4,
++        slope_prior: crate::bifactor_grm::SlopePrior::None,
+         device: crate::Device::Cpu,
+     };
+     let fit = fit_bifactor_grm(
+diff --git a/tests/unit/bifactor_oakes_tests.rs b/tests/unit/bifactor_oakes_tests.rs
+index cf6691465..4ed29ed7b 100644
+--- a/tests/unit/bifactor_oakes_tests.rs
++++ b/tests/unit/bifactor_oakes_tests.rs
+@@ -392,6 +392,7 @@ fn six_item_mle_is_positive_definite_with_matching_vcov_and_se() {
+             seed: fit_seed,
+             newton_iter: 10,
+             ridge: 1e-8,
++            slope_prior: crate::bifactor_grm::SlopePrior::None,
+             device: crate::Device::Cpu,
+         };
+         let fit = fit_bifactor_grm(

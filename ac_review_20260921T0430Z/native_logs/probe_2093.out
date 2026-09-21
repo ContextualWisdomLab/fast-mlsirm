@@ -1,0 +1,10 @@
+fast_mlsirm 0.11.4
+baseline 2grp anchor=None q7       FAIL start 0: EM observed-data log-likelihood decreased at iteration 9: delta=-6.141380e-3
+2grp anchor=None q15               FAIL start 0: EM observed-data log-likelihood decreased at iteration 29: delta=-9.686773e-3
+2grp anchor=None q31               OK   n_iter= 26 min_delta=+3.396e-03 sd_g1=1.2948 mean_g1=+0.6730
+2grp anchor=None q61               FAIL start 0: EM observed-data log-likelihood decreased at iteration 21: delta=-6.541364e-3
+1grp (delegates to single-group)   OK   n_iter= 32 min_delta=+4.526e-03 sd_g1=1.0000 mean_g1=+0.0000
+2grp anchor=None seed=7            FAIL start 0: EM observed-data log-likelihood decreased at iteration 9: delta=-6.141380e-3
+max_iter=7: ll_last=-45.965241126 mean_g1=+0.467765 sd_g1=1.407147 a_g=[ 6.5662 -0.0816  0.1685  2.9326]
+max_iter=8: ll_last=-45.933711015 mean_g1=+0.436716 sd_g1=1.473648 a_g=[ 8.8379 -0.0839  0.1816  2.7869]
+max_iter=9: FAIL  0: EM observed-data log-likelihood decreased at iteration 9: delta=-6.141380e-3

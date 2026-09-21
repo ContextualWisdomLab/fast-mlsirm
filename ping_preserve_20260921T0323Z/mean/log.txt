@@ -1,0 +1,3 @@
+32807ed0 fix(two-tier): accept full remapped-LL mean steps earlier
+3fc6160a fix(two-tier): pair FIPC scale with mean recovery
+3860a99f fix(two-tier): require material FIPC scale steps

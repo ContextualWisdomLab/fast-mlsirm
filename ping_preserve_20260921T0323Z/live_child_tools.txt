@@ -1,0 +1,6 @@
+ 2527  53952       35:48 /Users/seonghobae/.local/bin/cursor-agent --use-system-ca /Users/seonghobae/.local/share/cursor-agent/versions/2026.09.18-9a7762b/index.js --yolo
+ 3816  54192       35:41 /Users/seonghobae/.local/bin/cursor-agent --use-system-ca /Users/seonghobae/.local/share/cursor-agent/versions/2026.09.18-9a7762b/index.js --yolo
+ 5152  54208       35:31 /Users/seonghobae/.local/bin/cursor-agent --use-system-ca /Users/seonghobae/.local/share/cursor-agent/versions/2026.09.18-9a7762b/index.js --yolo
+ 6567  54384       35:23 /Users/seonghobae/.local/bin/cursor-agent --use-system-ca /Users/seonghobae/.local/share/cursor-agent/versions/2026.09.18-9a7762b/index.js --yolo
+85111 152656       02:20 /Users/seonghobae/.local/bin/cursor-agent --use-system-ca /Users/seonghobae/.local/share/cursor-agent/versions/2026.09.18-9a7762b/index.js --yolo
+85252  63760       02:18 /Users/seonghobae/.local/share/cursor-agent/versions/2026.09.18-9a7762b/node /Users/seonghobae/.local/share/cursor-agent/versions/2026.09.18-9a7762b/index.js worker-server

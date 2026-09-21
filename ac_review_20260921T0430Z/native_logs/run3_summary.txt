@@ -1,0 +1,19 @@
+START 05:31:17 HEAD e9f5aa53 DIFF_SHA 09c9c3bd138ad25c
+LIB_EXIT=0
+   Compiling mlsirm-core v0.11.4 (/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-ac-slope-prior/crates/mlsirm-core)
+test bifactor_grm::tests::lnorm_abs_slope_prior_curvature_matches_fd_of_gradient ... ok
+test bifactor_grm::tests::lnorm_abs_slope_prior_keeps_zero_outside_support ... ok
+test bifactor_grm::tests::lnorm_abs_slope_prior_has_signed_support_and_jacobian ... ok
+test bifactor_grm::tests::multigroup_single_group_prior_matches_single_group_fit ... ok
+test bifactor_grm::tests::slope_prior_rejects_invalid_hyperparameters ... ok
+test bifactor_grm::tests::zero_prior_weight_nodes_do_not_nan_estep_counts ... ok
+test bifactor_oakes::tests::map_information_adds_exact_prior_curvature_on_slopes_only ... ok
+test bifactor_oakes::tests::map_information_rejects_invalid_prior ... ok
+test bifactor_grm::tests::real_prior_fit_pulls_slopes_toward_prior_and_records_provenance ... ok
+test bifactor_grm::tests::no_prior_objective_trace_is_the_loglik_trace_bit_for_bit ... ok
+test bifactor_grm::tests::multigroup_prior_acts_on_common_and_free_items_with_partial_anchor ... ok
+test bifactor_grm::tests::multigroup_prior_acts_on_common_items_under_default_anchor ... ok
+test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 1203 filtered out; finished in 237.82s
+NORUN_EXIT=0
+PY_CHECK_EXIT=0
+END 05:38:40

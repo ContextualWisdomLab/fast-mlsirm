@@ -1,0 +1,23 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0 -- /private/tmp/claude-501/-Users-seonghobae-orca-workspaces-fast-mlsirm-orchestration-lead-fmls-v4/b5755172-d4fc-4a3a-8278-54dd39ac9a8d/scratchpad/pin/venv312/bin/python
+rootdir: /private/tmp/claude-501/-Users-seonghobae-orca-workspaces-fast-mlsirm-orchestration-lead-fmls-v4/b5755172-d4fc-4a3a-8278-54dd39ac9a8d/scratchpad/provwt
+collecting ... collected 14 items
+
+tests/test_library_regression_h1_h5_provenance.py::test_driver_git_sha_is_head_and_modified_driver_is_refused PASSED [  7%]
+tests/test_library_regression_h1_h5_provenance.py::test_scores_inputs_records_file_sha256_per_scale PASSED [ 14%]
+tests/test_library_regression_h1_h5_provenance.py::test_scores_inputs_refuses_incomplete_or_inconsistent_manifest[missing_scale] PASSED [ 21%]
+tests/test_library_regression_h1_h5_provenance.py::test_scores_inputs_refuses_incomplete_or_inconsistent_manifest[unknown_scale] PASSED [ 28%]
+tests/test_library_regression_h1_h5_provenance.py::test_scores_inputs_refuses_incomplete_or_inconsistent_manifest[missing_linking] PASSED [ 35%]
+tests/test_library_regression_h1_h5_provenance.py::test_scores_inputs_refuses_incomplete_or_inconsistent_manifest[missing_report] PASSED [ 42%]
+tests/test_library_regression_h1_h5_provenance.py::test_scores_inputs_refuses_incomplete_or_inconsistent_manifest[absolute_report] PASSED [ 50%]
+tests/test_library_regression_h1_h5_provenance.py::test_scores_inputs_refuses_incomplete_or_inconsistent_manifest[missing_artifact] PASSED [ 57%]
+tests/test_library_regression_h1_h5_provenance.py::test_scores_inputs_refuses_incomplete_or_inconsistent_manifest[glob_path] PASSED [ 64%]
+tests/test_library_regression_h1_h5_provenance.py::test_scores_inputs_refuses_incomplete_or_inconsistent_manifest[sha256_mismatch] PASSED [ 71%]
+tests/test_library_regression_h1_h5_provenance.py::test_fastmlsirm_commit_comes_only_from_the_installer_record[direct_url0-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee] PASSED [ 78%]
+tests/test_library_regression_h1_h5_provenance.py::test_fastmlsirm_commit_comes_only_from_the_installer_record[direct_url1-None] PASSED [ 85%]
+tests/test_library_regression_h1_h5_provenance.py::test_fastmlsirm_commit_comes_only_from_the_installer_record[None-None] PASSED [ 92%]
+tests/test_library_regression_h1_h5_provenance.py::test_producer_record_passes_consumer_check_and_missing_fields_are_refused SKIPPED [100%]
+
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_library_regression_h1_h5_provenance.py:152: consumer tools/apply_library_numbers.py or the contract is not on this branch
+======================== 13 passed, 1 skipped in 0.62s =========================

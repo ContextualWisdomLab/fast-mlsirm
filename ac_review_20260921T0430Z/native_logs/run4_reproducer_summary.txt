@@ -1,0 +1,5 @@
+DIFF_SHA 12471b5e9cafed3f
+REPRO_EXIT=101
+thread 'bifactor_grm::tests::reproducer_multigroup_mml_on_toy_fixture_runs' (270075234) panicked at crates/mlsirm-core/src/../../../tests/unit/bifactor_grm_tests.rs:447:14:
+MG MML on the toy fixture must run: "all 1 EM start(s) failed numerically; first error: start 0: EM observed-data log-likelihood decreased at iteration 9: delta=-6.141380e-3"
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1248 filtered out; finished in 0.03s

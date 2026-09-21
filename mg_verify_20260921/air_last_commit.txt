@@ -1,0 +1,24 @@
+commit 99c228a8f50aa8f2a9b1f95f3cc3c3edace9e781
+Author:     Seongho Bae <me@seonghobae.me>
+AuthorDate: Sat Sep 19 22:11:24 2026 +0900
+Commit:     GitHub <noreply@github.com>
+CommitDate: Sat Sep 19 22:11:24 2026 +0900
+
+    fix(bifactor): regenerate stale stage-3 Oakes mirt oracle (#2024) (#2032)
+    
+    * fix(bifactor): regenerate stage-3 Oakes mirt oracle after category-order fix
+    
+    The committed oracle was fit on the pre-0781051b reversed stage-1 dataset,
+    so info at that point was not PD and main's rust job stayed red (#2024).
+    
+    Co-authored-by: Cursor <cursoragent@cursor.com>
+    
+    * test(oakes): require generated fixture to be strict JSON
+    
+    * fix(oakes): quote generated JSON string vectors
+    
+    * fix(oakes): regenerate strict JSON metadata vectors
+    
+    ---------
+    
+    Co-authored-by: Cursor <cursoragent@cursor.com>

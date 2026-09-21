@@ -1,0 +1,3 @@
+/Users/seonghobae/.pyenv/versions/3.14.5/bin/python3 0.11.4 /Users/seonghobae/.pyenv/versions/3.14.5/lib/python3.14/site-packages/fast_mlsirm/__init__.py
+anchor=None ValueError all 1 EM start(s) failed numerically; first error: start 0: EM observed-data log-likelihood decreased at iteration 9: delta=-6.141380e-3
+anchor=[T,T,F,F] ValueError all 1 EM start(s) failed numerically; first error: start 0: EM observed-data log-likelihood decreased at iteration 20: delta=-1.514901e-1

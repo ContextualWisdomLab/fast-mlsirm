@@ -1,0 +1,62 @@
+START 05:03:02 HEAD e9f5aa53
+test bifactor_grm::tests::lnorm_abs_slope_prior_curvature_matches_fd_of_gradient ... ok
+test bifactor_grm::tests::lnorm_abs_slope_prior_has_signed_support_and_jacobian ... ok
+test bifactor_grm::tests::lnorm_abs_slope_prior_keeps_zero_outside_support ... ok
+test bifactor_grm::tests::oracle_rejects_nonzero_specific_slope_on_general_only_items ... ok
+test bifactor_grm::tests::non_convergence_is_reported_not_substituted ... ok
+test bifactor_grm::tests::reduced_marginal_loglik_matches_brute_force_product_grid ... ok
+test bifactor_grm::tests::rejects_malformed_specific_map ... ok
+test bifactor_grm::tests::rejects_bad_iteration_and_tolerance_budgets ... ok
+test bifactor_grm::tests::refuse_tolerance_reclassifies_bit_identical_start ... ok
+test bifactor_grm::tests::rejects_out_of_range_categories ... ok
+test bifactor_grm::tests::rejects_zero_quadrature_counts ... ok
+test bifactor_grm::tests::slope_prior_rejects_invalid_hyperparameters ... ok
+test bifactor_grm::tests::zero_prior_weight_nodes_do_not_nan_estep_counts ... ok
+test bifactor_grm::tests::unobserved_category_fails_loudly_with_item_and_category ... ok
+test bifactor_oakes::tests::binary_cell_hessian_matches_logistic_form_and_fd ... ok
+test bifactor_oakes::tests::analytic_q_hessian_matches_central_fd_of_q_gradient ... ok
+test bifactor_oakes::tests::general_only_items_have_no_specific_slot_and_match_fd ... ok
+test bifactor_oakes::tests::map_information_adds_exact_prior_curvature_on_slopes_only ... ok
+test bifactor_oakes::tests::map_information_rejects_invalid_prior ... ok
+test bifactor_grm::tests::multigroup_single_group_prior_matches_single_group_fit ... ok
+test bifactor_oakes::tests::non_pd_information_is_flagged_with_reason_and_no_substitute ... ok
+test bifactor_oakes::tests::map_information_non_pd_and_non_finite_are_reported_not_substituted ... ok
+test bifactor_oakes::tests::rejects_non_positive_fd_steps ... ok
+test bifactor_recursion::tests::test_bifactor_lord_wingersky_dichotomous_matches_direct_enumeration ... ok
+test bifactor_grm::tests::multigroup_prior_acts_on_common_items_under_default_anchor ... FAILED
+test gpu::dispatch_nd_tests::two_dimensional_covers_metal_bifactor_blk_counts ... ok
+test marginal::covariate_interaction_tests::bifactor_delta_step_uses_inner_product_predictor ... ok
+test bifactor_grm::tests::real_prior_fit_pulls_slopes_toward_prior_and_records_provenance ... ok
+test bifactor_oakes::tests::oakes_information_matches_fd_of_marginal_loglik_on_tiny_problem ... ok
+test rotation::selector::tests::bifactor_policy_penalizes_non_bifactor_candidates ... ok
+test rotation::criteria::tests::bifactor_gradients_and_metadata_are_exercised ... ok
+test rotation::selector::tests::target_alignment_preserves_bifactor_general_column ... ok
+test two_tier_grm::tests::single_primary_oracle_matches_stage1_bifactor_oracle ... ok
+test rotation::tests::canonicalization_keeps_bifactor_general_column_first ... ok
+test bifactor_grm::tests::multigroup_prior_acts_on_common_and_free_items_with_partial_anchor ... FAILED
+test bifactor_grm::tests::uncapped_budgets_are_accepted ... ok
+test bifactor_grm::tests::arbitrary_quadrature_counts_above_the_old_fixed_table_are_accepted ... ok
+test bifactor_grm::tests::estep_gpu_matches_cpu_counts_and_loglik ... ok
+test marginal_recovery_tests::bifactor_recovers_general_loadings ... ok
+test bifactor_oakes::tests::six_item_mle_is_positive_definite_with_matching_vcov_and_se ... ok
+test bifactor_recursion::tests::test_bifactor_lord_wingersky_matches_direct_enumeration_within_1e12_on_257_grid ... ok
+test bifactor_grm::tests::dense_quadrature_fit_never_claims_tolerance_at_start_slopes has been running for over 60 seconds
+test bifactor_grm::tests::dense_quadrature_fit_never_claims_tolerance_at_start_slopes ... ok
+thread 'bifactor_grm::tests::multigroup_prior_acts_on_common_items_under_default_anchor' (270011267) panicked at crates/mlsirm-core/src/../../../tests/unit/bifactor_grm_tests.rs:259:6:
+tiny multigroup fit must run: "all 1 EM start(s) failed numerically; first error: start 0: EM observed-data log-likelihood decreased at iteration 9: delta=-6.141380e-3"
+thread 'bifactor_grm::tests::multigroup_prior_acts_on_common_and_free_items_with_partial_anchor' (270011266) panicked at crates/mlsirm-core/src/../../../tests/unit/bifactor_grm_tests.rs:318:10:
+partial-anchor multigroup fit must run: "all 1 EM start(s) failed numerically; first error: start 0: EM observed-data log-likelihood decreased at iteration 20: delta=-1.514901e-1"
+test result: FAILED. 40 passed; 2 failed; 0 ignored; 0 measured; 1203 filtered out; finished in 274.58s
+error: test failed, to rerun pass `-p mlsirm-core --lib`
+LIB_EXIT=
+test bifactor_grm_agrees_with_mirt_bfactor_graded ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.18s
+test uncapped_start_budget_is_accepted ... ok
+test single_group_multigroup_matches_stage1_exactly ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+test rust_oakes_se_matches_mirt_oakes_fixture ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+INT_EXIT=
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.60s
+PY_CHECK_EXIT=
+END 05:12:38

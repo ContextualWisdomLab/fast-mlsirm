@@ -1,0 +1,62 @@
+diff --git a/python/fast_mlsirm/bifactor_grm.py b/python/fast_mlsirm/bifactor_grm.py
+index eac9d131..679373cf 100644
+--- a/python/fast_mlsirm/bifactor_grm.py
++++ b/python/fast_mlsirm/bifactor_grm.py
+@@ -171,6 +171,11 @@ class BifactorGrmFit:
+     item parameter remained at its start — never reported as
+     ``tolerance_met``; see #1976); ``best_start`` the winning start in
+     ``0..n_starts``.
++
++    Under a slope prior (``slope_prior_mu``/``slope_prior_sd`` set),
++    convergence, ``final_loglik_change`` and start ranking refer to the
++    log-posterior EM objective recorded in ``em_objective_trace``;
++    ``loglik_trace`` stays the observed-data log-likelihood.
+     """
+ 
+     a_general: np.ndarray
+diff --git a/python/fast_mlsirm/bifactor_multigroup.py b/python/fast_mlsirm/bifactor_multigroup.py
+index d2dfd01c..2cea24f6 100644
+--- a/python/fast_mlsirm/bifactor_multigroup.py
++++ b/python/fast_mlsirm/bifactor_multigroup.py
+@@ -157,6 +157,11 @@ class BifactorMultigroupFit:
+     n_items x n_cat``. ``termination_reason`` is ``"tolerance_met"``,
+     ``"max_iter_reached"``, or ``"numerical_em_stall"`` (see #1976);
+     ``best_start`` the winning start in ``0..n_starts``.
++
++    Under a slope prior (``slope_prior_mu``/``slope_prior_sd`` set),
++    convergence, ``final_loglik_change`` and start ranking refer to the
++    log-posterior EM objective recorded in ``em_objective_trace``;
++    ``loglik_trace`` stays the observed-data log-likelihood.
+     """
+ 
+     a_general: np.ndarray
+diff --git a/tests/unit/bifactor_grm_tests.rs b/tests/unit/bifactor_grm_tests.rs
+index e5e9eea6..723ab5d0 100644
+--- a/tests/unit/bifactor_grm_tests.rs
++++ b/tests/unit/bifactor_grm_tests.rs
+@@ -429,6 +429,25 @@ fn item_rows(r: &BifactorMultigroupResult, g: usize, items: &[usize]) -> Vec<Ite
+         .collect()
+ }
+ 
++/// Reproducer kept on purpose (not a green test): the ORIGINAL 12-person
++/// two-group toy fixture fails in plain MML, with no slope prior, because the
++/// multigroup EM observed-data log-likelihood decreases (iteration 9, delta
++/// -6.141380e-3 with `anchor = None`; iteration 20, delta -1.514901e-1 with
++/// anchor `[T, T, F, F]`). The released 0.11.4 binary (no AC changes; zero
++/// diff in `bifactor_grm.rs` from v0.11.4 to 99c228a8) reproduces both
++/// errors bit-for-bit, so this is pre-existing MG MML behavior outside the
++/// slope-prior scope. Run with `--ignored` once the MG EM owner fixes it.
++#[test]
++#[ignore = "pre-existing MG MML EM likelihood decrease on the 12-person toy fixture; tracked gap"]
++fn reproducer_multigroup_mml_on_toy_fixture_runs() {
++    let (y, n_persons) = tiny_data();
++    let group_id: Vec<usize> = (0..n_persons).map(|p| p % 2).collect();
++    for anchor in [None, Some(&[true, true, false, false][..])] {
++        fit_mg(&y, &group_id, 2, &TINY_SPECIFIC_MAP, anchor, SlopePrior::None)
++            .expect("MG MML on the toy fixture must run");
++    }
++}
++
+ #[test]
+ fn em_guard_rejects_a_real_log_posterior_decrease() {
+     let prior = SlopePrior::Lognormal { mu: 0.0, sd: 1.0 };

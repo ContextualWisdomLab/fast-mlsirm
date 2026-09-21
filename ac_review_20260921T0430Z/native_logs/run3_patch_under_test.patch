@@ -1,0 +1,1592 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 982e9e5d..a7e9ffda 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -3,6 +3,27 @@
+ ## Unreleased
+ 
+ <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
++### Added
++
++#### Bifactor GRM opt-in lognormal |a| slope prior
++
++- `fit_bifactor_grm` and `fit_bifactor_grm_multigroup` accept paired
++  `slope_prior_mu` / `slope_prior_sd` for MAP estimation under a lognormal
++  prior on `|a|` (folded lognormal on signed slopes; no defaults). In the
++  multigroup fit the prior applies to free items per group AND to common
++  (anchored) items once per shared parameter, so it is active under the
++  default `anchor=None`. FIPC exposes no prior knob. Results record the
++  fitted prior (`slope_prior_mu` / `slope_prior_sd`). Under a prior the EM
++  monotonicity guard, `tol` convergence, `final_loglik_change` and
++  multi-start ranking use the log posterior; `loglik_trace` stays the
++  observed-data log-likelihood.
++- `bifactor_oakes_se` accepts the same prior. With it, `information` is the
++  negative log-posterior curvature (Oakes observed information plus the
++  diagonal prior curvature on slopes) and `vcov`/`se` are a posterior-curvature
++  (Laplace) approximation to the posterior covariance, not a frequentist
++  sampling covariance (Mislevy, 1986, https://doi.org/10.1007/BF02293979).
++  Omitting the prior remains the MML observed-information SE.
++
+ ### Changed
+ 
+ #### Release cut 0.11.4
+diff --git a/crates/fast-mlsirm-py/src/lib.rs b/crates/fast-mlsirm-py/src/lib.rs
+index b4815d82..a19bd801 100644
+--- a/crates/fast-mlsirm-py/src/lib.rs
++++ b/crates/fast-mlsirm-py/src/lib.rs
+@@ -1416,12 +1416,7 @@ fn fit_bifactor_grm(
+                 .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+         })
+         .collect::<PyResult<_>>()?;
+-    let slope_prior = match (slope_prior_mu, slope_prior_sd) {
+-        (None, None) => SlopePrior::None,
+-        (Some(mu), Some(sd)) => SlopePrior::Lognormal { mu, sd },
+-        _ => return Err(PyValueError::new_err("slope_prior_mu and slope_prior_sd must be provided together")),
+-    };
+-    slope_prior.validate().map_err(PyValueError::new_err)?;
++    let slope_prior = parse_slope_prior(slope_prior_mu, slope_prior_sd)?;
+     let cfg = BifactorGrmConfig {
+         q_general,
+         q_specific,
+@@ -1464,6 +1459,10 @@ fn fit_bifactor_grm(
+     out.set_item("final_loglik_change", res.final_loglik_change)?;
+     out.set_item("best_start", res.best_start)?;
+     out.set_item("n_parameters", res.n_parameters)?;
++    let (prior_mu, prior_sd) = slope_prior_parts(res.slope_prior);
++    out.set_item("slope_prior_mu", prior_mu)?;
++    out.set_item("slope_prior_sd", prior_sd)?;
++    out.set_item("em_objective_trace", res.em_objective_trace)?;
+     Ok(out.into())
+ }
+ 
+@@ -1551,12 +1550,7 @@ fn fit_bifactor_grm_multigroup(
+         Some(a) => Some(a.as_slice()?.to_vec()),
+         None => None,
+     };
+-    let slope_prior = match (slope_prior_mu, slope_prior_sd) {
+-        (None, None) => SlopePrior::None,
+-        (Some(mu), Some(sd)) => SlopePrior::Lognormal { mu, sd },
+-        _ => return Err(PyValueError::new_err("slope_prior_mu and slope_prior_sd must be provided together")),
+-    };
+-    slope_prior.validate().map_err(PyValueError::new_err)?;
++    let slope_prior = parse_slope_prior(slope_prior_mu, slope_prior_sd)?;
+     let cfg = BifactorMultigroupConfig {
+         q_general,
+         q_specific,
+@@ -1603,6 +1597,10 @@ fn fit_bifactor_grm_multigroup(
+     out.set_item("final_loglik_change", res.final_loglik_change)?;
+     out.set_item("best_start", res.best_start)?;
+     out.set_item("n_parameters", res.n_parameters)?;
++    let (prior_mu, prior_sd) = slope_prior_parts(res.slope_prior);
++    out.set_item("slope_prior_mu", prior_mu)?;
++    out.set_item("slope_prior_sd", prior_sd)?;
++    out.set_item("em_objective_trace", res.em_objective_trace)?;
+     Ok(out.into())
+ }
+ 
+@@ -1632,7 +1630,7 @@ fn fit_bifactor_grm_multigroup(
+ /// https://doi.org/10.1177/0146621606289485
+ #[pyfunction]
+ #[allow(clippy::too_many_arguments)]
+-#[pyo3(signature = (a_general, a_specific, threshold, y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general, q_specific, fd_step))]
++#[pyo3(signature = (a_general, a_specific, threshold, y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general, q_specific, fd_step, slope_prior_mu = None, slope_prior_sd = None))]
+ fn bifactor_oakes_se(
+     py: Python<'_>,
+     a_general: PyReadonlyArray1<'_, f64>,
+@@ -1648,7 +1646,10 @@ fn bifactor_oakes_se(
+     q_general: usize,
+     q_specific: usize,
+     fd_step: f64,
++    slope_prior_mu: Option<f64>,
++    slope_prior_sd: Option<f64>,
+ ) -> PyResult<Py<pyo3::types::PyDict>> {
++    let slope_prior = parse_slope_prior(slope_prior_mu, slope_prior_sd)?;
+     let y_slice = y.as_slice()?;
+     let obs_vec: Option<Vec<bool>> = match &observed {
+         Some(o) => Some(o.as_slice()?.to_vec()),
+@@ -1693,6 +1694,7 @@ fn bifactor_oakes_se(
+         q_general,
+         q_specific,
+         fd_step,
++        slope_prior,
+     };
+     let res = py
+         .detach(|| {
+@@ -1721,6 +1723,31 @@ fn bifactor_oakes_se(
+     Ok(out.into())
+ }
+ 
++/// Build the optional bifactor slope prior from the paired Python kwargs
++/// (both `None` = MML; both set = lognormal on `|a|`; validated, never
++/// clamped).
++fn parse_slope_prior(mu: Option<f64>, sd: Option<f64>) -> PyResult<SlopePrior> {
++    let prior = match (mu, sd) {
++        (None, None) => SlopePrior::None,
++        (Some(mu), Some(sd)) => SlopePrior::Lognormal { mu, sd },
++        _ => {
++            return Err(PyValueError::new_err(
++                "slope_prior_mu and slope_prior_sd must be provided together",
++            ))
++        }
++    };
++    prior.validate().map_err(PyValueError::new_err)?;
++    Ok(prior)
++}
++
++/// `(mu, sd)` of a fitted slope prior for result dicts (`(None, None)` = MML).
++fn slope_prior_parts(prior: SlopePrior) -> (Option<f64>, Option<f64>) {
++    match prior {
++        SlopePrior::None => (None, None),
++        SlopePrior::Lognormal { mu, sd } => (Some(mu), Some(sd)),
++    }
++}
++
+ /// Focal-group fixed-item parameter calibration (FIPC) for the polytomous
+ /// bifactor graded response model (Rust compute path;
+ /// `mlsirm_core::bifactor_grm::fit_bifactor_grm_fipc`). `anchor` (length
+diff --git a/crates/mlsirm-core/src/bifactor_grm.rs b/crates/mlsirm-core/src/bifactor_grm.rs
+index ed9016be..8079fc00 100644
+--- a/crates/mlsirm-core/src/bifactor_grm.rs
++++ b/crates/mlsirm-core/src/bifactor_grm.rs
+@@ -148,20 +148,41 @@ use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
+ // real-valued controls, and checked arithmetic that turns size overflow
+ // into `Err` instead of a panic.
+ 
+-/// Optional MAP prior on free item slopes for bifactor GRM M-steps.
++/// Optional MAP prior on estimated item slopes for bifactor GRM M-steps.
+ ///
+ /// `None` is plain MML (no slope prior). `Lognormal { mu, sd }` places a
+-/// lognormal density on `|a|` for every free general and specific slope
+-/// (`log|a| ~ N(mu, sd^2)`), so reverse-keyed unconstrained slopes keep their
+-/// sign while the prior regularizes magnitude. Threshold intercepts are
+-/// never penalized. Numeric `(mu, sd)` are caller-owned: this crate does not
+-/// ship research-specific default values.
++/// lognormal density on `|a|` for every ESTIMATED general and specific slope
++/// (`log|a| ~ N(mu, sd^2)`): single-group items, multigroup free items (once
++/// per group) and multigroup common/anchored items (once per shared
++/// parameter). FIPC exposes no prior knob: its anchors are fixed at
++/// reference values and its free items are plain MML. Threshold intercepts
++/// are never penalized.
++///
++/// EM under a prior is generalized EM on the log POSTERIOR: the per-iteration
++/// monotonicity guard, the `tol` convergence test, `final_loglik_change` and
++/// multi-start ranking all use log-likelihood + log slope prior (constants
++/// omitted). `loglik_trace` still records the observed-data log-likelihood,
++/// which may legitimately decrease under a prior. Without a prior the
++/// objective IS the log-likelihood (bit-identical behavior). Numeric `(mu, sd)`
++/// are caller-owned: this crate does not ship research-specific defaults.
++///
++/// Support: the density used for a signed slope is the folded lognormal
++/// `p(a) = f_LN(|a|; mu, sd) / 2` on `a != 0`. It integrates to one over
++/// `R \ {0}` and the fold only adds the constant `ln 2` to `-log p`, so the
++/// mode, gradient and curvature equal those of the lognormal on `|a|`
++/// (derivative chain `d|a|/da = sign(a)`). `a = 0` is outside the support
++/// (`-log p = +inf`); it is a barrier, not a clamp. This signed extension is
++/// this crate's, not the cited source's: mirt's `lnorm` applies to positive
++/// slopes.
+ ///
+ /// Basis: Chalmers, R. P. (2012). mirt: A multidimensional item response
+ /// theory package for the R environment. *Journal of Statistical Software,
+ /// 48*(6). https://doi.org/10.18637/jss.v048.i06 (lognormal discrimination
+ /// priors via `priorType = "lnorm"`); applied here to `|a|` so the crate's
+-/// unconstrained-slope contract (#1879) remains intact.
++/// unconstrained-slope contract (#1879) remains intact. MAP (Bayes modal)
++/// item estimation: Mislevy, R. J. (1986). Bayes modal estimation in item
++/// response models. *Psychometrika, 51*(2), 177-195.
++/// https://doi.org/10.1007/BF02293979
+ #[derive(Clone, Copy, Debug, Default, PartialEq)]
+ pub enum SlopePrior {
+     /// No slope prior (default MML).
+@@ -195,10 +216,10 @@ impl SlopePrior {
+ }
+ 
+ /// Add `-log p(|a|)` and its derivative for `a ~` sign-preserving lognormal
+-/// on `|a|` (`log|a| ~ N(mu, sd^2)`). Uses `|a| = max(|a|, 1e-12)` only to
+-/// keep `ln` finite at the origin; the prior still drives estimates away from
+-/// zero. Constants independent of `a` are omitted (Newton compares deltas).
+-fn add_lnorm_abs_slope_prior(a: f64, mu: f64, sd: f64, nll: &mut f64, grad_a: &mut f64) {
++/// on `|a|` (`log|a| ~ N(mu, sd^2)`). `a = 0` is outside the support and sets
++/// the objective to `+inf` (no floor, no clamp). Constants independent of `a`
++/// are omitted (Newton compares deltas).
++pub(crate) fn add_lnorm_abs_slope_prior(a: f64, mu: f64, sd: f64, nll: &mut f64, grad_a: &mut f64) {
+     if a == 0.0 {
+         // Zero is outside the signed-support extension. Keep the objective
+         // infinite so every line-search candidate at the boundary rejects.
+@@ -212,6 +233,19 @@ fn add_lnorm_abs_slope_prior(a: f64, mu: f64, sd: f64, nll: &mut f64, grad_a: &m
+     *grad_a += (1.0 + z / sd) / a;
+ }
+ 
++/// Second derivative of `-log p(a)` for [`add_lnorm_abs_slope_prior`]:
++/// `(1 / sd^2 - 1 - z / sd) / a^2` with `z = (ln|a| - mu) / sd`. It can be
++/// negative (the lognormal is not log-concave in `a`), which the Oakes
++/// assembly reports through its positive-definiteness flag. `+inf` at the
++/// unsupported point `a = 0`.
++pub(crate) fn lnorm_abs_slope_prior_curvature(a: f64, mu: f64, sd: f64) -> f64 {
++    if a == 0.0 {
++        return f64::INFINITY;
++    }
++    let z = (a.abs().ln() - mu) / sd;
++    (1.0 / (sd * sd) - 1.0 - z / sd) / (a * a)
++}
++
+ /// Configuration for [`fit_bifactor_grm`]. Every field is caller-owned and
+ /// range-validated; nothing is clamped.
+ #[derive(Clone, Copy, Debug)]
+@@ -268,6 +302,14 @@ pub struct BifactorGrmResult {
+     pub best_start: usize,
+     /// `sum_i (1 + has_specific(i) + (n_cat - 1))` free item parameters.
+     pub n_parameters: usize,
++    /// The slope prior the estimates were fitted under (`None` = MML
++    /// estimates; `Lognormal` = MAP estimates). Pass the same prior to
++    /// [`crate::bifactor_oakes::bifactor_oakes_se`].
++    pub slope_prior: SlopePrior,
++    /// EM objective per E-step of the winning start: log-likelihood + log
++    /// slope prior (constants omitted) under a prior, bit-identical to
++    /// `loglik_trace` without one. Monotone non-decreasing by the EM guard.
++    pub em_objective_trace: Vec<f64>,
+ }
+ 
+ /// Validated problem structure shared by the fitter and the public
+@@ -951,15 +993,45 @@ fn m_step_item(
+     params
+ }
+ 
++/// `-log p(slopes)` summed over the given estimated items (constants
++/// omitted, as in the M-step); exactly `0.0` without a prior.
++fn slope_prior_neg_log<'a>(
++    prior: SlopePrior,
++    items: impl IntoIterator<Item = &'a ItemParams>,
++) -> f64 {
++    let SlopePrior::Lognormal { mu, sd } = prior else {
++        return 0.0;
++    };
++    let mut nll = 0.0;
++    let mut ignored_grad = 0.0;
++    for item in items {
++        add_lnorm_abs_slope_prior(item.a_g, mu, sd, &mut nll, &mut ignored_grad);
++        if let Some(a_s) = item.a_s {
++            add_lnorm_abs_slope_prior(a_s, mu, sd, &mut nll, &mut ignored_grad);
++        }
++    }
++    nll
++}
++
++/// Name of the EM objective whose monotonicity and tolerance are checked:
++/// the observed-data log-likelihood for MML, the log posterior
++/// (log-likelihood + log slope prior) for MAP — generalized EM only
++/// guarantees ascent of the objective the M-step maximizes.
++fn em_objective_name(prior: SlopePrior) -> &'static str {
++    match prior {
++        SlopePrior::None => "observed-data log-likelihood",
++        SlopePrior::Lognormal { .. } => "log posterior (log-likelihood + log slope prior)",
++    }
++}
++
+ fn checked_em_loglik_change(
+     current: f64,
+     previous: Option<f64>,
+     iteration: usize,
++    objective: &str,
+ ) -> Result<Option<f64>, String> {
+     if !current.is_finite() {
+-        return Err(format!(
+-            "non-finite observed-data log-likelihood at iteration {iteration}"
+-        ));
++        return Err(format!("non-finite EM {objective} at iteration {iteration}"));
+     }
+     let Some(previous) = previous else {
+         return Ok(None);
+@@ -968,7 +1040,7 @@ fn checked_em_loglik_change(
+     let monotonicity_tolerance = 32.0 * f64::EPSILON * (1.0 + previous.abs());
+     if change < -monotonicity_tolerance {
+         return Err(format!(
+-            "EM observed-data log-likelihood decreased at iteration {iteration}: delta={change:.6e}"
++            "EM {objective} decreased at iteration {iteration}: delta={change:.6e}"
+         ));
+     }
+     Ok(Some(change))
+@@ -977,6 +1049,9 @@ fn checked_em_loglik_change(
+ struct SingleStartOutcome {
+     params: Vec<ItemParams>,
+     loglik_trace: Vec<f64>,
++    /// EM objective per E-step (== `loglik_trace` without a prior); its last
++    /// value ranks starts.
++    em_objective_trace: Vec<f64>,
+     n_iter: usize,
+     converged: bool,
+     termination_reason: String,
+@@ -1028,17 +1103,23 @@ fn run_single_start(
+     let mut n_iter = 0usize;
+     let mut termination_reason = "max_iter_reached".to_string();
+     let mut final_loglik_change = f64::NAN;
++    let mut previous: Option<f64> = None;
++    let mut em_objective_trace: Vec<f64> = Vec::new();
++    let objective_name = em_objective_name(cfg.slope_prior);
+ 
+     loop {
+         let tables = fill_logprob_tables(v, &params, tg, ts, qg, qs);
+         let (ll, counts) = e_step(
+             v, y, observed, &tables, log_wg, log_ws, qg, qs, tg, ts, cfg.device,
+         );
+-        let previous = loglik_trace.last().copied();
+-        let change = checked_em_loglik_change(ll, previous, n_iter)?;
++        // MAP: GEM ascends log-likelihood + log prior, not the likelihood.
++        let objective = ll - slope_prior_neg_log(cfg.slope_prior, &params);
++        let change = checked_em_loglik_change(objective, previous, n_iter, objective_name)?;
+         loglik_trace.push(ll);
++        em_objective_trace.push(objective);
++        let prev_objective = previous.replace(objective);
+         if let Some(change) = change {
+-            let prev = previous.expect("change requires a previous log-likelihood");
++            let prev = prev_objective.expect("change requires a previous objective");
+             final_loglik_change = change;
+             if final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
+                 converged = true;
+@@ -1087,6 +1168,7 @@ fn run_single_start(
+     Ok(SingleStartOutcome {
+         params,
+         loglik_trace,
++        em_objective_trace,
+         n_iter,
+         converged,
+         termination_reason,
+@@ -1144,10 +1226,11 @@ pub fn fit_bifactor_grm(
+         ) {
+             Ok(outcome) => {
+                 n_succeeded += 1;
++                // Best EM objective (log posterior under a prior) wins.
+                 let ll = *outcome
+-                    .loglik_trace
++                    .em_objective_trace
+                     .last()
+-                    .expect("EM trace is never empty");
++                    .expect("EM objective trace is never empty");
+                 if best.is_none() || ll > best_ll {
+                     best_ll = ll;
+                     best = Some(outcome);
+@@ -1292,6 +1375,8 @@ pub fn fit_bifactor_grm(
+         final_loglik_change: outcome.final_loglik_change,
+         best_start,
+         n_parameters,
++        slope_prior: cfg.slope_prior,
++        em_objective_trace: outcome.em_objective_trace,
+     })
+ }
+ 
+@@ -1710,6 +1795,11 @@ pub struct BifactorMultigroupResult {
+     /// Free item parameters (anchored counted once, free per group) plus
+     /// estimated group distribution parameters.
+     pub n_parameters: usize,
++    /// The slope prior the estimates were fitted under (`None` = MML).
++    pub slope_prior: SlopePrior,
++    /// EM objective per E-step (see [`BifactorGrmResult::em_objective_trace`];
++    /// common items contribute their prior once, free items once per group).
++    pub em_objective_trace: Vec<f64>,
+ }
+ 
+ fn validate_multigroup_cfg(cfg: &BifactorMultigroupConfig) -> Result<(), String> {
+@@ -1875,6 +1965,9 @@ struct MultiStartOutcome {
+     sigmas: Vec<f64>,
+     taus: Vec<Vec<f64>>,
+     loglik_trace: Vec<f64>,
++    /// EM objective per E-step (== `loglik_trace` without a prior); its last
++    /// value ranks starts.
++    em_objective_trace: Vec<f64>,
+     n_iter: usize,
+     converged: bool,
+     termination_reason: String,
+@@ -2186,6 +2279,9 @@ fn run_single_start_multigroup(
+     let mut n_iter = 0usize;
+     let mut termination_reason = "max_iter_reached".to_string();
+     let mut final_loglik_change = f64::NAN;
++    let mut previous: Option<f64> = None;
++    let mut em_objective_trace: Vec<f64> = Vec::new();
++    let objective_name = em_objective_name(cfg.slope_prior);
+ 
+     loop {
+         // Common-scale group nodes for this sweep.
+@@ -2216,11 +2312,25 @@ fn run_single_start_multigroup(
+             qs,
+             cfg.device,
+         );
+-        let previous = loglik_trace.last().copied();
+-        let change = checked_em_loglik_change(ll, previous, n_iter)?;
++        // MAP: GEM ascends log-likelihood + log prior. Common (anchored)
++        // items count once (group 0 row), free items once per group.
++        let prior_nll = slope_prior_neg_log(
++            cfg.slope_prior,
++            (0..n_groups).flat_map(|g| {
++                params_groups[g]
++                    .iter()
++                    .enumerate()
++                    .filter(move |&(i, _)| g == 0 || !anchor[i])
++                    .map(|(_, item)| item)
++            }),
++        );
++        let objective = ll - prior_nll;
++        let change = checked_em_loglik_change(objective, previous, n_iter, objective_name)?;
+         loglik_trace.push(ll);
++        em_objective_trace.push(objective);
++        let prev_objective = previous.replace(objective);
+         if let Some(change) = change {
+-            let prev = previous.expect("change requires a previous log-likelihood");
++            let prev = prev_objective.expect("change requires a previous objective");
+             final_loglik_change = change;
+             if final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
+                 converged = true;
+@@ -2275,9 +2385,11 @@ fn run_single_start_multigroup(
+                     v.n_cat,
+                     cfg.ridge,
+                     cfg.newton_iter,
+-                    // Common anchor items define the linked scale; a prior is
+-                    // only for free item slopes and must not move anchors.
+-                    SlopePrior::None,
++                    // Common (anchored) items are ESTIMATED from the pooled
++                    // counts, so they carry the prior once per shared
++                    // parameter — otherwise the prior would be a silent no-op
++                    // under the default all-common `anchor = None`.
++                    cfg.slope_prior,
+                 );
+                 for g in 0..n_groups {
+                     params_groups[g][i].a_g = updated[0];
+@@ -2392,6 +2504,7 @@ fn run_single_start_multigroup(
+         sigmas,
+         taus,
+         loglik_trace,
++        em_objective_trace,
+         n_iter,
+         converged,
+         termination_reason,
+@@ -2494,6 +2607,8 @@ pub fn fit_bifactor_grm_multigroup(
+             final_loglik_change: single.final_loglik_change,
+             best_start: single.best_start,
+             n_parameters: single.n_parameters,
++            slope_prior: single.slope_prior,
++            em_objective_trace: single.em_objective_trace,
+         });
+     }
+     // Base structural validation (pooled categories, blocks, checked
+@@ -2608,10 +2723,11 @@ pub fn fit_bifactor_grm_multigroup(
+             start,
+         ) {
+             Ok(outcome) => {
++                // Best EM objective (log posterior under a prior) wins.
+                 let ll = *outcome
+-                    .loglik_trace
++                    .em_objective_trace
+                     .last()
+-                    .expect("EM trace is never empty");
++                    .expect("EM objective trace is never empty");
+                 if best.is_none() || ll > best_ll {
+                     best_ll = ll;
+                     best = Some(outcome);
+@@ -2854,6 +2970,8 @@ pub fn fit_bifactor_grm_multigroup(
+         final_loglik_change: outcome.final_loglik_change,
+         best_start,
+         n_parameters,
++        slope_prior: cfg.slope_prior,
++        em_objective_trace: outcome.em_objective_trace,
+     })
+ }
+ 
+@@ -3224,7 +3342,7 @@ pub fn fit_bifactor_grm_fipc(
+             crate::Device::Cpu,
+         );
+         let previous = loglik_trace.last().copied();
+-        let change = checked_em_loglik_change(ll, previous, n_iter)?;
++        let change = checked_em_loglik_change(ll, previous, n_iter, "observed-data log-likelihood")?;
+         loglik_trace.push(ll);
+         if let Some(change) = change {
+             let prev = previous.expect("change requires a previous log-likelihood");
+diff --git a/crates/mlsirm-core/src/bifactor_oakes.rs b/crates/mlsirm-core/src/bifactor_oakes.rs
+index 2649b9c4..ba2a319e 100644
+--- a/crates/mlsirm-core/src/bifactor_oakes.rs
++++ b/crates/mlsirm-core/src/bifactor_oakes.rs
+@@ -40,6 +40,42 @@
+ //! `bifactor_grm.rs` is Hessian conditioning only, not a parameter prior,
+ //! and is NOT part of the information.
+ //!
++//! # MAP estimates (optional slope prior)
++//!
++//! For estimates fitted under a [`SlopePrior::Lognormal`] (MAP / Bayes modal
++//! estimation; Mislevy, 1986), pass the SAME prior in
++//! [`BifactorOakesConfig::slope_prior`]. The returned `information` is then
++//! the curvature of the negative log POSTERIOR,
++//! `-d^2 [l(xi) + log p(xi)] / d xi d xi'` — the Oakes observed information
++//! (exact at any `xi`, including the MAP point) plus the analytic diagonal
++//! prior curvature on each slope coordinate — and `vcov`/`se` are its
++//! inverse.
++//!
++//! What that uncertainty IS: with a prior, `vcov` is the posterior-curvature
++//! (Laplace / normal) approximation to the posterior covariance at the mode,
++//! a Bayesian quantity. It is NOT a frequentist sampling covariance of the
++//! MAP estimator and must not be labeled as one (the two differ by the
++//! prior's shrinkage; no sandwich correction is computed). Without a prior,
++//! `vcov` is the usual inverse observed information of the MML estimates.
++//! A likelihood-only information evaluated at MAP estimates is NOT a
++//! supported uncertainty for those estimates.
++//!
++//! Derivation scope (this crate's, not a quoted result): the log posterior
++//! is additive, `log p(xi | Y) = l(xi) + log p(xi) + const`, so its negative
++//! Hessian is the observed information (from the Oakes identity, exact at
++//! any `xi`) plus `-d^2 log p(xi)`. The slope prior is a product of
++//! independent per-slope terms, so its Hessian is DIAGONAL: every
++//! off-diagonal entry — slope/threshold and cross-item blocks — is the
++//! Oakes term unchanged, and thresholds get no prior term. Population
++//! parameters stay fixed by identification exactly as in the MML case, so
++//! the approximation is conditional on them. The per-slope curvature is
++//! `(1/sd^2 - 1 - z/sd)/a^2`; it can be negative (the lognormal is not
++//! log-concave), and a non-PD or non-finite result (e.g. `a = 0`) is
++//! reported through `positive_definite` / `non_pd_reason`, never
++//! substituted. Mislevy (1986) is cited for Bayes modal (MAP) item
++//! estimation; the implemented formula is verified by unit tests, not by the
++//! citation.
++//!
+ //! # Free parameters and multigroup extension
+ //!
+ //! The free vector is per-item `[a_G, a_S?, d_1..d_{K-1}]` (slopes
+@@ -71,10 +107,13 @@
+ //! Full-information item bifactor analysis of graded response data. *Applied
+ //! Psychological Measurement, 31*(1), 4-19.
+ //! https://doi.org/10.1177/0146621606289485
++//!
++//! Mislevy, R. J. (1986). Bayes modal estimation in item response models.
++//! *Psychometrika, 51*(2), 177-195. https://doi.org/10.1007/BF02293979
+ 
+ use crate::bifactor_grm::{
+-    check_param_shapes, e_step, fill_logprob_tables, gh_rule, pack_params, validate, ItemParams,
+-    Validated,
++    check_param_shapes, e_step, fill_logprob_tables, gh_rule, lnorm_abs_slope_prior_curvature,
++    pack_params, validate, ItemParams, SlopePrior, Validated,
+ };
+ use crate::poly::{grm_node_gradient, grm_node_hessian};
+ 
+@@ -91,6 +130,11 @@ pub struct BifactorOakesConfig {
+     /// (`h_j = fd_step * (1 + |xi_j|)`); the complete-data gradient and
+     /// Hessian are analytic, so this touches only the posterior sensitivity.
+     pub fd_step: f64,
++    /// Prior the item parameters were fitted under. `None` = MML estimates
++    /// (observed information); `Lognormal` = MAP estimates (negative
++    /// log-posterior curvature; see the module docs). Validated, never
++    /// clamped.
++    pub slope_prior: SlopePrior,
+ }
+ 
+ /// Result of [`bifactor_oakes_se`].
+@@ -560,6 +604,7 @@ pub fn bifactor_oakes_se(
+     if cfg.q_specific < 1 {
+         return Err(format!("q_specific must be >= 1; got {}", cfg.q_specific));
+     }
++    cfg.slope_prior.validate()?;
+     let provider = Stage1Provider::new(
+         y,
+         observed,
+@@ -608,6 +653,15 @@ pub fn bifactor_oakes_se(
+                 * (term_a[r * k + c] + cross[r * k + c] + term_a[c * k + r] + cross[c * k + r]);
+         }
+     }
++    // MAP estimates: add the diagonal prior curvature on slope coordinates
++    // (labels `a_general:*` / `a_specific:*`); thresholds carry no prior.
++    if let SlopePrior::Lognormal { mu, sd } = cfg.slope_prior {
++        for j in 0..k {
++            if labels[j].starts_with("a_") {
++                information[j * k + j] += lnorm_abs_slope_prior_curvature(packed[j], mu, sd);
++            }
++        }
++    }
+     if information.iter().any(|v| !v.is_finite()) {
+         return Ok(BifactorOakesResult {
+             labels,
+diff --git a/crates/mlsirm-core/tests/bifactor_oakes_calibration.rs b/crates/mlsirm-core/tests/bifactor_oakes_calibration.rs
+index 25df6204..ed8758dc 100644
+--- a/crates/mlsirm-core/tests/bifactor_oakes_calibration.rs
++++ b/crates/mlsirm-core/tests/bifactor_oakes_calibration.rs
+@@ -201,6 +201,7 @@ fn se_matches_empirical_sd_over_simulation_replicates() {
+         q_general: CAL_QG,
+         q_specific: CAL_QS,
+         fd_step: 1e-5,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+     };
+     // Free-parameter order: per item [a_G, a_S, d_0, d_1, d_2].
+     let k = N_ITEMS * (2 + M1);
+@@ -345,8 +346,8 @@ fn estimates_stabilize_as_grid_grows_within_supported_cap() {
+             n_starts: 3,
+             seed: 777,
+             newton_iter: 10,
+-        ridge: 1e-8,
+-        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
++            ridge: 1e-8,
++            slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+             device: mlsirm_core::Device::Cpu,
+         };
+         let fit = fit_bifactor_grm(
+@@ -370,6 +371,7 @@ fn estimates_stabilize_as_grid_grows_within_supported_cap() {
+             q_general: q,
+             q_specific: q,
+             fd_step: 1e-5,
++            slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+         };
+         let res = bifactor_oakes_se(
+             &fit.a_general,
+@@ -444,8 +446,8 @@ fn study_settings_se_converges_at_121_vs_241_nodes() {
+             n_starts: 3,
+             seed: 777,
+             newton_iter: 10,
+-        ridge: 1e-8,
+-        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
++            ridge: 1e-8,
++            slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+             device: mlsirm_core::Device::Cpu,
+         };
+         let fit = fit_bifactor_grm(
+@@ -468,6 +470,7 @@ fn study_settings_se_converges_at_121_vs_241_nodes() {
+             q_general: q,
+             q_specific: q,
+             fd_step: 1e-5,
++            slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+         };
+         let res = bifactor_oakes_se(
+             &fit.a_general,
+diff --git a/crates/mlsirm-core/tests/bifactor_oakes_mirt.rs b/crates/mlsirm-core/tests/bifactor_oakes_mirt.rs
+index 0c6a0126..37045252 100644
+--- a/crates/mlsirm-core/tests/bifactor_oakes_mirt.rs
++++ b/crates/mlsirm-core/tests/bifactor_oakes_mirt.rs
+@@ -160,6 +160,7 @@ fn rust_oakes_se_matches_mirt_oakes_fixture() {
+         q_general: QUADPTS,
+         q_specific: QUADPTS,
+         fd_step: 1e-5,
++        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
+     };
+     let res = bifactor_oakes_se(
+         &a_g,
+diff --git a/docs/changelog.d/bifactor-slope-prior.md b/docs/changelog.d/bifactor-slope-prior.md
+new file mode 100644
+index 00000000..37bedace
+--- /dev/null
++++ b/docs/changelog.d/bifactor-slope-prior.md
+@@ -0,0 +1,20 @@
++# Bifactor GRM opt-in lognormal |a| slope prior
++
++## Added
++
++- `fit_bifactor_grm` and `fit_bifactor_grm_multigroup` accept paired
++  `slope_prior_mu` / `slope_prior_sd` for MAP estimation under a lognormal
++  prior on `|a|` (folded lognormal on signed slopes; no defaults). In the
++  multigroup fit the prior applies to free items per group AND to common
++  (anchored) items once per shared parameter, so it is active under the
++  default `anchor=None`. FIPC exposes no prior knob. Results record the
++  fitted prior (`slope_prior_mu` / `slope_prior_sd`). Under a prior the EM
++  monotonicity guard, `tol` convergence, `final_loglik_change` and
++  multi-start ranking use the log posterior; `loglik_trace` stays the
++  observed-data log-likelihood.
++- `bifactor_oakes_se` accepts the same prior. With it, `information` is the
++  negative log-posterior curvature (Oakes observed information plus the
++  diagonal prior curvature on slopes) and `vcov`/`se` are a posterior-curvature
++  (Laplace) approximation to the posterior covariance, not a frequentist
++  sampling covariance (Mislevy, 1986, https://doi.org/10.1007/BF02293979).
++  Omitting the prior remains the MML observed-information SE.
+diff --git a/python/fast_mlsirm/bifactor_grm.py b/python/fast_mlsirm/bifactor_grm.py
+index 0786b827..eac9d131 100644
+--- a/python/fast_mlsirm/bifactor_grm.py
++++ b/python/fast_mlsirm/bifactor_grm.py
+@@ -111,6 +111,34 @@ def _positive_real_control(value: object, name: str) -> float:
+     return numeric
+ 
+ 
++def _slope_prior_pair(
++    mu: object, sd: object
++) -> tuple[float | None, float | None]:
++    """Validate the paired lognormal ``|a|`` slope-prior kwargs.
++
++    Both ``None`` = no prior (MML); both set = finite ``mu`` and finite
++    positive ``sd``. Anything else raises ``ValueError`` (never clamped).
++    """
++
++    if (mu is None) != (sd is None):
++        raise ValueError("slope_prior_mu and slope_prior_sd must be provided together")
++    if mu is None:
++        return None, None
++    for value, name in ((mu, "slope_prior_mu"), (sd, "slope_prior_sd")):
++        if isinstance(value, bool):
++            raise ValueError(f"{name} must be a real number")
++    try:
++        mu_f = float(mu)  # type: ignore[arg-type]
++        sd_f = float(sd)  # type: ignore[arg-type]
++    except (TypeError, ValueError, OverflowError):
++        raise ValueError("slope_prior_mu and slope_prior_sd must be real numbers") from None
++    if not np.isfinite(mu_f):
++        raise ValueError("slope_prior_mu must be finite")
++    if not np.isfinite(sd_f) or sd_f <= 0:
++        raise ValueError("slope_prior_sd must be finite and positive")
++    return mu_f, sd_f
++
++
+ def _u64_seed(value: object) -> int:
+     """Normalize the deterministic start seed without callbacks."""
+ 
+@@ -160,6 +188,12 @@ class BifactorGrmFit:
+     final_loglik_change: float
+     best_start: int
+     n_parameters: int
++    slope_prior_mu: float | None = None
++    slope_prior_sd: float | None = None
++    # EM objective (MAXIMIZED; unlike FitResult.objective_trace) per E-step: log-likelihood + log slope prior under a prior
++    # (monotone), identical to ``loglik_trace`` without one. ``loglik_trace``
++    # keeps its meaning and may decrease under a prior.
++    em_objective_trace: np.ndarray | None = None
+ 
+ 
+ def fit_bifactor_grm(
+@@ -202,6 +236,11 @@ def fit_bifactor_grm(
+     per the no-magic-caps rule — upper-bounded only where a real constraint
+     exists); unobserved categories raise; ``max_iter`` exhaustion returns
+     ``converged=False`` instead of substituting values.
++    ``slope_prior_mu`` / ``slope_prior_sd`` (both or neither) request MAP
++    estimation under a lognormal prior on ``|a|`` for every estimated slope
++    (``log|a| ~ N(mu, sd^2)``; see ``SlopePrior`` in the Rust core). Omitted
++    = plain MML. There are no defaults; the fitted prior is recorded on the
++    result and must be passed to ``bifactor_oakes_se`` for MAP SEs.
+ 
+     See the module docstring for the model, the paper basis of every
+     non-obvious decision, and the APA 7th references.
+@@ -235,15 +274,7 @@ def fit_bifactor_grm(
+     ):
+         raise ValueError(f"device must be one of 'cpu', 'gpu', 'auto'; got {device!r}")
+     device_str = device.strip().lower()
+-    if (slope_prior_mu is None) != (slope_prior_sd is None):
+-        raise ValueError("slope_prior_mu and slope_prior_sd must be provided together")
+-    if slope_prior_mu is not None:
+-        slope_prior_mu = float(slope_prior_mu)
+-        slope_prior_sd = float(slope_prior_sd)
+-        if not np.isfinite(slope_prior_mu):
+-            raise ValueError("slope_prior_mu must be finite")
+-        if not np.isfinite(slope_prior_sd) or slope_prior_sd <= 0:
+-            raise ValueError("slope_prior_sd must be finite and positive")
++    slope_prior_mu, slope_prior_sd = _slope_prior_pair(slope_prior_mu, slope_prior_sd)
+ 
+     y = np.asarray(responses)
+     if np.iscomplexobj(y):
+@@ -328,9 +359,18 @@ def fit_bifactor_grm(
+         final_loglik_change=float(res["final_loglik_change"]),
+         best_start=int(res["best_start"]),
+         n_parameters=int(res["n_parameters"]),
++        slope_prior_mu=_optional_float(res["slope_prior_mu"]),
++        slope_prior_sd=_optional_float(res["slope_prior_sd"]),
++        em_objective_trace=np.asarray(res["em_objective_trace"], dtype=np.float64),
+     )
+ 
+ 
++def _optional_float(value: object) -> float | None:
++    """Rust-reported optional prior hyperparameter (``None`` = no prior)."""
++
++    return None if value is None else float(value)  # type: ignore[arg-type]
++
++
+ @dataclass
+ class BifactorOakesSe:
+     """Observed-information standard errors for the bifactor GRM.
+@@ -359,6 +399,8 @@ class BifactorOakesSe:
+     se: np.ndarray | None
+     positive_definite: bool
+     non_pd_reason: str | None
++    slope_prior_mu: float | None = None
++    slope_prior_sd: float | None = None
+ 
+ 
+ def bifactor_oakes_se(
+@@ -372,6 +414,8 @@ def bifactor_oakes_se(
+     q_general: int,
+     q_specific: int,
+     fd_step: float,
++    slope_prior_mu: float | None = None,
++    slope_prior_sd: float | None = None,
+ ) -> BifactorOakesSe:
+     """Observed-information SEs via the Oakes (1999, eq. 6, p. 480) identity
+     at given item parameters (valid at every point, not only the MLE).
+@@ -389,6 +433,18 @@ def bifactor_oakes_se(
+     definite information returns ``positive_definite=False`` with
+     ``non_pd_reason`` and ``None`` SEs (never substituted).
+ 
++    MAP estimates: pass the SAME ``slope_prior_mu`` / ``slope_prior_sd`` the
++    fit used (recorded on ``BifactorGrmFit``). ``information`` is then the
++    negative log-posterior curvature (Oakes observed information plus the
++    analytic lognormal ``|a|`` prior curvature on each slope) and
++    ``vcov``/``se`` its inverse: a posterior-curvature (Laplace) approximation
++    to the POSTERIOR covariance at the mode, not a frequentist sampling
++    covariance of the MAP estimator (Mislevy, R. J. (1986). Bayes modal
++    estimation in item response models. *Psychometrika, 51*(2), 177-195.
++    https://doi.org/10.1007/BF02293979). Omitting the prior is defined only
++    for MML estimates; a likelihood-only information at MAP estimates is not
++    a supported SE.
++
+     Implementation basis: Oakes, D. (1999). Direct calculation of the
+     information matrix via the EM algorithm. *Journal of the Royal
+     Statistical Society Series B: Statistical Methodology, 61*(2), 479-482.
+@@ -421,6 +477,7 @@ def bifactor_oakes_se(
+     if q_specific_int < 1:
+         raise ValueError("q_specific must be >= 1")
+     fd_float = _positive_real_control(fd_step, "fd_step")
++    slope_prior_mu, slope_prior_sd = _slope_prior_pair(slope_prior_mu, slope_prior_sd)
+ 
+     y = np.asarray(responses)
+     if np.iscomplexobj(y):
+@@ -491,6 +548,8 @@ def bifactor_oakes_se(
+         int(q_general_int),
+         int(q_specific_int),
+         float(fd_float),
++        slope_prior_mu,
++        slope_prior_sd,
+     )
+     labels = [str(v) for v in res["labels"]]
+     information = np.asarray(res["information"], dtype=np.float64)
+@@ -512,6 +571,8 @@ def bifactor_oakes_se(
+         se=se,
+         positive_definite=bool(res["positive_definite"]),
+         non_pd_reason=None if reason_raw is None else str(reason_raw),
++        slope_prior_mu=slope_prior_mu,
++        slope_prior_sd=slope_prior_sd,
+     )
+ 
+ 
+diff --git a/python/fast_mlsirm/bifactor_multigroup.py b/python/fast_mlsirm/bifactor_multigroup.py
+index 585b5897..d2dfd01c 100644
+--- a/python/fast_mlsirm/bifactor_multigroup.py
++++ b/python/fast_mlsirm/bifactor_multigroup.py
+@@ -94,6 +94,8 @@ from dataclasses import dataclass
+ 
+ import numpy as np
+ 
++from .bifactor_grm import _optional_float, _slope_prior_pair
++
+ 
+ 
+ def _finite_integer_control(value: object, name: str) -> int:
+@@ -176,6 +178,12 @@ class BifactorMultigroupFit:
+     final_loglik_change: float
+     best_start: int
+     n_parameters: int
++    slope_prior_mu: float | None = None
++    slope_prior_sd: float | None = None
++    # EM objective (MAXIMIZED; unlike FitResult.objective_trace) per E-step: log-likelihood + log slope prior under a prior
++    # (monotone), identical to ``loglik_trace`` without one. ``loglik_trace``
++    # keeps its meaning and may decrease under a prior.
++    em_objective_trace: np.ndarray | None = None
+ 
+ 
+ def fit_bifactor_grm_multigroup(
+@@ -227,6 +235,11 @@ def fit_bifactor_grm_multigroup(
+     per the no-magic-caps rule — upper-bounded only where a real constraint
+     exists); unobserved categories raise; ``max_iter`` exhaustion returns
+     ``converged=False`` instead of substituting values.
++    ``slope_prior_mu`` / ``slope_prior_sd`` (both or neither) request MAP
++    estimation under a lognormal prior on ``|a|`` for every ESTIMATED slope:
++    free items once per group and common (anchored) items once per shared
++    parameter, so the prior also acts under the default ``anchor=None``.
++    Omitted = plain MML; the fitted prior is recorded on the result.
+ 
+     See the module docstring for the model, the paper basis of every
+     non-obvious decision, and the APA 7th references.
+@@ -255,15 +268,7 @@ def fit_bifactor_grm_multigroup(
+     seed_int = _u64_seed(seed)
+     if not isinstance(estimate_specific_vars, bool):
+         raise ValueError("estimate_specific_vars must be a bool")
+-    if (slope_prior_mu is None) != (slope_prior_sd is None):
+-        raise ValueError("slope_prior_mu and slope_prior_sd must be provided together")
+-    if slope_prior_mu is not None:
+-        slope_prior_mu = float(slope_prior_mu)
+-        slope_prior_sd = float(slope_prior_sd)
+-        if not np.isfinite(slope_prior_mu):
+-            raise ValueError("slope_prior_mu must be finite")
+-        if not np.isfinite(slope_prior_sd) or slope_prior_sd <= 0:
+-            raise ValueError("slope_prior_sd must be finite and positive")
++    slope_prior_mu, slope_prior_sd = _slope_prior_pair(slope_prior_mu, slope_prior_sd)
+ 
+     y = np.asarray(responses)
+     if np.iscomplexobj(y):
+@@ -415,4 +420,7 @@ def fit_bifactor_grm_multigroup(
+         final_loglik_change=float(res["final_loglik_change"]),
+         best_start=int(res["best_start"]),
+         n_parameters=int(res["n_parameters"]),
++        slope_prior_mu=_optional_float(res["slope_prior_mu"]),
++        slope_prior_sd=_optional_float(res["slope_prior_sd"]),
++        em_objective_trace=np.asarray(res["em_objective_trace"], dtype=np.float64),
+     )
+diff --git a/tests/test_bifactor_slope_prior.py b/tests/test_bifactor_slope_prior.py
+new file mode 100644
+index 00000000..4844bda8
+--- /dev/null
++++ b/tests/test_bifactor_slope_prior.py
+@@ -0,0 +1,153 @@
++"""Python surface of the opt-in lognormal ``|a|`` bifactor slope prior.
++
++FORWARDING-ONLY evidence: a recording fake core stands in for Rust, so
++nothing here exercises native MAP numerics. The numerical prior (MAP M-step,
++multigroup common/anchored items, Oakes MAP curvature) is tested in Rust (``tests/unit/bifactor_grm_tests.rs`` and
++``tests/unit/bifactor_oakes_tests.rs``). These tests pin the Python
++contract with a recording fake core: validation before dispatch, exact
++kwarg forwarding (``None`` stays ``None`` = unchanged MML call), and prior
++provenance on every result.
++"""
++
++from __future__ import annotations
++
++import numpy as np
++import pytest
++
++from fast_mlsirm import bifactor_grm, bifactor_multigroup, fitstats
++
++N_ITEMS, N_CAT, N_SPECIFIC = 4, 3, 2
++SMAP = np.array([0, 0, 1, 1])
++RESPONSES = np.array(
++    [[0, 1, 2, 0], [1, 2, 0, 1], [2, 0, 1, 2], [0, 2, 1, 0], [1, 1, 1, 1], [2, 2, 2, 2]]
++)
++N_PERSONS = RESPONSES.shape[0]
++CONTROLS = dict(q_general=7, q_specific=7, max_iter=5, tol=1e-4, n_starts=1, seed=1)
++
++
++class RecordingCore:
++    def __init__(self) -> None:
++        self.calls: dict[str, tuple] = {}
++
++    def _fit(self, n_groups: int) -> dict:
++        return {
++            "a_general": np.ones(n_groups * N_ITEMS),
++            "a_specific": np.ones(n_groups * N_ITEMS),
++            "threshold": np.tile([0.5, -0.5], n_groups * N_ITEMS),
++            "theta_g_eap": np.zeros(N_PERSONS),
++            "theta_g_sd": np.ones(N_PERSONS),
++            "category_counts": np.ones(N_ITEMS * N_CAT, dtype=np.int64),
++            "group_category_counts": np.ones(n_groups * N_ITEMS * N_CAT, dtype=np.int64),
++            "general_mean": np.zeros(n_groups),
++            "general_sd": np.ones(n_groups),
++            "specific_sd": np.ones(n_groups * N_SPECIFIC),
++            "loglik_trace": np.array([-1.0]),
++            "em_objective_trace": np.array([-1.5]),
++            "n_iter": 1,
++            "converged": True,
++            "termination_reason": "tolerance_met",
++            "final_loglik_change": 0.0,
++            "best_start": 0,
++            "n_parameters": 1,
++        }
++
++    def _with_prior(self, res: dict, args: tuple) -> dict:
++        # The Rust core echoes the fitted prior; provenance is read from it.
++        res["slope_prior_mu"], res["slope_prior_sd"] = args[-2:]
++        return res
++
++    def fit_bifactor_grm(self, *args):
++        self.calls["fit_bifactor_grm"] = args
++        return self._with_prior(self._fit(1), args)
++
++    def fit_bifactor_grm_multigroup(self, *args):
++        self.calls["fit_bifactor_grm_multigroup"] = args
++        return self._with_prior(self._fit(args[3]), args)
++
++    def bifactor_oakes_se(self, *args):
++        self.calls["bifactor_oakes_se"] = args
++        return {
++            "labels": ["a_general:0"],
++            "information": [[1.0]],
++            "vcov": [[1.0]],
++            "se": [1.0],
++            "positive_definite": True,
++            "non_pd_reason": None,
++        }
++
++
++@pytest.fixture
++def core(monkeypatch: pytest.MonkeyPatch) -> RecordingCore:
++    fake = RecordingCore()
++    monkeypatch.setattr(fitstats, "_core_module", lambda: fake)
++    return fake
++
++
++def _fit(**prior):
++    return bifactor_grm.fit_bifactor_grm(RESPONSES, SMAP, N_CAT, N_SPECIFIC, **CONTROLS, **prior)
++
++
++def _fit_mg(**prior):
++    group = np.arange(N_PERSONS) % 2
++    return bifactor_multigroup.fit_bifactor_grm_multigroup(
++        RESPONSES, group, SMAP, N_CAT, N_SPECIFIC, **CONTROLS, **prior
++    )
++
++
++def _oakes(**prior):
++    return bifactor_grm.bifactor_oakes_se(
++        np.ones(N_ITEMS),
++        np.ones(N_ITEMS),
++        np.tile([0.5, -0.5], (N_ITEMS, 1)),
++        RESPONSES,
++        SMAP,
++        N_CAT,
++        N_SPECIFIC,
++        7,
++        7,
++        1e-5,
++        **prior,
++    )
++
++
++@pytest.mark.parametrize(
++    ("call", "core_name"),
++    [
++        (_fit, "fit_bifactor_grm"),
++        (_fit_mg, "fit_bifactor_grm_multigroup"),
++        (_oakes, "bifactor_oakes_se"),
++    ],
++)
++def test_prior_kwargs_forward_and_are_recorded(core, call, core_name):
++    mml = call()
++    assert core.calls[core_name][-2:] == (None, None)
++    assert (mml.slope_prior_mu, mml.slope_prior_sd) == (None, None)
++
++    mu = float(np.log(0.8))
++    map_ = call(slope_prior_mu=np.float64(mu), slope_prior_sd=0.5)
++    forwarded = core.calls[core_name][-2:]
++    assert forwarded == (mu, 0.5)
++    assert all(type(v) is float for v in forwarded)
++    assert (map_.slope_prior_mu, map_.slope_prior_sd) == (mu, 0.5)
++    if core_name != "bifactor_oakes_se":
++        np.testing.assert_array_equal(map_.em_objective_trace, [-1.5])
++
++
++@pytest.mark.parametrize("call", [_fit, _fit_mg, _oakes])
++@pytest.mark.parametrize(
++    ("prior", "message"),
++    [
++        ({"slope_prior_mu": 0.0}, "provided together"),
++        ({"slope_prior_sd": 1.0}, "provided together"),
++        ({"slope_prior_mu": float("nan"), "slope_prior_sd": 1.0}, "slope_prior_mu"),
++        ({"slope_prior_mu": 0.0, "slope_prior_sd": 0.0}, "slope_prior_sd"),
++        ({"slope_prior_mu": 0.0, "slope_prior_sd": float("inf")}, "slope_prior_sd"),
++        ({"slope_prior_mu": True, "slope_prior_sd": 1.0}, "slope_prior_mu"),
++        ({"slope_prior_mu": "x", "slope_prior_sd": 1.0}, "real numbers"),
++        ({"slope_prior_mu": object(), "slope_prior_sd": 1.0}, "real numbers"),
++    ],
++)
++def test_invalid_prior_is_rejected_before_core(core, call, prior, message):
++    with pytest.raises(ValueError, match=message):
++        call(**prior)
++    assert core.calls == {}
+diff --git a/tests/unit/bifactor_grm_tests.rs b/tests/unit/bifactor_grm_tests.rs
+index 8460d4fd..e5e9eea6 100644
+--- a/tests/unit/bifactor_grm_tests.rs
++++ b/tests/unit/bifactor_grm_tests.rs
+@@ -24,8 +24,11 @@
+ //! https://doi.org/10.1007/BF02295430
+ 
+ use crate::bifactor_grm::{
+-    bifactor_grm_marginal_loglik, bifactor_grm_marginal_loglik_brute, fit_bifactor_grm,
+-    add_lnorm_abs_slope_prior, BifactorGrmConfig, SlopePrior,
++    add_lnorm_abs_slope_prior, bifactor_grm_marginal_loglik, bifactor_grm_marginal_loglik_brute,
++    checked_em_loglik_change, em_objective_name, fit_bifactor_grm, fit_bifactor_grm_multigroup,
++    gh_rule, lnorm_abs_slope_prior_curvature, run_single_start, slope_prior_neg_log, validate,
++    BifactorGrmConfig, BifactorMultigroupConfig, BifactorMultigroupResult, ItemParams,
++    SlopePrior,
+ };
+ 
+ // ---------------------------------------------------------------------------
+@@ -161,6 +164,371 @@ fn lnorm_abs_slope_prior_keeps_zero_outside_support() {
+     assert_eq!(grad, 0.0);
+ }
+ 
++#[test]
++fn lnorm_abs_slope_prior_curvature_matches_fd_of_gradient() {
++    let (mu, sd) = (0.2, 0.8);
++    // Signed slopes on both sides, including the near-zero domain where the
++    // curvature grows like 1/a^2 (relative FD step keeps a +/- h same-signed).
++    for a in [-1.7, -0.3, -1e-3, 1e-3, 0.4, 2.5] {
++        let h = 1e-6 * f64::abs(a);
++        let grad_at = |x: f64| {
++            let (mut nll, mut g) = (0.0, 0.0);
++            add_lnorm_abs_slope_prior(x, mu, sd, &mut nll, &mut g);
++            g
++        };
++        let fd = (grad_at(a + h) - grad_at(a - h)) / (2.0 * h);
++        let analytic = lnorm_abs_slope_prior_curvature(a, mu, sd);
++        let rel = (analytic - fd).abs() / analytic.abs().max(1.0);
++        assert!(rel < 1e-5, "a={a}: analytic={analytic}, fd={fd}");
++    }
++    assert!(lnorm_abs_slope_prior_curvature(0.0, mu, sd).is_infinite());
++}
++
++/// Mean distance of every estimated slope's `ln|a|` from `mu`.
++fn mean_log_slope_gap(a_g: &[f64], a_s: &[f64], mu: f64) -> f64 {
++    let all: Vec<f64> = a_g.iter().chain(a_s.iter()).copied().collect();
++    all.iter().map(|a| (a.abs().ln() - mu).abs()).sum::<f64>() / all.len() as f64
++}
++
++fn prior_fit_config(slope_prior: SlopePrior) -> BifactorGrmConfig {
++    BifactorGrmConfig {
++        max_iter: 60,
++        newton_iter: 10,
++        slope_prior,
++        ..valid_config()
++    }
++}
++
++#[test]
++fn real_prior_fit_pulls_slopes_toward_prior_and_records_provenance() {
++    let (y, n_persons) = tiny_data();
++    let fit = |prior| {
++        fit_bifactor_grm(
++            &y,
++            None,
++            &TINY_SPECIFIC_MAP,
++            n_persons,
++            TINY_N_ITEMS,
++            TINY_N_SPECIFIC,
++            TINY_N_CAT,
++            &prior_fit_config(prior),
++        )
++        .expect("tiny fit must run")
++    };
++    let mu = 0.5f64.ln();
++    let prior = SlopePrior::Lognormal { mu, sd: 0.1 };
++    let mml = fit(SlopePrior::None);
++    let map = fit(prior);
++    assert_eq!(mml.slope_prior, SlopePrior::None);
++    assert_eq!(map.slope_prior, prior);
++    let gap_mml = mean_log_slope_gap(&mml.a_general, &mml.a_specific, mu);
++    let gap_map = mean_log_slope_gap(&map.a_general, &map.a_specific, mu);
++    assert!(
++        gap_map < gap_mml && gap_map < 0.25,
++        "MAP slopes must sit near exp(mu): gap_map={gap_map}, gap_mml={gap_mml}"
++    );
++}
++
++fn tiny_multigroup(n_groups: usize, slope_prior: SlopePrior) -> BifactorMultigroupResult {
++    let (y, n_persons) = tiny_data();
++    let group_id: Vec<usize> = (0..n_persons).map(|p| p % n_groups).collect();
++    fit_mg(&y, &group_id, n_groups, &TINY_SPECIFIC_MAP, None, slope_prior)
++        .expect("tiny multigroup fit must run")
++}
++
++fn fit_mg(
++    y: &[usize],
++    group_id: &[usize],
++    n_groups: usize,
++    specific_map: &[i32],
++    anchor: Option<&[bool]>,
++    slope_prior: SlopePrior,
++) -> Result<BifactorMultigroupResult, String> {
++    let base = prior_fit_config(slope_prior);
++    let cfg = BifactorMultigroupConfig {
++        q_general: base.q_general,
++        q_specific: base.q_specific,
++        max_iter: base.max_iter,
++        tol: base.tol,
++        n_starts: base.n_starts,
++        seed: base.seed,
++        newton_iter: base.newton_iter,
++        ridge: base.ridge,
++        slope_prior,
++        ..BifactorMultigroupConfig::default()
++    };
++    let n_items = specific_map.len();
++    fit_bifactor_grm_multigroup(
++        y,
++        None,
++        group_id,
++        n_groups,
++        specific_map,
++        group_id.len(),
++        n_items,
++        TINY_N_SPECIFIC,
++        TINY_N_CAT,
++        anchor,
++        &cfg,
++    )
++}
++
++// Two-group simulated design for native MG prior tests: six items (three per
++// specific, the identified design of the Oakes unit tests), group 1 shifted
++// on the general factor. The 12-person toy data is too small for MG: its MML
++// comparison fit trips the EM likelihood guard (native RED 2026-09-21, run 2),
++// independently of any prior.
++const SIX_SPECIFIC_MAP: [i32; 6] = [0, 0, 0, 1, 1, 1];
++
++struct Lcg(u64);
++
++impl Lcg {
++    fn uniform(&mut self) -> f64 {
++        self.0 = self
++            .0
++            .wrapping_mul(6_364_136_223_846_793_005)
++            .wrapping_add(1_442_695_040_888_963_407);
++        (((self.0 >> 11) as f64) + 0.5) / ((1u64 << 53) as f64)
++    }
++
++    fn standard_normal(&mut self) -> f64 {
++        let u1 = self.uniform().clamp(1e-12, 1.0 - 1e-12);
++        let u2 = self.uniform();
++        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
++    }
++}
++
++/// `P(Y >= k) = logistic(a_G tG + a_S tS + d_k)`, group 1 has `tG ~ N(0.5, 1)`.
++fn simulate_two_groups(n_per_group: usize, seed: u64) -> (Vec<usize>, Vec<usize>) {
++    let a_g = [1.3, 1.1, 0.9, 1.2, 1.0, 0.8];
++    let a_s = [1.0, 0.9, 1.1, 0.8, 1.0, 0.9];
++    let d = [1.2, -0.8, 1.0, -1.0, 1.3, -0.7, 1.1, -0.9, 0.9, -1.1, 1.2, -0.8];
++    let mut rng = Lcg(seed);
++    let (mut y, mut group_id) = (Vec::new(), Vec::new());
++    for g in 0..2 {
++        for _ in 0..n_per_group {
++            let tg = rng.standard_normal() + 0.5 * g as f64;
++            let ts = [rng.standard_normal(), rng.standard_normal()];
++            for i in 0..6 {
++                let base = a_g[i] * tg + a_s[i] * ts[i / 3];
++                let u = rng.uniform();
++                let mut cat = 0usize;
++                for k in 0..2 {
++                    if u < 1.0 / (1.0 + (-(base + d[i * 2 + k])).exp()) {
++                        cat += 1;
++                    } else {
++                        break;
++                    }
++                }
++                y.push(cat);
++            }
++            group_id.push(g);
++        }
++    }
++    (y, group_id)
++}
++
++fn sim_mg(anchor: Option<&[bool]>, slope_prior: SlopePrior) -> BifactorMultigroupResult {
++    let (y, group_id) = simulate_two_groups(200, 20_260_921);
++    fit_mg(&y, &group_id, 2, &SIX_SPECIFIC_MAP, anchor, slope_prior)
++        .expect("simulated two-group fit must run")
++}
++
++/// Prior far from the generating slopes so MAP visibly moves them.
++const FAR_MU: f64 = -1.2039728043259361; // ln(0.3)
++
++fn far_prior() -> SlopePrior {
++    SlopePrior::Lognormal { mu: FAR_MU, sd: 0.03 }
++}
++
++#[test]
++fn multigroup_prior_acts_on_common_items_under_default_anchor() {
++    // `anchor = None` makes every item common (estimated from pooled
++    // counts). Before the fix the prior was skipped for common items, so it
++    // was a silent no-op here.
++    let mml = sim_mg(None, SlopePrior::None);
++    let map = sim_mg(None, far_prior());
++    assert_eq!(mml.slope_prior, SlopePrior::None);
++    assert_eq!(map.slope_prior, far_prior());
++    let all: Vec<usize> = (0..6).collect();
++    let gap_mml = rows_gap(&mml, 0, &all);
++    let gap_map = rows_gap(&map, 0, &all);
++    assert!(
++        gap_map < 0.5 * gap_mml,
++        "common-item slopes must carry the prior: gap_map={gap_map}, gap_mml={gap_mml}"
++    );
++    // Common items stay identical across groups.
++    assert_eq!(map.a_general[0], map.a_general[1]);
++    assert_eq!(map.a_specific[0], map.a_specific[1]);
++    // Regression (native RED 2026-09-21, run 1): under the prior the observed
++    // log-likelihood legitimately DECREASES while the log posterior ascends;
++    // the old likelihood-only guard rejected such fits.
++    assert!(
++        map.loglik_trace.windows(2).any(|w| w[1] < w[0]),
++        "fixture must exercise a likelihood decrease: {:?}",
++        map.loglik_trace
++    );
++    assert_monotone(&map.em_objective_trace);
++    // No duplicated prior for shared items: every item is common, so the
++    // prior enters once per item (group-0 row), not once per group.
++    let gap = map.em_objective_trace.last().unwrap() - map.loglik_trace.last().unwrap();
++    let expected = -slope_prior_neg_log(far_prior(), &item_rows(&map, 0, &all));
++    assert!((gap - expected).abs() < 1e-9, "gap={gap}, expected={expected}");
++}
++
++#[test]
++fn multigroup_prior_acts_on_common_and_free_items_with_partial_anchor() {
++    // Items 0,1,3,4 common (pooled, shared); items 2 and 5 free per group.
++    let anchor = [true, true, false, true, true, false];
++    let (common, free) = ([0usize, 1, 3, 4], [2usize, 5]);
++    let mml = sim_mg(Some(&anchor), SlopePrior::None);
++    let map = sim_mg(Some(&anchor), far_prior());
++    for (label, items) in [("common", &common[..]), ("free", &free[..])] {
++        for g in 0..2 {
++            let (gap_mml, gap_map) = (rows_gap(&mml, g, items), rows_gap(&map, g, items));
++            assert!(
++                gap_map < 0.5 * gap_mml,
++                "{label} items, group {g}: gap_map={gap_map}, gap_mml={gap_mml}"
++            );
++        }
++    }
++    for &i in &common {
++        assert_eq!(map.a_general[0][i], map.a_general[1][i], "common item {i} shared");
++    }
++    assert_monotone(&map.em_objective_trace);
++    // Common items enter the prior once; free items once per group.
++    let mut rows = item_rows(&map, 0, &[0, 1, 2, 3, 4, 5]);
++    rows.extend(item_rows(&map, 1, &free));
++    let gap = map.em_objective_trace.last().unwrap() - map.loglik_trace.last().unwrap();
++    let expected = -slope_prior_neg_log(far_prior(), &rows);
++    assert!((gap - expected).abs() < 1e-9, "gap={gap}, expected={expected}");
++}
++
++fn rows_gap(r: &BifactorMultigroupResult, g: usize, items: &[usize]) -> f64 {
++    let a_g: Vec<f64> = items.iter().map(|&i| r.a_general[g][i]).collect();
++    let a_s: Vec<f64> = items.iter().map(|&i| r.a_specific[g][i]).collect();
++    mean_log_slope_gap(&a_g, &a_s, FAR_MU)
++}
++
++fn assert_monotone(trace: &[f64]) {
++    for w in trace.windows(2) {
++        assert!(w[1] >= w[0] - 1e-9 * (1.0 + w[0].abs()), "objective decreased: {trace:?}");
++    }
++}
++
++/// Slope rows of group `g` (|a| is all the prior sees, so reflection
++/// canonicalization of the reported signs is irrelevant).
++fn item_rows(r: &BifactorMultigroupResult, g: usize, items: &[usize]) -> Vec<ItemParams> {
++    items
++        .iter()
++        .map(|&i| ItemParams {
++            a_g: r.a_general[g][i],
++            a_s: Some(r.a_specific[g][i]),
++            d: Vec::new(),
++        })
++        .collect()
++}
++
++#[test]
++fn em_guard_rejects_a_real_log_posterior_decrease() {
++    let prior = SlopePrior::Lognormal { mu: 0.0, sd: 1.0 };
++    let err = checked_em_loglik_change(-10.0, Some(-9.0), 3, em_objective_name(prior))
++        .expect_err("a posterior decrease must be rejected");
++    assert!(err.contains("log posterior") && err.contains("decreased"), "{err}");
++    assert_eq!(
++        checked_em_loglik_change(-9.0, Some(-10.0), 3, em_objective_name(prior)),
++        Ok(Some(1.0))
++    );
++}
++
++#[test]
++fn no_prior_objective_trace_is_the_loglik_trace_bit_for_bit() {
++    let (y, n_persons) = tiny_data();
++    let single = fit_bifactor_grm(
++        &y,
++        None,
++        &TINY_SPECIFIC_MAP,
++        n_persons,
++        TINY_N_ITEMS,
++        TINY_N_SPECIFIC,
++        TINY_N_CAT,
++        &prior_fit_config(SlopePrior::None),
++    )
++    .expect("tiny fit must run");
++    assert_eq!(single.em_objective_trace, single.loglik_trace);
++    let mg = sim_mg(None, SlopePrior::None);
++    assert_eq!(mg.em_objective_trace, mg.loglik_trace);
++}
++
++#[test]
++fn multistart_ranks_starts_by_log_posterior() {
++    let (y, n_persons) = tiny_data();
++    let prior = SlopePrior::Lognormal { mu: 0.5f64.ln(), sd: 0.3 };
++    let cfg = BifactorGrmConfig {
++        n_starts: 3,
++        ..prior_fit_config(prior)
++    };
++    let fit = fit_bifactor_grm(
++        &y,
++        None,
++        &TINY_SPECIFIC_MAP,
++        n_persons,
++        TINY_N_ITEMS,
++        TINY_N_SPECIFIC,
++        TINY_N_CAT,
++        &cfg,
++    )
++    .expect("multi-start prior fit must run");
++    let v = validate(
++        &y,
++        None,
++        &TINY_SPECIFIC_MAP,
++        n_persons,
++        TINY_N_ITEMS,
++        TINY_N_SPECIFIC,
++        TINY_N_CAT,
++        &cfg,
++    )
++    .expect("valid tiny problem");
++    let (tg, wg) = gh_rule(cfg.q_general).expect("rule");
++    let (ts, ws) = gh_rule(cfg.q_specific).expect("rule");
++    let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
++    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
++    let finals: Vec<(f64, f64)> = (0..cfg.n_starts)
++        .map(|start| {
++            let o = run_single_start(
++                &v, &y, None, &cfg, tg, ts, &log_wg, &log_ws, tg.len(), ts.len(), start,
++            )
++            .expect("start runs");
++            (*o.em_objective_trace.last().unwrap(), *o.loglik_trace.last().unwrap())
++        })
++        .collect();
++    let best_objective = finals.iter().map(|f| f.0).fold(f64::NEG_INFINITY, f64::max);
++    assert_eq!(finals[fit.best_start].0, best_objective, "starts: {finals:?}");
++    assert_eq!(*fit.em_objective_trace.last().unwrap(), best_objective);
++}
++
++#[test]
++fn multigroup_single_group_prior_matches_single_group_fit() {
++    let prior = SlopePrior::Lognormal { mu: 0.5f64.ln(), sd: 0.1 };
++    let (y, n_persons) = tiny_data();
++    let single = fit_bifactor_grm(
++        &y,
++        None,
++        &TINY_SPECIFIC_MAP,
++        n_persons,
++        TINY_N_ITEMS,
++        TINY_N_SPECIFIC,
++        TINY_N_CAT,
++        &prior_fit_config(prior),
++    )
++    .expect("tiny fit must run");
++    let mg = tiny_multigroup(1, prior);
++    assert_eq!(mg.a_general[0], single.a_general);
++    assert_eq!(mg.a_specific[0], single.a_specific);
++    assert_eq!(mg.slope_prior, prior);
++}
++
+ #[test]
+ fn slope_prior_rejects_invalid_hyperparameters() {
+     assert!(SlopePrior::Lognormal { mu: f64::NAN, sd: 1.0 }
+diff --git a/tests/unit/bifactor_oakes_tests.rs b/tests/unit/bifactor_oakes_tests.rs
+index 4ed29ed7..56c24fa0 100644
+--- a/tests/unit/bifactor_oakes_tests.rs
++++ b/tests/unit/bifactor_oakes_tests.rs
+@@ -77,9 +77,117 @@ fn tiny_oakes_config() -> BifactorOakesConfig {
+         q_general: 7,
+         q_specific: 7,
+         fd_step: 1e-5,
++        slope_prior: crate::bifactor_grm::SlopePrior::None,
+     }
+ }
+ 
++#[test]
++fn map_information_adds_exact_prior_curvature_on_slopes_only() {
++    // MAP SE definition: information = Oakes observed information + the
++    // analytic lognormal |a| prior curvature on each slope diagonal; the
++    // threshold block and every off-diagonal entry are unchanged.
++    let (a_g, a_s, thresholds) = tiny_params();
++    let (y, n_persons) = tiny_data();
++    let run = |slope_prior| {
++        let cfg = BifactorOakesConfig {
++            slope_prior,
++            ..tiny_oakes_config()
++        };
++        bifactor_oakes_se(
++            &a_g,
++            &a_s,
++            &thresholds,
++            &y,
++            None,
++            &TINY_SPECIFIC_MAP,
++            n_persons,
++            TINY_N_ITEMS,
++            TINY_N_SPECIFIC,
++            TINY_N_CAT,
++            &cfg,
++        )
++        .expect("tiny Oakes assembly must succeed")
++    };
++    let (mu, sd) = (0.1, 0.5);
++    let mle = run(crate::bifactor_grm::SlopePrior::None);
++    let map = run(crate::bifactor_grm::SlopePrior::Lognormal { mu, sd });
++    let packed = pack_tiny(&a_g, &a_s, &thresholds);
++    let k = mle.labels.len();
++    assert_eq!(mle.labels, map.labels);
++    for r in 0..k {
++        for c in 0..k {
++            let expected = if r == c && mle.labels[r].starts_with("a_") {
++                mle.information[r * k + c]
++                    + crate::bifactor_grm::lnorm_abs_slope_prior_curvature(packed[r], mu, sd)
++            } else {
++                mle.information[r * k + c]
++            };
++            assert_eq!(map.information[r * k + c], expected, "entry ({r}, {c})");
++        }
++    }
++}
++
++#[test]
++fn map_information_non_pd_and_non_finite_are_reported_not_substituted() {
++    let (a_g, a_s, thresholds) = tiny_params();
++    let (y, n_persons) = tiny_data();
++    let run = |a_general: &[f64], slope_prior| {
++        let cfg = BifactorOakesConfig {
++            slope_prior,
++            ..tiny_oakes_config()
++        };
++        bifactor_oakes_se(
++            a_general,
++            &a_s,
++            &thresholds,
++            &y,
++            None,
++            &TINY_SPECIFIC_MAP,
++            n_persons,
++            TINY_N_ITEMS,
++            TINY_N_SPECIFIC,
++            TINY_N_CAT,
++            &cfg,
++        )
++        .expect("assembly reports, never errors, on curvature failure")
++    };
++    // mu far below ln|a| makes the prior curvature strongly negative.
++    let neg = run(&a_g, crate::bifactor_grm::SlopePrior::Lognormal { mu: -50.0, sd: 1.0 });
++    assert!(!neg.positive_definite && neg.vcov.is_none() && neg.se.is_none());
++    assert!(neg.non_pd_reason.is_some());
++    // a = 0 is outside the prior's support: non-finite, reported.
++    let mut at_zero = a_g.clone();
++    at_zero[0] = 0.0;
++    let zero = run(&at_zero, crate::bifactor_grm::SlopePrior::Lognormal { mu: 0.0, sd: 1.0 });
++    assert!(!zero.positive_definite && zero.se.is_none());
++    assert!(zero.non_pd_reason.expect("reason").contains("non-finite"));
++}
++
++#[test]
++fn map_information_rejects_invalid_prior() {
++    let (a_g, a_s, thresholds) = tiny_params();
++    let (y, n_persons) = tiny_data();
++    let cfg = BifactorOakesConfig {
++        slope_prior: crate::bifactor_grm::SlopePrior::Lognormal { mu: 0.0, sd: 0.0 },
++        ..tiny_oakes_config()
++    };
++    let err = bifactor_oakes_se(
++        &a_g,
++        &a_s,
++        &thresholds,
++        &y,
++        None,
++        &TINY_SPECIFIC_MAP,
++        n_persons,
++        TINY_N_ITEMS,
++        TINY_N_SPECIFIC,
++        TINY_N_CAT,
++        &cfg,
++    )
++    .expect_err("sd = 0 must be a loud error");
++    assert!(err.contains("slope_prior_sd"), "{err}");
++}
++
+ /// Pack `[a_G, a_S, d..]` per item in the assembly's free-vector order.
+ fn pack_tiny(a_g: &[f64], a_s: &[f64], thresholds: &[f64]) -> Vec<f64> {
+     let m1 = TINY_N_CAT - 1;
+@@ -690,6 +798,7 @@ fn rejects_non_positive_fd_steps() {
+             q_general: 7,
+             q_specific: 7,
+             fd_step,
++            slope_prior: crate::bifactor_grm::SlopePrior::None,
+         };
+         let err = Stage1Provider::new(
+             &y,

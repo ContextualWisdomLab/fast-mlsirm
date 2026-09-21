@@ -1,0 +1,12 @@
+    Checking mlsirm-core v0.11.4 (/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-ac-slope-prior/crates/mlsirm-core)
+warning: function `gh_rule_unidim` is never used
+   --> /Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-ac-slope-prior/crates/mlsirm-core/src/quadrature.rs:911:15
+    |
+911 | pub(crate) fn gh_rule_unidim(q: usize) -> Option<(&'static [f64], &'static [f64])> {
+    |               ^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `mlsirm-core` (lib) generated 1 warning
+    Checking fast-mlsirm-py v0.11.4 (/Users/seonghobae/orca/workspaces/fast-mlsirm/fmls-ac-slope-prior/crates/fast-mlsirm-py)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.51s

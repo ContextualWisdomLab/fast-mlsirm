@@ -1,0 +1,95 @@
+diff --git a/crates/mlsirm-core/src/bifactor_grm.rs b/crates/mlsirm-core/src/bifactor_grm.rs
+index ca97c4f20..4593dc660 100644
+--- a/crates/mlsirm-core/src/bifactor_grm.rs
++++ b/crates/mlsirm-core/src/bifactor_grm.rs
+@@ -57,9 +57,11 @@
+ //! `O(Q_G * Q_S^S * n_items)`. The M-step is a per-item finite-difference-
+ //! Hessian Newton over `[a_G, a_S?, d_1..d_{K-1}]`, byte-for-byte the ascent
+ //! of `grm::fit_grm`'s item step (ridge = Hessian conditioning only, NOT a
+-//! prior; backtracking line search REJECTS non-finite objectives, which is
+-//! exactly how the ordered-threshold constraint is maintained WITHOUT an
+-//! explicit reparametrization — see `grm.rs`).
++//! parameter prior; an optional caller-supplied lognormal MAP prior on
++//! `|a|` may be layered on top — see [`SlopePrior`]; backtracking line
++//! search REJECTS non-finite objectives, which is exactly how the ordered-
++//! threshold constraint is maintained WITHOUT an explicit reparametrization
++//! — see `grm.rs`).
+ //!
+ //! # Identification and reflection
+ //!
+@@ -146,6 +148,66 @@ use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
+ // real-valued controls, and checked arithmetic that turns size overflow
+ // into `Err` instead of a panic.
+ 
++/// Optional MAP prior on free item slopes for bifactor GRM M-steps.
++///
++/// `None` is plain MML (no slope prior). `Lognormal { mu, sd }` places a
++/// lognormal density on `|a|` for every free general and specific slope
++/// (`log|a| ~ N(mu, sd^2)`), so reverse-keyed unconstrained slopes keep their
++/// sign while the prior regularizes magnitude. Threshold intercepts are
++/// never penalized. Numeric `(mu, sd)` are caller-owned: this crate does not
++/// ship research-specific default values.
++///
++/// Basis: Chalmers, R. P. (2012). mirt: A multidimensional item response
++/// theory package for the R environment. *Journal of Statistical Software,
++/// 48*(6). https://doi.org/10.18637/jss.v048.i06 (lognormal discrimination
++/// priors via `priorType = "lnorm"`); applied here to `|a|` so the crate's
++/// unconstrained-slope contract (#1879) remains intact.
++#[derive(Clone, Copy, Debug, Default, PartialEq)]
++pub enum SlopePrior {
++    /// No slope prior (default MML).
++    #[default]
++    None,
++    /// Lognormal prior on `|a|` with mean `mu` and SD `sd` on the log scale.
++    Lognormal {
++        /// Mean of `log|a|`.
++        mu: f64,
++        /// SD of `log|a|` (must be finite and `> 0`).
++        sd: f64,
++    },
++}
++
++impl SlopePrior {
++    /// Validate caller-owned prior hyperparameters (loud `Err`, never clamp).
++    pub fn validate(self) -> Result<(), String> {
++        match self {
++            SlopePrior::None => Ok(()),
++            SlopePrior::Lognormal { mu, sd } => {
++                if !mu.is_finite() {
++                    return Err("slope_prior_mu must be finite".into());
++                }
++                if !sd.is_finite() || sd <= 0.0 {
++                    return Err("slope_prior_sd must be finite and positive".into());
++                }
++                Ok(())
++            }
++        }
++    }
++}
++
++/// Add `-log p(|a|)` and its derivative for `a ~` sign-preserving lognormal
++/// on `|a|` (`log|a| ~ N(mu, sd^2)`). Uses `|a| = max(|a|, 1e-12)` only to
++/// keep `ln` finite at the origin; the prior still drives estimates away from
++/// zero. Constants independent of `a` are omitted (Newton compares deltas).
++fn add_lnorm_abs_slope_prior(a: f64, mu: f64, sd: f64, nll: &mut f64, grad_a: &mut f64) {
++    let sign = if a >= 0.0 { 1.0 } else { -1.0 };
++    let u = a.abs().max(1e-12);
++    let z = (u.ln() - mu) / sd;
++    *nll += u.ln() + 0.5 * z * z;
++    // d/du [ln u + 0.5*((ln u - mu)/sd)^2] = 1/u + z/(sd*u) = (1 + z/sd)/u
++    let du = (1.0 + z / sd) / u;
++    *grad_a += sign * du;
++}
++
+ /// Configuration for [`fit_bifactor_grm`]. Every field is caller-owned and
+ /// range-validated; nothing is clamped.
+ #[derive(Clone, Copy, Debug)]
+@@ -164,6 +226,8 @@ pub struct BifactorGrmConfig {
+     pub newton_iter: usize,
+     /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
+     pub ridge: f64,
++    /// Optional MAP prior on free slopes (`|a|`); see [`SlopePrior`].
++    pub slope_prior: SlopePrior,
+     /// Compute device for the E-step sweep: `Cpu` runs the `f64` scalar
+     /// sweep; `Gpu`/`Auto` run the WGSL `f32` person-parallel sweep when a
+     /// compatible adapter exists and fall back to CPU otherwise (`Gpu`
