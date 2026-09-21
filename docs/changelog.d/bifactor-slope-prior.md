@@ -16,5 +16,10 @@
   negative log-posterior curvature (Oakes observed information plus the
   diagonal prior curvature on slopes) and `vcov`/`se` are a posterior-curvature
   (Laplace) approximation to the posterior covariance, not a frequentist
-  sampling covariance (Mislevy, 1986, https://doi.org/10.1007/BF02293979).
+  sampling covariance (Mislevy, 1985, p. 13,
+  https://doi.org/10.1002/j.2330-8516.1985.tb00118.x).
   Omitting the prior remains the MML observed-information SE.
+- Multigroup Oakes SE is explicitly unavailable: it requires the joint
+  information for item and focal-group mean/variance parameters. The
+  single-group entry point rejects multigroup fit objects and stacked rows;
+  extracting one group row cannot supply a valid multigroup SE.

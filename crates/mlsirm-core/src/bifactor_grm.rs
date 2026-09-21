@@ -172,17 +172,21 @@ use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
 /// mode, gradient and curvature equal those of the lognormal on `|a|`
 /// (derivative chain `d|a|/da = sign(a)`). `a = 0` is outside the support
 /// (`-log p = +inf`); it is a barrier, not a clamp. This signed extension is
-/// this crate's, not the cited source's: mirt's `lnorm` applies to positive
-/// slopes.
+/// this crate's, not the cited source's.
 ///
-/// Basis: Chalmers, R. P. (2012). mirt: A multidimensional item response
-/// theory package for the R environment. *Journal of Statistical Software,
-/// 48*(6). https://doi.org/10.18637/jss.v048.i06 (lognormal discrimination
-/// priors via `priorType = "lnorm"`); applied here to `|a|` so the crate's
-/// unconstrained-slope contract (#1879) remains intact. MAP (Bayes modal)
-/// item estimation: Mislevy, R. J. (1986). Bayes modal estimation in item
-/// response models. *Psychometrika, 51*(2), 177-195.
-/// https://doi.org/10.1007/BF02293979
+/// Basis: Chalmers (2012, p. 14) demonstrates a MAP prior in a bifactor
+/// calibration; Mislevy (1985, p. 13, following Equation 3.9) gives the
+/// prior-augmented EM score equations. Neither source specifies this
+/// lognormal density on signed `|a|`: that distribution and its derivatives
+/// above are this crate's extension, verified by finite differences.
+///
+/// References (APA 7th ed.):
+/// Chalmers, R. P. (2012). mirt: A multidimensional item response theory
+/// package for the R environment. *Journal of Statistical Software, 48*(6),
+/// 1-29. https://doi.org/10.18637/jss.v048.i06
+/// Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+/// (Research Report RR-85-33). Educational Testing Service.
+/// https://doi.org/10.1002/j.2330-8516.1985.tb00118.x
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum SlopePrior {
     /// No slope prior (default MML).

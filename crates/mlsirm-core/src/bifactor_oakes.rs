@@ -43,7 +43,7 @@
 //! # MAP estimates (optional slope prior)
 //!
 //! For estimates fitted under a [`SlopePrior::Lognormal`] (MAP / Bayes modal
-//! estimation; Mislevy, 1986), pass the SAME prior in
+//! estimation; Mislevy, 1985, p. 13), pass the SAME prior in
 //! [`BifactorOakesConfig::slope_prior`]. The returned `information` is then
 //! the curvature of the negative log POSTERIOR,
 //! `-d^2 [l(xi) + log p(xi)] / d xi d xi'` — the Oakes observed information
@@ -72,21 +72,21 @@
 //! `(1/sd^2 - 1 - z/sd)/a^2`; it can be negative (the lognormal is not
 //! log-concave), and a non-PD or non-finite result (e.g. `a = 0`) is
 //! reported through `positive_definite` / `non_pd_reason`, never
-//! substituted. Mislevy (1986) is cited for Bayes modal (MAP) item
+//! substituted. Mislevy (1985, p. 13) is cited for Bayes modal (MAP) item
 //! estimation; the implemented formula is verified by unit tests, not by the
 //! citation.
 //!
-//! # Free parameters and multigroup extension
+//! # Free parameters and multigroup limitation
 //!
 //! The free vector is per-item `[a_G, a_S?, d_1..d_{K-1}]` (slopes
 //! unconstrained; thresholds strictly decreasing). Population parameters are
 //! fixed by identification (orthogonal `N(0, 1)` factors; Gibbons et al.,
 //! 2007, "Model" section), so the vcov is conditional on them. The assembly
-//! is written against the [`PosteriorProvider`] trait: stage 1 fills
-//! expected counts from the single-group reduced E-step; the stage-2
-//! multigroup calibration reuses the same assembly with group-specific
-//! E-steps sharing this item-parameter packing (group means/variances stay
-//! conditional, held at their MLE).
+//! is written against the [`PosteriorProvider`] trait and currently fills
+//! expected counts from the single-group reduced E-step. Multigroup Oakes
+//! SEs are unavailable: a valid multigroup fit needs joint information for
+//! shared/free item parameters and focal-group mean/variance parameters,
+//! including cross-information. A single group row cannot supply it.
 //!
 //! # Failure reporting
 //!
@@ -108,8 +108,9 @@
 //! Psychological Measurement, 31*(1), 4-19.
 //! https://doi.org/10.1177/0146621606289485
 //!
-//! Mislevy, R. J. (1986). Bayes modal estimation in item response models.
-//! *Psychometrika, 51*(2), 177-195. https://doi.org/10.1007/BF02293979
+//! Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+//! (Research Report RR-85-33). Educational Testing Service.
+//! https://doi.org/10.1002/j.2330-8516.1985.tb00118.x
 
 use crate::bifactor_grm::{
     check_param_shapes, e_step, fill_logprob_tables, gh_rule, lnorm_abs_slope_prior_curvature,

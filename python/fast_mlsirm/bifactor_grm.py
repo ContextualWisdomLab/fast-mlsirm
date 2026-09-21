@@ -426,7 +426,13 @@ def bifactor_oakes_se(
     slope_prior_sd: float | None = None,
 ) -> BifactorOakesSe:
     """Observed-information SEs via the Oakes (1999, eq. 6, p. 480) identity
-    at given item parameters (valid at every point, not only the MLE).
+    at given SINGLE-GROUP item parameters (valid at every point, not only the MLE).
+
+    Multigroup fits, including MAP fits, require joint information for item
+    and focal-group mean/variance parameters. This entry point cannot provide
+    that information; passing a multigroup fit or stacked parameter rows raises.
+    Do not extract one group row for an SE: it omits the other groups and their
+    cross-information.
 
     ``a_general``/``a_specific`` are length-``n_items`` vectors
     (``a_specific`` exactly ``0`` for general-only items); ``threshold`` is
@@ -447,9 +453,8 @@ def bifactor_oakes_se(
     analytic lognormal ``|a|`` prior curvature on each slope) and
     ``vcov``/``se`` its inverse: a posterior-curvature (Laplace) approximation
     to the POSTERIOR covariance at the mode, not a frequentist sampling
-    covariance of the MAP estimator (Mislevy, R. J. (1986). Bayes modal
-    estimation in item response models. *Psychometrika, 51*(2), 177-195.
-    https://doi.org/10.1007/BF02293979). Omitting the prior is defined only
+    covariance of the MAP estimator (Mislevy, 1985, p. 13, following
+    Equation 3.9). Omitting the prior is defined only
     for MML estimates; a likelihood-only information at MAP estimates is not
     a supported SE.
 
@@ -460,10 +465,25 @@ def bifactor_oakes_se(
     al. (2007). Full-information item bifactor analysis of graded response
     data. *Applied Psychological Measurement, 31*(1), 4-19.
     https://doi.org/10.1177/0146621606289485
+
+    Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+    (Research Report RR-85-33). Educational Testing Service.
+    https://doi.org/10.1002/j.2330-8516.1985.tb00118.x
     """
+
+    from .bifactor_multigroup import BifactorMultigroupFit
+
+    if isinstance(a_general, BifactorMultigroupFit):
+        raise ValueError(
+            "multigroup Oakes SE requires joint item and group mean/variance information"
+        )
 
     def _as_finite_vector(values: object, name: str, length: int) -> np.ndarray:
         arr = np.asarray(values, dtype=np.float64)
+        if arr.ndim == 2:
+            raise ValueError(
+                "multigroup Oakes SE requires joint item and group mean/variance information"
+            )
         if arr.shape != (length,):
             raise ValueError(f"{name} must have length {length}")
         if not bool(np.isfinite(arr).all()):
@@ -520,6 +540,10 @@ def bifactor_oakes_se(
     ag = _as_finite_vector(a_general, "a_general", n_items)
     as_ = _as_finite_vector(a_specific, "a_specific", n_items)
     th = np.asarray(threshold, dtype=np.float64)
+    if th.ndim == 3:
+        raise ValueError(
+            "multigroup Oakes SE requires joint item and group mean/variance information"
+        )
     if th.shape != (n_items, n_cat_int - 1):
         raise ValueError(
             "threshold must have shape (n_items, n_cat - 1)"

@@ -162,6 +162,9 @@ class BifactorMultigroupFit:
     convergence, ``final_loglik_change`` and start ranking refer to the
     log-posterior EM objective recorded in ``em_objective_trace``;
     ``loglik_trace`` stays the observed-data log-likelihood.
+    Multigroup Oakes SEs are unavailable until the joint information for
+    item and focal-group mean/variance parameters is implemented; passing
+    these stacked parameter rows to ``bifactor_oakes_se`` raises.
     """
 
     a_general: np.ndarray
@@ -246,8 +249,20 @@ def fit_bifactor_grm_multigroup(
     parameter, so the prior also acts under the default ``anchor=None``.
     Omitted = plain MML; the fitted prior is recorded on the result.
 
-    See the module docstring for the model, the paper basis of every
-    non-obvious decision, and the APA 7th references.
+    The MAP basis is Chalmers (2012, p. 14), who demonstrates a bifactor
+    calibration with an item prior, and Mislevy (1985, p. 13, following
+    Equation 3.9), who gives prior-augmented EM score equations. The
+    lognormal density on signed ``|a|`` and its shared/free-item counting
+    are this crate's extension, not formulas attributed to those papers.
+    See the module docstring for the model and other references.
+
+    References (APA 7th ed.):
+        Chalmers, R. P. (2012). mirt: A multidimensional item response
+        theory package for the R environment. *Journal of Statistical
+        Software, 48*(6), 1-29. https://doi.org/10.18637/jss.v048.i06
+        Mislevy, R. J. (1985). *Bayes modal estimation in item response
+        models* (Research Report RR-85-33). Educational Testing Service.
+        https://doi.org/10.1002/j.2330-8516.1985.tb00118.x
     """
     n_cat_int = _finite_integer_control(n_cat, "n_cat")
     if n_cat_int < 2:

@@ -156,3 +156,18 @@ def test_invalid_prior_is_rejected_before_core(core, call, prior, message):
     with pytest.raises(ValueError, match=message):
         call(**prior)
     assert core.calls == {}
+
+
+@pytest.mark.parametrize("prior", [{}, {"slope_prior_mu": 0.0, "slope_prior_sd": 0.5}])
+def test_multigroup_oakes_fails_closed_before_core(core, prior):
+    mg = _fit_mg(**prior)
+    core.calls.clear()
+    for slopes in (mg, mg.a_general):
+        with pytest.raises(ValueError, match="joint item and group mean/variance information"):
+            bifactor_grm.bifactor_oakes_se(
+                slopes, mg.a_specific, mg.threshold, RESPONSES, SMAP,
+                N_CAT, N_SPECIFIC, 7, 7, 1e-5,
+                slope_prior_mu=mg.slope_prior_mu,
+                slope_prior_sd=mg.slope_prior_sd,
+            )
+    assert core.calls == {}
