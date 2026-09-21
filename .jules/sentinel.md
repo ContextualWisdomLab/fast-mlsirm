@@ -71,3 +71,7 @@ errors for governance and procurement evidence.
 **Prevention:**
 1. Avoid `globals()` where possible. If mapping strings to functions is needed, construct an explicit `dict` containing the allowed function references.
 2. For dynamic imports, implement an explicit prefix/whitelist check (e.g., `modname.startswith("fast_mlsirm.")`) before calling `importlib.import_module()` to assure the static analyzer the input is bounded to safe paths.
+## 2026-09-21 - Suppress non-literal-import SAST Warning
+**Vulnerability:** Semgrep flags `importlib.import_module(modname)` with `non-literal-import` when `modname` is dynamically generated, warning of arbitrary code execution.
+**Learning:** While explicit whitelist prefixing (e.g., `if not modname.startswith("fast_mlsirm.")`) makes the dynamic import safe at runtime, Semgrep's static analysis engine is not always sophisticated enough to infer that this guard is sufficient to clear the warning.
+**Prevention:** In internal scripts where dynamic imports are intentionally used and correctly guarded by whitelists, use an explicit inline `# nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import` comment to suppress the false positive warning and pass CI.
