@@ -178,6 +178,109 @@ class BifactorMultigroupFit:
     n_parameters: int
 
 
+def bifactor_multigroup_oakes_se(
+    fit: BifactorMultigroupFit,
+    responses: np.ndarray,
+    group: np.ndarray,
+    specific_map: np.ndarray,
+    anchor_mask: np.ndarray | None,
+    *,
+    q_general: int,
+    q_specific: int,
+    fd_step: float,
+    estimate_specific_vars: bool = False,
+):
+    """Joint ML Oakes SEs for a fitted multigroup bifactor GRM.
+
+    Labels are item-major: common item `a_general:i, a_specific:i?, d:i:k`
+    once; free item `a_general:g:i, a_specific:g:i?, d:g:i:k` by group.
+    Then focal groups in order have `general_mean:g, general_var:g` and,
+    when estimated, `specific_var:g:s`. The reference distribution is fixed.
+
+    Basis: Oakes (1999, eq. 6, p. 480); Cai, Yang, and Hansen (2011, p. 230);
+    Gibbons et al. (2007, eqs. 9 and 15, pp. 7 and 9).
+    References (APA 7th): Oakes, D. (1999). Direct calculation of the
+    information matrix via the EM algorithm. *Journal of the Royal
+    Statistical Society: Series B, 61*(2), 479–482.
+    https://doi.org/10.1111/1467-9868.00188
+    Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
+    item bifactor analysis. *Psychological Methods, 16*(3), 221–248.
+    https://doi.org/10.1037/a0023350
+    Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E.,
+    Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., & Stover,
+    A. (2007). Full-information item bifactor analysis of graded response
+    data. *Applied Psychological Measurement, 31*(1), 4–19.
+    https://doi.org/10.1177/0146621606289485
+    """
+    from .bifactor_grm import BifactorOakesSe
+    from .fitstats import _core_module
+
+    qg = _finite_integer_control(q_general, "q_general")
+    qs = _finite_integer_control(q_specific, "q_specific")
+    if qg < 1 or qs < 1:
+        raise ValueError("quadrature counts must be >= 1")
+    step = _positive_real_control(fd_step, "fd_step")
+    if not isinstance(estimate_specific_vars, bool):
+        raise ValueError("estimate_specific_vars must be bool")
+    y = np.asarray(responses)
+    if y.ndim != 2 or y.dtype.kind not in "biuf" or np.isinf(y).any():
+        raise ValueError("responses must be a real persons x items array without infinity")
+    y = y.astype(np.float64, copy=False)
+    n_persons, n_items = y.shape
+    gid = np.asarray(group)
+    if gid.shape != (n_persons,) or gid.dtype.kind not in "iuf" or (
+        not np.isfinite(gid).all()) or np.any(gid != np.floor(gid)):
+        raise ValueError("group must be finite integer labels of length n_persons")
+    gid = gid.astype(np.int64)
+    n_groups = fit.n_groups
+    if np.any(gid < 0) or np.any(gid >= n_groups):
+        raise ValueError("group labels must be in 0..n_groups-1")
+    smap = np.asarray(specific_map)
+    if smap.shape != (n_items,) or smap.dtype.kind not in "iuf" or (
+        not np.isfinite(smap).all()) or np.any(smap != np.floor(smap)):
+        raise ValueError("specific_map must have finite integer entries")
+    smap = smap.astype(np.int64)
+    if np.any(smap < -1) or np.any(smap >= fit.n_specific):
+        raise ValueError("specific_map entries out of range")
+    anchor = np.ones(n_items, dtype=np.bool_) if anchor_mask is None else np.asarray(anchor_mask)
+    if anchor.shape != (n_items,) or anchor.dtype.kind != "b":
+        raise ValueError("anchor_mask must be a boolean vector of length n_items")
+    observed = np.isfinite(y) & (y >= 0)
+    if np.any(observed & ((y != np.floor(y)) | (y >= fit.n_cat))):
+        raise ValueError("observed responses must be integer categories in range")
+    ag = np.asarray(fit.a_general, dtype=np.float64)
+    as_ = np.asarray(fit.a_specific, dtype=np.float64)
+    th = np.asarray(fit.threshold, dtype=np.float64)
+    mu = np.asarray(fit.general_mean, dtype=np.float64)
+    sd = np.asarray(fit.general_sd, dtype=np.float64)
+    ss = np.asarray(fit.specific_sd, dtype=np.float64)
+    if ag.shape != (n_groups, n_items) or as_.shape != ag.shape or (
+        th.shape != (n_groups, n_items, fit.n_cat-1)) or mu.shape != (n_groups,) or (
+        sd.shape != (n_groups,)) or ss.shape != (n_groups, fit.n_specific):
+        raise ValueError("fit parameter shapes do not match responses")
+    if not all(np.isfinite(v).all() for v in (ag, as_, th, mu, sd, ss)):
+        raise ValueError("fit parameters must be finite")
+    core = _core_module()
+    if core is None or not hasattr(core, "bifactor_multigroup_oakes_se"):
+        raise RuntimeError("bifactor_multigroup_oakes_se requires the compiled Rust core")
+    result = core.bifactor_multigroup_oakes_se(
+        ag.ravel(), as_.ravel(), th.ravel(), mu, sd, ss.ravel(),
+        np.where(observed, y, 0).astype(np.int64).ravel(), observed.ravel(),
+        gid, smap, anchor, n_persons, n_items, n_groups, fit.n_specific,
+        fit.n_cat, estimate_specific_vars, qg, qs, step,
+    )
+    labels = list(result["labels"])
+    k = len(labels)
+    return BifactorOakesSe(
+        labels=labels,
+        information=np.asarray(result["information"]).reshape(k, k),
+        vcov=None if result["vcov"] is None else np.asarray(result["vcov"]).reshape(k, k),
+        se=None if result["se"] is None else np.asarray(result["se"]),
+        positive_definite=bool(result["positive_definite"]),
+        non_pd_reason=result["non_pd_reason"],
+    )
+
+
 def fit_bifactor_grm_multigroup(
     responses: np.ndarray,
     group: np.ndarray,

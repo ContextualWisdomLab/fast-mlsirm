@@ -1777,7 +1777,7 @@ struct MultiStartOutcome {
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
 #[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
-fn e_step_multigroup(
+pub(crate) fn e_step_multigroup(
     v: &Validated,
     y: &[usize],
     observed: Option<&[bool]>,

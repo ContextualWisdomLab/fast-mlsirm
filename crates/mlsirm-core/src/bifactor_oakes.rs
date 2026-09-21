@@ -607,6 +607,14 @@ pub fn bifactor_oakes_se(
                 * (term_a[r * k + c] + cross[r * k + c] + term_a[c * k + r] + cross[c * k + r]);
         }
     }
+    finish_information(labels, information)
+}
+
+pub(crate) fn finish_information(
+    labels: Vec<String>,
+    information: Vec<f64>,
+) -> Result<BifactorOakesResult, String> {
+    let k = labels.len();
     if information.iter().any(|v| !v.is_finite()) {
         return Ok(BifactorOakesResult {
             labels,
