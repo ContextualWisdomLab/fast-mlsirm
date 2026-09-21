@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2025-05-19 - 스칼라 리덕션 및 거리 계산 시 중간 배열 할당 우회 (Marginal Estimator)
+**Learning:** `np.sum(diff * diff, axis=1)`이나 스칼라 값 축소를 위한 `np.sum(A * B) + np.sum(C * D)` 패턴은 파이썬 내에서 불필요한 중간 배열(2차원 배열 등)을 메모리에 크게 할당하고 복사하는 오버헤드를 발생시킵니다. 특히 `fast_mlsirm/estimators/marginal.py` 내의 M-step과 같이 반복 호출되는 계산 루프에서는 이것이 심각한 성능 병목이 될 수 있습니다.
+**Action:** 요소별로 계산한 후 축소하는 연산에서는 중간 배열 할당을 막기 위해 `np.vdot(A, B)`를 사용하고, 유클리드 거리 계산과 같이 축을 따라 합산하는 경우 `np.einsum("ij,ij->i", diff, diff, optimize=True)`를 사용하여 메모리 효율을 극대화하고 처리 속도를 크게 개선합니다.
