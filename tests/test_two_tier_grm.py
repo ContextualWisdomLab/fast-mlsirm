@@ -90,6 +90,7 @@ def test_identity_primary_identification() -> None:
     fixed = _fit(y, primary_correlation="identity", tol=1e-7)
     estimated = _fit(y, primary_correlation="estimate")
     np.testing.assert_array_equal(fixed.phi, np.eye(N_PRIMARY))
+    assert not np.signbit(fixed.phi).any()
     assert fixed.primary_identification == "orthogonal"
     assert estimated.primary_identification == "correlated"
     assert fixed.n_parameters + N_PRIMARY * (N_PRIMARY - 1) // 2 == estimated.n_parameters

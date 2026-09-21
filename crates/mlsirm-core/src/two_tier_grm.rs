@@ -1628,7 +1628,8 @@ pub fn fit_two_tier_grm(
 
     // Per-dimension reflection canonicalization (module docs): each primary
     // over its loading items (flipping slopes, the EAP column, and the Phi
-    // row/column signs jointly), each specific within its block;
+    // row/column signs jointly only when Phi is estimated), each specific
+    // within its block; fixed Phi remains bit-exact I;
     // thresholds untouched.
     let mut phi_work = phi;
     for d in 0..p {
@@ -1651,10 +1652,12 @@ pub fn fit_two_tier_grm(
             for pp in 0..n_persons {
                 theta_p_eap[pp * p + d] = -theta_p_eap[pp * p + d];
             }
-            for q in 0..p {
-                if q != d {
-                    phi_work[d * p + q] = -phi_work[d * p + q];
-                    phi_work[q * p + d] = -phi_work[q * p + d];
+            if cfg.estimate_primary_correlation {
+                for q in 0..p {
+                    if q != d {
+                        phi_work[d * p + q] = -phi_work[d * p + q];
+                        phi_work[q * p + d] = -phi_work[q * p + d];
+                    }
                 }
             }
         }
