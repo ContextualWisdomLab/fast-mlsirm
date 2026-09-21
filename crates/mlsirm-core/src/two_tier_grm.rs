@@ -1656,11 +1656,20 @@ pub fn fit_two_tier_grm_fipc(
                         &candidate_specific_sd,
                         n_grid,
                     );
+                    let scale_moved_materially = candidate_covariance
+                        .iter()
+                        .zip(&covariance)
+                        .any(|(&new, &old)| (new - old).abs() > 1e-3)
+                        || candidate_specific_sd
+                            .iter()
+                            .zip(&specific_sd)
+                            .any(|(&new, &old)| (new - old).abs() > 1e-3);
                     if scale_ll.is_some_and(|value| {
                         value.is_finite()
                             && value >= ll - acceptance_tolerance
                             && value > fixed_ll
                                 + 32.0 * f64::EPSILON * (1.0 + fixed_ll.abs())
+                            && scale_moved_materially
                     }) {
                         covariance = candidate_covariance;
                         specific_sd = candidate_specific_sd;
