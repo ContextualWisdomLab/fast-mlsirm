@@ -273,31 +273,94 @@ def _workflow_job_body(workflow: str, job_name: str) -> str:
     return "\n".join(job_lines)
 
 
+# Test modules whose skips are capability/opt-in gates evidenced by a
+# dedicated CI job; any allowlist entry for them must name that job.
+CAPABILITY_MODULES = (
+    "tests/test_bifactor_gpu_high_q.py",
+    "tests/test_bifactor_bootstrap_benchmark.py",
+    "tests/test_marginal_parity.py",
+)
+_OWNER_MARKER = "owned by "
+
+
+def _capability_ownership_violations(allowlist: str, ci_workflow: str) -> list[str]:
+    """Return every capability allowlist entry that lacks an executing CI owner.
+
+    An entry is a capability entry when its reason declares ``owned by <job>``,
+    names a GPU/``STAGE5_HIGH_Q`` gate, or its node lives in
+    ``CAPABILITY_MODULES``. Each must be one exact node (no glob), declare its
+    owning job, and appear verbatim in that job's body, so a newly allowlisted
+    node without an executing job fails instead of silently widening the
+    waiver.
+    """
+    violations: list[str] = []
+    for raw in allowlist.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        node, _, reason = line.partition(" # ")
+        node = node.strip()
+        is_capability = (
+            _OWNER_MARKER in reason
+            or "GPU" in reason
+            or "STAGE5_HIGH_Q" in reason
+            or node.split("::", 1)[0] in CAPABILITY_MODULES
+        )
+        if not is_capability:
+            continue
+        if "*" in node:
+            violations.append(f"{node}: capability entry must be one exact node, not a glob")
+            continue
+        if _OWNER_MARKER not in reason:
+            violations.append(f"{node}: capability entry does not declare 'owned by <job>'")
+            continue
+        job = reason.split(_OWNER_MARKER, 1)[1].split()[0].strip("`.,;()")
+        try:
+            body = _workflow_job_body(ci_workflow, job)
+        except AssertionError:
+            violations.append(f"{node}: declared owner job {job!r} does not exist")
+            continue
+        if node not in body:
+            violations.append(f"{node}: owner job {job!r} never executes this node")
+    return violations
+
+
 def test_allowlisted_capability_nodes_have_exact_ci_owners() -> None:
-    """Require exact non-execution entries and evidence in their owning CI jobs."""
+    """Require every capability allowlist entry to be executed by its owning CI job."""
     allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text(encoding="utf-8")
     ci_workflow = (
         REPO_TESTS_DIR.parent / ".github" / "workflows" / "ci.yml"
     ).read_text(encoding="utf-8")
     gpu_smoke_job = _workflow_job_body(ci_workflow, "gpu-smoke")
     fuzz_job = _workflow_job_body(ci_workflow, "fuzz")
-    gpu_owned_nodes = (
-        "tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely",
-        "tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q121",
-        "tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241",
-        "tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q481",
-        "tests/test_bifactor_gpu_high_q.py::"
-        "test_bifactor_gpu_parity_q241_wide_items_metal_workgroups",
-        "tests/test_bifactor_gpu_high_q.py::test_bifactor_cpu_q121_vs_q241_agree",
-        "tests/test_bifactor_bootstrap_benchmark.py::"
-        "test_joint_bootstrap_cpu_vs_gpu_wall_time_q121",
-    )
 
-    assert "tests/test_bifactor_gpu_high_q.py::*" not in allowlist
-    assert "tests/test_fuzz_properties.py #" not in allowlist
-    for node in gpu_owned_nodes:
-        assert node in allowlist
-        assert node in gpu_smoke_job
+    assert _capability_ownership_violations(allowlist, ci_workflow) == []
+    owned = [
+        line for line in allowlist.splitlines()
+        if not line.lstrip().startswith("#") and _OWNER_MARKER + "gpu-smoke" in line
+    ]
+    assert len(owned) == 7, owned
+    assert "tests/test_fuzz_properties.py" not in "\n".join(
+        line for line in allowlist.splitlines() if not line.lstrip().startswith("#")
+    )
     assert "pytest tests/test_fuzz_properties.py" in fuzz_job
     assert 'ElementTree.parse(Path("gpu-junit.xml"))' in gpu_smoke_job
     assert 'ElementTree.parse(Path("fuzz-properties-junit.xml"))' in fuzz_job
+
+
+def test_capability_ownership_rejects_unowned_or_widened_entries() -> None:
+    """A new capability node without an executing owner job must be reported."""
+    ci_workflow = (
+        REPO_TESTS_DIR.parent / ".github" / "workflows" / "ci.yml"
+    ).read_text(encoding="utf-8")
+    allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text(encoding="utf-8")
+    unowned = "tests/test_bifactor_gpu_high_q.py::test_unowned_future_capability"
+    cases = {
+        "claims gpu-smoke but not executed": f"{unowned} # GPU adapter owned by gpu-smoke (reviewed 2026-09-22)",
+        "no owner declared": f"{unowned} # GPU adapter absent (reviewed 2026-09-22)",
+        "module glob": "tests/test_bifactor_gpu_high_q.py::* # GPU owned by gpu-smoke (reviewed 2026-09-22)",
+        "missing owner job": f"{unowned} # GPU owned by no-such-job (reviewed 2026-09-22)",
+    }
+    for label, entry in cases.items():
+        violations = _capability_ownership_violations(allowlist + "\n" + entry + "\n", ci_workflow)
+        assert violations, f"{label}: injected entry was not rejected"
