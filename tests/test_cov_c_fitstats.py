@@ -697,7 +697,11 @@ def test_dif_analysis_accepts_boolean_mask():
         y,
         np.zeros(6, dtype=np.int64),
         gid,
-        config=FitConfig(model="MIRT", estimator="mmle", max_iter=120, q_theta=11),
+        # max_iter well above the ~121-150 rounds this fixture needs on
+        # pre-AVX x86 (Xeon X5650), where 120 stopped at delta 2.7e-5 and
+        # _require_converged_fit refused the constrained fit. This test is
+        # about the mask branch, not the EM convergence budget.
+        config=FitConfig(model="MIRT", estimator="mmle", max_iter=400, q_theta=11),
         mask=mask,
         studied_items=[2],
     )
