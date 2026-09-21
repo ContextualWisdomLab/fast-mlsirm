@@ -46,7 +46,7 @@
 use crate::gpu::GpuContext;
 #[cfg(all(feature = "gpu", not(coverage)))]
 use wgpu::util::DeviceExt;
-use std::sync::{Mutex, OnceLock};
+use std::cell::RefCell;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct GpuDispatchReceipt {
@@ -56,18 +56,20 @@ pub(crate) struct GpuDispatchReceipt {
     pub fallback_reason: Option<String>,
 }
 
-static LAST_RECEIPT: OnceLock<Mutex<GpuDispatchReceipt>> = OnceLock::new();
-
-fn receipt() -> &'static Mutex<GpuDispatchReceipt> {
-    LAST_RECEIPT.get_or_init(|| Mutex::new(GpuDispatchReceipt::default()))
+thread_local! {
+    static LAST_RECEIPT: RefCell<GpuDispatchReceipt> = RefCell::new(GpuDispatchReceipt::default());
 }
 
 pub(crate) fn reset_gpu_dispatch_receipt() {
-    *receipt().lock().expect("GPU receipt mutex poisoned") = GpuDispatchReceipt::default();
+    LAST_RECEIPT.with(|receipt| *receipt.borrow_mut() = GpuDispatchReceipt::default());
 }
 
 pub(crate) fn gpu_dispatch_receipt() -> GpuDispatchReceipt {
-    receipt().lock().expect("GPU receipt mutex poisoned").clone()
+    LAST_RECEIPT.with(|receipt| receipt.borrow().clone())
+}
+
+fn set_fallback_reason(reason: &'static str) {
+    LAST_RECEIPT.with(|receipt| receipt.borrow_mut().fallback_reason = Some(reason.into()));
 }
 
 /// Inputs for one reduced E-step sweep. `tables_groups[g][i]` holds the
@@ -423,13 +425,11 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     };
 
     let Some(ctx) = GpuContext::get() else {
-        receipt().lock().expect("GPU receipt mutex poisoned").fallback_reason =
-            Some("no_usable_adapter_or_device".into());
+        set_fallback_reason("no_usable_adapter_or_device");
         return None;
     };
     if ctx.adapter_storage_buffers() < MIN_STORAGE_BUFFERS {
-        receipt().lock().expect("GPU receipt mutex poisoned").fallback_reason =
-            Some("adapter_storage_buffer_limit".into());
+        set_fallback_reason("adapter_storage_buffer_limit");
         return None;
     }
     let device = &ctx.device;
@@ -459,11 +459,13 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     ];
     for &len in &buffer_lens[1..] {
         if !storage_buffer_fits(&limits, len) {
+            set_fallback_reason("storage_buffer_limit");
             return None;
         }
     }
     // yobs is i32; reuse the f32-sized check with equal element width.
     if !storage_buffer_fits(&limits, buffer_lens[0]) {
+        set_fallback_reason("response_buffer_limit");
         return None;
     }
 
@@ -494,6 +496,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         }
     }
     if !storage_buffer_fits(&limits, tables.len()) {
+        set_fallback_reason("table_buffer_limit");
         return None;
     }
     let mut block_of = vec![-1i32; ni];
@@ -772,11 +775,13 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     }
 
     {
-        let mut dispatch = receipt().lock().expect("GPU receipt mutex poisoned");
-        dispatch.used = true;
-        dispatch.backend = Some(ctx.backend().to_owned());
-        dispatch.device_name = Some(ctx.device_name().to_owned());
-        dispatch.fallback_reason = None;
+        LAST_RECEIPT.with(|receipt| {
+            let mut dispatch = receipt.borrow_mut();
+            dispatch.used = true;
+            dispatch.backend = Some(ctx.backend().to_owned());
+            dispatch.device_name = Some(ctx.device_name().to_owned());
+            dispatch.fallback_reason = None;
+        });
     }
     Some(ReducedEstepOutputs {
         loglik,
@@ -798,7 +803,6 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
 pub(crate) fn e_step_reduced_gpu(
     _inputs: &ReducedEstepInputs,
 ) -> Option<ReducedEstepOutputs> {
-    receipt().lock().expect("GPU receipt mutex poisoned").fallback_reason =
-        Some("gpu_feature_disabled_or_coverage_build".into());
+    set_fallback_reason("gpu_feature_disabled_or_coverage_build");
     None
 }

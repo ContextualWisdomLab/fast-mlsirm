@@ -928,8 +928,17 @@ fn canonical_person_order(v: &Validated, y: &[usize], observed: Option<&[bool]>)
             .map(|i| {
                 let left_observed = observed.is_none_or(|o| o[left * v.n_items + i]);
                 let right_observed = observed.is_none_or(|o| o[right * v.n_items + i]);
-                (left_observed, y[left * v.n_items + i])
-                    .cmp(&(right_observed, y[right * v.n_items + i]))
+                let left_category = if left_observed {
+                    Some(y[left * v.n_items + i])
+                } else {
+                    None
+                };
+                let right_category = if right_observed {
+                    Some(y[right * v.n_items + i])
+                } else {
+                    None
+                };
+                (left_observed, left_category).cmp(&(right_observed, right_category))
             })
             .find(|ordering| *ordering != std::cmp::Ordering::Equal)
             .unwrap_or(std::cmp::Ordering::Equal)
