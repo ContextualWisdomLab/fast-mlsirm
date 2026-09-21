@@ -2041,6 +2041,10 @@ fn fit_two_tier_grm_fipc(
     out.set_item("n_accepted_prior_steps", res.n_accepted_prior_steps)?;
     out.set_item("n_rollback_full", res.n_rollback_full)?;
     out.set_item("consecutive_rollback", res.consecutive_rollback)?;
+    out.set_item(
+        "prior_update_decision_trace",
+        res.prior_update_decision_trace,
+    )?;
     Ok(out.into())
 }
 

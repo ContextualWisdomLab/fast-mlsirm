@@ -377,6 +377,9 @@ pub struct TwoTierFipcResult {
     pub n_accepted_prior_steps: usize,
     pub n_rollback_full: usize,
     pub consecutive_rollback: usize,
+    /// Per-iteration prior-update decision labels from the real accept path
+    /// (joint / backtrack / scale / mean / rollback). Diagnostic only.
+    pub prior_update_decision_trace: Vec<String>,
 }
 
 /// Validated problem structure shared by the fitter and the public
@@ -1398,6 +1401,7 @@ pub fn fit_two_tier_grm_fipc(
     let mut n_rollback_full = 0;
     let mut consecutive_rollback = 0;
     let mut recovery_progress = false;
+    let mut prior_update_decision_trace = Vec::new();
     const MAX_CONSECUTIVE_ROLLBACKS: usize = 3;
 
     loop {
@@ -1413,7 +1417,7 @@ pub fn fit_two_tier_grm_fipc(
             .map(|_| log_ws.clone())
             .collect();
         let log_w = log_w0.clone();
-        let fixed_log_ws_by_specific: Vec<Vec<f64>> = (0..n_specific)
+        let _fixed_log_ws_by_specific: Vec<Vec<f64>> = (0..n_specific)
             .map(|_| log_ws.clone())
             .collect();
         let (fixed_ll, fixed_m1, fixed_m2, fixed_specific_m2) = fixed_fipc_e_step(
@@ -1547,6 +1551,7 @@ pub fn fit_two_tier_grm_fipc(
             })
         };
         let acceptance_tolerance = 32.0 * f64::EPSILON * (1.0 + ll.abs());
+        let fixed_improve_eps = 32.0 * f64::EPSILON * (1.0 + fixed_ll.abs());
         if !candidate_ll.is_some_and(|value| {
             value.is_finite() && value >= ll - acceptance_tolerance
         }) {
@@ -1554,8 +1559,16 @@ pub fn fit_two_tier_grm_fipc(
             let target_covariance = covariance.clone();
             let target_specific_sd = specific_sd.clone();
             let target_params = params.clone();
+            let joint_ll = candidate_ll;
+            let joint_pd = cholesky_lower(&covariance, n_primary).is_some();
             let mut alpha = 0.5;
             let mut accepted = false;
+            let mut decision = format!(
+                "iter={n_iter};branch=joint_reject;ll={ll:.10e};fixed_ll={fixed_ll:.10e};joint_ll={};joint_pd={joint_pd};target_mean={target_mean:?};baseline_mean={baseline_mean:?}",
+                joint_ll
+                    .map(|v| format!("{v:.10e}"))
+                    .unwrap_or_else(|| "none".into())
+            );
             while alpha >= 1e-6 {
                 for i in 0..n_items {
                     if anchor[i] {
@@ -1618,6 +1631,9 @@ pub fn fit_two_tier_grm_fipc(
                 .0;
                 if remapped_ll.is_finite() && remapped_ll >= ll - acceptance_tolerance {
                     accepted = true;
+                    decision = format!(
+                        "iter={n_iter};branch=joint_backtrack_accept;alpha={alpha:.3e};ll={ll:.10e};cand_ll={remapped_ll:.10e};mean={mean:?}"
+                    );
                     break;
                 }
                 alpha *= 0.5;
@@ -1627,11 +1643,63 @@ pub fn fit_two_tier_grm_fipc(
                 mean = previous_mean.clone();
                 covariance = previous_covariance.clone();
                 specific_sd = previous_specific_sd.clone();
-                // Recover focal scale before falling back to mean-only steps.
-                // The covariance/specific moment target is evaluated with the
-                // restored item state under the same direct-GH objective.
+                // Mean-first recovery on the restored baseline. A scale-first
+                // trust region previously accepted covariance drift while the
+                // mean loop either never ran (pre-pairing) or only tried
+                // alpha<=0.1; when a remapped mean step improves the Class-A
+                // objective, take the largest feasible step from 1.0.
+                let mut mean_accepted = false;
+                let mut mean_alpha = 1.0;
+                let mut mean_reject_detail = String::from("mean_not_tried");
+                while !mean_accepted && mean_alpha >= 1e-6 {
+                    let candidate_mean: Vec<f64> = mean
+                        .iter()
+                        .zip(&target_mean)
+                        .map(|(&old, &target)| old + mean_alpha * (target - old))
+                        .collect();
+                    let mean_ll = direct_fipc_loglik(
+                        &v,
+                        y,
+                        observed,
+                        &params,
+                        &base_coords,
+                        &log_w0,
+                        &log_ws,
+                        ts_std,
+                        &candidate_mean,
+                        &covariance,
+                        &specific_sd,
+                        n_grid,
+                    );
+                    let mean_pd = cholesky_lower(&covariance, n_primary).is_some();
+                    let passes_ll_guard = mean_ll.is_some_and(|value| {
+                        value.is_finite() && value >= ll - acceptance_tolerance
+                    });
+                    let passes_fixed_improve = mean_ll
+                        .is_some_and(|value| value.is_finite() && value > fixed_ll + fixed_improve_eps);
+                    if passes_ll_guard && passes_fixed_improve {
+                        mean = candidate_mean;
+                        mean_accepted = true;
+                        decision = format!(
+                            "iter={n_iter};branch=mean_accept;alpha={mean_alpha:.3e};ll={ll:.10e};fixed_ll={fixed_ll:.10e};mean_ll={:.10e};scale_first=false;mean_pd={mean_pd};mean={mean:?}",
+                            mean_ll.unwrap_or(f64::NAN)
+                        );
+                        break;
+                    }
+                    mean_reject_detail = format!(
+                        "alpha={mean_alpha:.3e};mean_ll={};passes_ll_guard={passes_ll_guard};passes_fixed_improve={passes_fixed_improve};cand_mean={candidate_mean:?}",
+                        mean_ll
+                            .map(|v| format!("{v:.10e}"))
+                            .unwrap_or_else(|| "none".into())
+                    );
+                    mean_alpha *= 0.5;
+                }
+                // Scale recovery after mean: keep any improving covariance /
+                // specific-SD step under the same remapped LL guard. Do not
+                // undo a valid scale step when mean already had its chance.
                 let mut scale_accepted = false;
                 let mut scale_alpha = 0.1;
+                let mut scale_ll_best = None;
                 while scale_alpha >= 1e-6 {
                     let candidate_covariance: Vec<f64> = covariance
                         .iter()
@@ -1657,6 +1725,7 @@ pub fn fit_two_tier_grm_fipc(
                         &candidate_specific_sd,
                         n_grid,
                     );
+                    let scale_pd = cholesky_lower(&candidate_covariance, n_primary).is_some();
                     let scale_moved_materially = candidate_covariance
                         .iter()
                         .zip(&covariance)
@@ -1668,63 +1737,39 @@ pub fn fit_two_tier_grm_fipc(
                     if scale_ll.is_some_and(|value| {
                         value.is_finite()
                             && value >= ll - acceptance_tolerance
-                            && value > fixed_ll
-                                + 32.0 * f64::EPSILON * (1.0 + fixed_ll.abs())
+                            && value > fixed_ll + fixed_improve_eps
                             && scale_moved_materially
                     }) {
                         covariance = candidate_covariance;
                         specific_sd = candidate_specific_sd;
                         scale_accepted = true;
+                        scale_ll_best = scale_ll;
+                        if mean_accepted {
+                            decision = format!(
+                                "iter={n_iter};branch=mean_then_scale_accept;mean_alpha={mean_alpha:.3e};scale_alpha={scale_alpha:.3e};ll={ll:.10e};fixed_ll={fixed_ll:.10e};scale_ll={:.10e};scale_pd={scale_pd};mean={mean:?}",
+                                scale_ll.unwrap_or(f64::NAN)
+                            );
+                        } else {
+                            decision = format!(
+                                "iter={n_iter};branch=scale_only_accept;alpha={scale_alpha:.3e};ll={ll:.10e};fixed_ll={fixed_ll:.10e};scale_ll={:.10e};scale_pd={scale_pd};{mean_reject_detail}",
+                                scale_ll.unwrap_or(f64::NAN)
+                            );
+                        }
                         break;
                     }
                     scale_alpha *= 0.5;
                 }
-                // After restore, borrow the restored state (previous_* were moved).
-                // The finite direct-GH objective can accept a posterior-moment
-                // direction repeatedly even after it has passed the focal
-                // fixture. Use a small trust-region step for this recovery
-                // path; the ordinary joint proposal remains unchanged.
-                accepted = false;
-                let mut mean_alpha = 0.1;
-                while !accepted && mean_alpha >= 1e-6 {
-                    let candidate_mean: Vec<f64> = mean
-                        .iter()
-                        .zip(&target_mean)
-                        .map(|(&old, &target)| old + mean_alpha * (target - old))
-                        .collect();
-                    let mean_ll = direct_fipc_loglik(
-                        &v,
-                        y,
-                        observed,
-                        &params,
-                        &base_coords,
-                        &log_w0,
-                        &log_ws,
-                        ts_std,
-                        &candidate_mean,
-                        &covariance,
-                        &specific_sd,
-                        n_grid,
+                accepted = mean_accepted || scale_accepted;
+                if !accepted {
+                    decision = format!(
+                        "iter={n_iter};branch=full_rollback;ll={ll:.10e};fixed_ll={fixed_ll:.10e};scale_ll={};{mean_reject_detail};target_mean={target_mean:?}",
+                        scale_ll_best
+                            .map(|v| format!("{v:.10e}"))
+                            .unwrap_or_else(|| "none".into())
                     );
-                    if mean_ll.is_some_and(|value| {
-                        value.is_finite()
-                            && value >= ll - acceptance_tolerance
-                            && value > fixed_ll
-                                + 32.0 * f64::EPSILON * (1.0 + fixed_ll.abs())
-                    }) {
-                        mean = candidate_mean;
-                        accepted = true;
-                        break;
-                    }
-                    mean_alpha *= 0.5;
-                }
-                if !accepted && scale_accepted {
-                    params = previous_params.clone();
-                    mean = previous_mean.clone();
-                    covariance = previous_covariance.clone();
-                    specific_sd = previous_specific_sd.clone();
                 }
             }
+            prior_update_decision_trace.push(decision);
             if accepted {
                 // Compare against pre-update snapshots: previous_* may have been
                 // moved into mean/covariance/specific_sd on the restore path.
@@ -1749,6 +1794,10 @@ pub fn fit_two_tier_grm_fipc(
                 consecutive_rollback += 1;
             }
         } else {
+            prior_update_decision_trace.push(format!(
+                "iter={n_iter};branch=joint_full_accept;ll={ll:.10e};cand_ll={:.10e};mean={mean:?}",
+                candidate_ll.unwrap_or(f64::NAN)
+            ));
             n_accepted_prior_steps += 1;
             consecutive_rollback = 0;
         }
@@ -1786,7 +1835,7 @@ pub fn fit_two_tier_grm_fipc(
     for i in 0..n_items { if !anchor[i] { n_parameters += v.free_primaries[i].len() + usize::from(v.item_block[i].is_some()) + v.m1; } }
     if cfg.estimate_specific_vars { n_parameters += n_specific; }
     let primary_sd = (0..n_primary).map(|d| covariance[d * n_primary + d].max(0.0).sqrt()).collect();
-    Ok(TwoTierFipcResult { a_primary, a_specific, threshold, primary_mean: mean, primary_cov: covariance, primary_sd, specific_sd, theta_p_eap, theta_p_sd, category_counts, loglik_trace, fixed_loglik_trace, fixed_primary_first_moment_trace, fixed_primary_second_moment_trace, fixed_specific_second_moment_trace, prior_mean_trace, prior_covariance_trace, prior_specific_sd_trace, n_iter, converged, termination_reason, final_loglik_change, n_parameters, n_accepted_prior_steps, n_rollback_full, consecutive_rollback })
+    Ok(TwoTierFipcResult { a_primary, a_specific, threshold, primary_mean: mean, primary_cov: covariance, primary_sd, specific_sd, theta_p_eap, theta_p_sd, category_counts, loglik_trace, fixed_loglik_trace, fixed_primary_first_moment_trace, fixed_primary_second_moment_trace, fixed_specific_second_moment_trace, prior_mean_trace, prior_covariance_trace, prior_specific_sd_trace, n_iter, converged, termination_reason, final_loglik_change, n_parameters, n_accepted_prior_steps, n_rollback_full, consecutive_rollback, prior_update_decision_trace })
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item — the

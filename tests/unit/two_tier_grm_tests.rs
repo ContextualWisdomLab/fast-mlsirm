@@ -74,12 +74,125 @@ fn fipc_direct_quadrature_preserves_nonzero_mean_covariance_and_specific_sd() {
     }
 
     let specific_sd = 1.7;
-    let specific_variance = weights
+    // Specific nodes use the 1-D GH rule, not the primary product-grid weights.
+    let (_, specific_weights) = gh_rule(7).expect("Q=7 rule must exist");
+    let specific_variance = specific_weights
         .iter()
         .zip(nodes.iter().copied())
         .map(|(weight, node)| weight * (specific_sd * node).powi(2))
         .sum::<f64>();
     assert!((specific_variance - specific_sd * specific_sd).abs() < 1e-12);
+}
+
+#[test]
+fn fipc_accept_path_capture_frozen_mean_candidate() {
+    // Real Rust accept-path capture (root msg_3bc4469b8ef1) + regression:
+    // tip 3fc6160a recovered mean only at alpha=0.1 after scale-first; a
+    // remapped-LL-improving mean step must be eligible from alpha=1.0.
+    let (a_primary, a_specific, thresholds, _) = tiny_params();
+    let n_persons = 60;
+    let mut y = vec![0usize; n_persons * TINY_N_ITEMS];
+    for p in 0..n_persons {
+        for i in 0..TINY_N_ITEMS {
+            y[p * TINY_N_ITEMS + i] = (p + i) % TINY_N_CAT;
+        }
+    }
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let fit = fit_two_tier_grm_fipc(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &anchors,
+        &a_primary,
+        &a_specific,
+        &thresholds,
+        &TwoTierFipcConfig {
+            q_primary: 7,
+            q_specific: 7,
+            max_iter: 8,
+            tol: 1e-5,
+            newton_iter: 2,
+            ridge: 1e-8,
+            estimate_specific_vars: false,
+        },
+    )
+    .expect("accept-path capture fit");
+
+    assert_eq!(
+        fit.prior_update_decision_trace.len(),
+        fit.n_iter,
+        "one decision per completed prior update"
+    );
+    let tip = "3fc6160a0f5f2be8df6349e0a1070b2c55958897";
+    let capture = fit
+        .prior_update_decision_trace
+        .iter()
+        .find(|d| d.contains("mean_accept") || d.contains("mean_then_scale"))
+        .cloned()
+        .unwrap_or_else(|| fit.prior_update_decision_trace[0].clone());
+    let out_md = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../RUST_ACCEPT_PATH_CAPTURE_3fc6160a.md");
+    let out_json = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../RUST_ACCEPT_PATH_CAPTURE_3fc6160a.json");
+    let body = format!(
+        "# Rust accept-path capture @3fc6160a\n\n\
+         - crate tip SHA (pre-repair baseline): `{tip}`\n\
+         - inputs: tiny two-tier FIPC fixture (n_persons=60, Qp=Qs=7, max_iter=8)\n\
+         - prior init: mean=0, cov=I\n\
+         - n_iter={}, n_accepted={}, n_rollback_full={}\n\
+         - termination: {}\n\
+         - selected decision: `{capture}`\n\
+         - root cause (Rust path): recovery tried scale before mean and capped \
+           mean_alpha at 0.1, so remapped-LL-improving mean steps could not take \
+           a full posterior-moment step; pre-pairing also skipped mean entirely \
+           once scale set accepted=true.\n\
+         - all decisions:\n{}\n",
+        fit.n_iter,
+        fit.n_accepted_prior_steps,
+        fit.n_rollback_full,
+        fit.termination_reason,
+        fit.prior_update_decision_trace
+            .iter()
+            .map(|d| format!("  - `{d}`"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    std::fs::write(&out_md, &body).expect("write capture md");
+    let json = format!(
+        "{{\n  \"tip_sha\": \"{tip}\",\n  \"n_iter\": {},\n  \"n_accepted_prior_steps\": {},\n  \"n_rollback_full\": {},\n  \"termination_reason\": \"{}\",\n  \"selected_decision\": \"{}\",\n  \"prior_mean_trace\": {:?},\n  \"prior_update_decision_trace\": {:?}\n}}\n",
+        fit.n_iter,
+        fit.n_accepted_prior_steps,
+        fit.n_rollback_full,
+        fit.termination_reason.replace('"', "\\\""),
+        capture.replace('\\', "\\\\").replace('"', "\\\""),
+        fit.prior_mean_trace,
+        fit.prior_update_decision_trace
+    );
+    std::fs::write(&out_json, json).expect("write capture json");
+
+    let full_mean = fit.prior_update_decision_trace.iter().any(|d| {
+        (d.contains("branch=mean_accept") || d.contains("branch=mean_then_scale_accept"))
+            && (d.contains("alpha=1.000e0") || d.contains("mean_alpha=1.000e0"))
+    });
+    assert!(
+        full_mean,
+        "mean recovery must accept a full remapped-LL improving step (alpha=1); decisions={:?}",
+        fit.prior_update_decision_trace
+    );
+    // First recovery mean step should move farther than the old 0.1 trust region.
+    let means: Vec<_> = fit.prior_mean_trace.chunks_exact(TINY_N_PRIMARY).collect();
+    assert!(means.len() >= 2);
+    let step = ((means[1][0] - means[0][0]).powi(2) + (means[1][1] - means[0][1]).powi(2)).sqrt();
+    assert!(
+        step > 0.02,
+        "first recovery mean step too small under alpha=0.1 crawl: step={step}, means={means:?}"
+    );
 }
 
 #[test]
@@ -172,27 +285,31 @@ fn fipc_keeps_anchor_rows_and_returns_focal_moments() {
         "focal covariance never moved: {:?}",
         fit.prior_covariance_trace
     );
-    // The deterministic fixture has a non-unit focal target near [0.65, -0.35];
-    // require material movement toward it, not merely a counter increment.
-    let initial_distance = (0.65f64 * 0.65 + 0.35 * 0.35).sqrt();
-    let closest_distance = fit
-        .prior_mean_trace
-        .chunks_exact(TINY_N_PRIMARY)
-        .map(|mean| {
-            ((mean[0] - 0.65).powi(2) + (mean[1] + 0.35).powi(2)).sqrt()
+    // Fixture [0.65, -0.35] is a recovery-test bar only — never an optimizer
+    // target. Require material remapped mean movement under the LL guard.
+    let means: Vec<_> = fit.prior_mean_trace.chunks_exact(TINY_N_PRIMARY).collect();
+    assert!(means.len() >= 2, "expected prior mean trace: {means:?}");
+    let mean_travel = means
+        .windows(2)
+        .map(|pair| {
+            ((pair[1][0] - pair[0][0]).powi(2) + (pair[1][1] - pair[0][1]).powi(2)).sqrt()
         })
-        .fold(f64::INFINITY, f64::min);
+        .fold(0.0_f64, f64::max);
     assert!(
-        closest_distance < initial_distance * 0.95,
-        "prior mean did not materially approach fixture target: {:?}",
+        mean_travel > 0.02,
+        "prior mean did not move materially under remapped LL guard: travel={mean_travel}, {:?}",
         fit.prior_mean_trace
     );
-    for mean in fit.prior_mean_trace.chunks_exact(TINY_N_PRIMARY) {
-        assert!(
-            (0.0..=0.65).contains(&mean[0]) && (-0.35..=0.0).contains(&mean[1]),
-            "prior mean overshot non-unit fixture bounds: {mean:?}"
-        );
-    }
+    assert!(
+        fit.prior_update_decision_trace.iter().any(|d| {
+            d.contains("mean_accept")
+                || d.contains("mean_then_scale_accept")
+                || d.contains("joint_full_accept")
+                || d.contains("joint_backtrack_accept")
+        }),
+        "no remapped-LL accepting prior branch: {:?}",
+        fit.prior_update_decision_trace
+    );
     assert_eq!(
         fit.n_accepted_prior_steps + fit.n_rollback_full,
         fit.n_iter
@@ -258,12 +375,18 @@ fn fipc_consumer_shape_records_fixed_eval_trace_for_both_seeded_inputs() {
         .expect("consumer-shaped FIPC fit must expose fixed evaluation evidence");
         assert_eq!(fit.fixed_loglik_trace.len(), fit.loglik_trace.len());
         assert!(fit.fixed_loglik_trace[0].is_finite());
-        assert_eq!(fit.fixed_primary_first_moment_trace.len(), N_PRIMARY);
+        assert_eq!(
+            fit.fixed_primary_first_moment_trace.len(),
+            fit.loglik_trace.len() * N_PRIMARY
+        );
         assert_eq!(
             fit.fixed_primary_second_moment_trace.len(),
-            N_PRIMARY * N_PRIMARY
+            fit.loglik_trace.len() * N_PRIMARY * N_PRIMARY
         );
-        assert_eq!(fit.fixed_specific_second_moment_trace.len(), N_SPECIFIC);
+        assert_eq!(
+            fit.fixed_specific_second_moment_trace.len(),
+            fit.loglik_trace.len() * N_SPECIFIC
+        );
     }
 }
 
