@@ -1,6 +1,6 @@
-### Added
+# Opt-in EM progress for long two-tier / bifactor GRM fits (#2021)
 
-#### Opt-in EM progress for long two-tier / bifactor GRM fits (#2021)
+## Added
 
 - Add optional `progress` callable on `fit_two_tier_grm` and `fit_bifactor_grm`
   (default `None`, silent — 0.11.4-compatible). Each E-step reports
