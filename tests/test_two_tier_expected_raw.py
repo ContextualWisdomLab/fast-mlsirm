@@ -474,3 +474,31 @@ def test_collapsed_gh_matches_product_meshgrid_reference() -> None:
     expected = predict_expected_response_polytomous(cell, base.reshape(-1))
     mesh_total = (expected.reshape(base.shape) * wmesh[None, :]).sum(axis=1)
     assert np.allclose(got.expected_total, mesh_total, atol=1e-9, rtol=0.0)
+
+
+@pytest.mark.parametrize("q_pair", [(121, 241), (241, 481)])
+def test_study_node_counts_stabilize_on_two_primary_fixture(q_pair) -> None:
+    """Study-setting node counts (>=121, doubling) agree (AGENTS steering 1, #1929)."""
+    ap, a_s, th, smap = _two_primary_four_specific_fixture()
+    grid = np.linspace(-3.0, 3.0, 25)
+    lo = _call(ap, a_s, th, smap, grid, q=q_pair[0])
+    hi = _call(ap, a_s, th, smap, grid, q=q_pair[1])
+    assert float(np.max(np.abs(lo.expected_total - hi.expected_total))) < 1e-9
+    small = _call(ap, a_s, th, smap, grid, q=15)
+    # The small-node unit tests above sit within 1e-6 of the study-node value.
+    assert float(np.max(np.abs(small.expected_total - hi.expected_total))) < 1e-6
+
+
+def test_gauss_hermite_rule_is_finite_and_exact_at_study_node_counts() -> None:
+    """The nuisance rule stays finite at q >= 481 (numpy's closed form is NaN)."""
+    from fast_mlsirm.two_tier_grm import _probabilists_gauss_hermite
+
+    for q in (1, 2, 15, 121, 241, 481, 961):
+        nodes, weights = _probabilists_gauss_hermite(q)
+        assert nodes.shape == weights.shape == (q,)
+        assert np.all(np.isfinite(nodes)) and np.all(np.isfinite(weights))
+        assert float(weights.sum()) == pytest.approx(1.0, abs=1e-12)
+        # Standard-normal moments E[Z^2] = 1, E[Z^4] = 3 hold exactly for q >= 3.
+        if q >= 3:
+            assert float(weights @ nodes**2) == pytest.approx(1.0, abs=1e-9)
+            assert float(weights @ nodes**4) == pytest.approx(3.0, abs=1e-8)

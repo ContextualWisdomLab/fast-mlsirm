@@ -624,6 +624,35 @@ def _as_specific_map_int64(
     return smap_int
 
 
+def _probabilists_gauss_hermite(q: int) -> tuple[np.ndarray, np.ndarray]:
+    """Probabilists' Gauss-Hermite rule for any ``q >= 1`` via Golub & Welsch.
+
+    Nodes are the eigenvalues of the symmetric tridiagonal Jacobi matrix of the
+    ``He_n`` recurrence (``alpha_k = 0``, ``beta_k = k``); weights are the
+    squared first eigenvector components, normalized to sum to one (Golub &
+    Welsch, 1969, eq. 2.1-2.2, pp. 222-223; Section 3, p. 225). Unlike the
+    closed-form weight formula in ``numpy.polynomial.hermite_e.hermegauss``,
+    which returns NaN weights from about ``q = 481`` because ``1 / He_{n-1}^2``
+    overflows, tail weights here underflow to ``0.0`` and never become NaN.
+    This mirrors ``crates/mlsirm-core/src/quadrature.rs``
+    ``gauss_hermite_probabilists`` (#1929).
+
+    Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature
+    rules. *Mathematics of Computation, 23*(106), 221-230.
+    https://doi.org/10.1090/S0025-5718-69-99647-1
+    """
+    if q == 1:
+        return np.zeros(1), np.ones(1)
+    off = np.sqrt(np.arange(1, q, dtype=np.float64))
+    jacobi = np.diag(off, 1) + np.diag(off, -1)
+    nodes, vectors = np.linalg.eigh(jacobi)
+    weights = vectors[0, :] ** 2
+    weights = weights / weights.sum()
+    if not (np.all(np.isfinite(nodes)) and np.all(np.isfinite(weights))):
+        raise ValueError(f"Gauss-Hermite rule with q={q} is not finite")
+    return nodes, weights
+
+
 def expected_total_score_two_tier_given_primary(
     a_primary: np.ndarray,
     a_specific: np.ndarray,
@@ -647,7 +676,11 @@ def expected_total_score_two_tier_given_primary(
     ``L = sum_k a_k Z_k`` and independent Gaussians yield
     ``L ~ N(sum a_k mu_k, sum (a_k sigma_k)^2)``, the product rule collapses to
     a single 1-D Gauss-Hermite integral with ``q_nuisance`` nodes (required; no
-    default — issue #1929). This avoids ``q^n`` meshgrid allocation.
+    default — issue #1929). This avoids ``q^n`` meshgrid allocation. The upper
+    bound ``MAX_POLY_QUADRATURE_POINTS`` is the package's shared
+    quadrature-point resource budget (the rule is generated for any ``n >= 1``;
+    the budget keeps the dense ``O(q^2)`` rule construction bounded), matching
+    ``_fit_quadrature_points`` / ``q_xi`` validation, not a rule-table cap.
 
     Reference distributions are **per primary / per specific dimension**. A
     scalar mean/sd broadcasts identical values across dimensions (producer
@@ -728,8 +761,7 @@ def expected_total_score_two_tier_given_primary(
     s_mean = _as_ref_mean(specific_ref_mean, n_specific, "specific_ref_mean")
     s_sd = _as_ref_sd(specific_ref_sd, n_specific, "specific_ref_sd")
 
-    unit_nodes, unit_weights = np.polynomial.hermite_e.hermegauss(q)
-    unit_weights = unit_weights / unit_weights.sum()
+    unit_nodes, unit_weights = _probabilists_gauss_hermite(q)
     unit_slope = np.ones(1, dtype=np.float64)
     expected_total = np.zeros(grid.size, dtype=np.float64)
 
