@@ -94,6 +94,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .bifactor_grm import _optional_float, _slope_prior_pair
+
 
 
 def _finite_integer_control(value: object, name: str) -> int:
@@ -176,6 +178,12 @@ class BifactorMultigroupFit:
     final_loglik_change: float
     best_start: int
     n_parameters: int
+    slope_prior_mu: float | None = None
+    slope_prior_sd: float | None = None
+    # EM objective (MAXIMIZED; unlike FitResult.objective_trace) per E-step: log-likelihood + log slope prior under a prior
+    # (monotone), identical to ``loglik_trace`` without one. ``loglik_trace``
+    # keeps its meaning and may decrease under a prior.
+    em_objective_trace: np.ndarray | None = None
 
 
 def fit_bifactor_grm_multigroup(
@@ -227,6 +235,11 @@ def fit_bifactor_grm_multigroup(
     per the no-magic-caps rule — upper-bounded only where a real constraint
     exists); unobserved categories raise; ``max_iter`` exhaustion returns
     ``converged=False`` instead of substituting values.
+    ``slope_prior_mu`` / ``slope_prior_sd`` (both or neither) request MAP
+    estimation under a lognormal prior on ``|a|`` for every ESTIMATED slope:
+    free items once per group and common (anchored) items once per shared
+    parameter, so the prior also acts under the default ``anchor=None``.
+    Omitted = plain MML; the fitted prior is recorded on the result.
 
     See the module docstring for the model, the paper basis of every
     non-obvious decision, and the APA 7th references.
@@ -255,15 +268,7 @@ def fit_bifactor_grm_multigroup(
     seed_int = _u64_seed(seed)
     if not isinstance(estimate_specific_vars, bool):
         raise ValueError("estimate_specific_vars must be a bool")
-    if (slope_prior_mu is None) != (slope_prior_sd is None):
-        raise ValueError("slope_prior_mu and slope_prior_sd must be provided together")
-    if slope_prior_mu is not None:
-        slope_prior_mu = float(slope_prior_mu)
-        slope_prior_sd = float(slope_prior_sd)
-        if not np.isfinite(slope_prior_mu):
-            raise ValueError("slope_prior_mu must be finite")
-        if not np.isfinite(slope_prior_sd) or slope_prior_sd <= 0:
-            raise ValueError("slope_prior_sd must be finite and positive")
+    slope_prior_mu, slope_prior_sd = _slope_prior_pair(slope_prior_mu, slope_prior_sd)
 
     y = np.asarray(responses)
     if np.iscomplexobj(y):
@@ -415,4 +420,7 @@ def fit_bifactor_grm_multigroup(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+        slope_prior_mu=_optional_float(res["slope_prior_mu"]),
+        slope_prior_sd=_optional_float(res["slope_prior_sd"]),
+        em_objective_trace=np.asarray(res["em_objective_trace"], dtype=np.float64),
     )

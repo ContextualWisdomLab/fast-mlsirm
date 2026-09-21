@@ -40,6 +40,42 @@
 //! `bifactor_grm.rs` is Hessian conditioning only, not a parameter prior,
 //! and is NOT part of the information.
 //!
+//! # MAP estimates (optional slope prior)
+//!
+//! For estimates fitted under a [`SlopePrior::Lognormal`] (MAP / Bayes modal
+//! estimation; Mislevy, 1986), pass the SAME prior in
+//! [`BifactorOakesConfig::slope_prior`]. The returned `information` is then
+//! the curvature of the negative log POSTERIOR,
+//! `-d^2 [l(xi) + log p(xi)] / d xi d xi'` — the Oakes observed information
+//! (exact at any `xi`, including the MAP point) plus the analytic diagonal
+//! prior curvature on each slope coordinate — and `vcov`/`se` are its
+//! inverse.
+//!
+//! What that uncertainty IS: with a prior, `vcov` is the posterior-curvature
+//! (Laplace / normal) approximation to the posterior covariance at the mode,
+//! a Bayesian quantity. It is NOT a frequentist sampling covariance of the
+//! MAP estimator and must not be labeled as one (the two differ by the
+//! prior's shrinkage; no sandwich correction is computed). Without a prior,
+//! `vcov` is the usual inverse observed information of the MML estimates.
+//! A likelihood-only information evaluated at MAP estimates is NOT a
+//! supported uncertainty for those estimates.
+//!
+//! Derivation scope (this crate's, not a quoted result): the log posterior
+//! is additive, `log p(xi | Y) = l(xi) + log p(xi) + const`, so its negative
+//! Hessian is the observed information (from the Oakes identity, exact at
+//! any `xi`) plus `-d^2 log p(xi)`. The slope prior is a product of
+//! independent per-slope terms, so its Hessian is DIAGONAL: every
+//! off-diagonal entry — slope/threshold and cross-item blocks — is the
+//! Oakes term unchanged, and thresholds get no prior term. Population
+//! parameters stay fixed by identification exactly as in the MML case, so
+//! the approximation is conditional on them. The per-slope curvature is
+//! `(1/sd^2 - 1 - z/sd)/a^2`; it can be negative (the lognormal is not
+//! log-concave), and a non-PD or non-finite result (e.g. `a = 0`) is
+//! reported through `positive_definite` / `non_pd_reason`, never
+//! substituted. Mislevy (1986) is cited for Bayes modal (MAP) item
+//! estimation; the implemented formula is verified by unit tests, not by the
+//! citation.
+//!
 //! # Free parameters and multigroup extension
 //!
 //! The free vector is per-item `[a_G, a_S?, d_1..d_{K-1}]` (slopes
@@ -71,10 +107,13 @@
 //! Full-information item bifactor analysis of graded response data. *Applied
 //! Psychological Measurement, 31*(1), 4-19.
 //! https://doi.org/10.1177/0146621606289485
+//!
+//! Mislevy, R. J. (1986). Bayes modal estimation in item response models.
+//! *Psychometrika, 51*(2), 177-195. https://doi.org/10.1007/BF02293979
 
 use crate::bifactor_grm::{
-    check_param_shapes, e_step, fill_logprob_tables, gh_rule, pack_params, validate, ItemParams,
-    Validated,
+    check_param_shapes, e_step, fill_logprob_tables, gh_rule, lnorm_abs_slope_prior_curvature,
+    pack_params, validate, ItemParams, SlopePrior, Validated,
 };
 use crate::poly::{grm_node_gradient, grm_node_hessian};
 
@@ -91,6 +130,11 @@ pub struct BifactorOakesConfig {
     /// (`h_j = fd_step * (1 + |xi_j|)`); the complete-data gradient and
     /// Hessian are analytic, so this touches only the posterior sensitivity.
     pub fd_step: f64,
+    /// Prior the item parameters were fitted under. `None` = MML estimates
+    /// (observed information); `Lognormal` = MAP estimates (negative
+    /// log-posterior curvature; see the module docs). Validated, never
+    /// clamped.
+    pub slope_prior: SlopePrior,
 }
 
 /// Result of [`bifactor_oakes_se`].
@@ -560,6 +604,7 @@ pub fn bifactor_oakes_se(
     if cfg.q_specific < 1 {
         return Err(format!("q_specific must be >= 1; got {}", cfg.q_specific));
     }
+    cfg.slope_prior.validate()?;
     let provider = Stage1Provider::new(
         y,
         observed,
@@ -606,6 +651,15 @@ pub fn bifactor_oakes_se(
         for c in 0..k {
             information[r * k + c] = -0.5
                 * (term_a[r * k + c] + cross[r * k + c] + term_a[c * k + r] + cross[c * k + r]);
+        }
+    }
+    // MAP estimates: add the diagonal prior curvature on slope coordinates
+    // (labels `a_general:*` / `a_specific:*`); thresholds carry no prior.
+    if let SlopePrior::Lognormal { mu, sd } = cfg.slope_prior {
+        for j in 0..k {
+            if labels[j].starts_with("a_") {
+                information[j * k + j] += lnorm_abs_slope_prior_curvature(packed[j], mu, sd);
+            }
         }
     }
     if information.iter().any(|v| !v.is_finite()) {

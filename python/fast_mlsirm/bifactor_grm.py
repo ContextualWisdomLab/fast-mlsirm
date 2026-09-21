@@ -111,6 +111,34 @@ def _positive_real_control(value: object, name: str) -> float:
     return numeric
 
 
+def _slope_prior_pair(
+    mu: object, sd: object
+) -> tuple[float | None, float | None]:
+    """Validate the paired lognormal ``|a|`` slope-prior kwargs.
+
+    Both ``None`` = no prior (MML); both set = finite ``mu`` and finite
+    positive ``sd``. Anything else raises ``ValueError`` (never clamped).
+    """
+
+    if (mu is None) != (sd is None):
+        raise ValueError("slope_prior_mu and slope_prior_sd must be provided together")
+    if mu is None:
+        return None, None
+    for value, name in ((mu, "slope_prior_mu"), (sd, "slope_prior_sd")):
+        if isinstance(value, bool):
+            raise ValueError(f"{name} must be a real number")
+    try:
+        mu_f = float(mu)  # type: ignore[arg-type]
+        sd_f = float(sd)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("slope_prior_mu and slope_prior_sd must be real numbers") from None
+    if not np.isfinite(mu_f):
+        raise ValueError("slope_prior_mu must be finite")
+    if not np.isfinite(sd_f) or sd_f <= 0:
+        raise ValueError("slope_prior_sd must be finite and positive")
+    return mu_f, sd_f
+
+
 def _u64_seed(value: object) -> int:
     """Normalize the deterministic start seed without callbacks."""
 
@@ -160,6 +188,12 @@ class BifactorGrmFit:
     final_loglik_change: float
     best_start: int
     n_parameters: int
+    slope_prior_mu: float | None = None
+    slope_prior_sd: float | None = None
+    # EM objective (MAXIMIZED; unlike FitResult.objective_trace) per E-step: log-likelihood + log slope prior under a prior
+    # (monotone), identical to ``loglik_trace`` without one. ``loglik_trace``
+    # keeps its meaning and may decrease under a prior.
+    em_objective_trace: np.ndarray | None = None
 
 
 def fit_bifactor_grm(
@@ -202,6 +236,11 @@ def fit_bifactor_grm(
     per the no-magic-caps rule — upper-bounded only where a real constraint
     exists); unobserved categories raise; ``max_iter`` exhaustion returns
     ``converged=False`` instead of substituting values.
+    ``slope_prior_mu`` / ``slope_prior_sd`` (both or neither) request MAP
+    estimation under a lognormal prior on ``|a|`` for every estimated slope
+    (``log|a| ~ N(mu, sd^2)``; see ``SlopePrior`` in the Rust core). Omitted
+    = plain MML. There are no defaults; the fitted prior is recorded on the
+    result and must be passed to ``bifactor_oakes_se`` for MAP SEs.
 
     See the module docstring for the model, the paper basis of every
     non-obvious decision, and the APA 7th references.
@@ -235,15 +274,7 @@ def fit_bifactor_grm(
     ):
         raise ValueError(f"device must be one of 'cpu', 'gpu', 'auto'; got {device!r}")
     device_str = device.strip().lower()
-    if (slope_prior_mu is None) != (slope_prior_sd is None):
-        raise ValueError("slope_prior_mu and slope_prior_sd must be provided together")
-    if slope_prior_mu is not None:
-        slope_prior_mu = float(slope_prior_mu)
-        slope_prior_sd = float(slope_prior_sd)
-        if not np.isfinite(slope_prior_mu):
-            raise ValueError("slope_prior_mu must be finite")
-        if not np.isfinite(slope_prior_sd) or slope_prior_sd <= 0:
-            raise ValueError("slope_prior_sd must be finite and positive")
+    slope_prior_mu, slope_prior_sd = _slope_prior_pair(slope_prior_mu, slope_prior_sd)
 
     y = np.asarray(responses)
     if np.iscomplexobj(y):
@@ -328,7 +359,16 @@ def fit_bifactor_grm(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+        slope_prior_mu=_optional_float(res["slope_prior_mu"]),
+        slope_prior_sd=_optional_float(res["slope_prior_sd"]),
+        em_objective_trace=np.asarray(res["em_objective_trace"], dtype=np.float64),
     )
+
+
+def _optional_float(value: object) -> float | None:
+    """Rust-reported optional prior hyperparameter (``None`` = no prior)."""
+
+    return None if value is None else float(value)  # type: ignore[arg-type]
 
 
 @dataclass
@@ -359,6 +399,8 @@ class BifactorOakesSe:
     se: np.ndarray | None
     positive_definite: bool
     non_pd_reason: str | None
+    slope_prior_mu: float | None = None
+    slope_prior_sd: float | None = None
 
 
 def bifactor_oakes_se(
@@ -372,6 +414,8 @@ def bifactor_oakes_se(
     q_general: int,
     q_specific: int,
     fd_step: float,
+    slope_prior_mu: float | None = None,
+    slope_prior_sd: float | None = None,
 ) -> BifactorOakesSe:
     """Observed-information SEs via the Oakes (1999, eq. 6, p. 480) identity
     at given item parameters (valid at every point, not only the MLE).
@@ -388,6 +432,18 @@ def bifactor_oakes_se(
     value is clamped). Out-of-range arguments raise ``ValueError``; a non-positive-
     definite information returns ``positive_definite=False`` with
     ``non_pd_reason`` and ``None`` SEs (never substituted).
+
+    MAP estimates: pass the SAME ``slope_prior_mu`` / ``slope_prior_sd`` the
+    fit used (recorded on ``BifactorGrmFit``). ``information`` is then the
+    negative log-posterior curvature (Oakes observed information plus the
+    analytic lognormal ``|a|`` prior curvature on each slope) and
+    ``vcov``/``se`` its inverse: a posterior-curvature (Laplace) approximation
+    to the POSTERIOR covariance at the mode, not a frequentist sampling
+    covariance of the MAP estimator (Mislevy, R. J. (1986). Bayes modal
+    estimation in item response models. *Psychometrika, 51*(2), 177-195.
+    https://doi.org/10.1007/BF02293979). Omitting the prior is defined only
+    for MML estimates; a likelihood-only information at MAP estimates is not
+    a supported SE.
 
     Implementation basis: Oakes, D. (1999). Direct calculation of the
     information matrix via the EM algorithm. *Journal of the Royal
@@ -421,6 +477,7 @@ def bifactor_oakes_se(
     if q_specific_int < 1:
         raise ValueError("q_specific must be >= 1")
     fd_float = _positive_real_control(fd_step, "fd_step")
+    slope_prior_mu, slope_prior_sd = _slope_prior_pair(slope_prior_mu, slope_prior_sd)
 
     y = np.asarray(responses)
     if np.iscomplexobj(y):
@@ -491,6 +548,8 @@ def bifactor_oakes_se(
         int(q_general_int),
         int(q_specific_int),
         float(fd_float),
+        slope_prior_mu,
+        slope_prior_sd,
     )
     labels = [str(v) for v in res["labels"]]
     information = np.asarray(res["information"], dtype=np.float64)
@@ -512,6 +571,8 @@ def bifactor_oakes_se(
         se=se,
         positive_definite=bool(res["positive_definite"]),
         non_pd_reason=None if reason_raw is None else str(reason_raw),
+        slope_prior_mu=slope_prior_mu,
+        slope_prior_sd=slope_prior_sd,
     )
 
 
