@@ -25,7 +25,7 @@
 
 use crate::bifactor_grm::{
     bifactor_grm_marginal_loglik, bifactor_grm_marginal_loglik_brute, fit_bifactor_grm,
-    BifactorGrmConfig,
+    fit_bifactor_grm_multigroup, BifactorGrmConfig, BifactorMultigroupConfig,
 };
 
 // ---------------------------------------------------------------------------
@@ -665,3 +665,72 @@ fn dense_quadrature_fit_never_claims_tolerance_at_start_slopes() {
         assert_eq!(fit.termination_reason, "numerical_em_stall");
     }
 }
+
+// ---------------------------------------------------------------------------
+// #2093: multigroup EM must be monotone on the observed-data objective.
+// ---------------------------------------------------------------------------
+
+/// Toy fixture split into two alternating groups, all items common, `Q = 7`
+/// (the released 0.11.4 build failed at iteration 9 with
+/// `delta=-6.141380e-3`).
+fn toy_multigroup(
+    q: usize,
+    seed: u64,
+    estimate_specific_vars: bool,
+) -> Result<crate::bifactor_grm::BifactorMultigroupResult, String> {
+    let (y, n_persons) = tiny_data();
+    let group_id: Vec<usize> = (0..n_persons).map(|p| p % 2).collect();
+    let cfg = BifactorMultigroupConfig {
+        q_general: q,
+        q_specific: q,
+        max_iter: 60,
+        tol: 1e-4,
+        n_starts: 1,
+        seed,
+        estimate_specific_vars,
+        ..BifactorMultigroupConfig::default()
+    };
+    fit_bifactor_grm_multigroup(
+        &y,
+        None,
+        &group_id,
+        2,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        None,
+        &cfg,
+    )
+}
+
+#[test]
+fn reproducer_multigroup_mml_on_toy_fixture_runs() {
+    let fit = toy_multigroup(7, 42, false).expect("MG MML on the toy fixture must run");
+    assert!(fit.loglik_trace.len() >= 2);
+}
+
+#[test]
+fn multigroup_em_population_step_is_monotone_and_moves() {
+    // The ECM population step must never decrease the guarded quadrature
+    // log-likelihood, and must actually move the focal distribution (a
+    // rejected/stalled step would also be "monotone"). Convergence is NOT
+    // asserted: the 12-person toy is separable, so slopes diverge and no
+    // finite MLE exists; only the ascent property is testable here.
+    for (q, seed, spec) in [(7, 42, false), (15, 42, false), (61, 42, false), (7, 7, false), (7, 42, true)] {
+        let fit = toy_multigroup(q, seed, spec)
+            .unwrap_or_else(|e| panic!("q={q} seed={seed} spec={spec}: {e}"));
+        for w in fit.loglik_trace.windows(2) {
+            assert!(w[1] >= w[0], "q={q} seed={seed} spec={spec}: loglik decreased {w:?}");
+        }
+        assert!(
+            fit.general_mean[1] != 0.0 && fit.general_sd[1] != 1.0,
+            "q={q} seed={seed} spec={spec}: focal distribution never moved"
+        );
+        if spec {
+            assert!(fit.specific_sd[1].iter().all(|&t| t != 1.0));
+        }
+    }
+}
+
