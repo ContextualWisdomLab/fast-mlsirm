@@ -242,6 +242,7 @@ fn single_primary_oracle_matches_stage1_bifactor_oracle() {
 
 fn valid_config() -> TwoTierGrmConfig {
     TwoTierGrmConfig {
+        estimate_primary_correlation: true,
         q_primary: 7,
         q_specific: 7,
         max_iter: 5,

@@ -11,8 +11,7 @@ Reference
 ---------
 Cai, L. (2010). A two-tier full-information item factor analysis model with
 applications. *Psychometrika, 75*(4), 581-612.
-https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text not
-accessible — no equation locator is drawn from it)
+https://doi.org/10.1007/s11336-010-9178-0 (full text read, pp. 583-584)
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fast_mlsirm.two_tier_grm import fit_two_tier_grm
+from fast_mlsirm.two_tier_grm import fit_two_tier_grm, two_tier_oakes_se
 
 N_PERSONS = 300
 N_ITEMS = 6
@@ -63,11 +62,12 @@ TRUE_D = np.array(
 )
 
 
-def _simulate(seed: int) -> np.ndarray:
+def _simulate(seed: int, rho: float = RHO) -> np.ndarray:
     rng = np.random.default_rng(seed)
     z0 = rng.normal(0.0, 1.0, N_PERSONS)
     z1 = rng.normal(0.0, 1.0, N_PERSONS)
-    theta = np.stack([z0, RHO * z0 + np.sqrt(1.0 - RHO**2) * z1], axis=1)
+    theta = np.stack([z0, rho * z0 + np.sqrt(1.0 - rho**2) * z1], axis=1)
+
     theta_s = rng.normal(0.0, 1.0, (N_PERSONS, N_SPECIFIC))
     y = np.zeros((N_PERSONS, N_ITEMS), dtype=np.int64)
     for i in range(N_ITEMS):
@@ -83,6 +83,32 @@ def _simulate(seed: int) -> np.ndarray:
         draws = rng.random(N_PERSONS)
         y[:, i] = (draws[:, None] > np.cumsum(probs, axis=1)).sum(axis=1)
     return y
+
+def test_identity_primary_identification() -> None:
+    y = _simulate(SEED, rho=0.0)
+    # Oakes information needs a fit close enough to the stationary point.
+    fixed = _fit(y, primary_correlation="identity", tol=1e-7)
+    estimated = _fit(y, primary_correlation="estimate")
+    np.testing.assert_array_equal(fixed.phi, np.eye(N_PRIMARY))
+    assert fixed.primary_identification == "orthogonal"
+    assert estimated.primary_identification == "correlated"
+    assert fixed.n_parameters + N_PRIMARY * (N_PRIMARY - 1) // 2 == estimated.n_parameters
+    assert np.all(np.diff(fixed.loglik_trace) >= -1e-7)
+    assert abs(fixed.loglik_trace[-1] - estimated.loglik_trace[-1]) / N_PERSONS < 0.03
+    se = two_tier_oakes_se(
+        fixed.a_primary, fixed.a_specific, fixed.threshold, fixed.phi, y,
+        PRIMARY_MAP, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC,
+        q_primary=7, q_specific=7, fd_step=1e-5, primary_correlation="identity",
+    )
+    assert se.information.shape == (fixed.n_parameters, fixed.n_parameters)
+    assert not any(label.startswith("phi_z:") for label in se.labels)
+    assert se.positive_definite, se.non_pd_reason
+    assert np.isfinite(se.se).all()
+
+
+def test_primary_correlation_validation() -> None:
+    with pytest.raises(ValueError, match="primary_correlation"):
+        _fit(_simulate(SEED), primary_correlation="unknown")
 
 
 def _fit(y: np.ndarray, **overrides):

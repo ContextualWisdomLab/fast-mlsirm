@@ -195,8 +195,7 @@
 //!
 //! Cai, L. (2010). A two-tier full-information item factor analysis model
 //! with applications. *Psychometrika, 75*(4), 581-612.
-//! https://doi.org/10.1007/s11336-010-9178-0 (abstract + metadata read via
-//! the Zotero record; full text not accessible — see the source-access note)
+//! https://doi.org/10.1007/s11336-010-9178-0 (full text read, pp. 583-584)
 //!
 //! Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
 //! item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
@@ -246,6 +245,8 @@ use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
 /// fixed-table cap), so this module imposes no upper cap of its own.
 #[derive(Clone, Copy, Debug)]
 pub struct TwoTierGrmConfig {
+    /// Estimate primary correlations; false fixes Phi to the identity.
+    pub estimate_primary_correlation: bool,
     /// Gauss-Hermite nodes per primary dimension (any `n >= 1`).
     /// The primary product grid has `q_primary^n_primary` nodes.
     pub q_primary: usize,
@@ -279,8 +280,8 @@ pub struct TwoTierGrmResult {
     pub a_specific: Vec<f64>,
     /// Ordered boundary intercepts `d_ik`, row-major `n_items * (n_cat - 1)`.
     pub threshold: Vec<f64>,
-    /// Estimated primary correlation matrix, row-major
-    /// `n_primary * n_primary` (unit diagonal).
+    /// Primary correlation matrix, row-major `n_primary * n_primary`;
+    /// exactly I when `estimate_primary_correlation` is false.
     pub phi: Vec<f64>,
     /// Primary-factor EAPs `E[theta_d | Y_p]`, row-major
     /// `n_persons * n_primary`.
@@ -297,9 +298,12 @@ pub struct TwoTierGrmResult {
     pub final_loglik_change: f64,
     /// Winning start index in `0..n_starts` (deterministic from `seed`).
     pub best_start: usize,
-    /// `sum_i (k_i + has_specific(i) + (n_cat - 1)) + P*(P-1)/2` free
-    /// parameters, where `k_i` is item `i`'s free primary-slope count.
+    /// `sum_i (k_i + has_specific(i) + (n_cat - 1))` free item parameters
+    /// (`k_i` is item `i`'s free primary-slope count), plus `P*(P-1)/2`
+    /// when primary correlations are estimated.
     pub n_parameters: usize,
+    /// `"correlated"` when Phi was estimated, `"orthogonal"` when fixed to I.
+    pub primary_identification: &'static str,
 }
 
 /// Validated problem structure shared by the fitter and the public
@@ -541,6 +545,7 @@ fn initial_params(
     observed: Option<&[bool]>,
     seed: u64,
     start: usize,
+    estimate_phi: bool,
 ) -> (Vec<ItemParams>, Vec<f64>) {
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
     let mut rng = SplitMix64(seed ^ (0x9E37_79B9_7F4A_7C15u64.wrapping_mul(start as u64 + 1)));
@@ -583,7 +588,7 @@ fn initial_params(
     // Primary correlations in Fisher-z space (start 0: Phi = I).
     let m = v.n_primary * (v.n_primary.saturating_sub(1)) / 2;
     let mut z = vec![0.0f64; m];
-    if start > 0 {
+    if start > 0 && estimate_phi {
         for slot in z.iter_mut() {
             *slot = 0.25 * rng.standard_normal();
         }
@@ -1330,7 +1335,14 @@ fn run_single_start(
     start: usize,
 ) -> Result<SingleStartOutcome, String> {
     let p = v.n_primary;
-    let (mut params, mut z_phi) = initial_params(v, y, observed, cfg.seed, start);
+    let (mut params, mut z_phi) = initial_params(
+        v,
+        y,
+        observed,
+        cfg.seed,
+        start,
+        cfg.estimate_primary_correlation,
+    );
 
     // No pre-allocation from `max_iter`: it is caller-owned and unbounded
     // above, so `with_capacity(max_iter + 1)` could overflow; the trace grows
@@ -1368,7 +1380,9 @@ fn run_single_start(
         for slot in s_bar.iter_mut() {
             *slot /= v.n_persons as f64;
         }
-        z_phi = m_step_phi(z_phi, p, &s_bar, v.n_persons, cfg.ridge, cfg.newton_iter);
+        if cfg.estimate_primary_correlation {
+            z_phi = m_step_phi(z_phi, p, &s_bar, v.n_persons, cfg.ridge, cfg.newton_iter);
+        }
         for i in 0..v.n_items {
             let free = &v.free_primaries[i];
             let has_specific = v.item_block[i].is_some();
@@ -1426,7 +1440,9 @@ fn run_single_start(
 /// `primary_map` is row-major `n_items * n_primary` confirmatory
 /// free-slope pattern; `specific_map` is length `n_items` with `-1` for
 /// specific-free items and `0..n_specific` otherwise. Runs `n_starts` EM
-/// runs and keeps the best loglik. Returns `Err` on malformed input,
+/// runs and keeps the best loglik. `estimate_primary_correlation=false`
+/// fixes Phi to I (Cai, 2010, pp. 583-584), omitting its Fisher-z M-step;
+/// true preserves estimated Phi. Returns `Err` on malformed input or
 /// unobserved categories (unidentified ordered boundary pair under Cai et
 /// al., 2011, eq. 7), or total numerical failure; per-start
 /// non-convergence is reported through the winning run's flags, never
@@ -1436,8 +1452,7 @@ fn run_single_start(
 ///
 /// Cai, L. (2010). A two-tier full-information item factor analysis model
 /// with applications. *Psychometrika, 75*(4), 581-612.
-/// https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text not
-/// accessible — see the module source-access note)
+/// https://doi.org/10.1007/s11336-010-9178-0 (full text read, pp. 583-584)
 ///
 /// Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
 /// item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
@@ -1593,7 +1608,11 @@ pub fn fit_two_tier_grm(
     let mut a_primary = vec![0.0f64; n_items * p];
     let mut a_specific = vec![0.0f64; n_items];
     let mut threshold = vec![0.0f64; n_items * v.m1];
-    let mut n_parameters = p * (p.saturating_sub(1)) / 2;
+    let mut n_parameters = if cfg.estimate_primary_correlation {
+        p * (p.saturating_sub(1)) / 2
+    } else {
+        0
+    };
     for (i, par) in params.iter().enumerate() {
         for &dim in &v.free_primaries[i] {
             a_primary[i * p + dim] = par.a_p[dim];
@@ -1677,6 +1696,11 @@ pub fn fit_two_tier_grm(
         final_loglik_change: outcome.final_loglik_change,
         best_start,
         n_parameters,
+        primary_identification: if cfg.estimate_primary_correlation {
+            "correlated"
+        } else {
+            "orthogonal"
+        },
     })
 }
 
@@ -1723,6 +1747,7 @@ pub fn two_tier_grm_marginal_loglik(
     // `validate` sees them only for its own field-level bounds checks.
     // (No `..Default()` exists: Project rule, issue #1929.)
     let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: true,
         q_primary,
         q_specific,
         max_iter: 1,
@@ -1815,6 +1840,7 @@ pub fn two_tier_grm_marginal_loglik_brute(
     // `validate` sees them only for its own field-level bounds checks.
     // (No `..Default()` exists: Project rule, issue #1929.)
     let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: true,
         q_primary,
         q_specific,
         max_iter: 1,

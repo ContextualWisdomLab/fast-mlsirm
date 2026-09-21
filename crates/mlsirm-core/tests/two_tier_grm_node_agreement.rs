@@ -87,6 +87,7 @@ fn simulate(n_persons: usize, seed: u64) -> Vec<usize> {
 
 fn fit_config() -> TwoTierGrmConfig {
     TwoTierGrmConfig {
+        estimate_primary_correlation: true,
         q_primary: 15,
         q_specific: 15,
         max_iter: 1000,
