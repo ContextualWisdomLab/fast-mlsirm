@@ -3,6 +3,9 @@ validation gates, IRTree expansion, DIF analysis, Vuong, Q3/GDDM, and ICs."""
 
 from __future__ import annotations
 
+import pytest
+pytestmark = pytest.mark.filterwarnings('ignore::DeprecationWarning')
+
 import math
 
 import numpy as np

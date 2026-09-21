@@ -26,6 +26,9 @@ testing with polytomous items. *Applied Psychological Measurement, 19*(1),
 
 from __future__ import annotations
 
+import pytest
+pytestmark = pytest.mark.filterwarnings('ignore::DeprecationWarning')
+
 import numpy as np
 from fast_mlsirm import cat_simulate_polytomous, fit_polytomous
 

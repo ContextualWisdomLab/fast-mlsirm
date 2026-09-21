@@ -1,3 +1,6 @@
+
+import pytest
+pytestmark = pytest.mark.filterwarnings('ignore::DeprecationWarning')
 """Public Rust-owned GRM/GPCM prediction contract."""
 
 from types import SimpleNamespace

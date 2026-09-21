@@ -4,6 +4,9 @@ structure/finiteness, and plausible-values response domain."""
 
 from __future__ import annotations
 
+import pytest
+pytestmark = pytest.mark.filterwarnings('ignore::DeprecationWarning')
+
 import io
 import json
 import warnings
