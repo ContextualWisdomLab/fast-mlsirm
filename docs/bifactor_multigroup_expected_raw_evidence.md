@@ -85,6 +85,18 @@ made on it directly. Raw output of the evidence script:
 }
 ```
 
+**Provenance of the tested code.** The host has no toolchain able to build
+this branch's Rust core (cargo 1.75), so the branch's `python/fast_mlsirm` tree
+was staged next to the host's already-compiled `_core` instead. The
+`fast_mlsirm: 0.11.4` string in the output is that host distribution's package
+metadata, **not** the code under test. The Python actually executed is commit
+`54a5925c`: `sha256(python/fast_mlsirm/polytomous.py)` is
+`b9de819503142bfb7ec914e89d0723d23afb9c5b857c1b907d4132797d86298d` and
+`sha256(python/fast_mlsirm/_legacy_init.py)` is
+`db1fc2ddfc65c01a4d958d39129c2ac1be84fe64b09fed49227a71d809102771`, identical
+on the host and in `git show 54a5925c:`. The compiled core is not exercised by
+this path, which is pure NumPy.
+
 What it establishes:
 
 - **The failing call now succeeds on the identical object.** `refit: false`,
