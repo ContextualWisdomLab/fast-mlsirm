@@ -72,6 +72,15 @@ fn set_fallback_reason(reason: &'static str) {
     LAST_RECEIPT.with(|receipt| receipt.borrow_mut().fallback_reason = Some(reason.into()));
 }
 
+fn record_gpu_success(backend: &str, device_name: &str) {
+    LAST_RECEIPT.with(|receipt| {
+        let mut dispatch = receipt.borrow_mut();
+        dispatch.used = true;
+        dispatch.backend = Some(backend.to_owned());
+        dispatch.device_name = Some(device_name.to_owned());
+    });
+}
+
 /// Inputs for one reduced E-step sweep. `tables_groups[g][i]` holds the
 /// log-probability table of group `g`, item `i` (`qg * qs * n_cat` entries
 /// for block items with node `(t, h)` at `(t * qs + h) * n_cat`, `qg * n_cat`
@@ -724,7 +733,10 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         (&pl_mg, dispatch_count(ng)),
         (&pl_ms, dispatch_count(ng * ns)),
     ] {
-        let (dx, dy, dz) = dispatch_workgroups_nd(groups.max(1), max_wg)?;
+        let Some((dx, dy, dz)) = dispatch_workgroups_nd(groups.max(1), max_wg) else {
+            set_fallback_reason("workgroup_dispatch_limit");
+            return None;
+        };
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: None,
             timestamp_writes: None,
@@ -738,7 +750,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let postg_staging = staging_buffer(device, "postg_read", np * qg);
     let counts_staging = staging_buffer(device, "counts_read", ng * ni * stride * nc);
     let moments_staging = staging_buffer(device, "moments_read", ng * (3 + 2 * ns));
-    let read = submit_and_readback(
+    let Some(read) = submit_and_readback(
         ctx,
         encoder,
         &[
@@ -747,12 +759,27 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
             (&counts_buf, &counts_staging, ng * ni * stride * nc),
             (&moments_buf, &moments_staging, ng * (3 + 2 * ns)),
         ],
-    )?;
+    ) else {
+        set_fallback_reason("gpu_submit_or_readback_failure");
+        return None;
+    };
     let mut iter = read.into_iter();
-    let ll_vec = iter.next()?;
-    let postg_vec = iter.next()?;
-    let counts_vec = iter.next()?;
-    let moments_vec = iter.next()?;
+    let Some(ll_vec) = iter.next() else {
+        set_fallback_reason("gpu_readback_missing_loglik");
+        return None;
+    };
+    let Some(postg_vec) = iter.next() else {
+        set_fallback_reason("gpu_readback_missing_posterior");
+        return None;
+    };
+    let Some(counts_vec) = iter.next() else {
+        set_fallback_reason("gpu_readback_missing_counts");
+        return None;
+    };
+    let Some(moments_vec) = iter.next() else {
+        set_fallback_reason("gpu_readback_missing_moments");
+        return None;
+    };
 
     let mut loglik = 0.0;
     for &v in &ll_vec {
@@ -775,13 +802,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     }
 
     {
-        LAST_RECEIPT.with(|receipt| {
-            let mut dispatch = receipt.borrow_mut();
-            dispatch.used = true;
-            dispatch.backend = Some(ctx.backend().to_owned());
-            dispatch.device_name = Some(ctx.device_name().to_owned());
-            dispatch.fallback_reason = None;
-        });
+        record_gpu_success(ctx.backend(), ctx.device_name());
     }
     Some(ReducedEstepOutputs {
         loglik,
@@ -805,4 +826,43 @@ pub(crate) fn e_step_reduced_gpu(
 ) -> Option<ReducedEstepOutputs> {
     set_fallback_reason("gpu_feature_disabled_or_coverage_build");
     None
+}
+
+#[cfg(test)]
+mod receipt_tests {
+    use super::*;
+
+    #[test]
+    fn fallback_history_survives_later_gpu_success() {
+        reset_gpu_dispatch_receipt();
+        set_fallback_reason("gpu_submit_or_readback_failure");
+        record_gpu_success("Metal", "Apple M5");
+        let receipt = gpu_dispatch_receipt();
+        assert!(receipt.used);
+        assert_eq!(receipt.backend.as_deref(), Some("Metal"));
+        assert_eq!(receipt.device_name.as_deref(), Some("Apple M5"));
+        assert_eq!(
+            receipt.fallback_reason.as_deref(),
+            Some("gpu_submit_or_readback_failure")
+        );
+    }
+
+    #[test]
+    fn receipt_state_is_thread_local() {
+        reset_gpu_dispatch_receipt();
+        set_fallback_reason("main_thread");
+        let child = std::thread::spawn(|| {
+            let receipt = gpu_dispatch_receipt();
+            assert!(!receipt.used);
+            assert!(receipt.fallback_reason.is_none());
+            set_fallback_reason("child_thread");
+            gpu_dispatch_receipt()
+        });
+        let child_receipt = child.join().expect("receipt thread must finish");
+        assert_eq!(child_receipt.fallback_reason.as_deref(), Some("child_thread"));
+        assert_eq!(
+            gpu_dispatch_receipt().fallback_reason.as_deref(),
+            Some("main_thread")
+        );
+    }
 }

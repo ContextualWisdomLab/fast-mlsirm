@@ -549,6 +549,57 @@ fn fipc_person_permutation_is_stable_at_consumer_exact_tolerance() {
     );
 }
 
+#[test]
+fn fipc_missing_placeholders_do_not_change_canonical_order() {
+    let (a_primary, a_specific, thresholds, _) = tiny_params();
+    let n_persons = 60;
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let y = (0..n_persons * TINY_N_ITEMS)
+        .map(|index| index % TINY_N_CAT)
+        .collect::<Vec<_>>();
+    let mut placeholder_variant = y.clone();
+    let mut observed = vec![true; y.len()];
+    for person in 0..n_persons {
+        let index = person * TINY_N_ITEMS + (person % TINY_N_ITEMS);
+        observed[index] = false;
+        placeholder_variant[index] = TINY_N_CAT + person + 1;
+    }
+    let config = TwoTierFipcConfig {
+        q_primary: 7,
+        q_specific: 7,
+        max_iter: 2,
+        tol: 1e-5,
+        newton_iter: 2,
+        ridge: 1e-8,
+        estimate_specific_vars: false,
+        device: crate::Device::Cpu,
+    };
+    let fit = |responses: &[usize]| {
+        fit_two_tier_grm_fipc(
+            responses,
+            Some(&observed),
+            &TINY_PRIMARY_MAP,
+            &TINY_SPECIFIC_MAP,
+            n_persons,
+            TINY_N_ITEMS,
+            TINY_N_PRIMARY,
+            TINY_N_SPECIFIC,
+            TINY_N_CAT,
+            &anchors,
+            &a_primary,
+            &a_specific,
+            &thresholds,
+            &config,
+        )
+        .expect("missing placeholder fit")
+    };
+    let original = fit(&y);
+    let placeholder = fit(&placeholder_variant);
+    assert_eq!(original.prior_mean_trace, placeholder.prior_mean_trace);
+    assert_eq!(original.prior_covariance_trace, placeholder.prior_covariance_trace);
+    assert_eq!(original.theta_p_eap, placeholder.theta_p_eap);
+}
+
 // ---------------------------------------------------------------------------
 // Shared tiny two-tier problem: 10 items, P = 2 primaries in simple
 // structure (items 0-4 on primary 0, items 5-9 on primary 1), S = 2
