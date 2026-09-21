@@ -111,8 +111,8 @@ fn unbalanced_exact_constant_binary64_outcomes_fail_closed_before_aggregation() 
 #[test]
 fn positive_within_dispersion_must_not_underflow_into_unit_icc() {
     let cluster_ids = [10_u64, 10, 20, 20, 20, 30, 30];
-    let scale = 1.0e-162;
-    let outcomes = [
+    let scale = 1.0e-162_f64;
+    let outcomes: [f64; 7] = [
         scale,
         2.0 * scale,
         4.0 * scale,
