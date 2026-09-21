@@ -254,3 +254,50 @@ def test_zero_collected_stays_nonzero(tmp_path: Path) -> None:
     """
     proc = _run_child(tmp_path, {}, mode="enforced")
     assert proc.returncode != 0, proc.stdout + proc.stderr
+
+
+def _workflow_job_body(workflow: str, job_name: str) -> str:
+    """Return one top-level GitHub Actions job without borrowing sibling evidence."""
+    lines = workflow.splitlines()
+    header = f"  {job_name}:"
+    try:
+        start_index = lines.index(header)
+    except ValueError as exc:
+        raise AssertionError(f"missing workflow job {job_name!r}") from exc
+
+    job_lines = [lines[start_index]]
+    for line in lines[start_index + 1 :]:
+        if line.startswith("  ") and not line.startswith("    ") and line.endswith(":"):
+            break
+        job_lines.append(line)
+    return "\n".join(job_lines)
+
+
+def test_allowlisted_capability_nodes_have_exact_ci_owners() -> None:
+    """Require exact non-execution entries and evidence in their owning CI jobs."""
+    allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text(encoding="utf-8")
+    ci_workflow = (
+        REPO_TESTS_DIR.parent / ".github" / "workflows" / "ci.yml"
+    ).read_text(encoding="utf-8")
+    gpu_smoke_job = _workflow_job_body(ci_workflow, "gpu-smoke")
+    fuzz_job = _workflow_job_body(ci_workflow, "fuzz")
+    gpu_owned_nodes = (
+        "tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely",
+        "tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q121",
+        "tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241",
+        "tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q481",
+        "tests/test_bifactor_gpu_high_q.py::"
+        "test_bifactor_gpu_parity_q241_wide_items_metal_workgroups",
+        "tests/test_bifactor_gpu_high_q.py::test_bifactor_cpu_q121_vs_q241_agree",
+        "tests/test_bifactor_bootstrap_benchmark.py::"
+        "test_joint_bootstrap_cpu_vs_gpu_wall_time_q121",
+    )
+
+    assert "tests/test_bifactor_gpu_high_q.py::*" not in allowlist
+    assert "tests/test_fuzz_properties.py #" not in allowlist
+    for node in gpu_owned_nodes:
+        assert node in allowlist
+        assert node in gpu_smoke_job
+    assert "pytest tests/test_fuzz_properties.py" in fuzz_job
+    assert 'ElementTree.parse(Path("gpu-junit.xml"))' in gpu_smoke_job
+    assert 'ElementTree.parse(Path("fuzz-properties-junit.xml"))' in fuzz_job
