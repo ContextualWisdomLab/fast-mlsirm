@@ -120,6 +120,7 @@ fn fipc_accept_path_capture_frozen_mean_candidate() {
             newton_iter: 2,
             ridge: 1e-8,
             estimate_specific_vars: false,
+            device: crate::Device::Cpu,
         },
     )
     .expect("accept-path capture fit");
@@ -228,6 +229,7 @@ fn fipc_keeps_anchor_rows_and_returns_focal_moments() {
             newton_iter: 2,
             ridge: 1e-8,
             estimate_specific_vars: false,
+            device: crate::Device::Cpu,
         },
     )
     .expect("two-tier FIPC real-fit path must accept a valid anchored fit");
@@ -370,6 +372,7 @@ fn fipc_consumer_shape_records_fixed_eval_trace_for_both_seeded_inputs() {
                 newton_iter: 2,
                 ridge: 1e-8,
                 estimate_specific_vars: false,
+                device: crate::Device::Cpu,
             },
         )
         .expect("consumer-shaped FIPC fit must expose fixed evaluation evidence");
@@ -387,6 +390,49 @@ fn fipc_consumer_shape_records_fixed_eval_trace_for_both_seeded_inputs() {
             fit.fixed_specific_second_moment_trace.len(),
             fit.loglik_trace.len() * N_SPECIFIC
         );
+    }
+}
+
+#[test]
+fn fipc_gpu_device_matches_cpu_or_fail_closed_fallback() {
+    let (a_primary, a_specific, thresholds, _) = tiny_params();
+    let n_persons = 60;
+    let mut y = vec![0usize; n_persons * TINY_N_ITEMS];
+    for p in 0..n_persons {
+        for i in 0..TINY_N_ITEMS {
+            y[p * TINY_N_ITEMS + i] = (p + i) % TINY_N_CAT;
+        }
+    }
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let config = |device| TwoTierFipcConfig {
+        q_primary: 7,
+        q_specific: 7,
+        max_iter: 1,
+        tol: 1e-5,
+        newton_iter: 2,
+        ridge: 1e-8,
+        estimate_specific_vars: false,
+        device,
+    };
+    let cpu = fit_two_tier_grm_fipc(
+        &y, None, &TINY_PRIMARY_MAP, &TINY_SPECIFIC_MAP, n_persons,
+        TINY_N_ITEMS, TINY_N_PRIMARY, TINY_N_SPECIFIC, TINY_N_CAT, &anchors,
+        &a_primary, &a_specific, &thresholds, &config(crate::Device::Cpu),
+    )
+    .expect("CPU FIPC reference must succeed");
+    let gpu = fit_two_tier_grm_fipc(
+        &y, None, &TINY_PRIMARY_MAP, &TINY_SPECIFIC_MAP, n_persons,
+        TINY_N_ITEMS, TINY_N_PRIMARY, TINY_N_SPECIFIC, TINY_N_CAT, &anchors,
+        &a_primary, &a_specific, &thresholds, &config(crate::Device::Gpu),
+    )
+    .expect("GPU FIPC must succeed or fail closed to CPU");
+    assert!((cpu.loglik_trace[0] - gpu.loglik_trace[0]).abs() < 2e-3);
+    assert!((cpu.fixed_loglik_trace[0] - gpu.fixed_loglik_trace[0]).abs() < 2e-3);
+    for (actual, expected) in gpu.primary_mean.iter().zip(&cpu.primary_mean) {
+        assert!((actual - expected).abs() < 2e-3);
+    }
+    for (actual, expected) in gpu.theta_p_eap.iter().zip(&cpu.theta_p_eap) {
+        assert!((actual - expected).abs() < 2e-3);
     }
 }
 

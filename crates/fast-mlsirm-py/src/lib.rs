@@ -1967,7 +1967,7 @@ fn fit_two_tier_grm(
 /// and focal primary moments are estimated by MWU-MEM/Bock-Aitkin EM.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, anchor, fixed_a_primary, fixed_a_specific, fixed_threshold, q_primary = 21, q_specific = 11, max_iter = 500, tol = 1e-6, newton_iter = 10, ridge = 1e-8, estimate_specific_vars = false))]
+#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, anchor, fixed_a_primary, fixed_a_specific, fixed_threshold, q_primary = 21, q_specific = 11, max_iter = 500, tol = 1e-6, newton_iter = 10, ridge = 1e-8, estimate_specific_vars = false, device = "cpu"))]
 fn fit_two_tier_grm_fipc(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1990,6 +1990,7 @@ fn fit_two_tier_grm_fipc(
     newton_iter: usize,
     ridge: f64,
     estimate_specific_vars: bool,
+    device: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
     let obs_vec = observed.as_ref().map(|o| o.as_slice().map(|v| v.to_vec())).transpose()?;
@@ -2003,7 +2004,9 @@ fn fit_two_tier_grm_fipc(
     let fixed_p = fixed_a_primary.as_slice()?.to_vec();
     let fixed_s = fixed_a_specific.as_slice()?.to_vec();
     let fixed_d = fixed_threshold.as_slice()?.to_vec();
-    let cfg = TwoTierFipcConfig { q_primary, q_specific, max_iter, tol, newton_iter, ridge, estimate_specific_vars };
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    let cfg = TwoTierFipcConfig { q_primary, q_specific, max_iter, tol, newton_iter, ridge, estimate_specific_vars, device };
     let res = py.detach(|| core_fit_two_tier_grm_fipc(&yy, obs_vec.as_deref(), &pmap, &smap, n_persons, n_items, n_primary, n_specific, n_cat, &anchor_vec, &fixed_p, &fixed_s, &fixed_d, &cfg)).map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("a_primary", res.a_primary)?;

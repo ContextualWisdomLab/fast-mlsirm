@@ -314,6 +314,9 @@ pub struct TwoTierFipcConfig {
     pub ridge: f64,
     /// Estimate the focal specific-factor SDs instead of fixing them at 1.
     pub estimate_specific_vars: bool,
+    /// Execution device for the FIPC E-step. GPU uses the reduced bifactor
+    /// kernel and falls back to the f64 CPU sweep when unavailable.
+    pub device: crate::Device,
 }
 
 impl Default for TwoTierFipcConfig {
@@ -326,6 +329,7 @@ impl Default for TwoTierFipcConfig {
             newton_iter: 10,
             ridge: 1e-8,
             estimate_specific_vars: false,
+            device: crate::Device::Cpu,
         }
     }
 }
@@ -1071,7 +1075,7 @@ pub(crate) fn e_step(
 /// separate from `e_step` preserves the zero-mean/unit-variance contract of
 /// the ordinary two-tier fitter.
 #[allow(clippy::too_many_arguments)]
-fn e_step_fipc(
+fn e_step_fipc_cpu(
     v: &Validated,
     y: &[usize],
     observed: Option<&[bool]>,
@@ -1196,6 +1200,158 @@ fn e_step_fipc(
     (loglik, counts, sum_primary, sum_primary2, sum_specific2, specific_mass, person_eap, person_sd)
 }
 
+#[allow(clippy::too_many_arguments)]
+fn e_step_fipc(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+    device: crate::Device,
+) -> (
+    f64,
+    Vec<Vec<Vec<f64>>>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+) {
+    if device != crate::Device::Cpu {
+        if let Some(result) = e_step_fipc_gpu(
+            v, y, observed, params, log_w, log_ws_by_specific, coords,
+            ts_by_specific, n_grid, qs,
+        ) {
+            return result;
+        }
+    }
+    e_step_fipc_cpu(
+        v, y, observed, params, log_w, log_ws_by_specific, coords,
+        ts_by_specific, n_grid, qs,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn e_step_fipc_gpu(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+) -> Option<(
+    f64,
+    Vec<Vec<Vec<f64>>>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+)> {
+    if log_ws_by_specific.iter().any(|weights| weights.as_slice() != log_ws_by_specific.first().map_or(&[][..], Vec::as_slice)) {
+        return None;
+    }
+    let log_ws = log_ws_by_specific.first().map_or(&[][..], Vec::as_slice);
+    if log_ws.len() != qs || coords.len() != n_grid * v.n_primary {
+        return None;
+    }
+    let mut tables = Vec::with_capacity(v.n_items);
+    for i in 0..v.n_items {
+        let block = v.item_block[i];
+        let nodes = if block.is_some() { n_grid * qs } else { n_grid };
+        let mut table = vec![0.0; nodes * v.n_cat];
+        for g in 0..n_grid {
+            for h in 0..if block.is_some() { qs } else { 1 } {
+                for cat in 0..v.n_cat {
+                    table[(g * if block.is_some() { qs } else { 1 } + h) * v.n_cat + cat] =
+                        item_cat_logprob_fipc(v, params, coords, ts_by_specific, i, g, h, cat);
+                }
+            }
+        }
+        tables.push(table);
+    }
+    let ts_groups = vec![ts_by_specific.to_vec()];
+    let inputs = crate::gpu_bifactor::ReducedEstepInputs {
+        y,
+        observed,
+        group_id: None,
+        n_persons: v.n_persons,
+        n_items: v.n_items,
+        n_specific: v.n_specific,
+        n_cat: v.n_cat,
+        qg: n_grid,
+        qs,
+        n_groups: 1,
+        tables_groups: &[tables],
+        item_block: &v.item_block,
+        blocks: &v.blocks,
+        tg_groups: &[coords.to_vec()],
+        ts_groups: &ts_groups,
+        log_wg: log_w,
+        log_ws,
+    };
+    let result = crate::gpu_bifactor::e_step_reduced_gpu(&inputs)?;
+    let mut counts = Vec::with_capacity(v.n_items);
+    for i in 0..v.n_items {
+        let nodes = if v.item_block[i].is_some() { n_grid * qs } else { n_grid };
+        let base = i * result.counts_stride_nodes * v.n_cat;
+        counts.push(
+            result.counts[base..base + nodes * v.n_cat]
+                .chunks_exact(v.n_cat)
+                .map(<[f64]>::to_vec)
+                .collect(),
+        );
+    }
+    let mut sum_primary = vec![0.0; v.n_primary];
+    let mut sum_primary2 = vec![0.0; v.n_primary * v.n_primary];
+    let mut person_eap = vec![0.0; v.n_persons * v.n_primary];
+    let mut person_sd = vec![0.0; v.n_persons * v.n_primary];
+    for person in 0..v.n_persons {
+        for g in 0..n_grid {
+            let post = result.postg[person * n_grid + g];
+            for d in 0..v.n_primary {
+                let value = coords[g * v.n_primary + d];
+                person_eap[person * v.n_primary + d] += post * value;
+                sum_primary[d] += post * value;
+                for e in 0..v.n_primary {
+                    sum_primary2[d * v.n_primary + e] +=
+                        post * value * coords[g * v.n_primary + e];
+                }
+            }
+        }
+        for d in 0..v.n_primary {
+            let mean = person_eap[person * v.n_primary + d];
+            let mut variance = 0.0;
+            for g in 0..n_grid {
+                let delta = coords[g * v.n_primary + d] - mean;
+                variance += result.postg[person * n_grid + g] * delta * delta;
+            }
+            person_sd[person * v.n_primary + d] = variance.max(0.0).sqrt();
+        }
+    }
+    Some((
+        result.loglik,
+        counts,
+        sum_primary,
+        sum_primary2,
+        result.s2_spec.clone(),
+        result.w_spec,
+        person_eap,
+        person_sd,
+    ))
+}
+
 fn fipc_primary_coords(base: &[f64], mean: &[f64], chol: &[f64], p: usize, n_grid: usize) -> Vec<f64> {
     let mut coords = vec![0.0; base.len()];
     for g in 0..n_grid {
@@ -1222,6 +1378,7 @@ fn direct_fipc_loglik(
     covariance: &[f64],
     specific_sd: &[f64],
     n_grid: usize,
+    device: crate::Device,
 ) -> Option<f64> {
     let (chol, _) = cholesky_lower(covariance, mean.len())?;
     let coords = fipc_primary_coords(base_coords, mean, &chol, mean.len(), n_grid);
@@ -1244,6 +1401,7 @@ fn direct_fipc_loglik(
             &ts_by_specific,
             n_grid,
             ts_std.len(),
+            device,
         )
         .0,
     )
@@ -1268,6 +1426,7 @@ fn fixed_fipc_e_step(
     ts_by_specific: &[Vec<f64>],
     n_grid: usize,
     qs: usize,
+    device: crate::Device,
 ) -> (f64, Vec<f64>, Vec<f64>, Vec<f64>) {
     let (loglik, _, sum_primary, sum_primary2, sum_specific2, _, _, _) = e_step_fipc(
         v,
@@ -1280,6 +1439,7 @@ fn fixed_fipc_e_step(
         ts_by_specific,
         n_grid,
         qs,
+        device,
     );
     (loglik, sum_primary, sum_primary2, sum_specific2)
 }
@@ -1431,13 +1591,14 @@ pub fn fit_two_tier_grm_fipc(
             &ts_by_specific,
             n_grid,
             ts_std.len(),
+            cfg.device,
         );
         fixed_loglik_trace.push(fixed_ll);
         fixed_primary_first_moment_trace.extend_from_slice(&fixed_m1);
         fixed_primary_second_moment_trace.extend_from_slice(&fixed_m2);
         fixed_specific_second_moment_trace.extend_from_slice(&fixed_specific_m2);
         let (ll, counts, sum_primary, sum_primary2, sum_specific2, specific_mass, _, _) =
-            e_step_fipc(&v, y, observed, &params, &log_w, &log_ws_by_specific, &coords, &ts_by_specific, n_grid, ts_std.len());
+            e_step_fipc(&v, y, observed, &params, &log_w, &log_ws_by_specific, &coords, &ts_by_specific, n_grid, ts_std.len(), cfg.device);
         let previous = loglik_trace.last().copied();
         if let Some(change) = checked_em_loglik_change(ll, previous, n_iter).map_err(|error| {
             let fixed_change = fixed_loglik_trace
@@ -1543,9 +1704,10 @@ pub fn fit_two_tier_grm_fipc(
                     &log_w0,
                     &candidate_weights,
                     &candidate_coords,
-                    &candidate_ts,
-                    n_grid,
-                    ts_std.len(),
+                &candidate_ts,
+                n_grid,
+                ts_std.len(),
+                cfg.device,
                 )
                 .0
             })
@@ -1627,6 +1789,7 @@ pub fn fit_two_tier_grm_fipc(
                     &candidate_ts,
                     n_grid,
                     ts_std.len(),
+                    cfg.device,
                 )
                 .0;
                 if remapped_ll.is_finite() && remapped_ll >= ll - acceptance_tolerance {
@@ -1670,6 +1833,7 @@ pub fn fit_two_tier_grm_fipc(
                         &covariance,
                         &specific_sd,
                         n_grid,
+                        cfg.device,
                     );
                     let mean_pd = cholesky_lower(&covariance, n_primary).is_some();
                     let passes_ll_guard = mean_ll.is_some_and(|value| {
@@ -1724,6 +1888,7 @@ pub fn fit_two_tier_grm_fipc(
                         &candidate_covariance,
                         &candidate_specific_sd,
                         n_grid,
+                        cfg.device,
                     );
                     let scale_pd = cholesky_lower(&candidate_covariance, n_primary).is_some();
                     let scale_moved_materially = candidate_covariance
@@ -1820,7 +1985,7 @@ pub fn fit_two_tier_grm_fipc(
         .map(|_| log_ws.clone())
         .collect();
     let log_w = log_w0.clone();
-    let (_, _, _, _, _, _, theta_p_eap, theta_p_sd) = e_step_fipc(&v, y, observed, &params, &log_w, &log_ws_by_specific, &coords, &ts_by_specific, n_grid, ts_std.len());
+    let (_, _, _, _, _, _, theta_p_eap, theta_p_sd) = e_step_fipc(&v, y, observed, &params, &log_w, &log_ws_by_specific, &coords, &ts_by_specific, n_grid, ts_std.len(), cfg.device);
     let mut a_primary = vec![0.0; n_items * n_primary];
     let mut a_specific = vec![0.0; n_items];
     let mut threshold = vec![0.0; n_items * v.m1];

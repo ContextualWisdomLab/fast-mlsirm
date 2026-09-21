@@ -93,6 +93,9 @@ pub(crate) struct ReducedEstepOutputs {
     pub s2_g: Vec<f64>,
     pub s2_spec: Vec<f64>,
     pub w_spec: Vec<f64>,
+    /// Per-person posterior over the general-node axis. FIPC uses this to
+    /// recover moments on its affine multi-primary coordinates.
+    pub postg: Vec<f64>,
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
@@ -700,6 +703,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     }
 
     let ll_staging = staging_buffer(device, "ll_read", np);
+    let postg_staging = staging_buffer(device, "postg_read", np * qg);
     let counts_staging = staging_buffer(device, "counts_read", ng * ni * stride * nc);
     let moments_staging = staging_buffer(device, "moments_read", ng * (3 + 2 * ns));
     let read = submit_and_readback(
@@ -707,12 +711,14 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         encoder,
         &[
             (&ll_buf, &ll_staging, np),
+            (&postg_buf, &postg_staging, np * qg),
             (&counts_buf, &counts_staging, ng * ni * stride * nc),
             (&moments_buf, &moments_staging, ng * (3 + 2 * ns)),
         ],
     )?;
     let mut iter = read.into_iter();
     let ll_vec = iter.next()?;
+    let postg_vec = iter.next()?;
     let counts_vec = iter.next()?;
     let moments_vec = iter.next()?;
 
@@ -745,6 +751,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         s2_g,
         s2_spec,
         w_spec,
+        postg: postg_vec.into_iter().map(f64::from).collect(),
     })
 }
 
