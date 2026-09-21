@@ -111,7 +111,7 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_and_parity() -> None:
     os.environ.get("STAGE5_HIGH_Q") != "1",
     reason="study-precision grid (121 nodes); rerun with STAGE5_HIGH_Q=1",
 )
-def test_joint_bootstrap_cpu_vs_gpu_wall_time_q121() -> None:
+def test_joint_bootstrap_cpu_vs_gpu_wall_time_q121(capfd) -> None:
     """Measure CPU vs GPU bootstrap wall time at the 121-point study grid.
 
     Same completion/parity contract as the smoke benchmark, at the
@@ -165,6 +165,9 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_q121() -> None:
     t1 = time.perf_counter()
     res_gpu = run_bifactor_bootstrap(**common, device="gpu", n_jobs=workers)
     gpu_time = time.perf_counter() - t1
+    # capfd captures the core's stderr CPU-fallback warning; fail rather
+    # than report CPU-vs-CPU parity as GPU evidence.
+    assert "no usable GPU adapter was found" not in capfd.readouterr().err
 
     for res in (res_cpu, res_gpu):
         assert isinstance(res, BifactorBootstrapResult)

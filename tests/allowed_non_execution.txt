@@ -33,16 +33,3 @@ tests/test_rsm_lossless_tolerance.py::test_rsm_rejects_lossy_longdouble_toleranc
 tests/test_twopl_control_callback_safety.py::test_fit_2pl_rejects_lossy_longdouble_tolerance_before_response_work # extended-precision gate: platform longdouble has no additional precision on this platform (reviewed 2026-09-17)
 tests/test_twopl_response_admission.py::test_fit_2pl_rejects_extended_precision_value_that_would_round_to_binary_response # extended-precision gate: platform longdouble has no additional precision on this platform (reviewed 2026-09-17)
 tests/test_wle_control_admission.py::test_score_wle_rejects_lossy_longdouble_control_before_data # extended-precision gate: platform long double is not wider than binary64 (reviewed 2026-09-17)
-
-# Capability gates on default GHA ubuntu (STAGE5_HIGH_Q unset; no GPU adapter).
-# These are intentional skipif/runtime skips — recorded per Issue #1732 allowlist
-# policy, not a weakening of the fail-closed plugin. Hypothesis collection-skip
-# is NOT listed: hypothesis is now in requirements/ci.in so the fuzz contract runs.
-# Receipt: #2034 run 35444146431 (reviewed 2026-09-20).
-tests/test_bifactor_bootstrap_benchmark.py::test_joint_bootstrap_cpu_vs_gpu_wall_time_q121 # STAGE5_HIGH_Q unset on default CI (reviewed 2026-09-20)
-tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q121 # STAGE5_HIGH_Q unset on default CI (reviewed 2026-09-20)
-tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241 # STAGE5_HIGH_Q unset on default CI (reviewed 2026-09-20)
-tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q481 # STAGE5_HIGH_Q unset on default CI (reviewed 2026-09-20)
-tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241_wide_items_metal_workgroups # STAGE5_HIGH_Q unset on default CI (reviewed 2026-09-20)
-tests/test_bifactor_gpu_high_q.py::test_bifactor_cpu_q121_vs_q241_agree # STAGE5_HIGH_Q unset on default CI (reviewed 2026-09-20)
-tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely # no usable GPU adapter on GHA ubuntu (reviewed 2026-09-20)
