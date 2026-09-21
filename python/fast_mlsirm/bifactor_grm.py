@@ -171,6 +171,11 @@ class BifactorGrmFit:
     item parameter remained at its start — never reported as
     ``tolerance_met``; see #1976); ``best_start`` the winning start in
     ``0..n_starts``.
+
+    Under a slope prior (``slope_prior_mu``/``slope_prior_sd`` set),
+    convergence, ``final_loglik_change`` and start ranking refer to the
+    log-posterior EM objective recorded in ``em_objective_trace``;
+    ``loglik_trace`` stays the observed-data log-likelihood.
     """
 
     a_general: np.ndarray
