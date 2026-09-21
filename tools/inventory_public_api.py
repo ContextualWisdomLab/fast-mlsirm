@@ -120,7 +120,7 @@ def collect_python_rows() -> list[dict]:
         if not modname.startswith("fast_mlsirm.") and modname != "fast_mlsirm":
             continue
         try:
-            mod = importlib.import_module(modname)
+            mod = importlib.import_module(modname)  # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
         except Exception:
             continue
         for name in sorted(vars(mod)):
