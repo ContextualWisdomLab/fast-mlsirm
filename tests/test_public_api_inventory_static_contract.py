@@ -150,3 +150,34 @@ class Contract:
     contract = next(node for node in tree.body if isinstance(node, ast.ClassDef))
 
     assert inventory._ast_class_params(contract) == "value"
+
+
+def test_static_protocol_projection_preserves_runtime_variadic_signature() -> None:
+    """An unloaded public Protocol keeps the runtime ``*args, **kwargs`` signature."""
+    inventory = _inventory_tool()
+    path = REPO_ROOT / "python" / "fast_mlsirm" / "scoring" / "execution.py"
+    engine = _class_named(path, "ScoringEngine")
+
+    assert inventory._ast_class_params(engine, path) == "*args, **kwargs"
+
+
+def test_static_projection_resolves_package_relative_inherited_constructor() -> None:
+    """A subclass without ``__init__`` keeps its aliased package base's constructor."""
+    inventory = _inventory_tool()
+    path = REPO_ROOT / "python" / "fast_mlsirm" / "scoring" / "authorization.py"
+    engine = _class_named(path, "StaticFixtureEngine")
+
+    assert inventory._ast_class_params(engine, path) == "descriptor, outcomes"
+
+
+def test_static_projection_marks_unresolvable_package_base(tmp_path: Path) -> None:
+    """A package-relative base that cannot be parsed is marked, never silently empty."""
+    inventory = _inventory_tool()
+    module = tmp_path / "orphan.py"
+    module.write_text(
+        "from .missing import Base\n\nclass Child(Base):\n    pass\n",
+        encoding="utf-8",
+    )
+    child = _class_named(module, "Child")
+
+    assert inventory._ast_class_params(child, module) == "<inherited>"

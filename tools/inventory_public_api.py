@@ -202,8 +202,54 @@ def _dataclass_field_participates_in_init(statement: ast.AnnAssign) -> bool:
     return True
 
 
-def _ast_class_params(node: ast.ClassDef) -> str:
-    """Project explicit or dataclass-generated constructors without importing the module."""
+_MAX_BASE_DEPTH = 8
+
+
+def _package_relative_file(module_path: Path, level: int, module: str | None) -> Path | None:
+    """Resolve ``from <dots><module> import ...`` to a source file beside ``module_path``."""
+    base = module_path.parent
+    for _ in range(level - 1):
+        base = base.parent
+    target = base.joinpath(*module.split(".")) if module else base
+    for candidate in (target.with_suffix(".py"), target / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _inherited_class_params(node: ast.ClassDef, module_path: Path, depth: int) -> str | None:
+    """Project the constructor a class inherits from a same-package base, statically.
+
+    Returns ``None`` when no base is package-owned (the runtime signature is then
+    the external/builtin one this tool leaves empty) and ``"<inherited>"`` when a
+    package-relative base cannot be parsed, so the loss is visible.
+    """
+    tree = ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
+    for base in node.bases:
+        if not isinstance(base, ast.Name):
+            continue
+        for statement in tree.body:
+            if isinstance(statement, ast.ClassDef) and statement.name == base.id and statement is not node:
+                return _ast_class_params(statement, module_path, depth + 1)
+        for statement in tree.body:
+            if not isinstance(statement, ast.ImportFrom) or statement.level == 0:
+                continue
+            for alias in statement.names:
+                if (alias.asname or alias.name) != base.id:
+                    continue
+                source = _package_relative_file(module_path, statement.level, statement.module)
+                if source is None:
+                    return "<inherited>"
+                source_tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+                for candidate in source_tree.body:
+                    if isinstance(candidate, ast.ClassDef) and candidate.name == alias.name:
+                        return _ast_class_params(candidate, source, depth + 1)
+                return "<inherited>"
+    return None
+
+
+def _ast_class_params(node: ast.ClassDef, module_path: Path | None = None, depth: int = 0) -> str:
+    """Project explicit, inherited, or dataclass-generated constructors without importing."""
     for statement in node.body:
         if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)) and statement.name == "__init__":
             return _ast_function_params(statement)
@@ -211,7 +257,16 @@ def _ast_class_params(node: ast.ClassDef) -> str:
         return "*values"
     if any(_is_builtin_exception_base(base) for base in node.bases):
         return "<no-signature>"
-    if not _is_dataclass(node) or not _dataclass_generates_initializer(node):
+    if not _is_dataclass(node):
+        # typing.Protocol installs a variadic __init__ on its subclasses.
+        if any(_annotation_root_name(base) == "Protocol" for base in node.bases):
+            return "*args, **kwargs"
+        if module_path is not None and depth < _MAX_BASE_DEPTH:
+            inherited = _inherited_class_params(node, module_path, depth)
+            if inherited is not None:
+                return inherited
+        return ""
+    if not _dataclass_generates_initializer(node):
         return ""
 
     parts: list[str] = []
@@ -262,7 +317,11 @@ def collect_python_rows() -> list[dict]:
             }
         )
 
-    def visit_static(module_name: str, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> None:
+    def visit_static(
+        module_name: str,
+        node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+        module_path: Path,
+    ) -> None:
         if node.name.startswith("_"):
             return
         key = (module_name, node.name)
@@ -270,7 +329,11 @@ def collect_python_rows() -> list[dict]:
             return
         seen.add(key)
         kind = "class" if isinstance(node, ast.ClassDef) else "function"
-        params = _ast_class_params(node) if isinstance(node, ast.ClassDef) else _ast_function_params(node)
+        params = (
+            _ast_class_params(node, module_path)
+            if isinstance(node, ast.ClassDef)
+            else _ast_function_params(node)
+        )
         rows.append(
             {
                 "source": "python",
@@ -309,7 +372,7 @@ def collect_python_rows() -> list[dict]:
         tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
         for statement in tree.body:
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                visit_static(module_name, statement)
+                visit_static(module_name, statement, py_file)
 
     rows.sort(key=lambda r: (r["module"], r["current_name"]))
     return rows
