@@ -1623,13 +1623,14 @@ pub fn fit_two_tier_grm_fipc(
                 alpha *= 0.5;
             }
             if !accepted {
-                params = previous_params;
-                mean = previous_mean;
-                covariance = previous_covariance;
-                specific_sd = previous_specific_sd;
+                params = previous_params.clone();
+                mean = previous_mean.clone();
+                covariance = previous_covariance.clone();
+                specific_sd = previous_specific_sd.clone();
                 // Recover focal scale before falling back to mean-only steps.
                 // The covariance/specific moment target is evaluated with the
                 // restored item state under the same direct-GH objective.
+                let mut scale_accepted = false;
                 let mut scale_alpha = 0.1;
                 while scale_alpha >= 1e-6 {
                     let candidate_covariance: Vec<f64> = covariance
@@ -1673,7 +1674,7 @@ pub fn fit_two_tier_grm_fipc(
                     }) {
                         covariance = candidate_covariance;
                         specific_sd = candidate_specific_sd;
-                        accepted = true;
+                        scale_accepted = true;
                         break;
                     }
                     scale_alpha *= 0.5;
@@ -1683,6 +1684,7 @@ pub fn fit_two_tier_grm_fipc(
                 // direction repeatedly even after it has passed the focal
                 // fixture. Use a small trust-region step for this recovery
                 // path; the ordinary joint proposal remains unchanged.
+                accepted = false;
                 let mut mean_alpha = 0.1;
                 while !accepted && mean_alpha >= 1e-6 {
                     let candidate_mean: Vec<f64> = mean
@@ -1715,6 +1717,12 @@ pub fn fit_two_tier_grm_fipc(
                         break;
                     }
                     mean_alpha *= 0.5;
+                }
+                if !accepted && scale_accepted {
+                    params = previous_params.clone();
+                    mean = previous_mean.clone();
+                    covariance = previous_covariance.clone();
+                    specific_sd = previous_specific_sd.clone();
                 }
             }
             if accepted {
