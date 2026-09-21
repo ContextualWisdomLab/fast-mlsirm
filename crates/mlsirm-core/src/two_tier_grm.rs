@@ -384,6 +384,10 @@ pub struct TwoTierFipcResult {
     /// Per-iteration prior-update decision labels from the real accept path
     /// (joint / backtrack / scale / mean / rollback). Diagnostic only.
     pub prior_update_decision_trace: Vec<String>,
+    pub gpu_execution_used: bool,
+    pub gpu_backend: Option<String>,
+    pub gpu_device_name: Option<String>,
+    pub cpu_fallback_reason: Option<String>,
 }
 
 /// Validated problem structure shared by the fitter and the public
@@ -1470,6 +1474,7 @@ pub fn fit_two_tier_grm_fipc(
     fixed_threshold: &[f64],
     cfg: &TwoTierFipcConfig,
 ) -> Result<TwoTierFipcResult, String> {
+    crate::gpu_bifactor::reset_gpu_dispatch_receipt();
     let validation_cfg = TwoTierGrmConfig {
         q_primary: cfg.q_primary,
         q_specific: cfg.q_specific,
@@ -2000,7 +2005,8 @@ pub fn fit_two_tier_grm_fipc(
     for i in 0..n_items { if !anchor[i] { n_parameters += v.free_primaries[i].len() + usize::from(v.item_block[i].is_some()) + v.m1; } }
     if cfg.estimate_specific_vars { n_parameters += n_specific; }
     let primary_sd = (0..n_primary).map(|d| covariance[d * n_primary + d].max(0.0).sqrt()).collect();
-    Ok(TwoTierFipcResult { a_primary, a_specific, threshold, primary_mean: mean, primary_cov: covariance, primary_sd, specific_sd, theta_p_eap, theta_p_sd, category_counts, loglik_trace, fixed_loglik_trace, fixed_primary_first_moment_trace, fixed_primary_second_moment_trace, fixed_specific_second_moment_trace, prior_mean_trace, prior_covariance_trace, prior_specific_sd_trace, n_iter, converged, termination_reason, final_loglik_change, n_parameters, n_accepted_prior_steps, n_rollback_full, consecutive_rollback, prior_update_decision_trace })
+    let gpu_receipt = crate::gpu_bifactor::gpu_dispatch_receipt();
+    Ok(TwoTierFipcResult { a_primary, a_specific, threshold, primary_mean: mean, primary_cov: covariance, primary_sd, specific_sd, theta_p_eap, theta_p_sd, category_counts, loglik_trace, fixed_loglik_trace, fixed_primary_first_moment_trace, fixed_primary_second_moment_trace, fixed_specific_second_moment_trace, prior_mean_trace, prior_covariance_trace, prior_specific_sd_trace, n_iter, converged, termination_reason, final_loglik_change, n_parameters, n_accepted_prior_steps, n_rollback_full, consecutive_rollback, prior_update_decision_trace, gpu_execution_used: gpu_receipt.used, gpu_backend: gpu_receipt.backend, gpu_device_name: gpu_receipt.device_name, cpu_fallback_reason: gpu_receipt.fallback_reason })
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item — the

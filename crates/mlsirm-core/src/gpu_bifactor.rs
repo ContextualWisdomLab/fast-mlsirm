@@ -46,6 +46,29 @@
 use crate::gpu::GpuContext;
 #[cfg(all(feature = "gpu", not(coverage)))]
 use wgpu::util::DeviceExt;
+use std::sync::{Mutex, OnceLock};
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct GpuDispatchReceipt {
+    pub used: bool,
+    pub backend: Option<String>,
+    pub device_name: Option<String>,
+    pub fallback_reason: Option<String>,
+}
+
+static LAST_RECEIPT: OnceLock<Mutex<GpuDispatchReceipt>> = OnceLock::new();
+
+fn receipt() -> &'static Mutex<GpuDispatchReceipt> {
+    LAST_RECEIPT.get_or_init(|| Mutex::new(GpuDispatchReceipt::default()))
+}
+
+pub(crate) fn reset_gpu_dispatch_receipt() {
+    *receipt().lock().expect("GPU receipt mutex poisoned") = GpuDispatchReceipt::default();
+}
+
+pub(crate) fn gpu_dispatch_receipt() -> GpuDispatchReceipt {
+    receipt().lock().expect("GPU receipt mutex poisoned").clone()
+}
 
 /// Inputs for one reduced E-step sweep. `tables_groups[g][i]` holds the
 /// log-probability table of group `g`, item `i` (`qg * qs * n_cat` entries
@@ -399,8 +422,14 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         storage_entry, submit_and_readback,
     };
 
-    let ctx = GpuContext::get()?;
+    let Some(ctx) = GpuContext::get() else {
+        receipt().lock().expect("GPU receipt mutex poisoned").fallback_reason =
+            Some("no_usable_adapter_or_device".into());
+        return None;
+    };
     if ctx.adapter_storage_buffers() < MIN_STORAGE_BUFFERS {
+        receipt().lock().expect("GPU receipt mutex poisoned").fallback_reason =
+            Some("adapter_storage_buffer_limit".into());
         return None;
     }
     let device = &ctx.device;
@@ -742,6 +771,13 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         }
     }
 
+    {
+        let mut dispatch = receipt().lock().expect("GPU receipt mutex poisoned");
+        dispatch.used = true;
+        dispatch.backend = Some(ctx.backend().to_owned());
+        dispatch.device_name = Some(ctx.device_name().to_owned());
+        dispatch.fallback_reason = None;
+    }
     Some(ReducedEstepOutputs {
         loglik,
         counts: counts_vec.into_iter().map(f64::from).collect(),
@@ -762,5 +798,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
 pub(crate) fn e_step_reduced_gpu(
     _inputs: &ReducedEstepInputs,
 ) -> Option<ReducedEstepOutputs> {
+    receipt().lock().expect("GPU receipt mutex poisoned").fallback_reason =
+        Some("gpu_feature_disabled_or_coverage_build".into());
     None
 }

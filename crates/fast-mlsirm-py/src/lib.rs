@@ -2048,6 +2048,10 @@ fn fit_two_tier_grm_fipc(
         "prior_update_decision_trace",
         res.prior_update_decision_trace,
     )?;
+    out.set_item("gpu_execution_used", res.gpu_execution_used)?;
+    out.set_item("gpu_backend", res.gpu_backend)?;
+    out.set_item("gpu_device_name", res.gpu_device_name)?;
+    out.set_item("cpu_fallback_reason", res.cpu_fallback_reason)?;
     Ok(out.into())
 }
 

@@ -426,6 +426,9 @@ fn fipc_gpu_device_matches_cpu_or_fail_closed_fallback() {
         &a_primary, &a_specific, &thresholds, &config(crate::Device::Gpu),
     )
     .expect("GPU FIPC must succeed or fail closed to CPU");
+    if !gpu.gpu_execution_used {
+        assert!(gpu.cpu_fallback_reason.is_some());
+    }
     assert!((cpu.loglik_trace[0] - gpu.loglik_trace[0]).abs() < 2e-3);
     assert!((cpu.fixed_loglik_trace[0] - gpu.fixed_loglik_trace[0]).abs() < 2e-3);
     for (actual, expected) in gpu.primary_mean.iter().zip(&cpu.primary_mean) {
@@ -434,6 +437,56 @@ fn fipc_gpu_device_matches_cpu_or_fail_closed_fallback() {
     for (actual, expected) in gpu.theta_p_eap.iter().zip(&cpu.theta_p_eap) {
         assert!((actual - expected).abs() < 2e-3);
     }
+}
+
+#[test]
+#[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
+fn fipc_gpu_hardware_gate_requires_actual_dispatch() {
+    let (a_primary, a_specific, thresholds, _) = tiny_params();
+    let n_persons = 60;
+    let y: Vec<usize> = (0..n_persons * TINY_N_ITEMS)
+        .map(|index| index % TINY_N_CAT)
+        .collect();
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let fit = fit_two_tier_grm_fipc(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &anchors,
+        &a_primary,
+        &a_specific,
+        &thresholds,
+        &TwoTierFipcConfig {
+            q_primary: 7,
+            q_specific: 7,
+            max_iter: 1,
+            tol: 1e-5,
+            newton_iter: 2,
+            ridge: 1e-8,
+            estimate_specific_vars: false,
+            device: crate::Device::Gpu,
+        },
+    )
+    .expect("GPU FIPC must return a result or fail closed");
+    assert!(
+        fit.gpu_execution_used,
+        "GPU acceptance unmet: fallback={:?}, backend={:?}, device={:?}",
+        fit.cpu_fallback_reason,
+        fit.gpu_backend,
+        fit.gpu_device_name
+    );
+    eprintln!(
+        "FIPC GPU dispatch receipt: backend={:?};device={:?};fallback={:?}",
+        fit.gpu_backend, fit.gpu_device_name, fit.cpu_fallback_reason
+    );
+    assert!(fit.gpu_backend.is_some());
+    assert!(fit.gpu_device_name.is_some());
 }
 
 // ---------------------------------------------------------------------------
