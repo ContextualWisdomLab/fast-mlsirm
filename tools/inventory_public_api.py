@@ -118,6 +118,7 @@ def collect_python_rows() -> list[dict]:
         if any(part.startswith("_") for part in modname.split(".")):
             continue
         try:
+            # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import # fmt: skip
             mod = importlib.import_module(modname)
         except Exception:
             continue
@@ -139,7 +140,9 @@ _PYMODULE_RE = re.compile(
 )
 _WRAP_PYFUNCTION_RE = re.compile(r"wrap_pyfunction!\((\w+)")
 _SIGNATURE_ATTR_RE = re.compile(r"#\[pyo3\(signature\s*=\s*\((.*?)\)\)\]", re.DOTALL)
-_FN_DEF_RE = re.compile(r"fn\s+{name}\s*(?:<[^>]*>)?\s*\((.*?)\)\s*(?:->|\{{)", re.DOTALL)
+_FN_DEF_RE = re.compile(
+    r"fn\s+{name}\s*(?:<[^>]*>)?\s*\((.*?)\)\s*(?:->|\{{)", re.DOTALL
+)
 
 
 def _extract_braced_block(text: str, open_brace_index: int) -> str:
@@ -206,7 +209,9 @@ def collect_rust_rows() -> list[dict]:
                         pass  # take the last (closest) match before fn decl
                     # Nothing but whitespace/other attrs sits between the closest
                     # #[pyo3(signature = (...))] and the "fn <name>(" it governs.
-                    if sig_match is not None and preceding[sig_match.end() :].strip() in (
+                    if sig_match is not None and preceding[
+                        sig_match.end() :
+                    ].strip() in (
                         "",
                         "#[allow(clippy::too_many_arguments)]",
                     ):
