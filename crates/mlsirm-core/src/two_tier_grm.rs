@@ -1121,7 +1121,19 @@ fn e_step_fipc_cpu(
     let mut person_sd = vec![0.0; v.n_persons * p];
     let mut loglik = 0.0;
 
-    for pp in 0..v.n_persons {
+    let mut person_order: Vec<usize> = (0..v.n_persons).collect();
+    person_order.sort_unstable_by(|&left, &right| {
+        (0..v.n_items)
+            .map(|i| {
+                let left_observed = observed.is_none_or(|o| o[left * v.n_items + i]);
+                let right_observed = observed.is_none_or(|o| o[right * v.n_items + i]);
+                (left_observed, y[left * v.n_items + i])
+                    .cmp(&(right_observed, y[right * v.n_items + i]))
+            })
+            .find(|ordering| *ordering != std::cmp::Ordering::Equal)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for pp in person_order {
         gen_log.copy_from_slice(log_w);
         for &i in &v.specific_free {
             if !is_obs(pp, i) { continue; }

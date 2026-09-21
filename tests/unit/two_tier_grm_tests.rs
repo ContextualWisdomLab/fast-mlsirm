@@ -490,7 +490,7 @@ fn fipc_gpu_hardware_gate_requires_actual_dispatch() {
 }
 
 #[test]
-fn fipc_person_permutation_is_stable_within_f64_reduction_tolerance() {
+fn fipc_person_permutation_is_stable_at_consumer_exact_tolerance() {
     let (a_primary, a_specific, thresholds, _) = tiny_params();
     let n_persons = 60;
     let anchors = [true, true, true, true, true, true, true, true, false, false];
@@ -544,8 +544,8 @@ fn fipc_person_permutation_is_stable_within_f64_reduction_tolerance() {
         }
     }
     assert!(
-        max_delta < 1e-8,
-        "person permutation changed CPU EAP beyond reduction tolerance: {max_delta:e}"
+        max_delta <= 1e-10,
+        "person permutation changed CPU EAP beyond consumer tolerance: {max_delta:e}"
     );
 }
 
