@@ -1,6 +1,6 @@
-"""Materialize late-life-owned FIPC sidecars onto an immutable fit artifact.
+"""Materialize research-consumer-owned FIPC sidecars onto an immutable fit artifact.
 
-This command never fits or invents research values. The late-life consumer
+This command never fits or invents research values. The research consumer
 must provide row identity and expected-raw sidecars; this tool only validates
 their hashes/contracts and writes a new derived artifact.
 """
