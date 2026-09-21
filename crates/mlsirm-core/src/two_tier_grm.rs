@@ -1397,6 +1397,7 @@ pub fn fit_two_tier_grm_fipc(
     let mut n_accepted_prior_steps = 0;
     let mut n_rollback_full = 0;
     let mut consecutive_rollback = 0;
+    let mut recovery_progress = false;
     const MAX_CONSECUTIVE_ROLLBACKS: usize = 3;
 
     loop {
@@ -1456,6 +1457,7 @@ pub fn fit_two_tier_grm_fipc(
             // A rejected combined update restores the prior iteration state;
             // its next LL is flat by construction, not evidence of convergence.
             if !rolled_back
+                && recovery_progress
                 && change <= cfg.tol * (1.0 + previous.expect("previous loglik exists").abs())
             {
                 converged = true;
@@ -1704,6 +1706,19 @@ pub fn fit_two_tier_grm_fipc(
                 }
             }
             if accepted {
+                let mean_moved = mean
+                    .iter()
+                    .zip(&previous_mean)
+                    .any(|(&new, &old)| (new - old).abs() > 1e-6);
+                let scale_moved = covariance
+                    .iter()
+                    .zip(&previous_covariance)
+                    .any(|(&new, &old)| (new - old).abs() > 1e-6)
+                    || specific_sd
+                        .iter()
+                        .zip(&previous_specific_sd)
+                        .any(|(&new, &old)| (new - old).abs() > 1e-6);
+                recovery_progress |= mean_moved && scale_moved;
                 n_accepted_prior_steps += 1;
                 consecutive_rollback = 0;
             } else {
