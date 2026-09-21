@@ -70,6 +70,30 @@ needs_high_q = pytest.mark.skipif(
     reason="study-precision grids (121/241 nodes); rerun with STAGE5_HIGH_Q=1",
 )
 
+# The Rust core reports an explicit ``device="gpu"`` request that fell back
+# to the f64 CPU path only on stderr. ``capfd`` swallows that line, so a
+# runner without a usable adapter would otherwise "pass" CPU-vs-CPU parity.
+GPU_FALLBACK_MARKER = "no usable GPU adapter was found"
+
+
+def _require_gpu_execution(captured_err):
+    """Fail when an explicit GPU fit fell back to the CPU implementation."""
+    if GPU_FALLBACK_MARKER in captured_err:
+        pytest.fail(
+            "explicit device='gpu' fit fell back to CPU; parity would compare "
+            "CPU with CPU and is not GPU evidence"
+        )
+
+
+def test_gpu_execution_guard_rejects_cpu_fallback():
+    """The fallback guard fails on the core's CPU-fallback warning."""
+    _require_gpu_execution("")
+    with pytest.raises(pytest.fail.Exception):
+        _require_gpu_execution(
+            "fast-mlsirm: GPU bifactor E-step requested but no usable GPU "
+            "adapter was found; falling back to CPU implementation."
+        )
+
 
 def _fixture(n_persons=48, n_items=6, n_cat=3, seed=20260917):
     smap = np.zeros(n_items, dtype=np.int64)
@@ -127,6 +151,7 @@ def test_bifactor_gpu_parity_q121(capfd):
     t1 = time.perf_counter()
     fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
     t2 = time.perf_counter()
+    _require_gpu_execution(capfd.readouterr().err)
 
     slope_diff, threshold_diff, loglik_diff = _report(
         "single q=121", t1 - t0, t2 - t1, fit_cpu, fit_gpu
@@ -151,6 +176,7 @@ def test_bifactor_gpu_parity_q241(capfd):
     t1 = time.perf_counter()
     fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
     t2 = time.perf_counter()
+    _require_gpu_execution(capfd.readouterr().err)
 
     slope_diff, threshold_diff, loglik_diff = _report(
         "single q=241", t1 - t0, t2 - t1, fit_cpu, fit_gpu
@@ -175,6 +201,7 @@ def test_bifactor_gpu_parity_q481(capfd):
     t1 = time.perf_counter()
     fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
     t2 = time.perf_counter()
+    _require_gpu_execution(capfd.readouterr().err)
 
     slope_diff, threshold_diff, loglik_diff = _report(
         "single q=481", t1 - t0, t2 - t1, fit_cpu, fit_gpu
@@ -204,6 +231,7 @@ def test_bifactor_gpu_parity_q241_wide_items_metal_workgroups(capfd):
     t1 = time.perf_counter()
     fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
     t2 = time.perf_counter()
+    _require_gpu_execution(capfd.readouterr().err)
 
     slope_diff, threshold_diff, loglik_diff = _report(
         "wide q=241 (Metal 2-D dispatch)", t1 - t0, t2 - t1, fit_cpu, fit_gpu

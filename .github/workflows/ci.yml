@@ -9,6 +9,21 @@ on:
 permissions:
   contents: read
 
+env:
+  # Single source for the GPU-executor node IDs. python-matrix deselects
+  # exactly these; gpu-smoke runs exactly these with STAGE5_HIGH_Q=1 under a
+  # zero-skip, no-CPU-fallback JUnit gate; the required `python` aggregate
+  # needs both. A renamed ID fails gpu-smoke (not found) or reappears as an
+  # unallowlisted skip in python-matrix, so none can silently disappear.
+  GPU_EXECUTOR_TESTS: >-
+    tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely
+    tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q121
+    tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241
+    tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q481
+    tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241_wide_items_metal_workgroups
+    tests/test_bifactor_gpu_high_q.py::test_bifactor_cpu_q121_vs_q241_agree
+    tests/test_bifactor_bootstrap_benchmark.py::test_joint_bootstrap_cpu_vs_gpu_wall_time_q121
+
 concurrency:
   # Keep one active CI run per PR while preserving independent push runs. A
   # synchronized head cancels its queued/running predecessor instead of
@@ -43,11 +58,15 @@ jobs:
       - run: python -m pip install --no-deps --no-build-isolation -e .
       - name: Verify Rust core is the resolved default backend
         run: python -c "import fast_mlsirm._core as c; from fast_mlsirm.backend import resolve_backend; from fast_mlsirm import FitConfig; assert hasattr(c, 'neg_loglik_and_grad'); assert resolve_backend(FitConfig().backend) == 'rust'; print('rust primary OK')"
-      - run: pytest
+      - name: Run suite (GPU-executor tests run in gpu-smoke)
+        run: |
+          args=()
+          for node in $GPU_EXECUTOR_TESTS; do args+=(--deselect "$node"); done
+          pytest "${args[@]}"
 
   python:
     name: python
-    needs: python-matrix
+    needs: [python-matrix, gpu-smoke]
     if: ${{ always() && (github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed')) }}
     runs-on: ubuntu-latest
     steps:
@@ -55,6 +74,10 @@ jobs:
         run: |
           echo "python-matrix result=${{ needs.python-matrix.result }}"
           test "${{ needs.python-matrix.result }}" = "success"
+      - name: Require GPU-executor evidence
+        run: |
+          echo "gpu-smoke result=${{ needs.gpu-smoke.result }}"
+          test "${{ needs.gpu-smoke.result }}" = "success"
 
 
   rust:
@@ -76,18 +99,27 @@ jobs:
 
   gpu-smoke:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    # One bounded explicit-GPU parity test remains on every PR. The full
-    # paper-design GPU recovery study runs in the scheduled/manual workflow.
+    # Runs every GPU_EXECUTOR_TESTS node on Mesa lavapipe: a CPU-emulated
+    # software Vulkan adapter. This is functional coverage of the WGSL/wgpu
+    # path only -- not physical-GPU/Metal parity or performance evidence.
+    # The full paper-design GPU recovery study runs in the scheduled/manual
+    # workflow.
+    name: gpu-smoke (${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
     env:
+      STAGE5_HIGH_Q: "1"
       WGPU_BACKEND: vulkan
       XDG_RUNTIME_DIR: /tmp/fast-mlsirm-xdg-runtime
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.97.1
@@ -134,25 +166,46 @@ jobs:
           test -n "$LVP_ICD"
           echo "VK_ICD_FILENAMES=$LVP_ICD" >> "$GITHUB_ENV"
       - name: Prove Vulkan compute adapter availability
-        run: vulkaninfo --summary
+        run: |
+          vulkaninfo --summary
+          # Record the workgroup-count limit that decides whether the wide
+          # q=241 leg actually exercises the multi-dimension dispatch split.
+          vulkaninfo 2>/dev/null | grep -A3 maxComputeWorkGroupCount | head -4
       - run: python -m pip install --require-hashes -r requirements/ci.txt
       - run: python -m pip install --no-deps --no-build-isolation -e .
-      - name: Run explicit GPU parity without a skip
-        run: pytest tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely -q --junitxml=gpu-junit.xml
-      - name: Reject skipped GPU evidence
+      - name: Run GPU-executor tests without a skip
+        run: |
+          # shellcheck disable=SC2086 # intentional word splitting of node IDs
+          pytest $GPU_EXECUTOR_TESTS -q -rA --junitxml=gpu-junit.xml -o junit_logging=all
+      - name: Reject skipped, missing, or CPU-fallback GPU evidence
         run: |
           python - <<'PY'
+          import os
           from pathlib import Path
           from xml.etree import ElementTree
 
+          expected = set(os.environ["GPU_EXECUTOR_TESTS"].split())
           root = ElementTree.parse(Path("gpu-junit.xml")).getroot()
           suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
-          tests = sum(int(suite.attrib.get("tests", "0")) for suite in suites)
-          skipped = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)
-          if tests < 1:
-              raise SystemExit("GPU evidence did not execute a test")
-          if skipped != 0:
-              raise SystemExit(f"GPU evidence contained {skipped} skipped test(s)")
+          executed = set()
+          for case in (c for suite in suites for c in suite.iter("testcase")):
+              if case.find("skipped") is not None:
+                  raise SystemExit(f"GPU evidence skipped: {case.attrib['name']}")
+              if case.find("failure") is not None or case.find("error") is not None:
+                  raise SystemExit(f"GPU evidence failed: {case.attrib['name']}")
+              output = "".join(
+                  node.text or "" for node in case if node.tag in ("system-err", "system-out")
+              )
+              if "no usable GPU adapter was found" in output:
+                  raise SystemExit(f"GPU evidence fell back to CPU: {case.attrib['name']}")
+              module = case.attrib["classname"].replace(".", "/") + ".py"
+              executed.add(f"{module}::{case.attrib['name']}")
+          if executed != expected:
+              raise SystemExit(
+                  f"GPU evidence mismatch: missing={sorted(expected - executed)} "
+                  f"unexpected={sorted(executed - expected)}"
+              )
+          print(f"GPU-executor evidence: {len(executed)} tests, 0 skipped, no CPU fallback")
           PY
 
   fuzz:
