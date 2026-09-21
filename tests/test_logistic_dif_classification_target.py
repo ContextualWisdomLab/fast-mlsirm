@@ -21,6 +21,9 @@ reported as descriptive numbers with no letter attached to either.
 
 from __future__ import annotations
 
+import pytest
+pytestmark = pytest.mark.filterwarnings('ignore::DeprecationWarning')
+
 import numpy as np
 import pytest
 
