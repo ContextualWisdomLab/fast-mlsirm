@@ -94,8 +94,39 @@ metadata, **not** the code under test. The Python actually executed is commit
 `b9de819503142bfb7ec914e89d0723d23afb9c5b857c1b907d4132797d86298d` and
 `sha256(python/fast_mlsirm/_legacy_init.py)` is
 `db1fc2ddfc65c01a4d958d39129c2ac1be84fe64b09fed49227a71d809102771`, identical
-on the host and in `git show 54a5925c:`. The compiled core is not exercised by
-this path, which is pure NumPy.
+on the host and in `git show 54a5925c:`.
+
+**The compiled core IS on this path** (corrected; an earlier revision of this
+document claimed the opposite). `predict_bifactor_expected_total_score` calls
+`predict_expected_response_polytomous` per item, which routes through
+`_polytomous_predictions`, which *requires* the native extension — it raises
+`RuntimeError("polytomous predictions require the compiled Rust core")` when the
+module is absent and otherwise calls `core.polytomous_predictions`
+(`python/fast_mlsirm/polytomous.py:218-226`). The new group-selection and
+validation logic is NumPy, but every expected-score value in this evidence was
+produced by native code. The run is therefore **mixed-provenance by
+construction**: branch Python over a previously built native artifact, bound
+here so the mixture is auditable rather than implied.
+
+| Loaded native artifact | Value |
+|---|---|
+| Module resolved at run time (`fast_mlsirm._core.__file__`) | `…/late-life-w-ac-mg-s1-20260921/local/branch_verify/fast_mlsirm/_core.cpython-312-x86_64-linux-gnu.so` |
+| sha256 / size | `a0453b7af30038e5f848c7a1f0735c683e41fa809341770c59e123a2d10978ed` / 14362448 bytes |
+| `polytomous_predictions` exported | yes (verified on the loaded module, not inferred) |
+| Source it was copied from | `/data/orca/workspaces/fmls-perf-diag-venv/lib/python3.12/site-packages/fast_mlsirm/_core.cpython-312-x86_64-linux-gnu.so`, byte-identical (same sha256) |
+| Installed distribution | `fast_mlsirm-0.11.4.dist-info`; its `RECORD` lists `sha256=oEU7evMAOOX4SMeh8HNcaD5B-oCTQXcMWeEjotEJeO0`, which decodes to the same digest |
+| Wheel identity | `fast_mlsirm-0.11.4-cp312-cp312-manylinux_2_35_x86_64.whl`, built by maturin 1.15.0 |
+| Wheel origin (`direct_url.json`) | `file:///data/orca/workspaces/fmls-g4w-fipc-s1-wheels/32807ed0/…`, archive sha256 `664aef1a467063428423fe5c38115c197d1a7dcd4e182204d63fc5324355f5f8` |
+
+That last row is the material caveat: the native half came from a **locally
+built wheel on an internal path, not an immutable published release**. It is
+adequate to demonstrate that the multiple-group consume path works on the
+preserved fit without refitting; it is *not* release acceptance, and it does not
+pre-empt the acceptance owed once an immutable release exists (release
+provenance, version and artifact digest, the installed loaded-core path and hash
+at that time, the saved fit consumed with no refit, and validation of all 1020
+row keys with their group correspondence — index-wise person/row/group alignment
+and per-person curve identity, not merely the score distribution).
 
 What it establishes:
 
@@ -133,6 +164,37 @@ call wrote the fit under that key first, so the preserved `.pkl` holds a
 back where a score dict was expected. The outer key is now
 `W_ac_mg_score_q{Q_NODES}_seed{SEED}`; the inner (fit) key is unchanged, so
 the preserved checkpoint keeps its name and its meaning.
+
+```diff
+--- library_score_corr_W_only_s1.py (before)
++++ analysis/library_score_corr_W_only_s1.py (after)
+@@ -25,8 +25,11 @@
++    # Distinct schema keys: score_ac_multigroup checkpoints the FIT under
++    # W_ac_mg_q..._seed..., so the score dict must not reuse that key -- the
++    # outer read would otherwise hand a BifactorMultigroupFit back as a score.
+     out = lsc.checkpointed(
+-        f"W_ac_mg_q{lsc.Q_NODES}_seed{lsc.SEED}",
++        f"W_ac_mg_score_q{lsc.Q_NODES}_seed{lsc.SEED}",
+         lambda: lsc.score_ac_multigroup(x, masks),
+     )
+```
+
+**Ownership and delivery path.** That file lives on the analysis host, in a
+directory that is not a git repository, so the edit cannot ride in this
+repository's pull request and would otherwise exist only in a shell history.
+It is owned by this change's author as the expected-raw / checkpoint-schema
+owner, and is delivered by this record plus an on-host backup:
+
+| Artifact | sha256 |
+|---|---|
+| `analysis/library_score_corr_W_only_s1.py` (after) | `427fdad0304d53ba2156a4c0de447af0597d79da26b6b2712c562f179030e4f0` |
+| backup before the edit, `local/branch_verify/library_score_corr_W_only_s1.py.bak` | `ee862685a97118b24941e7de9d3824cab7d1efa825796fdc49ac97885b1a270a` |
+| evidence script, `local/branch_verify/verify_mg_expected_raw.py` | `8ef158a5d9867c345550953e34e448e3f02963c11f1cab11f6f5bafbe210e25f` |
+| preserved fit checkpoint, unchanged by the edit | `d74eb91aa38a0e42cb1253feba58db0f127d8bc3b24b0edfd16d73a216c81411` |
+
+The shared `library_score_correlations.py::expected_raw_from_bifactor_fit` was
+**not** touched: that consumer has its own writer, and migrating it onto the
+public API is coordinated work scheduled after release acceptance.
 
 ## Follow-ups (not in this change)
 
