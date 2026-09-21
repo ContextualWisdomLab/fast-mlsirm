@@ -109,10 +109,10 @@ def test_poly_fipc_validation() -> None:
     anchor = np.zeros(N_ITEMS, dtype=bool)
     anchor[0] = True
     with pytest.raises(ValueError):
-        fit_poly_fipc(y, N_CAT, np.zeros(N_ITEMS, dtype=bool), good_slope, good_cat)
+        fit_poly_fipc(y, N_CAT, np.zeros(N_ITEMS, dtype=bool), good_slope, good_cat, q_theta=21, max_iter=200, tol=1e-6)
     # #1929: no node-count cap; q_theta=25 is now accepted, only < 1 is not.
     with pytest.raises(ValueError):
-        fit_poly_fipc(y, N_CAT, anchor, good_slope, good_cat, q_theta=0)
+        fit_poly_fipc(y, N_CAT, anchor, good_slope, good_cat, q_theta=0, max_iter=200, tol=1e-6)
 
 
 SPECIFIC_MAP = np.array([0, 0, 0, 0, 1, 1, 1, 1], dtype=np.int64)
@@ -140,7 +140,16 @@ def test_bifactor_fipc_recovers_shift() -> None:
 
     y_ref = _simulate_bifactor(101, 500, 0.0, 1.0)
     ref = fit_bifactor_grm(
-        y_ref, SPECIFIC_MAP, N_CAT, 2, q_general=21, q_specific=11, max_iter=300, tol=1e-5
+        y_ref,
+        SPECIFIC_MAP,
+        N_CAT,
+        2,
+        q_general=21,
+        q_specific=11,
+        max_iter=300,
+        tol=1e-5,
+        n_starts=1,
+        seed=0x9E37_79B9_7F4A_7C15,
     )
     assert ref.converged
     anchor = np.zeros(N_ITEMS, dtype=bool)

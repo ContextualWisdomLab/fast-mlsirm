@@ -9,16 +9,15 @@ point estimation, and true-parameter recovery checks.
 
 The implemented simple-structure MLSIRM/MLS2PLM path follows Jeon, Jin,
 Schweinberger, and Baugh (2021), Kang and Jeon (2025), and Molenaar and Jeon
-(2026). Adjacent shipped screens include Angoff delta-plot DIF
-([`docs/delta_plot_dif.md`](docs/delta_plot_dif.md)) and Bradley–Terry MM
-ranking ([`docs/bradley_terry_mm.md`](docs/bradley_terry_mm.md)). Primary
+(2026). Adjacent shipped methods include Angoff delta-plot DIF
+([`docs/delta_plot_dif.md`](https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/docs/delta_plot_dif.md)) and Bradley–Terry MM
+ranking ([`docs/bradley_terry_mm.md`](https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/docs/bradley_terry_mm.md)). Primary
 citations and decision records live in
-[`docs/traceability/research-basis.md`](docs/traceability/research-basis.md)
-and [`docs/adr/README.md`](docs/adr/README.md). Score interpretation and
-fairness remain governed by AERA, APA, and NCME (2014); those methods are not
-CWE/OWASP/NIST controls.
+[`docs/traceability/research-basis.md`](https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/docs/traceability/research-basis.md)
+and [`docs/adr/README.md`](https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/docs/adr/README.md). Score interpretation and
+fairness remain governed by AERA, APA, and NCME (2014).
 
-The first implementation keeps the public API small:
+The public API stays small:
 
 ```python
 import numpy as np
@@ -72,12 +71,12 @@ fixed_item_calibration = fixed_item_calibration_diagnostics(
 print(fixed_item_calibration.best)
 ```
 
-## What Works Now
+## Features
 
 - Canonical MLS2PLM binary response simulation.
 - `gamma=0` no-CD simulation.
 - Regularized JML/MAP-style fitting for `MIRT`, `MLSRM`, `MLS2PLM`,
-  `ULSRM`, and `ULS2PLM` constraints.
+  `ULSRM`, `ULS2PLM`, and `BIFAC2PLM` constraints.
 - Missing response exclusion via `NaN`, `-1`, or an explicit mask, including
   missing-by-design rows or items when at least one response is observed.
 - Adam and small L-BFGS-style optimizers without SciPy.
@@ -98,82 +97,27 @@ print(fixed_item_calibration.best)
   using fixed evaluation-item likelihood and an item-fit penalty.
 - Rubric-centered schemas, deterministic bounded item-blueprint compilation,
   and canonical provider-neutral generation contracts. See
-  [Rubric-Centered Item Generation](docs/rubric_item_generation.md).
+  [Rubric-Centered Item Generation](https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/docs/rubric_item_generation.md).
 - Provider-neutral contextual-orchestrator LLM-as-a-Judge integration with
   strict structured parsing. A judge result becomes an IRT row only through
-  LLMJudgeResult.to_irt_row() with at least two criteria, followed by
-  validate_irt_response_matrix() for a multi-item dichotomous or explicitly
-  categorized polytomous matrix. When `category_count` is supplied without an
-  explicit method, the adapter defaults to `category_method="binary_threshold"`:
-  each ordered boundary is a bounded Boolean call, and malformed or
-  non-monotone evidence fails closed. Equal-width direct K-way projection is
-  calibration-only and requires explicit `category_method="direct"`;
-  `category_method="cumulative_threshold"` remains an explicit alternative
-  that asks for one strict Boolean vector. Binary threshold judging has a
-  maximum of 64 calls per result.
-  When the injected contextual-orchestrator exposes its bounded
-  `client.local_concurrency`, those independent boundary calls reuse that limit;
-  generic injected orchestrators remain sequential by default.
-  `ContextualOrchestratorJudge` accepts only an adapter declaring
-  `contextual_orchestrator_contract == "contextual-orchestrator-contract-v1"`;
-  an arbitrary direct provider transport fails at construction. This is an
-  architectural provenance marker, not a security credential; production
-  adapters must still route, trace, and validate through contextual-orchestrator.
-  A failed binary boundary raises `JudgeFormatError` with bounded `.evidence`
-  containing call/parse status, partial trace-step counts, usage, and ordered
-  boundary records; callers must retain that failure in calibration results.
-  For semantically interpretable polytomous calibration, callers may provide a
-  `category_anchors` tuple of exactly K definitions on every `JudgeCriterion`;
-  those definitions are carried as rubric data to each binary boundary. Mixed,
-  incomplete, or mismatched anchor sets are rejected. Omitted anchors remain a
-  backwards-compatible exploratory mode and must not be treated as gold
-  calibration evidence. Each binary prompt asks whether the answer meets at
-  least the requested boundary (not exactly that category), requires
-  criterion/task relevance, and rejects generic intent, unrelated detail,
-  missing-control admissions, or rubric repetition as evidence.
-  Category-count and prompt-perturbation calibration remain required for all
-  methods. See
+  `LLMJudgeResult.to_irt_row()` with at least two criteria, followed by
+  `validate_irt_response_matrix()`. Polytomous scoring defaults to
+  `category_method="binary_threshold"`, where each ordered boundary is a
+  bounded Boolean call and malformed or non-monotone evidence fails closed;
+  `"direct"` and `"cumulative_threshold"` are explicit alternatives.
+  `ContextualOrchestratorJudge` accepts only an adapter that declares the
+  contextual-orchestrator contract, so a raw provider transport fails at
+  construction. Category-count and prompt-perturbation calibration are required
+  for every method, and paired controls are available through
+  `build_multiple_choice_calibration_cases()` and
+  `evaluate_paired_calibration()`. Paired score deltas are diagnostic
+  sensitivity evidence, not a causal law or a claim of judge debiasing.
+  The response-matrix and calibration contracts are specified in
   [ADR 0005](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0005-irt-response-matrix-contract.md),
   [ADR 0006](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0006-polytomous-llm-judge-bias-calibration.md), and
   [ADR 0008](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0008-fast-judge-review-hardening.md).
-  Production and benchmark IRT readiness additionally requires every declared
-  polytomous category to be observed at least once for every item; low-level
-  diagnostic fitters remain available for partial-occupancy fixtures.
-  `build_multiple_choice_calibration_cases()` and
-  `evaluate_paired_calibration()` provide bounded paired controls for
-  baseline, option-only/no-question, shuffled-option, and
-  distractor-replacement variants. They accept an existing
-  `ContextualOrchestratorJudge`, so every calibration call uses the
-  contextual-orchestrator route; provider, parse, semantic, and IRT failures
-  remain in the denominator, with no retry, repair, keyword matching, or
-  positional category inference. Gold categories and contamination status are
-  caller-supplied, and every successful result must project to multiple
-  criterion columns before it can be used as a polytomous row. Paired score
-  deltas are diagnostic sensitivity evidence, not a causal positive-option-
-  count law or a claim of judge debiasing. When a binary judge raises a
-  `JudgeFormatError`, the report retains its bounded `.evidence` (boundary
-  statuses, parse state, trace counts, and usage) while excluding source text
-  and raw model output.
-  Cross-repository exact-head review, structured Strix evidence, and merge
-  policy are recorded in [contextual-orchestrator ADR 0004](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0004-pr-review-merge-loop.md) and
-  [ADR 0009 dependency cooldown](https://github.com/ContextualWisdomLab/contextual-orchestrator/blob/1b7dbd2a46533f41072def1fb94283147134cab5/docs/planning/adrs/0009-supply-chain-dependency-cooldown.md).
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
-- Automated benchmark evidence reports from release-acceptance timing.
-- Release evidence index reports that tie dist artifact hashes, acceptance,
-  benchmark, sales-readiness, and buyer-packet evidence to one commit.
-- Single-command commercial release evidence builder for dist, acceptance,
-  benchmark, sales-readiness, buyer packet, release index, and final gate
-  output.
-- Procurement due-diligence evidence reports for distribution metadata,
-  policy files, commercial-release integrity, GitHub snapshot state, and
-  SHA256-verified HTML review output.
-- PR queue governance evidence reports for open PR review state, stale and
-  changes-requested risk counts, release-scope conflict classification, and
-  SHA256-verified HTML review output.
-- Figma evidence sync reports that verify the static buyer-review design packet
-  still references buyer packet, release evidence index, procurement due
-  diligence, and PR queue governance evidence while Code Connect stays disabled.
-- CLI commands for simulation and fitting.
+- CLI commands for simulation, fitting, diagnostics, and report rendering.
 - Rust-backed fitting objective (neg-loglik, gradients, and distance kernels)
   via PyO3/maturin as the primary numeric path, with a numerically-identical
   NumPy reference backend kept for parity testing. `auto` fails closed when
@@ -181,153 +125,46 @@ print(fixed_item_calibration.best)
 
 ## Install
 
-For local development:
-
 ```bash
-python -m pip install -e .
+python -m pip install fast-mlsirm
 ```
 
+Python 3.12 or newer. Published wheels ship the compiled Rust core, so nothing
+else is needed to fit a model.
+
 The default runtime backend is `"auto"`. It uses the compiled Rust core
-(`fast_mlsirm._core`) and fails closed when that extension is unavailable.
-Automatic resolution never silently selects NumPy. Source and editable installs
-use maturin to build the extension, so they require a working Rust toolchain;
-installed wheels ship the compiled core. Pass `backend="numpy"` only when you
-want the explicit pure-Python reference used for parity testing.
-The core Rust workspace can be tested with:
+(`fast_mlsirm._core`) and fails closed when that extension is unavailable;
+automatic resolution never silently selects NumPy. The NumPy reference path is
+reached explicitly through `fast_mlsirm.fit_reference()` or
+`fast-mlsirm fit --reference`, not by passing `backend="numpy"` to `fit()`.
+
+For local development from a checkout:
 
 ```bash
+python -m pip install -e ".[dev]"
 cargo test --workspace
 ```
 
-The PyO3 extension crate is built by maturin and exercised by the Python backend
-parity tests.
+Source and editable installs build the extension with maturin, so they need a
+working Rust toolchain; the PyO3 crate is exercised by the Python parity
+tests.
 
-## Commercial Readiness
+## Project Status
 
-The current release is supportable as a commercial beta for technical teams that need
-local MLS2PLM simulation, point-estimate fitting, diagnostics, and report
-generation. It is not a regulated decision product, hosted assessment platform,
-or Bayesian posterior inference engine. See:
+`fast-mlsirm` is an alpha research library. It is usable today by teams that
+run local MLS2PLM simulation, point-estimate fitting, diagnostics, and report
+generation, and it is not a regulated decision product, a hosted assessment
+platform, or a Bayesian posterior inference engine.
 
-- [Commercial readiness gate](docs/commercial_readiness.md)
-- [Enterprise sales readiness gate](docs/enterprise_sales_readiness.md)
-- [KRW 2,000,000,000 product readiness gate](docs/20b_product_readiness.md)
-- [Buyer demo storyboard](docs/buyer_demo_storyboard.md)
-- [Figma product design packet](docs/figma_product_design_packet.md)
-- [IRT stability product design and equation contract](docs/irt_stability_product_design.md)
-- [ROI evidence model](docs/roi_evidence_model.md)
-- [Release acceptance guide](docs/release_acceptance.md)
-- [Security policy](SECURITY.md)
-- [Support policy](SUPPORT.md)
-- [Changelog](CHANGELOG.md)
+Every tagged release is built from a wheel that carries the compiled Rust core,
+and is checked against the Rust/NumPy parity suite plus a release-acceptance
+run before publication. The procedure lives in the
+[release acceptance guide](https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/docs/release_acceptance.md).
 
-Sales readiness verification uses:
-
-```bash
-python scripts/build_commercial_release.py \
-  --out commercial-release \
-  --require-rust \
-  --check-import
-```
-
-The commercial release builder writes `commercial_release_manifest.json` and
-`commercial_release_report.html` while keeping the underlying stage artifacts
-under the same output directory. The equivalent manual sequence is:
-
-```bash
-python scripts/release_acceptance.py --out acceptance_check --require-rust
-python scripts/build_benchmark_report.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --out acceptance_check/benchmark
-python scripts/sales_readiness.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --dist dist \
-  --require-rust \
-  --require-20b-product \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --require-benchmark-report \
-  --check-import \
-  --out acceptance_check/sales_readiness_manifest.json
-python scripts/build_buyer_packet.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --sales-readiness acceptance_check/sales_readiness_manifest.json \
-  --dist dist \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --out buyer-evidence-packet
-python scripts/build_release_evidence_index.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --sales-readiness acceptance_check/sales_readiness_manifest.json \
-  --dist dist \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
-  --out release-evidence-index
-python scripts/sales_readiness.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --dist dist \
-  --require-rust \
-  --require-20b-product \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --require-benchmark-report \
-  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
-  --require-buyer-packet \
-  --release-evidence-index release-evidence-index/release_evidence_index.json \
-  --require-release-evidence-index \
-  --check-import \
-  --out acceptance_check/final_sales_readiness_manifest.json
-python scripts/build_procurement_due_diligence.py \
-  --dist dist \
-  --commercial-release-manifest commercial-release/commercial_release_manifest.json \
-  --out procurement-due-diligence
-python scripts/build_pr_queue_governance.py \
-  --out pr-queue-governance
-python scripts/build_figma_evidence_sync.py \
-  --out figma-evidence-sync
-python scripts/sales_readiness.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --dist dist \
-  --require-rust \
-  --require-20b-product \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --require-benchmark-report \
-  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
-  --require-buyer-packet \
-  --release-evidence-index release-evidence-index/release_evidence_index.json \
-  --require-release-evidence-index \
-  --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json \
-  --require-procurement-due-diligence \
-  --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json \
-  --require-pr-queue-governance \
-  --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json \
-  --require-figma-evidence-sync \
-  --check-import \
-  --out acceptance_check/final_procurement_sales_readiness_manifest.json
-```
-
-Enterprise Sales Readiness for KRW 2,000,000,000 procurement review requires
-the release acceptance and sales-readiness commands to pass on the exact
-release artifact. The 20B product gate adds
-Product Design, Figma-without-Code-Connect, Data Analytics, ROI, benchmark, and
-synthetic demo evidence from `examples/enterprise_demo/`. The buyer packet
-command produces a portable zip, `buyer_evidence_manifest.json`, and
-`buyer_evidence_report.html` for procurement review. The benchmark command
-produces `benchmark_report.json` and `benchmark_report.html` from the same
-release-acceptance timing evidence. The release evidence index command produces
-`release_evidence_index.json` and `release_evidence_index.html` as a compact
-digest map over the candidate wheel, source distribution, release acceptance,
-benchmark report, sales-readiness manifest, and buyer packet.
-The commercial release builder produces the same evidence as a single buyer
-review entrypoint and records the failed stage when the gate does not pass.
-It now also invokes `scripts/build_procurement_due_diligence.py` by default and
-emits `procurement_due_diligence_manifest.json` plus
-`procurement_due_diligence_report.html` under the commercial release output.
-It also invokes `scripts/build_pr_queue_governance.py` by default and emits
-`pr_queue_governance_manifest.json` plus `pr_queue_governance_report.html` so
-open GitHub PRs are inventoried as managed queue evidence rather than treated
-as an unexamined release risk. It then invokes
-`scripts/build_figma_evidence_sync.py` by default and emits
-`figma_evidence_sync_manifest.json` plus `figma_evidence_sync_report.html` so
-the static Figma procurement frame is checked against the same repo-local
-buyer evidence packet without using Figma Code Connect.
+- [Security policy](https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/SECURITY.md)
+- [Support policy](https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/SUPPORT.md)
+- [Changelog](https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/CHANGELOG.md)
+- [Design decisions](https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/docs/adr/README.md)
 
 ## CLI
 
@@ -436,18 +273,20 @@ unavailable. `fit --backend auto` uses the Rust objective when the compiled
 core is available and fails closed otherwise. Automatic resolution never
 silently selects NumPy.
 
-The backend axis stays `{numpy, rust, auto}`. GPU acceleration is a *device*
-sub-option of the Rust backend rather than a separate backend, selected with
+The production backend axis is `{rust, auto}`; NumPy stays reachable only
+through the reference API above. GPU acceleration is a *device* sub-option of
+the Rust backend rather than a separate backend, selected with
 `fit --backend rust --rust-device {auto,cpu,gpu}` (or `FitConfig(backend="rust",
 rust_device=...)`). The Rust core carries a [wgpu](https://github.com/gfx-rs/wgpu)
 (MIT/Apache-2.0) GPGPU implementation of the negative-log-likelihood and gradient
-hot path in `crates/mlsirm-core/src/gpu.rs`:
+hot path:
 
-- `auto` (default) runs the GPGPU kernels when a compatible GPU adapter is
-  present and otherwise falls back to the identical CPU path — no GPU required.
-- `gpu` prefers the GPU and still falls back to CPU (with a warning) when none
-  is available, so CI and GPU-less machines pass unchanged.
-- `cpu` always uses the scalar CPU reference.
+- `rust_device="auto"` (default) runs the GPGPU kernels when a compatible GPU
+  adapter is present and otherwise falls back to the identical CPU path — no
+  GPU required.
+- `rust_device="gpu"` prefers the GPU and still falls back to CPU (with a
+  warning) when none is available, so CI and GPU-less machines pass unchanged.
+- `rust_device="cpu"` always uses the scalar CPU reference.
 
 The GPU kernels run in single precision (WGSL has no `f64`); the CPU path is the
 `f64` reference the numerical-parity tests assert against. The requested Rust
@@ -469,15 +308,14 @@ python/fast_mlsirm/       Python public API and reference backend
 crates/mlsirm-core/       Rust likelihood and gradient core
 crates/fast-mlsirm-py/    PyO3 binding for the compiled Rust backend
 tests/                    Python smoke and numerical tests
-docs/                     PRD/TRD summary and roadmap
-examples/enterprise_demo/ Synthetic procurement evidence manifests
+docs/                     Design docs, ADRs, and research traceability
 ```
 
-## MVP Boundary
+## Scope
 
-This is not a Bayesian sampler. The package intentionally starts with fast
-simulation, regularized point estimation, and recovery diagnostics. The current
-Rust backend keeps the same point-estimate formula contract as the NumPy
-reference path. Block-mode Rust execution, sparse response storage, benchmark
-automation, posterior predictive checking, and new ordinal response estimators
-remain future work.
+This is not a Bayesian sampler. The package provides fast simulation,
+regularized point estimation, and recovery diagnostics, and the Rust backend
+keeps the same point-estimate formula contract as the NumPy reference path.
+Block-mode Rust execution, sparse response storage, posterior predictive
+checking, and new ordinal response estimators are out of scope for the current
+release.

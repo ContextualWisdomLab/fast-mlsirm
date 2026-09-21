@@ -169,7 +169,7 @@ def test_rejects_out_of_range_caller_arguments() -> None:
             N_PRIMARY,
             N_SPECIFIC,
             7,
-            7,
+            7, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15
         )
     with pytest.raises(ValueError, match="specific_map"):
         fit_two_tier_grm(
@@ -180,7 +180,7 @@ def test_rejects_out_of_range_caller_arguments() -> None:
             N_PRIMARY,
             N_SPECIFIC,
             7,
-            7,
+            7, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15
         )
 
 
@@ -188,7 +188,7 @@ def test_q_primary_and_q_specific_are_required() -> None:
     """No unsourced defaults exist for the node counts (Project rule, #1929)."""
     y = _simulate(SEED)
     with pytest.raises(TypeError):
-        fit_two_tier_grm(y, PRIMARY_MAP, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC)
+        fit_two_tier_grm(y, PRIMARY_MAP, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15)
 
 
 def test_unobserved_category_fails_loudly() -> None:

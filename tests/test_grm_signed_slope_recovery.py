@@ -99,7 +99,7 @@ def _fitted_slopes() -> np.ndarray:
         n_cat=N_CAT,
         q=QUADRATURE_POINTS,
         max_iter=MAX_ITER,
-        tol=1e-6,
+        tol=1e-6, model=1, xi_points=4000, xi_seed=0x9E3779B97F4A7C15
     )
     return np.asarray(fit.slope, dtype=np.float64).reshape(TRUE_SLOPES.size, -1)[:, 0]
 

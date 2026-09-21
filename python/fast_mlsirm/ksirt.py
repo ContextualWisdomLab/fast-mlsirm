@@ -5,6 +5,7 @@ core; this module only validates and marshals arrays."""
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -135,10 +136,11 @@ def _real_float_array(value: object, name: str) -> np.ndarray:
         raise ValueError(f"{name} must be numeric and convertible to float64") from None
 
 
-def ksirt_analysis(
+def analyze_ksirt(
     responses: np.ndarray,
     kernel: str = "gaussian",
-    nevalpoints: int = 51,
+    *,
+    nevalpoints: int,
     bandwidth: np.ndarray | None = None,
 ) -> KsirtResult:
     """Kernel smoothing of option characteristic curves (compute in Rust;
@@ -204,7 +206,7 @@ def ksirt_analysis(
 
     core = _core_module()
     if core is None or not hasattr(core, "ksirt_occ"):
-        raise RuntimeError("ksirt_analysis requires the compiled Rust core")
+        raise RuntimeError("analyze_ksirt requires the compiled Rust core")
 
     res = core.ksirt_occ(
         y.reshape(-1),
@@ -230,3 +232,21 @@ def ksirt_analysis(
         expected=[np.asarray(e, dtype=np.float64) for e in res["expected"]],
         expected_total=np.asarray(res["expected_total"], dtype=np.float64),
     )
+
+
+def ksirt_analysis(
+    responses: np.ndarray,
+    kernel: str = "gaussian",
+    nevalpoints: int = 51,
+    bandwidth: np.ndarray | None = None,
+) -> KsirtResult:
+    """Deprecated alias for :func:`analyze_ksirt`.
+
+    .. deprecated:: (ADR-0028) use :func:`analyze_ksirt` instead.
+    """
+    warnings.warn(
+        "ksirt_analysis is deprecated, use analyze_ksirt instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return analyze_ksirt(responses, kernel, nevalpoints=nevalpoints, bandwidth=bandwidth)

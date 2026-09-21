@@ -41,6 +41,7 @@ pub mod poly_marginal;
 pub(crate) mod quadrature;
 pub mod rasch_cml;
 pub mod rating_range;
+pub mod regression;
 pub mod reliability;
 pub mod rsm;
 pub mod rt;
@@ -54,6 +55,7 @@ pub mod test_form;
 pub mod testlet;
 pub mod twopl;
 pub mod two_tier_grm;
+pub mod two_tier_oakes;
 pub mod utility;
 
 /// Checked size arithmetic shared by public-input validators.

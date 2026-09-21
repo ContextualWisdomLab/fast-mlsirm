@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import warnings
 
 import numpy as np
 
@@ -182,13 +183,13 @@ def delta_plot(
     group,
     *,
     threshold: str = "norm",
-    alpha: float = 0.05,
+    alpha: float,
     fixed_threshold: float = 1.5,
     extreme: str = "constraint",
     const_range: tuple[float, float] = (0.001, 0.999),
     nr_add: int = 1,
     purify: str | None = None,
-    max_iter: int = 10,
+    max_iter: int,
 ) -> DeltaPlotResult:
     """Angoff Delta plot DIF detection
     (``mlsirm_core::dif::delta_plot``), a computational port of the

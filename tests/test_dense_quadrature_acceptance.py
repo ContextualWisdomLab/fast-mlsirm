@@ -21,7 +21,7 @@ def test_dense_rule_reaches_native_fit_and_scoring(
     response_values = np.asarray(list(product(range(3), repeat=3)), dtype=float)
     # One EM iteration is sufficient for admission, not convergence evidence.
     fitted_model = polytomous.fit_polytomous(
-        response_values, 3, model=model_name, q_theta=quadrature_count, max_iter=1
+        response_values, 3, model=model_name, q_theta=quadrature_count, max_iter=1, tol=1e-6
     )
     assert np.isfinite(fitted_model.loglik)
     scored_values = polytomous.score_polytomous(
@@ -48,7 +48,7 @@ def test_dense_xi_rule_reaches_native_fit(
     the tensor-grid axis too, same as they already are for theta."""
     response_values = np.asarray(list(product(range(3), repeat=3)), dtype=float)
     fitted_model = polytomous.fit_lsirm_polytomous(
-        response_values, 3, q_theta=61, q_xi=quadrature_count, max_iter=1
+        response_values, 3, model="grm", q_theta=61, q_xi=quadrature_count, max_iter=1, tol=1e-5
     )
     assert np.isfinite(fitted_model.loglik)
 
@@ -64,4 +64,4 @@ def test_zero_xi_rule_rejected_before_response_or_native_work(
     monkeypatch.setattr(polytomous, "_poly_int_and_mask", forbidden_work)
     monkeypatch.setattr(polytomous, "_core_module", forbidden_work)
     with pytest.raises(ValueError, match="q_theta and q_xi must be >= 1"):
-        polytomous.fit_lsirm_polytomous(object(), 3, q_theta=61, q_xi=0)
+        polytomous.fit_lsirm_polytomous(object(), 3, model="grm", q_theta=61, q_xi=0, max_iter=60, tol=1e-5)

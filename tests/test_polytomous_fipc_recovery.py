@@ -99,7 +99,7 @@ def test_fipc_recovers_period_two_mean_shift_that_an_independent_refit_would_hid
         theta_period_1, true_discrimination, true_thresholds, SEED + 1
     )
     period_1_fit = fit_polytomous(
-        responses_period_1, n_cat=N_CAT, model="grm"
+        responses_period_1, n_cat=N_CAT, model="grm", q_theta=21, max_iter=80, tol=1e-6
     )
     assert period_1_fit.converged
 
@@ -108,7 +108,7 @@ def test_fipc_recovers_period_two_mean_shift_that_an_independent_refit_would_hid
     )
 
     # Fixed-bank scoring: period 2 uses period 1's item parameters unchanged.
-    fipc_scored = score_polytomous(responses_period_2, period_1_fit)
+    fipc_scored = score_polytomous(responses_period_2, period_1_fit, q_theta=21)
     fipc_theta_eap = fipc_scored["theta_eap"]
     fipc_theta_sd = fipc_scored["theta_sd"]
 
@@ -150,10 +150,10 @@ def test_fipc_recovers_period_two_mean_shift_that_an_independent_refit_would_hid
 
     # The comparison is admissible only if the free refit itself converged.
     independent_fit = fit_polytomous(
-        responses_period_2, n_cat=N_CAT, model="grm"
+        responses_period_2, n_cat=N_CAT, model="grm", q_theta=21, max_iter=80, tol=1e-6
     )
     assert independent_fit.converged
-    independent_scored = score_polytomous(responses_period_2, independent_fit)
+    independent_scored = score_polytomous(responses_period_2, independent_fit, q_theta=21)
     independent_detected_shift = float(independent_scored["theta_eap"].mean())
 
     assert abs(independent_detected_shift) < MAX_INDEPENDENT_REFIT_MEAN_SHIFT_DETECTED, (
