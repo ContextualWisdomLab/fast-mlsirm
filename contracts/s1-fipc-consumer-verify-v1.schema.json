@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contextualwisdomlab.github.io/fast-mlsirm/contracts/s1-fipc-consumer-verify-v1.schema.json",
+  "title": "S1 two-tier GRM FIPC consumer verification v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sha", "build_source_sha", "build_source_sha_present",
+    "loaded_extension", "loaded_extension_sha256", "row_order",
+    "row_order_max_abs", "row_order_rmse", "row_order_diagnosis", "all_pass"
+  ],
+  "properties": {
+    "sha": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+    "build_source_sha": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+    "build_source_sha_present": {"type": "boolean"},
+    "loaded_extension": {"type": "string", "minLength": 1},
+    "loaded_extension_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "responses_fit_eap_expected_raw": {"type": "boolean"},
+    "non_unit_focal_prior": {"type": "boolean"},
+    "row_order": {"type": "boolean"},
+    "row_order_max_abs": {"type": ["number", "null"], "minimum": 0},
+    "row_order_rmse": {"type": ["number", "null"], "minimum": 0},
+    "row_order_diagnosis": {"enum": ["pass", "refit_order_dependence", "fit_error"]},
+    "anchor_rows_fixed": {"type": "boolean"},
+    "convergence_failure": {"type": "boolean"},
+    "orthogonal_specific_prior_fixed": {"type": "boolean"},
+    "wrong_model_reject": {"type": "boolean"},
+    "expected_raw_range": {"type": "null"},
+    "fipc_fit_error": {"type": "string", "minLength": 1},
+    "all_pass": {"type": "boolean"}
+  }
+}
