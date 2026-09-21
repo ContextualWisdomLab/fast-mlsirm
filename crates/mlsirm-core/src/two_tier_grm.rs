@@ -1472,6 +1472,9 @@ pub fn fit_two_tier_grm_fipc(
         let previous_mean = mean.clone();
         let previous_covariance = covariance.clone();
         let previous_specific_sd = specific_sd.clone();
+        let baseline_mean = previous_mean.clone();
+        let baseline_covariance = previous_covariance.clone();
+        let baseline_specific_sd = previous_specific_sd.clone();
         for i in 0..n_items {
             if anchor[i] { continue; }
             let free = &v.free_primaries[i];
@@ -1706,17 +1709,19 @@ pub fn fit_two_tier_grm_fipc(
                 }
             }
             if accepted {
+                // Compare against pre-update snapshots: previous_* may have been
+                // moved into mean/covariance/specific_sd on the restore path.
                 let mean_moved = mean
                     .iter()
-                    .zip(&previous_mean)
+                    .zip(&baseline_mean)
                     .any(|(&new, &old)| (new - old).abs() > 1e-6);
                 let scale_moved = covariance
                     .iter()
-                    .zip(&previous_covariance)
+                    .zip(&baseline_covariance)
                     .any(|(&new, &old)| (new - old).abs() > 1e-6)
                     || specific_sd
                         .iter()
-                        .zip(&previous_specific_sd)
+                        .zip(&baseline_specific_sd)
                         .any(|(&new, &old)| (new - old).abs() > 1e-6);
                 recovery_progress |= mean_moved && scale_moved;
                 n_accepted_prior_steps += 1;
