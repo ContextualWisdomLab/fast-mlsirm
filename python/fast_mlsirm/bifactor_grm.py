@@ -125,8 +125,11 @@ def _slope_prior_pair(
     if mu is None:
         return None, None
     for value, name in ((mu, "slope_prior_mu"), (sd, "slope_prior_sd")):
-        if isinstance(value, bool):
-            raise ValueError(f"{name} must be a real number")
+        # Reject before coercion: float() would silently turn np.bool_ into
+        # 1.0/0.0, drop the imaginary part of a complex (with only a warning),
+        # and unwrap 0-d arrays.
+        if isinstance(value, (bool, np.bool_, complex, np.complexfloating, np.ndarray)):
+            raise ValueError(f"{name} must be a real scalar")
     try:
         mu_f = float(mu)  # type: ignore[arg-type]
         sd_f = float(sd)  # type: ignore[arg-type]
