@@ -489,6 +489,66 @@ fn fipc_gpu_hardware_gate_requires_actual_dispatch() {
     assert!(fit.gpu_device_name.is_some());
 }
 
+#[test]
+fn fipc_person_permutation_is_stable_within_f64_reduction_tolerance() {
+    let (a_primary, a_specific, thresholds, _) = tiny_params();
+    let n_persons = 60;
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let y: Vec<usize> = (0..n_persons * TINY_N_ITEMS)
+        .map(|index| (index / TINY_N_ITEMS + index) % TINY_N_CAT)
+        .collect();
+    let perm: Vec<usize> = (0..n_persons).rev().collect();
+    let permuted: Vec<usize> = perm
+        .iter()
+        .flat_map(|&person| y[person * TINY_N_ITEMS..(person + 1) * TINY_N_ITEMS].iter().copied())
+        .collect();
+    let config = TwoTierFipcConfig {
+        q_primary: 7,
+        q_specific: 7,
+        max_iter: 2,
+        tol: 1e-5,
+        newton_iter: 2,
+        ridge: 1e-8,
+        estimate_specific_vars: false,
+        device: crate::Device::Cpu,
+    };
+    let fit = |responses: &[usize]| {
+        fit_two_tier_grm_fipc(
+            responses,
+            None,
+            &TINY_PRIMARY_MAP,
+            &TINY_SPECIFIC_MAP,
+            n_persons,
+            TINY_N_ITEMS,
+            TINY_N_PRIMARY,
+            TINY_N_SPECIFIC,
+            TINY_N_CAT,
+            &anchors,
+            &a_primary,
+            &a_specific,
+            &thresholds,
+            &config,
+        )
+        .expect("permutation stability fit")
+    };
+    let original = fit(&y);
+    let reversed = fit(&permuted);
+    let mut max_delta = 0.0_f64;
+    for (new_person, &old_person) in perm.iter().enumerate() {
+        for dimension in 0..TINY_N_PRIMARY {
+            max_delta = max_delta.max(
+                (original.theta_p_eap[old_person * TINY_N_PRIMARY + dimension]
+                    - reversed.theta_p_eap[new_person * TINY_N_PRIMARY + dimension])
+                    .abs(),
+            );
+        }
+    }
+    assert!(
+        max_delta < 1e-8,
+        "person permutation changed CPU EAP beyond reduction tolerance: {max_delta:e}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Shared tiny two-tier problem: 10 items, P = 2 primaries in simple
 // structure (items 0-4 on primary 0, items 5-9 on primary 1), S = 2
