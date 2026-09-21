@@ -165,6 +165,13 @@ fn fipc_keeps_anchor_rows_and_returns_focal_moments() {
         "fixed-measure LL never improved: {:?}",
         fit.fixed_loglik_trace
     );
+    assert!(
+        fit.prior_covariance_trace.chunks_exact(TINY_N_PRIMARY * TINY_N_PRIMARY).any(
+            |cov| (cov[0] - 1.0).abs() > 1e-6 || (cov[3] - 1.0).abs() > 1e-6
+        ),
+        "focal covariance never moved: {:?}",
+        fit.prior_covariance_trace
+    );
     // The deterministic fixture has a non-unit focal target near [0.65, -0.35];
     // require material movement toward it, not merely a counter increment.
     let initial_distance = (0.65f64 * 0.65 + 0.35 * 0.35).sqrt();

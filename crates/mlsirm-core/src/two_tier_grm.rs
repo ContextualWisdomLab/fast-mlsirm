@@ -1622,13 +1622,55 @@ pub fn fit_two_tier_grm_fipc(
                 mean = previous_mean;
                 covariance = previous_covariance;
                 specific_sd = previous_specific_sd;
+                // Recover focal scale before falling back to mean-only steps.
+                // The covariance/specific moment target is evaluated with the
+                // restored item state under the same direct-GH objective.
+                let mut scale_alpha = 0.1;
+                while scale_alpha >= 1e-6 {
+                    let candidate_covariance: Vec<f64> = covariance
+                        .iter()
+                        .zip(&target_covariance)
+                        .map(|(&old, &target)| old + scale_alpha * (target - old))
+                        .collect();
+                    let candidate_specific_sd: Vec<f64> = specific_sd
+                        .iter()
+                        .zip(&target_specific_sd)
+                        .map(|(&old, &target)| old + scale_alpha * (target - old))
+                        .collect();
+                    let scale_ll = direct_fipc_loglik(
+                        &v,
+                        y,
+                        observed,
+                        &params,
+                        &base_coords,
+                        &log_w0,
+                        &log_ws,
+                        ts_std,
+                        &mean,
+                        &candidate_covariance,
+                        &candidate_specific_sd,
+                        n_grid,
+                    );
+                    if scale_ll.is_some_and(|value| {
+                        value.is_finite()
+                            && value >= ll - acceptance_tolerance
+                            && value > fixed_ll
+                                + 32.0 * f64::EPSILON * (1.0 + fixed_ll.abs())
+                    }) {
+                        covariance = candidate_covariance;
+                        specific_sd = candidate_specific_sd;
+                        accepted = true;
+                        break;
+                    }
+                    scale_alpha *= 0.5;
+                }
                 // After restore, borrow the restored state (previous_* were moved).
                 // The finite direct-GH objective can accept a posterior-moment
                 // direction repeatedly even after it has passed the focal
                 // fixture. Use a small trust-region step for this recovery
                 // path; the ordinary joint proposal remains unchanged.
                 let mut mean_alpha = 0.1;
-                while mean_alpha >= 1e-6 {
+                while !accepted && mean_alpha >= 1e-6 {
                     let candidate_mean: Vec<f64> = mean
                         .iter()
                         .zip(&target_mean)
