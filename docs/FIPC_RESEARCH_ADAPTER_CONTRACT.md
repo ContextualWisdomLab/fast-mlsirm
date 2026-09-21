@@ -35,10 +35,10 @@ The materializer fails closed on any mismatch and writes a new derived JSON;
 it never edits the input artifact. The preflight must report
 `research_consumption_ready=true` before any research result can be consumed.
 
-## Late-Life Owner Commands
+## Research Consumer Owner Commands
 
-The late-life consumer owner must supply the real row IDs and expected-raw
+The research consumer owner must supply the real row IDs and expected-raw
 values from the existing research input/checkpoint lineage, compute the hashes
 with the specified encodings, run materialization, and attach `preflight.json`
-to the release evidence. Do not copy or invent source data on MacBookAir and
-do not rerun the fit merely to manufacture these sidecars.
+to the release evidence. Do not copy or invent source data on the library
+host and do not rerun the fit merely to manufacture these sidecars.
