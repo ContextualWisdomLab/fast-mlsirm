@@ -48,3 +48,6 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2023-11-20 - Vectorized Categorical Reduction
+**Learning:** In NumPy-based EM estimators, using list comprehensions and `np.stack` over categorical classes inside the item loop (e.g., `np.stack([post[y == k].sum() for k in range(k_cat)])`) causes significant Python overhead and intermediate array allocation.
+**Action:** Replace it with a vectorized 3D mask multiplication `((y == k_range).astype(post.dtype).T @ post).T` and hoist `k_range = np.arange(k_cat)` outside the loop to completely eliminate Python loops and boolean allocations, pushing the operation down to optimized C matrix multiplication.

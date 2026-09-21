@@ -1752,8 +1752,10 @@ def fit_gpcm_numpy(y, n_cat, *, q_theta, max_iter, tol):
     final_delta = np.inf
     stopping_tolerance = float(tol * (1.0 + abs(ll)))
     for it in range(1, max_iter + 1):
+        k_range = np.arange(k_cat)
         for i in range(n_items):
-            r = np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)
+            # Optimized: replace boolean array loops and np.stack with a vectorized 3D mask and transposed matrix multiplication
+            r = ((y[:, i, None] == k_range).astype(post.dtype, copy=False).T @ post).T
             params[i] = _gpcm_m_step_item(params[i], nodes, r)
         next_ll, post = estep(params)
         if not np.isfinite(next_ll):  # pragma: no cover - stable log-sum-exp keeps the likelihood finite
