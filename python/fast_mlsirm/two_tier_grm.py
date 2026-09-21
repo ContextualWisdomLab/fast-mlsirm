@@ -499,9 +499,10 @@ class TwoTierExpectedTotalGivenPrimary:
     orthogonal identification; :func:`expected_total_score_two_tier_from_fit`
     additionally requires an explicit consumer confirmation flag.
 
-    Example (not a universal library contract): late-life emotionality G+4+W
-    under orthogonal mirt identification uses ``focal_primary=0`` (G) with W
-    and specifics as independent reference nuisances.
+    Example (not a universal library contract): a general + method-factor
+    two-primary model with specifics, fitted under orthogonal identification,
+    uses ``focal_primary=0`` (general) with the method factor and specifics
+    as independent reference nuisances.
     """
 
     theta_focal: np.ndarray
@@ -654,9 +655,9 @@ def expected_total_score_two_tier_given_primary(
     record that basis). Distinct W vs S reference variances must pass arrays;
     bundling unequal variances into one scalar changes the integral.
 
-    Example (emotionality G+4+W, orthogonal ID): ``focal_primary=0`` (G);
-    non-crossed items integrate one specific; wording-crossed items integrate
-    ``(S_d, W)`` jointly. Reverse keys use unconstrained (possibly negative)
+    Example (general + method factor + specifics, orthogonal ID):
+    ``focal_primary=0`` (general); items without a method-factor loading
+    integrate one specific; method-loaded items integrate ``(S_d, W)`` jointly. Reverse keys use unconstrained (possibly negative)
     slopes. This example is not a universal contract for all two-tier fits.
 
     Parameters

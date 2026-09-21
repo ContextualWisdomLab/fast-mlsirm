@@ -181,34 +181,39 @@ def test_ref_distribution_rejects_bad_shape_nan_nonpositive() -> None:
         _call(ap, asp, th, smap, grid, q=5, primary_ref_sd=0.0)
 
 
-def _g4w_16_fixture() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """16-item emotionality-like G+4+W example fixture (not a universal contract)."""
-    n_items = 16
-    wording = {4, 5, 6, 9, 12, 14, 15}
-    reverse = {2, 7, 11, 13}
+def _two_primary_four_specific_fixture() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Synthetic 12-item two-primary (G + method factor) + 4-specific fixture.
+
+    Item-to-factor pattern is arbitrary and deliberately not any study's
+    item map: 4 specifics of 3 items, method-factor loadings on items
+    {1, 3, 8, 10}, reverse-keyed general slopes on items {0, 6, 11}.
+    """
+    n_items = 12
+    method = {1, 3, 8, 10}
+    reverse = {0, 6, 11}
     a_g = np.full(n_items, 1.1)
     for i in reverse:
         a_g[i] = -1.1
     a_w = np.zeros(n_items)
-    for i in wording:
+    for i in method:
         a_w[i] = 0.55
     a_s = np.full(n_items, 0.65)
-    smap = np.array([i // 4 for i in range(n_items)], dtype=np.int64)
+    smap = np.array([i // 3 for i in range(n_items)], dtype=np.int64)
     th = np.tile(np.array([1.2, 0.0, -1.2]), (n_items, 1))
     ap = np.column_stack([a_g, a_w])
     return ap, a_s, th, smap
 
 
-def test_g4w_16_item_quantitative_bounds_and_wording_effect() -> None:
-    ap, a_s, th, smap = _g4w_16_fixture()
+def test_two_primary_quantitative_bounds_and_method_factor_effect() -> None:
+    ap, a_s, th, smap = _two_primary_four_specific_fixture()
     grid = np.linspace(-3.0, 3.0, 13)
     # Producer case: all nuisance refs fixed at N(0,1) — scalar broadcast documented.
     out = _call(ap, a_s, th, smap, grid, q=15)
-    assert out.n_items == 16
+    assert out.n_items == 12
     assert np.all(out.expected_total >= 0.0 - 1e-9)
-    assert np.all(out.expected_total <= 48.0 + 1e-9)
-    assert out.expected_total[grid == 0.0][0] == pytest.approx(24.0, abs=1e-8)
-    no_w = _call(np.column_stack([ap[:, 0], np.zeros(16)]), a_s, th, smap, grid, q=15)
+    assert np.all(out.expected_total <= 36.0 + 1e-9)
+    assert out.expected_total[grid == 0.0][0] == pytest.approx(18.0, abs=1e-8)
+    no_w = _call(np.column_stack([ap[:, 0], np.zeros(12)]), a_s, th, smap, grid, q=15)
     assert float(np.max(np.abs(out.expected_total - no_w.expected_total))) > 0.05
     ap_fwd = ap.copy()
     ap_fwd[:, 0] = np.abs(ap_fwd[:, 0])
@@ -217,8 +222,8 @@ def test_g4w_16_item_quantitative_bounds_and_wording_effect() -> None:
     assert out.expected_total[0] > fwd.expected_total[0]
 
 
-def test_g4w_distinct_w_vs_s_reference_variances() -> None:
-    ap, a_s, th, smap = _g4w_16_fixture()
+def test_two_primary_distinct_method_vs_specific_reference_variances() -> None:
+    ap, a_s, th, smap = _two_primary_four_specific_fixture()
     grid = np.array([-1.0, 0.0, 1.0])
     unit = _call(ap, a_s, th, smap, grid, q=11)
     # W tighter than specifics — must differ from all-unit scalar broadcast.
