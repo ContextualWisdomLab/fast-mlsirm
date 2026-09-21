@@ -111,11 +111,11 @@ def test_the_focal_dimension_must_exist(dimension: int) -> None:
         )
 
 
-@pytest.mark.parametrize("bad_q", [0, -3, 4097, 21.5, "21", None])
+@pytest.mark.parametrize("bad_q", [0, -3, 2**40, 21.5, "21", None])
 def test_the_quadrature_count_is_a_documented_range(bad_q) -> None:
-    """``q_nuisance`` lives in ``1..=MAX_POLY_QUADRATURE_POINTS``: a Gauss
-    rule exists for every ``n >= 1`` and the cap is the package's shared
-    quadrature-point budget, not a new constant."""
+    """``q_nuisance`` is an exact integer ``>= 1``: a Gauss rule exists for
+    every ``n >= 1``; there is no node cap, and an unrepresentable Jacobi
+    matrix (``2**40``) is refused by the allocation guard."""
     with pytest.raises((ValueError, TypeError)):
         focal_expected_total_score_monotonicity(
             _Fit(np.array([[1.0, 0.5]])), 0, np.linspace(-2.0, 2.0, 9), q_nuisance=bad_q
