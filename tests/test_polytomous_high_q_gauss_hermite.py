@@ -72,3 +72,23 @@ def test_public_checks_return_finite_curves_at_high_q(check) -> None:
     assert np.all(np.isfinite(high.expected_total))
     assert high.monotone
     np.testing.assert_allclose(high.expected_total, check(grid, 121).expected_total, atol=1e-9)
+
+
+@pytest.mark.parametrize(
+    "check",
+    (
+        lambda grid: check_focal_expected_total_score_monotonicity(_Fit(), 0, grid, 41),
+        lambda grid: check_bifactor_expected_total_score_monotonicity(_Fit(), grid, 41),
+    ),
+    ids=("focal", "bifactor"),
+)
+def test_non_finite_curve_fails_closed(check, monkeypatch) -> None:
+    """Any numerical fault that yields a NaN curve must raise, never report monotone."""
+    import fast_mlsirm.polytomous as polytomous
+
+    def nan_prediction(fit, theta):
+        return np.full((np.asarray(theta).size, 1), np.nan)
+
+    monkeypatch.setattr(polytomous, "predict_expected_response_polytomous", nan_prediction)
+    with pytest.raises(ValueError, match="not finite"):
+        check(np.linspace(-3.0, 3.0, 7))

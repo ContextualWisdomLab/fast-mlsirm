@@ -14,3 +14,6 @@
   (4096) cap: any exact integer `>= 1` is accepted, and an unrepresentable
   `q x q` Jacobi matrix or an allocation / eigensolver failure raises
   `ValueError`.
+- The shared expected-score monotonicity reducer now fails closed: a
+  non-finite expected-total curve raises `ValueError` instead of reducing to
+  `monotone=True` (NaN compares false, so no decrease was ever recorded).
