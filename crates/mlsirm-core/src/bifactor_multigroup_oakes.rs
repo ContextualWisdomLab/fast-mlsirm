@@ -78,7 +78,7 @@ impl Joint<'_> {
         (items, mu, sd, tau)
     }
 
-    fn posterior(&self, p: &[f64]) -> Vec<Vec<Vec<Vec<f64>>>> {
+    fn posterior(&self, p: &[f64]) -> (f64, Vec<Vec<Vec<Vec<f64>>>>) {
         let (items, mu, sd, tau) = self.unpack(p);
         let tg: Vec<Vec<f64>> = (0..self.n_groups)
             .map(|g| self.x.iter().map(|&x| mu[g] + sd[g] * x).collect())
@@ -90,7 +90,7 @@ impl Joint<'_> {
                     .collect()
             })
             .collect();
-        let (_, counts, _, _, _, _, _) = e_step_multigroup(
+        let (loglik, counts, _, _, _, _, _) = e_step_multigroup(
             &self.v,
             self.y,
             self.observed,
@@ -105,7 +105,7 @@ impl Joint<'_> {
             self.z.len(),
             crate::Device::Cpu,
         );
-        counts
+        (loglik, counts)
     }
 
     // Returns analytic Q score and, when requested, its fixed-posterior Hessian.
@@ -431,7 +431,7 @@ pub fn bifactor_multigroup_oakes_se(
         estimate_specific_vars,
         pop_start,
     };
-    let posterior = joint.posterior(&packed);
+    let (_, posterior) = joint.posterior(&packed);
     let (g0, a) = joint.derivatives(&packed, &posterior, true);
     let k = packed.len();
     let mut cross = vec![0.0; k * k];
@@ -442,7 +442,7 @@ pub fn bifactor_multigroup_oakes_se(
         if j >= pop_start && packed[j] > 0.0 && perturbed[j] <= 0.0 {
             perturbed[j] = packed[j] - step;
         }
-        let posterior_j = joint.posterior(&perturbed);
+        let (_, posterior_j) = joint.posterior(&perturbed);
         let (gj, _) = joint.derivatives(&packed, &posterior_j, false);
         for c in 0..k {
             cross[j * k + c] = (gj[c] - g0[c]) / (perturbed[j] - packed[j]);
@@ -648,6 +648,8 @@ mod tests {
         let p = [
             0.8, 0.5, 0.1, 1.0, 0.7, -0.2, 1.1, 0.8, -0.1, 0.2, 1.21, 1.44,
         ];
+        let (_, base_posterior) = joint.posterior(&p);
+        let score = joint.derivatives(&p, &base_posterior, false).0;
         let mut error_sq = 0.0;
         let mut reference_sq = 0.0;
         for j in 0..k {
@@ -655,8 +657,16 @@ mod tests {
             let mut minus = p;
             plus[j] += 1e-5;
             minus[j] -= 1e-5;
-            let score_plus = joint.derivatives(&plus, &joint.posterior(&plus), false).0;
-            let score_minus = joint.derivatives(&minus, &joint.posterior(&minus), false).0;
+            let (ll_plus, post_plus) = joint.posterior(&plus);
+            let (ll_minus, post_minus) = joint.posterior(&minus);
+            let score_plus = joint.derivatives(&plus, &post_plus, false).0;
+            let score_minus = joint.derivatives(&minus, &post_minus, false).0;
+            let score_fd = (ll_plus - ll_minus) / (2e-5);
+            assert!(
+                (score_fd - score[j]).abs() / (1.0 + score_fd.abs()) < 1e-5,
+                "observed score coordinate {j}: {score_fd} vs {}",
+                score[j]
+            );
             for c in 0..k {
                 let fd = -(score_plus[c] - score_minus[c]) / (2e-5);
                 let observed = result.information[j * k + c];
