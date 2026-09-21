@@ -921,6 +921,22 @@ fn item_cat_logprob_fipc(
     grm_logprobs(base, &par.d)[cat]
 }
 
+fn canonical_person_order(v: &Validated, y: &[usize], observed: Option<&[bool]>) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..v.n_persons).collect();
+    order.sort_unstable_by(|&left, &right| {
+        (0..v.n_items)
+            .map(|i| {
+                let left_observed = observed.is_none_or(|o| o[left * v.n_items + i]);
+                let right_observed = observed.is_none_or(|o| o[right * v.n_items + i]);
+                (left_observed, y[left * v.n_items + i])
+                    .cmp(&(right_observed, y[right * v.n_items + i]))
+            })
+            .find(|ordering| *ordering != std::cmp::Ordering::Equal)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    order
+}
+
 /// One reduced E-step sweep (Gibbons et al., 2007, eq. 15: the person
 /// marginal factored per primary node): observed-data loglik, expected
 /// category counts per item (`counts[i][node][k]`, `node = g * qs + h` for
@@ -1121,18 +1137,7 @@ fn e_step_fipc_cpu(
     let mut person_sd = vec![0.0; v.n_persons * p];
     let mut loglik = 0.0;
 
-    let mut person_order: Vec<usize> = (0..v.n_persons).collect();
-    person_order.sort_unstable_by(|&left, &right| {
-        (0..v.n_items)
-            .map(|i| {
-                let left_observed = observed.is_none_or(|o| o[left * v.n_items + i]);
-                let right_observed = observed.is_none_or(|o| o[right * v.n_items + i]);
-                (left_observed, y[left * v.n_items + i])
-                    .cmp(&(right_observed, y[right * v.n_items + i]))
-            })
-            .find(|ordering| *ordering != std::cmp::Ordering::Equal)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    let person_order = canonical_person_order(v, y, observed);
     for pp in person_order {
         gen_log.copy_from_slice(log_w);
         for &i in &v.specific_free {
@@ -1275,6 +1280,18 @@ fn e_step_fipc_gpu(
     Vec<f64>,
     Vec<f64>,
 )> {
+    let person_order = canonical_person_order(v, y, observed);
+    let mut canonical_y = vec![0usize; y.len()];
+    let mut canonical_observed = observed.map(|_| vec![false; y.len()]);
+    for (canonical_person, &original_person) in person_order.iter().enumerate() {
+        let source = original_person * v.n_items;
+        let target = canonical_person * v.n_items;
+        canonical_y[target..target + v.n_items].copy_from_slice(&y[source..source + v.n_items]);
+        if let (Some(source_observed), Some(target_observed)) = (observed, canonical_observed.as_mut()) {
+            target_observed[target..target + v.n_items]
+                .copy_from_slice(&source_observed[source..source + v.n_items]);
+        }
+    }
     if log_ws_by_specific.iter().any(|weights| weights.as_slice() != log_ws_by_specific.first().map_or(&[][..], Vec::as_slice)) {
         return None;
     }
@@ -1299,8 +1316,8 @@ fn e_step_fipc_gpu(
     }
     let ts_groups = vec![ts_by_specific.to_vec()];
     let inputs = crate::gpu_bifactor::ReducedEstepInputs {
-        y,
-        observed,
+        y: &canonical_y,
+        observed: canonical_observed.as_deref(),
         group_id: None,
         n_persons: v.n_persons,
         n_items: v.n_items,
@@ -1331,14 +1348,14 @@ fn e_step_fipc_gpu(
     }
     let mut sum_primary = vec![0.0; v.n_primary];
     let mut sum_primary2 = vec![0.0; v.n_primary * v.n_primary];
-    let mut person_eap = vec![0.0; v.n_persons * v.n_primary];
-    let mut person_sd = vec![0.0; v.n_persons * v.n_primary];
+    let mut canonical_person_eap = vec![0.0; v.n_persons * v.n_primary];
+    let mut canonical_person_sd = vec![0.0; v.n_persons * v.n_primary];
     for person in 0..v.n_persons {
         for g in 0..n_grid {
             let post = result.postg[person * n_grid + g];
             for d in 0..v.n_primary {
                 let value = coords[g * v.n_primary + d];
-                person_eap[person * v.n_primary + d] += post * value;
+                canonical_person_eap[person * v.n_primary + d] += post * value;
                 sum_primary[d] += post * value;
                 for e in 0..v.n_primary {
                     sum_primary2[d * v.n_primary + e] +=
@@ -1347,14 +1364,24 @@ fn e_step_fipc_gpu(
             }
         }
         for d in 0..v.n_primary {
-            let mean = person_eap[person * v.n_primary + d];
+            let mean = canonical_person_eap[person * v.n_primary + d];
             let mut variance = 0.0;
             for g in 0..n_grid {
                 let delta = coords[g * v.n_primary + d] - mean;
                 variance += result.postg[person * n_grid + g] * delta * delta;
             }
-            person_sd[person * v.n_primary + d] = variance.max(0.0).sqrt();
+            canonical_person_sd[person * v.n_primary + d] = variance.max(0.0).sqrt();
         }
+    }
+    let mut person_eap = vec![0.0; v.n_persons * v.n_primary];
+    let mut person_sd = vec![0.0; v.n_persons * v.n_primary];
+    for (canonical_person, &original_person) in person_order.iter().enumerate() {
+        let source = canonical_person * v.n_primary;
+        let target = original_person * v.n_primary;
+        person_eap[target..target + v.n_primary]
+            .copy_from_slice(&canonical_person_eap[source..source + v.n_primary]);
+        person_sd[target..target + v.n_primary]
+            .copy_from_slice(&canonical_person_sd[source..source + v.n_primary]);
     }
     Some((
         result.loglik,
