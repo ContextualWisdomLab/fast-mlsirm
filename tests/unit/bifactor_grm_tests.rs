@@ -25,7 +25,7 @@
 
 use crate::bifactor_grm::{
     bifactor_grm_marginal_loglik, bifactor_grm_marginal_loglik_brute, fit_bifactor_grm,
-    BifactorGrmConfig,
+    add_lnorm_abs_slope_prior, BifactorGrmConfig, SlopePrior,
 };
 
 // ---------------------------------------------------------------------------
@@ -131,8 +131,47 @@ fn valid_config() -> BifactorGrmConfig {
         seed: 42,
         newton_iter: 3,
         ridge: 1e-8,
+        slope_prior: SlopePrior::None,
         device: crate::Device::Cpu,
     }
+}
+
+#[test]
+fn lnorm_abs_slope_prior_has_signed_support_and_jacobian() {
+    let (a, mu, sd, h) = (-1.7, 0.2, 0.8, 1e-6);
+    let mut nll = 0.0;
+    let mut grad = 0.0;
+    add_lnorm_abs_slope_prior(a, mu, sd, &mut nll, &mut grad);
+    let mut plus = 0.0;
+    let mut minus = 0.0;
+    let mut ignored_grad = 0.0;
+    add_lnorm_abs_slope_prior(a + h, mu, sd, &mut plus, &mut ignored_grad);
+    add_lnorm_abs_slope_prior(a - h, mu, sd, &mut minus, &mut ignored_grad);
+    let fd = (plus - minus) / (2.0 * h);
+    assert!(nll.is_finite());
+    assert!((grad - fd).abs() < 1e-6, "analytic={grad}, fd={fd}");
+}
+
+#[test]
+fn lnorm_abs_slope_prior_keeps_zero_outside_support() {
+    let mut nll = 0.0;
+    let mut grad = 0.0;
+    add_lnorm_abs_slope_prior(0.0, 0.0, 1.0, &mut nll, &mut grad);
+    assert!(nll.is_infinite() && nll.is_sign_positive());
+    assert_eq!(grad, 0.0);
+}
+
+#[test]
+fn slope_prior_rejects_invalid_hyperparameters() {
+    assert!(SlopePrior::Lognormal { mu: f64::NAN, sd: 1.0 }
+        .validate()
+        .is_err());
+    assert!(SlopePrior::Lognormal { mu: 0.0, sd: 0.0 }
+        .validate()
+        .is_err());
+    assert!(SlopePrior::Lognormal { mu: 0.0, sd: f64::INFINITY }
+        .validate()
+        .is_err());
 }
 
 fn valid_data() -> (Vec<usize>, usize) {
@@ -637,6 +676,7 @@ fn dense_quadrature_fit_never_claims_tolerance_at_start_slopes() {
         seed: 20260917,
         newton_iter: 5,
         ridge: 1e-4,
+        slope_prior: crate::bifactor_grm::SlopePrior::None,
         device: crate::Device::Cpu,
     };
     let fit = fit_bifactor_grm(

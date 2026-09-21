@@ -194,6 +194,8 @@ def fit_bifactor_grm_multigroup(
     seed: int,
     estimate_specific_vars: bool = False,
     device: str = "cpu",
+    slope_prior_mu: float | None = None,
+    slope_prior_sd: float | None = None,
 ) -> BifactorMultigroupFit:
     """Fit the multiple-group polytomous bifactor GRM (compute in Rust).
 
@@ -253,6 +255,15 @@ def fit_bifactor_grm_multigroup(
     seed_int = _u64_seed(seed)
     if not isinstance(estimate_specific_vars, bool):
         raise ValueError("estimate_specific_vars must be a bool")
+    if (slope_prior_mu is None) != (slope_prior_sd is None):
+        raise ValueError("slope_prior_mu and slope_prior_sd must be provided together")
+    if slope_prior_mu is not None:
+        slope_prior_mu = float(slope_prior_mu)
+        slope_prior_sd = float(slope_prior_sd)
+        if not np.isfinite(slope_prior_mu):
+            raise ValueError("slope_prior_mu must be finite")
+        if not np.isfinite(slope_prior_sd) or slope_prior_sd <= 0:
+            raise ValueError("slope_prior_sd must be finite and positive")
 
     y = np.asarray(responses)
     if np.iscomplexobj(y):
@@ -369,6 +380,8 @@ def fit_bifactor_grm_multigroup(
         int(seed_int),
         bool(estimate_specific_vars),
         device_str,
+        slope_prior_mu,
+        slope_prior_sd,
     )
     return BifactorMultigroupFit(
         a_general=np.asarray(res["a_general"], dtype=np.float64).reshape(

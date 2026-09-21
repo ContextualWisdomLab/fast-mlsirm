@@ -99,6 +99,7 @@ fn single_group_multigroup_matches_stage1_exactly() {
         seed: 20_260_916,
         newton_iter: 10,
         ridge: 1e-8,
+        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         device: mlsirm_core::Device::Cpu,
     };
     let single = fit_bifactor_grm(
@@ -122,6 +123,7 @@ fn single_group_multigroup_matches_stage1_exactly() {
         seed: 20_260_916,
         newton_iter: 10,
         ridge: 1e-8,
+        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         device: mlsirm_core::Device::Cpu,
         estimate_specific_vars: false,
     };
@@ -227,6 +229,7 @@ fn uncapped_start_budget_is_accepted() {
         seed: 20_260_922,
         newton_iter: 10,
         ridge: 1e-8,
+        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         device: mlsirm_core::Device::Cpu,
         estimate_specific_vars: false,
     };

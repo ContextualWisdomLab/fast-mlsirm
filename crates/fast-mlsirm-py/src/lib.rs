@@ -56,7 +56,7 @@ use mlsirm_core::bifactor_grm::{
     fit_bifactor_grm as core_fit_bifactor_grm,
     fit_bifactor_grm_fipc as core_fit_bifactor_grm_fipc,
     fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup, BifactorFipcConfig,
-    BifactorGrmConfig, BifactorMultigroupConfig,
+    BifactorGrmConfig, BifactorMultigroupConfig, SlopePrior,
 };
 use mlsirm_core::bifactor_oakes::{
     bifactor_oakes_se as core_bifactor_oakes_se, BifactorOakesConfig,
@@ -1370,7 +1370,7 @@ fn parse_device(name: &str) -> PyResult<mlsirm_core::Device> {
 /// `converged = False` instead of substituting values.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu"))]
+#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu", slope_prior_mu = None, slope_prior_sd = None))]
 fn fit_bifactor_grm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1387,6 +1387,8 @@ fn fit_bifactor_grm(
     n_starts: usize,
     seed: u64,
     device: &str,
+    slope_prior_mu: Option<f64>,
+    slope_prior_sd: Option<f64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
@@ -1414,6 +1416,12 @@ fn fit_bifactor_grm(
                 .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
         })
         .collect::<PyResult<_>>()?;
+    let slope_prior = match (slope_prior_mu, slope_prior_sd) {
+        (None, None) => SlopePrior::None,
+        (Some(mu), Some(sd)) => SlopePrior::Lognormal { mu, sd },
+        _ => return Err(PyValueError::new_err("slope_prior_mu and slope_prior_sd must be provided together")),
+    };
+    slope_prior.validate().map_err(PyValueError::new_err)?;
     let cfg = BifactorGrmConfig {
         q_general,
         q_specific,
@@ -1425,6 +1433,7 @@ fn fit_bifactor_grm(
         // Python and out of #1929's quadrature-node scope.
         newton_iter: 10,
         ridge: 1e-8,
+        slope_prior,
         device: parse_device(device)?,
     };
     let res = py
@@ -1482,7 +1491,7 @@ fn fit_bifactor_grm(
 /// `n_groups == 1` this bit-reproduces `fit_bifactor_grm`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, group_id, n_groups, specific_map, n_persons, n_items, n_specific, n_cat, anchor = None, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, estimate_specific_vars = false, device = "cpu"))]
+#[pyo3(signature = (y, observed, group_id, n_groups, specific_map, n_persons, n_items, n_specific, n_cat, anchor = None, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, estimate_specific_vars = false, device = "cpu", slope_prior_mu = None, slope_prior_sd = None))]
 fn fit_bifactor_grm_multigroup(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1503,6 +1512,8 @@ fn fit_bifactor_grm_multigroup(
     seed: u64,
     estimate_specific_vars: bool,
     device: &str,
+    slope_prior_mu: Option<f64>,
+    slope_prior_sd: Option<f64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
@@ -1540,6 +1551,12 @@ fn fit_bifactor_grm_multigroup(
         Some(a) => Some(a.as_slice()?.to_vec()),
         None => None,
     };
+    let slope_prior = match (slope_prior_mu, slope_prior_sd) {
+        (None, None) => SlopePrior::None,
+        (Some(mu), Some(sd)) => SlopePrior::Lognormal { mu, sd },
+        _ => return Err(PyValueError::new_err("slope_prior_mu and slope_prior_sd must be provided together")),
+    };
+    slope_prior.validate().map_err(PyValueError::new_err)?;
     let cfg = BifactorMultigroupConfig {
         q_general,
         q_specific,
@@ -1548,6 +1565,7 @@ fn fit_bifactor_grm_multigroup(
         n_starts,
         seed,
         estimate_specific_vars,
+        slope_prior,
         device: parse_device(device)?,
         ..BifactorMultigroupConfig::default()
     };

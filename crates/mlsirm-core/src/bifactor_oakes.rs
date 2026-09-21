@@ -200,6 +200,7 @@ impl Stage1Provider {
             seed: 0,
             newton_iter: 1,
             ridge: 1e-8,
+            slope_prior: crate::bifactor_grm::SlopePrior::None,
             // The Oakes assembly's E-step reruns are exact f64 scalar work
             // (the cross term needs analytic precision), never the f32 GPU
             // kernels.

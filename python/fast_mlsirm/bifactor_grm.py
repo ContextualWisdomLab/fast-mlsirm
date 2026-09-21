@@ -174,6 +174,8 @@ def fit_bifactor_grm(
     n_starts: int,
     seed: int,
     device: str = "cpu",
+    slope_prior_mu: float | None = None,
+    slope_prior_sd: float | None = None,
 ) -> BifactorGrmFit:
     """Fit the single-group polytomous bifactor GRM (compute in Rust).
 
@@ -233,6 +235,15 @@ def fit_bifactor_grm(
     ):
         raise ValueError(f"device must be one of 'cpu', 'gpu', 'auto'; got {device!r}")
     device_str = device.strip().lower()
+    if (slope_prior_mu is None) != (slope_prior_sd is None):
+        raise ValueError("slope_prior_mu and slope_prior_sd must be provided together")
+    if slope_prior_mu is not None:
+        slope_prior_mu = float(slope_prior_mu)
+        slope_prior_sd = float(slope_prior_sd)
+        if not np.isfinite(slope_prior_mu):
+            raise ValueError("slope_prior_mu must be finite")
+        if not np.isfinite(slope_prior_sd) or slope_prior_sd <= 0:
+            raise ValueError("slope_prior_sd must be finite and positive")
 
     y = np.asarray(responses)
     if np.iscomplexobj(y):
@@ -294,6 +305,8 @@ def fit_bifactor_grm(
         int(n_starts_int),
         int(seed_int),
         device_str,
+        slope_prior_mu,
+        slope_prior_sd,
     )
     return BifactorGrmFit(
         a_general=np.asarray(res["a_general"], dtype=np.float64),
