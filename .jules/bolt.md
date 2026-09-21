@@ -51,3 +51,11 @@
 ## 2023-11-20 - Vectorized Categorical Reduction
 **Learning:** In NumPy-based EM estimators, using list comprehensions and `np.stack` over categorical classes inside the item loop (e.g., `np.stack([post[y == k].sum() for k in range(k_cat)])`) causes significant Python overhead and intermediate array allocation.
 **Action:** Replace it with a vectorized 3D mask multiplication `((y == k_range).astype(post.dtype).T @ post).T` and hoist `k_range = np.arange(k_cat)` outside the loop to completely eliminate Python loops and boolean allocations, pushing the operation down to optimized C matrix multiplication.
+
+## 2023-11-20 - Global State Security Alert
+**Learning:** `globals()[var]` when used with a dynamically iterated string (even a hardcoded tuple) can trigger critical SAST tool warnings (like Semgrep `python.lang.security.dangerous-globals-use`).
+**Action:** Replace `globals()[var]` pattern completely with explicit mappings/tuples containing actual function references instead of strings.
+
+## 2023-11-20 - Dynamic Imports
+**Learning:** Calling `importlib.import_module(var)` with an unconstrained variable triggers a SAST security risk (`non-literal-import`) as it implies arbitrary code execution.
+**Action:** Always add an explicit namespace validation/whitelist (e.g. `if not var.startswith('my_package.'): continue`) before dynamically importing, and suppress the alert cleanly if the static analyzer still can't infer it.
