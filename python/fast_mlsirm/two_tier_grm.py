@@ -643,9 +643,24 @@ def _probabilists_gauss_hermite(q: int) -> tuple[np.ndarray, np.ndarray]:
     """
     if q == 1:
         return np.zeros(1), np.ones(1)
-    off = np.sqrt(np.arange(1, q, dtype=np.float64))
-    jacobi = np.diag(off, 1) + np.diag(off, -1)
-    nodes, vectors = np.linalg.eigh(jacobi)
+    # Allocation guard instead of a node-count cap (cf. the Rust core's
+    # checked_mul guard, #1929): the dense q x q float64 Jacobi matrix must be
+    # representable, and allocation/eigensolver failures fail loudly.
+    itemsize = np.dtype(np.float64).itemsize
+    if q > int(np.iinfo(np.intp).max) // (q * itemsize):
+        raise ValueError(
+            f"q_nuisance={q} needs a {q}x{q} Jacobi matrix that is not "
+            "representable on this platform"
+        )
+    try:
+        off = np.sqrt(np.arange(1, q, dtype=np.float64))
+        jacobi = np.diag(off, 1) + np.diag(off, -1)
+        nodes, vectors = np.linalg.eigh(jacobi)
+    except (MemoryError, np.linalg.LinAlgError) as exc:
+        raise ValueError(
+            f"q_nuisance={q}: Gauss-Hermite rule construction failed "
+            f"({type(exc).__name__})"
+        ) from exc
     weights = vectors[0, :] ** 2
     weights = weights / weights.sum()
     if not (np.all(np.isfinite(nodes)) and np.all(np.isfinite(weights))):
@@ -676,11 +691,13 @@ def expected_total_score_two_tier_given_primary(
     ``L = sum_k a_k Z_k`` and independent Gaussians yield
     ``L ~ N(sum a_k mu_k, sum (a_k sigma_k)^2)``, the product rule collapses to
     a single 1-D Gauss-Hermite integral with ``q_nuisance`` nodes (required; no
-    default — issue #1929). This avoids ``q^n`` meshgrid allocation. The upper
-    bound ``MAX_POLY_QUADRATURE_POINTS`` is the package's shared
-    quadrature-point resource budget (the rule is generated for any ``n >= 1``;
-    the budget keeps the dense ``O(q^2)`` rule construction bounded), matching
-    ``_fit_quadrature_points`` / ``q_xi`` validation, not a rule-table cap.
+    default — issue #1929). This avoids ``q^n`` meshgrid allocation. Any exact
+    integer ``q_nuisance >= 1`` is accepted with no node-count cap (maintainer
+    steering 2026-09-16/17, item 1). Resource safety comes from allocation
+    guards instead, mirroring the Rust core's ``checked_mul`` guard: the
+    prediction-cell admission check runs before the rule is built, the dense
+    ``q x q`` Jacobi matrix must be representable, and an allocation or
+    eigensolver failure raises ``ValueError``.
 
     Reference distributions are **per primary / per specific dimension**. A
     scalar mean/sd broadcasts identical values across dimensions (producer
@@ -703,9 +720,10 @@ def expected_total_score_two_tier_given_primary(
         Length-``n_specific`` (or scalar broadcast), indexed by ``specific_map``.
     """
     from .polytomous import (
-        MAX_POLY_QUADRATURE_POINTS,
+        _NUMPY_INTEGER_SCALAR_TYPES,
         PolytomousFit,
         _bounded_integer,
+        _is_exact_type,
         predict_expected_response_polytomous,
     )
     from ._polytomous_prediction_admission import _raise_if_oversized_prediction_grid
@@ -743,7 +761,16 @@ def expected_total_score_two_tier_given_primary(
         raise ValueError("theta_focal must be finite")
 
     focal = _bounded_integer(focal_primary, "focal_primary", 0, n_primary - 1)
-    q = _bounded_integer(q_nuisance, "q_nuisance", 1, MAX_POLY_QUADRATURE_POINTS)
+    # Exact integer >= 1, no node-count cap (maintainer steering item 1).
+    q_type = type(q_nuisance)
+    if q_type is int:
+        q = q_nuisance
+    elif _is_exact_type(q_type, _NUMPY_INTEGER_SCALAR_TYPES):
+        q = int(q_nuisance)
+    else:
+        raise ValueError("q_nuisance must be an integer >= 1")
+    if q < 1:
+        raise ValueError("q_nuisance must be an integer >= 1")
 
     # When n_specific is not supplied by the fit wrapper, derive from the map.
     # Fail closed on huge representable indices that would allocate max(map)+1
@@ -761,6 +788,8 @@ def expected_total_score_two_tier_given_primary(
     s_mean = _as_ref_mean(specific_ref_mean, n_specific, "specific_ref_mean")
     s_sd = _as_ref_sd(specific_ref_sd, n_specific, "specific_ref_sd")
 
+    # Admission before any O(q) / O(q^2) allocation (was after the rule).
+    _raise_if_oversized_prediction_grid(int(grid.size) * int(q))
     unit_nodes, unit_weights = _probabilists_gauss_hermite(q)
     unit_slope = np.ones(1, dtype=np.float64)
     expected_total = np.zeros(grid.size, dtype=np.float64)

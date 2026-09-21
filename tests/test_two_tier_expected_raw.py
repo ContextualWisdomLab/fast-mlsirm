@@ -502,3 +502,42 @@ def test_gauss_hermite_rule_is_finite_and_exact_at_study_node_counts() -> None:
         if q >= 3:
             assert float(weights @ nodes**2) == pytest.approx(1.0, abs=1e-9)
             assert float(weights @ nodes**4) == pytest.approx(3.0, abs=1e-8)
+
+
+def test_q_nuisance_has_no_node_count_cap(monkeypatch) -> None:
+    """Node counts above the old 4096 bound reach rule construction (steering item 1)."""
+    import fast_mlsirm.two_tier_grm as tt
+
+    seen: list[int] = []
+    real = tt._probabilists_gauss_hermite
+
+    def _spy(q: int):
+        seen.append(q)
+        return real(15)  # stand-in rule so the test stays fast
+
+    monkeypatch.setattr(tt, "_probabilists_gauss_hermite", _spy)
+    ap = np.array([[1.0, 0.3], [0.8, 0.0]])
+    asp = np.array([0.5, 0.4])
+    th = np.array([[1.0, 0.0, -1.0], [0.5, -0.2, -1.2]])
+    smap = np.array([0, 1], dtype=np.int64)
+    out = _call(ap, asp, th, smap, np.array([0.0]), q=4097)
+    assert seen == [4097]
+    assert np.all(np.isfinite(out.expected_total))
+
+
+@pytest.mark.parametrize("bad", [0, -1, 2.0, "15", True])
+def test_q_nuisance_must_be_exact_integer_at_least_one(bad) -> None:
+    ap = np.array([[1.0, 0.0]])
+    asp = np.array([0.5])
+    th = np.array([[1.0, 0.0, -1.0]])
+    smap = np.array([0], dtype=np.int64)
+    with pytest.raises(ValueError, match="q_nuisance"):
+        _call(ap, asp, th, smap, np.array([0.0]), q=bad)
+
+
+def test_unrepresentable_rule_fails_before_allocation() -> None:
+    """The allocation guard rejects a q whose q x q matrix cannot be represented."""
+    from fast_mlsirm.two_tier_grm import _probabilists_gauss_hermite
+
+    with pytest.raises(ValueError, match="not representable"):
+        _probabilists_gauss_hermite(2**40)
