@@ -157,7 +157,7 @@ def test_rejects_threshold_shape_mismatch() -> None:
         )
 
 
-@pytest.mark.parametrize("q_specific", [0, -1, 4097])
+@pytest.mark.parametrize("q_specific", [0, -1, 2**40])
 def test_rejects_out_of_range_q_specific(q_specific: int) -> None:
     fit = _BifactorFit(np.array([1.0, 1.0]), np.array([0.5, 0.3]))
     with pytest.raises(ValueError):

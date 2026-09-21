@@ -86,6 +86,64 @@ def _bounded_integer(value, name: str, lower: int, upper: int) -> int:
     return validated
 
 
+def _gauss_hermite_node_count(value, name: str) -> int:
+    """Validate an exact integer Gauss-Hermite node count ``>= 1`` (no cap).
+
+    An ``n``-node Gauss rule exists for every ``n >= 1`` (Golub & Welsch,
+    1969); resource limits are enforced by
+    :func:`_probabilists_gauss_hermite`'s allocation guard, not by a table.
+    """
+    value_type = type(value)
+    if value_type is int:
+        validated = value
+    elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
+        validated = int(value)
+    else:
+        raise ValueError(f"{name} must be an integer >= 1")
+    if validated < 1:
+        raise ValueError(f"{name} must be an integer >= 1")
+    return validated
+
+
+def _probabilists_gauss_hermite(q: int) -> tuple[np.ndarray, np.ndarray]:
+    """Probabilists' Gauss-Hermite rule for any ``q >= 1`` via Golub & Welsch.
+
+    Nodes are the eigenvalues of the symmetric tridiagonal Jacobi matrix of
+    the ``He_n`` recurrence (``alpha_k = 0``, ``beta_k = k``); weights are the
+    squared first eigenvector components, normalized to sum to one (Golub &
+    Welsch, 1969, eqs. 2.1-2.2, pp. 222-223). This is the algorithm of
+    ``crates/mlsirm-core/src/quadrature.rs`` ``gauss_hermite_probabilists``
+    (#1929). ``numpy.polynomial.hermite_e.hermegauss`` is not used: its
+    closed-form ``1 / He_{n-1}^2`` weights underflow to all-zero from
+    ``q = 371`` and overflow to NaN from ``q = 400`` (numpy 2.5.2), so the
+    normalized weights are NaN. Here tail weights underflow to ``0.0`` only.
+
+    Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature
+    rules. *Mathematics of Computation, 23*(106), 221-230.
+    https://doi.org/10.1090/S0025-5718-69-99647-1
+    """
+    if q == 1:
+        return np.zeros(1), np.ones(1)
+    # ponytail: dense O(q^3) eigensolve (~1 min at q=4096); port the Rust
+    # first-row QL (tql2_first_row, O(q^2)) if very high q becomes routine.
+    if q > int(np.iinfo(np.intp).max) // (q * np.dtype(np.float64).itemsize):
+        raise ValueError(
+            f"q={q} needs a {q}x{q} Jacobi matrix that is not representable"
+        )
+    try:
+        off = np.sqrt(np.arange(1, q, dtype=np.float64))
+        nodes, vectors = np.linalg.eigh(np.diag(off, 1) + np.diag(off, -1))
+    except (MemoryError, np.linalg.LinAlgError) as exc:
+        raise ValueError(
+            f"q={q}: Gauss-Hermite rule construction failed ({type(exc).__name__})"
+        ) from exc
+    weights = vectors[0, :] ** 2
+    weights = weights / weights.sum()
+    if not (np.all(np.isfinite(nodes)) and np.all(np.isfinite(weights))):
+        raise ValueError(f"Gauss-Hermite rule with q={q} is not finite")
+    return nodes, weights
+
+
 def _quadrature_points(value) -> int:
     """Backward-compatible alias for the supported unidimensional rule set."""
     return _fit_quadrature_points(value)
@@ -433,13 +491,12 @@ def check_focal_expected_total_score_monotonicity(
 
     ``fit`` is a :class:`~fast_mlsirm.grm.GrmFit`; ``dimension`` selects the
     focal trait; ``theta`` is the caller's grid on it. ``q_nuisance`` is a
-    required, caller-chosen Gauss-Hermite node count in ``1..=4096`` — no
+    required, caller-chosen Gauss-Hermite node count ``>= 1`` — no
     default is offered, because no accuracy target is on file to source one
-    against (Project rule, issue #1929). The lower bound
-    is exact (an ``n``-node Gauss rule exists for every ``n >= 1``;
-    Golub & Welsch, 1969) and the upper bound reuses this package's
-    quadrature-point budget (``MAX_POLY_QUADRATURE_POINTS``), not a new
-    constant. Returns the same report
+    against (Project rule, issue #1929). The bound is exact (an ``n``-node
+    Gauss rule exists for every ``n >= 1``; Golub & Welsch, 1969); there is
+    no upper node cap, only the rule's allocation guard (see
+    ``_probabilists_gauss_hermite``). Returns the same report
     as :func:`expected_total_score_monotonicity`, with the same two grid-stable
     statistics and the same omissions.
 
@@ -502,9 +559,7 @@ def check_focal_expected_total_score_monotonicity(
         raise ValueError("fit.slope must be finite")
     n_items, n_dims = slope.shape
     focal = _bounded_integer(dimension, "dimension", 0, n_dims - 1)
-    nodes_requested = _bounded_integer(
-        q_nuisance, "q_nuisance", 1, MAX_POLY_QUADRATURE_POINTS
-    )
+    nodes_requested = _gauss_hermite_node_count(q_nuisance, "q_nuisance")
 
     threshold = np.asarray(fit.threshold, dtype=np.float64)
     if threshold.ndim != 2 or threshold.shape[0] != n_items:
@@ -512,8 +567,7 @@ def check_focal_expected_total_score_monotonicity(
     if not np.all(np.isfinite(threshold)):
         raise ValueError("fit.threshold must be finite")
 
-    nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
-    weights = weights / weights.sum()
+    nodes, weights = _probabilists_gauss_hermite(nodes_requested)
 
     nuisance_sd = np.sqrt(
         np.square(slope).sum(axis=1) - np.square(slope[:, focal])
@@ -551,12 +605,11 @@ def check_bifactor_expected_total_score_monotonicity(
     fields); the general factor is always the focal dimension, matching the
     bifactor model's role for it (Gibbons et al., 2007). ``theta`` is the
     caller's grid on the general factor. ``q_specific`` is a required,
-    caller-chosen Gauss-Hermite node count in ``1..=4096`` — no default is
+    caller-chosen Gauss-Hermite node count ``>= 1`` — no default is
     offered, because no accuracy target is on file to source one against
-    (Project rule, issue #1929). The lower bound is exact (an
-    ``n``-node Gauss rule exists for every ``n >= 1``; Golub & Welsch, 1969)
-    and the upper bound reuses this package's quadrature-point budget
-    (``MAX_POLY_QUADRATURE_POINTS``), not a new constant. Returns the same
+    (Project rule, issue #1929). The bound is exact (an ``n``-node Gauss
+    rule exists for every ``n >= 1``; Golub & Welsch, 1969); there is no
+    upper node cap, only the rule's allocation guard. Returns the same
     report as :func:`expected_total_score_monotonicity`.
 
     **Why one node count integrates every item's specific factor.** In the
@@ -616,9 +669,7 @@ def check_bifactor_expected_total_score_monotonicity(
         raise ValueError("fit.a_general and fit.a_specific must be finite")
     n_items = a_general.shape[0]
 
-    nodes_requested = _bounded_integer(
-        q_specific, "q_specific", 1, MAX_POLY_QUADRATURE_POINTS
-    )
+    nodes_requested = _gauss_hermite_node_count(q_specific, "q_specific")
 
     threshold = np.asarray(fit.threshold, dtype=np.float64)
     if threshold.ndim != 2 or threshold.shape[0] != n_items:
@@ -626,8 +677,7 @@ def check_bifactor_expected_total_score_monotonicity(
     if not np.all(np.isfinite(threshold)):
         raise ValueError("fit.threshold must be finite")
 
-    nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
-    weights = weights / weights.sum()
+    nodes, weights = _probabilists_gauss_hermite(nodes_requested)
     unit_slope = np.ones(1, dtype=np.float64)
 
     expected_total = np.zeros(grid.size, dtype=np.float64)
