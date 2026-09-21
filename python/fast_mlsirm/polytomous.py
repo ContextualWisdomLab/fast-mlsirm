@@ -455,7 +455,13 @@ def expected_total_score_monotonicity(
 def _decrease_report(
     grid: np.ndarray, expected_total: np.ndarray
 ) -> ExpectedScoreMonotonicity:
-    """Shared reduction from a curve to the two grid-stable statistics."""
+    """Shared reduction from a curve to the two grid-stable statistics.
+
+    Fails closed: NaN compares false against zero, so a non-finite curve would
+    otherwise reduce to ``monotone=True`` with no decrease.
+    """
+    if not np.all(np.isfinite(expected_total)):
+        raise ValueError("expected total score curve is not finite")
     step = np.diff(expected_total)
     falling = step < 0.0
     total_decrease = float(-step[falling].sum()) if falling.any() else 0.0
