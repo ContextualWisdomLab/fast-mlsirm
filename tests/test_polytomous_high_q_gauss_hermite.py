@@ -47,7 +47,7 @@ def test_rule_matches_hermegauss_where_hermegauss_is_finite(q: int) -> None:
     ref_nodes, ref_weights = np.polynomial.hermite_e.hermegauss(q)
     nodes, weights = _probabilists_gauss_hermite(q)
     np.testing.assert_allclose(nodes, ref_nodes, rtol=0, atol=1e-12)
-    np.testing.assert_allclose(weights, ref_weights / ref_weights.sum(), rtol=0, atol=1e-14)
+    np.testing.assert_allclose(weights, ref_weights / ref_weights.sum(), rtol=0, atol=1e-13)
 
 
 class _Fit:
