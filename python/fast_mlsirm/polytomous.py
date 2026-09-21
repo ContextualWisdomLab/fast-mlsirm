@@ -618,11 +618,11 @@ def _bifactor_group_item_params(
             index = _bounded_integer(group, "group", 0, n_groups - 1)
         if hasattr(fit, "specific_sd"):
             specific_sd = np.asarray(fit.specific_sd, dtype=np.float64)
-            scope = (
-                specific_sd
-                if group is None
-                else np.atleast_2d(specific_sd)[index]
-            )
+            if specific_sd.ndim != 2 or specific_sd.shape[0] != n_groups:
+                raise ValueError(
+                    "fit.specific_sd must be n_groups x n_specific"
+                )
+            scope = specific_sd if group is None else specific_sd[index]
             if not np.all(scope == 1.0):
                 raise ValueError(
                     "fit.specific_sd is not all 1 (estimate_specific_vars=True); "
