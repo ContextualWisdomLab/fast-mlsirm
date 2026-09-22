@@ -41,7 +41,7 @@ use rayon::prelude::*;
 /// Half-open person range `[start, end)` for chunk `chunk_idx` of `n_chunks`.
 ///
 /// Chunk size is `ceil(n_persons / n_chunks)`, independent of any thread
-/// count. Trailing chunks may be empty when `n_chunks > n_persons`.
+/// count.
 ///
 /// # Panics
 ///
@@ -88,6 +88,9 @@ where
     if n_threads < 1 {
         return Err("e_step_n_threads must be >= 1".into());
     }
+    if n_chunks > n_persons.max(1) {
+        return Err("e_step_n_chunks must not exceed n_persons".into());
+    }
     // Single chunk: keep the historical person-order association (no rayon).
     if n_chunks == 1 {
         let (start, end) = person_chunk_range(n_persons, 1, 0);
@@ -125,12 +128,8 @@ mod tests {
     }
 
     #[test]
-    fn trailing_chunks_may_be_empty_when_n_chunks_exceeds_n_persons() {
-        assert_eq!(person_chunk_range(3, 5, 0), (0, 1));
-        assert_eq!(person_chunk_range(3, 5, 1), (1, 2));
-        assert_eq!(person_chunk_range(3, 5, 2), (2, 3));
-        assert_eq!(person_chunk_range(3, 5, 3), (3, 3));
-        assert_eq!(person_chunk_range(3, 5, 4), (3, 3));
+    fn excessive_empty_chunks_are_rejected_before_allocation() {
+        assert!(map_person_chunks(3, 100_000, 1, |_, _| ()).is_err());
     }
 
     #[test]
