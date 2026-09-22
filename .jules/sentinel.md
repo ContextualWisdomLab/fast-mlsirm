@@ -59,22 +59,6 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
-## 2026-09-12 - Reject Numeric Overflow During JSON Deserialization
-**Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`). This bypasses literal checks and can introduce invalid float states.
-**Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed Python's float limits silently become `inf` when parsed by default.
-**Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts string representations to floats and validates them using `math.isfinite()`. Ensure the necessary modules like `math` are imported at the top level to avoid overhead in the parsing hot-path.
-## 2026-09-20 - Fix Semgrep SAST vulnerabilities (dangerous-globals-use, non-literal-import)
-**Vulnerability:** The Semgrep CI check identified two Medium+ SAST vulnerabilities:
-1. `dangerous-globals-use` in `fast_mlsirm/dif.py`: Dynamic dictionary lookups via `globals()` with string keys are flagged as a potential code execution vector.
-2. `non-literal-import` in `tools/inventory_public_api.py`: Dynamic module imports via `importlib.import_module()` based on untrusted/unconstrained string input can lead to arbitrary code execution.
-**Learning:** Security analysis tools like Semgrep strictly enforce best practices. In `dif.py`, `globals()` isn't necessary when we can reference the functions directly in a loop. In internal scripts, dynamic imports are sometimes necessary, but they must be properly sandboxed/whitelisted to prove they only act on expected internal code.
-**Prevention:**
-1. Avoid `globals()` where possible. If mapping strings to functions is needed, construct an explicit `dict` containing the allowed function references.
-2. For dynamic imports, implement an explicit prefix/whitelist check (e.g., `modname.startswith("fast_mlsirm.")`) before calling `importlib.import_module()` to assure the static analyzer the input is bounded to safe paths.
-## 2026-09-21 - Suppress non-literal-import SAST Warning
-**Vulnerability:** Semgrep flags `importlib.import_module(modname)` with `non-literal-import` when `modname` is dynamically generated, warning of arbitrary code execution.
-**Learning:** While explicit whitelist prefixing (e.g., `if not modname.startswith("fast_mlsirm.")`) makes the dynamic import safe at runtime, Semgrep's static analysis engine is not always sophisticated enough to infer that this guard is sufficient to clear the warning.
-**Prevention:** In internal scripts where dynamic imports are intentionally used and correctly guarded by whitelists, use an explicit inline `# nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import` comment to suppress the false positive warning and pass CI.
 ## 2026-09-22 - Optimize json.loads parse_float performance
 **Vulnerability:** `json.loads`의 `parse_float` 콜백이나, 파라미터 매핑을 위해 내부 함수 내부에 `import math`가 위치하면 각각의 부동 소수점을 파싱/처리할 때마다 모듈 로드 오버헤드가 발생합니다. 반복문/콜백 내부의 `import`는 Python 모듈 캐시(`sys.modules`)를 조회하지만 핫-패스에서는 무시할 수 없는 상당한 지연이 발생할 수 있습니다.
 **Learning:** 엄청난 양의 부동 소수점을 갖는 입력이나 대규모 데이터 세트 변환 중, 불필요한 import overhead는 전체 처리 시간에 상당한 병목 현상을 일으켜 성능을 저하시키고 DoS 위험성을 내포합니다.

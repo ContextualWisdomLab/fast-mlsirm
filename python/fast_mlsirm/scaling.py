@@ -74,7 +74,6 @@ Stephenson, A., & Sonas, J. (2020). PlayerRatings: Dynamic updating methods
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
 
 import numpy as np
 
@@ -2107,6 +2106,7 @@ def _predict_float_array(x, name, fname, allow_nan):
 
 def _predict_scalar(x, name, fname):
     """Validate a finite real scalar parameter."""
+    import math
     if isinstance(x, (bool, np.bool_)):
         raise ValueError(f"{fname}: {name} must be real numeric, not bool")
     raw = np.asarray(x)
@@ -2178,6 +2178,7 @@ def _predict_games_u64(x, fname):
 
 def _predict_tng_u64(tng, fname):
     """Validate tng losslessly into u64 (no float round-trip for ints)."""
+    import math
 
     if isinstance(tng, (bool, np.bool_)):
         raise ValueError(f"{fname}: tng must be real numeric, not bool")
