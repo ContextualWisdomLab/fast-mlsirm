@@ -59,3 +59,8 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+
+## 2026-09-22 - 안전한 내부 스크립트의 Semgrep 오탐지 예외 처리
+**Vulnerability:** Semgrep SAST 검사(`python.lang.security.dangerous-globals-use.dangerous-globals-use` 및 `python.lang.security.audit.non-literal-import.non-literal-import`)에서 동적으로 `globals()`를 수정하거나 `importlib.import_module()`을 호출하는 패턴을 취약점으로 분류하는 현상을 발견했습니다.
+**Learning:** 모듈 별명(alias) 이전을 지원하기 위한 런타임 전역 변수 동적 패치나 공개 API 검사를 위해 모듈을 순회하며 동적으로 임포트하는 것과 같이, 통제된 내부 환경에서 정적 리터럴에 제한되어 사용되는 동적 코드는 실제 보안 위험(취약점)이 없는 오탐지(False Positive)임을 배웠습니다.
+**Prevention:** 내부 리플렉션 등 안전성이 명확히 보장되는 동적 코드 실행 구간에서는 이전 줄에 `# nosemgrep: <rule-id>` 주석을 추가하여 정적 코드 분석기의 오탐지를 안전하게 우회합니다. Python 포맷터(예: ruff)에 의해 주석이 밀리거나 분리되는 것을 방지하기 위해 해당 코드와 같은 줄(inline)이 아닌 직전 줄(preceding line)에 배치해야 합니다.
