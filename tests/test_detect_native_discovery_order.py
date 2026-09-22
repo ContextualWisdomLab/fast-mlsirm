@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import fast_mlsirm.fitstats as fitstats
-from fast_mlsirm.detect import _trusted_numeric_array, detect_analysis, dimtest
+from fast_mlsirm.detect import detect_analysis, dimtest
 
 
 def _unexpected_core_discovery():

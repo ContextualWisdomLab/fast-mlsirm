@@ -30,7 +30,6 @@ from fast_mlsirm.scoring import (
     StaticFixtureEngine,
     build_engine_descriptor,
     build_score_observation,
-    build_scoring_request,
     build_scoring_result,
 )
 

@@ -23,8 +23,6 @@ from ._contract_safety import (
 )
 from ._validation import (
     ASSESSMENT_SCHEMA_VERSION,
-    MAX_POLICY_REFERENCES,
-    AssessmentSpecError,
     CanonicalContract,
     assessment_error,
     assessment_schema_version,
