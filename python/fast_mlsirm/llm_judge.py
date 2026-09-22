@@ -407,14 +407,14 @@ def _validate_raw_json_depth(content: str) -> None:
 
 def _reject_nonfinite_constant(_: str) -> None:
     """Reject non-finite JSON constants like NaN or Infinity."""
-    raise ValueError("non-finite JSON numeric constant")
+    raise JudgeFormatError("non-finite JSON numeric constant")
 
 
 def _reject_nonfinite_float(value: str) -> float:
     """Reject floating point values that overflow to infinity."""
     f = float(value)
     if not math.isfinite(f):
-        raise ValueError("non-finite JSON numeric value")
+        raise JudgeFormatError("non-finite JSON numeric value")
     return f
 
 
