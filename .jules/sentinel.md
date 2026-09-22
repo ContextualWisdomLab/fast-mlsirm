@@ -59,3 +59,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+## 2026-09-22 - Optimize json.loads parse_float performance
+**Vulnerability:** `json.loads`의 `parse_float` 콜백이나, 파라미터 매핑을 위해 내부 함수 내부에 `import math`가 위치하면 각각의 부동 소수점을 파싱/처리할 때마다 모듈 로드 오버헤드가 발생합니다. 반복문/콜백 내부의 `import`는 Python 모듈 캐시(`sys.modules`)를 조회하지만 핫-패스에서는 무시할 수 없는 상당한 지연이 발생할 수 있습니다.
+**Learning:** 엄청난 양의 부동 소수점을 갖는 입력이나 대규모 데이터 세트 변환 중, 불필요한 import overhead는 전체 처리 시간에 상당한 병목 현상을 일으켜 성능을 저하시키고 DoS 위험성을 내포합니다.
+**Prevention:** `import math`와 같은 모듈 임포트 구문은 내부 함수가 아닌 모듈의 최상단(top-level)에 위치시켜 매번 모듈을 로드하는 오버헤드를 방지해야 합니다.

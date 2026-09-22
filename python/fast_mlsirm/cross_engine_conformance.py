@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 import hashlib
 import json
+import math
 import re
 import unicodedata
 
@@ -903,6 +904,13 @@ def _reject_json_constant(value: str) -> object:
     raise ValueError(f"manifest JSON contains unsupported constant: {value}")
 
 
+def _reject_nonfinite_float(value: str) -> float:
+    f_val = float(value)
+    if not math.isfinite(f_val):
+        raise ValueError("manifest JSON contains non-finite numbers")
+    return f_val
+
+
 def _validate_raw_manifest_depth(content: str) -> None:
     """Reject JSON strings whose nesting depth exceeds the maximum budget."""
     depth = 0
@@ -1063,6 +1071,7 @@ class ConformanceInventory:
                 value,
                 object_pairs_hook=_reject_duplicate_json_keys,
                 parse_constant=_reject_json_constant,
+                parse_float=_reject_nonfinite_float,
             )
         except json.JSONDecodeError as exc:
             raise ValueError("manifest JSON must contain valid JSON") from exc
