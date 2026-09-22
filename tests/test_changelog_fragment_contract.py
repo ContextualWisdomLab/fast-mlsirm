@@ -68,7 +68,6 @@ def test_every_repository_fragment_matches_the_authoritative_format():
     """A release cannot silently omit a malformed or unclassified fragment."""
     module = _module()
     paths = module.fragment_paths()
-    assert paths
     rendered = module.render_unreleased(paths)
     for path in paths:
         title, _ = module.parse_fragment(path)
@@ -171,6 +170,8 @@ def test_cli_check_and_update_modes_are_fail_closed(tmp_path, capsys):
     module = _module()
     changelog = tmp_path / "CHANGELOG.md"
     changelog.write_text(_changelog(), encoding="utf-8")
+    fragment = _fragment(tmp_path / "100-first.md")
+    module.fragment_paths = lambda: (fragment,)
 
     with pytest.raises(SystemExit) as failure:
         module.main(["--check", str(changelog)])
@@ -181,11 +182,21 @@ def test_cli_check_and_update_modes_are_fail_closed(tmp_path, capsys):
     assert module.main(["--check", str(changelog)]) == 0
 
 
-def test_render_contract_rejects_empty_and_malformed_fragments(tmp_path):
-    """Malformed or empty fragment inventories cannot produce release evidence."""
+def test_render_contract_accepts_empty_inventory_and_rejects_malformed_fragments(
+    tmp_path,
+):
+    """A release may consume every fragment, while malformed fragments fail."""
     module = _module()
-    with pytest.raises(ValueError, match="at least one"):
-        module.render_unreleased(())
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(_changelog(), encoding="utf-8")
+    assert module.render_unreleased(()) == "## Unreleased\n"
+    module.update_changelog(changelog, ())
+    module.check_changelog(changelog, ())
+    updated = changelog.read_text(encoding="utf-8")
+    assert module.BEGIN_MARKER not in updated
+    assert module.END_MARKER not in updated
+    assert "- Manual note." in updated
+    assert "## [1.0.0]" in updated
 
     malformed = tmp_path / "bad.md"
     malformed.write_text("not a title\n", encoding="utf-8")

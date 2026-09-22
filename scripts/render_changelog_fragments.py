@@ -73,7 +73,7 @@ def render_unreleased(paths: Iterable[Path] | None = None) -> str:
     """Render all fragments as one deterministic ``Unreleased`` Markdown block."""
     selected = fragment_paths() if paths is None else tuple(paths)
     if not selected:
-        raise ValueError("at least one changelog fragment is required")
+        return "## Unreleased\n"
 
     grouped: dict[str, list[tuple[str, tuple[str, ...]]]] = defaultdict(list)
     for path in selected:
@@ -127,6 +127,14 @@ def synchronize_text(changelog: str, rendered: str) -> str:
         END_MARKER
     ):
         raise ValueError("fragment markers must occur only inside Unreleased")
+
+    if rendered == "## Unreleased\n":
+        if begin_count == 1:
+            begin = section.index(BEGIN_MARKER)
+            end = section.index(END_MARKER, begin) + len(END_MARKER)
+            section = section[:begin] + section[end:]
+        replacement = section or "\n"
+        return changelog[: heading.end()] + replacement + changelog[section_end:]
 
     managed = _managed_block(rendered)
     if begin_count == 1:
