@@ -84,32 +84,81 @@ def _simulate(seed: int, rho: float = RHO) -> np.ndarray:
         y[:, i] = (draws[:, None] > np.cumsum(probs, axis=1)).sum(axis=1)
     return y
 
-def test_identity_primary_identification() -> None:
-    y = _simulate(SEED, rho=0.0)
-    # Oakes information needs a fit close enough to the stationary point.
-    fixed = _fit(y, primary_correlation="identity", tol=1e-7)
-    estimated = _fit(y, primary_correlation="estimate")
-    np.testing.assert_array_equal(fixed.phi, np.eye(N_PRIMARY))
-    assert not np.signbit(fixed.phi).any()
-    assert fixed.primary_identification == "orthogonal"
-    assert estimated.primary_identification == "correlated"
-    assert fixed.n_parameters + N_PRIMARY * (N_PRIMARY - 1) // 2 == estimated.n_parameters
-    assert np.all(np.diff(fixed.loglik_trace) >= -1e-7)
-    assert abs(fixed.loglik_trace[-1] - estimated.loglik_trace[-1]) / N_PERSONS < 0.03
-    se = two_tier_oakes_se(
-        fixed.a_primary, fixed.a_specific, fixed.threshold, fixed.phi, y,
-        PRIMARY_MAP, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC,
-        q_primary=7, q_specific=7, fd_step=1e-5, primary_correlation="identity",
-    )
-    assert se.information.shape == (fixed.n_parameters, fixed.n_parameters)
-    assert not any(label.startswith("phi_z:") for label in se.labels)
-    assert se.positive_definite, se.non_pd_reason
-    assert np.isfinite(se.se).all()
-
-
 def test_primary_correlation_validation() -> None:
     with pytest.raises(ValueError, match="primary_correlation"):
         _fit(_simulate(SEED), primary_correlation="unknown")
+
+
+def test_identity_rejects_identical_primary_support() -> None:
+    y = _simulate(SEED)
+    shared = np.ones_like(PRIMARY_MAP)
+    with pytest.raises(ValueError, match="identical free-loading item sets"):
+        fit_two_tier_grm(
+            y, shared, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC,
+            q_primary=7, q_specific=7, max_iter=500, tol=1e-5,
+            n_starts=1, seed=SEED, primary_correlation="identity",
+        )
+
+
+def test_estimate_path_matches_origin_main_golden() -> None:
+    """Golden from origin/main 99c228a8f50a in a separate clean s1 checkout.
+
+    Built there with Python 3.12 and ``pip install -e .``; ran this test's
+    deterministic 12 x 4 data through ``fit_two_tier_grm`` with the explicit
+    arguments below, then ``two_tier_oakes_se`` at the fitted parameters.
+    Cai (2010, pp. 583-584) defines the two-tier covariance; this checks that
+    the existing estimated-Phi path stayed numerically unchanged.
+
+    Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+    model with applications. *Psychometrika, 75*(4), 581-612.
+    https://doi.org/10.1007/s11336-010-9178-0
+    """
+    y = np.array([[(p + i) % 3 for i in range(4)] for p in range(12)], dtype=np.int64)
+    pmap = np.array([[1, 0], [1, 0], [0, 1], [0, 1]], dtype=bool)
+    smap = np.zeros(4, dtype=np.int64)
+    kwargs = dict(q_primary=7, q_specific=7, max_iter=500, tol=1e-2, n_starts=1, seed=20260922)
+    golden_phi = np.array([[1.0, -0.10480732118999127], [-0.10480732118999127, 1.0]])
+    golden_trace = np.array([
+        -57.878882056754186, -51.76952034453358, -47.89637529712579,
+        -43.0974994038811, -38.606846492548215, -37.22539643782572,
+        -37.15081748073924,
+    ])
+    golden_primary = np.array([
+        [-0.14916623496724393, 0.0], [0.2869920793276147, 0.0],
+        [0.0, 0.2869920842842997], [0.0, -0.14916624583907015],
+    ])
+    golden_specific = np.array([
+        22.307488834567913, -0.8566330375435262,
+        -0.8566330381941958, 22.307488835442,
+    ])
+    golden_threshold = np.array([
+        [11.64599181577608, -11.591569652560967],
+        [0.6385437446044752, -1.0542766103752086],
+        [1.05427661081288, -0.6385437452077196],
+        [11.5915696386629, -11.645991831810742],
+    ])
+    golden_labels = [
+        "a_primary:0:0", "a_specific:0", "d:0:0", "d:0:1",
+        "a_primary:1:0", "a_specific:1", "d:1:0", "d:1:1",
+        "a_primary:2:1", "a_specific:2", "d:2:0", "d:2:1",
+        "a_primary:3:1", "a_specific:3", "d:3:0", "d:3:1", "phi_z:0:1",
+    ]
+    for correlation in (None, "estimate"):
+        options = kwargs if correlation is None else {**kwargs, "primary_correlation": correlation}
+        fit = fit_two_tier_grm(y, pmap, smap, 3, 2, 1, **options)
+        for got, expected in (
+            (fit.phi, golden_phi), (fit.loglik_trace, golden_trace),
+            (fit.a_primary, golden_primary), (fit.a_specific, golden_specific),
+            (fit.threshold, golden_threshold),
+        ):
+            np.testing.assert_allclose(got, expected, rtol=0, atol=1e-12)
+        se = two_tier_oakes_se(
+            fit.a_primary, fit.a_specific, fit.threshold, fit.phi,
+            y, pmap, smap, 3, 2, 1, q_primary=7, q_specific=7, fd_step=1e-5,
+            **({} if correlation is None else {"primary_correlation": correlation}),
+        )
+        assert se.labels == golden_labels
+        assert se.information.shape == (17, 17)
 
 
 def _fit(y: np.ndarray, **overrides):

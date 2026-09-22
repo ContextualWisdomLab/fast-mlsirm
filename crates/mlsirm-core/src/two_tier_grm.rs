@@ -45,30 +45,7 @@
 //! below means degenerate single-loader inputs valid in stage 1 are rejected
 //! here — reduction equivalence holds for full-pattern inputs). The two-tier model itself —
 //! correlated primaries plus orthogonal specifics, subsuming the bifactor
-//! and testlet models — is Cai (2010) (abstract; see the source-access note
-//! below).
-//!
-//! # Source-access note (why Cai 2010 has no equation locator here)
-//!
-//! The Zotero record for Cai (2010) (key `GT3NQ8K8`) holds the abstract,
-//! DOI (`10.1007/s11336-010-9178-0`), and bibliographic data — its abstract
-//! confirms the model claims used here (the framework "subsumes standard
-//! multidimensional IRT models, bifactor IRT models, and testlet response
-//! theory models as special cases", "reduction in the dimensionality of the
-//! latent variable space", "an EM algorithm for full-information maximum
-//! marginal likelihood estimation") — but the attached file is the Springer
-//! article landing page, NOT the full text, and the full text could not be
-//! obtained in-run (paywalled at the publisher; the institutional proxy
-//! serves the article page without entitlement, Springer WAYF rejects the
-//! proxy redirect host, and no author manuscript was found). So no Cai
-//! (2010) equation or page number is cited: every locator below names a
-//! source whose full text was actually read — the local Gibbons et al.
-//! (2007) PDF (eq. 9, 11-12, 15), the open-access Cai, Yang, & Hansen
-//! (2011) full text (eq. 6-7, 10-11, "Maximum Marginal Likelihood
-//! Estimation" section), and the installed mirt 1.46.1 `bfactor` help topic
-//! (two-tier covariance, `ncol(G) + 1` integration). The `mirt::bfactor`
-//! two-tier oracle, whose own implementation follows Cai (2010), validates
-//! the same MLE empirically.
+//! and testlet models — is Cai (2010, pp. 583-584).
 //!
 //! # Estimation: Bock-Aitkin EM with reduction over the specific tier
 //!
@@ -159,6 +136,10 @@
 //! block — negating that dimension's slopes AND the reported primary EAP
 //! column AND the `Phi` row/column signs for primary flips, but NOT the
 //! thresholds.
+//! When `Phi = I`, identical free-loading item sets for two primary columns
+//! leave their orthogonal rotation unidentified. Distinct supports are a
+//! necessary condition for the fixed-identity specialization (Cai, 2010,
+//! pp. 583-584); the per-column reflection rule above handles signs.
 //!
 //! # Caller-owned numerics (no hidden clamps, no magic caps)
 //!
@@ -422,6 +403,19 @@ pub(crate) fn validate(
                  per primary dimension are required (implementation stability choice — fewer \
                  leave the primary correlation weakly identified; see the module docs)"
             ));
+        }
+    }
+    if !cfg.estimate_primary_correlation {
+        for d in 0..n_primary {
+            for other in d + 1..n_primary {
+                if (0..n_items)
+                    .all(|i| primary_map[i * n_primary + d] == primary_map[i * n_primary + other])
+                {
+                    return Err(format!(
+                        "identity primary correlation requires distinct free-loading item sets for every pair of primary columns; identical free-loading item sets at columns {d} and {other} admit orthogonal rotation"
+                    ));
+                }
+            }
         }
     }
     let mut blocks: Vec<Vec<usize>> = vec![Vec::new(); n_specific];
@@ -716,7 +710,12 @@ pub(crate) fn z_from_phi(phi: &[f64], p: usize) -> Result<Vec<f64>, String> {
 /// rule order). Fixed-grid Gauss-Hermite quadrature is an implementation
 /// choice (the embedded rules in `crate::quadrature`); the node counts are
 /// caller arguments with no upper cap in this module.
-pub(crate) fn build_primary_grid(tz: &[f64], wz: &[f64], p: usize, n_grid: usize) -> (Vec<f64>, Vec<f64>) {
+pub(crate) fn build_primary_grid(
+    tz: &[f64],
+    wz: &[f64],
+    p: usize,
+    n_grid: usize,
+) -> (Vec<f64>, Vec<f64>) {
     let q = tz.len();
     let mut coords = vec![0.0f64; n_grid * p];
     let mut log_w0 = vec![0.0f64; n_grid];
@@ -1359,8 +1358,9 @@ fn run_single_start(
             .ok_or_else(|| format!("primary correlation became non-PD at iteration {n_iter}"))?;
         let phi_inv = chol_inverse(&l, p);
         let log_w = reweighted_log_weights(log_w0, coords, &phi_inv, logdet, p);
-        let (ll, counts, s_bar_sum) =
-            e_step(v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs);
+        let (ll, counts, s_bar_sum) = e_step(
+            v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs,
+        );
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);

@@ -428,6 +428,45 @@ fn rejects_zero_quadrature_counts() {
 }
 
 #[test]
+fn identity_rejects_identical_primary_support_but_accepts_nested_support() {
+    let (y, n_persons) = tiny_data();
+    let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: false,
+        ..valid_config()
+    };
+    let shared = [true; TINY_N_ITEMS * TINY_N_PRIMARY];
+    let err = fit_two_tier_grm(
+        &y,
+        None,
+        &shared,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect_err("identical supports admit a continuous rotation");
+    assert!(err.contains("identical free-loading item sets"), "{err}");
+
+    let nested: Vec<bool> = (0..TINY_N_ITEMS).flat_map(|i| [true, i < 5]).collect();
+    fit_two_tier_grm(
+        &y,
+        None,
+        &nested,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("distinct nested supports must fit");
+}
+
+#[test]
 fn rejects_bad_iteration_and_tolerance_budgets() {
     let (y, n_persons) = tiny_data();
     for cfg in [

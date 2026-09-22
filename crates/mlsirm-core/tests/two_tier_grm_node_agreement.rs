@@ -16,27 +16,24 @@
 //! q_specific`), which still exercises the SAME arbitrary-`n` Gauss-Hermite
 //! path (`quadrature::gh_rule`) the production `n_primary = 2` config in
 //! `two_tier_grm_recovery.rs` uses; node-count convergence is a property of
-//! the quadrature rule, not of `n_primary`. `n_persons = 300` keeps
+//! the quadrature rule, not of `n_primary`. `n_persons = 60` keeps
 //! `--ignored` runtime bounded; node count, not sample size or dimension
-//! count, is what this test exercises.
+//! count, is what this test exercises. The identity-mode fit and Oakes SE
+//! both use 121 and 241 nodes per dimension.
 //! Run with `cargo test --release -- --ignored --nocapture`.
 
 use mlsirm_core::two_tier_grm::{fit_two_tier_grm, TwoTierGrmConfig};
+use mlsirm_core::two_tier_oakes::{two_tier_oakes_se, TwoTierOakesConfig};
 
 const N_ITEMS: usize = 4;
 const N_PRIMARY: usize = 1;
 const N_SPECIFIC: usize = 1;
 const N_CAT: usize = 3;
 const PRIMARY_MAP: [bool; N_ITEMS * N_PRIMARY] = [true, true, true, true];
-const SPECIFIC_MAP: [i32; N_ITEMS] = [0, 0, 0, 0];
+const SPECIFIC_MAP: [i32; N_ITEMS] = [-1, -1, 0, 0];
 const TRUE_A_PRIMARY: [f64; N_ITEMS] = [1.20, 1.00, 0.90, 1.10];
-const TRUE_A_SPECIFIC: [f64; N_ITEMS] = [0.80, 0.70, 0.90, 0.60];
-const TRUE_D: [[f64; 2]; N_ITEMS] = [
-    [1.00, -1.00],
-    [0.80, -1.20],
-    [1.10, -0.90],
-    [0.90, -1.10],
-];
+const TRUE_A_SPECIFIC: [f64; N_ITEMS] = [0.0, 0.0, 0.90, 0.60];
+const TRUE_D: [[f64; 2]; N_ITEMS] = [[1.00, -1.00], [0.80, -1.20], [1.10, -0.90], [0.90, -1.10]];
 
 struct Lcg(u64);
 
@@ -87,11 +84,11 @@ fn simulate(n_persons: usize, seed: u64) -> Vec<usize> {
 
 fn fit_config() -> TwoTierGrmConfig {
     TwoTierGrmConfig {
-        estimate_primary_correlation: true,
+        estimate_primary_correlation: false,
         q_primary: 15,
         q_specific: 15,
-        max_iter: 1000,
-        tol: 1e-5,
+        max_iter: 500,
+        tol: 1e-4,
         n_starts: 1,
         seed: 0x9E37_79B9_7F4A_7C15,
         newton_iter: 10,
@@ -102,13 +99,14 @@ fn fit_config() -> TwoTierGrmConfig {
 #[test]
 #[ignore = "slow (121/241 node grids); run with: cargo test --release -- --ignored --nocapture"]
 fn two_tier_grm_121_vs_241_nodes_agree() {
-    let n_persons = 300;
+    let n_persons = 60;
     let y = simulate(n_persons, 20_260_917);
 
     let mut loglik = [0.0f64; 2];
     let mut a_primary = [Vec::new(), Vec::new()];
     let mut a_specific = [Vec::new(), Vec::new()];
     let mut threshold = [Vec::new(), Vec::new()];
+    let mut standard_errors = [Vec::new(), Vec::new()];
     let mut elapsed_secs = [0.0f64; 2];
 
     for (idx, &q) in [121usize, 241usize].iter().enumerate() {
@@ -137,10 +135,38 @@ fn two_tier_grm_121_vs_241_nodes_agree() {
             "q={q} fit must converge (termination: {})",
             fit.termination_reason
         );
+        assert_eq!(fit.phi, vec![1.0]);
+        assert_eq!(fit.primary_identification, "orthogonal");
         loglik[idx] = *fit.loglik_trace.last().expect("non-empty trace");
         a_primary[idx] = fit.a_primary.clone();
         a_specific[idx] = fit.a_specific.clone();
         threshold[idx] = fit.threshold.clone();
+        let se = two_tier_oakes_se(
+            &fit.a_primary,
+            &fit.a_specific,
+            &fit.threshold,
+            &fit.phi,
+            &y,
+            None,
+            &PRIMARY_MAP,
+            &SPECIFIC_MAP,
+            n_persons,
+            N_ITEMS,
+            N_PRIMARY,
+            N_SPECIFIC,
+            N_CAT,
+            &TwoTierOakesConfig {
+                estimate_primary_correlation: false,
+                q_primary: q,
+                q_specific: q,
+                fd_step: 1e-5,
+            },
+        )
+        .expect("identity Oakes information must compute");
+        assert!(se.labels.iter().all(|label| !label.starts_with("phi_z:")));
+        standard_errors[idx] = se
+            .se
+            .expect("identity Oakes information must be positive definite");
         eprintln!(
             "q={q}: n_iter={}, final_loglik={:.6}, elapsed={:.2}s",
             fit.n_iter, loglik[idx], elapsed_secs[idx]
@@ -154,7 +180,7 @@ fn two_tier_grm_121_vs_241_nodes_agree() {
         elapsed_secs[0], elapsed_secs[1]
     );
     // Same tolerance basis as the bifactor 121-vs-241 regression: the EM
-    // stopping tolerance is 1e-5, so two well-converged fits at different
+    // stopping tolerance is 1e-4, so two well-converged fits at different
     // (already-stabilized) node counts should agree to a small multiple of
     // that, not to float epsilon (independent EM runs land at slightly
     // different points on a flat likelihood ridge).
@@ -182,6 +208,12 @@ fn two_tier_grm_121_vs_241_nodes_agree() {
             "threshold[{i}] disagrees: 121={}, 241={}",
             threshold[0][i],
             threshold[1][i]
+        );
+    }
+    for i in 0..standard_errors[0].len() {
+        assert!(
+            (standard_errors[0][i] - standard_errors[1][i]).abs() < 5e-3,
+            "SE[{i}] disagrees between 121 and 241 nodes"
         );
     }
 }

@@ -222,6 +222,9 @@ def fit_two_tier_grm(
     non-obvious decision, and the APA 7th references.
     ``primary_correlation='estimate'`` preserves the existing correlated-primary
     fit; ``'identity'`` fixes Phi exactly to I (Cai, 2010, pp. 583-584).
+    In identity mode, distinct free-loading item sets for each primary pair
+    are necessary to rule out continuous orthogonal rotations; per-column
+    reflection canonicalization handles the remaining sign ambiguity.
 
     References (APA 7th ed.): Cai, L. (2010). A two-tier full-information item
     factor analysis model with applications. *Psychometrika, 75*(4), 581-612.
@@ -275,6 +278,15 @@ def fit_two_tier_grm(
     if pmap.ndim != 2 or pmap.shape != (n_items, n_primary_int):
         raise ValueError("primary_map must be an n_items x n_primary boolean array")
     pmap_bool = np.asarray(pmap, dtype=bool)
+    if primary_correlation == "identity":
+        for d in range(n_primary_int):
+            for other in range(d + 1, n_primary_int):
+                if np.array_equal(pmap_bool[:, d], pmap_bool[:, other]):
+                    raise ValueError(
+                        "identity primary correlation requires distinct free-loading item sets "
+                        "for every pair of primary columns; identical free-loading item sets "
+                        f"at columns {d} and {other} admit orthogonal rotation"
+                    )
 
     smap = np.asarray(specific_map)
     if smap.ndim != 1 or smap.shape[0] != n_items:
