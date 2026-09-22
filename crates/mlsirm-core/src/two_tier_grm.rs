@@ -17,19 +17,26 @@
 //! ```
 //!
 //! with `P(Y >= 0) = 1`, `P(Y >= K) = 0`, and category probabilities from
-//! adjacent differences (Cai et al., 2011, eq. 7). The cumulative-logit
-//! graded form is Cai, Yang, & Hansen (2011, eq. 6, "A Model for Graded
-//! Response" section: `P(y >= k|theta_0, theta_s) = 1/(1 + exp{-[d_k + a_0
-//! theta_0 + a_s theta_s]})`) with category probabilities as adjacent
-//! differences (Cai et al., 2011, eq. 7); the multi-primary sum replaces
-//! their single general term, exactly as the two-tier structure requires
-//! (see the covariance paragraph below). The link is logistic rather than
-//! the normal ogive of Gibbons et al. (2007, eq. 9) — the same
-//! implementation choice as stage 1, matching the `mirt` graded comparison
-//! in this repository's fixture.
+//! adjacent differences. This is exactly the two-tier graded response model
+//! of Cai (2010, eq. 11, p. 589: `P_+(k|eta, xi_s, theta) = 1/(1 +
+//! exp{-[alpha_k + beta' eta + beta_s xi_s]})`, and eq. 12, p. 589:
+//! `P_k = P_+(k) - P_+(k+1)` with `P_+(0) = 1`, `P_+(K) = 0`); the same
+//! form appears in Cai, Yang, & Hansen (2011, eq. 6-7) with a single
+//! general term where Cai (2010) already carries the multi-primary sum
+//! `beta' eta`. Cai's `alpha_1..alpha_{K-1}` are "strictly ordered"
+//! (p. 589) and must DECREASE in `k` for `P_+` to decrease, which is this
+//! module's strictly-decreasing `d_ik` contract. The LOGISTIC link is
+//! therefore the paper's own, NOT an implementation choice: Gibbons et al.
+//! (2007, eq. 9) use the normal ogive, but Cai (2010) does not.
 //!
 //! The latent covariance is the two-tier block structure
-//! `Sigma = [[G, 0], [0, diag(S)]]` (Chalmers, 2026, mirt `bfactor`
+//! `Sigma = [[G, 0], [0, diag(S)]]` — Cai (2010, eq. 2, p. 586:
+//! `[[Phi, 0], [0, diag(tau)]]`, `Phi` of any type subject to
+//! identification, `diag(tau)` diagonal; eq. 3, p. 586, is Cai's own
+//! unit-variance scaling in which the primaries are correlated with unit
+//! variances and the specifics are "similarly scaled, mutually
+//! uncorrelated, and uncorrelated with the primary factors"; Chalmers,
+//! 2026, mirt `bfactor`
 //! documentation, "Details" section: "the secondary latent traits are
 //! assumed to be orthogonal to all traits and have a fixed variance of 1,
 //! while the primary traits can be organized to vary and covary with other
@@ -45,30 +52,37 @@
 //! below means degenerate single-loader inputs valid in stage 1 are rejected
 //! here — reduction equivalence holds for full-pattern inputs). The two-tier model itself —
 //! correlated primaries plus orthogonal specifics, subsuming the bifactor
-//! and testlet models — is Cai (2010) (abstract; see the source-access note
-//! below).
+//! and testlet models — is Cai (2010, Sections 3.1-3.2, pp. 586-588).
 //!
-//! # Source-access note (why Cai 2010 has no equation locator here)
+//! Cai (2010, eq. 1, p. 586) permits arbitrary primary cross-loadings but
+//! states that "an item is assumed to load on at most one specific
+//! dimension", which is what the one-entry-per-item `specific_map` encodes,
+//! and `diag(tau)` of eq. 2 is estimable there while this module fixes the
+//! specific variances at 1 with free per-item `a_iS`. That is the same
+//! scaling (Cai's own eq. 3), EXCEPT that the testlet-style constraint
+//! "`a_iS` equal across a block with `tau_s` free" cannot be expressed
+//! here — a scope limit, not a formula difference.
 //!
-//! The Zotero record for Cai (2010) (key `GT3NQ8K8`) holds the abstract,
-//! DOI (`10.1007/s11336-010-9178-0`), and bibliographic data — its abstract
-//! confirms the model claims used here (the framework "subsumes standard
-//! multidimensional IRT models, bifactor IRT models, and testlet response
-//! theory models as special cases", "reduction in the dimensionality of the
-//! latent variable space", "an EM algorithm for full-information maximum
-//! marginal likelihood estimation") — but the attached file is the Springer
-//! article landing page, NOT the full text, and the full text could not be
-//! obtained in-run (paywalled at the publisher; the institutional proxy
-//! serves the article page without entitlement, Springer WAYF rejects the
-//! proxy redirect host, and no author manuscript was found). So no Cai
-//! (2010) equation or page number is cited: every locator below names a
-//! source whose full text was actually read — the local Gibbons et al.
-//! (2007) PDF (eq. 9, 11-12, 15), the open-access Cai, Yang, & Hansen
-//! (2011) full text (eq. 6-7, 10-11, "Maximum Marginal Likelihood
-//! Estimation" section), and the installed mirt 1.46.1 `bfactor` help topic
-//! (two-tier covariance, `ncol(G) + 1` integration). The `mirt::bfactor`
-//! two-tier oracle, whose own implementation follows Cai (2010), validates
-//! the same MLE empirically.
+//! # Scope: Cai (2010) results deliberately NOT implemented here
+//!
+//! - The 3PL (eq. 10, p. 588) and generalized partial credit (eq. 13,
+//!   p. 589) two-tier item models: this module is GRM-only.
+//! - Standard errors: Cai (2010, Section 3.5, p. 591) prescribes a
+//!   Supplemented EM (Cai, 2008b) for the asymptotic covariance matrix.
+//!   `crate::two_tier_oakes` instead uses the Oakes (1999) identity, whose
+//!   locator is Oakes (1999, eq. 6, p. 480) — NOT Cai (2010).
+//! - Specific-factor EAP scores and posterior variances (Cai, 2010,
+//!   Appendix B, p. 609): only the primary EAPs and posterior SDs are
+//!   returned.
+//! - Quadrature: Cai (2010, p. 590) uses equally spaced abscissa on
+//!   `[-4.5, +4.5]` with normalized Gaussian ordinates and `Q = 19`; this
+//!   module uses Gauss-Hermite rules with caller-owned node counts (#1929).
+//! - Convergence: Cai (2010, p. 590) terminates on maximum absolute
+//!   parameter change below `1.0e-3`; this module terminates on the
+//!   relative marginal-loglik change (`<= tol * (1 + |prev|)`).
+//!
+//! The `mirt::bfactor` two-tier oracle, whose own implementation follows
+//! Cai (2010), validates the same MLE empirically.
 //!
 //! # Estimation: Bock-Aitkin EM with reduction over the specific tier
 //!
@@ -181,10 +195,13 @@
 //!
 //! Every declared category must be observed for every item (with no
 //! observations in a category the adjacent boundary intercepts are pinned
-//! only to each other by the category-difference definition, Cai et al.,
-//! 2011, eq. 7, so the strictly-ordered pair is unidentified): the fitter
+//! only to each other by the category-difference definition, Cai, 2010,
+//! eq. 12, p. 589; Cai et al., 2011, eq. 7, so the strictly-ordered pair is
+//! unidentified): the fitter
 //! returns `Err` naming the item and category instead of imputing.
-//! Missing cells are dropped under MAR (Cai et al., 2011, eq. 10: a missing
+//! Missing cells are dropped under MAR (Cai, 2010, eq. 9, p. 588: with the
+//! category indicator `chi_k` defined as it is, "missing observations do not
+//! contribute to the likelihood"; Cai et al., 2011, eq. 10: a missing
 //! observation contributes a factor of 1, i.e. nothing, to the conditional
 //! density).
 //! Non-convergence at `max_iter` is reported via `converged == false` with
@@ -195,8 +212,12 @@
 //!
 //! Cai, L. (2010). A two-tier full-information item factor analysis model
 //! with applications. *Psychometrika, 75*(4), 581-612.
-//! https://doi.org/10.1007/s11336-010-9178-0 (abstract + metadata read via
-//! the Zotero record; full text not accessible — see the source-access note)
+//! https://doi.org/10.1007/s11336-010-9178-0 (FULL TEXT READ from the local
+//! copy, SHA-256
+//! 82aef96ee7a7bf66aa00db4ae8752188310582b89d66bcc44342111228ae6731,
+//! 32 pages = journal pp. 581-612: eq. 1-3 p. 586, eq. 4-7 p. 587,
+//! eq. 8-10 p. 588, eq. 11-13 and 15 p. 589, eq. 16 p. 590, Section 3.5
+//! p. 591, Appendix A and B p. 609)
 //!
 //! Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
 //! item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
@@ -774,8 +795,8 @@ fn log_sum_exp(xs: &[f64]) -> f64 {
 }
 
 /// Primary-linear predictor contribution for item `i` at primary node `g`
-/// (Cai et al., 2011, eq. 6, p. 227: the multi-primary sum replaces their
-/// single general term).
+/// (the `beta' eta` term of Cai, 2010, eq. 11, p. 589; Cai et al., 2011,
+/// eq. 6, p. 227, is the single-general-term special case).
 #[inline]
 fn item_primary_base(v: &Validated, par: &ItemParams, coords: &[f64], g: usize, i: usize) -> f64 {
     let p = v.n_primary;
@@ -787,8 +808,8 @@ fn item_primary_base(v: &Validated, par: &ItemParams, coords: &[f64], g: usize, 
 }
 
 /// Category log-prob for item `i` at primary node `g` and specific node `h`
-/// (`h` ignored / `t_s = 0` for specific-free items). Evaluates Cai et al.
-/// (2011, eq. 6–7, p. 227) on the fly so the E-step never materializes a
+/// (`h` ignored / `t_s = 0` for specific-free items). Evaluates Cai (2010,
+/// eq. 11–12, p. 589; = Cai et al., 2011, eq. 6–7, p. 227) on the fly so the E-step never materializes a
 /// full `n_grid * q_specific * n_cat` table per item (#1992 memory).
 #[inline]
 fn item_cat_logprob(
@@ -810,8 +831,11 @@ fn item_cat_logprob(
     grm_logprobs(base, &par.d)[cat]
 }
 
-/// One reduced E-step sweep (Gibbons et al., 2007, eq. 15: the person
-/// marginal factored per primary node): observed-data loglik, expected
+/// One reduced E-step sweep — Cai's dimension reduction: the specific tier
+/// factors into a product over blocks `I_s` of one-dimensional integrals at
+/// each fixed primary node (Cai, 2010, eq. 8, p. 588, and eq. 15, p. 589,
+/// second line; the quadrature form is eq. 16, p. 590; Gibbons et al.,
+/// 2007, eq. 15, is the bifactor special case): observed-data loglik, expected
 /// category counts per item (`counts[i][node][k]`, `node = g * qs + h` for
 /// block items, `node = g` for specific-free items), and the summed
 /// posterior primary second moment (`s_bar_sum[j * p + k] += sum_p sum_g
@@ -1436,8 +1460,10 @@ fn run_single_start(
 ///
 /// Cai, L. (2010). A two-tier full-information item factor analysis model
 /// with applications. *Psychometrika, 75*(4), 581-612.
-/// https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text not
-/// accessible — see the module source-access note)
+/// https://doi.org/10.1007/s11336-010-9178-0 (full text read: eq. 1-2
+/// p. 586, eq. 8-9 p. 588, eq. 11-12 and 15 p. 589, eq. 16 p. 590,
+/// Appendix A p. 609; see the module scope note for what is deliberately
+/// not implemented)
 ///
 /// Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
 /// item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
@@ -1778,8 +1804,15 @@ fn reduced_loglik(
 }
 
 /// Observed-data marginal loglik at GIVEN parameters via BRUTE-FORCE full
-/// product-grid integration over `Q_P^P * Q_S^S` nodes — the unrestricted
-/// marginal (Gibbons et al., 2007, eq. 10) evaluated by direct summation.
+/// product-grid integration over `Q_P^P * Q_S^S` nodes — the UNREDUCED
+/// `p + S`-fold marginal of Cai (2010, eq. 15, p. 589, FIRST line;
+/// Gibbons et al., 2007, eq. 10) evaluated by direct summation.
+///
+/// NOTE for verification work: this oracle shares `build_primary_grid`,
+/// `reweighted_log_weights`, `pack_params` and `poly::grm_logprobs` with
+/// the reduced path, so it tests the eq. 15 REDUCTION IDENTITY only. It is
+/// not an independent check of eq. 11-12 or of the latent densities; that
+/// requires an out-of-crate reimplementation from the paper.
 /// Numerically identical to [`two_tier_grm_marginal_loglik`] up to
 /// floating-point reorder noise; kept public as the exactness oracle for
 /// the reduction (tiny models only — the grid is capped at 2,000,000

@@ -12,22 +12,41 @@ Modelling decisions and their sources (every non-obvious choice is cited;
 decisions without a paper source are marked as implementation choices):
 
 - Cumulative-logit graded form ``P(Y >= k) = logistic(sum_p a_ip*theta_p +
-  a_S*theta_S + d_k)`` with strictly decreasing boundary intercepts (Cai et
-  al., 2011, eq. 6), adjacent-difference category probabilities (Cai et al.,
-  2011, eq. 7). The logistic link is an implementation choice (Gibbons et
-  al., 2007, eq. 9, use the normal ogive) matching the ``mirt`` graded
-  comparison.
+  a_S*theta_S + d_k)`` with strictly decreasing boundary intercepts, and
+  adjacent-difference category probabilities (Cai, 2010, eq. 11-12, p. 589:
+  ``P_+(k|eta, xi_s, theta) = 1/(1 + exp{-[alpha_k + beta' eta +
+  beta_s xi_s]})`` and ``P_k = P_+(k) - P_+(k+1)`` with ``P_+(0) = 1``,
+  ``P_+(K) = 0``; same form in Cai et al., 2011, eq. 6-7). The LOGISTIC link
+  is the paper's own two-tier graded form, NOT an implementation choice —
+  Gibbons et al. (2007, eq. 9) use the normal ogive, but Cai (2010) does
+  not. Cai's "strictly ordered" ``alpha_1..alpha_{K-1}`` (p. 589) must be
+  strictly DECREASING for ``P_+`` to decrease in ``k``, which is exactly the
+  crate's ordering contract on ``d_ik``.
 - Two-tier latent covariance ``Sigma = [[G, 0], [0, diag(S)]]``: primaries
   ``theta_P ~ MVN(0, Phi)`` with ``Phi`` a correlation matrix (unit
   diagonal, free off-diagonals — the single-group identification), specifics
-  orthogonal ``N(0, 1)`` (Chalmers, 2026, mirt ``bfactor`` documentation,
-  "Details" section, which cites Cai, 2010). The bifactor model is the
-  special case of one primary dimension (same source). The two-tier model
-  itself is Cai (2010) (abstract read; full text not accessible).
+  orthogonal ``N(0, 1)`` (Cai, 2010, eq. 2, p. 586: ``Sigma = [[Phi, 0],
+  [0, diag(tau)]]`` with ``Phi`` free subject to identification, specifics
+  mutually orthogonal and orthogonal to the primaries; eq. 3, p. 586, is
+  Cai's own unit-variance scaling of that structure. Cai leaves
+  ``diag(tau)`` estimable in general; fixing ``tau = 1`` with a free
+  per-item ``a_S`` is the equivalent scaling — but the testlet-style
+  constraint "``a_S`` equal across a block, ``tau_s`` free" is NOT
+  expressible here, a scope limit, not a formula difference. See also
+  Chalmers, 2026, mirt ``bfactor`` documentation, "Details" section, which
+  cites Cai, 2010). The bifactor model is the special case of one primary
+  dimension (same source).
 - Caller-supplied confirmatory primary pattern (fixed zeros are never
   estimated); rotation with correlated primaries is the caller's
-  identification responsibility (implementation scope choice; Cai, 2010, is a
-  confirmatory model). Specific-free items (``specific_map == -1``) allowed.
+  identification responsibility (implementation scope choice; Cai, 2010,
+  eq. 1, p. 586, is a confirmatory pattern in which primary cross-loadings
+  are free but "an item is assumed to load on at most one specific
+  dimension", which is what the one-entry-per-item ``specific_map``
+  encodes). Specific-free items (``specific_map == -1``) allowed — Cai
+  (2010, p. 588, after eq. 8) instead groups such an item into an arbitrary
+  ``I_s`` "without loss of generality"; integrating it on the primary grid
+  only is numerically the same thing (its factor is constant in ``xi_s``)
+  and cheaper.
 - Slopes UNCONSTRAINED on the real line so reverse-keyed items are
   representable (implementation choice extending the crate's #1879
   unconstrained-slope contract to the two-tier case).
@@ -43,17 +62,26 @@ decisions without a paper source are marked as implementation choices):
   primary correlation and the primary/specific split weakly identified).
 - E-step integrates the primaries on a fixed product grid (density-ratio
   reweighting by ``Phi``) and each specific factor within its item block at
-  fixed primary nodes, so integration needs only ``P + 1`` dimensions
-  (Chalmers, 2026, mirt ``bfactor`` documentation: "requires only ncol(G) +
-  1 dimensions for integration ... due to the dimension reduction
-  technique"; the per-node factorization follows Gibbons et al., 2007,
-  eq. 15). Gauss-Hermite quadrature on fixed grids; the EM node set never
-  reparametrizes, so EM is monotone (Cai et al., 2011, "Maximum Marginal
-  Likelihood Estimation" section).
+  fixed primary nodes, so integration needs only ``P + 1`` dimensions. This
+  is Cai's own dimension reduction: the conditional independence
+  factorization over specific blocks ``I_s`` (Cai, 2010, eq. 8, p. 588),
+  carried into the marginal likelihood so the ``p + S``-fold integral
+  collapses to ``p + 1`` (Cai, 2010, eq. 15, p. 589, second line: "the
+  integral over xi is broken into a product of S one-dimensional
+  integrals"), evaluated by quadrature (Cai, 2010, eq. 16, p. 590). See also
+  Chalmers, 2026, mirt ``bfactor`` documentation ("requires only ncol(G) + 1
+  dimensions for integration") and Gibbons et al., 2007, eq. 15, for the
+  bifactor special case. DEVIATION: Cai (2010, p. 590) uses equally spaced
+  abscissa on ``[-4.5, +4.5]`` with normalized Gaussian ordinates and
+  ``Q = 19``; this module uses Gauss-Hermite rules with caller-owned
+  ``q_primary``/``q_specific`` (#1929). The EM node set never reparametrizes,
+  so EM is monotone (Cai et al., 2011, "Maximum Marginal Likelihood
+  Estimation" section).
 - Primary correlations maximize the expected complete-data normal
-  log-likelihood over Fisher-``z`` transforms (implementation choice using
-  the crate's shared Newton ascent; the EM M-step principle is Cai et al.,
-  2011, "Maximum Marginal Likelihood Estimation" section).
+  log-likelihood ``sum_q r(X_q) log f(X_q | theta)`` — that objective is
+  Cai (2010, Appendix A, p. 609, "The M-step log-likelihood for the primary
+  dimensions"); the Fisher-``z`` parametrization and the crate's shared
+  Newton ascent are the implementation choices.
 - ``seed`` drives ONLY the random-start jitter; quadrature is deterministic,
   so reruns with the same arguments bit-reproduce (implementation choice for
   the #1912 reproducibility requirement).
@@ -62,8 +90,10 @@ decisions without a paper source are marked as implementation choices):
   with the crate's GRM estimator, not caller arguments.
 - Unobserved categories raise instead of imputing (with no observations in
   a category the adjacent boundary pair is unidentified under Cai et al.,
-  2011, eq. 7). Missing cells are dropped under MAR (Cai et al., 2011,
-  eq. 10). Non-convergence reports ``converged=False`` instead of
+  2011, eq. 7; Cai, 2010, eq. 12, p. 589). Missing cells are dropped under
+  MAR (Cai, 2010, eq. 9, p. 588: with the category indicator defined as
+  ``chi_k``, "missing observations do not contribute to the likelihood";
+  Cai et al., 2011, eq. 10). Non-convergence reports ``converged=False`` instead of
   substituting values (implementation choice for the #1912 fail-loud
   requirement).
 
@@ -71,8 +101,16 @@ References (APA 7th ed.):
 
     Cai, L. (2010). A two-tier full-information item factor analysis model
         with applications. *Psychometrika, 75*(4), 581-612.
-        https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text
-        not accessible — no equation locator is drawn from it)
+        https://doi.org/10.1007/s11336-010-9178-0 (FULL TEXT READ from the
+        local copy, SHA-256
+        82aef96ee7a7bf66aa00db4ae8752188310582b89d66bcc44342111228ae6731,
+        32 pages = journal pp. 581-612; locators above are eq. 1-2 p. 586,
+        eq. 8-9 p. 588, eq. 11-12 and 15 p. 589, eq. 16 p. 590, Appendix A
+        p. 609. Two Cai (2010) results are deliberately NOT implemented
+        here: the standard errors of Section 3.5, p. 591, are prescribed as
+        a Supplemented EM (Cai, 2008b), not the Oakes identity used by
+        ``two_tier_oakes``; and the specific-factor EAP of Appendix B,
+        p. 609, is not exposed - only the primary EAPs are.)
 
     Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
         item bifactor analysis. *Psychological Methods, 16*(3), 221-248.

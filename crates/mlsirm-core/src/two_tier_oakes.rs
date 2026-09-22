@@ -27,12 +27,23 @@
 //!
 //! # Model and free vector
 //!
-//! The response model is the confirmatory two-tier GRM of Cai (2010)
-//! (abstract; full text not accessible — locators below use Cai et al.,
-//! 2011, and Gibbons et al., 2007, which were read in full): correlated
-//! primaries plus orthogonal specifics with dimension reduction over the
-//! specific tier (Gibbons et al., 2007, eq. 15; Chalmers, 2026, mirt
-//! `bfactor` documentation: `ncol(G) + 1` integration). The free vector is
+//! The response model is the confirmatory two-tier GRM of Cai (2010,
+//! eq. 11-12, p. 589): correlated primaries (eq. 2, p. 586) plus orthogonal
+//! specifics with dimension reduction over the specific tier (eq. 8, p. 588;
+//! eq. 15, p. 589; Gibbons et al., 2007, eq. 15, is the bifactor special
+//! case; Chalmers, 2026, mirt `bfactor` documentation: `ncol(G) + 1`
+//! integration).
+//!
+//! # The SE method here is NOT Cai's
+//!
+//! Cai (2010, Section 3.5, p. 591) prescribes a Supplemented EM (Cai, 2008b)
+//! for the asymptotic covariance matrix of the two-tier MLE, noting that
+//! with Bock-Aitkin EM "the asymptotic covariance matrix is not an automatic
+//! by-product". This module instead uses the Oakes (1999) identity, whose
+//! locator is Oakes (1999, eq. 6, p. 480), reached by the same route as
+//! [`crate::bifactor_oakes`]. No Oakes locator is drawn from Cai (2010),
+//! because there is none: reading the full text settled this, it is not a
+//! source-access gap. The free vector is
 //! per-item `[a_p for free primary slots..., a_S?, d_1..d_{K-1}]` followed
 //! by Fisher-`z` primary correlations (`rho = tanh(z)`). Population
 //! specific variances remain fixed at 1 by identification.
@@ -53,8 +64,11 @@
 //!
 //! Cai, L. (2010). A two-tier full-information item factor analysis model
 //! with applications. *Psychometrika, 75*(4), 581-612.
-//! https://doi.org/10.1007/s11336-010-9178-0 (abstract + metadata read;
-//! full text not accessible — no equation locator drawn from it)
+//! https://doi.org/10.1007/s11336-010-9178-0 (FULL TEXT READ from the local
+//! copy, SHA-256
+//! 82aef96ee7a7bf66aa00db4ae8752188310582b89d66bcc44342111228ae6731:
+//! eq. 2 p. 586, eq. 8 p. 588, eq. 11-12 and 15 p. 589, Section 3.5 p. 591
+//! — which prescribes Supplemented EM, not the Oakes identity used here)
 //!
 //! Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
 //! item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
