@@ -1628,6 +1628,7 @@ fn fit_bifactor_grm_multigroup(
 /// Full-information item bifactor analysis of graded response data.
 /// *Applied Psychological Measurement, 31*(1), 4-19.
 /// https://doi.org/10.1177/0146621606289485
+/// Private raw-array single-group Oakes kernel; fit provenance is checked by Python (#2113).
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (a_general, a_specific, threshold, y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general, q_specific, fd_step, slope_prior_mu = None, slope_prior_sd = None))]

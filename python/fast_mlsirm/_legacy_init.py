@@ -64,6 +64,7 @@ from .nominal import fit_nominal as fit_nominal, NominalResponseFit as NominalRe
 from .grm import fit_grm as fit_grm, GrmFit as GrmFit
 from .bifactor_grm import fit_bifactor_grm as fit_bifactor_grm, BifactorGrmFit as BifactorGrmFit
 from .bifactor_grm import bifactor_oakes_se as bifactor_oakes_se, BifactorOakesSe as BifactorOakesSe
+from .bifactor_grm import bifactor_oakes_se_from_fit as bifactor_oakes_se_from_fit
 from .bifactor_multigroup import fit_bifactor_grm_multigroup as fit_bifactor_grm_multigroup, BifactorMultigroupFit as BifactorMultigroupFit
 from .two_tier_grm import fit_two_tier_grm as fit_two_tier_grm, TwoTierGrmFit as TwoTierGrmFit
 from .two_tier_grm import two_tier_oakes_se as two_tier_oakes_se, TwoTierOakesSe as TwoTierOakesSe
@@ -403,6 +404,7 @@ __all__ = [  # noqa: RUF022
     "fit_bifactor_grm",
     "BifactorGrmFit",
     "bifactor_oakes_se",
+    "bifactor_oakes_se_from_fit",
     "BifactorOakesSe",
     "fit_bifactor_grm_multigroup",
     "BifactorMultigroupFit",

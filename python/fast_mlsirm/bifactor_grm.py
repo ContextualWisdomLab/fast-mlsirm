@@ -168,7 +168,9 @@ class BifactorGrmFit:
     (``0`` for general-only items, canonicalized within each block);
     ``threshold`` the ``n_items x (n_cat-1)`` strictly decreasing boundary
     intercepts; ``theta_g_eap`` / ``theta_g_sd`` the general-factor EAP and
-    posterior SD; ``category_counts`` the observed ``n_items x n_cat`` counts.
+    posterior SD; ``category_counts`` the observed ``n_items x n_cat`` counts;
+    ``specific_map`` retains the validated item-to-factor assignments for
+    provenance-aware Oakes information.
     ``termination_reason`` is ``"tolerance_met"``, ``"max_iter_reached"``, or
     ``"numerical_em_stall"`` (relative loglik change met ``tol`` while every
     item parameter remained at its start — never reported as
@@ -196,6 +198,7 @@ class BifactorGrmFit:
     final_loglik_change: float
     best_start: int
     n_parameters: int
+    specific_map: np.ndarray | None = None
     slope_prior_mu: float | None = None
     slope_prior_sd: float | None = None
     # EM objective (MAXIMIZED; unlike FitResult.objective_trace) per E-step: log-likelihood + log slope prior under a prior
@@ -248,7 +251,7 @@ def fit_bifactor_grm(
     estimation under a lognormal prior on ``|a|`` for every estimated slope
     (``log|a| ~ N(mu, sd^2)``; see ``SlopePrior`` in the Rust core). Omitted
     = plain MML. There are no defaults; the fitted prior is recorded on the
-    result and must be passed to ``bifactor_oakes_se`` for MAP SEs.
+    result and is passed automatically by ``bifactor_oakes_se_from_fit``.
 
     See the module docstring for the model, the paper basis of every
     non-obvious decision, and the APA 7th references.
@@ -367,6 +370,7 @@ def fit_bifactor_grm(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+        specific_map=smap_int.copy(),
         slope_prior_mu=_optional_float(res["slope_prior_mu"]),
         slope_prior_sd=_optional_float(res["slope_prior_sd"]),
         em_objective_trace=np.asarray(res["em_objective_trace"], dtype=np.float64),
@@ -428,11 +432,11 @@ def bifactor_oakes_se(
     """Observed-information SEs via the Oakes (1999, eq. 6, p. 480) identity
     at given SINGLE-GROUP item parameters (valid at every point, not only the MLE).
 
-    Multigroup fits, including MAP fits, require joint information for item
-    and focal-group mean/variance parameters. This entry point cannot provide
-    that information; passing a multigroup fit or stacked parameter rows raises.
-    Do not extract one group row for an SE: it omits the other groups and their
-    cross-information.
+    This raw-array API computes the single-group model's observed information
+    at the given parameters. Parameters selected from one row of a multigroup
+    fit produce a single-group calculation, NOT the multigroup SE: that needs
+    joint item and group information (#2113). Prefer
+    ``bifactor_oakes_se_from_fit`` when a fit object is available.
 
     ``a_general``/``a_specific`` are length-``n_items`` vectors
     (``a_specific`` exactly ``0`` for general-only items); ``threshold`` is
@@ -605,6 +609,57 @@ def bifactor_oakes_se(
         non_pd_reason=None if reason_raw is None else str(reason_raw),
         slope_prior_mu=slope_prior_mu,
         slope_prior_sd=slope_prior_sd,
+    )
+
+
+def bifactor_oakes_se_from_fit(
+    fit: BifactorGrmFit,
+    responses: np.ndarray,
+    *,
+    q_general: int,
+    q_specific: int,
+    fd_step: float,
+) -> BifactorOakesSe:
+    """Calculate single-group Oakes information from a fitted model.
+
+    Oakes (1999, Eq. 6, p. 480) gives observed information for the fitted
+    single-group model. A multigroup fit requires joint item and group
+    information (#2113). The fitted slope prior is included in MAP posterior
+    curvature (Mislevy, 1985, p. 13, following Eq. 3.9).
+
+    References (APA 7th ed.): Oakes, D. (1999). Direct calculation of the
+    information matrix via the EM algorithm. *Journal of the Royal Statistical
+    Society: Series B, 61*(2), 479–482. https://doi.org/10.1111/1467-9868.00188
+    Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+    (Research Report RR-85-33). Educational Testing Service.
+    https://doi.org/10.1002/j.2330-8516.1985.tb00118.x
+    """
+    if not isinstance(fit, BifactorGrmFit) or hasattr(fit, "n_groups"):
+        raise TypeError(
+            "single-group BifactorGrmFit required; multigroup Oakes SE "
+            "needs joint information (#2113)"
+        )
+    n_items = fit.a_general.shape[0]
+    y = np.asarray(responses)
+    if y.ndim != 2 or y.shape[1] != n_items:
+        raise ValueError(f"responses must have shape (n_persons, {n_items})")
+    if fit.specific_map is None:
+        raise ValueError(
+            "fit lacks specific_map provenance; refit before Oakes SE (#2113)"
+        )
+    return bifactor_oakes_se(
+        fit.a_general,
+        fit.a_specific,
+        fit.threshold,
+        y,
+        fit.specific_map,
+        fit.n_cat,
+        fit.n_specific,
+        q_general,
+        q_specific,
+        fd_step,
+        slope_prior_mu=fit.slope_prior_mu,
+        slope_prior_sd=fit.slope_prior_sd,
     )
 
 

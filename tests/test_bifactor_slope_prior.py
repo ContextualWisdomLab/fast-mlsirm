@@ -171,3 +171,51 @@ def test_multigroup_oakes_fails_closed_before_core(core, prior):
                 slope_prior_sd=mg.slope_prior_sd,
             )
     assert core.calls == {}
+
+
+@pytest.mark.parametrize("prior", [{}, {"slope_prior_mu": 0.0, "slope_prior_sd": 0.5}])
+def test_oakes_from_fit_rejects_selected_multigroup_row(core, prior):
+    mg = _fit_mg(**prior)
+    with pytest.raises((TypeError, ValueError), match="#2113"):
+        bifactor_grm.bifactor_oakes_se_from_fit(
+            mg, RESPONSES[::2], q_general=7, q_specific=7, fd_step=1e-5
+        )
+    assert "bifactor_oakes_se" not in core.calls
+
+
+@pytest.mark.parametrize("prior", [{}, {"slope_prior_mu": 0.0, "slope_prior_sd": 0.5}])
+def test_oakes_from_fit_matches_raw_call_with_fitted_prior(core, prior):
+    fit = _fit(**prior)
+    from_fit = bifactor_grm.bifactor_oakes_se_from_fit(
+        fit, RESPONSES, q_general=7, q_specific=7, fd_step=1e-5
+    )
+    from_fit_args = core.calls["bifactor_oakes_se"]
+    raw = bifactor_grm.bifactor_oakes_se(
+        fit.a_general, fit.a_specific, fit.threshold, RESPONSES, SMAP,
+        fit.n_cat, fit.n_specific, 7, 7, 1e-5,
+        slope_prior_mu=fit.slope_prior_mu, slope_prior_sd=fit.slope_prior_sd,
+    )
+    raw_args = core.calls["bifactor_oakes_se"]
+    for left, right in zip(from_fit_args, raw_args):
+        np.testing.assert_array_equal(left, right)
+    np.testing.assert_array_equal(from_fit.information, raw.information)
+    np.testing.assert_array_equal(from_fit.se, raw.se)
+    assert (from_fit.slope_prior_mu, from_fit.slope_prior_sd) == raw_args[-2:]
+
+
+def test_oakes_from_fit_validates_response_shape_and_categories(core):
+    fit = _fit()
+    for responses in (RESPONSES[:, :-1], np.full_like(RESPONSES, N_CAT)):
+        with pytest.raises(ValueError, match="responses"):
+            bifactor_grm.bifactor_oakes_se_from_fit(
+                fit, responses, q_general=7, q_specific=7, fd_step=1e-5
+            )
+    assert "bifactor_oakes_se" not in core.calls
+
+
+def test_raw_oakes_fixed_fixture_remains_unchanged(core):
+    result = _oakes()
+    assert result.labels == ["a_general:0"]
+    np.testing.assert_array_equal(result.information, [[1.0]])
+    np.testing.assert_array_equal(result.se, [1.0])
+    assert core.calls["bifactor_oakes_se"][-2:] == (None, None)
