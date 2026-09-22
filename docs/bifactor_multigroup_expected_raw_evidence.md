@@ -17,29 +17,38 @@ The fit was fine; the consume path was not. `BifactorMultigroupFit.a_general`
 is `n_groups x n_items`, and the expected-score path accepted only the
 single-group 1-D layout.
 
-## What the library now guarantees (tested)
+## What the library now guarantees
 
-The guarantees below are exercised by
-`tests/test_bifactor_multigroup_expected_raw.py` on synthetic fits:
+Each item says whether a test in
+`tests/test_bifactor_multigroup_expected_raw.py` exercises it on synthetic
+fits, or whether it holds by construction in `python/fast_mlsirm/polytomous.py`
+without a separate test.
 
-- **Group selection is explicit.** `predict_bifactor_expected_total_score(fit,
+- **Group selection is explicit (tested).** `predict_bifactor_expected_total_score(fit,
   theta, q_specific, group=g)` uses group `g`'s `a_general`, `a_specific` and
   `threshold` rows. Out-of-range or non-integral `group` values raise.
 - **Implicit selection only when it is exact.** `group=None` is accepted for a
-  multiple-group fit only if every item-parameter block (`a_general`,
-  `a_specific`, `threshold`) is exactly equal across groups, as an all-anchored
-  fit (`anchor_mask=None`) makes them. A fit whose rows differ raises rather
-  than silently scoring group 0.
-- **Group population parameters stay out of the conditional curve.**
-  `general_mean` / `general_sd` differ across groups and do not enter
-  `E[T | theta_G]`. Multiple-group item parameters and `theta_g_eap` are on the
-  one common (reference) metric that the E-step places every group's nodes on,
-  so no per-group rescaling of `theta` is applied.
-- **Unit specific variances are required.** With `estimate_specific_vars=False`
+  multiple-group fit only if the item-parameter blocks are exactly equal across
+  groups, as an all-anchored fit (`anchor_mask=None`) makes them. A fit whose
+  rows differ raises rather than silently scoring group 0. *Tested* for
+  differing `a_general` rows (`test_group_specific_rows_require_naming_the_group`)
+  and differing `threshold` rows (`test_threshold_rows_are_part_of_the_identity_check`).
+  The same exact-equality check also covers `a_specific`
+  (`_bifactor_group_item_params`, which compares all three blocks), but
+  `a_specific`-only differences have no separate test.
+- **Group population parameters stay out of the conditional curve (by
+  construction; not separately tested).** `_bifactor_group_item_params`
+  returns only one group's `(a_general, a_specific, threshold)` rows, and
+  `general_mean` / `general_sd` are never read on this path. Multiple-group item
+  parameters and `theta_g_eap` share the one common (reference) metric that the
+  E-step places every group's nodes on, so no per-group rescaling of `theta` is
+  applied. A test that varies `general_mean`/`general_sd` and checks that the
+  curve is unchanged would make this an executable guarantee.
+- **Unit specific variances are required (tested: `test_rejects_estimated_specific_sd`).** With `estimate_specific_vars=False`
   the per-item specific-factor marginalization is computable from the fit
   alone. A non-unit `specific_sd` raises, because the fit does not carry the
   `specific_map` needed to match an item to its specific factor.
-- **One kernel.** `check_bifactor_expected_total_score_monotonicity` and
+- **One kernel (tested: `test_monotonicity_check_reads_the_same_kernel`, `test_pointwise_theta_may_tie_and_be_unordered`).** `check_bifactor_expected_total_score_monotonicity` and
   `predict_bifactor_expected_total_score` read the same kernel. Pointwise
   scoring of unordered or tied `theta` agrees with scoring on the sorted unique
   grid.
