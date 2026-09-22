@@ -117,7 +117,7 @@ def collect_python_rows() -> list[dict]:
     ):
         if any(part.startswith("_") for part in modname.split(".")):
             continue
-        if not modname.startswith("fast_mlsirm."):
+        if modname != "fast_mlsirm" and not modname.startswith("fast_mlsirm."):
             continue
         try:
             mod = importlib.import_module(modname)  # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
