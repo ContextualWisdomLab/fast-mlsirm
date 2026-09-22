@@ -2,6 +2,7 @@ pub mod agreement;
 pub mod bifactor_grm;
 pub mod bifactor_indices;
 pub mod bifactor_oakes;
+pub mod bifactor_multigroup_oakes;
 pub mod bifactor_recursion;
 pub mod cdm;
 pub mod classification;

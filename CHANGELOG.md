@@ -3,6 +3,18 @@
 ## Unreleased
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Added
+
+#### Joint multigroup bifactor Oakes ML information (#2113)
+
+- Add `bifactor_multigroup_oakes_se` in Rust, PyO3, and Python for joint ML
+  information and SEs: common item parameters enter once, free items enter by
+  group, and focal general means/variances and optional specific variances
+  enter jointly. Non-PD information keeps its matrix and reports unavailable
+  SEs.
+- Calibration command for s1 (pending): `python scripts/bifactor_multigroup_oakes_calibration.py --replicates 20 --persons-per-group 340 --q-general 121 --q-specific 121 --fd-step 1e-6 --seed 2113`.
+- empirical SD / mean Oakes SE ratio: PENDING (merge gate)
+
 ### Changed
 
 #### Release cut 0.11.4
@@ -20,6 +32,19 @@
   in git history.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
+
+### Fixed
+
+#### CI pytest fail-closed gates
+
+- Hash-lock Hypothesis in the Python CI requirements so
+  `tests/test_fuzz_properties.py` runs instead of collection-skipping.
+- Record the `STAGE5_HIGH_Q` study-grid skips and the no-adapter GPU parity
+  skip on the default pytest allowlist. The GPU smoke job still executes
+  that parity test on lavapipe and rejects a skip.
+- Append deprecated DIF docstrings from the function objects directly, and
+  import public API inventory modules only when the name is a `fast_mlsirm`
+  dotted identifier.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 
 

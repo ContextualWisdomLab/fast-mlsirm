@@ -58,6 +58,7 @@ use mlsirm_core::bifactor_grm::{
     fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup, BifactorFipcConfig,
     BifactorGrmConfig, BifactorMultigroupConfig,
 };
+use mlsirm_core::bifactor_multigroup_oakes::bifactor_multigroup_oakes_se as core_bifactor_multigroup_oakes_se;
 use mlsirm_core::bifactor_oakes::{
     bifactor_oakes_se as core_bifactor_oakes_se, BifactorOakesConfig,
 };
@@ -1689,6 +1690,127 @@ fn bifactor_oakes_se(
                 n_items,
                 n_specific,
                 n_cat,
+                &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("labels", res.labels)?;
+    out.set_item("information", res.information)?;
+    out.set_item("vcov", res.vcov)?;
+    out.set_item("se", res.se)?;
+    out.set_item("positive_definite", res.positive_definite)?;
+    out.set_item("non_pd_reason", res.non_pd_reason)?;
+    Ok(out.into())
+}
+
+/// Joint ML observed information. Oakes (1999, eq. 6, p. 480);
+/// Cai, Yang, and Hansen (2011, p. 230). References: Oakes, D. (1999).
+/// Direct calculation of the information matrix via the EM algorithm.
+/// *JRSS B, 61*(2), 479–482. https://doi.org/10.1111/1467-9868.00188
+/// Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
+/// item bifactor analysis. *Psychological Methods, 16*(3), 221–248.
+/// https://doi.org/10.1037/a0023350
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn bifactor_multigroup_oakes_se(
+    py: Python<'_>,
+    a_general: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    general_mean: PyReadonlyArray1<'_, f64>,
+    general_sd: PyReadonlyArray1<'_, f64>,
+    specific_sd: PyReadonlyArray1<'_, f64>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    group: PyReadonlyArray1<'_, i64>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    anchor: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    n_items: usize,
+    n_groups: usize,
+    n_specific: usize,
+    n_cat: usize,
+    estimate_specific_vars: bool,
+    q_general: usize,
+    q_specific: usize,
+    fd_step: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    if n_cat < 2 || n_items < 1 || n_groups < 1 || n_specific < 1 {
+        return Err(PyValueError::new_err(
+            "n_cat >= 2 and dimensions >= 1 required",
+        ));
+    }
+    let rows = |v: &[f64], width: usize| -> PyResult<Vec<Vec<f64>>> {
+        if v.len()
+            != n_groups
+                .checked_mul(width)
+                .ok_or_else(|| PyValueError::new_err("shape overflow"))?
+        {
+            return Err(PyValueError::new_err("parameter table shape mismatch"));
+        }
+        Ok(v.chunks_exact(width).map(|r| r.to_vec()).collect())
+    };
+    let ag = rows(a_general.as_slice()?, n_items)?;
+    let as_ = rows(a_specific.as_slice()?, n_items)?;
+    let threshold_width = n_items
+        .checked_mul(n_cat - 1)
+        .ok_or_else(|| PyValueError::new_err("threshold shape overflow"))?;
+    let th = rows(threshold.as_slice()?, threshold_width)?;
+    let ss = rows(specific_sd.as_slice()?, n_specific)?;
+    let mu = general_mean.as_slice()?.to_vec();
+    let sd = general_sd.as_slice()?.to_vec();
+    let obs = observed.as_slice()?.to_vec();
+    let yy: Vec<usize> = y
+        .as_slice()?
+        .iter()
+        .enumerate()
+        .map(|(j, &v)| {
+            if v < 0 && obs.get(j) == Some(&false) {
+                return Ok(0);
+            }
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("observed category must be nonnegative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let gid: Vec<usize> = group
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            usize::try_from(v).map_err(|_| PyValueError::new_err("group must be nonnegative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let smap: Vec<i32> = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| i32::try_from(v).map_err(|_| PyValueError::new_err("specific_map out of range")))
+        .collect::<PyResult<_>>()?;
+    let anchors = anchor.as_slice()?.to_vec();
+    let cfg = BifactorOakesConfig {
+        q_general,
+        q_specific,
+        fd_step,
+    };
+    let res = py
+        .detach(|| {
+            core_bifactor_multigroup_oakes_se(
+                &ag,
+                &as_,
+                &th,
+                &mu,
+                &sd,
+                &ss,
+                &yy,
+                Some(&obs),
+                &gid,
+                n_groups,
+                &smap,
+                n_persons,
+                n_items,
+                n_specific,
+                n_cat,
+                &anchors,
+                estimate_specific_vars,
                 &cfg,
             )
         })
@@ -10434,6 +10556,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_bifactor_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_multigroup, m)?)?;
     m.add_function(wrap_pyfunction!(bifactor_oakes_se, m)?)?;
+    m.add_function(wrap_pyfunction!(bifactor_multigroup_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_two_tier_grm, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_oakes_se, m)?)?;
