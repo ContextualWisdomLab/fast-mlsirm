@@ -63,3 +63,7 @@
 ## 2023-11-20 - NumPy 2.0 Compatibility (.astype)
 **Learning:** Using `.astype(dtype, copy=False)` to cast arrays (e.g., boolean to float) works seamlessly in NumPy 1.x by silently making the required copy, but raises a strict `ValueError` in NumPy 2.0+ (NEP 51) because casting inherently requires a memory copy.
 **Action:** When vectorizing boolean masks into floats, avoid `copy=False` in `.astype()`. Rely on standard `.astype(dtype)` and optimize surrounding linear algebra (e.g., transposes and `@` multiplications) instead of micro-optimizing the typecast parameter itself.
+
+## 2023-11-20 - Global Namespace vs Module Namespace
+**Learning:** Reassigning public functions inside a `globals()` loop (e.g., `globals()[name] = new_func`) can inadvertently leak loop iteration variables into the module namespace or overwrite exported references when `del` is called incorrectly. This breaks backward compatibility and causes `ImportError` / `AttributeError` for downstream test suites importing those names.
+**Action:** When dynamically patching module namespaces or assigning docstrings for deprecation, use `sys.modules[__name__]` and `getattr/setattr` to strictly manage the exact module objects, keeping iteration loop variables strictly separated from module exports.
