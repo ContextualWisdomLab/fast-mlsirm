@@ -1472,6 +1472,7 @@ def compute_person_fit_polytomous(
     prior_mean: float = 0.0,
     prior_sd: float = 1.0,
     flag_threshold: float,
+    allow_unconverged: bool = False,
 ) -> dict[str, object]:
     """Person-fit statistics for polytomous responses under a fitted GRM/GPCM
     (compute in Rust). Returns the standardized log-likelihood ``lz``
@@ -1481,8 +1482,14 @@ def compute_person_fit_polytomous(
     response pattern). ``responses`` is persons x items of integer categories
     with ``NaN`` or ``-1`` for missing. For ``PolyFipcFit``, the focal
     ``N(mu, sigma²)`` prior is used for EAP and the correction. For
-    ``PolytomousFit``, ``prior_mean``/``prior_sd`` set both EAP and correction
-    priors and default to standard normal.
+    ``PolytomousFit``, EAP retains its established ``N(0,1)`` grid;
+    ``prior_mean``/``prior_sd`` enter only the ``r0`` correction.
+    A ``PolyFipcFit`` with ``converged=False`` always raises. For a legacy
+    ``PolytomousFit`` or duck-typed fit, ``converged=False`` or an unknown
+    convergence field raises unless ``allow_unconverged=True``. Such results
+    retain ``flagged`` for diagnostics but are not valid for research reporting:
+    ``valid_person_fit=False`` and ``diagnostic_only=True``. Converged results
+    have the opposite markers. The override preserves termination provenance.
     Reduces to the binary l_z at ``n_cat = 2``. Low
     (negative) values indicate poor person fit. Also returns ``n_observed``
     and the package/core version, core SHA-256, and fit termination provenance.
@@ -1497,10 +1504,17 @@ def compute_person_fit_polytomous(
             statistics with estimated person parameter. *Psychometrika, 66*(3),
             331-342. https://doi.org/10.1007/BF02294437
     """
-    if not isinstance(fit, (PolytomousFit, PolyFipcFit)):
-        raise TypeError("fit must be a PolytomousFit or PolyFipcFit")
-    if not fit.converged:
-        raise ValueError("person fit requires a converged fit")
+    converged = getattr(fit, "converged", "unknown")
+    if isinstance(fit, PolyFipcFit) and converged is not True:
+        raise ValueError(
+            "person fit requires a converged PolyFipcFit; "
+            "allow_unconverged does not apply"
+        )
+    if converged is not True and not allow_unconverged:
+        raise ValueError(
+            "person fit requires a converged fit; set allow_unconverged=True "
+            "to inspect an unconverged or unknown fit"
+        )
     if isinstance(fit, PolyFipcFit):
         if prior_mean != 0.0 or prior_sd != 1.0:
             raise ValueError("PolyFipcFit uses its fitted focal prior")
@@ -1540,6 +1554,7 @@ def compute_person_fit_polytomous(
         float(prior_mean),
         float(prior_sd),
         float(flag_threshold),
+        isinstance(fit, PolyFipcFit),
     )
     import fast_mlsirm
 
@@ -1553,8 +1568,10 @@ def compute_person_fit_polytomous(
         "fast_mlsirm_version": fast_mlsirm.__version__,
         "core_path": str(core_path),
         "core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),
-        "converged": fit.converged,
-        "termination_reason": fit.termination_reason,
+        "converged": converged,
+        "termination_reason": getattr(fit, "termination_reason", "unknown"),
+        "valid_person_fit": converged is True,
+        "diagnostic_only": converged is not True,
     }
 
 
@@ -1565,6 +1582,7 @@ def person_fit_polytomous(
     prior_mean: float = 0.0,
     prior_sd: float = 1.0,
     flag_threshold: float = -1.645,
+    allow_unconverged: bool = False,
 ) -> dict[str, object]:
     """Deprecated alias for :func:`compute_person_fit_polytomous` (ADR-0028 rename)."""
     warnings.warn(
@@ -1579,6 +1597,7 @@ def person_fit_polytomous(
         prior_mean=prior_mean,
         prior_sd=prior_sd,
         flag_threshold=flag_threshold,
+        allow_unconverged=allow_unconverged,
     )
 
 
