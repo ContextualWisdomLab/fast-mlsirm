@@ -100,6 +100,17 @@ def test_identity_rejects_identical_primary_support() -> None:
         )
 
 
+# Cross-build tolerance for the stored origin/main literals below. The fixture
+# stops on `delta_loglik <= 1e-2 * (1 + |loglik|)` (slack ~3.8e-1 at
+# loglik = -37.15), so the pinned iterate is a trajectory point whose low-order
+# bits differ between compilers; the observed cross-build spread on this fixture
+# was at the 1e-9 scale, while any behavioural change to the estimate path moves
+# these values by >= 1e-2. 1e-6 sits between those scales.
+GOLDEN_CROSS_BUILD_ATOL = 1e-6
+GOLDEN_N_ITER = 6
+GOLDEN_TERMINATION = "tolerance_met"
+
+
 def test_estimate_path_matches_origin_main_golden() -> None:
     """Golden from origin/main 99c228a8f50a in a separate clean s1 checkout.
 
@@ -108,6 +119,25 @@ def test_estimate_path_matches_origin_main_golden() -> None:
     arguments below, then ``two_tier_oakes_se`` at the fitted parameters.
     Cai (2010, pp. 583-584) defines the two-tier covariance; this checks that
     the existing estimated-Phi path stayed numerically unchanged.
+
+    Tolerance contract. Two things are checked with different strictness:
+
+    * Within one build, the default path and ``primary_correlation="estimate"``
+      must agree bit-for-bit, and the iteration count, termination reason and
+      trace length must match the golden exactly. Those are integer/string or
+      same-arithmetic comparisons, so they carry no cross-platform slack.
+    * The stored floating-point literals are compared with
+      ``GOLDEN_CROSS_BUILD_ATOL``. They were produced by one build
+      (linux-x86_64, pre-AVX host) and reproduce there exactly; a second build
+      (macos-arm64) was reported to differ at the 1e-9 scale on this fixture,
+      although that run's assertion text was not preserved. The fixture stops
+      on the relative rule ``delta_loglik <= tol * (1 + |loglik|)``, which with
+      ``tol=1e-2`` is a slack of about 3.8e-1 around ``loglik = -37.15``: the
+      iterate this golden pins is a point on the EM trajectory, not a converged
+      optimum, so ordinary floating-point reassociation between builds moves it
+      far more than 1e-12. Any real change to the estimate path moves these
+      values by orders of magnitude more than the tolerance below, so the guard
+      keeps its purpose without asserting bitwise equality across compilers.
 
     Reference: Cai, L. (2010). A two-tier full-information item factor analysis
     model with applications. *Psychometrika, 75*(4), 581-612.
@@ -143,15 +173,26 @@ def test_estimate_path_matches_origin_main_golden() -> None:
         "a_primary:2:1", "a_specific:2", "d:2:0", "d:2:1",
         "a_primary:3:1", "a_specific:3", "d:3:0", "d:3:1", "phi_z:0:1",
     ]
+    fits = {}
     for correlation in (None, "estimate"):
         options = kwargs if correlation is None else {**kwargs, "primary_correlation": correlation}
         fit = fit_two_tier_grm(y, pmap, smap, 3, 2, 1, **options)
+        fits[correlation] = fit
+        # Exact, platform-independent parts of the contract.
+        assert fit.n_iter == GOLDEN_N_ITER
+        assert fit.termination_reason == GOLDEN_TERMINATION
+        assert fit.loglik_trace.shape == golden_trace.shape
+        np.testing.assert_array_equal(np.diag(fit.phi), np.ones(2))
+        np.testing.assert_array_equal(fit.phi, fit.phi.T)
+        # Stored literals: cross-build tolerance (see docstring).
         for got, expected in (
             (fit.phi, golden_phi), (fit.loglik_trace, golden_trace),
             (fit.a_primary, golden_primary), (fit.a_specific, golden_specific),
             (fit.threshold, golden_threshold),
         ):
-            np.testing.assert_allclose(got, expected, rtol=0, atol=1e-12)
+            np.testing.assert_allclose(
+                got, expected, rtol=0, atol=GOLDEN_CROSS_BUILD_ATOL
+            )
         se = two_tier_oakes_se(
             fit.a_primary, fit.a_specific, fit.threshold, fit.phi,
             y, pmap, smap, 3, 2, 1, q_primary=7, q_specific=7, fd_step=1e-5,
@@ -159,6 +200,18 @@ def test_estimate_path_matches_origin_main_golden() -> None:
         )
         assert se.labels == golden_labels
         assert se.information.shape == (17, 17)
+
+    # Same build, same arithmetic: the default path and the explicit
+    # "estimate" path must be bit-identical, with no tolerance at all.
+    default_fit, explicit_fit = fits[None], fits["estimate"]
+    for left, right in (
+        (default_fit.phi, explicit_fit.phi),
+        (default_fit.loglik_trace, explicit_fit.loglik_trace),
+        (default_fit.a_primary, explicit_fit.a_primary),
+        (default_fit.a_specific, explicit_fit.a_specific),
+        (default_fit.threshold, explicit_fit.threshold),
+    ):
+        np.testing.assert_array_equal(left, right)
 
 
 def _fit(y: np.ndarray, **overrides):
