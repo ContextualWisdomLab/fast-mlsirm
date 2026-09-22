@@ -184,6 +184,8 @@ def score_poly_fipc_group_persons(
 
     EAP uses the fitted focal prior ``N(mu, sigma^2)`` from the FIPC result
     (Kim, 2006), not a dropped ``N(0, 1)`` via :func:`score_polytomous`.
+    An unconverged calibration raises before any interpretation-facing score
+    is computed.
 
     References
     ----------
@@ -209,6 +211,11 @@ def score_poly_fipc_group_persons(
         max_iter=max_iter,
         tol=tol,
     )
+    if not fipc.converged:
+        raise RuntimeError(
+            "FIPC calibration did not converge: "
+            f"termination_reason={fipc.termination_reason}, n_iter={fipc.n_iter}"
+        )
     bank = _as_poly_fit(fipc)
     scored = _score_poly_eap_gaussian_prior(
         responses,

@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+import fast_mlsirm.fipc_group_score as fipc_group_score
+
 from fast_mlsirm.fipc_group_score import (
     _as_poly_fit,
     _score_poly_eap_gaussian_prior,
@@ -74,6 +76,31 @@ def test_score_poly_fipc_group_persons_smoke(reference_bank) -> None:
     assert float(out.expected_raw.min()) >= -1e-9
     assert float(out.expected_raw.max()) <= hi + 1e-9
     np.testing.assert_array_equal(out.fipc.slope[:N_ANCHOR], ref_slope[:N_ANCHOR])
+
+
+def test_nonconverged_fipc_never_returns_person_scores(monkeypatch) -> None:
+    class UnconvergedFit:
+        converged = False
+        termination_reason = "max_iter"
+        n_iter = 1
+
+    monkeypatch.setattr(fipc_group_score, "fit_poly_fipc", lambda *args, **kwargs: UnconvergedFit())
+    monkeypatch.setattr(
+        fipc_group_score,
+        "_score_poly_eap_gaussian_prior",
+        lambda *args, **kwargs: pytest.fail("nonconverged bank reached EAP scoring"),
+    )
+    with pytest.raises(RuntimeError, match="FIPC calibration did not converge: termination_reason=max_iter, n_iter=1"):
+        score_poly_fipc_group_persons(
+            np.array([[0, 1]], dtype=np.int64),
+            3,
+            np.array([True, False]),
+            np.array([1.0, 1.0]),
+            np.array([[0.5, -0.5], [0.5, -0.5]]),
+            q_theta=121,
+            max_iter=1,
+            tol=1e-5,
+        )
 
 
 def test_q_theta_required_no_default(reference_bank) -> None:
