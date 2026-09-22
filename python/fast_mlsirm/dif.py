@@ -1091,22 +1091,20 @@ def breslow_day_dif(
     )
 
 
-def _append_renamed_docstring(old_fn, new_fn) -> None:
-    """Keep the renamed function's interpretation caveats on the deprecated alias."""
-    old_fn.__doc__ = f"{old_fn.__doc__}\n\n{new_fn.__doc__}"
-
-
 # Deprecated aliases carry a terse ADR-0028 notice on their own docstring, but
 # callers (and this module's own docstring-content regression tests) still
-# rely on the full interpretation caveats. Bind the functions directly so the
-# copy cannot follow a non-static name.
-_append_renamed_docstring(mantel_haenszel_dif, detect_dif_mantel_haenszel)
-_append_renamed_docstring(
-    mantel_haenszel_dif_purified, detect_dif_mantel_haenszel_purified
-)
-_append_renamed_docstring(logistic_dif_purified, detect_dif_logistic_purified)
-_append_renamed_docstring(logistic_dif, detect_dif_logistic)
-_append_renamed_docstring(mantel_smd_dif, detect_dif_mantel_smd)
-_append_renamed_docstring(gmh_dif, detect_dif_gmh)
-_append_renamed_docstring(breslow_day_dif, detect_dif_breslow_day)
-del _append_renamed_docstring
+# rely on the full interpretation caveats -- append the renamed function's
+# docstring rather than discarding it.
+for _old_name, _new_name in (
+    ("mantel_haenszel_dif", "detect_dif_mantel_haenszel"),
+    ("mantel_haenszel_dif_purified", "detect_dif_mantel_haenszel_purified"),
+    ("logistic_dif_purified", "detect_dif_logistic_purified"),
+    ("logistic_dif", "detect_dif_logistic"),
+    ("mantel_smd_dif", "detect_dif_mantel_smd"),
+    ("gmh_dif", "detect_dif_gmh"),
+    ("breslow_day_dif", "detect_dif_breslow_day"),
+):
+    _old_fn = globals()[_old_name]
+    _new_fn = globals()[_new_name]
+    _old_fn.__doc__ = f"{_old_fn.__doc__}\n\n{_new_fn.__doc__}"
+del _old_name, _new_name, _old_fn, _new_fn
