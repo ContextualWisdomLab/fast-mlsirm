@@ -24,9 +24,16 @@ Each item says whether a test in
 fits, or whether it holds by construction in `python/fast_mlsirm/polytomous.py`
 without a separate test.
 
-- **Group selection is explicit (tested).** `predict_bifactor_expected_total_score(fit,
+- **Group selection is explicit.** `predict_bifactor_expected_total_score(fit,
   theta, q_specific, group=g)` uses group `g`'s `a_general`, `a_specific` and
-  `threshold` rows. Out-of-range or non-integral `group` values raise.
+  `threshold` rows. *Tested* for rows that differ in `a_general`
+  (`test_group_specific_rows_require_naming_the_group`: `group=0` and
+  `group=1` give different curves, and `group=0` matches the single-group
+  curve) and for out-of-range or non-integral `group` values
+  (`test_rejects_out_of_range_group`). That `group=g` also picks group `g`'s
+  `a_specific` and `threshold` rows holds by construction
+  (`_bifactor_group_item_params` indexes all three blocks by the same `g`);
+  no test varies those rows alone.
 - **Implicit selection only when it is exact.** `group=None` is accepted for a
   multiple-group fit only if the item-parameter blocks are exactly equal across
   groups, as an all-anchored fit (`anchor_mask=None`) makes them. A fit whose
