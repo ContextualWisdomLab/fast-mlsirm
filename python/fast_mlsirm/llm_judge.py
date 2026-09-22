@@ -405,11 +405,29 @@ def _validate_raw_json_depth(content: str) -> None:
             depth -= 1
 
 
+def _reject_nonfinite_constant(_: str) -> None:
+    """Reject non-finite JSON constants like NaN or Infinity."""
+    raise ValueError("non-finite JSON numeric constant")
+
+
+def _reject_nonfinite_float(value: str) -> float:
+    """Reject floating point values that overflow to infinity."""
+    f = float(value)
+    if not math.isfinite(f):
+        raise ValueError("non-finite JSON numeric value")
+    return f
+
+
 def _response_object(raw: str, *, required_fields: set[str]) -> dict[str, Any]:
     text = raw.strip()
     _validate_raw_json_depth(text)
     try:
-        value = json.loads(text, object_pairs_hook=_duplicate_free_object)
+        value = json.loads(
+            text,
+            object_pairs_hook=_duplicate_free_object,
+            parse_constant=_reject_nonfinite_constant,
+            parse_float=_reject_nonfinite_float,
+        )
     except _DuplicateJsonKeyError as exc:
         raise JudgeFormatError("judge response contains duplicate JSON object keys") from exc
     except json.JSONDecodeError as exc:
