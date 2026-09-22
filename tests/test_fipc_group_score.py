@@ -103,6 +103,24 @@ def test_nonconverged_fipc_never_returns_person_scores(monkeypatch) -> None:
         )
 
 
+def test_max_iter_one_real_fipc_rejects_person_scores() -> None:
+    responses = np.array(
+        [[(person + item) % 3 for item in range(4)] for person in range(45)],
+        dtype=np.int64,
+    )
+    with pytest.raises(RuntimeError, match="FIPC calibration did not converge: termination_reason=max_iter"):
+        score_poly_fipc_group_persons(
+            responses,
+            3,
+            np.array([True, True, False, False]),
+            np.array([1.0, 1.1, 0.8, 1.2]),
+            np.tile(np.array([0.8, -0.8]), (4, 1)),
+            q_theta=121,
+            max_iter=1,
+            tol=1e-8,
+        )
+
+
 def test_q_theta_required_no_default(reference_bank) -> None:
     ref_slope, ref_cat = reference_bank
     y = _simulate(3, 40, 0.0, 1.0, TRUE_A)
