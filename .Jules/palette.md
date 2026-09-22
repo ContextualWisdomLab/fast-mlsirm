@@ -51,3 +51,11 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2026-08-11 - Do Not Hardcode Light Colors on Thematic Backgrounds
+**Learning:** Hardcoding `color: white;` on elements with thematic variable backgrounds (like `var(--teal)`) guarantees contrast failure in dark mode when the thematic variable inevitably shifts to a lighter shade to remain visible against a dark background.
+**Action:** When setting text colors on elements using thematic variables for their background, always use a matching paired variable (e.g. `color: var(--bg)`) to ensure the contrast ratio is preserved across both light and dark themes.
+
+## 2026-08-11 - Hover Transition Standards
+**Learning:** Interactive UI elements that change state on hover (like table rows or bar charts receiving a different background color) look extremely jarring without a transition.
+**Action:** Always add an appropriate CSS transition (e.g., `transition: background-color 0.15s ease-in-out;`) to elements that have `:hover` state modifiers.
