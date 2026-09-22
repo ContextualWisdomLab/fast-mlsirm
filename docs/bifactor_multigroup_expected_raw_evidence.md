@@ -32,7 +32,8 @@ without a separate test.
   curve) and for out-of-range or non-integral `group` values
   (`test_rejects_out_of_range_group`). That `group=g` also picks group `g`'s
   `a_specific` and `threshold` rows holds by construction
-  (`_bifactor_group_item_params` indexes all three blocks by the same `g`);
+  (`_bifactor_group_item_params` indexes all three blocks by the same `g`,
+  `python/fast_mlsirm/polytomous.py` lines 632-634);
   no test varies those rows alone.
 - **Implicit selection only when it is exact.** `group=None` is accepted for a
   multiple-group fit only if the item-parameter blocks are exactly equal across
@@ -41,20 +42,28 @@ without a separate test.
   differing `a_general` rows (`test_group_specific_rows_require_naming_the_group`)
   and differing `threshold` rows (`test_threshold_rows_are_part_of_the_identity_check`).
   The same exact-equality check also covers `a_specific`
-  (`_bifactor_group_item_params`, which compares all three blocks), but
+  (`_bifactor_group_item_params`, which compares all three blocks at
+  `python/fast_mlsirm/polytomous.py` lines 604-609), but
   `a_specific`-only differences have no separate test.
 - **Group population parameters stay out of the conditional curve (by
   construction; not separately tested).** `_bifactor_group_item_params`
-  returns only one group's `(a_general, a_specific, threshold)` rows, and
-  `general_mean` / `general_sd` are never read on this path. Multiple-group item
+  returns only one group's `(a_general, a_specific, threshold)` rows
+  (`python/fast_mlsirm/polytomous.py` lines 619-642), and `general_mean` /
+  `general_sd` are never read on this path (lines 684-715 use only those rows
+  and `theta`). Multiple-group item
   parameters and `theta_g_eap` share the one common (reference) metric that the
   E-step places every group's nodes on, so no per-group rescaling of `theta` is
   applied. A test that varies `general_mean`/`general_sd` and checks that the
   curve is unchanged would make this an executable guarantee.
 - **Unit specific variances are required (tested: `test_rejects_estimated_specific_sd`).** With `estimate_specific_vars=False`
   the per-item specific-factor marginalization is computable from the fit
-  alone. A non-unit `specific_sd` raises, because the fit does not carry the
-  `specific_map` needed to match an item to its specific factor.
+  alone. The check is scoped to the group being scored
+  (`python/fast_mlsirm/polytomous.py` lines 625-630): with an explicit
+  `group=g` only group `g`'s `specific_sd` must be all 1, so `group=0` still
+  scores when another group has a non-unit SD; with `group=None` every group's
+  `specific_sd` must be all 1. A non-unit SD in the checked scope raises,
+  because the fit does not carry the `specific_map` needed to match an item to
+  its specific factor.
 - **One kernel (tested: `test_monotonicity_check_reads_the_same_kernel`, `test_pointwise_theta_may_tie_and_be_unordered`).** `check_bifactor_expected_total_score_monotonicity` and
   `predict_bifactor_expected_total_score` read the same kernel. Pointwise
   scoring of unordered or tied `theta` agrees with scoring on the sorted unique
