@@ -14,6 +14,8 @@ adjacent-category) is available for partial-credit scoring.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
+from pathlib import Path
 import warnings
 
 import numpy as np
@@ -1464,22 +1466,26 @@ def fit_nominal_polytomous(
 
 def compute_person_fit_polytomous(
     responses: np.ndarray,
-    fit: PolytomousFit,
+    fit: PolytomousFit | PolyFipcFit,
     *,
     q_theta: int,
     prior_mean: float = 0.0,
     prior_sd: float = 1.0,
     flag_threshold: float,
-) -> dict[str, np.ndarray]:
+) -> dict[str, object]:
     """Person-fit statistics for polytomous responses under a fitted GRM/GPCM
     (compute in Rust). Returns the standardized log-likelihood ``lz`` (Drasgow,
     Levine & Williams, 1985) and its estimated-trait correction ``lz_star``
     (Snijders, 2001) at the EAP trait, plus ``theta_eap`` and a boolean
     ``flagged`` (``lz_star < flag_threshold``, i.e. an aberrant / misfitting
     response pattern). ``responses`` is persons x items of integer categories
-    with ``NaN`` or ``-1`` for missing; ``prior_mean``/``prior_sd`` set the MAP prior used
-    in the Snijders correction. Reduces to the binary l_z at ``n_cat = 2``. Low
-    (negative) values indicate poor person fit.
+    with ``NaN`` or ``-1`` for missing. For ``PolyFipcFit``, the focal
+    ``N(mu, sigma²)`` prior is used for EAP and the correction. For
+    ``PolytomousFit``, ``prior_mean``/``prior_sd`` set both EAP and correction
+    priors and default to standard normal.
+    Reduces to the binary l_z at ``n_cat = 2``. Low
+    (negative) values indicate poor person fit. Also returns ``n_observed``
+    and the package/core version, core SHA-256, and fit termination provenance.
 
     References (APA 7th ed.):
         Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness
@@ -1491,6 +1497,17 @@ def compute_person_fit_polytomous(
             statistics with estimated person parameter. *Psychometrika, 66*(3),
             331-342. https://doi.org/10.1007/BF02294437
     """
+    if not isinstance(fit, (PolytomousFit, PolyFipcFit)):
+        raise TypeError("fit must be a PolytomousFit or PolyFipcFit")
+    if not fit.converged:
+        raise ValueError("person fit requires a converged fit")
+    if isinstance(fit, PolyFipcFit):
+        if prior_mean != 0.0 or prior_sd != 1.0:
+            raise ValueError("PolyFipcFit uses its fitted focal prior")
+        prior_mean, prior_sd = fit.mu, fit.sigma
+        model = "grm"
+    else:
+        model = fit.model
     n_items = fit.slope.shape[0]
     n_cat = fit.cat_params.shape[1] + 1
     q_theta = _fit_quadrature_points(q_theta)
@@ -1518,28 +1535,37 @@ def compute_person_fit_polytomous(
         fit.slope.astype(np.float64),
         fit.cat_params.reshape(-1).astype(np.float64),
         obs_arg,
-        fit.model,
+        model,
         int(q_theta),
         float(prior_mean),
         float(prior_sd),
         float(flag_threshold),
     )
+    import fast_mlsirm
+
+    core_path = Path(core.__file__).resolve()
     return {
         "lz": np.asarray(res["lz"], dtype=np.float64),
         "lz_star": np.asarray(res["lz_star"], dtype=np.float64),
         "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),
         "flagged": np.asarray(res["flagged"], dtype=bool),
+        "n_observed": observed.sum(axis=1),
+        "fast_mlsirm_version": fast_mlsirm.__version__,
+        "core_path": str(core_path),
+        "core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),
+        "converged": fit.converged,
+        "termination_reason": fit.termination_reason,
     }
 
 
 def person_fit_polytomous(
     responses: np.ndarray,
-    fit: PolytomousFit,
+    fit: PolytomousFit | PolyFipcFit,
     q_theta: int = 21,
     prior_mean: float = 0.0,
     prior_sd: float = 1.0,
     flag_threshold: float = -1.645,
-) -> dict[str, np.ndarray]:
+) -> dict[str, object]:
     """Deprecated alias for :func:`compute_person_fit_polytomous` (ADR-0028 rename)."""
     warnings.warn(
         "person_fit_polytomous is deprecated; use compute_person_fit_polytomous instead.",
