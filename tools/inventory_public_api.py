@@ -29,6 +29,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PY_ROOT = REPO_ROOT / "python"
 RUST_SRC = REPO_ROOT / "crates" / "fast-mlsirm-py" / "src"
 FIELDS = ["source", "current_name", "module", "kind", "parameters"]
+# pkgutil names are untrusted until they match this package's public dotted path.
+_OWN_PUBLIC_MODULE = re.compile(r"fast_mlsirm(?:\.[A-Za-z_][A-Za-z0-9_]*)*\Z")
 
 
 def _install_core_stub() -> None:
@@ -117,8 +119,11 @@ def collect_python_rows() -> list[dict]:
     ):
         if any(part.startswith("_") for part in modname.split(".")):
             continue
+        if _OWN_PUBLIC_MODULE.fullmatch(modname) is None:
+            continue
         try:
-            mod = importlib.import_module(modname)
+            # Name is a dotted identifier under fast_mlsirm from walk_packages.
+            mod = importlib.import_module(modname)  # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
         except Exception:
             continue
         for name in sorted(vars(mod)):
