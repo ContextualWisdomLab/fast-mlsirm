@@ -63,6 +63,8 @@ def _one_fit(y: np.ndarray, smap: np.ndarray) -> None:
         n_starts=1,
         seed=42,
         device="cpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
 
 

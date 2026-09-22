@@ -250,6 +250,8 @@ fn valid_config() -> TwoTierGrmConfig {
         seed: 42,
         newton_iter: 3,
         ridge: 1e-8,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     }
 }
 
@@ -536,4 +538,96 @@ fn non_convergence_is_reported_not_substituted() {
         fit.termination_reason, "max_iter_reached",
         "termination reason must say max_iter_reached"
     );
+}
+
+// ---------------------------------------------------------------------------
+// #2002 / #2074: deterministic person-chunked CPU E-step reduction.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fit_records_e_step_chunk_provenance() {
+    let (y, n_persons) = tiny_data();
+    let cfg = TwoTierGrmConfig {
+        e_step_n_chunks: 3,
+        e_step_n_threads: 2,
+        ..valid_config()
+    };
+    let fit = fit_two_tier_grm(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("fit");
+    assert_eq!(fit.e_step_n_chunks, 3);
+    assert_eq!(fit.e_step_n_threads, 2);
+}
+
+#[test]
+fn fit_same_chunks_bit_identical_across_thread_counts() {
+    let (y, n_persons) = tiny_data();
+    let base = TwoTierGrmConfig {
+        max_iter: 8,
+        n_starts: 1,
+        e_step_n_chunks: 4,
+        ..valid_config()
+    };
+    let fit1 = fit_two_tier_grm(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &TwoTierGrmConfig {
+            e_step_n_threads: 1,
+            ..base.clone()
+        },
+    )
+    .expect("fit threads=1");
+    let fit2 = fit_two_tier_grm(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &TwoTierGrmConfig {
+            e_step_n_threads: 4,
+            ..base
+        },
+    )
+    .expect("fit threads=4");
+    assert_eq!(fit1.loglik_trace.len(), fit2.loglik_trace.len());
+    for (a, b) in fit1.loglik_trace.iter().zip(fit2.loglik_trace.iter()) {
+        assert_eq!(
+            a.to_bits(),
+            b.to_bits(),
+            "EM loglik trace must match bit-for-bit"
+        );
+    }
+    for (a, b) in fit1.a_primary.iter().zip(fit2.a_primary.iter()) {
+        assert_eq!(a.to_bits(), b.to_bits());
+    }
+    for (a, b) in fit1.a_specific.iter().zip(fit2.a_specific.iter()) {
+        assert_eq!(a.to_bits(), b.to_bits());
+    }
+    for (a, b) in fit1.threshold.iter().zip(fit2.threshold.iter()) {
+        assert_eq!(a.to_bits(), b.to_bits());
+    }
+    for (a, b) in fit1.phi.iter().zip(fit2.phi.iter()) {
+        assert_eq!(a.to_bits(), b.to_bits());
+    }
 }

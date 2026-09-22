@@ -93,6 +93,8 @@ def _fit(y: np.ndarray, **overrides):
         "tol": 1e-5,
         "n_starts": 1,
         "seed": SEED,
+        "e_step_n_chunks": 1,
+        "e_step_n_threads": 1,
     }
     kwargs.update(overrides)
     return fit_two_tier_grm(y, PRIMARY_MAP, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC, **kwargs)
@@ -169,7 +171,8 @@ def test_rejects_out_of_range_caller_arguments() -> None:
             N_PRIMARY,
             N_SPECIFIC,
             7,
-            7, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15
+            7, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15,
+            e_step_n_chunks=1, e_step_n_threads=1,
         )
     with pytest.raises(ValueError, match="specific_map"):
         fit_two_tier_grm(
@@ -180,8 +183,13 @@ def test_rejects_out_of_range_caller_arguments() -> None:
             N_PRIMARY,
             N_SPECIFIC,
             7,
-            7, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15
+            7, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15,
+            e_step_n_chunks=1, e_step_n_threads=1,
         )
+    with pytest.raises(ValueError, match="e_step_n_chunks"):
+        _fit(y, e_step_n_chunks=0)
+    with pytest.raises(ValueError, match="e_step_n_threads"):
+        _fit(y, e_step_n_threads=0)
 
 
 def test_q_primary_and_q_specific_are_required() -> None:
@@ -189,6 +197,52 @@ def test_q_primary_and_q_specific_are_required() -> None:
     y = _simulate(SEED)
     with pytest.raises(TypeError):
         fit_two_tier_grm(y, PRIMARY_MAP, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15)
+
+
+def test_e_step_parallel_knobs_are_required() -> None:
+    """ADR-0028 / #2074: no unsourced defaults for E-step partition knobs."""
+    y = _simulate(SEED)
+    with pytest.raises(TypeError):
+        fit_two_tier_grm(
+            y,
+            PRIMARY_MAP,
+            SPECIFIC_MAP,
+            N_CAT,
+            N_PRIMARY,
+            N_SPECIFIC,
+            7,
+            7,
+            max_iter=500,
+            tol=1e-6,
+            n_starts=1,
+            seed=SEED,
+        )
+
+
+def test_same_chunks_bit_identical_across_thread_counts() -> None:
+    """#2074: fixed e_step_n_chunks keeps the FP association tree bit-identical."""
+    y = _simulate(SEED)
+    a = _fit(y, e_step_n_chunks=4, e_step_n_threads=1, max_iter=20)
+    b = _fit(y, e_step_n_chunks=4, e_step_n_threads=4, max_iter=20)
+    np.testing.assert_array_equal(a.a_primary, b.a_primary)
+    np.testing.assert_array_equal(a.a_specific, b.a_specific)
+    np.testing.assert_array_equal(a.threshold, b.threshold)
+    np.testing.assert_array_equal(a.phi, b.phi)
+    np.testing.assert_array_equal(a.loglik_trace, b.loglik_trace)
+    assert a.e_step_n_chunks == 4
+    assert a.e_step_n_threads == 1
+    assert b.e_step_n_threads == 4
+
+
+def test_n_jobs1_floor_bit_reproduces() -> None:
+    """#2074 evidence floor: e_step_n_threads=1 twice is bit-identical (issue claims 0)."""
+    y = _simulate(SEED)
+    first = _fit(y, e_step_n_chunks=1, e_step_n_threads=1)
+    second = _fit(y, e_step_n_chunks=1, e_step_n_threads=1)
+    np.testing.assert_array_equal(first.a_primary, second.a_primary)
+    np.testing.assert_array_equal(first.threshold, second.threshold)
+    np.testing.assert_array_equal(first.phi, second.phi)
+    np.testing.assert_array_equal(first.loglik_trace, second.loglik_trace)
 
 
 def test_unobserved_category_fails_loudly() -> None:

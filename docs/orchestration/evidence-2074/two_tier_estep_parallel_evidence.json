@@ -1,0 +1,36 @@
+{
+  "setting": {
+    "n_persons": 48,
+    "n_items": 8,
+    "q": 7,
+    "max_iter": 12,
+    "e_step_n_chunks": 4,
+    "note": "small study; NOT A4; NOT q=241 n=340"
+  },
+  "baseline_threads_1": {
+    "wall_s_run_a": 2.153204584028572,
+    "wall_s_run_b": 4.268577834125608,
+    "cpu_s_run_a": 1.3412220000000001,
+    "maxrss_run_a": 47824896,
+    "bit_identical_repeats": {
+      "a_primary_equal": true,
+      "threshold_equal": true,
+      "phi_equal": true,
+      "loglik_equal": true
+    }
+  },
+  "parallel": {
+    "e_step_n_threads": 4,
+    "wall_s": 1.8922994579188526,
+    "cpu_s": 3.240301,
+    "maxrss": 47824896,
+    "wall_speedup_vs_baseline_a": 1.137877292633515,
+    "cpu_over_wall": 1.7123616383443228,
+    "bit_identical_vs_threads_1": {
+      "a_primary_equal": true,
+      "threshold_equal": true,
+      "phi_equal": true,
+      "loglik_equal": true
+    }
+  }
+}

@@ -9,6 +9,7 @@ pub mod crm;
 pub mod detect;
 pub mod dif;
 pub mod equating;
+pub(crate) mod estep_parallel;
 pub mod exposure;
 pub mod facets;
 pub mod factor;
