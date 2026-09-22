@@ -135,11 +135,18 @@ def test_polytomous_fit_origin_main_numeric_oracles():
     build reassociates those sums and moves the result in the last few digits;
     the literal-producing build (linux-x86_64) reproduces them exactly, while a
     macos-arm64 build was reported to differ at the 1e-12 scale on this fixture
-    (that run's assertion text was not preserved). The regression this test
-    guards - the focal prior leaking into, or vanishing from, the EAP grid -
-    moves ``lz_star`` by more than ``ORACLE_PRIOR_SHIFT_FLOOR``, which the final
-    assertion pins, so the tolerance stays far below the effect size it must
-    catch.
+    (that run's assertion text was not preserved).
+
+    This fixture is a ``PolytomousFit``, so ``prior_mean``/``prior_sd`` must
+    reach the Snijders ``r0`` term only: EAP keeps its ``N(0, 1)`` grid
+    (``polytomous.py`` passes the prior through to ``poly.rs``, which calls
+    ``score_poly_eap`` for this path and forms ``r0 = -(theta - mu) / sigma^2``).
+    Both directions of that contract stay caught at the tolerance above:
+    dropping the prior from ``r0`` collapses the two priors' ``lz_star``
+    difference to 0, which the final ``ORACLE_PRIOR_SHIFT_FLOOR`` assertion
+    fails on, and leaking the prior into the EAP grid moves ``theta_eap`` by
+    about 3e-1, far above ``ORACLE_CROSS_BUILD_ATOL``. The focal-prior EAP path
+    belongs to ``PolyFipcFit`` and is covered separately.
     """
     responses = np.array([[0, 1, 2, -1], [2, 2, 1, 0], [1, -1, 0, 2]])
     fit = PolytomousFit("grm", np.array([1.1, 0.9, 1.2, 0.8]),
