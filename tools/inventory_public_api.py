@@ -27,10 +27,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PY_ROOT = REPO_ROOT / "python"
-PACKAGE_ROOT = (PY_ROOT / "fast_mlsirm").resolve()
 RUST_SRC = REPO_ROOT / "crates" / "fast-mlsirm-py" / "src"
 FIELDS = ["source", "current_name", "module", "kind", "parameters"]
-_OWNED_MODULE = re.compile(r"^fast_mlsirm(?:\.[a-z_][a-z0-9_]*)+$")
 
 
 def _install_core_stub() -> None:
@@ -68,43 +66,6 @@ def _format_params(sig: inspect.Signature) -> str:
             default = _format_default(p.default)
             parts.append(f"{name}={default}" if default else name)
     return ", ".join(parts)
-
-
-def _import_owned_fast_mlsirm_module(modname: str):
-    """Import one public submodule whose source lives inside this package.
-
-    ``pkgutil`` discovers names from ``fast_mlsirm.__path__``. This guard
-    still refuses anything that is not a public ``fast_mlsirm.*`` identifier
-    with a source file under ``python/fast_mlsirm``, so a discovered string
-    cannot redirect the import outside the repository package.
-    """
-    parts = modname.split(".")
-    if (
-        _OWNED_MODULE.fullmatch(modname) is None
-        or len(parts) < 2
-        or any(part.startswith("_") or not part.isidentifier() for part in parts[1:])
-    ):
-        raise ValueError(f"refusing to import {modname!r}")
-    relative = Path(*parts)
-    source = next(
-        (
-            path
-            for path in (
-                PY_ROOT / relative.with_suffix(".py"),
-                PY_ROOT / relative / "__init__.py",
-            )
-            if path.is_file()
-        ),
-        None,
-    )
-    if source is None:
-        raise ImportError(modname)
-    resolved = source.resolve()
-    if resolved != PACKAGE_ROOT and PACKAGE_ROOT not in resolved.parents:
-        raise ValueError(f"refusing to import outside package root: {modname}")
-    # The rule has no semantic whitelist; the checks above are that whitelist.
-    # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
-    return importlib.import_module(modname)
 
 
 def collect_python_rows() -> list[dict]:
@@ -157,7 +118,7 @@ def collect_python_rows() -> list[dict]:
         if any(part.startswith("_") for part in modname.split(".")):
             continue
         try:
-            mod = _import_owned_fast_mlsirm_module(modname)
+            mod = importlib.import_module(modname)
         except Exception:
             continue
         for name in sorted(vars(mod)):
