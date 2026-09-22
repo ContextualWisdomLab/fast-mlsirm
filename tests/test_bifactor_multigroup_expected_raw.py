@@ -173,3 +173,55 @@ def test_rejects_non_finite_theta() -> None:
         predict_bifactor_expected_total_score(
             _anchored(), np.array([0.0, np.nan]), q_specific=41
         )
+
+
+def _without_threshold() -> object:
+    fit = _SingleGroupFit(A_GENERAL, A_SPECIFIC)
+    del fit.threshold
+    return fit
+
+
+def _two_d_multigroup_threshold() -> _MultigroupFit:
+    fit = _anchored()
+    fit.threshold = fit.threshold[0]
+    return fit
+
+
+def _one_d_specific_sd() -> _MultigroupFit:
+    fit = _anchored()
+    fit.specific_sd = np.ones(3)
+    return fit
+
+
+def _non_finite_threshold() -> _SingleGroupFit:
+    fit = _SingleGroupFit(A_GENERAL, A_SPECIFIC)
+    fit.threshold[0, 0] = np.nan
+    return fit
+
+
+@pytest.mark.parametrize(
+    ("make_fit", "theta", "error", "match"),
+    [
+        (_without_threshold, np.zeros(3), TypeError, "threshold array"),
+        (_two_d_multigroup_threshold, np.zeros(3), ValueError, "n_groups x n_items"),
+        (_one_d_specific_sd, np.zeros(3), ValueError, "n_groups x n_specific"),
+        (_non_finite_threshold, np.zeros(3), ValueError, "threshold must be finite"),
+        (_anchored, np.zeros((2, 2)), ValueError, "non-empty 1-D"),
+        (_anchored, np.array([]), ValueError, "non-empty 1-D"),
+    ],
+)
+def test_rejects_malformed_fit_or_theta(make_fit, theta, error, match) -> None:
+    with pytest.raises(error, match=match):
+        predict_bifactor_expected_total_score(make_fit(), theta, q_specific=41)
+
+
+def test_multigroup_fit_without_specific_sd_scores() -> None:
+    """A fit object that omits specific_sd is read as unit specific SDs."""
+    fit = _anchored()
+    del fit.specific_sd
+    grid = np.linspace(-2.0, 2.0, 5)
+    np.testing.assert_allclose(
+        predict_bifactor_expected_total_score(fit, grid, q_specific=41, group=0),
+        predict_bifactor_expected_total_score(_anchored(), grid, q_specific=41),
+        atol=1e-12,
+    )
