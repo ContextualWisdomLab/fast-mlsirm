@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-import importlib
+import importlib.util
 import inspect
 import pkgutil
 import re
@@ -66,6 +66,63 @@ def _format_params(sig: inspect.Signature) -> str:
             default = _format_default(p.default)
             parts.append(f"{name}={default}" if default else name)
     return ", ".join(parts)
+
+
+_PACKAGE_MODULE_NAME = re.compile(r"fast_mlsirm(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
+
+
+def _load_package_module(modname: str) -> types.ModuleType:
+    """Load one ``fast_mlsirm`` submodule from this repository tree.
+
+    Names that do not match the package, and files that resolve outside
+    ``python/``, are refused. Already-imported modules are reused only when
+    their ``__file__`` is inside that tree.
+    """
+    if _PACKAGE_MODULE_NAME.fullmatch(modname) is None:
+        raise ImportError(modname)
+    root = PY_ROOT.resolve()
+    loaded = sys.modules.get(modname)
+    if isinstance(loaded, types.ModuleType):
+        origin = getattr(loaded, "__file__", None)
+        if origin is not None and Path(origin).resolve().is_relative_to(root):
+            return loaded
+
+    parts = modname.split(".")
+    relative = Path(*parts)
+    package_init = root / relative / "__init__.py"
+    module_file = root / relative.with_suffix(".py")
+    if package_init.is_file():
+        path = package_init
+        search = [str(package_init.parent)]
+    elif module_file.is_file():
+        path = module_file
+        search = None
+    else:
+        raise ImportError(modname)
+    path = path.resolve()
+    if not path.is_relative_to(root):
+        raise ImportError(modname)
+
+    spec = importlib.util.spec_from_file_location(
+        modname, path, submodule_search_locations=search
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(modname)
+    module = importlib.util.module_from_spec(spec)
+    parent_name, _, child_name = modname.rpartition(".")
+    parent = sys.modules.get(parent_name)
+    if isinstance(parent, types.ModuleType) and child_name:
+        setattr(parent, child_name, module)
+    sys.modules[modname] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(modname, None)
+        if isinstance(parent, types.ModuleType) and child_name:
+            if getattr(parent, child_name, None) is module:
+                delattr(parent, child_name)
+        raise
+    return module
 
 
 def collect_python_rows() -> list[dict]:
@@ -118,7 +175,7 @@ def collect_python_rows() -> list[dict]:
         if any(part.startswith("_") for part in modname.split(".")):
             continue
         try:
-            mod = importlib.import_module(modname)
+            mod = _load_package_module(modname)
         except Exception:
             continue
         for name in sorted(vars(mod)):

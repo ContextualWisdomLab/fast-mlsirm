@@ -13,6 +13,13 @@
   EAP grid even with non-default `prior_mean`/`prior_sd`, which affect only
   the `r0` correction. `PolyFipcFit` uses its fitted focal prior for both.
 
+### Fixed
+
+- Deprecated DIF aliases copy their successor docstrings through direct
+  function bindings. The public-API inventory loads `fast_mlsirm` submodules
+  only from files under `python/`, so neither path indexes `globals()` or
+  calls `importlib.import_module` with a dynamic name.
+
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 

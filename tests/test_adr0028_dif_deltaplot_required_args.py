@@ -99,6 +99,8 @@ def test_delta_plot_requires_alpha_and_max_iter():
 def test_old_dif_alias_warns_and_matches_new_name(old_name, new_name):
     old_fn = getattr(dif, old_name)
     new_fn = getattr(dif, new_name)
+    assert new_fn.__doc__
+    assert new_fn.__doc__ in old_fn.__doc__
     if new_name in ("detect_dif_mantel_smd", "detect_dif_gmh"):
         responses, group = _ordinal_responses(), _group()
         with pytest.warns(DeprecationWarning, match=old_name):
