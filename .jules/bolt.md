@@ -48,22 +48,3 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
-## 2023-11-20 - Vectorized Categorical Reduction
-**Learning:** In NumPy-based EM estimators, using list comprehensions and `np.stack` over categorical classes inside the item loop (e.g., `np.stack([post[y == k].sum() for k in range(k_cat)])`) causes significant Python overhead and intermediate array allocation.
-**Action:** Replace it with a vectorized 3D mask multiplication `((y == k_range).astype(post.dtype).T @ post).T` and hoist `k_range = np.arange(k_cat)` outside the loop to completely eliminate Python loops and boolean allocations, pushing the operation down to optimized C matrix multiplication.
-
-## 2023-11-20 - Global State Security Alert
-**Learning:** `globals()[var]` when used with a dynamically iterated string (even a hardcoded tuple) can trigger critical SAST tool warnings (like Semgrep `python.lang.security.dangerous-globals-use`).
-**Action:** Replace `globals()[var]` pattern completely with explicit mappings/tuples containing actual function references instead of strings.
-
-## 2023-11-20 - Dynamic Imports
-**Learning:** Calling `importlib.import_module(var)` with an unconstrained variable triggers a SAST security risk (`non-literal-import`) as it implies arbitrary code execution.
-**Action:** Always add an explicit namespace validation/whitelist (e.g. `if not var.startswith('my_package.'): continue`) before dynamically importing, and suppress the alert cleanly if the static analyzer still can't infer it.
-
-## 2023-11-20 - NumPy 2.0 Compatibility (.astype)
-**Learning:** Using `.astype(dtype, copy=False)` to cast arrays (e.g., boolean to float) works seamlessly in NumPy 1.x by silently making the required copy, but raises a strict `ValueError` in NumPy 2.0+ (NEP 51) because casting inherently requires a memory copy.
-**Action:** When vectorizing boolean masks into floats, avoid `copy=False` in `.astype()`. Rely on standard `.astype(dtype)` and optimize surrounding linear algebra (e.g., transposes and `@` multiplications) instead of micro-optimizing the typecast parameter itself.
-
-## 2023-11-20 - Global Namespace vs Module Namespace
-**Learning:** Reassigning public functions inside a `globals()` loop (e.g., `globals()[name] = new_func`) can inadvertently leak loop iteration variables into the module namespace or overwrite exported references when `del` is called incorrectly. This breaks backward compatibility and causes `ImportError` / `AttributeError` for downstream test suites importing those names.
-**Action:** When dynamically patching module namespaces or assigning docstrings for deprecation, use `sys.modules[__name__]` and `getattr/setattr` to strictly manage the exact module objects, keeping iteration loop variables strictly separated from module exports.

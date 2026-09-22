@@ -8,7 +8,6 @@ item response model is fitted. The numerical computation runs in Rust."""
 from __future__ import annotations
 
 import math
-import sys
 import warnings
 
 import numpy as np
@@ -1105,7 +1104,7 @@ for _old_name, _new_name in (
     ("gmh_dif", "detect_dif_gmh"),
     ("breslow_day_dif", "detect_dif_breslow_day"),
 ):
-    _old_fn = getattr(sys.modules[__name__], _old_name)
-    _new_fn = getattr(sys.modules[__name__], _new_name)
+    _old_fn = globals()[_old_name]
+    _new_fn = globals()[_new_name]
     _old_fn.__doc__ = f"{_old_fn.__doc__}\n\n{_new_fn.__doc__}"
 del _old_name, _new_name, _old_fn, _new_fn
