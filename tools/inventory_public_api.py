@@ -118,7 +118,7 @@ def collect_python_rows() -> list[dict]:
         if any(part.startswith("_") for part in modname.split(".")):
             continue
         try:
-            mod = importlib.import_module(modname)  # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
+            mod = importlib.import_module(modname)
         except Exception:
             continue
         for name in sorted(vars(mod)):
