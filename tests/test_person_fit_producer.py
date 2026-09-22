@@ -116,17 +116,37 @@ def test_convergence_override_and_unknown_provenance():
     assert unknown["diagnostic_only"] is True
 
 
+ORACLE_CROSS_BUILD_ATOL = 1e-9
+ORACLE_PRIOR_SHIFT_FLOOR = 1e-3
+
+
 def test_polytomous_fit_origin_main_numeric_oracles():
     """Literals from origin/main 99c228a8 built on s1 in a clean checkout.
 
     The archived source was installed with its own isolated CARGO_TARGET_DIR;
     this fixture called its compute_person_fit_polytomous at q_theta=121.
+
+    Tolerance contract. ``flagged`` is a boolean decision and is compared
+    exactly. The floating-point literals are compared with
+    ``ORACLE_CROSS_BUILD_ATOL``, the same tolerance
+    ``test_fipc_independent_eap_and_r0_correction`` already uses for ``lz_star``
+    against an independent NumPy implementation. These values come from a
+    121-node quadrature followed by a log-sum-exp reduction, so a different
+    build reassociates those sums and moves the result in the last few digits;
+    the literal-producing build (linux-x86_64) reproduces them exactly, while a
+    macos-arm64 build was reported to differ at the 1e-12 scale on this fixture
+    (that run's assertion text was not preserved). The regression this test
+    guards - the focal prior leaking into, or vanishing from, the EAP grid -
+    moves ``lz_star`` by more than ``ORACLE_PRIOR_SHIFT_FLOOR``, which the final
+    assertion pins, so the tolerance stays far below the effect size it must
+    catch.
     """
     responses = np.array([[0, 1, 2, -1], [2, 2, 1, 0], [1, -1, 0, 2]])
     fit = PolytomousFit("grm", np.array([1.1, 0.9, 1.2, 0.8]),
                         np.array([[0.8, -0.8]] * 4), 0.0, 2, True, "converged")
     theta = [0.03421257788604403, 0.3819274316185286, -0.13607182669069784]
     lz = [-0.1562136694635439, 0.10720515212513168, -0.03735691585230127]
+    observed = {}
     for prior_mean, prior_sd, lz_star, flagged in [
         (0.0, 1.0,
          [-0.1647866699256647, -0.40866161268448986, -0.14101585110937956],
@@ -141,8 +161,17 @@ def test_polytomous_fit_origin_main_numeric_oracles():
         )
         for key, expected in (("lz", lz), ("lz_star", lz_star),
                               ("theta_eap", theta)):
-            np.testing.assert_allclose(result[key], expected, rtol=0, atol=1e-12)
+            np.testing.assert_allclose(
+                result[key], expected, rtol=0, atol=ORACLE_CROSS_BUILD_ATOL
+            )
         np.testing.assert_array_equal(result["flagged"], flagged)
+        observed[prior_sd] = np.asarray(result["lz_star"], dtype=float)
+
+    # The prior semantics this oracle guards must move lz_star by far more than
+    # the cross-build tolerance above, so the looser comparison still fails if
+    # the focal prior is wired into (or out of) the EAP grid.
+    shift = np.abs(observed[1.0] - observed[1.3])
+    assert float(shift.min()) > ORACLE_PRIOR_SHIFT_FLOOR
 
 
 def _independent_grm_logprobs(theta, slope, thresholds):
