@@ -1474,8 +1474,8 @@ def compute_person_fit_polytomous(
     flag_threshold: float,
 ) -> dict[str, object]:
     """Person-fit statistics for polytomous responses under a fitted GRM/GPCM
-    (compute in Rust). Returns the standardized log-likelihood ``lz`` (Drasgow,
-    Levine & Williams, 1985) and its estimated-trait correction ``lz_star``
+    (compute in Rust). Returns the standardized log-likelihood ``lz``
+    (Drasgow et al., 1985, pp. 71–72) and its estimated-trait correction ``lz_star``
     (Snijders, 2001) at the EAP trait, plus ``theta_eap`` and a boolean
     ``flagged`` (``lz_star < flag_threshold``, i.e. an aberrant / misfitting
     response pattern). ``responses`` is persons x items of integer categories

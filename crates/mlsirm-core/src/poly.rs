@@ -1385,7 +1385,7 @@ pub struct PolyPersonFit {
 }
 
 /// Person-fit statistics for polytomous responses under a fitted GRM/GPCM: the
-/// standardized log-likelihood `l_z` (Drasgow, Levine & Williams, 1985) and its
+/// standardized log-likelihood `l_z` (Drasgow et al., 1985, pp. 71–72) and its
 /// estimated-trait correction `l_z*` (Snijders, 2001), evaluated at the EAP
 /// trait under `N(prior_mean, prior_sd²)`. With `l_0 = Σ_i log P_i(y_i|θ̂)`,
 /// `E = Σ_i Σ_k P_ik log P_ik`, and
