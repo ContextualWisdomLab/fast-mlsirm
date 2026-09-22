@@ -2,8 +2,30 @@
 
 ## Unreleased
 
-<!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+## [0.11.5] - 2026-09-23
+
 ### Changed
+
+#### Release cut 0.11.5
+
+- Project version is bumped to 0.11.5 in `pyproject.toml`, `crates/mlsirm-core`,
+  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
+  `[0.11.5] - 2026-09-23` release section, which folds the two repairs that made
+  every pull request red regardless of its contents: the fail-closed `python`
+  outcome gate escalating capability lanes another job owns, and the three
+  blocking Semgrep findings on `main`.
+- `publish-pypi.yml` publishes to PyPI through OIDC trusted publishing instead
+  of a long-lived API token. The `publish-pypi` job now carries
+  `permissions: contents: read` plus `id-token: write`, the
+  `password: ${{ secrets.PIPY_TOKEN }}` input is removed, and PEP 740
+  attestations are enabled so each uploaded distribution ships a verifiable
+  provenance statement. `environment: pypi` and `skip-existing: true` are
+  unchanged, so a partial publish stays retryable.
+- This cut removes the standing predecessor note `release-0.11.4-cut.md`, whose
+  substance is permanently recorded in the `[0.11.5] - 2026-09-23` section and
+  in git history.
+- Released authoritative fragments are removed from `docs/changelog.d`; the
+  directory again holds only genuinely unreleased notes.
 
 #### Release cut 0.11.4
 
@@ -20,8 +42,52 @@
   in git history.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
-<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 
+### Fixed
+
+#### Red `python` gate from capability lanes another job owns
+
+- The fail-closed outcome gate (`tests/conftest.py`, Issue #1732) escalated
+  capability-gated skips in the ordinary `python` matrix. The first repair
+  over-broadly allowed the whole high-q module and incorrectly described the
+  Atheris harnesses as evidence for a separate Hypothesis module.
+- The allowlist now names six exact high-q pytest nodes instead of a module
+  glob. `gpu-smoke` installs a software Vulkan adapter, sets
+  `STAGE5_HIGH_Q=1`, executes those six nodes plus the existing marginal GPU
+  parity node, and fails when its JUnit evidence contains any skip.
+- `tests/test_fuzz_properties.py` is no longer allowlisted. The `fuzz` job
+  installs the `.[fuzz]` dependencies, executes that Hypothesis module
+  directly, and rejects collection-time or runtime skips before running the
+  separately owned Atheris harnesses. `hypothesis` (already in the `dev`
+  extra) is also added to the hash-locked `requirements/ci.txt`, so the
+  `python` matrix executes the module instead of collection-skipping it;
+  without that the gate still failed on `collection-skip:
+  tests/test_fuzz_properties.py` (#2075 run 106114739240).
+- `test_allowlisted_capability_nodes_have_exact_ci_owners` prevents a future
+  module glob, owner-name substitution, or allowlisted node without an
+  executable CI command.
+
+#### Red Semgrep gate on every PR
+
+- The central `Semgrep (multi-language SAST)` gate reported three blocking
+  WARNING findings on `main`, so it failed on every pull request regardless of
+  its contents. The org ruleset gates on that workflow passing, so this blocked
+  merges repository-wide. Reproduced locally with the same ruleset
+  (`semgrep --config=p/default --severity=WARNING --severity=ERROR`), which
+  returns the same three.
+- `python/fast_mlsirm/dif.py` built its deprecated-alias docstrings by indexing
+  `globals()` with loop variables drawn from a literal table three lines above.
+  The rule cannot see that the keys are literals, and the indirection bought
+  nothing: the loop now names the function objects directly, so a typo fails at
+  import instead of at runtime, and the finding disappears with cleaner code.
+- `tools/inventory_public_api.py` calls `importlib.import_module(modname)` with
+  a name from `pkgutil.walk_packages(fast_mlsirm.__path__, ...)`. The only
+  importable values are this package's own installed submodules, there is no
+  caller-supplied input, and the file is a repository tool that never ships in
+  the wheel, so it carries a scoped `# nosemgrep` with that justification rather
+  than a refactor.
+Neither change weakens the gate: the suppression is per-rule, per-line, and
+recorded separately from the blocking count by the central workflow.
 
 ## [0.11.4] - 2026-09-18
 

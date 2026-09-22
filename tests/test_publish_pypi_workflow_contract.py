@@ -135,7 +135,7 @@ def test_release_asset_write_is_isolated_from_pypi_credentials() -> None:
     assert ".immutable // false" in assets
 
     assert "environment: pypi" in publish
-    assert "permissions:\n      contents: read" in publish
+    assert "permissions:\n      contents: read\n      id-token: write" in publish
     assert "gh release upload" not in publish
     assert "contents: write" not in publish
 
@@ -149,8 +149,12 @@ def test_pypi_publish_uses_a_pinned_package_owned_uploader() -> None:
     assert "python -m twine upload" not in text
     assert "TWINE_USERNAME" not in text
     assert f"uses: pypa/gh-action-pypi-publish@{PYPI_PUBLISH_SHA}" in publish
-    assert "password: ${{ secrets.PIPY_TOKEN }}" in publish
-    assert "attestations: false" in publish
+    # Trusted publishing (OIDC): no long-lived PyPI credential is read anywhere
+    # in this workflow, and the job mints its own short-lived identity token.
+    assert "password:" not in publish
+    assert "secrets.PIPY_TOKEN" not in text
+    assert "permissions:\n      contents: read\n      id-token: write" in publish
+    assert "attestations: true" in publish
     assert "skip-existing: true" in publish
     assert "Ensure LICENSE is present in the sdist" in sdist
     assert 'license_member = f"{root}/LICENSE"' in sdist

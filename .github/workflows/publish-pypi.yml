@@ -370,6 +370,7 @@ jobs:
     environment: pypi
     permissions:
       contents: read
+      id-token: write
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -381,8 +382,9 @@ jobs:
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         with:
-          password: ${{ secrets.PIPY_TOKEN }}
-          attestations: false
+          # Trusted publishing: the job's OIDC identity authenticates the
+          # upload, so no long-lived PyPI API token is stored or read here.
+          attestations: true
           # Partial publishes (wheels accepted, sdist rejected) must be
           # retryable without failing on already-uploaded filenames.
           skip-existing: true
