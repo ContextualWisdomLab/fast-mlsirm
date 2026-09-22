@@ -62,6 +62,12 @@ without a separate test.
 
 ## The compiled core is on this path
 
+*By construction; not separately tested.* In
+`python/fast_mlsirm/polytomous.py`, `predict_bifactor_expected_total_score`
+(line 645) calls `predict_expected_response_polytomous` per item (line 712),
+which returns `_polytomous_predictions(...)[1]` (line 262); lines 220-221 are
+the raise and the native call quoted below.
+
 `predict_bifactor_expected_total_score` calls
 `predict_expected_response_polytomous` per item. That routes through
 `_polytomous_predictions`, which requires the native extension: it raises
