@@ -567,7 +567,9 @@ def _person_logliks(
         delta_d = delta[:, items]  # (S, I_d, Qt, Nx)
         logp0_d = logp0[:, items]
         # einsum over the item axis with per-person context gather
-        l_ll[:, d] += np.einsum("pi,piqx->pqx", pos_d, delta_d[s_of_person], optimize=True)
+        l_ll[:, d] += np.einsum(
+            "pi,piqx->pqx", pos_d, delta_d[s_of_person], optimize=True
+        )
         if miss_d.any():
             l_ll[:, d] -= np.einsum(
                 "pi,piqx->pqx", miss_d, logp0_d[s_of_person], optimize=True
