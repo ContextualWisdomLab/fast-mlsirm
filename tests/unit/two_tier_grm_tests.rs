@@ -432,6 +432,7 @@ fn identity_rejects_identical_primary_support_but_accepts_nested_support() {
     let (y, n_persons) = tiny_data();
     let cfg = TwoTierGrmConfig {
         estimate_primary_correlation: false,
+        max_iter: 500,
         ..valid_config()
     };
     let shared = [true; TINY_N_ITEMS * TINY_N_PRIMARY];
@@ -451,7 +452,7 @@ fn identity_rejects_identical_primary_support_but_accepts_nested_support() {
     assert!(err.contains("identical free-loading item sets"), "{err}");
 
     let nested: Vec<bool> = (0..TINY_N_ITEMS).flat_map(|i| [true, i < 5]).collect();
-    fit_two_tier_grm(
+    let fit = fit_two_tier_grm(
         &y,
         None,
         &nested,
@@ -464,6 +465,9 @@ fn identity_rejects_identical_primary_support_but_accepts_nested_support() {
         &cfg,
     )
     .expect("distinct nested supports must fit");
+    assert!(fit.converged, "nested-support fit did not converge");
+    assert_ne!(fit.termination_reason, "max_iter_reached");
+    assert_eq!(fit.phi, vec![1.0, 0.0, 0.0, 1.0]);
 }
 
 #[test]
