@@ -104,8 +104,8 @@ def test_identity_rejects_identical_primary_support() -> None:
 # stops on `delta_loglik <= 1e-2 * (1 + |loglik|)` (slack ~3.8e-1 at
 # loglik = -37.15), so the pinned iterate is a trajectory point whose low-order
 # bits differ between compilers; the observed cross-build spread on this fixture
-# was at the 1e-9 scale, while any behavioural change to the estimate path moves
-# these values by >= 1e-2. 1e-6 sits between those scales.
+# was at the 1e-9 scale, while injected behavioural regressions moved these
+# values by 3.98e-4 to 1.05e-1. 1e-6 sits between those measured scales.
 GOLDEN_CROSS_BUILD_ATOL = 1e-6
 GOLDEN_N_ITER = 6
 GOLDEN_TERMINATION = "tolerance_met"
@@ -136,8 +136,12 @@ def test_estimate_path_matches_origin_main_golden() -> None:
       iterate this golden pins is a point on the EM trajectory, not a converged
       optimum, so ordinary floating-point reassociation between builds moves it
       far more than 1e-12. Any real change to the estimate path moves these
-      values by orders of magnitude more than the tolerance below, so the guard
-      keeps its purpose without asserting bitwise equality across compilers.
+      values by far more than the tolerance below - deliberately injected
+      regressions on this fixture (identity rewiring, one fewer Newton step, a
+      10x larger ridge) moved them by 1.05e-1, 2.09e-2 and 3.98e-4 - so the
+      guard keeps its purpose without asserting bitwise equality across
+      compilers. Note the smallest of those is 3.98e-4: a 1e-2 tolerance would
+      have missed it, which is why the bound below sits at 1e-6.
 
     Reference: Cai, L. (2010). A two-tier full-information item factor analysis
     model with applications. *Psychometrika, 75*(4), 581-612.
