@@ -1104,8 +1104,7 @@ for _old_name, _new_name in (
     ("gmh_dif", "detect_dif_gmh"),
     ("breslow_day_dif", "detect_dif_breslow_day"),
 ):
-    _globals_dict = globals()
-    _old_fn = _globals_dict[_old_name]  # nosemgrep: python.lang.security.dangerous-globals-use.dangerous-globals-use
-    _new_fn = _globals_dict[_new_name]  # nosemgrep: python.lang.security.dangerous-globals-use.dangerous-globals-use
+    _old_fn = globals()[_old_name]
+    _new_fn = globals()[_new_name]
     _old_fn.__doc__ = f"{_old_fn.__doc__}\n\n{_new_fn.__doc__}"
 del _old_name, _new_name, _old_fn, _new_fn
