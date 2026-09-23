@@ -314,7 +314,7 @@ Notes:
    functionality), or pinning `numpy` to a version range. Only 2.5.3 was inspected, and there is
    no evidence that any official Linux x86_64 NumPy wheel is libquadmath-free.
 
-Recommendation: open a follow-up that combines (3) now with (1) as a
+Recommendation (tracked in #2136): a follow-up that combines (3) now with (1) as a
 Fortran-free (`C_LAPACK`) scipy-openblas → NumPy wheel build for
 manylinux x86_64/aarch64 and win_amd64, keeping Accelerate on macOS ≥ 14. The
 owner decides whether the GCC-runtime-exception libraries are acceptable
@@ -327,8 +327,8 @@ until then.
    Unicode-3.0). Those licenses require their notices to go with binary
    distributions. The wheel carries only fast-mlsirm's own MIT `LICENSE` and
    the SBOM. Proposed fix: generate a `THIRD_PARTY_LICENSES` file from the
-   binding lock and include it in the wheel and sdist.
-2. **objc2 / Apple SDK caveat** (section 3), for the owner's review.
+   binding lock and include it in the wheel and sdist. Tracked in #2137.
+2. **objc2 / Apple SDK caveat** (section 3), for the owner's review. Tracked in #2137.
 3. **hypothesis is MPL-2.0 (file-level weak copyleft).** It is dev/test only
    and outside the user's GPL/LGPL/AGPL set, so it is recorded here for owner
    confirmation, not removed.
@@ -348,6 +348,8 @@ until then.
 7. **No CI gate enforces this policy yet.** A cargo-deny `[licenses]` allow
    list with an explicit `r-efi` clarification, plus a fail-closed Python
    license check over the locks, would keep this evidence from going stale.
+   Tracked in #2138, together with items 3 and 4 and the atheris upstream
+   metadata fix.
 
 ## 8. Reproduction
 
