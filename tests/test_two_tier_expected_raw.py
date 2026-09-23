@@ -282,15 +282,14 @@ def _stub_fit(
     *, phi: np.ndarray, n_specific: int = 1, primary_identification: str | None = None
 ) -> TwoTierGrmFit:
     # `primary_identification` became a required TwoTierGrmFit field when the
-    # orthogonal-primary work landed. Mirror what a real fit would carry: a
-    # stub whose Phi is exactly the identity stands for an identity-identified
-    # fit, anything else for the estimated-correlation path. The from_fit gate
-    # keys off its own `orthogonal_primary_identification` argument, so this
-    # only keeps the stub faithful to the dataclass.
+    # orthogonal-primary work landed. fit_two_tier_grm records exactly two
+    # values: "orthogonal" when Phi was fixed to I and "correlated" when Phi
+    # was estimated. Mirror that here so the stub matches a real fit, and let
+    # a test override it to exercise the fail-closed gate.
     phi_arr = np.asarray(phi, dtype=np.float64)
     if primary_identification is None:
         primary_identification = (
-            "identity"
+            "orthogonal"
             if phi_arr.shape[0] == phi_arr.shape[1]
             and np.array_equal(phi_arr, np.eye(phi_arr.shape[0]))
             else "correlated"
@@ -395,6 +394,48 @@ def test_specific_map_rejects_noninteger_before_int64_cast() -> None:
     # Valid ints still accepted (including float dtype that is integral).
     out = _call(ap, asp, th, np.array([0.0, 0.0]), grid, q=5)
     assert out.n_items == 2
+
+
+def test_from_fit_rejects_a_correlated_fit_even_when_phi_is_exactly_identity() -> None:
+    """Metadata gates the fit even if Phi is numerically I and the caller says True.
+
+    ``fit_two_tier_grm`` records ``"correlated"`` whenever Phi was estimated. An
+    estimated Phi can land on exactly the identity, so accepting such a fit here
+    would silently score it as if orthogonal primaries had been imposed.
+    """
+    fit = _stub_fit(phi=np.eye(2), primary_identification="correlated")
+    with pytest.raises(ValueError, match="primary_identification"):
+        expected_total_score_two_tier_from_fit(
+            fit,
+            np.array([0.0]),
+            focal_primary=0,
+            q_nuisance=7,
+            specific_map=np.zeros(2, dtype=np.int64),
+            orthogonal_primary_identification=True,
+        )
+
+
+def test_from_fit_rejects_a_fit_without_identification_metadata() -> None:
+    """A fit object that carries no identification field fails closed."""
+
+    class _NoMetadataFit:
+        def __init__(self, base: TwoTierGrmFit) -> None:
+            for name in (
+                "a_primary", "a_specific", "threshold", "phi", "n_primary",
+                "n_specific", "n_cat",
+            ):
+                setattr(self, name, getattr(base, name))
+
+    fit = _NoMetadataFit(_stub_fit(phi=np.eye(2)))
+    with pytest.raises(ValueError, match="primary_identification"):
+        expected_total_score_two_tier_from_fit(
+            fit,
+            np.array([0.0]),
+            focal_primary=0,
+            q_nuisance=7,
+            specific_map=np.zeros(2, dtype=np.int64),
+            orthogonal_primary_identification=True,
+        )
 
 
 def test_specific_map_rejects_uint64_wraparound_boundaries() -> None:

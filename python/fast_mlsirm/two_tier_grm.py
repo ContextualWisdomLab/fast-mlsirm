@@ -922,11 +922,20 @@ def expected_total_score_two_tier_from_fit(
 
     ``fit.phi == I`` is necessary but **not sufficient** evidence that the fit
     was estimated under orthogonal primary identification (a numeric matrix can
-    be identity for other reasons). Callers must pass
-    ``orthogonal_primary_identification=True`` only when the consuming research
-    / estimation contract itself fixes orthogonal primaries. ``TwoTierGrmFit``
-    does not yet carry identification metadata; this flag is the explicit
-    consumer confirmation until such metadata exists.
+    be identity for other reasons). Two independent gates are therefore
+    required, and both fail closed:
+
+    * ``fit.primary_identification == "orthogonal"`` - the estimator's own
+      record of how Phi was treated. ``fit_two_tier_grm`` writes
+      ``"orthogonal"`` when Phi was fixed to I and ``"correlated"`` when it was
+      estimated, so this is the authoritative evidence about the fit. A fit
+      that lacks the field at all is rejected rather than trusted.
+    * ``orthogonal_primary_identification=True`` - the consumer's confirmation
+      that the research / estimation contract itself fixes orthogonal
+      primaries. Metadata alone cannot establish that, so this stays required.
+
+    Passing the flag for a ``"correlated"`` fit is refused even when ``phi``
+    happens to be exactly the identity.
     """
     if orthogonal_primary_identification is not True:
         raise ValueError(
@@ -947,6 +956,15 @@ def expected_total_score_two_tier_from_fit(
             f"{fit.n_specific}"
         )
     _require_identity_phi(fit.phi, atol=0.0)
+    identification = getattr(fit, "primary_identification", None)
+    if identification != "orthogonal":
+        raise ValueError(
+            "fit.primary_identification must be 'orthogonal': the estimator "
+            "records 'orthogonal' only when Phi was fixed to I, and a fit whose "
+            "Phi was estimated (or that carries no identification metadata) is "
+            "not admissible here even when phi is numerically the identity; "
+            f"got {identification!r}"
+        )
     return expected_total_score_two_tier_given_primary(
         fit.a_primary,
         fit.a_specific,
