@@ -724,6 +724,7 @@ jobs:
           python3 - <<'PY'
           import hashlib
           import importlib.util
+          import io
           import json
           import os
           import re
@@ -740,7 +741,7 @@ jobs:
           transport.verify_materialized(selected, receipt, Path("downloaded"))
 
           def sha256(path: Path) -> str:
-              return hashlib.sha256(path.read_bytes()).hexdigest()
+              return transport.hash_file(path)
 
           legs = os.environ["EXPECTED_WHEEL_LEGS"].split()
           commit, tag = os.environ["RELEASE_COMMIT"], os.environ["RELEASE_TAG"]
@@ -801,7 +802,8 @@ jobs:
                           metadata = [p for p in archive.namelist() if p.endswith(".dist-info/WHEEL")]
                           if len(metadata) != 1:
                               raise ValueError("expected one WHEEL metadata member")
-                          tags = [line[5:] for line in archive.read(metadata[0]).decode("utf-8").splitlines() if line.startswith("Tag: ")]
+                          with archive.open(metadata[0]) as wheel_metadata:
+                              tags = [line[5:].rstrip("\r\n") for line in io.TextIOWrapper(wheel_metadata, encoding="utf-8") if line.startswith("Tag: ")]
                       parts = row["file"][:-4].rsplit("-", 3)
                       expected_tags = {f"{parts[1]}-{parts[2]}-{p}" for p in parts[3].split(".")}
                       if len(tags) != len(set(tags)) or set(tags) != expected_tags:

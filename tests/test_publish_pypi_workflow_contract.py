@@ -527,7 +527,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
             archives[index] = buffer.getvalue()
             selected.append({"id": index, "name": name, "digest": "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()})
         module = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
-        receipt = module["materialize"](selected, "owner/repo", root / "downloaded", lambda repo, index: archives[index])
+        receipt = module["materialize"](selected, "owner/repo", root / "downloaded", lambda repo, index, output: output.write(archives[index]))
         (root / "selected-artifacts.json").write_text(json.dumps(selected))
         (root / "transport-receipt.json").write_text(json.dumps(receipt))
         (root / "trusted-control").symlink_to(REPO_ROOT, target_is_directory=True)
