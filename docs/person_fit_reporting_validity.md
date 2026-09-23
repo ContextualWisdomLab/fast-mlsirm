@@ -1,11 +1,12 @@
 # Person-fit reporting metadata (schema 1)
 
 This is an evidence-boundary correction, not a new numerical method or a
-validation of the existing correction. The implementation's own method note
-in `crates/mlsirm-core/src/poly.rs` records that the polytomous EAP correction
-is an extrapolation whose original pinpoint is not verified. This patch does
-not independently verify that literature. Method/reporting acceptance remains
-on HOLD pending primary-source and recovery evidence.
+validation of the existing correction. Snijders (2001, pp. 333, 341) is now
+directly checked in the primary PDF and page images. The paper explicitly
+extends its results to bounded polytomous outcomes; a "dichotomous only"
+exclusion is therefore not supported. The remaining HOLD concerns whether the
+current EAP/category-log-likelihood implementation meets the theorem's
+conditions and has recovery evidence. Access to this source is not the blocker.
 
 Rust `PolyPersonFit`, the PyO3 `poly_person_fit` dictionary, the Python public
 `compute_person_fit_polytomous` producer and its deprecated alias preserve
@@ -45,3 +46,35 @@ actual Python producer and alias with a fake native routine; it performs no
 numerical fit. Native compilation, PyO3 execution and the existing numerical
 producer suite require separate verification and are not claimed by these
 mock regressions.
+
+## Primary-source check (2026-09-24)
+
+Snijders, T. A. B. (2001). Asymptotic null distribution of person fit statistics
+with estimated person parameter. *Psychometrika, 66*(3), 331–342.
+https://doi.org/10.1007/BF02294437
+
+- Source identity: Zotero personal library `users/0`, item `9FSBEPXY`, attachment
+  `ZBFXFGNT`; PDF SHA256
+  `6b1ccd2df19be89a2a778fa07d4ef92a93435de9c3429c5d93231999d60a4ddb`.
+- Locators checked directly: PDF page 3 = printed 333, PDF page 11 = printed
+  341 (offset +330 at both checked pages). Extracted text is checked against
+  both page images, including equation (5).
+- Page 333 requires an estimator satisfying equation (5); the examples include
+  ML, Warm's estimator and "posterior mode estimators". It also states a
+  nondegenerate root-n limit requirement. A posterior mean is not certified
+  merely by adding the normal-prior score term to the correction.
+- Page 341 states that the results "can be generalized to polytomous items".
+  Its extension concerns linear statistics of bounded outcomes with the stated
+  expectation, replacing the Bernoulli variance in equation (14) by the
+  outcome variance. The partial-credit example uses ML satisfying equation (5).
+  This establishes the extension's existence, not its automatic application
+  to every GRM/GPCM category-log-likelihood statistic or EAP estimator.
+- The same page limits the reported finite-sample simulation: smaller tail
+  probabilities are liberal and skewness needs a more precise approximation.
+  Those simulations do not calibrate this implementation's reporting cutoff.
+
+The unresolved implementation evidence is the estimator-equation/theorem
+mapping for the actual EAP and category-log-likelihood path, followed by
+appropriate finite-sample/null-recovery verification. This bounded source
+check does not prove impossibility, select another estimator, change a formula
+or assign reporting acceptance. Schema 1's unverified states remain unchanged.
