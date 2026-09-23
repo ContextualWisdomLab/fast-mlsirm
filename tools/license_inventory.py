@@ -571,13 +571,16 @@ def parse_notice_stanzas(text: str) -> list[dict]:
         if "Name" in fields and "Files" in fields:
             body_match = re.search(r"^License: [^\n]*\n(?P<body>.*)$", block, re.MULTILINE | re.DOTALL)
             body = body_match.group("body") if body_match else ""
+            header = block[:body_match.start("body")] if body_match else block
+            header_fields = re.findall(r"^([^:\n]+):[^\n]*$", header, re.MULTILINE)
+            header_scope_verified = header_fields == ["Name", "Files", "License"]
             # Debian-style notice continuation lines have one indentation
             # column and use a single dot for a blank line.
             body = "\n".join(
                 "" if line.strip() == "." else line[1:] if line.startswith(" ") else line
                 for line in body.splitlines()
             )
-            fields["Verified-Text"] = verified_standard_text(body)
+            fields["Verified-Text"] = verified_standard_text(body) if header_scope_verified else []
             stanzas.append(fields)
     return stanzas
 
@@ -642,8 +645,7 @@ def vendored_native_license_holds(artifacts: list[dict]) -> list[str]:
                 elected, _ = elect(declared)
                 elected_terms = spdx_terms(elected) if elected else []
                 text_verified = bool(elected_terms) and all(
-                    term in UNFINGERPRINTED_IDS
-                    or any(_label_covers(term, label) for label in stanza["verified_text"])
+                    any(_label_covers(term, label) for label in stanza["verified_text"])
                     for term in elected_terms
                 )
                 if not elected or classify(elected) != "PERMISSIVE" or not text_verified:

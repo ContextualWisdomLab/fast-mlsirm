@@ -270,6 +270,51 @@ def test_vendored_native_additional_condition_holds(tmp_path, native_license):
     assert "no verified elected grant" in row["vendored_native_license_holds"][0]
 
 
+@pytest.mark.parametrize("native_license", ["MIT", "MIT OR LGPL-2.1-or-later"])
+def test_vendored_native_pre_license_condition_holds(tmp_path, native_license):
+    """A condition before License is part of the notice and invalidates verification."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    _native_wheel(wheel, native_license=native_license, license_body=MIT_TEXT)
+    result = io.BytesIO()
+    with zipfile.ZipFile(wheel) as old, zipfile.ZipFile(result, "w") as new:
+        for entry in old.infolist():
+            data = old.read(entry.filename)
+            if entry.filename.endswith("/NOTICE"):
+                data = data.replace(
+                    b"License: ",
+                    b"Description: Additional restriction: commercial use prohibited\nLicense: ",
+                    1,
+                )
+            new.writestr(entry.filename, data)
+    wheel.write_bytes(result.getvalue())
+    digest = hashlib.sha256(result.getvalue()).hexdigest()
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert "no verified elected grant" in row["vendored_native_license_holds"][0]
+
+
+@pytest.mark.parametrize("native_license", ["0BSD", "CC0-1.0", "BSD-3-Clause-Open-MPI"])
+def test_vendored_native_unfingerprinted_label_without_grant_holds(tmp_path, native_license):
+    """A native component needs scope-bound permission evidence even for these ids."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    digest = _native_wheel(wheel, native_license=native_license)
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert "no verified elected grant" in row["vendored_native_license_holds"][0]
+
+
 def test_missing_scope_is_unclassified_gap_not_exclusion(tmp_path):
     """A package without a scope entry is UNCLASSIFIED with unknown scope, and a gap."""
     gaps = []
