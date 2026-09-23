@@ -91,6 +91,25 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
+      - name: Verify release source ancestry for direct publication
+        env:
+          CONTROL_PLANE_COMMIT: ${{ inputs.control_plane_commit }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          checked_out_commit="$(git rev-parse HEAD)"
+          if [ "$checked_out_commit" != "$RELEASE_COMMIT" ]; then
+            echo "checked-out release source does not match release_commit" >&2
+            exit 1
+          fi
+          if ! git cat-file -e "$CONTROL_PLANE_COMMIT^{commit}"; then
+            echo "publication control-plane commit is unavailable for ancestry verification" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" "$CONTROL_PLANE_COMMIT"; then
+            echo "release commit must be an ancestor of the publication control plane" >&2
+            exit 1
+          fi
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"

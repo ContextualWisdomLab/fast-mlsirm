@@ -83,6 +83,52 @@ def test_wheels_cover_supported_cpython_versions_on_every_platform() -> None:
     assert "name: dist-wheel-${{ matrix.target }}-py${{ matrix.python-version }}" in wheels
 
 
+def test_direct_publish_ancestry_guard_against_real_git_history(tmp_path: Path) -> None:
+    verify = _job_block(_workflow_text(), "verify-release")
+    name = "Verify release source ancestry for direct publication"
+    step = verify.split(f"- name: {name}\n", 1)[1].split("\n      - ", 1)[0]
+    script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+    assert verify.index("fetch-depth: 0") < verify.index(name)
+    assert verify.index(name) < verify.index("Require release tag and source commit")
+    assert 'CONTROL_PLANE_COMMIT: ${{ inputs.control_plane_commit }}' in step
+    assert 'shell: bash --noprofile --norc -e -o pipefail {0}' in step
+    assert "fetch-tags: true" in verify
+    # Execute only the actual guard; no workflow tag/sign/publish command runs.
+    repo = tmp_path / "git-history"
+    repo.mkdir()
+    env = {**os.environ, "GIT_AUTHOR_NAME": "fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+           "GIT_COMMITTER_NAME": "fixture", "GIT_COMMITTER_EMAIL": "fixture@example.invalid"}
+
+    def git(*args: str) -> str:
+        return subprocess.check_output(["git", *args], cwd=repo, env=env, text=True).strip()
+
+    git("init", "-q")
+    git("commit", "--allow-empty", "-qm", "root")
+    root = git("rev-parse", "HEAD")
+    git("commit", "--allow-empty", "-qm", "control")
+    control = git("rev-parse", "HEAD")
+    git("checkout", "--detach", "-q", root)
+    git("commit", "--allow-empty", "-qm", "sibling")
+    sibling = git("rev-parse", "HEAD")
+    absent = "0" * 40
+    cases = [(control, control, control, True), (root, root, control, True),
+             (sibling, sibling, control, False), (control, control, root, False),
+             (root, root, absent, False), (root, absent, control, False),
+             (root, control, control, False)]
+    for index, (checkout, release, caller, allowed) in enumerate(cases):
+        git("checkout", "--detach", "-q", checkout)
+        marker = tmp_path / f"downstream-{index}"
+        result = subprocess.run(
+            ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c",
+             script + '\nprintf reached > "$DOWNSTREAM_MARKER"\n'],
+            cwd=repo, env={**env, "RELEASE_COMMIT": release, "CONTROL_PLANE_COMMIT": caller,
+                           "DOWNSTREAM_MARKER": str(marker)}, capture_output=True, text=True,
+        )
+        assert (result.returncode == 0) is allowed, result.stderr
+        assert marker.exists() is allowed
+        assert git("tag", "--list") == ""
+
+
 def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
     publish_text = _workflow_text()
     release_text = _release_tag_workflow_text()
