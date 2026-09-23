@@ -554,6 +554,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.control_plane_commit }}
+          path: trusted-control
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.release_commit }}
+          path: release-source
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           pattern: dist-*
@@ -604,6 +614,18 @@ jobs:
               raise SystemExit("reproducibility gate failed:\n" + "\n".join(failures))
 
           record = Path("reproducibility-record.tsv")
+          # Existing matrix rows retain the build environment. This job only
+          # binds declarations; its Ubuntu host is not a target closure oracle.
+          import importlib.util
+          import json
+          spec = importlib.util.spec_from_file_location("transport", "trusted-control/scripts/ci/release_artifact_transport.py")
+          transport = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(transport)
+          scope_records = [transport.scope_identity(
+              Path("dist") / row["file"], row["target"], Path("release-source"),
+              os.environ["RELEASE_COMMIT"], row["build_env"],
+          ) for row in rows.values()]
+          Path("release-scope-identities.json").write_text(json.dumps(scope_records, sort_keys=True) + "\n")
           with record.open("w", encoding="utf-8") as stream:
               stream.write(
                   f"# release {os.environ['RELEASE_TAG']} @ {os.environ['RELEASE_COMMIT']}, "
@@ -627,7 +649,9 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: reproducibility-record
-          path: reproducibility-record.tsv
+          path: |
+            reproducibility-record.tsv
+            release-scope-identities.json
 
   # R5b: nothing is tagged, released or published unless this job proves, for
   # this exact run, that the 13 distribution files are the reproducibility-
@@ -651,6 +675,11 @@ jobs:
       RUN_ID: ${{ github.run_id }}
       EXPECTED_WHEEL_LEGS: "x86_64-unknown-linux-gnu-py3.12 x86_64-unknown-linux-gnu-py3.13 x86_64-unknown-linux-gnu-py3.14 aarch64-unknown-linux-gnu-py3.12 aarch64-unknown-linux-gnu-py3.13 aarch64-unknown-linux-gnu-py3.14 universal2-apple-darwin-py3.12 universal2-apple-darwin-py3.13 universal2-apple-darwin-py3.14 x86_64-pc-windows-msvc-py3.12 x86_64-pc-windows-msvc-py3.13 x86_64-pc-windows-msvc-py3.14"
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.release_commit }}
+          path: release-source
+          persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.control_plane_commit }}
@@ -888,6 +917,15 @@ jobs:
               failures.append(f"the 12 sdist seals diverge: {sorted(map(str, sealed_sdists))!r}")
           if failures:
               raise SystemExit("release admission refused:\n" + "\n".join(failures))
+
+          # The same immutable-ID transport receipt covers this JSON alongside
+          # the TSV. Recompute its source/archive bindings before any admission.
+          scope_records = json.loads(Path("downloaded/reproducibility-record/release-scope-identities.json").read_text())
+          distribution_paths = {
+              row["file"]: Path("downloaded") / ("dist-sdist" if leg == "sdist" else f"dist-wheel-{leg}") / row["file"]
+              for leg, row in rows.items()
+          }
+          transport.verify_scope_identities(scope_records, rows, distribution_paths, Path("release-source"), commit)
 
           # The current central handoff does not authenticate a same-run full
           # licence/Strix verdict or platform-complete inventory. A caller can
