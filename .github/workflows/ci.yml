@@ -76,10 +76,11 @@ jobs:
 
   gpu-smoke:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    # One bounded explicit-GPU parity test remains on every PR. The full
-    # paper-design GPU recovery study runs in the scheduled/manual workflow.
+    # Exact GPU and study-precision nodes below own every corresponding
+    # non-execution allowlist entry. The full paper-design recovery study
+    # remains in the scheduled/manual workflow.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 240
     env:
       WGPU_BACKEND: vulkan
       XDG_RUNTIME_DIR: /tmp/fast-mlsirm-xdg-runtime
@@ -137,8 +138,19 @@ jobs:
         run: vulkaninfo --summary
       - run: python -m pip install --require-hashes -r requirements/ci.txt
       - run: python -m pip install --no-deps --no-build-isolation -e .
-      - name: Run explicit GPU parity without a skip
-        run: pytest tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely -q --junitxml=gpu-junit.xml
+      - name: Run exact GPU and study-precision evidence without a skip
+        env:
+          STAGE5_HIGH_Q: "1"
+          STAGE5_HIGH_Q_BOOTSTRAP_REPS: "2"
+        run: |
+          pytest -q --junitxml=gpu-junit.xml \
+            tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely \
+            tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q121 \
+            tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241 \
+            tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q481 \
+            tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241_wide_items_metal_workgroups \
+            tests/test_bifactor_gpu_high_q.py::test_bifactor_cpu_q121_vs_q241_agree \
+            tests/test_bifactor_bootstrap_benchmark.py::test_joint_bootstrap_cpu_vs_gpu_wall_time_q121
       - name: Reject skipped GPU evidence
         run: |
           python - <<'PY'
@@ -170,11 +182,29 @@ jobs:
       # pip is version-pinned so the toolchain used to resolve the fuzz extras
       # is reproducible (OpenSSF Scorecard pinned-dependencies hardening).
       - run: python -m pip install --upgrade "pip==26.1.2"
-      # Editable install of the repo-under-test. pip does not support
-      # --require-hashes for editable/local installs, so the fuzz extras
-      # (atheris plus test-only hypothesis) are resolved from the pinned pip
-      # above rather than a hash-locked requirements file.
-      - run: python -m pip install -e '.[fuzz]'
+      # The property checks below use pytest from the dev extra; fuzz alone
+      # provides Atheris and Hypothesis, but not the pytest command.
+      # Editable/local installs cannot use --require-hashes.
+      - run: python -m pip install -e '.[dev,fuzz]'
+      - name: Run Hypothesis input properties without a skip
+        run: pytest tests/test_fuzz_properties.py -q --junitxml=fuzz-properties-junit.xml
+      - name: Reject skipped Hypothesis evidence
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+
+          root = ElementTree.parse(Path("fuzz-properties-junit.xml")).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          tests = sum(int(suite.attrib.get("tests", "0")) for suite in suites)
+          skipped = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)
+          if tests < 1:
+              raise SystemExit("Hypothesis evidence did not execute a test")
+          if skipped != 0:
+              raise SystemExit(
+                  f"Hypothesis evidence contained {skipped} skipped test(s)"
+              )
+          PY
       - name: Fuzz load_factor_csv (CSV parser)
         run: |
           python fuzz/atheris/fuzz_load_factor_csv.py \

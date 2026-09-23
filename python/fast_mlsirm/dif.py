@@ -1095,17 +1095,19 @@ def breslow_day_dif(
 # callers (and this module's own docstring-content regression tests) still
 # rely on the full interpretation caveats -- append the renamed function's
 # docstring rather than discarding it.
-for _old_name, _new_name in (
-    ("mantel_haenszel_dif", "detect_dif_mantel_haenszel"),
-    ("mantel_haenszel_dif_purified", "detect_dif_mantel_haenszel_purified"),
-    ("logistic_dif_purified", "detect_dif_logistic_purified"),
-    ("logistic_dif", "detect_dif_logistic"),
-    ("mantel_smd_dif", "detect_dif_mantel_smd"),
-    ("gmh_dif", "detect_dif_gmh"),
-    ("breslow_day_dif", "detect_dif_breslow_day"),
+# The pairs name the function objects directly rather than indexing globals()
+# by string. Both forms read the same literal table, but the indirect one trips
+# the dangerous-globals-use SAST rule, which cannot see that the keys are
+# literals three lines above; referencing the functions removes the lookup
+# entirely and lets a typo fail at import instead of at runtime.
+for _old_fn, _new_fn in (
+    (mantel_haenszel_dif, detect_dif_mantel_haenszel),
+    (mantel_haenszel_dif_purified, detect_dif_mantel_haenszel_purified),
+    (logistic_dif_purified, detect_dif_logistic_purified),
+    (logistic_dif, detect_dif_logistic),
+    (mantel_smd_dif, detect_dif_mantel_smd),
+    (gmh_dif, detect_dif_gmh),
+    (breslow_day_dif, detect_dif_breslow_day),
 ):
-    _globals_dict = globals()
-    _old_fn = _globals_dict[_old_name]  # nosemgrep: python.lang.security.dangerous-globals-use.dangerous-globals-use
-    _new_fn = _globals_dict[_new_name]  # nosemgrep: python.lang.security.dangerous-globals-use.dangerous-globals-use
     _old_fn.__doc__ = f"{_old_fn.__doc__}\n\n{_new_fn.__doc__}"
-del _old_name, _new_name, _old_fn, _new_fn
+del _old_fn, _new_fn
