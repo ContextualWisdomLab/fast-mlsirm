@@ -1374,6 +1374,16 @@ pub fn fit_nominal(
 
 /// Per-person polytomous person-fit result.
 pub struct PolyPersonFit {
+    /// Reporting metadata schema; not a numerical-estimation success flag.
+    pub validity_schema_version: u8,
+    /// The uncorrected statistic has no reporting acceptance assigned here.
+    pub lz_validity: &'static str,
+    /// The EAP correction remains unverified; also governs `flagged`.
+    pub corrected_validity: &'static str,
+    /// Conservative bundle-level compatibility flag for corrected results.
+    pub valid_person_fit: bool,
+    /// Corrected values are available for diagnostics, not validated reporting.
+    pub diagnostic_only: bool,
     /// Standardized log-likelihood `l_z` per person.
     pub lz: Vec<f64>,
     /// Snijders (2001) `l_z*` corrected for the estimated trait.
@@ -1555,6 +1565,11 @@ fn poly_person_fit_impl(
         }
     }
     Ok(PolyPersonFit {
+        validity_schema_version: 1,
+        lz_validity: "not_assessed_uncorrected",
+        corrected_validity: "unverified_polytomous_eap_correction",
+        valid_person_fit: false,
+        diagnostic_only: true,
         lz,
         lz_star,
         theta_eap,

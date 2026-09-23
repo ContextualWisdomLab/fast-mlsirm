@@ -7334,6 +7334,14 @@ fn poly_person_fit(
     out.set_item("lz_star", res.lz_star)?;
     out.set_item("theta_eap", res.theta_eap)?;
     out.set_item("flagged", res.flagged)?;
+    out.set_item("validity_schema_version", res.validity_schema_version)?;
+    out.set_item("valid_person_fit", res.valid_person_fit)?;
+    out.set_item("diagnostic_only", res.diagnostic_only)?;
+    let statistic_validity = pyo3::types::PyDict::new(py);
+    statistic_validity.set_item("lz", res.lz_validity)?;
+    statistic_validity.set_item("lz_star", res.corrected_validity)?;
+    statistic_validity.set_item("flagged", res.corrected_validity)?;
+    out.set_item("statistic_validity", statistic_validity)?;
     Ok(out.into())
 }
 

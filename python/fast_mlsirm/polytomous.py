@@ -1630,8 +1630,15 @@ def compute_person_fit_polytomous(
     ``PolytomousFit`` or duck-typed fit, ``converged=False`` or an unknown
     convergence field raises unless ``allow_unconverged=True``. Such results
     retain ``flagged`` for diagnostics but are not valid for research reporting:
-    ``valid_person_fit=False`` and ``diagnostic_only=True``. Converged results
-    have the opposite markers. The override preserves termination provenance.
+    ``valid_person_fit=False`` and ``diagnostic_only=True``. These conservative
+    bundle markers also apply to converged fits: convergence does not validate
+    the polytomous EAP correction. ``validity_schema_version=1`` and the
+    ``statistic_validity`` mapping distinguish ``lz`` (``not_assessed_uncorrected``)
+    from ``lz_star`` and its derived ``flagged`` decision
+    (``unverified_polytomous_eap_correction``). No statistic receives reporting
+    acceptance from this producer. This does not assert that the uncorrected
+    ``lz`` has the correction's defect. The override preserves termination
+    provenance and cannot opt into reporting validity.
     Reduces to the binary l_z at ``n_cat = 2``. Low
     (negative) values indicate poor person fit. Also returns ``n_observed``
     and the package/core version, core SHA-256, and fit termination provenance.
@@ -1712,8 +1719,16 @@ def compute_person_fit_polytomous(
         "core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),
         "converged": converged,
         "termination_reason": getattr(fit, "termination_reason", "unknown"),
-        "valid_person_fit": converged is True,
-        "diagnostic_only": converged is not True,
+        # Also protects callers using an older native core that has no validity
+        # metadata. Numerical convergence is deliberately not an acceptance key.
+        "validity_schema_version": 1,
+        "valid_person_fit": False,
+        "diagnostic_only": True,
+        "statistic_validity": {
+            "lz": "not_assessed_uncorrected",
+            "lz_star": "unverified_polytomous_eap_correction",
+            "flagged": "unverified_polytomous_eap_correction",
+        },
     }
 
 
