@@ -50,6 +50,46 @@ def _module():
 
 L = _module()
 
+REVIEWED = json.loads((Path(__file__).parent / "fixtures/license_inventory_reviewed_texts.json").read_text())
+
+
+@pytest.mark.parametrize("row", REVIEWED, ids=lambda r: r["package"])
+def test_reviewed_whole_license_bytes_and_mutations(row):
+    text = row["text"]
+    assert hashlib.sha256(text.encode()).hexdigest() == row["raw_sha256"]
+    normalized = L.re.sub(r"[ \t\r\n]+", " ", text).strip(" \t\r\n")
+    assert hashlib.sha256(normalized.encode()).hexdigest() == row["normalized_sha256"]
+    assert L.verified_standard_text(text) == [row["identifier"]]
+    assert L.verified_standard_text(text.replace("\n", "\r\n")) == [row["identifier"]]
+    for changed in (text.replace("License", "Restriction", 1) if "License" in text else text.replace("software", "hardware", 1),
+                    text + "\nCommercial use is prohibited.", "extra\n" + text, text + "\nextra"):
+        assert changed != text
+        assert L.verified_standard_text(changed) == []
+
+
+@pytest.mark.parametrize("extra", [None, "COPYRIGHT", "missing-mit", "restricted", "LGPL"])
+def test_reviewed_alternative_preserves_all_candidate_validation(tmp_path, extra):
+    args = _rust_args(tmp_path)
+    apache = next(r["text"] for r in REVIEWED if r["identifier"] == "Apache-2.0")
+    files = {"LICENSE-MIT": L.MIT_CANONICAL_BODY, "LICENSE-APACHE": apache}
+    if extra == "COPYRIGHT":
+        files["COPYRIGHT"] = "Except as otherwise noted in individual files; some code derives from libstd."
+    elif extra == "missing-mit":
+        del files["LICENSE-MIT"]
+    elif extra == "restricted":
+        files["LICENSE-APACHE"] += "\nCommercial use is prohibited."
+    elif extra == "LGPL":
+        files["vendor/COPYING"] = LGPL_TEXT
+    digest = _crate(Path(args.cargo_registry_cache), "dep", "1.0", files)
+    lock = Path(args.cargo_lock_workspace)
+    content = lock.read_text()
+    old = L.tomllib.loads(content)["package"][0]["checksum"]
+    lock.write_text(content.replace(old, digest))
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == ("PERMISSIVE" if extra is None else "HOLD")
+    if extra == "missing-mit":
+        assert row["elected_text_present_in_artifact"] is False
+
 
 @pytest.mark.parametrize("expr", ["LicenseRef-unreviewed", "NOASSERTION", "NONE", "", "   ", "MIT AND", "(MIT", "MIT WITH Bogus-exception"])
 def test_unreviewed_or_malformed_expressions_are_unknown(expr):
