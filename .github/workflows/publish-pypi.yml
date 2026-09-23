@@ -713,6 +713,7 @@ jobs:
           import hashlib
           import json
           import os
+          import re
           from pathlib import Path
 
           def sha256(path: Path) -> str:
@@ -728,11 +729,35 @@ jobs:
               raise SystemExit(f"reproducibility record is not bound to {tag} @ {commit}: {lines[:1]!r}")
           header = lines[1].split("\t")
           rows = {}
+          filenames = set()
           for line in lines[2:]:
+              if len(line.split("\t")) != len(header):
+                  raise SystemExit("malformed reproducibility row")
               row = dict(zip(header, line.split("\t")))
+              if row["target"] in rows or row["file"] in filenames:
+                  raise SystemExit("duplicate record target or filename")
+              filenames.add(row["file"])
               rows[row["target"]] = row
           if set(rows) != set(legs) | {"sdist"}:
               raise SystemExit(f"record legs {sorted(rows)!r} are not the 12 wheel legs + sdist")
+          if len(filenames) != 13:
+              raise SystemExit("expected 13 unique distribution filenames")
+          for leg in legs:
+              target, python = leg.rsplit("-py", 1)
+              cp = "cp" + python.replace(".", "")
+              platforms = {
+                  "x86_64-unknown-linux-gnu": r"manylinux(?:2014|_2_[0-9]+)_x86_64",
+                  "aarch64-unknown-linux-gnu": r"manylinux(?:2014|_2_[0-9]+)_aarch64",
+                  "universal2-apple-darwin": r"macosx_[0-9]+_[0-9]+_universal2",
+                  "x86_64-pc-windows-msvc": r"win_amd64",
+              }
+              parts = rows[leg]["file"].removesuffix(".whl").rsplit("-", 3)
+              if (not rows[leg]["file"].endswith(".whl") or len(parts) != 4
+                      or parts[1:3] != [cp, cp]
+                      or not all(re.fullmatch(platforms[target], p) for p in parts[3].split("."))):
+                  raise SystemExit(f"{leg}: wheel filename platform/ABI mismatch")
+          if not rows["sdist"]["file"].endswith(".tar.gz"):
+              raise SystemExit("sdist filename must end with .tar.gz")
           for leg, row in rows.items():
               if row["byte_verified"] != "true" or row["sha256"] != row["rebuild_sha256"]:
                   failures.append(f"{leg}: record row is not byte-verified")

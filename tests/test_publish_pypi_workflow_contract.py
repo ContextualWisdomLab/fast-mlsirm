@@ -432,7 +432,15 @@ def test_tag_and_release_are_created_only_after_release_admission() -> None:
 
 def _admission_fixture(root: Path) -> dict:
     legs = _expected_legs()
-    files = {leg: f"pkg-1.2.3-{leg}.whl" for leg in legs}
+    platforms = {"x86_64-unknown-linux-gnu": "manylinux2014_x86_64",
+                 "aarch64-unknown-linux-gnu": "manylinux2014_aarch64",
+                 "universal2-apple-darwin": "macosx_11_0_universal2",
+                 "x86_64-pc-windows-msvc": "win_amd64"}
+    files = {}
+    for leg in legs:
+        target, version = leg.rsplit("-py", 1)
+        cp = "cp" + version.replace(".", "")
+        files[leg] = f"pkg-1.2.3-{cp}-{cp}-{platforms[target]}.whl"
     files["sdist"] = "pkg-1.2.3.tar.gz"
     payload = {leg: f"bytes of {name}".encode() for leg, name in files.items()}
     sha = {leg: hashlib.sha256(data).hexdigest() for leg, data in payload.items()}
@@ -579,6 +587,32 @@ def test_publication_sinks_consume_only_the_admitted_bytes(tmp_path: Path) -> No
                 assert result.returncode == 0, (sink, result.stderr)
             else:
                 assert result.returncode != 0 and "not the admitted bytes" in result.stderr, (sink, name)
+
+
+def test_admission_rejects_record_collapse_before_dict_coalescing(tmp_path: Path) -> None:
+    for case in ("target", "filename", "abi", "platform"):
+        root = tmp_path / case
+        fixture = _admission_fixture(root)
+        path = root / "record/reproducibility-record.tsv"
+        lines = path.read_text().splitlines()
+        wheel_rows = [i for i, line in enumerate(lines[2:], 2) if "\t" in line and not line.startswith("sdist\t")]
+        first, second = wheel_rows[:2]
+        row = lines[second].split("\t")
+        if case == "target":
+            row[0] = lines[first].split("\t")[0]
+        elif case == "filename":
+            row[5] = lines[first].split("\t")[5]
+        elif case == "abi":
+            fields = row[5].split("-")
+            fields[-2] = "abi3"
+            row[5] = "-".join(fields)
+        else:
+            row[5] = row[5].replace("aarch64", "x86_64")
+        lines[second] = "\t".join(row)
+        path.write_text("\n".join(lines) + "\n")
+        result = _run_admission(root, _BYTES_STEP)
+        assert result.returncode != 0, case
+        assert ("duplicate record" if case in ("target", "filename") else "platform/ABI mismatch") in result.stderr
 
 
 def test_release_admission_ignores_legitimate_non_distribution_artifacts(tmp_path: Path) -> None:
