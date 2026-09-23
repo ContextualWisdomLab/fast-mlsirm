@@ -213,17 +213,27 @@ def test_rejects_invalid_native_expected_total(monkeypatch, native_result) -> No
         )
 
 
-@pytest.mark.parametrize("n_items,n_cat", ((0, 4), (1, 0), (1, 1), (1, 65)))
-def test_native_expected_total_rejects_invalid_dimensions(n_items, n_cat) -> None:
+@pytest.mark.parametrize(
+    "a_general,a_specific,thresholds,n_items,n_cat",
+    (
+        (np.array([]), np.array([]), np.array([]), 0, 4),
+        (np.array([1.0]), np.array([0.5]), np.array([]), 1, 0),
+        (np.array([1.0]), np.array([0.5]), np.array([]), 1, 1),
+        (np.array([1.0]), np.array([0.5]), np.array([1.2, 0.0, -1.2]), 1, 65),
+    ),
+)
+def test_native_expected_total_rejects_invalid_dimensions(
+    a_general, a_specific, thresholds, n_items, n_cat
+) -> None:
     """Direct PyO3 callers cannot reach zero-width threshold chunking."""
     from fast_mlsirm import _core
 
     with pytest.raises(ValueError):
         _core.bifactor_expected_total_score(
             np.array([0.0]),
-            np.array([1.0]),
-            np.array([0.5]),
-            np.array([1.2, 0.0, -1.2]),
+            a_general,
+            a_specific,
+            thresholds,
             n_items,
             n_cat,
             21,
