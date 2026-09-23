@@ -166,79 +166,146 @@ jobs:
           command: sdist
           maturin-version: v1.14.1
           args: --out dist
+      - name: Rebuild sdist for byte-reproducibility check
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+        with:
+          command: sdist
+          maturin-version: v1.14.1
+          args: --out dist-rebuild
       # Historical release tags predate the pyproject include workaround for
       # maturin omitting LICENSE from mixed-layout sdists while still writing
       # License-File metadata. Inject the checked-out LICENSE when missing so
-      # already-cut tags remain publishable without retagging.
+      # already-cut tags remain publishable without retagging. The rewrite pins
+      # the gzip header (mtime = SOURCE_DATE_EPOCH, no embedded file name) and
+      # the injected member's metadata so it is byte-reproducible.
       - name: Ensure LICENSE is present in the sdist
         run: |
           set -euo pipefail
           python - <<'PY'
           from __future__ import annotations
 
+          import gzip
           import io
-          import sys
+          import os
           import tarfile
           from pathlib import Path
 
-          dist = Path("dist")
-          archives = sorted(dist.glob("*.tar.gz"))
-          if len(archives) != 1:
-              raise SystemExit(f"expected exactly one sdist archive, found {archives!r}")
-          archive = archives[0]
+          epoch = os.environ.get("SOURCE_DATE_EPOCH", "")
+          if not epoch.isdigit():
+              raise SystemExit(f"SOURCE_DATE_EPOCH is not set to a release-commit epoch: {epoch!r}")
           license_path = Path("LICENSE")
           if not license_path.is_file():
               raise SystemExit("checked-out release source is missing LICENSE")
           license_bytes = license_path.read_bytes()
 
-          with tarfile.open(archive, "r:gz") as reader:
-              names = reader.getnames()
-              members = reader.getmembers()
-              file_members = {
-                  member.name: reader.extractfile(member).read()
-                  for member in members
-                  if member.isfile()
-              }
+          for dist in (Path("dist"), Path("dist-rebuild")):
+              archives = sorted(dist.glob("*.tar.gz"))
+              if len(archives) != 1:
+                  raise SystemExit(f"expected exactly one sdist archive in {dist}, found {archives!r}")
+              archive = archives[0]
 
-          roots = {name.split("/", 1)[0] for name in names if name}
-          if len(roots) != 1:
-              raise SystemExit(f"sdist must have a single top-level directory, found {sorted(roots)!r}")
-          root = next(iter(roots))
-          license_member = f"{root}/LICENSE"
-          if license_member in file_members:
-              if file_members[license_member] != license_bytes:
-                  raise SystemExit("sdist LICENSE content does not match checked-out LICENSE")
-              print(f"{archive.name} already contains {license_member}")
-              sys.exit(0)
+              with tarfile.open(archive, "r:gz") as reader:
+                  names = reader.getnames()
+                  members = reader.getmembers()
+                  file_members = {
+                      member.name: reader.extractfile(member).read()
+                      for member in members
+                      if member.isfile()
+                  }
 
-          rebuilt = archive.with_suffix(archive.suffix + ".rewritten")
-          with tarfile.open(archive, "r:gz") as reader, tarfile.open(rebuilt, "w:gz") as writer:
-              for member in members:
-                  payload = reader.extractfile(member) if member.isfile() else None
-                  writer.addfile(member, payload)
-              info = tarfile.TarInfo(name=license_member)
-              info.size = len(license_bytes)
-              info.mode = 0o644
-              writer.addfile(info, io.BytesIO(license_bytes))
+              roots = {name.split("/", 1)[0] for name in names if name}
+              if len(roots) != 1:
+                  raise SystemExit(f"sdist must have a single top-level directory, found {sorted(roots)!r}")
+              root = next(iter(roots))
+              license_member = f"{root}/LICENSE"
+              if license_member in file_members:
+                  if file_members[license_member] != license_bytes:
+                      raise SystemExit("sdist LICENSE content does not match checked-out LICENSE")
+                  print(f"{archive} already contains {license_member}")
+                  continue
 
-          rebuilt.replace(archive)
-          with tarfile.open(archive, "r:gz") as reader:
-              if license_member not in reader.getnames():
-                  raise SystemExit(f"failed to inject {license_member} into {archive.name}")
-          print(f"injected {license_member} into {archive.name}")
+              rebuilt = archive.with_suffix(archive.suffix + ".rewritten")
+              with (
+                  tarfile.open(archive, "r:gz") as reader,
+                  open(rebuilt, "wb") as raw,
+                  gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=int(epoch)) as compressed,
+                  tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as writer,
+              ):
+                  for member in members:
+                      payload = reader.extractfile(member) if member.isfile() else None
+                      writer.addfile(member, payload)
+                  info = tarfile.TarInfo(name=license_member)
+                  info.size = len(license_bytes)
+                  info.mode = 0o644
+                  info.mtime = int(epoch)
+                  writer.addfile(info, io.BytesIO(license_bytes))
+
+              rebuilt.replace(archive)
+              with tarfile.open(archive, "r:gz") as reader:
+                  if license_member not in reader.getnames():
+                      raise SystemExit(f"failed to inject {license_member} into {archive}")
+              print(f"injected {license_member} into {archive}")
           PY
-      - name: Record sdist digest
+      - name: Compare double-build sdist digests and record them
+        shell: bash
+        env:
+          LEG: sdist
+          ARTIFACT_GLOB: "*.tar.gz"
         run: |
           set -euo pipefail
-          mkdir -p repro-digest
-          for sdist in dist/*.tar.gz; do
-            printf '%s\t%s\t%s\t%s\n' sdist false "$(sha256sum "$sdist" | cut -d' ' -f1)" "$(basename "$sdist")" >> repro-digest/sdist.tsv
-          done
-          cat repro-digest/sdist.tsv
+          python - <<'PY'
+          import hashlib
+          import os
+          import shutil
+          import subprocess
+          from pathlib import Path
+
+          # Claim scope: a clean-target repeat build in the SAME runner and
+          # container environment. This is not independent-environment or
+          # independent-toolchain provenance.
+          leg = os.environ["LEG"]
+          pattern = os.environ["ARTIFACT_GLOB"]
+
+          def digest(directory: str) -> tuple[str, str]:
+              found = sorted(Path(directory).glob(pattern))
+              if len(found) != 1:
+                  raise SystemExit(f"expected exactly one {pattern} in {directory}, found {found!r}")
+              return found[0].name, hashlib.sha256(found[0].read_bytes()).hexdigest()
+
+          epoch = os.environ.get("SOURCE_DATE_EPOCH", "")
+          if not epoch.isdigit():
+              raise SystemExit(f"SOURCE_DATE_EPOCH is not set to a release-commit epoch: {epoch!r}")
+          first = digest("dist")
+          second = digest("dist-rebuild")
+          if first != second:
+              raise SystemExit(f"{leg} is not byte-reproducible: {first!r} != {second!r}")
+
+          images: list[str] = []
+          if os.environ["RUNNER_OS"] == "Linux" and shutil.which("docker"):
+              listing = subprocess.run(
+                  ["docker", "images", "--digests", "--format", "{{.Repository}}@{{.Digest}}"],
+                  capture_output=True, text=True, check=True,
+              ).stdout.split()
+              images = sorted({image for image in listing if "manylinux" in image})
+          if os.environ["RUNNER_OS"] == "Linux" and leg != "sdist" and not images:
+              raise SystemExit(f"could not record the manylinux container digest for {leg}")
+          build_env = ",".join(images) or f"runner:{os.environ.get('ImageOS', 'unknown')}/{os.environ.get('ImageVersion', 'unknown')}"
+
+          name, sha = first
+          out = Path("repro-digest")
+          out.mkdir(exist_ok=True)
+          row = "\t".join([leg, "true", "clean-target-repeat-same-env", sha, second[1], name, build_env])
+          (out / f"{leg}.tsv").write_text(row + "\n", encoding="utf-8")
+          print(row)
+          PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dist-sdist
           path: dist
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: repro-rebuild-sdist
+          path: dist-rebuild
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: repro-digest-sdist
@@ -260,73 +327,61 @@ jobs:
             manylinux: "2014"
             python-version: "3.12"
             interpreter: python3.12
-            verify-reproducible: true
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             manylinux: "2014"
             python-version: "3.13"
             interpreter: python3.13
-            verify-reproducible: false
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             manylinux: "2014"
             python-version: "3.14"
             interpreter: python3.14
-            verify-reproducible: false
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             manylinux: "2014"
             python-version: "3.12"
             interpreter: python3.12
-            verify-reproducible: true
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             manylinux: "2014"
             python-version: "3.13"
             interpreter: python3.13
-            verify-reproducible: false
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             manylinux: "2014"
             python-version: "3.14"
             interpreter: python3.14
-            verify-reproducible: false
           - runner: macos-latest
             target: universal2-apple-darwin
             manylinux: ""
             python-version: "3.12"
             interpreter: python
-            verify-reproducible: true
           - runner: macos-latest
             target: universal2-apple-darwin
             manylinux: ""
             python-version: "3.13"
             interpreter: python
-            verify-reproducible: false
           - runner: macos-latest
             target: universal2-apple-darwin
             manylinux: ""
             python-version: "3.14"
             interpreter: python
-            verify-reproducible: false
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             manylinux: ""
             python-version: "3.12"
             interpreter: python
-            verify-reproducible: true
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             manylinux: ""
             python-version: "3.13"
             interpreter: python
-            verify-reproducible: false
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             manylinux: ""
             python-version: "3.14"
             interpreter: python
-            verify-reproducible: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -347,11 +402,10 @@ jobs:
           maturin-version: v1.14.1
           docker-options: -e SOURCE_DATE_EPOCH
           args: --release --out dist -i ${{ matrix.interpreter }}
-      # Independent second build (fresh cargo target dir) for one leg per
-      # OS/arch family; the digest record marks every other leg as not
-      # byte-verified so one pass is never reported as a pass for all legs.
+      # Clean-target second build (fresh cargo target dir) for EVERY leg. The
+      # reproducibility record fails closed on any publishable artifact
+      # without a matching byte-verified row.
       - name: Rebuild wheel for byte-reproducibility check
-        if: ${{ matrix.verify-reproducible }}
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
         with:
           target: ${{ matrix.target }}
@@ -363,36 +417,53 @@ jobs:
         shell: bash
         env:
           LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
-          VERIFY_REPRODUCIBLE: ${{ matrix.verify-reproducible }}
+          ARTIFACT_GLOB: "*.whl"
         run: |
           set -euo pipefail
           python - <<'PY'
           import hashlib
           import os
+          import shutil
+          import subprocess
           from pathlib import Path
 
-          def digests(directory: str) -> dict[str, str]:
-              wheels = sorted(Path(directory).glob("*.whl"))
-              if len(wheels) != 1:
-                  raise SystemExit(f"expected exactly one wheel in {directory}, found {wheels!r}")
-              return {w.name: hashlib.sha256(w.read_bytes()).hexdigest() for w in wheels}
+          # Claim scope: a clean-target repeat build in the SAME runner and
+          # container environment. This is not independent-environment or
+          # independent-toolchain provenance.
+          leg = os.environ["LEG"]
+          pattern = os.environ["ARTIFACT_GLOB"]
+
+          def digest(directory: str) -> tuple[str, str]:
+              found = sorted(Path(directory).glob(pattern))
+              if len(found) != 1:
+                  raise SystemExit(f"expected exactly one {pattern} in {directory}, found {found!r}")
+              return found[0].name, hashlib.sha256(found[0].read_bytes()).hexdigest()
 
           epoch = os.environ.get("SOURCE_DATE_EPOCH", "")
           if not epoch.isdigit():
               raise SystemExit(f"SOURCE_DATE_EPOCH is not set to a release-commit epoch: {epoch!r}")
-          leg = os.environ["LEG"]
-          verified = os.environ["VERIFY_REPRODUCIBLE"] == "true"
-          first = digests("dist")
-          if verified:
-              second = digests("dist-rebuild")
-              if first != second:
-                  raise SystemExit(f"wheel is not byte-reproducible for {leg}: {first!r} != {second!r}")
+          first = digest("dist")
+          second = digest("dist-rebuild")
+          if first != second:
+              raise SystemExit(f"{leg} is not byte-reproducible: {first!r} != {second!r}")
+
+          images: list[str] = []
+          if os.environ["RUNNER_OS"] == "Linux" and shutil.which("docker"):
+              listing = subprocess.run(
+                  ["docker", "images", "--digests", "--format", "{{.Repository}}@{{.Digest}}"],
+                  capture_output=True, text=True, check=True,
+              ).stdout.split()
+              images = sorted({image for image in listing if "manylinux" in image})
+          if os.environ["RUNNER_OS"] == "Linux" and leg != "sdist" and not images:
+              raise SystemExit(f"could not record the manylinux container digest for {leg}")
+          build_env = ",".join(images) or f"runner:{os.environ.get('ImageOS', 'unknown')}/{os.environ.get('ImageVersion', 'unknown')}"
+
+          name, sha = first
           out = Path("repro-digest")
           out.mkdir(exist_ok=True)
-          (name, sha), = first.items()
-          line = f"{leg}\t{str(verified).lower()}\t{sha}\t{name}\n"
-          (out / f"{leg}.tsv").write_text(line, encoding="utf-8")
-          print(line, end="")
+          row = "\t".join([leg, "true", "clean-target-repeat-same-env", sha, second[1], name, build_env])
+          (out / f"{leg}.tsv").write_text(row + "\n", encoding="utf-8")
+          print(row)
           PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -400,9 +471,15 @@ jobs:
           path: dist
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
+          name: repro-rebuild-${{ matrix.target }}-py${{ matrix.python-version }}
+          path: dist-rebuild
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
           name: repro-digest-${{ matrix.target }}-py${{ matrix.python-version }}
           path: repro-digest
 
+  # Publication gate: release-assets and publish-pypi need this job, so a
+  # publishable artifact without a matching byte-verified row blocks both.
   reproducibility-record:
     name: reproducibility record
     needs: [verify-release, sdist, wheels]
@@ -411,37 +488,74 @@ jobs:
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
           pattern: repro-digest-*
           path: repro-digest
           merge-multiple: true
-      - name: Publish per-target digest record
+      - name: Require a byte-verified row for every publishable artifact
         env:
           RELEASE_COMMIT: ${{ inputs.release_commit }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           SOURCE_DATE_EPOCH: ${{ needs.verify-release.outputs.source_date_epoch }}
         run: |
           set -euo pipefail
-          {
-            echo "# release $RELEASE_TAG @ $RELEASE_COMMIT, SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
-            printf 'target\tbyte_verified\tsha256\tfile\n'
-            sort repro-digest/*.tsv
-          } > reproducibility-record.tsv
-          rows="$(cat repro-digest/*.tsv | grep -c .)"
-          if [ "$rows" -ne 13 ]; then
-            echo "expected 13 digest rows (12 wheels + sdist), found $rows" >&2
-            exit 1
-          fi
-          verified="$(awk -F'\t' '$2 == "true"' repro-digest/*.tsv | wc -l)"
-          {
-            echo "## Release artifact digests"
-            echo
-            echo "Byte-verified by an independent double build: $verified of $rows artifacts. Rows with byte_verified=false were built once and are NOT reproducibility-verified."
-            echo
-            echo '```'
-            cat reproducibility-record.tsv
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          cat reproducibility-record.tsv
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+
+          header = ["target", "byte_verified", "verification", "sha256", "rebuild_sha256", "file", "build_env"]
+          rows = {}
+          for path in sorted(Path("repro-digest").glob("*.tsv")):
+              for line in path.read_text(encoding="utf-8").splitlines():
+                  fields = line.split("\t")
+                  if len(fields) != len(header):
+                      raise SystemExit(f"malformed digest row in {path.name}: {line!r}")
+                  row = dict(zip(header, fields))
+                  if row["file"] in rows:
+                      raise SystemExit(f"duplicate digest row for {row['file']}")
+                  rows[row["file"]] = row
+
+          published = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(Path("dist").iterdir())}
+          if len(published) != 13:
+              raise SystemExit(f"expected 13 publishable artifacts (12 wheels + sdist), found {sorted(published)!r}")
+          failures = []
+          for name, sha in published.items():
+              row = rows.get(name)
+              if row is None:
+                  failures.append(f"{name}: no byte-verification row")
+              elif row["byte_verified"] != "true" or row["sha256"] != sha or row["rebuild_sha256"] != sha:
+                  failures.append(f"{name}: not byte-verified against the published bytes ({row!r}, published {sha})")
+          for name in sorted(set(rows) - set(published)):
+              failures.append(f"{name}: digest row without a publishable artifact")
+          if failures:
+              raise SystemExit("reproducibility gate failed:\n" + "\n".join(failures))
+
+          record = Path("reproducibility-record.tsv")
+          with record.open("w", encoding="utf-8") as stream:
+              stream.write(
+                  f"# release {os.environ['RELEASE_TAG']} @ {os.environ['RELEASE_COMMIT']}, "
+                  f"SOURCE_DATE_EPOCH={os.environ['SOURCE_DATE_EPOCH']}\n"
+              )
+              stream.write("\t".join(header) + "\n")
+              for name in sorted(rows):
+                  stream.write("\t".join(rows[name][key] for key in header) + "\n")
+          summary = (
+              "## Release artifact digests\n\n"
+              f"Byte-verified: {len(rows)} of {len(published)} publishable artifacts; single-built only: 0.\n\n"
+              "Claim scope: every row is a clean-target repeat build in the SAME runner/container "
+              "environment (build_env column). This is NOT independent-environment or "
+              "independent-toolchain provenance.\n\n"
+              "```\n" + record.read_text(encoding="utf-8") + "```\n"
+          )
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
+              stream.write(summary)
+          print(record.read_text(encoding="utf-8"))
+          PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: reproducibility-record
@@ -449,7 +563,7 @@ jobs:
 
   release-assets:
     name: attach release assets
-    needs: [sdist, wheels]
+    needs: [sdist, wheels, reproducibility-record]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -511,7 +625,7 @@ jobs:
 
   publish-pypi:
     name: publish to PyPI
-    needs: [sdist, wheels]
+    needs: [sdist, wheels, reproducibility-record]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: pypi

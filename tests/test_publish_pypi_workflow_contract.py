@@ -1,7 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+import gzip
+import hashlib
+import io
+import os
 import re
+import subprocess
+import sys
+import tarfile
+import textwrap
+import time
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -54,7 +63,7 @@ def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     assert "release tag does not target release_commit" in verify
     assert 'tomllib.load' in verify or 'tomllib.loads' in verify
     assert 'f"v{project[\'version\']}"' in verify
-    assert text.count("maturin-version: v1.14.1") == 3
+    assert text.count("maturin-version: v1.14.1") == 4
 
 
 def test_wheels_cover_supported_cpython_versions_on_every_platform() -> None:
@@ -165,11 +174,17 @@ def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> N
     # same verified build artifacts. Immutable releases skip asset upload
     # without failing the job so a previously failed PyPI publication can be
     # retried to a green overall run.
-    assert "needs: [sdist, wheels]" in assets
-    assert "needs: [sdist, wheels]" in publish
+    assert "needs: [sdist, wheels, reproducibility-record]" in assets
+    assert "needs: [sdist, wheels, reproducibility-record]" in publish
     assert "release-assets" not in publish.split("needs:", 1)[1].split("\n", 1)[0]
     assert "skipping GitHub asset upload" in assets
     assert "skip-existing: true" in publish
+
+
+def _step_python(job: str, step_name: str) -> str:
+    step = job.split(f"- name: {step_name}\n", 1)[1]
+    body = re.split(r"python3? - <<'PY'\n", step, maxsplit=1)[1].split("\n          PY\n", 1)[0]
+    return textwrap.dedent(body)
 
 
 def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> None:
@@ -178,6 +193,8 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     sdist = _job_block(text, "sdist")
     wheels = _job_block(text, "wheels")
     record = _job_block(text, "reproducibility-record")
+    assets = _job_block(text, "release-assets")
+    publish = _job_block(text, "publish-pypi")
 
     # SOURCE_DATE_EPOCH is the committer time of the exact release commit,
     # derived once and fanned out, never the wall clock of the build runner.
@@ -195,39 +212,79 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     assert len(builds) == 2
     for build in builds:
         assert "docker-options: -e SOURCE_DATE_EPOCH\n" in build
+        assert "if:" not in build
 
-    # One leg per OS/arch family is built twice from a fresh target dir and
-    # compared byte-for-byte; the job fails when the digests differ.
-    flags = re.findall(r"target: (\S+)\n(?:            .*\n)*?            verify-reproducible: (true|false)", wheels)
-    assert len(flags) == 12
-    assert sorted(t for t, flag in flags if flag == "true") == sorted(
-        {
-            "x86_64-unknown-linux-gnu",
-            "aarch64-unknown-linux-gnu",
-            "universal2-apple-darwin",
-            "x86_64-pc-windows-msvc",
-        }
-    )
-    rebuild = builds[1]
-    assert "if: ${{ matrix.verify-reproducible }}" in rebuild
-    assert "--out dist-rebuild --target-dir target-rebuild" in rebuild
-    compare = wheels.split("- name: Compare double-build wheel digests and record them", 1)[1]
-    assert 'second = digests("dist-rebuild")' in compare
-    assert "if first != second:" in compare
-    assert "wheel is not byte-reproducible for" in compare
+    # Every publishable artifact (12 wheels + sdist) is rebuilt from a clean
+    # target and compared; no leg may opt out of the double build.
+    assert "verify-reproducible" not in wheels
+    assert "--out dist-rebuild --target-dir target-rebuild" in builds[1]
+    assert "- name: Rebuild sdist for byte-reproducibility check" in sdist
+    assert "args: --out dist-rebuild" in sdist
+    compare_wheel = _step_python(wheels, "Compare double-build wheel digests and record them")
+    compare_sdist = _step_python(sdist, "Compare double-build sdist digests and record them")
+    assert compare_wheel == compare_sdist
+    assert 'second = digest("dist-rebuild")' in compare_wheel
+    assert "if first != second:" in compare_wheel
+    assert "is not byte-reproducible" in compare_wheel
+    assert "clean-target-repeat-same-env" in compare_wheel
+    assert "could not record the manylinux container digest" in compare_wheel
+    assert '"--digests"' in compare_wheel
+    assert "name: repro-rebuild-${{ matrix.target }}-py${{ matrix.python-version }}" in wheels
+    assert "name: repro-rebuild-sdist" in sdist
 
-    # Every artifact gets a digest row that states whether it was byte-verified,
-    # published as a summary and artifact outside the dist-* publish pattern.
-    assert "name: repro-digest-${{ matrix.target }}-py${{ matrix.python-version }}" in wheels
-    assert "name: repro-digest-sdist" in sdist
+    # The record fails closed: every downloaded publishable artifact needs a
+    # byte-verified row whose digests match the published bytes, and both
+    # publication sinks depend on it.
+    gate = _step_python(record, "Require a byte-verified row for every publishable artifact")
+    assert "pattern: dist-*" in record
     assert "pattern: repro-digest-*" in record
-    assert "byte_verified" in record
-    assert 'if [ "$rows" -ne 13 ]' in record
-    assert "GITHUB_STEP_SUMMARY" in record
+    assert 'failures.append(f"{name}: no byte-verification row")' in gate
+    assert 'row["sha256"] != sha or row["rebuild_sha256"] != sha' in gate
+    assert "if failures:" in gate
+    assert "len(published) != 13" in gate
+    assert "NOT independent-environment or" in gate
     assert "name: reproducibility-record" in record
+    for sink in (assets, publish):
+        assert "needs: [sdist, wheels, reproducibility-record]" in sink
+        assert "always()" not in sink
+        assert "|| true" not in sink
+    assert "|| true" not in record
 
     # SOURCE_DATE_EPOCH alone is not enough: with the default 16 codegen units
     # fresh builds of the binding crate differ in `.llvm.<hash>` symbol
     # suffixes, so the shipped release profile pins a single codegen unit.
     binding = (REPO_ROOT / "crates" / "fast-mlsirm-py" / "Cargo.toml").read_text(encoding="utf-8")
     assert re.search(r"(?m)^\[profile\.release\]\n(?:(?!\[).*\n)*?codegen-units = 1$", binding)
+
+
+def _sdist_without_license(path: Path) -> None:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as writer:
+        for name, payload in (("fast_mlsirm-0.0.0/PKG-INFO", b"Metadata-Version: 2.4\n"),
+                              ("fast_mlsirm-0.0.0/pyproject.toml", b"[project]\n")):
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            info.mtime = 1_700_000_000
+            writer.addfile(info, io.BytesIO(payload))
+    path.write_bytes(gzip.compress(buffer.getvalue(), mtime=1_700_000_000))
+
+
+def test_historical_sdist_license_injection_is_byte_reproducible(tmp_path: Path) -> None:
+    script = _step_python(_job_block(_workflow_text(), "sdist"), "Ensure LICENSE is present in the sdist")
+    env = {**os.environ, "SOURCE_DATE_EPOCH": "1790068752"}
+    outputs = []
+    for attempt in range(2):
+        work = tmp_path / f"run{attempt}"
+        for dist in ("dist", "dist-rebuild"):
+            (work / dist).mkdir(parents=True)
+            _sdist_without_license(work / dist / "fast_mlsirm-0.0.0.tar.gz")
+        (work / "LICENSE").write_bytes((REPO_ROOT / "LICENSE").read_bytes())
+        if attempt:
+            time.sleep(1.1)  # a wall-clock gzip mtime would now differ
+        subprocess.run([sys.executable, "-c", script], cwd=work, env=env, check=True)
+        for dist in ("dist", "dist-rebuild"):
+            archive = work / dist / "fast_mlsirm-0.0.0.tar.gz"
+            with tarfile.open(archive, "r:gz") as reader:
+                assert reader.extractfile("fast_mlsirm-0.0.0/LICENSE").read() == (REPO_ROOT / "LICENSE").read_bytes()
+            outputs.append(hashlib.sha256(archive.read_bytes()).hexdigest())
+    assert len(set(outputs)) == 1, outputs
