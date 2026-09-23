@@ -37,6 +37,8 @@ import stat
 import tarfile
 import tomllib
 import zipfile
+from email import policy
+from email.parser import BytesParser
 from pathlib import Path
 
 LICENSE_NAME = re.compile(r"^(licen[cs]e|copying|notice|authors|copyright|unlicense)", re.IGNORECASE)
@@ -384,7 +386,7 @@ def normalized_archive_path(path: str) -> str | None:
     if not path or "\\" in path or "\x00" in path or path.startswith("/"):
         return None
     normalized = posixpath.normpath(path)
-    if normalized in ("", ".") or normalized.startswith("../"):
+    if normalized in ("", ".", "..") or normalized.startswith("../"):
         return None
     if normalized != path.rstrip("/"):
         return None
@@ -663,12 +665,33 @@ def python_artifact_evidence(path: Path) -> dict:
             )
             return ev
         meta = metadata_paths[0]
-        for line in zf.read(members[meta]).decode("utf-8", "replace").splitlines():
-            if not line:
-                break
-            k, _, v = line.partition(": ")
-            if k in ("License", "License-Expression", "License-File") or (k == "Classifier" and v.startswith("License")):
-                ev["metadata"].setdefault(k, []).append(v)
+        metadata_message = BytesParser(policy=policy.default).parsebytes(
+            zf.read(members[meta]), headersonly=True
+        )
+        metadata_defects = list(metadata_message.defects)
+        metadata_defects.extend(
+            defect
+            for header in metadata_message.values()
+            for defect in getattr(header, "defects", ())
+        )
+        if metadata_defects:
+            ev["evidence_errors"].append(
+                "METADATA header parser reported defects: "
+                + ", ".join(type(defect).__name__ for defect in metadata_defects)
+            )
+        for key in ("License", "License-Expression", "License-File"):
+            values = [str(value).strip() for value in metadata_message.get_all(key, [])]
+            if values:
+                ev["metadata"][key] = values
+        classifiers = [
+            str(value).strip() for value in metadata_message.get_all("Classifier", [])
+            if str(value).strip().startswith("License")
+        ]
+        if classifiers:
+            ev["metadata"]["Classifier"] = classifiers
+        for singleton in ("License", "License-Expression"):
+            if len(ev["metadata"].get(singleton, [])) > 1:
+                ev["evidence_errors"].append(f"duplicate METADATA {singleton} declaration")
         declared_values = ev["metadata"].get("License-File", [])
         if len(declared_values) != len(set(declared_values)):
             ev["evidence_errors"].append("duplicate METADATA License-File declaration")

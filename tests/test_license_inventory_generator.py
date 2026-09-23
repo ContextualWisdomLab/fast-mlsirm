@@ -453,7 +453,52 @@ def test_metadata_declared_custom_license_file_is_consumed(tmp_path):
     assert "terms.txt" in " ".join(row["hold_reasons"])
 
 
-@pytest.mark.parametrize("declared", ["missing.txt", "../LICENSE", "/LICENSE", r"dir\LICENSE"])
+@pytest.mark.parametrize(
+    "header",
+    [
+        "License-File:terms.txt",
+        "license-file: terms.txt",
+        "License-File:\tterms.txt",
+        "License-File:\n terms.txt",
+    ],
+)
+def test_metadata_license_file_uses_standard_header_parsing(tmp_path, header):
+    """Whitespace, case, and folding cannot make a declared file disappear."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+
+    def writer(zf):
+        zf.writestr(
+            "pkg-1.0.dist-info/METADATA",
+            f"Metadata-Version: 2.4\nName: pkg\nVersion: 1.0\n{header}\n\n",
+        )
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+        zf.writestr("pkg-1.0.dist-info/licenses/terms.txt", "Commercial use is prohibited.\n")
+
+    _replace_wheel(args, writer)
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert "terms.txt" in " ".join(row["hold_reasons"])
+
+
+def test_metadata_parser_defect_holds(tmp_path):
+    """Malformed metadata cannot fall back to a permissive partial parse."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+
+    def writer(zf):
+        zf.writestr(
+            "pkg-1.0.dist-info/METADATA",
+            "Metadata-Version: 2.4\nName: pkg\nMalformed header\nLicense-File: terms.txt\n\n",
+        )
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+        zf.writestr("pkg-1.0.dist-info/licenses/terms.txt", MIT_TEXT)
+
+    _replace_wheel(args, writer)
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert "parser reported defects" in " ".join(row["vendored_native_license_holds"])
+
+
+@pytest.mark.parametrize("declared", ["missing.txt", "..", "../LICENSE", "/LICENSE", r"dir\LICENSE"])
 def test_invalid_or_missing_metadata_license_file_holds(tmp_path, declared):
     args = _python_args(tmp_path, expression="MIT", license_text=False)
 
