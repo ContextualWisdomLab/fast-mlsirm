@@ -836,9 +836,18 @@ fn gauss_hermite_probabilists(n: usize) -> Result<(Vec<f64>, Vec<f64>), String> 
     tql2_first_row(&mut d, &mut e, &mut z1)?;
 
     let mut pairs: Vec<(f64, f64)> = d.iter().zip(z1.iter()).map(|(&x, &z)| (x, z * z)).collect();
-    pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).expect("eigenvalues are finite"));
+    if pairs
+        .iter()
+        .any(|(node, weight)| !node.is_finite() || !weight.is_finite() || *weight < 0.0)
+    {
+        return Err("Gauss-Hermite rule contains non-finite nodes or invalid weights".into());
+    }
+    pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
 
     let weight_sum: f64 = pairs.iter().map(|p| p.1).sum();
+    if !weight_sum.is_finite() || weight_sum <= 0.0 {
+        return Err("Gauss-Hermite weights must have a finite positive sum".into());
+    }
     let mut nodes: Vec<f64> = pairs.iter().map(|p| p.0).collect();
     let mut weights: Vec<f64> = pairs.iter().map(|p| p.1 / weight_sum).collect();
 
@@ -857,7 +866,28 @@ fn gauss_hermite_probabilists(n: usize) -> Result<(Vec<f64>, Vec<f64>), String> 
     if n % 2 == 1 {
         nodes[n / 2] = 0.0;
     }
+    validate_gh_rule(&nodes, &weights)?;
     Ok((nodes, weights))
+}
+
+fn validate_gh_rule(nodes: &[f64], weights: &[f64]) -> Result<(), String> {
+    if nodes.is_empty() || nodes.len() != weights.len() {
+        return Err("Gauss-Hermite nodes and weights must have equal non-zero lengths".into());
+    }
+    if nodes.iter().any(|node| !node.is_finite()) {
+        return Err("Gauss-Hermite nodes must be finite".into());
+    }
+    if weights
+        .iter()
+        .any(|weight| !weight.is_finite() || *weight < 0.0)
+    {
+        return Err("Gauss-Hermite weights must be finite and non-negative".into());
+    }
+    let weight_sum: f64 = weights.iter().sum();
+    if !weight_sum.is_finite() || weight_sum <= 0.0 {
+        return Err("Gauss-Hermite weights must have a finite positive sum".into());
+    }
+    Ok(())
 }
 
 static GH_CACHE: OnceLock<Mutex<HashMap<usize, &'static (Vec<f64>, Vec<f64>)>>> = OnceLock::new();
@@ -881,7 +911,7 @@ fn gh_rule_computed(q: usize) -> Result<(&'static [f64], &'static [f64]), String
 }
 
 fn resolve_gh_rule(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
-    match q {
+    let rule = match q {
         0 => Err("quadrature node count must be >= 1".to_string()),
         7 => Ok((&GH_NODES_7, &GH_WEIGHTS_7)),
         11 => Ok((&GH_NODES_11, &GH_WEIGHTS_11)),
@@ -892,7 +922,9 @@ fn resolve_gh_rule(q: usize) -> Result<(&'static [f64], &'static [f64]), String>
         61 => Ok(gh_rule_61()),
         81 => Ok(gh_rule_81()),
         _ => gh_rule_computed(q),
-    }
+    }?;
+    validate_gh_rule(rule.0, rule.1)?;
+    Ok(rule)
 }
 
 /// Any node count `q >= 1` is supported (#1929: no table, no cap); `None`

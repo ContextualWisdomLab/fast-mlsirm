@@ -369,6 +369,58 @@ pub fn polytomous_predictions(
     })
 }
 
+/// Expected total GRM score at caller-supplied general-factor values, with
+/// each item's orthogonal specific factor integrated by the shared standard-
+/// normal Gauss-Hermite rule.
+pub fn bifactor_expected_total_score(
+    theta: &[f64],
+    a_general: &[f64],
+    a_specific: &[f64],
+    thresholds: &[f64],
+    n_items: usize,
+    n_cat: usize,
+    q_specific: usize,
+) -> Result<Vec<f64>, String> {
+    if theta.is_empty() || theta.iter().any(|value| !value.is_finite()) {
+        return Err("theta must be a non-empty finite vector".into());
+    }
+    if a_specific.len() != n_items || a_specific.iter().any(|value| !value.is_finite()) {
+        return Err("a_specific must contain one finite value per item".into());
+    }
+    validate_poly_item_parameters(
+        a_general,
+        thresholds,
+        n_items,
+        n_cat,
+        PolyModel::Grm,
+    )?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule(q_specific, "q_specific")?;
+    let mut totals = Vec::with_capacity(theta.len());
+    for &general_theta in theta {
+        let mut total = 0.0_f64;
+        for item in 0..n_items {
+            let item_thresholds =
+                &thresholds[item * (n_cat - 1)..(item + 1) * (n_cat - 1)];
+            let mut item_mean = 0.0_f64;
+            for (&specific_theta, &weight) in nodes.iter().zip(weights.iter()) {
+                let base = a_general[item] * general_theta + a_specific[item] * specific_theta;
+                let expected = grm_logprobs(base, item_thresholds)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(category, log_probability)| category as f64 * log_probability.exp())
+                    .sum::<f64>();
+                item_mean += weight * expected;
+            }
+            total += item_mean;
+        }
+        if !total.is_finite() {
+            return Err("bifactor expected total score is not finite".into());
+        }
+        totals.push(total);
+    }
+    Ok(totals)
+}
+
 /// Result of [`fit_poly_unidim`]. `slope[i]` is item `i`'s discrimination `a_i`;
 /// `cat_params[i]` holds the `K-1` free category parameters (GPCM additive
 /// intercepts, or GRM cumulative thresholds). `n_iter` counts completed M-steps;

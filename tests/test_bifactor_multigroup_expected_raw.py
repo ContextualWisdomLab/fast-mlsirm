@@ -168,10 +168,48 @@ def test_monotonicity_check_reads_the_same_kernel() -> None:
     assert report.monotone
 
 
+def test_high_order_shared_rule_returns_a_finite_stable_curve() -> None:
+    """The Rust rule remains finite beyond NumPy hermegauss's failure order."""
+    grid = np.linspace(-3.0, 3.0, 7)
+    high = predict_bifactor_expected_total_score(
+        _anchored(), grid, q_specific=481
+    )
+    reference = predict_bifactor_expected_total_score(
+        _anchored(), grid, q_specific=121
+    )
+    assert np.all(np.isfinite(high))
+    np.testing.assert_allclose(high, reference, atol=1e-9, rtol=0.0)
+
+
 def test_rejects_non_finite_theta() -> None:
     with pytest.raises(ValueError):
         predict_bifactor_expected_total_score(
             _anchored(), np.array([0.0, np.nan]), q_specific=41
+        )
+
+
+@pytest.mark.parametrize(
+    "native_result",
+    (
+        np.array([0.0, np.nan]),
+        np.array([0.0, np.inf]),
+        np.array([0.0]),
+        np.array([[0.0, 1.0]]),
+    ),
+)
+def test_rejects_invalid_native_expected_total(monkeypatch, native_result) -> None:
+    """The public consumer rejects malformed or non-finite FFI results."""
+    import fast_mlsirm.polytomous as polytomous
+
+    class _Core:
+        @staticmethod
+        def bifactor_expected_total_score(*args):
+            return native_result
+
+    monkeypatch.setattr(polytomous, "_core_module", lambda: _Core())
+    with pytest.raises(ValueError, match="wrong shape|not finite"):
+        predict_bifactor_expected_total_score(
+            _anchored(), np.array([-1.0, 1.0]), q_specific=41
         )
 
 

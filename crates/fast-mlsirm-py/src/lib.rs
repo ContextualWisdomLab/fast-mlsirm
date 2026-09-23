@@ -7117,6 +7117,31 @@ fn polytomous_predictions(
     Ok(out.into())
 }
 
+/// Bifactor GRM expected total scores with specific-factor integration owned
+/// by the shared Rust quadrature and polytomous kernels.
+#[pyfunction]
+#[pyo3(signature = (theta, a_general, a_specific, thresholds, n_items, n_cat, q_specific))]
+fn bifactor_expected_total_score(
+    theta: PyReadonlyArray1<'_, f64>,
+    a_general: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    thresholds: PyReadonlyArray1<'_, f64>,
+    n_items: usize,
+    n_cat: usize,
+    q_specific: usize,
+) -> PyResult<Vec<f64>> {
+    mlsirm_core::poly::bifactor_expected_total_score(
+        theta.as_slice()?,
+        a_general.as_slice()?,
+        a_specific.as_slice()?,
+        thresholds.as_slice()?,
+        n_items,
+        n_cat,
+        q_specific,
+    )
+    .map_err(PyValueError::new_err)
+}
+
 /// Unidimensional polytomous marginal-EM fit (Rust compute path). `model` is
 /// "grm" (default) or "gpcm"; `y` holds integer categories `0..n_cat-1`.
 #[pyfunction]
@@ -10654,6 +10679,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gpcm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(polytomous_predictions, m)?)?;
+    m.add_function(wrap_pyfunction!(bifactor_expected_total_score, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal, m)?)?;

@@ -693,27 +693,27 @@ def predict_bifactor_expected_total_score(
         q_specific, "q_specific", 1, MAX_POLY_QUADRATURE_POINTS
     )
 
-    nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
-    weights = weights / weights.sum()
-    unit_slope = np.ones(1, dtype=np.float64)
-
-    expected_total = np.zeros(values.size, dtype=np.float64)
-    for item in range(a_general.shape[0]):
-        base = (
-            a_general[item] * values[:, None] + a_specific[item] * nodes[None, :]
+    core = _core_module()
+    if core is None or not hasattr(core, "bifactor_expected_total_score"):
+        raise RuntimeError(
+            "bifactor expected total scores require the compiled Rust core"
         )
-        cell = PolytomousFit(
-            model="grm",
-            slope=unit_slope,
-            cat_params=threshold[item : item + 1],
-            loglik=float("nan"),
-            n_iter=0,
-            converged=True,
-            termination_reason="marginalized",
-        )
-        expected = predict_expected_response_polytomous(cell, base.reshape(-1))
-        expected_total += (expected.reshape(base.shape) * weights[None, :]).sum(axis=1)
-
+    expected_total = np.asarray(
+        core.bifactor_expected_total_score(
+            values,
+            a_general,
+            a_specific,
+            threshold.reshape(-1),
+            int(a_general.size),
+            int(threshold.shape[1]) + 1,
+            nodes_requested,
+        ),
+        dtype=np.float64,
+    )
+    if expected_total.shape != values.shape:
+        raise ValueError("Rust bifactor expected-total result has the wrong shape")
+    if not np.all(np.isfinite(expected_total)):
+        raise ValueError("Rust bifactor expected-total result is not finite")
     return expected_total
 
 

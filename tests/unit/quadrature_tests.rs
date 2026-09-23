@@ -65,6 +65,17 @@ fn zero_nodes_is_rejected_with_a_named_error() {
 }
 
 #[test]
+fn invalid_rule_shapes_and_masses_fail_closed() {
+    assert!(validate_gh_rule(&[], &[]).is_err());
+    assert!(validate_gh_rule(&[0.0], &[]).is_err());
+    assert!(validate_gh_rule(&[f64::NAN], &[1.0]).is_err());
+    assert!(validate_gh_rule(&[0.0], &[f64::INFINITY]).is_err());
+    assert!(validate_gh_rule(&[0.0], &[-1.0]).is_err());
+    assert!(validate_gh_rule(&[0.0], &[0.0]).is_err());
+    assert!(validate_gh_rule(&[0.0], &[1.0]).is_ok());
+}
+
+#[test]
 fn computed_rules_agree_with_embedded_tables() {
     // The embedded tables (7..=41) were generated independently via
     // numpy.polynomial.hermite_e.hermegauss; recomputing them with the
