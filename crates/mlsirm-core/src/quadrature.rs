@@ -934,10 +934,12 @@ pub(crate) fn gh_rule(q: usize) -> Option<(&'static [f64], &'static [f64])> {
 }
 
 fn resolve_gh_rule_unidim(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
-    match q {
+    let rule = match q {
         121 => Ok(gh_rule_121()),
         _ => resolve_gh_rule(q),
-    }
+    }?;
+    validate_gh_rule(rule.0, rule.1)?;
+    Ok(rule)
 }
 
 pub(crate) fn gh_rule_unidim(q: usize) -> Option<(&'static [f64], &'static [f64])> {

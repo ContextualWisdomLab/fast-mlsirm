@@ -45,6 +45,12 @@ fn dense_unidimensional_rule_is_normalized_and_symmetric() {
     }
 }
 
+#[test]
+fn dedicated_121_rule_passes_the_shared_validator() {
+    let (nodes, weights) = resolve_gh_rule_unidim(121).unwrap();
+    validate_gh_rule(nodes, weights).unwrap();
+}
+
 /// #1929: node count must no longer be capped at 41. Any n >= 1 is
 /// generated on demand via Golub & Welsch (1969) (see module-level comment
 /// in quadrature.rs for full citations).

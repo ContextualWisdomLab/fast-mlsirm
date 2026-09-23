@@ -384,6 +384,12 @@ pub fn bifactor_expected_total_score(
     if theta.is_empty() || theta.iter().any(|value| !value.is_finite()) {
         return Err("theta must be a non-empty finite vector".into());
     }
+    if n_items == 0 || n_cat < 2 {
+        return Err("n_items must be positive and n_cat must be at least 2".into());
+    }
+    if n_cat > POLY_MAX_CAT {
+        return Err(format!("n_cat must be in 2..={POLY_MAX_CAT}"));
+    }
     if a_specific.len() != n_items || a_specific.iter().any(|value| !value.is_finite()) {
         return Err("a_specific must contain one finite value per item".into());
     }
@@ -395,6 +401,21 @@ pub fn bifactor_expected_total_score(
         PolyModel::Grm,
     )?;
     let (nodes, weights) = crate::quadrature::require_gh_rule(q_specific, "q_specific")?;
+    let integration_points = crate::checked_mul_usize(
+        theta.len(),
+        nodes.len(),
+        "theta count * q_specific exceeds the expected-score buffer size",
+    )?;
+    let probability_cells = crate::checked_mul_usize(
+        integration_points,
+        n_cat,
+        "expected-score cells * n_cat exceeds the probability buffer size",
+    )?;
+    if probability_cells > POLY_MAX_PREDICTION_CELLS {
+        return Err(format!(
+            "polytomous prediction grid of {probability_cells} cells exceeds the 20,000,000 prediction-cell limit"
+        ));
+    }
     let mut totals = Vec::with_capacity(theta.len());
     for &general_theta in theta {
         let mut total = 0.0_f64;

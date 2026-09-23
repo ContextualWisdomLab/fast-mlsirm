@@ -3126,4 +3126,16 @@ fn bifactor_expected_total_rejects_invalid_native_inputs() {
         21,
     )
     .is_err());
+    for &(n_items, n_cat) in &[(0, 4), (1, 0), (1, 1), (1, POLY_MAX_CAT + 1)] {
+        assert!(bifactor_expected_total_score(
+            &[0.0],
+            &[1.0],
+            &[0.5],
+            &thresholds,
+            n_items,
+            n_cat,
+            21,
+        )
+        .is_err());
+    }
 }
