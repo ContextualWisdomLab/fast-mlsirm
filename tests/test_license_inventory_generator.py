@@ -315,6 +315,42 @@ def test_vendored_native_unfingerprinted_label_without_grant_holds(tmp_path, nat
     assert "no verified elected grant" in row["vendored_native_license_holds"][0]
 
 
+@pytest.mark.parametrize(
+    "needle,replacement",
+    [
+        (b"Name: native-component", b"Unscoped permission statement\nName: native-component"),
+        (b"Files: pkg.libs/libexample.so", b"Files: pkg.libs/libexample.so\n continuation"),
+        (b"License: MIT", b"Intermediate statement\nLicense: MIT"),
+        (b"License: MIT", b"Name: duplicate\nFiles: pkg.libs/libexample.so\nLicense: MIT"),
+        (b" MIT License", b" MIT License\nUnindented middle statement"),
+        (b" SOFTWARE.\n", b" SOFTWARE.\nTrailing statement\n"),
+    ],
+)
+def test_vendored_native_notice_rejects_unparsed_nonblank_bytes(tmp_path, needle, replacement):
+    """Every nonblank notice byte must belong to the verified header/body grammar."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    _native_wheel(wheel, native_license="MIT", license_body=MIT_TEXT)
+    result = io.BytesIO()
+    with zipfile.ZipFile(wheel) as old, zipfile.ZipFile(result, "w") as new:
+        for entry in old.infolist():
+            data = old.read(entry.filename)
+            if entry.filename.endswith("/NOTICE"):
+                assert needle in data
+                data = data.replace(needle, replacement, 1)
+            new.writestr(entry.filename, data)
+    wheel.write_bytes(result.getvalue())
+    digest = hashlib.sha256(result.getvalue()).hexdigest()
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert row["vendored_native_license_holds"]
+
+
 def test_missing_scope_is_unclassified_gap_not_exclusion(tmp_path):
     """A package without a scope entry is UNCLASSIFIED with unknown scope, and a gap."""
     gaps = []

@@ -566,21 +566,31 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
 
 def parse_notice_stanzas(text: str) -> list[dict]:
     stanzas = []
-    for block in re.split(r"\n(?=Name: )", text):
+    normalized_text = text.replace("\r\n", "\n").replace("\r", "\n")
+    starts = [match.start() for match in re.finditer(r"^Name: ", normalized_text, re.MULTILINE)]
+    prefix_unparsed = bool(starts and normalized_text[:starts[0]].strip())
+    for index, start in enumerate(starts):
+        end = starts[index + 1] if index + 1 < len(starts) else len(normalized_text)
+        block = normalized_text[start:end].rstrip("\n")
         fields = dict(re.findall(r"^(Name|Files|Description|License): (.*)$", block, re.MULTILINE))
         if "Name" in fields and "Files" in fields:
-            body_match = re.search(r"^License: [^\n]*\n(?P<body>.*)$", block, re.MULTILINE | re.DOTALL)
-            body = body_match.group("body") if body_match else ""
-            header = block[:body_match.start("body")] if body_match else block
-            header_fields = re.findall(r"^([^:\n]+):[^\n]*$", header, re.MULTILINE)
-            header_scope_verified = header_fields == ["Name", "Files", "License"]
+            lines = block.splitlines()
+            complete = (
+                len(lines) >= 3
+                and lines[0].startswith("Name: ") and bool(lines[0][len("Name: "):])
+                and lines[1].startswith("Files: ") and bool(lines[1][len("Files: "):])
+                and lines[2].startswith("License: ") and bool(lines[2][len("License: "):])
+                and all(line == "." or line.startswith(" ") for line in lines[3:])
+                and not (index == 0 and prefix_unparsed)
+            )
+            body = "\n".join(lines[3:]) if complete else ""
             # Debian-style notice continuation lines have one indentation
             # column and use a single dot for a blank line.
             body = "\n".join(
                 "" if line.strip() == "." else line[1:] if line.startswith(" ") else line
                 for line in body.splitlines()
             )
-            fields["Verified-Text"] = verified_standard_text(body) if header_scope_verified else []
+            fields["Verified-Text"] = verified_standard_text(body) if complete else []
             stanzas.append(fields)
     return stanzas
 
@@ -599,15 +609,15 @@ def python_artifact_evidence(path: Path) -> dict:
             k, _, v = line.partition(": ")
             if k in ("License", "License-Expression", "License-File") or (k == "Classifier" and v.startswith("License")):
                 ev["metadata"].setdefault(k, []).append(v)
-        notice_text = ""
+        stanzas = []
         for n in names:
             base = n.rsplit("/", 1)[-1]
             if ".dist-info/" in n and LICENSE_NAME.match(base):
                 raw = zf.read(n)
                 text = raw.decode("utf-8", "replace")
-                notice_text += "\n" + text
+                if re.search(r"^Name: ", text, re.MULTILINE):
+                    stanzas.extend(parse_notice_stanzas(text))
                 ev["license_files"].append({"path": n, "sha256": sha256_bytes(raw), "detected": detect(text)})
-        stanzas = parse_notice_stanzas(notice_text)
         for n in names:
             base = n.rsplit("/", 1)[-1]
             if re.search(r"\.(so(\.[0-9]+)*|dylib|dll|a)$", base) and (
