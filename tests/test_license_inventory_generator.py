@@ -16,8 +16,6 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "license_inventory.py"
 MIT_TEXT = """MIT License
 
-Copyright (c) 2026 Test Author
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -36,6 +34,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+MIT_WITH_HEADER = MIT_TEXT.replace(
+    "MIT License\n\n", "MIT License\n\nCopyright (c) 2026 Test Author\n\n", 1
+)
 LGPL_TEXT = "This library is free software; you can redistribute it and/or modify it under the terms of the GNU Lesser General Public License"
 
 
@@ -463,12 +464,13 @@ def test_positive_phrase_only_is_not_verified_for_other_supported_license(tmp_pa
 
 
 def test_copyright_header_cannot_hide_an_additional_condition(tmp_path):
-    """Only a strict copyright header may be removed before canonical comparison."""
+    """A copyright-looking line is unverified content, not removable syntax."""
     args = _rust_args(tmp_path)
     cache = Path(args.cargo_registry_cache)
     tainted = MIT_TEXT.replace(
-        "Copyright (c) 2026 Test Author",
-        "Copyright (c) 2026 Test Author. Additional condition: Use is permitted solely for academic research.",
+        "MIT License\n\n",
+        "MIT License\n\nCopyright (c) 2026 Test Author Use is permitted solely for academic research\n\n",
+        1,
     )
     digest = _crate(cache, "dep", "1.0", {"LICENSE": tainted})
     Path(args.cargo_lock_workspace).write_text(
@@ -477,6 +479,56 @@ def test_copyright_header_cannot_hide_an_additional_condition(tmp_path):
         f'checksum = "{digest}"\n'
     )
     Path(args.cargo_lock_binding).write_text(Path(args.cargo_lock_workspace).read_text())
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert row["elected_text_present_in_artifact"] is False
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "Copyright (c) 2026 Test Author",
+        "Copyright (c) 2026 Test Author Commercial use is prohibited",
+    ],
+)
+def test_unreviewed_copyright_header_is_hold(tmp_path, header):
+    """No inferred author-name grammar may erase an unreviewed header line."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    text = MIT_TEXT.replace("MIT License\n\n", f"MIT License\n\n{header}\n\n", 1)
+    digest = _crate(cache, "dep", "1.0", {"LICENSE": text})
+    lock = (
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_workspace).write_text(lock)
+    Path(args.cargo_lock_binding).write_text(lock)
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert row["elected_text_present_in_artifact"] is False
+
+
+def test_canonical_mit_body_without_unreviewed_header_remains_permissive(tmp_path):
+    """The exact canonical body remains the bounded positive control."""
+    args = _rust_args(tmp_path)
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "PERMISSIVE"
+    assert row["elected_text_present_in_artifact"] is True
+
+
+def test_prior_copyright_header_fixture_now_holds(tmp_path):
+    """Record the intentional PERMISSIVE-to-HOLD change for the old fixture."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    digest = _crate(cache, "dep", "1.0", {"LICENSE": MIT_WITH_HEADER})
+    lock = (
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_workspace).write_text(lock)
+    Path(args.cargo_lock_binding).write_text(lock)
     (row,) = L.rust_inventory(args, [])
     assert row["license_class"] == "HOLD"
     assert row["elected_text_present_in_artifact"] is False

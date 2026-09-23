@@ -92,9 +92,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
-MIT_COPYRIGHT_HEADER = re.compile(
-    r"^Copyright \(c\) [0-9]{4}(?:-[0-9]{4})? [A-Za-z0-9_-]+(?: [A-Za-z0-9_-]+)*$"
-)
 COPYLEFT_TEXT_LABELS = ("AGPL", "LGPL", "GPL")
 WEAK_COPYLEFT_TEXT_LABELS = ("MPL-2.0",)
 
@@ -203,10 +200,9 @@ def verified_standard_text(text: str) -> list[str]:
         lines.pop(0)
     while lines and not lines[0].strip():
         lines.pop(0)
-    if lines and MIT_COPYRIGHT_HEADER.fullmatch(lines[0].strip()):
-        lines.pop(0)
-    while lines and not lines[0].strip():
-        lines.pop(0)
+    # A copyright-looking line is not syntax: arbitrary conditions can be
+    # appended using the same ASCII words as a person's or organization's
+    # name.  Without exact pre-reviewed bytes, do not discard any header.
     candidate = " ".join("\n".join(lines).split()).casefold()
     canonical = " ".join(MIT_CANONICAL_BODY.split()).casefold()
     return ["MIT"] if candidate == canonical else []
