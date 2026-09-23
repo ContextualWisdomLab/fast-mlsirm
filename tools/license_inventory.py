@@ -612,6 +612,28 @@ def python_artifact_evidence(path: Path) -> dict:
     return ev
 
 
+def vendored_native_license_holds(artifacts: list[dict]) -> list[str]:
+    """Return fail-closed findings for hash-bound native wheel components."""
+    findings = []
+    for artifact in artifacts:
+        if not artifact["hash_binding"]["match"]:
+            continue
+        for native in artifact["vendored_native"]:
+            stanzas = native["notice_stanza"]
+            if not stanzas:
+                findings.append(f"{native['path']}: no bound notice stanza")
+                continue
+            for stanza in stanzas:
+                declared = normalize_spdx(stanza.get("license"))
+                elected, _ = elect(declared)
+                if not elected or classify(elected) != "PERMISSIVE":
+                    findings.append(
+                        f"{native['path']}: vendored native license is "
+                        f"{declared or 'UNKNOWN'}"
+                    )
+    return sorted(set(findings))
+
+
 REQ_PIN = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s\\;]+)")
 REQ_BLOCK = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s\\]+) \\\n((?:[ \t]+--hash=sha256:[0-9a-f]{64}(?: \\)?\n)+)", re.MULTILINE)
 
@@ -684,6 +706,9 @@ def python_inventory(args, gaps: list[str]) -> list[dict]:
             artifacts.append(ev)
         if not artifacts:
             hold.append("no artifact examined, so no license text was verified")
+        native_holds = vendored_native_license_holds(artifacts)
+        if native_holds:
+            hold.append(f"vendored native license evidence is not verified permissive: {native_holds}")
         text_labels = sorted({lbl for a in artifacts if a["hash_binding"]["match"] for f in a["license_files"] for lbl in f["detected"]})
         copyleft_text = [lbl for lbl in text_labels if lbl in COPYLEFT_TEXT_LABELS + WEAK_COPYLEFT_TEXT_LABELS]
         norm = normalize_spdx(declared)
@@ -733,6 +758,7 @@ def python_inventory(args, gaps: list[str]) -> list[dict]:
             "license_text_detected_in_artifact": text_labels,
             "license_class_from_metadata": classify(norm) if declared else ("UNKNOWN" if not classifiers else "CLASSIFIER-ONLY"),
             "license_determination": determination,
+            "vendored_native_license_holds": native_holds,
             "license_class": "HOLD" if hold and base in ("PERMISSIVE", "WEAK-COPYLEFT") else base,
             "hold_reasons": hold,
             "elected_license": elected,

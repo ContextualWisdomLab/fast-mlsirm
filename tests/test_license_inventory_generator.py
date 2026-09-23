@@ -85,6 +85,23 @@ def _wheel(path: Path, name: str, version: str, license_text: str | None) -> str
     return hashlib.sha256(buf.getvalue()).hexdigest()
 
 
+def _native_wheel(path: Path, *, native_license: str | None, bind_notice: bool = True) -> str:
+    """Write the minimal shape used by real wheels with vendored native notices."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("pkg-1.0.dist-info/METADATA", "Metadata-Version: 2.4\nName: pkg\nVersion: 1.0\n\n")
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+        zf.writestr("pkg.libs/libexample.so", b"synthetic native bytes")
+        if bind_notice:
+            zf.writestr(
+                "pkg-1.0.dist-info/licenses/NOTICE",
+                "Name: native-component\nFiles: pkg.libs/libexample.so\n"
+                f"License: {native_license or ''}\nDescription: synthetic fixture\n",
+            )
+    path.write_bytes(buf.getvalue())
+    return hashlib.sha256(buf.getvalue()).hexdigest()
+
+
 def _python_args(tmp_path: Path, *, expression, license_text, lock_hash=None, scope=True, requirements="") -> Namespace:
     """Build python_inventory inputs for one package 'pkg 1.0'."""
     art = tmp_path / "art"
@@ -148,6 +165,61 @@ def test_bound_artifact_with_matching_text_is_permissive(tmp_path):
     gaps = []
     (row,) = L.python_inventory(_python_args(tmp_path, expression="MIT", license_text=MIT_TEXT), gaps)
     assert (row["license_class"], row["hold_reasons"], gaps) == ("PERMISSIVE", [], [])
+
+
+@pytest.mark.parametrize(
+    "native_license",
+    [
+        "LGPL-2.1-or-later",
+        "GPL-3.0-or-later WITH GCC-exception-3.1",
+        "AGPL-3.0-only",
+        "LicenseRef-unreviewed",
+        None,
+    ],
+)
+def test_vendored_native_nonpermissive_or_unknown_license_holds(tmp_path, native_license):
+    """Permissive package metadata cannot hide a bound native component policy failure."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    digest = _native_wheel(wheel, native_license=native_license)
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert row["vendored_native_license_holds"]
+
+
+def test_vendored_native_without_bound_notice_holds(tmp_path):
+    """A native wheel member with no matching notice stanza is not silently accepted."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    digest = _native_wheel(wheel, native_license=None, bind_notice=False)
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert "no bound notice stanza" in row["vendored_native_license_holds"][0]
+
+
+def test_vendored_native_verified_permissive_election_remains_allowed(tmp_path):
+    """A hash-bound native component may elect its verified permissive alternative."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    digest = _native_wheel(wheel, native_license="MIT OR LGPL-2.1-or-later")
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+    (row,) = L.python_inventory(args, [])
+    assert row["vendored_native_license_holds"] == []
+    assert row["license_class"] == "PERMISSIVE"
 
 
 def test_missing_scope_is_unclassified_gap_not_exclusion(tmp_path):
