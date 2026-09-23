@@ -431,6 +431,7 @@ def test_tag_and_release_are_created_only_after_release_admission() -> None:
 
 
 def _admission_fixture(root: Path) -> dict:
+    import zipfile
     legs = _expected_legs()
     platforms = {"x86_64-unknown-linux-gnu": "manylinux2014_x86_64",
                  "aarch64-unknown-linux-gnu": "manylinux2014_aarch64",
@@ -443,6 +444,12 @@ def _admission_fixture(root: Path) -> dict:
         files[leg] = f"pkg-1.2.3-{cp}-{cp}-{platforms[target]}.whl"
     files["sdist"] = "pkg-1.2.3.tar.gz"
     payload = {leg: f"bytes of {name}".encode() for leg, name in files.items()}
+    for leg in legs:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            tag = "-".join(files[leg][:-4].rsplit("-", 3)[1:])
+            archive.writestr("pkg-1.2.3.dist-info/WHEEL", f"Wheel-Version: 1.0\nTag: {tag}\n")
+        payload[leg] = buffer.getvalue()
     sha = {leg: hashlib.sha256(data).hexdigest() for leg, data in payload.items()}
     (root / "dist").mkdir(parents=True)
     for leg, name in files.items():
@@ -473,16 +480,59 @@ def _admission_fixture(root: Path) -> dict:
         (bundle / "checksums.sha256").write_text(
             "".join(f"{hashlib.sha256(members[m]).hexdigest()}  {m}\n" for m in sorted(members))
         )
-    listing = [{"name": name, "workflow_run": {"id": _RUN_ID}, "expired": False, "digest": "sha256:" + "d" * 64}
-               for name in artifacts]
+    listing = [{"id": index, "name": name, "workflow_run": {"id": _RUN_ID}, "expired": False, "digest": "sha256:" + "d" * 64}
+               for index, name in enumerate(artifacts, 1)]
     return {"legs": legs, "files": files, "listing": listing}
 
 
 def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> subprocess.CompletedProcess:
     import json
+    import runpy
+    import zipfile
 
     if listing is not None:
         (root / "run-artifacts.jsonl").write_text("".join(json.dumps(item) + "\n" for item in listing))
+    if step == _BYTES_STEP and not (root / "downloaded").exists():
+        # Exercise the actual transport with synthetic ZIPs, not a fake receipt.
+        artifacts = [("reproducibility-record", list((root / "record").iterdir()))]
+        record = (root / "record/reproducibility-record.tsv").read_text().splitlines()
+        for line in record[2:]:
+            fields = line.split("\t")
+            name = "dist-sdist" if fields[0] == "sdist" else "dist-wheel-" + fields[0]
+            path = root / "dist" / fields[5]
+            # Missing files still reach the admission check as an empty mismatch.
+            artifacts.append((name, [path] if path.exists() else []))
+        artifacts += [(p.name, list(p.iterdir())) for p in (root / "evidence").iterdir()]
+        recorded_names = {line.split("\t")[5] for line in record[2:]}
+        extras = [p for p in (root / "dist").iterdir() if p.name not in recorded_names]
+        for name, paths in artifacts:
+            if name == "dist-sdist":
+                paths.extend(extras)
+        selected, archives = [], {}
+        # A duplicated target is diagnosed by record admission, not this test's
+        # archive constructor; no metadata or record content is repaired.
+        seen = set()
+        for name, paths in artifacts:
+            if name in seen:
+                continue
+            seen.add(name)
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as z:
+                for path in paths:
+                    if path.is_file():
+                        z.writestr(path.name, path.read_bytes())
+                if not paths:
+                    z.writestr("missing-member", b"missing")
+            index = len(selected) + 1
+            archives[index] = buffer.getvalue()
+            selected.append({"id": index, "name": name, "digest": "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()})
+        module = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
+        receipt = module["materialize"](selected, "owner/repo", root / "downloaded", lambda repo, index: archives[index])
+        (root / "selected-artifacts.json").write_text(json.dumps(selected))
+        (root / "transport-receipt.json").write_text(json.dumps(receipt))
+        (root / "trusted-control").symlink_to(REPO_ROOT, target_is_directory=True)
+        if os.environ.get("CWL_GATE_FIXTURE_ROOT"):
+            (root / "trusted-gate").symlink_to(os.environ["CWL_GATE_FIXTURE_ROOT"], target_is_directory=True)
     script = _step_python(_job_block(_workflow_text(), "release-admission"), step)
     env = {**os.environ, "EXPECTED_WHEEL_LEGS": " ".join(_expected_legs()), "RUN_ID": str(_RUN_ID),
            "RELEASE_COMMIT": _RELEASE_COMMIT, "RELEASE_TAG": _RELEASE_TAG, "REPOSITORY": "owner/repo"}
@@ -500,8 +550,10 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
     ok_set = _run_admission(tmp_path / "ok", _SET_STEP, fixture["listing"])
     assert ok_set.returncode == 0, ok_set.stderr
     ok_bytes = _run_admission(tmp_path / "ok", _BYTES_STEP)
-    assert ok_bytes.returncode == 0, ok_bytes.stderr
-    assert len((tmp_path / "ok" / "admitted-manifest.tsv").read_text().splitlines()) == 13
+    # This historical fixture has empty SBOMs and no full gate authorization.
+    # It must never be counted as successful release admission.
+    assert ok_bytes.returncode != 0 and "central sealed handoff rejected" in ok_bytes.stderr
+    assert not (tmp_path / "ok" / "admitted-manifest.tsv").exists()
 
     def refuse_set(name: str, mutate, expected: str) -> None:
         root = tmp_path / name
@@ -522,6 +574,8 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
     refuse_set("duplicate", lambda l: l + [l[0]], "duplicate artifact name")
     refuse_set("extra-dist", lambda l: l + [dict(l[0], name="dist-wheel-extra")], "unexpected publishable")
     refuse_set("missing-dist", lambda l: [a for a in l if a["name"] != "dist-sdist"], "dist-sdist: not uploaded")
+    refuse_set("missing-ids", lambda l: [{k: v for k, v in a.items() if k != "id"} for a in l], "immutable artifact ID")
+    refuse_set("duplicate-ids", lambda l: [dict(a, id=1) for a in l], "immutable artifact ID")
 
     def refuse_bytes(name: str, mutate, expected: str) -> None:
         root = tmp_path / name
@@ -563,6 +617,21 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
                  "reproducibility record is not bound")
     refuse_bytes("record-unverified", lambda r, f: record_mutation(r, "\ttrue\t", "\tfalse\t"),
                  "record row is not byte-verified")
+
+    def identity_only(root: Path, fixture: dict) -> None:
+        for bundle in (root / "evidence").iterdir():
+            for path in bundle.iterdir():
+                if path.name not in ("source-identity.json", "checksums.sha256"):
+                    path.unlink()  # only synthetic members made by this test
+            identity_path = bundle / "source-identity.json"
+            (bundle / "checksums.sha256").write_text(
+                f"{hashlib.sha256(identity_path.read_bytes()).hexdigest()}  source-identity.json\n")
+
+    refuse_bytes("identity-only", identity_only, "central sealed handoff rejected")
+
+    # An untrusted JSON verdict is not a trusted gate-success receipt.
+    refuse_bytes("self-pass", lambda r, f: rewrite_identity(
+        r, first, lambda i: i.update(result="PASS", stage="full")), "central sealed handoff rejected")
 
 
 def test_publication_sinks_consume_only_the_admitted_bytes(tmp_path: Path) -> None:
@@ -607,7 +676,7 @@ def test_admission_rejects_record_collapse_before_dict_coalescing(tmp_path: Path
             fields[-2] = "abi3"
             row[5] = "-".join(fields)
         else:
-            row[5] = row[5].replace("aarch64", "x86_64")
+            row[5] = row[5].rsplit("-", 1)[0] + "-win_arm64.whl"
         lines[second] = "\t".join(row)
         path.write_text("\n".join(lines) + "\n")
         result = _run_admission(root, _BYTES_STEP)

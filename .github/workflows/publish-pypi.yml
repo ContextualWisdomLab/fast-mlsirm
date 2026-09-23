@@ -632,6 +632,17 @@ jobs:
       RUN_ID: ${{ github.run_id }}
       EXPECTED_WHEEL_LEGS: "x86_64-unknown-linux-gnu-py3.12 x86_64-unknown-linux-gnu-py3.13 x86_64-unknown-linux-gnu-py3.14 aarch64-unknown-linux-gnu-py3.12 aarch64-unknown-linux-gnu-py3.13 aarch64-unknown-linux-gnu-py3.14 universal2-apple-darwin-py3.12 universal2-apple-darwin-py3.13 universal2-apple-darwin-py3.14 x86_64-pc-windows-msvc-py3.12 x86_64-pc-windows-msvc-py3.13 x86_64-pc-windows-msvc-py3.14"
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.control_plane_commit }}
+          path: trusted-control
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ContextualWisdomLab/.github
+          ref: d4d80fda02f0d44998611ee9d35d434e946ca4d3
+          path: trusted-gate
+          persist-credentials: false
       - name: List this run's artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -667,6 +678,8 @@ jobs:
           distributions = {"dist-sdist"} | {f"dist-wheel-{leg}" for leg in legs}
           evidence = {f"license-evidence-{leg}" for leg in legs}
           failures = []
+          selected = []
+          ids = set()
           missing_evidence = sorted(evidence - set(seen))
           if missing_evidence:
               failures.append(
@@ -684,6 +697,12 @@ jobs:
                   failures.append(f"{name}: expired or expiry unknown")
               if not re.fullmatch(r"sha256:[0-9a-f]{64}", artifact.get("digest") or ""):
                   failures.append(f"{name}: no sha256 artifact digest")
+              artifact_id = artifact.get("id")
+              if type(artifact_id) is not int or artifact_id <= 0 or artifact_id in ids:
+                  failures.append(f"{name}: missing or duplicate immutable artifact ID")
+              else:
+                  ids.add(artifact_id)
+              selected.append({"id": artifact_id, "name": name, "digest": artifact.get("digest")})
           unexpected = sorted(
               name for name in seen
               if name.startswith(("dist-", "license-evidence-")) and name not in distributions | evidence
@@ -691,30 +710,34 @@ jobs:
           failures += [f"{name}: unexpected publishable or evidence artifact" for name in unexpected]
           if failures:
               raise SystemExit("release admission refused:\n" + "\n".join(failures))
+          with open("selected-artifacts.json", "w", encoding="utf-8") as output:
+              json.dump(selected, output, sort_keys=True)
           print(f"same-run artifacts: {len(distributions)} distribution artifacts, {len(evidence)} licence evidence bundles")
           PY
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          pattern: dist-*
-          path: dist
-          merge-multiple: true
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: reproducibility-record
-          path: record
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          pattern: license-evidence-*
-          path: evidence
+      - name: Download selected immutable IDs and verify archive digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I trusted-control/scripts/ci/release_artifact_transport.py "$REPOSITORY"
       - name: Admit exactly the verified bytes of release_commit
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import hashlib
+          import importlib.util
           import json
           import os
           import re
+          import subprocess
+          import sys
+          import zipfile
           from pathlib import Path
+
+          spec = importlib.util.spec_from_file_location("transport", "trusted-control/scripts/ci/release_artifact_transport.py")
+          transport = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(transport)
+          selected = json.loads(Path("selected-artifacts.json").read_text())
+          receipt = json.loads(Path("transport-receipt.json").read_text())
+          transport.verify_materialized(selected, receipt, Path("downloaded"))
 
           def sha256(path: Path) -> str:
               return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -724,7 +747,7 @@ jobs:
           failures = []
 
           # Source and same-release binding of the reproducibility record.
-          lines = Path("record/reproducibility-record.tsv").read_text(encoding="utf-8").splitlines()
+          lines = Path("downloaded/reproducibility-record/reproducibility-record.tsv").read_text(encoding="utf-8").splitlines()
           if not lines or not lines[0].startswith(f"# release {tag} @ {commit}, SOURCE_DATE_EPOCH="):
               raise SystemExit(f"reproducibility record is not bound to {tag} @ {commit}: {lines[:1]!r}")
           header = lines[1].split("\t")
@@ -763,7 +786,28 @@ jobs:
                   failures.append(f"{leg}: record row is not byte-verified")
 
           # The 13 distribution files are exactly the recorded bytes.
-          dist = {p.name: sha256(p) for p in Path("dist").iterdir() if p.is_file()}
+          dist = {}
+          for leg, row in rows.items():
+              artifact_name = "dist-sdist" if leg == "sdist" else f"dist-wheel-{leg}"
+              members = list((Path("downloaded") / artifact_name).iterdir())
+              if len(members) != 1 or members[0].name != row["file"]:
+                  raise SystemExit(f"{leg}: distribution files differ from the record")
+              dist[members[0].name] = sha256(members[0])
+              if dist[members[0].name] != row["sha256"]:
+                  raise SystemExit(f"{leg}: distribution files differ from the record")
+              if leg != "sdist":
+                  try:
+                      with zipfile.ZipFile(members[0]) as archive:
+                          metadata = [p for p in archive.namelist() if p.endswith(".dist-info/WHEEL")]
+                          if len(metadata) != 1:
+                              raise ValueError("expected one WHEEL metadata member")
+                          tags = [line[5:] for line in archive.read(metadata[0]).decode("utf-8").splitlines() if line.startswith("Tag: ")]
+                      parts = row["file"][:-4].rsplit("-", 3)
+                      expected_tags = {f"{parts[1]}-{parts[2]}-{p}" for p in parts[3].split(".")}
+                      if len(tags) != len(set(tags)) or set(tags) != expected_tags:
+                          raise ValueError("WHEEL tags differ from filename ABI/platform")
+                  except (OSError, ValueError, zipfile.BadZipFile, UnicodeError) as error:
+                      raise SystemExit(f"{leg}: wheel metadata invalid ({error})")
           recorded = {row["file"]: row["sha256"] for row in rows.values()}
           if dist != recorded:
               failures.append(f"distribution files differ from the record: files={sorted(dist)!r}")
@@ -773,7 +817,7 @@ jobs:
           sealed_sdists = set()
           for leg in legs:
               name = f"license-evidence-{leg}"
-              bundle = Path("evidence") / name
+              bundle = Path("downloaded") / name
               try:
                   identity = json.loads((bundle / "source-identity.json").read_text(encoding="utf-8"))
                   listed = {}
@@ -801,15 +845,35 @@ jobs:
               if (sdist.get("filename"), sdist.get("sha256")) != (sdist_row["file"], sdist_row["sha256"]):
                   failures.append(f"{name}: sealed sdist is not the recorded sdist")
               sealed_sdists.add(sdist.get("sha256"))
+              # Reuse the organization-owned six-member verifier. This checks
+              # inert archive bytes/SBOM/source, not licence-gate authorization.
+              try:
+                  outer = next(a for a in selected if a["name"] == name)
+                  args = [sys.executable, "-I", "trusted-gate/scripts/ci/verify_exact_artifact_sbom_handoff.py",
+                          "--source-repository", os.environ["REPOSITORY"], "--source-sha", commit,
+                          "--evidence-artifact-name", name, "--evidence-artifact-digest", outer["digest"],
+                          "--evidence-root", str(bundle), "--predicate-type", identity["predicate_type"],
+                          "--cyclonedx-schema", identity["cyclonedx_schema"],
+                          "--source-identity-sha256", sha256(bundle / "source-identity.json"),
+                          "--checksum-sha256", sha256(bundle / "checksums.sha256"),
+                          "--output-manifest", f"verified-{name}.json"]
+                  for label, item in (("wheel", wheel), ("sdist", sdist)):
+                      for key in ("filename", "sha256", "sbom_filename", "sbom_sha256"):
+                          args += [f"--{label}-{key.replace('_', '-')}", item[key]]
+                  subprocess.run(args, check=True, stdout=subprocess.DEVNULL)
+              except (KeyError, StopIteration, subprocess.CalledProcessError) as error:
+                  failures.append(f"{name}: central sealed handoff rejected ({error})")
           if len(sealed_sdists) > 1:
               failures.append(f"the 12 sdist seals diverge: {sorted(map(str, sealed_sdists))!r}")
           if failures:
               raise SystemExit("release admission refused:\n" + "\n".join(failures))
 
-          with open("admitted-manifest.tsv", "w", encoding="utf-8") as stream:
-              for name in sorted(dist):
-                  stream.write(f"{dist[name]}  {name}\n")
-          print(f"admitted {len(dist)} distribution files backed by {len(legs)} licence evidence bundles")
+          # The current central handoff does not authenticate a same-run full
+          # licence/Strix verdict or platform-complete inventory. A caller can
+          # manufacture a structurally valid seal. Do not publish a manifest
+          # until the trusted gate-success contract is wired (B2/B3/R5c).
+          raise SystemExit("release admission HOLD: trusted same-run full licence/Strix gate-success contract is not wired")
+
           PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
