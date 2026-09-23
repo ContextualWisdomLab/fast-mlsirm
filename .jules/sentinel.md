@@ -59,3 +59,8 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+
+## 2026-09-23 - JSON Depth Validation Underflow
+**Vulnerability:** fast-mlsirm 내의 JSON 깊이 검증 함수들(`_validate_raw_json_depth`, `_validate_contract_depth`, `_validate_raw_manifest_depth`, `_load_json_bounded`)에서 닫는 괄호(`]}`)를 만날 때 깊이 카운터(`depth`)가 0 미만으로 언더플로우(underflow)되는 것을 허용하고 있었습니다. 공격자가 닫는 괄호를 악의적으로 많이 배치한 뒤(`]]]]]...`) 깊게 중첩된 JSON을 전달하면 카운터가 인위적으로 감소하여 제한을 우회할 수 있고, 결과적으로 `RecursionError`와 DoS를 유발할 수 있습니다.
+**Learning:** 닫는 괄호를 처리할 때 현재 깊이 상태를 확인하지 않으면 공격자가 초기 카운터를 음수로 만들어 깊이 한도를 우회할 수 있습니다. 단순히 카운터를 증감하는 것만으로는 불충분합니다.
+**Prevention:** JSON 깊이를 수동으로 추적할 때는 항상 닫는 괄호(`]}`)를 처리할 때 카운터가 0보다 큰지(`and depth:`)를 먼저 확인하여 언더플로우를 방지해야 합니다.
