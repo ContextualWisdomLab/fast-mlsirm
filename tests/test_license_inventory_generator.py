@@ -400,3 +400,63 @@ def test_unknown_notice_alongside_mit_is_hold(tmp_path):
     assert row["elected_text_present_in_artifact"] is True
     assert row["license_class"] == "HOLD"
     assert "unrecognized" in " ".join(row["hold_reasons"])
+
+
+def test_full_mit_text_with_additional_condition_is_hold(tmp_path):
+    """A canonical grant plus an extra restriction is not the canonical MIT license."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    restricted = MIT_TEXT + "\nAdditional condition: Use is permitted solely for academic research.\n"
+    digest = _crate(cache, "dep", "1.0", {"LICENSE": restricted})
+    Path(args.cargo_lock_workspace).write_text(
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_binding).write_text(Path(args.cargo_lock_workspace).read_text())
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert row["elected_text_present_in_artifact"] is False
+
+
+def test_missing_declared_license_file_is_hold_even_with_root_mit(tmp_path):
+    """A different root license cannot substitute for Cargo metadata's missing path."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    digest = _crate(cache, "dep", "1.0", {"LICENSE": MIT_TEXT})
+    meta_path = Path(args.cargo_metadata_workspace)
+    metadata = json.loads(meta_path.read_text())
+    metadata["packages"][0]["license_file"] = "legal/terms.txt"
+    meta_path.write_text(json.dumps(metadata))
+    Path(args.cargo_metadata_binding).write_text(meta_path.read_text())
+    Path(args.cargo_lock_workspace).write_text(
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_binding).write_text(Path(args.cargo_lock_workspace).read_text())
+    (row,) = L.rust_inventory(args, [])
+    assert row["elected_text_present_in_artifact"] is True
+    assert row["license_class"] == "HOLD"
+    assert "license_file is absent" in " ".join(row["hold_reasons"])
+
+
+def test_positive_phrase_only_is_not_verified_for_other_supported_license(tmp_path):
+    """A known Apache phrase is detection evidence, not a complete verified grant."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    digest = _crate(cache, "dep", "1.0", {"LICENSE": "Apache License Version 2.0"})
+    meta_path = Path(args.cargo_metadata_workspace)
+    metadata = json.loads(meta_path.read_text())
+    metadata["packages"][0]["license"] = "Apache-2.0"
+    meta_path.write_text(json.dumps(metadata))
+    Path(args.cargo_metadata_binding).write_text(meta_path.read_text())
+    Path(args.cargo_lock_workspace).write_text(
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_binding).write_text(Path(args.cargo_lock_workspace).read_text())
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert row["elected_text_present_in_artifact"] is False

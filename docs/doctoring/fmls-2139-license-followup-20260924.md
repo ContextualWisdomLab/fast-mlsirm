@@ -14,10 +14,14 @@ candidate is unrecognized or conditional, or when artifact text grants GPL,
 LGPL, or AGPL terms absent from the declared SPDX expression. Candidate files
 are collected at every archive depth, and Cargo metadata's `license_file` path
 is included even when its basename is not license-like. MIT acceptance requires
-independent grant, warranty, and liability clauses from the standard text;
-matching a license name or one copied sentence is insufficient. Detection is
-case-insensitive. Package metadata remains separate evidence and cannot replace
-or erase the artifact text.
+independent grant, warranty, and liability clauses from the standard text, and
+the normalized body must equal the canonical template after removing only an
+optional `MIT License` title and copyright header lines. Added conditions or
+other trailing prose are not accepted. Other recognized license phrases remain
+unverified and HOLD until their own complete canonical validators exist.
+Detection is case-insensitive. A Cargo metadata `license_file` path must exist
+in the hash-bound archive. Package metadata remains separate evidence and
+cannot replace or erase the artifact text.
 
 Focused verification used the repository's existing Python environment and
 performed no package installation, download, Cargo invocation, or release:
@@ -27,7 +31,7 @@ python3 -m py_compile tools/license_inventory.py tests/test_license_inventory_ge
 exit 0
 
 PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider --noconftest -q tests/test_license_inventory_generator.py
-33 passed in 0.38s
+36 passed in 0.35s
 exit 0
 ```
 
@@ -37,5 +41,8 @@ uppercase LGPL grant text, metadata-declared nonstandard license paths,
 one-byte-source reuse for hash and extraction, source path replacement during a
 read, and a full standard MIT-text matching-byte permissive case. The six
 preserved independent-review counterexamples all return HOLD under this commit.
+The later academic-use-only and missing-declared-license-file counterexamples
+also return HOLD, while their preserved canonical-MIT positive control remains
+PERMISSIVE.
 This evidence does not establish the complete release inventory, hosted checks,
 independent review, or release acceptance.

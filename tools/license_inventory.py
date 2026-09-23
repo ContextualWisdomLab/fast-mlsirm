@@ -75,6 +75,23 @@ NEGATING_OR_CONDITIONAL_MARKERS = (
     "commercial redistribution is prohibited",
     "non-commercial use only",
 )
+MIT_CANONICAL_BODY = """Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE."""
 COPYLEFT_TEXT_LABELS = ("AGPL", "LGPL", "GPL")
 WEAK_COPYLEFT_TEXT_LABELS = ("MPL-2.0",)
 
@@ -172,6 +189,20 @@ def detect(text: str) -> list[str]:
     if "BSD" in found:
         found[found.index("BSD")] = "BSD-3-Clause" if "Neither the name" in text else "BSD-2-Clause"
     return found
+
+
+def verified_standard_text(text: str) -> list[str]:
+    """Return licenses whose complete canonical grant has no extra conditions."""
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").strip().splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if lines and lines[0].strip().casefold() == "mit license":
+        lines.pop(0)
+    while lines and (not lines[0].strip() or lines[0].strip().casefold().startswith("copyright")):
+        lines.pop(0)
+    candidate = " ".join("\n".join(lines).split()).casefold()
+    canonical = " ".join(MIT_CANONICAL_BODY.split()).casefold()
+    return ["MIT"] if candidate == canonical else []
 
 
 def normalize_spdx(expr: str | None) -> str | None:
@@ -360,7 +391,10 @@ def read_crate_license_files(
                 out.append({"path": relative, "sha256": sha256_bytes(raw),
                             "artifact_sha256": artifact_sha256,
                             "declared_license_file": bool(declared and relative == declared),
-                            "detected": detect(raw.decode("utf-8", "replace"))})
+                            "detected": detect(raw.decode("utf-8", "replace")),
+                            "verified_standard_text": verified_standard_text(
+                                raw.decode("utf-8", "replace")
+                            )})
     return out
 
 
@@ -444,6 +478,10 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
                 hold.append(f"the .crate source path was not stable: {read_error}")
             if bound and not files:
                 hold.append("the hash-bound .crate contains no license file")
+            if bound and p and p.get("license_file") and not any(
+                f["declared_license_file"] for f in files
+            ):
+                hold.append("Cargo metadata license_file is absent from the hash-bound .crate")
             origin = ("package metadata (Cargo.toml license); license files read from the .crate whose sha256 "
                       "equals the Cargo.lock checksum" + ("" if files else "; the .crate contains NO license file")
                       ) if bound else "UNVERIFIED: no hash-bound .crate, license text not read"
@@ -461,6 +499,9 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
         elected, rationale = elect(norm)
         ident = f"{name}@{version}"
         file_labels = {label for f in files for label in f["detected"]}
+        verified_labels = {
+            label for f in files for label in f.get("verified_standard_text", [])
+        }
         unrecognized_files = sorted(f["path"] for f in files if not f["detected"])
         if unrecognized_files:
             hold.append(f"license candidate text is unrecognized: {unrecognized_files}")
@@ -475,7 +516,7 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
             )
         elected_terms = spdx_terms(elected)
         elected_text_present = all(
-            t in UNFINGERPRINTED_IDS or any(_label_covers(t, lbl) for lbl in file_labels)
+            t in UNFINGERPRINTED_IDS or any(_label_covers(t, lbl) for lbl in verified_labels)
             for t in elected_terms
         ) if elected_terms else False
         if elected_terms and not elected_text_present:
