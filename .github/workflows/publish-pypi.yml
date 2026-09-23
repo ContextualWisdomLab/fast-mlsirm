@@ -105,13 +105,16 @@ jobs:
             echo "checked-out release source does not match release_commit" >&2
             exit 1
           fi
-          if ! tag_commit="$(git rev-parse "$RELEASE_TAG^{commit}" 2>/dev/null)"; then
-            echo "release tag is unavailable for provenance verification" >&2
-            exit 1
-          fi
-          if [ "$tag_commit" != "$RELEASE_COMMIT" ]; then
-            echo "release tag does not target release_commit" >&2
-            exit 1
+          # R5a: the immutable tag is created only after release admission
+          # (create-tag-and-release). A missing tag is the normal first-run
+          # state; an existing tag (a retry) must already target release_commit.
+          if tag_commit="$(git rev-parse -q --verify "$RELEASE_TAG^{commit}" 2>/dev/null)"; then
+            if [ "$tag_commit" != "$RELEASE_COMMIT" ]; then
+              echo "release tag does not target release_commit" >&2
+              exit 1
+            fi
+          else
+            echo "release tag $RELEASE_TAG does not exist yet; it is created only after release admission"
           fi
           python - <<'PY'
           import os
@@ -607,9 +610,428 @@ jobs:
           name: reproducibility-record
           path: reproducibility-record.tsv
 
+  # R5b: nothing is tagged, released or published unless this job proves, for
+  # this exact run, that the 13 distribution files are the reproducibility-
+  # verified bytes of release_commit AND that each of the 12 wheel legs carries a
+  # sealed licence evidence bundle over exactly those bytes. The licence gate
+  # callers are not wired yet (R5c; central B1/B2 open), so this job currently
+  # refuses every release. That is intentional fail-closed behaviour: there is
+  # no skip, default or placeholder verdict.
+  release-admission:
+    name: release admission
+    needs: [verify-release, reproducibility-record]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    env:
+      RELEASE_COMMIT: ${{ inputs.release_commit }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      REPOSITORY: ${{ github.repository }}
+      RUN_ID: ${{ github.run_id }}
+      EXPECTED_WHEEL_LEGS: "x86_64-unknown-linux-gnu-py3.12 x86_64-unknown-linux-gnu-py3.13 x86_64-unknown-linux-gnu-py3.14 aarch64-unknown-linux-gnu-py3.12 aarch64-unknown-linux-gnu-py3.13 aarch64-unknown-linux-gnu-py3.14 universal2-apple-darwin-py3.12 universal2-apple-darwin-py3.13 universal2-apple-darwin-py3.14 x86_64-pc-windows-msvc-py3.12 x86_64-pc-windows-msvc-py3.13 x86_64-pc-windows-msvc-py3.14"
+    steps:
+      - name: List this run's artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100" \
+            --jq '.artifacts[]' > run-artifacts.jsonl
+      - name: Require the exact same-run artifact set
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+
+          # 13 distribution artifacts (12 wheels + sdist) and 12 licence evidence
+          # bundles (one per wheel leg, each sealing that wheel and the sdist) are
+          # two different sets and are checked separately.
+          legs = os.environ["EXPECTED_WHEEL_LEGS"].split()
+          if len(legs) != 12 or len(set(legs)) != 12:
+              raise SystemExit(f"expected 12 distinct wheel legs, got {legs!r}")
+          run_id = int(os.environ["RUN_ID"])
+          seen: dict[str, dict] = {}
+          with open("run-artifacts.jsonl", encoding="utf-8") as stream:
+              for line in stream:
+                  if not line.strip():
+                      continue
+                  artifact = json.loads(line)
+                  name = artifact.get("name", "")
+                  if name in seen:
+                      raise SystemExit(f"duplicate artifact name in this run: {name}")
+                  seen[name] = artifact
+          distributions = {"dist-sdist"} | {f"dist-wheel-{leg}" for leg in legs}
+          evidence = {f"license-evidence-{leg}" for leg in legs}
+          failures = []
+          missing_evidence = sorted(evidence - set(seen))
+          if missing_evidence:
+              failures.append(
+                  f"licence evidence missing for {len(missing_evidence)} of 12 wheel legs; "
+                  "the licence gate is not wired (R5c, central B1/B2 open), so publication is refused"
+              )
+          for name in sorted(distributions | evidence | {"reproducibility-record"}):
+              artifact = seen.get(name)
+              if artifact is None:
+                  failures.append(f"{name}: not uploaded by this run")
+                  continue
+              if (artifact.get("workflow_run") or {}).get("id") != run_id:
+                  failures.append(f"{name}: not produced by run {run_id}")
+              if artifact.get("expired") is not False:
+                  failures.append(f"{name}: expired or expiry unknown")
+              if not re.fullmatch(r"sha256:[0-9a-f]{64}", artifact.get("digest") or ""):
+                  failures.append(f"{name}: no sha256 artifact digest")
+          unexpected = sorted(
+              name for name in seen
+              if name.startswith(("dist-", "license-evidence-")) and name not in distributions | evidence
+          )
+          failures += [f"{name}: unexpected publishable or evidence artifact" for name in unexpected]
+          if failures:
+              raise SystemExit("release admission refused:\n" + "\n".join(failures))
+          print(f"same-run artifacts: {len(distributions)} distribution artifacts, {len(evidence)} licence evidence bundles")
+          PY
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: reproducibility-record
+          path: record
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: license-evidence-*
+          path: evidence
+      - name: Admit exactly the verified bytes of release_commit
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          def sha256(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          legs = os.environ["EXPECTED_WHEEL_LEGS"].split()
+          commit, tag = os.environ["RELEASE_COMMIT"], os.environ["RELEASE_TAG"]
+          failures = []
+
+          # Source and same-release binding of the reproducibility record.
+          lines = Path("record/reproducibility-record.tsv").read_text(encoding="utf-8").splitlines()
+          if not lines or not lines[0].startswith(f"# release {tag} @ {commit}, SOURCE_DATE_EPOCH="):
+              raise SystemExit(f"reproducibility record is not bound to {tag} @ {commit}: {lines[:1]!r}")
+          header = lines[1].split("\t")
+          rows = {}
+          for line in lines[2:]:
+              row = dict(zip(header, line.split("\t")))
+              rows[row["target"]] = row
+          if set(rows) != set(legs) | {"sdist"}:
+              raise SystemExit(f"record legs {sorted(rows)!r} are not the 12 wheel legs + sdist")
+          for leg, row in rows.items():
+              if row["byte_verified"] != "true" or row["sha256"] != row["rebuild_sha256"]:
+                  failures.append(f"{leg}: record row is not byte-verified")
+
+          # The 13 distribution files are exactly the recorded bytes.
+          dist = {p.name: sha256(p) for p in Path("dist").iterdir() if p.is_file()}
+          recorded = {row["file"]: row["sha256"] for row in rows.values()}
+          if dist != recorded:
+              failures.append(f"distribution files differ from the record: files={sorted(dist)!r}")
+
+          # Each of the 12 evidence bundles seals that leg's wheel and the same sdist.
+          sdist_row = rows["sdist"]
+          sealed_sdists = set()
+          for leg in legs:
+              name = f"license-evidence-{leg}"
+              bundle = Path("evidence") / name
+              try:
+                  identity = json.loads((bundle / "source-identity.json").read_text(encoding="utf-8"))
+                  listed = {}
+                  for entry in (bundle / "checksums.sha256").read_text(encoding="utf-8").splitlines():
+                      digest, member = entry.split("  ", 1)
+                      listed[member] = digest
+              except (OSError, ValueError) as error:
+                  failures.append(f"{name}: unreadable sealed evidence ({error})")
+                  continue
+              members = {p.name for p in bundle.iterdir() if p.is_file()} - {"checksums.sha256"}
+              if set(listed) != members or any(sha256(bundle / m) != d for m, d in listed.items()):
+                  failures.append(f"{name}: checksums.sha256 does not match the bundle contents")
+              wheel = identity.get("artifacts", {}).get("wheel", {})
+              sdist = identity.get("artifacts", {}).get("sdist", {})
+              expected = {
+                  "source_repository": os.environ["REPOSITORY"],
+                  "source_sha": commit,
+                  "evidence_artifact_name": name,
+              }
+              for key, value in expected.items():
+                  if identity.get(key) != value:
+                      failures.append(f"{name}: {key}={identity.get(key)!r}, expected {value!r}")
+              if (wheel.get("filename"), wheel.get("sha256")) != (rows[leg]["file"], rows[leg]["sha256"]):
+                  failures.append(f"{name}: sealed wheel is not the recorded {leg} wheel")
+              if (sdist.get("filename"), sdist.get("sha256")) != (sdist_row["file"], sdist_row["sha256"]):
+                  failures.append(f"{name}: sealed sdist is not the recorded sdist")
+              sealed_sdists.add(sdist.get("sha256"))
+          if len(sealed_sdists) > 1:
+              failures.append(f"the 12 sdist seals diverge: {sorted(map(str, sealed_sdists))!r}")
+          if failures:
+              raise SystemExit("release admission refused:\n" + "\n".join(failures))
+
+          with open("admitted-manifest.tsv", "w", encoding="utf-8") as stream:
+              for name in sorted(dist):
+                  stream.write(f"{dist[name]}  {name}\n")
+          print(f"admitted {len(dist)} distribution files backed by {len(legs)} licence evidence bundles")
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-admission-manifest
+          path: admitted-manifest.tsv
+
+  # R5a: the immutable tag and the GitHub release are created only here, after
+  # release admission. release-tag.yml verifies and dispatches but no longer
+  # creates either. A retry re-runs the whole build/record/admission chain; an
+  # existing tag or release is only resumed when it already targets
+  # release_commit, so no existing-tag path skips admission.
+  create-tag-and-release:
+    name: create tag and release after admission
+    needs: [verify-release, release-admission]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.release_commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Derive the release version from the admitted tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$RELEASE_TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+            echo "release_tag must be v<major>.<minor>.<patch>, got $RELEASE_TAG" >&2
+            exit 1
+          fi
+          echo "RELEASE_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+      - name: Fail closed on fragment to CHANGELOG aggregate drift
+        run: |
+          set -euo pipefail
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+      - name: Extract the release notes from the CHANGELOG section
+        run: |
+          set -euo pipefail
+          awk -v header="## [$RELEASE_VERSION] - " '
+            index($0, header) == 1 { capture = 1; next }
+            capture && /^## / { exit }
+            capture { print }
+          ' CHANGELOG.md > release_notes.md
+          if ! grep -q '[^[:space:]]' release_notes.md; then
+            echo "CHANGELOG section for $RELEASE_VERSION is empty" >&2
+            exit 1
+          fi
+      - name: Cap the release body below the GitHub release-body limit
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          notes_path = Path("release_notes.md")
+          notes_text = notes_path.read_text(encoding="utf-8")
+          body_limit = 120_000
+          if len(notes_text) > body_limit:
+              release_version = os.environ["RELEASE_VERSION"]
+              repository = os.environ["GITHUB_REPOSITORY"]
+              changelog_url = (
+                  f"https://github.com/{repository}/blob/"
+                  f"v{release_version}/CHANGELOG.md"
+              )
+              headings = list(
+                  dict.fromkeys(
+                      line
+                      for line in notes_text.splitlines()
+                      if line.startswith("#### ")
+                  )
+              )
+              summary_lines = [
+                  "The complete notes for this release exceed GitHub's "
+                  "release-body limit, so this body is a summary.",
+                  "",
+                  f"Full authoritative notes: the `[{release_version}]` "
+                  f"section of [CHANGELOG.md]({changelog_url}).",
+                  "",
+                  "### Contents",
+                  "",
+              ]
+              summary_lines += [
+                  "- " + line[len("#### "):] for line in headings
+              ]
+              capped_text = "\n".join(summary_lines) + "\n"
+              if len(capped_text) > body_limit:
+                  capped_text = (
+                      capped_text[: body_limit - 60].rsplit("\n", 1)[0]
+                      + "\n\n(contents list truncated)\n"
+                  )
+              notes_path.write_text(capped_text, encoding="utf-8")
+          PY
+      - name: Classify the tag and release state after admission
+        id: release_tag_state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+        run: |
+          set -euo pipefail
+          api_status() {
+            endpoint="$1"
+            response_file="$2"
+            curl --silent --show-error \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/$endpoint"
+          }
+          response_file="$(mktemp)"
+          status="$(api_status "git/ref/tags/v$RELEASE_VERSION" "$response_file")"
+          case "$status" in
+            404)
+              tag_exists=false
+              echo "resume_existing_tag=false" >> "$GITHUB_OUTPUT"
+              ;;
+            200)
+              python3 - "$response_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          response = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          tag_object = response.get("object", {})
+          actual_tag_sha = tag_object.get("sha")
+          if (
+              tag_object.get("type") != "commit"
+              or actual_tag_sha != os.environ["RELEASE_COMMIT"]
+          ):
+              raise SystemExit(
+                  "existing tag does not target the requested release commit"
+              )
+          PY
+              tag_exists=true
+              echo "tag v$RELEASE_VERSION already targets release_commit; resuming publication for the existing immutable tag"
+              echo "resume_existing_tag=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              cat "$response_file" >&2
+              echo "GitHub API returned HTTP $status while checking tag v$RELEASE_VERSION" >&2
+              exit 1
+              ;;
+          esac
+          status="$(api_status "releases/tags/v$RELEASE_VERSION" "$response_file")"
+          case "$status" in
+            404)
+              echo "resume_existing_release=false" >> "$GITHUB_OUTPUT"
+              ;;
+            200)
+              if [ "$tag_exists" != "true" ]; then
+                echo "release v$RELEASE_VERSION exists without its verified tag; refusing to reuse it" >&2
+                exit 1
+              fi
+              echo "release v$RELEASE_VERSION already exists for the verified tag; resuming without recreating it"
+              echo "resume_existing_release=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              cat "$response_file" >&2
+              echo "GitHub API returned HTTP $status while checking release v$RELEASE_VERSION" >&2
+              exit 1
+              ;;
+          esac
+          rm -f "$response_file"
+      - name: Atomically create the immutable release tag
+        if: steps.release_tag_state.outputs.resume_existing_tag != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+        run: |
+          set -euo pipefail
+          request_file="$(mktemp)"
+          response_file="$(mktemp)"
+          cleanup() {
+            rm -f "$request_file" "$response_file"
+          }
+          trap cleanup EXIT
+
+          python3 - "$request_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          Path(sys.argv[1]).write_text(
+              json.dumps(
+                  {
+                      "ref": f"refs/tags/v{os.environ['RELEASE_VERSION']}",
+                      "sha": os.environ["RELEASE_COMMIT"],
+                  }
+              ),
+              encoding="utf-8",
+          )
+          PY
+
+          status="$(curl --silent --show-error \
+            --request POST \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --header "Content-Type: application/json" \
+            --data-binary "@$request_file" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/refs")"
+          if [ "$status" != "201" ]; then
+            cat "$response_file" >&2
+            echo "GitHub API returned HTTP $status while creating the release tag" >&2
+            exit 1
+          fi
+
+          python3 - "$response_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          response = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected_ref = f"refs/tags/v{os.environ['RELEASE_VERSION']}"
+          actual_ref = response.get("ref")
+          actual_sha = response.get("object", {}).get("sha")
+          if actual_ref != expected_ref or actual_sha != os.environ["RELEASE_COMMIT"]:
+              raise SystemExit(
+                  "GitHub returned an unexpected ref or commit for the release tag"
+              )
+          PY
+      - name: Publish the GitHub release from the verified tag
+        if: steps.release_tag_state.outputs.resume_existing_release != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "v$RELEASE_VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "v$RELEASE_VERSION" \
+            --notes-file release_notes.md
+
   release-assets:
     name: attach release assets
-    needs: [sdist, wheels, reproducibility-record]
+    needs: [sdist, wheels, reproducibility-record, release-admission, create-tag-and-release]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -620,6 +1042,19 @@ jobs:
           pattern: dist-*
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: release-admission-manifest
+          path: admission
+      - name: Require the admitted bytes
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum -- *) | sort -k2 > downloaded.tsv
+          sort -k2 admission/admitted-manifest.tsv > admitted.tsv
+          if ! diff -u admitted.tsv downloaded.tsv; then
+            echo "downloaded distributions are not the admitted bytes" >&2
+            exit 1
+          fi
       - name: List built artifacts
         run: ls -la dist
       - name: Attach release assets
@@ -671,7 +1106,7 @@ jobs:
 
   publish-pypi:
     name: publish to PyPI
-    needs: [sdist, wheels, reproducibility-record]
+    needs: [sdist, wheels, reproducibility-record, release-admission, create-tag-and-release]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: pypi
@@ -683,6 +1118,19 @@ jobs:
           pattern: dist-*
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: release-admission-manifest
+          path: admission
+      - name: Require the admitted bytes
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum -- *) | sort -k2 > downloaded.tsv
+          sort -k2 admission/admitted-manifest.tsv > admitted.tsv
+          if ! diff -u admitted.tsv downloaded.tsv; then
+            echo "downloaded distributions are not the admitted bytes" >&2
+            exit 1
+          fi
       - name: List built artifacts
         run: ls -la dist
       - name: Publish package distributions to PyPI

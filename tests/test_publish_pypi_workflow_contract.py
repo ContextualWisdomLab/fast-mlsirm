@@ -58,7 +58,7 @@ def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     assert 'RELEASE_COMMIT: ${{ inputs.release_commit }}' in verify
     assert "release_commit must be a canonical 40-character lowercase SHA-1" in verify
     assert 'git rev-parse HEAD' in verify
-    assert 'git rev-parse "$RELEASE_TAG^{commit}"' in verify
+    assert 'git rev-parse -q --verify "$RELEASE_TAG^{commit}"' in verify
     assert "checked-out release source does not match release_commit" in verify
     assert "release tag does not target release_commit" in verify
     assert 'tomllib.load' in verify or 'tomllib.loads' in verify
@@ -113,7 +113,7 @@ def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
     assert 'if [ "$CONTROL_PLANE_SHA" != "$CONTROL_PLANE_COMMIT" ]' in verify
     assert "publication control plane moved after release verification" in verify
 
-    assert "permissions:\n      contents: write\n      actions: write" in release_job
+    assert "permissions:\n      contents: read\n      actions: write" in release_job
     assert "gh workflow run publish-pypi.yml" in release_job
     assert 'DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}' in release_job
     assert 'git rev-parse "origin/$DEFAULT_BRANCH"' in release_job
@@ -124,9 +124,9 @@ def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
     assert '-f release_commit="$RELEASE_COMMIT"' in release_job
     assert '-f control_plane_commit="$CONTROL_PLANE_COMMIT"' in release_job
     assert 'RELEASE_COMMIT: ${{ inputs.release_commit }}' in release_job
-    assert release_job.index('gh release create "v$RELEASE_VERSION"') < release_job.index(
-        "gh workflow run publish-pypi.yml"
-    )
+    # R5a: release-tag.yml verifies and dispatches; it never creates the tag or release.
+    assert "gh release create" not in release_job
+    assert "/git/refs" not in release_job
 
 
 def test_release_asset_write_is_isolated_from_pypi_credentials() -> None:
@@ -174,8 +174,8 @@ def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> N
     # same verified build artifacts. Immutable releases skip asset upload
     # without failing the job so a previously failed PyPI publication can be
     # retried to a green overall run.
-    assert "needs: [sdist, wheels, reproducibility-record]" in assets
-    assert "needs: [sdist, wheels, reproducibility-record]" in publish
+    assert "needs: [sdist, wheels, reproducibility-record, release-admission, create-tag-and-release]" in assets
+    assert "needs: [sdist, wheels, reproducibility-record, release-admission, create-tag-and-release]" in publish
     assert "release-assets" not in publish.split("needs:", 1)[1].split("\n", 1)[0]
     assert "skipping GitHub asset upload" in assets
     assert "skip-existing: true" in publish
@@ -253,7 +253,7 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     assert "NOT independent-environment or" in gate
     assert "name: reproducibility-record" in record
     for sink in (assets, publish):
-        assert "needs: [sdist, wheels, reproducibility-record]" in sink
+        assert "needs: [sdist, wheels, reproducibility-record, release-admission, create-tag-and-release]" in sink
         assert "always()" not in sink
         assert "|| true" not in sink
     assert "|| true" not in record
@@ -362,3 +362,220 @@ def test_build_env_provenance_is_bound_to_the_invocation_and_fails_closed(tmp_pa
         assert good.returncode == 0, (leg, good.stderr)
         row = (tmp_path / f"{runner_os}-{leg}-ok" / "repro-digest" / f"{leg}.tsv").read_text().rstrip("\n").split("\t")
         assert row[-1] == f"runner:ubuntu24/20260920.1/{runner_os}/X64"
+
+
+_RELEASE_COMMIT = "c" * 40
+_RELEASE_TAG = "v1.2.3"
+_RUN_ID = 424242
+
+
+def _needs(job: str) -> set[str]:
+    match = re.search(r"(?m)^    needs: (?:\[(?P<many>[^\]]*)\]|(?P<one>\S+))$", job)
+    if match is None:
+        return set()
+    if match.group("one"):
+        return {match.group("one")}
+    return {name.strip() for name in match.group("many").split(",")}
+
+
+def _requires(text: str, job: str, dependency: str) -> bool:
+    pending, seen = [job], set()
+    while pending:
+        current = pending.pop()
+        for parent in _needs(_job_block(text, current)):
+            if parent == dependency:
+                return True
+            if parent not in seen:
+                seen.add(parent)
+                pending.append(parent)
+    return False
+
+
+def _expected_legs() -> list[str]:
+    admission = _job_block(_workflow_text(), "release-admission")
+    match = re.search(r'EXPECTED_WHEEL_LEGS: "([^"]+)"', admission)
+    assert match is not None
+    return match.group(1).split()
+
+
+def test_tag_and_release_are_created_only_after_release_admission() -> None:
+    text = _workflow_text()
+    release_job = _job_block(_release_tag_workflow_text(), "publish-release-tag")
+
+    # R5a: only the post-admission job creates the immutable tag and release.
+    creator = _job_block(text, "create-tag-and-release")
+    assert '"$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/refs"' in creator
+    assert 'gh release create "v$RELEASE_VERSION"' in creator
+    for name in ("verify-release", "sdist", "wheels", "reproducibility-record", "release-admission",
+                 "release-assets", "publish-pypi"):
+        job = _job_block(text, name)
+        assert "gh release create" not in job and "/git/refs\"" not in job, name
+    assert "gh release create" not in release_job and "/git/refs" not in release_job
+    assert "contents: write" not in release_job
+
+    assert _requires(text, "create-tag-and-release", "release-admission")
+    assert _requires(text, "release-admission", "reproducibility-record")
+    assert _requires(text, "release-admission", "verify-release")
+    for sink in ("release-assets", "publish-pypi"):
+        assert _requires(text, sink, "create-tag-and-release"), sink
+        assert _requires(text, sink, "release-admission"), sink
+    for name in ("release-admission", "create-tag-and-release", "release-assets", "publish-pypi"):
+        job = _job_block(text, name)
+        assert "always()" not in job and "continue-on-error" not in job and "|| true" not in job, name
+        assert not re.search(r"(?m)^    if:", job), name
+
+    # Condition 4: the admitted wheel legs are exactly the build matrix.
+    wheels = _job_block(text, "wheels")
+    matrix = re.findall(r"target: (\S+)\n(?:            .*\n)*?            python-version: \"([^\"]+)\"", wheels)
+    assert sorted(f"{target}-py{version}" for target, version in matrix) == sorted(_expected_legs())
+
+
+def _admission_fixture(root: Path) -> dict:
+    legs = _expected_legs()
+    files = {leg: f"pkg-1.2.3-{leg}.whl" for leg in legs}
+    files["sdist"] = "pkg-1.2.3.tar.gz"
+    payload = {leg: f"bytes of {name}".encode() for leg, name in files.items()}
+    sha = {leg: hashlib.sha256(data).hexdigest() for leg, data in payload.items()}
+    (root / "dist").mkdir(parents=True)
+    for leg, name in files.items():
+        (root / "dist" / name).write_bytes(payload[leg])
+    (root / "record").mkdir()
+    rows = "".join(
+        f"{leg}\ttrue\tclean-target-repeat-same-env\t{sha[leg]}\t{sha[leg]}\t{files[leg]}\trunner:x\n"
+        for leg in sorted(files)
+    )
+    (root / "record" / "reproducibility-record.tsv").write_text(
+        f"# release {_RELEASE_TAG} @ {_RELEASE_COMMIT}, SOURCE_DATE_EPOCH=1\n"
+        "target\tbyte_verified\tverification\tsha256\trebuild_sha256\tfile\tbuild_env\n" + rows
+    )
+    artifacts = [f"dist-wheel-{leg}" for leg in legs] + ["dist-sdist", "reproducibility-record"]
+    for leg in legs:
+        name = f"license-evidence-{leg}"
+        artifacts.append(name)
+        bundle = root / "evidence" / name
+        bundle.mkdir(parents=True)
+        members = {files[leg]: payload[leg], files["sdist"]: payload["sdist"],
+                   f"{files[leg]}.cdx.json": b"{}", f"{files['sdist']}.cdx.json": b"{}"}
+        identity = {"source_repository": "owner/repo", "source_sha": _RELEASE_COMMIT, "evidence_artifact_name": name,
+                    "artifacts": {"wheel": {"filename": files[leg], "sha256": sha[leg]},
+                                  "sdist": {"filename": files["sdist"], "sha256": sha["sdist"]}}}
+        members["source-identity.json"] = (__import__("json").dumps(identity) + "\n").encode()
+        for member, data in members.items():
+            (bundle / member).write_bytes(data)
+        (bundle / "checksums.sha256").write_text(
+            "".join(f"{hashlib.sha256(members[m]).hexdigest()}  {m}\n" for m in sorted(members))
+        )
+    listing = [{"name": name, "workflow_run": {"id": _RUN_ID}, "expired": False, "digest": "sha256:" + "d" * 64}
+               for name in artifacts]
+    return {"legs": legs, "files": files, "listing": listing}
+
+
+def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> subprocess.CompletedProcess:
+    import json
+
+    if listing is not None:
+        (root / "run-artifacts.jsonl").write_text("".join(json.dumps(item) + "\n" for item in listing))
+    script = _step_python(_job_block(_workflow_text(), "release-admission"), step)
+    env = {**os.environ, "EXPECTED_WHEEL_LEGS": " ".join(_expected_legs()), "RUN_ID": str(_RUN_ID),
+           "RELEASE_COMMIT": _RELEASE_COMMIT, "RELEASE_TAG": _RELEASE_TAG, "REPOSITORY": "owner/repo"}
+    return subprocess.run([sys.executable, "-c", script], cwd=root, env=env, capture_output=True, text=True)
+
+
+_SET_STEP = "Require the exact same-run artifact set"
+_BYTES_STEP = "Admit exactly the verified bytes of release_commit"
+
+
+def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -> None:
+    import json
+
+    fixture = _admission_fixture(tmp_path / "ok")
+    ok_set = _run_admission(tmp_path / "ok", _SET_STEP, fixture["listing"])
+    assert ok_set.returncode == 0, ok_set.stderr
+    ok_bytes = _run_admission(tmp_path / "ok", _BYTES_STEP)
+    assert ok_bytes.returncode == 0, ok_bytes.stderr
+    assert len((tmp_path / "ok" / "admitted-manifest.tsv").read_text().splitlines()) == 13
+
+    def refuse_set(name: str, mutate, expected: str) -> None:
+        root = tmp_path / name
+        listing = _admission_fixture(root)["listing"]
+        result = _run_admission(root, _SET_STEP, mutate(listing))
+        assert result.returncode != 0 and expected in result.stderr, (name, result.stderr)
+
+    # Today no licence gate is wired: zero evidence bundles must refuse (fail-closed B1/B2).
+    refuse_set("no-evidence", lambda l: [a for a in l if not a["name"].startswith("license-evidence-")],
+               "licence evidence missing for 12 of 12 wheel legs")
+    refuse_set("eleven-evidence", lambda l: l[:-1], "licence evidence missing for 1 of 12 wheel legs")
+    refuse_set("other-run", lambda l: [dict(a, workflow_run={"id": 1}) if a["name"] == "dist-sdist" else a for a in l],
+               "dist-sdist: not produced by run")
+    refuse_set("expired", lambda l: [dict(a, expired=True) if a["name"] == "reproducibility-record" else a for a in l],
+               "reproducibility-record: expired")
+    refuse_set("no-digest", lambda l: [dict(a, digest=None) if a["name"].startswith("dist-wheel-") else a for a in l],
+               "no sha256 artifact digest")
+    refuse_set("duplicate", lambda l: l + [l[0]], "duplicate artifact name")
+    refuse_set("extra-dist", lambda l: l + [dict(l[0], name="dist-wheel-extra")], "unexpected publishable")
+    refuse_set("missing-dist", lambda l: [a for a in l if a["name"] != "dist-sdist"], "dist-sdist: not uploaded")
+
+    def refuse_bytes(name: str, mutate, expected: str) -> None:
+        root = tmp_path / name
+        fixture = _admission_fixture(root)
+        mutate(root, fixture)
+        result = _run_admission(root, _BYTES_STEP)
+        assert result.returncode != 0 and expected in result.stderr, (name, result.stderr)
+
+    first = _expected_legs()[0]
+
+    def rewrite_identity(root: Path, leg: str, change) -> None:
+        bundle = root / "evidence" / f"license-evidence-{leg}"
+        identity = json.loads((bundle / "source-identity.json").read_text())
+        change(identity)
+        (bundle / "source-identity.json").write_text(json.dumps(identity) + "\n")
+        members = {p.name: p.read_bytes() for p in bundle.iterdir() if p.name != "checksums.sha256"}
+        (bundle / "checksums.sha256").write_text(
+            "".join(f"{hashlib.sha256(members[m]).hexdigest()}  {m}\n" for m in sorted(members))
+        )
+
+    refuse_bytes("source-sha", lambda r, f: rewrite_identity(r, first, lambda i: i.update(source_sha="e" * 40)),
+                 "source_sha=")
+    refuse_bytes("wheel-sha", lambda r, f: rewrite_identity(
+        r, first, lambda i: i["artifacts"]["wheel"].update(sha256="0" * 64)), "sealed wheel is not the recorded")
+    refuse_bytes("sdist-seal", lambda r, f: rewrite_identity(
+        r, first, lambda i: i["artifacts"]["sdist"].update(sha256="1" * 64)), "the 12 sdist seals diverge")
+    refuse_bytes("tampered-member", lambda r, f: (r / "evidence" / f"license-evidence-{first}" / "source-identity.json")
+                 .write_text("{}\n"), "checksums.sha256 does not match")
+    refuse_bytes("extra-dist-file", lambda r, f: (r / "dist" / "extra.whl").write_bytes(b"x"),
+                 "distribution files differ from the record")
+    refuse_bytes("changed-dist-bytes", lambda r, f: (r / "dist" / f["files"][first]).write_bytes(b"other"),
+                 "distribution files differ from the record")
+
+    def record_mutation(root: Path, old: str, new: str) -> None:
+        path = root / "record" / "reproducibility-record.tsv"
+        path.write_text(path.read_text().replace(old, new, 1))
+
+    refuse_bytes("record-commit", lambda r, f: record_mutation(r, _RELEASE_COMMIT, "f" * 40),
+                 "reproducibility record is not bound")
+    refuse_bytes("record-unverified", lambda r, f: record_mutation(r, "\ttrue\t", "\tfalse\t"),
+                 "record row is not byte-verified")
+
+
+def test_publication_sinks_consume_only_the_admitted_bytes(tmp_path: Path) -> None:
+    text = _workflow_text()
+    for sink in ("release-assets", "publish-pypi"):
+        job = _job_block(text, sink)
+        step = job.split("- name: Require the admitted bytes\n", 1)[1].split("run: |\n", 1)[1]
+        script = textwrap.dedent(step.split("\n      - ", 1)[0])
+        for name, tamper in (("ok", None), ("changed", b"tampered"), ("extra", "extra")):
+            root = tmp_path / f"{sink}-{name}"
+            (root / "dist").mkdir(parents=True)
+            (root / "admission").mkdir()
+            (root / "dist" / "a.whl").write_bytes(b"a")
+            (root / "admission" / "admitted-manifest.tsv").write_text(
+                f"{hashlib.sha256(b'a').hexdigest()}  a.whl\n")
+            if tamper == b"tampered":
+                (root / "dist" / "a.whl").write_bytes(tamper)
+            elif tamper == "extra":
+                (root / "dist" / "b.whl").write_bytes(b"b")
+            result = subprocess.run(["bash", "-c", script], cwd=root, capture_output=True, text=True)
+            if tamper is None:
+                assert result.returncode == 0, (sink, result.stderr)
+            else:
+                assert result.returncode != 0 and "not the admitted bytes" in result.stderr, (sink, name)

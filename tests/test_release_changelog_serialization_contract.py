@@ -19,8 +19,14 @@ def test_release_workflow_checks_fragment_aggregate_before_tag_state() -> None:
 
     assert parity_check in workflow
     assert tag_state in workflow
-    assert tag_create in workflow
-    assert workflow.index(parity_check) < workflow.index(tag_state) < workflow.index(tag_create)
+    assert workflow.index(parity_check) < workflow.index(tag_state)
+    # R5a: the tag is created after release admission by publish-pypi.yml,
+    # which repeats the drift check before classifying and creating the tag.
+    assert tag_create not in workflow
+    publish = (_ROOT / ".github" / "workflows" / "publish-pypi.yml").read_text(encoding="utf-8")
+    creator = publish[publish.index("  create-tag-and-release:\n"):]
+    post_state = "Classify the tag and release state after admission"
+    assert creator.index(parity_check) < creator.index(post_state) < creator.index(tag_create)
 
 
 def test_feature_ci_does_not_require_derived_changelog_parity() -> None:
