@@ -28,3 +28,6 @@ pr-queue-governance*/
 *.orig
 *.rej
 .coverage
+
+# Orchestration billing/usage snapshots are operator evidence, never library source.
+billing-snapshots/
