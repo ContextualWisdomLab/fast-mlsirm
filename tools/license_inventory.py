@@ -30,7 +30,9 @@ import fnmatch
 import hashlib
 import io
 import json
+import os
 import re
+import stat
 import tarfile
 import tomllib
 import zipfile
@@ -108,8 +110,35 @@ class SpdxError(ValueError):
     """Raised for an expression outside the supported SPDX grammar or id list."""
 
 
+class EvidenceReadError(OSError):
+    """Raised when artifact bytes cannot be bound to one stable source path."""
+
+
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def read_stable_bytes(path: Path) -> bytes:
+    """Read a regular file once and reject path or descriptor mutation."""
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode):
+        raise EvidenceReadError(f"artifact path is not a regular non-symlink file: {path}")
+    with path.open("rb") as handle:
+        opened = os.fstat(handle.fileno())
+        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+            raise EvidenceReadError(f"artifact path changed before read: {path}")
+        data = handle.read()
+        after_fd = os.fstat(handle.fileno())
+    after_path = path.lstat()
+    def identity(file_stat):
+        return (file_stat.st_dev, file_stat.st_ino, file_stat.st_size, file_stat.st_mtime_ns)
+    if identity(before) != identity(opened) or identity(opened) != identity(after_fd):
+        raise EvidenceReadError(f"artifact changed while being read: {path}")
+    if identity(after_fd) != identity(after_path):
+        raise EvidenceReadError(f"artifact path was replaced after read: {path}")
+    if len(data) != after_fd.st_size:
+        raise EvidenceReadError(f"artifact read was incomplete: {path}")
+    return data
 
 
 def detect(text: str) -> list[str]:
@@ -295,15 +324,17 @@ def _text_covered_by(label: str, declared_ids: list[str]) -> bool:
     return any(i.startswith(label + "-") for i in declared_ids)
 
 
-def read_crate_license_files(crate: Path) -> list[dict]:
+def read_crate_license_files(data: bytes, artifact_sha256: str) -> list[dict]:
     """License files at the top level of a .crate archive (read from its bytes)."""
     out = []
-    with tarfile.open(fileobj=io.BytesIO(crate.read_bytes()), mode="r:gz") as tf:
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
         for member in sorted(tf.getmembers(), key=lambda m: m.name):
             parts = member.name.split("/")
             if member.isfile() and len(parts) == 2 and LICENSE_NAME.match(parts[1]):
                 data = tf.extractfile(member).read()
-                out.append({"path": parts[1], "sha256": sha256_bytes(data), "detected": detect(data.decode("utf-8", "replace"))})
+                out.append({"path": parts[1], "sha256": sha256_bytes(data),
+                            "artifact_sha256": artifact_sha256,
+                            "detected": detect(data.decode("utf-8", "replace"))})
     return out
 
 
@@ -365,15 +396,26 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
         source = lock_entry["source"]
         if source and source.startswith("registry+"):
             crates = sorted(cache.glob(f"*/{name}-{version}.crate"))
-            measured = sha256_bytes(crates[0].read_bytes()) if crates else None
+            archive_bytes = None
+            read_error = None
+            if crates:
+                try:
+                    archive_bytes = read_stable_bytes(crates[0])
+                except OSError as exc:
+                    read_error = str(exc)
+            measured = sha256_bytes(archive_bytes) if archive_bytes is not None else None
             expected = lock_entry["checksum"]
             bound = measured is not None and expected is not None and measured == expected
             source_hash = {"algorithm": "sha256", "expected": expected, "expected_origin": "Cargo.lock checksum",
                            "measured": measured, "measured_origin": ".crate bytes in the cargo registry cache",
                            "match": bound}
-            files = read_crate_license_files(crates[0]) if bound else []
+            files = read_crate_license_files(archive_bytes, measured) if bound else []
             if not bound:
                 hold.append("the .crate bytes are missing or do not match the Cargo.lock checksum")
+            if read_error:
+                hold.append(f"the .crate source path was not stable: {read_error}")
+            if bound and not files:
+                hold.append("the hash-bound .crate contains no license file")
             origin = ("package metadata (Cargo.toml license); license files read from the .crate whose sha256 "
                       "equals the Cargo.lock checksum" + ("" if files else "; the .crate contains NO license file")
                       ) if bound else "UNVERIFIED: no hash-bound .crate, license text not read"
@@ -391,6 +433,15 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
         elected, rationale = elect(norm)
         ident = f"{name}@{version}"
         file_labels = {label for f in files for label in f["detected"]}
+        declared_ids = spdx_terms(norm)
+        uncovered_copyleft = sorted(
+            label for label in file_labels if label in COPYLEFT_TEXT_LABELS
+            and not _text_covered_by(label, declared_ids)
+        )
+        if uncovered_copyleft:
+            hold.append(
+                f"artifact text also grants {uncovered_copyleft}, which the declared expression does not name"
+            )
         elected_terms = spdx_terms(elected)
         base = classify(elected) if elected else "UNKNOWN"
         rows.append({

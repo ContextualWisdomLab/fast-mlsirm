@@ -188,6 +188,7 @@ def test_crate_license_text_is_read_only_from_hash_bound_crate(tmp_path):
     (row,) = L.rust_inventory(_rust_args(tmp_path), gaps)
     assert row["source_hash"]["match"] is True
     assert [f["path"] for f in row["license_files_in_artifact"]] == ["LICENSE-MIT"]
+    assert row["license_files_in_artifact"][0]["artifact_sha256"] == row["source_hash"]["measured"]
     assert (row["license_class"], gaps) == ("PERMISSIVE", [])
 
 
@@ -207,3 +208,85 @@ def test_lock_entry_missing_from_metadata_is_a_gap_and_unknown(tmp_path):
     (row,) = L.rust_inventory(_rust_args(tmp_path, drop_from_metadata=True), gaps)
     assert row["license_class"] == "UNKNOWN"
     assert any("not in cargo metadata" in g for g in gaps)
+
+
+def test_registry_crate_without_license_file_is_hold(tmp_path):
+    """Cargo metadata alone cannot replace license text from the exact archive."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    digest = _crate(cache, "dep", "1.0", {"Cargo.toml": ""})
+    Path(args.cargo_lock_workspace).write_text(
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_binding).write_text(Path(args.cargo_lock_workspace).read_text())
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_files_in_artifact"] == []
+    assert row["license_class"] == "HOLD"
+    assert "contains no license file" in " ".join(row["hold_reasons"])
+
+
+def test_cargo_metadata_mit_does_not_hide_separate_lgpl_text(tmp_path):
+    """A permissive declaration cannot erase an additional copyleft grant."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    digest = _crate(cache, "dep", "1.0", {"LICENSE-MIT": MIT_TEXT, "COPYING.LESSER": LGPL_TEXT})
+    Path(args.cargo_lock_workspace).write_text(
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_binding).write_text(Path(args.cargo_lock_workspace).read_text())
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert "LGPL" in " ".join(row["hold_reasons"])
+
+
+def test_crate_archive_is_read_once_for_hash_and_license_text(tmp_path, monkeypatch):
+    """The bytes hashed are the same bytes used to extract license evidence."""
+    args = _rust_args(tmp_path)
+    original = L.read_stable_bytes
+    calls = []
+
+    def counted(path):
+        calls.append(path)
+        return original(path)
+
+    monkeypatch.setattr(L, "read_stable_bytes", counted)
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "PERMISSIVE"
+    assert len(calls) == 1
+
+
+def test_crate_path_replacement_during_read_is_hold(tmp_path, monkeypatch):
+    """Replacing the source path after open cannot retain a trusted hash binding."""
+    args = _rust_args(tmp_path)
+    crate = next(Path(args.cargo_registry_cache).glob("*/dep-1.0.crate"))
+    original_open = Path.open
+
+    class ReplacingReader:
+        def __init__(self, handle):
+            self.handle = handle
+        def __enter__(self):
+            return self
+        def __exit__(self, *exc):
+            return self.handle.__exit__(*exc)
+        def fileno(self):
+            return self.handle.fileno()
+        def read(self):
+            data = self.handle.read()
+            replacement = crate.with_suffix(".replacement")
+            replacement.write_bytes(data)
+            replacement.replace(crate)
+            return data
+
+    def replacing_open(path, *open_args, **open_kwargs):
+        handle = original_open(path, *open_args, **open_kwargs)
+        return ReplacingReader(handle) if path == crate else handle
+
+    monkeypatch.setattr(Path, "open", replacing_open)
+    (row,) = L.rust_inventory(args, [])
+    assert row["source_hash"]["match"] is False
+    assert row["license_class"] == "HOLD"
+    assert "source path was not stable" in " ".join(row["hold_reasons"])
