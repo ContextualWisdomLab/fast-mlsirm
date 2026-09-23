@@ -248,7 +248,7 @@ jobs:
     name: wheels (${{ matrix.target }}, py${{ matrix.python-version }})
     needs: verify-release
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       SOURCE_DATE_EPOCH: ${{ needs.verify-release.outputs.source_date_epoch }}
     strategy:
