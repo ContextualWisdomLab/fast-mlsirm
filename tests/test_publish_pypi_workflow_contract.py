@@ -579,3 +579,35 @@ def test_publication_sinks_consume_only_the_admitted_bytes(tmp_path: Path) -> No
                 assert result.returncode == 0, (sink, result.stderr)
             else:
                 assert result.returncode != 0 and "not the admitted bytes" in result.stderr, (sink, name)
+
+
+def test_release_admission_ignores_legitimate_non_distribution_artifacts(tmp_path: Path) -> None:
+    # Non-distribution artifacts a full run also uploads must not be confused
+    # with the distribution set: central gate diagnostic reports (names per
+    # ContextualWisdomLab/.github 00c6551183cca101cfc97c43656a17cc2491c1b4, gate
+    # L567/L575), the per-leg licence pair inputs, and this workflow's own
+    # reproducibility digest/rebuild artifacts.
+    legs = _expected_legs()
+    diagnostics = [
+        f"release-dependency-{kind}-report--license-evidence-{leg}" for kind in ("license", "gate") for leg in legs
+    ] + [f"license-pair-{leg}" for leg in legs] + [f"repro-digest-{leg}" for leg in legs] + [
+        "repro-digest-sdist"] + [f"repro-rebuild-{leg}" for leg in legs] + ["repro-rebuild-sdist"]
+    assert len(diagnostics) == 24 + 12 + 13 + 13
+
+    def listing_with(root: Path, extra: list[str]) -> list[dict]:
+        listing = _admission_fixture(root)["listing"]
+        template = dict(listing[0])
+        return listing + [dict(template, name=name) for name in extra]
+
+    ok = _run_admission(tmp_path / "ok", _SET_STEP, listing_with(tmp_path / "ok", diagnostics))
+    assert ok.returncode == 0, ok.stderr
+
+    # Rejections that must survive the relaxation-free check above.
+    for name, extra, expected in (
+        ("unknown-evidence", diagnostics + ["license-evidence-unknown-leg"], "unexpected publishable or evidence"),
+        ("unknown-dist", diagnostics + ["dist-wheel-unknown-leg"], "unexpected publishable or evidence"),
+        ("duplicate-leg", diagnostics + [f"dist-wheel-{legs[0]}"], "duplicate artifact name"),
+        ("duplicate-evidence", diagnostics + [f"license-evidence-{legs[0]}"], "duplicate artifact name"),
+    ):
+        result = _run_admission(tmp_path / name, _SET_STEP, listing_with(tmp_path / name, extra))
+        assert result.returncode != 0 and expected in result.stderr, (name, result.stderr)
