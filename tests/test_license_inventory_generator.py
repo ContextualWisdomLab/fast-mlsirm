@@ -424,6 +424,81 @@ def test_vendored_native_unmatched_verified_stanza_holds_package(tmp_path):
     assert "not fully verified" in " ".join(row["hold_reasons"])
 
 
+def _replace_wheel(args, writer):
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        writer(zf)
+    wheel.write_bytes(buf.getvalue())
+    digest = hashlib.sha256(buf.getvalue()).hexdigest()
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+
+
+def test_metadata_declared_custom_license_file_is_consumed(tmp_path):
+    """A nonstandard License-File cannot hide a package-wide restriction."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+
+    def writer(zf):
+        zf.writestr("pkg-1.0.dist-info/METADATA", "Metadata-Version: 2.4\nName: pkg\nVersion: 1.0\nLicense-File: terms.txt\n\n")
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+        zf.writestr("pkg-1.0.dist-info/licenses/terms.txt", "Commercial use is prohibited.\n")
+
+    _replace_wheel(args, writer)
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert "terms.txt" in " ".join(row["hold_reasons"])
+
+
+@pytest.mark.parametrize("declared", ["missing.txt", "../LICENSE", "/LICENSE", r"dir\LICENSE"])
+def test_invalid_or_missing_metadata_license_file_holds(tmp_path, declared):
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+
+    def writer(zf):
+        zf.writestr("pkg-1.0.dist-info/METADATA", f"Metadata-Version: 2.4\nName: pkg\nVersion: 1.0\nLicense-File: {declared}\n\n")
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+
+    _replace_wheel(args, writer)
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert row["vendored_native_license_holds"]
+
+
+def test_duplicate_wheel_member_holds_before_last_entry_can_mask_first(tmp_path):
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+
+    def writer(zf):
+        zf.writestr("pkg-1.0.dist-info/METADATA", "Metadata-Version: 2.4\nName: pkg\nVersion: 1.0\n\n")
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+        zf.writestr("pkg-1.0.dist-info/licenses/NOTICE", "Commercial use is prohibited.\n")
+        zf.writestr("pkg-1.0.dist-info/licenses/NOTICE", MIT_TEXT)
+
+    _replace_wheel(args, writer)
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert "duplicate wheel member" in " ".join(row["vendored_native_license_holds"])
+
+
+@pytest.mark.parametrize("pattern,expected", [("pkg.libs/libexample.so", "HOLD"), ("pkg.libs/libexample*.so", "PERMISSIVE")])
+def test_native_files_scope_is_exact_unless_notice_declares_glob(tmp_path, pattern, expected):
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+
+    def writer(zf):
+        zf.writestr("pkg-1.0.dist-info/METADATA", "Metadata-Version: 2.4\nName: pkg\nVersion: 1.0\n\n")
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+        zf.writestr("pkg.libs/libexample_unrelated.so", b"synthetic")
+        body = "\n".join(f" {line}" if line else " ." for line in MIT_TEXT.splitlines())
+        zf.writestr("pkg-1.0.dist-info/licenses/NOTICE", f"Name: component\nFiles: {pattern}\nLicense: MIT OR LGPL-2.1-or-later\n{body}\n")
+
+    _replace_wheel(args, writer)
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == expected
+    assert bool(row["vendored_native_license_holds"]) is (expected == "HOLD")
+
+
 def test_missing_scope_is_unclassified_gap_not_exclusion(tmp_path):
     """A package without a scope entry is UNCLASSIFIED with unknown scope, and a gap."""
     gaps = []

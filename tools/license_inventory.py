@@ -31,6 +31,7 @@ import hashlib
 import io
 import json
 import os
+import posixpath
 import re
 import stat
 import tarfile
@@ -378,15 +379,39 @@ def _text_covered_by(label: str, declared_ids: list[str]) -> bool:
     return any(i.startswith(label + "-") for i in declared_ids)
 
 
+def normalized_archive_path(path: str) -> str | None:
+    """Return one canonical relative POSIX member path, or reject it."""
+    if not path or "\\" in path or "\x00" in path or path.startswith("/"):
+        return None
+    normalized = posixpath.normpath(path)
+    if normalized in ("", ".") or normalized.startswith("../"):
+        return None
+    if normalized != path.rstrip("/"):
+        return None
+    return normalized
+
+
 def read_crate_license_files(
     data: bytes, artifact_sha256: str, declared_license_file: str | None
-) -> list[dict]:
+) -> tuple[list[dict], list[str]]:
     """Read every license-named member and the metadata-declared license file."""
     out = []
-    declared = (declared_license_file or "").replace("\\", "/").removeprefix("./")
+    errors = []
+    declared = normalized_archive_path(declared_license_file or "") or ""
+    if declared_license_file and not declared:
+        errors.append("Cargo metadata license_file is not a safe canonical relative path")
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
+        seen = set()
         for member in sorted(tf.getmembers(), key=lambda m: m.name):
-            parts = member.name.split("/")
+            normalized = normalized_archive_path(member.name)
+            if normalized is None:
+                errors.append(f"unsafe or non-canonical archive member path: {member.name!r}")
+                continue
+            if normalized in seen:
+                errors.append(f"duplicate archive member path: {normalized!r}")
+                continue
+            seen.add(normalized)
+            parts = normalized.split("/")
             relative = "/".join(parts[1:])
             base = parts[-1]
             if member.isfile() and (LICENSE_NAME.match(base) or (declared and relative == declared)):
@@ -398,7 +423,7 @@ def read_crate_license_files(
                             "verified_standard_text": verified_standard_text(
                                 raw.decode("utf-8", "replace")
                             )})
-    return out
+    return out, errors
 
 
 def license_files_in_dir(root: Path) -> list[dict]:
@@ -472,9 +497,10 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
             source_hash = {"algorithm": "sha256", "expected": expected, "expected_origin": "Cargo.lock checksum",
                            "measured": measured, "measured_origin": ".crate bytes in the cargo registry cache",
                            "match": bound}
-            files = read_crate_license_files(
+            files, archive_errors = read_crate_license_files(
                 archive_bytes, measured, p.get("license_file") if p else None
-            ) if bound else []
+            ) if bound else ([], [])
+            hold.extend(archive_errors)
             if not bound:
                 hold.append("the .crate bytes are missing or do not match the Cargo.lock checksum")
             if read_error:
@@ -613,23 +639,59 @@ def notice_stanza_grant_verified(stanza: dict) -> bool:
 
 def python_artifact_evidence(path: Path) -> dict:
     data = path.read_bytes()
-    ev = {"artifact": path.name, "sha256": sha256_bytes(data), "license_files": [], "metadata": {}, "vendored_native": []}
+    ev = {"artifact": path.name, "sha256": sha256_bytes(data), "license_files": [],
+          "metadata": {}, "vendored_native": [], "evidence_errors": []}
     if path.suffix != ".whl":
         return ev
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        names = zf.namelist()
-        meta = next(n for n in names if n.endswith(".dist-info/METADATA"))
-        for line in zf.read(meta).decode("utf-8", "replace").splitlines():
+        members = {}
+        for info in zf.infolist():
+            normalized = normalized_archive_path(info.filename)
+            if normalized is None:
+                ev["evidence_errors"].append(
+                    f"unsafe or non-canonical wheel member path: {info.filename!r}"
+                )
+                continue
+            if normalized in members:
+                ev["evidence_errors"].append(f"duplicate wheel member path: {normalized!r}")
+                continue
+            members[normalized] = info
+        metadata_paths = sorted(n for n in members if n.endswith(".dist-info/METADATA"))
+        if len(metadata_paths) != 1:
+            ev["evidence_errors"].append(
+                f"wheel must contain exactly one .dist-info/METADATA member; found {len(metadata_paths)}"
+            )
+            return ev
+        meta = metadata_paths[0]
+        for line in zf.read(members[meta]).decode("utf-8", "replace").splitlines():
             if not line:
                 break
             k, _, v = line.partition(": ")
             if k in ("License", "License-Expression", "License-File") or (k == "Classifier" and v.startswith("License")):
                 ev["metadata"].setdefault(k, []).append(v)
+        declared_values = ev["metadata"].get("License-File", [])
+        if len(declared_values) != len(set(declared_values)):
+            ev["evidence_errors"].append("duplicate METADATA License-File declaration")
+        dist_info = meta.rsplit("/", 1)[0]
+        declared_paths = set()
+        for value in declared_values:
+            declared = normalized_archive_path(value)
+            if declared is None:
+                ev["evidence_errors"].append(
+                    f"METADATA License-File is not a safe canonical relative path: {value!r}"
+                )
+                continue
+            resolved = f"{dist_info}/licenses/{declared}"
+            declared_paths.add(resolved)
+            if resolved not in members:
+                ev["evidence_errors"].append(
+                    f"declared METADATA License-File member is absent: {resolved!r}"
+                )
         stanzas = []
-        for n in names:
+        for n, info in members.items():
             base = n.rsplit("/", 1)[-1]
-            if ".dist-info/" in n and LICENSE_NAME.match(base):
-                raw = zf.read(n)
+            if ".dist-info/" in n and (LICENSE_NAME.match(base) or n in declared_paths):
+                raw = zf.read(info)
                 text = raw.decode("utf-8", "replace")
                 file_stanzas, notice_consumed = parse_notice_stanzas(text)
                 for stanza in file_stanzas:
@@ -645,18 +707,22 @@ def python_artifact_evidence(path: Path) -> dict:
                     "notice_file_fully_consumed": notice_consumed,
                     "candidate_verified": False,
                 })
-        for n in names:
+        for n, info in members.items():
             base = n.rsplit("/", 1)[-1]
             if re.search(r"\.(so(\.[0-9]+)*|dylib|dll|a)$", base) and (
                 ".libs/" in n or ".dylibs/" in n or "/" not in n
             ):
-                norm = n.replace("\\", "/")
-                match = [s for s in stanzas if any(fnmatch.fnmatch(norm, g.strip().replace("\\", "/")) or fnmatch.fnmatch(norm, g.strip().replace("\\", "/").replace(".so", "*")) for g in s["Files"].split(","))]
+                norm = n
+                match = [s for s in stanzas if any(
+                    normalized_archive_path(g.strip()) is not None
+                    and fnmatch.fnmatchcase(norm, g.strip())
+                    for g in s["Files"].split(",")
+                )]
                 for stanza in match:
                     stanza["Matched-Native"].append(norm)
                 ev["vendored_native"].append({
                     "path": n,
-                    "sha256": sha256_bytes(zf.read(n)),
+                    "sha256": sha256_bytes(zf.read(info)),
                     "notice_stanza": [{
                         "name": s["Name"],
                         "license": s.get("License"),
@@ -687,6 +753,9 @@ def vendored_native_license_holds(artifacts: list[dict]) -> list[str]:
     for artifact in artifacts:
         if not artifact["hash_binding"]["match"]:
             continue
+        findings.extend(
+            f"{artifact['artifact']}: {error}" for error in artifact.get("evidence_errors", [])
+        )
         for native in artifact["vendored_native"]:
             stanzas = native["notice_stanza"]
             if not stanzas:
