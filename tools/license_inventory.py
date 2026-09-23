@@ -92,6 +92,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
+MIT_COPYRIGHT_HEADER = re.compile(
+    r"^Copyright \(c\) [0-9]{4}(?:-[0-9]{4})? [A-Za-z0-9_-]+(?: [A-Za-z0-9_-]+)*$"
+)
 COPYLEFT_TEXT_LABELS = ("AGPL", "LGPL", "GPL")
 WEAK_COPYLEFT_TEXT_LABELS = ("MPL-2.0",)
 
@@ -198,7 +201,11 @@ def verified_standard_text(text: str) -> list[str]:
         lines.pop(0)
     if lines and lines[0].strip().casefold() == "mit license":
         lines.pop(0)
-    while lines and (not lines[0].strip() or lines[0].strip().casefold().startswith("copyright")):
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if lines and MIT_COPYRIGHT_HEADER.fullmatch(lines[0].strip()):
+        lines.pop(0)
+    while lines and not lines[0].strip():
         lines.pop(0)
     candidate = " ".join("\n".join(lines).split()).casefold()
     canonical = " ".join(MIT_CANONICAL_BODY.split()).casefold()
@@ -505,6 +512,11 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
         unrecognized_files = sorted(f["path"] for f in files if not f["detected"])
         if unrecognized_files:
             hold.append(f"license candidate text is unrecognized: {unrecognized_files}")
+        unverified_files = sorted(
+            f["path"] for f in files if not f.get("verified_standard_text")
+        )
+        if unverified_files:
+            hold.append(f"license candidate text is not canonically verified: {unverified_files}")
         declared_ids = spdx_terms(norm)
         uncovered_copyleft = sorted(
             label for label in file_labels if label in COPYLEFT_TEXT_LABELS

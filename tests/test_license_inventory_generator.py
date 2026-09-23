@@ -460,3 +460,47 @@ def test_positive_phrase_only_is_not_verified_for_other_supported_license(tmp_pa
     (row,) = L.rust_inventory(args, [])
     assert row["license_class"] == "HOLD"
     assert row["elected_text_present_in_artifact"] is False
+
+
+def test_copyright_header_cannot_hide_an_additional_condition(tmp_path):
+    """Only a strict copyright header may be removed before canonical comparison."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    tainted = MIT_TEXT.replace(
+        "Copyright (c) 2026 Test Author",
+        "Copyright (c) 2026 Test Author. Additional condition: Use is permitted solely for academic research.",
+    )
+    digest = _crate(cache, "dep", "1.0", {"LICENSE": tainted})
+    Path(args.cargo_lock_workspace).write_text(
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_binding).write_text(Path(args.cargo_lock_workspace).read_text())
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert row["elected_text_present_in_artifact"] is False
+
+
+@pytest.mark.parametrize(
+    "other_name,other_text",
+    [
+        ("COPYING", MIT_TEXT + "\nAdditional condition: Use is permitted solely for academic research.\n"),
+        ("NOTICE", "Apache License Version 2.0"),
+    ],
+)
+def test_verified_mit_cannot_hide_an_unverified_candidate_file(tmp_path, other_name, other_text):
+    """Every collected candidate is independently verified or the row is held."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    digest = _crate(cache, "dep", "1.0", {"LICENSE": MIT_TEXT, other_name: other_text})
+    Path(args.cargo_lock_workspace).write_text(
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_binding).write_text(Path(args.cargo_lock_workspace).read_text())
+    (row,) = L.rust_inventory(args, [])
+    assert row["elected_text_present_in_artifact"] is True
+    assert row["license_class"] == "HOLD"
+    assert other_name in " ".join(row["hold_reasons"])
