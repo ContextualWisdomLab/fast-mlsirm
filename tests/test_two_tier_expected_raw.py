@@ -1,4 +1,9 @@
-"""Tests for two-tier expected raw total E[T|theta_focal] (manuscript G+4+W path)."""
+"""Tests for the two-tier expected raw total score E[T|theta_focal].
+
+The fixture is a general primary plus one further primary with a nested
+loading pattern, which is the smallest design that exercises the fixed-primary
+conditioning path. Synthetic data only.
+"""
 from __future__ import annotations
 
 import numpy as np
