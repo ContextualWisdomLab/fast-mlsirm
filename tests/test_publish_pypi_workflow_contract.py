@@ -54,7 +54,7 @@ def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     assert "release tag does not target release_commit" in verify
     assert 'tomllib.load' in verify or 'tomllib.loads' in verify
     assert 'f"v{project[\'version\']}"' in verify
-    assert text.count("maturin-version: v1.14.1") == 2
+    assert text.count("maturin-version: v1.14.1") == 3
 
 
 def test_wheels_cover_supported_cpython_versions_on_every_platform() -> None:
@@ -170,3 +170,58 @@ def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> N
     assert "release-assets" not in publish.split("needs:", 1)[1].split("\n", 1)[0]
     assert "skipping GitHub asset upload" in assets
     assert "skip-existing: true" in publish
+
+
+def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> None:
+    text = _workflow_text()
+    verify = _job_block(text, "verify-release")
+    sdist = _job_block(text, "sdist")
+    wheels = _job_block(text, "wheels")
+    record = _job_block(text, "reproducibility-record")
+
+    # SOURCE_DATE_EPOCH is the committer time of the exact release commit,
+    # derived once and fanned out, never the wall clock of the build runner.
+    assert 'epoch="$(git log -1 --format=%ct "$RELEASE_COMMIT")"' in verify
+    assert "source_date_epoch: ${{ steps.source-date-epoch.outputs.value }}" in verify
+    for job in (verify, sdist, wheels, record):
+        assert "date +%s" not in job
+    epoch_env = "SOURCE_DATE_EPOCH: ${{ needs.verify-release.outputs.source_date_epoch }}"
+    assert f"    env:\n      {epoch_env}\n" in sdist
+    assert f"    env:\n      {epoch_env}\n" in wheels
+
+    # maturin-action does not forward SOURCE_DATE_EPOCH into the manylinux
+    # container on its own, so every wheel build step passes it explicitly.
+    builds = re.findall(r"(?ms)^      - name: (?:Build|Rebuild) wheel.*?(?=^      - )", wheels)
+    assert len(builds) == 2
+    for build in builds:
+        assert "docker-options: -e SOURCE_DATE_EPOCH\n" in build
+
+    # One leg per OS/arch family is built twice from a fresh target dir and
+    # compared byte-for-byte; the job fails when the digests differ.
+    flags = re.findall(r"target: (\S+)\n(?:            .*\n)*?            verify-reproducible: (true|false)", wheels)
+    assert len(flags) == 12
+    assert sorted(t for t, flag in flags if flag == "true") == sorted(
+        {
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "universal2-apple-darwin",
+            "x86_64-pc-windows-msvc",
+        }
+    )
+    rebuild = builds[1]
+    assert "if: ${{ matrix.verify-reproducible }}" in rebuild
+    assert "--out dist-rebuild --target-dir target-rebuild" in rebuild
+    compare = wheels.split("- name: Compare double-build wheel digests and record them", 1)[1]
+    assert 'second = digests("dist-rebuild")' in compare
+    assert "if first != second:" in compare
+    assert "wheel is not byte-reproducible for" in compare
+
+    # Every artifact gets a digest row that states whether it was byte-verified,
+    # published as a summary and artifact outside the dist-* publish pattern.
+    assert "name: repro-digest-${{ matrix.target }}-py${{ matrix.python-version }}" in wheels
+    assert "name: repro-digest-sdist" in sdist
+    assert "pattern: repro-digest-*" in record
+    assert "byte_verified" in record
+    assert 'if [ "$rows" -ne 13 ]' in record
+    assert "GITHUB_STEP_SUMMARY" in record
+    assert "name: reproducibility-record" in record
