@@ -106,15 +106,21 @@ copyright and permission notice). The legacy crates.io forms `A/B` and
 `A / B` are normalized to `A OR B`. The remaining non-disjunctive grants in
 published scope are:
 
-- MIT (16);
+- MIT (17);
 - Apache-2.0: `codespan-reporting`, `gl_generator`, `glutin_wgl_sys`,
   `khronos_api` and `spirv`;
 - Zlib: `foldhash` and `slotmap`;
 - ISC: `libloading`;
 - BSD-2-Clause: the rust `numpy` binding crate;
-- Apache-2.0 WITH LLVM-exception: `target-lexicon`;
-- `(MIT OR Apache-2.0) AND Unicode-3.0`, elected as `MIT AND Unicode-3.0`:
-  `unicode-ident`.
+- Apache-2.0 WITH LLVM-exception: `target-lexicon`.
+
+`unicode-ident` is one of the 131 disjunctive rows:
+`(MIT OR Apache-2.0) AND Unicode-3.0`, elected as `MIT AND Unicode-3.0`.
+
+In the inventory, `declared_license_class` classifies the declared expression
+and `license_class` classifies the elected one. For r-efi these are
+`COPYLEFT` (because of its LGPL alternative) and `PERMISSIVE`
+respectively.
 
 **Metadata compared with the license file in the artifact.** 16 registry
 crates ship **no license file in the `.crate`** (their SPDX field is present).

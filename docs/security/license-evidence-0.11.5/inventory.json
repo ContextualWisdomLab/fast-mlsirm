@@ -7,6 +7,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -53,6 +54,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT/Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -95,6 +97,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -143,6 +146,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -195,6 +199,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -247,6 +252,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -295,6 +301,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -343,6 +350,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -385,6 +393,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -433,6 +442,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -481,6 +491,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -529,6 +540,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -583,6 +595,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -634,6 +647,7 @@
     "x86_64-apple-darwin"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -664,6 +678,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -712,6 +727,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Zlib OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -767,6 +783,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Zlib OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -822,6 +839,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Zlib OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -871,6 +889,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -919,6 +938,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -967,6 +987,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1015,6 +1036,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1063,6 +1085,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "Apache-2.0",
@@ -1110,6 +1133,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1158,6 +1182,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1199,6 +1224,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1253,6 +1279,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1307,6 +1334,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1355,6 +1383,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Zlib OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1385,6 +1414,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1429,6 +1459,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1477,6 +1508,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1525,6 +1557,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1573,6 +1606,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1602,6 +1636,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1644,6 +1679,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 / MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1692,6 +1728,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Zlib",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "Zlib",
@@ -1733,6 +1770,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1775,6 +1813,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1817,6 +1856,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1859,6 +1899,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1901,6 +1942,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1943,6 +1985,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -1991,6 +2034,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2032,6 +2076,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2074,6 +2119,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2118,6 +2164,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "Apache-2.0",
@@ -2149,6 +2196,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0 OR Zlib",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2204,6 +2252,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "Apache-2.0",
@@ -2245,6 +2294,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2297,6 +2347,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2349,6 +2400,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2401,6 +2453,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2455,6 +2508,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2497,6 +2551,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2545,6 +2600,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2599,6 +2655,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2647,6 +2704,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2689,6 +2747,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2731,6 +2790,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2758,6 +2818,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2800,6 +2861,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2846,6 +2908,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT/Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2894,6 +2957,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "Apache-2.0",
@@ -2921,6 +2985,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -2969,6 +3034,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3023,6 +3089,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "ISC",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "ISC",
@@ -3070,6 +3137,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3112,6 +3180,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3174,6 +3243,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3222,6 +3292,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3270,6 +3341,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3318,6 +3390,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3372,6 +3445,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT/Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3426,6 +3500,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Unlicense OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3485,6 +3560,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3514,6 +3590,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3562,6 +3639,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3610,6 +3688,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3658,6 +3737,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3712,6 +3792,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3760,6 +3841,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3793,6 +3875,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3847,6 +3930,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3901,6 +3985,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -3955,6 +4040,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4009,6 +4095,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "BSD-2-Clause",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "BSD-2-Clause",
@@ -4053,6 +4140,7 @@
     "x86_64-apple-darwin"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4086,6 +4174,7 @@
     "x86_64-apple-darwin"
    ],
    "declared_license": "Zlib OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4119,6 +4208,7 @@
     "x86_64-apple-darwin"
    ],
    "declared_license": "Zlib OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4152,6 +4242,7 @@
     "x86_64-apple-darwin"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4185,6 +4276,7 @@
     "x86_64-apple-darwin"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4215,6 +4307,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Zlib OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4245,6 +4338,7 @@
     "x86_64-apple-darwin"
    ],
    "declared_license": "Zlib OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4278,6 +4372,7 @@
     "x86_64-apple-darwin"
    ],
    "declared_license": "Zlib OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4314,6 +4409,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4362,6 +4458,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4401,6 +4498,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4446,6 +4544,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4500,6 +4599,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4548,6 +4648,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4590,6 +4691,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4635,6 +4737,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4683,6 +4786,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Apache-2.0/MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4731,6 +4835,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4773,6 +4878,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4815,6 +4921,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4857,6 +4964,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4905,6 +5013,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4953,6 +5062,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -4999,6 +5109,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5045,6 +5156,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5093,6 +5205,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5141,6 +5254,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5174,6 +5288,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5222,6 +5337,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5276,6 +5392,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5324,6 +5441,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5378,6 +5496,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5426,6 +5545,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5468,6 +5588,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT/Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5510,6 +5631,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5558,6 +5680,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5600,6 +5723,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0 OR LGPL-2.1-or-later",
+   "declared_license_class": "COPYLEFT",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5609,7 +5733,7 @@
    "in_published_artifact_scope": false,
    "in_wheel_sbom": false,
    "in_workspace_lock": true,
-   "license_class": "COPYLEFT",
+   "license_class": "PERMISSIVE",
    "license_files_in_artifact": [
     {
      "detected": [
@@ -5637,6 +5761,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0 OR LGPL-2.1-or-later",
+   "declared_license_class": "COPYLEFT",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5646,7 +5771,7 @@
    "in_published_artifact_scope": false,
    "in_wheel_sbom": false,
    "in_workspace_lock": true,
-   "license_class": "COPYLEFT",
+   "license_class": "PERMISSIVE",
    "license_files_in_artifact": [
     {
      "detected": [
@@ -5674,6 +5799,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5723,6 +5849,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5772,6 +5899,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5821,6 +5949,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5872,6 +6001,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5922,6 +6052,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0 OR Zlib",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -5980,6 +6111,7 @@
     "x86_64-apple-darwin"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6031,6 +6163,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT/Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6079,6 +6212,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6114,6 +6248,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6160,6 +6295,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6212,6 +6348,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Apache-2.0/MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6266,6 +6403,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6314,6 +6452,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6370,6 +6509,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6412,6 +6552,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT/Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6460,6 +6601,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6508,6 +6650,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6556,6 +6699,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6604,6 +6748,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6652,6 +6797,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6700,6 +6846,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6748,6 +6895,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6796,6 +6944,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6850,6 +6999,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6898,6 +7048,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -6933,6 +7084,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Zlib",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "Zlib",
@@ -6968,6 +7120,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7016,6 +7169,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7068,6 +7222,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "Apache-2.0",
@@ -7105,6 +7260,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7153,6 +7309,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7201,6 +7358,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7249,6 +7407,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7297,6 +7456,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Apache-2.0 WITH LLVM-exception",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "Apache-2.0 WITH LLVM-exception",
@@ -7332,6 +7492,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7374,6 +7535,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Unlicense OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7421,6 +7583,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7469,6 +7632,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7517,6 +7681,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7565,6 +7730,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7613,6 +7779,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7667,6 +7834,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7715,6 +7883,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7763,6 +7932,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7816,6 +7986,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -7858,6 +8029,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT AND Unicode-3.0",
@@ -7914,6 +8086,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT AND Unicode-3.0",
@@ -7976,6 +8149,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8031,6 +8205,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8079,6 +8254,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8133,6 +8309,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT/Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8175,6 +8352,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT/Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8217,6 +8395,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8266,6 +8445,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8308,6 +8488,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8350,6 +8531,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8392,6 +8574,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8434,6 +8617,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8476,6 +8660,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8518,6 +8703,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8560,6 +8746,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8602,6 +8789,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8644,6 +8832,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8689,6 +8878,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8727,6 +8917,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8769,6 +8960,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8811,6 +9003,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8859,6 +9052,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8907,6 +9101,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -8955,6 +9150,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9003,6 +9199,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9048,6 +9245,7 @@
     "x86_64-apple-darwin"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9093,6 +9291,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9135,6 +9334,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9177,6 +9377,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9223,6 +9424,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9269,6 +9471,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9317,6 +9520,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9365,6 +9569,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9413,6 +9618,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9461,6 +9667,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9509,6 +9716,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9557,6 +9765,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Unlicense OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9606,6 +9815,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9652,6 +9862,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9698,6 +9909,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9744,6 +9956,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9790,6 +10003,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9834,6 +10048,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9878,6 +10093,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9924,6 +10140,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -9970,6 +10187,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -10016,6 +10234,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -10060,6 +10279,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -10104,6 +10324,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT OR Apache-2.0",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -10148,6 +10369,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -10197,6 +10419,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -10234,6 +10457,7 @@
     "x86_64-pc-windows-msvc"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -10269,6 +10493,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -10324,6 +10549,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -10379,6 +10605,7 @@
   {
    "compiled_at_build_for_targets": [],
    "declared_license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -10434,6 +10661,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -10489,6 +10717,7 @@
     "x86_64-unknown-linux-gnu"
    ],
    "declared_license": "MIT",
+   "declared_license_class": "PERMISSIVE",
    "declared_license_file": null,
    "ecosystem": "cargo",
    "elected_license": "MIT",
@@ -14062,6 +14291,12 @@
  "summary": {
   "cargo_binding_graph_packages": 158,
   "cargo_by_class": {
+   "COPYLEFT": 0,
+   "PERMISSIVE": 229,
+   "UNKNOWN": 0,
+   "WEAK-COPYLEFT": 0
+  },
+  "cargo_by_declared_class": {
    "COPYLEFT": 2,
    "PERMISSIVE": 227,
    "UNKNOWN": 0,
