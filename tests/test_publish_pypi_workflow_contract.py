@@ -225,3 +225,9 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     assert 'if [ "$rows" -ne 13 ]' in record
     assert "GITHUB_STEP_SUMMARY" in record
     assert "name: reproducibility-record" in record
+
+    # SOURCE_DATE_EPOCH alone is not enough: with the default 16 codegen units
+    # fresh builds of the binding crate differ in `.llvm.<hash>` symbol
+    # suffixes, so the shipped release profile pins a single codegen unit.
+    binding = (REPO_ROOT / "crates" / "fast-mlsirm-py" / "Cargo.toml").read_text(encoding="utf-8")
+    assert re.search(r"(?m)^\[profile\.release\]\n(?:(?!\[).*\n)*?codegen-units = 1$", binding)
