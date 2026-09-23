@@ -227,8 +227,16 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     assert "if first != second:" in compare_wheel
     assert "is not byte-reproducible" in compare_wheel
     assert "clean-target-repeat-same-env" in compare_wheel
-    assert "could not record the manylinux container digest" in compare_wheel
-    assert '"--digests"' in compare_wheel
+    assert '"docker", "images"' not in compare_wheel  # never scan unrelated cached images
+    assert "container: ${{ matrix.container }}" in builds[0]
+    assert "container: ${{ matrix.container }}" in builds[1]
+    containers = re.findall(r"target: (\S+)\n(?:            .*\n)*?            container: \"([^\"]*)\"", wheels)
+    assert len(containers) == 12
+    for target, image in containers:
+        if "linux" in target:
+            assert re.fullmatch(r"quay\.io/pypa/manylinux2014_(?:x86_64|aarch64)@sha256:[0-9a-f]{64}", image), image
+        else:
+            assert image == "", (target, image)
     assert "name: repro-rebuild-${{ matrix.target }}-py${{ matrix.python-version }}" in wheels
     assert "name: repro-rebuild-sdist" in sdist
 
@@ -288,3 +296,69 @@ def test_historical_sdist_license_injection_is_byte_reproducible(tmp_path: Path)
                 assert reader.extractfile("fast_mlsirm-0.0.0/LICENSE").read() == (REPO_ROOT / "LICENSE").read_bytes()
             outputs.append(hashlib.sha256(archive.read_bytes()).hexdigest())
     assert len(set(outputs)) == 1, outputs
+
+
+_PINNED = "quay.io/pypa/manylinux2014_x86_64@sha256:" + "a" * 64
+_UNRELATED = "quay.io/pypa/manylinux2014_x86_64@sha256:" + "b" * 64
+
+
+def _run_compare(tmp_path: Path, name: str, *, leg: str, runner_os: str, container: str,
+                 docker_digests: list[str] | None, runner_identity: bool = True) -> subprocess.CompletedProcess:
+    script = _step_python(_job_block(_workflow_text(), "wheels"), "Compare double-build wheel digests and record them")
+    work = tmp_path / name
+    for dist in ("dist", "dist-rebuild"):
+        (work / dist).mkdir(parents=True)
+        (work / dist / "pkg-0-py3-none-any.whl").write_bytes(b"same bytes")
+    stub = work / "bin"
+    stub.mkdir()
+    docker = stub / "docker"
+    # Stub runner docker: `image inspect <ref>` succeeds only for images in docker_digests.
+    docker.write_text(
+        "#!/bin/sh\n"
+        f"KNOWN='{' '.join(docker_digests or [])}'\n"
+        'for ref; do :; done\n'  # the image reference is the last argument
+        'for d in $KNOWN; do [ "$d" = "$ref" ] && { printf \'["%s"]\\n\' "$ref"; exit 0; }; done\n'
+        'echo "Error: No such image: $ref" >&2; exit 1\n'
+    )
+    docker.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k not in {"ImageOS", "ImageVersion", "RUNNER_ARCH"}}
+    env.update({"PATH": f"{stub}{os.pathsep}{env['PATH']}", "SOURCE_DATE_EPOCH": "1790068752", "LEG": leg,
+                "ARTIFACT_GLOB": "*.whl", "RUNNER_OS": runner_os, "CONTAINER_IMAGE": container})
+    if runner_identity:
+        env.update({"ImageOS": "ubuntu24", "ImageVersion": "20260920.1", "RUNNER_ARCH": "X64"})
+    return subprocess.run([sys.executable, "-c", script], cwd=work, env=env, capture_output=True, text=True)
+
+
+def test_build_env_provenance_is_bound_to_the_invocation_and_fails_closed(tmp_path: Path) -> None:
+    linux = "x86_64-unknown-linux-gnu-py3.12"
+    ok = _run_compare(tmp_path, "linux-ok", leg=linux, runner_os="Linux", container=_PINNED,
+                      docker_digests=[_PINNED, _UNRELATED])
+    assert ok.returncode == 0, ok.stderr
+    row = (tmp_path / "linux-ok" / "repro-digest" / f"{linux}.tsv").read_text().rstrip("\n").split("\t")
+    assert row[-1] == f"container:{_PINNED}"
+
+    # Negative shape 1: a Linux leg with only an unrelated cached image, or no bound digest.
+    cached_only = _run_compare(tmp_path, "linux-cached-only", leg=linux, runner_os="Linux", container=_PINNED,
+                               docker_digests=[_UNRELATED])
+    assert cached_only.returncode != 0 and "is not present on this runner" in cached_only.stderr
+    unbound = _run_compare(tmp_path, "linux-unbound", leg=linux, runner_os="Linux", container="",
+                           docker_digests=[_UNRELATED])
+    assert unbound.returncode != 0 and "no digest-pinned build container" in unbound.stderr
+    tag_only = _run_compare(tmp_path, "linux-tag", leg=linux, runner_os="Linux",
+                            container="quay.io/pypa/manylinux2014_x86_64:latest", docker_digests=[_UNRELATED])
+    assert tag_only.returncode != 0 and "no digest-pinned build container" in tag_only.stderr
+
+    # Negative shape 2: a container-less row (macOS/Windows/sdist) with a container digest or no runner identity.
+    for leg, runner_os in (("universal2-apple-darwin-py3.12", "macOS"), ("x86_64-pc-windows-msvc-py3.12", "Windows"),
+                           ("sdist", "Linux")):
+        carries = _run_compare(tmp_path, f"{runner_os}-{leg}-carries", leg=leg, runner_os=runner_os,
+                               container=_PINNED, docker_digests=[_PINNED])
+        assert carries.returncode != 0 and "carries container provenance" in carries.stderr, (leg, carries.stderr)
+        anonymous = _run_compare(tmp_path, f"{runner_os}-{leg}-anon", leg=leg, runner_os=runner_os, container="",
+                                 docker_digests=[_PINNED], runner_identity=False)
+        assert anonymous.returncode != 0 and "missing runner identity" in anonymous.stderr, (leg, anonymous.stderr)
+        good = _run_compare(tmp_path, f"{runner_os}-{leg}-ok", leg=leg, runner_os=runner_os, container="",
+                            docker_digests=[_PINNED])
+        assert good.returncode == 0, (leg, good.stderr)
+        row = (tmp_path / f"{runner_os}-{leg}-ok" / "repro-digest" / f"{leg}.tsv").read_text().rstrip("\n").split("\t")
+        assert row[-1] == f"runner:ubuntu24/20260920.1/{runner_os}/X64"

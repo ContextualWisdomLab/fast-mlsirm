@@ -251,12 +251,14 @@ jobs:
         env:
           LEG: sdist
           ARTIFACT_GLOB: "*.tar.gz"
+          CONTAINER_IMAGE: ""
         run: |
           set -euo pipefail
           python - <<'PY'
           import hashlib
+          import json
           import os
-          import shutil
+          import re
           import subprocess
           from pathlib import Path
 
@@ -280,16 +282,30 @@ jobs:
           if first != second:
               raise SystemExit(f"{leg} is not byte-reproducible: {first!r} != {second!r}")
 
-          images: list[str] = []
-          if os.environ["RUNNER_OS"] == "Linux" and shutil.which("docker"):
-              listing = subprocess.run(
-                  ["docker", "images", "--digests", "--format", "{{.Repository}}@{{.Digest}}"],
-                  capture_output=True, text=True, check=True,
-              ).stdout.split()
-              images = sorted({image for image in listing if "manylinux" in image})
-          if os.environ["RUNNER_OS"] == "Linux" and leg != "sdist" and not images:
-              raise SystemExit(f"could not record the manylinux container digest for {leg}")
-          build_env = ",".join(images) or f"runner:{os.environ.get('ImageOS', 'unknown')}/{os.environ.get('ImageVersion', 'unknown')}"
+          # Provenance is bound to THIS invocation: Linux wheel legs build in
+          # the digest-pinned container passed to maturin-action, which must be
+          # the image present on the runner; every other row (macOS, Windows,
+          # sdist) ran without a container and records the runner identity.
+          # Unrelated cached images are never consulted.
+          container = os.environ.get("CONTAINER_IMAGE", "")
+          runner_os = os.environ.get("RUNNER_OS", "")
+          if runner_os == "Linux" and leg != "sdist":
+              if not re.fullmatch(r"[a-z0-9.\-]+(?:/[a-z0-9._\-]+)+@sha256:[0-9a-f]{64}", container):
+                  raise SystemExit(f"{leg}: Linux wheel leg has no digest-pinned build container: {container!r}")
+              inspected = subprocess.run(
+                  ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", container],
+                  capture_output=True, text=True,
+              )
+              if inspected.returncode != 0 or container not in json.loads(inspected.stdout or "[]"):
+                  raise SystemExit(f"{leg}: pinned build container {container} is not present on this runner")
+              build_env = f"container:{container}"
+          else:
+              if container:
+                  raise SystemExit(f"{leg}: ran without a container but carries container provenance {container!r}")
+              identity = [os.environ.get(key, "") for key in ("ImageOS", "ImageVersion", "RUNNER_OS", "RUNNER_ARCH")]
+              if not all(identity):
+                  raise SystemExit(f"{leg}: missing runner identity (ImageOS/ImageVersion/RUNNER_OS/RUNNER_ARCH): {identity!r}")
+              build_env = "runner:" + "/".join(identity)
 
           name, sha = first
           out = Path("repro-digest")
@@ -327,61 +343,73 @@ jobs:
             manylinux: "2014"
             python-version: "3.12"
             interpreter: python3.12
+            container: "quay.io/pypa/manylinux2014_x86_64@sha256:2fa5f99f660f115f547d96b4edcadfc19f77a6de8807734bf0fc4924f81be01a"
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             manylinux: "2014"
             python-version: "3.13"
             interpreter: python3.13
+            container: "quay.io/pypa/manylinux2014_x86_64@sha256:2fa5f99f660f115f547d96b4edcadfc19f77a6de8807734bf0fc4924f81be01a"
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             manylinux: "2014"
             python-version: "3.14"
             interpreter: python3.14
+            container: "quay.io/pypa/manylinux2014_x86_64@sha256:2fa5f99f660f115f547d96b4edcadfc19f77a6de8807734bf0fc4924f81be01a"
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             manylinux: "2014"
             python-version: "3.12"
             interpreter: python3.12
+            container: "quay.io/pypa/manylinux2014_aarch64@sha256:47940daeb8e0fdcc7deefad334bfda3d8d12b447ba1ebd5411f9f106318eafdb"
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             manylinux: "2014"
             python-version: "3.13"
             interpreter: python3.13
+            container: "quay.io/pypa/manylinux2014_aarch64@sha256:47940daeb8e0fdcc7deefad334bfda3d8d12b447ba1ebd5411f9f106318eafdb"
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             manylinux: "2014"
             python-version: "3.14"
             interpreter: python3.14
+            container: "quay.io/pypa/manylinux2014_aarch64@sha256:47940daeb8e0fdcc7deefad334bfda3d8d12b447ba1ebd5411f9f106318eafdb"
           - runner: macos-latest
             target: universal2-apple-darwin
             manylinux: ""
             python-version: "3.12"
             interpreter: python
+            container: ""
           - runner: macos-latest
             target: universal2-apple-darwin
             manylinux: ""
             python-version: "3.13"
             interpreter: python
+            container: ""
           - runner: macos-latest
             target: universal2-apple-darwin
             manylinux: ""
             python-version: "3.14"
             interpreter: python
+            container: ""
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             manylinux: ""
             python-version: "3.12"
             interpreter: python
+            container: ""
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             manylinux: ""
             python-version: "3.13"
             interpreter: python
+            container: ""
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             manylinux: ""
             python-version: "3.14"
             interpreter: python
+            container: ""
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -399,6 +427,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
+          container: ${{ matrix.container }}
           maturin-version: v1.14.1
           docker-options: -e SOURCE_DATE_EPOCH
           args: --release --out dist -i ${{ matrix.interpreter }}
@@ -410,6 +439,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
+          container: ${{ matrix.container }}
           maturin-version: v1.14.1
           docker-options: -e SOURCE_DATE_EPOCH
           args: --release --out dist-rebuild --target-dir target-rebuild -i ${{ matrix.interpreter }}
@@ -418,12 +448,14 @@ jobs:
         env:
           LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
           ARTIFACT_GLOB: "*.whl"
+          CONTAINER_IMAGE: ${{ matrix.container }}
         run: |
           set -euo pipefail
           python - <<'PY'
           import hashlib
+          import json
           import os
-          import shutil
+          import re
           import subprocess
           from pathlib import Path
 
@@ -447,16 +479,30 @@ jobs:
           if first != second:
               raise SystemExit(f"{leg} is not byte-reproducible: {first!r} != {second!r}")
 
-          images: list[str] = []
-          if os.environ["RUNNER_OS"] == "Linux" and shutil.which("docker"):
-              listing = subprocess.run(
-                  ["docker", "images", "--digests", "--format", "{{.Repository}}@{{.Digest}}"],
-                  capture_output=True, text=True, check=True,
-              ).stdout.split()
-              images = sorted({image for image in listing if "manylinux" in image})
-          if os.environ["RUNNER_OS"] == "Linux" and leg != "sdist" and not images:
-              raise SystemExit(f"could not record the manylinux container digest for {leg}")
-          build_env = ",".join(images) or f"runner:{os.environ.get('ImageOS', 'unknown')}/{os.environ.get('ImageVersion', 'unknown')}"
+          # Provenance is bound to THIS invocation: Linux wheel legs build in
+          # the digest-pinned container passed to maturin-action, which must be
+          # the image present on the runner; every other row (macOS, Windows,
+          # sdist) ran without a container and records the runner identity.
+          # Unrelated cached images are never consulted.
+          container = os.environ.get("CONTAINER_IMAGE", "")
+          runner_os = os.environ.get("RUNNER_OS", "")
+          if runner_os == "Linux" and leg != "sdist":
+              if not re.fullmatch(r"[a-z0-9.\-]+(?:/[a-z0-9._\-]+)+@sha256:[0-9a-f]{64}", container):
+                  raise SystemExit(f"{leg}: Linux wheel leg has no digest-pinned build container: {container!r}")
+              inspected = subprocess.run(
+                  ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", container],
+                  capture_output=True, text=True,
+              )
+              if inspected.returncode != 0 or container not in json.loads(inspected.stdout or "[]"):
+                  raise SystemExit(f"{leg}: pinned build container {container} is not present on this runner")
+              build_env = f"container:{container}"
+          else:
+              if container:
+                  raise SystemExit(f"{leg}: ran without a container but carries container provenance {container!r}")
+              identity = [os.environ.get(key, "") for key in ("ImageOS", "ImageVersion", "RUNNER_OS", "RUNNER_ARCH")]
+              if not all(identity):
+                  raise SystemExit(f"{leg}: missing runner identity (ImageOS/ImageVersion/RUNNER_OS/RUNNER_ARCH): {identity!r}")
+              build_env = "runner:" + "/".join(identity)
 
           name, sha = first
           out = Path("repro-digest")
