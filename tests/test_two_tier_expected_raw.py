@@ -278,7 +278,23 @@ def test_monte_carlo_reference_two_nuisance_item() -> None:
     assert gh.expected_total[0] == pytest.approx(mc, abs=0.02)
 
 
-def _stub_fit(*, phi: np.ndarray, n_specific: int = 1) -> TwoTierGrmFit:
+def _stub_fit(
+    *, phi: np.ndarray, n_specific: int = 1, primary_identification: str | None = None
+) -> TwoTierGrmFit:
+    # `primary_identification` became a required TwoTierGrmFit field when the
+    # orthogonal-primary work landed. Mirror what a real fit would carry: a
+    # stub whose Phi is exactly the identity stands for an identity-identified
+    # fit, anything else for the estimated-correlation path. The from_fit gate
+    # keys off its own `orthogonal_primary_identification` argument, so this
+    # only keeps the stub faithful to the dataclass.
+    phi_arr = np.asarray(phi, dtype=np.float64)
+    if primary_identification is None:
+        primary_identification = (
+            "identity"
+            if phi_arr.shape[0] == phi_arr.shape[1]
+            and np.array_equal(phi_arr, np.eye(phi_arr.shape[0]))
+            else "correlated"
+        )
     ap = np.array([[1.0, 0.0], [1.0, 0.4]])
     asp = np.array([0.5, 0.5])
     th = np.array([[1.0, 0.0, -1.0], [1.0, 0.0, -1.0]])
@@ -286,7 +302,7 @@ def _stub_fit(*, phi: np.ndarray, n_specific: int = 1) -> TwoTierGrmFit:
         a_primary=ap,
         a_specific=asp,
         threshold=th,
-        phi=np.asarray(phi, dtype=np.float64),
+        phi=phi_arr,
         theta_p_eap=np.zeros((2, 2)),
         theta_p_sd=np.ones((2, 2)),
         category_counts=np.ones((2, 4), dtype=np.int64),
@@ -297,6 +313,7 @@ def _stub_fit(*, phi: np.ndarray, n_specific: int = 1) -> TwoTierGrmFit:
         n_iter=1,
         converged=True,
         termination_reason="tolerance_met",
+        primary_identification=primary_identification,
         final_loglik_change=0.0,
         best_start=0,
         n_parameters=10,
