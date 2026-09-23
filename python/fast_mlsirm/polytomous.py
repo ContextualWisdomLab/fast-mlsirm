@@ -14,6 +14,8 @@ adjacent-category) is available for partial-credit scoring.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
+from pathlib import Path
 import warnings
 
 import numpy as np
@@ -1606,22 +1608,33 @@ def fit_nominal_polytomous(
 
 def compute_person_fit_polytomous(
     responses: np.ndarray,
-    fit: PolytomousFit,
+    fit: PolytomousFit | PolyFipcFit,
     *,
     q_theta: int,
     prior_mean: float = 0.0,
     prior_sd: float = 1.0,
     flag_threshold: float,
-) -> dict[str, np.ndarray]:
+    allow_unconverged: bool = False,
+) -> dict[str, object]:
     """Person-fit statistics for polytomous responses under a fitted GRM/GPCM
-    (compute in Rust). Returns the standardized log-likelihood ``lz`` (Drasgow,
-    Levine & Williams, 1985) and its estimated-trait correction ``lz_star``
+    (compute in Rust). Returns the standardized log-likelihood ``lz``
+    (Drasgow et al., 1985, pp. 71–72) and its estimated-trait correction ``lz_star``
     (Snijders, 2001) at the EAP trait, plus ``theta_eap`` and a boolean
     ``flagged`` (``lz_star < flag_threshold``, i.e. an aberrant / misfitting
     response pattern). ``responses`` is persons x items of integer categories
-    with ``NaN`` or ``-1`` for missing; ``prior_mean``/``prior_sd`` set the MAP prior used
-    in the Snijders correction. Reduces to the binary l_z at ``n_cat = 2``. Low
-    (negative) values indicate poor person fit.
+    with ``NaN`` or ``-1`` for missing. For ``PolyFipcFit``, the focal
+    ``N(mu, sigma²)`` prior is used for EAP and the correction. For
+    ``PolytomousFit``, EAP retains its established ``N(0,1)`` grid;
+    ``prior_mean``/``prior_sd`` enter only the ``r0`` correction.
+    A ``PolyFipcFit`` with ``converged=False`` always raises. For a legacy
+    ``PolytomousFit`` or duck-typed fit, ``converged=False`` or an unknown
+    convergence field raises unless ``allow_unconverged=True``. Such results
+    retain ``flagged`` for diagnostics but are not valid for research reporting:
+    ``valid_person_fit=False`` and ``diagnostic_only=True``. Converged results
+    have the opposite markers. The override preserves termination provenance.
+    Reduces to the binary l_z at ``n_cat = 2``. Low
+    (negative) values indicate poor person fit. Also returns ``n_observed``
+    and the package/core version, core SHA-256, and fit termination provenance.
 
     References (APA 7th ed.):
         Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness
@@ -1633,6 +1646,24 @@ def compute_person_fit_polytomous(
             statistics with estimated person parameter. *Psychometrika, 66*(3),
             331-342. https://doi.org/10.1007/BF02294437
     """
+    converged = getattr(fit, "converged", "unknown")
+    if isinstance(fit, PolyFipcFit) and converged is not True:
+        raise ValueError(
+            "person fit requires a converged PolyFipcFit; "
+            "allow_unconverged does not apply"
+        )
+    if converged is not True and not allow_unconverged:
+        raise ValueError(
+            "person fit requires a converged fit; set allow_unconverged=True "
+            "to inspect an unconverged or unknown fit"
+        )
+    if isinstance(fit, PolyFipcFit):
+        if prior_mean != 0.0 or prior_sd != 1.0:
+            raise ValueError("PolyFipcFit uses its fitted focal prior")
+        prior_mean, prior_sd = fit.mu, fit.sigma
+        model = "grm"
+    else:
+        model = fit.model
     n_items = fit.slope.shape[0]
     n_cat = fit.cat_params.shape[1] + 1
     q_theta = _fit_quadrature_points(q_theta)
@@ -1660,28 +1691,41 @@ def compute_person_fit_polytomous(
         fit.slope.astype(np.float64),
         fit.cat_params.reshape(-1).astype(np.float64),
         obs_arg,
-        fit.model,
+        model,
         int(q_theta),
         float(prior_mean),
         float(prior_sd),
         float(flag_threshold),
+        isinstance(fit, PolyFipcFit),
     )
+    import fast_mlsirm
+
+    core_path = Path(core.__file__).resolve()
     return {
         "lz": np.asarray(res["lz"], dtype=np.float64),
         "lz_star": np.asarray(res["lz_star"], dtype=np.float64),
         "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),
         "flagged": np.asarray(res["flagged"], dtype=bool),
+        "n_observed": observed.sum(axis=1),
+        "fast_mlsirm_version": fast_mlsirm.__version__,
+        "core_path": str(core_path),
+        "core_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),
+        "converged": converged,
+        "termination_reason": getattr(fit, "termination_reason", "unknown"),
+        "valid_person_fit": converged is True,
+        "diagnostic_only": converged is not True,
     }
 
 
 def person_fit_polytomous(
     responses: np.ndarray,
-    fit: PolytomousFit,
+    fit: PolytomousFit | PolyFipcFit,
     q_theta: int = 21,
     prior_mean: float = 0.0,
     prior_sd: float = 1.0,
     flag_threshold: float = -1.645,
-) -> dict[str, np.ndarray]:
+    allow_unconverged: bool = False,
+) -> dict[str, object]:
     """Deprecated alias for :func:`compute_person_fit_polytomous` (ADR-0028 rename)."""
     warnings.warn(
         "person_fit_polytomous is deprecated; use compute_person_fit_polytomous instead.",
@@ -1695,6 +1739,7 @@ def person_fit_polytomous(
         prior_mean=prior_mean,
         prior_sd=prior_sd,
         flag_threshold=flag_threshold,
+        allow_unconverged=allow_unconverged,
     )
 
 

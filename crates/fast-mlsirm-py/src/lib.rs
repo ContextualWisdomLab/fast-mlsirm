@@ -140,7 +140,7 @@ use mlsirm_core::poly::{
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
     poly_cat_simulate as core_poly_cat_simulate, poly_dif_sweep as core_poly_dif,
     poly_information_curves as core_poly_information_curves,
-    poly_person_fit as core_poly_person_fit, poly_s_x2 as core_poly_s_x2,
+    poly_person_fit as core_poly_person_fit, poly_person_fit_focal as core_poly_person_fit_focal, poly_s_x2 as core_poly_s_x2,
     score_poly_eap as core_score_poly_eap, u3_poly_bootstrap_cutoff as core_u3_poly_cutoff,
     u3_poly_person_fit as core_u3_poly_person_fit, PolyModel,
 };
@@ -7289,7 +7289,7 @@ fn fit_nominal(
 ///     331-342. https://doi.org/10.1007/BF02294437
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, observed = None, model = "grm", q_theta = 21, prior_mean = 0.0, prior_sd = 1.0, flag_threshold = -1.645))]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, observed = None, model = "grm", q_theta = 21, prior_mean = 0.0, prior_sd = 1.0, flag_threshold = -1.645, focal_eap = false))]
 fn poly_person_fit(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -7304,11 +7304,17 @@ fn poly_person_fit(
     prior_mean: f64,
     prior_sd: f64,
     flag_threshold: f64,
+    focal_eap: bool,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
     let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
-    let res = core_poly_person_fit(
+    let person_fit = if focal_eap {
+        core_poly_person_fit_focal
+    } else {
+        core_poly_person_fit
+    };
+    let res = person_fit(
         &yv,
         obs,
         n_persons,
