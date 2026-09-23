@@ -911,7 +911,7 @@ fn gh_rule_computed(q: usize) -> Result<(&'static [f64], &'static [f64]), String
 }
 
 fn resolve_gh_rule(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
-    let rule = match q {
+    let rule: Result<(&'static [f64], &'static [f64]), String> = match q {
         0 => Err("quadrature node count must be >= 1".to_string()),
         7 => Ok((&GH_NODES_7, &GH_WEIGHTS_7)),
         11 => Ok((&GH_NODES_11, &GH_WEIGHTS_11)),
@@ -922,7 +922,8 @@ fn resolve_gh_rule(q: usize) -> Result<(&'static [f64], &'static [f64]), String>
         61 => Ok(gh_rule_61()),
         81 => Ok(gh_rule_81()),
         _ => gh_rule_computed(q),
-    }?;
+    };
+    let rule = rule?;
     validate_gh_rule(rule.0, rule.1)?;
     Ok(rule)
 }
@@ -934,10 +935,11 @@ pub(crate) fn gh_rule(q: usize) -> Option<(&'static [f64], &'static [f64])> {
 }
 
 fn resolve_gh_rule_unidim(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
-    let rule = match q {
+    let rule: Result<(&'static [f64], &'static [f64]), String> = match q {
         121 => Ok(gh_rule_121()),
         _ => resolve_gh_rule(q),
-    }?;
+    };
+    let rule = rule?;
     validate_gh_rule(rule.0, rule.1)?;
     Ok(rule)
 }
