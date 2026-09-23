@@ -538,10 +538,189 @@ def check_focal_expected_total_score_monotonicity(
     return _decrease_report(grid, expected_total)
 
 
+def _bifactor_group_item_params(
+    fit, group: int | None
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return one group's ``(a_general, a_specific, threshold)`` from a fitted
+    bifactor GRM, single-group or multiple-group.
+
+    A single-group fit (:class:`~fast_mlsirm.bifactor_grm.BifactorGrmFit`)
+    stores ``n_items`` slopes and an ``n_items x (n_cat-1)`` threshold matrix,
+    and takes ``group=None``. A multiple-group fit
+    (:class:`~fast_mlsirm.bifactor_multigroup.BifactorMultigroupFit`) stores
+    ``n_groups x n_items`` slopes and ``n_groups x n_items x (n_cat-1)``
+    thresholds. The group axis is selected, never flattened: its rows are
+    separate item parameters whenever any item is free to differ
+    (``anchor_mask`` not all-``True``), so concatenating them would silently
+    score one group's persons on another group's items.
+
+    ``group=None`` on a multiple-group fit is admitted only when every group's
+    ``a_general``, ``a_specific`` and ``threshold`` row is *exactly* equal --
+    the identity an all-anchored fit creates by construction
+    (``anchor_mask=None``), checked here rather than assumed, so no group is
+    silently picked for a fit whose rows differ. When they differ the caller
+    must name the group whose curve it wants.
+
+    ``theta`` needs no per-group rescaling: a multiple-group fit's item
+    parameters are on the common (reference) metric, the metric the E-step
+    places every group's general-factor nodes on as ``general_mean[g] +
+    general_sd[g] * z``, and the metric ``theta_g_eap`` is reported on.
+    ``general_mean``/``general_sd`` describe where a group's population sits
+    on that metric, not the conditional curve, and so do not enter here.
+
+    ``specific_sd[g, s]`` scales the specific-factor nodes
+    (``theta_S ~ N(0, specific_sd[g, s]^2)``), but no fit object carries the
+    ``specific_map`` saying which specific factor each item loads, so an
+    estimated (non-unit) ``specific_sd`` cannot be marginalized from the fit
+    alone and raises instead of being approximated.
+    """
+    if not hasattr(fit, "a_general") or not hasattr(fit, "a_specific"):
+        raise TypeError("fit must expose a_general and a_specific arrays")
+    if not hasattr(fit, "threshold"):
+        raise TypeError("fit must expose a threshold array")
+    a_general = np.asarray(fit.a_general, dtype=np.float64)
+    a_specific = np.asarray(fit.a_specific, dtype=np.float64)
+    threshold = np.asarray(fit.threshold, dtype=np.float64)
+    if a_general.ndim not in (1, 2) or a_general.size == 0:
+        raise ValueError(
+            "fit.a_general must be a non-empty n_items 1-D array (single group) "
+            "or n_groups x n_items 2-D array (multiple group)"
+        )
+    if a_specific.shape != a_general.shape:
+        raise ValueError("fit.a_specific must have the same shape as fit.a_general")
+
+    if a_general.ndim == 1:
+        if group is not None:
+            raise ValueError(
+                "group applies only to a multiple-group fit; this fit.a_general "
+                "is 1-D"
+            )
+    else:
+        n_groups, n_items = a_general.shape
+        if threshold.ndim != 3 or threshold.shape[:2] != (n_groups, n_items):
+            raise ValueError(
+                "fit.threshold must be n_groups x n_items x (n_cat - 1)"
+            )
+        if group is None:
+            shared = all(
+                np.array_equal(block[0], block[g])
+                for block in (a_general, a_specific, threshold)
+                for g in range(1, n_groups)
+            )
+            if not shared:
+                raise ValueError(
+                    "fit holds group-specific item parameters; pass "
+                    "group=<index> to choose whose expected-score curve to "
+                    "compute"
+                )
+            index = 0
+        else:
+            index = _bounded_integer(group, "group", 0, n_groups - 1)
+        if hasattr(fit, "specific_sd"):
+            specific_sd = np.asarray(fit.specific_sd, dtype=np.float64)
+            if specific_sd.ndim != 2 or specific_sd.shape[0] != n_groups:
+                raise ValueError(
+                    "fit.specific_sd must be n_groups x n_specific"
+                )
+            scope = specific_sd if group is None else specific_sd[index]
+            if not np.all(scope == 1.0):
+                raise ValueError(
+                    "fit.specific_sd is not all 1 (estimate_specific_vars=True); "
+                    "marginalizing an estimated specific-factor SD needs the "
+                    "specific_map this fit does not carry"
+                )
+        a_general = a_general[index]
+        a_specific = a_specific[index]
+        threshold = threshold[index]
+
+    if not np.all(np.isfinite(a_general)) or not np.all(np.isfinite(a_specific)):
+        raise ValueError("fit.a_general and fit.a_specific must be finite")
+    if threshold.ndim != 2 or threshold.shape[0] != a_general.shape[0]:
+        raise ValueError("fit.threshold must be n_items x (n_cat - 1)")
+    if not np.all(np.isfinite(threshold)):
+        raise ValueError("fit.threshold must be finite")
+    return a_general, a_specific, threshold
+
+
+def predict_bifactor_expected_total_score(
+    fit,
+    theta: np.ndarray,
+    q_specific: int,
+    *,
+    group: int | None = None,
+) -> np.ndarray:
+    """Return ``E[T | theta_G]`` for a fitted bifactor GRM, one value per
+    ``theta`` entry, with each item's specific factor integrated out.
+
+    ``fit`` is a :class:`~fast_mlsirm.bifactor_grm.BifactorGrmFit`, a
+    :class:`~fast_mlsirm.bifactor_multigroup.BifactorMultigroupFit`, or any
+    object exposing the same ``a_general``, ``a_specific`` and ``threshold``
+    fields; ``group`` selects the group of a multiple-group fit (see
+    :func:`_bifactor_group_item_params` for what ``None`` requires of one).
+    ``theta`` is any finite 1-D array of general-factor values -- person EAPs
+    with ties and in any order are fine, because this is a pointwise
+    evaluation, not a curve-shape statistic. ``q_specific`` is a required,
+    caller-chosen Gauss-Hermite node count in ``1..=4096`` -- no default is
+    offered, because no accuracy target is on file to source one against
+    (Project rule, issue #1929).
+
+    The marginalization is the one
+    :func:`check_bifactor_expected_total_score_monotonicity` documents and
+    cites: expectation is linear, so ``E[T | theta_G] = sum_i
+    E_{theta_Si}[score_i(theta_G, theta_Si)]`` term by term regardless of
+    which items share a specific factor, and each term is that item's own
+    one-dimensional Gauss-Hermite integral (Gibbons et al., 2007, eqs. 8-14).
+    That check is this function plus a grid validation and a decrease
+    report; both read the same kernel, so the two never disagree.
+
+    References
+    ----------
+    Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E.,
+    Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., &
+    Stover, A. (2007). Full-information item bifactor analysis of graded
+    response data. *Applied Psychological Measurement, 31*(1), 4-19.
+    https://doi.org/10.1177/0146621606289485
+    """
+    values = np.asarray(theta, dtype=np.float64)
+    if values.ndim != 1 or values.size == 0:
+        raise ValueError("theta must be a non-empty 1-D array")
+    if not np.all(np.isfinite(values)):
+        raise ValueError("theta must be finite")
+    a_general, a_specific, threshold = _bifactor_group_item_params(fit, group)
+    nodes_requested = _bounded_integer(
+        q_specific, "q_specific", 1, MAX_POLY_QUADRATURE_POINTS
+    )
+
+    nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
+    weights = weights / weights.sum()
+    unit_slope = np.ones(1, dtype=np.float64)
+
+    expected_total = np.zeros(values.size, dtype=np.float64)
+    for item in range(a_general.shape[0]):
+        base = (
+            a_general[item] * values[:, None] + a_specific[item] * nodes[None, :]
+        )
+        cell = PolytomousFit(
+            model="grm",
+            slope=unit_slope,
+            cat_params=threshold[item : item + 1],
+            loglik=float("nan"),
+            n_iter=0,
+            converged=True,
+            termination_reason="marginalized",
+        )
+        expected = predict_expected_response_polytomous(cell, base.reshape(-1))
+        expected_total += (expected.reshape(base.shape) * weights[None, :]).sum(axis=1)
+
+    return expected_total
+
+
 def check_bifactor_expected_total_score_monotonicity(
     fit,
     theta: np.ndarray,
     q_specific: int,
+    *,
+    group: int | None = None,
 ) -> ExpectedScoreMonotonicity:
     """Monotonicity of the expected total score along the general factor of
     a fitted bifactor GRM, with each item's specific factor integrated out.
@@ -550,7 +729,12 @@ def check_bifactor_expected_total_score_monotonicity(
     object exposing the same ``a_general``, ``a_specific``, and ``threshold``
     fields); the general factor is always the focal dimension, matching the
     bifactor model's role for it (Gibbons et al., 2007). ``theta`` is the
-    caller's grid on the general factor. ``q_specific`` is a required,
+    caller's grid on the general factor. A
+    :class:`~fast_mlsirm.bifactor_multigroup.BifactorMultigroupFit` is also
+    accepted: ``group`` names whose item parameters the curve uses, and
+    ``group=None`` requires every group's rows to be exactly equal (see
+    :func:`predict_bifactor_expected_total_score`, which this delegates the
+    whole curve to). ``q_specific`` is a required,
     caller-chosen Gauss-Hermite node count in ``1..=4096`` — no default is
     offered, because no accuracy target is on file to source one against
     (Project rule, issue #1929). The lower bound is exact (an
@@ -602,51 +786,9 @@ def check_bifactor_expected_total_score_monotonicity(
     https://doi.org/10.1090/S0025-5718-69-99647-1
     """
     grid = _validated_monotonicity_grid(theta)
-    if not hasattr(fit, "a_general") or not hasattr(fit, "a_specific"):
-        raise TypeError("fit must expose a_general and a_specific arrays")
-    if not hasattr(fit, "threshold"):
-        raise TypeError("fit must expose a threshold array")
-    a_general = np.asarray(fit.a_general, dtype=np.float64)
-    a_specific = np.asarray(fit.a_specific, dtype=np.float64)
-    if a_general.ndim != 1 or a_general.size == 0:
-        raise ValueError("fit.a_general must be a non-empty 1-D array")
-    if a_specific.shape != a_general.shape:
-        raise ValueError("fit.a_specific must have the same shape as fit.a_general")
-    if not np.all(np.isfinite(a_general)) or not np.all(np.isfinite(a_specific)):
-        raise ValueError("fit.a_general and fit.a_specific must be finite")
-    n_items = a_general.shape[0]
-
-    nodes_requested = _bounded_integer(
-        q_specific, "q_specific", 1, MAX_POLY_QUADRATURE_POINTS
+    expected_total = predict_bifactor_expected_total_score(
+        fit, grid, q_specific, group=group
     )
-
-    threshold = np.asarray(fit.threshold, dtype=np.float64)
-    if threshold.ndim != 2 or threshold.shape[0] != n_items:
-        raise ValueError("fit.threshold must be n_items x (n_cat - 1)")
-    if not np.all(np.isfinite(threshold)):
-        raise ValueError("fit.threshold must be finite")
-
-    nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
-    weights = weights / weights.sum()
-    unit_slope = np.ones(1, dtype=np.float64)
-
-    expected_total = np.zeros(grid.size, dtype=np.float64)
-    for item in range(n_items):
-        base = (
-            a_general[item] * grid[:, None] + a_specific[item] * nodes[None, :]
-        )
-        cell = PolytomousFit(
-            model="grm",
-            slope=unit_slope,
-            cat_params=threshold[item : item + 1],
-            loglik=float("nan"),
-            n_iter=0,
-            converged=True,
-            termination_reason="marginalized",
-        )
-        expected = predict_expected_response_polytomous(cell, base.reshape(-1))
-        expected_total += (expected.reshape(base.shape) * weights[None, :]).sum(axis=1)
-
     return _decrease_report(grid, expected_total)
 
 
