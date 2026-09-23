@@ -67,6 +67,7 @@ from .bifactor_grm import bifactor_oakes_se as bifactor_oakes_se, BifactorOakesS
 from .bifactor_multigroup import fit_bifactor_grm_multigroup as fit_bifactor_grm_multigroup, BifactorMultigroupFit as BifactorMultigroupFit
 from .two_tier_grm import fit_two_tier_grm as fit_two_tier_grm, TwoTierGrmFit as TwoTierGrmFit
 from .two_tier_grm import two_tier_oakes_se as two_tier_oakes_se, TwoTierOakesSe as TwoTierOakesSe
+from .two_tier_grm import two_tier_oakes_se_from_fit as two_tier_oakes_se_from_fit
 from .two_tier_grm import (
     TwoTierExpectedTotalGivenPrimary as TwoTierExpectedTotalGivenPrimary,
     expected_total_score_two_tier_given_primary as expected_total_score_two_tier_given_primary,
@@ -414,6 +415,7 @@ __all__ = [  # noqa: RUF022
     "fit_two_tier_grm",
     "TwoTierGrmFit",
     "two_tier_oakes_se",
+    "two_tier_oakes_se_from_fit",
     "TwoTierOakesSe",
     "TwoTierExpectedTotalGivenPrimary",
     "expected_total_score_two_tier_given_primary",

@@ -1990,7 +1990,7 @@ fn fit_two_tier_grm(
 #[pyo3(signature = (
     a_primary, a_specific, threshold, phi, y, observed, primary_map, specific_map,
     n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific, fd_step,
-    primary_correlation = "estimate"
+    primary_correlation
 ))]
 fn two_tier_oakes_se(
     py: Python<'_>,

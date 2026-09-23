@@ -92,7 +92,7 @@ References (APA 7th ed.):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -396,6 +396,8 @@ class TwoTierOakesSe:
     se: np.ndarray | None
     positive_definite: bool
     non_pd_reason: str | None
+    primary_correlation: str
+    identification_source: str
 
 
 def two_tier_oakes_se(
@@ -412,7 +414,7 @@ def two_tier_oakes_se(
     q_primary: int,
     q_specific: int,
     fd_step: float,
-    primary_correlation: str = "estimate",
+    primary_correlation: str,
 ) -> TwoTierOakesSe:
     """Observed-information SEs via Oakes (1999, eq. 6, p. 480) at given
     two-tier parameters (valid at every point, not only the MLE).
@@ -424,6 +426,9 @@ def two_tier_oakes_se(
     eq. 6, p. 227); Gibbons et al. (2007, eq. 15).
     ``primary_correlation='identity'`` excludes fixed Phi from the information
     matrix (Cai, 2010, pp. 583-584; Oakes, 1999, eq. 6, p. 480).
+    This array API requires an explicit mode; Phi values do not establish how
+    a fit was identified. Use ``two_tier_oakes_se_from_fit`` for a saved fit
+    carrying the estimator's ``primary_identification`` record.
 
     References (APA 7th ed.): Cai, L. (2010). A two-tier full-information item
     factor analysis model with applications. *Psychometrika, 75*(4), 581-612.
@@ -482,6 +487,10 @@ def two_tier_oakes_se(
     ph = np.asarray(phi, dtype=np.float64)
     if ph.shape != (n_primary_int, n_primary_int):
         raise ValueError("phi must have shape (n_primary, n_primary)")
+    if primary_correlation == "identity" and not np.array_equal(
+        ph, np.eye(n_primary_int)
+    ):
+        raise ValueError("identity primary_correlation requires phi = I")
 
     observed = np.isfinite(y) & (y >= 0)
     from .fitstats import _core_module
@@ -525,7 +534,45 @@ def two_tier_oakes_se(
         se=se,
         positive_definite=bool(res["positive_definite"]),
         non_pd_reason=None if reason_raw is None else str(reason_raw),
+        primary_correlation=primary_correlation,
+        identification_source="explicit_array_mode",
     )
+
+
+def two_tier_oakes_se_from_fit(
+    fit: TwoTierGrmFit,
+    responses: np.ndarray,
+    primary_map: np.ndarray,
+    specific_map: np.ndarray,
+    *,
+    q_primary: int,
+    q_specific: int,
+    fd_step: float,
+) -> TwoTierOakesSe:
+    """Forward the estimator's identification record to the existing SE API.
+
+    This adapter makes no new estimation or method-validity decision. Missing
+    or unknown records are refused, including old array-only checkpoints.
+    ``correlated`` remains estimated mode even if the fitted Phi equals I.
+    No mode override is accepted. A record on a caller-mutated fit object is
+    not a cryptographic proof of its history.
+    """
+    identification = getattr(fit, "primary_identification", None)
+    if not isinstance(identification, str) or identification not in (
+        "orthogonal", "correlated"
+    ):
+        raise ValueError(
+            "fit.primary_identification must be 'orthogonal' or 'correlated'; "
+            "missing provenance cannot be inferred from phi"
+        )
+    mode = "identity" if identification == "orthogonal" else "estimate"
+    result = two_tier_oakes_se(
+        fit.a_primary, fit.a_specific, fit.threshold, fit.phi,
+        responses, primary_map, specific_map,
+        fit.n_cat, fit.n_primary, fit.n_specific,
+        q_primary, q_specific, fd_step, primary_correlation=mode,
+    )
+    return replace(result, identification_source="fit.primary_identification")
 
 
 @dataclass(frozen=True)
