@@ -212,7 +212,7 @@ def test_vendored_native_without_bound_notice_holds(tmp_path):
     )
     (row,) = L.python_inventory(args, [])
     assert row["license_class"] == "HOLD"
-    assert "no bound notice stanza" in row["vendored_native_license_holds"][0]
+    assert "no bound notice stanza" in " ".join(row["vendored_native_license_holds"])
 
 
 def test_vendored_native_verified_permissive_election_remains_allowed(tmp_path):
@@ -247,7 +247,7 @@ def test_vendored_native_label_without_verified_grant_holds(tmp_path, native_lic
     )
     (row,) = L.python_inventory(args, [])
     assert row["license_class"] == "HOLD"
-    assert "no verified elected grant" in row["vendored_native_license_holds"][0]
+    assert "no verified elected grant" in " ".join(row["vendored_native_license_holds"])
 
 
 @pytest.mark.parametrize("native_license", ["MIT", "MIT OR LGPL-2.1-or-later"])
@@ -267,7 +267,7 @@ def test_vendored_native_additional_condition_holds(tmp_path, native_license):
     )
     (row,) = L.python_inventory(args, [])
     assert row["license_class"] == "HOLD"
-    assert "no verified elected grant" in row["vendored_native_license_holds"][0]
+    assert "no verified elected grant" in " ".join(row["vendored_native_license_holds"])
 
 
 @pytest.mark.parametrize("native_license", ["MIT", "MIT OR LGPL-2.1-or-later"])
@@ -296,7 +296,7 @@ def test_vendored_native_pre_license_condition_holds(tmp_path, native_license):
     )
     (row,) = L.python_inventory(args, [])
     assert row["license_class"] == "HOLD"
-    assert "no verified elected grant" in row["vendored_native_license_holds"][0]
+    assert "no verified elected grant" in " ".join(row["vendored_native_license_holds"])
 
 
 @pytest.mark.parametrize("native_license", ["0BSD", "CC0-1.0", "BSD-3-Clause-Open-MPI"])
@@ -312,7 +312,7 @@ def test_vendored_native_unfingerprinted_label_without_grant_holds(tmp_path, nat
     )
     (row,) = L.python_inventory(args, [])
     assert row["license_class"] == "HOLD"
-    assert "no verified elected grant" in row["vendored_native_license_holds"][0]
+    assert "no verified elected grant" in " ".join(row["vendored_native_license_holds"])
 
 
 @pytest.mark.parametrize(
@@ -349,6 +349,79 @@ def test_vendored_native_notice_rejects_unparsed_nonblank_bytes(tmp_path, needle
     (row,) = L.python_inventory(args, [])
     assert row["license_class"] == "HOLD"
     assert row["vendored_native_license_holds"]
+
+
+@pytest.mark.parametrize("case", ["separate-condition", "unmatched-prefix", "invalid-second-match"])
+def test_vendored_native_all_candidate_files_and_stanzas_must_verify(tmp_path, case):
+    """Package acceptance consumes every candidate file and every native stanza."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    _native_wheel(
+        wheel,
+        native_license="MIT OR LGPL-2.1-or-later",
+        license_body=MIT_TEXT,
+    )
+    result = io.BytesIO()
+    with zipfile.ZipFile(wheel) as old, zipfile.ZipFile(result, "w") as new:
+        for entry in old.infolist():
+            data = old.read(entry.filename)
+            if entry.filename.endswith("/NOTICE") and case == "unmatched-prefix":
+                data = (
+                    b"Unparsed package-wide condition\n"
+                    b"Name: unrelated\nFiles: unused.so\nLicense: MIT\n .\n"
+                    + data
+                )
+            elif entry.filename.endswith("/NOTICE") and case == "invalid-second-match":
+                data += (
+                    b"Name: extra\nFiles: pkg.libs/libexample.so\nLicense: MIT\n"
+                    b" Unverified condition\n"
+                )
+            new.writestr(entry.filename, data)
+        if case == "separate-condition":
+            new.writestr(
+                "pkg-1.0.dist-info/licenses/NOTICE-CONDITIONS",
+                "Unparsed package-wide condition\n",
+            )
+    wheel.write_bytes(result.getvalue())
+    digest = hashlib.sha256(result.getvalue()).hexdigest()
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert row["vendored_native_license_holds"]
+    assert "not fully verified" in " ".join(row["hold_reasons"])
+
+
+def test_vendored_native_unmatched_verified_stanza_holds_package(tmp_path):
+    """A valid grant for a nonexistent binary is still unconsumed artifact evidence."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    _native_wheel(wheel, native_license="MIT", license_body=MIT_TEXT)
+    result = io.BytesIO()
+    with zipfile.ZipFile(wheel) as old, zipfile.ZipFile(result, "w") as new:
+        for entry in old.infolist():
+            data = old.read(entry.filename)
+            if entry.filename.endswith("/NOTICE"):
+                body = "\n".join(f" {line}" if line else " ." for line in MIT_TEXT.splitlines())
+                data += (
+                    b"Name: absent-component\nFiles: absent.so\nLicense: MIT\n"
+                    + body.encode()
+                    + b"\n"
+                )
+            new.writestr(entry.filename, data)
+    wheel.write_bytes(result.getvalue())
+    digest = hashlib.sha256(result.getvalue()).hexdigest()
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert "not fully verified" in " ".join(row["hold_reasons"])
 
 
 def test_missing_scope_is_unclassified_gap_not_exclusion(tmp_path):

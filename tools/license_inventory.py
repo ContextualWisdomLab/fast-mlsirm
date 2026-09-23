@@ -564,11 +564,11 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
     return rows
 
 
-def parse_notice_stanzas(text: str) -> list[dict]:
+def parse_notice_stanzas(text: str) -> tuple[list[dict], bool]:
     stanzas = []
     normalized_text = text.replace("\r\n", "\n").replace("\r", "\n")
     starts = [match.start() for match in re.finditer(r"^Name: ", normalized_text, re.MULTILINE)]
-    prefix_unparsed = bool(starts and normalized_text[:starts[0]].strip())
+    file_consumed = bool(starts) and not normalized_text[:starts[0]].strip()
     for index, start in enumerate(starts):
         end = starts[index + 1] if index + 1 < len(starts) else len(normalized_text)
         block = normalized_text[start:end].rstrip("\n")
@@ -581,8 +581,8 @@ def parse_notice_stanzas(text: str) -> list[dict]:
                 and lines[1].startswith("Files: ") and bool(lines[1][len("Files: "):])
                 and lines[2].startswith("License: ") and bool(lines[2][len("License: "):])
                 and all(line == "." or line.startswith(" ") for line in lines[3:])
-                and not (index == 0 and prefix_unparsed)
             )
+            file_consumed = file_consumed and complete
             body = "\n".join(lines[3:]) if complete else ""
             # Debian-style notice continuation lines have one indentation
             # column and use a single dot for a blank line.
@@ -592,7 +592,23 @@ def parse_notice_stanzas(text: str) -> list[dict]:
             )
             fields["Verified-Text"] = verified_standard_text(body) if complete else []
             stanzas.append(fields)
-    return stanzas
+        else:
+            file_consumed = False
+    if not file_consumed:
+        for stanza in stanzas:
+            stanza["Verified-Text"] = []
+    return stanzas, file_consumed
+
+
+def notice_stanza_grant_verified(stanza: dict) -> bool:
+    """Require a permissive election whose exact grant is verified in this stanza."""
+    declared = normalize_spdx(stanza.get("License"))
+    elected, _ = elect(declared)
+    terms = spdx_terms(elected) if elected else []
+    return bool(terms) and classify(elected) == "PERMISSIVE" and all(
+        any(_label_covers(term, label) for label in stanza["Verified-Text"])
+        for term in terms
+    )
 
 
 def python_artifact_evidence(path: Path) -> dict:
@@ -615,9 +631,20 @@ def python_artifact_evidence(path: Path) -> dict:
             if ".dist-info/" in n and LICENSE_NAME.match(base):
                 raw = zf.read(n)
                 text = raw.decode("utf-8", "replace")
-                if re.search(r"^Name: ", text, re.MULTILINE):
-                    stanzas.extend(parse_notice_stanzas(text))
-                ev["license_files"].append({"path": n, "sha256": sha256_bytes(raw), "detected": detect(text)})
+                file_stanzas, notice_consumed = parse_notice_stanzas(text)
+                for stanza in file_stanzas:
+                    stanza["Source-Path"] = n
+                    stanza["Matched-Native"] = []
+                stanzas.extend(file_stanzas)
+                whole_text = verified_standard_text(text)
+                ev["license_files"].append({
+                    "path": n,
+                    "sha256": sha256_bytes(raw),
+                    "detected": detect(text),
+                    "verified_standard_text": whole_text,
+                    "notice_file_fully_consumed": notice_consumed,
+                    "candidate_verified": False,
+                })
         for n in names:
             base = n.rsplit("/", 1)[-1]
             if re.search(r"\.(so(\.[0-9]+)*|dylib|dll|a)$", base) and (
@@ -625,6 +652,8 @@ def python_artifact_evidence(path: Path) -> dict:
             ):
                 norm = n.replace("\\", "/")
                 match = [s for s in stanzas if any(fnmatch.fnmatch(norm, g.strip().replace("\\", "/")) or fnmatch.fnmatch(norm, g.strip().replace("\\", "/").replace(".so", "*")) for g in s["Files"].split(","))]
+                for stanza in match:
+                    stanza["Matched-Native"].append(norm)
                 ev["vendored_native"].append({
                     "path": n,
                     "sha256": sha256_bytes(zf.read(n)),
@@ -635,6 +664,19 @@ def python_artifact_evidence(path: Path) -> dict:
                         "verified_text": s["Verified-Text"],
                     } for s in match],
                 })
+        for candidate in ev["license_files"]:
+            file_stanzas = [s for s in stanzas if s["Source-Path"] == candidate["path"]]
+            candidate["verified_notice_text"] = sorted({
+                label for stanza in file_stanzas for label in stanza["Verified-Text"]
+            })
+            candidate["candidate_verified"] = bool(candidate["verified_standard_text"]) or (
+                candidate["notice_file_fully_consumed"]
+                and bool(file_stanzas)
+                and all(
+                    notice_stanza_grant_verified(stanza) and stanza["Matched-Native"]
+                    for stanza in file_stanzas
+                )
+            )
         ev["notice_stanzas_declared"] = [{"name": s["Name"], "files": s["Files"], "license": s.get("License")} for s in stanzas]
     return ev
 
@@ -652,17 +694,19 @@ def vendored_native_license_holds(artifacts: list[dict]) -> list[str]:
                 continue
             for stanza in stanzas:
                 declared = normalize_spdx(stanza.get("license"))
-                elected, _ = elect(declared)
-                elected_terms = spdx_terms(elected) if elected else []
-                text_verified = bool(elected_terms) and all(
-                    any(_label_covers(term, label) for label in stanza["verified_text"])
-                    for term in elected_terms
-                )
-                if not elected or classify(elected) != "PERMISSIVE" or not text_verified:
+                if not notice_stanza_grant_verified({
+                    "License": stanza.get("license"),
+                    "Verified-Text": stanza["verified_text"],
+                }):
                     findings.append(
                         f"{native['path']}: vendored native license is "
                         f"{declared or 'UNKNOWN'} with no verified elected grant"
                     )
+        for candidate in artifact["license_files"]:
+            if not candidate["candidate_verified"]:
+                findings.append(
+                    f"{candidate['path']}: license candidate file was not fully verified"
+                )
     return sorted(set(findings))
 
 
@@ -741,6 +785,13 @@ def python_inventory(args, gaps: list[str]) -> list[dict]:
         native_holds = vendored_native_license_holds(artifacts)
         if native_holds:
             hold.append(f"vendored native license evidence is not verified permissive: {native_holds}")
+        unverified_candidates = sorted({
+            f"{a['artifact']}:{candidate['path']}"
+            for a in artifacts if a["hash_binding"]["match"]
+            for candidate in a["license_files"] if not candidate["candidate_verified"]
+        })
+        if unverified_candidates:
+            hold.append(f"artifact license candidate files are not fully verified: {unverified_candidates}")
         text_labels = sorted({lbl for a in artifacts if a["hash_binding"]["match"] for f in a["license_files"] for lbl in f["detected"]})
         copyleft_text = [lbl for lbl in text_labels if lbl in COPYLEFT_TEXT_LABELS + WEAK_COPYLEFT_TEXT_LABELS]
         norm = normalize_spdx(declared)
