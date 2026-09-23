@@ -204,7 +204,8 @@ def _trusted_worker_count(module: ModuleType, value: object) -> int:
         integer = int(value)
     else:
         raise ValueError("worker_count must be an integer in the supported range")
-    return module.exact_integer(integer, "worker_count", minimum=1)
+    from ._validation import exact_integer
+    return exact_integer(integer, "worker_count", minimum=1)
 
 
 def _trusted_context_effect_scalar(value: object) -> float:
@@ -308,10 +309,11 @@ def install(module: ModuleType) -> None:
         if type(design) is not module.ContextMembershipDesign:
             raise ValueError("design must be an exact ContextMembershipDesign")
         _ = design.design_fingerprint
-        trusted_max_iter = module.exact_integer(
+        from ._validation import exact_integer
+        trusted_max_iter = exact_integer(
             max_iter, "max_iter", minimum=1, maximum=10_000
         )
-        trusted_workers = module.exact_integer(
+        trusted_workers = exact_integer(
             worker_count, "worker_count", minimum=1, maximum=10_000
         )
         trusted_tol = module._exact_positive_real(tol, "tol")
