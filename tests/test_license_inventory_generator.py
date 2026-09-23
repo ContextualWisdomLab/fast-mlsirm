@@ -85,7 +85,13 @@ def _wheel(path: Path, name: str, version: str, license_text: str | None) -> str
     return hashlib.sha256(buf.getvalue()).hexdigest()
 
 
-def _native_wheel(path: Path, *, native_license: str | None, bind_notice: bool = True) -> str:
+def _native_wheel(
+    path: Path,
+    *,
+    native_license: str | None,
+    bind_notice: bool = True,
+    license_body: str = "",
+) -> str:
     """Write the minimal shape used by real wheels with vendored native notices."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
@@ -96,7 +102,9 @@ def _native_wheel(path: Path, *, native_license: str | None, bind_notice: bool =
             zf.writestr(
                 "pkg-1.0.dist-info/licenses/NOTICE",
                 "Name: native-component\nFiles: pkg.libs/libexample.so\n"
-                f"License: {native_license or ''}\nDescription: synthetic fixture\n",
+                f"License: {native_license or ''}\n"
+                + "\n".join(f" {line}" if line else " ." for line in license_body.splitlines())
+                + "\n",
             )
     path.write_bytes(buf.getvalue())
     return hashlib.sha256(buf.getvalue()).hexdigest()
@@ -211,7 +219,11 @@ def test_vendored_native_verified_permissive_election_remains_allowed(tmp_path):
     """A hash-bound native component may elect its verified permissive alternative."""
     args = _python_args(tmp_path, expression="MIT", license_text=False)
     wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
-    digest = _native_wheel(wheel, native_license="MIT OR LGPL-2.1-or-later")
+    digest = _native_wheel(
+        wheel,
+        native_license="MIT OR LGPL-2.1-or-later",
+        license_body=MIT_TEXT,
+    )
     Path(args.uv_lock).write_text(
         'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
         'source = { registry = "https://pypi.org/simple" }\n'
@@ -220,6 +232,42 @@ def test_vendored_native_verified_permissive_election_remains_allowed(tmp_path):
     (row,) = L.python_inventory(args, [])
     assert row["vendored_native_license_holds"] == []
     assert row["license_class"] == "PERMISSIVE"
+
+
+@pytest.mark.parametrize("native_license", ["MIT", "MIT OR LGPL-2.1-or-later"])
+def test_vendored_native_label_without_verified_grant_holds(tmp_path, native_license):
+    """A hash-bound SPDX label alone does not verify a native component grant."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    digest = _native_wheel(wheel, native_license=native_license)
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert "no verified elected grant" in row["vendored_native_license_holds"][0]
+
+
+@pytest.mark.parametrize("native_license", ["MIT", "MIT OR LGPL-2.1-or-later"])
+def test_vendored_native_additional_condition_holds(tmp_path, native_license):
+    """Canonical MIT text plus a commercial-use restriction is not permissive evidence."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    digest = _native_wheel(
+        wheel,
+        native_license=native_license,
+        license_body=MIT_TEXT + "\nAdditional restriction: commercial use prohibited.",
+    )
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+    (row,) = L.python_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert "no verified elected grant" in row["vendored_native_license_holds"][0]
 
 
 def test_missing_scope_is_unclassified_gap_not_exclusion(tmp_path):

@@ -569,6 +569,15 @@ def parse_notice_stanzas(text: str) -> list[dict]:
     for block in re.split(r"\n(?=Name: )", text):
         fields = dict(re.findall(r"^(Name|Files|Description|License): (.*)$", block, re.MULTILINE))
         if "Name" in fields and "Files" in fields:
+            body_match = re.search(r"^License: [^\n]*\n(?P<body>.*)$", block, re.MULTILINE | re.DOTALL)
+            body = body_match.group("body") if body_match else ""
+            # Debian-style notice continuation lines have one indentation
+            # column and use a single dot for a blank line.
+            body = "\n".join(
+                "" if line.strip() == "." else line[1:] if line.startswith(" ") else line
+                for line in body.splitlines()
+            )
+            fields["Verified-Text"] = verified_standard_text(body)
             stanzas.append(fields)
     return stanzas
 
@@ -606,7 +615,12 @@ def python_artifact_evidence(path: Path) -> dict:
                 ev["vendored_native"].append({
                     "path": n,
                     "sha256": sha256_bytes(zf.read(n)),
-                    "notice_stanza": [{"name": s["Name"], "license": s.get("License"), "description": s.get("Description")} for s in match],
+                    "notice_stanza": [{
+                        "name": s["Name"],
+                        "license": s.get("License"),
+                        "description": s.get("Description"),
+                        "verified_text": s["Verified-Text"],
+                    } for s in match],
                 })
         ev["notice_stanzas_declared"] = [{"name": s["Name"], "files": s["Files"], "license": s.get("License")} for s in stanzas]
     return ev
@@ -626,10 +640,16 @@ def vendored_native_license_holds(artifacts: list[dict]) -> list[str]:
             for stanza in stanzas:
                 declared = normalize_spdx(stanza.get("license"))
                 elected, _ = elect(declared)
-                if not elected or classify(elected) != "PERMISSIVE":
+                elected_terms = spdx_terms(elected) if elected else []
+                text_verified = bool(elected_terms) and all(
+                    term in UNFINGERPRINTED_IDS
+                    or any(_label_covers(term, label) for label in stanza["verified_text"])
+                    for term in elected_terms
+                )
+                if not elected or classify(elected) != "PERMISSIVE" or not text_verified:
                     findings.append(
                         f"{native['path']}: vendored native license is "
-                        f"{declared or 'UNKNOWN'}"
+                        f"{declared or 'UNKNOWN'} with no verified elected grant"
                     )
     return sorted(set(findings))
 
