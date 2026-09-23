@@ -14,7 +14,28 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "license_inventory.py"
-MIT_TEXT = "Permission is hereby granted, free of charge, to any person obtaining a copy"
+MIT_TEXT = """MIT License
+
+Copyright (c) 2026 Test Author
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
 LGPL_TEXT = "This library is free software; you can redistribute it and/or modify it under the terms of the GNU Lesser General Public License"
 
 
@@ -290,3 +311,92 @@ def test_crate_path_replacement_during_read_is_hold(tmp_path, monkeypatch):
     assert row["source_hash"]["match"] is False
     assert row["license_class"] == "HOLD"
     assert "source path was not stable" in " ".join(row["hold_reasons"])
+
+
+@pytest.mark.parametrize(
+    "license_text",
+    [
+        "UNKNOWN",
+        "Commercial redistribution is prohibited. Permission is not granted.",
+        "Permission is hereby granted, free of charge, but this grant does not apply. "
+        'THE SOFTWARE IS PROVIDED "AS IS". IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE.',
+    ],
+)
+def test_cargo_permissive_metadata_requires_verified_unqualified_text(tmp_path, license_text):
+    """Names, restrictions, and negated standard phrases are not permissive evidence."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    digest = _crate(cache, "dep", "1.0", {"LICENSE": license_text})
+    Path(args.cargo_lock_workspace).write_text(
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_binding).write_text(Path(args.cargo_lock_workspace).read_text())
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert row["elected_text_present_in_artifact"] is False
+
+
+def test_nested_uppercase_lgpl_grant_is_collected_and_holds(tmp_path):
+    """Nested candidate paths and case variants cannot hide copyleft text."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    uppercase_lgpl = LGPL_TEXT.upper()
+    digest = _crate(
+        cache,
+        "dep",
+        "1.0",
+        {"LICENSE-MIT": MIT_TEXT, "vendor/other/COPYING": uppercase_lgpl},
+    )
+    Path(args.cargo_lock_workspace).write_text(
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_binding).write_text(Path(args.cargo_lock_workspace).read_text())
+    (row,) = L.rust_inventory(args, [])
+    assert {f["path"] for f in row["license_files_in_artifact"]} == {
+        "LICENSE-MIT", "vendor/other/COPYING"
+    }
+    assert row["license_class"] == "HOLD"
+    assert "LGPL" in " ".join(row["hold_reasons"])
+
+
+def test_declared_nested_license_file_is_collected(tmp_path):
+    """Cargo metadata's LicenseFile path is evidence even without a license-like basename."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    digest = _crate(cache, "dep", "1.0", {"legal/grant.txt": MIT_TEXT})
+    meta_path = Path(args.cargo_metadata_workspace)
+    metadata = json.loads(meta_path.read_text())
+    metadata["packages"][0]["license_file"] = "legal/grant.txt"
+    meta_path.write_text(json.dumps(metadata))
+    Path(args.cargo_metadata_binding).write_text(meta_path.read_text())
+    Path(args.cargo_lock_workspace).write_text(
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_binding).write_text(Path(args.cargo_lock_workspace).read_text())
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "PERMISSIVE"
+    assert row["license_files_in_artifact"][0]["path"] == "legal/grant.txt"
+    assert row["license_files_in_artifact"][0]["declared_license_file"] is True
+
+
+def test_unknown_notice_alongside_mit_is_hold(tmp_path):
+    """An unparsed candidate file remains UNKNOWN even when MIT text is present."""
+    args = _rust_args(tmp_path)
+    cache = Path(args.cargo_registry_cache)
+    digest = _crate(cache, "dep", "1.0", {"LICENSE-MIT": MIT_TEXT, "NOTICE": "UNKNOWN"})
+    Path(args.cargo_lock_workspace).write_text(
+        'version = 4\n[[package]]\nname = "dep"\nversion = "1.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        f'checksum = "{digest}"\n'
+    )
+    Path(args.cargo_lock_binding).write_text(Path(args.cargo_lock_workspace).read_text())
+    (row,) = L.rust_inventory(args, [])
+    assert row["elected_text_present_in_artifact"] is True
+    assert row["license_class"] == "HOLD"
+    assert "unrecognized" in " ".join(row["hold_reasons"])

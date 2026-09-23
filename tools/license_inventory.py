@@ -59,6 +59,22 @@ TEXT_FINGERPRINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Unicode-3.0", ("UNICODE LICENSE V3", "Unicode, Inc.")),
     ("PSF-2.0", ("PYTHON SOFTWARE FOUNDATION LICENSE",)),
 )
+# A short name or one copied sentence is not license evidence.  These labels
+# need independent grant and warranty/liability clauses from the standard text.
+FULL_TEXT_MARKERS: dict[str, tuple[str, ...]] = {
+    "MIT": (
+        "permission is hereby granted, free of charge",
+        "the software is provided \"as is\"",
+        "in no event shall the authors or copyright holders be liable",
+    ),
+}
+NEGATING_OR_CONDITIONAL_MARKERS = (
+    "does not apply",
+    "permission is not granted",
+    "commercial distribution prohibited",
+    "commercial redistribution is prohibited",
+    "non-commercial use only",
+)
 COPYLEFT_TEXT_LABELS = ("AGPL", "LGPL", "GPL")
 WEAK_COPYLEFT_TEXT_LABELS = ("MPL-2.0",)
 
@@ -142,10 +158,14 @@ def read_stable_bytes(path: Path) -> bytes:
 
 
 def detect(text: str) -> list[str]:
-    text = " ".join(text.split())
+    text = " ".join(text.split()).casefold()
     found = []
     for label, needles in TEXT_FINGERPRINTS:
-        if any(n in text for n in needles):
+        folded_needles = tuple(n.casefold() for n in needles)
+        markers = FULL_TEXT_MARKERS.get(label)
+        valid_standard_text = markers is None or all(marker in text for marker in markers)
+        unqualified = not any(marker in text for marker in NEGATING_OR_CONDITIONAL_MARKERS)
+        if any(n in text for n in folded_needles) and valid_standard_text and unqualified:
             if label == "Apache-2.0" and "Apache-2.0 WITH LLVM-exception" in found:
                 continue
             found.append(label)
@@ -324,17 +344,23 @@ def _text_covered_by(label: str, declared_ids: list[str]) -> bool:
     return any(i.startswith(label + "-") for i in declared_ids)
 
 
-def read_crate_license_files(data: bytes, artifact_sha256: str) -> list[dict]:
-    """License files at the top level of a .crate archive (read from its bytes)."""
+def read_crate_license_files(
+    data: bytes, artifact_sha256: str, declared_license_file: str | None
+) -> list[dict]:
+    """Read every license-named member and the metadata-declared license file."""
     out = []
+    declared = (declared_license_file or "").replace("\\", "/").removeprefix("./")
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
         for member in sorted(tf.getmembers(), key=lambda m: m.name):
             parts = member.name.split("/")
-            if member.isfile() and len(parts) == 2 and LICENSE_NAME.match(parts[1]):
-                data = tf.extractfile(member).read()
-                out.append({"path": parts[1], "sha256": sha256_bytes(data),
+            relative = "/".join(parts[1:])
+            base = parts[-1]
+            if member.isfile() and (LICENSE_NAME.match(base) or (declared and relative == declared)):
+                raw = tf.extractfile(member).read()
+                out.append({"path": relative, "sha256": sha256_bytes(raw),
                             "artifact_sha256": artifact_sha256,
-                            "detected": detect(data.decode("utf-8", "replace"))})
+                            "declared_license_file": bool(declared and relative == declared),
+                            "detected": detect(raw.decode("utf-8", "replace"))})
     return out
 
 
@@ -409,7 +435,9 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
             source_hash = {"algorithm": "sha256", "expected": expected, "expected_origin": "Cargo.lock checksum",
                            "measured": measured, "measured_origin": ".crate bytes in the cargo registry cache",
                            "match": bound}
-            files = read_crate_license_files(archive_bytes, measured) if bound else []
+            files = read_crate_license_files(
+                archive_bytes, measured, p.get("license_file") if p else None
+            ) if bound else []
             if not bound:
                 hold.append("the .crate bytes are missing or do not match the Cargo.lock checksum")
             if read_error:
@@ -433,6 +461,9 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
         elected, rationale = elect(norm)
         ident = f"{name}@{version}"
         file_labels = {label for f in files for label in f["detected"]}
+        unrecognized_files = sorted(f["path"] for f in files if not f["detected"])
+        if unrecognized_files:
+            hold.append(f"license candidate text is unrecognized: {unrecognized_files}")
         declared_ids = spdx_terms(norm)
         uncovered_copyleft = sorted(
             label for label in file_labels if label in COPYLEFT_TEXT_LABELS
@@ -443,6 +474,12 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
                 f"artifact text also grants {uncovered_copyleft}, which the declared expression does not name"
             )
         elected_terms = spdx_terms(elected)
+        elected_text_present = all(
+            t in UNFINGERPRINTED_IDS or any(_label_covers(t, lbl) for lbl in file_labels)
+            for t in elected_terms
+        ) if elected_terms else False
+        if elected_terms and not elected_text_present:
+            hold.append("elected license text was not verified in the hash-bound artifact")
         base = classify(elected) if elected else "UNKNOWN"
         rows.append({
             "ecosystem": "cargo",
@@ -459,9 +496,7 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
             "elected_license": elected,
             "election_rationale": rationale,
             "license_files_in_artifact": files,
-            "elected_text_present_in_artifact": all(
-                any(_label_covers(t, lbl) for lbl in file_labels) for t in elected_terms
-            ) if elected_terms else False,
+            "elected_text_present_in_artifact": elected_text_present,
             "value_origin": origin,
             "in_workspace_lock": key in ws_lock,
             "in_binding_lock_graph": key in binding_lock,

@@ -9,10 +9,15 @@ bytes supply both the Cargo.lock checksum comparison and license extraction.
 Each extracted license row records the enclosing artifact SHA-256.
 
 The inventory stays on hold when a hash-bound registry archive contains no
-license file, when the source path changes during the read, or when artifact
-text grants GPL, LGPL, or AGPL terms absent from the declared SPDX expression.
-Package metadata remains separate evidence and cannot replace or erase the
-artifact text.
+license file, when the source path changes during the read, when a license
+candidate is unrecognized or conditional, or when artifact text grants GPL,
+LGPL, or AGPL terms absent from the declared SPDX expression. Candidate files
+are collected at every archive depth, and Cargo metadata's `license_file` path
+is included even when its basename is not license-like. MIT acceptance requires
+independent grant, warranty, and liability clauses from the standard text;
+matching a license name or one copied sentence is insufficient. Detection is
+case-insensitive. Package metadata remains separate evidence and cannot replace
+or erase the artifact text.
 
 Focused verification used the repository's existing Python environment and
 performed no package installation, download, Cargo invocation, or release:
@@ -21,13 +26,16 @@ performed no package installation, download, Cargo invocation, or release:
 python3 -m py_compile tools/license_inventory.py tests/test_license_inventory_generator.py
 exit 0
 
-python3 -m pytest -q tests/test_license_inventory_generator.py
-27 passed in 0.39s
+PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider --noconftest -q tests/test_license_inventory_generator.py
+33 passed in 0.38s
 exit 0
 ```
 
-The focused tests cover missing Cargo license text, a declared MIT license with
-separate LGPL grant text, one-byte-source reuse for hash and extraction, source
-path replacement during a read, and the unchanged matching-byte permissive
-case. This evidence does not establish the complete release inventory, hosted
-checks, independent review, or release acceptance.
+The focused tests cover missing or unrecognized Cargo license text, commercial
+restrictions, negated MIT phrases, a declared MIT license with nested or
+uppercase LGPL grant text, metadata-declared nonstandard license paths,
+one-byte-source reuse for hash and extraction, source path replacement during a
+read, and a full standard MIT-text matching-byte permissive case. The six
+preserved independent-review counterexamples all return HOLD under this commit.
+This evidence does not establish the complete release inventory, hosted checks,
+independent review, or release acceptance.
