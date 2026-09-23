@@ -8,8 +8,19 @@ procedure that produces the inputs is documented in
 For every dependency the inventory records the declared SPDX expression
 (package metadata) separately from what the license files shipped inside the
 actual artifact say, plus whether the package is inside the published
-artifact scope. It never infers a license from a missing field: a package with
-no declared license and no recognisable license text is reported as UNKNOWN.
+artifact scope. The generator fails closed:
+
+- an expression that does not parse under the supported SPDX grammar, or that
+  names an identifier outside the reviewed list (``NOASSERTION``,
+  ``LicenseRef-*``, empty), is UNKNOWN, and so is a disjunction with no fully
+  permissive alternative;
+- copyleft grant text found in an artifact is kept and puts the row on HOLD,
+  never dropped in favour of a permissive reading;
+- every package in every lock must produce exactly one row, every requirements
+  pin must parse with its hashes, and every PyPI row needs a scope entry;
+  otherwise the run reports completeness gaps and exits 1;
+- license text is read only from artifact bytes whose measured sha256 equals
+  the lock's expected hash; anything unbound is HOLD.
 """
 
 from __future__ import annotations
@@ -17,8 +28,10 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import hashlib
+import io
 import json
 import re
+import tarfile
 import tomllib
 import zipfile
 from pathlib import Path
@@ -44,14 +57,36 @@ TEXT_FINGERPRINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Unicode-3.0", ("UNICODE LICENSE V3", "Unicode, Inc.")),
     ("PSF-2.0", ("PYTHON SOFTWARE FOUNDATION LICENSE",)),
 )
+COPYLEFT_TEXT_LABELS = ("AGPL", "LGPL", "GPL")
+WEAK_COPYLEFT_TEXT_LABELS = ("MPL-2.0",)
 
-COPYLEFT_PREFIXES = ("GPL-", "LGPL-", "AGPL-")
+# Organization policy markers, mirrored from ContextualWisdomLab/.github
+# scripts/ci/sbom_inventory_aggregator.py (COPYLEFT_LICENSE_MARKERS at
+# bd94a89a). Any identifier containing one of them can never classify as
+# PERMISSIVE, whatever the reviewed lists below say.
+CENTRAL_POLICY_MARKERS = ("GPL", "AGPL", "LGPL", "MPL", "EPL", "CDDL", "CC-BY-SA", "SSPL", "OSL", "EUPL")
+
+# Reviewed SPDX identifiers. Anything else - including NOASSERTION, NONE and
+# LicenseRef-* - is UNKNOWN until a human reviews it and adds it here.
+PERMISSIVE_IDS = frozenset({
+    "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "BSD-3-Clause-Open-MPI", "ISC", "Zlib",
+    "Unlicense", "Unicode-3.0", "0BSD", "CC0-1.0", "PSF-2.0",
+})
+WEAK_COPYLEFT_IDS = frozenset({"MPL-2.0"})
+COPYLEFT_IDS = frozenset({
+    "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",
+    "LGPL-2.0-only", "LGPL-2.0-or-later", "LGPL-2.1-only", "LGPL-2.1-or-later",
+    "LGPL-3.0-only", "LGPL-3.0-or-later", "AGPL-3.0-only", "AGPL-3.0-or-later",
+})
+EXCEPTION_IDS = frozenset({"LLVM-exception", "GCC-exception-3.1"})
+if any(m in i.upper() for i in PERMISSIVE_IDS for m in CENTRAL_POLICY_MARKERS):
+    raise RuntimeError("a PERMISSIVE_IDS entry matches a central copyleft policy marker")
+
 CLASSIFIER_SPDX = {
     "License :: OSI Approved :: MIT License": "MIT",
     "License :: OSI Approved :: Apache Software License": "Apache-2.0",
     "License :: OSI Approved :: BSD License": "BSD",
 }
-WEAK_COPYLEFT = ("MPL-2.0",)
 # Election order for disjunctive (OR) expressions. MIT first because it is the
 # project's own license and imposes only notice retention; Apache-2.0 next
 # (adds NOTICE/patent terms); then the other permissive grants.
@@ -61,6 +96,16 @@ ELECTION_RATIONALE = (
     "is permissive, and carries the smallest obligation set (retain the copyright and "
     "permission notice); no copyleft alternative is exercised."
 )
+ELECTION_FAILED = "election failed: no fully permissive alternative in the disjunction; held as UNKNOWN"
+CLASS_RANK = {"PERMISSIVE": 0, "WEAK-COPYLEFT": 1, "COPYLEFT": 2, "UNKNOWN": 3}
+CLASSES = ("PERMISSIVE", "WEAK-COPYLEFT", "COPYLEFT", "HOLD", "UNKNOWN")
+# Declared ids without a text fingerprint; their absence from artifact text is
+# not counted as a disagreement (they are public-domain style dedications).
+UNFINGERPRINTED_IDS = frozenset({"0BSD", "CC0-1.0", "BSD-3-Clause-Open-MPI"})
+
+
+class SpdxError(ValueError):
+    """Raised for an expression outside the supported SPDX grammar or id list."""
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -87,41 +132,179 @@ def normalize_spdx(expr: str | None) -> str | None:
     return re.sub(r"\s*/\s*", " OR ", expr.strip())
 
 
-def spdx_terms(expr: str) -> list[str]:
-    return [t for t in re.split(r"\s+(?:OR|AND)\s+|[()]", expr) if t.strip()]
+def id_class(license_id: str, exception: str | None = None) -> str:
+    """Classify one identifier; unreviewed identifiers are UNKNOWN."""
+    if exception is not None and exception not in EXCEPTION_IDS:
+        return "UNKNOWN"
+    if license_id in COPYLEFT_IDS:
+        return "COPYLEFT"  # a WITH exception does not auto-approve copyleft
+    if license_id in WEAK_COPYLEFT_IDS:
+        return "WEAK-COPYLEFT"
+    if license_id in PERMISSIVE_IDS:
+        return "PERMISSIVE"
+    if any(m in license_id.upper() for m in CENTRAL_POLICY_MARKERS):
+        return "COPYLEFT"
+    return "UNKNOWN"
+
+
+def parse_spdx(expr: str | None):
+    """Parse ``expr`` into ("lic", id, exc) / ("and", [...]) / ("or", [...]).
+
+    Grammar: or := and ("OR" and)*; and := atom ("AND" atom)*;
+    atom := "(" or ")" | ID ["WITH" EXCEPTION]. Raises SpdxError.
+    """
+    if expr is None or not expr.strip():
+        raise SpdxError("empty license expression")
+    tokens = re.findall(r"\(|\)|[^\s()]+", expr)
+    pos = 0
+
+    def peek():
+        return tokens[pos] if pos < len(tokens) else None
+
+    def take():
+        nonlocal pos
+        tok = peek()
+        if tok is None:
+            raise SpdxError(f"unexpected end of expression: {expr!r}")
+        pos += 1
+        return tok
+
+    def parse_or():
+        items = [parse_and()]
+        while peek() == "OR":
+            take()
+            items.append(parse_and())
+        return items[0] if len(items) == 1 else ("or", items)
+
+    def parse_and():
+        items = [parse_atom()]
+        while peek() == "AND":
+            take()
+            items.append(parse_atom())
+        return items[0] if len(items) == 1 else ("and", items)
+
+    def parse_atom():
+        tok = take()
+        if tok == "(":
+            node = parse_or()
+            if take() != ")":
+                raise SpdxError(f"unbalanced parenthesis in {expr!r}")
+            return node
+        if tok in (")", "AND", "OR", "WITH"):
+            raise SpdxError(f"unexpected {tok!r} in {expr!r}")
+        exc = None
+        if peek() == "WITH":
+            take()
+            exc = take()
+        if id_class(tok, exc) == "UNKNOWN":
+            raise SpdxError(f"unreviewed license identifier {tok!r}" + (f" WITH {exc!r}" if exc else "") + f" in {expr!r}")
+        return ("lic", tok, exc)
+
+    node = parse_or()
+    if pos != len(tokens):
+        raise SpdxError(f"trailing tokens in {expr!r}")
+    return node
+
+
+def render(node) -> str:
+    kind = node[0]
+    if kind == "lic":
+        return node[1] + (f" WITH {node[2]}" if node[2] else "")
+    parts = [f"({render(c)})" if c[0] != "lic" and c[0] != kind else render(c) for c in node[1]]
+    return f" {kind.upper()} ".join(parts)
+
+
+def node_class(node) -> str:
+    """Worst class over every term (fail-closed view of a declared expression)."""
+    if node[0] == "lic":
+        return id_class(node[1], node[2])
+    return max((node_class(c) for c in node[1]), key=CLASS_RANK.__getitem__)
+
+
+def node_ids(node) -> list[str]:
+    """License terms of an expression, each rendered with its WITH exception."""
+    if node[0] == "lic":
+        return [render(node)]
+    return [i for c in node[1] for i in node_ids(c)]
+
+
+def _elect_node(node):
+    if node[0] == "lic":
+        return node
+    if node[0] == "and":
+        parts = [_elect_node(c) for c in node[1]]
+        return None if any(p is None for p in parts) else ("and", parts)
+    options = [e for e in (_elect_node(c) for c in node[1]) if e is not None and node_class(e) == "PERMISSIVE"]
+    if not options:
+        return None
+
+    def rank(option):
+        text = render(option)
+        return ELECTION_ORDER.index(text) if text in ELECTION_ORDER else len(ELECTION_ORDER)
+
+    return min(options, key=rank)
+
+
+def _has_or(node) -> bool:
+    return node[0] == "or" or (node[0] == "and" and any(_has_or(c) for c in node[1]))
 
 
 def elect(expr: str | None) -> tuple[str | None, str | None]:
-    """Return (elected expression, rationale) for a normalized SPDX expression."""
+    """Return (elected expression, rationale); (None, reason) when it cannot be elected."""
     if expr is None:
         return None, None
-    if " OR " not in expr:
-        return expr, None
-    # (A OR B) AND C  ->  elect inside the disjunction, keep the conjunct.
-    m = re.fullmatch(r"\((.+)\)\s+AND\s+(.+)", expr)
-    if m:
-        inner, _ = elect(m.group(1))
-        return f"{inner} AND {m.group(2)}", ELECTION_RATIONALE
-    options = [o.strip() for o in expr.split(" OR ")]
-    for pref in ELECTION_ORDER:
-        if pref in options:
-            rationale = ELECTION_RATIONALE if pref == "MIT" else (
-                f"Disjunctive license without MIT: {pref} elected as the first permissive option "
-                "in the policy order MIT > Apache-2.0 > BSD > ISC > Zlib > Unlicense."
-            )
-            return pref, rationale
-    return None, "no permissive alternative in disjunction"
+    try:
+        node = parse_spdx(expr)
+    except SpdxError as err:
+        return None, f"unparseable or unreviewed expression: {err}"
+    chosen = _elect_node(node)
+    if chosen is None:
+        return None, ELECTION_FAILED
+    if not _has_or(node):
+        return render(chosen), None
+    ids = node_ids(chosen)
+    if "MIT" in ids:
+        return render(chosen), ELECTION_RATIONALE
+    return render(chosen), (
+        f"Disjunctive license without MIT: {render(chosen)} elected as the first permissive option "
+        "in the policy order MIT > Apache-2.0 > BSD > ISC > Zlib > Unlicense."
+    )
 
 
 def classify(expr: str | None) -> str:
-    if expr is None:
+    """Fail-closed class of an expression; anything unparseable is UNKNOWN."""
+    try:
+        return node_class(parse_spdx(expr))
+    except SpdxError:
         return "UNKNOWN"
-    terms = spdx_terms(expr)
-    if any(t.startswith(COPYLEFT_PREFIXES) for t in terms):
-        return "COPYLEFT"
-    if any(t in WEAK_COPYLEFT for t in terms):
-        return "WEAK-COPYLEFT"
-    return "PERMISSIVE"
+
+
+def spdx_terms(expr: str | None) -> list[str]:
+    try:
+        return node_ids(parse_spdx(expr))
+    except SpdxError:
+        return []
+
+
+def _label_covers(term: str, label: str) -> bool:
+    return term == label or (term.startswith("BSD") and label.startswith("BSD"))
+
+
+def _text_covered_by(label: str, declared_ids: list[str]) -> bool:
+    """Is a copyleft text label (GPL/LGPL/AGPL) covered by a declared identifier?"""
+    return any(i.startswith(label + "-") for i in declared_ids)
+
+
+def read_crate_license_files(crate: Path) -> list[dict]:
+    """License files at the top level of a .crate archive (read from its bytes)."""
+    out = []
+    with tarfile.open(fileobj=io.BytesIO(crate.read_bytes()), mode="r:gz") as tf:
+        for member in sorted(tf.getmembers(), key=lambda m: m.name):
+            parts = member.name.split("/")
+            if member.isfile() and len(parts) == 2 and LICENSE_NAME.match(parts[1]):
+                data = tf.extractfile(member).read()
+                out.append({"path": parts[1], "sha256": sha256_bytes(data), "detected": detect(data.decode("utf-8", "replace"))})
+    return out
 
 
 def license_files_in_dir(root: Path) -> list[dict]:
@@ -132,9 +315,9 @@ def license_files_in_dir(root: Path) -> list[dict]:
     return out
 
 
-def cargo_lock_checksums(lock: Path) -> dict[tuple[str, str], str]:
+def cargo_lock_packages(lock: Path) -> dict[tuple[str, str], dict]:
     data = tomllib.loads(lock.read_text())
-    return {(p["name"], p["version"]): p.get("checksum") for p in data["package"]}
+    return {(p["name"], p["version"]): {"source": p.get("source"), "checksum": p.get("checksum")} for p in data["package"]}
 
 
 def read_target_sets(tree_dir: Path, kind: str) -> dict[str, set[str]]:
@@ -145,12 +328,11 @@ def read_target_sets(tree_dir: Path, kind: str) -> dict[str, set[str]]:
     return sets
 
 
-def rust_inventory(args) -> list[dict]:
-    ws = json.loads(Path(args.cargo_metadata_workspace).read_text())
-    binding = json.loads(Path(args.cargo_metadata_binding).read_text())
-    checksums = {}
-    for lock in args.cargo_lock:
-        checksums.update(cargo_lock_checksums(Path(lock)))
+def rust_inventory(args, gaps: list[str]) -> list[dict]:
+    ws_meta = json.loads(Path(args.cargo_metadata_workspace).read_text())
+    binding_meta = json.loads(Path(args.cargo_metadata_binding).read_text())
+    ws_lock = cargo_lock_packages(Path(args.cargo_lock_workspace))
+    binding_lock = cargo_lock_packages(Path(args.cargo_lock_binding))
     sbom = json.loads(Path(args.wheel_sbom).read_text())
 
     def walk(components):
@@ -163,52 +345,80 @@ def rust_inventory(args) -> list[dict]:
     sbom_set.add((root.get("name"), root.get("version")))
     linked = read_target_sets(Path(args.tree_dir), "linked")
     build = read_target_sets(Path(args.tree_dir), "build")
-    binding_ids = {(p["name"], p["version"]) for p in binding["packages"]}
-    registry = Path(args.cargo_registry_src)
+    cache = Path(args.cargo_registry_cache)
 
-    rows = {}
-    for graph, meta in (("workspace", ws), ("binding", binding)):
-        for p in meta["packages"]:
-            key = (p["name"], p["version"])
-            if key in rows:
-                continue
-            src_dir = Path(p["manifest_path"]).parent
-            if p["source"] and p["source"].startswith("registry+"):
-                src_dir = next(registry.glob(f"*/{p['name']}-{p['version']}"))
-            files = license_files_in_dir(src_dir)
-            declared = p["license"]
-            norm = normalize_spdx(declared)
-            elected, rationale = elect(norm)
-            ident = f"{p['name']}@{p['version']}"
-            file_labels = {label for f in files for label in f["detected"]}
-            elected_terms = spdx_terms(elected) if elected else []
-            rows[key] = {
-                "ecosystem": "cargo",
-                "name": p["name"],
-                "version": p["version"],
-                "source": p["source"] or "path (this repository)",
-                "source_hash": {"algorithm": "sha256", "value": checksums.get(key), "origin": "Cargo.lock checksum"} if checksums.get(key) else None,
-                "declared_license": declared,
-                "declared_license_file": p["license_file"],
-                "spdx_normalized": norm,
-                "declared_license_class": classify(norm),
-                "license_class": classify(elected),
-                "elected_license": elected,
-                "election_rationale": rationale,
-                "license_files_in_artifact": files,
-                "elected_text_present_in_artifact": all(
-                    any(t == lbl or (t.startswith("BSD") and lbl.startswith("BSD")) for lbl in file_labels) for t in elected_terms
-                ) if elected_terms else False,
-                "value_origin": "package metadata (Cargo.toml license)" + (
-                    "; license text verified in .crate" if files else "; NO license file in .crate"
-                ),
-                "in_workspace_lock": key in {(q["name"], q["version"]) for q in ws["packages"]},
-                "in_binding_lock_graph": key in binding_ids,
-                "in_wheel_sbom": key in sbom_set,
-                "linked_into_core_for_targets": sorted(t for t, s in linked.items() if ident in s),
-                "compiled_at_build_for_targets": sorted(t for t, s in build.items() if ident in s),
-            }
-    for row in rows.values():
+    # Completeness: the lock files are the expected set; metadata must match them.
+    for label, lock, meta in (("workspace", ws_lock, ws_meta), ("binding", binding_lock, binding_meta)):
+        meta_keys = {(p["name"], p["version"]) for p in meta["packages"]}
+        for key in sorted(set(lock) - meta_keys):
+            gaps.append(f"cargo {label}: {key[0]}@{key[1]} is in Cargo.lock but not in cargo metadata")
+        for key in sorted(meta_keys - set(lock)):
+            gaps.append(f"cargo {label}: {key[0]}@{key[1]} is in cargo metadata but not in Cargo.lock")
+    meta_by_key = {(p["name"], p["version"]): p for meta in (ws_meta, binding_meta) for p in meta["packages"]}
+
+    rows = []
+    for key in sorted(set(ws_lock) | set(binding_lock)):
+        name, version = key
+        lock_entry = ws_lock.get(key) or binding_lock[key]
+        p = meta_by_key.get(key)
+        hold = []
+        source = lock_entry["source"]
+        if source and source.startswith("registry+"):
+            crates = sorted(cache.glob(f"*/{name}-{version}.crate"))
+            measured = sha256_bytes(crates[0].read_bytes()) if crates else None
+            expected = lock_entry["checksum"]
+            bound = measured is not None and expected is not None and measured == expected
+            source_hash = {"algorithm": "sha256", "expected": expected, "expected_origin": "Cargo.lock checksum",
+                           "measured": measured, "measured_origin": ".crate bytes in the cargo registry cache",
+                           "match": bound}
+            files = read_crate_license_files(crates[0]) if bound else []
+            if not bound:
+                hold.append("the .crate bytes are missing or do not match the Cargo.lock checksum")
+            origin = ("package metadata (Cargo.toml license); license files read from the .crate whose sha256 "
+                      "equals the Cargo.lock checksum" + ("" if files else "; the .crate contains NO license file")
+                      ) if bound else "UNVERIFIED: no hash-bound .crate, license text not read"
+        elif source is None and p is not None:
+            source_hash = None
+            files = license_files_in_dir(Path(p["manifest_path"]).parent)
+            origin = "package metadata (Cargo.toml license); this repository's own source"
+        else:
+            source_hash, files, origin = None, [], "UNVERIFIED: unsupported source"
+            hold.append(f"unsupported source {source!r}")
+        if p is None:
+            hold.append("no cargo metadata row for this lock entry")
+        declared = p["license"] if p else None
+        norm = normalize_spdx(declared)
+        elected, rationale = elect(norm)
+        ident = f"{name}@{version}"
+        file_labels = {label for f in files for label in f["detected"]}
+        elected_terms = spdx_terms(elected)
+        base = classify(elected) if elected else "UNKNOWN"
+        rows.append({
+            "ecosystem": "cargo",
+            "name": name,
+            "version": version,
+            "source": source or "path (this repository)",
+            "source_hash": source_hash,
+            "declared_license": declared,
+            "declared_license_file": p["license_file"] if p else None,
+            "spdx_normalized": norm,
+            "declared_license_class": classify(norm),
+            "license_class": "HOLD" if hold and base != "UNKNOWN" else base,
+            "hold_reasons": hold,
+            "elected_license": elected,
+            "election_rationale": rationale,
+            "license_files_in_artifact": files,
+            "elected_text_present_in_artifact": all(
+                any(_label_covers(t, lbl) for lbl in file_labels) for t in elected_terms
+            ) if elected_terms else False,
+            "value_origin": origin,
+            "in_workspace_lock": key in ws_lock,
+            "in_binding_lock_graph": key in binding_lock,
+            "in_wheel_sbom": key in sbom_set,
+            "linked_into_core_for_targets": sorted(t for t, s in linked.items() if ident in s),
+            "compiled_at_build_for_targets": sorted(t for t, s in build.items() if ident in s),
+        })
+    for row in rows:
         row["in_published_artifact_scope"] = row["in_binding_lock_graph"]
         row["scope_note"] = (
             "compiled into fast_mlsirm/_core for the listed targets" if row["linked_into_core_for_targets"]
@@ -216,7 +426,7 @@ def rust_inventory(args) -> list[dict]:
             else "in binding lock graph and wheel SBOM but not compiled for any published target" if row["in_binding_lock_graph"]
             else "workspace lock only (dev/test path); not in any published artifact"
         )
-    return sorted(rows.values(), key=lambda r: (r["name"], r["version"]))
+    return rows
 
 
 def parse_notice_stanzas(text: str) -> list[dict]:
@@ -233,7 +443,7 @@ def python_artifact_evidence(path: Path) -> dict:
     ev = {"artifact": path.name, "sha256": sha256_bytes(data), "license_files": [], "metadata": {}, "vendored_native": []}
     if path.suffix != ".whl":
         return ev
-    with zipfile.ZipFile(path) as zf:
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
         names = zf.namelist()
         meta = next(n for n in names if n.endswith(".dist-info/METADATA"))
         for line in zf.read(meta).decode("utf-8", "replace").splitlines():
@@ -267,51 +477,116 @@ def python_artifact_evidence(path: Path) -> dict:
     return ev
 
 
-def python_inventory(args) -> list[dict]:
+REQ_PIN = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s\\;]+)")
+REQ_BLOCK = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s\\]+) \\\n((?:[ \t]+--hash=sha256:[0-9a-f]{64}(?: \\)?\n)+)", re.MULTILINE)
+
+
+def parse_requirements(path: Path, gaps: list[str]) -> dict[tuple[str, str], list[str]]:
+    """Hash-pinned requirements; every top-level line must be a fully hashed pin."""
+    text = path.read_text()
+    parsed = {}
+    for m in REQ_BLOCK.finditer(text):
+        name = m.group(1).lower().replace("_", "-")
+        parsed[(name, m.group(2))] = ["sha256:" + h for h in re.findall(r"sha256:([0-9a-f]{64})", m.group(3))]
+    for line in text.splitlines():
+        if not line.strip() or line.startswith("#") or line[0] in " \t":
+            continue
+        m = REQ_PIN.match(line)
+        if not m:
+            gaps.append(f"{path.as_posix()}: unparsed requirement line {line!r}")
+        elif (m.group(1).lower().replace("_", "-"), m.group(2)) not in parsed:
+            gaps.append(f"{path.as_posix()}: pin {m.group(1)}=={m.group(2)} has no parsed --hash block")
+    return parsed
+
+
+def python_inventory(args, gaps: list[str]) -> list[dict]:
     uv = tomllib.loads(Path(args.uv_lock).read_text())
     entries: dict[tuple[str, str], dict] = {}
     for p in uv["package"]:
-        if p["source"].get("editable"):
-            continue
+        if p["source"].get("editable") or p["source"].get("virtual"):
+            continue  # the project itself
         hashes = [p["sdist"]["hash"]] if "sdist" in p else []
         hashes += [w["hash"] for w in p.get("wheels", [])]
+        if not hashes:
+            gaps.append(f"uv.lock: {p['name']}@{p['version']} has no artifact hash")
         entries.setdefault((p["name"], p["version"]), {"locks": {}})["locks"]["uv.lock"] = hashes
     for req in args.requirements:
-        text = Path(req).read_text()
-        for m in re.finditer(r"^([A-Za-z0-9_.-]+)==([^\s\\]+) \\\n((?:\s+--hash=sha256:[0-9a-f]{64}(?: \\)?\n)+)", text, re.MULTILINE):
-            name = m.group(1).lower().replace("_", "-")
-            hashes = ["sha256:" + h for h in re.findall(r"sha256:([0-9a-f]{64})", m.group(3))]
-            entries.setdefault((name, m.group(2)), {"locks": {}})["locks"][Path(req).as_posix()] = hashes
+        for key, hashes in parse_requirements(Path(req), gaps).items():
+            entries.setdefault(key, {"locks": {}})["locks"][Path(req).as_posix()] = hashes
     for extra in args.extra_python or []:
         name, version, why = extra.split("==", 1)[0], extra.split("==", 1)[1].split(":", 1)[0], extra.split(":", 1)[1]
         entries.setdefault((name, version), {"locks": {}})["locks"][why] = []
 
     scope = json.loads(Path(args.python_scope).read_text())
+    for name in sorted(set(scope) - {n for n, _ in entries}):
+        gaps.append(f"python scope entry {name!r} matches no inventoried package")
     meta_dir, art_dir = Path(args.pypi_meta_dir), Path(args.pypi_artifact_dir)
     rows = []
     for (name, version), e in sorted(entries.items()):
-        meta = json.loads((meta_dir / f"{name}-{version}.json").read_text())["info"]
+        hold = []
+        meta_path = meta_dir / f"{name}-{version}.json"
+        if meta_path.exists():
+            meta_doc = json.loads(meta_path.read_text())
+        else:
+            meta_doc = {"info": {}, "urls": []}
+            gaps.append(f"pypi: {name}@{version} has no PyPI metadata JSON")
+        meta = meta_doc["info"]
+        pypi_digests = {u["filename"]: u["digests"]["sha256"] for u in meta_doc.get("urls", [])}
         declared = meta.get("license_expression") or None
         classifiers = [c for c in meta.get("classifiers") or [] if c.startswith("License ::")]
         paths = {a for stem in {name, name.replace("-", "_")} for a in art_dir.glob(f"{stem}-{version}[-.]*")}
-        artifacts = [python_artifact_evidence(a) for a in sorted(paths)]
-        text_labels = sorted({lbl for a in artifacts for f in a["license_files"] for lbl in f["detected"]})
+        expected = {h.split(":", 1)[1] for hs in e["locks"].values() for h in hs}
+        artifacts = []
+        for a in sorted(paths):
+            ev = python_artifact_evidence(a)
+            if expected:
+                ev["hash_binding"] = {"expected_origin": "lock hashes", "match": ev["sha256"] in expected}
+            else:
+                ev["hash_binding"] = {"expected_origin": "PyPI JSON digest (no lock hash exists)",
+                                      "match": pypi_digests.get(a.name) == ev["sha256"]}
+            if not ev["hash_binding"]["match"]:
+                hold.append(f"artifact {a.name} sha256 does not match its expected hash")
+            artifacts.append(ev)
+        if not artifacts:
+            hold.append("no artifact examined, so no license text was verified")
+        text_labels = sorted({lbl for a in artifacts if a["hash_binding"]["match"] for f in a["license_files"] for lbl in f["detected"]})
+        copyleft_text = [lbl for lbl in text_labels if lbl in COPYLEFT_TEXT_LABELS + WEAK_COPYLEFT_TEXT_LABELS]
         norm = normalize_spdx(declared)
         elected, rationale = elect(norm)
         if declared:
-            determination = {"spdx": norm, "origin": "package metadata License-Expression",
-                             "text_agrees": all(any(t == lbl or (t.startswith("BSD") and lbl.startswith("BSD")) for lbl in text_labels)
-                                                for t in spdx_terms(elected or norm) if t not in ("0BSD", "CC0-1.0"))}
+            declared_ids = spdx_terms(norm)
+            agrees = bool(text_labels) and all(any(_label_covers(t, lbl) for lbl in text_labels)
+                                               for t in spdx_terms(elected or norm) if t not in UNFINGERPRINTED_IDS)
+            uncovered = [lbl for lbl in copyleft_text if not _text_covered_by(lbl, declared_ids) and lbl not in declared_ids]
+            determination = {"spdx": norm, "origin": "package metadata License-Expression", "text_agrees": agrees,
+                             "copyleft_text_not_in_declared_expression": uncovered}
+            if not agrees:
+                hold.append("declared license text not found in a hash-bound artifact")
+            if uncovered:
+                hold.append(f"artifact text also grants {uncovered}, which the declared expression does not name")
         else:
             cls_terms = {CLASSIFIER_SPDX.get(c) for c in classifiers} - {None}
-            text_only = [lbl for lbl in text_labels if lbl not in ("GPL", "LGPL", "AGPL")]
-            if cls_terms and len(text_only) == 1 and all(text_only[0].startswith(t) for t in cls_terms):
-                determination = {"spdx": text_only[0], "origin": "trove classifier confirmed by the license file in the artifact (no License-Expression)", "text_agrees": True}
-            elif not cls_terms and len(text_only) == 1:
-                determination = {"spdx": text_only[0], "origin": "license file in the artifact ONLY - package metadata declares no license; recorded as an explicit evidence-based exception, not inferred from absence", "text_agrees": True}
+            permissive_text = [lbl for lbl in text_labels if lbl not in copyleft_text]
+            if copyleft_text:
+                determination = {"spdx": None, "origin": f"HOLD - artifact text contains {copyleft_text} and metadata declares no expression",
+                                 "text_agrees": False, "copyleft_text_not_in_declared_expression": copyleft_text}
+                hold.append(f"artifact text contains {copyleft_text} with no declared expression")
+            elif cls_terms and len(permissive_text) == 1 and all(permissive_text[0].startswith(t) for t in cls_terms):
+                determination = {"spdx": permissive_text[0], "origin": "trove classifier confirmed by the license file in the artifact (no License-Expression)", "text_agrees": True,
+                                 "copyleft_text_not_in_declared_expression": []}
+            elif not cls_terms and len(permissive_text) == 1:
+                determination = {"spdx": permissive_text[0], "origin": "license file in the artifact ONLY - package metadata declares no license; recorded as an explicit evidence-based exception, not inferred from absence", "text_agrees": True,
+                                 "copyleft_text_not_in_declared_expression": []}
             else:
-                determination = {"spdx": None, "origin": "UNKNOWN - on hold", "text_agrees": False}
+                determination = {"spdx": None, "origin": "UNKNOWN - on hold", "text_agrees": False,
+                                 "copyleft_text_not_in_declared_expression": []}
             elected = determination["spdx"]
+        base = classify(elected) if elected else "UNKNOWN"
+        if name in scope:
+            scope_fields = scope[name]
+        else:
+            scope_fields = {"scope": "UNCLASSIFIED", "in_published_artifact_scope": None, "runtime_dependency_of_published_artifact": None}
+            gaps.append(f"python scope: {name} has no scope entry")
         rows.append({
             "ecosystem": "pypi",
             "name": name,
@@ -323,11 +598,12 @@ def python_inventory(args) -> list[dict]:
             "license_text_detected_in_artifact": text_labels,
             "license_class_from_metadata": classify(norm) if declared else ("UNKNOWN" if not classifiers else "CLASSIFIER-ONLY"),
             "license_determination": determination,
-            "license_class": classify(determination["spdx"]),
+            "license_class": "HOLD" if hold and base in ("PERMISSIVE", "WEAK-COPYLEFT") else base,
+            "hold_reasons": hold,
             "elected_license": elected,
             "election_rationale": rationale,
             "artifacts_examined": artifacts,
-            **scope.get(name, {"scope": "unclassified", "in_published_artifact_scope": False}),
+            **scope_fields,
         })
     return rows
 
@@ -336,8 +612,9 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--cargo-metadata-workspace", required=True)
     ap.add_argument("--cargo-metadata-binding", required=True)
-    ap.add_argument("--cargo-lock", nargs="+", required=True, help="workspace and binding-crate Cargo.lock files")
-    ap.add_argument("--cargo-registry-src", required=True)
+    ap.add_argument("--cargo-lock-workspace", required=True)
+    ap.add_argument("--cargo-lock-binding", required=True)
+    ap.add_argument("--cargo-registry-cache", required=True, help="$CARGO_HOME/registry/cache (holds the .crate files)")
     ap.add_argument("--wheel-sbom", required=True)
     ap.add_argument("--tree-dir", required=True)
     ap.add_argument("--uv-lock", required=True)
@@ -349,26 +626,29 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
 
-    rust = rust_inventory(args)
-    python = python_inventory(args)
+    gaps: list[str] = []
+    rust = rust_inventory(args, gaps)
+    python = python_inventory(args, gaps)
     summary = {
+        "completeness_gaps": gaps,
         "cargo_workspace_lock_packages": sum(r["in_workspace_lock"] for r in rust),
         "cargo_binding_graph_packages": sum(r["in_binding_lock_graph"] for r in rust),
         "cargo_wheel_sbom_packages": sum(r["in_wheel_sbom"] for r in rust),
-        "cargo_by_class": {c: sum(r["license_class"] == c for r in rust) for c in ("PERMISSIVE", "WEAK-COPYLEFT", "COPYLEFT", "UNKNOWN")},
-        "cargo_by_declared_class": {c: sum(r["declared_license_class"] == c for r in rust) for c in ("PERMISSIVE", "WEAK-COPYLEFT", "COPYLEFT", "UNKNOWN")},
-        "cargo_disjunctive_with_copyleft_alternative": [f"{r['name']}@{r['version']}" for r in rust if " OR " in (r["spdx_normalized"] or "") and any(t.startswith(COPYLEFT_PREFIXES) for t in spdx_terms(r["spdx_normalized"]))],
+        "cargo_by_class": {c: sum(r["license_class"] == c for r in rust) for c in CLASSES},
+        "cargo_by_declared_class": {c: sum(r["declared_license_class"] == c for r in rust) for c in CLASSES},
+        "cargo_disjunctive_with_copyleft_alternative": [f"{r['name']}@{r['version']}" for r in rust if " OR " in (r["spdx_normalized"] or "") and r["declared_license_class"] == "COPYLEFT"],
         "cargo_without_license_file_in_crate": [f"{r['name']}@{r['version']}" for r in rust if not r["license_files_in_artifact"] and r["source"] != "path (this repository)"],
         "cargo_elected_text_missing": [f"{r['name']}@{r['version']}" for r in rust if not r["elected_text_present_in_artifact"] and r["source"] != "path (this repository)"],
-        "cargo_registry_without_checksum": [f"{r['name']}@{r['version']}" for r in rust if r["source_hash"] is None and r["source"] != "path (this repository)"],
+        "cargo_crate_hash_unbound": [f"{r['name']}@{r['version']}" for r in rust if r["source_hash"] is not None and not r["source_hash"]["match"]],
         "pypi_packages": len(python),
         "pypi_metadata_unknown": [f"{r['name']}@{r['version']}" for r in python if r["license_class_from_metadata"] == "UNKNOWN"],
-        "pypi_by_class": {c: [f"{r['name']}@{r['version']}" for r in python if r["license_class"] == c] for c in ("WEAK-COPYLEFT", "COPYLEFT", "UNKNOWN")},
+        "pypi_by_class": {c: [f"{r['name']}@{r['version']}" for r in python if r["license_class"] == c] for c in CLASSES if c != "PERMISSIVE"},
+        "pypi_hold_reasons": {f"{r['name']}@{r['version']}": r["hold_reasons"] for r in python if r["hold_reasons"]},
         "pypi_vendored_native_by_notice_license": sorted({(s.get("license") or "NO NOTICE IN ARTIFACT") for r in python for a in r["artifacts_examined"] for v in a["vendored_native"] for s in (v["notice_stanza"] or [{}])}),
     }
     Path(args.out).write_text(json.dumps({"summary": summary, "cargo": rust, "pypi": python}, indent=1, sort_keys=True) + "\n")
     print(json.dumps(summary, indent=1))
-    return 0
+    return 1 if gaps else 0
 
 
 if __name__ == "__main__":

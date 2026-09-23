@@ -76,8 +76,14 @@ section 6 covers it.
 Each row records:
 
 - name, version and source;
-- the source hash. For Cargo rows this is the `Cargo.lock` sha256 checksum;
-  every registry crate has one. For PyPI rows it is every hash in each lock;
+- the source hash, split into expected and measured values:
+  - Cargo `source_hash`: `expected` is the `Cargo.lock` checksum, `measured`
+    is the sha256 of the `.crate` bytes, and `match` compares them. All 227
+    registry crates match. License text is read only from inside a
+    hash-bound `.crate`.
+  - PyPI: every hash in each lock, plus `hash_binding` per examined artifact
+    (lock hash, or the PyPI JSON digest for maturin 1.14.1, which has no lock
+    entry). All examined artifacts match;
 - the declared SPDX expression from package metadata, together with the
   license files found **inside the actual artifact** (`.crate` or wheel),
   each with its sha256 and the license family detected from its text;
@@ -87,6 +93,31 @@ Each row records:
     `linked_into_core_for_targets` (normal, non-proc-macro edges per published
     target) and `compiled_at_build_for_targets`;
   - PyPI: the `scope` text and `runtime_dependency_of_published_artifact`.
+    A package without a scope entry is `UNCLASSIFIED`, with
+    `in_published_artifact_scope: null`, and is reported as a gap;
+- `license_class` plus `hold_reasons`.
+
+The generator fails closed:
+
+- It parses expressions with a strict SPDX grammar over a reviewed identifier
+  list.
+  - `NOASSERTION`, `LicenseRef-*`, an empty value, any other unreviewed
+    identifier, or a grammar error is `UNKNOWN`.
+  - A disjunction with no fully permissive branch is also `UNKNOWN`, not
+    elected.
+  - Identifiers matching the organization copyleft markers mirrored from
+    `ContextualWisdomLab/.github` `scripts/ci/sbom_inventory_aggregator.py`
+    can never be permissive.
+- Copyleft grant text found in an artifact is kept. When the declared
+  expression does not name it, the row is `HOLD`.
+- Missing artifact text, or an unbound or mismatched hash, is also `HOLD`.
+- Every package in each `Cargo.lock`, `uv.lock` and requirements file must
+  produce a row, and every requirements line must be a hashed pin. Otherwise
+  `summary.completeness_gaps` is non-empty and the generator exits 1. For
+  this inventory it is empty.
+
+`tests/test_license_inventory_generator.py` holds the negative regression
+cases.
 
 Cargo results:
 
@@ -145,7 +176,7 @@ Python results:
 
 | Package | Version | Determination | Origin of the value | Scope |
 | --- | --- | --- | --- | --- |
-| numpy | 2.5.3 | `BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0` (the package itself) | metadata License-Expression, and LICENSE.txt agrees | **runtime dependency**, section 6 |
+| numpy | 2.5.3 | `BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0` for the package itself; row class **HOLD**, because its LICENSE.txt also carries GPL and LGPL grant text for the bundled GCC libraries | metadata License-Expression, and LICENSE.txt agrees | **runtime dependency**, section 6 |
 | atheris | 3.1.0 | Apache-2.0 | LICENSE file only, **metadata absent**, section 4 | extra `fuzz` |
 | hypothesis | 6.156.6 / 6.168.0 | **MPL-2.0 (weak copyleft)** | metadata, LICENSE agrees | extras `dev`/`fuzz`, CI |
 | pytest / iniconfig | 9.1.1 / 2.3.0 | MIT | metadata, LICENSE agrees | dev/CI |
@@ -360,7 +391,11 @@ until then.
 ## 8. Reproduction
 
 The Cargo steps ran on s1 in an isolated directory with its own `CARGO_HOME`
-and `CARGO_TARGET_DIR`. The Python steps can run anywhere.
+and `CARGO_TARGET_DIR`. The Python steps can run anywhere. The committed
+inventory was regenerated off-s1 from a copy of those inputs. The only
+change to the copies was replacing the checkout prefix in the two `cargo
+metadata` files' `manifest_path` with the local worktree, which only locates
+this repository's own path crates.
 
 ```bash
 cargo metadata --locked --format-version 1 > ws.json
@@ -376,7 +411,8 @@ maturin build --release --out dist            # take dist-info/sboms/*.json as s
 # download the wheels (numpy: every cp312 wheel; atheris: all), verifying sha256 against that JSON.
 python tools/license_inventory.py \
   --cargo-metadata-workspace ws.json --cargo-metadata-binding py.json \
-  --cargo-lock Cargo.lock crates/fast-mlsirm-py/Cargo.lock --cargo-registry-src "$CARGO_HOME/registry/src" \
+  --cargo-lock-workspace Cargo.lock --cargo-lock-binding crates/fast-mlsirm-py/Cargo.lock \
+  --cargo-registry-cache "$CARGO_HOME/registry/cache" \
   --wheel-sbom sbom.json --tree-dir tree --uv-lock uv.lock \
   --requirements requirements/ci.txt requirements/package.txt \
   --extra-python "maturin==1.14.1:publish-pypi.yml maturin-action binary" \
