@@ -697,7 +697,7 @@ def test_dif_analysis_accepts_boolean_mask():
         y,
         np.zeros(6, dtype=np.int64),
         gid,
-        config=FitConfig(model="MIRT", estimator="mmle", max_iter=120, q_theta=11),
+        config=FitConfig(model="MIRT", estimator="mmle", max_iter=500, q_theta=11),
         mask=mask,
         studied_items=[2],
     )
