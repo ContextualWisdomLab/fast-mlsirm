@@ -1,6 +1,6 @@
 # Exact whole-text support for Cargo evidence
 
-Base: 63aa17c76b40b1695e23c2133f1b2eee57e82688. Scope: four complete
+Combined base: dc41563f523f977a380974c0644040c7c4eab657. Scope: four complete
 Apache-2.0/Zlib texts recognized by whole-text SHA256 after ASCII layout
 whitespace normalization only. Package names, SPDX labels, filenames, and
 partial text do not substitute for recognition. Every candidate file is still
@@ -37,5 +37,5 @@ Tests exercise exact bytes and hashes, ASCII line endings, one-word mutations,
 extra conditions, added prefix/suffix, and the real synthetic crate inventory
 consumer with an unverified COPYRIGHT, missing selected MIT, extra restriction,
 or LGPL material. Existing election and AND regressions remain in the same
-focused file. The separate NumPy repair touches the same tool in another branch;
-integration requires a reviewed merge, not overwriting either owner's tree.
+focused file. The NumPy repair and exact-text support are combined in commit
+7354cf2ca3f694355d94d502d8487e61a41dba57.
