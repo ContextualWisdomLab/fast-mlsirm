@@ -1,5 +1,6 @@
 """Require the living architecture baseline document at repository root."""
 
+import re
 from pathlib import Path
 
 
@@ -31,4 +32,4 @@ def test_architecture_doctoring_note_exists() -> None:
     assert "Fox" in note
     assert "Jeon" in note
     assert "Kang" in note
-    assert "https://doi.org/" in note
+    assert re.search(r"(?<!\S)https://doi\.org/10\.\d{4,9}/\S+", note)
