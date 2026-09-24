@@ -652,6 +652,27 @@ _VERSIONED_SONAME = re.compile(r"^(?P<stem>.+)\.so(?:\.[0-9]+)+$")
 _MACOS_DYLIB = re.compile(r"^(?P<stem>.+)\.dylib$")
 
 
+_WINDOWS_DRIVE = re.compile(r"^[A-Za-z]:")
+
+
+def notice_files_pattern_to_posix(pattern: str) -> str | None:
+    """Canonicalize one notice ``Files:`` pattern, or reject it.
+
+    Windows wheels write notice paths with backslashes
+    (``numpy.libs\\libscipy_openblas*.dll``), while wheel members always use
+    ``/``.  Every backslash becomes ``/`` and the result must then pass the same
+    canonical relative-path checks as any member path, so traversal (``..\\``),
+    absolute or UNC roots (``\\``, ``\\\\server``) and drive letters (``C:``) are
+    still rejected.  fnmatch has no escape character, so this cannot change
+    what a glob means.  Only the notice side is converted; a member path that
+    itself contains a backslash stays rejected when the wheel is read.
+    """
+    converted = pattern.replace("\\", "/")
+    if _WINDOWS_DRIVE.match(converted):
+        return None
+    return normalized_archive_path(converted)
+
+
 def notice_files_pattern_matches(member: str, pattern: str) -> bool:
     """Bind one notice ``Files:`` pattern to one native wheel member.
 
@@ -663,7 +684,8 @@ def notice_files_pattern_matches(member: str, pattern: str) -> bool:
     unrelated library is never bound and an unmatched member keeps failing
     closed as "no bound notice stanza".
     """
-    if normalized_archive_path(pattern) is None:
+    pattern = notice_files_pattern_to_posix(pattern)
+    if pattern is None:
         return False
     if fnmatch.fnmatchcase(member, pattern):
         return True
