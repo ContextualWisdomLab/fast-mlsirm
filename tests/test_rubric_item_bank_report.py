@@ -155,6 +155,17 @@ def test_json_report_is_deterministic_machine_readable_and_source_text_free() ->
     assert "response_text" not in first
 
 
+def test_html_report_carries_a_deny_by_default_content_security_policy() -> None:
+    """The standalone artifact denies every fetch directive but its own style."""
+    rendered = render_item_bank_report_html(_lifecycle())
+
+    assert '<meta http-equiv="Content-Security-Policy" content="' in rendered
+    policy = rendered.split('Content-Security-Policy" content="')[1].split('"')[0]
+    assert policy.startswith("default-src &#x27;none&#x27;")
+    assert "style-src &#x27;unsafe-inline&#x27;" in policy
+    assert "script-src" not in policy  # denied by the default-src fallback
+
+
 def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
     """The human report has semantic landmarks and a visible focus contract."""
     records = _lifecycle()
