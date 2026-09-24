@@ -1045,7 +1045,8 @@ def fit_marginal_numpy(
                         deta_z = x_grid  # (Nx, K)
                     else:
                         diff = x_grid - zeta_i[None, :]
-                        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
+                        # Optimized: replace np.sum(diff * diff, axis=1) with np.einsum('ij,ij->i', diff, diff) to avoid unnecessary intermediate 2D array allocations and improve performance
+                        dist = np.sqrt(eps_distance + np.einsum("ij,ij->i", diff, diff))
                         deta_z = gamma * diff / dist[:, None]  # (Nx, K)
                     g_zeta = (
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
