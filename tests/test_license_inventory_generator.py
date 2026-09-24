@@ -1094,3 +1094,80 @@ def test_affero_mention_in_gpl3_is_not_an_agpl_grant():
     assert "GPL" in L.detect(gpl3_section_13)
     assert "AGPL" in L.detect("GNU AFFERO GENERAL PUBLIC LICENSE Version 3, 19 November 2007")
     assert "AGPL" in L.detect("you can redistribute it under the terms of the GNU Affero General Public License")
+
+
+GCC_RUNTIME_NOTICE_BODY = (
+    "Libgfortran is free software; you can redistribute it and/or modify\n"
+    "it under the terms of the GNU General Public License as published by\n"
+    "the Free Software Foundation; either version 3, or (at your option)\n"
+    "any later version.\n"
+    "\n"
+    "Under Section 7 of GPL version 3, you are granted additional\n"
+    "permissions described in the GCC Runtime Library Exception, version\n"
+    "3.1, as published by the Free Software Foundation."
+)
+WINDOWS_OPENBLAS_DLL = "pkg.libs/libscipy_openblas64_-ed4f167a5330424524f45258e7ca2c8d.dll"
+
+
+def _windows_notice_wheel(args, member: str, files_pattern: str, *, with_permissive_stanza: bool = False) -> None:
+    """A NumPy win_amd64-shaped wheel: the notice names its DLL with a backslash path."""
+    def stanza(name, license_id, body):
+        lines = "\n".join(f" {line}" if line else " ." for line in body.splitlines())
+        return f"Name: {name}\nFiles: {files_pattern}\nLicense: {license_id}\n{lines}\n"
+
+    def writer(zf):
+        zf.writestr("pkg-1.0.dist-info/METADATA", "Metadata-Version: 2.4\nName: pkg\nVersion: 1.0\n\n")
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+        zf.writestr(member, b"synthetic native bytes")
+        notice = stanza("GCC runtime library", "GPL-3.0-or-later WITH GCC-exception-3.1", GCC_RUNTIME_NOTICE_BODY)
+        if with_permissive_stanza:
+            notice = stanza("OpenBLAS", "MIT", MIT_TEXT) + "\n" + notice
+        zf.writestr("pkg-1.0.dist-info/licenses/NOTICE", notice)
+
+    _replace_wheel(args, writer)
+
+
+@pytest.mark.parametrize("with_permissive_stanza", [False, True])
+def test_windows_backslash_notice_binds_gcc_runtime_label_and_holds(tmp_path, with_permissive_stanza):
+    """numpy win_amd64 writes 'numpy.libs\\libscipy_openblas*.dll'; the GCC-exception label must bind."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    _windows_notice_wheel(
+        args, WINDOWS_OPENBLAS_DLL, "pkg.libs\\libscipy_openblas*.dll", with_permissive_stanza=with_permissive_stanza
+    )
+    (row,) = L.python_inventory(args, [])
+    (native,) = [v for a in row["artifacts_examined"] for v in a["vendored_native"] if v["path"] == WINDOWS_OPENBLAS_DLL]
+    licenses = [s["license"] for s in native["notice_stanza"]]
+    assert "GPL-3.0-or-later WITH GCC-exception-3.1" in licenses
+    holds = " ".join(row["vendored_native_license_holds"])
+    assert f"{WINDOWS_OPENBLAS_DLL}: no bound notice stanza" not in holds
+    assert f"{WINDOWS_OPENBLAS_DLL}: vendored native license is GPL-3.0-or-later WITH GCC-exception-3.1" in holds
+    # A runtime exception never approves the component, even beside a verified permissive stanza.
+    assert row["license_class"] == "HOLD"
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "..\\pkg.libs\\libscipy_openblas*.dll",  # traversal
+        "pkg.libs\\..\\..\\libscipy_openblas*.dll",  # traversal after a component
+        "\\pkg.libs\\libscipy_openblas*.dll",  # absolute root
+        "\\\\server\\share\\libscipy_openblas*.dll",  # UNC root
+        "C:\\pkg.libs\\libscipy_openblas*.dll",  # drive letter
+        "other.libs\\libscipy_openblas*.dll",  # other directory
+        "pkg.libs\\msvcp140*.dll",  # other DLL
+    ],
+)
+def test_windows_backslash_notice_never_binds_unsafe_or_unrelated(tmp_path, pattern):
+    """Backslash conversion keeps every canonical-path rejection and never widens binding."""
+    assert L.notice_files_pattern_matches(WINDOWS_OPENBLAS_DLL, pattern) is False
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    _windows_notice_wheel(args, WINDOWS_OPENBLAS_DLL, pattern)
+    (row,) = L.python_inventory(args, [])
+    assert f"{WINDOWS_OPENBLAS_DLL}: no bound notice stanza" in " ".join(row["vendored_native_license_holds"])
+    assert row["license_class"] == "HOLD"
+
+
+def test_windows_notice_pattern_normalization_is_notice_side_only():
+    """Only notice patterns are converted; the canonical-path gate itself is unchanged."""
+    assert L.notice_files_pattern_to_posix("pkg.libs\\libscipy_openblas*.dll") == "pkg.libs/libscipy_openblas*.dll"
+    assert L.normalized_archive_path("pkg.libs\\libscipy_openblas64_.dll") is None
