@@ -45,7 +45,9 @@ LICENSE_NAME = re.compile(r"^(licen[cs]e|copying|notice|authors|copyright|unlice
 
 # Ordered text fingerprints. A file may match several (e.g. a triple-license AUTHORS).
 TEXT_FINGERPRINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("AGPL", ("GNU AFFERO GENERAL PUBLIC LICENSE",)),
+    # Title/grant forms only: GPL-3.0 section 13 names the Affero license
+    # without granting under it, which must not read as AGPL.
+    ("AGPL", ("GNU AFFERO GENERAL PUBLIC LICENSE Version", "under the terms of the GNU Affero General Public")),
     # Grant-form phrases only: MPL-2.0 names the GNU licenses as "Secondary
     # Licenses" without granting under them, which must not read as (L)GPL.
     ("LGPL", ("GNU LESSER GENERAL PUBLIC LICENSE Version", "under the terms of the GNU Lesser General Public",
@@ -184,7 +186,11 @@ def detect(text: str) -> list[str]:
         folded_needles = tuple(n.casefold() for n in needles)
         markers = FULL_TEXT_MARKERS.get(label)
         valid_standard_text = markers is None or all(marker in text for marker in markers)
-        unqualified = not any(marker in text for marker in NEGATING_OR_CONDITIONAL_MARKERS)
+        # Negating/conditional language may void a permissive grant, but it
+        # never removes copyleft evidence: GPL-3.0 itself says a clause "does
+        # not apply", and dropping the label would hide the copyleft component.
+        copyleft = label in COPYLEFT_TEXT_LABELS + WEAK_COPYLEFT_TEXT_LABELS
+        unqualified = copyleft or not any(marker in text for marker in NEGATING_OR_CONDITIONAL_MARKERS)
         if any(n in text for n in folded_needles) and valid_standard_text and unqualified:
             if label == "Apache-2.0" and "Apache-2.0 WITH LLVM-exception" in found:
                 continue
@@ -642,6 +648,41 @@ def parse_notice_stanzas(text: str) -> tuple[list[dict], bool]:
     return stanzas, file_consumed
 
 
+_VERSIONED_SONAME = re.compile(r"^(?P<stem>.+)\.so(?:\.[0-9]+)+$")
+_MACOS_DYLIB = re.compile(r"^(?P<stem>.+)\.dylib$")
+
+
+def notice_files_pattern_matches(member: str, pattern: str) -> bool:
+    """Bind one notice ``Files:`` pattern to one native wheel member.
+
+    Exact patterns stay exact.  A glob ending in ``.so`` also binds the
+    platform spellings that wheel notices describe with the generic suffix:
+    versioned ELF sonames (``libquadmath-<hash>.so.0.0.0``) and, inside a
+    ``.dylibs/`` directory, macOS ``.dylib`` names (``libquadmath.0.dylib``).
+    The glob stem must match the member stem in the same directory, so an
+    unrelated library is never bound and an unmatched member keeps failing
+    closed as "no bound notice stanza".
+    """
+    if normalized_archive_path(pattern) is None:
+        return False
+    if fnmatch.fnmatchcase(member, pattern):
+        return True
+    if not pattern.endswith(".so") or not any(c in pattern for c in "*?["):
+        return False
+    if member.rpartition("/")[0] != pattern.rpartition("/")[0]:
+        return False
+    stem_pattern = pattern[: -len(".so")]
+    soname = _VERSIONED_SONAME.match(member)
+    if soname and fnmatch.fnmatchcase(soname["stem"], stem_pattern):
+        return True
+    dylib = _MACOS_DYLIB.match(member)
+    return bool(
+        dylib
+        and member.rpartition("/")[0].rpartition("/")[2] == ".dylibs"
+        and fnmatch.fnmatchcase(dylib["stem"], stem_pattern)
+    )
+
+
 def notice_stanza_grant_verified(stanza: dict) -> bool:
     """Require a permissive election whose exact grant is verified in this stanza."""
     declared = normalize_spdx(stanza.get("License"))
@@ -751,8 +792,7 @@ def python_artifact_evidence(path: Path) -> dict:
             ):
                 norm = n
                 match = [s for s in stanzas if any(
-                    normalized_archive_path(g.strip()) is not None
-                    and fnmatch.fnmatchcase(norm, g.strip())
+                    notice_files_pattern_matches(norm, g.strip())
                     for g in s["Files"].split(",")
                 )]
                 for stanza in match:
