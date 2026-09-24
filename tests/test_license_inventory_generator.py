@@ -990,3 +990,107 @@ def test_verified_mit_cannot_hide_an_unverified_candidate_file(tmp_path, other_n
     assert row["elected_text_present_in_artifact"] is True
     assert row["license_class"] == "HOLD"
     assert other_name in " ".join(row["hold_reasons"])
+
+
+LGPL_NOTICE_BODY = (
+    "This library is free software; you can redistribute it and/or\n"
+    "modify it under the terms of the GNU Lesser General Public\n"
+    "License as published by the Free Software Foundation; either\n"
+    "version 2.1 of the License, or (at your option) any later version."
+)
+
+
+def _lgpl_native_wheel(args, member: str, files_pattern: str) -> None:
+    """A NumPy-shaped wheel: vendored libquadmath described by a generic ``*.so`` notice."""
+    def writer(zf):
+        zf.writestr("pkg-1.0.dist-info/METADATA", "Metadata-Version: 2.4\nName: pkg\nVersion: 1.0\n\n")
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+        zf.writestr(member, b"synthetic native bytes")
+        body = "\n".join(f" {line}" for line in LGPL_NOTICE_BODY.splitlines())
+        zf.writestr(
+            "pkg-1.0.dist-info/licenses/NOTICE",
+            f"Name: libquadmath\nFiles: {files_pattern}\nLicense: LGPL-2.1-or-later\n{body}\n",
+        )
+
+    _replace_wheel(args, writer)
+
+
+@pytest.mark.parametrize(
+    "member,pattern",
+    [
+        ("pkg.libs/libquadmath-2284e583-a9307bba.so.0.0.0", "pkg.libs/libquadmath*.so"),
+        ("pkg/.dylibs/libquadmath.0.dylib", "pkg/.dylibs/libquadmath*.so"),
+    ],
+)
+def test_versioned_soname_and_dylib_bind_lgpl_notice_and_hold(tmp_path, member, pattern):
+    """Real wheels ship versioned/dylib names under a generic *.so notice; LGPL must stay visible."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    _lgpl_native_wheel(args, member, pattern)
+    (row,) = L.python_inventory(args, [])
+    (native,) = [v for a in row["artifacts_examined"] for v in a["vendored_native"] if v["path"] == member]
+    assert [s["license"] for s in native["notice_stanza"]] == ["LGPL-2.1-or-later"]
+    holds = " ".join(row["vendored_native_license_holds"])
+    assert f"{member}: no bound notice stanza" not in holds
+    assert f"{member}: vendored native license is LGPL-2.1-or-later" in holds
+    assert row["license_class"] == "HOLD"
+
+
+@pytest.mark.parametrize(
+    "member,pattern",
+    [
+        ("pkg.libs/libquadmath.so.0", "pkg.libs/libquadmath.so"),  # exact pattern stays exact
+        ("pkg.libs/libgfortran-83c28eba.so.5.0.0", "pkg.libs/libquadmath*.so"),  # other stem
+        ("other.libs/libquadmath-2284e583.so.0.0.0", "pkg.libs/libquadmath*.so"),  # other directory
+        ("pkg.libs/libquadmath.0.dylib", "pkg.libs/libquadmath*.so"),  # dylib outside .dylibs/
+        ("pkg.libs/libquadmath-2284e583.so.0.x", "pkg.libs/libquadmath*.so"),  # not a numeric soname
+    ],
+)
+def test_soname_binding_never_widens_to_unrelated_members(tmp_path, member, pattern):
+    """An unmatched native member keeps failing closed instead of borrowing a notice."""
+    assert L.notice_files_pattern_matches(member, pattern) is False
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    _lgpl_native_wheel(args, member, pattern)
+    (row,) = L.python_inventory(args, [])
+    if any(v["path"] == member for a in row["artifacts_examined"] for v in a["vendored_native"]):
+        assert f"{member}: no bound notice stanza" in " ".join(row["vendored_native_license_holds"])
+    assert row["license_class"] == "HOLD"
+
+
+def test_notice_for_absent_file_binds_nothing_and_holds(tmp_path):
+    """A notice naming a library that is not in the wheel cannot vouch for the one that is."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    _lgpl_native_wheel(args, "pkg.libs/libexample-1a2b.so.1", "pkg.libs/libquadmath*.so")
+    (row,) = L.python_inventory(args, [])
+    holds = " ".join(row["vendored_native_license_holds"])
+    assert "pkg.libs/libexample-1a2b.so.1: no bound notice stanza" in holds
+    assert row["license_class"] == "HOLD"
+
+
+def test_negating_phrase_never_hides_copyleft_text_labels():
+    """GPL-3.0 says a clause 'does not apply'; that must not erase GPL/LGPL evidence."""
+    text = (
+        "GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007. "
+        "This requirement does not apply if neither you nor any third party retains the ability. "
+        "Libquadmath is free software; you can redistribute it and/or modify it "
+        "under the terms of the GNU Library General Public License."
+    )
+    labels = L.detect(text)
+    assert "GPL" in labels and "LGPL" in labels
+    # The same phrase still voids a permissive-looking grant.
+    assert "MIT" not in L.detect(
+        "Permission is hereby granted, free of charge, but this grant does not apply. "
+        'THE SOFTWARE IS PROVIDED "AS IS". IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE.'
+    )
+
+
+def test_affero_mention_in_gpl3_is_not_an_agpl_grant():
+    """GPL-3.0 section 13 names the Affero license; only an Affero title or grant is AGPL."""
+    gpl3_section_13 = (
+        "GNU GENERAL PUBLIC LICENSE Version 3. 13. Use with the GNU Affero General Public License. "
+        "You have permission to link or combine any covered work with a work licensed under "
+        "version 3 of the GNU Affero General Public License into a single combined work."
+    )
+    assert "AGPL" not in L.detect(gpl3_section_13)
+    assert "GPL" in L.detect(gpl3_section_13)
+    assert "AGPL" in L.detect("GNU AFFERO GENERAL PUBLIC LICENSE Version 3, 19 November 2007")
+    assert "AGPL" in L.detect("you can redistribute it under the terms of the GNU Affero General Public License")
