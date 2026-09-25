@@ -1211,3 +1211,48 @@ def test_binding_target_flags_must_be_paired(tmp_path):
                 "--cargo-lock-binding", "x", "--cargo-registry-cache", "x", "--wheel-sbom", "x", "--tree-dir", "x",
                 "--uv-lock", "x", "--requirements", "x", "--python-scope", "x", "--pypi-meta-dir", "x",
                 "--pypi-artifact-dir", "x", "--out", str(tmp_path / "o.json"), "--binding-target", "x86_64-unknown-linux-gnu"])
+
+
+def _upstream_args(tmp_path: Path, *, crate_sha1="a" * 40, recorded_sha1="a" * 40, text=None, recorded_text=None):
+    """dep 1.0 whose hash-bound .crate has no license file, plus an upstream evidence record."""
+    args = _rust_args(tmp_path)
+    vcs = json.dumps({"git": {"sha1": crate_sha1}, "path_in_vcs": "dep"})
+    digest = _crate(Path(args.cargo_registry_cache), "dep", "1.0", {"Cargo.toml": "", ".cargo_vcs_info.json": vcs})
+    lock = Path(args.cargo_lock_workspace)
+    content = lock.read_text()
+    lock.write_text(content.replace(L.tomllib.loads(content)["package"][0]["checksum"], digest))
+    text = L.MIT_CANONICAL_BODY if text is None else text
+    (tmp_path / "LICENSE-MIT").write_text(text)
+    evidence = tmp_path / "upstream.json"
+    evidence.write_text(json.dumps({"dep@1.0": {
+        "repository": "https://example.invalid/dep", "vcs_sha1": recorded_sha1, "path_in_vcs": "dep",
+        "files": [{"path": "LICENSE-MIT", "url": "https://example.invalid/LICENSE-MIT", "local_path": "LICENSE-MIT",
+                   "sha256": hashlib.sha256((recorded_text if recorded_text is not None else text).encode()).hexdigest()}],
+    }}))
+    return args, str(evidence)
+
+
+def test_upstream_license_evidence_binds_only_with_matching_commit_and_hash(tmp_path):
+    args, evidence = _upstream_args(tmp_path)
+    (plain,) = L.rust_inventory(args, [])
+    assert plain["license_class"] == "HOLD" and "license_text_origin" not in plain
+    assert "the hash-bound .crate contains no license file" in plain["hold_reasons"]
+    args.cargo_upstream_license_evidence = evidence
+    (row,) = L.rust_inventory(args, [])
+    assert (row["license_class"], row["hold_reasons"], row["license_text_origin"]) == ("PERMISSIVE", [], "upstream-vcs")
+    assert row["license_files_in_artifact"][0]["vcs_sha1"] == "a" * 40
+
+
+@pytest.mark.parametrize("case", ["sha1-mismatch", "file-hash-mismatch", "extra-condition"])
+def test_upstream_license_evidence_mismatch_stays_hold(tmp_path, case):
+    kwargs = {
+        "sha1-mismatch": {"crate_sha1": "b" * 40},
+        "file-hash-mismatch": {"recorded_text": L.MIT_CANONICAL_BODY + " "},
+        "extra-condition": {"text": L.MIT_CANONICAL_BODY + "\nCommercial use is prohibited.\n"},
+    }[case]
+    args, evidence = _upstream_args(tmp_path, **kwargs)
+    args.cargo_upstream_license_evidence = evidence
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    if case != "extra-condition":
+        assert row["license_files_in_artifact"] == [] and "license_text_origin" not in row

@@ -212,6 +212,7 @@ def verified_standard_text(text: str) -> list[str]:
         "3a31f72fe7c9baf376c3da1d7d0154366be8ef0bab0a3f7531db4c2abf1ad062": "Zlib",
         "444399c3da8f18f32878c6f8b7348110f33985558ca7abe98d4c8ed26f013109": "Zlib",
         # 66 copyright-header/appendix-only variants, reviewed in s1 text-review-20260926.
+        "1834e4a70e47109cc013a1fa4f34cb0e5b32753be1247a116ec1f1357b87115f": "MIT",  # upstream aclysma/profiling@8271551172eb LICENSE-MIT (profiling-1.0.18 .crate has none)
         "8b496867ab4da1182d754c6dbd948db3e0f08598d6c685155f4481f9afc98d86": "Apache-2.0",  # deranged-0.5.8/LICENSE-Apache
         "52b86d7cac180bbb9dca8ebe3c9e66ac7cc8e704735ef151a514b6beff85600e": "Apache-2.0",  # futures-core-0.3.34/LICENSE-APACHE
         "6cd11fd5f811c88bac0b0e9d03c79ee8f72ef808a31fe7b31109f5d1d6a46d88": "Apache-2.0",  # gpu-allocator-0.28.0/LICENSE-APACHE
@@ -515,6 +516,45 @@ def read_crate_license_files(
     return out, errors
 
 
+def bind_upstream_license_files(archive: bytes, name: str, version: str, entry: dict, base: Path) -> tuple[list[dict], list[str]]:
+    """Use upstream license files for a hash-bound .crate that ships none.
+
+    Binds only when the in-crate .cargo_vcs_info.json names the recorded commit
+    and path and every local file matches its recorded sha256; otherwise no
+    file is returned and the row stays HOLD.
+    """
+    errors = []
+    try:
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tf:
+            vcs = json.loads(tf.extractfile(f"{name}-{version}/.cargo_vcs_info.json").read())
+    except (KeyError, AttributeError, ValueError, tarfile.TarError):
+        return [], ["upstream license evidence: the .crate has no readable .cargo_vcs_info.json"]
+    sha1 = vcs.get("git", {}).get("sha1")
+    if sha1 != entry.get("vcs_sha1"):
+        errors.append(f"upstream license evidence: .cargo_vcs_info.json sha1 {sha1!r} != recorded {entry.get('vcs_sha1')!r}")
+    if vcs.get("path_in_vcs", "") != entry.get("path_in_vcs", ""):
+        errors.append("upstream license evidence: .cargo_vcs_info.json path_in_vcs differs from the record")
+    files = []
+    for f in entry.get("files") or []:
+        try:
+            raw = (base / f["local_path"]).read_bytes()
+        except OSError as exc:
+            errors.append(f"upstream license evidence: {f.get('path')!r} unreadable: {exc}")
+            continue
+        if sha256_bytes(raw) != f["sha256"]:
+            errors.append(f"upstream license evidence: {f['path']!r} sha256 does not match the record")
+            continue
+        text = raw.decode("utf-8", "replace")
+        files.append({"path": f["path"], "sha256": f["sha256"], "artifact_sha256": None,
+                      "declared_license_file": False, "detected": detect(text),
+                      "verified_standard_text": verified_standard_text(text),
+                      "origin": "upstream-vcs", "repository": entry.get("repository"),
+                      "vcs_sha1": entry.get("vcs_sha1"), "url": f.get("url")})
+    if not entry.get("files"):
+        errors.append("upstream license evidence lists no files")
+    return ([], errors) if errors else (files, [])
+
+
 def license_files_in_dir(root: Path) -> list[dict]:
     out = []
     for path in sorted(p for p in root.iterdir() if p.is_file() and LICENSE_NAME.match(p.name)):
@@ -563,6 +603,8 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
     linked = read_target_sets(Path(args.tree_dir), "linked")
     build = read_target_sets(Path(args.tree_dir), "build")
     cache = Path(args.cargo_registry_cache)
+    upstream_path = getattr(args, "cargo_upstream_license_evidence", None)
+    upstream = json.loads(Path(upstream_path).read_text()) if upstream_path else {}
 
     # Completeness: the lock files are the expected set; metadata must match them.
     for label, lock, meta in (("workspace", ws_lock, ws_meta), ("binding", binding_lock, binding_meta)):
@@ -599,25 +641,37 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
                 archive_bytes, measured, p.get("license_file") if p else None
             ) if bound else ([], [])
             hold.extend(archive_errors)
+            text_origin = None
+            if bound and not files and f"{name}@{version}" in upstream:
+                files, upstream_errors = bind_upstream_license_files(
+                    archive_bytes, name, version, upstream[f"{name}@{version}"], Path(upstream_path).parent)
+                hold.extend(upstream_errors)
+                text_origin = "upstream-vcs" if files else None
             if not bound:
                 hold.append("the .crate bytes are missing or do not match the Cargo.lock checksum")
             if read_error:
                 hold.append(f"the .crate source path was not stable: {read_error}")
             if bound and not files:
                 hold.append("the hash-bound .crate contains no license file")
-            if bound and p and p.get("license_file") and not any(
+            if bound and text_origin and p and p.get("license_file"):
+                hold.append("Cargo metadata license_file is absent from the hash-bound .crate")
+            if bound and not text_origin and p and p.get("license_file") and not any(
                 f["declared_license_file"] for f in files
             ):
                 hold.append("Cargo metadata license_file is absent from the hash-bound .crate")
             origin = ("package metadata (Cargo.toml license); license files read from the .crate whose sha256 "
                       "equals the Cargo.lock checksum" + ("" if files else "; the .crate contains NO license file")
                       ) if bound else "UNVERIFIED: no hash-bound .crate, license text not read"
+            if text_origin:
+                origin = ("package metadata (Cargo.toml license); the hash-bound .crate contains NO license file; "
+                          "license files from upstream at the commit named by its .cargo_vcs_info.json, sha256-pinned")
         elif source is None and p is not None:
+            text_origin = None
             source_hash = None
             files = license_files_in_dir(Path(p["manifest_path"]).parent)
             origin = "package metadata (Cargo.toml license); this repository's own source"
         else:
-            source_hash, files, origin = None, [], "UNVERIFIED: unsupported source"
+            source_hash, files, origin, text_origin = None, [], "UNVERIFIED: unsupported source", None
             hold.append(f"unsupported source {source!r}")
         if p is None:
             hold.append("no cargo metadata row for this lock entry")
@@ -676,6 +730,7 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
             "in_wheel_sbom": key in sbom_set,
             "linked_into_core_for_targets": sorted(t for t, s in linked.items() if ident in s),
             "compiled_at_build_for_targets": sorted(t for t, s in build.items() if ident in s),
+            **({"license_text_origin": text_origin} if text_origin else {}),
         })
     for row in rows:
         row["in_published_artifact_scope"] = row["in_binding_lock_graph"]
@@ -1116,6 +1171,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--cargo-metadata-binding-target", help="cargo metadata --filter-platform output for --binding-target")
     ap.add_argument("--binding-target", help="target triple of --cargo-metadata-binding-target")
+    ap.add_argument("--cargo-upstream-license-evidence",
+                    help="JSON {name@version: {repository, vcs_sha1, path_in_vcs, files: [{path, url, sha256, local_path}]}}; "
+                         "local_path is relative to this file")
     args = ap.parse_args(argv)
     if bool(args.cargo_metadata_binding_target) != bool(args.binding_target):
         ap.error("--cargo-metadata-binding-target and --binding-target must be given together")
