@@ -1171,3 +1171,43 @@ def test_windows_notice_pattern_normalization_is_notice_side_only():
     """Only notice patterns are converted; the canonical-path gate itself is unchanged."""
     assert L.notice_files_pattern_to_posix("pkg.libs\\libscipy_openblas*.dll") == "pkg.libs/libscipy_openblas*.dll"
     assert L.normalized_archive_path("pkg.libs\\libscipy_openblas64_.dll") is None
+
+
+def _target_meta(tmp_path: Path, packages: list[tuple[str, str]], nodes: list[str]) -> str:
+    path = tmp_path / "target-meta.json"
+    path.write_text(json.dumps({
+        "packages": [{"id": f"{n}@{v}", "name": n, "version": v} for n, v in packages],
+        "resolve": {"nodes": [{"id": i} for i in nodes]},
+    }))
+    return str(path)
+
+
+def test_binding_target_graph_marks_rows_and_absent_filter_is_unchanged(tmp_path):
+    """Target-filtered metadata marks graph membership; without it rows carry no target field."""
+    args = _rust_args(tmp_path)
+    (plain,) = L.rust_inventory(args, [])
+    assert "in_binding_target_graph" not in plain
+    for nodes, expected in ((["dep@1.0"], True), ([], False)):
+        args.cargo_metadata_binding_target = _target_meta(tmp_path, [("dep", "1.0")], nodes)
+        args.binding_target = "x86_64-unknown-linux-gnu"
+        gaps = []
+        (row,) = L.rust_inventory(args, gaps)
+        assert (row["in_binding_target_graph"], gaps) == (expected, [])
+        assert {k: v for k, v in row.items() if k != "in_binding_target_graph"} == plain
+
+
+def test_binding_target_package_outside_binding_lock_is_a_gap(tmp_path):
+    args = _rust_args(tmp_path)
+    args.cargo_metadata_binding_target = _target_meta(tmp_path, [("dep", "1.0"), ("ghost", "9.9")], ["dep@1.0", "ghost@9.9"])
+    args.binding_target = "x86_64-unknown-linux-gnu"
+    gaps = []
+    L.rust_inventory(args, gaps)
+    assert gaps == ["cargo binding target x86_64-unknown-linux-gnu: ghost@9.9 is not in the binding Cargo.lock"]
+
+
+def test_binding_target_flags_must_be_paired(tmp_path):
+    with pytest.raises(SystemExit):
+        L.main(["--cargo-metadata-workspace", "x", "--cargo-metadata-binding", "x", "--cargo-lock-workspace", "x",
+                "--cargo-lock-binding", "x", "--cargo-registry-cache", "x", "--wheel-sbom", "x", "--tree-dir", "x",
+                "--uv-lock", "x", "--requirements", "x", "--python-scope", "x", "--pypi-meta-dir", "x",
+                "--pypi-artifact-dir", "x", "--out", str(tmp_path / "o.json"), "--binding-target", "x86_64-unknown-linux-gnu"])

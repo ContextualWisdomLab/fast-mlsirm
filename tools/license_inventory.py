@@ -541,6 +541,15 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
     binding_meta = json.loads(Path(args.cargo_metadata_binding).read_text())
     ws_lock = cargo_lock_packages(Path(args.cargo_lock_workspace))
     binding_lock = cargo_lock_packages(Path(args.cargo_lock_binding))
+    # Optional per-target binding graph: `cargo metadata --filter-platform <triple>` resolve nodes.
+    # Absent, rows and summary are unchanged (union over the binding Cargo.lock).
+    target_keys = None
+    if getattr(args, "cargo_metadata_binding_target", None):
+        target_meta = json.loads(Path(args.cargo_metadata_binding_target).read_text())
+        node_ids = {n["id"] for n in target_meta["resolve"]["nodes"]}
+        target_keys = {(p["name"], p["version"]) for p in target_meta["packages"] if p["id"] in node_ids}
+        for key in sorted(target_keys - set(binding_lock)):
+            gaps.append(f"cargo binding target {args.binding_target}: {key[0]}@{key[1]} is not in the binding Cargo.lock")
     sbom = json.loads(Path(args.wheel_sbom).read_text())
 
     def walk(components):
@@ -670,6 +679,8 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
         })
     for row in rows:
         row["in_published_artifact_scope"] = row["in_binding_lock_graph"]
+        if target_keys is not None:
+            row["in_binding_target_graph"] = (row["name"], row["version"]) in target_keys
         row["scope_note"] = (
             "compiled into fast_mlsirm/_core for the listed targets" if row["linked_into_core_for_targets"]
             else "build-time only (proc-macro/build script) for the listed targets" if row["compiled_at_build_for_targets"]
@@ -1103,7 +1114,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pypi-meta-dir", required=True)
     ap.add_argument("--pypi-artifact-dir", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--cargo-metadata-binding-target", help="cargo metadata --filter-platform output for --binding-target")
+    ap.add_argument("--binding-target", help="target triple of --cargo-metadata-binding-target")
     args = ap.parse_args(argv)
+    if bool(args.cargo_metadata_binding_target) != bool(args.binding_target):
+        ap.error("--cargo-metadata-binding-target and --binding-target must be given together")
 
     gaps: list[str] = []
     rust = rust_inventory(args, gaps)
@@ -1119,6 +1134,10 @@ def main(argv: list[str] | None = None) -> int:
         "cargo_without_license_file_in_crate": [f"{r['name']}@{r['version']}" for r in rust if not r["license_files_in_artifact"] and r["source"] != "path (this repository)"],
         "cargo_elected_text_missing": [f"{r['name']}@{r['version']}" for r in rust if not r["elected_text_present_in_artifact"] and r["source"] != "path (this repository)"],
         "cargo_crate_hash_unbound": [f"{r['name']}@{r['version']}" for r in rust if r["source_hash"] is not None and not r["source_hash"]["match"]],
+        **({"cargo_binding_target": args.binding_target,
+            "cargo_binding_target_graph_packages": sum(r["in_binding_target_graph"] for r in rust),
+            "cargo_binding_target_by_class": {c: sum(r["in_binding_target_graph"] and r["license_class"] == c for r in rust) for c in CLASSES}}
+           if args.binding_target else {}),
         "pypi_packages": len(python),
         "pypi_metadata_unknown": [f"{r['name']}@{r['version']}" for r in python if r["license_class_from_metadata"] == "UNKNOWN"],
         "pypi_by_class": {c: [f"{r['name']}@{r['version']}" for r in python if r["license_class"] == c] for c in CLASSES if c != "PERMISSIVE"},
