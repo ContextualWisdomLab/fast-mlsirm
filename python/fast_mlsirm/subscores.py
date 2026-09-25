@@ -5,7 +5,9 @@ arrays."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+from typing import NoReturn
 
 import numpy as np
 
@@ -43,6 +45,28 @@ _TRUSTED_NUMERIC_SEQUENCE_SCALAR_TYPES = frozenset(
         np.clongdouble,
     }
 )
+_SUBSCORE_RESULT_KEYS = frozenset(
+    {
+        "alpha",
+        "alpha_total",
+        "corr",
+        "disattenuated_corr",
+        "prmse_s",
+        "prmse_x",
+        "prmse_sx",
+        "tau",
+        "beta",
+        "gamma",
+        "added_value_s",
+        "added_value_sx",
+        "observed",
+        "total",
+        "subscore_s",
+        "subscore_x",
+        "subscore_sx",
+    }
+)
+_SUBSCORE_RESULT_ERROR = "invalid subscore Rust result payload"
 
 
 @dataclass
@@ -154,6 +178,249 @@ def _trusted_numeric_array(value: object, name: str) -> np.ndarray:
     return raw
 
 
+def _invalid_subscore_result() -> NoReturn:
+    """Raise the stable fail-closed error for a stale/foreign native result."""
+    raise RuntimeError(_SUBSCORE_RESULT_ERROR)
+
+
+def _native_float_vector(
+    value: object,
+    *,
+    expected_length: int | None = None,
+    allowed_nan_indices: frozenset[int] = frozenset(),
+) -> list[float]:
+    """Validate one flattened Rust f64 vector before NumPy materialization."""
+    if type(value) is np.ndarray:
+        if value.ndim != 1 or value.dtype != np.dtype(np.float64):
+            _invalid_subscore_result()
+        if expected_length is not None and value.shape[0] != expected_length:
+            _invalid_subscore_result()
+        scalars: list[object] = list(value)
+    elif type(value) in (list, tuple):
+        if expected_length is not None and len(value) != expected_length:
+            _invalid_subscore_result()
+        scalars = list(value)
+    else:
+        _invalid_subscore_result()
+
+    validated: list[float] = []
+    for index, scalar in enumerate(scalars):
+        scalar_type = type(scalar)
+        if scalar_type is float:
+            normalized = scalar
+        elif scalar_type is np.float64:
+            normalized = float(scalar)
+        else:
+            _invalid_subscore_result()
+        if math.isnan(normalized):
+            if index not in allowed_nan_indices:
+                _invalid_subscore_result()
+        elif not math.isfinite(normalized):
+            _invalid_subscore_result()
+        validated.append(normalized)
+    return validated
+
+
+def _native_bool_vector(value: object, *, expected_length: int) -> list[bool]:
+    """Validate one Rust Boolean vector without conversion callbacks."""
+    if type(value) is np.ndarray:
+        if (
+            value.ndim != 1
+            or value.dtype != np.dtype(np.bool_)
+            or value.shape[0] != expected_length
+        ):
+            _invalid_subscore_result()
+        scalars: list[object] = list(value)
+    elif type(value) in (list, tuple):
+        if len(value) != expected_length:
+            _invalid_subscore_result()
+        scalars = list(value)
+    else:
+        _invalid_subscore_result()
+
+    validated: list[bool] = []
+    for scalar in scalars:
+        if type(scalar) is bool:
+            validated.append(scalar)
+        elif type(scalar) is np.bool_:
+            validated.append(bool(scalar))
+        else:
+            _invalid_subscore_result()
+    return validated
+
+
+def _native_float_scalar(value: object) -> float:
+    """Validate one Rust f64 scalar before public result construction."""
+    if type(value) is float:
+        normalized = value
+    elif type(value) is np.float64:
+        normalized = float(value)
+    else:
+        _invalid_subscore_result()
+    if not math.isfinite(normalized):
+        _invalid_subscore_result()
+    return normalized
+
+
+def _validate_reliability_prmse_domains(
+    alpha: list[float],
+    alpha_total: float,
+    prmse_s: list[float],
+    prmse_x: list[float],
+    prmse_sx: list[float],
+) -> None:
+    """Replay the explicit Rust guards without recomputing any estimator."""
+    if any(value <= 0.0 or value > 1.0 for value in alpha):
+        _invalid_subscore_result()
+    if alpha_total <= 0.0 or alpha_total > 1.0:
+        _invalid_subscore_result()
+    for values in (prmse_s, prmse_x, prmse_sx):
+        if any(value < 0.0 or value > 1.0 + 1e-9 for value in values):
+            _invalid_subscore_result()
+
+
+def _validate_rust_cross_field_invariants(
+    *,
+    alpha: list[float],
+    prmse_s: list[float],
+    prmse_x: list[float],
+    prmse_sx: list[float],
+    added_value_s: list[bool],
+    added_value_sx: list[bool],
+) -> None:
+    """Replay deterministic identities already established by the Rust owner."""
+    if prmse_s != alpha:
+        _invalid_subscore_result()
+    if any(
+        decision != (ps > px)
+        for decision, ps, px in zip(added_value_s, prmse_s, prmse_x, strict=True)
+    ):
+        _invalid_subscore_result()
+    if any(
+        decision != (psx > max(ps, px) + 0.01)
+        for decision, psx, ps, px in zip(
+            added_value_sx, prmse_sx, prmse_s, prmse_x, strict=True
+        )
+    ):
+        _invalid_subscore_result()
+
+
+def _validate_symmetric_flat_matrix(values: list[float], *, size: int) -> None:
+    """Replay exact symmetry established by the Rust correlation constructors."""
+    for row in range(size):
+        for column in range(row + 1, size):
+            if values[row * size + column] != values[column * size + row]:
+                _invalid_subscore_result()
+
+
+def _validated_subscore_result(
+    value: object,
+    *,
+    n_persons: int,
+    expected_k: int,
+) -> tuple[
+    list[float],
+    float,
+    list[float],
+    list[float],
+    list[float],
+    list[float],
+    list[float],
+    list[float],
+    list[float],
+    list[float],
+    list[bool],
+    list[bool],
+    list[float],
+    list[float],
+    list[float],
+    list[float],
+    list[float],
+]:
+    """Replay the exact subscore result schema before any NumPy coercion."""
+    if type(value) is not dict:
+        _invalid_subscore_result()
+    keys = list(value.keys())
+    if any(type(key) is not str for key in keys) or set(keys) != _SUBSCORE_RESULT_KEYS:
+        _invalid_subscore_result()
+    if expected_k < 2:
+        _invalid_subscore_result()
+
+    alpha = _native_float_vector(value["alpha"], expected_length=expected_k)
+    k = expected_k
+    alpha_total = _native_float_scalar(value["alpha_total"])
+    corr = _native_float_vector(value["corr"], expected_length=(k + 1) * (k + 1))
+    _validate_symmetric_flat_matrix(corr, size=k + 1)
+
+    diagonal = frozenset(index * k + index for index in range(k))
+    disattenuated_corr = _native_float_vector(
+        value["disattenuated_corr"],
+        expected_length=k * k,
+        allowed_nan_indices=diagonal,
+    )
+    if any(not math.isnan(disattenuated_corr[index]) for index in diagonal):
+        _invalid_subscore_result()
+    _validate_symmetric_flat_matrix(disattenuated_corr, size=k)
+
+    prmse_s = _native_float_vector(value["prmse_s"], expected_length=k)
+    prmse_x = _native_float_vector(value["prmse_x"], expected_length=k)
+    prmse_sx = _native_float_vector(value["prmse_sx"], expected_length=k)
+    _validate_reliability_prmse_domains(
+        alpha,
+        alpha_total,
+        prmse_s,
+        prmse_x,
+        prmse_sx,
+    )
+    tau = _native_float_vector(value["tau"], expected_length=k)
+    beta = _native_float_vector(value["beta"], expected_length=k)
+    gamma = _native_float_vector(value["gamma"], expected_length=k)
+    added_value_s = _native_bool_vector(value["added_value_s"], expected_length=k)
+    added_value_sx = _native_bool_vector(value["added_value_sx"], expected_length=k)
+    _validate_rust_cross_field_invariants(
+        alpha=alpha,
+        prmse_s=prmse_s,
+        prmse_x=prmse_x,
+        prmse_sx=prmse_sx,
+        added_value_s=added_value_s,
+        added_value_sx=added_value_sx,
+    )
+
+    person_subscore_length = n_persons * k
+    observed = _native_float_vector(
+        value["observed"], expected_length=person_subscore_length
+    )
+    total = _native_float_vector(value["total"], expected_length=n_persons)
+    subscore_s = _native_float_vector(
+        value["subscore_s"], expected_length=person_subscore_length
+    )
+    subscore_x = _native_float_vector(
+        value["subscore_x"], expected_length=person_subscore_length
+    )
+    subscore_sx = _native_float_vector(
+        value["subscore_sx"], expected_length=person_subscore_length
+    )
+    return (
+        alpha,
+        alpha_total,
+        corr,
+        disattenuated_corr,
+        prmse_s,
+        prmse_x,
+        prmse_sx,
+        tau,
+        beta,
+        gamma,
+        added_value_s,
+        added_value_sx,
+        observed,
+        total,
+        subscore_s,
+        subscore_x,
+        subscore_sx,
+    )
+
+
 def subscore_analysis(
     responses: np.ndarray,
     groups: np.ndarray,
@@ -184,7 +451,10 @@ def subscore_analysis(
     package-trusted concrete Python/NumPy numeric scalars or exact NumPy
     numeric array leaves. Logical-cell and structural traversal budgets are
     enforced before NumPy materialization, and callback-bearing or cyclic
-    providers fail closed.
+    providers fail closed. The Rust result is replayed against the exact
+    package-owned field, scalar, finiteness, reliability/PRMSE-domain, and
+    cardinality contract before NumPy result marshalling, including the
+    subscale count implied by the admitted group evidence.
 
     References (APA 7th ed.):
         Haberman, S. J. (2008). When can subscores have value? *Journal of
@@ -230,6 +500,7 @@ def subscore_analysis(
     if np.any(g >= n_items):
         # trust boundary: the subscale count drives Rust-side allocations
         raise ValueError("groups indices must be < n_items")
+    expected_k = int(np.max(g)) + 1
 
     from .fitstats import _core_module
 
@@ -237,36 +508,49 @@ def subscore_analysis(
     if core is None or not hasattr(core, "subscore_analysis"):
         raise RuntimeError("subscore_analysis requires the compiled Rust core")
 
-    res = core.subscore_analysis(
+    raw_result = core.subscore_analysis(
         y.reshape(-1), int(n_persons), int(n_items), [int(v) for v in g]
     )
-    k = len(res["alpha"])
+    (
+        alpha,
+        alpha_total,
+        corr,
+        disattenuated_corr,
+        prmse_s,
+        prmse_x,
+        prmse_sx,
+        tau,
+        beta,
+        gamma,
+        added_value_s,
+        added_value_sx,
+        observed,
+        total,
+        subscore_s,
+        subscore_x,
+        subscore_sx,
+    ) = _validated_subscore_result(
+        raw_result,
+        n_persons=int(n_persons),
+        expected_k=expected_k,
+    )
+    k = expected_k
     return SubscoreResult(
-        alpha=np.asarray(res["alpha"], dtype=np.float64),
-        alpha_total=float(res["alpha_total"]),
-        corr=np.asarray(res["corr"], dtype=np.float64).reshape(k + 1, k + 1),
-        disattenuated_corr=np.asarray(
-            res["disattenuated_corr"], dtype=np.float64
-        ).reshape(k, k),
-        prmse_s=np.asarray(res["prmse_s"], dtype=np.float64),
-        prmse_x=np.asarray(res["prmse_x"], dtype=np.float64),
-        prmse_sx=np.asarray(res["prmse_sx"], dtype=np.float64),
-        tau=np.asarray(res["tau"], dtype=np.float64),
-        beta=np.asarray(res["beta"], dtype=np.float64),
-        gamma=np.asarray(res["gamma"], dtype=np.float64),
-        added_value_s=np.asarray(res["added_value_s"], dtype=bool),
-        added_value_sx=np.asarray(res["added_value_sx"], dtype=bool),
-        observed=np.asarray(res["observed"], dtype=np.float64).reshape(
-            n_persons, k
-        ),
-        total=np.asarray(res["total"], dtype=np.float64),
-        subscore_s=np.asarray(res["subscore_s"], dtype=np.float64).reshape(
-            n_persons, k
-        ),
-        subscore_x=np.asarray(res["subscore_x"], dtype=np.float64).reshape(
-            n_persons, k
-        ),
-        subscore_sx=np.asarray(res["subscore_sx"], dtype=np.float64).reshape(
-            n_persons, k
-        ),
+        alpha=np.asarray(alpha, dtype=np.float64),
+        alpha_total=alpha_total,
+        corr=np.asarray(corr, dtype=np.float64).reshape(k + 1, k + 1),
+        disattenuated_corr=np.asarray(disattenuated_corr, dtype=np.float64).reshape(k, k),
+        prmse_s=np.asarray(prmse_s, dtype=np.float64),
+        prmse_x=np.asarray(prmse_x, dtype=np.float64),
+        prmse_sx=np.asarray(prmse_sx, dtype=np.float64),
+        tau=np.asarray(tau, dtype=np.float64),
+        beta=np.asarray(beta, dtype=np.float64),
+        gamma=np.asarray(gamma, dtype=np.float64),
+        added_value_s=np.asarray(added_value_s, dtype=bool),
+        added_value_sx=np.asarray(added_value_sx, dtype=bool),
+        observed=np.asarray(observed, dtype=np.float64).reshape(n_persons, k),
+        total=np.asarray(total, dtype=np.float64),
+        subscore_s=np.asarray(subscore_s, dtype=np.float64).reshape(n_persons, k),
+        subscore_x=np.asarray(subscore_x, dtype=np.float64).reshape(n_persons, k),
+        subscore_sx=np.asarray(subscore_sx, dtype=np.float64).reshape(n_persons, k),
     )
