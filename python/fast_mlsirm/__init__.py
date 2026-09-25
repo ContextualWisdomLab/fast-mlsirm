@@ -246,6 +246,9 @@ from .rating_range import (
     paired_rating_range_evidence as paired_rating_range_evidence,
 )
 from .regression import (
+    adjusted_r_squared as adjusted_r_squared,
+)
+from .regression import (
     chi2_sf_df1 as chi2_sf_df1,
 )
 from .regression import (
@@ -349,6 +352,7 @@ __all__ = list(_legacy_init.__all__) + [
     "validate_irt_experiment_readiness",
     "RatingRangeEvidence",
     "paired_rating_range_evidence",
+    "adjusted_r_squared",
     "chi2_sf_df1",
     "conditional_slope",
     "contrast",
