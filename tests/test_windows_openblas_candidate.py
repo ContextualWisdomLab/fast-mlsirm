@@ -21,6 +21,13 @@ SPEC.loader.exec_module(GATE)
 
 
 class CandidateGateTest(unittest.TestCase):
+    def test_symbol_renaming_linker_receives_evidence_flags(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("'-DCMAKE_LINKER_FLAGS=/MAP;/VERBOSE'", workflow)
+        self.assertIn("(Get-Command lld-link.exe -ErrorAction Stop).Source", workflow)
+        self.assertNotIn("CMAKE_SHARED_LINKER_FLAGS", workflow)
+        self.assertNotIn("-DCMAKE_LINKER=link.exe", workflow)
+
     def test_download_requires_attested_source_and_signer(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         verify = workflow.split("- name: Verify downloaded evidence", 1)[1]

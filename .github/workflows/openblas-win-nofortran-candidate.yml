@@ -74,16 +74,16 @@ jobs:
           }
           $env:Path = "C:\Program Files\LLVM\bin;$env:Path"
           clang-cl --version | Out-File candidate/toolchain.txt
-          (Get-Command link.exe).Source | Out-File candidate/linker.txt
+          if (-not (Get-Command perl.exe -ErrorAction SilentlyContinue)) { throw 'Perl required for OpenBLAS symbol export generation' }
+          (Get-Command lld-link.exe -ErrorAction Stop).Source | Out-File candidate/linker.txt
           cmake --version | Out-File candidate/cmake.txt
           "ImageVersion=$env:ImageVersion" | Out-File candidate/runner.txt
           cmake -S source -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_C_COMPILER=clang-cl `
             -DCMAKE_CXX_COMPILER=clang-cl `
-            -DCMAKE_LINKER=link.exe `
-            '-DCMAKE_SHARED_LINKER_FLAGS=/MAP /VERBOSE:LIB' `
-            -DNOFORTRAN=1 -DC_LAPACK=ON -DINTERFACE64=1 `
+            '-DCMAKE_LINKER_FLAGS=/MAP;/VERBOSE' `
+            -DNOFORTRAN=1 -DC_LAPACK=ON -DBUILD_WITHOUT_LAPACK=OFF -DINTERFACE64=1 `
             -DSYMBOLPREFIX=scipy_ -DSYMBOLSUFFIX=64_ `
             -DLIBNAMEPREFIX=scipy_ -DLIBNAMESUFFIX=64_ `
             -DFIXED_LIBNAME=ON -DDYNAMIC_ARCH=ON -DTARGET=PRESCOTT `
