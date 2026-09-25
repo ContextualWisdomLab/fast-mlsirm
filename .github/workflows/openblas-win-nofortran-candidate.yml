@@ -1,0 +1,135 @@
+name: Windows OpenBLAS DLL candidate (no publish)
+
+# A new workflow_dispatch file must first reach the default branch before GitHub
+# will accept a manual run. This workflow never builds a wheel or publishes.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_head:
+        description: Exact commit to test
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: win-openblas-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dll-candidate:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      OPENBLAS_COMMIT: 446c436e10450c348169808f1a6b3fae0925c9f7
+    steps:
+      - name: Require exact branch head
+        shell: pwsh
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+        run: |
+          if ($env:EXPECTED_HEAD -notmatch '^[0-9a-f]{40}$' -or
+              $env:GITHUB_SHA -ne $env:EXPECTED_HEAD -or
+              $env:GITHUB_REF_TYPE -ne 'branch') { throw 'Exact branch head required' }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch pinned OpenBLAS source
+        shell: pwsh
+        run: |
+          git init source
+          git -C source config core.autocrlf false
+          git -C source remote add origin https://github.com/OpenMathLib/OpenBLAS.git
+          git -C source fetch --depth=1 origin $env:OPENBLAS_COMMIT
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned source fetch failed' }
+          git -C source checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0 -or (git -C source rev-parse HEAD) -ne $env:OPENBLAS_COMMIT) {
+            throw 'OpenBLAS commit mismatch'
+          }
+          New-Item -ItemType Directory candidate | Out-Null
+          git -C source rev-parse 'HEAD^{tree}' | Out-File candidate/source-tree.txt
+
+      - name: Configure and build DLL only
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $vs) { throw 'VS 2022 not found' }
+          $dev = Join-Path $vs 'Common7\Tools\VsDevCmd.bat'
+          $vars = & cmd /c "`"$dev`" -arch=amd64 -host_arch=amd64 >nul && set"
+          if ($LASTEXITCODE -ne 0) { throw 'VS developer environment failed' }
+          foreach ($line in $vars) {
+            if ($line -match '^([^=][^=]*)=(.*)$') {
+              [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
+            }
+          }
+          $env:Path = "C:\Program Files\LLVM\bin;$env:Path"
+          clang-cl --version | Out-File candidate/toolchain.txt
+          (Get-Command link.exe).Source | Out-File candidate/linker.txt
+          cmake --version | Out-File candidate/cmake.txt
+          "ImageVersion=$env:ImageVersion" | Out-File candidate/runner.txt
+          cmake -S source -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=clang-cl `
+            -DCMAKE_CXX_COMPILER=clang-cl `
+            -DCMAKE_LINKER=link.exe `
+            '-DCMAKE_SHARED_LINKER_FLAGS=/MAP /VERBOSE:LIB' `
+            -DNOFORTRAN=1 -DC_LAPACK=ON -DINTERFACE64=1 `
+            -DSYMBOLPREFIX=scipy_ -DSYMBOLSUFFIX=64_ `
+            -DLIBNAMEPREFIX=scipy_ -DLIBNAMESUFFIX=64_ `
+            -DFIXED_LIBNAME=ON -DDYNAMIC_ARCH=ON -DTARGET=PRESCOTT `
+            -DBUILD_SHARED_LIBS=ON -DBUILD_STATIC_LIBS=OFF `
+            -DUSE_OPENMP=OFF -DBUILD_TESTING=OFF *> candidate/configure.log
+          if ($LASTEXITCODE -ne 0) { throw 'OpenBLAS configure failed' }
+          $fortran = Select-String build/CMakeCache.txt -Pattern '^CMAKE_Fortran_COMPILER(:[^=]*)?=(?!.*NOTFOUND).+$'
+          if ($fortran) { throw 'Fortran compiler unexpectedly enabled' }
+          cmake --build build --config Release --parallel 2 --verbose *> candidate/link.log
+          if ($LASTEXITCODE -ne 0) { throw 'OpenBLAS build failed; inspect link.log' }
+          $dlls = @(Get-ChildItem build -Recurse -Filter '*openblas*.dll')
+          $maps = @(Get-ChildItem build -Recurse -Filter '*.map')
+          if ($dlls.Count -ne 1 -or $maps.Count -ne 1) { throw 'Expected exactly one DLL and /MAP file' }
+          Copy-Item $dlls[0].FullName candidate/openblas.dll
+          Copy-Item $maps[0].FullName candidate/openblas.map
+          & dumpbin /DEPENDENTS candidate/openblas.dll | Out-File candidate/imports.txt
+          if ($LASTEXITCODE -ne 0) { throw 'PE dependency inspection failed' }
+          python scripts/verify_windows_openblas_candidate.py `
+            --dll candidate/openblas.dll --imports candidate/imports.txt `
+            --link-log candidate/link.log --map candidate/openblas.map `
+            --source source --out candidate
+          if ($LASTEXITCODE -ne 0) { throw 'Native/license gate failed' }
+
+      - name: Attest gated DLL
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: candidate/openblas.dll
+
+      - name: Retain gated candidate and evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: openblas-win-nofortran-candidate-${{ github.sha }}
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Retain failed-build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: openblas-win-nofortran-diagnostics-${{ github.sha }}
+          path: |
+            candidate/configure.log
+            candidate/link.log
+            candidate/toolchain.txt
+            candidate/linker.txt
+            candidate/runner.txt
+          if-no-files-found: warn
+          retention-days: 7
