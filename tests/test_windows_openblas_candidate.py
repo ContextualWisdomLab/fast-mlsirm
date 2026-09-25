@@ -40,16 +40,20 @@ class CandidateGateTest(unittest.TestCase):
 
     def test_fail_closed_native_evidence(self):
         imports = "Image has the following dependencies:\n    KERNEL32.dll\n    VCRUNTIME140.dll\n"
-        link = "  Loaded C:\\MSVC\\libcmt.lib(init.obj)\n"
+        link = "  Loaded C:\\MSVC\\libcmt.lib(init.obj) for _main\n"
         mapping = "libscipy_openblas64_.dll\n  0001:0000 openblas.obj\n"
         self.assertEqual(
             GATE.inspect(imports, link, mapping)[0],
             ["KERNEL32.dll", "VCRUNTIME140.dll"],
         )
+        self.assertEqual(
+            GATE.inspect(imports, link, mapping)[1],
+            ["C:\\MSVC\\libcmt.lib(init.obj)"],
+        )
         for bad in (
             (imports + "    libgfortran.dll\n", link, mapping),
             (imports + "    mystery.dll\n", link, mapping),
-            (imports, "  Loaded C:\\GCC\\libgcc.a(start.obj)\n", mapping),
+            (imports, "  Loaded C:\\GCC\\libgcc.a(start.obj) for _main\n", mapping),
             (imports, "", mapping),
             (imports, link, ""),
             (imports, link, mapping + "libquadmath.a(q.obj)\n"),

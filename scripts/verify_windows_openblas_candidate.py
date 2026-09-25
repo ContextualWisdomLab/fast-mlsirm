@@ -19,7 +19,7 @@ ALLOWED_DLL = re.compile(
     r"(?i)^(?:kernel32|vcruntime140(?:_1)?|ucrtbase|"
     r"api-ms-win-(?:crt|core)-[a-z0-9-]+)\.dll$"
 )
-MEMBER = re.compile(r"(?im)^\s*Loaded\s+(.+?\.(?:lib|a)\([^)]+\))\s*$")
+MEMBER = re.compile(r"(?im)^\s*Loaded\s+(.+?\.(?:lib|a)\([^)]+\))(?:\s+for\s+.+)?\s*$")
 IMPORT = re.compile(r"(?im)^\s*([\w.+-]+\.dll)\s*$")
 REQUIRED_EVIDENCE = {
     "openblas.dll",
