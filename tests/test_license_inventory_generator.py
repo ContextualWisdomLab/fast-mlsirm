@@ -1302,3 +1302,57 @@ def test_own_crate_wheel_mismatch_stays_hold(tmp_path, case):
     (row,) = L.rust_inventory(args, [])
     assert row["license_class"] == "HOLD" and "license_text_origin" not in row
     assert row["license_files_in_artifact"] == []
+
+
+# Exact reviewed pointer-notice bytes (s1 text-review-20260926 texts/23860c2a..., 01c266bc...).
+UNICODE_WIDTH_COPYRIGHT = 'Licensed under the Apache License, Version 2.0\n<LICENSE-APACHE or\nhttp://www.apache.org/licenses/LICENSE-2.0> or the MIT\nlicense <LICENSE-MIT or http://opensource.org/licenses/MIT>,\nat your option. All files in the project carrying such\nnotice may not be copied, modified, or distributed except\naccording to those terms.\n'
+MEMCHR_COPYING = 'This project is dual-licensed under the Unlicense and MIT licenses.\n\nYou may use this code under the terms of either license.\n'
+
+
+
+def test_pointer_notice_map_holds_exactly_the_reviewed_texts():
+    for text, names in ((UNICODE_WIDTH_COPYRIGHT, ("Apache-2.0", "MIT")), (MEMCHR_COPYING, ("Unlicense", "MIT")),
+                        ("MIT OR Apache-2.0", ("MIT", "Apache-2.0"))):
+        normalized = L.re.sub(r"[ \t\r\n]+", " ", text).strip(" \t\r\n")
+        assert L.POINTER_NOTICES[hashlib.sha256(normalized.encode()).hexdigest()] == names
+        assert L.verified_standard_text(text) == []
+
+
+def _pointer_args(tmp_path: Path, *, pointer="MIT OR Apache-2.0", with_apache=True, declared="MIT OR Apache-2.0"):
+    args = _rust_args(tmp_path)
+    apache = next(r["text"] for r in REVIEWED if r["identifier"] == "Apache-2.0")
+    files = {"LICENSE": pointer, "LICENSE-MIT": L.MIT_CANONICAL_BODY}
+    if with_apache:
+        files["LICENSE-APACHE"] = apache
+    digest = _crate(Path(args.cargo_registry_cache), "dep", "1.0", files)
+    lock = Path(args.cargo_lock_workspace)
+    content = lock.read_text()
+    lock.write_text(content.replace(L.tomllib.loads(content)["package"][0]["checksum"], digest))
+    meta = Path(args.cargo_metadata_workspace)
+    meta.write_text(meta.read_text().replace('"MIT OR Apache-2.0"', json.dumps(declared)))
+    return args
+
+
+def test_reviewed_pointer_is_satisfied_only_with_the_flag(tmp_path):
+    args = _pointer_args(tmp_path)
+    (plain,) = L.rust_inventory(args, [])
+    assert plain["license_class"] == "HOLD"
+    assert all("pointer_notice" not in f for f in plain["license_files_in_artifact"])
+    args.reviewed_pointer_notices = True
+    (row,) = L.rust_inventory(args, [])
+    assert (row["license_class"], row["hold_reasons"]) == ("PERMISSIVE", [])
+    (pointer,) = [f for f in row["license_files_in_artifact"] if f["path"] == "LICENSE"]
+    assert pointer["pointer_notice"] == {"names": ["MIT", "Apache-2.0"], "satisfied": True}
+
+
+@pytest.mark.parametrize("case", ["a-unreviewed-pointer", "b-named-text-missing", "c-declared-mismatch"])
+def test_reviewed_pointer_violation_stays_hold(tmp_path, case):
+    args = _pointer_args(tmp_path, **{
+        "a-unreviewed-pointer": {"pointer": "MIT OR Apache-2.0 OR BSD-3-Clause"},
+        "b-named-text-missing": {"with_apache": False},
+        "c-declared-mismatch": {"declared": "MIT"},
+    }[case])
+    args.reviewed_pointer_notices = True
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert not any(f.get("pointer_notice", {}).get("satisfied") for f in row["license_files_in_artifact"])

@@ -200,6 +200,17 @@ def detect(text: str) -> list[str]:
     return found
 
 
+# Reviewed pointer notices (normalized sha256 -> licenses they point to), from s1
+# text-review-20260926. A pointer is not a license text: with --reviewed-pointer-notices it
+# is satisfied only when every named license has a verified full text in the same
+# hash-bound .crate and the names equal the declared SPDX expression's terms.
+POINTER_NOTICES = {
+    "9fba058782d4dbf4eda66df225dfc11e8afdc5618f6bc36c2dafbb087cda3971": ("Apache-2.0", "MIT"),  # unicode-width COPYRIGHT 23860c2a
+    "7e7a2c785f3db52a3daf64a62b76b09b940355e4fe1b7f7092f473b7663416b1": ("Unlicense", "MIT"),  # memchr-family COPYING 01c266bc
+    "db11fec9946737df39ca3898d9cd8c10ec6f6c3a884a6802b0ad0b81b4e8f23a": ("MIT", "Apache-2.0"),  # typenum LICENSE db11fec9
+}
+
+
 def verified_standard_text(text: str) -> list[str]:
     """Return licenses whose complete canonical grant has no extra conditions."""
     # Reviewed entire archive members, with source hashes and exact bytes in
@@ -212,6 +223,7 @@ def verified_standard_text(text: str) -> list[str]:
         "3a31f72fe7c9baf376c3da1d7d0154366be8ef0bab0a3f7531db4c2abf1ad062": "Zlib",
         "444399c3da8f18f32878c6f8b7348110f33985558ca7abe98d4c8ed26f013109": "Zlib",
         # 66 copyright-header/appendix-only variants, reviewed in s1 text-review-20260926.
+        "2069c208cba553e43cd0b730df8a0c10bf1b1101b96f661e2f1307c73b9722e3": "Unlicense",  # UNLICENSE 7e12e5df, byte-identical to SPDX v3.29.0 (memchr/termcolor/winapi-util)
         "f5ac0308cf2b3f96a0f49a8c0c9e4a2a02c483afc72a646af8de1f356983de06": "MIT",  # fast-mlsirm LICENSE (wheel dist-info/licenses/LICENSE; own crates bind via --own-crate-wheel)
         "1834e4a70e47109cc013a1fa4f34cb0e5b32753be1247a116ec1f1357b87115f": "MIT",  # upstream aclysma/profiling@8271551172eb LICENSE-MIT (profiling-1.0.18 .crate has none)
         "8b496867ab4da1182d754c6dbd948db3e0f08598d6c685155f4481f9afc98d86": "Apache-2.0",  # deranged-0.5.8/LICENSE-Apache
@@ -483,7 +495,7 @@ def normalized_archive_path(path: str) -> str | None:
 
 
 def read_crate_license_files(
-    data: bytes, artifact_sha256: str, declared_license_file: str | None
+    data: bytes, artifact_sha256: str, declared_license_file: str | None, pointer_rule: bool = False
 ) -> tuple[list[dict], list[str]]:
     """Read every license-named member and the metadata-declared license file."""
     out = []
@@ -514,6 +526,11 @@ def read_crate_license_files(
                             "verified_standard_text": verified_standard_text(
                                 raw.decode("utf-8", "replace")
                             )})
+                if pointer_rule:
+                    text = raw.decode("utf-8", "replace")
+                    names = POINTER_NOTICES.get(sha256_bytes(re.sub(r"[ \t\r\n]+", " ", text).strip(" \t\r\n").encode()))
+                    if names:
+                        out[-1]["pointer_notice"] = {"names": list(names)}
     return out, errors
 
 
@@ -682,7 +699,8 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
                            "measured": measured, "measured_origin": ".crate bytes in the cargo registry cache",
                            "match": bound}
             files, archive_errors = read_crate_license_files(
-                archive_bytes, measured, p.get("license_file") if p else None
+                archive_bytes, measured, p.get("license_file") if p else None,
+                bool(getattr(args, "reviewed_pointer_notices", False)),
             ) if bound else ([], [])
             hold.extend(archive_errors)
             text_origin = None
@@ -732,15 +750,29 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
         norm = normalize_spdx(declared)
         elected, rationale = elect(norm)
         ident = f"{name}@{version}"
+        for f in files:
+            if "pointer_notice" not in f:
+                continue
+            names = set(f["pointer_notice"]["names"])
+            full = {lbl for g in files if g is not f and g.get("artifact_sha256") == f["artifact_sha256"]
+                    for lbl in g.get("verified_standard_text", [])}
+            missing = sorted(names - full)
+            mismatch = names != set(spdx_terms(norm))
+            f["pointer_notice"]["satisfied"] = not missing and not mismatch
+            if missing:
+                hold.append(f"reviewed pointer {f['path']!r} names {missing} without a verified full text in this .crate")
+            if mismatch:
+                hold.append(f"reviewed pointer {f['path']!r} names {sorted(names)} but the declared expression is {norm!r}")
+        satisfied_pointers = {f["path"] for f in files if f.get("pointer_notice", {}).get("satisfied")}
         file_labels = {label for f in files for label in f["detected"]}
         verified_labels = {
             label for f in files for label in f.get("verified_standard_text", [])
         }
-        unrecognized_files = sorted(f["path"] for f in files if not f["detected"])
+        unrecognized_files = sorted(f["path"] for f in files if not f["detected"] and f["path"] not in satisfied_pointers)
         if unrecognized_files:
             hold.append(f"license candidate text is unrecognized: {unrecognized_files}")
         unverified_files = sorted(
-            f["path"] for f in files if not f.get("verified_standard_text")
+            f["path"] for f in files if not f.get("verified_standard_text") and f["path"] not in satisfied_pointers
         )
         if unverified_files:
             hold.append(f"license candidate text is not canonically verified: {unverified_files}")
@@ -1224,6 +1256,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--cargo-metadata-binding-target", help="cargo metadata --filter-platform output for --binding-target")
     ap.add_argument("--binding-target", help="target triple of --cargo-metadata-binding-target")
+    ap.add_argument("--reviewed-pointer-notices", action="store_true",
+                    help="accept POINTER_NOTICES files whose named licenses are verified in the same .crate and match the declared expression")
     ap.add_argument("--own-crate-wheel", help="published wheel whose METADATA License-File binds this repository's own crates")
     ap.add_argument("--own-crate-wheel-sha256", help="expected sha256 of --own-crate-wheel")
     ap.add_argument("--cargo-upstream-license-evidence",
