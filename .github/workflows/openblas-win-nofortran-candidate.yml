@@ -130,9 +130,16 @@ jobs:
 
       - name: Verify downloaded evidence against attested manifest
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $digest = (Get-FileHash downloaded/manifest.json -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($digest -ne $env:EXPECTED_MANIFEST_SHA256) { throw 'Downloaded manifest digest changed' }
+          gh attestation verify downloaded/manifest.json `
+            --repo $env:GITHUB_REPOSITORY `
+            --signer-workflow "${env:GITHUB_REPOSITORY}/.github/workflows/openblas-win-nofortran-candidate.yml" `
+            --source-digest $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest attestation provenance mismatch' }
           python scripts/verify_windows_openblas_candidate.py --verify-dir downloaded
           if ($LASTEXITCODE -ne 0) { throw 'Downloaded evidence digest mismatch' }
 

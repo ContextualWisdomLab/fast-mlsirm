@@ -10,6 +10,10 @@ import unittest
 SCRIPT = (
     Path(__file__).resolve().parents[1] / "scripts/verify_windows_openblas_candidate.py"
 )
+WORKFLOW = (
+    Path(__file__).resolve().parents[1]
+    / ".github/workflows/openblas-win-nofortran-candidate.yml"
+)
 SPEC = importlib.util.spec_from_file_location("candidate_gate", SCRIPT)
 assert SPEC and SPEC.loader
 GATE = importlib.util.module_from_spec(SPEC)
@@ -17,6 +21,16 @@ SPEC.loader.exec_module(GATE)
 
 
 class CandidateGateTest(unittest.TestCase):
+    def test_download_requires_attested_source_and_signer(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        verify = workflow.split("- name: Verify downloaded evidence", 1)[1]
+        verify = verify.split("- name: Retain failed-build diagnostics", 1)[0]
+        self.assertIn("gh attestation verify downloaded/manifest.json", verify)
+        self.assertIn("--repo $env:GITHUB_REPOSITORY", verify)
+        self.assertIn("--signer-workflow", verify)
+        self.assertIn("--source-digest $env:GITHUB_SHA", verify)
+        self.assertIn("if ($LASTEXITCODE -ne 0)", verify)
+
     def test_fail_closed_native_evidence(self):
         imports = "Image has the following dependencies:\n    KERNEL32.dll\n    VCRUNTIME140.dll\n"
         link = "  Loaded C:\\MSVC\\libcmt.lib(init.obj)\n"
