@@ -117,10 +117,8 @@ def collect_python_rows() -> list[dict]:
     ):
         if any(part.startswith("_") for part in modname.split(".")):
             continue
-        if not modname.startswith("fast_mlsirm."):
-            continue  # whitelist safe modules to fix Semgrep non-literal import warning
         try:
-            mod = importlib.import_module(modname)  # nosemgrep
+            mod = importlib.import_module(modname)
         except Exception:
             continue
         for name in sorted(vars(mod)):
