@@ -95,9 +95,13 @@ def person_fit_np(x) -> PersonFitNpResult:
     of seven dichotomous statistics as IMPLEMENTED by the CRAN PerFit R
     package (READ: ``R/G.R``, ``R/Gnormed.R``, ``R/NCI.R``, ``R/U3.R``,
     ``R/ZU3.R``, ``R/C.Sato.R``, ``R/Cstar.R`` at cran/PerFit commit
-    c9df433). NOT READ (cited only as referenced by the PerFit sources):
-    van der Flier (1977, 1982); Meijer (1994); Tatsuoka & Tatsuoka
-    (1982, 1983); Sato (1975); Harnisch & Linn (1981).
+    c9df433). Subsequent traceability doctoring directly read Meijer
+    (1994, pp. 311–312) and Harnisch & Linn's 1981 final report for
+    definition/order evidence only; neither is promoted here to exact
+    implementation-equation authority. Still not read at the required
+    implementation-equation level: Loevinger (1947, 1948); van der
+    Flier (1977, 1980, 1982); Tatsuoka & Tatsuoka (1982, 1983); Sato
+    (1975); and the Harnisch & Linn (1981) journal equation.
 
     ``x`` is a 2-D person-by-item matrix of exactly 0s and 1s. Missing
     data is out of scope (PerFit's imputation paths were not ported):
