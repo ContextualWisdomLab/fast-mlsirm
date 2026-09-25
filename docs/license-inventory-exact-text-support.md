@@ -39,3 +39,16 @@ consumer with an unverified COPYRIGHT, missing selected MIT, extra restriction,
 or LGPL material. Existing election and AND regressions remain in the same
 focused file. The NumPy repair and exact-text support are combined in commit
 7354cf2ca3f694355d94d502d8487e61a41dba57.
+
+## 66 copyright-header/appendix-only Cargo variants (2026-09-26)
+
+Sixty-six more whole texts (MIT 55, Apache-2.0 8, Zlib 3) from the 132
+binding-graph HOLD rows of s1 inventory eeb2ed00 are recognized by the same
+exact normalized-SHA256 lookup. Each was extracted from its lock-checksum-matched
+`.crate` on s1 and compared with a local template (MIT body from this module,
+`/usr/share/common-licenses/Apache-2.0`, foldhash Zlib). The only differences are
+leading title/copyright lines or an omitted or filled Apache APPENDIX. Per-hash
+quotes are in s1 `text-review-20260926/copyright-only-diffs.md` (sha256
+3a44b440bf93462b102f97b77bf41836bd9ab6ab05015faa64fd085038a9f8a4). Matching logic
+is unchanged. The 10 DEVIATES texts, 11 NO_LOCAL_TEMPLATE texts, and crates
+with no license file remain HOLD.

@@ -211,6 +211,73 @@ def verified_standard_text(text: str) -> list[str]:
         "59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99": "Apache-2.0",
         "3a31f72fe7c9baf376c3da1d7d0154366be8ef0bab0a3f7531db4c2abf1ad062": "Zlib",
         "444399c3da8f18f32878c6f8b7348110f33985558ca7abe98d4c8ed26f013109": "Zlib",
+        # 66 copyright-header/appendix-only variants, reviewed in s1 text-review-20260926.
+        "8b496867ab4da1182d754c6dbd948db3e0f08598d6c685155f4481f9afc98d86": "Apache-2.0",  # deranged-0.5.8/LICENSE-Apache
+        "52b86d7cac180bbb9dca8ebe3c9e66ac7cc8e704735ef151a514b6beff85600e": "Apache-2.0",  # futures-core-0.3.34/LICENSE-APACHE
+        "6cd11fd5f811c88bac0b0e9d03c79ee8f72ef808a31fe7b31109f5d1d6a46d88": "Apache-2.0",  # gpu-allocator-0.28.0/LICENSE-APACHE
+        "ad90af82d790fc53e9b247434d2ae5382df1941b6a380c1c16d43bbb7cfce7f1": "Apache-2.0",  # powerfmt-0.2.0/LICENSE-Apache
+        "c8f231e806990fbae26a329908ad335584ee2448af43f743e40353675841e373": "Apache-2.0",  # pyo3-0.29.2/LICENSE-APACHE
+        "3c2971a948fcb684bfb692b3dc13aee15e9a8bcafc7444e160ba33d93c0c392e": "Apache-2.0",  # typenum-1.20.1/LICENSE-APACHE
+        "145806f1918280735937d8be844ea1da8d912251b1a234ce3406e9338e8cf9e0": "Apache-2.0",  # windows-0.62.2/license-apache-2.0
+        "534e8240bf07aab05c15a12e0599b8daa248f6bbcc84c82894ace32ddfc2858e": "Apache-2.0",  # zerocopy-0.8.57/LICENSE-APACHE
+        "2bcdc0b2d0f39f744a3295a725725ffd3f7477a8a76c76ac671e26e1b5af4bf5": "MIT",  # android_system_properties-0.1.6/LICENSE-MIT
+        "625eb062458d42d2eb8c69913a4ad35e01753490350d8de9cddddb6cde8d7e62": "MIT",  # arrayvec-0.7.8/LICENSE-MIT
+        "4bd94c8c3a98fcffa62cb91de62dd4a75996040e775e973ef428b28be8a5420a": "MIT",  # ash-0.38.0+1.3.281/LICENSE-MIT
+        "9cee45046fedfd0bde5b25dc3bba824c92b6e4e7bfe89d3f58ec5e664cba579a": "MIT",  # autocfg-1.5.1/LICENSE-MIT
+        "71bc93e83568101862883f070290bd873f1d9a720727e99ab96f3ede6b2dc91d": "MIT",  # bit-set-0.10.0/LICENSE-MIT
+        "5376f07638d3fd777c45e872500a3a11b785b79c2fff2d67bc0361d0d87f5a80": "MIT",  # bit-vec-0.9.1/LICENSE-MIT
+        "c25311c4c60e634637fe8148151c9fc62b749205a8c83ad0bd02baeaf71c3209": "MIT",  # bitflags-2.13.2/LICENSE-MIT
+        "5df37ed67c513072d5fe279e179bd1d8a49dd20fd61b1f1c7f1f07379fc17591": "MIT",  # block-buffer-0.10.4/LICENSE-MIT
+        "d36be0aa3bf9c24679d232041f324b417567b6d61db00e9c8267de3c67432ec7": "MIT",  # bumpalo-3.20.3/LICENSE-MIT
+        "6bf6d79db7f6f622c369dc3a36429c9bfd0351ddfdcadd046e0bcf575f3d2614": "MIT",  # cfg-if-1.0.5/LICENSE-MIT
+        "ceb65ec3e793eb098d672594a12fde934db8508b7de6238d7f23a8567625eaac": "MIT",  # cfg_aliases-0.2.2/LICENSE
+        "516c5a27fb50acd9d2fba2432afd0a729065a19d020989ffdd66b327a918de84": "MIT",  # cpufeatures-0.2.17/LICENSE-MIT
+        "12af027810fb17f70ee3df906c5793979ce4564607114e46a301b7a54a72a9f4": "MIT",  # crunchy-0.2.4/LICENSE
+        "6e40c7393f7c3a7f8d7e950067d6c6fddeace4d29cea85bb10c3e824fb2a8c5d": "MIT",  # crypto-common-0.1.7/LICENSE-MIT
+        "b99d57e1913bd860d1145d49a14715bd65e077dd15c4efb70c0ec29d05508cce": "MIT",  # deranged-0.5.8/LICENSE-MIT
+        "c84ea1490b494b7687fcce5d4af0cd51a6b3ca99d8d169941882391934f277c9": "MIT",  # digest-0.10.7/LICENSE-MIT
+        "164b92de4d5de31acc77023494891c3ea72283296eff6e69f0c2fb35e35a7d2e": "MIT",  # dlib-0.5.3/LICENSE.txt
+        "e723f0aaad2740b74a5042e19c02f312c567b0b26ccbc5eacc7b6fb4023d13ca": "MIT",  # document-features-0.2.12/LICENSE-MIT
+        "3c7d8bcc6f358ab370c9153e0ca3a77ad0589daa316d23f17f58e1e89ac8b2a6": "MIT",  # equivalent-1.0.2/LICENSE-MIT
+        "be1847dc49ef1ef89acc076d21a0499c7dd8131db9b5322a2a0333f4a16c1c64": "MIT",  # futures-core-0.3.34/LICENSE-MIT
+        "2f1ac698186584433271fd1c5ea35ec0da31cacfa13d75ae278969ddeed12f78": "MIT",  # generic-array-0.14.7/LICENSE
+        "b0696be97bff992e45b18754fc0ae85b18c4f0142d6c317c05deec6692d9b8ff": "MIT",  # gpu-allocator-0.28.0/LICENSE-MIT
+        "7e1f7cb813ec8afdb27afbb7162b48874c3f6c5b55f2affcbc5f4c132d8861c4": "MIT",  # hashbrown-0.16.1/LICENSE-MIT
+        "d1442c3bc874608ba5ed80a044a1f7aa115565c30214e2e4ef8563acf0309d39": "MIT",  # heck-0.5.0/LICENSE-MIT
+        "72c966073ea33b7014ce2d23cc0bba6d184017cca50703ee4808c02af4624f46": "MIT",  # indexmap-2.14.2/LICENSE-MIT
+        "f416d58a13d825df923c71e898567758b3f595c706a9b5da23abfbd94737dcc7": "MIT",  # jni-sys-0.3.1/LICENSE-MIT
+        "6ebd8d40ce1b5685fdb9b3689d815d802022732e8504c1c513bc9d309575758c": "MIT",  # libc-0.2.189/LICENSE-MIT
+        "1816a1f362c89aa6d4b41fd44c14a8f6dc2bc788ac03877e48cb76d3e1b15784": "MIT",  # litrs-1.0.0/LICENSE-MIT
+        "2810737fc58c4fa01c84559aa0b48db577fb0d7e0f871a2459b2551976b9a446": "MIT",  # lock_api-0.4.14/LICENSE-MIT
+        "952115fb93510335fd97e1e479516553fa0c4da1b49acddf9cd5d18392a3e1cf": "MIT",  # memchr-2.8.3/LICENSE-MIT
+        "1876d90fad39cffe11fb7db9bce71ac60795643b00c71d8f88661558b4426586": "MIT",  # naga-30.0.1/LICENSE.MIT
+        "5e7a18f489b9b089f6946ccfc5190ab073199054b7ed58fe65fe8650ebc3b9ea": "MIT",  # num-conv-0.2.2/LICENSE-MIT
+        "e0d942dfe6038ddff3ec62d78064580c23119971b55a8854bba4b612757fffc0": "MIT",  # ordered-float-5.5.0/LICENSE-MIT
+        "31639cdc357735ba41f11654af24649688897149e857718df92dbd4fb746fad4": "MIT",  # pollster-1.0.1/LICENSE-MIT
+        "93bb3b571eb0df578c76b844cefc929ed8573413c763cafcd36c63408251e8ba": "MIT",  # powerfmt-0.2.0/LICENSE-MIT
+        "8195dbce873a94a4c279100e99a9cbc0e90472044b06669aa4fe183801d214d1": "MIT",  # presser-0.3.1/LICENSE-MIT
+        "500e97bb9db8f7ed04ac270750cad498669224f165ed554531894f1cfb963434": "MIT",  # pyo3-0.29.2/LICENSE-MIT
+        "3ad193b1e1de2efd71d467fda89d0d906e508d2e9980464444f48c95a7d1cb61": "MIT",  # range-alloc-0.1.5/LICENSE.MIT
+        "279ce0b86b8d12d7f1ee41a38e62214daaca48e151ce43e111eae0869ad48009": "MIT",  # raw-window-handle-0.6.2/LICENSE-MIT.md
+        "f6b06eca855bbfd854ba2f545c684dade8593e27cc95877587fa21a8932100bb": "MIT",  # rawpointer-0.2.1/LICENSE-MIT
+        "d26280807255cbdc7b6df0416ed435765790c9775574466d6c3c5b7fb496e2d6": "MIT",  # redox_syscall-0.5.18/LICENSE
+        "cbb061a9e2168fff25c66311fea587c24dd6cbd8f2849ac87d60beabff88b30f": "MIT",  # renderdoc-sys-1.1.0/LICENSE-MIT
+        "4e212f4528c9ceca0d7a6dbcc0833cd19a84fb113fff70144bd4c172324bdf5b": "MIT",  # scopeguard-1.2.0/LICENSE-MIT
+        "5327d3e76b455dce2f1110d7717bb6a8e4efd8673a3ba5282338f5a60dd90153": "MIT",  # sha2-0.10.9/LICENSE-MIT
+        "075c3581049481a7dccdf4c1e643fdb764c29b7e8ffd832ab423f8f1f420c1f3": "MIT",  # slab-0.4.12/LICENSE
+        "2736d79caea349a8296cf4b17009aee66cb09683beee42232e27a86252aab766": "MIT",  # smallvec-1.16.1/LICENSE-MIT
+        "8ec9de4a8300964b9806862de209aea912c02413c5303f040ef1d25734679296": "MIT",  # static_assertions-1.1.0/LICENSE-MIT
+        "a8f60d2a6461811c1f38b179a651379ea28ec38b6158314a957e372a3b93f91a": "MIT",  # time-0.3.55/LICENSE-MIT
+        "574f47f354afb5af89b1ea4de48bbb1d4e9064c334fe590ee35895ab39b3d3da": "MIT",  # typenum-1.20.1/LICENSE-MIT
+        "de1bcb73d8f5f58556f70ed0681b98700bdbfd33a6bf554d245c3caddafb3463": "MIT",  # uuid-1.26.1/LICENSE-MIT
+        "8963f9b21e899360aa4add8b67cc1c9d6319a073011db97829381fc267d515a3": "MIT",  # version_check-0.9.5/LICENSE-MIT
+        "a38abdc9d438e7c88550e68100ad09f16ebe90d0f4529c47ea5764725a6ed15f": "MIT",  # wayland-sys-0.31.11/LICENSE.txt
+        "dd83c703f6d90d1dfff17f4d18c26c26da327ae1398a27398913bf3333587df4": "MIT",  # winapi-util-0.1.11/LICENSE-MIT
+        "502292ebd8d883e73d2b433a3bb4531fe5c7d917959377f1cb6e75bf4cbd89ad": "MIT",  # xml-rs-0.8.29/LICENSE
+        "bc6715c4aa80f44647f3afe233cbc0409cad091d77fb94925a257770714f42c3": "MIT",  # zerocopy-0.8.57/LICENSE-MIT
+        "7ab00508d3cf6798339908ff677796063e2d9260adeb67d22e0cd66b864a2bbb": "Zlib",  # bytemuck-1.25.2/LICENSE-ZLIB
+        "6533009df0e5dd56f0a2d720b4396123453b4e6d212224b755c0f9b3573754bd": "Zlib",  # raw-window-handle-0.6.2/LICENSE-ZLIB.md
+        "e9e88becb88223fa0cdb694393e9dc1aa6cfc803d3805e60a6d66bc990647011": "Zlib",  # slotmap-1.1.1/LICENSE
     }
     normalized = re.sub(r"[ \t\r\n]+", " ", text).strip(" \t\r\n")
     recognized = reviewed.get(sha256_bytes(normalized.encode("utf-8")))
