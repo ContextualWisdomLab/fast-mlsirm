@@ -1256,3 +1256,49 @@ def test_upstream_license_evidence_mismatch_stays_hold(tmp_path, case):
     assert row["license_class"] == "HOLD"
     if case != "extra-condition":
         assert row["license_files_in_artifact"] == [] and "license_text_origin" not in row
+
+
+def _own_crate_args(tmp_path: Path, *, wheel_version="1.0", license_member=True, license_text=None):
+    """One path crate 'own 1.0' with no LICENSE beside Cargo.toml, plus a published wheel."""
+    crate_dir = tmp_path / "own"
+    crate_dir.mkdir()
+    (crate_dir / "Cargo.toml").write_text("")
+    lock = tmp_path / "Cargo.lock"
+    lock.write_text('version = 4\n[[package]]\nname = "own"\nversion = "1.0"\n')
+    meta = tmp_path / "meta.json"
+    meta.write_text(json.dumps({"packages": [{"name": "own", "version": "1.0", "source": None, "license": "MIT",
+                                              "license_file": None, "manifest_path": str(crate_dir / "Cargo.toml")}]}))
+    sbom = tmp_path / "sbom.json"
+    sbom.write_text(json.dumps({"components": []}))
+    (tmp_path / "tree").mkdir()
+    wheel = tmp_path / "own-1.0-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as zf:
+        zf.writestr("own-1.0.dist-info/METADATA", f"Metadata-Version: 2.4\nName: own\nVersion: {wheel_version}\nLicense-File: LICENSE\n")
+        if license_member:
+            zf.writestr("own-1.0.dist-info/licenses/LICENSE", license_text or L.MIT_CANONICAL_BODY)
+    args = Namespace(cargo_metadata_workspace=str(meta), cargo_metadata_binding=str(meta), cargo_lock_workspace=str(lock),
+                     cargo_lock_binding=str(lock), cargo_registry_cache=str(tmp_path / "cache"), wheel_sbom=str(sbom),
+                     tree_dir=str(tmp_path / "tree"))
+    return args, str(wheel), hashlib.sha256(wheel.read_bytes()).hexdigest()
+
+
+def test_own_crate_binds_to_published_wheel_license_and_absent_flag_is_unchanged(tmp_path):
+    args, wheel, digest = _own_crate_args(tmp_path)
+    (plain,) = L.rust_inventory(args, [])
+    assert plain["license_class"] == "HOLD" and "license_text_origin" not in plain
+    args.own_crate_wheel, args.own_crate_wheel_sha256 = wheel, digest
+    (row,) = L.rust_inventory(args, [])
+    assert (row["license_class"], row["hold_reasons"], row["license_text_origin"]) == ("PERMISSIVE", [], "published-wheel")
+    assert row["license_files_in_artifact"][0]["artifact_sha256"] == digest
+
+
+@pytest.mark.parametrize("case", ["wheel-sha-mismatch", "version-mismatch", "license-member-missing"])
+def test_own_crate_wheel_mismatch_stays_hold(tmp_path, case):
+    args, wheel, digest = _own_crate_args(
+        tmp_path, wheel_version="9.9" if case == "version-mismatch" else "1.0",
+        license_member=case != "license-member-missing")
+    args.own_crate_wheel = wheel
+    args.own_crate_wheel_sha256 = "0" * 64 if case == "wheel-sha-mismatch" else digest
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD" and "license_text_origin" not in row
+    assert row["license_files_in_artifact"] == []

@@ -212,6 +212,7 @@ def verified_standard_text(text: str) -> list[str]:
         "3a31f72fe7c9baf376c3da1d7d0154366be8ef0bab0a3f7531db4c2abf1ad062": "Zlib",
         "444399c3da8f18f32878c6f8b7348110f33985558ca7abe98d4c8ed26f013109": "Zlib",
         # 66 copyright-header/appendix-only variants, reviewed in s1 text-review-20260926.
+        "f5ac0308cf2b3f96a0f49a8c0c9e4a2a02c483afc72a646af8de1f356983de06": "MIT",  # fast-mlsirm LICENSE (wheel dist-info/licenses/LICENSE; own crates bind via --own-crate-wheel)
         "1834e4a70e47109cc013a1fa4f34cb0e5b32753be1247a116ec1f1357b87115f": "MIT",  # upstream aclysma/profiling@8271551172eb LICENSE-MIT (profiling-1.0.18 .crate has none)
         "8b496867ab4da1182d754c6dbd948db3e0f08598d6c685155f4481f9afc98d86": "Apache-2.0",  # deranged-0.5.8/LICENSE-Apache
         "52b86d7cac180bbb9dca8ebe3c9e66ac7cc8e704735ef151a514b6beff85600e": "Apache-2.0",  # futures-core-0.3.34/LICENSE-APACHE
@@ -555,6 +556,47 @@ def bind_upstream_license_files(archive: bytes, name: str, version: str, entry: 
     return ([], errors) if errors else (files, [])
 
 
+def own_crate_wheel_license_files(wheel: Path, expected_sha256: str) -> tuple[str | None, list[dict], list[str]]:
+    """Return (METADATA Version, license files, errors) from the published wheel for this repository's crates.
+
+    Files are returned only when the wheel sha256 matches and every declared
+    METADATA License-File member exists; otherwise the caller keeps HOLD.
+    """
+    try:
+        data = wheel.read_bytes()
+    except OSError as exc:
+        return None, [], [f"own-crate wheel unreadable: {exc}"]
+    digest = sha256_bytes(data)
+    if digest != expected_sha256:
+        return None, [], [f"own-crate wheel sha256 {digest} != expected {expected_sha256}"]
+    errors, files = [], []
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        metas = [n for n in zf.namelist() if n.count("/") == 1 and n.endswith(".dist-info/METADATA")]
+        if len(metas) != 1:
+            return None, [], ["own-crate wheel has no single top-level .dist-info/METADATA"]
+        message = BytesParser(policy=policy.compat32).parsebytes(zf.read(metas[0]))
+        versions = message.get_all("Version", [])
+        declared = [str(v).strip() for v in message.get_all("License-File", [])]
+        if len(versions) != 1:
+            errors.append("own-crate wheel METADATA has no single Version")
+        if not declared:
+            errors.append("own-crate wheel METADATA declares no License-File")
+        dist_info = metas[0].rsplit("/", 1)[0]
+        for value in declared:
+            rel = normalized_archive_path(value)
+            member = f"{dist_info}/licenses/{rel}" if rel else None
+            if member is None or member not in zf.namelist():
+                errors.append(f"own-crate wheel License-File member is absent: {value!r}")
+                continue
+            raw = zf.read(member)
+            text = raw.decode("utf-8", "replace")
+            files.append({"path": member, "sha256": sha256_bytes(raw), "artifact_sha256": digest,
+                          "declared_license_file": True, "detected": detect(text),
+                          "verified_standard_text": verified_standard_text(text), "origin": "published-wheel"})
+    version = str(versions[0]).strip() if len(versions) == 1 else None
+    return version, ([] if errors else files), errors
+
+
 def license_files_in_dir(root: Path) -> list[dict]:
     out = []
     for path in sorted(p for p in root.iterdir() if p.is_file() and LICENSE_NAME.match(p.name)):
@@ -605,6 +647,8 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
     cache = Path(args.cargo_registry_cache)
     upstream_path = getattr(args, "cargo_upstream_license_evidence", None)
     upstream = json.loads(Path(upstream_path).read_text()) if upstream_path else {}
+    own_wheel = (own_crate_wheel_license_files(Path(args.own_crate_wheel), args.own_crate_wheel_sha256)
+                 if getattr(args, "own_crate_wheel", None) else None)
 
     # Completeness: the lock files are the expected set; metadata must match them.
     for label, lock, meta in (("workspace", ws_lock, ws_meta), ("binding", binding_lock, binding_meta)):
@@ -670,6 +714,15 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
             source_hash = None
             files = license_files_in_dir(Path(p["manifest_path"]).parent)
             origin = "package metadata (Cargo.toml license); this repository's own source"
+            if own_wheel is not None:
+                wheel_version, wheel_files, wheel_errors = own_wheel
+                hold.extend(wheel_errors)
+                if not wheel_errors and wheel_version != version:
+                    hold.append(f"own-crate wheel METADATA Version {wheel_version!r} != crate version {version!r}")
+                elif not wheel_errors:
+                    files = files + wheel_files
+                    text_origin = "published-wheel"
+                    origin += "; license files from the sha256-pinned published wheel's METADATA License-File"
         else:
             source_hash, files, origin, text_origin = None, [], "UNVERIFIED: unsupported source", None
             hold.append(f"unsupported source {source!r}")
@@ -1171,12 +1224,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--cargo-metadata-binding-target", help="cargo metadata --filter-platform output for --binding-target")
     ap.add_argument("--binding-target", help="target triple of --cargo-metadata-binding-target")
+    ap.add_argument("--own-crate-wheel", help="published wheel whose METADATA License-File binds this repository's own crates")
+    ap.add_argument("--own-crate-wheel-sha256", help="expected sha256 of --own-crate-wheel")
     ap.add_argument("--cargo-upstream-license-evidence",
                     help="JSON {name@version: {repository, vcs_sha1, path_in_vcs, files: [{path, url, sha256, local_path}]}}; "
                          "local_path is relative to this file")
     args = ap.parse_args(argv)
     if bool(args.cargo_metadata_binding_target) != bool(args.binding_target):
         ap.error("--cargo-metadata-binding-target and --binding-target must be given together")
+    if bool(args.own_crate_wheel) != bool(args.own_crate_wheel_sha256):
+        ap.error("--own-crate-wheel and --own-crate-wheel-sha256 must be given together")
 
     gaps: list[str] = []
     rust = rust_inventory(args, gaps)
