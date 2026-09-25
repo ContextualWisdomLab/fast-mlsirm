@@ -45,30 +45,7 @@
 //! below means degenerate single-loader inputs valid in stage 1 are rejected
 //! here — reduction equivalence holds for full-pattern inputs). The two-tier model itself —
 //! correlated primaries plus orthogonal specifics, subsuming the bifactor
-//! and testlet models — is Cai (2010) (abstract; see the source-access note
-//! below).
-//!
-//! # Source-access note (why Cai 2010 has no equation locator here)
-//!
-//! The Zotero record for Cai (2010) (key `GT3NQ8K8`) holds the abstract,
-//! DOI (`10.1007/s11336-010-9178-0`), and bibliographic data — its abstract
-//! confirms the model claims used here (the framework "subsumes standard
-//! multidimensional IRT models, bifactor IRT models, and testlet response
-//! theory models as special cases", "reduction in the dimensionality of the
-//! latent variable space", "an EM algorithm for full-information maximum
-//! marginal likelihood estimation") — but the attached file is the Springer
-//! article landing page, NOT the full text, and the full text could not be
-//! obtained in-run (paywalled at the publisher; the institutional proxy
-//! serves the article page without entitlement, Springer WAYF rejects the
-//! proxy redirect host, and no author manuscript was found). So no Cai
-//! (2010) equation or page number is cited: every locator below names a
-//! source whose full text was actually read — the local Gibbons et al.
-//! (2007) PDF (eq. 9, 11-12, 15), the open-access Cai, Yang, & Hansen
-//! (2011) full text (eq. 6-7, 10-11, "Maximum Marginal Likelihood
-//! Estimation" section), and the installed mirt 1.46.1 `bfactor` help topic
-//! (two-tier covariance, `ncol(G) + 1` integration). The `mirt::bfactor`
-//! two-tier oracle, whose own implementation follows Cai (2010), validates
-//! the same MLE empirically.
+//! and testlet models — is Cai (2010, pp. 583-584).
 //!
 //! # Estimation: Bock-Aitkin EM with reduction over the specific tier
 //!
@@ -105,6 +82,16 @@
 //! monotonicity contract of stage 1 is preserved exactly; at `Phi = I` the
 //! weights are bitwise the plain Gauss-Hermite weights).
 //!
+//! # Memory (exact blocked product-grid evaluation; #1992)
+//!
+//! Category log-probs and M-step node coordinates are evaluated on the fly
+//! over the full primary product Gauss–Hermite grid (Golub & Welsch, 1969;
+//! node counts remain caller-controlled with no silent cap — #1929;
+//! Lesaffre & Spiessens, 2001, warn that low `Q` can bias results). The
+//! specific-tier scratch is `O(n_specific * q_specific)` per active primary
+//! node rather than `O(n_specific * n_grid * q_specific)`. Finite sums are
+//! associative, so the numerical value matches a materialised-table path up
+//! to ordinary floating-point roundoff.//!
 //! The M-step updates each item by the per-item finite-difference-Hessian
 //! Newton of stage 1 (ridge = Hessian conditioning only, NOT a prior;
 //! backtracking line search REJECTS non-finite objectives, which is exactly
@@ -149,6 +136,10 @@
 //! block — negating that dimension's slopes AND the reported primary EAP
 //! column AND the `Phi` row/column signs for primary flips, but NOT the
 //! thresholds.
+//! When `Phi = I`, identical free-loading item sets for two primary columns
+//! leave their orthogonal rotation unidentified. Distinct supports are a
+//! necessary condition for the fixed-identity specialization (Cai, 2010,
+//! pp. 583-584); the per-column reflection rule above handles signs.
 //!
 //! # Caller-owned numerics (no hidden clamps, no magic caps)
 //!
@@ -185,8 +176,7 @@
 //!
 //! Cai, L. (2010). A two-tier full-information item factor analysis model
 //! with applications. *Psychometrika, 75*(4), 581-612.
-//! https://doi.org/10.1007/s11336-010-9178-0 (abstract + metadata read via
-//! the Zotero record; full text not accessible — see the source-access note)
+//! https://doi.org/10.1007/s11336-010-9178-0 (full text read, pp. 583-584)
 //!
 //! Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
 //! item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
@@ -203,6 +193,16 @@
 //! (Version 1.46.1) [R package].
 //! https://cran.r-project.org/package=mirt (`bfactor` help topic read:
 //! two-tier covariance, `ncol(G) + 1` integration, bifactor special case)
+
+//! Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature rules.
+//! *Mathematics of Computation, 23*(106), 221-230.
+//! https://doi.org/10.1090/S0025-5718-69-99647-1 (full text read via open copy)
+//!
+//! Lesaffre, E., & Spiessens, B. (2001). On the effect of the number of
+//! quadrature points in a logistic random-effects model: an example.
+//! *Journal of the Royal Statistical Society Series C: Applied Statistics,
+//! 50*(3), 325-335. https://doi.org/10.1111/1467-9876.00237 (full text read:
+//! high `Q` often required; do not invent a low default)
 
 use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
 
@@ -226,6 +226,8 @@ use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
 /// fixed-table cap), so this module imposes no upper cap of its own.
 #[derive(Clone, Copy, Debug)]
 pub struct TwoTierGrmConfig {
+    /// Estimate primary correlations; false fixes Phi to the identity.
+    pub estimate_primary_correlation: bool,
     /// Gauss-Hermite nodes per primary dimension (any `n >= 1`).
     /// The primary product grid has `q_primary^n_primary` nodes.
     pub q_primary: usize,
@@ -259,8 +261,8 @@ pub struct TwoTierGrmResult {
     pub a_specific: Vec<f64>,
     /// Ordered boundary intercepts `d_ik`, row-major `n_items * (n_cat - 1)`.
     pub threshold: Vec<f64>,
-    /// Estimated primary correlation matrix, row-major
-    /// `n_primary * n_primary` (unit diagonal).
+    /// Primary correlation matrix, row-major `n_primary * n_primary`;
+    /// exactly I when `estimate_primary_correlation` is false.
     pub phi: Vec<f64>,
     /// Primary-factor EAPs `E[theta_d | Y_p]`, row-major
     /// `n_persons * n_primary`.
@@ -277,34 +279,37 @@ pub struct TwoTierGrmResult {
     pub final_loglik_change: f64,
     /// Winning start index in `0..n_starts` (deterministic from `seed`).
     pub best_start: usize,
-    /// `sum_i (k_i + has_specific(i) + (n_cat - 1)) + P*(P-1)/2` free
-    /// parameters, where `k_i` is item `i`'s free primary-slope count.
+    /// `sum_i (k_i + has_specific(i) + (n_cat - 1))` free item parameters
+    /// (`k_i` is item `i`'s free primary-slope count), plus `P*(P-1)/2`
+    /// when primary correlations are estimated.
     pub n_parameters: usize,
+    /// `"correlated"` when Phi was estimated, `"orthogonal"` when fixed to I.
+    pub primary_identification: &'static str,
 }
 
 /// Validated problem structure shared by the fitter and the public
 /// marginal-loglik entry points.
-struct Validated {
-    n_persons: usize,
-    n_items: usize,
-    n_primary: usize,
-    n_specific: usize,
-    n_cat: usize,
-    m1: usize,
+pub(crate) struct Validated {
+    pub(crate) n_persons: usize,
+    pub(crate) n_items: usize,
+    pub(crate) n_primary: usize,
+    pub(crate) n_specific: usize,
+    pub(crate) n_cat: usize,
+    pub(crate) m1: usize,
     /// Validated primary product-grid size (`q_primary^n_primary`).
-    grid_size: usize,
+    pub(crate) grid_size: usize,
     /// Per-item free primary dimensions (pattern positions).
-    free_primaries: Vec<Vec<usize>>,
+    pub(crate) free_primaries: Vec<Vec<usize>>,
     /// Per-specific item-block member lists.
-    blocks: Vec<Vec<usize>>,
+    pub(crate) blocks: Vec<Vec<usize>>,
     /// Specific-free item indices (primary-only items).
-    specific_free: Vec<usize>,
+    pub(crate) specific_free: Vec<usize>,
     /// Per-item owning block (`None` = specific-free).
-    item_block: Vec<Option<usize>>,
+    pub(crate) item_block: Vec<Option<usize>>,
 }
 
 #[allow(clippy::too_many_arguments)]
-fn validate(
+pub(crate) fn validate(
     y: &[usize],
     observed: Option<&[bool]>,
     primary_map: &[bool],
@@ -398,6 +403,19 @@ fn validate(
                  per primary dimension are required (implementation stability choice — fewer \
                  leave the primary correlation weakly identified; see the module docs)"
             ));
+        }
+    }
+    if !cfg.estimate_primary_correlation {
+        for d in 0..n_primary {
+            for other in d + 1..n_primary {
+                if (0..n_items)
+                    .all(|i| primary_map[i * n_primary + d] == primary_map[i * n_primary + other])
+                {
+                    return Err(format!(
+                        "identity primary correlation requires distinct free-loading item sets for every pair of primary columns; identical free-loading item sets at columns {d} and {other} admit orthogonal rotation"
+                    ));
+                }
+            }
         }
     }
     let mut blocks: Vec<Vec<usize>> = vec![Vec::new(); n_specific];
@@ -499,12 +517,12 @@ impl SplitMix64 {
 
 /// One item's working parameters.
 #[derive(Clone, Debug)]
-struct ItemParams {
+pub(crate) struct ItemParams {
     /// Length `n_primary`; exact `0.0` at fixed pattern positions.
-    a_p: Vec<f64>,
+    pub(crate) a_p: Vec<f64>,
     /// `None` for specific-free items.
-    a_s: Option<f64>,
-    d: Vec<f64>,
+    pub(crate) a_s: Option<f64>,
+    pub(crate) d: Vec<f64>,
 }
 
 /// Proportion-based start (start 0): free primary slopes at `1.0`,
@@ -521,6 +539,7 @@ fn initial_params(
     observed: Option<&[bool]>,
     seed: u64,
     start: usize,
+    estimate_phi: bool,
 ) -> (Vec<ItemParams>, Vec<f64>) {
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
     let mut rng = SplitMix64(seed ^ (0x9E37_79B9_7F4A_7C15u64.wrapping_mul(start as u64 + 1)));
@@ -563,7 +582,7 @@ fn initial_params(
     // Primary correlations in Fisher-z space (start 0: Phi = I).
     let m = v.n_primary * (v.n_primary.saturating_sub(1)) / 2;
     let mut z = vec![0.0f64; m];
-    if start > 0 {
+    if start > 0 && estimate_phi {
         for slot in z.iter_mut() {
             *slot = 0.25 * rng.standard_normal();
         }
@@ -583,13 +602,13 @@ fn initial_params(
     (items, z)
 }
 
-fn gh_rule(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
+pub(crate) fn gh_rule(q: usize) -> Result<(&'static [f64], &'static [f64]), String> {
     crate::quadrature::gh_rule(q).ok_or_else(|| format!("unsupported quadrature count {q}"))
 }
 
 /// Lower Cholesky factor (row-major) plus `log|Phi|`; `None` when `phi` is
 /// not positive-definite.
-fn cholesky_lower(phi: &[f64], p: usize) -> Option<(Vec<f64>, f64)> {
+pub(crate) fn cholesky_lower(phi: &[f64], p: usize) -> Option<(Vec<f64>, f64)> {
     let mut l = vec![0.0f64; p * p];
     for i in 0..p {
         for j in 0..=i {
@@ -617,7 +636,7 @@ fn cholesky_lower(phi: &[f64], p: usize) -> Option<(Vec<f64>, f64)> {
 }
 
 /// Explicit inverse from a lower Cholesky factor (`inv = L^{-T} L^{-1}`).
-fn chol_inverse(l: &[f64], p: usize) -> Vec<f64> {
+pub(crate) fn chol_inverse(l: &[f64], p: usize) -> Vec<f64> {
     // Columns of inv(L), then inv = Y'Y.
     let mut y = vec![0.0f64; p * p];
     for col in 0..p {
@@ -646,7 +665,7 @@ fn chol_inverse(l: &[f64], p: usize) -> Vec<f64> {
 /// strict-upper-triangle parameters (`rho = tanh(z)`, so `|rho| < 1` by
 /// construction; positive-definiteness is checked by the caller via
 /// [`cholesky_lower`]).
-fn phi_from_z(z: &[f64], p: usize) -> Vec<f64> {
+pub(crate) fn phi_from_z(z: &[f64], p: usize) -> Vec<f64> {
     let mut phi = vec![0.0f64; p * p];
     for i in 0..p {
         phi[i * p + i] = 1.0;
@@ -663,6 +682,27 @@ fn phi_from_z(z: &[f64], p: usize) -> Vec<f64> {
     phi
 }
 
+/// Fisher-`z` strict-upper-triangle from a correlation matrix (`z = atanh(rho)`).
+/// Unit-diagonal entries are ignored; off-diagonals must satisfy `|rho| < 1`.
+pub(crate) fn z_from_phi(phi: &[f64], p: usize) -> Result<Vec<f64>, String> {
+    let m = p * (p.saturating_sub(1)) / 2;
+    let mut z = vec![0.0f64; m];
+    let mut t = 0usize;
+    for i in 0..p {
+        for j in (i + 1)..p {
+            let rho = phi[i * p + j];
+            if !rho.is_finite() || rho.abs() >= 1.0 {
+                return Err(format!(
+                    "phi[{i},{j}] = {rho} is outside (-1, 1); cannot form Fisher-z"
+                ));
+            }
+            z[t] = rho.atanh();
+            t += 1;
+        }
+    }
+    Ok(z)
+}
+
 /// Fixed independent-Gauss-Hermite primary product grid: row-major
 /// `n_grid * n_primary` coordinates plus base log weights
 /// (`sum_d log w_d`), little-endian digit order with dimension 0 fastest
@@ -670,7 +710,12 @@ fn phi_from_z(z: &[f64], p: usize) -> Vec<f64> {
 /// rule order). Fixed-grid Gauss-Hermite quadrature is an implementation
 /// choice (the embedded rules in `crate::quadrature`); the node counts are
 /// caller arguments with no upper cap in this module.
-fn build_primary_grid(tz: &[f64], wz: &[f64], p: usize, n_grid: usize) -> (Vec<f64>, Vec<f64>) {
+pub(crate) fn build_primary_grid(
+    tz: &[f64],
+    wz: &[f64],
+    p: usize,
+    n_grid: usize,
+) -> (Vec<f64>, Vec<f64>) {
     let q = tz.len();
     let mut coords = vec![0.0f64; n_grid * p];
     let mut log_w0 = vec![0.0f64; n_grid];
@@ -697,7 +742,7 @@ fn build_primary_grid(tz: &[f64], wz: &[f64], p: usize, n_grid: usize) -> (Vec<f
 /// — that keeps the EM node set fixed (hence the fixed-grid EM
 /// monotonicity contract of Cai et al., 2011, "Maximum Marginal Likelihood
 /// Estimation" section, is preserved exactly).
-fn reweighted_log_weights(
+pub(crate) fn reweighted_log_weights(
     log_w0: &[f64],
     coords: &[f64],
     phi_inv: &[f64],
@@ -720,55 +765,6 @@ fn reweighted_log_weights(
     out
 }
 
-/// Per-item category log-prob tables at the current parameters:
-/// block items `lp[i][g * qs + h][k]`, specific-free `lp[i][g][k]`. Each
-/// cell evaluates the graded cumulative-logit category probabilities
-/// (Cai et al., 2011, eq. 6-7) at the two-tier linear predictor.
-fn fill_logprob_tables(
-    v: &Validated,
-    params: &[ItemParams],
-    coords: &[f64],
-    ts: &[f64],
-    n_grid: usize,
-    qs: usize,
-) -> Vec<Vec<f64>> {
-    let p = v.n_primary;
-    let mut tables = Vec::with_capacity(v.n_items);
-    for (i, par) in params.iter().enumerate() {
-        match par.a_s {
-            Some(a_s) => {
-                let mut lp = vec![0.0f64; n_grid * qs * v.n_cat];
-                for g in 0..n_grid {
-                    let mut prim = 0.0f64;
-                    for &dim in &v.free_primaries[i] {
-                        prim += par.a_p[dim] * coords[g * p + dim];
-                    }
-                    for h in 0..qs {
-                        let base = prim + a_s * ts[h];
-                        let probs = grm_logprobs(base, &par.d);
-                        lp[(g * qs + h) * v.n_cat..(g * qs + h + 1) * v.n_cat]
-                            .copy_from_slice(&probs);
-                    }
-                }
-                tables.push(lp);
-            }
-            None => {
-                let mut lp = vec![0.0f64; n_grid * v.n_cat];
-                for g in 0..n_grid {
-                    let mut prim = 0.0f64;
-                    for &dim in &v.free_primaries[i] {
-                        prim += par.a_p[dim] * coords[g * p + dim];
-                    }
-                    let probs = grm_logprobs(prim, &par.d);
-                    lp[g * v.n_cat..(g + 1) * v.n_cat].copy_from_slice(&probs);
-                }
-                tables.push(lp);
-            }
-        }
-    }
-    tables
-}
-
 fn log_sum_exp(xs: &[f64]) -> f64 {
     let mx = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
     if mx == f64::NEG_INFINITY {
@@ -781,29 +777,77 @@ fn log_sum_exp(xs: &[f64]) -> f64 {
     mx + acc.ln()
 }
 
+/// Primary-linear predictor contribution for item `i` at primary node `g`
+/// (Cai et al., 2011, eq. 6, p. 227: the multi-primary sum replaces their
+/// single general term).
+#[inline]
+fn item_primary_base(v: &Validated, par: &ItemParams, coords: &[f64], g: usize, i: usize) -> f64 {
+    let p = v.n_primary;
+    let mut prim = 0.0f64;
+    for &dim in &v.free_primaries[i] {
+        prim += par.a_p[dim] * coords[g * p + dim];
+    }
+    prim
+}
+
+/// Category log-prob for item `i` at primary node `g` and specific node `h`
+/// (`h` ignored / `t_s = 0` for specific-free items). Evaluates Cai et al.
+/// (2011, eq. 6–7, p. 227) on the fly so the E-step never materializes a
+/// full `n_grid * q_specific * n_cat` table per item (#1992 memory).
+#[inline]
+fn item_cat_logprob(
+    v: &Validated,
+    params: &[ItemParams],
+    coords: &[f64],
+    ts: &[f64],
+    i: usize,
+    g: usize,
+    h: usize,
+    cat: usize,
+) -> f64 {
+    let par = &params[i];
+    let prim = item_primary_base(v, par, coords, g, i);
+    let base = match par.a_s {
+        Some(a_s) => prim + a_s * ts[h],
+        None => prim,
+    };
+    grm_logprobs(base, &par.d)[cat]
+}
+
 /// One reduced E-step sweep (Gibbons et al., 2007, eq. 15: the person
 /// marginal factored per primary node): observed-data loglik, expected
 /// category counts per item (`counts[i][node][k]`, `node = g * qs + h` for
 /// block items, `node = g` for specific-free items), and the summed
 /// posterior primary second moment (`s_bar_sum[j * p + k] += sum_p sum_g
 /// post_pg z_gj z_gk`, divided by `n_persons` by the caller).
+///
+/// # Memory (exact blocked product-grid evaluation; #1992)
+///
+/// The primary product Gauss–Hermite grid (Golub & Welsch, 1969) is still
+/// fully summed — node counts remain caller-controlled with no silent cap
+/// (#1929; Lesaffre & Spiessens, 2001, warn that low `Q` can bias results).
+/// Category log-probs are evaluated on the fly, and the specific-tier
+/// scratch `block_acc` is sized `n_specific * q_specific` (one primary node
+/// at a time) rather than `n_specific * n_grid * q_specific`. Finite sums
+/// are associative, so the numerical value matches the materialised-table
+/// path up to ordinary floating-point roundoff order.
 #[allow(clippy::too_many_arguments)]
-fn e_step(
+pub(crate) fn e_step(
     v: &Validated,
     y: &[usize],
     observed: Option<&[bool]>,
-    tables: &[Vec<f64>],
+    params: &[ItemParams],
     log_w: &[f64],
     log_ws: &[f64],
     coords: &[f64],
+    ts: &[f64],
     n_grid: usize,
     qs: usize,
 ) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
     let p = v.n_primary;
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
     let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
-    for (i, par) in tables.iter().enumerate() {
-        let _ = par;
+    for i in 0..v.n_items {
         let n_nodes = if v.item_block[i].is_some() {
             n_grid * qs
         } else {
@@ -811,30 +855,30 @@ fn e_step(
         };
         counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
     }
-    // Per-person scratch.
-    let mut block_acc = vec![0.0f64; v.n_specific * n_grid * qs];
+    // Per-person scratch: O(n_grid) for primary marginals + O(S * qs) for
+    // the active primary node's specific-tier block (not O(S * n_grid * qs)).
     let mut log_i = vec![0.0f64; v.n_specific * n_grid];
     let mut gen_log = vec![0.0f64; n_grid];
     let mut log_like_g = vec![0.0f64; n_grid];
     let mut post_g = vec![0.0f64; n_grid];
     let mut tmp_h = vec![0.0f64; qs];
+    let mut block_acc_g = vec![0.0f64; v.n_specific * qs];
     let mut s_bar_sum = vec![0.0f64; p * p];
 
     let mut loglik = 0.0f64;
     for pp in 0..v.n_persons {
-        // Specific-free log-likelihood per primary node.
+        // Pass 1: person marginal per primary node (specific-free + block
+        // integrals), without storing per-(g,h) tables.
         gen_log.copy_from_slice(log_w);
         for &i in &v.specific_free {
             if !is_obs(pp, i) {
                 continue;
             }
             let yc = y[pp * v.n_items + i];
-            let lp = &tables[i];
             for g in 0..n_grid {
-                gen_log[g] += lp[g * v.n_cat + yc];
+                gen_log[g] += item_cat_logprob(v, params, coords, ts, i, g, 0, yc);
             }
         }
-        // Block accumulations: sum of item log-probs per (s, g, h).
         for (s, members) in v.blocks.iter().enumerate() {
             for g in 0..n_grid {
                 for h in 0..qs {
@@ -844,14 +888,9 @@ fn e_step(
                             continue;
                         }
                         let yc = y[pp * v.n_items + i];
-                        acc += tables[i][(g * qs + h) * v.n_cat + yc];
+                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
                     }
-                    block_acc[(s * n_grid + g) * qs + h] = acc;
-                }
-            }
-            for g in 0..n_grid {
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * n_grid + g) * qs + h];
+                    tmp_h[h] = acc;
                 }
                 log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
             }
@@ -876,7 +915,6 @@ fn e_step(
                 *slot += post * coords[g * p + j] * coords[g * p + k];
             }
         }
-        // Specific-free expected counts share the marginal primary posterior.
         for &i in &v.specific_free {
             if !is_obs(pp, i) {
                 continue;
@@ -886,14 +924,25 @@ fn e_step(
                 counts[i][g][yc] += post_g[g];
             }
         }
-        // Block items: joint (g, h) posterior marginalizing the other blocks.
+        // Pass 2: joint (g, h) posteriors for block items — recompute the
+        // active primary node's specific-tier block on the fly.
         for (s, members) in v.blocks.iter().enumerate() {
             let any_obs = members.iter().any(|&i| is_obs(pp, i));
             if !any_obs {
                 continue;
             }
             for g in 0..n_grid {
-                // Sum of the OTHER blocks' log-integrals at g.
+                for h in 0..qs {
+                    let mut acc = log_ws[h];
+                    for &i in members {
+                        if !is_obs(pp, i) {
+                            continue;
+                        }
+                        let yc = y[pp * v.n_items + i];
+                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                    }
+                    block_acc_g[s * qs + h] = acc;
+                }
                 let mut others = gen_log[g] - log_w[g];
                 for s2 in 0..v.n_specific {
                     if s2 != s {
@@ -901,8 +950,7 @@ fn e_step(
                     }
                 }
                 for h in 0..qs {
-                    let log_post =
-                        log_w[g] + block_acc[(s * n_grid + g) * qs + h] + others - log_lp;
+                    let log_post = log_w[g] + block_acc_g[s * qs + h] + others - log_lp;
                     let post = log_post.exp();
                     for &i in members {
                         if !is_obs(pp, i) {
@@ -923,18 +971,20 @@ fn e_step(
 /// Likelihood Estimation" section) with the crate's shared
 /// finite-difference-Hessian Newton convention (`grm.rs`).
 /// `params = [free primary slopes..., (a_S?), d_1..d_{K-1}]` (primary slopes
-/// in ascending-dimension order); `node_p[node]` holds the primary
-/// coordinates (row-major `n_nodes * n_primary`), `node_s[node]` the
-/// specific coordinate (`0.0` for specific-free items); `free` maps packed
-/// positions to primary dimensions.
+/// in ascending-dimension order). Node coordinates are derived on the fly
+/// from the primary product grid and specific GH nodes (`node = g * qs + h`
+/// for block items, `node = g` for specific-free) so the M-step never
+/// materializes an `n_grid * qs * n_primary` coordinate tensor (#1992).
 #[allow(clippy::too_many_arguments)]
 fn item_neg_ll_grad(
     params: &[f64],
     free: &[usize],
     has_specific: bool,
-    node_p: &[f64],
-    node_s: &[f64],
+    coords: &[f64],
+    ts: &[f64],
     n_primary: usize,
+    n_grid: usize,
+    qs: usize,
     counts: &[Vec<f64>],
     _n_cat: usize,
 ) -> (f64, Vec<f64>) {
@@ -944,21 +994,27 @@ fn item_neg_ll_grad(
     let mut ll = 0.0f64;
     let mut grad = vec![0.0f64; params.len()];
     for (node, cnt) in counts.iter().enumerate() {
+        let (g, h) = if has_specific {
+            (node / qs, node % qs)
+        } else {
+            debug_assert!(node < n_grid);
+            (node, 0)
+        };
         let mut base = 0.0f64;
         for (t, &dim) in free.iter().enumerate() {
-            base += params[t] * node_p[node * n_primary + dim];
+            base += params[t] * coords[g * n_primary + dim];
         }
         if has_specific {
-            base += params[k] * node_s[node];
+            base += params[k] * ts[h];
         }
         let lp = grm_logprobs(base, beta);
         ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
         let (g_base, g_thr) = grm_node_gradient(base, beta, cnt);
         for (t, &dim) in free.iter().enumerate() {
-            grad[t] += g_base * node_p[node * n_primary + dim];
+            grad[t] += g_base * coords[g * n_primary + dim];
         }
         if has_specific {
-            grad[k] += g_base * node_s[node];
+            grad[k] += g_base * ts[h];
         }
         for (j, gj) in g_thr.iter().enumerate() {
             grad[off + j] += gj;
@@ -978,9 +1034,11 @@ fn m_step_item(
     mut params: Vec<f64>,
     free: &[usize],
     has_specific: bool,
-    node_p: &[f64],
-    node_s: &[f64],
+    coords: &[f64],
+    ts: &[f64],
     n_primary: usize,
+    n_grid: usize,
+    qs: usize,
     counts: &[Vec<f64>],
     n_cat: usize,
     ridge: f64,
@@ -992,9 +1050,11 @@ fn m_step_item(
             &params,
             free,
             has_specific,
-            node_p,
-            node_s,
+            coords,
+            ts,
             n_primary,
+            n_grid,
+            qs,
             counts,
             n_cat,
         );
@@ -1011,9 +1071,11 @@ fn m_step_item(
                 &pj,
                 free,
                 has_specific,
-                node_p,
-                node_s,
+                coords,
+                ts,
                 n_primary,
+                n_grid,
+                qs,
                 counts,
                 n_cat,
             );
@@ -1053,9 +1115,11 @@ fn m_step_item(
                 &candidate,
                 free,
                 has_specific,
-                node_p,
-                node_s,
+                coords,
+                ts,
                 n_primary,
+                n_grid,
+                qs,
                 counts,
                 n_cat,
             );
@@ -1081,7 +1145,7 @@ fn m_step_item(
 /// Bock-Aitkin M-step principle (Cai et al., 2011, "Maximum Marginal
 /// Likelihood Estimation" section); the Fisher-`z` parametrization is an
 /// implementation choice (it confines each correlation to `(-1, 1)`).
-fn phi_neg_ll(z: &[f64], p: usize, s_bar: &[f64], n_persons: usize) -> f64 {
+pub(crate) fn phi_neg_ll(z: &[f64], p: usize, s_bar: &[f64], n_persons: usize) -> f64 {
     let phi = phi_from_z(z, p);
     let Some((l, logdet)) = cholesky_lower(&phi, p) else {
         return f64::INFINITY;
@@ -1270,31 +1334,14 @@ fn run_single_start(
     start: usize,
 ) -> Result<SingleStartOutcome, String> {
     let p = v.n_primary;
-    let (mut params, mut z_phi) = initial_params(v, y, observed, cfg.seed, start);
-    // Latent coordinates per expected-count node.
-    let mut node_p: Vec<Vec<f64>> = Vec::with_capacity(v.n_items);
-    let mut node_s: Vec<Vec<f64>> = Vec::with_capacity(v.n_items);
-    for i in 0..v.n_items {
-        if v.item_block[i].is_some() {
-            let mut pp = Vec::with_capacity(n_grid * qs * p);
-            let mut ss = Vec::with_capacity(n_grid * qs);
-            for g in 0..n_grid {
-                for &t in ts.iter().take(qs) {
-                    pp.extend_from_slice(&coords[g * p..(g + 1) * p]);
-                    ss.push(t);
-                }
-            }
-            node_p.push(pp);
-            node_s.push(ss);
-        } else {
-            let mut pp = Vec::with_capacity(n_grid * p);
-            for g in 0..n_grid {
-                pp.extend_from_slice(&coords[g * p..(g + 1) * p]);
-            }
-            node_p.push(pp);
-            node_s.push(vec![0.0; n_grid]);
-        }
-    }
+    let (mut params, mut z_phi) = initial_params(
+        v,
+        y,
+        observed,
+        cfg.seed,
+        start,
+        cfg.estimate_primary_correlation,
+    );
 
     // No pre-allocation from `max_iter`: it is caller-owned and unbounded
     // above, so `with_capacity(max_iter + 1)` could overflow; the trace grows
@@ -1311,9 +1358,9 @@ fn run_single_start(
             .ok_or_else(|| format!("primary correlation became non-PD at iteration {n_iter}"))?;
         let phi_inv = chol_inverse(&l, p);
         let log_w = reweighted_log_weights(log_w0, coords, &phi_inv, logdet, p);
-        let tables = fill_logprob_tables(v, &params, coords, ts, n_grid, qs);
-        let (ll, counts, s_bar_sum) =
-            e_step(v, y, observed, &tables, &log_w, log_ws, coords, n_grid, qs);
+        let (ll, counts, s_bar_sum) = e_step(
+            v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs,
+        );
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
@@ -1333,7 +1380,9 @@ fn run_single_start(
         for slot in s_bar.iter_mut() {
             *slot /= v.n_persons as f64;
         }
-        z_phi = m_step_phi(z_phi, p, &s_bar, v.n_persons, cfg.ridge, cfg.newton_iter);
+        if cfg.estimate_primary_correlation {
+            z_phi = m_step_phi(z_phi, p, &s_bar, v.n_persons, cfg.ridge, cfg.newton_iter);
+        }
         for i in 0..v.n_items {
             let free = &v.free_primaries[i];
             let has_specific = v.item_block[i].is_some();
@@ -1349,9 +1398,11 @@ fn run_single_start(
                 packed,
                 free,
                 has_specific,
-                &node_p[i],
-                &node_s[i],
+                coords,
+                ts,
                 p,
+                n_grid,
+                qs,
                 &counts[i],
                 v.n_cat,
                 cfg.ridge,
@@ -1389,7 +1440,9 @@ fn run_single_start(
 /// `primary_map` is row-major `n_items * n_primary` confirmatory
 /// free-slope pattern; `specific_map` is length `n_items` with `-1` for
 /// specific-free items and `0..n_specific` otherwise. Runs `n_starts` EM
-/// runs and keeps the best loglik. Returns `Err` on malformed input,
+/// runs and keeps the best loglik. `estimate_primary_correlation=false`
+/// fixes Phi to I (Cai, 2010, pp. 583-584), omitting its Fisher-z M-step;
+/// true preserves estimated Phi. Returns `Err` on malformed input or
 /// unobserved categories (unidentified ordered boundary pair under Cai et
 /// al., 2011, eq. 7), or total numerical failure; per-start
 /// non-convergence is reported through the winning run's flags, never
@@ -1399,8 +1452,7 @@ fn run_single_start(
 ///
 /// Cai, L. (2010). A two-tier full-information item factor analysis model
 /// with applications. *Psychometrika, 75*(4), 581-612.
-/// https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text not
-/// accessible — see the module source-access note)
+/// https://doi.org/10.1007/s11336-010-9178-0 (full text read, pp. 583-584)
 ///
 /// Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
 /// item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
@@ -1491,15 +1543,16 @@ pub fn fit_two_tier_grm(
     let phi = phi_from_z(&outcome.z_phi, p);
 
     // Final EAP pass for the primary tier at the winning parameters.
+    // Streaming (same blocked GH product as the E-step; #1992): no full
+    // log-prob tables, and specific-tier scratch is O(S * qs) per primary
+    // node rather than O(S * n_grid * qs).
     let (l, logdet) = cholesky_lower(&phi, p)
         .ok_or_else(|| "winning primary correlation is non-PD".to_string())?;
     let phi_inv = chol_inverse(&l, p);
     let log_w = reweighted_log_weights(&log_w0, &coords, &phi_inv, logdet, p);
-    let tables = fill_logprob_tables(&v, &params, &coords, ts, n_grid, qs);
     let mut theta_p_eap = vec![0.0f64; n_persons * p];
     let mut theta_p_sd = vec![0.0f64; n_persons * p];
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * n_items + i]);
-    let mut block_acc = vec![0.0f64; v.n_specific * n_grid * qs];
     let mut log_i = vec![0.0f64; v.n_specific * n_grid];
     let mut log_like_g = vec![0.0f64; n_grid];
     let mut tmp_h = vec![0.0f64; qs];
@@ -1511,7 +1564,7 @@ pub fn fit_two_tier_grm(
             }
             let yc = y[pp * n_items + i];
             for g in 0..n_grid {
-                gen_log[g] += tables[i][g * n_cat + yc];
+                gen_log[g] += item_cat_logprob(&v, &params, &coords, ts, i, g, 0, yc);
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
@@ -1523,12 +1576,9 @@ pub fn fit_two_tier_grm(
                             continue;
                         }
                         let yc = y[pp * n_items + i];
-                        acc += tables[i][(g * qs + h) * n_cat + yc];
+                        acc += item_cat_logprob(&v, &params, &coords, ts, i, g, h, yc);
                     }
-                    block_acc[(s * n_grid + g) * qs + h] = acc;
-                }
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * n_grid + g) * qs + h];
+                    tmp_h[h] = acc;
                 }
                 log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
             }
@@ -1558,7 +1608,11 @@ pub fn fit_two_tier_grm(
     let mut a_primary = vec![0.0f64; n_items * p];
     let mut a_specific = vec![0.0f64; n_items];
     let mut threshold = vec![0.0f64; n_items * v.m1];
-    let mut n_parameters = p * (p.saturating_sub(1)) / 2;
+    let mut n_parameters = if cfg.estimate_primary_correlation {
+        p * (p.saturating_sub(1)) / 2
+    } else {
+        0
+    };
     for (i, par) in params.iter().enumerate() {
         for &dim in &v.free_primaries[i] {
             a_primary[i * p + dim] = par.a_p[dim];
@@ -1574,7 +1628,8 @@ pub fn fit_two_tier_grm(
 
     // Per-dimension reflection canonicalization (module docs): each primary
     // over its loading items (flipping slopes, the EAP column, and the Phi
-    // row/column signs jointly), each specific within its block;
+    // row/column signs jointly only when Phi is estimated), each specific
+    // within its block; fixed Phi remains bit-exact I;
     // thresholds untouched.
     let mut phi_work = phi;
     for d in 0..p {
@@ -1597,10 +1652,12 @@ pub fn fit_two_tier_grm(
             for pp in 0..n_persons {
                 theta_p_eap[pp * p + d] = -theta_p_eap[pp * p + d];
             }
-            for q in 0..p {
-                if q != d {
-                    phi_work[d * p + q] = -phi_work[d * p + q];
-                    phi_work[q * p + d] = -phi_work[q * p + d];
+            if cfg.estimate_primary_correlation {
+                for q in 0..p {
+                    if q != d {
+                        phi_work[d * p + q] = -phi_work[d * p + q];
+                        phi_work[q * p + d] = -phi_work[q * p + d];
+                    }
                 }
             }
         }
@@ -1642,6 +1699,11 @@ pub fn fit_two_tier_grm(
         final_loglik_change: outcome.final_loglik_change,
         best_start,
         n_parameters,
+        primary_identification: if cfg.estimate_primary_correlation {
+            "correlated"
+        } else {
+            "orthogonal"
+        },
     })
 }
 
@@ -1688,6 +1750,7 @@ pub fn two_tier_grm_marginal_loglik(
     // `validate` sees them only for its own field-level bounds checks.
     // (No `..Default()` exists: Project rule, issue #1929.)
     let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: true,
         q_primary,
         q_specific,
         max_iter: 1,
@@ -1735,10 +1798,9 @@ fn reduced_loglik(
     let phi_inv = chol_inverse(&l, p);
     let log_w = reweighted_log_weights(&log_w0, &coords, &phi_inv, logdet, p);
     let params = pack_params(v, a_primary, a_specific, thresholds);
-    let tables = fill_logprob_tables(v, &params, &coords, ts, n_grid, qs);
     let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
     Ok(e_step(
-        v, y, observed, &tables, &log_w, &log_ws, &coords, n_grid, qs,
+        v, y, observed, &params, &log_w, &log_ws, &coords, ts, n_grid, qs,
     )
     .0)
 }
@@ -1781,6 +1843,7 @@ pub fn two_tier_grm_marginal_loglik_brute(
     // `validate` sees them only for its own field-level bounds checks.
     // (No `..Default()` exists: Project rule, issue #1929.)
     let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: true,
         q_primary,
         q_specific,
         max_iter: 1,
@@ -1944,7 +2007,7 @@ fn check_param_shapes(
     Ok(())
 }
 
-fn pack_params(
+pub(crate) fn pack_params(
     v: &Validated,
     a_primary: &[f64],
     a_specific: &[f64],

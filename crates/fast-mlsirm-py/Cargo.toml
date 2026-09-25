@@ -1,6 +1,6 @@
 [package]
 name = "fast-mlsirm-py"
-version = "0.11.1"
+version = "0.11.4"
 edition = "2021"
 license = "MIT"
 description = "PyO3 bindings for the fast-mlsirm Rust core."
@@ -14,6 +14,6 @@ path = "src/entrypoint.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-mlsirm-core = { path = "../mlsirm-core", default-features = false }
+mlsirm-core = { path = "../mlsirm-core" }
 numpy = "0.29.0"
 pyo3 = "0.29.0"

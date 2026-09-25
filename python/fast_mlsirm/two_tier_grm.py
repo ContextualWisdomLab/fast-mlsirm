@@ -2,7 +2,7 @@
 Cai, Yang, & Hansen, 2011; Gibbons et al., 2007).
 
 Each item's ordered categories load a caller-supplied subset of the
-correlated primary dimensions plus at most one orthogonal specific factor.
+primary dimensions plus at most one orthogonal specific factor.
 Estimation is Bock-Aitkin marginal maximum likelihood (Cai et al., 2011,
 "Maximum Marginal Likelihood Estimation" section) with dimension reduction
 over the specific tier; the numerical work runs in Rust
@@ -19,11 +19,12 @@ decisions without a paper source are marked as implementation choices):
   comparison.
 - Two-tier latent covariance ``Sigma = [[G, 0], [0, diag(S)]]``: primaries
   ``theta_P ~ MVN(0, Phi)`` with ``Phi`` a correlation matrix (unit
-  diagonal, free off-diagonals — the single-group identification), specifics
+  diagonal, optionally fixed to identity), specifics
   orthogonal ``N(0, 1)`` (Chalmers, 2026, mirt ``bfactor`` documentation,
   "Details" section, which cites Cai, 2010). The bifactor model is the
   special case of one primary dimension (same source). The two-tier model
-  itself is Cai (2010) (abstract read; full text not accessible).
+  itself is Cai (2010, pp. 583-584, full text read). Fixing ``Phi = I`` is
+  an orthogonal-primary restriction of its covariance structure.
 - Caller-supplied confirmatory primary pattern (fixed zeros are never
   estimated); rotation with correlated primaries is the caller's
   identification responsibility (implementation scope choice; Cai, 2010, is a
@@ -71,8 +72,7 @@ References (APA 7th ed.):
 
     Cai, L. (2010). A two-tier full-information item factor analysis model
         with applications. *Psychometrika, 75*(4), 581-612.
-        https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text
-        not accessible — no equation locator is drawn from it)
+        https://doi.org/10.1007/s11336-010-9178-0 (full text read)
 
     Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
         item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
@@ -151,12 +151,14 @@ class TwoTierGrmFit:
     ``a_specific`` the ``n_items`` specific slopes (``0`` for specific-free
     items, canonicalized within each block); ``threshold`` the
     ``n_items x (n_cat-1)`` strictly decreasing boundary intercepts; ``phi``
-    the ``n_primary x n_primary`` estimated primary correlation matrix (unit
+    the ``n_primary x n_primary`` primary correlation matrix (unit
     diagonal); ``theta_p_eap`` / ``theta_p_sd`` the primary-factor EAPs and
     marginal posterior SDs (``n_persons x n_primary``); ``category_counts``
     the observed ``n_items x n_cat`` counts. ``termination_reason`` is
     ``"tolerance_met"`` or ``"max_iter_reached"``; ``best_start`` the winning
-    start in ``0..n_starts``.
+    start in ``0..n_starts``. ``primary_identification`` is
+    ``"orthogonal"`` when Phi was fixed to I or ``"correlated"`` when
+    its off-diagonal entries were estimated (Cai, 2010, pp. 583-584).
     """
 
     a_primary: np.ndarray
@@ -176,6 +178,7 @@ class TwoTierGrmFit:
     final_loglik_change: float
     best_start: int
     n_parameters: int
+    primary_identification: str
 
 
 def fit_two_tier_grm(
@@ -191,6 +194,7 @@ def fit_two_tier_grm(
     tol: float,
     n_starts: int,
     seed: int,
+    primary_correlation: str = "estimate",
 ) -> TwoTierGrmFit:
     """Fit the single-group polytomous two-tier GRM (compute in Rust).
 
@@ -216,7 +220,22 @@ def fit_two_tier_grm(
 
     See the module docstring for the model, the paper basis of every
     non-obvious decision, and the APA 7th references.
+    ``primary_correlation='estimate'`` preserves the existing correlated-primary
+    fit; ``'identity'`` fixes Phi exactly to I (Cai, 2010, pp. 583-584).
+    In identity mode, distinct free-loading item sets for each primary pair
+    are necessary to rule out continuous orthogonal rotations; per-column
+    reflection canonicalization handles the remaining sign ambiguity.
+
+    References (APA 7th ed.): Cai, L. (2010). A two-tier full-information item
+    factor analysis model with applications. *Psychometrika, 75*(4), 581-612.
+    https://doi.org/10.1007/s11336-010-9178-0; Cai, L., Yang, J. S., &
+    Hansen, M. (2011). Generalized full-information item bifactor analysis.
+    *Psychological Methods, 16*(3), 221-248. https://doi.org/10.1037/a0023350.
     """
+    if not isinstance(primary_correlation, str) or primary_correlation not in (
+        "estimate", "identity"
+    ):
+        raise ValueError("primary_correlation must be 'estimate' or 'identity'")
     n_cat_int = _finite_integer_control(n_cat, "n_cat")
     if n_cat_int < 2:
         raise ValueError("n_cat must be >= 2")
@@ -259,6 +278,15 @@ def fit_two_tier_grm(
     if pmap.ndim != 2 or pmap.shape != (n_items, n_primary_int):
         raise ValueError("primary_map must be an n_items x n_primary boolean array")
     pmap_bool = np.asarray(pmap, dtype=bool)
+    if primary_correlation == "identity":
+        for d in range(n_primary_int):
+            for other in range(d + 1, n_primary_int):
+                if np.array_equal(pmap_bool[:, d], pmap_bool[:, other]):
+                    raise ValueError(
+                        "identity primary correlation requires distinct free-loading item sets "
+                        "for every pair of primary columns; identical free-loading item sets "
+                        f"at columns {d} and {other} admit orthogonal rotation"
+                    )
 
     smap = np.asarray(specific_map)
     if smap.ndim != 1 or smap.shape[0] != n_items:
@@ -309,6 +337,7 @@ def fit_two_tier_grm(
         float(tol_float),
         int(n_starts_int),
         int(seed_int),
+        primary_correlation,
     )
     return TwoTierGrmFit(
         a_primary=np.asarray(res["a_primary"], dtype=np.float64).reshape(
@@ -340,4 +369,160 @@ def fit_two_tier_grm(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+        primary_identification=str(res["primary_identification"]),
+    )
+
+
+@dataclass
+class TwoTierOakesSe:
+    """Observed-information standard errors for the two-tier GRM.
+
+    ``labels`` free-parameter names; ``information`` always present ``k x k``;
+    ``vcov``/``se`` are ``None`` when the information is not positive
+    definite (never substituted).
+
+    Implementation basis: Oakes, D. (1999). Direct calculation of the
+    information matrix via the EM algorithm. *Journal of the Royal
+    Statistical Society Series B: Statistical Methodology, 61*(2), 479-482.
+    https://doi.org/10.1111/1467-9868.00188 (eq. 6, p. 480); Cai, L., Yang,
+    J. S., & Hansen, M. (2011). Generalized full-information item bifactor
+    analysis. *Psychological Methods, 16*(3), 221-248.
+    https://doi.org/10.1037/a0023350 (eq. 6, p. 227).
+    """
+
+    labels: list
+    information: np.ndarray
+    vcov: np.ndarray | None
+    se: np.ndarray | None
+    positive_definite: bool
+    non_pd_reason: str | None
+
+
+def two_tier_oakes_se(
+    a_primary: np.ndarray,
+    a_specific: np.ndarray,
+    threshold: np.ndarray,
+    phi: np.ndarray,
+    responses: np.ndarray,
+    primary_map: np.ndarray,
+    specific_map: np.ndarray,
+    n_cat: int,
+    n_primary: int,
+    n_specific: int,
+    q_primary: int,
+    q_specific: int,
+    fd_step: float,
+    primary_correlation: str = "estimate",
+) -> TwoTierOakesSe:
+    """Observed-information SEs via Oakes (1999, eq. 6, p. 480) at given
+    two-tier parameters (valid at every point, not only the MLE).
+
+    ``q_primary``/``q_specific``/``fd_step`` are REQUIRED (no defaults;
+    ADR-0028 / #1929). Non-PD information returns ``se=None``.
+
+    Implementation basis: Oakes (1999, eq. 6, p. 480); Cai et al. (2011,
+    eq. 6, p. 227); Gibbons et al. (2007, eq. 15).
+    ``primary_correlation='identity'`` excludes fixed Phi from the information
+    matrix (Cai, 2010, pp. 583-584; Oakes, 1999, eq. 6, p. 480).
+
+    References (APA 7th ed.): Cai, L. (2010). A two-tier full-information item
+    factor analysis model with applications. *Psychometrika, 75*(4), 581-612.
+    https://doi.org/10.1007/s11336-010-9178-0; Oakes, D. (1999). Direct
+    calculation of the information matrix via the EM algorithm. *Journal of
+    the Royal Statistical Society: Series B, 61*(2), 479-482.
+    https://doi.org/10.1111/1467-9868.00188.
+    """
+    if not isinstance(primary_correlation, str) or primary_correlation not in (
+        "estimate", "identity"
+    ):
+        raise ValueError("primary_correlation must be 'estimate' or 'identity'")
+
+    n_cat_int = _finite_integer_control(n_cat, "n_cat")
+    if n_cat_int < 2:
+        raise ValueError("n_cat must be >= 2")
+    n_primary_int = _finite_integer_control(n_primary, "n_primary")
+    if n_primary_int < 1:
+        raise ValueError("n_primary must be >= 1")
+    n_specific_int = _finite_integer_control(n_specific, "n_specific")
+    if n_specific_int < 1:
+        raise ValueError("n_specific must be >= 1")
+    q_primary_int = _finite_integer_control(q_primary, "q_primary")
+    if q_primary_int < 1:
+        raise ValueError("q_primary must be >= 1")
+    q_specific_int = _finite_integer_control(q_specific, "q_specific")
+    if q_specific_int < 1:
+        raise ValueError("q_specific must be >= 1")
+    fd_float = _positive_real_control(fd_step, "fd_step")
+
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    y = y.astype(np.float64, copy=False)
+    n_persons, n_items = y.shape
+
+    pmap = np.asarray(primary_map)
+    if pmap.ndim != 2 or pmap.shape != (n_items, n_primary_int):
+        raise ValueError("primary_map must be an n_items x n_primary boolean array")
+    pmap_bool = np.asarray(pmap, dtype=bool)
+
+    smap = np.asarray(specific_map)
+    if smap.ndim != 1 or smap.shape[0] != n_items:
+        raise ValueError("specific_map must be a 1-D array of length n_items")
+    smap_int = smap.astype(np.int64, copy=False)
+
+    ag = np.asarray(a_primary, dtype=np.float64)
+    if ag.shape != (n_items, n_primary_int):
+        raise ValueError("a_primary must have shape (n_items, n_primary)")
+    as_ = np.asarray(a_specific, dtype=np.float64)
+    if as_.shape != (n_items,):
+        raise ValueError("a_specific must have length n_items")
+    th = np.asarray(threshold, dtype=np.float64)
+    if th.shape != (n_items, n_cat_int - 1):
+        raise ValueError("threshold must have shape (n_items, n_cat - 1)")
+    ph = np.asarray(phi, dtype=np.float64)
+    if ph.shape != (n_primary_int, n_primary_int):
+        raise ValueError("phi must have shape (n_primary, n_primary)")
+
+    observed = np.isfinite(y) & (y >= 0)
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "two_tier_oakes_se"):
+        raise RuntimeError("two_tier_oakes_se requires the compiled Rust core")
+
+    yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
+    res = core.two_tier_oakes_se(
+        ag.reshape(-1),
+        as_.reshape(-1),
+        th.reshape(-1),
+        ph.reshape(-1),
+        yy,
+        observed.reshape(-1),
+        pmap_bool.reshape(-1),
+        smap_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_primary_int),
+        int(n_specific_int),
+        int(n_cat_int),
+        int(q_primary_int),
+        int(q_specific_int),
+        float(fd_float),
+        primary_correlation,
+    )
+    labels = [str(v) for v in res["labels"]]
+    k = len(labels)
+    information = np.asarray(res["information"], dtype=np.float64).reshape(k, k)
+    vcov_raw = res["vcov"]
+    se_raw = res["se"]
+    vcov = None if vcov_raw is None else np.asarray(vcov_raw, dtype=np.float64).reshape(k, k)
+    se = None if se_raw is None else np.asarray(se_raw, dtype=np.float64)
+    reason_raw = res["non_pd_reason"]
+    return TwoTierOakesSe(
+        labels=labels,
+        information=information,
+        vcov=vcov,
+        se=se,
+        positive_definite=bool(res["positive_definite"]),
+        non_pd_reason=None if reason_raw is None else str(reason_raw),
     )

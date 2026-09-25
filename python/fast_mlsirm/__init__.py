@@ -249,7 +249,13 @@ from .regression import (
     chi2_sf_df1 as chi2_sf_df1,
 )
 from .regression import (
+    conditional_slope as conditional_slope,
+)
+from .regression import (
     contrast as contrast,
+)
+from .regression import (
+    design_row_dot as design_row_dot,
 )
 from .regression import (
     f_sf as f_sf,
@@ -258,7 +264,13 @@ from .regression import (
     fit_ols_hc as fit_ols_hc,
 )
 from .regression import (
+    slope_difference as slope_difference,
+)
+from .regression import (
     t_sf as t_sf,
+)
+from .regression import (
+    xwz_e_design_row as xwz_e_design_row,
 )
 from .rotation import (
     RotationCriterionInfo as RotationCriterionInfo,
@@ -338,10 +350,14 @@ __all__ = list(_legacy_init.__all__) + [
     "RatingRangeEvidence",
     "paired_rating_range_evidence",
     "chi2_sf_df1",
+    "conditional_slope",
     "contrast",
+    "design_row_dot",
     "f_sf",
     "fit_ols_hc",
+    "slope_difference",
     "t_sf",
+    "xwz_e_design_row",
     "SAMPLING_DESIGN_SCHEMA_VERSION",
     "ACHIEVED_PROPORTION_SCHEMA_VERSION",
     "SamplingStratum",

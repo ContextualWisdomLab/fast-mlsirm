@@ -2,26 +2,134 @@
 
 ## Unreleased
 
+### Changed
+
+- Polytomous person fit now requires convergence by default, including for
+  duck-typed fits with unknown convergence. `allow_unconverged=True` permits
+  diagnostic use only for legacy or duck-typed fits and marks the result
+  `valid_person_fit=False`, `diagnostic_only=True`; unconverged `PolyFipcFit`
+  always raises. Provenance retains convergence and termination fields (or
+  `"unknown"`). `PolytomousFit` retains its established standard-normal
+  EAP grid even with non-default `prior_mean`/`prior_sd`, which affect only
+  the `r0` correction. `PolyFipcFit` uses its fitted focal prior for both.
+
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 
-#### Release cut 0.11.1
+#### Release cut 0.11.4
 
-- Project version is bumped to 0.11.1 in `pyproject.toml`, `crates/mlsirm-core`,
+- Project version is bumped to 0.11.4 in `pyproject.toml`, `crates/mlsirm-core`,
   and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
-  `[0.11.1] - 2026-09-18` release section, headlined by the bifactor GRM
-  dense-quadrature EM stall fix (#1976 / #1981): zero-weight Gauss–Hermite
-  nodes are skipped in the E-step, and a bit-identical start-slope plateau is
-  reported as `numerical_em_stall` instead of a false `tolerance_met`. Also
-  folded from the post-0.11.0 deferred lineage: ADR-0028 naming/defaults
-  application for `dif`/`deltaplot`/`polytomous` (#1962), bifactor modules
-  (#1963/#1969), and core IRT fitters (#1964/#1973).
-- This cut removes the standing predecessor note `release-0.11.0-cut.md`, whose
-  substance is permanently recorded in the `[0.11.0] - 2026-09-17` section and
+  `[0.11.4] - 2026-09-18` release section, headlined by the PyPI package-description
+  boundary repair (#1993): `README.md` no longer carries internal commercial-boundary
+  vocabulary or repo-relative links that 404 on the registry page, so the corrected
+  immutable description can ship after the 0.11.3 page. The section also folds the
+  two-tier / multi-primary Oakes SE and streaming E-step memory work (#1992) and the
+  support-policy / bifactor quadrature test repairs that cleared red `main`.
+- This cut removes the standing predecessor note `release-0.11.3-cut.md`, whose
+  substance is permanently recorded in the `[0.11.3] - 2026-09-18` section and
   in git history.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
+
+## [0.11.4] - 2026-09-18
+
+### Added
+
+#### Two-tier / multi-primary Oakes SE and streaming E-step memory (#1992)
+
+- Add `two_tier_oakes_se` (Rust + PyO3 + Python) for confirmatory multi-primary
+  / G+W method-factor GRM observed-information SEs via Oakes (1999, eq. 6,
+  p. 480), with the same fail-loud non-PD contract as `bifactor_oakes_se`.
+- Stream the two-tier E-step / EAP / M-step over the full product Gauss–Hermite
+  primary grid without materializing per-item `n_grid * q_specific * n_cat`
+  log-prob tables or `n_grid * q_specific * n_primary` node tensors (#1992
+  memory), keeping caller-controlled node counts (no silent caps; #1929).
+- mirt 1.46.1 Oakes cross-check fixture on the stage-4 dataset
+  (`seed=20260917`, `quadpts=15`).
+
+### Changed
+
+#### README public-description boundary (#1993)
+
+- `README.md` is the PyPI `long_description`, so it no longer carries internal
+  commercial-boundary vocabulary. The `Commercial Readiness` section — with the
+  enterprise sales gate, the KRW 2,000,000,000 product gate, buyer packet,
+  procurement due-diligence, PR queue governance, Figma evidence sync links, and
+  the multi-step evidence build transcript — is replaced by a `Project Status`
+  section that states scope, release verification, and the security, support,
+  changelog, and ADR entry points. The same evidence machinery is unchanged and
+  stays documented in `docs/commercial_readiness.md` and
+  `docs/release_acceptance.md`.
+- Repo-relative README links now resolve to absolute GitHub URLs. Only `LICENSE`
+  and the Python sources ship in the distribution, so `docs/`, `SECURITY.md`,
+  `SUPPORT.md`, and `CHANGELOG.md` links were dead on the PyPI project page.
+
+### Fixed
+
+#### README public-description boundary (#1993)
+
+- `scripts/sales_readiness.py` gained a `public_boundary:README.md` check that
+  fails the gate when internal commercial, procurement, buyer, or monetary-target
+  vocabulary reappears in the published package description. The required
+  commercial tokens it used to demand from `README.md` are now required in
+  `docs/commercial_readiness.md` and `docs/enterprise_sales_readiness.md`, where
+  that language belongs.
+
+#### Red main: support-policy version and a stale quadrature assertion (#1993)
+
+- `SECURITY.md` and `SUPPORT.md` still named `0.10.x` as the supported pre-1.0
+  line after the 0.11 releases, so
+  `tests/test_support_policy_version_contract.py` failed on `main` and blocked
+  every PR's `python` check. Both now name `0.11.x`.
+- `tests/test_bifactor_oakes.py::test_rejects_out_of_range_caller_arguments`
+  still asserted that `q_general=5` is rejected. #1929 deliberately removed the
+  Gauss-Hermite node-count cap — `SUPPORTED_Q` membership became a plain
+  `q >= 1` check — and updated the same assertion in
+  `tests/test_bifactor_grm.py` and `tests/test_bifactor_multigroup.py` but
+  missed this file. The case now uses `q_general=0`, which is still invalid,
+  and carries the same `#1929` note as its siblings.
+
+
+## [0.11.3] - 2026-09-18
+
+### Fixed
+
+#### Bifactor GPU E-step Metal/WebGPU workgroup-dimension limit (#1987)
+
+- Split bifactor reduced E-step compute dispatches across `(x, y, z)` using the
+  adapter's runtime `max_compute_workgroups_per_dimension` so Apple Metal no
+  longer panics when a 1-D workgroup count exceeds 65535 (AC late-life
+  multigroup bootstrap at q=241 required 141573 groups on `reduce_counts_blk`).
+- Query `max_storage_buffer_binding_size` / `max_buffer_size` before allocating
+  E-step buffers and fall back to the f64 CPU path when they do not fit; no
+  hardcoded workgroup or byte caps.
+- Replace the WGSL zero-mass log-weight sentinel `-1e300` with an f32-representable
+  `-1e37` so `create_shader_module` succeeds on Metal (WGSL rejects the abstract
+  literal inside an `f32` comparison).
+- Re-enable the `mlsirm-core` default `gpu` feature on the PyO3 cdylib (it had been
+  disabled via `default-features = false` in a WIP salvage commit), so `device="gpu"`
+  again reaches the wgpu kernels instead of always falling back to CPU.
+- Extend study-precision CPU/GPU parity coverage with a q=481 leg and a wide-item
+  q=241 Metal 2-D dispatch leg gated by `STAGE5_HIGH_Q=1`.
+
+
+## [0.11.2] - 2026-09-18
+
+### Added
+
+#### Moderated (simple) slopes on the H1–H5 OLS design (#1985)
+
+- Rust + PyO3 + Python helpers for Aiken–West / Hayes pick-a-point slopes on
+  the length-10 `Y ~ X*W*Z + X*E` design: `xwz_e_design_row`,
+  `design_row_dot`, `conditional_slope`, and `slope_difference`, reusing the
+  existing HC sandwich `linear_contrast` path for SEs (no SciPy / Rscript).
+- H1–H5 parity fixtures under `tests/data/regression_h1_h5/`
+  (`beta_vcov.npz` aggregates plus coefficient/contrast CSVs) and
+  `tests/test_moderated_slopes_h1_h5_parity.py` asserting estimate and HC3 SE
+  to atol `1e-6` against `library_regression_h1_h5_contrasts.csv`.
 
 
 ## [0.11.1] - 2026-09-18
