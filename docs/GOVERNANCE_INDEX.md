@@ -15,7 +15,7 @@ security posture, test strategy, and operability artifacts. Pair with root
 | Multilevel / multi-membership / temporal contracts | Atomistic-fallacy guards, longitudinal occasions | `python/fast_mlsirm/multilevel/`, `docs/doctoring/multilevel_longitudinal_measurement.md` |
 | Doctoring (APA 7th) | Paper and standard citations for shipped claims | `docs/doctoring/` |
 | Commercial readiness | Buyer packet / 20B product narrative gates | `docs/20b_product_readiness.md`, `docs/commercial_readiness.md` |
-| Security | Bounded JSON, hostile control rejection, Strix/CodeQL CI | `SECURITY.md`, `docs/bounded_json_input_security.md` |
+| Security | Bounded JSON, hostile control rejection, Strix/CodeQL CI | `SECURITY.md`, `docs/bounded_json_input_security.md`, `docs/security/threat-model.md` |
 | Changelog fragments | Authoritative unreleased notes | `docs/changelog.d/`, `/CHANGELOG.md` |
 
 ## ADR index (lightweight)
@@ -72,6 +72,14 @@ STRIDE focus for this package:
 | GPU | Explicit parity vs CPU in CI (`gpu-smoke`) |
 | Fuzz | Atheris CSV/report/config budgets |
 | Release | `scripts/release_acceptance.py`, `scripts/sales_readiness.py` |
+
+## Code-scanning ownership
+
+GitHub-managed CodeQL Default setup is the sole CodeQL result owner. It
+supplies the required `Analyze (actions)` check on every pull request; the
+repository does not duplicate that check with a local workflow. Disabling
+Default setup would block every PR because no remaining path would provide the
+required check.
 
 ## Operability
 

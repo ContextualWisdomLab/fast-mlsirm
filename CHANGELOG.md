@@ -12,6 +12,10 @@
   `"unknown"`). `PolytomousFit` retains its established standard-normal
   EAP grid even with non-default `prior_mean`/`prior_sd`, which affect only
   the `r0` correction. `PolyFipcFit` uses its fitted focal prior for both.
+- Remove the duplicate local `.github/workflows/codeql.yml` workflow. The
+  required `Analyze (actions)` check is documented and tested as being supplied
+  by GitHub-managed CodeQL Default setup; disabling Default setup would block
+  every pull request.
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed

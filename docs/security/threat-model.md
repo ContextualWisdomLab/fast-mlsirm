@@ -114,6 +114,14 @@ Enterprise issue priority additionally requires causal outcome/intervention/cost
 
 Material PRs must update this threat model when they introduce a new trust boundary, persistence/credential authority, native execution surface, artifact mutation path, provider/evidence flow, or scientific interpretation that changes the abuse cases above. Hosted product threats are linked rather than duplicated.
 
+### Code-scanning ownership
+
+GitHub-managed CodeQL Default setup is the sole CodeQL result owner for
+this repository. It supplies the required `Analyze (actions)` check on every
+pull request, so no repository workflow duplicates that check or uploads a
+second CodeQL result. Disabling Default setup would block every PR because no
+remaining path would provide the required check.
+
 ## 8. Standards and evidence basis
 
 The architecture maps to the repository's current standards/research basis in `docs/traceability/research-basis.md`, including secure software development, AI risk/governance, architecture description, requirements engineering and testing/measurement standards. This document supports SOC 2/CSAP readiness evidence but does not claim certification.
