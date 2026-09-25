@@ -21,6 +21,18 @@ ALLOWED_DLL = re.compile(
 )
 MEMBER = re.compile(r"(?im)^\s*Loaded\s+(.+?\.(?:lib|a)\([^)]+\))\s*$")
 IMPORT = re.compile(r"(?im)^\s*([\w.+-]+\.dll)\s*$")
+REQUIRED_EVIDENCE = {
+    "openblas.dll",
+    "openblas.map",
+    "imports.txt",
+    "link.log",
+    "source-tree.txt",
+    "toolchain.txt",
+    "runner.txt",
+    "evidence.json",
+    "sbom.cdx.json",
+    "NOTICE.txt",
+}
 
 
 def sha256(path: Path) -> str:
@@ -50,15 +62,53 @@ def inspect(imports: str, link_log: str, map_text: str) -> tuple[list[str], list
     return dlls, members
 
 
+def verify_bundle(directory: Path) -> None:
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    files = manifest["files"]
+    names = [item["name"] for item in files]
+    entries = list(directory.iterdir())
+    if any(not path.is_file() or path.is_symlink() for path in entries):
+        raise ValueError("evidence directory contains a non-file or symlink")
+    actual = {path.name for path in entries} - {"manifest.json"}
+    if (
+        manifest.get("source_commit") != OPENBLAS_COMMIT
+        or len(names) != len(set(names))
+        or not REQUIRED_EVIDENCE.issubset(actual)
+        or set(names) != actual
+    ):
+        raise ValueError("incomplete or inconsistent evidence manifest")
+    for item in files:
+        if (
+            "/" in item["name"]
+            or "\\" in item["name"]
+            or item["name"] in ("", ".", "..")
+            or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"])
+        ):
+            raise ValueError("unsafe evidence manifest entry")
+        if sha256(directory / item["name"]) != item["sha256"]:
+            raise ValueError(f"evidence digest mismatch: {item['name']}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dll", type=Path, required=True)
-    parser.add_argument("--imports", type=Path, required=True)
-    parser.add_argument("--link-log", type=Path, required=True)
-    parser.add_argument("--map", type=Path, required=True)
-    parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--verify-dir", type=Path)
+    parser.add_argument("--dll", type=Path)
+    parser.add_argument("--imports", type=Path)
+    parser.add_argument("--link-log", type=Path)
+    parser.add_argument("--map", type=Path)
+    parser.add_argument("--source", type=Path)
+    parser.add_argument("--out", type=Path)
     args = parser.parse_args()
+    if args.verify_dir:
+        verify_bundle(args.verify_dir)
+        return
+    if any(
+        getattr(args, name) is None
+        for name in ("dll", "imports", "link_log", "map", "source", "out")
+    ):
+        parser.error(
+            "DLL creation requires --dll, --imports, --link-log, --map, --source, --out"
+        )
     if not args.dll.is_file() or not args.dll.stat().st_size:
         raise ValueError("candidate DLL missing or empty")
     for relpath, expected in LICENSE_HASHES.items():
@@ -96,14 +146,49 @@ def main() -> None:
             }
         },
         "components": [
-            {"type": "library", "name": "OpenBLAS", "version": OPENBLAS_COMMIT},
+            {
+                "type": "library",
+                "name": "OpenBLAS",
+                "version": OPENBLAS_COMMIT,
+                "licenses": [{"license": {"id": "BSD-3-Clause"}}],
+                "properties": [
+                    {"name": "license-sha256", "value": LICENSE_HASHES["LICENSE"]}
+                ],
+            },
             {
                 "type": "library",
                 "name": "LAPACK C translation",
                 "version": OPENBLAS_COMMIT,
+                "licenses": [
+                    {"license": {"name": "LAPACK modified BSD (pinned text in NOTICE)"}}
+                ],
+                "properties": [
+                    {
+                        "name": "license-sha256",
+                        "value": LICENSE_HASHES["lapack-netlib/LICENSE"],
+                    }
+                ],
             },
-            *({"type": "library", "name": name} for name in dlls),
-            *({"type": "library", "name": name} for name in members),
+            *(
+                {
+                    "type": "library",
+                    "name": name,
+                    "properties": [
+                        {"name": "license-status", "value": "HOLD-unverified"}
+                    ],
+                }
+                for name in dlls
+            ),
+            *(
+                {
+                    "type": "library",
+                    "name": name,
+                    "properties": [
+                        {"name": "license-status", "value": "HOLD-unverified"}
+                    ],
+                }
+                for name in members
+            ),
         ],
     }
     (args.out / "sbom.cdx.json").write_text(
@@ -114,6 +199,22 @@ def main() -> None:
         args.source / "lapack-netlib/LICENSE"
     ).read_text(encoding="utf-8")
     (args.out / "NOTICE.txt").write_text(notice, encoding="utf-8")
+    receipt_paths = sorted(
+        path
+        for path in args.out.iterdir()
+        if path.is_file() and path.name != "manifest.json"
+    )
+    manifest = {
+        "source_commit": OPENBLAS_COMMIT,
+        "license_adoption": "HOLD: MSVC/LLVM runtime terms and native parity unverified",
+        "files": [
+            {"name": path.name, "sha256": sha256(path)} for path in receipt_paths
+        ],
+    }
+    (args.out / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    verify_bundle(args.out)
 
 
 if __name__ == "__main__":

@@ -106,11 +106,13 @@ jobs:
             --link-log candidate/link.log --map candidate/openblas.map `
             --source source --out candidate
           if ($LASTEXITCODE -ne 0) { throw 'Native/license gate failed' }
+          $digest = (Get-FileHash candidate/manifest.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          Add-Content $env:GITHUB_ENV "EXPECTED_MANIFEST_SHA256=$digest"
 
-      - name: Attest gated DLL
+      - name: Attest complete evidence manifest
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
-          subject-path: candidate/openblas.dll
+          subject-path: candidate/manifest.json
 
       - name: Retain gated candidate and evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
@@ -119,6 +121,20 @@ jobs:
           path: candidate/
           if-no-files-found: error
           retention-days: 7
+
+      - name: Download uploaded evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
+        with:
+          name: openblas-win-nofortran-candidate-${{ github.sha }}
+          path: downloaded/
+
+      - name: Verify downloaded evidence against attested manifest
+        shell: pwsh
+        run: |
+          $digest = (Get-FileHash downloaded/manifest.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne $env:EXPECTED_MANIFEST_SHA256) { throw 'Downloaded manifest digest changed' }
+          python scripts/verify_windows_openblas_candidate.py --verify-dir downloaded
+          if ($LASTEXITCODE -ne 0) { throw 'Downloaded evidence digest mismatch' }
 
       - name: Retain failed-build diagnostics
         if: failure()

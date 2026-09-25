@@ -1,7 +1,9 @@
 """The candidate gate must reject missing and forbidden native evidence."""
 
 import importlib.util
+import json
 from pathlib import Path
+import tempfile
 import unittest
 
 
@@ -33,6 +35,30 @@ class CandidateGateTest(unittest.TestCase):
         ):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 GATE.inspect(*bad)
+
+    def test_evidence_manifest_detects_tampering(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            for name in GATE.REQUIRED_EVIDENCE:
+                (directory / name).write_text(name, encoding="utf-8")
+            manifest = {
+                "source_commit": GATE.OPENBLAS_COMMIT,
+                "files": [
+                    {"name": name, "sha256": GATE.sha256(directory / name)}
+                    for name in sorted(GATE.REQUIRED_EVIDENCE)
+                ],
+            }
+            (directory / "manifest.json").write_text(
+                json.dumps(manifest), encoding="utf-8"
+            )
+            GATE.verify_bundle(directory)
+            (directory / "imports.txt").write_text("altered", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                GATE.verify_bundle(directory)
+            (directory / "imports.txt").write_text("imports.txt", encoding="utf-8")
+            (directory / "unlisted.txt").write_text("extra", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                GATE.verify_bundle(directory)
 
 
 if __name__ == "__main__":
