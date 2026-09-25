@@ -1356,3 +1356,19 @@ def test_reviewed_pointer_violation_stays_hold(tmp_path, case):
     (row,) = L.rust_inventory(args, [])
     assert row["license_class"] == "HOLD"
     assert not any(f.get("pointer_notice", {}).get("satisfied") for f in row["license_files_in_artifact"])
+
+
+def test_reviewed_unicode_license_satisfies_and_conjunct(tmp_path):
+    """MIT AND Unicode-3.0 passes only with the exact reviewed Unicode text in the crate."""
+    unicode = next(r["text"] for r in REVIEWED if r["identifier"] == "Unicode-3.0")
+    for text, expected in ((unicode, "PERMISSIVE"), (unicode + "\nNo commercial use.", "HOLD")):
+        (tmp_path / expected).mkdir()
+        args = _pointer_args(tmp_path / expected, pointer=L.MIT_CANONICAL_BODY, with_apache=False,
+                             declared="MIT AND Unicode-3.0")
+        digest = _crate(Path(args.cargo_registry_cache), "dep", "1.0",
+                        {"LICENSE-MIT": L.MIT_CANONICAL_BODY, "LICENSE-UNICODE": text})
+        lock = Path(args.cargo_lock_workspace)
+        content = lock.read_text()
+        lock.write_text(content.replace(L.tomllib.loads(content)["package"][0]["checksum"], digest))
+        (row,) = L.rust_inventory(args, [])
+        assert row["license_class"] == expected
