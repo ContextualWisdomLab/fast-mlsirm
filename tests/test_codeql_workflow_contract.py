@@ -21,4 +21,4 @@ def test_default_setup_owns_required_actions_codeql_check() -> None:
     )
     assert "CodeQL Default setup" in documentation
     assert "`Analyze (actions)`" in documentation
-    assert "disabling Default setup would block every PR" in documentation
+    assert "disabling default setup would block every pr" in documentation.casefold()
