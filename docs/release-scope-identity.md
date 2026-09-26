@@ -15,27 +15,74 @@ The sdist has a separate source identity, unique PKG-INFO/pyproject members unde
 one root, and pyproject bytes equal to the release source. These checks never
 execute package code. Existing transport hashing remains chunked.
 
-`release-admission` first verifies the selected immutable artifact IDs, ZIP and
-member digests and existing distribution/sealed evidence checks. It then consumes
+`release-admission` first requires the pinned central gate job to succeed, then
+verifies the selected immutable artifact IDs, ZIP and member digests. The
+central full-set verdict must match the same run and attempt, exact release
+source, all thirteen distribution rows, and the complete Strix binding set. It
+then consumes
 the JSON from the same selected reproducibility artifact and recomputes every
 identity using exact release blobs and transported distribution bytes. Missing,
 duplicate, changed, cross-platform or promoted records refuse admission before
-the existing final trusted-full-gate HOLD. No name-only fallback is added.
+the remaining platform-scope HOLD. No name-only fallback is added.
 
 Runtime, build, dev, optional, native and bundled scope entries are explicitly
 `UNKNOWN` with null evidence. Complete declarations, an empty dependency array
 or an asserted boolean cannot certify any scope. In particular, hashing every
 Cargo lock does not establish the features/targets used in compiled wheels;
 METADATA hashes do not establish resolved marker or optional dependency closure.
-No trusted collector is connected in this increment, so there is deliberately
-no accepted positive scope sentinel. A future owner must bind collector evidence
-and full expected-set checks before adding that positive path. The source/control
-and attestation signer contracts, complete license verdicts, platform-specific
-native inspection and full same-run gate aggregation remain separate blockers.
+No trusted target-scope collector is connected yet, so there is deliberately no
+accepted positive scope sentinel. The central licence and Strix verdict now has
+its own authenticated path; it does not claim platform scope completeness.
+
+## Evidence needed to remove the scope HOLD
+
+Each of the twelve wheel build jobs and the sdist job must produce an immutable
+scope inventory from its actual target build environment. The record job must
+bind exactly thirteen inventory artifact IDs and archive digests to the
+corresponding distribution SHA, source SHA, build-environment identity, run ID
+and attempt. Admission must check that exact inventory set against the
+downloaded distributions. A missing, duplicate, stale, foreign-run, wrong-target
+or changed inventory must refuse release.
+
+The six scopes have distinct sources of truth:
+
+- **Runtime and optional Python:** record the target Python interpreter and
+  installed or otherwise fully resolved distribution files, versions, markers,
+  extras and hashes. Compare them with the wheel's `Requires-Dist` and the
+  applicable `uv.lock` resolution. The lock is universal; its mere presence is
+  not a target installation. An unavailable optional extra must remain
+  unresolved or gain an explicit supported-platform contract.
+- **Build and dev:** record the build environment's installed Python tools and
+  target-filtered Cargo resolution with the features used by the wheel build.
+  `requirements/package.txt` and `Cargo.lock` constrain these scopes but do not
+  prove which packages the build loaded. The sdist needs its own build scope.
+- **Native and bundled:** inspect every binary and packaged library in the
+  *finished* wheel on its target runner. Record imported shared-library names,
+  resolved paths or explicit system-provided identities, and hashes of bundled
+  files. A source manifest or Linux-only inspection cannot establish the macOS
+  and Windows wheels' native closure. The macOS `universal2` wheel contains two
+  architecture slices; evidence for one runner architecture does not establish
+  the other slice.
+
+The validator must require a complete, nonempty evidence record for each
+applicable scope and compare it with the exact distribution and target. Until
+target-side producers, immutable transfer and negative tests exist, every
+`UNKNOWN` entry continues to refuse admission. The current `uv.lock` and
+`requirements/package.txt` pin different NumPy versions; they describe
+different environments and must not be silently substituted for each other.
+An sdist describes future target builds rather than one installed runtime;
+its inventory must distinguish the inspected source/build environment from
+platform-dependent consumer resolutions instead of claiming one universal
+runtime closure.
+
+The tool semantics behind this split are documented by the
+[uv universal-resolution guide](https://docs.astral.sh/uv/concepts/resolution/),
+[Cargo metadata reference](https://doc.rust-lang.org/cargo/commands/cargo-metadata.html)
+and [auditwheel's binary inspection description](https://github.com/pypa/auditwheel).
 
 Backward compatibility: prior reproducibility artifacts lacking the JSON cannot
 be admitted. The trusted control commit must carry the updated helper and
-workflow together. Existing final HOLD, tag/publish ordering and central verifier
-remain. Focused synthetic tests exercise the actual workflow producer block,
-ID-bound transport and scope-consumer block; they do not run a build or certify
-real dependencies. No hosted run or full license acceptance is claimed.
+workflow together. The scope HOLD and tag/publish ordering remain. Focused
+synthetic tests exercise the actual workflow producer, ID-bound transport,
+central-verdict comparison and scope-consumer blocks; they do not certify real
+target dependencies. No hosted acceptance is claimed.
