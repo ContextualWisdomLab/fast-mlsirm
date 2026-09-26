@@ -152,6 +152,10 @@ def test_report_escapes_untrusted_text_and_exposes_accessible_table_semantics() 
     """Buyer evidence remains text-visible, escaped, and table-accessible."""
     html_text, _ = render_conformance_report(_canonical_json(_executed_inventory()))
 
+    assert '<main id="main-content" tabindex="-1">' in html_text
+    assert '<a href="#main-content" class="skip-link">Skip to main content</a>' in html_text
+    assert ".skip-link { position: absolute;" in html_text
+
     assert "<script>unsafe</script>" not in html_text
     assert "<script>alert('x')</script>" not in html_text
     assert "&lt;script&gt;unsafe&lt;/script&gt;" in html_text
