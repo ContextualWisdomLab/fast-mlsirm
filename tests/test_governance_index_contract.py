@@ -1,5 +1,6 @@
 """Require the living governance index and its doctoring note."""
 
+import re
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -29,4 +30,4 @@ def test_governance_doctoring_cites_multilevel_literature() -> None:
     """Doctoring note must cite multilevel / LSIRM literature."""
     note = _DOC.read_text(encoding="utf-8")
     assert "Fox" in note and "Jeon" in note and "Kang" in note
-    assert "https://doi.org/" in note
+    assert re.search(r"(?<!\S)https://doi\.org/10\.\d{4,9}/\S+", note)
