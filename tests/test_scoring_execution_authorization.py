@@ -12,7 +12,6 @@ from fast_mlsirm.scoring import (
     AssessmentSpecError,
     EnginePolicy,
     ObservationStatus,
-    StaticFixtureEngine,
     artifact_digest,
     build_assessment_spec,
     build_score_observation,

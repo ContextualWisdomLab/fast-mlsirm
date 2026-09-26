@@ -16,11 +16,9 @@ import pytest
 
 import fast_mlsirm.fitstats as fm
 from fast_mlsirm.config import FitConfig
-from fast_mlsirm.fit import fit
 
 
 def _pure_chi2_sf(x: float, df: float) -> float:
-    import math
     if df <= 0:
         return float("nan")
     # use public pure helper still on module if present

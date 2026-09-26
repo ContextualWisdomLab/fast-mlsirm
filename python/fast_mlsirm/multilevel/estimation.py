@@ -20,7 +20,6 @@ from dataclasses import dataclass
 import numpy as np
 
 from .._multilevel_core_loader import multilevel_core
-from ._validation import exact_integer
 from .contracts import ContextMembershipDesign, LongitudinalDesign, LongitudinalStateKind
 
 ContextKey = tuple[str, str]

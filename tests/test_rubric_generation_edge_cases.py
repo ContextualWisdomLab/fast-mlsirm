@@ -12,7 +12,6 @@ from fast_mlsirm.rubric import (
     CandidateValidationError,
     DifficultyBand,
     EvidenceMode,
-    GenerationRequest,
     ResponseFormat,
     RubricLevel,
     RubricSpecification,

@@ -7,7 +7,6 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-import fast_mlsirm.equating as E
 from fast_mlsirm.equating import (
     CircleArcResult,
     EquateResult,
