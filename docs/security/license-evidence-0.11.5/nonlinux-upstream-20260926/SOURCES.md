@@ -28,5 +28,17 @@ These are evidence inputs, not independent legal approvals.
 | `spirv@0.4.0+sdk-1.4.341.0` | `d9571ea910ebd84c86af4b3ed27f9dbdc6ad06f17c5f96146b2b671e2976744f` | `8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4` | `LICENSE` | [raw](https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/LICENSE) | `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30` |
 
 The `objc2` `LICENSE.md` is explanatory and contains an Apple SDK caveat; it is not a complete MIT/Zlib/Apache grant. Its rows remain HOLD.
-The `jni-sys` Apache file changes bracket notation in the appendix outside an SPDX template variable; its row remains HOLD.
+The `jni-sys` Apache file changes bracket notation in the appendix outside an SPDX template variable; its exact normalized hash was separately reviewed and accepted, as recorded in `REVIEW.md`.
 The existing `profiling` and `spirv` files are copied unchanged from the earlier pinned evidence.
+
+## Python companion files in exact wheels
+
+| Wheel SHA256 | Member | Member SHA256 | Role |
+| --- | --- | --- | --- |
+| `5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e` (`packaging 26.2`) | [`licenses/LICENSE`](python-companions/packaging-26.2-LICENSE) | `cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48` | States that either `LICENSE.APACHE` or `LICENSE.BSD` applies; both complete grants are present in the same wheel. |
+| `81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176` (`pygments 2.20.0`) | [`licenses/AUTHORS`](python-companions/pygments-2.20.0-AUTHORS) | `0db603a5f4499f690c4425477ff664c166da325d3acc3b5a8d4de3db072443d0` | Lists contributors named by the complete BSD license in the same wheel; contains no separate grant. |
+
+Both files were extracted without modification from the hash-bound PyPI wheels
+in `py-exact-0115-20260926/inputs/pypi-art` on s1. The verifier accepts
+each companion only with its exact wheel hash, member path and member hash,
+and only while the stated complete sibling grant remains verified.

@@ -1500,6 +1500,28 @@ def test_wheel_directory_entry_is_not_a_license_candidate(tmp_path):
     assert paths == ["pkg-1.0.dist-info/licenses/LICENSE"]
 
 
+def test_reviewed_python_companion_requires_exact_member_and_sibling_grant(tmp_path, monkeypatch):
+    wheel = tmp_path / "pkg-1.0-py3-none-any.whl"
+    companion = "Names of contributors, without license terms."
+    path = "pkg-1.0.dist-info/licenses/AUTHORS"
+    with zipfile.ZipFile(wheel, "w") as zf:
+        zf.writestr("pkg-1.0.dist-info/METADATA", "Metadata-Version: 2.4\nName: pkg\nVersion: 1.0\n\n")
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+        zf.writestr(path, companion)
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    key = (digest, path, hashlib.sha256(companion.encode()).hexdigest())
+    monkeypatch.setitem(L.REVIEWED_PYTHON_COMPANIONS, key, ("MIT",))
+    files = {f["path"]: f for f in L.python_artifact_evidence(wheel)["license_files"]}
+    assert files[path]["candidate_verified"] is True
+    assert files[path]["reviewed_companion_grants"] == ["MIT"]
+    monkeypatch.setitem(L.REVIEWED_PYTHON_COMPANIONS, key, ("BSD-2-Clause",))
+    files = {f["path"]: f for f in L.python_artifact_evidence(wheel)["license_files"]}
+    assert files[path]["candidate_verified"] is False
+    monkeypatch.delitem(L.REVIEWED_PYTHON_COMPANIONS, key)
+    files = {f["path"]: f for f in L.python_artifact_evidence(wheel)["license_files"]}
+    assert files[path]["candidate_verified"] is False
+
+
 @pytest.mark.parametrize("pinned", [True, False])
 def test_external_runtime_dependency_is_pinned_to_its_wheel(tmp_path, monkeypatch, pinned):
     """Vendored-native findings become notes only for the exact pinned wheel of an external dependency."""

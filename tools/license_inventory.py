@@ -249,6 +249,19 @@ EXTERNAL_RUNTIME_DEPENDENCIES = {
     },
 }
 
+# Exact wheel members that explain or attribute a grant supplied in another
+# license file in the same hash-bound wheel. These are not standalone grants.
+REVIEWED_PYTHON_COMPANIONS = {
+    ("5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e",
+     "packaging-26.2.dist-info/licenses/LICENSE",
+     "cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48"):
+        ("Apache-2.0", "BSD-2-Clause"),
+    ("81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176",
+     "pygments-2.20.0.dist-info/licenses/AUTHORS",
+     "0db603a5f4499f690c4425477ff664c166da325d3acc3b5a8d4de3db072443d0"):
+        ("BSD-2-Clause",),
+}
+
 
 POINTER_NOTICES = {
     "9fba058782d4dbf4eda66df225dfc11e8afdc5618f6bc36c2dafbb087cda3971": ("Apache-2.0", "MIT"),  # unicode-width COPYRIGHT 23860c2a
@@ -1187,7 +1200,16 @@ def python_artifact_evidence(path: Path) -> dict:
             candidate["verified_notice_text"] = sorted({
                 label for stanza in file_stanzas for label in stanza["Verified-Text"]
             })
-            candidate["candidate_verified"] = bool(candidate["verified_standard_text"]) or (
+            companion_grants = REVIEWED_PYTHON_COMPANIONS.get(
+                (ev["sha256"], candidate["path"], candidate["sha256"]), ()
+            )
+            companion_verified = bool(companion_grants) and all(
+                any(label in other["verified_standard_text"]
+                    for other in ev["license_files"] if other is not candidate)
+                for label in companion_grants
+            )
+            candidate["reviewed_companion_grants"] = list(companion_grants) if companion_verified else []
+            candidate["candidate_verified"] = bool(candidate["verified_standard_text"]) or companion_verified or (
                 candidate["notice_file_fully_consumed"]
                 and bool(file_stanzas)
                 and all(

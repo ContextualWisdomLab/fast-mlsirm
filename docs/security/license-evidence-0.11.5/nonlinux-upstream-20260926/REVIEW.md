@@ -36,3 +36,37 @@ The verifier at this branch head was run against the same 0.11.5 inputs with the
 The 19 changed verdicts are the 12 Windows rows, `glutin_wgl_sys`, `jni-sys` ×2, `jni-sys-macros`, `gl_generator`, `khronos_api`, and `ndk-sys`. The remaining 11 are the ten `objc2` family rows above plus `android_system_properties`. Their separate text or publication evidence needs a decision before a non-Linux gate can pass; this review does not turn a pointer or Apache header into a full license text.
 
 Reproduction inputs and outputs on s1: `/data/orca/workspaces/fmls-license-evidence/nonlinux-upstream-20260926/` (`rerun-current.sh`, `current-union/`, `current-linux/`).
+
+## Target-filtered binding graph (2026-09-26 follow-up)
+
+The locked 0.11.5 binding manifest was resolved offline with Cargo 1.97.1 using
+`cargo metadata --offline --locked --format-version 1 --filter-platform <triple>`.
+Each JSON input and verifier result is retained beside the rerun script on s1.
+The counts below include only rows in that target's binding resolve graph;
+the inventory's unfiltered `cargo_by_class` summary also includes workspace rows.
+
+| Target triple | Binding rows | Permissive | HOLD | Metadata SHA256 | Inventory SHA256 |
+| --- | ---: | ---: | ---: | --- | --- |
+| `x86_64-apple-darwin` | 114 | 104 | 10 | `bf0bff04e9c9a9324db2d05dd3bdcd6ed7c81e93755e5161e09fb008b1a5931d` | `6d964bdcb7fe95ab30df9b4af580a39d05438425e38cb0ac27da4a2fb888bc92` |
+| `aarch64-apple-darwin` | 114 | 104 | 10 | `1181921e0de383aa2a1db14d9823e40f790f88f2518e28c7f1ffa8d0fe147398` | `7b8a8ffee1ce7d544ad84dd14de1773a3d2660171805a6babc8ab000de24d757` |
+| `x86_64-pc-windows-msvc` | 119 | 119 | 0 | `87d3843c75d371a28d6bc5ad0370de76b2fa0b6a5a2e5f1600ff67025dd7734e` | `55dc00adb5c28086d726e1d1d74749da8021cee7bf89b224e2da2660d78e108d` |
+| `aarch64-unknown-linux-gnu` | 103 | 103 | 0 | `c1da18d400f771d38156998b91a75a2a1e2cad3b44c13198106c22c18aea18b3` | `c161caf7dd8ea4ab45719e0cf42516fee258c111f1ec4169b0c68fb581146c91` |
+
+All four verifier runs exited zero with no completeness gaps. Both macOS
+graphs contain the ten `objc2` family HOLD rows listed above. The Android
+header row is outside these four graphs; that does not clear its union HOLD.
+These target-resolve results alone do not prove which optional crates are
+present in a particular built wheel. No macOS gate verdict is issued.
+
+## Python companion-file follow-up
+
+The exact `packaging 26.2` and `pygments 2.20.0` wheel members described in
+[`SOURCES.md`](SOURCES.md) are explanatory and attribution files. Their
+acceptance requires the complete named grants in the same hash-bound wheel;
+the member hash or wheel hash changing returns them to HOLD. The verifier's
+new union rerun exited zero with no completeness gaps, and changed only these
+two Python rows from HOLD to PERMISSIVE. Python HOLD is now **6**; Cargo union
+HOLD remains **11**. The new inventory is
+`current-python-companions/inventory.json` on s1, SHA256
+`19d81c75e85511a29b3185421e12c1436f9e67072c3d8e7dcbead8ac1f74c246`.
+The focused generator and SPDX tests passed: 238 tests.
