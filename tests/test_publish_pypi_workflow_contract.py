@@ -523,7 +523,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@c203246ce6eb12dc601a8cb6d403c82d43fd2776" in central
+    assert "release-dependency-license-strix-gate.yml@4bc9aeb306aef7c60939b0741648dfa004984a09" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -566,11 +566,16 @@ def _admission_fixture(root: Path) -> dict:
         f"# release {_RELEASE_TAG} @ {_RELEASE_COMMIT}, SOURCE_DATE_EPOCH=1\n"
         "target\tbyte_verified\tverification\tsha256\trebuild_sha256\tfile\tbuild_env\n" + rows
     )
+    for leg in files:
+        folder = root / "scope-evidence" / f"repro-digest-{leg}"
+        folder.mkdir(parents=True)
+        row = next(line for line in rows.splitlines() if line.startswith(f"{leg}\t"))
+        (folder / f"{leg}.tsv").write_text(row + "\n")
     artifacts = [f"dist-wheel-{leg}" for leg in legs] + [
         "dist-sdist", "reproducibility-record", "release-dependency-sealed-evidence",
         "release-dependency-sealed-evidence--full-set-verdict",
-    ]
-    for name in artifacts[-2:]:
+    ] + [f"repro-digest-{leg}" for leg in files]
+    for name in ("release-dependency-sealed-evidence", "release-dependency-sealed-evidence--full-set-verdict"):
         bundle = root / "evidence" / name
         bundle.mkdir(parents=True)
         (bundle / "placeholder.txt").write_text("inert test artifact\n")
@@ -597,6 +602,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
             # Missing files still reach the admission check as an empty mismatch.
             artifacts.append((name, [path] if path.exists() else []))
         artifacts += [(p.name, list(p.iterdir())) for p in (root / "evidence").iterdir()]
+        artifacts += [(p.name, list(p.iterdir())) for p in (root / "scope-evidence").iterdir()]
         recorded_names = {line.split("\t")[5] for line in record[2:]}
         extras = [p for p in (root / "dist").iterdir() if p.name not in recorded_names]
         for name, paths in artifacts:
@@ -632,12 +638,19 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
         identity = {"source_repository": "owner/repo", "source_sha": _RELEASE_COMMIT,
                     "control_sha": "d" * 40, "run_id": _RUN_ID, "run_attempt": 2}
         manifest = {"schema_version": 1, **identity, "distributions": distributions}
+        scope_set = {"schema_version": 1, **identity, "evidence": [
+            {"leg": leg, "artifact_id": by_name[f"repro-digest-{leg}"]["id"],
+             "artifact_name": f"repro-digest-{leg}",
+             "artifact_digest": by_name[f"repro-digest-{leg}"]["digest"]}
+            for leg in sorted([*_expected_legs(), "sdist"])
+        ]}
         record_artifact = by_name["reproducibility-record"]
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             for path in (root / "record").iterdir():
                 archive.writestr(path.name, path.read_bytes())
             archive.writestr("release-gate-distribution-set.json", json.dumps(manifest))
+            archive.writestr("release-scope-evidence-set.json", json.dumps(scope_set))
             archive.writestr("release-scope-identities.json", "[]")
         archives[record_artifact["id"]] = buffer.getvalue()
         record_artifact["digest"] = "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()
@@ -736,6 +749,9 @@ def test_distribution_set_manifest_binds_exact_same_run_bytes(tmp_path: Path) ->
     assert (manifest["run_id"], manifest["run_attempt"]) == (_RUN_ID, 2)
     assert len(manifest["distributions"]) == 13
     assert len({row["artifact_id"] for row in manifest["distributions"]}) == 13
+    scope_set = json.loads((tmp_path / "ok/release-scope-evidence-set.json").read_text())
+    assert len(scope_set["evidence"]) == 13
+    assert not {row["artifact_id"] for row in scope_set["evidence"]} & {row["artifact_id"] for row in manifest["distributions"]}
 
     def tamper_sdist(root: Path, items: list[dict]) -> list[dict]:
         (root / "dist/pkg-1.2.3.tar.gz").write_bytes(b"altered")
@@ -749,6 +765,8 @@ def test_distribution_set_manifest_binds_exact_same_run_bytes(tmp_path: Path) ->
         ("duplicate-id", lambda root, items: [dict(a, id=1) if a["name"] == "dist-sdist" else a for a in items]),
         ("extra", lambda root, items: items + [dict(items[0], name="dist-wheel-extra")]),
         ("tampered", tamper_sdist),
+        ("missing-scope", lambda root, items: [a for a in items if a["name"] != "repro-digest-sdist"]),
+        ("stale-scope", lambda root, items: [dict(a, created_at="2026-09-26T11:59:59Z") if a["name"] == "repro-digest-sdist" else a for a in items]),
     ]
     for name, mutate in cases:
         result = run(name, mutate)
@@ -787,6 +805,7 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
     refuse_set("duplicate", lambda l: l + [l[0]], "duplicate artifact name")
     refuse_set("extra-dist", lambda l: l + [dict(l[0], name="dist-wheel-extra")], "unexpected publishable")
     refuse_set("missing-dist", lambda l: [a for a in l if a["name"] != "dist-sdist"], "dist-sdist: not uploaded")
+    refuse_set("missing-scope", lambda l: [a for a in l if a["name"] != "repro-digest-sdist"], "repro-digest-sdist: not uploaded")
     refuse_set("missing-ids", lambda l: [{k: v for k, v in a.items() if k != "id"} for a in l], "immutable artifact ID")
     refuse_set("duplicate-ids", lambda l: [dict(a, id=1) for a in l], "immutable artifact ID")
 
@@ -812,6 +831,16 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
                  "reproducibility record is not bound")
     refuse_bytes("record-unverified", lambda r, f: record_mutation(r, "\ttrue\t", "\tfalse\t"),
                  "record row is not byte-verified")
+    refuse_bytes(
+        "changed-scope-row",
+        lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / f"{first}.tsv").write_text("forged\n"),
+        "scope evidence row differs from reproducibility record",
+    )
+    refuse_bytes(
+        "extra-scope-member",
+        lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / "extra.json").write_text("{}"),
+        "scope evidence artifact members differ from build output",
+    )
 
 
 
@@ -874,9 +903,8 @@ def test_release_admission_ignores_legitimate_non_distribution_artifacts(tmp_pat
     legs = _expected_legs()
     diagnostics = [
         f"release-dependency-{kind}-report--license-evidence-{leg}" for kind in ("license", "gate") for leg in legs
-    ] + [f"license-pair-{leg}" for leg in legs] + [f"repro-digest-{leg}" for leg in legs] + [
-        "repro-digest-sdist"] + [f"repro-rebuild-{leg}" for leg in legs] + ["repro-rebuild-sdist"]
-    assert len(diagnostics) == 24 + 12 + 13 + 13
+    ] + [f"license-pair-{leg}" for leg in legs] + [f"repro-rebuild-{leg}" for leg in legs] + ["repro-rebuild-sdist"]
+    assert len(diagnostics) == 24 + 12 + 13
 
     def listing_with(root: Path, extra: list[str]) -> list[dict]:
         listing = _admission_fixture(root)["listing"]

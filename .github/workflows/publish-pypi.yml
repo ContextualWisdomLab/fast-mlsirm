@@ -759,11 +759,35 @@ jobs:
               distributions.append({"leg": leg, "file": row["file"], "sha256": sha,
                                     "artifact_id": artifact_id, "artifact_name": name,
                                     "artifact_digest": digest})
+          scope_evidence = []
+          expected_scope_names = {f"repro-digest-{leg}" for leg in expected_legs}
+          if {name for name in seen if name.startswith("repro-digest-")} != expected_scope_names:
+              raise SystemExit("scope evidence artifacts differ from the exact 13-leg set")
+          for leg in sorted(expected_legs):
+              name = f"repro-digest-{leg}"
+              artifact = seen[name]
+              artifact_id, digest = artifact.get("id"), artifact.get("digest")
+              if (type(artifact_id) is not int or artifact_id <= 0 or artifact_id in ids
+                      or not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                      or (artifact.get("workflow_run") or {}).get("id") != run_id
+                      or (artifact.get("workflow_run") or {}).get("head_sha") != control_sha
+                      or timestamp(artifact.get("created_at")) <= attempt_started
+                      or artifact.get("expired") is not False):
+                  raise SystemExit(f"{name}: missing or foreign immutable artifact identity")
+              ids.add(artifact_id)
+              scope_evidence.append({"leg": leg, "artifact_id": artifact_id,
+                                     "artifact_name": name, "artifact_digest": digest})
           manifest = {"schema_version": 1, "source_repository": os.environ["GITHUB_REPOSITORY"],
                       "source_sha": os.environ["RELEASE_COMMIT"], "control_sha": control_sha, "run_id": run_id,
                       "run_attempt": attempt, "distributions": distributions}
           Path("release-gate-distribution-set.json").write_text(
               json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
+          )
+          scope_set = {"schema_version": 1, "source_repository": os.environ["GITHUB_REPOSITORY"],
+                       "source_sha": os.environ["RELEASE_COMMIT"], "control_sha": control_sha,
+                       "run_id": run_id, "run_attempt": attempt, "evidence": scope_evidence}
+          Path("release-scope-evidence-set.json").write_text(
+              json.dumps(scope_set, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
           )
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"selected_wheel_filename={rows['x86_64-unknown-linux-gnu-py3.12']['file']}\n")
@@ -777,11 +801,12 @@ jobs:
             reproducibility-record.tsv
             release-scope-identities.json
             release-gate-distribution-set.json
+            release-scope-evidence-set.json
 
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@c203246ce6eb12dc601a8cb6d403c82d43fd2776
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@4bc9aeb306aef7c60939b0741648dfa004984a09
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
@@ -866,6 +891,7 @@ jobs:
                       raise SystemExit(f"duplicate artifact name in this run: {name}")
                   seen[name] = artifact
           distributions = {"dist-sdist"} | {f"dist-wheel-{leg}" for leg in legs}
+          scope_evidence = {"repro-digest-sdist"} | {f"repro-digest-{leg}" for leg in legs}
           evidence = {os.environ["VERDICT_NAME"], os.environ["SEALED_NAME"]}
           failures = []
           selected = []
@@ -873,7 +899,7 @@ jobs:
           missing_evidence = sorted(evidence - set(seen))
           if missing_evidence:
               failures.append(f"central release evidence missing: {missing_evidence}")
-          for name in sorted(distributions | evidence | {"reproducibility-record"}):
+          for name in sorted(distributions | scope_evidence | evidence | {"reproducibility-record"}):
               artifact = seen.get(name)
               if artifact is None:
                   failures.append(f"{name}: not uploaded by this run")
@@ -907,7 +933,8 @@ jobs:
               selected.append({"id": artifact_id, "name": name, "digest": artifact.get("digest")})
           unexpected = sorted(
               name for name in seen
-              if name.startswith(("dist-", "license-evidence-")) and name not in distributions | evidence
+              if name.startswith(("dist-", "repro-digest-", "license-evidence-"))
+              and name not in distributions | scope_evidence | evidence
           )
           failures += [f"{name}: unexpected publishable or evidence artifact" for name in unexpected]
           if failures:
@@ -1019,9 +1046,33 @@ jobs:
           recorded = {row["file"]: row["sha256"] for row in rows.values()}
           if dist != recorded:
               failures.append(f"distribution files differ from the record: files={sorted(dist)!r}")
-
           if failures:
               raise SystemExit("release admission refused:\n" + "\n".join(failures))
+
+          scope_set = json.loads(Path("downloaded/reproducibility-record/release-scope-evidence-set.json").read_text())
+          scope_names = {f"repro-digest-{leg}" for leg in rows}
+          expected_scope_set = {
+              "schema_version": 1, "source_repository": os.environ["REPOSITORY"],
+              "source_sha": commit, "control_sha": os.environ["GITHUB_SHA"],
+              "run_id": int(os.environ["RUN_ID"]), "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "evidence": [
+                  {"leg": leg, "artifact_id": item["id"], "artifact_name": name,
+                   "artifact_digest": item["digest"]}
+                  for leg in sorted(rows)
+                  for name in [f"repro-digest-{leg}"]
+                  for item in selected if item["name"] == name
+              ],
+          }
+          if (scope_set != expected_scope_set or len(scope_set.get("evidence", [])) != 13
+                  or {item["name"] for item in selected if item["name"].startswith("repro-digest-")} != scope_names):
+              raise SystemExit("scope evidence set differs from selected same-run artifacts")
+          for leg, row in rows.items():
+              name = f"repro-digest-{leg}"
+              members = list((Path("downloaded") / name).iterdir())
+              if len(members) != 1 or members[0].name != f"{leg}.tsv":
+                  raise SystemExit(f"{leg}: scope evidence artifact members differ from build output")
+              if members[0].read_text(encoding="utf-8") != "\t".join(row[key] for key in header) + "\n":
+                  raise SystemExit(f"{leg}: scope evidence row differs from reproducibility record")
 
           # The central job result is required by `needs`; its immutable verdict
           # must independently match the record and all current-attempt artifacts.
