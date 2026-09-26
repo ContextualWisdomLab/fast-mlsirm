@@ -632,4 +632,33 @@ mod tests {
         assert!((got.primary_eap[1] - 0.5 * got.primary_eap[0]).abs() < 1e-10);
         assert!((got.lz[0] - expected.lz[0]).abs() < 1e-10);
     }
+
+    #[test]
+    fn two_primary_cross_loading_with_specific_block_scores() {
+        let input = MultidimPersonFitInput {
+            y: &[2, 2, 1],
+            observed: None,
+            group: &[0],
+            specific_map: &[0, 0, -1],
+            a_primary: &[0.8, 0.4, 0.7, 0.5, 0.0, 0.9],
+            a_specific: &[1.0, 0.8, 0.0],
+            threshold: &[1.0, -1.0, 1.0, -1.0, 1.0, -1.0],
+            primary_mean: &[0.0, 0.0],
+            primary_cov: &[1.0, 0.3, 0.3, 1.0],
+            specific_sd: &[1.0],
+            n_persons: 1,
+            n_items: 3,
+            n_primary: 2,
+            n_specific: 1,
+            n_groups: 1,
+            n_cat: 3,
+            q_primary: 121,
+            q_specific: 121,
+            flag_threshold: -1.5,
+        };
+        let got = person_fit_multidim(&input).unwrap();
+        assert!(got.lz[0].is_finite());
+        assert!(got.primary_eap.iter().all(|v| v.is_finite()));
+        assert!(got.specific_eap[0] > 0.0);
+    }
 }
