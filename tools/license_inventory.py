@@ -223,6 +223,11 @@ def verified_standard_text(text: str) -> list[str]:
         "3a31f72fe7c9baf376c3da1d7d0154366be8ef0bab0a3f7531db4c2abf1ad062": "Zlib",
         "444399c3da8f18f32878c6f8b7348110f33985558ca7abe98d4c8ed26f013109": "Zlib",
         # 66 copyright-header/appendix-only variants, reviewed in s1 text-review-20260926.
+        "f42a00ac54d036890559853a40f95622ab3e63d52173f5714284134b2af11e3c": "Apache-2.0 WITH LLVM-exception",  # target-lexicon-0.13.5/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review
+        "a66ace7bb1d24a3290b823ae25fcd5f95fc5a3dd5af95c45dd77dc37ee593bcd": "BSD-2-Clause",  # numpy-0.29.0/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review
+        "272a160fd2085e79bc5aa395e9fbbc267d0830e5b66757677a87ce93f4401727": "MIT",  # ndarray-0.17.2/LICENSE-MIT: coordinator verdict (user-delegated, 2026-09-26), not legal review
+        "f7539d10705fa2869dabf2d5ecaf51ed026d337e26865967e8d431a30b71833a": "MIT",  # matrixmultiply-0.3.11/LICENSE-MIT: coordinator verdict (user-delegated, 2026-09-26), not legal review
+        "02b0b107669e54b03f028ee6b07c3e35be05a7fe60495a5933a55324885abf0f": "Apache-2.0",  # ash-0.38.0+1.3.281/LICENSE-APACHE: coordinator verdict (user-delegated, 2026-09-26), not legal review
         "121aea2578cd98e64faa0ca32acfd4f83551b1ecd293730a9541a4f5a37bf85c": "ISC",  # libloading-0.8.9/LICENSE: ISC with copyright header only (no-template-reclass STANDARD_COPYRIGHT_ONLY)
         "2069c208cba553e43cd0b730df8a0c10bf1b1101b96f661e2f1307c73b9722e3": "Unlicense",  # UNLICENSE 7e12e5df, byte-identical to SPDX v3.29.0 (memchr/termcolor/winapi-util)
         "21b7ffe46249356209d64748a5179bf37a704880d8af02c77bd65d20800503f0": "Unicode-3.0",  # unicode-ident LICENSE-UNICODE f7db8105, byte-identical to SPDX v3.29.0
