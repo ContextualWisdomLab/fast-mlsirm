@@ -628,6 +628,67 @@ _SET_STEP = "Require the exact same-run artifact set"
 _BYTES_STEP = "Admit exactly the verified bytes of release_commit"
 
 
+def test_distribution_set_manifest_binds_exact_same_run_bytes(tmp_path: Path) -> None:
+    import json
+
+    job = _job_block(_workflow_text(), "reproducibility-record")
+    assert "actions: read" in job
+    assert "distribution_set_artifact_id: ${{ steps.record-upload.outputs.artifact-id }}" in job
+    assert "release-gate-distribution-set.json" in job
+    script = _step_python(job, "Bind all verified distribution bytes to immutable artifact IDs")
+    base_env = {**os.environ, "EXPECTED_WHEEL_LEGS": " ".join(_expected_legs()),
+                "RELEASE_COMMIT": _RELEASE_COMMIT, "RELEASE_TAG": _RELEASE_TAG,
+                "GITHUB_REPOSITORY": "owner/repo", "GITHUB_RUN_ID": str(_RUN_ID),
+                "GITHUB_RUN_ATTEMPT": "2", "GITHUB_SHA": "d" * 40}
+
+    def run(name: str, mutate=None) -> subprocess.CompletedProcess[str]:
+        root = tmp_path / name
+        fixture = _admission_fixture(root)
+        (root / "reproducibility-record.tsv").write_bytes(
+            (root / "record/reproducibility-record.tsv").read_bytes()
+        )
+        listing = [dict(item, workflow_run={"id": _RUN_ID, "head_sha": "d" * 40},
+                        created_at="2026-09-26T12:01:00Z") for item in fixture["listing"]]
+        if mutate is not None:
+            listing = mutate(root, listing)
+        (root / "run-attempt.json").write_text(json.dumps({
+            "id": _RUN_ID, "run_attempt": 2, "head_sha": "d" * 40,
+            "run_started_at": "2026-09-26T12:00:00Z",
+        }), encoding="utf-8")
+        (root / "run-artifacts.jsonl").write_text(
+            "".join(json.dumps(item) + "\n" for item in listing), encoding="utf-8"
+        )
+        return subprocess.run([sys.executable, "-c", script], cwd=root,
+                              env=base_env, capture_output=True, text=True)
+
+    ok = run("ok")
+    assert ok.returncode == 0, ok.stderr
+    manifest = json.loads((tmp_path / "ok/release-gate-distribution-set.json").read_text())
+    assert manifest["source_sha"] == _RELEASE_COMMIT
+    assert manifest["control_sha"] == "d" * 40
+    assert (manifest["run_id"], manifest["run_attempt"]) == (_RUN_ID, 2)
+    assert len(manifest["distributions"]) == 13
+    assert len({row["artifact_id"] for row in manifest["distributions"]}) == 13
+
+    def tamper_sdist(root: Path, items: list[dict]) -> list[dict]:
+        (root / "dist/pkg-1.2.3.tar.gz").write_bytes(b"altered")
+        return items
+
+    cases = [
+        ("missing", lambda root, items: [a for a in items if a["name"] != "dist-sdist"]),
+        ("other-run", lambda root, items: [dict(a, workflow_run={"id": 1}) if a["name"] == "dist-sdist" else a for a in items]),
+        ("earlier-attempt", lambda root, items: [dict(a, created_at="2026-09-26T11:59:59Z") if a["name"] == "dist-sdist" else a for a in items]),
+        ("other-control-head", lambda root, items: [dict(a, workflow_run={"id": _RUN_ID, "head_sha": "e" * 40}) if a["name"] == "dist-sdist" else a for a in items]),
+        ("duplicate-id", lambda root, items: [dict(a, id=1) if a["name"] == "dist-sdist" else a for a in items]),
+        ("extra", lambda root, items: items + [dict(items[0], name="dist-wheel-extra")]),
+        ("tampered", tamper_sdist),
+    ]
+    for name, mutate in cases:
+        result = run(name, mutate)
+        assert result.returncode != 0, (name, result.stderr)
+        assert not (tmp_path / name / "release-gate-distribution-set.json").exists()
+
+
 def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -> None:
     import json
 
