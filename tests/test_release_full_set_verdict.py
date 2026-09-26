@@ -153,6 +153,17 @@ def test_runtime_dependencies_require_matching_licensed_and_strix_bound_report()
         )
 
     check()
+    report["dependencies"][0].update(key="pypi/numpy@2.5.2", version="2.5.2")
+    verdict["binding_artifacts"][0]["key"] = "pypi/numpy@2.5.2"
+    variant_report = (json.dumps(report, sort_keys=True) + "\n").encode()
+    verdict["gate_report_sha256"] = hashlib.sha256(variant_report).hexdigest()
+    verify_runtime_dependency_coverage(
+        verdict, report, variant_report, archive_report, archive_raw, receipts,
+        repository="ContextualWisdomLab/fast-mlsirm", source_sha=SOURCE,
+    )
+    report["dependencies"][0].update(key=key, version="2.5.1")
+    verdict["binding_artifacts"][0]["key"] = key
+    verdict["gate_report_sha256"] = hashlib.sha256(raw).hexdigest()
     for mutate in (
         lambda: verdict.update(gate_report_sha256="0" * 64),
         lambda: receipts[0]["locked_dependencies"][0].update(version="2.5.2"),

@@ -25,7 +25,7 @@ central full-set verdict must match the same run and attempt, exact release
 source, all thirteen distribution rows, and the complete Strix binding set. Its
 selected artifact also carries the central dependency report. Admission checks
 the report hash named by the verdict and requires each installed dependency's
-exact wheel archive hash to appear in the licensed, Strix-bound dependency set.
+exact wheel archive hash to appear in the licensed, Strix-bound runtime archive set.
 Admission then consumes the JSON from the same selected reproducibility artifact and recomputes
 every identity using exact release blobs and transported distribution bytes. Missing,
 duplicate, changed, cross-platform or promoted records refuse admission before
@@ -39,9 +39,9 @@ METADATA hashes do not establish resolved marker or optional dependency closure.
 The central licence and Strix verdict has its own authenticated path; it does
 not claim platform scope completeness.
 The current `requirements/package.txt` pins NumPy 2.5.2 while `uv.lock`
-installs NumPy 2.5.1. The central report therefore cannot yet cover that runtime
-receipt. Actual target closure evidence must resolve this mismatch before B3
-can pass; changing one lock's version string would not establish coverage.
+installs NumPy 2.5.1. These are distinct build and runtime environments; each
+needs its own exact archive evidence. Matching their version strings would not
+establish either scope's coverage.
 
 ## Evidence needed to remove the scope HOLD
 

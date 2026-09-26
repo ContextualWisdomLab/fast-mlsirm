@@ -189,12 +189,15 @@ def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: 
         raise ValueError("Strix bindings or wheel runtime receipts do not cover the dependency set")
     expected_archives: dict[str, set[str]] = {}
     for runtime in runtime_records:
-        for package in runtime["locked_dependencies"]:
-            if f"pypi/{package['name']}@{package['version']}" not in keys:
-                raise ValueError(f"{runtime['leg']}: installed dependency lacks licence and Strix verdict: {package['name']}=={package['version']}")
+        locked = {f"pypi/{package['name']}@{package['version']}"
+                  for package in runtime["locked_dependencies"]}
+        archived = {f"pypi/{archive['name']}@{archive['version']}"
+                    for archive in runtime["archives"]}
+        if locked != archived or len(locked) != len(runtime["archives"]):
+            raise ValueError(f"{runtime['leg']}: installed dependencies differ from reviewed archives")
         for archive in runtime["archives"]:
             package_key = f"pypi/{archive['name']}@{archive['version']}"
-            if package_key not in keys or not re.fullmatch(r"[0-9a-f]{64}", archive["sha256"]):
+            if not re.fullmatch(r"[0-9a-f]{64}", archive["sha256"]):
                 raise ValueError(f"{runtime['leg']}: dependency archive lacks a licensed package identity")
             key = f"{package_key}/sha256/{archive['sha256']}"
             expected_archives.setdefault(key, set()).add(runtime["leg"])
@@ -211,7 +214,7 @@ def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: 
         key, package_key, sha = row.get("key"), row.get("package_key"), row.get("source_sha256")
         fixture, fixture_sha = row.get("fixture"), row.get("fixture_sha256")
         if (not isinstance(key, str) or key not in expected_archives or key in approved
-                or not isinstance(package_key, str) or package_key not in keys
+                or not isinstance(package_key, str)
                 or not isinstance(sha, str) or key != f"{package_key}/sha256/{sha}"
                 or not isinstance(fixture, Mapping) or fixture.get("id") != key
                 or not isinstance(fixture_sha, str)
