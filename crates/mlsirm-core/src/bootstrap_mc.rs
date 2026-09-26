@@ -182,6 +182,7 @@ pub fn mc_rank_interval(
 /// Rank bounds use the binomial order-statistic construction for independent
 /// draws (Lu, 2020, NIST TN 2119, sec. 5.3). `confidence` is per endpoint;
 /// callers choose any simultaneous-coverage adjustment and tolerance.
+/// Coverage is for a fixed draw count, not repeated looks with optional stopping.
 /// This calculation does not assess bootstrap-refit validity or sampling error.
 pub fn mc_percentile_interval_precision(
     values: &[f64],
