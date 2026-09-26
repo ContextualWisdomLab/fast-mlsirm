@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import tarfile
 import zipfile
 from argparse import Namespace
@@ -1259,7 +1260,8 @@ def test_upstream_license_evidence_mismatch_stays_hold(tmp_path, case):
         assert row["license_files_in_artifact"] == [] and "license_text_origin" not in row
 
 
-def _own_crate_args(tmp_path: Path, *, wheel_version="1.0", license_member=True, license_text=None):
+def _own_crate_args(tmp_path: Path, *, wheel_version="1.0", license_member=True, license_text=None,
+                    extra_license_files=None):
     """One path crate 'own 1.0' with no LICENSE beside Cargo.toml, plus a published wheel."""
     crate_dir = tmp_path / "own"
     crate_dir.mkdir()
@@ -1273,13 +1275,20 @@ def _own_crate_args(tmp_path: Path, *, wheel_version="1.0", license_member=True,
     sbom.write_text(json.dumps({"components": []}))
     (tmp_path / "tree").mkdir()
     wheel = tmp_path / "own-1.0-py3-none-any.whl"
+    extra_license_files = extra_license_files or {}
+    (tmp_path / "LICENSE").write_text(license_text or L.MIT_CANONICAL_BODY)
+    for name, text in extra_license_files.items():
+        (tmp_path / name).write_text(text)
     with zipfile.ZipFile(wheel, "w") as zf:
-        zf.writestr("own-1.0.dist-info/METADATA", f"Metadata-Version: 2.4\nName: own\nVersion: {wheel_version}\nLicense-File: LICENSE\n")
+        declarations = "".join(f"License-File: {name}\n" for name in extra_license_files)
+        zf.writestr("own-1.0.dist-info/METADATA", f"Metadata-Version: 2.4\nName: own\nVersion: {wheel_version}\nLicense-File: LICENSE\n{declarations}")
         if license_member:
             zf.writestr("own-1.0.dist-info/licenses/LICENSE", license_text or L.MIT_CANONICAL_BODY)
+        for name, text in extra_license_files.items():
+            zf.writestr(f"own-1.0.dist-info/licenses/{name}", text)
     args = Namespace(cargo_metadata_workspace=str(meta), cargo_metadata_binding=str(meta), cargo_lock_workspace=str(lock),
                      cargo_lock_binding=str(lock), cargo_registry_cache=str(tmp_path / "cache"), wheel_sbom=str(sbom),
-                     tree_dir=str(tmp_path / "tree"))
+                     tree_dir=str(tmp_path / "tree"), own_crate_wheel_source_root=str(tmp_path))
     return args, str(wheel), hashlib.sha256(wheel.read_bytes()).hexdigest()
 
 
@@ -1291,6 +1300,45 @@ def test_own_crate_binds_to_published_wheel_license_and_absent_flag_is_unchanged
     (row,) = L.rust_inventory(args, [])
     assert (row["license_class"], row["hold_reasons"], row["license_text_origin"]) == ("PERMISSIVE", [], "published-wheel")
     assert row["license_files_in_artifact"][0]["artifact_sha256"] == digest
+
+
+def test_own_crate_wheel_notices_are_recorded_but_not_own_license_candidates(tmp_path):
+    args, wheel, digest = _own_crate_args(tmp_path, extra_license_files={
+        "NOTICE": "Attribution notice; see LICENSE.",
+    })
+    args.own_crate_wheel, args.own_crate_wheel_sha256 = wheel, digest
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "PERMISSIVE" and row["hold_reasons"] == []
+    assert {f["path"].rsplit("/", 1)[-1]: f["wheel_role"] for f in row["license_files_in_artifact"]} == {
+        "LICENSE": "own-license", "NOTICE": "distribution-notice",
+    }
+    assert all(not f["verified_standard_text"] for f in row["license_files_in_artifact"]
+               if f["wheel_role"] != "own-license")
+
+
+def test_own_crate_wheel_unknown_notice_owner_stays_hold(tmp_path):
+    args, wheel, digest = _own_crate_args(tmp_path, extra_license_files={"NOTICE-unknown-1.0.txt": "Notice"})
+    args.own_crate_wheel, args.own_crate_wheel_sha256 = wheel, digest
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert any("no unique component" in reason for reason in row["hold_reasons"])
+
+
+def test_actual_a3_wheel_license_roles_when_artifact_is_supplied():
+    wheel_path = os.environ.get("FMLS_A3_WHEEL")
+    source_root = os.environ.get("FMLS_A3_SOURCE")
+    if not wheel_path or not source_root:
+        pytest.skip("set FMLS_A3_WHEEL and FMLS_A3_SOURCE to the exact-head artifacts")
+    expected = ("d8ec1d497763abd9" "43dfc5ba0defa93a"
+                "67f141b8bab9adf0" "4a02c8d09a9d43bb")
+    version, files, errors = L.own_crate_wheel_license_files(
+        Path(wheel_path), expected, {("cfg_aliases", "0.2.2"), ("libm", "0.2.16")},
+        Path(source_root))
+    assert (version, errors, len(files)) == ("0.11.5", [], 6)
+    assert [f["wheel_role"] for f in files].count("own-license") == 1
+    assert {f["wheel_component"] for f in files if f["wheel_role"] == "third-party-notice"} == {
+        "cfg_aliases@0.2.2", "libm@0.2.16"}
+    assert all(not f["verified_standard_text"] for f in files if f["wheel_role"] != "own-license")
 
 
 @pytest.mark.parametrize("case", ["wheel-sha-mismatch", "version-mismatch", "license-member-missing"])

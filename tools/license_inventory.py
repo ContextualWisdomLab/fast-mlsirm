@@ -642,11 +642,14 @@ def bind_upstream_license_files(archive: bytes, name: str, version: str, entry: 
     return ([], errors) if errors else (files, [])
 
 
-def own_crate_wheel_license_files(wheel: Path, expected_sha256: str) -> tuple[str | None, list[dict], list[str]]:
+def own_crate_wheel_license_files(
+    wheel: Path, expected_sha256: str, package_keys: set[tuple[str, str]],
+    source_root: Path, target_keys: set[tuple[str, str]] | None = None,
+) -> tuple[str | None, list[dict], list[str]]:
     """Return (METADATA Version, license files, errors) from the published wheel for this repository's crates.
 
     Files are returned only when the wheel sha256 matches and every declared
-    METADATA License-File member exists; otherwise the caller keeps HOLD.
+    METADATA License-File member has a known role and exists; otherwise HOLD.
     """
     try:
         data = wheel.read_bytes()
@@ -676,9 +679,51 @@ def own_crate_wheel_license_files(wheel: Path, expected_sha256: str) -> tuple[st
                 continue
             raw = zf.read(member)
             text = raw.decode("utf-8", "replace")
+            try:
+                source_raw = read_stable_bytes(source_root / rel)
+            except OSError as exc:
+                errors.append(f"own-crate wheel License-File source unreadable: {value!r}: {exc}")
+                continue
+            if source_raw != raw:
+                errors.append(f"own-crate wheel License-File differs from source: {value!r}")
+                continue
+            if rel == "LICENSE":
+                role, component = "own-license", "fast-mlsirm"
+            elif rel == "LICENSE-THIRD-PARTY":
+                role, component = "third-party-license-aggregate", "cargo binding graph"
+                try:
+                    snapshot_raw = read_stable_bytes(source_root / "tools/third_party_licenses.snapshot.json")
+                    snapshot = json.loads(snapshot_raw)
+                    snapshot_rows = {(r["name"], r["version"]) for r in snapshot["rows"]}
+                    snapshot_sha = sha256_bytes(snapshot_raw)
+                    source_sha = snapshot["source_inventory_sha256"]
+                    header = text[:1000]
+                    if (f"snapshot sha256 {snapshot_sha}" not in header
+                            or f"source inventory sha256 {source_sha}" not in header
+                            or f"Entries: {len(snapshot_rows)}." not in header
+                            or len(snapshot_rows) != len(snapshot["rows"])):
+                        errors.append("own-crate wheel third-party aggregate does not match its source snapshot")
+                    if target_keys is not None and snapshot_rows != {
+                        key for key in target_keys if key[0] not in {"mlsirm-core", "fast-mlsirm-py"}
+                    }:
+                        errors.append("own-crate wheel third-party snapshot differs from the binding target graph")
+                except (OSError, ValueError, KeyError, TypeError) as exc:
+                    errors.append(f"own-crate wheel third-party snapshot unreadable: {exc}")
+            elif rel == "NOTICE":
+                role, component = "distribution-notice", "fast-mlsirm"
+            else:
+                owners = [(name, version) for name, version in package_keys
+                          if rel.startswith(f"NOTICE-{name}-{version}-")]
+                if len(owners) != 1:
+                    errors.append(f"own-crate wheel License-File has no unique component: {value!r}")
+                    continue
+                role, component = "third-party-notice", f"{owners[0][0]}@{owners[0][1]}"
             files.append({"path": member, "sha256": sha256_bytes(raw), "artifact_sha256": digest,
                           "declared_license_file": True, "detected": detect(text),
-                          "verified_standard_text": verified_standard_text(text), "origin": "published-wheel"})
+                          "verified_standard_text": verified_standard_text(text), "origin": "published-wheel",
+                          "wheel_role": role, "wheel_component": component})
+        if not any(f["wheel_role"] == "own-license" for f in files):
+            errors.append("own-crate wheel METADATA declares no own LICENSE")
     version = str(versions[0]).strip() if len(versions) == 1 else None
     return version, ([] if errors else files), errors
 
@@ -733,7 +778,9 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
     cache = Path(args.cargo_registry_cache)
     upstream_path = getattr(args, "cargo_upstream_license_evidence", None)
     upstream = json.loads(Path(upstream_path).read_text()) if upstream_path else {}
-    own_wheel = (own_crate_wheel_license_files(Path(args.own_crate_wheel), args.own_crate_wheel_sha256)
+    own_wheel = (own_crate_wheel_license_files(Path(args.own_crate_wheel), args.own_crate_wheel_sha256,
+                                               set(ws_lock) | set(binding_lock),
+                                               Path(args.own_crate_wheel_source_root), target_keys)
                  if getattr(args, "own_crate_wheel", None) else None)
 
     # Completeness: the lock files are the expected set; metadata must match them.
@@ -824,11 +871,15 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
         norm = normalize_spdx(declared)
         elected, rationale = elect(norm)
         ident = f"{name}@{version}"
-        for f in files:
+        # The wheel also declares distribution and third-party notices. Keep
+        # their bytes and owners in the row, but do not test them as this
+        # crate's own grant or promote them to verified license text.
+        license_candidates = [f for f in files if f.get("wheel_role") in (None, "own-license")]
+        for f in license_candidates:
             if "pointer_notice" not in f:
                 continue
             names = set(f["pointer_notice"]["names"])
-            full = {lbl for g in files if g is not f and g.get("artifact_sha256") == f["artifact_sha256"]
+            full = {lbl for g in license_candidates if g is not f and g.get("artifact_sha256") == f["artifact_sha256"]
                     for lbl in g.get("verified_standard_text", [])}
             missing = sorted(names - full)
             mismatch = names != set(spdx_terms(norm))
@@ -837,17 +888,17 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
                 hold.append(f"reviewed pointer {f['path']!r} names {missing} without a verified full text in this .crate")
             if mismatch:
                 hold.append(f"reviewed pointer {f['path']!r} names {sorted(names)} but the declared expression is {norm!r}")
-        satisfied_pointers = {f["path"] for f in files if f.get("pointer_notice", {}).get("satisfied")}
-        file_labels = {label for f in files for label in f["detected"]}
+        satisfied_pointers = {f["path"] for f in license_candidates if f.get("pointer_notice", {}).get("satisfied")}
+        file_labels = {label for f in license_candidates for label in f["detected"]}
         verified_labels = {
-            label for f in files for label in f.get("verified_standard_text", [])
+            label for f in license_candidates for label in f.get("verified_standard_text", [])
         }
-        unrecognized_files = sorted(f["path"] for f in files if not f["detected"] and f["path"] not in satisfied_pointers
+        unrecognized_files = sorted(f["path"] for f in license_candidates if not f["detected"] and f["path"] not in satisfied_pointers
                                     and not f.get("documented_exception"))
         if unrecognized_files:
             hold.append(f"license candidate text is unrecognized: {unrecognized_files}")
         unverified_files = sorted(
-            f["path"] for f in files if not f.get("verified_standard_text") and f["path"] not in satisfied_pointers
+            f["path"] for f in license_candidates if not f.get("verified_standard_text") and f["path"] not in satisfied_pointers
         )
         if unverified_files:
             hold.append(f"license candidate text is not canonically verified: {unverified_files}")
@@ -1345,14 +1396,16 @@ def main(argv: list[str] | None = None) -> int:
                     help="accept POINTER_NOTICES files whose named licenses are verified in the same .crate and match the declared expression")
     ap.add_argument("--own-crate-wheel", help="published wheel whose METADATA License-File binds this repository's own crates")
     ap.add_argument("--own-crate-wheel-sha256", help="expected sha256 of --own-crate-wheel")
+    ap.add_argument("--own-crate-wheel-source-root", help="exact-head source tree for every wheel License-File and third-party snapshot")
     ap.add_argument("--cargo-upstream-license-evidence",
                     help="JSON {name@version: {repository, vcs_sha1, path_in_vcs, files: [{path, url, sha256, local_path}]}}; "
                          "local_path is relative to this file")
     args = ap.parse_args(argv)
     if bool(args.cargo_metadata_binding_target) != bool(args.binding_target):
         ap.error("--cargo-metadata-binding-target and --binding-target must be given together")
-    if bool(args.own_crate_wheel) != bool(args.own_crate_wheel_sha256):
-        ap.error("--own-crate-wheel and --own-crate-wheel-sha256 must be given together")
+    if len([x for x in (args.own_crate_wheel, args.own_crate_wheel_sha256,
+                       args.own_crate_wheel_source_root) if x]) not in (0, 3):
+        ap.error("--own-crate-wheel, --own-crate-wheel-sha256 and --own-crate-wheel-source-root must be given together")
 
     gaps: list[str] = []
     rust = rust_inventory(args, gaps)
