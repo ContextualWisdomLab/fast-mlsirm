@@ -12,7 +12,13 @@ import math
 import numpy as np
 import pytest
 
-from fast_mlsirm import chi2_sf_df1, contrast, fit_ols_hc
+from fast_mlsirm import (
+    chi2_sf_df1,
+    contrast,
+    fit_ols_hc,
+    normal_wald_interval,
+    sample_mean_sd,
+)
 from fast_mlsirm.regression import f_sf, t_sf
 
 
@@ -132,3 +138,14 @@ def test_regression_core_exports_without_scipy_rscript():
     src = open(reg.__file__, encoding="utf-8").read()
     assert "scipy" not in src.lower()
     assert "rscript" not in src.lower()
+
+
+def test_report_values_use_rust_with_explicit_interval_level():
+    assert sample_mean_sd(np.array([1.0, 2.0, 3.0])) == pytest.approx((2.0, 1.0))
+    assert normal_wald_interval(2.0, 0.5, 0.95) == pytest.approx(
+        (1.02001800773, 2.97998199227), abs=1e-9
+    )
+    with pytest.raises(ValueError):
+        sample_mean_sd(np.array([1.0]))
+    with pytest.raises(ValueError):
+        normal_wald_interval(2.0, 0.5, 1.0)
