@@ -61,7 +61,8 @@ def test_reviewed_whole_license_bytes_and_mutations(row):
     assert hashlib.sha256(normalized.encode()).hexdigest() == row["normalized_sha256"]
     assert L.verified_standard_text(text) == [row["identifier"]]
     assert L.verified_standard_text(text.replace("\n", "\r\n")) == [row["identifier"]]
-    for changed in (text.replace("License", "Restriction", 1) if "License" in text else text.replace("software", "hardware", 1),
+    word = next(w for w in ("License", "software", "Redistribution") if w in text)
+    for changed in (text.replace(word, "Restriction", 1),
                     text + "\nCommercial use is prohibited.", "extra\n" + text, text + "\nextra"):
         assert changed != text
         assert L.verified_standard_text(changed) == []

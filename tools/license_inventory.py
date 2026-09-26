@@ -223,6 +223,8 @@ def verified_standard_text(text: str) -> list[str]:
         "3a31f72fe7c9baf376c3da1d7d0154366be8ef0bab0a3f7531db4c2abf1ad062": "Zlib",
         "444399c3da8f18f32878c6f8b7348110f33985558ca7abe98d4c8ed26f013109": "Zlib",
         # 66 copyright-header/appendix-only variants, reviewed in s1 text-review-20260926.
+        "25c95a7b50ce321f537754cab2f5b1de56413ccdcbc492671d569851d62ce276": "BSD-2-Clause",  # zerocopy-0.8.57/LICENSE-BSD (same bytes in zerocopy-derive): coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-2-Clause template var spans
+        "bbb0c7a72cdfa383f0a62db4e19033942ed3f909eac4e865334e22e1c0a17c92": "MIT",  # bytemuck-1.25.2/LICENSE-MIT (same bytes in bytemuck_derive): coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT template optional span
         "f42a00ac54d036890559853a40f95622ab3e63d52173f5714284134b2af11e3c": "Apache-2.0 WITH LLVM-exception",  # target-lexicon-0.13.5/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review
         "a66ace7bb1d24a3290b823ae25fcd5f95fc5a3dd5af95c45dd77dc37ee593bcd": "BSD-2-Clause",  # numpy-0.29.0/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review
         "272a160fd2085e79bc5aa395e9fbbc267d0830e5b66757677a87ce93f4401727": "MIT",  # ndarray-0.17.2/LICENSE-MIT: coordinator verdict (user-delegated, 2026-09-26), not legal review
