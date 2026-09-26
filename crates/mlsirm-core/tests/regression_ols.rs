@@ -38,6 +38,7 @@ fn nested_column_drop_reports_classical_fit_statistics() {
     assert_close(result.r2_full, 25.0 / 27.0, 1e-12);
     assert_close(result.adjusted_r2_full, 73.0 / 81.0, 1e-12);
     assert_close(result.r2_reduced, 0.0, 1e-12);
+    assert_close(result.adjusted_r2_reduced, 0.0, 1e-12);
     assert_close(result.delta_r2, 25.0 / 27.0, 1e-12);
     assert_close(result.f_stat, 37.5, 1e-12);
     assert_eq!((result.df1, result.df2), (1, 3));

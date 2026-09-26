@@ -95,9 +95,22 @@ def test_nested_column_drop_uses_one_response_and_checks_design():
     assert got["r2_full"] == pytest.approx(25 / 27)
     assert got["adjusted_r2_full"] == pytest.approx(73 / 81)
     assert got["r2_reduced"] == pytest.approx(0)
+    assert got["adjusted_r2_reduced"] == pytest.approx(0)
     assert got["delta_r2"] == pytest.approx(25 / 27)
     assert got["f_stat"] == pytest.approx(37.5)
     assert (got["df1"], got["df2"]) == (1, 3)
+    x_nontrivial = np.column_stack((np.ones(8), np.arange(8), [0, 1] * 4))
+    y_nontrivial = np.array([1, 2, 4, 3, 6, 5, 8, 7], dtype=np.float64)
+    reduced = x_nontrivial[:, :2]
+    residual = y_nontrivial - reduced @ np.linalg.lstsq(reduced, y_nontrivial, rcond=None)[0]
+    expected = 1 - (
+        (residual @ residual)
+        / np.sum((y_nontrivial - y_nontrivial.mean()) ** 2)
+        * 7
+        / 6
+    )
+    nontrivial = nested_ols_column_drop(x_nontrivial, y_nontrivial, [2])
+    assert nontrivial["adjusted_r2_reduced"] == pytest.approx(expected)
     x_three = np.column_stack((x, x[:, 1] ** 2))
     with pytest.raises(ValueError, match="sorted, unique"):
         nested_ols_column_drop(x_three, y, [1, 1])

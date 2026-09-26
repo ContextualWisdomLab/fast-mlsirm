@@ -103,6 +103,7 @@ fn py_nested_ols_column_drop(
     out.set_item("r2_full", result.r2_full)?;
     out.set_item("adjusted_r2_full", result.adjusted_r2_full)?;
     out.set_item("r2_reduced", result.r2_reduced)?;
+    out.set_item("adjusted_r2_reduced", result.adjusted_r2_reduced)?;
     out.set_item("delta_r2", result.delta_r2)?;
     out.set_item("f_stat", result.f_stat)?;
     out.set_item("p_f", result.p_f)?;

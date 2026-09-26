@@ -143,6 +143,7 @@ pub struct NestedOlsComparison {
     pub r2_full: f64,
     pub adjusted_r2_full: f64,
     pub r2_reduced: f64,
+    pub adjusted_r2_reduced: f64,
     pub delta_r2: f64,
     pub f_stat: f64,
     pub p_f: f64,
@@ -410,9 +411,17 @@ pub fn nested_ols_column_drop(
     let r2_full = 1.0 - sse_full / sst;
     let r2_reduced = 1.0 - sse_reduced / sst;
     let adjusted_r2_full = 1.0 - (sse_full / sst) * (n - 1) as f64 / df2 as f64;
-    if ![f_stat, p_f, r2_full, r2_reduced, adjusted_r2_full]
-        .iter()
-        .all(|value| value.is_finite())
+    let adjusted_r2_reduced = 1.0 - (sse_reduced / sst) * (n - 1) as f64 / (n - k_reduced) as f64;
+    if ![
+        f_stat,
+        p_f,
+        r2_full,
+        r2_reduced,
+        adjusted_r2_full,
+        adjusted_r2_reduced,
+    ]
+    .iter()
+    .all(|value| value.is_finite())
     {
         return Err("non-finite OLS comparison statistic".to_owned());
     }
@@ -426,6 +435,7 @@ pub fn nested_ols_column_drop(
         r2_full,
         adjusted_r2_full,
         r2_reduced,
+        adjusted_r2_reduced,
         delta_r2: nonnegative_reduction / sst,
         f_stat,
         p_f,
