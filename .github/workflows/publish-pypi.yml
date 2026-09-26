@@ -662,6 +662,8 @@ jobs:
           set -euo pipefail
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
             --jq '.artifacts[]' > run-artifacts.jsonl
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
+            > run-attempt.json
       - name: Bind all verified distribution bytes to immutable artifact IDs
         env:
           RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
@@ -674,6 +676,7 @@ jobs:
           import json
           import os
           import re
+          from datetime import datetime
           from pathlib import Path
 
           legs = os.environ["EXPECTED_WHEEL_LEGS"].split()
@@ -711,8 +714,23 @@ jobs:
               raise SystemExit("distribution artifact names differ from the exact 13-leg set")
           run_id = int(os.environ["GITHUB_RUN_ID"])
           attempt = int(os.environ["GITHUB_RUN_ATTEMPT"])
-          if run_id < 1 or attempt < 1 or not re.fullmatch(r"[0-9a-f]{40}", os.environ["RELEASE_COMMIT"]):
+          control_sha = os.environ["GITHUB_SHA"]
+          if (run_id < 1 or attempt < 1
+                  or not re.fullmatch(r"[0-9a-f]{40}", os.environ["RELEASE_COMMIT"])
+                  or not re.fullmatch(r"[0-9a-f]{40}", control_sha)):
               raise SystemExit("invalid release execution identity")
+          run = json.loads(Path("run-attempt.json").read_text(encoding="utf-8"))
+          if (run.get("id") != run_id or run.get("run_attempt") != attempt
+                  or run.get("head_sha") != control_sha):
+              raise SystemExit("workflow attempt does not match the release control plane")
+          def timestamp(value):
+              if not isinstance(value, str):
+                  raise SystemExit("missing workflow or artifact timestamp")
+              parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+              if parsed.tzinfo is None:
+                  raise SystemExit("workflow or artifact timestamp has no timezone")
+              return parsed
+          attempt_started = timestamp(run.get("run_started_at"))
           distributions = []
           ids = set()
           for leg, row in sorted(rows.items()):
@@ -730,6 +748,8 @@ jobs:
               if (type(artifact_id) is not int or artifact_id <= 0 or artifact_id in ids
                       or not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
                       or (artifact.get("workflow_run") or {}).get("id") != run_id
+                      or (artifact.get("workflow_run") or {}).get("head_sha") != control_sha
+                      or timestamp(artifact.get("created_at")) <= attempt_started
                       or artifact.get("expired") is not False):
                   raise SystemExit(f"{name}: missing or foreign immutable artifact identity")
               ids.add(artifact_id)
@@ -737,7 +757,7 @@ jobs:
                                     "artifact_id": artifact_id, "artifact_name": name,
                                     "artifact_digest": digest})
           manifest = {"schema_version": 1, "source_repository": os.environ["GITHUB_REPOSITORY"],
-                      "source_sha": os.environ["RELEASE_COMMIT"], "run_id": run_id,
+                      "source_sha": os.environ["RELEASE_COMMIT"], "control_sha": control_sha, "run_id": run_id,
                       "run_attempt": attempt, "distributions": distributions}
           Path("release-gate-distribution-set.json").write_text(
               json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
