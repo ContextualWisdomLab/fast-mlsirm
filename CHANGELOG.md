@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Changed
+
+- Polytomous person fit now requires convergence by default, including for
+  duck-typed fits with unknown convergence. `allow_unconverged=True` permits
+  diagnostic use only for legacy or duck-typed fits and marks the result
+  `valid_person_fit=False`, `diagnostic_only=True`; unconverged `PolyFipcFit`
+  always raises. Provenance retains convergence and termination fields (or
+  `"unknown"`). `PolytomousFit` retains its established standard-normal
+  EAP grid even with non-default `prior_mean`/`prior_sd`, which affect only
+  the `r0` correction. `PolyFipcFit` uses its fitted focal prior for both.
+
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 
