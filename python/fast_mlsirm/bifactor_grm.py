@@ -119,12 +119,11 @@ def _u64_seed(value: object) -> int:
     if type(value) is int or isinstance(value, np.integer):
         seed = int(value)
     elif type(value) is float or isinstance(value, np.floating):
-        numeric = float(value)
-        if not np.isfinite(numeric) or numeric != np.floor(numeric):
+        if not np.isfinite(value) or value != np.floor(value):
             raise ValueError("seed must be a non-negative integer")
-        if abs(numeric) >= 2**53:
+        if abs(value) >= 2**53:
             raise ValueError("floating seed must be below 2**53 for exact conversion")
-        seed = int(numeric)
+        seed = int(value)
     else:
         raise ValueError("seed must be a non-negative integer")
     if not 0 <= seed < 2**64:
