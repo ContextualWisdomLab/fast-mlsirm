@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import sys
 import tarfile
+import tempfile
 
+from capture_release_runtime import _packages, _run, installed_extension
 from release_artifact_transport import bundle_inventory, hash_file, scope_identity
 
 
@@ -101,6 +104,65 @@ def capture(source: Path, source_sha: str, row_path: Path, dist: Path,
     return receipt
 
 
+def install(source: Path, source_sha: str, row_path: Path, output: Path,
+            scratch: Path) -> dict:
+    """Install the captured consumer wheel with the existing locked archives."""
+    row = _row(row_path)
+    leg = row["target"]
+    receipt_path = output / f"{leg}.consumer.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    wheel = output / f"{leg}.consumer.whl"
+    runtime = json.loads((output / f"{leg}.runtime.json").read_text(encoding="utf-8"))
+    requirements = output / f"{leg}.runtime-requirements.txt"
+    if (leg == "sdist" or row_path.name != f"{leg}.tsv"
+            or receipt.get("source_sha") != source_sha or receipt.get("leg") != leg
+            or receipt.get("consumer_sha256") != hash_file(wheel)
+            or receipt.get("file") != row["file"]
+            or receipt.get("published_sha256") != row["sha256"]
+            or runtime.get("source_sha") != source_sha or runtime.get("leg") != leg
+            or runtime.get("file") != row["file"] or runtime.get("sha256") != row["sha256"]
+            or runtime.get("requirements_sha256") != hash_file(requirements)
+            or runtime.get("uv_lock_sha256") != hash_file(source / "uv.lock")
+            or "installation" in receipt):
+        raise ValueError("consumer install differs from selected release evidence")
+    uv_version = _run("uv", "--version", cwd=source).strip()
+    if uv_version != runtime.get("uv_version") or uv_version.split()[:2] != ["uv", "0.12.5"]:
+        raise ValueError("consumer install requires the captured uv version")
+    with tempfile.TemporaryDirectory(prefix="release-consumer-", dir=scratch) as temporary:
+        venv = Path(temporary) / "venv"
+        _run("uv", "venv", str(venv), "--python", sys.executable, cwd=source)
+        interpreter = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        _run("uv", "pip", "sync", "--python", str(interpreter), "--require-hashes",
+             "--only-binary", ":all:", "--no-cache", "--no-index",
+             "--find-links", str(output), str(requirements), cwd=source)
+        before = _packages(_run("uv", "pip", "list", "--python", str(interpreter),
+                                "--format", "json", cwd=source))
+        if before != runtime.get("locked_dependencies"):
+            raise ValueError("consumer dependencies differ from locked runtime")
+        _run("uv", "pip", "install", "--python", str(interpreter), "--no-deps",
+             "--no-index", "--no-cache", str(wheel), cwd=source)
+        _run("uv", "pip", "check", "--python", str(interpreter), cwd=source)
+        imported = installed_extension(interpreter, venv)
+        after = _packages(_run("uv", "pip", "list", "--python", str(interpreter),
+                               "--format", "json", cwd=source))
+    if (after != runtime.get("installed") or imported != receipt.get("native_extension")
+            or hash_file(wheel) != receipt["consumer_sha256"]):
+        raise ValueError("consumer wheel install differs from the captured archive")
+    installation = {"uv_version": uv_version,
+                    "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+                    "implementation": sys.implementation.name, "sys_platform": sys.platform,
+                    "machine": platform.machine(), "requirements_sha256": hash_file(requirements),
+                    "uv_lock_sha256": hash_file(source / "uv.lock"),
+                    "locked_dependencies": before, "installed": after,
+                    "imported_extension": imported}
+    if installation != {key: runtime[key] for key in installation if key != "imported_extension"} | {
+            "imported_extension": receipt["native_extension"]}:
+        raise ValueError("consumer installation differs from selected target runtime")
+    receipt["installation"] = installation
+    receipt_path.write_text(json.dumps(receipt, sort_keys=True) + "\n", encoding="utf-8")
+    return receipt
+
+
 if __name__ == "__main__":
     mode, *args = sys.argv[1:]
     root = Path.cwd()
@@ -109,5 +171,7 @@ if __name__ == "__main__":
         prepare(root, sha, *(Path(arg) for arg in args))
     elif mode == "capture" and len(args) == 4:
         capture(root, sha, *(Path(arg) for arg in args))
+    elif mode == "install" and len(args) == 3:
+        install(root, sha, *(Path(arg) for arg in args))
     else:
-        raise SystemExit("usage: release_sdist_consumer.py prepare ROW DIST OUTPUT | capture ROW DIST PREPARED OUTPUT")
+        raise SystemExit("usage: release_sdist_consumer.py prepare ROW DIST OUTPUT | capture ROW DIST PREPARED OUTPUT | install ROW OUTPUT SCRATCH")

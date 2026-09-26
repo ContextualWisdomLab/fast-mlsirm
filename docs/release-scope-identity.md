@@ -93,8 +93,11 @@ digest and every packaged source member against the release commit. The separate
 consumer wheel and receipt stay in that target's immutable scope artifact;
 admission checks their hashes and the wheel metadata against the published wheel.
 The two native extension hashes need not match because build paths can differ.
-This records target buildability from the sdist, while consumer installation and
-dependency closure still need target evidence.
+The target runner also installs the consumer wheel in a separate environment
+using the already captured hash-locked dependency archives. Its receipt records
+the installed package set and imported extension hash; admission compares both
+with the target runtime and consumer wheel evidence. Hosted target results and
+the remaining build/development dependency closure still need verification.
 File hashes establish the bundled bytes, but do not identify the origin or
 licence of each member or the libraries it loads.
 Admission must validate those claims against the corresponding distribution

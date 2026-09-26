@@ -313,6 +313,7 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     assert "- name: Build this wheel target from the verified sdist" in wheels
     assert "working-directory: sdist-consumer/source" in wheels
     assert "- name: Capture target sdist consumer wheel" in wheels
+    assert "- name: Install target sdist consumer wheel" in wheels
     assert "args: --out dist-rebuild" in sdist
     compare_wheel = _step_python(wheels, "Compare double-build wheel digests and record them")
     compare_sdist = _step_python(sdist, "Compare double-build sdist digests and record them")
@@ -535,7 +536,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@8d45e81c4e9a1f431dc632b69539ba8fb387ed2c" in central
+    assert "release-dependency-license-strix-gate.yml@616f5846bfc1b1572c217225975e06e88ea2f8b0" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -663,6 +664,10 @@ def _admission_fixture(root: Path) -> dict:
                        "consumer_sha256": sha[leg], "metadata_members": metadata,
                        "native_extension": {"member": extension_member,
                                             "sha256": hashlib.sha256(extension_bytes).hexdigest()}}
+            receipt["installation"] = {key: runtime[key] for key in (
+                "uv_version", "python_version", "implementation", "sys_platform", "machine",
+                "requirements_sha256", "uv_lock_sha256", "locked_dependencies", "installed")}
+            receipt["installation"]["imported_extension"] = receipt["native_extension"]
             (folder / f"{leg}.consumer.json").write_text(json.dumps(receipt, sort_keys=True) + "\n")
         target, version = ("sdist", "3.12") if leg == "sdist" else leg.rsplit("-py", 1)
         targets = ([] if target == "sdist" else ["aarch64-apple-darwin", "x86_64-apple-darwin"]

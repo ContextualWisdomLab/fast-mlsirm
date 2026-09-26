@@ -246,9 +246,47 @@ def test_sdist_consumer_receipt_binds_both_finished_distributions(scope_fixture,
     output = Path("repro-digest")
     output.mkdir()
     receipt = consumer["capture"](source, sha, wheel_row, Path("dist"), prepared, output)
+    (source / "uv.lock").write_text("synthetic lock\n")
+    requirements = output / f"{leg}.runtime-requirements.txt"
+    requirements.write_text("synthetic requirements\n")
+    installed = [{"name": "fast-mlsirm", "version": "1"}]
+    runtime = {key: value for key, value in (
+        ("source_sha", sha), ("leg", leg), ("file", rows[leg]["file"]),
+        ("sha256", rows[leg]["sha256"]), ("uv_version", "uv 0.12.5"),
+        ("python_version", f"{consumer['sys'].version_info.major}.{consumer['sys'].version_info.minor}"),
+        ("implementation", consumer["sys"].implementation.name),
+        ("sys_platform", consumer["sys"].platform), ("machine", consumer["platform"].machine()),
+        ("requirements_sha256", M["hash_file"](requirements)),
+        ("uv_lock_sha256", M["hash_file"](source / "uv.lock")),
+        ("locked_dependencies", []), ("installed", installed))}
+    (output / f"{leg}.runtime.json").write_text(json.dumps(runtime))
+    lists = iter(([], installed))
+    calls = []
+
+    def fake_run(*args, cwd):
+        calls.append(args)
+        if args[:2] == ("uv", "--version"):
+            return "uv 0.12.5\n"
+        if args[:3] == ("uv", "pip", "list"):
+            return json.dumps(next(lists))
+        return ""
+
+    monkeypatch.setitem(consumer["install"].__globals__, "_run", fake_run)
+    monkeypatch.setitem(consumer["install"].__globals__, "installed_extension",
+                        lambda interpreter, venv: receipt["native_extension"])
+    receipt = consumer["install"](source, sha, wheel_row, output, Path.cwd())
+    assert any(args[:3] == ("uv", "pip", "sync") and "--require-hashes" in args
+               and "--no-index" in args for args in calls)
+    assert any(args[:3] == ("uv", "pip", "install") and "--no-deps" in args
+               and "--no-index" in args and "--no-cache" in args for args in calls)
     M["verify_sdist_consumer"](receipt, output / f"{leg}.consumer.whl", direct,
-                               rows[leg], rows["sdist"], sha)
+                               rows[leg], rows["sdist"], sha, runtime)
+    forged_install = copy.deepcopy(receipt)
+    forged_install["installation"]["installed"] = []
+    with pytest.raises(ValueError, match="consumer receipt differs"):
+        M["verify_sdist_consumer"](forged_install, output / f"{leg}.consumer.whl", direct,
+                                   rows[leg], rows["sdist"], sha, runtime)
     receipt["sdist_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="consumer receipt differs"):
         M["verify_sdist_consumer"](receipt, output / f"{leg}.consumer.whl", direct,
-                                   rows[leg], rows["sdist"], sha)
+                                   rows[leg], rows["sdist"], sha, runtime)

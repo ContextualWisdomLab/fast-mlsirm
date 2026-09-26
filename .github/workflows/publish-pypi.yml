@@ -629,6 +629,12 @@ jobs:
           RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
           LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
         run: python trusted-control/scripts/ci/release_sdist_consumer.py capture "repro-digest/$LEG.tsv" dist sdist-consumer repro-digest
+      - name: Install target sdist consumer wheel
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+          LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
+        run: python trusted-control/scripts/ci/release_sdist_consumer.py install "repro-digest/$LEG.tsv" repro-digest "$RUNNER_TEMP"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dist-wheel-${{ matrix.target }}-py${{ matrix.python-version }}
@@ -899,7 +905,7 @@ jobs:
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@8d45e81c4e9a1f431dc632b69539ba8fb387ed2c
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@616f5846bfc1b1572c217225975e06e88ea2f8b0
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
@@ -1195,17 +1201,17 @@ jobs:
                                         object_pairs_hook=unique_object)
               transport.verify_build_scope(build_first, build_second, row, Path("release-source"), commit)
               if leg != "sdist":
-                  consumer = json.loads(members[f"{leg}.consumer.json"].read_text(encoding="utf-8"),
-                                        object_pairs_hook=unique_object)
-                  transport.verify_sdist_consumer(
-                      consumer, members[f"{leg}.consumer.whl"], distribution, row,
-                      rows["sdist"], commit,
-                  )
                   runtime = json.loads(members[f"{leg}.runtime.json"].read_text(encoding="utf-8"),
                                        object_pairs_hook=unique_object)
                   transport.verify_runtime_inventory(
                       runtime, members[f"{leg}.runtime-requirements.txt"], row,
                       Path("release-source"), commit, expected_bundle, members,
+                  )
+                  consumer = json.loads(members[f"{leg}.consumer.json"].read_text(encoding="utf-8"),
+                                        object_pairs_hook=unique_object)
+                  transport.verify_sdist_consumer(
+                      consumer, members[f"{leg}.consumer.whl"], distribution, row,
+                      rows["sdist"], commit, runtime,
                   )
                   runtime_records.append(runtime)
 

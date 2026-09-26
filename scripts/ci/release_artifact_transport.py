@@ -287,7 +287,7 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
 
 
 def verify_sdist_consumer(receipt: dict, consumer: Path, direct: Path, row: dict,
-                          sdist_row: dict, source_sha: str) -> None:
+                          sdist_row: dict, source_sha: str, runtime: dict) -> None:
     """Bind one target's sdist rebuild to the published wheel and source archive."""
     leg = row["target"]
     if leg == "sdist" or sdist_row["target"] != "sdist":
@@ -312,6 +312,10 @@ def verify_sdist_consumer(receipt: dict, consumer: Path, direct: Path, row: dict
                 "metadata_members": metadata,
                 "native_extension": {"member": extension[0]["path"],
                                      "sha256": extension[0]["sha256"]}}
+    keys = ("uv_version", "python_version", "implementation", "sys_platform", "machine",
+            "requirements_sha256", "uv_lock_sha256", "locked_dependencies", "installed")
+    expected["installation"] = {key: runtime[key] for key in keys} | {
+        "imported_extension": expected["native_extension"]}
     if receipt != expected:
         raise ValueError(f"{leg}: sdist consumer receipt differs from selected artifacts")
 
