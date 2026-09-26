@@ -44,7 +44,11 @@ decisions without a paper source are marked as implementation choices):
   the #1912 reproducibility requirement).
 - Newton M-step depth (10 inner iterations) and ridge (1e-8, Hessian
   conditioning only, not a prior) are fixed implementation choices shared
-  with the crate's GRM estimator, not caller arguments.
+  with the crate's GRM estimator, not caller arguments. Each Newton
+  evaluation builds the analytic expected complete-data gradient and
+  Hessian in one node sweep (Bock & Aitkin, 1981, pp. 445, 448; Gibbons et
+  al., 2007, eq. 9 and Appendix A4–A6; Oakes, 1999, eq. 6 Term A via
+  ``grm_node_hessian``), not a finite-difference column fan-out (#2030).
 - Unobserved categories raise instead of imputing (an unobserved category
   leaves a boundary intercept unidentified; Samejima, 1969). Non-convergence
   reports ``converged=False`` instead of substituting values (implementation
@@ -73,6 +77,11 @@ References (APA 7th ed.):
     Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation
     of item parameters: Application of an EM algorithm. *Psychometrika,
     46*(4), 443-459. https://doi.org/10.1007/BF02293801
+
+    Oakes, D. (1999). Direct calculation of the information matrix via the EM
+    algorithm. *Journal of the Royal Statistical Society Series B:
+    Statistical Methodology, 61*(2), 479-482.
+    https://doi.org/10.1111/1467-9868.00188
 """
 
 from __future__ import annotations

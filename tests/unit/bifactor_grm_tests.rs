@@ -665,3 +665,250 @@ fn dense_quadrature_fit_never_claims_tolerance_at_start_slopes() {
         assert_eq!(fit.termination_reason, "numerical_em_stall");
     }
 }
+
+// ---------------------------------------------------------------------------
+// #2030: analytic item Hessian vs FD; Newton sweep classes (FD must be unused).
+// ---------------------------------------------------------------------------
+
+fn toy_item_counts(
+    has_specific: bool,
+    n_nodes: usize,
+    n_cat: usize,
+) -> (Vec<f64>, Vec<f64>, Vec<Vec<f64>>, Vec<f64>) {
+    let node_g: Vec<f64> = (0..n_nodes)
+        .map(|i| -1.5 + 3.0 * (i as f64) / ((n_nodes - 1) as f64))
+        .collect();
+    let node_s: Vec<f64> = if has_specific {
+        (0..n_nodes)
+            .map(|i| 0.8 * ((i as f64) * 0.37).sin())
+            .collect()
+    } else {
+        vec![0.0; n_nodes]
+    };
+    let mut counts = vec![vec![0.0f64; n_cat]; n_nodes];
+    for (node, row) in counts.iter_mut().enumerate() {
+        for (k, c) in row.iter_mut().enumerate() {
+            *c = 0.35 + 0.15 * ((node + 2 * k) as f64).sin().abs();
+        }
+    }
+    let params = if has_specific {
+        vec![1.1, 0.7, 1.2, 0.1, -1.0]
+    } else {
+        vec![0.9, 0.8, -0.2, -1.1]
+    };
+    (node_g, node_s, counts, params)
+}
+
+#[test]
+fn analytic_item_hessian_matches_fd_block_and_general_only() {
+    use super::{item_neg_ll_fd_hessian, item_neg_ll_grad_hess};
+
+    for has_specific in [true, false] {
+        let (node_g, node_s, counts, params) = toy_item_counts(has_specific, 11, 4);
+        let (_f, g_an, h_an) =
+            item_neg_ll_grad_hess(&params, has_specific, &node_g, &node_s, &counts, false);
+        let (g_fd, h_fd) =
+            item_neg_ll_fd_hessian(&params, has_specific, &node_g, &node_s, &counts, 1e-5);
+        let np = params.len();
+        let mut worst_g = 0.0f64;
+        let mut worst_h = 0.0f64;
+        for i in 0..np {
+            worst_g = worst_g.max((g_an[i] - g_fd[i]).abs() / (1.0 + g_fd[i].abs()));
+            for j in 0..np {
+                worst_h =
+                    worst_h.max((h_an[i][j] - h_fd[i][j]).abs() / (1.0 + h_fd[i][j].abs()));
+            }
+        }
+        assert!(
+            worst_g <= 1e-8,
+            "analytic gradient must match FD base gradient; has_specific={has_specific}, worst={worst_g:.3e}"
+        );
+        assert!(
+            worst_h <= 5e-4,
+            "analytic Hessian must match forward-FD of analytic gradient; \
+             has_specific={has_specific}, worst={worst_h:.3e}"
+        );
+    }
+}
+
+#[test]
+fn mstep_newton_records_zero_fd_sweeps() {
+    use super::{
+        enable_mstep_sweep_counters, fit_bifactor_grm, mstep_sweep_counters,
+        reset_mstep_sweep_counters, BifactorGrmConfig,
+    };
+
+    let n_persons = 48usize;
+    let n_items = 7usize;
+    let n_specific = 2usize;
+    let n_cat = 3usize;
+    let specific_map: [i32; 7] = [0, 0, 0, 1, 1, 1, -1];
+    let mut y = vec![0usize; n_persons * n_items];
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            y[p * n_items + i] = (p + 2 * i) % n_cat;
+        }
+    }
+    let cfg = BifactorGrmConfig {
+        q_general: 9,
+        q_specific: 9,
+        max_iter: 3,
+        tol: 1e-300,
+        n_starts: 1,
+        seed: 2030,
+        newton_iter: 4,
+        ridge: 1e-8,
+        device: crate::Device::Cpu,
+    };
+    enable_mstep_sweep_counters(true);
+    reset_mstep_sweep_counters();
+    let fit = fit_bifactor_grm(
+        &y,
+        None,
+        &specific_map,
+        n_persons,
+        n_items,
+        n_specific,
+        n_cat,
+        &cfg,
+    )
+    .expect("tiny fit for sweep accounting");
+    let (base, fd, linesearch, newton) = mstep_sweep_counters();
+    enable_mstep_sweep_counters(false);
+    assert!(
+        fit.n_iter >= 1,
+        "fit must enter the EM loop; got n_iter={}",
+        fit.n_iter
+    );
+    assert_eq!(
+        fd, 0,
+        "analytic Newton must not FD-reenter the node grid; got fd={fd}"
+    );
+    assert!(
+        newton > 0 && base > 0,
+        "expected Newton/Base activity; newton={newton} base={base} ls={linesearch}"
+    );
+    // Each Newton step that reaches the analytic evaluation records exactly
+    // one Base; early-exit on tiny grad may leave base == newton.
+    assert!(
+        base <= newton + 1,
+        "Base should track Newton evaluations; base={base} newton={newton}"
+    );
+    let total = base + fd + linesearch;
+    let per_newton = total as f64 / newton as f64;
+    assert!(
+        per_newton < 8.0,
+        "post-FD path should be far below the old ~33 sweeps/Newton; got {per_newton:.2}"
+    );
+}
+
+#[test]
+#[ignore = "#2030 recount: q=41/241 n=1020 max_iter=5; run with --ignored (minutes)"]
+fn mstep_sweep_recount_q41_q241_synthetic_cp3_shape() {
+    // #2022/#2030 contract shape (13 items · 4 cats · 3 specifics · n=1020 ·
+    // max_iter=5), synthetic responses — recount Base/FD/LS, not absolute
+    // wall seconds. Avoidance CSV is not vendored in-tree.
+    use super::{
+        enable_mstep_sweep_counters, fit_bifactor_grm, mstep_phase_ns, mstep_sweep_counters,
+        reset_mstep_sweep_counters, BifactorGrmConfig,
+    };
+    use std::time::Instant;
+
+    let n_persons = 1020usize;
+    let n_items = 13usize;
+    let n_specific = 3usize;
+    let n_cat = 4usize;
+    let specific_map: [i32; 13] = [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, -1];
+    let mut y = vec![0usize; n_persons * n_items];
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            y[p * n_items + i] = (p.wrapping_mul(17) + 3 * i) % n_cat;
+        }
+    }
+
+    let mut rows = Vec::new();
+    for q in [41usize, 241usize] {
+        let cfg = BifactorGrmConfig {
+            q_general: q,
+            q_specific: q,
+            max_iter: 5,
+            tol: 1e-300,
+            n_starts: 1,
+            seed: 20260917,
+            newton_iter: 10,
+            ridge: 1e-8,
+            device: crate::Device::Cpu,
+        };
+        enable_mstep_sweep_counters(true);
+        reset_mstep_sweep_counters();
+        let t0 = Instant::now();
+        let fit = fit_bifactor_grm(
+            &y,
+            None,
+            &specific_map,
+            n_persons,
+            n_items,
+            n_specific,
+            n_cat,
+            &cfg,
+        )
+        .unwrap_or_else(|e| panic!("q={q} fit failed: {e}"));
+        let wall = t0.elapsed();
+        let (base, fd, linesearch, newton) = mstep_sweep_counters();
+        let (fill_ns, estep_ns, mstep_ns) = mstep_phase_ns();
+        enable_mstep_sweep_counters(false);
+        let total = base + fd + linesearch;
+        let em_mstep_passes = 5u64; // max_iter=5 → 5 M-step passes
+        let per_pass = total as f64 / em_mstep_passes as f64;
+        let phases = (fill_ns + estep_ns + mstep_ns) as f64;
+        let m_share = if phases > 0.0 {
+            mstep_ns as f64 / phases
+        } else {
+            f64::NAN
+        };
+        eprintln!(
+            "SWEEP_RECOUNT q={q} n={n_persons} wall_s={:.3} base={base} fd={fd} \
+             ls={linesearch} newton={newton} total={total} per_em_mstep_pass={per_pass:.1} \
+             fill_s={:.3} estep_s={:.3} mstep_s={:.3} mstep_share={m_share:.3} \
+             n_iter={} reason={}",
+            wall.as_secs_f64(),
+            fill_ns as f64 / 1e9,
+            estep_ns as f64 / 1e9,
+            mstep_ns as f64 / 1e9,
+            fit.n_iter,
+            fit.termination_reason
+        );
+        assert_eq!(fd, 0, "q={q}: FD class must be unused");
+        assert!(newton > 0, "q={q}: expected Newton steps");
+        assert_eq!(
+            base, newton,
+            "q={q}: Base must equal Newton (one analytic sweep per step); \
+             base={base} newton={newton}"
+        );
+        // Pre-#2030 was ~434 sweeps / EM M-step pass (FD ≈ 65%). Analytic
+        // path is Base+LS only; LS retries keep this above 1×Newton but
+        // well below the FD-era floor.
+        assert!(
+            per_pass < 250.0,
+            "q={q}: per-pass sweeps {per_pass:.1} still look FD-era (~434)"
+        );
+        let ls_per_newton = linesearch as f64 / newton as f64;
+        assert!(
+            ls_per_newton < 3.0,
+            "q={q}: unexpected LS fan-out {ls_per_newton:.2} per Newton"
+        );
+        rows.push((q, base, fd, linesearch, newton, total, per_pass, m_share));
+    }
+    // Call counts stay nearly q-independent (#2022 observation).
+    let ratio = rows[1].5 as f64 / rows[0].5 as f64;
+    assert!(
+        (0.85..1.15).contains(&ratio),
+        "total sweep ratio q241/q41 should be ~1; got {ratio:.3}"
+    );
+    eprintln!(
+        "SWEEP_RECOUNT_SUMMARY q41_per_pass={:.1} q241_per_pass={:.1} \
+         q41_mstep_share={:.3} q241_mstep_share={:.3} total_ratio={ratio:.3}",
+        rows[0].6, rows[1].6, rows[0].7, rows[1].7
+    );
+}
+
