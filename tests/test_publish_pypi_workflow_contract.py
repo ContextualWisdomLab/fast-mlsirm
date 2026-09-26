@@ -684,6 +684,7 @@ def _admission_fixture(root: Path) -> dict:
                      "maturin_version": "maturin 1.15.0",
                      "maturin_binary_sha256": expected_maturin(leg, build_env(leg)),
                      "python_version": f"Python {version}.0",
+                     "python_packages": [{"name": "pip", "version": "25.2"}],
                      "cargo_features": [] if target == "sdist" else ["pyo3/extension-module"],
                      "cargo_targets": {triple: graph for triple in targets}}
             (folder / f"{leg}.build-{build_pass}.json").write_text(json.dumps(build, sort_keys=True) + "\n")
@@ -725,6 +726,10 @@ def test_build_scope_receipts_bind_wheel_lock_and_repeat(tmp_path: Path) -> None
     second["maturin_binary_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="toolchain or leg"):
         verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+    second = json.loads((folder / f"{leg}.build-second.json").read_text())
+    second["python_packages"] = [{"name": "pip", "version": "forged"}]
+    with pytest.raises(ValueError, match="repeated build graphs or toolchains differ"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
 
 
 def test_sdist_build_receipts_report_no_compiled_cargo_graph(tmp_path: Path) -> None:
@@ -756,6 +761,8 @@ def test_sdist_capture_records_runner_tools_without_cargo_metadata(tmp_path: Pat
             return _RELEASE_COMMIT
         if args == ("python", "--version"):
             return "Python 3.12.0"
+        if args[:2] == ("python", "-c"):
+            return '[{"name": "pip", "version": "25.2"}]'
         if args == ("cargo", "--version"):
             return "cargo 1.90.0"
         if args == ("rustc", "--version"):
@@ -777,6 +784,7 @@ def test_sdist_capture_records_runner_tools_without_cargo_metadata(tmp_path: Pat
     assert receipt["build_env"] == "runner:ubuntu/test/Linux/X64"
     assert receipt["cargo_targets"] == {}
     assert receipt["cargo_features"] == []
+    assert receipt["python_packages"] == [{"name": "pip", "version": "25.2"}]
 
 
 def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> subprocess.CompletedProcess:

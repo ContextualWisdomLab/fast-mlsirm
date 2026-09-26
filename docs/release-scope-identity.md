@@ -79,7 +79,9 @@ remains HOLD.
 
 Each wheel build now records the target-filtered Cargo graph, features, selected
 wheel-crate lock hash, and Rust/Python/maturin tool versions in its actual
-container or native runner. Both build passes must agree, and admission checks
+container or native runner. It also records the Python distributions visible to
+the interpreter used by that build, separately from the runtime dependency
+install. Both build passes must agree, and admission checks
 the receipts against the release source. The sdist runner records the same
 tool identities for both packaging passes and explicitly records no compiled
 Cargo graph. The action now requests maturin 1.15.0,
@@ -119,8 +121,9 @@ The six scopes have distinct sources of truth:
   prove which packages the build loaded. For Linux wheels, collect inside the
   digest-pinned manylinux container used by `maturin-action`; the surrounding
   runner's Python and Cargo inventories describe a different environment.
-  The sdist tool receipts and wheel Cargo graphs cover part of this requirement
-  but do not establish the full build or dev environment.
+  The sdist tool receipts, observed Python distribution names and versions,
+  and wheel Cargo graphs cover part of this requirement. They do not establish
+  exact Python distribution bytes, licences, or the full dev environment.
 - **Native and bundled:** inspect every binary and packaged library in the
   *finished* wheel on its target runner. Record imported shared-library names,
   resolved paths or explicit system-provided identities, and hashes of bundled

@@ -35,6 +35,23 @@ def capture(source: Path, environ: dict[str, str]) -> dict:
         raise ValueError("build scope container identity differs from target")
     if not _run(interpreter, "--version").startswith(f"Python {python}."):
         raise ValueError("build interpreter differs from wheel target")
+    python_packages = json.loads(_run(interpreter, "-c", """
+import json
+import re
+from importlib.metadata import distributions
+
+rows = [{"name": re.sub(r"[-_.]+", "-", dist.metadata["Name"]).lower(),
+         "version": dist.version} for dist in distributions()]
+print(json.dumps(sorted(rows, key=lambda row: row["name"])))
+"""))
+    if (type(python_packages) is not list
+            or any(type(item) is not dict or set(item) != {"name", "version"}
+                   or type(item["name"]) is not str or not item["name"]
+                   or type(item["version"]) is not str or not item["version"]
+                   for item in python_packages)
+            or python_packages != sorted(python_packages, key=lambda item: item["name"])
+            or len({item["name"] for item in python_packages}) != len(python_packages)):
+        raise ValueError("build interpreter has ambiguous Python distributions")
     pyproject = source / "pyproject.toml"
     lock = source / "crates/fast-mlsirm-py/Cargo.lock"
     locked = {(item["name"], item["version"], item.get("source")): item.get("checksum")
@@ -80,6 +97,7 @@ def capture(source: Path, environ: dict[str, str]) -> dict:
         "maturin_version": _run("maturin", "--version"),
         "maturin_binary_sha256": binary_sha,
         "python_version": _run(interpreter, "--version"),
+        "python_packages": python_packages,
         "cargo_features": [] if target == "sdist" else ["pyo3/extension-module"],
         "cargo_targets": graphs,
     }

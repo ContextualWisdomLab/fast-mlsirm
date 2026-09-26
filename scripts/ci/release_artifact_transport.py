@@ -241,7 +241,8 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
               for item in tomllib.loads(lock.read_text(encoding="utf-8"))["package"]}
     keys = {"schema_version", "source_sha", "leg", "pass", "build_env",
             "cargo_lock_sha256", "pyproject_sha256", "cargo_version", "rustc_version",
-            "maturin_version", "maturin_binary_sha256", "python_version", "cargo_features", "cargo_targets"}
+            "maturin_version", "maturin_binary_sha256", "python_version",
+            "python_packages", "cargo_features", "cargo_targets"}
     for receipt, build_pass in ((first, "first"), (second, "second")):
         if (type(receipt) is not dict or set(receipt) != keys
                 or receipt["schema_version"] != 1 or receipt["source_sha"] != source_sha
@@ -260,6 +261,16 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
                 or type(receipt["cargo_targets"]) is not dict
                 or set(receipt["cargo_targets"]) != set(targets)):
             raise ValueError(f"{leg}: build receipt differs from source, toolchain or leg")
+        packages = receipt["python_packages"]
+        if (type(packages) is not list
+                or any(type(item) is not dict or set(item) != {"name", "version"}
+                       or type(item["name"]) is not str
+                       or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", item["name"])
+                       or type(item["version"]) is not str or not item["version"]
+                       for item in packages)
+                or packages != sorted(packages, key=lambda item: item["name"])
+                or len({item["name"] for item in packages}) != len(packages)):
+            raise ValueError(f"{leg}: build interpreter package inventory is ambiguous")
         for triple in targets:
             graph = receipt["cargo_targets"][triple]
             if type(graph) is not list or not graph:
