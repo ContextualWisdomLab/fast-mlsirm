@@ -1,0 +1,4 @@
+Looking in links: /w/core-build-deps
+Processing /w/core-build-deps/maturin-1.14.1-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl
+Installing collected packages: maturin
+Successfully installed maturin-1.14.1

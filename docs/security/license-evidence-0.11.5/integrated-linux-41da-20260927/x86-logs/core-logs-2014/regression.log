@@ -1,0 +1,18 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0 -- /w/container-venv-2014test/bin/python
+rootdir: /dev
+configfile: null
+collecting ... collected 10 items
+
+../dev::test_fit_ols_hc3_parity_atol_1e6 PASSED                          [ 10%]
+../dev::test_all_hc_types_match_numpy_reference[HC0] PASSED              [ 20%]
+../dev::test_all_hc_types_match_numpy_reference[HC1] PASSED              [ 30%]
+../dev::test_all_hc_types_match_numpy_reference[HC2] PASSED              [ 40%]
+../dev::test_all_hc_types_match_numpy_reference[HC3] PASSED              [ 50%]
+../dev::test_contrast_parity_with_late_life_formula PASSED               [ 60%]
+../dev::test_distribution_tails_no_scipy PASSED                          [ 70%]
+../dev::test_regression_core_exports_without_scipy_rscript PASSED        [ 80%]
+../dev::test_normal_wald_tail_and_same_fit_contrast_vectors PASSED       [ 90%]
+../dev::test_adjusted_r_squared_reduced_design_contract PASSED           [100%]
+
+============================== 10 passed in 0.79s ==============================
