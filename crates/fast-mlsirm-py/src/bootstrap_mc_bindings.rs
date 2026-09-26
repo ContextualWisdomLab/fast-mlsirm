@@ -63,6 +63,11 @@ fn rank_interval_dict(py: Python<'_>, result: &McRankInterval) -> PyResult<Py<Py
     Ok(out.into())
 }
 
+/// Return fixed-draw Monte Carlo precision evidence for percentile endpoints.
+///
+/// `confidence` applies separately to each endpoint. The returned evidence does
+/// not establish simultaneous coverage, bootstrap-refit validity, or sampling
+/// validity. See Lu (2020), NIST Technical Note 2119, section 5.3, pp. 32–33.
 #[pyfunction(name = "mc_percentile_interval_precision")]
 fn py_mc_percentile_interval_precision(
     py: Python<'_>,

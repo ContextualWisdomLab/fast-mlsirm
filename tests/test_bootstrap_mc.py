@@ -48,6 +48,9 @@ def test_mc_inputs_fail_closed():
 
 
 def test_percentile_interval_precision_is_library_owned():
+    assert "fixed-draw Monte Carlo precision" in (
+        mc_percentile_interval_precision.__doc__ or ""
+    )
     draws = np.arange(100, dtype=np.float64)
     loose = mc_percentile_interval_precision(draws, 0.25, 0.75, 0.8, 1.0)
     strict = mc_percentile_interval_precision(draws[::-1], 0.25, 0.75, 0.8, 0.0)

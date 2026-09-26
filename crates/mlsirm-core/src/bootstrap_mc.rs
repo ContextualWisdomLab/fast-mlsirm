@@ -22,17 +22,32 @@ pub struct McRankInterval {
     pub hi: f64,
 }
 
+/// Monte Carlo precision evidence for a two-sided percentile interval.
+///
+/// The endpoint bounds are binomial order-statistic intervals for a fixed
+/// number of independent draws. They do not establish bootstrap-refit or
+/// sampling-design validity.
 #[derive(Clone, Debug, PartialEq)]
 pub struct McPercentileIntervalPrecision {
+    /// Type-7 estimate at the requested lower percentile.
     pub lower_endpoint: f64,
+    /// Type-7 estimate at the requested upper percentile.
     pub upper_endpoint: f64,
+    /// Half the distance between `lower_endpoint` and `upper_endpoint`.
     pub interval_halfwidth: f64,
+    /// Binomial order-statistic interval for the lower endpoint.
     pub lower_rank: McRankInterval,
+    /// Binomial order-statistic interval for the upper endpoint.
     pub upper_rank: McRankInterval,
+    /// Largest absolute displacement allowed by `lower_rank`.
     pub lower_error_bound: f64,
+    /// Largest absolute displacement allowed by `upper_rank`.
     pub upper_error_bound: f64,
+    /// Larger endpoint error bound divided by `interval_halfwidth`.
     pub worst_error_fraction: f64,
+    /// Caller-supplied maximum acceptable endpoint-error fraction.
     pub allowed_fraction: f64,
+    /// Whether `worst_error_fraction` is at most `allowed_fraction`.
     pub meets_tolerance: bool,
 }
 
@@ -184,6 +199,13 @@ pub fn mc_rank_interval(
 /// callers choose any simultaneous-coverage adjustment and tolerance.
 /// Coverage is for a fixed draw count, not repeated looks with optional stopping.
 /// This calculation does not assess bootstrap-refit validity or sampling error.
+///
+/// # Reference
+///
+/// Lu, J. (2020). *Estimating instrument performance: With confidence
+/// intervals and confidence bounds* (NIST Technical Note 2119, sec. 5.3,
+/// pp. 32–33). National Institute of Standards and Technology.
+/// https://doi.org/10.6028/NIST.TN.2119
 pub fn mc_percentile_interval_precision(
     values: &[f64],
     lower_percentile: f64,
