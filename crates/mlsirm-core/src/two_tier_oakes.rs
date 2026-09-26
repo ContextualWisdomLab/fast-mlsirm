@@ -28,8 +28,7 @@
 //! # Model and free vector
 //!
 //! The response model is the confirmatory two-tier GRM of Cai (2010)
-//! (abstract; full text not accessible — locators below use Cai et al.,
-//! 2011, and Gibbons et al., 2007, which were read in full): correlated
+//! (full text read, pp. 583-584): correlated
 //! primaries plus orthogonal specifics with dimension reduction over the
 //! specific tier (Gibbons et al., 2007, eq. 15; Chalmers, 2026, mirt
 //! `bfactor` documentation: `ncol(G) + 1` integration). The free vector is
@@ -53,8 +52,7 @@
 //!
 //! Cai, L. (2010). A two-tier full-information item factor analysis model
 //! with applications. *Psychometrika, 75*(4), 581-612.
-//! https://doi.org/10.1007/s11336-010-9178-0 (abstract + metadata read;
-//! full text not accessible — no equation locator drawn from it)
+//! https://doi.org/10.1007/s11336-010-9178-0 (full text read, pp. 583-584)
 //!
 //! Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
 //! item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
@@ -78,6 +76,8 @@ use crate::two_tier_grm::{
 /// nothing is clamped or defaulted (ADR-0028 / #1929).
 #[derive(Clone, Copy, Debug)]
 pub struct TwoTierOakesConfig {
+    /// Estimate primary correlations; false excludes Phi from the free vector.
+    pub estimate_primary_correlation: bool,
     /// Gauss–Hermite nodes per primary dimension (any `q >= 1`).
     pub q_primary: usize,
     /// Gauss–Hermite nodes per specific factor (any `q >= 1`).
@@ -156,6 +156,7 @@ impl Provider {
             return Err(format!("q_specific must be >= 1; got {}", cfg.q_specific));
         }
         let iter_cfg = TwoTierGrmConfig {
+            estimate_primary_correlation: cfg.estimate_primary_correlation,
             q_primary: cfg.q_primary,
             q_specific: cfg.q_specific,
             max_iter: 1,
@@ -212,11 +213,18 @@ impl Provider {
                 slots,
             });
         }
-        let n_phi = n_primary * (n_primary.saturating_sub(1)) / 2;
+        let n_phi = if cfg.estimate_primary_correlation {
+            n_primary * (n_primary.saturating_sub(1)) / 2
+        } else {
+            0
+        };
         let mut phi_slots = Vec::with_capacity(n_phi);
         let mut t = 0usize;
         for i in 0..n_primary {
             for j in (i + 1)..n_primary {
+                if !cfg.estimate_primary_correlation {
+                    continue;
+                }
                 phi_slots.push(cursor);
                 labels.push(format!("phi_z:{i}:{j}"));
                 cursor += 1;
@@ -255,6 +263,9 @@ impl Provider {
         let p = self.v.n_primary;
         let params = pack_params(&self.v, a_primary, a_specific, thresholds);
         let z = z_from_phi(phi, p)?;
+        if self.n_phi == 0 && phi != phi_from_z(&vec![0.0; p * (p - 1) / 2], p) {
+            return Err("fixed primary correlation requires phi = I".into());
+        }
         let mut out = vec![0.0f64; self.free_len()];
         for (i, spec) in self.specs.iter().enumerate() {
             let mut s = 0usize;
@@ -297,7 +308,11 @@ impl Provider {
             let _ = i;
             items.push(ItemParams { a_p, a_s, d });
         }
-        let z: Vec<f64> = self.phi_slots.iter().map(|&s| packed[s]).collect();
+        let z: Vec<f64> = if self.n_phi == 0 {
+            vec![0.0; p * (p - 1) / 2]
+        } else {
+            self.phi_slots.iter().map(|&s| packed[s]).collect()
+        };
         (items, z)
     }
 
@@ -588,6 +603,8 @@ fn cholesky_inverse(info: &[f64], k: usize) -> Result<Vec<f64>, String> {
 
 /// Observed-information standard errors via Oakes (1999, eq. 6, p. 480) at
 /// GIVEN two-tier item and primary-correlation parameters.
+/// With fixed Phi=I, only item parameters enter the free vector (Cai, 2010,
+/// pp. 583-584; Oakes, 1999, eq. 6, p. 480).
 #[allow(clippy::too_many_arguments)]
 pub fn two_tier_oakes_se(
     a_primary: &[f64],
