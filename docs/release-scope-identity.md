@@ -22,10 +22,12 @@ execute package code. Existing transport hashing remains chunked.
 `release-admission` first requires the pinned central gate job to succeed, then
 verifies the selected immutable artifact IDs, ZIP and member digests. The
 central full-set verdict must match the same run and attempt, exact release
-source, all thirteen distribution rows, and the complete Strix binding set. It
-then consumes
-the JSON from the same selected reproducibility artifact and recomputes every
-identity using exact release blobs and transported distribution bytes. Missing,
+source, all thirteen distribution rows, and the complete Strix binding set. Its
+selected artifact also carries the central dependency report. Admission checks
+the report hash named by the verdict and requires every installed wheel runtime
+dependency to appear in the licensed, Strix-bound dependency set. It then
+consumes the JSON from the same selected reproducibility artifact and recomputes
+every identity using exact release blobs and transported distribution bytes. Missing,
 duplicate, changed, cross-platform or promoted records refuse admission before
 the remaining platform-scope HOLD. No name-only fallback is added.
 
@@ -36,6 +38,10 @@ Cargo lock does not establish the features/targets used in compiled wheels;
 METADATA hashes do not establish resolved marker or optional dependency closure.
 The central licence and Strix verdict has its own authenticated path; it does
 not claim platform scope completeness.
+The current `requirements/package.txt` pins NumPy 2.5.2 while `uv.lock`
+installs NumPy 2.5.1. The central report therefore cannot yet cover that runtime
+receipt. Actual target closure evidence must resolve this mismatch before B3
+can pass; changing one lock's version string would not establish coverage.
 
 ## Evidence needed to remove the scope HOLD
 

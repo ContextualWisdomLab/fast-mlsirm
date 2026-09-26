@@ -523,7 +523,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@4bc9aeb306aef7c60939b0741648dfa004984a09" in central
+    assert "release-dependency-license-strix-gate.yml@43757f75b353f209adcb60b1e9a094f93da5f10c" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -698,17 +698,26 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
             archive.writestr("release-scope-identities.json", "[]")
         archives[record_artifact["id"]] = buffer.getvalue()
         record_artifact["digest"] = "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()
-        binding = {"key": "pypi/example@1", "name": "release-strix-binding-a2-"
-                   + hashlib.sha256(b"pypi/example@1").hexdigest(),
+        binding = {"key": "pypi/numpy@2.5.1", "name": "release-strix-binding-a2-"
+                   + hashlib.sha256(b"pypi/numpy@2.5.1").hexdigest(),
                    "id": 1000, "digest": "sha256:" + "b" * 64}
         verdict_artifact = by_name["release-dependency-sealed-evidence--full-set-verdict"]
+        report = {"schema": "cwl.release-dependency-gate/1", "result": "PASS",
+                  "stage": "full", "source_repository": "owner/repo", "source_sha": _RELEASE_COMMIT,
+                  "failures": [], "dependency_count": 1,
+                  "dependencies": [{"key": binding["key"], "ecosystem": "pypi", "name": "numpy",
+                                    "version": "2.5.1", "license": "BSD-3-Clause",
+                                    "source_sha256": "a" * 64, "fixture_sha256": "c" * 64}]}
+        report_bytes = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()
         verdict = {"schema": "cwl.release-full-set-verdict/1", "result": "PASS", **identity,
                    "record_artifact_id": record_artifact["id"],
                    "record_artifact_digest": record_artifact["digest"],
-                   "distributions": distributions, "binding_artifacts": [binding]}
+                   "distributions": distributions, "binding_artifacts": [binding],
+                   "gate_report_sha256": hashlib.sha256(report_bytes).hexdigest()}
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             archive.writestr("full-set-verdict.json", json.dumps(verdict))
+            archive.writestr("gate-report.json", report_bytes)
         archives[verdict_artifact["id"]] = buffer.getvalue()
         verdict_artifact["digest"] = "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()
         module = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))

@@ -134,6 +134,44 @@ def verify_full_set_verdict(
         raise ValueError("same-attempt Strix artifact set differs from the verdict")
 
 
+def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: bytes,
+                                       runtime_records: list[dict], *,
+                                       repository: str, source_sha: str) -> None:
+    """Require every installed wheel dependency in the licensed, Strix-bound set."""
+    if (not isinstance(verdict, Mapping) or not isinstance(report, Mapping)
+            or verdict.get("gate_report_sha256") != hashlib.sha256(report_bytes).hexdigest()
+            or report.get("schema") != "cwl.release-dependency-gate/1"
+            or report.get("result") != "PASS" or report.get("stage") != "full"
+            or report.get("source_repository") != repository
+            or report.get("source_sha") != source_sha
+            or report.get("failures") != []):
+        raise ValueError("full dependency report differs from the sealed verdict")
+    dependencies = report.get("dependencies")
+    bindings = verdict.get("binding_artifacts")
+    if (not isinstance(dependencies, list) or not dependencies
+            or type(report.get("dependency_count")) is not int
+            or report["dependency_count"] != len(dependencies)
+            or not isinstance(bindings, list) or not bindings):
+        raise ValueError("full dependency report has no complete dependency set")
+    keys = set()
+    for row in dependencies:
+        if (not isinstance(row, Mapping)
+                or row.get("ecosystem") not in ("pypi", "cargo")
+                or not all(isinstance(row.get(field), str) and row[field]
+                           for field in ("key", "name", "version", "license", "source_sha256", "fixture_sha256"))
+                or row["key"] != f"{row['ecosystem']}/{row['name']}@{row['version']}"
+                or row["key"] in keys):
+            raise ValueError("full dependency report contains an invalid dependency")
+        keys.add(row["key"])
+    if (keys != {binding.get("key") for binding in bindings if isinstance(binding, Mapping)}
+            or len(bindings) != len(keys) or len(runtime_records) != 12):
+        raise ValueError("Strix bindings or wheel runtime receipts do not cover the dependency set")
+    for runtime in runtime_records:
+        for package in runtime["locked_dependencies"]:
+            if f"pypi/{package['name']}@{package['version']}" not in keys:
+                raise ValueError(f"{runtime['leg']}: installed dependency lacks licence and Strix verdict: {package['name']}=={package['version']}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     for name in ("manifest", "verdict", "artifacts", "attempt", "repository", "source-sha",

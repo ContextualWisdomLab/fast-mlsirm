@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 
 import pytest
 
-from scripts.ci.verify_release_full_set_verdict import verify_full_set_verdict
+from scripts.ci.verify_release_full_set_verdict import (
+    verify_full_set_verdict, verify_runtime_dependency_coverage,
+)
 
 
 SOURCE = "a" * 40
@@ -101,3 +104,39 @@ def test_rejects_forged_missing_stale_or_changed_verdict() -> None:
         mutate(case)
         with pytest.raises(ValueError):
             _verify(case)
+
+
+def test_runtime_dependencies_require_matching_licensed_and_strix_bound_report() -> None:
+    key = "pypi/numpy@2.5.1"
+    report = {"schema": "cwl.release-dependency-gate/1", "result": "PASS",
+              "stage": "full", "source_repository": "ContextualWisdomLab/fast-mlsirm",
+              "source_sha": SOURCE, "failures": [], "dependency_count": 1,
+              "dependencies": [{"key": key, "ecosystem": "pypi", "name": "numpy",
+                                "version": "2.5.1", "license": "BSD-3-Clause",
+                                "source_sha256": "d" * 64, "fixture_sha256": "e" * 64}]}
+    raw = (json.dumps(report, sort_keys=True) + "\n").encode()
+    verdict = {"gate_report_sha256": hashlib.sha256(raw).hexdigest(),
+               "binding_artifacts": [{"key": key}]}
+    receipts = [{"leg": f"wheel-{index}",
+                 "locked_dependencies": [{"name": "numpy", "version": "2.5.1"}]}
+                for index in range(12)]
+
+    def check() -> None:
+        verify_runtime_dependency_coverage(
+            verdict, report, raw, receipts,
+            repository="ContextualWisdomLab/fast-mlsirm", source_sha=SOURCE,
+        )
+
+    check()
+    for mutate in (
+        lambda: verdict.update(gate_report_sha256="0" * 64),
+        lambda: receipts[0]["locked_dependencies"][0].update(version="2.5.2"),
+        lambda: verdict["binding_artifacts"][0].update(key="pypi/other@1"),
+    ):
+        original = (copy.deepcopy(verdict), copy.deepcopy(receipts))
+        mutate()
+        with pytest.raises(ValueError):
+            check()
+        verdict.clear()
+        verdict.update(original[0])
+        receipts[:] = original[1]

@@ -838,7 +838,7 @@ jobs:
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@4bc9aeb306aef7c60939b0741648dfa004984a09
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@43757f75b353f209adcb60b1e9a094f93da5f10c
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
@@ -1107,6 +1107,7 @@ jobs:
                       raise ValueError(f"duplicate bundle inventory key: {key}")
                   value[key] = item
               return value
+          runtime_records = []
           for leg, row in rows.items():
               name = f"repro-digest-{leg}"
               members = {path.name: path for path in (Path("downloaded") / name).iterdir()}
@@ -1131,6 +1132,7 @@ jobs:
                       runtime, members[f"{leg}.runtime-requirements.txt"], row,
                       Path("release-source"), commit, expected_bundle,
                   )
+                  runtime_records.append(runtime)
 
           # The central job result is required by `needs`; its immutable verdict
           # must independently match the record and all current-attempt artifacts.
@@ -1140,9 +1142,16 @@ jobs:
           verifier = importlib.util.module_from_spec(verifier_spec)
           verifier_spec.loader.exec_module(verifier)
           verdict_name = os.environ["VERDICT_NAME"]
+          verdict_members = {path.name: path for path in (Path("downloaded") / verdict_name).iterdir()}
+          if set(verdict_members) != {"full-set-verdict.json", "gate-report.json"}:
+              raise SystemExit("central verdict artifact does not contain the exact dependency report")
+          verdict = json.loads(verdict_members["full-set-verdict.json"].read_text(encoding="utf-8"),
+                               object_pairs_hook=unique_object)
+          report_bytes = verdict_members["gate-report.json"].read_bytes()
+          report = json.loads(report_bytes, object_pairs_hook=unique_object)
           verifier.verify_full_set_verdict(
               json.loads(Path("downloaded/reproducibility-record/release-gate-distribution-set.json").read_text()),
-              json.loads((Path("downloaded") / verdict_name / "full-set-verdict.json").read_text()),
+              verdict,
               [json.loads(line) for line in Path("run-artifacts.jsonl").read_text().splitlines()],
               json.loads(Path("run-attempt.json").read_text()),
               repository=os.environ["REPOSITORY"], source_sha=commit,
@@ -1151,6 +1160,10 @@ jobs:
               record_id=int(os.environ["RECORD_ID"]), record_digest=os.environ["RECORD_DIGEST"],
               verdict_id=int(os.environ["VERDICT_ID"]), verdict_digest=os.environ["VERDICT_DIGEST"],
               verdict_name=verdict_name,
+          )
+          verifier.verify_runtime_dependency_coverage(
+              verdict, report, report_bytes, runtime_records,
+              repository=os.environ["REPOSITORY"], source_sha=commit,
           )
 
           # The same immutable-ID transport receipt covers this JSON alongside
