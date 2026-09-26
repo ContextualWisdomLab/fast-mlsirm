@@ -525,7 +525,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@4dab93c56265f08689bb0a000c03ae5bd75709e9" in central
+    assert "release-dependency-license-strix-gate.yml@91694322b0e2bfc594abee404aefc8ec4efe462c" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -747,6 +747,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                    "record_artifact_id": record_artifact["id"],
                    "record_artifact_digest": record_artifact["digest"],
                    "distributions": distributions, "binding_artifacts": [binding],
+                   "scope_evidence": scope_set["evidence"],
                    "runtime_archive_binding_artifacts": [archive_binding],
                    "runtime_archive_license_sha256": hashlib.sha256(archive_report_bytes).hexdigest(),
                    "gate_report_sha256": hashlib.sha256(report_bytes).hexdigest()}

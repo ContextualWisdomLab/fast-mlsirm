@@ -40,7 +40,7 @@ def _artifact(item: Any, name: str, artifact_id: int, digest: str,
 
 
 def verify_full_set_verdict(
-    manifest: Any, verdict: Any, artifacts: list[Any], attempt: Any, *,
+    manifest: Any, scope_set: Any, verdict: Any, artifacts: list[Any], attempt: Any, *,
     repository: str, source_sha: str, control_sha: str, run_id: int,
     run_attempt: int, record_id: int, record_digest: str,
     verdict_id: int, verdict_digest: str, verdict_name: str,
@@ -110,6 +110,34 @@ def verify_full_set_verdict(
         seen_ids.add(artifact_id)
     if {name for name in listed if name.startswith("dist-")} != distribution_names:
         raise ValueError("distribution artifact set differs from the verdict")
+    scope_rows = scope_set.get("evidence") if isinstance(scope_set, Mapping) else None
+    if (not isinstance(scope_set, Mapping) or not isinstance(scope_rows, list)
+            or set(scope_set) != {"schema_version", *expected, "evidence"}
+            or type(scope_set.get("schema_version")) is not int
+            or scope_set["schema_version"] != 1
+            or len(scope_rows) != 13 or not isinstance(verdict.get("scope_evidence"), list)
+            or sorted(scope_rows, key=lambda row: row.get("leg", "") if isinstance(row, Mapping) else "")
+            != verdict["scope_evidence"]
+            or any(scope_set.get(key) != value for key, value in expected.items())):
+        raise ValueError("central verdict does not seal the exact scope artifact set")
+    scope_names: set[str] = set()
+    for row in scope_rows:
+        if not isinstance(row, Mapping) or set(row) != {
+            "leg", "artifact_id", "artifact_name", "artifact_digest"
+        }:
+            raise ValueError("scope artifact identity is malformed")
+        leg, name, artifact_id, digest = (row[field] for field in
+                                         ("leg", "artifact_name", "artifact_id", "artifact_digest"))
+        if (not isinstance(leg, str) or leg not in {item["leg"] for item in rows}
+                or name != f"repro-digest-{leg}" or name in scope_names
+                or type(artifact_id) is not int or artifact_id <= 0 or artifact_id in seen_ids
+                or not isinstance(digest, str) or not DIGEST.fullmatch(digest)):
+            raise ValueError("scope artifact identity is missing or duplicated")
+        _artifact(listed.get(name), name, artifact_id, digest, run_id, control_sha, started)
+        scope_names.add(name)
+        seen_ids.add(artifact_id)
+    if {name for name in listed if name.startswith("repro-digest-")} != scope_names:
+        raise ValueError("scope artifact set differs from the central verdict")
     bindings = verdict.get("binding_artifacts")
     archive_bindings = verdict.get("runtime_archive_binding_artifacts")
     if (not isinstance(bindings, list) or not bindings
@@ -239,13 +267,14 @@ def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    for name in ("manifest", "verdict", "artifacts", "attempt", "repository", "source-sha",
+    for name in ("manifest", "scope-set", "verdict", "artifacts", "attempt", "repository", "source-sha",
                  "control-sha", "run-id", "run-attempt", "record-id", "record-digest",
                  "verdict-id", "verdict-digest", "verdict-name"):
         parser.add_argument(f"--{name}", required=True)
     args = parser.parse_args()
     verify_full_set_verdict(
-        json.loads(Path(args.manifest).read_text()), json.loads(Path(args.verdict).read_text()),
+        json.loads(Path(args.manifest).read_text()), json.loads(Path(args.scope_set).read_text()),
+        json.loads(Path(args.verdict).read_text()),
         [json.loads(line) for line in Path(args.artifacts).read_text().splitlines()],
         json.loads(Path(args.attempt).read_text()), repository=args.repository,
         source_sha=args.source_sha, control_sha=args.control_sha,

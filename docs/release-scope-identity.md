@@ -22,7 +22,8 @@ execute package code. Existing transport hashing remains chunked.
 `release-admission` first requires the pinned central gate job to succeed, then
 verifies the selected immutable artifact IDs, ZIP and member digests. The
 central full-set verdict must match the same run and attempt, exact release
-source, all thirteen distribution rows, and the complete Strix binding set. Its
+source, all thirteen distribution rows, the thirteen scope artifact IDs and
+digests, and the complete Strix binding set. Its
 selected artifact also carries the central dependency report. Admission checks
 the report hash named by the verdict and requires each installed dependency's
 exact wheel archive hash to appear in the licensed, Strix-bound runtime archive set.

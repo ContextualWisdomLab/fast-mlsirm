@@ -838,7 +838,7 @@ jobs:
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@4dab93c56265f08689bb0a000c03ae5bd75709e9
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@91694322b0e2bfc594abee404aefc8ec4efe462c
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
@@ -1155,6 +1155,7 @@ jobs:
           archive_report = json.loads(archive_report_bytes, object_pairs_hook=unique_object)
           verifier.verify_full_set_verdict(
               json.loads(Path("downloaded/reproducibility-record/release-gate-distribution-set.json").read_text()),
+              scope_set,
               verdict,
               [json.loads(line) for line in Path("run-artifacts.jsonl").read_text().splitlines()],
               json.loads(Path("run-attempt.json").read_text()),

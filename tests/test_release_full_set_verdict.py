@@ -29,6 +29,10 @@ def _case() -> dict:
     rows.append({"leg": "sdist", "file": "source.tar.gz", "sha256": "d" * 64,
                  "artifact_id": 99, "artifact_name": "dist-sdist", "artifact_digest": DIGEST})
     manifest = {"schema_version": 1, **identity, "distributions": rows}
+    scope_rows = [{"leg": row["leg"], "artifact_id": index + 200,
+                   "artifact_name": f"repro-digest-{row['leg']}", "artifact_digest": DIGEST}
+                  for index, row in enumerate(rows)]
+    scope_set = {"schema_version": 1, **identity, "evidence": scope_rows}
     name = "release-dependency-sealed-evidence--full-set-verdict"
     binding = {"key": "pypi/example@1", "name": "release-strix-binding-a2-"
                + hashlib.sha256(b"pypi/example@1").hexdigest(),
@@ -41,17 +45,19 @@ def _case() -> dict:
                "record_artifact_id": 100, "record_artifact_digest": DIGEST,
                "distributions": copy.deepcopy(rows), "binding_artifacts": [binding],
                "runtime_archive_binding_artifacts": [archive_binding],
-               "runtime_archive_license_sha256": "f" * 64}
+               "runtime_archive_license_sha256": "f" * 64,
+               "scope_evidence": sorted(copy.deepcopy(scope_rows), key=lambda row: row["leg"])}
 
     def artifact(name: str, artifact_id: int) -> dict:
         return {"name": name, "id": artifact_id, "digest": DIGEST,
                 "created_at": "2026-09-26T12:01:00Z", "expired": False,
                 "workflow_run": {"id": 42, "head_sha": CONTROL}}
 
-    return {"manifest": manifest, "verdict": verdict,
+    return {"manifest": manifest, "scope_set": scope_set, "verdict": verdict,
             "artifacts": [artifact("reproducibility-record", 100), artifact(name, 101),
                           artifact(binding["name"], 102), artifact(archive_binding["name"], 103)]
-                         + [artifact(row["artifact_name"], row["artifact_id"]) for row in rows],
+                         + [artifact(row["artifact_name"], row["artifact_id"]) for row in rows]
+                         + [artifact(row["artifact_name"], row["artifact_id"]) for row in scope_rows],
             "attempt": {"id": 42, "run_attempt": 2, "head_sha": CONTROL,
                         "run_started_at": "2026-09-26T12:00:00Z"},
             "name": name}
@@ -59,7 +65,7 @@ def _case() -> dict:
 
 def _verify(case: dict) -> None:
     verify_full_set_verdict(
-        case["manifest"], case["verdict"], case["artifacts"], case["attempt"],
+        case["manifest"], case["scope_set"], case["verdict"], case["artifacts"], case["attempt"],
         repository="ContextualWisdomLab/fast-mlsirm", source_sha=SOURCE,
         control_sha=CONTROL, run_id=42, run_attempt=2, record_id=100,
         record_digest=DIGEST, verdict_id=101, verdict_digest=DIGEST,
@@ -103,9 +109,21 @@ def test_rejects_forged_missing_stale_or_changed_verdict() -> None:
     def changed_binding_key(case):
         case["verdict"]["binding_artifacts"][0]["key"] = "pypi/other@1"
 
+    def changed_scope_digest(case):
+        case["verdict"]["scope_evidence"][0]["artifact_digest"] = "sha256:" + "f" * 64
+
+    def foreign_scope_artifact(case):
+        next(item for item in case["artifacts"] if item["name"].startswith("repro-digest-"))[
+            "workflow_run"]["id"] = 1
+
+    def missing_scope_artifact(case):
+        case["artifacts"] = [item for item in case["artifacts"]
+                             if item["name"] != case["scope_set"]["evidence"][0]["artifact_name"]]
+
     for mutate in (other_run, stale, wrong_source, changed_file, missing_file,
                    missing_binding, extra_binding, wrong_attempt, changed_verdict_digest,
-                   changed_binding_key):
+                   changed_binding_key, changed_scope_digest, foreign_scope_artifact,
+                   missing_scope_artifact):
         case = _case()
         mutate(case)
         with pytest.raises(ValueError):
