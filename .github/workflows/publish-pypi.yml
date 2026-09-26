@@ -1205,7 +1205,7 @@ jobs:
                                        object_pairs_hook=unique_object)
                   transport.verify_runtime_inventory(
                       runtime, members[f"{leg}.runtime-requirements.txt"], row,
-                      Path("release-source"), commit, expected_bundle, members,
+                      Path("release-source"), commit, expected_bundle, distribution, members,
                   )
                   consumer = json.loads(members[f"{leg}.consumer.json"].read_text(encoding="utf-8"),
                                         object_pairs_hook=unique_object)

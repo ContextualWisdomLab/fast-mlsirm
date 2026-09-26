@@ -732,6 +732,33 @@ def test_build_scope_receipts_bind_wheel_lock_and_repeat(tmp_path: Path) -> None
         verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
 
 
+def test_runtime_rejects_unaccounted_native_member(tmp_path: Path) -> None:
+    import json
+    import runpy
+    import zipfile
+    import pytest
+
+    fixture = _admission_fixture(tmp_path)
+    leg = fixture["legs"][0]
+    folder = tmp_path / "scope-evidence" / f"repro-digest-{leg}"
+    distribution = tmp_path / "dist" / fixture["files"][leg]
+    with zipfile.ZipFile(distribution, "a") as archive:
+        archive.writestr("fast_mlsirm/hidden.dat", b"MZhidden native code")
+    transport = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
+    runtime = json.loads((folder / f"{leg}.runtime.json").read_text())
+    bundle = transport["bundle_inventory"](
+        distribution, leg, _RELEASE_COMMIT, fixture["build_env"][leg],
+    )
+    row = {"target": leg, "file": fixture["files"][leg],
+           "sha256": runtime["sha256"], "build_env": fixture["build_env"][leg]}
+    with pytest.raises(ValueError, match="unaccounted bundled native binary"):
+        transport["verify_runtime_inventory"](
+            runtime, folder / f"{leg}.runtime-requirements.txt", row,
+            tmp_path / "release-source", _RELEASE_COMMIT, bundle, distribution,
+            {path.name: path for path in folder.iterdir()},
+        )
+
+
 def test_sdist_build_receipts_report_no_compiled_cargo_graph(tmp_path: Path) -> None:
     import json
     import runpy

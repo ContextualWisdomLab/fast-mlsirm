@@ -290,3 +290,11 @@ def test_sdist_consumer_receipt_binds_both_finished_distributions(scope_fixture,
     with pytest.raises(ValueError, match="consumer receipt differs"):
         M["verify_sdist_consumer"](receipt, output / f"{leg}.consumer.whl", direct,
                                    rows[leg], rows["sdist"], sha, runtime)
+    consumer_wheel = output / f"{leg}.consumer.whl"
+    with zipfile.ZipFile(consumer_wheel, "a") as archive:
+        archive.writestr("fast_mlsirm/hidden-data.bin", b"\x7fELFhidden native code")
+    forged = json.loads((output / f"{leg}.consumer.json").read_text())
+    forged["consumer_sha256"] = M["hash_file"](consumer_wheel)
+    with pytest.raises(ValueError, match="unaccounted consumer bundled native binary"):
+        M["verify_sdist_consumer"](forged, consumer_wheel, direct,
+                                   rows[leg], rows["sdist"], sha, runtime)

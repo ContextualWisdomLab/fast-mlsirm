@@ -134,8 +134,30 @@ def bundle_inventory(artifact: Path, leg: str, source_sha: str, build_env: str) 
             "members": sorted(members, key=lambda item: item["path"])}
 
 
+def native_binary_members(wheel: Path) -> set[str]:
+    """Find packaged binaries by file type as well as their first bytes."""
+    magic = (b"\x7fELF", b"MZ", b"\x00asm", b"!<arch>\n",
+             b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf",
+             b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe",
+             b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf",
+             b"\xbe\xba\xfe\xca", b"\xbf\xba\xfe\xca")
+    found = set()
+    with zipfile.ZipFile(wheel) as archive:
+        for item in archive.infolist():
+            if item.is_dir():
+                continue
+            with archive.open(item) as stream:
+                header = stream.read(8)
+            name = item.filename.lower()
+            if (header.startswith(magic)
+                    or re.search(r"\.(?:so(?:\.[0-9]+)*|pyd|dll|dylib|a|lib|exe|wasm)$", name)
+                    or ".framework/" in name):
+                found.add(item.filename)
+    return found
+
+
 def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
-                             source: Path, source_sha: str, bundle: dict,
+                             source: Path, source_sha: str, bundle: dict, distribution: Path,
                              evidence_members: dict[str, Path]) -> None:
     """Bind a target install receipt to the selected wheel and exact source lock."""
     keys = {"schema_version", "source_sha", "leg", "file", "sha256", "build_env",
@@ -189,6 +211,8 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
             or {item["path"]: item["sha256"] for item in bundle["members"]}.get(extension["member"])
             != extension["sha256"]):
         raise ValueError(f"{leg}: imported extension differs from selected wheel member")
+    if native_binary_members(distribution) != {extension["member"]}:
+        raise ValueError(f"{leg}: unaccounted bundled native binary")
     archives = record["archives"]
     if (type(archives) is not list or not archives or len(archives) != len(before)
             or len(archives) > 64 or type(evidence_members) is not dict):
@@ -316,6 +340,8 @@ def verify_sdist_consumer(receipt: dict, consumer: Path, direct: Path, row: dict
                  and item["path"].endswith((".so", ".pyd"))]
     if metadata != metadata_members(published) or len(metadata) != 2 or len(extension) != 1:
         raise ValueError(f"{leg}: consumer wheel differs from published metadata or native layout")
+    if native_binary_members(consumer) != {extension[0]["path"]}:
+        raise ValueError(f"{leg}: unaccounted consumer bundled native binary")
     expected = {"schema_version": 1, "source_sha": source_sha, "leg": leg,
                 "build_env": row["build_env"], "sdist_file": sdist_row["file"],
                 "sdist_sha256": sdist_row["sha256"], "file": row["file"],

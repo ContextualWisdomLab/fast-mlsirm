@@ -102,6 +102,10 @@ with the target runtime and consumer wheel evidence. Hosted target results and
 the remaining build/development dependency closure still need verification.
 File hashes establish the bundled bytes, but do not identify the origin or
 licence of each member or the libraries it loads.
+Admission now refuses a published or consumer wheel with any additional
+packaged native binary, including one disguised with a non-library filename.
+This still leaves linked system-library identities and target-specific loads
+to verify.
 Admission must validate those claims against the corresponding distribution
 SHA and build environment before the scope HOLD can be removed.
 
