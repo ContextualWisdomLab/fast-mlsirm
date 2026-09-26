@@ -145,8 +145,14 @@ matching the reviewed 0.11.5 wheel input. The binding
 `528414b582b256a6ab8ac68ceceb134e8ddb719774513ab8cc3a0e4eb22a177d`.
 `uv lock --check --offline`, 254 focused license tests, workflow `actionlint`,
 and the exact A3 Linux cp312 wheel/source check all passed on that merge tree.
-The A3 wheel was built from pre-merge source `58b7b23f`; it is not a wheel
-built from `1c08f1bc`.
+A [fresh manylinux2014 build](../integrated-linux-cp312-20260926/README.md)
+from its Git archive (SHA256
+`7d8b1e1c917d6be5eeeed822742b8ec31add587b96ad62bfb68c49ceaaca1b01`)
+produced a wheel byte-identical to the earlier A3 candidate (SHA256
+`d8ec1d497763abd943dfc5ba0defa93a67f141b8bab9adf04a02c8d09a9d43bb`).
+The integrated wheel's six license members matched its extracted source; its
+installed regression set passed 10 tests. This local artifact result covers
+Linux x86_64 CPython 3.12 only.
 
 Using the integrated generator and reviewed fixture, rerun snapshots for
 Linux aarch64 and Windows x86_64 were byte-identical to the committed files
