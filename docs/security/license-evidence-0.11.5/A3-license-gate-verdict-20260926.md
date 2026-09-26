@@ -1,13 +1,16 @@
 # A3 license gate verdict — Linux x86_64 cp312, fast-mlsirm 0.11.5
 
-Status: **provisional for the examined Linux cp312 candidate** (coordinator verdict, user-delegated, 2026-09-26; not legal review). The actual-wheel inventory correction below needs independent re-review. Hosted checks, approval, and release remain pending.
+Status: **provisional for the examined Linux cp312 candidate** (coordinator verdict, user-delegated, 2026-09-26; not legal review). The actual-wheel inventory correction below needs independent re-review. Hosted checks, approval, and release remain pending. This is not a release-wide or PyPI publication verdict; on 2026-09-26, [PyPI project metadata](https://pypi.org/pypi/fast-mlsirm/json) listed no 0.11.5 files.
 Decision records: coordinator messages msg_60a758c73aad, msg_58e4fad25e39, msg_ee85fb3cb33f, msg_13c9108bac7d, msg_b5aa37b1b0c7, msg_411f3daec1fa.
 
 ## Scope
 - Source: #2157 head `58b7b23f7a154c8391c130ebc3aab2dde50bb84b`. Its Cargo lockfiles and crate manifests are unchanged from the inventoried `26cd4c83` input; the later changes add attribution, documentation, and the complete libm source notices.
 - Candidate artifact checked: `fast_mlsirm-0.11.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`
   SHA256 `d8ec1d497763abd943dfc5ba0defa93a67f141b8bab9adf04a02c8d09a9d43bb` (built from the exact head on s1; source archive SHA256 `f8a15e7513f63b765773d5de5fa7c15bc205b3f8e6f24a1cb30097cc923094bb`). `auditwheel` reports `manylinux_2_17_x86_64`; the installed pair passed 10 regression tests.
-- Cargo binding graph for `x86_64-unknown-linux-gnu`: 103 rows, **HOLD 0 after the actual-wheel correction below**; union of all targets: 158 rows, HOLD 30 (non-Linux, deferred to 12-wheel expansion). The #2170 parent head `bce6de42` alone has 0.11.4 manifests and does not prove the 0.11.5 result.
+- A [fresh build from integrated merge `1c08f1bc`](integrated-linux-cp312-20260926/README.md)
+  produced a byte-identical wheel with that same SHA256. Its separate source
+  archive SHA256 is `7d8b1e1c917d6be5eeeed822742b8ec31add587b96ad62bfb68c49ceaaca1b01`.
+- Cargo binding graph for `x86_64-unknown-linux-gnu`: 103 rows, **HOLD 0 after the actual-wheel correction below**. At the A3 snapshot, the 158-row all-target union had 30 HOLD (non-Linux, deferred to 12-wheel expansion); the [later non-Linux review](nonlinux-upstream-20260926/REVIEW.md) records the reduced count and remaining target-specific gaps. The #2170 parent head `bce6de42` alone has 0.11.4 manifests and does not prove the 0.11.5 result.
 
 ## Actual-wheel correction and binding
 
@@ -26,9 +29,22 @@ The actual wheel's six `METADATA License-File` members have the following SHA256
 | `NOTICE-libm-0.2.16-LICENSE.txt` | `3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7` |
 | `NOTICE-libm-0.2.16-source-notices.txt` | `9e949a13f66c0f9b60b73b54e8ab2940ccff92d704c46c53103b1028e2cc75ba` |
 
-Run the real-wheel hash regression explicitly with `python tests/test_license_inventory_generator.py WHEEL EXACT_SOURCE_ROOT`; the default pytest collection needs no wheel and has no skip. At the correction head, the default SPDX/inventory set passed 236/236; the explicit actual-wheel check passed, and a copy with a changed source `NOTICE` was rejected. The source archive identifies #2157 head `58b7b23f`; the synthetic #2157/#2170 merge still conflicts in `uv.lock`, so its final merge tree and hosted checks need separate confirmation.
+Run the real-wheel hash regression explicitly with `python tests/test_license_inventory_generator.py WHEEL EXACT_SOURCE_ROOT`; the default pytest collection needs no wheel and has no skip. At the correction head, the default SPDX/inventory set passed 236/236; the explicit actual-wheel check passed, and a copy with a changed source `NOTICE` was rejected. The source archive identifies #2157 head `58b7b23f`. The [integration candidate](nonlinux-upstream-20260926/REVIEW.md#integrated-source-candidate) resolved the `uv.lock` conflict and reproduced this exact Linux wheel; the other wheel targets and hosted checks remain pending.
 
 **Required A3 release evidence:** Before accepting this Linux cp312 candidate, run the explicit check above with the SHA-pinned wheel named in Scope and the extracted source archive whose Git commit is the #2157 head. Record the command, both input SHA256 values, exit code, and six-file result alongside the inventory. A default pytest pass does not satisfy this artifact check. With either path omitted, the command exits 1 (`usage: test_license_inventory_generator.py WHEEL EXACT_SOURCE_ROOT`); with the cited wheel and source it prints `actual A3 wheel license roles and six source hashes verified` and exits 0. This local pass applies only to the examined candidate; the integrated PR head and hosted gates remain pending.
+
+On 2026-09-26, the cited wheel and source archive were retrieved again from
+`s1.cluster.seonghobae.me` and hashed locally: wheel SHA256
+`d8ec1d497763abd943dfc5ba0defa93a67f141b8bab9adf04a02c8d09a9d43bb`;
+source archive SHA256
+`f8a15e7513f63b765773d5de5fa7c15bc205b3f8e6f24a1cb30097cc923094bb`.
+The current #2175 test was run as
+`python tests/test_license_inventory_generator.py WHEEL EXTRACTED_SOURCE_ROOT`
+with those exact files and exited 0, printing
+`actual A3 wheel license roles and six source hashes verified`. A separate
+ZIP/source byte check found all six members in the table above and matched
+each to the extracted source file. This rerun closes the local candidate's
+explicit artifact check; it does not cover a final integrated or published wheel.
 
 ## Acceptance bases (Linux graph, 103 rows)
 canonical verifier text 21; byte-identical condition clauses (reviewed hash) 68; SPDX matching template 4;
@@ -42,4 +58,4 @@ matrixmultiply, ndarray) are all accepted by explicit verdicts above, not by the
 
 ## Outside this gate
 - NumPy is an unbundled external runtime dependency (official wheel `3cdec01f…` vendors libgfortran/libquadmath; not a fast-mlsirm bundling violation). Research consumption uses a Fortran-free NumPy build.
-- Python non-shipping tooling (atheris, colorama, hypothesis x2, numpy text files, packaging, pygments, sortedcontainers): tracked as a separate license-hygiene item; none is GPL/LGPL/AGPL (strongest: MPL-2.0).
+- Python tooling and external-runtime license candidates are tracked separately in the [non-Linux follow-up](nonlinux-upstream-20260926/REVIEW.md). NumPy's pinned wheel includes GPL/LGPL component notices; no blanket permissive verdict follows from excluding it from this wheel's bundled bits.
