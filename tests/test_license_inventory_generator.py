@@ -1324,6 +1324,15 @@ def test_own_crate_wheel_unknown_notice_owner_stays_hold(tmp_path):
     assert any("no unique component" in reason for reason in row["hold_reasons"])
 
 
+def test_own_crate_wheel_notice_source_mismatch_stays_hold(tmp_path):
+    args, wheel, digest = _own_crate_args(tmp_path, extra_license_files={"NOTICE": "Original notice"})
+    (tmp_path / "NOTICE").write_text("Changed notice")
+    args.own_crate_wheel, args.own_crate_wheel_sha256 = wheel, digest
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert any("differs from source" in reason for reason in row["hold_reasons"])
+
+
 def test_actual_a3_wheel_license_roles_when_artifact_is_supplied():
     wheel_path = os.environ.get("FMLS_A3_WHEEL")
     source_root = os.environ.get("FMLS_A3_SOURCE")
@@ -1335,6 +1344,18 @@ def test_actual_a3_wheel_license_roles_when_artifact_is_supplied():
         Path(wheel_path), expected, {("cfg_aliases", "0.2.2"), ("libm", "0.2.16")},
         Path(source_root))
     assert (version, errors, len(files)) == ("0.11.5", [], 6)
+    expected_files = {
+        "LICENSE": "08f1fd81fb120bc468b69dc3e58ea0dc23c216305c766e45e107f56c76559e3f",
+        "LICENSE-THIRD-PARTY": "d46f307a2e8a49e2d638ee4e0b768c6c908c7786cb9106e74948561bf8cf0af0",
+        "NOTICE": "7192b2614bfee6e95283ef9db9f5fe41c2acb579f5cd30e6482445e42fca0ae5",
+        "NOTICE-cfg_aliases-0.2.2-NOTICES.md": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee",
+        "NOTICE-libm-0.2.16-LICENSE.txt": "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7",
+        "NOTICE-libm-0.2.16-source-notices.txt": "9e949a13f66c0f9b60b73b54e8ab2940ccff92d704c46c53103b1028e2cc75ba",
+    }
+    assert {f["path"].split("/licenses/", 1)[1]: f["sha256"] for f in files} == expected_files
+    assert all(hashlib.sha256((Path(source_root) / name).read_bytes()).hexdigest() == digest
+               for name, digest in expected_files.items())
+    assert all(f["artifact_sha256"] == expected for f in files)
     assert [f["wheel_role"] for f in files].count("own-license") == 1
     assert {f["wheel_component"] for f in files if f["wheel_role"] == "third-party-notice"} == {
         "cfg_aliases@0.2.2", "libm@0.2.16"}

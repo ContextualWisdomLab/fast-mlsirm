@@ -15,6 +15,17 @@ The previous generator applied all six wheel `License-File` entries to each own 
 
 The corrected run uses the exact #2157 source archive and wheel above, the 0.11.5 Cargo input set, `--own-crate-wheel-source-root` pointing to that source, and the Linux target graph. Every declared wheel file must match its source bytes. `LICENSE-THIRD-PARTY` must match the tracked snapshot SHA256 `e6d920bd6bdd392cc902a5a54fe365f48fdadb1b3762e857fddee1e4dea6ca26`, its source inventory SHA256 `621e4ca2e51b460c832438c1ec04cb679ca44c2dddad396d08103c2e99590d28`, and all 101 third-party rows in the target graph. The two own crate rows are version 0.11.5, PERMISSIVE, with no HOLD reasons; all 103 Linux rows are PERMISSIVE and completeness gaps are empty. Corrected inventory SHA256: `d8516b5a9f515d545c877e792091fde29e565f79a994f207adcfca13879dba56` at s1 `runs/fmls-a3-wheel-rca-58b7b23f-20260926/fixed-bound/inventory.json`. This is local evidence pending independent review, not a hosted gate result.
 
+The actual wheel's six `METADATA License-File` members have the following SHA256 values. Each corresponding top-level file in the exact #2157 source has the **same** SHA256. The real-wheel regression pins all six expected hashes, including the five supplemental files.
+
+| Source / wheel license member | Expected SHA256 |
+| --- | --- |
+| `LICENSE` | `08f1fd81fb120bc468b69dc3e58ea0dc23c216305c766e45e107f56c76559e3f` |
+| `LICENSE-THIRD-PARTY` | `d46f307a2e8a49e2d638ee4e0b768c6c908c7786cb9106e74948561bf8cf0af0` |
+| `NOTICE` | `7192b2614bfee6e95283ef9db9f5fe41c2acb579f5cd30e6482445e42fca0ae5` |
+| `NOTICE-cfg_aliases-0.2.2-NOTICES.md` | `1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee` |
+| `NOTICE-libm-0.2.16-LICENSE.txt` | `3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7` |
+| `NOTICE-libm-0.2.16-source-notices.txt` | `9e949a13f66c0f9b60b73b54e8ab2940ccff92d704c46c53103b1028e2cc75ba` |
+
 ## Acceptance bases (Linux graph, 103 rows)
 canonical verifier text 21; byte-identical condition clauses (reviewed hash) 68; SPDX matching template 4;
 upstream-vcs text at the published commit 2; own crates via published-wheel LICENSE 2; reviewed pointer notices 4;
