@@ -17,3 +17,10 @@ crate-type = ["cdylib"]
 mlsirm-core = { path = "../mlsirm-core" }
 numpy = "0.29.0"
 pyo3 = "0.29.0"
+
+# Byte-reproducible release wheels: with the default 16 codegen units, rustc's
+# thin-local-LTO symbol suffixes (`.llvm.<hash>`) vary between otherwise
+# identical fresh builds, so the shipped `_core` library differs build to build.
+# A single codegen unit removes that source of nondeterminism.
+[profile.release]
+codegen-units = 1

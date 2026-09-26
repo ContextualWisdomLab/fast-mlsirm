@@ -6,11 +6,20 @@ from pathlib import Path
 
 
 _WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "release-tag.yml"
+_PUBLISH = Path(__file__).parents[1] / ".github" / "workflows" / "publish-pypi.yml"
 
 
 def _workflow_text() -> str:
     """Return the release-tag workflow as UTF-8 text."""
     return _WORKFLOW.read_text(encoding="utf-8")
+
+
+def _creator_text() -> str:
+    """Return the post-admission job that creates the tag and release (R5a)."""
+    text = _PUBLISH.read_text(encoding="utf-8")
+    start = text.index("  create-tag-and-release:\n")
+    end = text.index("\n  release-assets:\n", start)
+    return text[start:end]
 
 
 def test_release_tag_workflow_is_manual_least_privilege_and_serialized():
@@ -20,7 +29,10 @@ def test_release_tag_workflow_is_manual_least_privilege_and_serialized():
     assert "schedule:" not in text
     assert "push:" not in text
     assert "permissions:\n  contents: read" in text
-    assert text.count("contents: write") == 1
+    # R5a: tag/release creation moved behind release admission, so this
+    # verify-and-dispatch workflow holds no contents write at all.
+    assert "contents: write" not in text
+    assert "permissions:\n      contents: write" in _creator_text()
     assert "group: release-tag\n" in text
     assert "cancel-in-progress: false" in text
     assert "timeout-minutes: 10" in text
@@ -93,10 +105,11 @@ def test_existing_release_and_api_uncertainty_block_publication():
 
 def test_tag_without_release_resumes_only_at_the_requested_source_commit():
     """An interrupted run resumes only when the immutable tag targets the source."""
-    text = _workflow_text()
+    text = _creator_text()
     assert "resume_existing_tag=true" in text
     assert "resume_existing_tag=false" in text
     assert "resuming publication for the existing immutable tag" in text
+    assert "exists without its verified tag; refusing to reuse it" in text
     assert "existing tag does not target the requested release commit" in text
     assert 'actual_tag_sha != os.environ["RELEASE_COMMIT"]' in text
     guard = "if: steps.release_tag_state.outputs.resume_existing_tag != 'true'"
@@ -119,7 +132,8 @@ def test_oversized_release_notes_are_capped_with_authoritative_pointer():
 
 def test_release_tag_is_created_atomically_at_the_explicit_source_commit():
     """The tag creation API binds the immutable ref to the reviewed release cut."""
-    text = _workflow_text()
+    text = _creator_text()
+    assert "Atomically create the immutable release tag" not in _workflow_text()
     create_step = "Atomically create the immutable release tag"
     post_ref = '"$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/refs"'
     assert create_step in text
@@ -135,8 +149,9 @@ def test_release_tag_is_created_atomically_at_the_explicit_source_commit():
 
 def test_release_creation_requires_the_verified_existing_tag():
     """Release publication cannot silently create or retarget a tag after checks."""
-    text = _workflow_text()
-    preflight = "Verify the release is absent and classify the tag state"
+    text = _creator_text()
+    assert 'gh release create' not in _workflow_text()
+    preflight = "Classify the tag and release state after admission"
     atomic_create = "Atomically create the immutable release tag"
     publish = 'gh release create "v$RELEASE_VERSION"'
     assert publish in text
