@@ -43,3 +43,7 @@ def test_unbounded_holder_var_is_capped():
 def test_changed_or_extra_condition_never_matches():
     assert M.match("Copyright (c) 2020 Example\n" + BODY.replace("keeping", "removing"), TPL) is None
     assert M.match("Copyright (c) 2020 Example\n" + BODY + "\nNo commercial use.", TPL) is None
+
+
+def test_very_long_text_is_rejected_quickly():
+    assert M.match("Copyright (c) 2020 Example\n" + "word " * 50000 + BODY, TPL) is None

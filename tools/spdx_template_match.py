@@ -47,6 +47,10 @@ def compile_template(tpl: str):
 
 def match(text: str, tpl: str, strict: bool = True) -> list[dict] | None:
     """Return the var/optional spans that differ from the template's original, or None."""
+    # ponytail: length guard instead of a regex engine with backtracking limits; a text longer than
+    # the template plus the widest vars cannot match, and huge combined files otherwise backtrack for minutes.
+    if len(text.split()) > 2 * len(re.sub(r"<<.*?>>", " ", tpl, flags=re.S).split()) + 1000:
+        return None
     rx, names = compile_template(tpl)
     m = rx.fullmatch(text.translate(EQUIV))
     if not m:
