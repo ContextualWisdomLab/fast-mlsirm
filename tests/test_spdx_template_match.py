@@ -47,3 +47,11 @@ def test_changed_or_extra_condition_never_matches():
 
 def test_very_long_text_is_rejected_quickly():
     assert M.match("Copyright (c) 2020 Example\n" + "word " * 50000 + BODY, TPL) is None
+
+
+def test_comment_indicators_and_leading_title_are_ignored():
+    """SPDX Matching Guidelines: ignore code comment markers and a license title at the start."""
+    commented = "/*\n * Example Project License\n * Copyright (c) 2020 Example\n *\n" + \
+        "".join(f" * {line}\n" for line in BODY.splitlines()) + " */\n"
+    assert M.match(commented, TPL) is not None
+    assert M.match(commented.replace("keeping", "removing"), TPL) is None

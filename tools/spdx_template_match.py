@@ -3,7 +3,8 @@
 Used to review texts before their normalized sha256 is added to the verifier's reviewed map;
 the verifier itself only trusts those exact hashes.
 
-Guidelines applied: whitespace, case and quote/dash equivalence; <<var>> matches its `match`
+Guidelines applied: whitespace, case and quote/dash equivalence; code comment indicators
+(/*, *, //, #) ignored; a license title at the start ignored; <<var>> matches its `match`
 regex; <<beginOptional>>...<<endOptional>> may be absent; everything else must match word for word.
 
 Strictness beyond the template (the SPDX `match` regexes are very permissive):
@@ -19,7 +20,10 @@ from pathlib import Path
 
 EQUIV = str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'", "–": "-", "—": "-"})
 HEADER_LINE = re.compile(
-    r"^((the )?mit license( \(mit\))?|copyright\b.*|(\(c\)|©)\s*\d{4}.*|all rights reserved\.?)$", re.I)
+    r"^((the )?mit license( \(mit\))?|[a-z0-9 .\-/]{1,40} licen[cs]e( v?\d[\w.]*)?|-{3,}|={3,}"
+    r"|copyright\b.*|(\(c\)|©)\s*\d{4}.*|all rights reserved\.?)$", re.I)
+# SPDX Matching Guidelines: code comment indicators and separators are ignored.
+COMMENT_MARKER = re.compile(r"^\s*(/\*+|\*+/|\*+(?=\s|$)|//+|#+(?=\s|$))\s?|\s*\*+/\s*$", re.M)
 UNBOUNDED_VAR_MAX = 200
 
 
@@ -52,7 +56,7 @@ def match(text: str, tpl: str, strict: bool = True) -> list[dict] | None:
     if len(text.split()) > 2 * len(re.sub(r"<<.*?>>", " ", tpl, flags=re.S).split()) + 1000:
         return None
     rx, names = compile_template(tpl)
-    m = rx.fullmatch(text.translate(EQUIV))
+    m = rx.fullmatch(COMMENT_MARKER.sub("", text).translate(EQUIV))
     if not m:
         return None
     if strict:
