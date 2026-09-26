@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2026-10-24 - M-step 그래디언트 계산 시 4차원 중간 배열 할당 방지 (np.vdot 및 사전 축소 활용)
+**Learning:** `marginal.py`의 그래디언트 및 info 계산 시 `float((resid * deta).sum())`와 같은 형태는 브로드캐스팅에 의해 크기가 큰 3차원 혹은 4차원 중간 배열(예: `(S, I, Qt, Nx)`)을 할당하게 되어 심각한 메모리 사용과 성능 저하를 초래합니다. `np.vdot`은 두 배열이 정확히 같은 크기일 때만 동작하지만, 브로드캐스팅을 위해 `deta`와 같이 차원이 추가된 변수를 사용하는 대신, 브로드캐스팅이 일어나기 전의 축들에 대해 `resid`를 `.sum(axis=(...))`로 먼저 축소한 뒤 `np.vdot`을 사용하면 수학적으로 동일한 스칼라 값을 계산하면서도 거대한 4차원 배열 할당을 완전히 피할 수 있습니다.
+**Action:** 스칼라 축소(reduction)가 필요한 그래디언트나 info 계산 과정에서 브로드캐스팅으로 인해 메모리 할당이 커지는 패턴을 발견할 경우, 브로드캐스트할 기준 배열의 차원에 맞춰 나머지 배열을 먼저 `.sum(axis=...)`으로 축소(pre-reduce)하고, 이후 `np.vdot`을 사용하여 중간 배열 할당 없이 연산을 최적화합니다.

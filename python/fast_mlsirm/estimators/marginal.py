@@ -1033,11 +1033,13 @@ def fit_marginal_numpy(
                 g_b = float(resid.sum()) - pen["lambda_b"] * b[i]
                 i_b = float(info.sum())
                 if free_alpha:
-                    deta_a = a_c * theta_i[:, :, None]
-                    g_alpha = float((resid * deta_a).sum()) - pen["lambda_alpha"] * (
+                    deta_a_reduced = a_c * theta_i
+                    # Optimized: Pre-reduce over inner axes to prevent multi-dimensional broadcasting,
+                    # then compute dot product with np.vdot to avoid intermediate array allocations.
+                    g_alpha = float(np.vdot(resid.sum(axis=2), deta_a_reduced)) - pen["lambda_alpha"] * (
                         alpha[i] - pen["mu_alpha"]
                     )
-                    i_alpha = float((info * deta_a * deta_a).sum())
+                    i_alpha = float(np.vdot(info.sum(axis=2), deta_a_reduced * deta_a_reduced))
                 else:
                     g_alpha, i_alpha = 0.0, 0.0
                 if uses_space:
@@ -1105,9 +1107,11 @@ def fit_marginal_numpy(
             )
             prob = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
             resid = rbar - n_all * prob
-            deta = -gamma * dist[None, :, None, :]
-            grad = float((resid * deta).sum()) - pen["lambda_tau"] * (tau - pen["mu_tau"])
-            info = float((n_all * prob * (1.0 - prob) * deta * deta).sum()) + pen["lambda_tau"]
+            deta_reduced = -gamma * dist
+            # Optimized: Pre-reduce over inner axes to prevent multi-dimensional broadcasting,
+            # then compute dot product with np.vdot to avoid intermediate array allocations.
+            grad = float(np.vdot(resid.sum(axis=(0, 2)), deta_reduced)) - pen["lambda_tau"] * (tau - pen["mu_tau"])
+            info = float(np.vdot((n_all * prob * (1.0 - prob)).sum(axis=(0, 2)), deta_reduced * deta_reduced)) + pen["lambda_tau"]
             if info > 0.0:
                 direction = grad / info
 
@@ -1172,9 +1176,10 @@ def fit_marginal_numpy(
             eta = eta_delta(delta)
             prob = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
             resid = rbar - n_all * prob
-            w_bcast = w_cov[:, :, None, None]
-            grad_d = float((resid * w_bcast).sum())
-            info_d = float((n_all * prob * (1.0 - prob) * w_bcast * w_bcast).sum())
+            # Optimized: Pre-reduce over inner axes to prevent multi-dimensional broadcasting,
+            # then compute dot product with np.vdot to avoid intermediate array allocations.
+            grad_d = float(np.vdot(resid.sum(axis=(2, 3)), w_cov))
+            info_d = float(np.vdot((n_all * prob * (1.0 - prob)).sum(axis=(2, 3)), w_cov * w_cov))
             if info_d > 0.0:
                 direction = grad_d / info_d
 
