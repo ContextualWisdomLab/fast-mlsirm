@@ -1373,3 +1373,23 @@ def test_reviewed_unicode_license_satisfies_and_conjunct(tmp_path):
         lock.write_text(content.replace(L.tomllib.loads(content)["package"][0]["checksum"], digest))
         (row,) = L.rust_inventory(args, [])
         assert row["license_class"] == expected
+
+
+def test_documented_exception_is_pinned_to_crate_and_member_hash(tmp_path, monkeypatch):
+    """An exception applies only to the exact (crate sha, member sha) pair it names."""
+    text = "Combined notice: MIT for the crate; third-party parts under notice-preserving terms.\n"
+    args = _rust_args(tmp_path)
+    digest = _crate(Path(args.cargo_registry_cache), "dep", "1.0", {"LICENSE.txt": text})
+    lock = Path(args.cargo_lock_workspace)
+    content = lock.read_text()
+    lock.write_text(content.replace(L.tomllib.loads(content)["package"][0]["checksum"], digest))
+    member = hashlib.sha256(text.encode()).hexdigest()
+    (plain,) = L.rust_inventory(args, [])
+    assert plain["license_class"] == "HOLD"
+    monkeypatch.setitem(L.DOCUMENTED_EXCEPTIONS, (digest, member), {"identifier": "MIT"})
+    (row,) = L.rust_inventory(args, [])
+    assert (row["license_class"], row["license_files_in_artifact"][0]["documented_exception"]) == ("PERMISSIVE", {"identifier": "MIT"})
+    monkeypatch.delitem(L.DOCUMENTED_EXCEPTIONS, (digest, member))
+    monkeypatch.setitem(L.DOCUMENTED_EXCEPTIONS, ("0" * 64, member), {"identifier": "MIT"})
+    (other,) = L.rust_inventory(args, [])
+    assert other["license_class"] == "HOLD"

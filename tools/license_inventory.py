@@ -204,6 +204,25 @@ def detect(text: str) -> list[str]:
 # text-review-20260926. A pointer is not a license text: with --reviewed-pointer-notices it
 # is satisfied only when every named license has a verified full text in the same
 # hash-bound .crate and the names equal the declared SPDX expression's terms.
+# Documented exceptions: a hash-pinned (crate sha256, member sha256) whose text is not a single
+# standard license but was accepted as the named identifier. Coordinator verdict (user-delegated,
+# 2026-09-26), not legal review. Evidence: s1 libm-notice-20260926 (PROPOSAL.md bdeac27d).
+# Release gate: the wheel third-party notices must include libm LICENSE.txt and its Sun
+# (freely granted, notice preserved) x50, BSD-2-Clause (David Schultz) x2 and MIT (core-math) x8
+# source notices.
+DOCUMENTED_EXCEPTIONS = {
+    ("b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981",
+     "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7"): {
+        "identifier": "MIT",
+        "classification": "notice-preserving permissive",
+        "package": "libm@0.2.16",
+        "member": "LICENSE.txt",
+        "notice_families": {"Sun freely-granted (notice preserved)": 50, "BSD-2-Clause": 2, "MIT (core-math)": 8},
+        "basis": "coordinator verdict (user-delegated, 2026-09-26), not legal review",
+    },
+}
+
+
 POINTER_NOTICES = {
     "9fba058782d4dbf4eda66df225dfc11e8afdc5618f6bc36c2dafbb087cda3971": ("Apache-2.0", "MIT"),  # unicode-width COPYRIGHT 23860c2a
     "7e7a2c785f3db52a3daf64a62b76b09b940355e4fe1b7f7092f473b7663416b1": ("Unlicense", "MIT"),  # memchr-family COPYING 01c266bc
@@ -712,6 +731,11 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
                 bool(getattr(args, "reviewed_pointer_notices", False)),
             ) if bound else ([], [])
             hold.extend(archive_errors)
+            for f in files:
+                exception = DOCUMENTED_EXCEPTIONS.get((measured, f["sha256"]))
+                if exception and not f["verified_standard_text"]:
+                    f["verified_standard_text"] = [exception["identifier"]]
+                    f["documented_exception"] = exception
             text_origin = None
             if bound and not files and f"{name}@{version}" in upstream:
                 files, upstream_errors = bind_upstream_license_files(
@@ -777,7 +801,8 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
         verified_labels = {
             label for f in files for label in f.get("verified_standard_text", [])
         }
-        unrecognized_files = sorted(f["path"] for f in files if not f["detected"] and f["path"] not in satisfied_pointers)
+        unrecognized_files = sorted(f["path"] for f in files if not f["detected"] and f["path"] not in satisfied_pointers
+                                    and not f.get("documented_exception"))
         if unrecognized_files:
             hold.append(f"license candidate text is unrecognized: {unrecognized_files}")
         unverified_files = sorted(

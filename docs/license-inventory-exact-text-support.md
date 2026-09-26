@@ -52,3 +52,18 @@ quotes are in s1 `text-review-20260926/copyright-only-diffs.md` (sha256
 3a44b440bf93462b102f97b77bf41836bd9ab6ab05015faa64fd085038a9f8a4). Matching logic
 is unchanged. The 10 DEVIATES texts, 11 NO_LOCAL_TEMPLATE texts, and crates
 with no license file remain HOLD.
+
+## Documented exception: libm 0.2.16 (2026-09-26)
+
+Coordinator verdict (user-delegated, 2026-09-26), not legal review. `DOCUMENTED_EXCEPTIONS` in
+`tools/license_inventory.py` accepts libm 0.2.16 `LICENSE.txt` (sha256
+3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7) as notice-preserving
+permissive MIT, only inside the lock-matched `.crate` sha256
+b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981. libm is linked into the Linux
+cp312 `_core` via naga/wgpu and num-traits. Its sources carry Sun "freely granted, provided that
+this notice is preserved" (50 files), BSD-2-Clause (David Schultz, 2 files) and MIT (core-math,
+8 files) notices. Evidence: s1 `libm-notice-20260926/` (PROPOSAL.md sha256 bdeac27d...).
+
+**Release gate (recorded, not yet enforced):** the wheel's third-party notices must include libm
+`LICENSE.txt` and the Sun, BSD-2-Clause (David Schultz) and core-math MIT source notices before
+any release that ships the Rust core.
