@@ -69,7 +69,7 @@ def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     assert "release tag does not target release_commit" in verify
     assert 'tomllib.load' in verify or 'tomllib.loads' in verify
     assert 'f"v{project[\'version\']}"' in verify
-    assert text.count("maturin-version: v1.14.1") == 4
+    assert text.count("maturin-version: v1.15.0") == 4
 
 
 def test_release_checkout_rejects_unvalidated_dispatch_sha_authority() -> None:
@@ -645,7 +645,7 @@ def _admission_fixture(root: Path) -> dict:
                          "cargo_lock_sha256": hashlib.sha256((crate / "Cargo.lock").read_bytes()).hexdigest(),
                          "pyproject_sha256": hashlib.sha256((source / "pyproject.toml").read_bytes()).hexdigest(),
                          "cargo_version": "cargo 1.90.0", "rustc_version": "rustc 1.90.0",
-                         "maturin_version": "maturin 1.14.1", "python_version": f"Python {version}.0",
+                         "maturin_version": "maturin 1.15.0", "python_version": f"Python {version}.0",
                          "cargo_features": ["pyo3/extension-module"],
                          "cargo_targets": {triple: graph for triple in targets}}
                 (folder / f"{leg}.build-{build_pass}.json").write_text(json.dumps(build, sort_keys=True) + "\n")
@@ -677,6 +677,10 @@ def test_build_scope_receipts_bind_wheel_lock_and_repeat(tmp_path: Path) -> None
     verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
     second["cargo_targets"][leg.rsplit("-py", 1)[0]][0]["version"] = "forged"
     with pytest.raises(ValueError, match="graph differs from selected lock"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+    second = json.loads((folder / f"{leg}.build-second.json").read_text())
+    second["maturin_version"] = "maturin 1.14.1"
+    with pytest.raises(ValueError, match="toolchain or leg"):
         verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
 
 

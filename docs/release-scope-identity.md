@@ -1,7 +1,6 @@
 # Release scope identity: declarations, not closure acceptance
 
-This first wiring increment extends the existing reproducibility-record artifact;
-it does not add jobs or resolve dependencies. The existing twelve wheel matrix
+The release scope record extends the existing reproducibility artifact. The twelve wheel matrix
 legs and separate sdist produce the same distributions and TSV rows. The record
 job checks out the approved control commit for the helper and the exact release
 source for immutable declaration blobs, then writes `release-scope-identities.json`
@@ -75,7 +74,13 @@ identities into its full-set verdict. Admission checks that set against the
 twelve installed-wheel receipts. A missing or mismatched platform wheel
 remains HOLD.
 
-The sdist and wheel builds still need build and native dependency evidence.
+Each wheel build now records the target-filtered Cargo graph, features, selected
+wheel-crate lock hash, and Rust/Python/maturin tool versions in its actual
+container or native runner. Both build passes must agree, and admission checks
+the receipts against the release source. The action now requests maturin 1.15.0,
+matching the version in `requirements/package.txt`; the standalone executable
+downloaded by the action still needs exact artifact provenance. The sdist and
+wheel builds still need complete Python build-tool and native dependency evidence.
 File hashes establish the bundled bytes, but do not identify the origin or
 licence of each member or the libraries it loads.
 Admission must validate those claims against the corresponding distribution
@@ -97,7 +102,8 @@ The six scopes have distinct sources of truth:
   prove which packages the build loaded. For Linux wheels, collect inside the
   digest-pinned manylinux container used by `maturin-action`; the surrounding
   runner's Python and Cargo inventories describe a different environment. The
-  sdist needs its own build scope.
+  sdist needs its own build scope. Cargo graph receipts now cover part of this
+  requirement but do not establish the full build or dev environment.
 - **Native and bundled:** inspect every binary and packaged library in the
   *finished* wheel on its target runner. Record imported shared-library names,
   resolved paths or explicit system-provided identities, and hashes of bundled

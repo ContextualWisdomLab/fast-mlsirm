@@ -218,7 +218,7 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
                 or not isinstance(receipt["python_version"], str)
                 or not receipt["python_version"].startswith(f"Python {python}.")
                 or not isinstance(receipt["maturin_version"], str)
-                or "1.14.1" not in receipt["maturin_version"]
+                or receipt["maturin_version"] != "maturin 1.15.0"
                 or any(not isinstance(receipt[key], str) or not receipt[key]
                        for key in ("cargo_version", "rustc_version"))
                 or type(receipt["cargo_targets"]) is not dict

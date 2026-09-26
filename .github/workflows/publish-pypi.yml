@@ -189,13 +189,13 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
         with:
           command: sdist
-          maturin-version: v1.14.1
+          maturin-version: v1.15.0
           args: --out dist
       - name: Rebuild sdist for byte-reproducibility check
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
         with:
           command: sdist
-          maturin-version: v1.14.1
+          maturin-version: v1.15.0
           args: --out dist-rebuild
       # Historical release tags predate the pyproject include workaround for
       # maturin omitting LICENSE from mixed-layout sdists while still writing
@@ -473,7 +473,7 @@ jobs:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
-          maturin-version: v1.14.1
+          maturin-version: v1.15.0
           docker-options: -e SOURCE_DATE_EPOCH
           before-script-linux: $CARGO_BUILD_PYTHON trusted-control/scripts/ci/capture_release_build_scope.py
           args: --release --out dist -i ${{ matrix.interpreter }}
@@ -493,7 +493,7 @@ jobs:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
-          maturin-version: v1.14.1
+          maturin-version: v1.15.0
           docker-options: -e SOURCE_DATE_EPOCH
           before-script-linux: $CARGO_BUILD_PYTHON trusted-control/scripts/ci/capture_release_build_scope.py
           args: --release --out dist-rebuild --target-dir target-rebuild -i ${{ matrix.interpreter }}
