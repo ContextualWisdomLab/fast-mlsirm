@@ -177,6 +177,10 @@ jobs:
     timeout-minutes: 15
     env:
       SOURCE_DATE_EPOCH: ${{ needs.verify-release.outputs.source_date_epoch }}
+      CARGO_RELEASE_SHA: ${{ needs.verify-release.outputs.release_commit }}
+      CARGO_RELEASE_LEG: sdist
+      CARGO_BUILD_IMAGE: ""
+      CARGO_BUILD_PYTHON: python
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -185,18 +189,31 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted-control
+          persist-credentials: false
       - name: Build sdist
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
         with:
           command: sdist
           maturin-version: v1.15.0
           args: --out dist
+      - name: Capture first sdist build tools
+        env:
+          CARGO_BUILD_PASS: first
+        run: python trusted-control/scripts/ci/capture_release_build_scope.py
       - name: Rebuild sdist for byte-reproducibility check
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
         with:
           command: sdist
           maturin-version: v1.15.0
           args: --out dist-rebuild
+      - name: Capture second sdist build tools
+        env:
+          CARGO_BUILD_PASS: second
+        run: python trusted-control/scripts/ci/capture_release_build_scope.py
       # Historical release tags predate the pyproject include workaround for
       # maturin omitting LICENSE from mixed-layout sdists while still writing
       # License-File metadata. Inject the checked-out LICENSE when missing so
@@ -339,11 +356,6 @@ jobs:
           (out / f"{leg}.tsv").write_text(row + "\n", encoding="utf-8")
           print(row)
           PY
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.sha }}
-          path: trusted-control
-          persist-credentials: false
       - name: Capture finished sdist members from the build leg
         env:
           RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
@@ -858,7 +870,7 @@ jobs:
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@f8c4eed05b2d996d2d4638d71de61e12d2e84244
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@de8e9369c7534f2e81051c3253ca3c3efd458a18
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
@@ -1131,10 +1143,10 @@ jobs:
           for leg, row in rows.items():
               name = f"repro-digest-{leg}"
               members = {path.name: path for path in (Path("downloaded") / name).iterdir()}
-              expected_members = {f"{leg}.tsv", f"{leg}.bundle.json"}
+              expected_members = {f"{leg}.tsv", f"{leg}.bundle.json",
+                                  f"{leg}.build-first.json", f"{leg}.build-second.json"}
               if leg != "sdist":
-                  expected_members |= {f"{leg}.runtime.json", f"{leg}.runtime-requirements.txt",
-                                       f"{leg}.build-first.json", f"{leg}.build-second.json"}
+                  expected_members |= {f"{leg}.runtime.json", f"{leg}.runtime-requirements.txt"}
               if (leg == "sdist" and set(members) != expected_members
                       or leg != "sdist" and not expected_members <= set(members)):
                   raise SystemExit(f"{leg}: scope evidence artifact members differ from build output")
@@ -1147,12 +1159,12 @@ jobs:
                                            object_pairs_hook=unique_object)
               if observed_bundle != expected_bundle:
                   raise SystemExit(f"{leg}: build-leg bundle inventory differs from distribution bytes")
+              build_first = json.loads(members[f"{leg}.build-first.json"].read_text(encoding="utf-8"),
+                                       object_pairs_hook=unique_object)
+              build_second = json.loads(members[f"{leg}.build-second.json"].read_text(encoding="utf-8"),
+                                        object_pairs_hook=unique_object)
+              transport.verify_build_scope(build_first, build_second, row, Path("release-source"), commit)
               if leg != "sdist":
-                  build_first = json.loads(members[f"{leg}.build-first.json"].read_text(encoding="utf-8"),
-                                           object_pairs_hook=unique_object)
-                  build_second = json.loads(members[f"{leg}.build-second.json"].read_text(encoding="utf-8"),
-                                            object_pairs_hook=unique_object)
-                  transport.verify_build_scope(build_first, build_second, row, Path("release-source"), commit)
                   runtime = json.loads(members[f"{leg}.runtime.json"].read_text(encoding="utf-8"),
                                        object_pairs_hook=unique_object)
                   transport.verify_runtime_inventory(

@@ -306,6 +306,8 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     assert "verify-reproducible" not in wheels
     assert "--out dist-rebuild --target-dir target-rebuild" in builds[1]
     assert "- name: Rebuild sdist for byte-reproducibility check" in sdist
+    assert "- name: Capture first sdist build tools" in sdist
+    assert "- name: Capture second sdist build tools" in sdist
     assert "args: --out dist-rebuild" in sdist
     compare_wheel = _step_python(wheels, "Compare double-build wheel digests and record them")
     compare_sdist = _step_python(sdist, "Compare double-build sdist digests and record them")
@@ -528,7 +530,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@f8c4eed05b2d996d2d4638d71de61e12d2e84244" in central
+    assert "release-dependency-license-strix-gate.yml@de8e9369c7534f2e81051c3253ca3c3efd458a18" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -579,6 +581,8 @@ def _admission_fixture(root: Path) -> dict:
     sha = {leg: hashlib.sha256(data).hexdigest() for leg, data in payload.items()}
     def build_env(leg: str) -> str:
         target = leg.rsplit("-py", 1)[0] if leg != "sdist" else "sdist"
+        if target == "sdist":
+            return "runner:ubuntu/test/Linux/X64"
         if target.endswith("linux-gnu"):
             return "container:quay.io/pypa/fixture@sha256:" + "a" * 64
         if target == "x86_64-pc-windows-msvc":
@@ -643,23 +647,24 @@ def _admission_fixture(root: Path) -> dict:
                               "name": "numpy", "version": "2.5.1"}],
             }
             (folder / f"{leg}.runtime.json").write_text(json.dumps(runtime, sort_keys=True) + "\n")
-            targets = (["aarch64-apple-darwin", "x86_64-apple-darwin"]
-                       if target == "universal2-apple-darwin" else [target])
-            graph = [{"name": name, "version": "0.11.4", "source": None,
-                      "checksum": None, "features": []}
-                     for name in ("fast-mlsirm-py", "mlsirm-core")]
-            for build_pass in ("first", "second"):
-                build = {"schema_version": 1, "source_sha": _RELEASE_COMMIT, "leg": leg,
-                         "pass": build_pass, "build_env": build_env(leg),
-                         "cargo_lock_sha256": hashlib.sha256((crate / "Cargo.lock").read_bytes()).hexdigest(),
-                         "pyproject_sha256": hashlib.sha256((source / "pyproject.toml").read_bytes()).hexdigest(),
-                         "cargo_version": "cargo 1.90.0", "rustc_version": "rustc 1.90.0",
-                         "maturin_version": "maturin 1.15.0",
-                         "maturin_binary_sha256": expected_maturin(leg, build_env(leg)),
-                         "python_version": f"Python {version}.0",
-                         "cargo_features": ["pyo3/extension-module"],
-                         "cargo_targets": {triple: graph for triple in targets}}
-                (folder / f"{leg}.build-{build_pass}.json").write_text(json.dumps(build, sort_keys=True) + "\n")
+        target, version = ("sdist", "3.12") if leg == "sdist" else leg.rsplit("-py", 1)
+        targets = ([] if target == "sdist" else ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+                   if target == "universal2-apple-darwin" else [target])
+        graph = [{"name": name, "version": "0.11.4", "source": None,
+                  "checksum": None, "features": []}
+                 for name in ("fast-mlsirm-py", "mlsirm-core")]
+        for build_pass in ("first", "second"):
+            build = {"schema_version": 1, "source_sha": _RELEASE_COMMIT, "leg": leg,
+                     "pass": build_pass, "build_env": build_env(leg),
+                     "cargo_lock_sha256": hashlib.sha256((crate / "Cargo.lock").read_bytes()).hexdigest(),
+                     "pyproject_sha256": hashlib.sha256((source / "pyproject.toml").read_bytes()).hexdigest(),
+                     "cargo_version": "cargo 1.90.0", "rustc_version": "rustc 1.90.0",
+                     "maturin_version": "maturin 1.15.0",
+                     "maturin_binary_sha256": expected_maturin(leg, build_env(leg)),
+                     "python_version": f"Python {version}.0",
+                     "cargo_features": [] if target == "sdist" else ["pyo3/extension-module"],
+                     "cargo_targets": {triple: graph for triple in targets}}
+            (folder / f"{leg}.build-{build_pass}.json").write_text(json.dumps(build, sort_keys=True) + "\n")
     artifacts = [f"dist-wheel-{leg}" for leg in legs] + [
         "dist-sdist", "reproducibility-record", "release-dependency-sealed-evidence",
         "release-dependency-sealed-evidence--full-set-verdict",
@@ -698,6 +703,58 @@ def test_build_scope_receipts_bind_wheel_lock_and_repeat(tmp_path: Path) -> None
     second["maturin_binary_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="toolchain or leg"):
         verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+
+
+def test_sdist_build_receipts_report_no_compiled_cargo_graph(tmp_path: Path) -> None:
+    import json
+    import runpy
+    import pytest
+
+    fixture = _admission_fixture(tmp_path)
+    folder = tmp_path / "scope-evidence/repro-digest-sdist"
+    first = json.loads((folder / "sdist.build-first.json").read_text())
+    second = json.loads((folder / "sdist.build-second.json").read_text())
+    verify = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))["verify_build_scope"]
+    row = {"target": "sdist", "build_env": fixture["build_env"]["sdist"]}
+    verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+    second["cargo_targets"] = {"x86_64-unknown-linux-gnu": []}
+    with pytest.raises(ValueError, match="toolchain or leg"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+
+
+def test_sdist_capture_records_runner_tools_without_cargo_metadata(tmp_path: Path, monkeypatch) -> None:
+    import runpy
+
+    _admission_fixture(tmp_path)
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "scripts/ci"))
+    capture = runpy.run_path(str(REPO_ROOT / "scripts/ci/capture_release_build_scope.py"))["capture"]
+
+    def run(*args: str) -> str:
+        if args[:3] == ("git", "-C", str(tmp_path / "release-source")):
+            return _RELEASE_COMMIT
+        if args == ("python", "--version"):
+            return "Python 3.12.0"
+        if args == ("cargo", "--version"):
+            return "cargo 1.90.0"
+        if args == ("rustc", "--version"):
+            return "rustc 1.90.0"
+        if args == ("maturin", "--version"):
+            return "maturin 1.15.0"
+        raise AssertionError(f"unexpected command: {args}")
+
+    monkeypatch.setitem(capture.__globals__, "_run", run)
+    monkeypatch.setitem(capture.__globals__, "expected_maturin_binary_sha256", lambda *_: "asset-hash")
+    monkeypatch.setitem(capture.__globals__, "hash_file", lambda _: "asset-hash")
+    monkeypatch.setattr(capture.__globals__["shutil"], "which", lambda _: "/tmp/maturin")
+    receipt = capture(tmp_path / "release-source", {
+        "CARGO_RELEASE_LEG": "sdist", "CARGO_RELEASE_SHA": _RELEASE_COMMIT,
+        "CARGO_BUILD_PASS": "first", "CARGO_BUILD_PYTHON": "python",
+        "ImageOS": "ubuntu", "ImageVersion": "test",
+        "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64",
+    })
+    assert receipt["build_env"] == "runner:ubuntu/test/Linux/X64"
+    assert receipt["cargo_targets"] == {}
+    assert receipt["cargo_features"] == []
 
 
 def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> subprocess.CompletedProcess:

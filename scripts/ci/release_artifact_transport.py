@@ -25,6 +25,7 @@ MATURIN_BINARY_SHA256 = {
     "universal2-apple-darwin/ARM64": "55b014193adf178c96c2b9d8c01f3f32dbf52d570338eb2d7a025444ad611532",
     "universal2-apple-darwin/X64": "37a8e94a0552f29c3f13468d24fee81461a39d16b61357a30dae54c18379592d",
     "x86_64-pc-windows-msvc": "787779fa7f453d3444ac732689ad2bb8f1399b4d4e2af1ad9e00f84bb6460f07",
+    "sdist": "7770f6d9cbe0497f69b9b60f001a9a92784767651658e778b9664e6ef9b8a29a",
 }
 
 
@@ -34,6 +35,10 @@ def expected_maturin_binary_sha256(leg: str, build_env: str) -> str:
         if not build_env.startswith("runner:"):
             raise ValueError("macOS build lacks runner identity")
         key = f"{target}/{build_env.rsplit('/', 1)[-1]}"
+    elif target == "sdist":
+        if not build_env.startswith("runner:") or not build_env.endswith("/Linux/X64"):
+            raise ValueError("sdist build lacks Linux x64 runner identity")
+        key = target
     elif target == "x86_64-pc-windows-msvc":
         if not build_env.startswith("runner:") or not build_env.endswith("/X64"):
             raise ValueError("Windows build lacks x64 runner identity")
@@ -224,10 +229,10 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
 
 
 def verify_build_scope(first: dict, second: dict, row: dict, source: Path, source_sha: str) -> None:
-    """Check both build-runner Cargo graphs against the selected wheel lock."""
+    """Check both build tool receipts and each wheel's Cargo graph."""
     leg = row["target"]
-    target, python = leg.rsplit("-py", 1)
-    targets = (["aarch64-apple-darwin", "x86_64-apple-darwin"]
+    target, python = ("sdist", "3.12") if leg == "sdist" else leg.rsplit("-py", 1)
+    targets = ([] if target == "sdist" else ["aarch64-apple-darwin", "x86_64-apple-darwin"]
                if target == "universal2-apple-darwin" else [target])
     lock = source / "crates/fast-mlsirm-py/Cargo.lock"
     wheel_crate = tomllib.loads((source / "crates/fast-mlsirm-py/Cargo.toml").read_text(encoding="utf-8"))["package"]
@@ -243,7 +248,7 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
                 or receipt["build_env"] != row["build_env"]
                 or receipt["cargo_lock_sha256"] != hash_file(lock)
                 or receipt["pyproject_sha256"] != hash_file(source / "pyproject.toml")
-                or receipt["cargo_features"] != ["pyo3/extension-module"]
+                or receipt["cargo_features"] != ([] if target == "sdist" else ["pyo3/extension-module"])
                 or not isinstance(receipt["python_version"], str)
                 or not receipt["python_version"].startswith(f"Python {python}.")
                 or not isinstance(receipt["maturin_version"], str)

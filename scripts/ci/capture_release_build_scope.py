@@ -1,4 +1,4 @@
-"""Record the target Cargo graph and tools in the wheel's actual build environment."""
+"""Record tools and, for wheels, the Cargo graph in the actual build environment."""
 
 from __future__ import annotations
 
@@ -24,12 +24,12 @@ def capture(source: Path, environ: dict[str, str]) -> dict:
     build_pass = environ["CARGO_BUILD_PASS"]
     image = environ.get("CARGO_BUILD_IMAGE", "")
     interpreter = environ["CARGO_BUILD_PYTHON"]
-    if (not re.fullmatch(r"(?:x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu|universal2-apple-darwin|x86_64-pc-windows-msvc)-py3\.1[234]", leg)
+    if (leg != "sdist" and not re.fullmatch(r"(?:x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu|universal2-apple-darwin|x86_64-pc-windows-msvc)-py3\.1[234]", leg)
             or not re.fullmatch(r"[0-9a-f]{40}", source_sha)
             or build_pass not in ("first", "second")
             or _run("git", "-C", str(source), "rev-parse", "HEAD") != source_sha):
         raise ValueError("build scope is not bound to the release source and leg")
-    target, python = leg.rsplit("-py", 1)
+    target, python = ("sdist", "3.12") if leg == "sdist" else leg.rsplit("-py", 1)
     if (target.endswith("linux-gnu") and not re.fullmatch(r"[a-z0-9./_-]+@sha256:[0-9a-f]{64}", image)
             or not target.endswith("linux-gnu") and image):
         raise ValueError("build scope container identity differs from target")
@@ -39,9 +39,9 @@ def capture(source: Path, environ: dict[str, str]) -> dict:
     lock = source / "crates/fast-mlsirm-py/Cargo.lock"
     locked = {(item["name"], item["version"], item.get("source")): item.get("checksum")
               for item in tomllib.loads(lock.read_text())["package"]}
-    if tomllib.loads(pyproject.read_text())["tool"]["maturin"]["features"] != ["pyo3/extension-module"]:
+    if target != "sdist" and tomllib.loads(pyproject.read_text())["tool"]["maturin"]["features"] != ["pyo3/extension-module"]:
         raise ValueError("unrecognized maturin feature selection")
-    targets = (["aarch64-apple-darwin", "x86_64-apple-darwin"]
+    targets = ([] if target == "sdist" else ["aarch64-apple-darwin", "x86_64-apple-darwin"]
                if target == "universal2-apple-darwin" else [target])
     graphs = {}
     for triple in targets:
@@ -80,7 +80,8 @@ def capture(source: Path, environ: dict[str, str]) -> dict:
         "maturin_version": _run("maturin", "--version"),
         "maturin_binary_sha256": binary_sha,
         "python_version": _run(interpreter, "--version"),
-        "cargo_features": ["pyo3/extension-module"], "cargo_targets": graphs,
+        "cargo_features": [] if target == "sdist" else ["pyo3/extension-module"],
+        "cargo_targets": graphs,
     }
 
 
