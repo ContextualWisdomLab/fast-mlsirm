@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import tarfile
+import tomllib
 import zipfile
 
 CHUNK_BYTES = 64 * 1024  # I/O buffer, not an artifact acceptance limit.
@@ -76,6 +77,51 @@ def bundle_inventory(artifact: Path, leg: str, source_sha: str, build_env: str) 
     return {"schema_version": 1, "source_sha": source_sha, "leg": leg,
             "file": artifact.name, "sha256": hash_file(artifact), "build_env": build_env,
             "members": sorted(members, key=lambda item: item["path"])}
+
+
+def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
+                             source: Path, source_sha: str) -> None:
+    """Bind a target install receipt to the selected wheel and exact source lock."""
+    keys = {"schema_version", "source_sha", "leg", "file", "sha256", "build_env",
+            "uv_version", "python_version", "implementation", "sys_platform", "machine",
+            "requirements_sha256", "uv_lock_sha256", "locked_dependencies", "installed"}
+    if type(record) is not dict or set(record) != keys or type(record["schema_version"]) is not int or record["schema_version"] != 1:
+        raise ValueError("runtime inventory schema differs")
+    leg = row["target"]
+    if (record["source_sha"] != source_sha or record["leg"] != leg
+            or record["file"] != row["file"] or record["sha256"] != row["sha256"]
+            or record["build_env"] != row["build_env"]
+            or record["requirements_sha256"] != hash_file(requirements)
+            or record["uv_lock_sha256"] != hash_file(source / "uv.lock")
+            or not isinstance(record["uv_version"], str)
+            or record["uv_version"].split()[:2] != ["uv", "0.12.5"]):
+        raise ValueError(f"{leg}: runtime inventory differs from selected source or wheel")
+    target, python = leg.rsplit("-py", 1)
+    platforms = {
+        "x86_64-unknown-linux-gnu": ("linux", {"x86_64"}),
+        "aarch64-unknown-linux-gnu": ("linux", {"aarch64"}),
+        "universal2-apple-darwin": ("darwin", {"arm64", "x86_64"}),
+        "x86_64-pc-windows-msvc": ("win32", {"AMD64", "x86_64"}),
+    }
+    if (target not in platforms or record["python_version"] != python
+            or record["implementation"] != "cpython"
+            or record["sys_platform"] != platforms[target][0]
+            or record["machine"] not in platforms[target][1]):
+        raise ValueError(f"{leg}: runtime interpreter differs from wheel target")
+    before, installed = record["locked_dependencies"], record["installed"]
+    def valid_packages(packages):
+        return (type(packages) is list and all(
+            type(item) is dict and set(item) == {"name", "version"}
+            and type(item["name"]) is str and re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", item["name"])
+            and type(item["version"]) is str and bool(item["version"])
+            for item in packages)
+            and packages == sorted(packages, key=lambda item: item["name"])
+            and len({item["name"] for item in packages}) == len(packages))
+    version = tomllib.loads((source / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    project = {"name": "fast-mlsirm", "version": version}
+    if (not valid_packages(before) or not valid_packages(installed) or not before
+            or project in before or installed != sorted([*before, project], key=lambda item: item["name"])):
+        raise ValueError(f"{leg}: runtime closure differs from locked install plus wheel")
 
 
 def materialize(selection: list[dict], repository: str, root: Path, fetch) -> list[dict]:

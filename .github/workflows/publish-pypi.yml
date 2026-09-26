@@ -556,6 +556,18 @@ jobs:
           RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
           LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
         run: python trusted-control/scripts/ci/capture_release_bundle.py "repro-digest/$LEG.tsv" dist
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: "0.12.5"
+          enable-cache: false
+      - name: Capture isolated locked runtime and fuzz dependencies
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+          LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
+        run: |
+          set -euo pipefail
+          python trusted-control/scripts/ci/capture_release_runtime.py "repro-digest/$LEG.tsv" dist "$RUNNER_TEMP"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dist-wheel-${{ matrix.target }}-py${{ matrix.python-version }}
@@ -1098,7 +1110,10 @@ jobs:
           for leg, row in rows.items():
               name = f"repro-digest-{leg}"
               members = {path.name: path for path in (Path("downloaded") / name).iterdir()}
-              if set(members) != {f"{leg}.tsv", f"{leg}.bundle.json"}:
+              expected_members = {f"{leg}.tsv", f"{leg}.bundle.json"}
+              if leg != "sdist":
+                  expected_members |= {f"{leg}.runtime.json", f"{leg}.runtime-requirements.txt"}
+              if set(members) != expected_members:
                   raise SystemExit(f"{leg}: scope evidence artifact members differ from build output")
               if members[f"{leg}.tsv"].read_text(encoding="utf-8") != "\t".join(row[key] for key in header) + "\n":
                   raise SystemExit(f"{leg}: scope evidence row differs from reproducibility record")
@@ -1109,6 +1124,13 @@ jobs:
                                            object_pairs_hook=unique_object)
               if observed_bundle != expected_bundle:
                   raise SystemExit(f"{leg}: build-leg bundle inventory differs from distribution bytes")
+              if leg != "sdist":
+                  runtime = json.loads(members[f"{leg}.runtime.json"].read_text(encoding="utf-8"),
+                                       object_pairs_hook=unique_object)
+                  transport.verify_runtime_inventory(
+                      runtime, members[f"{leg}.runtime-requirements.txt"], row,
+                      Path("release-source"), commit,
+                  )
 
           # The central job result is required by `needs`; its immutable verdict
           # must independently match the record and all current-attempt artifacts.

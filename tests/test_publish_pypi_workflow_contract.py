@@ -576,6 +576,10 @@ def _admission_fixture(root: Path) -> dict:
         f"# release {_RELEASE_TAG} @ {_RELEASE_COMMIT}, SOURCE_DATE_EPOCH=1\n"
         "target\tbyte_verified\tverification\tsha256\trebuild_sha256\tfile\tbuild_env\n" + rows
     )
+    source = root / "release-source"
+    source.mkdir()
+    (source / "uv.lock").write_text("fixture lock\n")
+    (source / "pyproject.toml").write_text('[project]\nname = "fast-mlsirm"\nversion = "1.2.3"\n')
     bundle_inventory = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))["bundle_inventory"]
     for leg in files:
         folder = root / "scope-evidence" / f"repro-digest-{leg}"
@@ -584,6 +588,28 @@ def _admission_fixture(root: Path) -> dict:
         (folder / f"{leg}.tsv").write_text(row + "\n")
         inventory = bundle_inventory(root / "dist" / files[leg], leg, _RELEASE_COMMIT, "runner:x")
         (folder / f"{leg}.bundle.json").write_text(json.dumps(inventory, sort_keys=True) + "\n")
+        if leg != "sdist":
+            requirements = folder / f"{leg}.runtime-requirements.txt"
+            requirements.write_text("numpy==2.5.1 --hash=sha256:" + "a" * 64 + "\n")
+            target, version = leg.rsplit("-py", 1)
+            system, machine = {
+                "x86_64-unknown-linux-gnu": ("linux", "x86_64"),
+                "aarch64-unknown-linux-gnu": ("linux", "aarch64"),
+                "universal2-apple-darwin": ("darwin", "arm64"),
+                "x86_64-pc-windows-msvc": ("win32", "AMD64"),
+            }[target]
+            before = [{"name": "numpy", "version": "2.5.1"}]
+            runtime = {
+                "schema_version": 1, "source_sha": _RELEASE_COMMIT, "leg": leg,
+                "file": files[leg], "sha256": sha[leg], "build_env": "runner:x",
+                "uv_version": "uv 0.12.5", "python_version": version,
+                "implementation": "cpython", "sys_platform": system, "machine": machine,
+                "requirements_sha256": hashlib.sha256(requirements.read_bytes()).hexdigest(),
+                "uv_lock_sha256": hashlib.sha256((source / "uv.lock").read_bytes()).hexdigest(),
+                "locked_dependencies": before,
+                "installed": [{"name": "fast-mlsirm", "version": "1.2.3"}, *before],
+            }
+            (folder / f"{leg}.runtime.json").write_text(json.dumps(runtime, sort_keys=True) + "\n")
     artifacts = [f"dist-wheel-{leg}" for leg in legs] + [
         "dist-sdist", "reproducibility-record", "release-dependency-sealed-evidence",
         "release-dependency-sealed-evidence--full-set-verdict",
@@ -862,6 +888,32 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
 
     refuse_bytes("forged-bundle", forge_bundle,
                  "build-leg bundle inventory differs from distribution bytes")
+    def forge_runtime(root: Path, fixture: dict) -> None:
+        path = root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime.json"
+        payload = json.loads(path.read_text())
+        payload["source_sha"] = "f" * 40
+        path.write_text(json.dumps(payload))
+
+    refuse_bytes("forged-runtime", forge_runtime,
+                 "runtime inventory differs from selected source or wheel")
+    def forge_runtime_target(root: Path, fixture: dict) -> None:
+        path = root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime.json"
+        payload = json.loads(path.read_text())
+        payload["sys_platform"] = "win32" if payload["sys_platform"] != "win32" else "linux"
+        path.write_text(json.dumps(payload))
+
+    refuse_bytes("wrong-runtime-target", forge_runtime_target,
+                 "runtime interpreter differs from wheel target")
+    refuse_bytes(
+        "missing-runtime",
+        lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime.json").unlink(),
+        "scope evidence artifact members differ from build output",
+    )
+    refuse_bytes(
+        "changed-runtime-requirements",
+        lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime-requirements.txt").write_text("forged\n"),
+        "runtime inventory differs from selected source or wheel",
+    )
 
 
 def test_build_leg_captures_finished_distribution_bytes(tmp_path: Path) -> None:

@@ -34,9 +34,8 @@ Runtime, build, dev, optional, native and bundled scope entries are explicitly
 or an asserted boolean cannot certify any scope. In particular, hashing every
 Cargo lock does not establish the features/targets used in compiled wheels;
 METADATA hashes do not establish resolved marker or optional dependency closure.
-No trusted target-scope collector is connected yet, so there is deliberately no
-accepted positive scope sentinel. The central licence and Strix verdict now has
-its own authenticated path; it does not claim platform scope completeness.
+The central licence and Strix verdict has its own authenticated path; it does
+not claim platform scope completeness.
 
 ## Evidence needed to remove the scope HOLD
 
@@ -51,9 +50,19 @@ release. These evidence
 artifacts remain separate from the thirteen distribution artifacts passed to
 the central licence and Strix gate.
 
-Each wheel build job and the sdist job must next add resolved environment and
-native dependency evidence. File hashes establish the bundled bytes, but do
-not identify the origin or licence of each member or the libraries it loads.
+Each wheel build job now also exports its locked runtime and `fuzz` requirements
+with pinned uv, installs their hash-verified binary distributions into an
+isolated environment for the runner's Python, installs the exact finished wheel,
+and checks the installed environment. The resulting package lists, interpreter
+identity, requirements hash and `uv.lock` hash travel inside the selected
+`repro-digest-*` artifact. Admission checks them against the exact source and
+wheel row. A changed, missing, or cross-target receipt refuses admission before
+the scope HOLD. The macOS universal2 receipt exercises the runner architecture
+only; it does not prove installation on its other binary slice.
+
+The sdist and wheel builds still need build and native dependency evidence.
+File hashes establish the bundled bytes, but do not identify the origin or
+licence of each member or the libraries it loads.
 Admission must validate those claims against the corresponding distribution
 SHA and build environment before the scope HOLD can be removed.
 
@@ -65,7 +74,8 @@ The six scopes have distinct sources of truth:
   applicable `uv.lock` resolution. The lock is universal; its mere presence is
   not a target installation. The `fuzz` extra now limits Atheris to its locked
   CPython/Linux x86_64 wheel targets; other targets retain Hypothesis only.
-  That marker is a support boundary, not proof of an installed optional closure.
+  The target installation receipt exercises this marker on the runner. It is
+  not yet promoted to an accepted scope identity.
 - **Build and dev:** record the build environment's installed Python tools and
   target-filtered Cargo resolution with the features used by the wheel build.
   `requirements/package.txt` and `Cargo.lock` constrain these scopes but do not
