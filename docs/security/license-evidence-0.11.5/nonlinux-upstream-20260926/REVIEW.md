@@ -162,8 +162,21 @@ and CPython 3.14 wheel SHA256
 Each has six license files byte-identical to the integrated source and the
 matching native extension; the wheel license verifier returned no errors.
 `auditwheel` confirmed `manylinux_2_17_x86_64` for both. Thus three local
-Linux x86_64 wheel candidates have exact attribution evidence; the other
-nine wheel targets still lack final artifact checks.
+Linux x86_64 wheel candidates have exact attribution evidence.
+
+A later integrated commit `68cb7143` also carries the target-snapshot pairing
+fix from draft PR #2174. Its Git archive SHA256 is
+`0be425c5b82b7e0e9c3c30635273e2c78d5c87bb42c132c5919ee1c4083d74f8`.
+The [ARM64 build record](../integrated-linux-aarch64-20260926/README.md)
+contains three locally built `manylinux_2_17_aarch64` candidates: CPython 3.12
+SHA256 `a663a645c241a3f13570ca017263ef857a11e856a1b240588fe93d74a41228bb`,
+3.13 SHA256 `13f8a6b637cc96d51b45a32513a5857fdabbae02c5293f8a66c45a4a57df39a7`,
+and 3.14 SHA256 `9bc29e9e07978b6fa0c1cc7a7ca220cb674f71a23ca39affb24ddb9e5c1e13a9`.
+Each wheel has six source-matching license members, an AArch64 extension, and
+no verifier errors. Six local Linux candidates now have exact attribution
+evidence. The six planned Windows/macOS wheel artifacts still lack final checks;
+macOS also retains ten Cargo HOLD rows. These are local candidates, not
+published-artifact verdicts.
 
 Using the integrated generator and reviewed fixture, rerun snapshots for
 Linux aarch64 and Windows x86_64 were byte-identical to the committed files
