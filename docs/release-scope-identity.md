@@ -50,8 +50,9 @@ The six scopes have distinct sources of truth:
   installed or otherwise fully resolved distribution files, versions, markers,
   extras and hashes. Compare them with the wheel's `Requires-Dist` and the
   applicable `uv.lock` resolution. The lock is universal; its mere presence is
-  not a target installation. An unavailable optional extra must remain
-  unresolved or gain an explicit supported-platform contract.
+  not a target installation. The `fuzz` extra now limits Atheris to its locked
+  CPython/Linux x86_64 wheel targets; other targets retain Hypothesis only.
+  That marker is a support boundary, not proof of an installed optional closure.
 - **Build and dev:** record the build environment's installed Python tools and
   target-filtered Cargo resolution with the features used by the wheel build.
   `requirements/package.txt` and `Cargo.lock` constrain these scopes but do not

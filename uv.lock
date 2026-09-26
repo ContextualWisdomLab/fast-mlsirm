@@ -36,13 +36,13 @@ dev = [
     { name = "pytest" },
 ]
 fuzz = [
-    { name = "atheris" },
+    { name = "atheris", marker = "python_full_version < '3.15' and implementation_name == 'cpython' and platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "hypothesis" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "atheris", marker = "extra == 'fuzz'", specifier = ">=2.3" },
+    { name = "atheris", marker = "python_full_version < '3.15' and implementation_name == 'cpython' and platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'fuzz'", specifier = ">=2.3" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "hypothesis", marker = "extra == 'fuzz'", specifier = ">=6" },
     { name = "numpy", specifier = ">=1.24" },
