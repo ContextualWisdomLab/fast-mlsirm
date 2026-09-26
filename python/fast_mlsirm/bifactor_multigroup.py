@@ -36,6 +36,11 @@ decisions without a paper source are marked as implementation choices):
   Fig. 7).
 - Pooled item M-step stacks each group's nodes and expected counts
   (Bock-Zimowski pooling); free items fit per group.
+- Focal ``mu``/``sigma`` (and ``tau``) update is an ECM conditional-
+  maximization step on the same expected complete-data log-likelihood as the
+  item step (Meng & Rubin, 1993, p. 269), so each iteration is a GEM step and
+  the reported quadrature log-likelihood never decreases (Dempster, Laird, &
+  Rubin, 1977, Theorem 1, p. 7; #2093).
 - Reflection pinned per dimension jointly across groups by the crate's
   deterministic rule (largest-magnitude slope positive over every group's
   slopes; ``poly::canonicalize_slope_reflection``, ``grm.rs``) — an
@@ -78,6 +83,15 @@ References (APA 7th ed.):
         van der Linden & R. K. Hambleton (Eds.), *Handbook of modern item
         response theory* (pp. 433-448). Springer.
         https://doi.org/10.1007/978-1-4757-2691-6_25
+
+    Dempster, A. P., Laird, N. M., & Rubin, D. B. (1977). Maximum likelihood
+        from incomplete data via the EM algorithm. *Journal of the Royal
+        Statistical Society: Series B (Methodological), 39*(1), 1-38.
+        https://doi.org/10.1111/j.2517-6161.1977.tb01600.x
+
+    Meng, X.-L., & Rubin, D. B. (1993). Maximum likelihood estimation via the
+        ECM algorithm: A general framework. *Biometrika, 80*(2), 267-278.
+        https://doi.org/10.1093/biomet/80.2.267
 
     Samejima, F. (1969). Estimation of latent ability using a response pattern
         of graded scores. *Psychometrika, 34*(S1), 1-97.
