@@ -135,6 +135,31 @@ The target-bundle selector, fail-closed macOS build guard, and built-wheel
 byte check are prepared in [draft PR #2174](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/2174)
 at `cf710bc1`; that branch is not part of this evidence checkout.
 
+## Integrated source candidate
+
+An isolated merge commit `1c08f1bcbd8f6d8be2b1b4f1be79640282dad787`
+combines this evidence branch at `56d9b6b1` with the release-notice branch at
+`cf710bc1`. Its only merge conflict was `uv.lock`: it selects NumPy 2.5.2,
+matching the reviewed 0.11.5 wheel input. The binding
+`crates/fast-mlsirm-py/Cargo.lock` remains SHA256
+`528414b582b256a6ab8ac68ceceb134e8ddb719774513ab8cc3a0e4eb22a177d`.
+`uv lock --check --offline`, 254 focused license tests, workflow `actionlint`,
+and the exact A3 Linux cp312 wheel/source check all passed on that merge tree.
+The A3 wheel was built from pre-merge source `58b7b23f`; it is not a wheel
+built from `1c08f1bc`.
+
+Using the integrated generator and reviewed fixture, rerun snapshots for
+Linux aarch64 and Windows x86_64 were byte-identical to the committed files
+(SHA256 `23452c4e7daaf7b36cbf2036ab4d1395d106b7bc5cfcef2bb4572d24ac4b476b`
+and `d39171f014f4b3603a564d2d9339e72d4fd5166b98714f7945dc8c727c69ed96`).
+Rendering them again against the hash-bound crate cache and upstream manifest
+produced notice SHA256
+`afa61d22b98ec3b8d4797c4af1dc9a6d159b2051a543e658c67f4d2404d2d87c`
+and `7a3537a1df4063760bfee6e720b7cc9105721748d3fffd29aed2732d155dde58`.
+Both macOS architecture inventories retained ten HOLD rows; their snapshot
+commands exited 1 at `block2@0.6.2 is HOLD, not PERMISSIVE` and wrote no file.
+These are source-graph checks, not final wheel evidence.
+
 ## Python companion-file follow-up
 
 The exact `packaging 26.2` and `pygments 2.20.0` wheel members described in
