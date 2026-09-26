@@ -29,9 +29,576 @@
 //! https://doi.org/10.1177/0146621606289485
 
 use crate::two_tier_grm::{
-    fit_two_tier_grm, two_tier_grm_marginal_loglik, two_tier_grm_marginal_loglik_brute,
+    build_primary_grid, fipc_primary_coords, fit_two_tier_grm, fit_two_tier_grm_fipc, gh_rule,
+    two_tier_grm_marginal_loglik, two_tier_grm_marginal_loglik_brute, TwoTierFipcConfig,
     TwoTierGrmConfig,
 };
+
+#[test]
+fn fipc_direct_quadrature_preserves_nonzero_mean_covariance_and_specific_sd() {
+    // MWU-MEM/EAP integrates after mapping standard-normal nodes into the
+    // focal prior, so the original GH weights remain the discrete measure.
+    let (nodes, weights) = gh_rule(7).expect("Q=7 rule must exist");
+    let (base, log_weights) = build_primary_grid(nodes, weights, 2, nodes.len() * nodes.len());
+    let mean = [1.5, -0.7];
+    let chol = [1.6, 0.0, 0.4, 1.3];
+    let coords = fipc_primary_coords(&base, &mean, &chol, 2, nodes.len() * nodes.len());
+    let weights: Vec<f64> = log_weights.iter().map(|value| value.exp()).collect();
+
+    assert!((weights.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+    for d in 0..2 {
+        let actual = weights
+            .iter()
+            .enumerate()
+            .map(|(g, weight)| weight * coords[g * 2 + d])
+            .sum::<f64>();
+        assert!((actual - mean[d]).abs() < 1e-12, "mean[{d}] = {actual}");
+    }
+    let expected_cov = [[2.56, 0.64], [0.64, 1.85]];
+    for row in 0..2 {
+        for col in 0..2 {
+            let actual = weights
+                .iter()
+                .enumerate()
+                .map(|(g, weight)| {
+                    let x = coords[g * 2 + row] - mean[row];
+                    let y = coords[g * 2 + col] - mean[col];
+                    weight * x * y
+                })
+                .sum::<f64>();
+            assert!(
+                (actual - expected_cov[row][col]).abs() < 1e-11,
+                "covariance[{row},{col}] = {actual}"
+            );
+        }
+    }
+
+    let specific_sd = 1.7;
+    // Specific nodes use the 1-D GH rule, not the primary product-grid weights.
+    let (_, specific_weights) = gh_rule(7).expect("Q=7 rule must exist");
+    let specific_variance = specific_weights
+        .iter()
+        .zip(nodes.iter().copied())
+        .map(|(weight, node)| weight * (specific_sd * node).powi(2))
+        .sum::<f64>();
+    assert!((specific_variance - specific_sd * specific_sd).abs() < 1e-12);
+}
+
+#[test]
+fn fipc_accept_path_capture_frozen_mean_candidate() {
+    // Real Rust accept-path capture (root msg_3bc4469b8ef1) + regression:
+    // tip 3fc6160a recovered mean only at alpha=0.1 after scale-first; a
+    // remapped-LL-improving mean step must be eligible from alpha=1.0.
+    let (a_primary, a_specific, thresholds, _) = tiny_params();
+    let n_persons = 60;
+    let mut y = vec![0usize; n_persons * TINY_N_ITEMS];
+    for p in 0..n_persons {
+        for i in 0..TINY_N_ITEMS {
+            y[p * TINY_N_ITEMS + i] = (p + i) % TINY_N_CAT;
+        }
+    }
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let fit = fit_two_tier_grm_fipc(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &anchors,
+        &a_primary,
+        &a_specific,
+        &thresholds,
+        &TwoTierFipcConfig {
+            q_primary: 7,
+            q_specific: 7,
+            max_iter: 8,
+            tol: 1e-5,
+            newton_iter: 2,
+            ridge: 1e-8,
+            estimate_specific_vars: false,
+            device: crate::Device::Cpu,
+        },
+    )
+    .expect("accept-path capture fit");
+
+    assert_eq!(
+        fit.prior_update_decision_trace.len(),
+        fit.n_iter,
+        "one decision per completed prior update"
+    );
+    let tip = "3fc6160a0f5f2be8df6349e0a1070b2c55958897";
+    let capture = fit
+        .prior_update_decision_trace
+        .iter()
+        .find(|d| d.contains("mean_accept") || d.contains("mean_then_scale"))
+        .cloned()
+        .unwrap_or_else(|| fit.prior_update_decision_trace[0].clone());
+    let out_md = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../RUST_ACCEPT_PATH_CAPTURE_3fc6160a.md");
+    let out_json = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../RUST_ACCEPT_PATH_CAPTURE_3fc6160a.json");
+    let body = format!(
+        "# Rust accept-path capture @3fc6160a\n\n\
+         - crate tip SHA (pre-repair baseline): `{tip}`\n\
+         - inputs: tiny two-tier FIPC fixture (n_persons=60, Qp=Qs=7, max_iter=8)\n\
+         - prior init: mean=0, cov=I\n\
+         - n_iter={}, n_accepted={}, n_rollback_full={}\n\
+         - termination: {}\n\
+         - selected decision: `{capture}`\n\
+         - root cause (Rust path): recovery tried scale before mean and capped \
+           mean_alpha at 0.1, so remapped-LL-improving mean steps could not take \
+           a full posterior-moment step; pre-pairing also skipped mean entirely \
+           once scale set accepted=true.\n\
+         - all decisions:\n{}\n",
+        fit.n_iter,
+        fit.n_accepted_prior_steps,
+        fit.n_rollback_full,
+        fit.termination_reason,
+        fit.prior_update_decision_trace
+            .iter()
+            .map(|d| format!("  - `{d}`"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    std::fs::write(&out_md, &body).expect("write capture md");
+    let json = format!(
+        "{{\n  \"tip_sha\": \"{tip}\",\n  \"n_iter\": {},\n  \"n_accepted_prior_steps\": {},\n  \"n_rollback_full\": {},\n  \"termination_reason\": \"{}\",\n  \"selected_decision\": \"{}\",\n  \"prior_mean_trace\": {:?},\n  \"prior_update_decision_trace\": {:?}\n}}\n",
+        fit.n_iter,
+        fit.n_accepted_prior_steps,
+        fit.n_rollback_full,
+        fit.termination_reason.replace('"', "\\\""),
+        capture.replace('\\', "\\\\").replace('"', "\\\""),
+        fit.prior_mean_trace,
+        fit.prior_update_decision_trace
+    );
+    std::fs::write(&out_json, json).expect("write capture json");
+
+    let full_mean = fit.prior_update_decision_trace.iter().any(|d| {
+        (d.contains("branch=mean_accept") || d.contains("branch=mean_then_scale_accept"))
+            && (d.contains("alpha=1.000e0") || d.contains("mean_alpha=1.000e0"))
+    });
+    assert!(
+        full_mean,
+        "mean recovery must accept a full remapped-LL improving step (alpha=1); decisions={:?}",
+        fit.prior_update_decision_trace
+    );
+    // First recovery mean step should move farther than the old 0.1 trust region.
+    let means: Vec<_> = fit.prior_mean_trace.chunks_exact(TINY_N_PRIMARY).collect();
+    assert!(means.len() >= 2);
+    let step = ((means[1][0] - means[0][0]).powi(2) + (means[1][1] - means[0][1]).powi(2)).sqrt();
+    assert!(
+        step > 0.02,
+        "first recovery mean step too small under alpha=0.1 crawl: step={step}, means={means:?}"
+    );
+}
+
+#[test]
+fn fipc_keeps_anchor_rows_and_returns_focal_moments() {
+    let (a_primary, a_specific, thresholds, _) = tiny_params();
+    let n_persons = 60;
+    let mut y = vec![0usize; n_persons * TINY_N_ITEMS];
+    for p in 0..n_persons {
+        for i in 0..TINY_N_ITEMS {
+            y[p * TINY_N_ITEMS + i] = (p + i) % TINY_N_CAT;
+        }
+    }
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let fit = fit_two_tier_grm_fipc(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &anchors,
+        &a_primary,
+        &a_specific,
+        &thresholds,
+        &TwoTierFipcConfig {
+            q_primary: 7,
+            q_specific: 7,
+            max_iter: 2,
+            tol: 1e-5,
+            newton_iter: 2,
+            ridge: 1e-8,
+            estimate_specific_vars: false,
+            device: crate::Device::Cpu,
+        },
+    )
+    .expect("two-tier FIPC real-fit path must accept a valid anchored fit");
+    for &i in &[0usize, 7] {
+        assert_eq!(
+            &fit.a_primary[i * TINY_N_PRIMARY..(i + 1) * TINY_N_PRIMARY],
+            &a_primary[i * TINY_N_PRIMARY..(i + 1) * TINY_N_PRIMARY]
+        );
+        assert_eq!(fit.a_specific[i], a_specific[i]);
+        assert_eq!(
+            &fit.threshold[i * (TINY_N_CAT - 1)..(i + 1) * (TINY_N_CAT - 1)],
+            &thresholds[i * (TINY_N_CAT - 1)..(i + 1) * (TINY_N_CAT - 1)]
+        );
+    }
+    assert_eq!(fit.primary_mean.len(), TINY_N_PRIMARY);
+    assert_eq!(fit.primary_cov.len(), TINY_N_PRIMARY * TINY_N_PRIMARY);
+    assert!(fit.loglik_trace.iter().all(|value| value.is_finite()));
+    assert_eq!(fit.fixed_loglik_trace.len(), fit.loglik_trace.len());
+    assert!(fit.fixed_loglik_trace.iter().all(|value| value.is_finite()));
+    assert_eq!(
+        fit.fixed_primary_first_moment_trace.len(),
+        fit.loglik_trace.len() * TINY_N_PRIMARY
+    );
+    assert_eq!(
+        fit.fixed_primary_second_moment_trace.len(),
+        fit.loglik_trace.len() * TINY_N_PRIMARY * TINY_N_PRIMARY
+    );
+    assert_eq!(
+        fit.fixed_specific_second_moment_trace.len(),
+        fit.loglik_trace.len() * TINY_N_SPECIFIC
+    );
+    assert_eq!(
+        fit.prior_mean_trace.len(),
+        fit.n_iter * TINY_N_PRIMARY
+    );
+    assert_eq!(
+        fit.prior_covariance_trace.len(),
+        fit.n_iter * TINY_N_PRIMARY * TINY_N_PRIMARY
+    );
+    assert_eq!(
+        fit.prior_specific_sd_trace.len(),
+        fit.n_iter * TINY_N_SPECIFIC
+    );
+    assert!(
+        fit.fixed_loglik_trace
+            .windows(2)
+            .any(|pair| pair[1] > pair[0] + 32.0 * f64::EPSILON * (1.0 + pair[0].abs())),
+        "fixed-measure LL never improved: {:?}",
+        fit.fixed_loglik_trace
+    );
+    assert!(
+        fit.prior_covariance_trace.chunks_exact(TINY_N_PRIMARY * TINY_N_PRIMARY).any(
+            |cov| (cov[0] - 1.0).abs() > 1e-6 || (cov[3] - 1.0).abs() > 1e-6
+        ),
+        "focal covariance never moved: {:?}",
+        fit.prior_covariance_trace
+    );
+    // Fixture [0.65, -0.35] is a recovery-test bar only — never an optimizer
+    // target. Require material remapped mean movement under the LL guard.
+    let means: Vec<_> = fit.prior_mean_trace.chunks_exact(TINY_N_PRIMARY).collect();
+    assert!(means.len() >= 2, "expected prior mean trace: {means:?}");
+    let mean_travel = means
+        .windows(2)
+        .map(|pair| {
+            ((pair[1][0] - pair[0][0]).powi(2) + (pair[1][1] - pair[0][1]).powi(2)).sqrt()
+        })
+        .fold(0.0_f64, f64::max);
+    assert!(
+        mean_travel > 0.02,
+        "prior mean did not move materially under remapped LL guard: travel={mean_travel}, {:?}",
+        fit.prior_mean_trace
+    );
+    assert!(
+        fit.prior_update_decision_trace.iter().any(|d| {
+            d.contains("mean_accept")
+                || d.contains("mean_then_scale_accept")
+                || d.contains("joint_full_accept")
+                || d.contains("joint_backtrack_accept")
+        }),
+        "no remapped-LL accepting prior branch: {:?}",
+        fit.prior_update_decision_trace
+    );
+    assert_eq!(
+        fit.n_accepted_prior_steps + fit.n_rollback_full,
+        fit.n_iter
+    );
+    assert!(fit.consecutive_rollback <= 3);
+    if fit.termination_reason == "prior_update_stalled" {
+        assert!(!fit.converged);
+        assert_eq!(fit.consecutive_rollback, 3);
+    }
+}
+
+#[test]
+fn fipc_consumer_shape_records_fixed_eval_trace_for_both_seeded_inputs() {
+    const N_PERSONS: usize = 180;
+    const N_ITEMS: usize = 6;
+    const N_PRIMARY: usize = 2;
+    const N_SPECIFIC: usize = 1;
+    const N_CAT: usize = 3;
+    const PRIMARY_MAP: [bool; N_ITEMS * N_PRIMARY] = [
+        true, false, true, false, true, false, false, true, false, true, false, true,
+    ];
+    const SPECIFIC_MAP: [i32; N_ITEMS] = [0, 0, 0, 0, 0, 0];
+    const ANCHOR: [bool; N_ITEMS] = [true, true, true, false, false, false];
+    let fixed_a_primary = vec![
+        1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0,
+    ];
+    let fixed_a_specific = vec![0.7; N_ITEMS];
+    let fixed_threshold = vec![1.0, -1.0].repeat(N_ITEMS);
+
+    for mut seed in [20_260_921_u64, 20_260_922_u64] {
+        let mut y = vec![0usize; N_PERSONS * N_ITEMS];
+        for value in &mut y {
+            // Deterministic xorshift stream keeps this regression independent
+            // of an external RNG while preserving both consumer seeds.
+            seed ^= seed << 7;
+            seed ^= seed >> 9;
+            *value = (seed as usize) % N_CAT;
+        }
+        let fit = fit_two_tier_grm_fipc(
+            &y,
+            None,
+            &PRIMARY_MAP,
+            &SPECIFIC_MAP,
+            N_PERSONS,
+            N_ITEMS,
+            N_PRIMARY,
+            N_SPECIFIC,
+            N_CAT,
+            &ANCHOR,
+            &fixed_a_primary,
+            &fixed_a_specific,
+            &fixed_threshold,
+            &TwoTierFipcConfig {
+                q_primary: 7,
+                q_specific: 7,
+                max_iter: 1,
+                tol: 1e-5,
+                newton_iter: 2,
+                ridge: 1e-8,
+                estimate_specific_vars: false,
+                device: crate::Device::Cpu,
+            },
+        )
+        .expect("consumer-shaped FIPC fit must expose fixed evaluation evidence");
+        assert_eq!(fit.fixed_loglik_trace.len(), fit.loglik_trace.len());
+        assert!(fit.fixed_loglik_trace[0].is_finite());
+        assert_eq!(
+            fit.fixed_primary_first_moment_trace.len(),
+            fit.loglik_trace.len() * N_PRIMARY
+        );
+        assert_eq!(
+            fit.fixed_primary_second_moment_trace.len(),
+            fit.loglik_trace.len() * N_PRIMARY * N_PRIMARY
+        );
+        assert_eq!(
+            fit.fixed_specific_second_moment_trace.len(),
+            fit.loglik_trace.len() * N_SPECIFIC
+        );
+    }
+}
+
+#[test]
+fn fipc_gpu_device_matches_cpu_or_fail_closed_fallback() {
+    let (a_primary, a_specific, thresholds, _) = tiny_params();
+    let n_persons = 60;
+    let mut y = vec![0usize; n_persons * TINY_N_ITEMS];
+    for p in 0..n_persons {
+        for i in 0..TINY_N_ITEMS {
+            y[p * TINY_N_ITEMS + i] = (p + i) % TINY_N_CAT;
+        }
+    }
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let config = |device| TwoTierFipcConfig {
+        q_primary: 7,
+        q_specific: 7,
+        max_iter: 1,
+        tol: 1e-5,
+        newton_iter: 2,
+        ridge: 1e-8,
+        estimate_specific_vars: false,
+        device,
+    };
+    let cpu = fit_two_tier_grm_fipc(
+        &y, None, &TINY_PRIMARY_MAP, &TINY_SPECIFIC_MAP, n_persons,
+        TINY_N_ITEMS, TINY_N_PRIMARY, TINY_N_SPECIFIC, TINY_N_CAT, &anchors,
+        &a_primary, &a_specific, &thresholds, &config(crate::Device::Cpu),
+    )
+    .expect("CPU FIPC reference must succeed");
+    let gpu = fit_two_tier_grm_fipc(
+        &y, None, &TINY_PRIMARY_MAP, &TINY_SPECIFIC_MAP, n_persons,
+        TINY_N_ITEMS, TINY_N_PRIMARY, TINY_N_SPECIFIC, TINY_N_CAT, &anchors,
+        &a_primary, &a_specific, &thresholds, &config(crate::Device::Gpu),
+    )
+    .expect("GPU FIPC must succeed or fail closed to CPU");
+    if !gpu.gpu_execution_used {
+        assert!(gpu.cpu_fallback_reason.is_some());
+    }
+    assert!((cpu.loglik_trace[0] - gpu.loglik_trace[0]).abs() < 2e-3);
+    assert!((cpu.fixed_loglik_trace[0] - gpu.fixed_loglik_trace[0]).abs() < 2e-3);
+    for (actual, expected) in gpu.primary_mean.iter().zip(&cpu.primary_mean) {
+        assert!((actual - expected).abs() < 2e-3);
+    }
+    for (actual, expected) in gpu.theta_p_eap.iter().zip(&cpu.theta_p_eap) {
+        assert!((actual - expected).abs() < 2e-3);
+    }
+}
+
+#[test]
+#[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
+fn fipc_gpu_hardware_gate_requires_actual_dispatch() {
+    let (a_primary, a_specific, thresholds, _) = tiny_params();
+    let n_persons = 60;
+    let y: Vec<usize> = (0..n_persons * TINY_N_ITEMS)
+        .map(|index| index % TINY_N_CAT)
+        .collect();
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let fit = fit_two_tier_grm_fipc(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &anchors,
+        &a_primary,
+        &a_specific,
+        &thresholds,
+        &TwoTierFipcConfig {
+            q_primary: 7,
+            q_specific: 7,
+            max_iter: 1,
+            tol: 1e-5,
+            newton_iter: 2,
+            ridge: 1e-8,
+            estimate_specific_vars: false,
+            device: crate::Device::Gpu,
+        },
+    )
+    .expect("GPU FIPC must return a result or fail closed");
+    assert!(
+        fit.gpu_execution_used,
+        "GPU acceptance unmet: fallback={:?}, backend={:?}, device={:?}",
+        fit.cpu_fallback_reason,
+        fit.gpu_backend,
+        fit.gpu_device_name
+    );
+    eprintln!(
+        "FIPC GPU dispatch receipt: backend={:?};device={:?};fallback={:?}",
+        fit.gpu_backend, fit.gpu_device_name, fit.cpu_fallback_reason
+    );
+    assert!(fit.gpu_backend.is_some());
+    assert!(fit.gpu_device_name.is_some());
+}
+
+#[test]
+fn fipc_person_permutation_is_stable_at_consumer_exact_tolerance() {
+    let (a_primary, a_specific, thresholds, _) = tiny_params();
+    let n_persons = 60;
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let y: Vec<usize> = (0..n_persons * TINY_N_ITEMS)
+        .map(|index| (index / TINY_N_ITEMS + index) % TINY_N_CAT)
+        .collect();
+    let perm: Vec<usize> = (0..n_persons).rev().collect();
+    let permuted: Vec<usize> = perm
+        .iter()
+        .flat_map(|&person| y[person * TINY_N_ITEMS..(person + 1) * TINY_N_ITEMS].iter().copied())
+        .collect();
+    let config = TwoTierFipcConfig {
+        q_primary: 7,
+        q_specific: 7,
+        max_iter: 2,
+        tol: 1e-5,
+        newton_iter: 2,
+        ridge: 1e-8,
+        estimate_specific_vars: false,
+        device: crate::Device::Cpu,
+    };
+    let fit = |responses: &[usize]| {
+        fit_two_tier_grm_fipc(
+            responses,
+            None,
+            &TINY_PRIMARY_MAP,
+            &TINY_SPECIFIC_MAP,
+            n_persons,
+            TINY_N_ITEMS,
+            TINY_N_PRIMARY,
+            TINY_N_SPECIFIC,
+            TINY_N_CAT,
+            &anchors,
+            &a_primary,
+            &a_specific,
+            &thresholds,
+            &config,
+        )
+        .expect("permutation stability fit")
+    };
+    let original = fit(&y);
+    let reversed = fit(&permuted);
+    let mut max_delta = 0.0_f64;
+    for (new_person, &old_person) in perm.iter().enumerate() {
+        for dimension in 0..TINY_N_PRIMARY {
+            max_delta = max_delta.max(
+                (original.theta_p_eap[old_person * TINY_N_PRIMARY + dimension]
+                    - reversed.theta_p_eap[new_person * TINY_N_PRIMARY + dimension])
+                    .abs(),
+            );
+        }
+    }
+    assert!(
+        max_delta <= 1e-10,
+        "person permutation changed CPU EAP beyond consumer tolerance: {max_delta:e}"
+    );
+}
+
+#[test]
+fn fipc_missing_placeholders_do_not_change_canonical_order() {
+    let (a_primary, a_specific, thresholds, _) = tiny_params();
+    let n_persons = 60;
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let y = (0..n_persons * TINY_N_ITEMS)
+        .map(|index| index % TINY_N_CAT)
+        .collect::<Vec<_>>();
+    let mut placeholder_variant = y.clone();
+    let mut observed = vec![true; y.len()];
+    for person in 0..n_persons {
+        let index = person * TINY_N_ITEMS + (person % TINY_N_ITEMS);
+        observed[index] = false;
+        placeholder_variant[index] = TINY_N_CAT + person + 1;
+    }
+    let config = TwoTierFipcConfig {
+        q_primary: 7,
+        q_specific: 7,
+        max_iter: 2,
+        tol: 1e-5,
+        newton_iter: 2,
+        ridge: 1e-8,
+        estimate_specific_vars: false,
+        device: crate::Device::Cpu,
+    };
+    let fit = |responses: &[usize]| {
+        fit_two_tier_grm_fipc(
+            responses,
+            Some(&observed),
+            &TINY_PRIMARY_MAP,
+            &TINY_SPECIFIC_MAP,
+            n_persons,
+            TINY_N_ITEMS,
+            TINY_N_PRIMARY,
+            TINY_N_SPECIFIC,
+            TINY_N_CAT,
+            &anchors,
+            &a_primary,
+            &a_specific,
+            &thresholds,
+            &config,
+        )
+        .expect("missing placeholder fit")
+    };
+    let original = fit(&y);
+    let placeholder = fit(&placeholder_variant);
+    assert_eq!(original.prior_mean_trace, placeholder.prior_mean_trace);
+    assert_eq!(original.prior_covariance_trace, placeholder.prior_covariance_trace);
+    assert_eq!(original.theta_p_eap, placeholder.theta_p_eap);
+}
 
 // ---------------------------------------------------------------------------
 // Shared tiny two-tier problem: 10 items, P = 2 primaries in simple

@@ -46,6 +46,40 @@
 use crate::gpu::GpuContext;
 #[cfg(all(feature = "gpu", not(coverage)))]
 use wgpu::util::DeviceExt;
+use std::cell::RefCell;
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct GpuDispatchReceipt {
+    pub used: bool,
+    pub backend: Option<String>,
+    pub device_name: Option<String>,
+    pub fallback_reason: Option<String>,
+}
+
+thread_local! {
+    static LAST_RECEIPT: RefCell<GpuDispatchReceipt> = RefCell::new(GpuDispatchReceipt::default());
+}
+
+pub(crate) fn reset_gpu_dispatch_receipt() {
+    LAST_RECEIPT.with(|receipt| *receipt.borrow_mut() = GpuDispatchReceipt::default());
+}
+
+pub(crate) fn gpu_dispatch_receipt() -> GpuDispatchReceipt {
+    LAST_RECEIPT.with(|receipt| receipt.borrow().clone())
+}
+
+fn set_fallback_reason(reason: &'static str) {
+    LAST_RECEIPT.with(|receipt| receipt.borrow_mut().fallback_reason = Some(reason.into()));
+}
+
+fn record_gpu_success(backend: &str, device_name: &str) {
+    LAST_RECEIPT.with(|receipt| {
+        let mut dispatch = receipt.borrow_mut();
+        dispatch.used = true;
+        dispatch.backend = Some(backend.to_owned());
+        dispatch.device_name = Some(device_name.to_owned());
+    });
+}
 
 /// Inputs for one reduced E-step sweep. `tables_groups[g][i]` holds the
 /// log-probability table of group `g`, item `i` (`qg * qs * n_cat` entries
@@ -93,6 +127,9 @@ pub(crate) struct ReducedEstepOutputs {
     pub s2_g: Vec<f64>,
     pub s2_spec: Vec<f64>,
     pub w_spec: Vec<f64>,
+    /// Per-person posterior over the general-node axis. FIPC uses this to
+    /// recover moments on its affine multi-primary coordinates.
+    pub postg: Vec<f64>,
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
@@ -396,8 +433,12 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         storage_entry, submit_and_readback,
     };
 
-    let ctx = GpuContext::get()?;
+    let Some(ctx) = GpuContext::get() else {
+        set_fallback_reason("no_usable_adapter_or_device");
+        return None;
+    };
     if ctx.adapter_storage_buffers() < MIN_STORAGE_BUFFERS {
+        set_fallback_reason("adapter_storage_buffer_limit");
         return None;
     }
     let device = &ctx.device;
@@ -427,11 +468,13 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     ];
     for &len in &buffer_lens[1..] {
         if !storage_buffer_fits(&limits, len) {
+            set_fallback_reason("storage_buffer_limit");
             return None;
         }
     }
     // yobs is i32; reuse the f32-sized check with equal element width.
     if !storage_buffer_fits(&limits, buffer_lens[0]) {
+        set_fallback_reason("response_buffer_limit");
         return None;
     }
 
@@ -462,6 +505,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         }
     }
     if !storage_buffer_fits(&limits, tables.len()) {
+        set_fallback_reason("table_buffer_limit");
         return None;
     }
     let mut block_of = vec![-1i32; ni];
@@ -689,7 +733,10 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         (&pl_mg, dispatch_count(ng)),
         (&pl_ms, dispatch_count(ng * ns)),
     ] {
-        let (dx, dy, dz) = dispatch_workgroups_nd(groups.max(1), max_wg)?;
+        let Some((dx, dy, dz)) = dispatch_workgroups_nd(groups.max(1), max_wg) else {
+            set_fallback_reason("workgroup_dispatch_limit");
+            return None;
+        };
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: None,
             timestamp_writes: None,
@@ -700,21 +747,39 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     }
 
     let ll_staging = staging_buffer(device, "ll_read", np);
+    let postg_staging = staging_buffer(device, "postg_read", np * qg);
     let counts_staging = staging_buffer(device, "counts_read", ng * ni * stride * nc);
     let moments_staging = staging_buffer(device, "moments_read", ng * (3 + 2 * ns));
-    let read = submit_and_readback(
+    let Some(read) = submit_and_readback(
         ctx,
         encoder,
         &[
             (&ll_buf, &ll_staging, np),
+            (&postg_buf, &postg_staging, np * qg),
             (&counts_buf, &counts_staging, ng * ni * stride * nc),
             (&moments_buf, &moments_staging, ng * (3 + 2 * ns)),
         ],
-    )?;
+    ) else {
+        set_fallback_reason("gpu_submit_or_readback_failure");
+        return None;
+    };
     let mut iter = read.into_iter();
-    let ll_vec = iter.next()?;
-    let counts_vec = iter.next()?;
-    let moments_vec = iter.next()?;
+    let Some(ll_vec) = iter.next() else {
+        set_fallback_reason("gpu_readback_missing_loglik");
+        return None;
+    };
+    let Some(postg_vec) = iter.next() else {
+        set_fallback_reason("gpu_readback_missing_posterior");
+        return None;
+    };
+    let Some(counts_vec) = iter.next() else {
+        set_fallback_reason("gpu_readback_missing_counts");
+        return None;
+    };
+    let Some(moments_vec) = iter.next() else {
+        set_fallback_reason("gpu_readback_missing_moments");
+        return None;
+    };
 
     let mut loglik = 0.0;
     for &v in &ll_vec {
@@ -736,6 +801,9 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         }
     }
 
+    {
+        record_gpu_success(ctx.backend(), ctx.device_name());
+    }
     Some(ReducedEstepOutputs {
         loglik,
         counts: counts_vec.into_iter().map(f64::from).collect(),
@@ -745,6 +813,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         s2_g,
         s2_spec,
         w_spec,
+        postg: postg_vec.into_iter().map(f64::from).collect(),
     })
 }
 
@@ -755,5 +824,45 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
 pub(crate) fn e_step_reduced_gpu(
     _inputs: &ReducedEstepInputs,
 ) -> Option<ReducedEstepOutputs> {
+    set_fallback_reason("gpu_feature_disabled_or_coverage_build");
     None
+}
+
+#[cfg(test)]
+mod receipt_tests {
+    use super::*;
+
+    #[test]
+    fn fallback_history_survives_later_gpu_success() {
+        reset_gpu_dispatch_receipt();
+        set_fallback_reason("gpu_submit_or_readback_failure");
+        record_gpu_success("Metal", "Apple M5");
+        let receipt = gpu_dispatch_receipt();
+        assert!(receipt.used);
+        assert_eq!(receipt.backend.as_deref(), Some("Metal"));
+        assert_eq!(receipt.device_name.as_deref(), Some("Apple M5"));
+        assert_eq!(
+            receipt.fallback_reason.as_deref(),
+            Some("gpu_submit_or_readback_failure")
+        );
+    }
+
+    #[test]
+    fn receipt_state_is_thread_local() {
+        reset_gpu_dispatch_receipt();
+        set_fallback_reason("main_thread");
+        let child = std::thread::spawn(|| {
+            let receipt = gpu_dispatch_receipt();
+            assert!(!receipt.used);
+            assert!(receipt.fallback_reason.is_none());
+            set_fallback_reason("child_thread");
+            gpu_dispatch_receipt()
+        });
+        let child_receipt = child.join().expect("receipt thread must finish");
+        assert_eq!(child_receipt.fallback_reason.as_deref(), Some("child_thread"));
+        assert_eq!(
+            gpu_dispatch_receipt().fallback_reason.as_deref(),
+            Some("main_thread")
+        );
+    }
 }
