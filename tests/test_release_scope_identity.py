@@ -95,17 +95,28 @@ def test_workflow_producer_transport_and_actual_consumer_hold(scope_fixture):
 def test_scope_record_mutations_refuse_before_generic_hold(scope_fixture, case):
     source, sha, rows, records = scope_fixture
     records = copy.deepcopy(records)
-    if case == "missing": records.pop()
-    elif case == "duplicate": records[-1] = records[0]
-    elif case == "other-platform": records[0]["target"] = "x86_64-pc-windows-msvc"
-    elif case == "abi": records[0]["abi"] = "cp313"
-    elif case == "metadata": records[0]["metadata_members"] = {}
-    elif case == "lock": records[0]["source_declarations"]["Cargo.lock"] = "0" * 64
-    elif case == "source": records[0]["source_sha"] = "0" * 40
-    elif case == "complete": records[0]["scopes"]["runtime"] = {"status": "complete", "evidence": []}
-    elif case == "empty-scope": records[0]["scopes"] = {}
-    elif case == "wheel-as-sdist": records[-1]["kind"] = "wheel"
-    elif case == "schema-bool": records[0]["schema_version"] = True
+    if case == "missing":
+        records.pop()
+    elif case == "duplicate":
+        records[-1] = records[0]
+    elif case == "other-platform":
+        records[0]["target"] = "x86_64-pc-windows-msvc"
+    elif case == "abi":
+        records[0]["abi"] = "cp313"
+    elif case == "metadata":
+        records[0]["metadata_members"] = {}
+    elif case == "lock":
+        records[0]["source_declarations"]["Cargo.lock"] = "0" * 64
+    elif case == "source":
+        records[0]["source_sha"] = "0" * 40
+    elif case == "complete":
+        records[0]["scopes"]["runtime"] = {"status": "complete", "evidence": []}
+    elif case == "empty-scope":
+        records[0]["scopes"] = {}
+    elif case == "wheel-as-sdist":
+        records[-1]["kind"] = "wheel"
+    elif case == "schema-bool":
+        records[0]["schema_version"] = True
     with pytest.raises(ValueError) as error:
         M["verify_scope_identities"](records, rows, {r["file"]: Path("dist") / r["file"] for r in rows.values()}, source, sha)
     assert "evidence UNKNOWN" not in str(error.value)
