@@ -6,7 +6,7 @@ import hashlib
 import importlib.util
 import io
 import json
-import os
+import sys
 import tarfile
 import zipfile
 from argparse import Namespace
@@ -1333,16 +1333,12 @@ def test_own_crate_wheel_notice_source_mismatch_stays_hold(tmp_path):
     assert any("differs from source" in reason for reason in row["hold_reasons"])
 
 
-def test_actual_a3_wheel_license_roles_when_artifact_is_supplied():
-    wheel_path = os.environ.get("FMLS_A3_WHEEL")
-    source_root = os.environ.get("FMLS_A3_SOURCE")
-    if not wheel_path or not source_root:
-        pytest.skip("set FMLS_A3_WHEEL and FMLS_A3_SOURCE to the exact-head artifacts")
+def verify_actual_a3_wheel_license_roles(wheel_path: Path, source_root: Path):
+    """Explicit artifact check; run this file with wheel and exact source paths."""
     expected = ("d8ec1d497763abd9" "43dfc5ba0defa93a"
                 "67f141b8bab9adf0" "4a02c8d09a9d43bb")
     version, files, errors = L.own_crate_wheel_license_files(
-        Path(wheel_path), expected, {("cfg_aliases", "0.2.2"), ("libm", "0.2.16")},
-        Path(source_root))
+        wheel_path, expected, {("cfg_aliases", "0.2.2"), ("libm", "0.2.16")}, source_root)
     assert (version, errors, len(files)) == ("0.11.5", [], 6)
     expected_files = {
         "LICENSE": "08f1fd81fb120bc468b69dc3e58ea0dc23c216305c766e45e107f56c76559e3f",
@@ -1353,7 +1349,7 @@ def test_actual_a3_wheel_license_roles_when_artifact_is_supplied():
         "NOTICE-libm-0.2.16-source-notices.txt": "9e949a13f66c0f9b60b73b54e8ab2940ccff92d704c46c53103b1028e2cc75ba",
     }
     assert {f["path"].split("/licenses/", 1)[1]: f["sha256"] for f in files} == expected_files
-    assert all(hashlib.sha256((Path(source_root) / name).read_bytes()).hexdigest() == digest
+    assert all(hashlib.sha256((source_root / name).read_bytes()).hexdigest() == digest
                for name, digest in expected_files.items())
     assert all(f["artifact_sha256"] == expected for f in files)
     assert [f["wheel_role"] for f in files].count("own-license") == 1
@@ -1513,3 +1509,10 @@ def test_external_runtime_dependency_is_pinned_to_its_wheel(tmp_path, monkeypatc
         assert "no bound notice stanza" in " ".join(row["external_runtime_notes"])
     else:
         assert row["license_class"] == "HOLD" and "external_runtime_dependency" not in row
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        raise SystemExit("usage: test_license_inventory_generator.py WHEEL EXACT_SOURCE_ROOT")
+    verify_actual_a3_wheel_license_roles(Path(sys.argv[1]), Path(sys.argv[2]))
+    print("actual A3 wheel license roles and six source hashes verified")

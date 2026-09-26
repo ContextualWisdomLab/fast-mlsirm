@@ -26,6 +26,8 @@ The actual wheel's six `METADATA License-File` members have the following SHA256
 | `NOTICE-libm-0.2.16-LICENSE.txt` | `3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7` |
 | `NOTICE-libm-0.2.16-source-notices.txt` | `9e949a13f66c0f9b60b73b54e8ab2940ccff92d704c46c53103b1028e2cc75ba` |
 
+Run the real-wheel hash regression explicitly with `python tests/test_license_inventory_generator.py WHEEL EXACT_SOURCE_ROOT`; the default pytest collection needs no wheel and has no skip. At the correction head, the default SPDX/inventory set passed 236/236; the explicit actual-wheel check passed, and a copy with a changed source `NOTICE` was rejected. The source archive identifies #2157 head `58b7b23f`; the synthetic #2157/#2170 merge still conflicts in `uv.lock`, so its final merge tree and hosted checks need separate confirmation.
+
 ## Acceptance bases (Linux graph, 103 rows)
 canonical verifier text 21; byte-identical condition clauses (reviewed hash) 68; SPDX matching template 4;
 upstream-vcs text at the published commit 2; own crates via published-wheel LICENSE 2; reviewed pointer notices 4;
