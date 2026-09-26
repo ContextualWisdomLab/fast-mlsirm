@@ -5,8 +5,8 @@
 
 use mlsirm_core::regression::{
     chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc, linear_contrast,
-    normal_wald_interval, sample_mean_sd, slope_difference, t_sf, xwz_e_design_row, HcType,
-    OlsFit, XWZ_E_K,
+    nested_ols_column_drop, normal_wald_interval, sample_mean_sd, slope_difference, t_sf,
+    xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
 };
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -77,6 +77,40 @@ fn py_fit_ols_hc(
     let y_vec: Vec<f64> = y.as_slice()?.to_vec();
     let (fit, vcov) = fit_ols_hc(&x_vec, &y_vec, n, k, hc_ty).map_err(PyValueError::new_err)?;
     fit_dict(py, &fit, &vcov, &hc.to_ascii_uppercase())
+}
+
+#[pyfunction(name = "nested_ols_column_drop")]
+fn py_nested_ols_column_drop(
+    py: Python<'_>,
+    x: PyReadonlyArray2<'_, f64>,
+    y: PyReadonlyArray1<'_, f64>,
+    drop_columns: Vec<usize>,
+) -> PyResult<Py<PyDict>> {
+    let shape = x.shape();
+    if y.len() != shape[0] {
+        return Err(PyValueError::new_err("y length must equal x.shape[0]"));
+    }
+    let x_vec: Vec<f64> = x.as_array().iter().copied().collect();
+    let y_vec: Vec<f64> = y.as_slice()?.to_vec();
+    let result = nested_ols_column_drop(&x_vec, &y_vec, shape[0], shape[1], &drop_columns)
+        .map_err(PyValueError::new_err)?;
+    let out = PyDict::new(py);
+    out.set_item("n", result.n)?;
+    out.set_item("k_full", result.k_full)?;
+    out.set_item("k_reduced", result.k_reduced)?;
+    out.set_item("sst", result.sst)?;
+    out.set_item("sse_full", result.sse_full)?;
+    out.set_item("sse_reduced", result.sse_reduced)?;
+    out.set_item("r2_full", result.r2_full)?;
+    out.set_item("adjusted_r2_full", result.adjusted_r2_full)?;
+    out.set_item("r2_reduced", result.r2_reduced)?;
+    out.set_item("adjusted_r2_reduced", result.adjusted_r2_reduced)?;
+    out.set_item("delta_r2", result.delta_r2)?;
+    out.set_item("f_stat", result.f_stat)?;
+    out.set_item("p_f", result.p_f)?;
+    out.set_item("df1", result.df1)?;
+    out.set_item("df2", result.df2)?;
+    Ok(out.into())
 }
 
 #[pyfunction(name = "linear_contrast")]
@@ -190,6 +224,7 @@ fn py_normal_wald_interval(
 fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("XWZ_E_K", XWZ_E_K)?;
     m.add_function(wrap_pyfunction!(py_fit_ols_hc, m)?)?;
+    m.add_function(wrap_pyfunction!(py_nested_ols_column_drop, m)?)?;
     m.add_function(wrap_pyfunction!(py_linear_contrast, m)?)?;
     m.add_function(wrap_pyfunction!(py_xwz_e_design_row, m)?)?;
     m.add_function(wrap_pyfunction!(py_design_row_dot, m)?)?;
