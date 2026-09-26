@@ -28,6 +28,8 @@ The actual wheel's six `METADATA License-File` members have the following SHA256
 
 Run the real-wheel hash regression explicitly with `python tests/test_license_inventory_generator.py WHEEL EXACT_SOURCE_ROOT`; the default pytest collection needs no wheel and has no skip. At the correction head, the default SPDX/inventory set passed 236/236; the explicit actual-wheel check passed, and a copy with a changed source `NOTICE` was rejected. The source archive identifies #2157 head `58b7b23f`; the synthetic #2157/#2170 merge still conflicts in `uv.lock`, so its final merge tree and hosted checks need separate confirmation.
 
+**Required A3 release evidence:** Before accepting this Linux cp312 candidate, run the explicit check above with the SHA-pinned wheel named in Scope and the extracted source archive whose Git commit is the #2157 head. Record the command, both input SHA256 values, exit code, and six-file result alongside the inventory. A default pytest pass does not satisfy this artifact check. With either path omitted, the command exits 1 (`usage: test_license_inventory_generator.py WHEEL EXACT_SOURCE_ROOT`); with the cited wheel and source it prints `actual A3 wheel license roles and six source hashes verified` and exits 0. This local pass applies only to the examined candidate; the integrated PR head and hosted gates remain pending.
+
 ## Acceptance bases (Linux graph, 103 rows)
 canonical verifier text 21; byte-identical condition clauses (reviewed hash) 68; SPDX matching template 4;
 upstream-vcs text at the published commit 2; own crates via published-wheel LICENSE 2; reviewed pointer notices 4;
