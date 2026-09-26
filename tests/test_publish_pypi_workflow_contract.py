@@ -536,7 +536,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@95e4da9e9a5d729f8142a718e68e2adeb947b75c" in central
+    assert "release-dependency-license-strix-gate.yml@8d76f3a46128749fdaf95ae7d00ba1de576f935d" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -942,16 +942,39 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
         archive_binding = {"key": archive_key, "name": "release-strix-binding-a2-"
                            + hashlib.sha256(archive_key.encode()).hexdigest(),
                            "id": 1001, "digest": "sha256:" + "c" * 64}
+        build_receipt = json.loads((root / "scope-evidence" / "repro-digest-sdist" /
+                                    "sdist.build-first.json").read_text())
+        build_package = build_receipt["python_packages"][0]
+        build_sha = hashlib.sha256(json.dumps(build_package, sort_keys=True,
+                                              separators=(",", ":")).encode()).hexdigest()
+        build_key = f"pypi/pip@25.2/sha256/{build_sha}"
+        build_binding = {"key": build_key, "name": "release-strix-binding-a2-"
+                         + hashlib.sha256(build_key.encode()).hexdigest(),
+                         "id": 1002, "digest": "sha256:" + "e" * 64}
+        build_fixture = {"id": build_key,
+                         "dependency": {"ecosystem": "pypi", "name": "pip", "version": "25.2",
+                                        "source_sha256": build_sha}}
+        build_fixture_sha = hashlib.sha256(json.dumps(build_fixture, sort_keys=True,
+                                                      separators=(",", ":")).encode()).hexdigest()
+        build_legs = sorted([*_expected_legs(), "sdist"])
+        build_snapshots = {leg: json.loads((root / "scope-evidence" / f"repro-digest-{leg}" /
+                                           f"{leg}.build-first.json").read_text())["python_snapshot_sha256"]
+                           for leg in build_legs}
         fixture = {"id": archive_key,
                    "dependency": {"ecosystem": "pypi", "name": "numpy", "version": "2.5.1",
                                   "source_sha256": dependency_sha}}
         fixture_sha = hashlib.sha256(json.dumps(fixture, sort_keys=True,
                                                separators=(",", ":")).encode()).hexdigest()
-        archive_report = {"schema": "cwl.release-runtime-archive-licenses/1", "archives": [
+        archive_report = {"schema": "cwl.release-runtime-archive-licenses/2", "archives": [
             {"key": archive_key, "package_key": binding["key"], "name": "numpy",
              "version": "2.5.1", "source_sha256": dependency_sha,
              "license": "BSD-3-Clause", "fixture": fixture,
-             "fixture_sha256": fixture_sha, "legs": _expected_legs()}]}
+             "fixture_sha256": fixture_sha, "legs": _expected_legs()}],
+            "build_packages": [{"key": build_key, "package_key": "pypi/pip@25.2",
+                                "name": "pip", "version": "25.2", "source_sha256": build_sha,
+                                "license": "MIT", "fixture": build_fixture,
+                                "fixture_sha256": build_fixture_sha, "legs": build_legs,
+                                "snapshots": build_snapshots}]}
         archive_report_bytes = (json.dumps(archive_report, sort_keys=True) + "\n").encode()
         verdict_artifact = by_name["release-dependency-sealed-evidence--full-set-verdict"]
         report = {"schema": "cwl.release-dependency-gate/1", "result": "PASS",
@@ -964,7 +987,10 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                   "runtime_archive_reviews": [{"key": archive_key, "package_key": binding["key"],
                                                "source_sha256": dependency_sha,
                                                "license": "BSD-3-Clause", "fixture_sha256": fixture_sha,
-                                               "legs": _expected_legs()}]}
+                                               "legs": _expected_legs()}],
+                  "build_package_reviews": [{"key": build_key, "package_key": "pypi/pip@25.2",
+                                             "source_sha256": build_sha, "license": "MIT",
+                                             "fixture_sha256": build_fixture_sha, "legs": build_legs}]}
         report_bytes = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()
         verdict = {"schema": "cwl.release-full-set-verdict/1", "result": "PASS", **identity,
                    "record_artifact_id": record_artifact["id"],
@@ -972,6 +998,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                    "distributions": distributions, "binding_artifacts": [binding],
                    "scope_evidence": scope_set["evidence"],
                    "runtime_archive_binding_artifacts": [archive_binding],
+                   "build_package_binding_artifacts": [build_binding],
                    "runtime_archive_license_sha256": hashlib.sha256(archive_report_bytes).hexdigest(),
                    "gate_report_sha256": hashlib.sha256(report_bytes).hexdigest()}
         buffer = io.BytesIO()
@@ -988,7 +1015,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
         (root / "run-artifacts.jsonl").write_text("".join(json.dumps({
             **item, "workflow_run": {"id": _RUN_ID, "head_sha": "d" * 40},
             "created_at": "2026-09-26T12:01:00Z", "expired": False,
-        }) + "\n" for item in selected + [binding, archive_binding]))
+        }) + "\n" for item in selected + [binding, archive_binding, build_binding]))
         (root / "run-attempt.json").write_text(json.dumps({
             "id": _RUN_ID, "run_attempt": 2, "head_sha": "d" * 40,
             "run_started_at": "2026-09-26T12:00:00Z",
@@ -1098,6 +1125,7 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
     ok_bytes = _run_admission(tmp_path / "ok", _BYTES_STEP)
     # The synthetic verdict passes; the deliberately empty scope inventory still refuses.
     assert ok_bytes.returncode != 0 and "scope identity set missing" in ok_bytes.stderr
+
     assert not (tmp_path / "ok" / "admitted-manifest.tsv").exists()
 
     def refuse_set(name: str, mutate, expected: str) -> None:
@@ -1223,6 +1251,48 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
         lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime-requirements.txt").write_text("forged\n"),
         "runtime inventory differs from selected source or wheel",
     )
+
+
+def test_build_package_licence_and_strix_must_cover_installed_files(tmp_path: Path) -> None:
+    import json
+    import runpy
+    import pytest
+
+    _admission_fixture(tmp_path)
+    result = _run_admission(tmp_path, _BYTES_STEP)
+    assert "scope identity set missing" in result.stderr
+    folder = tmp_path / "downloaded/release-dependency-sealed-evidence--full-set-verdict"
+    verdict = json.loads((folder / "full-set-verdict.json").read_text())
+    report_bytes = (folder / "gate-report.json").read_bytes()
+    report = json.loads(report_bytes)
+    archive_bytes = (folder / "runtime-archive-license-report.json").read_bytes()
+    archive_report = json.loads(archive_bytes)
+    legs = [*_expected_legs(), "sdist"]
+    scopes = [tmp_path / "scope-evidence" / f"repro-digest-{leg}" for leg in legs]
+    builds = [json.loads((path / f"{leg}.build-first.json").read_text()) for leg, path in zip(legs, scopes)]
+    runtimes = [json.loads((path / f"{leg}.runtime.json").read_text())
+                for leg, path in zip(legs, scopes) if leg != "sdist"]
+    verify = runpy.run_path(str(REPO_ROOT / "scripts/ci/verify_release_full_set_verdict.py"))[
+        "verify_runtime_dependency_coverage"]
+    verify(verdict, report, report_bytes, archive_report, archive_bytes, runtimes, builds,
+           repository="owner/repo", source_sha=_RELEASE_COMMIT)
+    bad = dict(archive_report, build_packages=[])
+    bad_bytes = (json.dumps(bad, sort_keys=True) + "\n").encode()
+    with pytest.raises(ValueError, match="complete dependency set"):
+        verify({**verdict, "runtime_archive_license_sha256": hashlib.sha256(bad_bytes).hexdigest()},
+               report, report_bytes, bad, bad_bytes, runtimes, builds,
+               repository="owner/repo", source_sha=_RELEASE_COMMIT)
+    with pytest.raises(ValueError, match="complete dependency set"):
+        verify({**verdict, "build_package_binding_artifacts": []}, report, report_bytes,
+               archive_report, archive_bytes, runtimes, builds,
+               repository="owner/repo", source_sha=_RELEASE_COMMIT)
+    forged = json.loads(archive_bytes)
+    forged["build_packages"][0]["snapshots"]["sdist"] = "0" * 64
+    forged_bytes = (json.dumps(forged, sort_keys=True) + "\n").encode()
+    with pytest.raises(ValueError, match="build package licence differs"):
+        verify({**verdict, "runtime_archive_license_sha256": hashlib.sha256(forged_bytes).hexdigest()},
+               report, report_bytes, forged, forged_bytes, runtimes, builds,
+               repository="owner/repo", source_sha=_RELEASE_COMMIT)
 
 
 def test_build_leg_captures_finished_distribution_bytes(tmp_path: Path) -> None:

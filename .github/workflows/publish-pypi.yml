@@ -905,7 +905,7 @@ jobs:
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@95e4da9e9a5d729f8142a718e68e2adeb947b75c
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@8d76f3a46128749fdaf95ae7d00ba1de576f935d
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
@@ -1175,6 +1175,7 @@ jobs:
                   value[key] = item
               return value
           runtime_records = []
+          build_records = []
           for leg, row in rows.items():
               name = f"repro-digest-{leg}"
               members = {path.name: path for path in (Path("downloaded") / name).iterdir()}
@@ -1202,6 +1203,8 @@ jobs:
                                         object_pairs_hook=unique_object)
               transport.verify_build_scope(build_first, build_second, row, Path("release-source"),
                                            commit, members[f"{leg}.build-python.zip"])
+              build_records.append({key: build_first[key] for key in
+                                    ("leg", "python_packages", "python_snapshot_sha256")})
               if leg != "sdist":
                   runtime = json.loads(members[f"{leg}.runtime.json"].read_text(encoding="utf-8"),
                                        object_pairs_hook=unique_object)
@@ -1250,7 +1253,7 @@ jobs:
           )
           verifier.verify_runtime_dependency_coverage(
               verdict, report, report_bytes, archive_report, archive_report_bytes,
-              runtime_records,
+              runtime_records, build_records,
               repository=os.environ["REPOSITORY"], source_sha=commit,
           )
 

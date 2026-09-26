@@ -140,14 +140,16 @@ def verify_full_set_verdict(
         raise ValueError("scope artifact set differs from the central verdict")
     bindings = verdict.get("binding_artifacts")
     archive_bindings = verdict.get("runtime_archive_binding_artifacts")
+    build_bindings = verdict.get("build_package_binding_artifacts")
     if (not isinstance(bindings, list) or not bindings
             or not isinstance(archive_bindings, list) or not archive_bindings
+            or not isinstance(build_bindings, list) or not build_bindings
             or not isinstance(verdict.get("runtime_archive_license_sha256"), str)
             or not re.fullmatch(r"[0-9a-f]{64}", verdict["runtime_archive_license_sha256"])):
         raise ValueError("verdict has no Strix binding set")
     seen_names: set[str] = set()
     seen_keys: set[str] = set()
-    for binding in [*bindings, *archive_bindings]:
+    for binding in [*bindings, *archive_bindings, *build_bindings]:
         if not isinstance(binding, Mapping):
             raise ValueError("malformed Strix binding identity")
         name, key, artifact_id, digest = (binding.get(field) for field in ("name", "key", "id", "digest"))
@@ -164,15 +166,15 @@ def verify_full_set_verdict(
         seen_keys.add(key)
     if any(not isinstance(binding.get("key"), str)
            or re.fullmatch(r"pypi/[a-z0-9-]+@[^/]+/sha256/[0-9a-f]{64}", binding["key"]) is None
-           for binding in archive_bindings):
-        raise ValueError("runtime archive Strix binding key is malformed")
+           for binding in [*archive_bindings, *build_bindings]):
+        raise ValueError("scoped dependency Strix binding key is malformed")
     if {name for name in listed if name.startswith(f"release-strix-binding-a{run_attempt}-")} != seen_names:
         raise ValueError("same-attempt Strix artifact set differs from the verdict")
 
 
 def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: bytes,
                                        archive_report: Any, archive_report_bytes: bytes,
-                                       runtime_records: list[dict], *,
+                                       runtime_records: list[dict], build_records: list[dict], *,
                                        repository: str, source_sha: str) -> None:
     """Require every installed wheel dependency in the licensed, Strix-bound set."""
     if (not isinstance(verdict, Mapping) or not isinstance(report, Mapping)
@@ -186,17 +188,23 @@ def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: 
     dependencies = report.get("dependencies")
     bindings = verdict.get("binding_artifacts")
     archive_bindings = verdict.get("runtime_archive_binding_artifacts")
+    build_bindings = verdict.get("build_package_binding_artifacts")
     reviews = report.get("runtime_archive_reviews")
+    build_reviews = report.get("build_package_reviews")
     licensed_archives = archive_report.get("archives") if isinstance(archive_report, Mapping) else None
+    licensed_build = archive_report.get("build_packages") if isinstance(archive_report, Mapping) else None
     if (not isinstance(dependencies, list) or not dependencies
             or type(report.get("dependency_count")) is not int
             or report["dependency_count"] != len(dependencies)
             or not isinstance(bindings, list) or not bindings
             or not isinstance(archive_bindings, list) or not archive_bindings
+            or not isinstance(build_bindings, list) or not build_bindings
             or not isinstance(reviews, list) or not reviews
+            or not isinstance(build_reviews, list) or not build_reviews
             or not isinstance(archive_report, Mapping)
-            or archive_report.get("schema") != "cwl.release-runtime-archive-licenses/1"
+            or archive_report.get("schema") != "cwl.release-runtime-archive-licenses/2"
             or not isinstance(licensed_archives, list) or not licensed_archives
+            or not isinstance(licensed_build, list) or not licensed_build
             or verdict.get("runtime_archive_license_sha256")
             != hashlib.sha256(archive_report_bytes).hexdigest()):
         raise ValueError("full dependency report has no complete dependency set")
@@ -263,6 +271,69 @@ def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: 
                ("package_key", "source_sha256", "license", "fixture_sha256", "legs")):
             raise ValueError("runtime archive Strix review differs from licence verdict")
         seen_reviews.add(review["key"])
+    if len(build_records) != 13 or {row.get("leg") for row in build_records} != {
+            "sdist", *{runtime["leg"] for runtime in runtime_records}}:
+        raise ValueError("build interpreter evidence does not cover all release legs")
+    expected_build: dict[str, dict] = {}
+    for record in build_records:
+        leg = record["leg"]
+        snapshot_sha = record["python_snapshot_sha256"]
+        if (not re.fullmatch(r"[0-9a-f]{64}", snapshot_sha)
+                or not isinstance(record.get("python_packages"), list)
+                or not record["python_packages"]):
+            raise ValueError("build interpreter snapshot identity is malformed")
+        for package in record["python_packages"]:
+            name, version = package["name"], package["version"]
+            sha = hashlib.sha256(json.dumps(
+                {"name": name, "version": version, "files": package["files"]},
+                sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            key = f"pypi/{name}@{version}/sha256/{sha}"
+            row = expected_build.setdefault(key, {"legs": set(), "snapshots": {},
+                                                  "name": name, "version": version,
+                                                  "source_sha256": sha})
+            if leg in row["legs"]:
+                raise ValueError("build interpreter package is duplicated")
+            row["legs"].add(leg)
+            row["snapshots"][leg] = snapshot_sha
+    if (len(licensed_build) != len(expected_build)
+            or len(build_reviews) != len(expected_build)
+            or len(build_bindings) != len(expected_build)
+            or {binding.get("key") for binding in build_bindings if isinstance(binding, Mapping)}
+            != set(expected_build)):
+        raise ValueError("build package licence and Strix sets differ from installed files")
+    approved_build = {}
+    for row in licensed_build:
+        if not isinstance(row, Mapping):
+            raise ValueError("build package licence row is malformed")
+        key, package_key, sha = row.get("key"), row.get("package_key"), row.get("source_sha256")
+        fixture, fixture_sha = row.get("fixture"), row.get("fixture_sha256")
+        if (not isinstance(key, str) or key not in expected_build or key in approved_build
+                or not isinstance(package_key, str) or not isinstance(sha, str)
+                or key != f"{package_key}/sha256/{sha}"
+                or package_key != f"pypi/{expected_build[key]['name']}@{expected_build[key]['version']}"
+                or sha != expected_build[key]["source_sha256"]
+                or not isinstance(fixture, Mapping) or fixture.get("id") != key
+                or fixture.get("dependency") != {
+                    "ecosystem": "pypi", "name": expected_build[key]["name"],
+                    "version": expected_build[key]["version"], "source_sha256": sha}
+                or not isinstance(fixture_sha, str)
+                or fixture_sha != hashlib.sha256(json.dumps(
+                    fixture, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                or not isinstance(row.get("license"), str) or not row["license"]
+                or set(row.get("legs", [])) != expected_build[key]["legs"]
+                or row.get("snapshots") != expected_build[key]["snapshots"]):
+            raise ValueError("build package licence differs from installed files")
+        approved_build[key] = row
+    seen_build_reviews = set()
+    for review in build_reviews:
+        if (not isinstance(review, Mapping) or review.get("key") not in approved_build
+                or review["key"] in seen_build_reviews):
+            raise ValueError("build package Strix review is missing or duplicated")
+        row = approved_build[review["key"]]
+        if any(review.get(field) != row.get(field) for field in
+               ("package_key", "source_sha256", "license", "fixture_sha256", "legs")):
+            raise ValueError("build package Strix review differs from licence verdict")
+        seen_build_reviews.add(review["key"])
 
 
 def main() -> None:
