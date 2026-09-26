@@ -264,3 +264,105 @@ fn fit_poly_lsirm_recovers_positions_and_slopes() {
     assert!(corr > 0.6, "theta EAP corr {corr}");
     assert!(fit.theta_sd.iter().all(|s| s.is_finite() && *s > 0.0));
 }
+
+#[test]
+fn returned_loglik_matches_final_bank_quadrature() {
+    let mut response_categories = vec![0usize; 40 * 5];
+    for (cell_index, response_category) in response_categories.iter_mut().enumerate() {
+        *response_category = cell_index % 4;
+    }
+    let mut observed_cells = vec![true; response_categories.len()];
+    observed_cells[..5].fill(false);
+    observed_cells[7] = false;
+    for response_model in [PolyModel::Grm, PolyModel::Gpcm] {
+        for latent_dim in [1, 2] {
+            for iteration_limit in [1, 3] {
+                let fitted_bank = fit_poly_lsirm(
+                    &response_categories,
+                    Some(&observed_cells),
+                    40,
+                    5,
+                    4,
+                    latent_dim,
+                    response_model,
+                    7,
+                    7,
+                    iteration_limit,
+                    1e-12,
+                )
+                .unwrap();
+                let expected_log_likelihood = final_bank_loglik(
+                    &response_categories,
+                    &observed_cells,
+                    &fitted_bank,
+                    5,
+                    4,
+                    latent_dim,
+                    response_model,
+                );
+                assert!(
+                    (fitted_bank.loglik - expected_log_likelihood).abs() < 1e-9,
+                    "{response_model:?} latent_dim={latent_dim} iteration_limit={iteration_limit}"
+                );
+            }
+        }
+    }
+}
+
+fn final_bank_loglik(
+    response_categories: &[usize],
+    observed_cells: &[bool],
+    fitted_bank: &PolyLsirmFit,
+    item_count: usize,
+    category_count: usize,
+    latent_dim: usize,
+    response_model: PolyModel,
+) -> f64 {
+    let (quadrature_nodes, quadrature_weights) =
+        crate::quadrature::require_gh_rule(7, "q").unwrap();
+    let mut total_log_likelihood = 0.0;
+    for person_index in 0..response_categories.len() / item_count {
+        let mut log_terms = Vec::new();
+        for (trait_index, &trait_node) in quadrature_nodes.iter().enumerate() {
+            for latent_index in 0..7usize.pow(latent_dim as u32) {
+                let mut remaining_index = latent_index;
+                let mut log_weight = quadrature_weights[trait_index].ln();
+                for _latent_dimension in 0..latent_dim {
+                    let axis_index = remaining_index % 7;
+                    remaining_index /= 7;
+                    log_weight += quadrature_weights[axis_index].ln();
+                }
+                let mut log_term = log_weight;
+                for item_index in 0..item_count {
+                    if observed_cells[person_index * item_count + item_index] {
+                        let mut squared_distance = 1e-8;
+                        for dimension_index in 0..latent_dim {
+                            let axis_index =
+                                (latent_index / 7usize.pow(dimension_index as u32)) % 7;
+                            let position_difference = quadrature_nodes[axis_index]
+                                - fitted_bank.zeta[item_index * latent_dim + dimension_index];
+                            squared_distance += position_difference * position_difference;
+                        }
+                        let linear_predictor =
+                            fitted_bank.slope[item_index] * trait_node - squared_distance.sqrt();
+                        log_term += poly_cell(
+                            linear_predictor,
+                            response_model,
+                            &fitted_bank.cat_params[item_index],
+                            category_count,
+                        )[response_categories[person_index * item_count + item_index]];
+                    }
+                }
+                log_terms.push(log_term);
+            }
+        }
+        let maximum_log_term = log_terms.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        total_log_likelihood += maximum_log_term
+            + log_terms
+                .iter()
+                .map(|log_term| (log_term - maximum_log_term).exp())
+                .sum::<f64>()
+                .ln();
+    }
+    total_log_likelihood
+}
