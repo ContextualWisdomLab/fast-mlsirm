@@ -96,6 +96,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .em_progress import EmIterationProgress
+
 
 def _finite_integer_control(value: object, name: str) -> int:
     """Normalize a trusted finite integer-valued scalar without callbacks."""
@@ -194,6 +196,7 @@ def fit_two_tier_grm(
     tol: float,
     n_starts: int,
     seed: int,
+    progress: object | None = None,
     primary_correlation: str = "estimate",
 ) -> TwoTierGrmFit:
     """Fit the single-group polytomous two-tier GRM (compute in Rust).
@@ -218,8 +221,23 @@ def fit_two_tier_grm(
     ``max_iter`` exhaustion returns ``converged=False`` instead of
     substituting values.
 
+    ``progress`` is an optional callable invoked once per EM E-step with an
+    :class:`~fast_mlsirm.em_progress.EmIterationProgress` report whose
+    ``loglik`` / ``delta_loglik`` are the already-computed observed-data
+    marginal values used for convergence (Bock & Aitkin, 1981, p. 445
+    eqs. 5–6; p. 447 E-step; p. 448). Default ``None`` keeps the fitter
+    silent (0.11.4-compatible; ADR-0028 — opt-in only, no unsourced
+    numeric knob).
+
     See the module docstring for the model, the paper basis of every
     non-obvious decision, and the APA 7th references.
+
+    References (APA 7th ed.) for ``progress``
+    ----------------------------------------
+    Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation
+        of item parameters: Application of an EM algorithm. *Psychometrika,
+        46*(4), 443–459. https://doi.org/10.1007/BF02293801 (full text read)
+
     ``primary_correlation='estimate'`` preserves the existing correlated-primary
     fit; ``'identity'`` fixes Phi exactly to I (Cai, 2010, pp. 583-584).
     In identity mode, distinct free-loading item sets for each primary pair
@@ -259,6 +277,8 @@ def fit_two_tier_grm(
         raise ValueError("n_starts must be >= 1")
     tol_float = _positive_real_control(tol, "tol")
     seed_int = _u64_seed(seed)
+    if progress is not None and not callable(progress):
+        raise TypeError("progress must be a callable or None")
 
     y = np.asarray(responses)
     if np.iscomplexobj(y):
@@ -321,6 +341,26 @@ def fit_two_tier_grm(
         raise RuntimeError("fit_two_tier_grm requires the compiled Rust core")
 
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
+    rust_progress = None
+    if progress is not None:
+
+        def rust_progress(
+            iteration: int,
+            loglik: float,
+            delta_loglik: float | None,
+            start: int,
+        ) -> None:
+            progress(
+                EmIterationProgress(
+                    iteration=int(iteration),
+                    loglik=float(loglik),
+                    delta_loglik=None
+                    if delta_loglik is None
+                    else float(delta_loglik),
+                    start=int(start),
+                )
+            )
+
     res = core.fit_two_tier_grm(
         yy,
         observed.reshape(-1),
@@ -337,6 +377,7 @@ def fit_two_tier_grm(
         float(tol_float),
         int(n_starts_int),
         int(seed_int),
+        rust_progress,
         primary_correlation,
     )
     return TwoTierGrmFit(

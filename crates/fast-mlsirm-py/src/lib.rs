@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 
 use mlsirm_core::agreement::{
     validate_scoring_with_thresholds as core_validate_scoring, ValidationThresholds,
@@ -55,7 +56,8 @@ use mlsirm_core::sampling_design::{
 use mlsirm_core::bifactor_grm::{
     fit_bifactor_grm as core_fit_bifactor_grm,
     fit_bifactor_grm_fipc as core_fit_bifactor_grm_fipc,
-    fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup, BifactorFipcConfig,
+    fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup,
+    fit_bifactor_grm_with_progress as core_fit_bifactor_grm_with_progress, BifactorFipcConfig,
     BifactorGrmConfig, BifactorMultigroupConfig,
 };
 use mlsirm_core::bifactor_oakes::{
@@ -118,7 +120,11 @@ use mlsirm_core::fitstats::{
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
-use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
+use mlsirm_core::two_tier_grm::{
+    fit_two_tier_grm as core_fit_two_tier_grm,
+    fit_two_tier_grm_with_progress as core_fit_two_tier_grm_with_progress, TwoTierGrmConfig,
+};
+use mlsirm_core::em_progress::EmIterationProgress;
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
     gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, phi_lambda as core_phi_lambda,
@@ -1370,7 +1376,7 @@ fn parse_device(name: &str) -> PyResult<mlsirm_core::Device> {
 /// `converged = False` instead of substituting values.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu"))]
+#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu", progress = None))]
 fn fit_bifactor_grm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1387,6 +1393,7 @@ fn fit_bifactor_grm(
     n_starts: usize,
     seed: u64,
     device: &str,
+    progress: Option<Bound<'_, PyAny>>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
@@ -1427,20 +1434,61 @@ fn fit_bifactor_grm(
         ridge: 1e-8,
         device: parse_device(device)?,
     };
-    let res = py
-        .detach(|| {
-            core_fit_bifactor_grm(
-                &yy,
-                obs_vec.as_deref(),
-                &smap,
-                n_persons,
-                n_items,
-                n_specific,
-                n_cat,
-                &cfg,
-            )
-        })
-        .map_err(PyValueError::new_err)?;
+    let res = match progress {
+        None => py
+            .detach(|| {
+                core_fit_bifactor_grm(
+                    &yy,
+                    obs_vec.as_deref(),
+                    &smap,
+                    n_persons,
+                    n_items,
+                    n_specific,
+                    n_cat,
+                    &cfg,
+                )
+            })
+            .map_err(PyValueError::new_err)?,
+        Some(cb) => {
+            let cb = cb.unbind();
+            let mut cb_err: Option<PyErr> = None;
+            let fit_res = py.detach(|| {
+                let mut rust_cb = |report: EmIterationProgress| {
+                    match Python::attach(|py| {
+                        cb.bind(py)
+                            .call1((
+                                report.iteration,
+                                report.loglik,
+                                report.delta_loglik,
+                                report.start,
+                            ))
+                            .map(|_| ())
+                    }) {
+                        Ok(_) => ControlFlow::Continue(()),
+                        Err(e) => {
+                            cb_err = Some(e);
+                            ControlFlow::Break(())
+                        }
+                    }
+                };
+                core_fit_bifactor_grm_with_progress(
+                    &yy,
+                    obs_vec.as_deref(),
+                    &smap,
+                    n_persons,
+                    n_items,
+                    n_specific,
+                    n_cat,
+                    &cfg,
+                    Some(&mut rust_cb),
+                )
+            });
+            if let Some(e) = cb_err {
+                return Err(e);
+            }
+            fit_res.map_err(PyValueError::new_err)?
+        }
+    };
     let out = pyo3::types::PyDict::new(py);
     out.set_item("a_general", res.a_general)?;
     out.set_item("a_specific", res.a_specific)?;
@@ -1865,7 +1913,7 @@ fn fit_bifactor_grm_fipc(
 /// https://doi.org/10.1037/a0023350 (full text read)
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, q_primary = 15, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, primary_correlation = "estimate"))]
+#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, q_primary = 15, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, progress = None, primary_correlation = "estimate"))]
 fn fit_two_tier_grm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1883,6 +1931,7 @@ fn fit_two_tier_grm(
     tol: f64,
     n_starts: usize,
     seed: u64,
+    progress: Option<Bound<'_, PyAny>>,
     primary_correlation: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let estimate_primary_correlation = match primary_correlation {
@@ -1934,22 +1983,65 @@ fn fit_two_tier_grm(
         newton_iter: 10,
         ridge: 1e-8,
     };
-    let res = py
-        .detach(|| {
-            core_fit_two_tier_grm(
-                &yy,
-                obs_vec.as_deref(),
-                &pmap,
-                &smap,
-                n_persons,
-                n_items,
-                n_primary,
-                n_specific,
-                n_cat,
-                &cfg,
-            )
-        })
-        .map_err(PyValueError::new_err)?;
+    let res = match progress {
+        None => py
+            .detach(|| {
+                core_fit_two_tier_grm(
+                    &yy,
+                    obs_vec.as_deref(),
+                    &pmap,
+                    &smap,
+                    n_persons,
+                    n_items,
+                    n_primary,
+                    n_specific,
+                    n_cat,
+                    &cfg,
+                )
+            })
+            .map_err(PyValueError::new_err)?,
+        Some(cb) => {
+            let cb = cb.unbind();
+            let mut cb_err: Option<PyErr> = None;
+            let fit_res = py.detach(|| {
+                let mut rust_cb = |report: EmIterationProgress| {
+                    match Python::attach(|py| {
+                        cb.bind(py)
+                            .call1((
+                                report.iteration,
+                                report.loglik,
+                                report.delta_loglik,
+                                report.start,
+                            ))
+                            .map(|_| ())
+                    }) {
+                        Ok(_) => ControlFlow::Continue(()),
+                        Err(e) => {
+                            cb_err = Some(e);
+                            ControlFlow::Break(())
+                        }
+                    }
+                };
+                core_fit_two_tier_grm_with_progress(
+                    &yy,
+                    obs_vec.as_deref(),
+                    &pmap,
+                    &smap,
+                    n_persons,
+                    n_items,
+                    n_primary,
+                    n_specific,
+                    n_cat,
+                    &cfg,
+                    Some(&mut rust_cb),
+                )
+            });
+            if let Some(e) = cb_err {
+                return Err(e);
+            }
+            fit_res.map_err(PyValueError::new_err)?
+        }
+    };
     let out = pyo3::types::PyDict::new(py);
     out.set_item("a_primary", res.a_primary)?;
     out.set_item("a_specific", res.a_specific)?;

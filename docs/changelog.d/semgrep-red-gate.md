@@ -13,12 +13,11 @@
   The rule cannot see that the keys are literals, and the indirection bought
   nothing: the loop now names the function objects directly, so a typo fails at
   import instead of at runtime, and the finding disappears with cleaner code.
-- `tools/inventory_public_api.py` calls `importlib.import_module(modname)` with
-  a name from `pkgutil.walk_packages(fast_mlsirm.__path__, ...)`. The only
-  importable values are this package's own installed submodules, there is no
-  caller-supplied input, and the file is a repository tool that never ships in
-  the wheel, so it carries a scoped `# nosemgrep` with that justification rather
-  than a refactor.
+- `tools/inventory_public_api.py` now enumerates repository-owned Python files
+  and parses otherwise-unloaded public modules with `ast` instead of importing
+  discovered module names. A regression fixture proves an import-time side
+  effect in a discovered module is not executed, while constructor projections
+  retain dataclass, enum, protocol, exception, and inherited signatures.
 
-Neither change weakens the gate: the suppression is per-rule, per-line, and
-recorded separately from the blocking count by the central workflow.
+Neither change weakens the gate: both dynamic execution primitives are removed,
+with no suppression or rule downgrade.

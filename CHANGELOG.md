@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- Opt-in `progress` callback on `fit_two_tier_grm` / `fit_bifactor_grm` exporting
+  per-E-step marginal loglik / Δloglik (Bock & Aitkin, 1981, pp. 445, 447–448;
+  #2021). Default remains silent.
+
 ### Changed
 
 - Polytomous person fit now requires convergence by default, including for
@@ -14,6 +20,18 @@
   the `r0` correction. `PolyFipcFit` uses its fitted focal prior for both.
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Added
+
+#### Opt-in EM progress for long two-tier / bifactor GRM fits (#2021)
+
+- Add optional `progress` callable on `fit_two_tier_grm` and `fit_bifactor_grm`
+  (default `None`, silent — 0.11.4-compatible). Each E-step reports
+  `EmIterationProgress(iteration, loglik, delta_loglik, start)` using the
+  already-computed observed-data marginal log-likelihood (Bock & Aitkin,
+  1981, *Psychometrika, 46*(4), pp. 445, 447–448). No extra quadrature.
+- Rust companions `fit_*_with_progress` keep existing silent entry points
+  unchanged; PyO3 detaches only when `progress is None`.
+
 ### Changed
 
 #### Release cut 0.11.4
@@ -31,6 +49,51 @@
   in git history.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
+
+### Fixed
+
+#### Red `python` gate from capability lanes another job owns
+
+- The fail-closed outcome gate (`tests/conftest.py`, Issue #1732) escalated
+  capability-gated skips in the ordinary `python` matrix. The first repair
+  over-broadly allowed the whole high-q module and incorrectly described the
+  Atheris harnesses as evidence for a separate Hypothesis module.
+- The allowlist now names six exact high-q pytest nodes instead of a module
+  glob. `gpu-smoke` installs a software Vulkan adapter, sets
+  `STAGE5_HIGH_Q=1`, executes those six nodes plus the existing marginal GPU
+  parity node, and fails when its JUnit evidence contains any skip.
+- `tests/test_fuzz_properties.py` is no longer allowlisted. The `fuzz` job
+  installs the `.[fuzz]` dependencies, executes that Hypothesis module
+  directly, and rejects collection-time or runtime skips before running the
+  separately owned Atheris harnesses. `hypothesis` (already in the `dev`
+  extra) is also added to the hash-locked `requirements/ci.txt`, so the
+  `python` matrix executes the module instead of collection-skipping it;
+  without that the gate still failed on `collection-skip:
+  tests/test_fuzz_properties.py` (#2075 run 106114739240).
+- `test_allowlisted_capability_nodes_have_exact_ci_owners` prevents a future
+  module glob, owner-name substitution, or allowlisted node without an
+  executable CI command.
+
+#### Red Semgrep gate on every PR
+
+- The central `Semgrep (multi-language SAST)` gate reported three blocking
+  WARNING findings on `main`, so it failed on every pull request regardless of
+  its contents. The org ruleset gates on that workflow passing, so this blocked
+  merges repository-wide. Reproduced locally with the same ruleset
+  (`semgrep --config=p/default --severity=WARNING --severity=ERROR`), which
+  returns the same three.
+- `python/fast_mlsirm/dif.py` built its deprecated-alias docstrings by indexing
+  `globals()` with loop variables drawn from a literal table three lines above.
+  The rule cannot see that the keys are literals, and the indirection bought
+  nothing: the loop now names the function objects directly, so a typo fails at
+  import instead of at runtime, and the finding disappears with cleaner code.
+- `tools/inventory_public_api.py` now enumerates repository-owned Python files
+  and parses otherwise-unloaded public modules with `ast` instead of importing
+  discovered module names. A regression fixture proves an import-time side
+  effect in a discovered module is not executed, while constructor projections
+  retain dataclass, enum, protocol, exception, and inherited signatures.
+Neither change weakens the gate: both dynamic execution primitives are removed,
+with no suppression or rule downgrade.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 
 
