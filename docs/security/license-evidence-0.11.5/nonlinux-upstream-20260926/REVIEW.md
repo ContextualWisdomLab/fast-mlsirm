@@ -154,6 +154,17 @@ The integrated wheel's six license members matched its extracted source; its
 installed regression set passed 10 tests. This local artifact result covers
 Linux x86_64 CPython 3.12 only.
 
+Two further [integrated Linux x86_64 candidates](../integrated-linux-cp313-cp314-20260926/README.md)
+were built from the same source archive: CPython 3.13 wheel SHA256
+`0e31da23ec42da997dcaace8d58607a539d84a2b639e59d4896cb3f6ebb05300`
+and CPython 3.14 wheel SHA256
+`542a4ee486557b0741646dcbb8bb7eb925267f6c3e13c65f2ace447b336a8a93`.
+Each has six license files byte-identical to the integrated source and the
+matching native extension; the wheel license verifier returned no errors.
+`auditwheel` confirmed `manylinux_2_17_x86_64` for both. Thus three local
+Linux x86_64 wheel candidates have exact attribution evidence; the other
+nine wheel targets still lack final artifact checks.
+
 Using the integrated generator and reviewed fixture, rerun snapshots for
 Linux aarch64 and Windows x86_64 were byte-identical to the committed files
 (SHA256 `23452c4e7daaf7b36cbf2036ab4d1395d106b7bc5cfcef2bb4572d24ac4b476b`
