@@ -269,6 +269,12 @@ native-file hashes. [Upstream build code](https://github.com/google/atheris/blob
 shows that Atheris copies libFuzzer and combines it with ASan/UBSan, but that
 moving branch does not bind these exact wheel binaries to an LLVM version,
 source commit, or license notice. No native exception was added.
+On 2026-09-26 UTC, the [PyPI Integrity API](https://docs.pypi.org/api/integrity/)
+returned 404 (no provenance) for each of the three exact Atheris 3.1.0 wheel
+filenames above. Its [build script](https://github.com/google/atheris/blob/master/setup.py)
+can use a caller-selected `LIBFUZZER_LIB` or `CLANG_BIN`, so that moving source
+file cannot identify the LLVM inputs of the published wheels. The four native
+hashes remain HOLD until an exact build record or bound notice is available.
 The native SHA256 digests are `3d5fbe5d97101964713e476f85c21393d769a7ad3355538eba1e36590c68bed7`
 (`asan_with_fuzzer.so`), `60d06f6748c007c46c772b0abee959053973ee4b607a88f9f3db3562b2bbecaf`
 (`libclang_rt.fuzzer_no_main.a`), `d77a11a9024b34aa37c86b41f78be3ce2d7ce59067208c1fb662cd216c50eb1c`
