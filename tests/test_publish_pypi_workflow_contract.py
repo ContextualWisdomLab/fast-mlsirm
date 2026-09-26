@@ -66,6 +66,30 @@ def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     assert text.count("maturin-version: v1.14.1") == 4
 
 
+def test_release_checkout_rejects_unvalidated_dispatch_sha_authority() -> None:
+    text = _workflow_text()
+    verify = _job_block(text, "verify-release")
+
+    assert "ref: ${{ inputs.release_commit }}" not in text
+    assert "ref: ${{ inputs.control_plane_commit }}" not in text
+    assert "release_commit: ${{ steps.release-source.outputs.value }}" in verify
+    assert "id: release-source" in verify
+    assert "ref: ${{ github.sha }}" in verify
+    assert verify.index("ref: ${{ github.sha }}") < verify.index("id: release-source")
+    assert "git merge-base --is-ancestor" in verify
+    assert 'echo "value=$canonical_release_commit" >> "$GITHUB_OUTPUT"' in verify
+
+    for job_name in (
+        "sdist",
+        "wheels",
+        "reproducibility-record",
+        "release-admission",
+        "create-tag-and-release",
+    ):
+        job = _job_block(text, job_name)
+        assert "ref: ${{ needs.verify-release.outputs.release_commit }}" in job
+
+
 def test_wheels_cover_supported_cpython_versions_on_every_platform() -> None:
     wheels = _job_block(_workflow_text(), "wheels")
 
