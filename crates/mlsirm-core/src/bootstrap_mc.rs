@@ -7,7 +7,8 @@
 use crate::equating::quantile_type7;
 use crate::fitstats::ln_gamma;
 
-const MAX_DRAWS: usize = 1_000_000;
+/// Maximum number of Monte Carlo draws accepted by the numerical and Python APIs.
+pub const MAX_BOOTSTRAP_MC_DRAWS: usize = 1_000_000;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct McRankInterval {
@@ -22,8 +23,8 @@ pub struct McRankInterval {
 }
 
 fn validate_binomial(n: usize, p: f64) -> Result<(), String> {
-    if n > MAX_DRAWS {
-        return Err(format!("n must not exceed {MAX_DRAWS}"));
+    if n > MAX_BOOTSTRAP_MC_DRAWS {
+        return Err(format!("n must not exceed {MAX_BOOTSTRAP_MC_DRAWS}"));
     }
     if !p.is_finite() || !(0.0..=1.0).contains(&p) {
         return Err("p must be finite and in [0, 1]".into());
@@ -87,8 +88,13 @@ pub fn binomial_interval_coverage(
 
 /// Linear-interpolated Type-7 percentile of finite draws.
 pub fn linear_percentile(values: &[f64], p: f64) -> Result<f64, String> {
-    if values.is_empty() || values.len() > MAX_DRAWS || values.iter().any(|v| !v.is_finite()) {
-        return Err(format!("values must contain 1..={MAX_DRAWS} finite draws"));
+    if values.is_empty()
+        || values.len() > MAX_BOOTSTRAP_MC_DRAWS
+        || values.iter().any(|v| !v.is_finite())
+    {
+        return Err(format!(
+            "values must contain 1..={MAX_BOOTSTRAP_MC_DRAWS} finite draws"
+        ));
     }
     if !p.is_finite() || !(0.0..=1.0).contains(&p) {
         return Err("p must be finite and in [0, 1]".into());
@@ -110,8 +116,13 @@ pub fn mc_rank_interval(
     confidence: f64,
 ) -> Result<McRankInterval, String> {
     let n = values.len();
-    if n < 2 || n > MAX_DRAWS || values.iter().any(|v| !v.is_finite()) {
-        return Err(format!("values must contain 2..={MAX_DRAWS} finite draws"));
+    if n < 2
+        || n > MAX_BOOTSTRAP_MC_DRAWS
+        || values.iter().any(|v| !v.is_finite())
+    {
+        return Err(format!(
+            "values must contain 2..={MAX_BOOTSTRAP_MC_DRAWS} finite draws"
+        ));
     }
     if !confidence.is_finite() || !(0.0..1.0).contains(&confidence) {
         return Err("confidence must be finite and in (0, 1)".into());
@@ -121,7 +132,21 @@ pub fn mc_rank_interval(
     }
     let alpha = (1.0 - confidence) / 2.0;
     let count_low = binomial_quantile(n, percentile, alpha)?;
-    let count_high = binomial_quantile(n, percentile, 1.0 - alpha)?;
+    let upper_probability = 1.0 - alpha;
+    let count_high = if upper_probability == 1.0 {
+        let mut upper_tail = 0.0;
+        let mut upper_count = n;
+        for k in (0..n).rev() {
+            upper_tail += binomial_mass(n, percentile, k + 1);
+            if upper_tail > alpha {
+                break;
+            }
+            upper_count = k;
+        }
+        upper_count
+    } else {
+        binomial_quantile(n, percentile, upper_probability)?
+    };
     if count_low == 0 || count_high == n {
         return Err("rank interval extends beyond observed draws; increase B".into());
     }

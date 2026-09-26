@@ -756,7 +756,7 @@ pub(crate) fn quantile_type7(sorted: &[f64], p: f64) -> f64 {
     let lo = h.floor() as usize;
     let frac = h - lo as f64;
     if lo + 1 < n {
-        sorted[lo] + frac * (sorted[lo + 1] - sorted[lo])
+        (1.0 - frac) * sorted[lo] + frac * sorted[lo + 1]
     } else {
         sorted[n - 1]
     }
