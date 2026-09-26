@@ -185,12 +185,69 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
             raise ValueError(f"{leg}: runtime archive metadata differs from receipt")
         identities.add(identity)
     expected_members = {f"{leg}.tsv", f"{leg}.bundle.json", f"{leg}.runtime.json",
-                        f"{leg}.runtime-requirements.txt"} | names
+                        f"{leg}.runtime-requirements.txt", f"{leg}.build-first.json",
+                        f"{leg}.build-second.json"} | names
     if set(evidence_members) != expected_members:
         raise ValueError(f"{leg}: scope evidence artifact members differ from build output")
     if (archives != sorted(archives, key=lambda item: item["file"])
             or identities != {(item["name"], item["version"]) for item in before}):
         raise ValueError(f"{leg}: runtime archives do not match installed dependencies")
+
+
+def verify_build_scope(first: dict, second: dict, row: dict, source: Path, source_sha: str) -> None:
+    """Check both build-runner Cargo graphs against the selected wheel lock."""
+    leg = row["target"]
+    target, python = leg.rsplit("-py", 1)
+    targets = (["aarch64-apple-darwin", "x86_64-apple-darwin"]
+               if target == "universal2-apple-darwin" else [target])
+    lock = source / "crates/fast-mlsirm-py/Cargo.lock"
+    wheel_crate = tomllib.loads((source / "crates/fast-mlsirm-py/Cargo.toml").read_text(encoding="utf-8"))["package"]
+    locked = {(item["name"], item["version"], item.get("source")): item.get("checksum")
+              for item in tomllib.loads(lock.read_text(encoding="utf-8"))["package"]}
+    keys = {"schema_version", "source_sha", "leg", "pass", "build_env",
+            "cargo_lock_sha256", "pyproject_sha256", "cargo_version", "rustc_version",
+            "maturin_version", "python_version", "cargo_features", "cargo_targets"}
+    for receipt, build_pass in ((first, "first"), (second, "second")):
+        if (type(receipt) is not dict or set(receipt) != keys
+                or receipt["schema_version"] != 1 or receipt["source_sha"] != source_sha
+                or receipt["leg"] != leg or receipt["pass"] != build_pass
+                or receipt["build_env"] != row["build_env"]
+                or receipt["cargo_lock_sha256"] != hash_file(lock)
+                or receipt["pyproject_sha256"] != hash_file(source / "pyproject.toml")
+                or receipt["cargo_features"] != ["pyo3/extension-module"]
+                or not isinstance(receipt["python_version"], str)
+                or not receipt["python_version"].startswith(f"Python {python}.")
+                or not isinstance(receipt["maturin_version"], str)
+                or "1.14.1" not in receipt["maturin_version"]
+                or any(not isinstance(receipt[key], str) or not receipt[key]
+                       for key in ("cargo_version", "rustc_version"))
+                or type(receipt["cargo_targets"]) is not dict
+                or set(receipt["cargo_targets"]) != set(targets)):
+            raise ValueError(f"{leg}: build receipt differs from source, toolchain or leg")
+        for triple in targets:
+            graph = receipt["cargo_targets"][triple]
+            if type(graph) is not list or not graph:
+                raise ValueError(f"{leg}: Cargo target graph is empty")
+            found = set()
+            for package in graph:
+                if (type(package) is not dict
+                        or set(package) != {"name", "version", "source", "checksum", "features"}
+                        or type(package["name"]) is not str or type(package["version"]) is not str
+                        or package["source"] is not None and type(package["source"]) is not str
+                        or type(package["features"]) is not list
+                        or not all(type(feature) is str for feature in package["features"])
+                        or package["features"] != sorted(set(package["features"]))):
+                    raise ValueError(f"{leg}: Cargo target package is malformed")
+                identity = package["name"], package["version"], package["source"]
+                if identity in found or identity not in locked or package["checksum"] != locked[identity]:
+                    raise ValueError(f"{leg}: Cargo graph differs from selected lock")
+                found.add(identity)
+            if (wheel_crate["name"], wheel_crate["version"], None) not in found or not any(
+                    name == "mlsirm-core" and origin is None for name, _, origin in found):
+                raise ValueError(f"{leg}: Cargo graph lacks wheel or core crate")
+    if {key: value for key, value in first.items() if key != "pass"} != {
+            key: value for key, value in second.items() if key != "pass"}:
+        raise ValueError(f"{leg}: repeated build graphs or toolchains differ")
 
 
 def materialize(selection: list[dict], repository: str, root: Path, fetch) -> list[dict]:

@@ -297,7 +297,9 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     assert len(builds) == 2
     for build in builds:
         assert "docker-options: -e SOURCE_DATE_EPOCH\n" in build
+        assert "before-script-linux: $CARGO_BUILD_PYTHON trusted-control/scripts/ci/capture_release_build_scope.py" in build
         assert "if:" not in build
+    assert wheels.count("python trusted-control/scripts/ci/capture_release_build_scope.py") == 2
 
     # Every publishable artifact (12 wheels + sdist) is rebuilt from a clean
     # target and compared; no leg may opt out of the double build.
@@ -350,6 +352,7 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     # suffixes, so the shipped release profile pins a single codegen unit.
     binding = (REPO_ROOT / "crates" / "fast-mlsirm-py" / "Cargo.toml").read_text(encoding="utf-8")
     assert re.search(r"(?m)^\[profile\.release\]\n(?:(?!\[).*\n)*?codegen-units = 1$", binding)
+    assert "cargo_manifest_path: crates/fast-mlsirm-py/Cargo.toml" in text
 
 
 def _sdist_without_license(path: Path) -> None:
@@ -525,7 +528,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@56bfac9a2cbbb23bd75d4e4db7632c1e1c438677" in central
+    assert "release-dependency-license-strix-gate.yml@70c1ce1809706560f14c48e5f8d445a5871d8fa6" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -590,6 +593,10 @@ def _admission_fixture(root: Path) -> dict:
     source.mkdir()
     (source / "uv.lock").write_text("fixture lock\n")
     (source / "pyproject.toml").write_text('[project]\nname = "fast-mlsirm"\nversion = "1.2.3"\n')
+    crate = source / "crates/fast-mlsirm-py"
+    crate.mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[package]\nname = "fast-mlsirm-py"\nversion = "0.11.4"\n')
+    (crate / "Cargo.lock").write_text('version = 4\n[[package]]\nname = "fast-mlsirm-py"\nversion = "0.11.4"\n[[package]]\nname = "mlsirm-core"\nversion = "0.11.4"\n')
     bundle_inventory = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))["bundle_inventory"]
     for leg in files:
         folder = root / "scope-evidence" / f"repro-digest-{leg}"
@@ -627,6 +634,21 @@ def _admission_fixture(root: Path) -> dict:
                               "name": "numpy", "version": "2.5.1"}],
             }
             (folder / f"{leg}.runtime.json").write_text(json.dumps(runtime, sort_keys=True) + "\n")
+            targets = (["aarch64-apple-darwin", "x86_64-apple-darwin"]
+                       if target == "universal2-apple-darwin" else [target])
+            graph = [{"name": name, "version": "0.11.4", "source": None,
+                      "checksum": None, "features": []}
+                     for name in ("fast-mlsirm-py", "mlsirm-core")]
+            for build_pass in ("first", "second"):
+                build = {"schema_version": 1, "source_sha": _RELEASE_COMMIT, "leg": leg,
+                         "pass": build_pass, "build_env": "runner:x",
+                         "cargo_lock_sha256": hashlib.sha256((crate / "Cargo.lock").read_bytes()).hexdigest(),
+                         "pyproject_sha256": hashlib.sha256((source / "pyproject.toml").read_bytes()).hexdigest(),
+                         "cargo_version": "cargo 1.90.0", "rustc_version": "rustc 1.90.0",
+                         "maturin_version": "maturin 1.14.1", "python_version": f"Python {version}.0",
+                         "cargo_features": ["pyo3/extension-module"],
+                         "cargo_targets": {triple: graph for triple in targets}}
+                (folder / f"{leg}.build-{build_pass}.json").write_text(json.dumps(build, sort_keys=True) + "\n")
     artifacts = [f"dist-wheel-{leg}" for leg in legs] + [
         "dist-sdist", "reproducibility-record", "release-dependency-sealed-evidence",
         "release-dependency-sealed-evidence--full-set-verdict",
@@ -638,6 +660,24 @@ def _admission_fixture(root: Path) -> dict:
     listing = [{"id": index, "name": name, "workflow_run": {"id": _RUN_ID}, "expired": False, "digest": "sha256:" + "d" * 64}
                for index, name in enumerate(artifacts, 1)]
     return {"legs": legs, "files": files, "listing": listing}
+
+
+def test_build_scope_receipts_bind_wheel_lock_and_repeat(tmp_path: Path) -> None:
+    import json
+    import runpy
+    import pytest
+
+    fixture = _admission_fixture(tmp_path)
+    leg = fixture["legs"][0]
+    folder = tmp_path / "scope-evidence" / f"repro-digest-{leg}"
+    first = json.loads((folder / f"{leg}.build-first.json").read_text())
+    second = json.loads((folder / f"{leg}.build-second.json").read_text())
+    verify = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))["verify_build_scope"]
+    row = {"target": leg, "build_env": "runner:x"}
+    verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+    second["cargo_targets"][leg.rsplit("-py", 1)[0]][0]["version"] = "forged"
+    with pytest.raises(ValueError, match="graph differs from selected lock"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
 
 
 def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> subprocess.CompletedProcess:
