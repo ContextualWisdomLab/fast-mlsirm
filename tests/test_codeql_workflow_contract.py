@@ -1,57 +1,24 @@
-"""Regression contract for the required Actions-language CodeQL PR gate."""
+"""Regression contract for repository-managed CodeQL workflow ownership."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 
-WORKFLOW_PATH = Path(__file__).parents[1] / ".github" / "workflows" / "codeql.yml"
+REPO_ROOT = Path(__file__).parents[1]
+WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "codeql.yml"
+GOVERNANCE_INDEX_PATH = REPO_ROOT / "docs" / "GOVERNANCE_INDEX.md"
+THREAT_MODEL_PATH = REPO_ROOT / "docs" / "security" / "threat-model.md"
 
 
-def _job_block(workflow: str, job_id: str, next_job_id: str | None = None) -> str:
-    """Return one top-level workflow job block from the repository YAML text."""
-    start = workflow.index(f"  {job_id}:\n")
-    if next_job_id is None:
-        return workflow[start:]
-    end = workflow.index(f"  {next_job_id}:\n", start + 1)
-    return workflow[start:end]
+def test_default_setup_owns_required_actions_codeql_check() -> None:
+    """Keep the required check supplied by one CodeQL execution path."""
+    assert not WORKFLOW_PATH.exists()
 
-
-def test_actions_codeql_runs_on_pull_requests_while_python_stays_manual() -> None:
-    """Keep the required Actions context reachable without duplicating Python CodeQL."""
-    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-    trigger_block = workflow.split("\npermissions:\n", 1)[0]
-
-    assert "  pull_request:\n" in trigger_block
-    assert "  workflow_dispatch:\n" in trigger_block
-
-    actions_job = _job_block(workflow, "analyze-actions", "analyze-python")
-    python_job = _job_block(workflow, "analyze-python")
-
-    assert "name: Analyze (actions)" in actions_job
-    assert "languages: actions" in actions_job
-    assert "github.event_name == 'workflow_dispatch'" not in actions_job
-
-    assert "name: Analyze (python)" in python_job
-    assert "languages: python" in python_job
-    assert "if: github.event_name == 'workflow_dispatch'" in python_job
-
-
-def test_advanced_jobs_do_not_upload_while_default_setup_is_enabled() -> None:
-    """Run real CodeQL queries without competing with default setup SARIF ownership."""
-    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-    actions_job = _job_block(workflow, "analyze-actions", "analyze-python")
-    python_job = _job_block(workflow, "analyze-python")
-
-    assert "upload: never" in actions_job
-    assert "upload: never" in python_job
-
-
-def test_codeql_workflow_keeps_pinned_actions_and_least_permissions() -> None:
-    """The trigger repair must not loosen action pinning or workflow permissions."""
-    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-
-    assert "permissions:\n  contents: read\n" in workflow
-    assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in workflow
-    assert "github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd" in workflow
-    assert "github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd" in workflow
+    documentation = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (GOVERNANCE_INDEX_PATH, THREAT_MODEL_PATH)
+    )
+    assert "CodeQL Default setup" in documentation
+    assert "`Analyze (actions)`" in documentation
+    assert "disabling default setup would block every pr" in documentation.casefold()
