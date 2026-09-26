@@ -540,7 +540,7 @@ def _admission_fixture(root: Path) -> dict:
     legs = _expected_legs()
     platforms = {"x86_64-unknown-linux-gnu": "manylinux2014_x86_64",
                  "aarch64-unknown-linux-gnu": "manylinux2014_aarch64",
-                 "universal2-apple-darwin": "macosx_11_0_universal2",
+                 "universal2-apple-darwin": "macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2",
                  "x86_64-pc-windows-msvc": "win_amd64"}
     files = {}
     for leg in legs:
@@ -552,8 +552,9 @@ def _admission_fixture(root: Path) -> dict:
     for leg in legs:
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
-            tag = "-".join(files[leg][:-4].rsplit("-", 3)[1:])
-            archive.writestr("pkg-1.2.3.dist-info/WHEEL", f"Wheel-Version: 1.0\nTag: {tag}\n")
+            _, abi, platform = files[leg][:-4].rsplit("-", 3)[1:]
+            tags = "".join(f"Tag: {abi}-{abi}-{part}\n" for part in platform.split("."))
+            archive.writestr("pkg-1.2.3.dist-info/WHEEL", f"Wheel-Version: 1.0\n{tags}")
         payload[leg] = buffer.getvalue()
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as archive:

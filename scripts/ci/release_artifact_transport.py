@@ -214,11 +214,13 @@ def scope_identity(artifact: Path, leg: str, source: Path, source_sha: str, buil
         platform_pattern = {
             "x86_64-unknown-linux-gnu": r"manylinux(?:2014|_2_[0-9]+)_x86_64",
             "aarch64-unknown-linux-gnu": r"manylinux(?:2014|_2_[0-9]+)_aarch64",
-            "universal2-apple-darwin": r"macosx_[0-9]+_[0-9]+_universal2",
+            "universal2-apple-darwin": r"macosx_[0-9]+_[0-9]+_(?:x86_64|arm64|universal2)",
             "x86_64-pc-windows-msvc": r"win_amd64",
         }.get(target)
         if platform_pattern is None or not all(re.fullmatch(platform_pattern, p) for p in platforms):
             raise ValueError("wheel scope target platform mismatch")
+        if target == "universal2-apple-darwin" and not any(p.endswith("_universal2") for p in platforms):
+            raise ValueError("universal2 wheel has no universal2 platform tag")
         with zipfile.ZipFile(artifact) as archive:
             for entry in archive.infolist():
                 parts = entry.filename.split("/")

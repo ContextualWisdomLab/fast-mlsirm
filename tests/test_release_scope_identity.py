@@ -34,17 +34,18 @@ def scope_fixture(tmp_path, monkeypatch):
     sha = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
     legs = re.search(r'EXPECTED_WHEEL_LEGS: "([^"]+)"', WORKFLOW).group(1).split()
     platforms = {"x86_64-unknown-linux-gnu": "manylinux2014_x86_64", "aarch64-unknown-linux-gnu": "manylinux2014_aarch64",
-                 "universal2-apple-darwin": "macosx_11_0_universal2", "x86_64-pc-windows-msvc": "win_amd64"}
+                 "universal2-apple-darwin": "macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2", "x86_64-pc-windows-msvc": "win_amd64"}
     dist = tmp_path / "dist"
     dist.mkdir()
     rows = {}
     for leg in legs:
         target, version = leg.rsplit("-py", 1)
         cp = "cp" + version.replace(".", "")
-        tag = f"{cp}-{cp}-{platforms[target]}"
-        path = dist / f"fixture-1-{tag}.whl"
+        platform = platforms[target]
+        path = dist / f"fixture-1-{cp}-{cp}-{platform}.whl"
         with zipfile.ZipFile(path, "w") as z:
-            z.writestr("fixture-1.dist-info/WHEEL", f"Wheel-Version: 1.0\nTag: {tag}\n")
+            tags = "".join(f"Tag: {cp}-{cp}-{part}\n" for part in platform.split("."))
+            z.writestr("fixture-1.dist-info/WHEEL", f"Wheel-Version: 1.0\n{tags}")
             z.writestr("fixture-1.dist-info/METADATA", "Name: fixture\nVersion: 1\nRequires-Dist: numpy\n")
         rows[leg] = {"target": leg, "file": path.name, "sha256": M["hash_file"](path), "build_env": "fixture:" + target}
     path = dist / "fixture-1.tar.gz"
@@ -120,6 +121,17 @@ def test_actual_artifact_replacement_and_source_head_refuse(scope_fixture):
         M["verify_scope_identities"](records, rows, {r["file"]: Path("dist") / r["file"] for r in rows.values()}, source, sha)
     with pytest.raises(ValueError, match="checkout mismatch"):
         M["scope_identity"](artifact, row["target"], source, "0" * 40, row["build_env"])
+
+
+def test_universal2_leg_requires_universal2_platform_tag(scope_fixture):
+    source, sha, rows, _ = scope_fixture
+    leg = "universal2-apple-darwin-py3.14"
+    row = rows[leg]
+    artifact = Path("dist") / row["file"]
+    without_universal = artifact.with_name(artifact.name.replace(".macosx_10_12_universal2", ""))
+    without_universal.write_bytes(artifact.read_bytes())
+    with pytest.raises(ValueError, match="no universal2 platform tag"):
+        M["scope_identity"](without_universal, leg, source, sha, row["build_env"])
 
 
 @pytest.mark.parametrize("case", ["missing-metadata", "duplicate-metadata", "wrong-tag", "wrong-platform", "missing-sdist-declaration", "changed-sdist-pyproject"])

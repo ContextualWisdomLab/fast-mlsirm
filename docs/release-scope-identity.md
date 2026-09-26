@@ -11,6 +11,10 @@ Each identity binds the release SHA, distribution filename/hash, recorded build
 environment, target/Python/ABI/platform/WHEEL tags, actual METADATA or PKG-INFO
 member hash, and tracked lock/pyproject/Cargo manifest/requirements blob hashes.
 Wheel metadata must be unique and its WHEEL tags agree with its filename and leg.
+The macOS universal2 leg accepts maturin's per-architecture x86_64 and arm64
+tags alongside a required universal2 tag; the locally built CPython 3.14 wheel
+carried all three. A filename tag alone still does not prove that both binary
+slices and their native imports were inspected.
 The sdist has a separate source identity, unique PKG-INFO/pyproject members under
 one root, and pyproject bytes equal to the release source. These checks never
 execute package code. Existing transport hashing remains chunked.
