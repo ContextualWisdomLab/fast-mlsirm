@@ -36,13 +36,16 @@ its own authenticated path; it does not claim platform scope completeness.
 
 ## Evidence needed to remove the scope HOLD
 
-Each of the twelve wheel build jobs and the sdist job must produce an immutable
-scope inventory from its actual target build environment. The record job must
-bind exactly thirteen inventory artifact IDs and archive digests to the
-corresponding distribution SHA, source SHA, build-environment identity, run ID
-and attempt. Admission must check that exact inventory set against the
-downloaded distributions. A missing, duplicate, stale, foreign-run, wrong-target
-or changed inventory must refuse release.
+Each of the twelve wheel build jobs and the sdist job must produce a scope
+inventory from its actual build environment. Put each inventory beside its
+existing TSV in that leg's `repro-digest-*` artifact; the record job must bind
+the exact thirteen digest-artifact IDs and archive digests to the corresponding
+distribution SHA, source SHA, build-environment identity, run ID and attempt.
+Admission must download those selected IDs, verify archive and member digests,
+and check the inventories against the distributions. A missing, duplicate,
+stale, foreign-run, wrong-target or changed inventory must refuse release.
+Keep these evidence artifacts separate from the thirteen distribution artifacts
+passed to the central licence and Strix gate.
 
 The six scopes have distinct sources of truth:
 
@@ -56,7 +59,10 @@ The six scopes have distinct sources of truth:
 - **Build and dev:** record the build environment's installed Python tools and
   target-filtered Cargo resolution with the features used by the wheel build.
   `requirements/package.txt` and `Cargo.lock` constrain these scopes but do not
-  prove which packages the build loaded. The sdist needs its own build scope.
+  prove which packages the build loaded. For Linux wheels, collect inside the
+  digest-pinned manylinux container used by `maturin-action`; the surrounding
+  runner's Python and Cargo inventories describe a different environment. The
+  sdist needs its own build scope.
 - **Native and bundled:** inspect every binary and packaged library in the
   *finished* wheel on its target runner. Record imported shared-library names,
   resolved paths or explicit system-provided identities, and hashes of bundled
