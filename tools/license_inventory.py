@@ -207,7 +207,7 @@ def detect(text: str) -> list[str]:
 # Documented exceptions: a hash-pinned (crate sha256, member sha256) whose text is not a single
 # standard license but was accepted as the named identifier. Coordinator verdict (user-delegated,
 # 2026-09-26), not legal review. Evidence: s1 libm-notice-20260926 (PROPOSAL.md bdeac27d).
-# Release gate: the wheel third-party notices must include libm LICENSE.txt and its Sun
+# Release gate: the wheel third-party notices must include cfg_aliases NOTICES.md, libm LICENSE.txt and its Sun
 # (freely granted, notice preserved) x50, BSD-2-Clause (David Schultz) x2 and MIT (core-math) x8
 # source notices.
 DOCUMENTED_EXCEPTIONS = {
@@ -218,6 +218,18 @@ DOCUMENTED_EXCEPTIONS = {
         "package": "libm@0.2.16",
         "member": "LICENSE.txt",
         "notice_families": {"Sun freely-granted (notice preserved)": 50, "BSD-2-Clause": 2, "MIT (core-math)": 8},
+        "basis": "coordinator verdict (user-delegated, 2026-09-26), not legal review",
+    },
+    # cfg_aliases NOTICES.md: attribution notice for code from tectonic_cfg_support (MIT). The embedded
+    # MIT text matches the SPDX v3.29.0 MIT matching template (curly-quote equivalence) but has NO
+    # copyright-holder line (recorded gap). Release gate: the wheel NOTICE must include this file.
+    ("f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527",
+     "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee"): {
+        "identifier": "MIT",
+        "classification": "third-party MIT attribution notice",
+        "package": "cfg_aliases@0.2.2",
+        "member": "NOTICES.md",
+        "gaps": ["no copyright-holder line for tectonic_cfg_support"],
         "basis": "coordinator verdict (user-delegated, 2026-09-26), not legal review",
     },
 }

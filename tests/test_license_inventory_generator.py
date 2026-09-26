@@ -1393,3 +1393,22 @@ def test_documented_exception_is_pinned_to_crate_and_member_hash(tmp_path, monke
     monkeypatch.setitem(L.DOCUMENTED_EXCEPTIONS, ("0" * 64, member), {"identifier": "MIT"})
     (other,) = L.rust_inventory(args, [])
     assert other["license_class"] == "HOLD"
+
+
+CFG_ALIASES_NOTICES = '# 3rd Party Notices\n\nThe `cfg_aliases!` macro uses a lot of the code from [`tectonic_cfg_support::target_cfg!`] macro which is under the following license:\n\n[`tectonic_cfg_support::target_cfg!`]: https://github.com/tectonic-typesetting/tectonic/blob/f2439b936470ad27bdf92882064bc4702ee01899/cfg_support/src/lib.rs#L166\n\n    tectonic_cfg_support is licensed under the MIT License.\n\n    Permission is hereby granted, free of charge, to any person obtaining a copy\n    of this software and associated documentation files (the “Software”), to deal\n    in the Software without restriction, including without limitation the rights\n    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n    copies of the Software, and to permit persons to whom the Software is\n    furnished to do so, subject to the following conditions:\n\n    The above copyright notice and this permission notice shall be included in all\n    copies or substantial portions of the Software.\n\n    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n    SOFTWARE.\n---\n'
+
+
+def test_cfg_aliases_notice_exception_is_pinned_to_the_0_2_2_crate(tmp_path):
+    """The same NOTICES.md bytes in any crate other than the pinned cfg_aliases 0.2.2 stay HOLD."""
+    member = hashlib.sha256(CFG_ALIASES_NOTICES.encode()).hexdigest()
+    pinned = [k for k, v in L.DOCUMENTED_EXCEPTIONS.items() if v.get("package") == "cfg_aliases@0.2.2"]
+    assert pinned == [("f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527", member)]
+    assert L.DOCUMENTED_EXCEPTIONS[pinned[0]]["classification"] == "third-party MIT attribution notice"
+    args = _rust_args(tmp_path)
+    digest = _crate(Path(args.cargo_registry_cache), "dep", "1.0", {"LICENSE-MIT": L.MIT_CANONICAL_BODY, "NOTICES.md": CFG_ALIASES_NOTICES})
+    lock = Path(args.cargo_lock_workspace)
+    content = lock.read_text()
+    lock.write_text(content.replace(L.tomllib.loads(content)["package"][0]["checksum"], digest))
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert not any(f.get("documented_exception") for f in row["license_files_in_artifact"])

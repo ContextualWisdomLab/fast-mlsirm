@@ -67,3 +67,16 @@ this notice is preserved" (50 files), BSD-2-Clause (David Schultz, 2 files) and 
 **Release gate (recorded, not yet enforced):** the wheel's third-party notices must include libm
 `LICENSE.txt` and the Sun, BSD-2-Clause (David Schultz) and core-math MIT source notices before
 any release that ships the Rust core.
+
+## Documented exception: cfg_aliases 0.2.2 NOTICES.md (2026-09-26)
+
+Coordinator verdict (user-delegated, 2026-09-26), not legal review. `DOCUMENTED_EXCEPTIONS`
+accepts cfg_aliases 0.2.2 `NOTICES.md` (sha256
+1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee) as a third-party MIT
+attribution notice, only inside the lock-matched `.crate` sha256
+f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527. Its embedded MIT text matches the
+SPDX v3.29.0 MIT matching template (curly-quote equivalence). **Recorded gap:** there is no
+copyright-holder line for tectonic_cfg_support.
+
+**Release gate (recorded, not yet enforced):** the wheel NOTICE must also include cfg_aliases
+`NOTICES.md`.
