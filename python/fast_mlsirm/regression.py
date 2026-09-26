@@ -122,6 +122,36 @@ def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     }
 
 
+def nested_ols_column_drop(
+    x: np.ndarray, y: np.ndarray, drop_columns: list[int] | tuple[int, ...]
+) -> dict[str, Any]:
+    """Return centered R² and the classical partial F for dropped columns.
+
+    Both models use the same response rows; the reduced design is built inside
+    Rust by dropping the specified full-design columns. Both designs require an
+    intercept. This F test assumes classical OLS errors and is distinct from
+    an HC Wald contrast (Pennsylvania State University, n.d., STAT 501 Lessons
+    5 and 8, coefficient of determination and general linear F sections).
+
+    References
+    ----------
+    Pennsylvania State University, Department of Statistics. (n.d.).
+    *Lesson 5: Multiple linear regression*. STAT 501: Regression methods.
+    https://online.stat.psu.edu/stat501/Lesson05
+
+    Pennsylvania State University, Department of Statistics. (n.d.).
+    *Lesson 8: Categorical predictors*. STAT 501: Regression methods.
+    https://online.stat.psu.edu/stat501/Lesson08
+    """
+    x_arr = _as_float64_matrix(x, "x")
+    y_arr = _as_float64_vector(y, "y", expected_length=int(x_arr.shape[0]))
+    if type(drop_columns) not in (list, tuple) or any(
+        type(column) is not int for column in drop_columns
+    ):
+        raise ValueError("drop_columns must be a list or tuple of integer indices")
+    return dict(regression_core().nested_ols_column_drop(x_arr, y_arr, drop_columns))
+
+
 def contrast(
     beta: np.ndarray,
     vcov: np.ndarray,

@@ -12,7 +12,7 @@ import math
 import numpy as np
 import pytest
 
-from fast_mlsirm import chi2_sf_df1, contrast, fit_ols_hc
+from fast_mlsirm import chi2_sf_df1, contrast, fit_ols_hc, nested_ols_column_drop
 from fast_mlsirm.regression import f_sf, t_sf
 
 
@@ -86,6 +86,39 @@ def test_fit_ols_hc3_parity_atol_1e6():
     np.testing.assert_allclose(got["se"], ref["se"], atol=1e-6, rtol=0.0)
     np.testing.assert_allclose(got["hat_diagonal"], ref["hat"], atol=1e-6, rtol=0.0)
     np.testing.assert_allclose(got["residuals"], ref["resid"], atol=1e-6, rtol=0.0)
+
+
+def test_nested_column_drop_uses_one_response_and_checks_design():
+    x = np.column_stack((np.ones(5), np.arange(5, dtype=np.float64)))
+    y = np.array([1.0, 2.0, 2.0, 4.0, 5.0], dtype=np.float64)
+    got = nested_ols_column_drop(x, y, [1])
+    assert got["r2_full"] == pytest.approx(25 / 27)
+    assert got["adjusted_r2_full"] == pytest.approx(73 / 81)
+    assert got["r2_reduced"] == pytest.approx(0)
+    assert got["adjusted_r2_reduced"] == pytest.approx(0)
+    assert got["delta_r2"] == pytest.approx(25 / 27)
+    assert got["f_stat"] == pytest.approx(37.5)
+    assert (got["df1"], got["df2"]) == (1, 3)
+    x_nontrivial = np.column_stack((np.ones(8), np.arange(8), [0, 1] * 4))
+    y_nontrivial = np.array([1, 2, 4, 3, 6, 5, 8, 7], dtype=np.float64)
+    reduced = x_nontrivial[:, :2]
+    residual = y_nontrivial - reduced @ np.linalg.lstsq(reduced, y_nontrivial, rcond=None)[0]
+    expected = 1 - (
+        (residual @ residual)
+        / np.sum((y_nontrivial - y_nontrivial.mean()) ** 2)
+        * 7
+        / 6
+    )
+    nontrivial = nested_ols_column_drop(x_nontrivial, y_nontrivial, [2])
+    assert nontrivial["adjusted_r2_reduced"] == pytest.approx(expected)
+    x_three = np.column_stack((x, x[:, 1] ** 2))
+    with pytest.raises(ValueError, match="sorted, unique"):
+        nested_ols_column_drop(x_three, y, [1, 1])
+    with pytest.raises(ValueError, match="constant intercept"):
+        no_intercept = np.column_stack((x[:, 1], x[:, 1] ** 2))
+        nested_ols_column_drop(no_intercept, y, [1])
+    with pytest.raises(ValueError, match="centered total sum"):
+        nested_ols_column_drop(x, np.full(5, 2.0), [1])
 
 
 @pytest.mark.parametrize("hc", ["HC0", "HC1", "HC2", "HC3"])
