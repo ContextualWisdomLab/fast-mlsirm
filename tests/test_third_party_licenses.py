@@ -7,7 +7,9 @@ import io
 import json
 import shutil
 import subprocess
+import sys
 import tarfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -120,3 +122,22 @@ def test_wheel_notice_selection_is_target_bound(tmp_path, target, expected):
     else:
         assert result.returncode == 0, result.stderr
     assert hashlib.sha256((tmp_path / "LICENSE-THIRD-PARTY").read_bytes()).hexdigest() == expected
+
+
+def test_built_wheel_must_contain_selected_license_bytes(tmp_path):
+    root = SCRIPT.parents[1]
+    notice = root.joinpath("LICENSE-THIRD-PARTY").read_bytes()
+    tmp_path.joinpath("LICENSE-THIRD-PARTY").write_bytes(notice)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    wheel = dist / "fast_mlsirm-0.11.5-py3-none-any.whl"
+    member = "fast_mlsirm-0.11.5.dist-info/licenses/LICENSE-THIRD-PARTY"
+
+    for contents, valid in ((notice, True), (b"wrong target\n", False)):
+        with zipfile.ZipFile(wheel, "w") as archive:
+            archive.writestr(member, contents)
+        result = subprocess.run(
+            [sys.executable, str(root / "tools/verify_wheel_license.py"), "dist"],
+            cwd=tmp_path, capture_output=True, text=True, check=False,
+        )
+        assert (result.returncode == 0) is valid
