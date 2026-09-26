@@ -46,6 +46,7 @@ __all__ = [
 
 VALID_POLY_MODELS = {"grm", "gpcm"}
 MAX_POLY_QUADRATURE_POINTS = 4_096
+MAX_POLY_PREDICTION_CELLS = 20_000_000
 MAX_POLY_BOOTSTRAP_REPLICATES = 10_000
 MAX_POLY_CAT_ITEMS = 10_000
 _NUMPY_INTEGER_SCALAR_TYPES = (
@@ -210,7 +211,7 @@ def _polytomous_predictions(
     if model not in VALID_POLY_MODELS:
         raise ValueError(f"fit.model must be one of {sorted(VALID_POLY_MODELS)}")
     prediction_cells = int(th.size) * int(slope.size) * n_cat
-    if prediction_cells > 20_000_000:
+    if prediction_cells > MAX_POLY_PREDICTION_CELLS:
         raise ValueError(
             f"prediction grid of {prediction_cells:,} cells exceeds the "
             "20,000,000 prediction-cell limit"
@@ -690,6 +691,12 @@ def predict_bifactor_expected_total_score(
     nodes_requested = _bounded_integer(
         q_specific, "q_specific", 1, MAX_POLY_QUADRATURE_POINTS
     )
+    prediction_cells = values.size * nodes_requested * (threshold.shape[1] + 1)
+    if prediction_cells > MAX_POLY_PREDICTION_CELLS:
+        raise ValueError(
+            f"prediction grid of {prediction_cells:,} cells exceeds the "
+            "20,000,000 prediction-cell limit"
+        )
 
     nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
     weights = weights / weights.sum()

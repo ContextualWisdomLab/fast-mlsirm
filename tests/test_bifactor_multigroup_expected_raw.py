@@ -175,6 +175,17 @@ def test_rejects_non_finite_theta() -> None:
         )
 
 
+def test_prediction_budget_precedes_quadrature_and_base_allocation(monkeypatch) -> None:
+    def unexpected_quadrature(_count):
+        raise AssertionError("quadrature must not run for an oversized grid")
+
+    monkeypatch.setattr(np.polynomial.hermite_e, "hermegauss", unexpected_quadrature)
+    with pytest.raises(ValueError, match="20,000,000 prediction-cell limit"):
+        predict_bifactor_expected_total_score(
+            _anchored(), np.zeros(1_000_000), q_specific=4096
+        )
+
+
 def _without_threshold() -> object:
     fit = _SingleGroupFit(A_GENERAL, A_SPECIFIC)
     del fit.threshold
