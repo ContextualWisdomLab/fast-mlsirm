@@ -457,8 +457,11 @@ def _github_checks(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     return checks
 
 
-def _content_security_policy() -> str:
-    return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+def _content_security_policy(css_content: str) -> str:
+    import base64
+    import hashlib
+    digest = base64.b64encode(hashlib.sha256(css_content.encode("utf-8")).digest()).decode("utf-8")
+    return f"default-src 'none'; style-src 'sha256-{digest}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _report_css() -> str:
@@ -558,11 +561,9 @@ def _render_report(manifest: dict[str, Any]) -> str:
             "<head>",
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(), quote=True)}">',
+            f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(_report_css()), quote=True)}">',
             "<title>fast-mlsirm Procurement Due Diligence</title>",
-            "<style>",
-            _report_css(),
-            "</style>",
+            f"<style>{_report_css()}</style>",
             "</head>",
             "<body><main>",
             '<section class="hero"><p>fast-mlsirm procurement review</p><h1>Procurement Due Diligence</h1>',
