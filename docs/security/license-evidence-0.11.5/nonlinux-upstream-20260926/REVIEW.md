@@ -18,8 +18,10 @@ Its binding `Cargo.lock` SHA256 is
 Its wheel workflow has no target-specific notice regeneration step. The
 earlier Linux build input checked by the verifier instead produced wheel
 SHA256 `3192b63f773bca1cfaecacddaed11bb6d806b699ad9e63c7a5f615275a77bf8b`
-with only `dist-info/licenses/LICENSE`. The separately reviewed A3 wheel is
-SHA256 `2c48a45752a1d9301923c54c264cd166e56505ce543f02d193635edcfb1b0e6f`.
+with only `dist-info/licenses/LICENSE`. An intermediate A3 wheel was
+SHA256 `2c48a45752a1d9301923c54c264cd166e56505ce543f02d193635edcfb1b0e6f`;
+the [current exact-head A3 candidate](../A3-license-gate-verdict-20260926.md)
+is SHA256 `d8ec1d497763abd943dfc5ba0defa93a67f141b8bab9adf04a02c8d09a9d43bb`.
 These hashes cannot share one attribution verdict. A target-matched notice
 bundle must be checked in each final wheel before release-wide acceptance.
 

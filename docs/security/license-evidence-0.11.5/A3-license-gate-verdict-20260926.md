@@ -30,6 +30,19 @@ Run the real-wheel hash regression explicitly with `python tests/test_license_in
 
 **Required A3 release evidence:** Before accepting this Linux cp312 candidate, run the explicit check above with the SHA-pinned wheel named in Scope and the extracted source archive whose Git commit is the #2157 head. Record the command, both input SHA256 values, exit code, and six-file result alongside the inventory. A default pytest pass does not satisfy this artifact check. With either path omitted, the command exits 1 (`usage: test_license_inventory_generator.py WHEEL EXACT_SOURCE_ROOT`); with the cited wheel and source it prints `actual A3 wheel license roles and six source hashes verified` and exits 0. This local pass applies only to the examined candidate; the integrated PR head and hosted gates remain pending.
 
+On 2026-09-26, the cited wheel and source archive were retrieved again from
+`s1.cluster.seonghobae.me` and hashed locally: wheel SHA256
+`d8ec1d497763abd943dfc5ba0defa93a67f141b8bab9adf04a02c8d09a9d43bb`;
+source archive SHA256
+`f8a15e7513f63b765773d5de5fa7c15bc205b3f8e6f24a1cb30097cc923094bb`.
+The current #2175 test was run as
+`python tests/test_license_inventory_generator.py WHEEL EXTRACTED_SOURCE_ROOT`
+with those exact files and exited 0, printing
+`actual A3 wheel license roles and six source hashes verified`. A separate
+ZIP/source byte check found all six members in the table above and matched
+each to the extracted source file. This rerun closes the local candidate's
+explicit artifact check; it does not cover a final integrated or published wheel.
+
 ## Acceptance bases (Linux graph, 103 rows)
 canonical verifier text 21; byte-identical condition clauses (reviewed hash) 68; SPDX matching template 4;
 upstream-vcs text at the published commit 2; own crates via published-wheel LICENSE 2; reviewed pointer notices 4;
@@ -42,4 +55,4 @@ matrixmultiply, ndarray) are all accepted by explicit verdicts above, not by the
 
 ## Outside this gate
 - NumPy is an unbundled external runtime dependency (official wheel `3cdec01f…` vendors libgfortran/libquadmath; not a fast-mlsirm bundling violation). Research consumption uses a Fortran-free NumPy build.
-- Python non-shipping tooling (atheris, colorama, hypothesis x2, numpy text files, packaging, pygments, sortedcontainers): tracked as a separate license-hygiene item; none is GPL/LGPL/AGPL (strongest: MPL-2.0).
+- Python tooling and external-runtime license candidates are tracked separately in the [non-Linux follow-up](nonlinux-upstream-20260926/REVIEW.md). NumPy's pinned wheel includes GPL/LGPL component notices; no blanket permissive verdict follows from excluding it from this wheel's bundled bits.
