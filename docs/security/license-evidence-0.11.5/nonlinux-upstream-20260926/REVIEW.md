@@ -70,3 +70,15 @@ HOLD remains **11**. The new inventory is
 `current-python-companions/inventory.json` on s1, SHA256
 `19d81c75e85511a29b3185421e12c1436f9e67072c3d8e7dcbead8ac1f74c246`.
 The focused generator and SPDX tests passed: 238 tests.
+
+The next exact-text review accepted the complete `colorama` BSD three-clause
+variant and the two byte-identical `hypothesis` files containing a full MPL 2.0
+body after an attribution introduction. Source hashes and the pinned SPDX
+comparison are in [`SOURCES.md`](SOURCES.md). A case-sensitive BSD detector
+check was corrected; the union rerun changed exactly these three Python rows
+and no Cargo row. Python HOLD is now **3** (`atheris`, `numpy`,
+`sortedcontainers`); both `hypothesis` rows are **WEAK-COPYLEFT**, not
+PERMISSIVE. The verifier exited zero with no completeness gaps. Its inventory
+is `current-python-variant/inventory.json` on s1, SHA256
+`fd72fa5f302a5a89f1e9f2084980f314e5e4bcaf7af9678140ed5dacccc98583`.
+The focused tests passed: 241 tests.

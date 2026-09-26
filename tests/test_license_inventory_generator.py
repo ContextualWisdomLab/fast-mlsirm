@@ -69,6 +69,12 @@ def test_reviewed_whole_license_bytes_and_mutations(row):
         assert L.verified_standard_text(changed) == []
 
 
+def test_bsd_non_endorsement_clause_is_detected_case_insensitively():
+    colorama = next(row["text"] for row in REVIEWED if row["package"] == "colorama@0.4.6")
+    assert L.detect(colorama) == ["BSD-3-Clause"]
+    assert L.detect(colorama.replace("Neither the name", "NEITHER THE NAME")) == ["BSD-3-Clause"]
+
+
 @pytest.mark.parametrize("extra", [None, "COPYRIGHT", "missing-mit", "restricted", "LGPL"])
 def test_reviewed_alternative_preserves_all_candidate_validation(tmp_path, extra):
     args = _rust_args(tmp_path)

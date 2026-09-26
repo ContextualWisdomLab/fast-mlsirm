@@ -42,3 +42,17 @@ Both files were extracted without modification from the hash-bound PyPI wheels
 in `py-exact-0115-20260926/inputs/pypi-art` on s1. The verifier accepts
 each companion only with its exact wheel hash, member path and member hash,
 and only while the stated complete sibling grant remains verified.
+
+## Python whole-text variants
+
+| Wheel SHA256 | Member | Member SHA256 | Reviewed text |
+| --- | --- | --- | --- |
+| `4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6` (`colorama 0.4.6`) | [`licenses/LICENSE.txt`](python-companions/colorama-0.4.6-LICENSE.txt) | `cac35c02686e5d04a5a7140bfb3b36e73aed496656e891102e428886d7930318` | Complete BSD three-clause grant. Its non-endorsement clause says `nor those of its contributors`, which is outside the [pinned SPDX BSD-3-Clause template](https://github.com/spdx/license-list-data/blob/31ba1a50e5397e00a304dbadc76531740e89ee48/template/BSD-3-Clause.template.txt) (SHA256 `c42368b683ceef1ad41b6f17999adf3b7534e3c47fbdd51449ed6690edb1fc5f`). Accepted by exact normalized hash as an individual review. |
+| `b4e66aaa7385538a5d617174d47c198ee807f06de99e282a67c6cb724c69340d` (`hypothesis 6.156.6`) | [`licenses/LICENSE.txt`](python-companions/hypothesis-LICENSE.txt) | `ac89037bac63550644dce8cf32c6765e5fab9dc1a1ce94b89f8a805f341a6750` | Attribution introduction followed by complete MPL 2.0 text. |
+| `5920d267f7d8cfd376672f2bde5905cdf284d47519582e41ce7c142d48ee46c4` (`hypothesis 6.168.0`) | same member bytes | `ac89037bac63550644dce8cf32c6765e5fab9dc1a1ce94b89f8a805f341a6750` | Same complete file as 6.156.6. |
+
+The `hypothesis` MPL section, starting at `Mozilla Public License Version 2.0`,
+is whitespace-equivalent to the [SPDX v3.29.0 MPL 2.0 text](https://github.com/spdx/license-list-data/blob/31ba1a50e5397e00a304dbadc76531740e89ee48/text/MPL-2.0.txt)
+(SHA256 `66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172`).
+The introduction says some code has other original notices; this review
+verifies the wheel's license candidate file, not every source-level exception.
