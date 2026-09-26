@@ -142,7 +142,9 @@ class BifactorGrmFit:
     ``"numerical_em_stall"`` (relative loglik change met ``tol`` while every
     item parameter remained at its start — never reported as
     ``tolerance_met``; see #1976); ``best_start`` the winning start in
-    ``0..n_starts``.
+    ``0..n_starts``. ``block_pattern_*`` fields are measured before/after
+    unique within-block partial-pattern counts from the response matrix
+    (#2003; ADR-0028 — no unsourced reduction defaults).
     """
 
     a_general: np.ndarray
@@ -160,6 +162,11 @@ class BifactorGrmFit:
     final_loglik_change: float
     best_start: int
     n_parameters: int
+    block_pattern_n_persons: int
+    block_pattern_n_persons_per_block: np.ndarray
+    block_pattern_n_unique_per_block: np.ndarray
+    block_pattern_n_persons_general_only: int
+    block_pattern_n_unique_general_only: int
 
 
 def fit_bifactor_grm(
@@ -315,6 +322,19 @@ def fit_bifactor_grm(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+        block_pattern_n_persons=int(res["block_pattern_n_persons"]),
+        block_pattern_n_persons_per_block=np.asarray(
+            res["block_pattern_n_persons_per_block"], dtype=np.int64
+        ),
+        block_pattern_n_unique_per_block=np.asarray(
+            res["block_pattern_n_unique_per_block"], dtype=np.int64
+        ),
+        block_pattern_n_persons_general_only=int(
+            res["block_pattern_n_persons_general_only"]
+        ),
+        block_pattern_n_unique_general_only=int(
+            res["block_pattern_n_unique_general_only"]
+        ),
     )
 
 
