@@ -47,17 +47,23 @@ def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
         r"(?m)^      release_commit:\n(?:        .*\n)*?        required: true$",
         text,
     )
-
-    for job in (verify, sdist, wheels):
-        assert "ref: ${{ inputs.release_commit }}" in job
+    assert "release_commit: ${{ steps.release-source.outputs.value }}" in verify
+    assert "ref: ${{ github.sha }}" in verify
+    assert "ref: ${{ inputs.release_commit }}" not in text
+    assert "ref: ${{ inputs.control_plane_commit }}" not in text
+    for job in (sdist, wheels):
+        assert "ref: ${{ needs.verify-release.outputs.release_commit }}" in job
         assert "persist-credentials: false" in job
         assert "ref: ${{ inputs.release_tag }}" not in job
 
     assert "fetch-depth: 0" in verify
     assert 'RELEASE_TAG: ${{ inputs.release_tag }}' in verify
     assert 'RELEASE_COMMIT: ${{ inputs.release_commit }}' in verify
+    assert 'RELEASE_COMMIT: ${{ steps.release-source.outputs.value }}' in verify
     assert "release_commit must be a canonical 40-character lowercase SHA-1" in verify
-    assert 'git rev-parse HEAD' in verify
+    assert 'git rev-parse --verify "$RELEASE_COMMIT^{commit}"' in verify
+    assert "release commit must be an ancestor of the publication control plane" in verify
+    assert 'git checkout --detach "$canonical_release_commit"' in verify
     assert 'git rev-parse -q --verify "$RELEASE_TAG^{commit}"' in verify
     assert "checked-out release source does not match release_commit" in verify
     assert "release tag does not target release_commit" in verify
@@ -109,15 +115,15 @@ def test_wheels_cover_supported_cpython_versions_on_every_platform() -> None:
 
 def test_direct_publish_ancestry_guard_against_real_git_history(tmp_path: Path) -> None:
     verify = _job_block(_workflow_text(), "verify-release")
-    name = "Verify release source ancestry for direct publication"
+    name = "Validate and select release source ancestry"
     step = verify.split(f"- name: {name}\n", 1)[1].split("\n      - ", 1)[0]
     script = textwrap.dedent(step.split("        run: |\n", 1)[1])
-    assert verify.index("fetch-depth: 0") < verify.index(name)
+    assert verify.index("ref: ${{ github.sha }}") < verify.index(name)
     assert verify.index(name) < verify.index("Require release tag and source commit")
     assert 'CONTROL_PLANE_COMMIT: ${{ inputs.control_plane_commit }}' in step
     assert 'shell: bash --noprofile --norc -e -o pipefail {0}' in step
     assert "fetch-tags: true" in verify
-    # Execute only the actual guard; no workflow tag/sign/publish command runs.
+
     repo = tmp_path / "git-history"
     repo.mkdir()
     env = {**os.environ, "GIT_AUTHOR_NAME": "fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
@@ -135,21 +141,30 @@ def test_direct_publish_ancestry_guard_against_real_git_history(tmp_path: Path) 
     git("commit", "--allow-empty", "-qm", "sibling")
     sibling = git("rev-parse", "HEAD")
     absent = "0" * 40
-    cases = [(control, control, control, True), (root, root, control, True),
-             (sibling, sibling, control, False), (control, control, root, False),
-             (root, root, absent, False), (root, absent, control, False),
-             (root, control, control, False)]
-    for index, (checkout, release, caller, allowed) in enumerate(cases):
-        git("checkout", "--detach", "-q", checkout)
+    cases = [
+        (control, control, True),
+        (root, control, True),
+        (sibling, control, False),
+        (absent, control, False),
+        (root, root, False),
+        (root.upper(), control, False),
+    ]
+    for index, (release, caller, allowed) in enumerate(cases):
+        git("checkout", "--detach", "-q", control)
         marker = tmp_path / f"downstream-{index}"
+        output = tmp_path / f"github-output-{index}"
         result = subprocess.run(
             ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c",
              script + '\nprintf reached > "$DOWNSTREAM_MARKER"\n'],
             cwd=repo, env={**env, "RELEASE_COMMIT": release, "CONTROL_PLANE_COMMIT": caller,
-                           "DOWNSTREAM_MARKER": str(marker)}, capture_output=True, text=True,
+                           "DOWNSTREAM_MARKER": str(marker), "GITHUB_OUTPUT": str(output)},
+            capture_output=True, text=True,
         )
         assert (result.returncode == 0) is allowed, result.stderr
         assert marker.exists() is allowed
+        if allowed:
+            assert git("rev-parse", "HEAD") == release
+            assert output.read_text() == f"value={release}\n"
         assert git("tag", "--list") == ""
 
 
