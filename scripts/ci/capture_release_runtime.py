@@ -61,12 +61,21 @@ def capture(row_path: Path, dist: Path, source: Path, scratch: Path, source_sha:
     requirements = row_path.with_suffix(".runtime-requirements.txt")
     _run("uv", "export", "--locked", "--no-dev", "--no-emit-project", "--extra", "fuzz",
          "--format", "requirements.txt", "--output-file", str(requirements), cwd=source)
+    if list(row_path.parent.glob("*.whl")):
+        raise ValueError("runtime archive destination is not empty")
+    _run(sys.executable, "-m", "pip", "download", "--require-hashes", "--no-deps",
+         "--only-binary=:all:", "--dest", str(row_path.parent), "-r", str(requirements), cwd=source)
+    archives = sorted(row_path.parent.glob("*.whl"))
+    if not archives:
+        raise ValueError("locked runtime download produced no wheel archives")
     with tempfile.TemporaryDirectory(prefix="release-runtime-", dir=scratch) as temporary:
         venv = Path(temporary) / "venv"
         _run("uv", "venv", str(venv), "--python", sys.executable, cwd=source)
         interpreter = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
         _run("uv", "pip", "sync", "--python", str(interpreter), "--require-hashes",
-             "--only-binary", ":all:", str(requirements), cwd=source)
+             "--only-binary", ":all:", "--no-cache", "--no-index",
+             "--find-links", str(row_path.parent),
+             str(requirements), cwd=source)
         before = _packages(_run("uv", "pip", "list", "--python", str(interpreter),
                                 "--format", "json", cwd=source))
         _run("uv", "pip", "install", "--python", str(interpreter), "--no-deps", str(wheel), cwd=source)
@@ -98,6 +107,8 @@ print(json.dumps({"member": "fast_mlsirm/" + extension.name, "sha256": digest.he
         "uv_lock_sha256": hash_file(source / "uv.lock"),
         "locked_dependencies": before, "installed": installed,
         "imported_extension": imported_extension,
+        "archives": [{"file": path.name, "size": path.stat().st_size, "sha256": hash_file(path)}
+                     for path in archives],
     }
 
 

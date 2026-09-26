@@ -1,6 +1,7 @@
 """Download only preselected immutable artifact IDs; verify ZIP bytes first."""
 from __future__ import annotations
 
+import email.parser
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -15,6 +16,7 @@ import zipfile
 
 CHUNK_BYTES = 64 * 1024  # I/O buffer, not an artifact acceptance limit.
 MAX_BUNDLE_BYTES = 1024 * 1024 * 1024
+MAX_RUNTIME_ARCHIVE_BYTES = 128 * 1024 * 1024
 
 
 def copy_and_hash(source, destination=None) -> str:
@@ -80,12 +82,13 @@ def bundle_inventory(artifact: Path, leg: str, source_sha: str, build_env: str) 
 
 
 def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
-                             source: Path, source_sha: str, bundle: dict) -> None:
+                             source: Path, source_sha: str, bundle: dict,
+                             evidence_members: dict[str, Path]) -> None:
     """Bind a target install receipt to the selected wheel and exact source lock."""
     keys = {"schema_version", "source_sha", "leg", "file", "sha256", "build_env",
             "uv_version", "python_version", "implementation", "sys_platform", "machine",
             "requirements_sha256", "uv_lock_sha256", "locked_dependencies", "installed",
-            "imported_extension"}
+            "imported_extension", "archives"}
     if type(record) is not dict or set(record) != keys or type(record["schema_version"]) is not int or record["schema_version"] != 1:
         raise ValueError("runtime inventory schema differs")
     leg = row["target"]
@@ -133,6 +136,47 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
             or {item["path"]: item["sha256"] for item in bundle["members"]}.get(extension["member"])
             != extension["sha256"]):
         raise ValueError(f"{leg}: imported extension differs from selected wheel member")
+    archives = record["archives"]
+    if (type(archives) is not list or not archives or len(archives) != len(before)
+            or len(archives) > 64 or type(evidence_members) is not dict):
+        raise ValueError(f"{leg}: runtime archive set is incomplete")
+    names, identities, total = set(), set(), 0
+    for archive_row in archives:
+        if (type(archive_row) is not dict or set(archive_row) != {"file", "size", "sha256"}
+                or type(archive_row["file"]) is not str
+                or not re.fullmatch(r"[A-Za-z0-9_.+-]+\.whl", archive_row["file"])
+                or archive_row["file"] in names
+                or type(archive_row["size"]) is not int
+                or not 0 < archive_row["size"] <= MAX_RUNTIME_ARCHIVE_BYTES
+                or type(archive_row["sha256"]) is not str
+                or not re.fullmatch(r"[0-9a-f]{64}", archive_row["sha256"])):
+            raise ValueError(f"{leg}: runtime archive identity is malformed")
+        names.add(archive_row["file"])
+        total += archive_row["size"]
+        if total > MAX_BUNDLE_BYTES:
+            raise ValueError(f"{leg}: runtime archives exceed size limit")
+        archive_path = evidence_members.get(archive_row["file"])
+        if (archive_path is None or archive_path.stat().st_size != archive_row["size"]
+                or hash_file(archive_path) != archive_row["sha256"]):
+            raise ValueError(f"{leg}: runtime archive bytes differ from receipt")
+        with zipfile.ZipFile(archive_path) as archive:
+            metadata = [item for item in archive.infolist()
+                        if item.filename.endswith(".dist-info/METADATA")
+                        and len(PurePosixPath(item.filename).parts) == 2]
+            if len(metadata) != 1 or metadata[0].file_size > 1024 * 1024:
+                raise ValueError(f"{leg}: runtime archive metadata is missing or oversized")
+            with archive.open(metadata[0]) as stream:
+                message = email.parser.Parser().parsestr(stream.read(1024 * 1024 + 1).decode("utf-8"))
+        name = re.sub(r"[-_.]+", "-", message.get("Name", "")).lower()
+        version = message.get("Version", "")
+        identities.add((name, version))
+    expected_members = {f"{leg}.tsv", f"{leg}.bundle.json", f"{leg}.runtime.json",
+                        f"{leg}.runtime-requirements.txt"} | names
+    if set(evidence_members) != expected_members:
+        raise ValueError(f"{leg}: scope evidence artifact members differ from build output")
+    if (archives != sorted(archives, key=lambda item: item["file"])
+            or identities != {(item["name"], item["version"]) for item in before}):
+        raise ValueError(f"{leg}: runtime archives do not match installed dependencies")
 
 
 def materialize(selection: list[dict], repository: str, root: Path, fetch) -> list[dict]:

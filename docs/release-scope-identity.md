@@ -56,16 +56,19 @@ release. These evidence
 artifacts remain separate from the thirteen distribution artifacts passed to
 the central licence and Strix gate.
 
-Each wheel build job now also exports its locked runtime and `fuzz` requirements
-with pinned uv, installs their hash-verified binary distributions into an
-isolated environment for the runner's Python, installs the exact finished wheel,
-and checks the installed environment. The resulting package lists, interpreter
-identity, requirements hash, `uv.lock` hash and successfully imported extension
-hash travel inside the selected `repro-digest-*` artifact. Admission checks
-them against the exact source and wheel member. A changed, missing, or
-cross-target receipt refuses admission before
-the scope HOLD. The macOS universal2 receipt exercises the runner architecture
-only; it does not prove installation on its other binary slice.
+Each wheel build job now exports its locked runtime and `fuzz` requirements
+with pinned uv, downloads their hash-verified binary distributions, and installs
+them without network access or a reused cache into an isolated environment for
+the runner's Python. It then installs the exact finished wheel and checks the
+environment and native extension import. The selected `repro-digest-*` artifact
+contains the downloaded dependency wheels, their hashes, package lists,
+interpreter identity, requirements hash, `uv.lock` hash and imported extension
+hash. Admission rehashes each dependency wheel, checks its metadata against the
+installed package list, and binds the extension hash to the published wheel.
+A changed, missing or cross-target receipt refuses admission before the scope
+HOLD. The macOS universal2 receipt exercises the runner architecture only; it
+does not prove installation on its other binary slice. The central licence and
+Strix gate has not yet consumed these target dependency wheel bytes.
 
 The sdist and wheel builds still need build and native dependency evidence.
 File hashes establish the bundled bytes, but do not identify the origin or

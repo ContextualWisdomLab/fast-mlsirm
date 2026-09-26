@@ -551,6 +551,11 @@ def _admission_fixture(root: Path) -> dict:
     payload = {leg: f"bytes of {name}".encode() for leg, name in files.items()}
     extension_member = "fast_mlsirm/_core.fixture.so"
     extension_bytes = b"synthetic extension member"
+    dependency_archive_name = "numpy-2.5.1-py3-none-any.whl"
+    dependency_buffer = io.BytesIO()
+    with zipfile.ZipFile(dependency_buffer, "w") as archive:
+        archive.writestr("numpy-2.5.1.dist-info/METADATA", "Name: numpy\nVersion: 2.5.1\n")
+    dependency_archive_bytes = dependency_buffer.getvalue()
     for leg in legs:
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
@@ -602,6 +607,7 @@ def _admission_fixture(root: Path) -> dict:
                 "x86_64-pc-windows-msvc": ("win32", "AMD64"),
             }[target]
             before = [{"name": "numpy", "version": "2.5.1"}]
+            (folder / dependency_archive_name).write_bytes(dependency_archive_bytes)
             runtime = {
                 "schema_version": 1, "source_sha": _RELEASE_COMMIT, "leg": leg,
                 "file": files[leg], "sha256": sha[leg], "build_env": "runner:x",
@@ -613,6 +619,9 @@ def _admission_fixture(root: Path) -> dict:
                 "installed": [{"name": "fast-mlsirm", "version": "1.2.3"}, *before],
                 "imported_extension": {"member": extension_member,
                                        "sha256": hashlib.sha256(extension_bytes).hexdigest()},
+                "archives": [{"file": dependency_archive_name,
+                              "size": len(dependency_archive_bytes),
+                              "sha256": hashlib.sha256(dependency_archive_bytes).hexdigest()}],
             }
             (folder / f"{leg}.runtime.json").write_text(json.dumps(runtime, sort_keys=True) + "\n")
     artifacts = [f"dist-wheel-{leg}" for leg in legs] + [
@@ -926,6 +935,11 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
 
     refuse_bytes("forged-imported-extension", forge_extension_hash,
                  "imported extension differs from selected wheel member")
+    refuse_bytes(
+        "changed-runtime-archive",
+        lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / "numpy-2.5.1-py3-none-any.whl").write_bytes(b"forged"),
+        "runtime archive bytes differ from receipt",
+    )
     refuse_bytes(
         "missing-runtime",
         lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime.json").unlink(),

@@ -1114,7 +1114,8 @@ jobs:
               expected_members = {f"{leg}.tsv", f"{leg}.bundle.json"}
               if leg != "sdist":
                   expected_members |= {f"{leg}.runtime.json", f"{leg}.runtime-requirements.txt"}
-              if set(members) != expected_members:
+              if (leg == "sdist" and set(members) != expected_members
+                      or leg != "sdist" and not expected_members <= set(members)):
                   raise SystemExit(f"{leg}: scope evidence artifact members differ from build output")
               if members[f"{leg}.tsv"].read_text(encoding="utf-8") != "\t".join(row[key] for key in header) + "\n":
                   raise SystemExit(f"{leg}: scope evidence row differs from reproducibility record")
@@ -1130,7 +1131,7 @@ jobs:
                                        object_pairs_hook=unique_object)
                   transport.verify_runtime_inventory(
                       runtime, members[f"{leg}.runtime-requirements.txt"], row,
-                      Path("release-source"), commit, expected_bundle,
+                      Path("release-source"), commit, expected_bundle, members,
                   )
                   runtime_records.append(runtime)
 
