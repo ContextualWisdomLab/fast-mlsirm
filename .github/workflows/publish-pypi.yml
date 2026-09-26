@@ -87,7 +87,7 @@ jobs:
         id: release-source
         env:
           CONTROL_PLANE_COMMIT: ${{ inputs.control_plane_commit }}
-          RELEASE_COMMIT: ${{ steps.release-source.outputs.value }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
         shell: bash --noprofile --norc -e -o pipefail {0}
         run: |
           if ! printf '%s' "$RELEASE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
