@@ -15,7 +15,8 @@ tags alongside a required universal2 tag; the locally built CPython 3.14 wheel
 carried all three. A filename tag alone still does not prove that both binary
 slices and their native imports were inspected.
 The sdist has a separate source identity, unique PKG-INFO/pyproject members under
-one root, and pyproject bytes equal to the release source. These checks never
+one root, pyproject bytes equal to the release source, and PKG-INFO name,
+version and Python requirement equal to that source declaration. These checks never
 execute package code. Existing transport hashing remains chunked.
 
 `release-admission` first requires the pinned central gate job to succeed, then
@@ -105,7 +106,7 @@ The six scopes have distinct sources of truth:
   `requirements/package.txt` and `Cargo.lock` constrain these scopes but do not
   prove which packages the build loaded. For Linux wheels, collect inside the
   digest-pinned manylinux container used by `maturin-action`; the surrounding
-  runner's Python and Cargo inventories describe a different environment. The
+  runner's Python and Cargo inventories describe a different environment.
   The sdist tool receipts and wheel Cargo graphs cover part of this requirement
   but do not establish the full build or dev environment.
 - **Native and bundled:** inspect every binary and packaged library in the

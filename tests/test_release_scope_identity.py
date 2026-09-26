@@ -24,7 +24,7 @@ def scope_fixture(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     source = tmp_path / "release-source"
     source.mkdir()
-    project = b'[build-system]\nrequires=["maturin>=1"]\n[project]\nname="fixture"\ndependencies=["numpy>=1"]\n[project.optional-dependencies]\ndev=["pytest"]\nfuzz=["atheris"]\n'
+    project = b'[build-system]\nrequires=["maturin>=1"]\n[project]\nname="fixture"\nversion="1"\nrequires-python=">=3.12"\ndependencies=["numpy>=1"]\n[project.optional-dependencies]\ndev=["pytest"]\nfuzz=["atheris"]\n'
     (source / "pyproject.toml").write_bytes(project)
     (source / "Cargo.lock").write_text("# synthetic lock\n")
     env = {**os.environ, "GIT_AUTHOR_NAME": "fixture", "GIT_COMMITTER_NAME": "fixture",
@@ -50,7 +50,7 @@ def scope_fixture(tmp_path, monkeypatch):
         rows[leg] = {"target": leg, "file": path.name, "sha256": M["hash_file"](path), "build_env": "fixture:" + target}
     path = dist / "fixture-1.tar.gz"
     with tarfile.open(path, "w:gz") as t:
-        for name, data in [("pyproject.toml", project), ("PKG-INFO", b"Name: fixture\nVersion: 1\n")]:
+        for name, data in [("pyproject.toml", project), ("PKG-INFO", b"Name: fixture\nVersion: 1\nRequires-Python: >=3.12\n")]:
             member = tarfile.TarInfo("fixture-1/" + name)
             member.size = len(data)
             t.addfile(member, io.BytesIO(data))
@@ -163,3 +163,24 @@ def test_actual_archive_declaration_failures(scope_fixture, case):
                     archive.writestr("fixture-1.dist-info/METADATA", "Name: changed\n")
     with pytest.raises(ValueError):
         M["scope_identity"](artifact, leg, source, sha, row["build_env"])
+
+
+@pytest.mark.parametrize("field,value", [
+    ("Name", "impostor"),
+    ("Version", "2"),
+    ("Requires-Python", ">=3.14"),
+])
+def test_sdist_package_info_must_match_exact_source(scope_fixture, field, value):
+    source, sha, rows, _ = scope_fixture
+    artifact = Path("dist/fixture-1.tar.gz")
+    project = (source / "pyproject.toml").read_bytes()
+    metadata = {"Name": "fixture", "Version": "1", "Requires-Python": ">=3.12"}
+    metadata[field] = value
+    with tarfile.open(artifact, "w:gz") as archive:
+        for name, data in (("pyproject.toml", project),
+                           ("PKG-INFO", "".join(f"{key}: {item}\n" for key, item in metadata.items()).encode())):
+            member = tarfile.TarInfo("fixture-1/" + name)
+            member.size = len(data)
+            archive.addfile(member, io.BytesIO(data))
+    with pytest.raises(ValueError, match="PKG-INFO differs"):
+        M["scope_identity"](artifact, "sdist", source, sha, rows["sdist"]["build_env"])

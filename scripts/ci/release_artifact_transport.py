@@ -385,14 +385,18 @@ def scope_identity(artifact: Path, leg: str, source: Path, source_sha: str, buil
     if "pyproject.toml" not in paths or not any(p.endswith(".lock") for p in paths):
         raise ValueError("scope source declarations or locks missing")
     declarations = {}
+    project_blob = b""
     for path in paths:
         # Hash immutable blobs, not potentially changed working-tree files.
         blob = subprocess.check_output(["git", "-C", str(source), "show", f"{source_sha}:{path}"])
         declarations[path] = hashlib.sha256(blob).hexdigest()
+        if path == "pyproject.toml":
+            project_blob = blob
     members, tags = {}, []
     if leg == "sdist":
         if not artifact.name.endswith(".tar.gz"):
             raise ValueError("sdist scope requires a source archive")
+        package_info = None
         with tarfile.open(artifact, "r:gz") as archive:
             for member in archive:
                 parts = member.name.split("/")
@@ -400,13 +404,25 @@ def scope_identity(artifact: Path, leg: str, source: Path, source_sha: str, buil
                     if not member.isfile() or member.name in members:
                         raise ValueError("invalid or duplicate sdist declaration")
                     with archive.extractfile(member) as stream:
-                        members[member.name] = copy_and_hash(stream)
+                        if parts[1] == "PKG-INFO":
+                            if member.size > 1024 * 1024:
+                                raise ValueError("sdist PKG-INFO exceeds size limit")
+                            package_info = stream.read()
+                            members[member.name] = hashlib.sha256(package_info).hexdigest()
+                        else:
+                            members[member.name] = copy_and_hash(stream)
         if sorted(p.split("/")[1] for p in members) != ["PKG-INFO", "pyproject.toml"]:
             raise ValueError("sdist declarations missing")
         if len({p.split("/")[0] for p in members}) != 1:
             raise ValueError("sdist declaration roots differ")
         if any(h != declarations["pyproject.toml"] for p, h in members.items() if p.endswith("/pyproject.toml")):
             raise ValueError("sdist pyproject differs from release source")
+        project = tomllib.loads(project_blob.decode("utf-8"))["project"]
+        metadata = email.parser.Parser().parsestr(package_info.decode("utf-8"))
+        if any(metadata.get_all(field) != [project[key]] for field, key in (
+                ("Name", "name"), ("Version", "version"),
+                ("Requires-Python", "requires-python"))):
+            raise ValueError("sdist PKG-INFO differs from release source")
         target, python, abi, platforms = "source", None, None, []
     else:
         match = re.fullmatch(r"(.+)-py(3\.[0-9]+)", leg)
