@@ -155,10 +155,11 @@ def test_fit_mixed_rejects_bad_hyperparameters():
     for ld in (0, 4, 1.5):
         with pytest.raises(ValueError):
             fit_mixed_items(y, "2pl", latent_dim=ld)
+    # #1929: no node-count cap; q_theta/q_xi=8 are now accepted, only < 1 is not.
     with pytest.raises(ValueError):
-        fit_mixed_items(y, "2pl", q_theta=8)
+        fit_mixed_items(y, "2pl", q_theta=0)
     with pytest.raises(ValueError):
-        fit_mixed_items(y, "2pl", q_xi=8)
+        fit_mixed_items(y, "2pl", q_xi=0)
     for mi in (0, 1.5):
         with pytest.raises(ValueError):
             fit_mixed_items(y, "2pl", max_iter=mi)

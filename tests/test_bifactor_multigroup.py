@@ -187,8 +187,9 @@ def test_free_anchor_keeps_anchored_rows_equal() -> None:
 
 def test_rejects_out_of_range_caller_arguments() -> None:
     y, group = _simulate(SEED)
+    # #1929: no node-count cap; q_general=5 is now accepted, only < 1 is not.
     with pytest.raises(ValueError):
-        _fit(y, group, q_general=5)
+        _fit(y, group, q_general=0)
     with pytest.raises(ValueError):
         _fit(y, group, n_starts=0)
     with pytest.raises(ValueError):

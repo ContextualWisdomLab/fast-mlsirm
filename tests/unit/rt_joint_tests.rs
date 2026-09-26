@@ -193,7 +193,8 @@ fn rejects_every_shape_data_and_control_boundary() {
         &zero,
         1,
         1,
-        SpeedAccuracyConfig { q: 9, ..base }
+        // #1929: no node-count cap; q=9 is now accepted, only q=0 is not.
+        SpeedAccuracyConfig { q: 0, ..base }
     )
     .is_err());
     assert!(call(&[2.0], &time, None, &one, &zero, &one, &zero, 1, 1, base).is_err());

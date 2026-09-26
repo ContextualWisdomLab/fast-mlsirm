@@ -161,6 +161,7 @@ fn fit_config() -> BifactorGrmConfig {
         seed: 0x9E37_79B9_7F4A_7C15,
         newton_iter: 10,
         ridge: 1e-8,
+        device: mlsirm_core::Device::Cpu,
     }
 }
 
@@ -335,4 +336,101 @@ fn bifactor_grm_recovers_true_parameters_at_n1020() {
         MAX_A_SPECIFIC_ERROR_N1020,
         MAX_D_ERROR_N1020,
     );
+}
+
+/// #1929 regression: a fit at 121 nodes/dimension and a fit at 241
+/// nodes/dimension (the maintainer's minimum-precision standard on this
+/// fixture's DGP; see quadrature.rs module docs for the Golub & Welsch, 1969
+/// generation method) must agree closely, since the marginal-likelihood
+/// integral has converged well before either node count. This is a numerical
+/// agreement check (both node counts vs each other), not a truth-recovery
+/// check (`assert_recovery` above already covers that at the production
+/// `q_general=21, q_specific=15`). n=500 keeps `--ignored` runtime bounded;
+/// node count, not sample size, is what this test exercises.
+/// Run with `cargo test --release -- --ignored --nocapture`.
+#[test]
+#[ignore = "slow (121/241 node grids); run with: cargo test --release -- --ignored --nocapture"]
+fn bifactor_grm_121_vs_241_nodes_agree() {
+    let n_persons = 500;
+    let (y, _true_theta_g) = simulate(n_persons, 20_260_916);
+
+    let mut loglik = [0.0f64; 2];
+    let mut a_general = [Vec::new(), Vec::new()];
+    let mut a_specific = [Vec::new(), Vec::new()];
+    let mut threshold = [Vec::new(), Vec::new()];
+    let mut elapsed_secs = [0.0f64; 2];
+
+    for (idx, &q) in [121usize, 241usize].iter().enumerate() {
+        let cfg = BifactorGrmConfig {
+            q_general: q,
+            q_specific: q,
+            ..fit_config()
+        };
+        let start = std::time::Instant::now();
+        let fit = fit_bifactor_grm(
+            &y,
+            None,
+            &SPECIFIC_MAP,
+            n_persons,
+            N_ITEMS,
+            N_SPECIFIC,
+            N_CAT,
+            &cfg,
+        )
+        .unwrap_or_else(|e| panic!("q={q} fit must succeed: {e}"));
+        elapsed_secs[idx] = start.elapsed().as_secs_f64();
+        assert!(
+            fit.converged,
+            "q={q} recovery fit must converge (termination: {})",
+            fit.termination_reason
+        );
+        loglik[idx] = *fit.loglik_trace.last().expect("non-empty trace");
+        a_general[idx] = fit.a_general.clone();
+        a_specific[idx] = fit.a_specific.clone();
+        threshold[idx] = fit.threshold.clone();
+        eprintln!(
+            "q={q}: n_iter={}, final_loglik={:.6}, elapsed={:.2}s",
+            fit.n_iter, loglik[idx], elapsed_secs[idx]
+        );
+    }
+
+    let loglik_diff = (loglik[0] - loglik[1]).abs();
+    eprintln!(
+        "121 vs 241 nodes: |loglik diff|={loglik_diff:.6}, \
+         121 took {:.2}s, 241 took {:.2}s",
+        elapsed_secs[0], elapsed_secs[1]
+    );
+    // Documented tolerance: EM stops at |delta loglik| < tol = 1e-5, so two
+    // well-converged fits at different (already-stabilized, per the
+    // maintainer's literature summary on #1929) node counts should agree to
+    // a small multiple of that EM stopping tolerance, not to float epsilon
+    // (independent EM runs land at slightly different points on a flat
+    // likelihood ridge). 5e-3 is ~500x the EM tolerance, well inside that
+    // band and far tighter than the truth-recovery tolerances above.
+    assert!(
+        loglik_diff < 5e-3,
+        "loglik must agree closely between 121 and 241 nodes: {loglik_diff:.6}"
+    );
+    for i in 0..N_ITEMS {
+        assert!(
+            (a_general[0][i] - a_general[1][i]).abs() < 5e-3,
+            "a_general[{i}] disagrees: 121={}, 241={}",
+            a_general[0][i],
+            a_general[1][i]
+        );
+        assert!(
+            (a_specific[0][i] - a_specific[1][i]).abs() < 5e-3,
+            "a_specific[{i}] disagrees: 121={}, 241={}",
+            a_specific[0][i],
+            a_specific[1][i]
+        );
+    }
+    for i in 0..threshold[0].len() {
+        assert!(
+            (threshold[0][i] - threshold[1][i]).abs() < 5e-3,
+            "threshold[{i}] disagrees: 121={}, 241={}",
+            threshold[0][i],
+            threshold[1][i]
+        );
+    }
 }

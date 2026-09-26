@@ -94,7 +94,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-_SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 
 
 def _finite_integer_control(value: object, name: str) -> int:
@@ -194,6 +193,7 @@ def fit_bifactor_grm_multigroup(
     n_starts: int = 1,
     seed: int = 0x9E37_79B9_7F4A_7C15,
     estimate_specific_vars: bool = False,
+    device: str = "cpu",
 ) -> BifactorMultigroupFit:
     """Fit the multiple-group polytomous bifactor GRM (compute in Rust).
 
@@ -207,11 +207,15 @@ def fit_bifactor_grm_multigroup(
     or a length-``n_items`` boolean array with ``True`` = common across
     groups and ``False`` = free per group (at least one common item is
     required when there are 2+ groups). ``q_general``/``q_specific`` are
-    required, keyword-only Gauss-Hermite node counts (one of
-    ``(7, 11, 15, 21, 31, 41)`` — the embedded rules that exist, hence the
-    only accepted values); no default is offered, because no accuracy
+    required, keyword-only Gauss-Hermite node counts (any integer ``>= 1``;
+    generated on demand via Golub & Welsch, 1969 — no fixed-table cap,
+    issue #1929); no default is offered, because no accuracy
     target is on file to source one against (Project rule, issue #1929).
     ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik.
+    ``device`` selects the E-step sweep: ``'cpu'`` runs the ``f64`` scalar
+    sweep; ``'gpu'`` runs the WGSL ``f32`` person-parallel sweep and falls
+    back to CPU (with a warning) when no GPU adapter is available; ``'auto'``
+    prefers GPU without warning. Anything else raises ``ValueError``.
     Out-of-range caller arguments raise ``ValueError`` (never clamped, and —
     per the no-magic-caps rule — upper-bounded only where a real constraint
     exists); unobserved categories raise; ``max_iter`` exhaustion returns
@@ -227,11 +231,13 @@ def fit_bifactor_grm_multigroup(
     if n_specific_int < 1:
         raise ValueError("n_specific must be >= 1")
     q_general_int = _finite_integer_control(q_general, "q_general")
-    if q_general_int not in _SUPPORTED_Q:
-        raise ValueError(f"q_general must be one of {_SUPPORTED_Q}")
+    # #1929: no node-count cap; the Rust core generates any n >= 1
+    # rule on demand (Golub & Welsch, 1969) and guards overflow.
+    if q_general_int < 1:
+        raise ValueError("q_general must be >= 1")
     q_specific_int = _finite_integer_control(q_specific, "q_specific")
-    if q_specific_int not in _SUPPORTED_Q:
-        raise ValueError(f"q_specific must be one of {_SUPPORTED_Q}")
+    if q_specific_int < 1:
+        raise ValueError("q_specific must be >= 1")
     max_iter_int = _finite_integer_control(max_iter, "max_iter")
     if max_iter_int < 1:
         raise ValueError("max_iter must be >= 1")
@@ -325,6 +331,13 @@ def fit_bifactor_grm_multigroup(
         raise RuntimeError(
             "fit_bifactor_grm_multigroup requires the compiled Rust core"
         )
+    if not isinstance(device, str) or device.strip().lower() not in (
+        "cpu",
+        "gpu",
+        "auto",
+    ):
+        raise ValueError(f"device must be one of 'cpu', 'gpu', 'auto'; got {device!r}")
+    device_str = device.strip().lower()
 
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
     anchor_arg = (
@@ -350,6 +363,7 @@ def fit_bifactor_grm_multigroup(
         int(n_starts_int),
         int(seed_int),
         bool(estimate_specific_vars),
+        device_str,
     )
     return BifactorMultigroupFit(
         a_general=np.asarray(res["a_general"], dtype=np.float64).reshape(

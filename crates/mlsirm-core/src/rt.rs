@@ -149,7 +149,7 @@ pub fn fit_rt_lognormal(
             return Err("fix_sigma_tau must be positive and finite".into());
         }
     }
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
 
     // log-times where observed
     let mut y = vec![0.0_f64; n_cells];
@@ -172,7 +172,7 @@ pub fn fit_rt_lognormal(
             }
         }
     }
-    if n_i.iter().any(|&c| c == 0) {
+    if n_i.contains(&0) {
         return Err("every item must be observed by at least one person".into());
     }
 
@@ -418,7 +418,7 @@ pub fn rt_person_fit(
     if !z_fast.is_finite() || z_fast < 0.0 {
         return Err("z_fast must be finite and non-negative".into());
     }
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
 
     let mut w = vec![f64::NAN; n_persons];
     let mut df = vec![0usize; n_persons];

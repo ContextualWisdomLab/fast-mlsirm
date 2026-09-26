@@ -252,7 +252,7 @@ pub fn fit_speed_accuracy_covariance(
         gh_rule(config.q).ok_or_else(|| format!("unsupported q {}", config.q))?;
     let q = nodes.len();
     let lnw: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     let ln2pi = (2.0 * std::f64::consts::PI).ln();
 
     // precompute per-person accuracy log-lik at each theta node (theta = z_a is

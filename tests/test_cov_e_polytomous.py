@@ -71,20 +71,21 @@ def test_poly_int_and_mask_rejects_non_2d_responses():
 
 def test_dif_rejects_2d_group_id():
     with pytest.raises(ValueError, match="group_id must be a non-empty 1-D array"):
-        dif_polytomous(_responses(4, 3, 2), np.zeros((4, 1)), n_cat=2)
+        dif_polytomous(_responses(4, 3, 2), np.zeros((4, 1)), n_cat=2, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
 
 
 def test_dif_rejects_non_numeric_group_id():
     with pytest.raises(ValueError, match="group_id must contain non-negative integers"):
-        dif_polytomous(_responses(4, 3, 2), np.array(["a", "b", "c", "d"]), n_cat=2)
+        dif_polytomous(_responses(4, 3, 2), np.array(["a", "b", "c", "d"]), n_cat=2, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
 
 
 # --- fit_polytomous ---
 
 
 def test_fit_polytomous_rejects_bad_q_theta():
-    with pytest.raises(ValueError, match="q_theta must be one of"):
-        fit_polytomous(_responses(4, 2, 3), n_cat=3, q_theta=12)
+    # #1929: no node-count cap; q_theta=12 is now accepted, only < 1 is not.
+    with pytest.raises(ValueError, match="q_theta must be in 1"):
+        fit_polytomous(_responses(4, 2, 3), n_cat=3, q_theta=0)
 
 
 def test_fit_polytomous_accepts_81_node_rule():
@@ -93,11 +94,13 @@ def test_fit_polytomous_accepts_81_node_rule():
     assert np.isfinite(fit.loglik)
 
 
-def test_fit_lsirm_rejects_81_node_xi_rule():
-    with pytest.raises(ValueError, match="q_theta/q_xi must be one of"):
-        fit_lsirm_polytomous(
-            _responses(4, 2, 3), n_cat=3, q_theta=81, q_xi=81, max_iter=1
-        )
+def test_fit_lsirm_accepts_81_node_xi_rule():
+    # #1929: no node-count cap; 81 used to be rejected (outside the fixed
+    # xi table) and is now a perfectly valid node count.
+    fit = fit_lsirm_polytomous(
+        _responses(4, 2, 3), n_cat=3, q_theta=81, q_xi=81, max_iter=1
+    )
+    assert np.isfinite(fit.loglik)
 
 
 def test_fit_polytomous_requires_core(monkeypatch):
@@ -174,8 +177,9 @@ def test_fit_lsirm_rejects_bad_latent_dim():
 
 
 def test_fit_lsirm_rejects_bad_quadrature():
-    with pytest.raises(ValueError, match="q_theta/q_xi must be one of"):
-        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, q_xi=12)
+    # #1929: no node-count cap; q_xi=12 is now accepted, only < 1 is not.
+    with pytest.raises(ValueError, match="q_theta and q_xi must be >= 1"):
+        fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, q_xi=0)
 
 
 def test_fit_lsirm_rejects_bad_tol():
@@ -244,8 +248,9 @@ def test_local_dependence_requires_core(monkeypatch):
 
 
 def test_fit_nominal_rejects_bad_q_theta():
-    with pytest.raises(ValueError, match="q_theta must be one of"):
-        fit_nominal_polytomous(_responses(4, 2, 3), n_cat=3, q_theta=12)
+    # #1929: no node-count cap; q_theta=12 is now accepted, only < 1 is not.
+    with pytest.raises(ValueError, match="q_theta must be in 1"):
+        fit_nominal_polytomous(_responses(4, 2, 3), n_cat=3, q_theta=0)
 
 
 def test_fit_nominal_requires_core(monkeypatch):
@@ -325,19 +330,19 @@ def test_cat_simulate_requires_core(monkeypatch):
 
 def test_dif_rejects_empty_items():
     with pytest.raises(ValueError, match="at least one person and one item"):
-        dif_polytomous(np.zeros((4, 0)), np.zeros(4, dtype=int), n_cat=2)
+        dif_polytomous(np.zeros((4, 0)), np.zeros(4, dtype=int), n_cat=2, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
 
 
 def test_dif_rejects_single_group():
     with pytest.raises(ValueError, match="DIF requires at least two groups"):
-        dif_polytomous(_responses(6, 3, 2), np.zeros(6, dtype=int), n_cat=2)
+        dif_polytomous(_responses(6, 3, 2), np.zeros(6, dtype=int), n_cat=2, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
 
 
 def test_dif_requires_core(monkeypatch):
     monkeypatch.setattr(polytomous, "_core_module", lambda: None)
     gid = np.arange(6) % 2
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
-        dif_polytomous(_responses(6, 3, 2), gid, n_cat=2)
+        dif_polytomous(_responses(6, 3, 2), gid, n_cat=2, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
 
 
 # --- u3 helpers ---

@@ -17,7 +17,6 @@ from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
 from .irt_contract import validate_irt_response_matrix
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
-_SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 _MAX_DIMS_GH = 3
 _MAX_DIMS_QMC = 6
 _MAX_NODES = 200_000
@@ -170,8 +169,10 @@ def fit_gpcm(
     if not 2 <= n_cat_int <= MAX_POLYTOMOUS_CATEGORIES:
         raise ValueError(f"n_cat must be between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
     q_int = _finite_integer(q, "q")
-    if gh_rule and q_int not in _SUPPORTED_Q:
-        raise ValueError(f"q must be one of {_SUPPORTED_Q}")
+    # #1929: no node-count cap; the Rust core generates any n >= 1
+    # rule on demand (Golub & Welsch, 1969) and guards overflow.
+    if gh_rule and q_int < 1:
+        raise ValueError("q must be >= 1")
     max_iter_int = _finite_integer(max_iter, "max_iter")
     if not 1 <= max_iter_int <= MAX_MAX_ITER:
         raise ValueError(f"max_iter must be between 1 and {MAX_MAX_ITER}")

@@ -104,7 +104,7 @@ def test_fit_polytomous_rejects_q_subclass_before_hash_callback() -> None:
     _BombResponses.calls = 0
     _HostileHashInt.calls = 0
 
-    with pytest.raises(ValueError, match="q_theta must be one of"):
+    with pytest.raises(ValueError, match="q_theta must be an integer"):
         polytomous.fit_polytomous(
             _BombResponses(),
             3,
@@ -119,7 +119,7 @@ def test_fit_polytomous_rejects_fractional_q_without_narrowing() -> None:
     """Floating quadrature controls are rejected rather than coerced/truncated."""
     _BombResponses.calls = 0
 
-    with pytest.raises(ValueError, match="q_theta must be one of"):
+    with pytest.raises(ValueError, match="q_theta must be an integer"):
         polytomous.fit_polytomous(_BombResponses(), 3, q_theta=21.0)  # type: ignore[arg-type]
 
     _assert_no_response_work()
@@ -148,7 +148,7 @@ def test_fit_polytomous_rejects_invalid_controls_before_core_discovery(
         raise AssertionError("native core discovered before control rejection")
 
     monkeypatch.setattr(polytomous, "_core_module", _bomb_core)
-    with pytest.raises(ValueError, match="q_theta must be one of"):
+    with pytest.raises(ValueError, match="q_theta must be an integer"):
         polytomous.fit_polytomous(_BombResponses(), 3, q_theta=21.5)  # type: ignore[arg-type]
 
     _assert_no_response_work()
@@ -168,7 +168,7 @@ def test_fit_polytomous_control_validators_preserve_numpy_scalars() -> None:
         (
             "dif_polytomous",
             (_BombResponses(), np.zeros(1, dtype=np.int64), _HostileInt(2)),
-            {},
+            {"model": "gpcm", "q_theta": 21, "max_iter": 200, "tol": 1e-5, "fdr_q": 0.05},
         ),
         ("score_polytomous", (_BombResponses(), None), {"q_theta": _HostileInt(21)}),
     ],
