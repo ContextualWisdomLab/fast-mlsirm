@@ -49,6 +49,7 @@ python-source = "python"
 include = [
     { path = "LICENSE", format = "sdist" },
     { path = "NOTICE*", format = "sdist" },
+    { path = "LICENSE-THIRD-PARTY", format = "sdist" },
 ]
 
 [tool.pytest.ini_options]
