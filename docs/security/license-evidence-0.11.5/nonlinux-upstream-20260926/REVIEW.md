@@ -51,6 +51,11 @@ The locked 0.11.5 binding manifest was resolved offline with Cargo 1.97.1 using
 Each JSON input and verifier result is retained beside the rerun script on s1.
 The counts below include only rows in that target's binding resolve graph;
 the inventory's unfiltered `cargo_by_class` summary also includes workspace rows.
+The [release workflow matrix](../../../../.github/workflows/publish-pypi.yml)
+plans CPython 3.12, 3.13, and 3.14 wheels for Linux x86_64, Linux aarch64,
+macOS universal2, and Windows x86_64 (12 wheels). Universal2 covers both
+macOS target triples below; the previously verified Linux x86_64 graph has
+103 rows and HOLD 0.
 
 | Target triple | Binding rows | Permissive | HOLD | Metadata SHA256 | Inventory SHA256 |
 | --- | ---: | ---: | ---: | --- | --- |
@@ -64,6 +69,17 @@ graphs contain the ten `objc2` family HOLD rows listed above. The Android
 header row is outside these four graphs; that does not clear its union HOLD.
 These target-resolve results alone do not prove which optional crates are
 present in a particular built wheel. No macOS gate verdict is issued.
+
+The complete [objc2 source snapshot at the archive publication commit](https://codeload.github.com/madsmtm/objc2/tar.gz/8852b424193ca41602281b3d7540d7c8ed51e49a)
+has SHA256 `e26253acf0639ce1986f79690fbc3ae9fa29b082ddc1e8661b9b53ac8d4925b3`.
+Its only license-named document is `LICENSE.md`, whose SHA256
+`7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54`
+matches the previously fetched raw file. That document links to standard
+MIT/Zlib/Apache terms and itself raises an Apple SDK licensing question; it
+does not supply the complete grants. The `copying.rs` paths in the snapshot
+are Rust source or tests, not additional license documents. This confirms the
+ten macOS target HOLD rows cannot be cleared by an overlooked license file in
+that pinned source tree.
 
 ## Python companion-file follow-up
 
