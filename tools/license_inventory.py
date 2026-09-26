@@ -279,6 +279,9 @@ def verified_standard_text(text: str) -> list[str]:
     reviewed = {
         "9384ef020bec4dca54f36ac8b293a41d0ff2ec0df4140b649d90edaa7bc242a5": "BSD-3-Clause",  # colorama 0.4.6: complete BSD three-clause variant, exact individual review
         "eed9dc7c361e1fb279ad5b126bb3a7e9d845c34e00bc27f79d0255444c3ccb72": "MPL-2.0",  # hypothesis 6.156.6/6.168.0: intro plus whitespace-equivalent full SPDX MPL text
+        "f7d5577e303aa20d09c0e805214000a7002449cecafd4346b03cd06f3049a5b8": "MIT",  # numpy 2.5.2 pcg64: attribution followed by complete canonical MIT body
+        "edf903a2906dd04e6c3657b707eea48d4185dd0ee566a8ce7557513e9d6e2df3": "MIT",  # numpy 2.5.2 sfc64: attribution followed by complete canonical MIT body
+        "f94dd7ca63ee8edec5a4c637c97ea56881fdf10cf7537284ba68e73f2c4004f7": "BSD-3-Clause",  # numpy 2.5.2 philox: complete grant, exact punctuation variant
         # Hash-pinned non-Linux review: full grants match the canonical body;
         # Windows omits the terminal period, while the two Apache files change
         # only appendix placeholder notation (glutin also fills copyright).
