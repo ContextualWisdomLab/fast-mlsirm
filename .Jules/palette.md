@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2024-11-20 - Skip-link Hardcoded Colors in Dark Mode
+**Learning:** `skip-link` 클래스 등 테마 CSS 변수를 배경색(예: `var(--teal)`)으로 사용하는 요소에 하드코딩된 텍스트 색상(예: `white`)을 사용하면 다크 모드(dark mode)에서 명도 대비(contrast) 기준을 통과하지 못할 위험이 있습니다.
+**Action:** 테마가 적용된 배경색을 사용하는 요소의 텍스트 색상을 설정할 때 항상 하드코딩된 색상(예: `white`)을 피하고 쌍을 이루는 테마 변수(예: `var(--bg)`)를 사용해야 합니다.
