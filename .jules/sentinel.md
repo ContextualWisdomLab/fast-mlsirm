@@ -59,3 +59,8 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+
+## 2026-09-23 - JSON 깊이 검증 언더플로우 오탐 및 JSONDecodeError 방어 기제
+**Vulnerability:** fast-mlsirm 내의 JSON 깊이 검증 함수들에서 닫는 괄호(`]}`)를 만날 때 `depth` 카운터가 0 미만으로 언더플로우되는 버그가 있었습니다. 초기에는 이를 통해 깊이 제한을 우회하여 `json.loads`에서 `RecursionError`를 유발할 수 있는 CRITICAL DoS 취약점으로 판단했습니다. 하지만 `]]]]]{"a":...}`와 같이 닫는 괄호가 앞에 오는 구조는 유효하지 않은 JSON이므로, `json.loads`가 파싱을 시작하자마자 깊은 탐색을 수행하기 전에 `JSONDecodeError`를 발생시켜 실행을 즉시 중단합니다. 따라서 실제 `RecursionError`나 자원 고갈로 이어지지 않으므로 심각한 취약점이 아닙니다.
+**Learning:** 잘못된 형식의 JSON(예: 닫는 괄호로 시작하는 경우)은 `json.loads`가 구조를 깊게 탐색하기 전에 구문 오류(`JSONDecodeError`)로 거부합니다. 따라서 깊이 카운터 언더플로우가 존재하더라도 이것이 항상 DoS 취약점으로 이어지는 것은 아니며, 파서의 초기 검증 단계가 강력한 방어 기제로 작용할 수 있습니다.
+**Prevention:** 취약점을 평가할 때는 전처리 로직의 버그가 실제 백엔드 엔진(`json.loads`)에서 어떻게 처리되는지 끝까지 검증해야 합니다. 카운터 언더플로우를 방지하기 위해 `and depth:` 조건을 추가하는 것은 올바른 조치이지만, 실제 익스플로잇 가능성을 과장하지 않도록 주의해야 합니다.
