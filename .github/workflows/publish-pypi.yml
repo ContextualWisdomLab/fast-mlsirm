@@ -1129,7 +1129,7 @@ jobs:
                                        object_pairs_hook=unique_object)
                   transport.verify_runtime_inventory(
                       runtime, members[f"{leg}.runtime-requirements.txt"], row,
-                      Path("release-source"), commit,
+                      Path("release-source"), commit, expected_bundle,
                   )
 
           # The central job result is required by `needs`; its immutable verdict

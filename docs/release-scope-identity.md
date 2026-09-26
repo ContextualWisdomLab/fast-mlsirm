@@ -54,9 +54,10 @@ Each wheel build job now also exports its locked runtime and `fuzz` requirements
 with pinned uv, installs their hash-verified binary distributions into an
 isolated environment for the runner's Python, installs the exact finished wheel,
 and checks the installed environment. The resulting package lists, interpreter
-identity, requirements hash and `uv.lock` hash travel inside the selected
-`repro-digest-*` artifact. Admission checks them against the exact source and
-wheel row. A changed, missing, or cross-target receipt refuses admission before
+identity, requirements hash, `uv.lock` hash and successfully imported extension
+hash travel inside the selected `repro-digest-*` artifact. Admission checks
+them against the exact source and wheel member. A changed, missing, or
+cross-target receipt refuses admission before
 the scope HOLD. The macOS universal2 receipt exercises the runner architecture
 only; it does not prove installation on its other binary slice.
 

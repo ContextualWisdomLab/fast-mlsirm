@@ -71,6 +71,19 @@ def capture(row_path: Path, dist: Path, source: Path, scratch: Path, source_sha:
                                 "--format", "json", cwd=source))
         _run("uv", "pip", "install", "--python", str(interpreter), "--no-deps", str(wheel), cwd=source)
         _run("uv", "pip", "check", "--python", str(interpreter), cwd=source)
+        imported_extension = json.loads(_run(str(interpreter), "-c", """
+import hashlib
+import json
+from pathlib import Path
+import fast_mlsirm._core as core
+
+extension = Path(core.__file__)
+digest = hashlib.sha256()
+with extension.open("rb") as stream:
+    for chunk in iter(lambda: stream.read(65536), b""):
+        digest.update(chunk)
+print(json.dumps({"member": "fast_mlsirm/" + extension.name, "sha256": digest.hexdigest()}))
+""", cwd=venv))
         installed = _packages(_run("uv", "pip", "list", "--python", str(interpreter),
                                    "--format", "json", cwd=source))
     release_package = {"name": "fast-mlsirm", "version": project["version"]}
@@ -84,6 +97,7 @@ def capture(row_path: Path, dist: Path, source: Path, scratch: Path, source_sha:
         "machine": platform.machine(), "requirements_sha256": hash_file(requirements),
         "uv_lock_sha256": hash_file(source / "uv.lock"),
         "locked_dependencies": before, "installed": installed,
+        "imported_extension": imported_extension,
     }
 
 

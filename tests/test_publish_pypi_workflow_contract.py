@@ -549,12 +549,15 @@ def _admission_fixture(root: Path) -> dict:
         files[leg] = f"pkg-1.2.3-{cp}-{cp}-{platforms[target]}.whl"
     files["sdist"] = "pkg-1.2.3.tar.gz"
     payload = {leg: f"bytes of {name}".encode() for leg, name in files.items()}
+    extension_member = "fast_mlsirm/_core.fixture.so"
+    extension_bytes = b"synthetic extension member"
     for leg in legs:
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             _, abi, platform = files[leg][:-4].rsplit("-", 3)[1:]
             tags = "".join(f"Tag: {abi}-{abi}-{part}\n" for part in platform.split("."))
             archive.writestr("pkg-1.2.3.dist-info/WHEEL", f"Wheel-Version: 1.0\n{tags}")
+            archive.writestr(extension_member, extension_bytes)
         payload[leg] = buffer.getvalue()
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
@@ -608,6 +611,8 @@ def _admission_fixture(root: Path) -> dict:
                 "uv_lock_sha256": hashlib.sha256((source / "uv.lock").read_bytes()).hexdigest(),
                 "locked_dependencies": before,
                 "installed": [{"name": "fast-mlsirm", "version": "1.2.3"}, *before],
+                "imported_extension": {"member": extension_member,
+                                       "sha256": hashlib.sha256(extension_bytes).hexdigest()},
             }
             (folder / f"{leg}.runtime.json").write_text(json.dumps(runtime, sort_keys=True) + "\n")
     artifacts = [f"dist-wheel-{leg}" for leg in legs] + [
@@ -904,6 +909,14 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
 
     refuse_bytes("wrong-runtime-target", forge_runtime_target,
                  "runtime interpreter differs from wheel target")
+    def forge_extension_hash(root: Path, fixture: dict) -> None:
+        path = root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime.json"
+        payload = json.loads(path.read_text())
+        payload["imported_extension"]["sha256"] = "0" * 64
+        path.write_text(json.dumps(payload))
+
+    refuse_bytes("forged-imported-extension", forge_extension_hash,
+                 "imported extension differs from selected wheel member")
     refuse_bytes(
         "missing-runtime",
         lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime.json").unlink(),

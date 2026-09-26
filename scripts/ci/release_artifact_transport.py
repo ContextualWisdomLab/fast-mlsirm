@@ -80,11 +80,12 @@ def bundle_inventory(artifact: Path, leg: str, source_sha: str, build_env: str) 
 
 
 def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
-                             source: Path, source_sha: str) -> None:
+                             source: Path, source_sha: str, bundle: dict) -> None:
     """Bind a target install receipt to the selected wheel and exact source lock."""
     keys = {"schema_version", "source_sha", "leg", "file", "sha256", "build_env",
             "uv_version", "python_version", "implementation", "sys_platform", "machine",
-            "requirements_sha256", "uv_lock_sha256", "locked_dependencies", "installed"}
+            "requirements_sha256", "uv_lock_sha256", "locked_dependencies", "installed",
+            "imported_extension"}
     if type(record) is not dict or set(record) != keys or type(record["schema_version"]) is not int or record["schema_version"] != 1:
         raise ValueError("runtime inventory schema differs")
     leg = row["target"]
@@ -122,6 +123,16 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
     if (not valid_packages(before) or not valid_packages(installed) or not before
             or project in before or installed != sorted([*before, project], key=lambda item: item["name"])):
         raise ValueError(f"{leg}: runtime closure differs from locked install plus wheel")
+    extension = record["imported_extension"]
+    if (type(extension) is not dict or set(extension) != {"member", "sha256"}
+            or type(extension["member"]) is not str
+            or not re.fullmatch(r"fast_mlsirm/_core\.[A-Za-z0-9_.-]+\.(?:so|pyd)", extension["member"])
+            or type(extension["sha256"]) is not str
+            or not re.fullmatch(r"[0-9a-f]{64}", extension["sha256"])
+            or not isinstance(bundle, dict) or not isinstance(bundle.get("members"), list)
+            or {item["path"]: item["sha256"] for item in bundle["members"]}.get(extension["member"])
+            != extension["sha256"]):
+        raise ValueError(f"{leg}: imported extension differs from selected wheel member")
 
 
 def materialize(selection: list[dict], repository: str, root: Path, fetch) -> list[dict]:
