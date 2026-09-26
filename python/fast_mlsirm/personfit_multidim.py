@@ -12,7 +12,7 @@ from .two_tier_grm import TwoTierGrmFit
 
 
 def _integer_vector(value: np.ndarray, name: str, size: int) -> np.ndarray:
-    if type(value) is not np.ndarray or value.shape != (size,) or value.dtype.kind not in "biuf":
+    if type(value) is not np.ndarray or value.shape != (size,) or value.dtype.kind not in "iuf":
         raise ValueError(f"{name} must be a numeric vector of length {size}")
     if not np.isfinite(value).all() or np.any(value != np.floor(value)):
         raise ValueError(f"{name} must contain finite integers")

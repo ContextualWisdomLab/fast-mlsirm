@@ -103,3 +103,8 @@ def test_saved_fit_person_fit_rejects_unconverged_and_bad_group():
             responses, _two_tier_fit(), np.array([-1, 0, -1]),
             q_primary=121, q_specific=121, flag_threshold=-1.5,
         )
+    with pytest.raises(ValueError, match="specific_map"):
+        compute_person_fit_multidim(
+            responses, _two_tier_fit(), np.array([True, True, False]),
+            q_primary=121, q_specific=121, flag_threshold=-1.5,
+        )
