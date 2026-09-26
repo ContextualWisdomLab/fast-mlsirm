@@ -48,3 +48,6 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2026-09-25 - Rust Moment Iteration and Gradient Power Optimization
+**Learning:** Chaining multiple `map().sum()` operations over the same slice in Rust to calculate mathematical moments (like $x^2$ and $x^4$) redundantly iterates through the array and evaluates memory addresses. Furthermore, in tight algorithmic loops (like gradient calculations), using `powi(3)` and `powi(4)` can introduce function call overhead and inhibit loop unrolling optimizations by LLVM if not perfectly inlined.
+**Action:** Use a single-pass `iter().fold()` to compute multiple moments simultaneously, explicitly defining calculations using manual multiplications (e.g., `let x2 = x * x; s4 + x2 * x2`) rather than `powi` to maximize execution speed in mathematical "hot paths".
