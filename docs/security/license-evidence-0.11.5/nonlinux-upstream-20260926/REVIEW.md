@@ -2,6 +2,13 @@
 
 Status: **partial**. Coordinator-style technical review delegated by the maintainer; not legal review or a release gate verdict.
 
+Release-state check on 2026-09-26: the [PyPI project JSON](https://pypi.org/pypi/fast-mlsirm/json)
+listed 0.11.4 as latest and no files for 0.11.5; the
+`/pypi/fast-mlsirm/0.11.5/json` endpoint returned HTTP 404. This review
+therefore concerns the prepared 0.11.5 build inputs and locally built wheel,
+not a published 0.11.5 PyPI artifact matrix. A release-wide verdict requires
+the exact built artifacts for every intended target.
+
 The input is the 0.11.5 union inventory from `rerun-785e675c` (SHA256 `f079cf2bf0d341a31a575a3672923965c5a3f7a795a32be8db1eb37b25ac5186`). Every registry archive was bound to its `Cargo.lock` SHA256. For crates without an archive license file, [`upstream-evidence.json`](upstream-evidence.json) binds the local text to the archive's `.cargo_vcs_info.json` commit and path; [`SOURCES.md`](SOURCES.md) records the raw URL and SHA256 of each file.
 
 ## Six distinct unverified archive texts
@@ -82,3 +89,11 @@ PERMISSIVE. The verifier exited zero with no completeness gaps. Its inventory
 is `current-python-variant/inventory.json` on s1, SHA256
 `fd72fa5f302a5a89f1e9f2084980f314e5e4bcaf7af9678140ed5dacccc98583`.
 The focused tests passed: 241 tests.
+
+The three Python HOLD rows still need separate evidence:
+
+| Package | Exact artifact finding | Why HOLD remains |
+| --- | --- | --- |
+| `atheris 3.1.0` | Three CPython wheels contain `asan_with_fuzzer.so`, `ubsan_with_fuzzer.so`, `ubsan_cxx_with_fuzzer.so`, and `libclang_rt.fuzzer_no_main.a`. | Their native files have no bound license notice stanza. The wheel's Apache license covers its own candidate file, but does not establish these components' grants. |
+| `numpy 2.5.2` | The pinned wheel (SHA256 `3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8`) still has 11 unverified license candidate files. | Several files combine component grants, and the main notice includes GPL/LGPL component text. The external-runtime decision does not waive all-candidate verification. |
+| `sortedcontainers 2.4.0` | Its wheel `LICENSE` (SHA256 `1db7cae7fce6452e2e608e401a0f953e0133e4c2d75db69fb8ae851d2086f5b6`) is a short Apache header and URL. | The complete Apache 2.0 terms are absent from the hash-bound wheel candidate; a URL alone is not a verified full grant under the current rule. |
