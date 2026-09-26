@@ -287,6 +287,11 @@ It embeds full BSD, GCC runtime exception, and GPL 3 text, then names
 `libquadmath` as LGPL 2.1 or later with a short notice and a link instead of
 the complete LGPL text. This main candidate prevents NumPy from clearing the
 current all-candidate rule; the row stays HOLD.
+An exact-wheel scan on 2026-09-26 UTC checked all 1,044 ZIP members of the
+pinned NumPy wheel. Only this main `LICENSE.txt` mentions LGPL or the GNU Lesser
+General Public License; no member contains a `GNU Lesser General Public License
+Version 2.1` heading. The complete grant cannot be supplied by another member
+of this same wheel.
 
 The [sortedcontainers 2.4.0 source distribution](https://pypi.org/project/sortedcontainers/2.4.0/#files)
 has SHA256 `25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88`.
@@ -294,3 +299,7 @@ Its `LICENSE` bytes hash to the same
 `1db7cae7fce6452e2e608e401a0f953e0133e4c2d75db69fb8ae851d2086f5b6`
 as the wheel's short Apache header. The release source therefore supplies no
 missing full text; this row stays HOLD.
+The pinned wheel itself (SHA256
+`a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0`)
+has nine ZIP members. A whole-wheel scan found Apache references in its short
+`LICENSE` and `METADATA` members, but no Apache 2.0 terms-and-conditions body.
