@@ -223,6 +223,7 @@ def verified_standard_text(text: str) -> list[str]:
         "3a31f72fe7c9baf376c3da1d7d0154366be8ef0bab0a3f7531db4c2abf1ad062": "Zlib",
         "444399c3da8f18f32878c6f8b7348110f33985558ca7abe98d4c8ed26f013109": "Zlib",
         # 66 copyright-header/appendix-only variants, reviewed in s1 text-review-20260926.
+        "121aea2578cd98e64faa0ca32acfd4f83551b1ecd293730a9541a4f5a37bf85c": "ISC",  # libloading-0.8.9/LICENSE: ISC with copyright header only (no-template-reclass STANDARD_COPYRIGHT_ONLY)
         "2069c208cba553e43cd0b730df8a0c10bf1b1101b96f661e2f1307c73b9722e3": "Unlicense",  # UNLICENSE 7e12e5df, byte-identical to SPDX v3.29.0 (memchr/termcolor/winapi-util)
         "21b7ffe46249356209d64748a5179bf37a704880d8af02c77bd65d20800503f0": "Unicode-3.0",  # unicode-ident LICENSE-UNICODE f7db8105, byte-identical to SPDX v3.29.0
         "f5ac0308cf2b3f96a0f49a8c0c9e4a2a02c483afc72a646af8de1f356983de06": "MIT",  # fast-mlsirm LICENSE (wheel dist-info/licenses/LICENSE; own crates bind via --own-crate-wheel)
