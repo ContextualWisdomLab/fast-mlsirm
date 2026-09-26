@@ -69,7 +69,7 @@ def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     assert "release tag does not target release_commit" in verify
     assert 'tomllib.load' in verify or 'tomllib.loads' in verify
     assert 'f"v{project[\'version\']}"' in verify
-    assert text.count("maturin-version: v1.15.0") == 4
+    assert text.count("maturin-version: v1.15.0") == 5
 
 
 def test_release_checkout_rejects_unvalidated_dispatch_sha_authority() -> None:
@@ -308,6 +308,11 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     assert "- name: Rebuild sdist for byte-reproducibility check" in sdist
     assert "- name: Capture first sdist build tools" in sdist
     assert "- name: Capture second sdist build tools" in sdist
+    assert "needs: [verify-release, sdist]" in wheels
+    assert "- name: Verify and unpack the same-run sdist" in wheels
+    assert "- name: Build this wheel target from the verified sdist" in wheels
+    assert "working-directory: sdist-consumer/source" in wheels
+    assert "- name: Capture target sdist consumer wheel" in wheels
     assert "args: --out dist-rebuild" in sdist
     compare_wheel = _step_python(wheels, "Compare double-build wheel digests and record them")
     compare_sdist = _step_python(sdist, "Compare double-build sdist digests and record them")
@@ -530,7 +535,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@d8e029c1b6c48a89da18540a015dd25421ab07dd" in central
+    assert "release-dependency-license-strix-gate.yml@8d45e81c4e9a1f431dc632b69539ba8fb387ed2c" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -569,6 +574,7 @@ def _admission_fixture(root: Path) -> dict:
             _, abi, platform = files[leg][:-4].rsplit("-", 3)[1:]
             tags = "".join(f"Tag: {abi}-{abi}-{part}\n" for part in platform.split("."))
             archive.writestr("pkg-1.2.3.dist-info/WHEEL", f"Wheel-Version: 1.0\n{tags}")
+            archive.writestr("pkg-1.2.3.dist-info/METADATA", "Name: pkg\nVersion: 1.2.3\n")
             archive.writestr(extension_member, extension_bytes)
         payload[leg] = buffer.getvalue()
     buffer = io.BytesIO()
@@ -647,6 +653,17 @@ def _admission_fixture(root: Path) -> dict:
                               "name": "numpy", "version": "2.5.1"}],
             }
             (folder / f"{leg}.runtime.json").write_text(json.dumps(runtime, sort_keys=True) + "\n")
+            (folder / f"{leg}.consumer.whl").write_bytes(payload[leg])
+            metadata = {item["path"]: item["sha256"] for item in inventory["members"]
+                        if item["path"].endswith((".dist-info/METADATA", ".dist-info/WHEEL"))}
+            receipt = {"schema_version": 1, "source_sha": _RELEASE_COMMIT,
+                       "leg": leg, "build_env": build_env(leg),
+                       "sdist_file": files["sdist"], "sdist_sha256": sha["sdist"],
+                       "file": files[leg], "published_sha256": sha[leg],
+                       "consumer_sha256": sha[leg], "metadata_members": metadata,
+                       "native_extension": {"member": extension_member,
+                                            "sha256": hashlib.sha256(extension_bytes).hexdigest()}}
+            (folder / f"{leg}.consumer.json").write_text(json.dumps(receipt, sort_keys=True) + "\n")
         target, version = ("sdist", "3.12") if leg == "sdist" else leg.rsplit("-py", 1)
         targets = ([] if target == "sdist" else ["aarch64-apple-darwin", "x86_64-apple-darwin"]
                    if target == "universal2-apple-darwin" else [target])
@@ -984,6 +1001,7 @@ def test_distribution_set_manifest_binds_exact_same_run_bytes(tmp_path: Path) ->
 
 def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -> None:
     import json
+    import zipfile
 
     fixture = _admission_fixture(tmp_path / "ok")
     ok_set = _run_admission(tmp_path / "ok", _SET_STEP, fixture["listing"])
@@ -1049,6 +1067,17 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
         lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / "extra.json").write_text("{}"),
         "scope evidence artifact members differ from build output",
     )
+    refuse_bytes(
+        "missing-consumer",
+        lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / f"{first}.consumer.json").unlink(),
+        "scope evidence artifact members differ from build output",
+    )
+    def change_consumer(root: Path, fixture: dict) -> None:
+        path = root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.consumer.whl"
+        with zipfile.ZipFile(path, "a") as archive:
+            archive.writestr("extra.txt", b"changed")
+    refuse_bytes("changed-consumer", change_consumer,
+                 "sdist consumer receipt differs from selected artifacts")
     def forge_bundle(root: Path, fixture: dict) -> None:
         path = root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.bundle.json"
         payload = json.loads(path.read_text())

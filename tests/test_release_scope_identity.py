@@ -216,3 +216,39 @@ def test_sdist_source_members_must_match_exact_commit(scope_fixture, path, data,
             archive.addfile(member, io.BytesIO(payload))
     with pytest.raises(ValueError, match=error):
         M["scope_identity"](artifact, "sdist", source, sha, rows["sdist"]["build_env"])
+
+
+def test_sdist_consumer_receipt_binds_both_finished_distributions(scope_fixture, monkeypatch):
+    import shutil
+
+    source, sha, rows, _ = scope_fixture
+    monkeypatch.syspath_prepend(str(ROOT / "scripts/ci"))
+    consumer = runpy.run_path(str(ROOT / "scripts/ci/release_sdist_consumer.py"))
+    leg = next(iter(rows))
+    direct = Path("dist") / rows[leg]["file"]
+    with zipfile.ZipFile(direct, "a") as archive:
+        archive.writestr("fast_mlsirm/_core.fixture.so", b"native extension")
+    rows[leg]["sha256"] = M["hash_file"](direct)
+    sdist = Path("dist") / rows["sdist"]["file"]
+    sdist_input = Path("sdist-input")
+    sdist_input.mkdir()
+    shutil.copyfile(sdist, sdist_input / sdist.name)
+    sdist_row = Path("sdist.tsv")
+    wheel_row = Path(f"{leg}.tsv")
+    for path, row in ((sdist_row, rows["sdist"]), (wheel_row, rows[leg])):
+        path.write_text("\t".join([row["target"], "true", "clean-target-repeat-same-env",
+                                    row["sha256"], row["sha256"], row["file"], row["build_env"]]) + "\n")
+    prepared = Path("sdist-consumer")
+    consumer["prepare"](source, sha, sdist_row, sdist_input, prepared)
+    built = prepared / "source/dist-consumer"
+    built.mkdir()
+    shutil.copyfile(direct, built / direct.name)
+    output = Path("repro-digest")
+    output.mkdir()
+    receipt = consumer["capture"](source, sha, wheel_row, Path("dist"), prepared, output)
+    M["verify_sdist_consumer"](receipt, output / f"{leg}.consumer.whl", direct,
+                               rows[leg], rows["sdist"], sha)
+    receipt["sdist_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="consumer receipt differs"):
+        M["verify_sdist_consumer"](receipt, output / f"{leg}.consumer.whl", direct,
+                                   rows[leg], rows["sdist"], sha)

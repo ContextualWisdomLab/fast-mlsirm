@@ -375,7 +375,7 @@ jobs:
 
   wheels:
     name: wheels (${{ matrix.target }}, py${{ matrix.python-version }})
-    needs: verify-release
+    needs: [verify-release, sdist]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     env:
@@ -600,6 +600,35 @@ jobs:
         run: |
           set -euo pipefail
           python trusted-control/scripts/ci/capture_release_runtime.py "repro-digest/$LEG.tsv" dist "$RUNNER_TEMP"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: dist-sdist
+          path: sdist-input
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: repro-digest-sdist
+          path: sdist-proof
+      - name: Verify and unpack the same-run sdist
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+        run: python trusted-control/scripts/ci/release_sdist_consumer.py prepare sdist-proof/sdist.tsv sdist-input sdist-consumer
+      - name: Build this wheel target from the verified sdist
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+        with:
+          command: build
+          working-directory: sdist-consumer/source
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          container: ${{ matrix.container }}
+          maturin-version: v1.15.0
+          docker-options: -e SOURCE_DATE_EPOCH
+          args: --release --out dist-consumer -i ${{ matrix.interpreter }}
+      - name: Capture target sdist consumer wheel
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+          LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
+        run: python trusted-control/scripts/ci/release_sdist_consumer.py capture "repro-digest/$LEG.tsv" dist sdist-consumer repro-digest
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dist-wheel-${{ matrix.target }}-py${{ matrix.python-version }}
@@ -870,7 +899,7 @@ jobs:
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@d8e029c1b6c48a89da18540a015dd25421ab07dd
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@8d45e81c4e9a1f431dc632b69539ba8fb387ed2c
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
@@ -1146,7 +1175,8 @@ jobs:
               expected_members = {f"{leg}.tsv", f"{leg}.bundle.json",
                                   f"{leg}.build-first.json", f"{leg}.build-second.json"}
               if leg != "sdist":
-                  expected_members |= {f"{leg}.runtime.json", f"{leg}.runtime-requirements.txt"}
+                  expected_members |= {f"{leg}.runtime.json", f"{leg}.runtime-requirements.txt",
+                                       f"{leg}.consumer.json", f"{leg}.consumer.whl"}
               if (leg == "sdist" and set(members) != expected_members
                       or leg != "sdist" and not expected_members <= set(members)):
                   raise SystemExit(f"{leg}: scope evidence artifact members differ from build output")
@@ -1165,6 +1195,12 @@ jobs:
                                         object_pairs_hook=unique_object)
               transport.verify_build_scope(build_first, build_second, row, Path("release-source"), commit)
               if leg != "sdist":
+                  consumer = json.loads(members[f"{leg}.consumer.json"].read_text(encoding="utf-8"),
+                                        object_pairs_hook=unique_object)
+                  transport.verify_sdist_consumer(
+                      consumer, members[f"{leg}.consumer.whl"], distribution, row,
+                      rows["sdist"], commit,
+                  )
                   runtime = json.loads(members[f"{leg}.runtime.json"].read_text(encoding="utf-8"),
                                        object_pairs_hook=unique_object)
                   transport.verify_runtime_inventory(

@@ -220,7 +220,8 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
         identities.add(identity)
     expected_members = {f"{leg}.tsv", f"{leg}.bundle.json", f"{leg}.runtime.json",
                         f"{leg}.runtime-requirements.txt", f"{leg}.build-first.json",
-                        f"{leg}.build-second.json"} | names
+                        f"{leg}.build-second.json", f"{leg}.consumer.json",
+                        f"{leg}.consumer.whl"} | names
     if set(evidence_members) != expected_members:
         raise ValueError(f"{leg}: scope evidence artifact members differ from build output")
     if (archives != sorted(archives, key=lambda item: item["file"])
@@ -283,6 +284,36 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
     if {key: value for key, value in first.items() if key != "pass"} != {
             key: value for key, value in second.items() if key != "pass"}:
         raise ValueError(f"{leg}: repeated build graphs or toolchains differ")
+
+
+def verify_sdist_consumer(receipt: dict, consumer: Path, direct: Path, row: dict,
+                          sdist_row: dict, source_sha: str) -> None:
+    """Bind one target's sdist rebuild to the published wheel and source archive."""
+    leg = row["target"]
+    if leg == "sdist" or sdist_row["target"] != "sdist":
+        raise ValueError("sdist consumer requires a wheel leg and source row")
+    if hash_file(direct) != row["sha256"]:
+        raise ValueError(f"{leg}: published wheel changed before consumer verification")
+    published = bundle_inventory(direct, leg, source_sha, row["build_env"])
+    inventory = bundle_inventory(consumer, leg, source_sha, row["build_env"])
+    def metadata_members(bundle: dict) -> dict[str, str]:
+        return {item["path"]: item["sha256"] for item in bundle["members"]
+                if item["path"].endswith((".dist-info/METADATA", ".dist-info/WHEEL"))}
+    metadata = metadata_members(inventory)
+    extension = [item for item in inventory["members"]
+                 if item["path"].startswith("fast_mlsirm/_core.")
+                 and item["path"].endswith((".so", ".pyd"))]
+    if metadata != metadata_members(published) or len(metadata) != 2 or len(extension) != 1:
+        raise ValueError(f"{leg}: consumer wheel differs from published metadata or native layout")
+    expected = {"schema_version": 1, "source_sha": source_sha, "leg": leg,
+                "build_env": row["build_env"], "sdist_file": sdist_row["file"],
+                "sdist_sha256": sdist_row["sha256"], "file": row["file"],
+                "published_sha256": row["sha256"], "consumer_sha256": inventory["sha256"],
+                "metadata_members": metadata,
+                "native_extension": {"member": extension[0]["path"],
+                                     "sha256": extension[0]["sha256"]}}
+    if receipt != expected:
+        raise ValueError(f"{leg}: sdist consumer receipt differs from selected artifacts")
 
 
 def materialize(selection: list[dict], repository: str, root: Path, fetch) -> list[dict]:

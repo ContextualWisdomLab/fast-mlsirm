@@ -88,6 +88,13 @@ the executable hash against the corresponding official release asset. The
 standalone executable's licence and Strix review is still distinct from the
 PyPI package review. The sdist and
 wheel builds still need complete Python build-tool and native dependency evidence.
+Each wheel target now also rebuilds from the same-run sdist after checking its
+digest and every packaged source member against the release commit. The separate
+consumer wheel and receipt stay in that target's immutable scope artifact;
+admission checks their hashes and the wheel metadata against the published wheel.
+The two native extension hashes need not match because build paths can differ.
+This records target buildability from the sdist, while consumer installation and
+dependency closure still need target evidence.
 File hashes establish the bundled bytes, but do not identify the origin or
 licence of each member or the libraries it loads.
 Admission must validate those claims against the corresponding distribution
