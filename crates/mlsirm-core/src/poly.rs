@@ -2688,7 +2688,7 @@ pub fn poly_information_curves(
 /// a microcomputer environment. *Applied Psychological Measurement, 6*(4),
 /// 431–444. https://doi.org/10.1177/014662168200600405
 #[allow(clippy::too_many_arguments)]
-fn score_poly_eap_with_prior(
+pub fn score_poly_eap_with_prior(
     y: &[usize],
     observed: Option<&[bool]>,
     n_persons: usize,

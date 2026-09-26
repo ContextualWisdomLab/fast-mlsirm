@@ -845,12 +845,16 @@ def score_polytomous(
     fit: PolytomousFit,
     *,
     q_theta: int,
+    prior_mean: float = 0.0,
+    prior_sd: float = 1.0,
 ) -> dict[str, np.ndarray]:
     """EAP trait scores for polytomous responses given a fitted model (compute
     in Rust). ``responses`` is persons x items of integer categories; ``fit`` is
     a :class:`PolytomousFit` from :func:`fit_polytomous`. ``NaN`` or ``-1`` marks a
     missing response. The posterior mean and standard deviation are evaluated
-    on a standard-normal quadrature grid (Bock & Mislevy, 1982). Returns
+    on a Gaussian-prior quadrature grid (Bock & Mislevy, 1982, pp. 432–433).
+    ``prior_mean`` and ``prior_sd`` specify that prior; defaults preserve
+    standard-normal scoring. Returns
     ``{"theta_eap", "theta_sd"}``.
 
     References
@@ -860,6 +864,16 @@ def score_polytomous(
     431–444. https://doi.org/10.1177/014662168200600405
     """
     validated_q_theta = _fit_quadrature_points(q_theta)
+    if not (
+        type(prior_mean) in (int, float)
+        or _is_exact_type(type(prior_mean), _NUMPY_INTEGER_SCALAR_TYPES)
+        or _is_exact_type(type(prior_mean), _NUMPY_FLOAT_SCALAR_TYPES)
+    ):
+        raise ValueError("prior_mean must be finite")
+    validated_prior_mean = float(prior_mean)
+    if not np.isfinite(validated_prior_mean):
+        raise ValueError("prior_mean must be finite")
+    validated_prior_sd = _positive_real(prior_sd, "prior_sd")
 
     slope = np.asarray(fit.slope, dtype=np.float64)
     cat_params = np.asarray(fit.cat_params, dtype=np.float64)
@@ -900,6 +914,8 @@ def score_polytomous(
         obs_arg,
         model,
         validated_q_theta,
+        validated_prior_mean,
+        validated_prior_sd,
     )
     return {
         "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),

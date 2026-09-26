@@ -9,7 +9,6 @@ import fast_mlsirm.fipc_group_score as fipc_group_score
 
 from fast_mlsirm.fipc_group_score import (
     _as_poly_fit,
-    _score_poly_eap_gaussian_prior,
     score_poly_fipc_group_persons,
 )
 from fast_mlsirm.polytomous import fit_polytomous, score_polytomous
@@ -53,7 +52,8 @@ def reference_bank() -> tuple[np.ndarray, np.ndarray]:
     return np.asarray(fit.slope), np.asarray(fit.cat_params)
 
 
-def test_score_poly_fipc_group_persons_smoke(reference_bank) -> None:
+@pytest.mark.parametrize("q_theta", [121, 481])
+def test_score_poly_fipc_group_persons_smoke(reference_bank, q_theta) -> None:
     ref_slope, ref_cat = reference_bank
     y_foc = _simulate(22, 120, 0.4, 1.1, TRUE_A)
     anchor = np.zeros(N_ITEMS, dtype=bool)
@@ -64,7 +64,7 @@ def test_score_poly_fipc_group_persons_smoke(reference_bank) -> None:
         anchor,
         ref_slope,
         ref_cat,
-        q_theta=Q,
+        q_theta=q_theta,
         max_iter=500,
         tol=1e-5,
     )
@@ -87,7 +87,7 @@ def test_nonconverged_fipc_never_returns_person_scores(monkeypatch) -> None:
     monkeypatch.setattr(fipc_group_score, "fit_poly_fipc", lambda *args, **kwargs: UnconvergedFit())
     monkeypatch.setattr(
         fipc_group_score,
-        "_score_poly_eap_gaussian_prior",
+        "score_polytomous",
         lambda *args, **kwargs: pytest.fail("nonconverged bank reached EAP scoring"),
     )
     with pytest.raises(RuntimeError, match="FIPC calibration did not converge: termination_reason=max_iter, n_iter=1"):
@@ -155,11 +155,11 @@ def test_eap_uses_focal_prior_not_dropped_n01(reference_bank) -> None:
     assert float(np.max(np.abs(out.theta_eap - dropped["theta_eap"]))) > 1e-3
 
     # Direct prior injection: non-unit negative prior shifts EAP vs N(0,1).
-    neg = _score_poly_eap_gaussian_prior(
-        y_foc, bank, mu=-0.75, sigma=1.4, q_theta=Q
+    neg = score_polytomous(
+        y_foc, bank, prior_mean=-0.75, prior_sd=1.4, q_theta=Q
     )
-    unit = _score_poly_eap_gaussian_prior(
-        y_foc, bank, mu=0.0, sigma=1.0, q_theta=Q
+    unit = score_polytomous(
+        y_foc, bank, prior_mean=0.0, prior_sd=1.0, q_theta=Q
     )
     assert float(np.mean(neg["theta_eap"])) < float(np.mean(unit["theta_eap"]))
 
@@ -171,7 +171,7 @@ def test_prior_matches_brute_force_and_standard_score(reference_bank) -> None:
     from fast_mlsirm.polytomous import PolytomousFit, predict_category_probabilities_polytomous
     bank = PolytomousFit("grm", slope, cat, 0.0, 0)
     y = np.array([[0] * N_ITEMS, [2] * N_ITEMS, [np.nan] + [1] * (N_ITEMS - 1), [-1] * N_ITEMS])
-    focal = _score_poly_eap_gaussian_prior(y, bank, mu=0.6, sigma=1.3, q_theta=481)
+    focal = score_polytomous(y, bank, prior_mean=0.6, prior_sd=1.3, q_theta=481)
     grid = np.linspace(-8, 8, 40001)
     probs = predict_category_probabilities_polytomous(bank, grid)
     prior = np.exp(-0.5 * ((grid - 0.6) / 1.3) ** 2)
@@ -184,7 +184,7 @@ def test_prior_matches_brute_force_and_standard_score(reference_bank) -> None:
         mean = np.sum(posterior * grid)
         sd = np.sqrt(np.sum(posterior * (grid - mean) ** 2))
         np.testing.assert_allclose([focal["theta_eap"][p], focal["theta_sd"][p]], [mean, sd], atol=1e-6)
-    unit = _score_poly_eap_gaussian_prior(y, bank, mu=0, sigma=1, q_theta=Q)
+    unit = score_polytomous(y, bank, prior_mean=0, prior_sd=1, q_theta=Q)
     native = score_polytomous(y, bank, q_theta=Q)
     np.testing.assert_allclose(unit["theta_eap"], native["theta_eap"], atol=1e-10)
     np.testing.assert_allclose(unit["theta_sd"], native["theta_sd"], atol=1e-10)
@@ -201,4 +201,23 @@ def test_invalid_responses(reference_bank, bad) -> None:
     y = np.zeros((1, N_ITEMS))
     y[0, 0] = bad
     with pytest.raises(ValueError):
-        _score_poly_eap_gaussian_prior(y, bank, mu=0, sigma=1, q_theta=Q)
+        score_polytomous(y, bank, prior_mean=0, prior_sd=1, q_theta=Q)
+
+
+@pytest.mark.parametrize(
+    ("prior_mean", "prior_sd"),
+    [(np.nan, 1.0), (0.0, 0.0), (0.0, np.inf)],
+)
+def test_invalid_focal_prior(reference_bank, prior_mean, prior_sd) -> None:
+    from fast_mlsirm.polytomous import PolytomousFit
+
+    slope, cat = reference_bank
+    bank = PolytomousFit("grm", slope, cat, 0.0, 0)
+    with pytest.raises(ValueError):
+        score_polytomous(
+            np.zeros((1, N_ITEMS), dtype=np.int64),
+            bank,
+            q_theta=Q,
+            prior_mean=prior_mean,
+            prior_sd=prior_sd,
+        )

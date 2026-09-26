@@ -4,6 +4,8 @@
 
 ### Changed
 
+- `score_polytomous` accepts an optional Gaussian prior mean and SD. FIPC group
+  scoring passes its fitted focal prior to the existing Rust EAP kernel.
 - Polytomous person fit now requires convergence by default, including for
   duck-typed fits with unknown convergence. `allow_unconverged=True` permits
   diagnostic use only for legacy or duck-typed fits and marks the result
