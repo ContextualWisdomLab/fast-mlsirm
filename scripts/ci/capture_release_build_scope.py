@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+from importlib.metadata import distributions
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
+import sys
 import tomllib
 
 from release_artifact_transport import expected_maturin_binary_sha256, hash_file
@@ -16,6 +19,47 @@ from release_artifact_transport import expected_maturin_binary_sha256, hash_file
 
 def _run(*args: str) -> str:
     return subprocess.run(args, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def _python_packages_with_files() -> list[dict]:
+    """Hash RECORD-listed files from the interpreter running the build hook."""
+    prefix = Path(sys.prefix).resolve()
+    result, total_files, total_bytes = [], 0, 0
+    for dist in distributions():
+        name = re.sub(r"[-_.]+", "-", dist.metadata["Name"]).lower()
+        files = dist.files
+        if (not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name)
+                or not dist.version or files is None):
+            raise ValueError("build interpreter distribution lacks RECORD identity")
+        members, seen = [], set()
+        for member in files:
+            logical = member.as_posix()
+            path = Path(dist.locate_file(member))
+            resolved = path.resolve()
+            if (not logical or len(logical) > 512 or logical.startswith("/")
+                    or "\\" in logical or any(ord(char) < 32 for char in logical)
+                    or logical in seen
+                    or path.is_symlink() or not resolved.is_relative_to(prefix)
+                    or not stat.S_ISREG(path.stat().st_mode)):
+                raise ValueError("build interpreter distribution file is unsafe")
+            seen.add(logical)
+            size = path.stat().st_size
+            total_files += 1
+            total_bytes += size
+            if total_files > 50_000 or total_bytes > 1024 * 1024 * 1024:
+                raise ValueError("build interpreter distribution files exceed limits")
+            digest = hash_file(path)
+            if path.stat().st_size != size:
+                raise ValueError("build interpreter distribution file changed during capture")
+            members.append({"path": logical, "size": size, "sha256": digest})
+        if not members:
+            raise ValueError("build interpreter distribution has no files")
+        result.append({"name": name, "version": dist.version,
+                       "files": sorted(members, key=lambda item: item["path"])})
+    result.sort(key=lambda item: item["name"])
+    if len({item["name"] for item in result}) != len(result):
+        raise ValueError("build interpreter has duplicate distributions")
+    return result
 
 
 def capture(source: Path, environ: dict[str, str]) -> dict:
@@ -35,23 +79,9 @@ def capture(source: Path, environ: dict[str, str]) -> dict:
         raise ValueError("build scope container identity differs from target")
     if not _run(interpreter, "--version").startswith(f"Python {python}."):
         raise ValueError("build interpreter differs from wheel target")
-    python_packages = json.loads(_run(interpreter, "-c", """
-import json
-import re
-from importlib.metadata import distributions
-
-rows = [{"name": re.sub(r"[-_.]+", "-", dist.metadata["Name"]).lower(),
-         "version": dist.version} for dist in distributions()]
-print(json.dumps(sorted(rows, key=lambda row: row["name"])))
-"""))
-    if (type(python_packages) is not list
-            or any(type(item) is not dict or set(item) != {"name", "version"}
-                   or type(item["name"]) is not str or not item["name"]
-                   or type(item["version"]) is not str or not item["version"]
-                   for item in python_packages)
-            or python_packages != sorted(python_packages, key=lambda item: item["name"])
-            or len({item["name"] for item in python_packages}) != len(python_packages)):
-        raise ValueError("build interpreter has ambiguous Python distributions")
+    if Path(_run(interpreter, "-c", "import sys; print(sys.executable)")).resolve() != Path(sys.executable).resolve():
+        raise ValueError("build scope runs under a different Python interpreter")
+    python_packages = _python_packages_with_files()
     pyproject = source / "pyproject.toml"
     lock = source / "crates/fast-mlsirm-py/Cargo.lock"
     locked = {(item["name"], item["version"], item.get("source")): item.get("checksum")

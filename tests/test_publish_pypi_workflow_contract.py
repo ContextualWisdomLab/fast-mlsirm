@@ -684,7 +684,8 @@ def _admission_fixture(root: Path) -> dict:
                      "maturin_version": "maturin 1.15.0",
                      "maturin_binary_sha256": expected_maturin(leg, build_env(leg)),
                      "python_version": f"Python {version}.0",
-                     "python_packages": [{"name": "pip", "version": "25.2"}],
+                     "python_packages": [{"name": "pip", "version": "25.2", "files": [
+                         {"path": "pip/__init__.py", "size": 1, "sha256": "a" * 64}]}],
                      "cargo_features": [] if target == "sdist" else ["pyo3/extension-module"],
                      "cargo_targets": {triple: graph for triple in targets}}
             (folder / f"{leg}.build-{build_pass}.json").write_text(json.dumps(build, sort_keys=True) + "\n")
@@ -727,8 +728,11 @@ def test_build_scope_receipts_bind_wheel_lock_and_repeat(tmp_path: Path) -> None
     with pytest.raises(ValueError, match="toolchain or leg"):
         verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
     second = json.loads((folder / f"{leg}.build-second.json").read_text())
-    second["python_packages"] = [{"name": "pip", "version": "forged"}]
+    second["python_packages"][0]["files"][0]["sha256"] = "b" * 64
     with pytest.raises(ValueError, match="repeated build graphs or toolchains differ"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+    second["python_packages"][0]["files"][0]["path"] = "../../unexpected\\file"
+    with pytest.raises(ValueError, match="distribution file is malformed"):
         verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
 
 
@@ -789,7 +793,7 @@ def test_sdist_capture_records_runner_tools_without_cargo_metadata(tmp_path: Pat
         if args == ("python", "--version"):
             return "Python 3.12.0"
         if args[:2] == ("python", "-c"):
-            return '[{"name": "pip", "version": "25.2"}]'
+            return sys.executable
         if args == ("cargo", "--version"):
             return "cargo 1.90.0"
         if args == ("rustc", "--version"):
@@ -799,6 +803,9 @@ def test_sdist_capture_records_runner_tools_without_cargo_metadata(tmp_path: Pat
         raise AssertionError(f"unexpected command: {args}")
 
     monkeypatch.setitem(capture.__globals__, "_run", run)
+    packages = [{"name": "pip", "version": "25.2", "files": [
+        {"path": "pip/__init__.py", "size": 1, "sha256": "a" * 64}]}]
+    monkeypatch.setitem(capture.__globals__, "_python_packages_with_files", lambda: packages)
     monkeypatch.setitem(capture.__globals__, "expected_maturin_binary_sha256", lambda *_: "asset-hash")
     monkeypatch.setitem(capture.__globals__, "hash_file", lambda _: "asset-hash")
     monkeypatch.setattr(capture.__globals__["shutil"], "which", lambda _: "/tmp/maturin")
@@ -811,7 +818,38 @@ def test_sdist_capture_records_runner_tools_without_cargo_metadata(tmp_path: Pat
     assert receipt["build_env"] == "runner:ubuntu/test/Linux/X64"
     assert receipt["cargo_targets"] == {}
     assert receipt["cargo_features"] == []
-    assert receipt["python_packages"] == [{"name": "pip", "version": "25.2"}]
+    assert receipt["python_packages"] == packages
+
+
+def test_build_package_inventory_hashes_installed_files(tmp_path: Path, monkeypatch) -> None:
+    import runpy
+    from pathlib import PurePosixPath
+    import pytest
+
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "scripts/ci"))
+    inventory = runpy.run_path(str(REPO_ROOT / "scripts/ci/capture_release_build_scope.py"))["_python_packages_with_files"]
+    prefix = tmp_path / "python"
+    target = prefix / "site-packages/pkg.py"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"installed bytes")
+
+    class Distribution:
+        metadata = {"Name": "My_Pkg"}
+        version = "1.0"
+        files = [PurePosixPath("site-packages/pkg.py")]
+
+        def locate_file(self, member):
+            return prefix / member
+
+    monkeypatch.setattr(inventory.__globals__["sys"], "prefix", str(prefix))
+    monkeypatch.setitem(inventory.__globals__, "distributions", lambda: [Distribution()])
+    assert inventory() == [{"name": "my-pkg", "version": "1.0", "files": [
+        {"path": "site-packages/pkg.py", "size": len(b"installed bytes"),
+         "sha256": hashlib.sha256(b"installed bytes").hexdigest()}]}]
+    Distribution.files = [PurePosixPath("../outside.py")]
+    (tmp_path / "outside.py").write_bytes(b"foreign bytes")
+    with pytest.raises(ValueError, match="unsafe"):
+        inventory()
 
 
 def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> subprocess.CompletedProcess:

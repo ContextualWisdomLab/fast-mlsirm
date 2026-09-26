@@ -287,7 +287,7 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
             raise ValueError(f"{leg}: build receipt differs from source, toolchain or leg")
         packages = receipt["python_packages"]
         if (type(packages) is not list
-                or any(type(item) is not dict or set(item) != {"name", "version"}
+                or any(type(item) is not dict or set(item) != {"name", "version", "files"}
                        or type(item["name"]) is not str
                        or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", item["name"])
                        or type(item["version"]) is not str or not item["version"]
@@ -295,6 +295,28 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
                 or packages != sorted(packages, key=lambda item: item["name"])
                 or len({item["name"] for item in packages}) != len(packages)):
             raise ValueError(f"{leg}: build interpreter package inventory is ambiguous")
+        file_count, byte_count = 0, 0
+        for package in packages:
+            files = package["files"]
+            if type(files) is not list or not files:
+                raise ValueError(f"{leg}: build interpreter distribution files are missing")
+            paths = set()
+            for file in files:
+                if (type(file) is not dict or set(file) != {"path", "size", "sha256"}
+                        or type(file["path"]) is not str or not file["path"]
+                        or len(file["path"]) > 512 or file["path"].startswith("/")
+                        or "\\" in file["path"] or any(ord(char) < 32 for char in file["path"])
+                        or file["path"] in paths or type(file["size"]) is not int
+                        or file["size"] < 0 or type(file["sha256"]) is not str
+                        or not re.fullmatch(r"[0-9a-f]{64}", file["sha256"])):
+                    raise ValueError(f"{leg}: build interpreter distribution file is malformed")
+                paths.add(file["path"])
+                file_count += 1
+                byte_count += file["size"]
+            if files != sorted(files, key=lambda item: item["path"]):
+                raise ValueError(f"{leg}: build interpreter distribution files are unordered")
+        if file_count > 50_000 or byte_count > MAX_BUNDLE_BYTES:
+            raise ValueError(f"{leg}: build interpreter distribution files exceed limits")
         for triple in targets:
             graph = receipt["cargo_targets"][triple]
             if type(graph) is not list or not graph:
