@@ -2,7 +2,7 @@
 
 use mlsirm_core::regression::{
     chi2_sf_df1, f_sf, fit_ols, fit_ols_hc, linear_contrast, nested_ols_column_drop,
-    normal_wald_interval, sample_mean_sd,
+    normal_wald_interval, paired_absolute_differences, sample_mean_sd,
     sandwich_vcov, t_sf, HcType,
 };
 
@@ -12,6 +12,16 @@ fn assert_close(a: f64, b: f64, tol: f64) {
         "expected {b}, got {a} (tol={tol}, |diff|={})",
         (a - b).abs()
     );
+}
+
+#[test]
+fn paired_difference_checks_values_and_shape() {
+    let (per_pair, maximum) = paired_absolute_differences(&[1.0, -2.0], &[2.5, -1.0]).unwrap();
+    assert_eq!(per_pair, vec![1.5, 1.0]);
+    assert_eq!(maximum, 1.5);
+    assert!(paired_absolute_differences(&[], &[]).is_err());
+    assert!(paired_absolute_differences(&[1.0], &[]).is_err());
+    assert!(paired_absolute_differences(&[f64::MAX], &[-f64::MAX]).is_err());
 }
 
 #[test]

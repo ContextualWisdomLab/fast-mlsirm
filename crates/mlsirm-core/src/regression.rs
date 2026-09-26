@@ -202,6 +202,27 @@ pub fn sample_mean_sd(values: &[f64]) -> Result<(f64, f64), String> {
     Ok((mean, sd))
 }
 
+/// Absolute differences for paired finite values and their maximum.
+pub fn paired_absolute_differences(left: &[f64], right: &[f64]) -> Result<(Vec<f64>, f64), String> {
+    if left.is_empty() || left.len() != right.len() {
+        return Err("paired values must be nonempty and have equal lengths".to_owned());
+    }
+    let mut differences = Vec::with_capacity(left.len());
+    let mut maximum = 0.0_f64;
+    for (&a, &b) in left.iter().zip(right) {
+        if !a.is_finite() || !b.is_finite() {
+            return Err("paired values must be finite".to_owned());
+        }
+        let difference = (a - b).abs();
+        if !difference.is_finite() {
+            return Err("paired absolute difference is not finite".to_owned());
+        }
+        maximum = maximum.max(difference);
+        differences.push(difference);
+    }
+    Ok((differences, maximum))
+}
+
 /// Normal-Wald interval for an estimate and supplied standard error.
 ///
 /// Pennsylvania State University (n.d.), *STAT 501*, Lesson 13,

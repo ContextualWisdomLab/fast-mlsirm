@@ -18,6 +18,7 @@ from fast_mlsirm import (
     fit_ols_hc,
     nested_ols_column_drop,
     normal_wald_interval,
+    paired_absolute_differences,
     sample_mean_sd,
 )
 from fast_mlsirm.regression import f_sf, t_sf
@@ -185,3 +186,15 @@ def test_report_values_use_rust_with_explicit_interval_level():
         normal_wald_interval(2.0, 0.5, 0.0)
     with pytest.raises(ValueError):
         normal_wald_interval(2.0, 0.5, 1.0)
+
+
+def test_paired_absolute_differences_use_rust_and_reject_bad_pairs():
+    result = paired_absolute_differences(
+        np.array([1.0, -2.0]), np.array([2.5, -1.0])
+    )
+    assert result["per_pair_abs_diff"].tolist() == [1.5, 1.0]
+    assert result["max_abs_diff"] == 1.5
+    with pytest.raises(ValueError):
+        paired_absolute_differences(np.array([1.0]), np.array([]))
+    with pytest.raises(ValueError):
+        paired_absolute_differences(np.array([np.finfo(float).max]), np.array([-np.finfo(float).max]))
