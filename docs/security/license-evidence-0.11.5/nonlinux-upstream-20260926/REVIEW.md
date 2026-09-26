@@ -288,6 +288,14 @@ filenames above. Its [build script](https://github.com/google/atheris/blob/maste
 can use a caller-selected `LIBFUZZER_LIB` or `CLANG_BIN`, so that moving source
 file cannot identify the LLVM inputs of the published wheels. The four native
 hashes remain HOLD until an exact build record or bound notice is available.
+Direct inspection of the three exact wheel ZIPs reconfirmed that each contains
+the same four native-file SHA256 digests listed below. In the extracted
+`libclang_rt.fuzzer_no_main.a`, `FuzzerDriver.cpp.o` has a DWARF source path
+`/root/llvm-project/compiler-rt/lib/fuzzer/FuzzerDriver.cpp`; its ELF `.comment`
+names GCC 10.2.1 (Red Hat). `asan_with_fuzzer.so` also names GCC 10.2.1 and
+4.8.5 in `.comment`. These embedded paths identify a compiler-rt build family,
+but neither an LLVM source commit nor a license-notice copy. They do not clear
+the four native-file HOLD reasons.
 The native SHA256 digests are `3d5fbe5d97101964713e476f85c21393d769a7ad3355538eba1e36590c68bed7`
 (`asan_with_fuzzer.so`), `60d06f6748c007c46c772b0abee959053973ee4b607a88f9f3db3562b2bbecaf`
 (`libclang_rt.fuzzer_no_main.a`), `d77a11a9024b34aa37c86b41f78be3ce2d7ce59067208c1fb662cd216c50eb1c`
