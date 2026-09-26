@@ -562,6 +562,8 @@ jobs:
     outputs:
       distribution_set_artifact_id: ${{ steps.record-upload.outputs.artifact-id }}
       distribution_set_artifact_digest: sha256:${{ steps.record-upload.outputs.artifact-digest }}
+      selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}
+      selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -665,6 +667,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
             > run-attempt.json
       - name: Bind all verified distribution bytes to immutable artifact IDs
+        id: bind-distributions
         env:
           RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
           RELEASE_TAG: ${{ inputs.release_tag }}
@@ -762,6 +765,9 @@ jobs:
           Path("release-gate-distribution-set.json").write_text(
               json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
           )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"selected_wheel_filename={rows['x86_64-unknown-linux-gnu-py3.12']['file']}\n")
+              output.write(f"selected_sdist_filename={rows['sdist']['file']}\n")
           PY
       - id: record-upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -772,16 +778,29 @@ jobs:
             release-scope-identities.json
             release-gate-distribution-set.json
 
-  # R5b: nothing is tagged, released or published unless this job proves, for
-  # this exact run, that the 13 distribution files are the reproducibility-
-  # verified bytes of release_commit AND that each of the 12 wheel legs carries a
-  # sealed licence evidence bundle over exactly those bytes. The licence gate
-  # callers are not wired yet (R5c; central B1/B2 open), so this job currently
-  # refuses every release. That is intentional fail-closed behaviour: there is
-  # no skip, default or placeholder verdict.
+  dependency-gate:
+    name: complete dependency licence and Strix gate
+    needs: [verify-release, reproducibility-record]
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@c203246ce6eb12dc601a8cb6d403c82d43fd2776
+    with:
+      source_repository: ${{ github.repository }}
+      source_sha: ${{ needs.verify-release.outputs.release_commit }}
+      ecosystems: python,cargo
+      python_lock_path: requirements/package.txt
+      cargo_manifest_path: Cargo.toml
+      distribution_set_artifact_id: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_id }}
+      distribution_set_artifact_digest: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_digest }}
+      wheel_filename: ${{ needs.reproducibility-record.outputs.selected_wheel_filename }}
+      sdist_filename: ${{ needs.reproducibility-record.outputs.selected_sdist_filename }}
+    secrets: inherit
+
+  # R5b/R5c: nothing is tagged, released or published until the exact thirteen
+  # files match both the reproducibility record and a successful same-run
+  # central licence/Strix verdict. Target-specific scope evidence and hosted
+  # exact-head proof remain required; the admission job still refuses release.
   release-admission:
     name: release admission
-    needs: [verify-release, reproducibility-record]
+    needs: [verify-release, reproducibility-record, dependency-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -804,12 +823,6 @@ jobs:
           ref: ${{ github.sha }}
           path: trusted-control
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ContextualWisdomLab/.github
-          ref: d4d80fda02f0d44998611ee9d35d434e946ca4d3
-          path: trusted-gate
-          persist-credentials: false
       - name: List this run's artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -817,7 +830,18 @@ jobs:
           set -euo pipefail
           gh api --paginate "repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100" \
             --jq '.artifacts[]' > run-artifacts.jsonl
+          gh api "repos/$REPOSITORY/actions/runs/$RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
+            > run-attempt.json
       - name: Require the exact same-run artifact set
+        env:
+          RECORD_ID: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_id }}
+          RECORD_DIGEST: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_digest }}
+          VERDICT_ID: ${{ needs.dependency-gate.outputs.full_set_verdict_artifact_id }}
+          VERDICT_DIGEST: ${{ needs.dependency-gate.outputs.full_set_verdict_artifact_digest }}
+          VERDICT_NAME: ${{ format('{0}--full-set-verdict', needs.dependency-gate.outputs.evidence_artifact_name) }}
+          SEALED_NAME: ${{ needs.dependency-gate.outputs.evidence_artifact_name }}
+          SEALED_ID: ${{ needs.dependency-gate.outputs.evidence_artifact_id }}
+          SEALED_DIGEST: ${{ needs.dependency-gate.outputs.evidence_artifact_digest }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -825,9 +849,8 @@ jobs:
           import os
           import re
 
-          # 13 distribution artifacts (12 wheels + sdist) and 12 licence evidence
-          # bundles (one per wheel leg, each sealing that wheel and the sdist) are
-          # two different sets and are checked separately.
+          # The central job's success authenticates the complete verdict;
+          # immutable IDs and digests bind its two evidence artifacts here.
           legs = os.environ["EXPECTED_WHEEL_LEGS"].split()
           if len(legs) != 12 or len(set(legs)) != 12:
               raise SystemExit(f"expected 12 distinct wheel legs, got {legs!r}")
@@ -843,16 +866,13 @@ jobs:
                       raise SystemExit(f"duplicate artifact name in this run: {name}")
                   seen[name] = artifact
           distributions = {"dist-sdist"} | {f"dist-wheel-{leg}" for leg in legs}
-          evidence = {f"license-evidence-{leg}" for leg in legs}
+          evidence = {os.environ["VERDICT_NAME"], os.environ["SEALED_NAME"]}
           failures = []
           selected = []
           ids = set()
           missing_evidence = sorted(evidence - set(seen))
           if missing_evidence:
-              failures.append(
-                  f"licence evidence missing for {len(missing_evidence)} of 12 wheel legs; "
-                  "the licence gate is not wired (R5c, central B1/B2 open), so publication is refused"
-              )
+              failures.append(f"central release evidence missing: {missing_evidence}")
           for name in sorted(distributions | evidence | {"reproducibility-record"}):
               artifact = seen.get(name)
               if artifact is None:
@@ -869,6 +889,21 @@ jobs:
                   failures.append(f"{name}: missing or duplicate immutable artifact ID")
               else:
                   ids.add(artifact_id)
+              if name == "reproducibility-record" and (
+                  str(artifact_id) != os.environ["RECORD_ID"]
+                  or artifact.get("digest") != os.environ["RECORD_DIGEST"]
+              ):
+                  failures.append("reproducibility record differs from producer output")
+              if name == os.environ["VERDICT_NAME"] and (
+                  str(artifact_id) != os.environ["VERDICT_ID"]
+                  or artifact.get("digest") != os.environ["VERDICT_DIGEST"]
+              ):
+                  failures.append("full-set verdict differs from central gate output")
+              if name == os.environ["SEALED_NAME"] and (
+                  str(artifact_id) != os.environ["SEALED_ID"]
+                  or artifact.get("digest") != os.environ["SEALED_DIGEST"]
+              ):
+                  failures.append("sealed pair evidence differs from central gate output")
               selected.append({"id": artifact_id, "name": name, "digest": artifact.get("digest")})
           unexpected = sorted(
               name for name in seen
@@ -879,13 +914,19 @@ jobs:
               raise SystemExit("release admission refused:\n" + "\n".join(failures))
           with open("selected-artifacts.json", "w", encoding="utf-8") as output:
               json.dump(selected, output, sort_keys=True)
-          print(f"same-run artifacts: {len(distributions)} distribution artifacts, {len(evidence)} licence evidence bundles")
+          print(f"same-run artifacts: {len(distributions)} distributions and {len(evidence)} central evidence bundles")
           PY
       - name: Download selected immutable IDs and verify archive digests
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -I trusted-control/scripts/ci/release_artifact_transport.py "$REPOSITORY"
       - name: Admit exactly the verified bytes of release_commit
+        env:
+          RECORD_ID: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_id }}
+          RECORD_DIGEST: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_digest }}
+          VERDICT_ID: ${{ needs.dependency-gate.outputs.full_set_verdict_artifact_id }}
+          VERDICT_DIGEST: ${{ needs.dependency-gate.outputs.full_set_verdict_artifact_digest }}
+          VERDICT_NAME: ${{ format('{0}--full-set-verdict', needs.dependency-gate.outputs.evidence_artifact_name) }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -895,8 +936,6 @@ jobs:
           import json
           import os
           import re
-          import subprocess
-          import sys
           import zipfile
           from pathlib import Path
 
@@ -981,61 +1020,29 @@ jobs:
           if dist != recorded:
               failures.append(f"distribution files differ from the record: files={sorted(dist)!r}")
 
-          # Each of the 12 evidence bundles seals that leg's wheel and the same sdist.
-          sdist_row = rows["sdist"]
-          sealed_sdists = set()
-          for leg in legs:
-              name = f"license-evidence-{leg}"
-              bundle = Path("downloaded") / name
-              try:
-                  identity = json.loads((bundle / "source-identity.json").read_text(encoding="utf-8"))
-                  listed = {}
-                  for entry in (bundle / "checksums.sha256").read_text(encoding="utf-8").splitlines():
-                      digest, member = entry.split("  ", 1)
-                      listed[member] = digest
-              except (OSError, ValueError) as error:
-                  failures.append(f"{name}: unreadable sealed evidence ({error})")
-                  continue
-              members = {p.name for p in bundle.iterdir() if p.is_file()} - {"checksums.sha256"}
-              if set(listed) != members or any(sha256(bundle / m) != d for m, d in listed.items()):
-                  failures.append(f"{name}: checksums.sha256 does not match the bundle contents")
-              wheel = identity.get("artifacts", {}).get("wheel", {})
-              sdist = identity.get("artifacts", {}).get("sdist", {})
-              expected = {
-                  "source_repository": os.environ["REPOSITORY"],
-                  "source_sha": commit,
-                  "evidence_artifact_name": name,
-              }
-              for key, value in expected.items():
-                  if identity.get(key) != value:
-                      failures.append(f"{name}: {key}={identity.get(key)!r}, expected {value!r}")
-              if (wheel.get("filename"), wheel.get("sha256")) != (rows[leg]["file"], rows[leg]["sha256"]):
-                  failures.append(f"{name}: sealed wheel is not the recorded {leg} wheel")
-              if (sdist.get("filename"), sdist.get("sha256")) != (sdist_row["file"], sdist_row["sha256"]):
-                  failures.append(f"{name}: sealed sdist is not the recorded sdist")
-              sealed_sdists.add(sdist.get("sha256"))
-              # Reuse the organization-owned six-member verifier. This checks
-              # inert archive bytes/SBOM/source, not licence-gate authorization.
-              try:
-                  outer = next(a for a in selected if a["name"] == name)
-                  args = [sys.executable, "-I", "trusted-gate/scripts/ci/verify_exact_artifact_sbom_handoff.py",
-                          "--source-repository", os.environ["REPOSITORY"], "--source-sha", commit,
-                          "--evidence-artifact-name", name, "--evidence-artifact-digest", outer["digest"],
-                          "--evidence-root", str(bundle), "--predicate-type", identity["predicate_type"],
-                          "--cyclonedx-schema", identity["cyclonedx_schema"],
-                          "--source-identity-sha256", sha256(bundle / "source-identity.json"),
-                          "--checksum-sha256", sha256(bundle / "checksums.sha256"),
-                          "--output-manifest", f"verified-{name}.json"]
-                  for label, item in (("wheel", wheel), ("sdist", sdist)):
-                      for key in ("filename", "sha256", "sbom_filename", "sbom_sha256"):
-                          args += [f"--{label}-{key.replace('_', '-')}", item[key]]
-                  subprocess.run(args, check=True, stdout=subprocess.DEVNULL)
-              except (KeyError, StopIteration, subprocess.CalledProcessError) as error:
-                  failures.append(f"{name}: central sealed handoff rejected ({error})")
-          if len(sealed_sdists) > 1:
-              failures.append(f"the 12 sdist seals diverge: {sorted(map(str, sealed_sdists))!r}")
           if failures:
               raise SystemExit("release admission refused:\n" + "\n".join(failures))
+
+          # The central job result is required by `needs`; its immutable verdict
+          # must independently match the record and all current-attempt artifacts.
+          verifier_spec = importlib.util.spec_from_file_location(
+              "full_verdict", "trusted-control/scripts/ci/verify_release_full_set_verdict.py"
+          )
+          verifier = importlib.util.module_from_spec(verifier_spec)
+          verifier_spec.loader.exec_module(verifier)
+          verdict_name = os.environ["VERDICT_NAME"]
+          verifier.verify_full_set_verdict(
+              json.loads(Path("downloaded/reproducibility-record/release-gate-distribution-set.json").read_text()),
+              json.loads((Path("downloaded") / verdict_name / "full-set-verdict.json").read_text()),
+              [json.loads(line) for line in Path("run-artifacts.jsonl").read_text().splitlines()],
+              json.loads(Path("run-attempt.json").read_text()),
+              repository=os.environ["REPOSITORY"], source_sha=commit,
+              control_sha=os.environ["GITHUB_SHA"], run_id=int(os.environ["RUN_ID"]),
+              run_attempt=int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              record_id=int(os.environ["RECORD_ID"]), record_digest=os.environ["RECORD_DIGEST"],
+              verdict_id=int(os.environ["VERDICT_ID"]), verdict_digest=os.environ["VERDICT_DIGEST"],
+              verdict_name=verdict_name,
+          )
 
           # The same immutable-ID transport receipt covers this JSON alongside
           # the TSV. Recompute its source/archive bindings before any admission.
@@ -1046,11 +1053,10 @@ jobs:
           }
           transport.verify_scope_identities(scope_records, rows, distribution_paths, Path("release-source"), commit)
 
-          # The current central handoff does not authenticate a same-run full
-          # licence/Strix verdict or platform-complete inventory. A caller can
-          # manufacture a structurally valid seal. Do not publish a manifest
-          # until the trusted gate-success contract is wired (B2/B3/R5c).
-          raise SystemExit("release admission HOLD: trusted same-run full licence/Strix gate-success contract is not wired")
+          # The target-specific runtime/build/dev/optional/native/bundled
+          # inventories are still UNKNOWN. Hosted exact-head evidence is also
+          # required before release admission can be enabled.
+          raise SystemExit("release admission HOLD: platform-complete scope inventory is not verified")
 
           PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

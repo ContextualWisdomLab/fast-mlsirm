@@ -501,6 +501,7 @@ def test_tag_and_release_are_created_only_after_release_admission() -> None:
     assert _requires(text, "create-tag-and-release", "release-admission")
     assert _requires(text, "release-admission", "reproducibility-record")
     assert _requires(text, "release-admission", "verify-release")
+    assert _requires(text, "release-admission", "dependency-gate")
     for sink in ("release-assets", "publish-pypi"):
         assert _requires(text, sink, "create-tag-and-release"), sink
         assert _requires(text, sink, "release-admission"), sink
@@ -513,6 +514,23 @@ def test_tag_and_release_are_created_only_after_release_admission() -> None:
     wheels = _job_block(text, "wheels")
     matrix = re.findall(r"target: (\S+)\n(?:            .*\n)*?            python-version: \"([^\"]+)\"", wheels)
     assert sorted(f"{target}-py{version}" for target, version in matrix) == sorted(_expected_legs())
+
+
+def test_central_full_set_gate_is_required_before_admission() -> None:
+    workflow = _workflow_text()
+    record = _job_block(workflow, "reproducibility-record")
+    central = _job_block(workflow, "dependency-gate")
+    admission = _job_block(workflow, "release-admission")
+    assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
+    assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
+    assert "release-dependency-license-strix-gate.yml@c203246ce6eb12dc601a8cb6d403c82d43fd2776" in central
+    assert "needs: [verify-release, reproducibility-record]" in central
+    assert "secrets: inherit" in central
+    assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
+    assert "full_set_verdict_artifact_id" in admission
+    assert "full_set_verdict_artifact_digest" in admission
+    assert "verify_release_full_set_verdict.py" in admission
+    assert "release admission HOLD: platform-complete scope inventory is not verified" in admission
 
 
 def _admission_fixture(root: Path) -> dict:
@@ -548,23 +566,14 @@ def _admission_fixture(root: Path) -> dict:
         f"# release {_RELEASE_TAG} @ {_RELEASE_COMMIT}, SOURCE_DATE_EPOCH=1\n"
         "target\tbyte_verified\tverification\tsha256\trebuild_sha256\tfile\tbuild_env\n" + rows
     )
-    artifacts = [f"dist-wheel-{leg}" for leg in legs] + ["dist-sdist", "reproducibility-record"]
-    for leg in legs:
-        name = f"license-evidence-{leg}"
-        artifacts.append(name)
+    artifacts = [f"dist-wheel-{leg}" for leg in legs] + [
+        "dist-sdist", "reproducibility-record", "release-dependency-sealed-evidence",
+        "release-dependency-sealed-evidence--full-set-verdict",
+    ]
+    for name in artifacts[-2:]:
         bundle = root / "evidence" / name
         bundle.mkdir(parents=True)
-        members = {files[leg]: payload[leg], files["sdist"]: payload["sdist"],
-                   f"{files[leg]}.cdx.json": b"{}", f"{files['sdist']}.cdx.json": b"{}"}
-        identity = {"source_repository": "owner/repo", "source_sha": _RELEASE_COMMIT, "evidence_artifact_name": name,
-                    "artifacts": {"wheel": {"filename": files[leg], "sha256": sha[leg]},
-                                  "sdist": {"filename": files["sdist"], "sha256": sha["sdist"]}}}
-        members["source-identity.json"] = (__import__("json").dumps(identity) + "\n").encode()
-        for member, data in members.items():
-            (bundle / member).write_bytes(data)
-        (bundle / "checksums.sha256").write_text(
-            "".join(f"{hashlib.sha256(members[m]).hexdigest()}  {m}\n" for m in sorted(members))
-        )
+        (bundle / "placeholder.txt").write_text("inert test artifact\n")
     listing = [{"id": index, "name": name, "workflow_run": {"id": _RUN_ID}, "expired": False, "digest": "sha256:" + "d" * 64}
                for index, name in enumerate(artifacts, 1)]
     return {"legs": legs, "files": files, "listing": listing}
@@ -611,16 +620,73 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
             index = len(selected) + 1
             archives[index] = buffer.getvalue()
             selected.append({"id": index, "name": name, "digest": "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()})
+        by_name = {item["name"]: item for item in selected}
+        distributions = []
+        for line in record[2:]:
+            leg, _, _, sha, _, filename, _ = line.split("\t")
+            name = "dist-sdist" if leg == "sdist" else f"dist-wheel-{leg}"
+            artifact = by_name[name]
+            distributions.append({"leg": leg, "file": filename, "sha256": sha,
+                                  "artifact_id": artifact["id"], "artifact_name": name,
+                                  "artifact_digest": artifact["digest"]})
+        identity = {"source_repository": "owner/repo", "source_sha": _RELEASE_COMMIT,
+                    "control_sha": "d" * 40, "run_id": _RUN_ID, "run_attempt": 2}
+        manifest = {"schema_version": 1, **identity, "distributions": distributions}
+        record_artifact = by_name["reproducibility-record"]
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            for path in (root / "record").iterdir():
+                archive.writestr(path.name, path.read_bytes())
+            archive.writestr("release-gate-distribution-set.json", json.dumps(manifest))
+            archive.writestr("release-scope-identities.json", "[]")
+        archives[record_artifact["id"]] = buffer.getvalue()
+        record_artifact["digest"] = "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()
+        binding = {"key": "pypi/example@1", "name": "release-strix-binding-a2-"
+                   + hashlib.sha256(b"pypi/example@1").hexdigest(),
+                   "id": 1000, "digest": "sha256:" + "b" * 64}
+        verdict_artifact = by_name["release-dependency-sealed-evidence--full-set-verdict"]
+        verdict = {"schema": "cwl.release-full-set-verdict/1", "result": "PASS", **identity,
+                   "record_artifact_id": record_artifact["id"],
+                   "record_artifact_digest": record_artifact["digest"],
+                   "distributions": distributions, "binding_artifacts": [binding]}
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("full-set-verdict.json", json.dumps(verdict))
+        archives[verdict_artifact["id"]] = buffer.getvalue()
+        verdict_artifact["digest"] = "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()
         module = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
         receipt = module["materialize"](selected, "owner/repo", root / "downloaded", lambda repo, index, output: output.write(archives[index]))
         (root / "selected-artifacts.json").write_text(json.dumps(selected))
         (root / "transport-receipt.json").write_text(json.dumps(receipt))
+        (root / "run-artifacts.jsonl").write_text("".join(json.dumps({
+            **item, "workflow_run": {"id": _RUN_ID, "head_sha": "d" * 40},
+            "created_at": "2026-09-26T12:01:00Z", "expired": False,
+        }) + "\n" for item in selected + [binding]))
+        (root / "run-attempt.json").write_text(json.dumps({
+            "id": _RUN_ID, "run_attempt": 2, "head_sha": "d" * 40,
+            "run_started_at": "2026-09-26T12:00:00Z",
+        }))
         (root / "trusted-control").symlink_to(REPO_ROOT, target_is_directory=True)
         if os.environ.get("CWL_GATE_FIXTURE_ROOT"):
             (root / "trusted-gate").symlink_to(os.environ["CWL_GATE_FIXTURE_ROOT"], target_is_directory=True)
     script = _step_python(_job_block(_workflow_text(), "release-admission"), step)
     env = {**os.environ, "EXPECTED_WHEEL_LEGS": " ".join(_expected_legs()), "RUN_ID": str(_RUN_ID),
-           "RELEASE_COMMIT": _RELEASE_COMMIT, "RELEASE_TAG": _RELEASE_TAG, "REPOSITORY": "owner/repo"}
+           "RELEASE_COMMIT": _RELEASE_COMMIT, "RELEASE_TAG": _RELEASE_TAG, "REPOSITORY": "owner/repo",
+           "VERDICT_NAME": "release-dependency-sealed-evidence--full-set-verdict",
+           "SEALED_NAME": "release-dependency-sealed-evidence",
+           "RECORD_ID": "14", "VERDICT_ID": "16", "SEALED_ID": "15",
+           "RECORD_DIGEST": "sha256:" + "d" * 64,
+           "VERDICT_DIGEST": "sha256:" + "d" * 64,
+           "SEALED_DIGEST": "sha256:" + "d" * 64, "GITHUB_SHA": "d" * 40,
+           "GITHUB_RUN_ATTEMPT": "2"}
+    if step == _BYTES_STEP:
+        by_name = {item["name"]: item for item in selected}
+        env.update(RECORD_ID=str(by_name["reproducibility-record"]["id"]),
+                   RECORD_DIGEST=by_name["reproducibility-record"]["digest"],
+                   VERDICT_ID=str(by_name[env["VERDICT_NAME"]]["id"]),
+                   VERDICT_DIGEST=by_name[env["VERDICT_NAME"]]["digest"],
+                   SEALED_ID=str(by_name[env["SEALED_NAME"]]["id"]),
+                   SEALED_DIGEST=by_name[env["SEALED_NAME"]]["digest"])
     return subprocess.run([sys.executable, "-c", script], cwd=root, env=env, capture_output=True, text=True)
 
 
@@ -639,7 +705,8 @@ def test_distribution_set_manifest_binds_exact_same_run_bytes(tmp_path: Path) ->
     base_env = {**os.environ, "EXPECTED_WHEEL_LEGS": " ".join(_expected_legs()),
                 "RELEASE_COMMIT": _RELEASE_COMMIT, "RELEASE_TAG": _RELEASE_TAG,
                 "GITHUB_REPOSITORY": "owner/repo", "GITHUB_RUN_ID": str(_RUN_ID),
-                "GITHUB_RUN_ATTEMPT": "2", "GITHUB_SHA": "d" * 40}
+                "GITHUB_RUN_ATTEMPT": "2", "GITHUB_SHA": "d" * 40,
+                "GITHUB_OUTPUT": str(tmp_path / "producer-output.txt")}
 
     def run(name: str, mutate=None) -> subprocess.CompletedProcess[str]:
         root = tmp_path / name
@@ -696,9 +763,8 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
     ok_set = _run_admission(tmp_path / "ok", _SET_STEP, fixture["listing"])
     assert ok_set.returncode == 0, ok_set.stderr
     ok_bytes = _run_admission(tmp_path / "ok", _BYTES_STEP)
-    # This historical fixture has empty SBOMs and no full gate authorization.
-    # It must never be counted as successful release admission.
-    assert ok_bytes.returncode != 0 and "central sealed handoff rejected" in ok_bytes.stderr
+    # The synthetic verdict passes; the deliberately empty scope inventory still refuses.
+    assert ok_bytes.returncode != 0 and "scope identity set missing" in ok_bytes.stderr
     assert not (tmp_path / "ok" / "admitted-manifest.tsv").exists()
 
     def refuse_set(name: str, mutate, expected: str) -> None:
@@ -707,10 +773,11 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
         result = _run_admission(root, _SET_STEP, mutate(listing))
         assert result.returncode != 0 and expected in result.stderr, (name, result.stderr)
 
-    # Today no licence gate is wired: zero evidence bundles must refuse (fail-closed B1/B2).
-    refuse_set("no-evidence", lambda l: [a for a in l if not a["name"].startswith("license-evidence-")],
-               "licence evidence missing for 12 of 12 wheel legs")
-    refuse_set("eleven-evidence", lambda l: l[:-1], "licence evidence missing for 1 of 12 wheel legs")
+    refuse_set("no-evidence", lambda l: [a for a in l if a["name"] not in (
+        "release-dependency-sealed-evidence", "release-dependency-sealed-evidence--full-set-verdict")],
+        "central release evidence missing")
+    refuse_set("missing-verdict", lambda l: [a for a in l if not a["name"].endswith("--full-set-verdict")],
+        "central release evidence missing")
     refuse_set("other-run", lambda l: [dict(a, workflow_run={"id": 1}) if a["name"] == "dist-sdist" else a for a in l],
                "dist-sdist: not produced by run")
     refuse_set("expired", lambda l: [dict(a, expired=True) if a["name"] == "reproducibility-record" else a for a in l],
@@ -732,24 +799,6 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
 
     first = _expected_legs()[0]
 
-    def rewrite_identity(root: Path, leg: str, change) -> None:
-        bundle = root / "evidence" / f"license-evidence-{leg}"
-        identity = json.loads((bundle / "source-identity.json").read_text())
-        change(identity)
-        (bundle / "source-identity.json").write_text(json.dumps(identity) + "\n")
-        members = {p.name: p.read_bytes() for p in bundle.iterdir() if p.name != "checksums.sha256"}
-        (bundle / "checksums.sha256").write_text(
-            "".join(f"{hashlib.sha256(members[m]).hexdigest()}  {m}\n" for m in sorted(members))
-        )
-
-    refuse_bytes("source-sha", lambda r, f: rewrite_identity(r, first, lambda i: i.update(source_sha="e" * 40)),
-                 "source_sha=")
-    refuse_bytes("wheel-sha", lambda r, f: rewrite_identity(
-        r, first, lambda i: i["artifacts"]["wheel"].update(sha256="0" * 64)), "sealed wheel is not the recorded")
-    refuse_bytes("sdist-seal", lambda r, f: rewrite_identity(
-        r, first, lambda i: i["artifacts"]["sdist"].update(sha256="1" * 64)), "the 12 sdist seals diverge")
-    refuse_bytes("tampered-member", lambda r, f: (r / "evidence" / f"license-evidence-{first}" / "source-identity.json")
-                 .write_text("{}\n"), "checksums.sha256 does not match")
     refuse_bytes("extra-dist-file", lambda r, f: (r / "dist" / "extra.whl").write_bytes(b"x"),
                  "distribution files differ from the record")
     refuse_bytes("changed-dist-bytes", lambda r, f: (r / "dist" / f["files"][first]).write_bytes(b"other"),
@@ -764,20 +813,6 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
     refuse_bytes("record-unverified", lambda r, f: record_mutation(r, "\ttrue\t", "\tfalse\t"),
                  "record row is not byte-verified")
 
-    def identity_only(root: Path, fixture: dict) -> None:
-        for bundle in (root / "evidence").iterdir():
-            for path in bundle.iterdir():
-                if path.name not in ("source-identity.json", "checksums.sha256"):
-                    path.unlink()  # only synthetic members made by this test
-            identity_path = bundle / "source-identity.json"
-            (bundle / "checksums.sha256").write_text(
-                f"{hashlib.sha256(identity_path.read_bytes()).hexdigest()}  source-identity.json\n")
-
-    refuse_bytes("identity-only", identity_only, "central sealed handoff rejected")
-
-    # An untrusted JSON verdict is not a trusted gate-success receipt.
-    refuse_bytes("self-pass", lambda r, f: rewrite_identity(
-        r, first, lambda i: i.update(result="PASS", stage="full")), "central sealed handoff rejected")
 
 
 def test_publication_sinks_consume_only_the_admitted_bytes(tmp_path: Path) -> None:
@@ -856,7 +891,7 @@ def test_release_admission_ignores_legitimate_non_distribution_artifacts(tmp_pat
         ("unknown-evidence", diagnostics + ["license-evidence-unknown-leg"], "unexpected publishable or evidence"),
         ("unknown-dist", diagnostics + ["dist-wheel-unknown-leg"], "unexpected publishable or evidence"),
         ("duplicate-leg", diagnostics + [f"dist-wheel-{legs[0]}"], "duplicate artifact name"),
-        ("duplicate-evidence", diagnostics + [f"license-evidence-{legs[0]}"], "duplicate artifact name"),
+        ("duplicate-evidence", diagnostics + ["release-dependency-sealed-evidence"], "duplicate artifact name"),
     ):
         result = _run_admission(tmp_path / name, _SET_STEP, listing_with(tmp_path / name, extra))
         assert result.returncode != 0 and expected in result.stderr, (name, result.stderr)
