@@ -61,6 +61,9 @@ use mlsirm_core::bifactor_grm::{
 use mlsirm_core::bifactor_oakes::{
     bifactor_oakes_se as core_bifactor_oakes_se, BifactorOakesConfig,
 };
+use mlsirm_core::personfit_multidim::{
+    person_fit_multidim as core_person_fit_multidim, MultidimPersonFitInput,
+};
 use mlsirm_core::two_tier_oakes::{
     two_tier_oakes_se as core_two_tier_oakes_se, TwoTierOakesConfig,
 };
@@ -7337,6 +7340,71 @@ fn poly_person_fit(
     Ok(out.into())
 }
 
+/// Evaluate saved-fit conditional `l_z` for bifactor and two-tier GRMs.
+///
+/// References (APA 7th ed.): Albers, C. J., Meijer, R. R., & Tendeiro,
+/// J. N. (2016). Derivation and applicability of asymptotic results for
+/// multiple subtests person-fit statistics. *Applied Psychological
+/// Measurement, 40*(4), 274–288. https://doi.org/10.1177/0146621615622832
+/// (pp. 276–278, Equations 2–4 and 9). The correction in that paper is not
+/// transferred to cross-loading bifactor or two-tier models.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn multidim_person_fit(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    group: PyReadonlyArray1<'_, i64>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    a_primary: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    primary_mean: PyReadonlyArray1<'_, f64>,
+    primary_cov: PyReadonlyArray1<'_, f64>,
+    specific_sd: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_groups: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+    flag_threshold: f64,
+    n_reps: Option<usize>,
+    seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yy = poly_responses(y.as_slice()?, obs, n_cat)?;
+    let groups = group.as_slice()?.iter().map(|&g| {
+        usize::try_from(g).map_err(|_| PyValueError::new_err("group entries must be non-negative"))
+    }).collect::<PyResult<Vec<_>>>()?;
+    let smap = specific_map.as_slice()?.iter().map(|&s| {
+        i32::try_from(s).map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+    }).collect::<PyResult<Vec<_>>>()?;
+    let input = MultidimPersonFitInput {
+        y: &yy, observed: obs, group: &groups, specific_map: &smap,
+        a_primary: a_primary.as_slice()?, a_specific: a_specific.as_slice()?,
+        threshold: threshold.as_slice()?, primary_mean: primary_mean.as_slice()?,
+        primary_cov: primary_cov.as_slice()?, specific_sd: specific_sd.as_slice()?,
+        n_persons, n_items, n_primary, n_specific, n_groups, n_cat,
+        q_primary, q_specific, flag_threshold,
+    };
+    let result = core_person_fit_multidim(&input).map_err(PyValueError::new_err)?;
+    let null_p_value = n_reps.map(|reps| {
+        mlsirm_core::personfit_multidim::person_fit_multidim_resampling(&input, reps, seed)
+            .map_err(PyValueError::new_err)
+    }).transpose()?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("lz", result.lz)?;
+    out.set_item("primary_eap", result.primary_eap)?;
+    out.set_item("specific_eap", result.specific_eap)?;
+    out.set_item("n_observed", result.n_observed)?;
+    out.set_item("flagged", result.flagged)?;
+    out.set_item("null_p_value", null_p_value)?;
+    Ok(out.into())
+}
+
 /// Simulate a polytomous computerized adaptive test (Rust compute path). Returns
 /// a dict with per-simulee `theta_eap`, `theta_sd` (final CAT SE), and `n_used`.
 ///
@@ -10650,6 +10718,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_poly_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal, m)?)?;
     m.add_function(wrap_pyfunction!(poly_person_fit, m)?)?;
+    m.add_function(wrap_pyfunction!(multidim_person_fit, m)?)?;
     m.add_function(wrap_pyfunction!(poly_cat_simulate, m)?)?;
     m.add_function(wrap_pyfunction!(score_poly_eap, m)?)?;
     m.add_function(wrap_pyfunction!(score_wle_poly, m)?)?;
