@@ -77,7 +77,115 @@ fn tiny_oakes_config() -> BifactorOakesConfig {
         q_general: 7,
         q_specific: 7,
         fd_step: 1e-5,
+        slope_prior: crate::bifactor_grm::SlopePrior::None,
     }
+}
+
+#[test]
+fn map_information_adds_exact_prior_curvature_on_slopes_only() {
+    // MAP SE definition: information = Oakes observed information + the
+    // analytic lognormal |a| prior curvature on each slope diagonal; the
+    // threshold block and every off-diagonal entry are unchanged.
+    let (a_g, a_s, thresholds) = tiny_params();
+    let (y, n_persons) = tiny_data();
+    let run = |slope_prior| {
+        let cfg = BifactorOakesConfig {
+            slope_prior,
+            ..tiny_oakes_config()
+        };
+        bifactor_oakes_se(
+            &a_g,
+            &a_s,
+            &thresholds,
+            &y,
+            None,
+            &TINY_SPECIFIC_MAP,
+            n_persons,
+            TINY_N_ITEMS,
+            TINY_N_SPECIFIC,
+            TINY_N_CAT,
+            &cfg,
+        )
+        .expect("tiny Oakes assembly must succeed")
+    };
+    let (mu, sd) = (0.1, 0.5);
+    let mle = run(crate::bifactor_grm::SlopePrior::None);
+    let map = run(crate::bifactor_grm::SlopePrior::Lognormal { mu, sd });
+    let packed = pack_tiny(&a_g, &a_s, &thresholds);
+    let k = mle.labels.len();
+    assert_eq!(mle.labels, map.labels);
+    for r in 0..k {
+        for c in 0..k {
+            let expected = if r == c && mle.labels[r].starts_with("a_") {
+                mle.information[r * k + c]
+                    + crate::bifactor_grm::lnorm_abs_slope_prior_curvature(packed[r], mu, sd)
+            } else {
+                mle.information[r * k + c]
+            };
+            assert_eq!(map.information[r * k + c], expected, "entry ({r}, {c})");
+        }
+    }
+}
+
+#[test]
+fn map_information_non_pd_and_non_finite_are_reported_not_substituted() {
+    let (a_g, a_s, thresholds) = tiny_params();
+    let (y, n_persons) = tiny_data();
+    let run = |a_general: &[f64], slope_prior| {
+        let cfg = BifactorOakesConfig {
+            slope_prior,
+            ..tiny_oakes_config()
+        };
+        bifactor_oakes_se(
+            a_general,
+            &a_s,
+            &thresholds,
+            &y,
+            None,
+            &TINY_SPECIFIC_MAP,
+            n_persons,
+            TINY_N_ITEMS,
+            TINY_N_SPECIFIC,
+            TINY_N_CAT,
+            &cfg,
+        )
+        .expect("assembly reports, never errors, on curvature failure")
+    };
+    // mu far below ln|a| makes the prior curvature strongly negative.
+    let neg = run(&a_g, crate::bifactor_grm::SlopePrior::Lognormal { mu: -50.0, sd: 1.0 });
+    assert!(!neg.positive_definite && neg.vcov.is_none() && neg.se.is_none());
+    assert!(neg.non_pd_reason.is_some());
+    // a = 0 is outside the prior's support: non-finite, reported.
+    let mut at_zero = a_g.clone();
+    at_zero[0] = 0.0;
+    let zero = run(&at_zero, crate::bifactor_grm::SlopePrior::Lognormal { mu: 0.0, sd: 1.0 });
+    assert!(!zero.positive_definite && zero.se.is_none());
+    assert!(zero.non_pd_reason.expect("reason").contains("non-finite"));
+}
+
+#[test]
+fn map_information_rejects_invalid_prior() {
+    let (a_g, a_s, thresholds) = tiny_params();
+    let (y, n_persons) = tiny_data();
+    let cfg = BifactorOakesConfig {
+        slope_prior: crate::bifactor_grm::SlopePrior::Lognormal { mu: 0.0, sd: 0.0 },
+        ..tiny_oakes_config()
+    };
+    let err = bifactor_oakes_se(
+        &a_g,
+        &a_s,
+        &thresholds,
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect_err("sd = 0 must be a loud error");
+    assert!(err.contains("slope_prior_sd"), "{err}");
 }
 
 /// Pack `[a_G, a_S, d..]` per item in the assembly's free-vector order.
@@ -392,6 +500,7 @@ fn six_item_mle_is_positive_definite_with_matching_vcov_and_se() {
             seed: fit_seed,
             newton_iter: 10,
             ridge: 1e-8,
+            slope_prior: crate::bifactor_grm::SlopePrior::None,
             device: crate::Device::Cpu,
         };
         let fit = fit_bifactor_grm(
@@ -689,6 +798,7 @@ fn rejects_non_positive_fd_steps() {
             q_general: 7,
             q_specific: 7,
             fd_step,
+            slope_prior: crate::bifactor_grm::SlopePrior::None,
         };
         let err = Stage1Provider::new(
             &y,
