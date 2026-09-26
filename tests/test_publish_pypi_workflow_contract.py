@@ -331,6 +331,8 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     gate = _step_python(record, "Require a byte-verified row for every publishable artifact")
     assert "pattern: dist-*" in record
     assert "pattern: repro-digest-*" in record
+    assert "pattern: repro-digest-*\n          path: repro-digest\n          merge-multiple: false" in record
+    assert 'Path("repro-digest").glob("repro-digest-*/*.tsv")' in gate
     assert 'failures.append(f"{name}: no byte-verification row")' in gate
     assert 'row["sha256"] != sha or row["rebuild_sha256"] != sha' in gate
     assert "if failures:" in gate

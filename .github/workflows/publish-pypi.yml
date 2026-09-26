@@ -616,7 +616,7 @@ jobs:
         with:
           pattern: repro-digest-*
           path: repro-digest
-          merge-multiple: true
+          merge-multiple: false
       - name: Require a byte-verified row for every publishable artifact
         env:
           RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
@@ -631,7 +631,7 @@ jobs:
 
           header = ["target", "byte_verified", "verification", "sha256", "rebuild_sha256", "file", "build_env"]
           rows = {}
-          for path in sorted(Path("repro-digest").glob("*.tsv")):
+          for path in sorted(Path("repro-digest").glob("repro-digest-*/*.tsv")):
               for line in path.read_text(encoding="utf-8").splitlines():
                   fields = line.split("\t")
                   if len(fields) != len(header):
