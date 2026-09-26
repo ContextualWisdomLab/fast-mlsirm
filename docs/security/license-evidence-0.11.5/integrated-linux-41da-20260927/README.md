@@ -63,7 +63,7 @@ HOLD); it is not the 158-row binding union. Windows and macOS candidate wheels
 and the published 12-wheel matrix have not been verified here. No final gate verdict follows
 from this Linux-only evidence.
 
-## Windows source graph follow-up
+## Non-Linux source graph follow-up
 
 The same extracted source was rerun with Cargo 1.97.1, `--locked --offline`,
 and `--filter-platform x86_64-pc-windows-msvc`. The target metadata SHA256 is
@@ -80,3 +80,15 @@ its 117 row objects exactly match the committed Windows snapshot. These files
 are under `inventory-windows-x86_64/` in the x86_64 build directory above.
 This establishes the third-party source graph only. A Windows wheel built from
 this source must still be checked against the Windows notice and source bytes.
+
+The same `--locked --offline` rerun for `x86_64-apple-darwin` produced target
+metadata SHA256 `98a6eb1bccfebf3c32d35c63df7041056a3c3c75efbe5ff2c0baeb8e3bbb502c`
+and inventory SHA256 `918de6e15bd8a6e6697d11aee886c819346645cdba22ab7fb21cae160c4f40af`.
+For `aarch64-apple-darwin` they are
+`55f571392ae406d3740368d5c6c8d087bd178ffd9ac13367186dddcf6e5bbc1d`
+and `393e48a3641bc0c57346cfe24bc78c18fdd7461ea9e5c897966f563a81fa65a7`.
+Both verifier runs exited zero with no completeness gaps. Each target graph
+has 114 rows: 102 PERMISSIVE, the same ten `objc2` family HOLD rows, and two
+own-crate HOLD rows because the input is a Linux wheel with a Linux notice.
+These inventories are under `inventory-<target>/` in the x86_64 build directory.
+They do not verify a macOS wheel or clear its ten third-party HOLD rows.
