@@ -167,6 +167,7 @@ fn rust_two_tier_oakes_se_matches_mirt_fixture() {
     let pmap = primary_map();
     let smap = SPECIFIC_MAP.to_vec();
     let cfg = TwoTierOakesConfig {
+        estimate_primary_correlation: true,
         q_primary: QUADPTS,
         q_specific: QUADPTS,
         fd_step: 1e-5,

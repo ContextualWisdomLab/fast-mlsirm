@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Added
+
+- Saved multiple-group bifactor and two-tier GRM fits can now produce
+  per-person conditional `l_z`, posterior trait estimates, observed-item
+  counts, and caller-threshold flags. Optional seeded model resampling gives
+  an empirical lower-tail probability; no cross-loading `l_z*` or normal-null
+  calibration is claimed (#2116).
+
+### Changed
+
+- Polytomous person fit now requires convergence by default, including for
+  duck-typed fits with unknown convergence. `allow_unconverged=True` permits
+  diagnostic use only for legacy or duck-typed fits and marks the result
+  `valid_person_fit=False`, `diagnostic_only=True`; unconverged `PolyFipcFit`
+  always raises. Provenance retains convergence and termination fields (or
+  `"unknown"`). `PolytomousFit` retains its established standard-normal
+  EAP grid even with non-default `prior_mean`/`prior_sd`, which affect only
+  the `r0` correction. `PolyFipcFit` uses its fitted focal prior for both.
+
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 

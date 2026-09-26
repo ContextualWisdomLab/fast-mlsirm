@@ -61,6 +61,9 @@ use mlsirm_core::bifactor_grm::{
 use mlsirm_core::bifactor_oakes::{
     bifactor_oakes_se as core_bifactor_oakes_se, BifactorOakesConfig,
 };
+use mlsirm_core::personfit_multidim::{
+    person_fit_multidim as core_person_fit_multidim, MultidimPersonFitInput,
+};
 use mlsirm_core::two_tier_oakes::{
     two_tier_oakes_se as core_two_tier_oakes_se, TwoTierOakesConfig,
 };
@@ -140,7 +143,7 @@ use mlsirm_core::poly::{
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
     poly_cat_simulate as core_poly_cat_simulate, poly_dif_sweep as core_poly_dif,
     poly_information_curves as core_poly_information_curves,
-    poly_person_fit as core_poly_person_fit, poly_s_x2 as core_poly_s_x2,
+    poly_person_fit as core_poly_person_fit, poly_person_fit_focal as core_poly_person_fit_focal, poly_s_x2 as core_poly_s_x2,
     score_poly_eap as core_score_poly_eap, u3_poly_bootstrap_cutoff as core_u3_poly_cutoff,
     u3_poly_person_fit as core_u3_poly_person_fit, PolyModel,
 };
@@ -1874,9 +1877,9 @@ fn fit_bifactor_grm_fipc(
 }
 
 /// Single-group polytomous two-tier graded response model (Cai, 2010,
-/// abstract read; Cai, Yang, & Hansen, 2011, eq. 6-7, full text read;
+/// pp. 583-584, full text read; Cai, Yang, & Hansen, 2011, eq. 6-7, full text read;
 /// `mlsirm_core::two_tier_grm::fit_two_tier_grm`). Each item's `n_cat` ORDERED categories load a caller-supplied subset of
-/// the `n_primary` correlated primary dimensions (`a_primary`, row-major
+/// the `n_primary` primary dimensions (`a_primary`, row-major
 /// `n_items * n_primary`, unconstrained, `0` at fixed pattern positions)
 /// and at most one orthogonal specific factor (`a_specific`,
 /// unconstrained, `0` for specific-free items):
@@ -1904,15 +1907,14 @@ fn fit_bifactor_grm_fipc(
 ///
 /// Cai, L. (2010). A two-tier full-information item factor analysis model
 /// with applications. *Psychometrika, 75*(4), 581-612.
-/// https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text not
-/// accessible — no equation locator is drawn from it)
+/// https://doi.org/10.1007/s11336-010-9178-0 (full text read, pp. 583-584)
 ///
 /// Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
 /// item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
 /// https://doi.org/10.1037/a0023350 (full text read)
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, q_primary = 15, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15))]
+#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, q_primary = 15, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, primary_correlation = "estimate"))]
 fn fit_two_tier_grm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1930,7 +1932,17 @@ fn fit_two_tier_grm(
     tol: f64,
     n_starts: usize,
     seed: u64,
+    primary_correlation: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    let estimate_primary_correlation = match primary_correlation {
+        "estimate" => true,
+        "identity" => false,
+        _ => {
+            return Err(PyValueError::new_err(
+                "primary_correlation must be 'estimate' or 'identity'",
+            ))
+        }
+    };
     let y_slice = y.as_slice()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
         Some(o) => Some(o.as_slice()?.to_vec()),
@@ -1959,6 +1971,7 @@ fn fit_two_tier_grm(
         })
         .collect::<PyResult<_>>()?;
     let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation,
         q_primary,
         q_specific,
         max_iter,
@@ -2001,12 +2014,14 @@ fn fit_two_tier_grm(
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("best_start", res.best_start)?;
     out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("primary_identification", res.primary_identification)?;
     Ok(out.into())
 }
 
 /// Observed-information SEs for the confirmatory two-tier GRM via Oakes
 /// (1999, eq. 6, p. 480). Free vector: free primary slopes, optional
-/// specific slope, thresholds, Fisher-`z` primary correlations.
+/// specific slope, thresholds, and Fisher-`z` primary correlations only when
+/// `primary_correlation="estimate"` (Cai, 2010, pp. 583-584).
 /// `q_primary`/`q_specific`/`fd_step` are REQUIRED (ADR-0028 / #1929).
 /// Non-PD information returns `se=None` (never substituted).
 ///
@@ -2015,12 +2030,16 @@ fn fit_two_tier_grm(
 /// Statistical Society Series B: Statistical Methodology, 61*(2), 479-482.
 /// https://doi.org/10.1111/1467-9868.00188; Cai, L., Yang, J. S., & Hansen,
 /// M. (2011). Generalized full-information item bifactor analysis.
-/// *Psychological Methods, 16*(3), 221-248. https://doi.org/10.1037/a0023350
+/// *Psychological Methods, 16*(3), 221-248. https://doi.org/10.1037/a0023350;
+/// Cai, L. (2010). A two-tier full-information item factor analysis model
+/// with applications. *Psychometrika, 75*(4), 581-612.
+/// https://doi.org/10.1007/s11336-010-9178-0 (pp. 583-584)
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (
     a_primary, a_specific, threshold, phi, y, observed, primary_map, specific_map,
-    n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific, fd_step
+    n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific, fd_step,
+    primary_correlation = "estimate"
 ))]
 fn two_tier_oakes_se(
     py: Python<'_>,
@@ -2040,7 +2059,17 @@ fn two_tier_oakes_se(
     q_primary: usize,
     q_specific: usize,
     fd_step: f64,
+    primary_correlation: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    let estimate_primary_correlation = match primary_correlation {
+        "estimate" => true,
+        "identity" => false,
+        _ => {
+            return Err(PyValueError::new_err(
+                "primary_correlation must be 'estimate' or 'identity'",
+            ))
+        }
+    };
     let y_slice = y.as_slice()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
         Some(o) => Some(o.as_slice()?.to_vec()),
@@ -2080,6 +2109,7 @@ fn two_tier_oakes_se(
     let thr = threshold.as_slice()?.to_vec();
     let phi_vec = phi.as_slice()?.to_vec();
     let cfg = TwoTierOakesConfig {
+        estimate_primary_correlation,
         q_primary,
         q_specific,
         fd_step,
@@ -7308,7 +7338,7 @@ fn fit_nominal(
 ///     331-342. https://doi.org/10.1007/BF02294437
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, observed = None, model = "grm", q_theta = 21, prior_mean = 0.0, prior_sd = 1.0, flag_threshold = -1.645))]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, observed = None, model = "grm", q_theta = 21, prior_mean = 0.0, prior_sd = 1.0, flag_threshold = -1.645, focal_eap = false))]
 fn poly_person_fit(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -7323,11 +7353,17 @@ fn poly_person_fit(
     prior_mean: f64,
     prior_sd: f64,
     flag_threshold: f64,
+    focal_eap: bool,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
     let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
-    let res = core_poly_person_fit(
+    let person_fit = if focal_eap {
+        core_poly_person_fit_focal
+    } else {
+        core_poly_person_fit
+    };
+    let res = person_fit(
         &yv,
         obs,
         n_persons,
@@ -7347,6 +7383,71 @@ fn poly_person_fit(
     out.set_item("lz_star", res.lz_star)?;
     out.set_item("theta_eap", res.theta_eap)?;
     out.set_item("flagged", res.flagged)?;
+    Ok(out.into())
+}
+
+/// Evaluate saved-fit conditional `l_z` for bifactor and two-tier GRMs.
+///
+/// References (APA 7th ed.): Albers, C. J., Meijer, R. R., & Tendeiro,
+/// J. N. (2016). Derivation and applicability of asymptotic results for
+/// multiple subtests person-fit statistics. *Applied Psychological
+/// Measurement, 40*(4), 274–288. https://doi.org/10.1177/0146621615622832
+/// (pp. 276–278, Equations 2–4 and 9). The correction in that paper is not
+/// transferred to cross-loading bifactor or two-tier models.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn multidim_person_fit(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    group: PyReadonlyArray1<'_, i64>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    a_primary: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    primary_mean: PyReadonlyArray1<'_, f64>,
+    primary_cov: PyReadonlyArray1<'_, f64>,
+    specific_sd: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_groups: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+    flag_threshold: f64,
+    n_reps: Option<usize>,
+    seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yy = poly_responses(y.as_slice()?, obs, n_cat)?;
+    let groups = group.as_slice()?.iter().map(|&g| {
+        usize::try_from(g).map_err(|_| PyValueError::new_err("group entries must be non-negative"))
+    }).collect::<PyResult<Vec<_>>>()?;
+    let smap = specific_map.as_slice()?.iter().map(|&s| {
+        i32::try_from(s).map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+    }).collect::<PyResult<Vec<_>>>()?;
+    let input = MultidimPersonFitInput {
+        y: &yy, observed: obs, group: &groups, specific_map: &smap,
+        a_primary: a_primary.as_slice()?, a_specific: a_specific.as_slice()?,
+        threshold: threshold.as_slice()?, primary_mean: primary_mean.as_slice()?,
+        primary_cov: primary_cov.as_slice()?, specific_sd: specific_sd.as_slice()?,
+        n_persons, n_items, n_primary, n_specific, n_groups, n_cat,
+        q_primary, q_specific, flag_threshold,
+    };
+    let result = core_person_fit_multidim(&input).map_err(PyValueError::new_err)?;
+    let null_p_value = n_reps.map(|reps| {
+        mlsirm_core::personfit_multidim::person_fit_multidim_resampling(&input, reps, seed)
+            .map_err(PyValueError::new_err)
+    }).transpose()?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("lz", result.lz)?;
+    out.set_item("primary_eap", result.primary_eap)?;
+    out.set_item("specific_eap", result.specific_eap)?;
+    out.set_item("n_observed", result.n_observed)?;
+    out.set_item("flagged", result.flagged)?;
+    out.set_item("null_p_value", null_p_value)?;
     Ok(out.into())
 }
 
@@ -10663,6 +10764,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_poly_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal, m)?)?;
     m.add_function(wrap_pyfunction!(poly_person_fit, m)?)?;
+    m.add_function(wrap_pyfunction!(multidim_person_fit, m)?)?;
     m.add_function(wrap_pyfunction!(poly_cat_simulate, m)?)?;
     m.add_function(wrap_pyfunction!(score_poly_eap, m)?)?;
     m.add_function(wrap_pyfunction!(score_wle_poly, m)?)?;
