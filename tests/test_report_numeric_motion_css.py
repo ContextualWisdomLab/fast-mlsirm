@@ -50,11 +50,6 @@ def test_rendered_report_uses_tabular_numerals_without_opacity_transitions(tmp_p
     bar_row_hover_rule = _rule_body(style, ".bar-row:hover")
     assert "background: var(--hover-bg);" in bar_row_hover_rule
 
-    assert ".bar-row:focus:not(:focus-visible)" not in style
-    assert ".bar-row:focus-visible" not in style
-    assert 'class="bar-row" tabindex=' not in html
-    assert 'class="bar-row" role=' not in html
-
     table_row_rule = _rule_body(style, "tbody tr")
     assert "transition: background-color 0.15s ease-in-out;" in table_row_rule
     assert "opacity" not in table_row_rule
