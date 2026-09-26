@@ -39,3 +39,22 @@ def test_merge_conflict_backup_artifacts_are_absent_and_ignored():
     }
     assert "*.orig" in ignore_lines
     assert "*.rej" in ignore_lines
+
+
+def test_operator_billing_snapshots_are_absent_and_ignored():
+    """Orchestration billing/usage snapshots never ship in the library tree."""
+    repository_root = Path(__file__).resolve().parents[1]
+    tracked = sorted(
+        path
+        for path in _tracked_paths(repository_root)
+        if path.split("/", 1)[0] == "billing-snapshots"
+    )
+    assert tracked == []
+
+    ignore_lines = {
+        line.strip()
+        for line in (repository_root / ".gitignore")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    }
+    assert "billing-snapshots/" in ignore_lines

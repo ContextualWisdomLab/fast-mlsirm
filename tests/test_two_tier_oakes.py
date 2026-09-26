@@ -42,6 +42,7 @@ def tiny_two_tier():
         q_primary=7,
         q_specific=7,
         fd_step=1e-5,
+        primary_correlation="estimate",
         _rng=rng,
     )
 

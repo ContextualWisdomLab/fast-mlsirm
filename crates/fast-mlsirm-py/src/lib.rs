@@ -1990,7 +1990,7 @@ fn fit_two_tier_grm(
 #[pyo3(signature = (
     a_primary, a_specific, threshold, phi, y, observed, primary_map, specific_map,
     n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific, fd_step,
-    primary_correlation = "estimate"
+    primary_correlation
 ))]
 fn two_tier_oakes_se(
     py: Python<'_>,
@@ -7117,6 +7117,31 @@ fn polytomous_predictions(
     Ok(out.into())
 }
 
+/// Bifactor GRM expected total scores with specific-factor integration owned
+/// by the shared Rust quadrature and polytomous kernels.
+#[pyfunction]
+#[pyo3(signature = (theta, a_general, a_specific, thresholds, n_items, n_cat, q_specific))]
+fn bifactor_expected_total_score(
+    theta: PyReadonlyArray1<'_, f64>,
+    a_general: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    thresholds: PyReadonlyArray1<'_, f64>,
+    n_items: usize,
+    n_cat: usize,
+    q_specific: usize,
+) -> PyResult<Vec<f64>> {
+    mlsirm_core::poly::bifactor_expected_total_score(
+        theta.as_slice()?,
+        a_general.as_slice()?,
+        a_specific.as_slice()?,
+        thresholds.as_slice()?,
+        n_items,
+        n_cat,
+        q_specific,
+    )
+    .map_err(PyValueError::new_err)
+}
+
 /// Unidimensional polytomous marginal-EM fit (Rust compute path). `model` is
 /// "grm" (default) or "gpcm"; `y` holds integer categories `0..n_cat-1`.
 #[pyfunction]
@@ -7334,6 +7359,14 @@ fn poly_person_fit(
     out.set_item("lz_star", res.lz_star)?;
     out.set_item("theta_eap", res.theta_eap)?;
     out.set_item("flagged", res.flagged)?;
+    out.set_item("validity_schema_version", res.validity_schema_version)?;
+    out.set_item("valid_person_fit", res.valid_person_fit)?;
+    out.set_item("diagnostic_only", res.diagnostic_only)?;
+    let statistic_validity = pyo3::types::PyDict::new(py);
+    statistic_validity.set_item("lz", res.lz_validity)?;
+    statistic_validity.set_item("lz_star", res.corrected_validity)?;
+    statistic_validity.set_item("flagged", res.corrected_validity)?;
+    out.set_item("statistic_validity", statistic_validity)?;
     Ok(out.into())
 }
 
@@ -10646,6 +10679,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gpcm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(polytomous_predictions, m)?)?;
+    m.add_function(wrap_pyfunction!(bifactor_expected_total_score, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal, m)?)?;
