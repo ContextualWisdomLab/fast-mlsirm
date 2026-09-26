@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import stat
 import subprocess
@@ -13,6 +13,7 @@ import tarfile
 import zipfile
 
 CHUNK_BYTES = 64 * 1024  # I/O buffer, not an artifact acceptance limit.
+MAX_BUNDLE_BYTES = 1024 * 1024 * 1024
 
 
 def copy_and_hash(source, destination=None) -> str:
@@ -29,6 +30,52 @@ def hash_file(path: Path) -> str:
     """Hash a regular file without allocating its entire contents."""
     with path.open("rb") as source:
         return copy_and_hash(source)
+
+
+def bundle_inventory(artifact: Path, leg: str, source_sha: str, build_env: str) -> dict:
+    """Hash every regular member in the finished distribution; never extract it."""
+    if not re.fullmatch(r"[0-9a-f]{40}", source_sha) or not leg or not build_env:
+        raise ValueError("bundle inventory lacks build identity")
+    if (leg == "sdist") != artifact.name.endswith(".tar.gz") or (leg != "sdist" and not artifact.name.endswith(".whl")):
+        raise ValueError("bundle inventory distribution kind mismatch")
+    members, seen, total = [], set(), 0
+
+    def record(name: str, size: int, stream) -> None:
+        nonlocal total
+        if (not name or name.startswith("/") or "\\" in name
+                or str(PurePosixPath(name)) != name or ".." in PurePosixPath(name).parts
+                or name in seen or size < 0):
+            raise ValueError("unsafe or duplicate bundle member")
+        seen.add(name)
+        total += size
+        if total > MAX_BUNDLE_BYTES:
+            raise ValueError("bundle members exceed size limit")
+        members.append({"path": name, "size": size, "sha256": copy_and_hash(stream)})
+
+    if leg == "sdist":
+        with tarfile.open(artifact, "r:gz") as archive:
+            for member in archive:
+                if member.isdir():
+                    continue
+                if not member.isfile():
+                    raise ValueError("non-regular sdist member")
+                with archive.extractfile(member) as stream:
+                    record(member.name, member.size, stream)
+    else:
+        with zipfile.ZipFile(artifact) as archive:
+            for member in archive.infolist():
+                if member.is_dir():
+                    continue
+                mode = member.external_attr >> 16
+                if stat.S_IFMT(mode) not in (0, stat.S_IFREG):
+                    raise ValueError("non-regular wheel member")
+                with archive.open(member) as stream:
+                    record(member.filename, member.file_size, stream)
+    if not members:
+        raise ValueError("empty distribution bundle")
+    return {"schema_version": 1, "source_sha": source_sha, "leg": leg,
+            "file": artifact.name, "sha256": hash_file(artifact), "build_env": build_env,
+            "members": sorted(members, key=lambda item: item["path"])}
 
 
 def materialize(selection: list[dict], repository: str, root: Path, fetch) -> list[dict]:

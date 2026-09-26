@@ -534,6 +534,8 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
 
 
 def _admission_fixture(root: Path) -> dict:
+    import json
+    import runpy
     import zipfile
     legs = _expected_legs()
     platforms = {"x86_64-unknown-linux-gnu": "manylinux2014_x86_64",
@@ -553,6 +555,13 @@ def _admission_fixture(root: Path) -> dict:
             tag = "-".join(files[leg][:-4].rsplit("-", 3)[1:])
             archive.writestr("pkg-1.2.3.dist-info/WHEEL", f"Wheel-Version: 1.0\nTag: {tag}\n")
         payload[leg] = buffer.getvalue()
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        data = b"Name: pkg\nVersion: 1.2.3\n"
+        member = tarfile.TarInfo("pkg-1.2.3/PKG-INFO")
+        member.size = len(data)
+        archive.addfile(member, io.BytesIO(data))
+    payload["sdist"] = buffer.getvalue()
     sha = {leg: hashlib.sha256(data).hexdigest() for leg, data in payload.items()}
     (root / "dist").mkdir(parents=True)
     for leg, name in files.items():
@@ -566,11 +575,14 @@ def _admission_fixture(root: Path) -> dict:
         f"# release {_RELEASE_TAG} @ {_RELEASE_COMMIT}, SOURCE_DATE_EPOCH=1\n"
         "target\tbyte_verified\tverification\tsha256\trebuild_sha256\tfile\tbuild_env\n" + rows
     )
+    bundle_inventory = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))["bundle_inventory"]
     for leg in files:
         folder = root / "scope-evidence" / f"repro-digest-{leg}"
         folder.mkdir(parents=True)
         row = next(line for line in rows.splitlines() if line.startswith(f"{leg}\t"))
         (folder / f"{leg}.tsv").write_text(row + "\n")
+        inventory = bundle_inventory(root / "dist" / files[leg], leg, _RELEASE_COMMIT, "runner:x")
+        (folder / f"{leg}.bundle.json").write_text(json.dumps(inventory, sort_keys=True) + "\n")
     artifacts = [f"dist-wheel-{leg}" for leg in legs] + [
         "dist-sdist", "reproducibility-record", "release-dependency-sealed-evidence",
         "release-dependency-sealed-evidence--full-set-verdict",
@@ -841,6 +853,35 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
         lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / "extra.json").write_text("{}"),
         "scope evidence artifact members differ from build output",
     )
+    def forge_bundle(root: Path, fixture: dict) -> None:
+        path = root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.bundle.json"
+        payload = json.loads(path.read_text())
+        payload["members"][0]["sha256"] = "0" * 64
+        path.write_text(json.dumps(payload))
+
+    refuse_bytes("forged-bundle", forge_bundle,
+                 "build-leg bundle inventory differs from distribution bytes")
+
+
+def test_build_leg_captures_finished_distribution_bytes(tmp_path: Path) -> None:
+    import json
+
+    fixture = _admission_fixture(tmp_path)
+    leg = fixture["legs"][0]
+    row = tmp_path / "scope-evidence" / f"repro-digest-{leg}" / f"{leg}.tsv"
+    inventory = row.with_suffix(".bundle.json")
+    expected = json.loads(inventory.read_text())
+    inventory.unlink()
+    command = [sys.executable, str(REPO_ROOT / "scripts/ci/capture_release_bundle.py"),
+               str(row), str(tmp_path / "dist")]
+    result = subprocess.run(command, env={**os.environ, "RELEASE_COMMIT": _RELEASE_COMMIT},
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(inventory.read_text()) == expected
+    row.write_text(row.read_text().replace("\ttrue\t", "\tfalse\t"))
+    result = subprocess.run(command, env={**os.environ, "RELEASE_COMMIT": _RELEASE_COMMIT},
+                            capture_output=True, text=True)
+    assert result.returncode != 0 and "not byte-verified" in result.stderr
 
 
 

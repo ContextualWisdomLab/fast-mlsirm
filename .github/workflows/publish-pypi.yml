@@ -339,6 +339,15 @@ jobs:
           (out / f"{leg}.tsv").write_text(row + "\n", encoding="utf-8")
           print(row)
           PY
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted-control
+          persist-credentials: false
+      - name: Capture finished sdist members from the build leg
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+        run: python trusted-control/scripts/ci/capture_release_bundle.py repro-digest/sdist.tsv dist
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dist-sdist
@@ -536,6 +545,17 @@ jobs:
           (out / f"{leg}.tsv").write_text(row + "\n", encoding="utf-8")
           print(row)
           PY
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted-control
+          persist-credentials: false
+      - name: Capture finished wheel members from the build leg
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+          LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
+        run: python trusted-control/scripts/ci/capture_release_bundle.py "repro-digest/$LEG.tsv" dist
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dist-wheel-${{ matrix.target }}-py${{ matrix.python-version }}
@@ -1066,13 +1086,27 @@ jobs:
           if (scope_set != expected_scope_set or len(scope_set.get("evidence", [])) != 13
                   or {item["name"] for item in selected if item["name"].startswith("repro-digest-")} != scope_names):
               raise SystemExit("scope evidence set differs from selected same-run artifacts")
+          def unique_object(pairs):
+              value = {}
+              for key, item in pairs:
+                  if key in value:
+                      raise ValueError(f"duplicate bundle inventory key: {key}")
+                  value[key] = item
+              return value
           for leg, row in rows.items():
               name = f"repro-digest-{leg}"
-              members = list((Path("downloaded") / name).iterdir())
-              if len(members) != 1 or members[0].name != f"{leg}.tsv":
+              members = {path.name: path for path in (Path("downloaded") / name).iterdir()}
+              if set(members) != {f"{leg}.tsv", f"{leg}.bundle.json"}:
                   raise SystemExit(f"{leg}: scope evidence artifact members differ from build output")
-              if members[0].read_text(encoding="utf-8") != "\t".join(row[key] for key in header) + "\n":
+              if members[f"{leg}.tsv"].read_text(encoding="utf-8") != "\t".join(row[key] for key in header) + "\n":
                   raise SystemExit(f"{leg}: scope evidence row differs from reproducibility record")
+              artifact_name = "dist-sdist" if leg == "sdist" else f"dist-wheel-{leg}"
+              distribution = Path("downloaded") / artifact_name / row["file"]
+              expected_bundle = transport.bundle_inventory(distribution, leg, commit, row["build_env"])
+              observed_bundle = json.loads(members[f"{leg}.bundle.json"].read_text(encoding="utf-8"),
+                                           object_pairs_hook=unique_object)
+              if observed_bundle != expected_bundle:
+                  raise SystemExit(f"{leg}: build-leg bundle inventory differs from distribution bytes")
 
           # The central job result is required by `needs`; its immutable verdict
           # must independently match the record and all current-attempt artifacts.

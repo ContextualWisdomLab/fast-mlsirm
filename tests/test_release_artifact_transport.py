@@ -83,6 +83,15 @@ def test_no_full_member_or_file_read(tmp_path, monkeypatch):
     assert receipt[0]["members"]["wheel.whl"] == hashlib.sha256(b"chunked" * 100).hexdigest()
 
 
+@pytest.mark.parametrize("member", ["../escape", "/absolute", "pkg//file", "pkg/./file"])
+def test_bundle_inventory_rejects_unsafe_member(tmp_path, member):
+    wheel = tmp_path / "pkg-1-cp312-cp312-manylinux2014_x86_64.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(member, b"unsafe")
+    with pytest.raises(ValueError, match="unsafe or duplicate"):
+        MODULE["bundle_inventory"](wheel, "x86_64-unknown-linux-gnu-py3.12", "a" * 40, "container:image")
+
+
 def test_partial_fetch_never_materializes(tmp_path):
     def fail(repo, ident, output):
         output.write(b"partial")

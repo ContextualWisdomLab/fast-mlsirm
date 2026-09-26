@@ -36,18 +36,22 @@ its own authenticated path; it does not claim platform scope completeness.
 
 ## Evidence needed to remove the scope HOLD
 
-The record job now binds the exact thirteen existing `repro-digest-*` artifact
-IDs and archive digests to the source SHA, control SHA, run ID and attempt.
+The build jobs now hash every regular member of each finished distribution and
+place a bundle inventory beside the TSV in their existing `repro-digest-*`
+artifacts. The record job binds the exact thirteen digest-artifact IDs and
+archive digests to the source SHA, control SHA, run ID and attempt.
 Admission selects those IDs, verifies their archive and member digests, and
-compares each TSV row with its distribution record. A missing, duplicate, stale,
-foreign-run or changed digest artifact refuses release. These evidence
+compares each TSV row and bundle inventory with the downloaded distribution.
+A missing, duplicate, stale, foreign-run or changed digest artifact refuses
+release. These evidence
 artifacts remain separate from the thirteen distribution artifacts passed to
 the central licence and Strix gate.
 
-Each wheel build job and the sdist job must next put a scope inventory from
-its actual build environment beside its existing TSV. Admission must bind
-each inventory to the corresponding distribution SHA and build-environment
-identity, and verify its contents before the scope HOLD can be removed.
+Each wheel build job and the sdist job must next add resolved environment and
+native dependency evidence. File hashes establish the bundled bytes, but do
+not identify the origin or licence of each member or the libraries it loads.
+Admission must validate those claims against the corresponding distribution
+SHA and build environment before the scope HOLD can be removed.
 
 The six scopes have distinct sources of truth:
 
