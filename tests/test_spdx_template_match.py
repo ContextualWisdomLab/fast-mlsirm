@@ -55,3 +55,9 @@ def test_comment_indicators_and_leading_title_are_ignored():
         "".join(f" * {line}\n" for line in BODY.splitlines()) + " */\n"
     assert M.match(commented, TPL) is not None
     assert M.match(commented.replace("keeping", "removing"), TPL) is None
+
+
+def test_tex_style_quotes_are_equivalent():
+    tpl = '<<var;name="copyright";original="x";match=".{0,50}">>\nPROVIDED "AS IS" ONLY.'
+    assert M.match("Copyright 2020 X\nPROVIDED ``AS IS'' ONLY.", tpl) is not None
+    assert M.match("Copyright 2020 X\nPROVIDED ``AS WAS'' ONLY.", tpl) is None

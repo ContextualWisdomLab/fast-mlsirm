@@ -56,7 +56,7 @@ def match(text: str, tpl: str, strict: bool = True) -> list[dict] | None:
     if len(text.split()) > 2 * len(re.sub(r"<<.*?>>", " ", tpl, flags=re.S).split()) + 1000:
         return None
     rx, names = compile_template(tpl)
-    m = rx.fullmatch(COMMENT_MARKER.sub("", text).translate(EQUIV))
+    m = rx.fullmatch(COMMENT_MARKER.sub("", text).replace("``", '"').replace("''", '"').translate(EQUIV))
     if not m:
         return None
     if strict:
