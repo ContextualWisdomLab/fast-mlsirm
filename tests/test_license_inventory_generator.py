@@ -1412,3 +1412,35 @@ def test_cfg_aliases_notice_exception_is_pinned_to_the_0_2_2_crate(tmp_path):
     (row,) = L.rust_inventory(args, [])
     assert row["license_class"] == "HOLD"
     assert not any(f.get("documented_exception") for f in row["license_files_in_artifact"])
+
+
+def test_wheel_directory_entry_is_not_a_license_candidate(tmp_path):
+    """A zip directory entry such as pkg-1.0.dist-info/licenses/ is not an (empty) license file."""
+    wheel = tmp_path / "pkg-1.0-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as zf:
+        zf.writestr("pkg-1.0.dist-info/METADATA", "Metadata-Version: 2.4\nName: pkg\nVersion: 1.0\n\n")
+        zf.writestr(zipfile.ZipInfo("pkg-1.0.dist-info/licenses/"), "")
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+    paths = [f["path"] for f in L.python_artifact_evidence(wheel)["license_files"]]
+    assert paths == ["pkg-1.0.dist-info/licenses/LICENSE"]
+
+
+@pytest.mark.parametrize("pinned", [True, False])
+def test_external_runtime_dependency_is_pinned_to_its_wheel(tmp_path, monkeypatch, pinned):
+    """Vendored-native findings become notes only for the exact pinned wheel of an external dependency."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    digest = _native_wheel(wheel, native_license=None, bind_notice=False)
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+    monkeypatch.setitem(L.EXTERNAL_RUNTIME_DEPENDENCIES, ("pkg", "1.0"),
+                        {"wheel_sha256": digest if pinned else "0" * 64, "classification": "external"})
+    (row,) = L.python_inventory(args, [])
+    if pinned:
+        assert (row["license_class"], row["vendored_native_license_holds"]) == ("PERMISSIVE", [])
+        assert "no bound notice stanza" in " ".join(row["external_runtime_notes"])
+    else:
+        assert row["license_class"] == "HOLD" and "external_runtime_dependency" not in row

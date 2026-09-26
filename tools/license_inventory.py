@@ -235,6 +235,21 @@ DOCUMENTED_EXCEPTIONS = {
 }
 
 
+# External runtime dependencies: installed separately by users, never bundled in fast-mlsirm
+# artifacts. For the pinned official wheel only, findings about that wheel's own vendored native
+# libraries (and copyleft labels that describe them) are recorded as notes, not HOLD, because
+# fast-mlsirm does not redistribute them. The dependency's own license candidate files must
+# still verify. Coordinator verdict (user-delegated, 2026-09-26), not legal review.
+EXTERNAL_RUNTIME_DEPENDENCIES = {
+    ("numpy", "2.5.2"): {
+        "wheel_sha256": "3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8",
+        "wheel": "numpy-2.5.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        "classification": "external runtime dependency, not bundled in fast-mlsirm artifacts",
+        "basis": "coordinator verdict (user-delegated, 2026-09-26), not legal review",
+    },
+}
+
+
 POINTER_NOTICES = {
     "9fba058782d4dbf4eda66df225dfc11e8afdc5618f6bc36c2dafbb087cda3971": ("Apache-2.0", "MIT"),  # unicode-width COPYRIGHT 23860c2a
     "7e7a2c785f3db52a3daf64a62b76b09b940355e4fe1b7f7092f473b7663416b1": ("Unlicense", "MIT"),  # memchr-family COPYING 01c266bc
@@ -254,6 +269,14 @@ def verified_standard_text(text: str) -> list[str]:
         "3a31f72fe7c9baf376c3da1d7d0154366be8ef0bab0a3f7531db4c2abf1ad062": "Zlib",
         "444399c3da8f18f32878c6f8b7348110f33985558ca7abe98d4c8ed26f013109": "Zlib",
         # 66 copyright-header/appendix-only variants, reviewed in s1 text-review-20260926.
+        "25480d7a337b885c258cc7e7299af35c39a2d2e5e8ead3970a26b0e1a3cd2a3e": "MIT",  # pytest-9.1.1.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
+        "2606d3710f5ed51b359ab2e16d26861a0d2d721a25f84ff93d97798e4a3b59fd": "MIT",  # pyproject_hooks-1.2.0.dist-info/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
+        "24977015e801cd4c9bbb8c6e8094c6644d5a03c6f466e678a0d7410d4f2b5699": "BSD-2-Clause",  # pygments-2.20.0.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-2-Clause matching template
+        "85400eb183e986a1080ec91937527ea15fac79880d3e1612432d0c6ad14e99b3": "MIT",  # pluggy-1.6.0.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
+        "13c6a3608faee72d1b3a7aad6d1c8036408ed82d9a28a7cf0ef87d6acc4f91c9": "BSD-2-Clause",  # packaging-26.2.dist-info/licenses/LICENSE.BSD: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-2-Clause matching template
+        "68830562168427457071504ddcc65411b8ed6694531eeeca13941ff3bddbdc03": "MIT",  # maturin-1.15.0.dist-info/licenses/license-mit (same bytes in maturin 1.14.1): coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
+        "6185ea2dea9ee04c27ebcff90420479bd07abd86233717f16e3e90b5865f7919": "MIT",  # iniconfig-2.3.0.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
+        "e0374e8fe0bcf2874d6fdadc44014ba4d725c39ac002b59a7172f45d08352c6d": "MIT",  # build-1.6.0.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
         "25c95a7b50ce321f537754cab2f5b1de56413ccdcbc492671d569851d62ce276": "BSD-2-Clause",  # zerocopy-0.8.57/LICENSE-BSD (same bytes in zerocopy-derive): coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-2-Clause template var spans
         "bbb0c7a72cdfa383f0a62db4e19033942ed3f909eac4e865334e22e1c0a17c92": "MIT",  # bytemuck-1.25.2/LICENSE-MIT (same bytes in bytemuck_derive): coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT template optional span
         "f42a00ac54d036890559853a40f95622ab3e63d52173f5714284134b2af11e3c": "Apache-2.0 WITH LLVM-exception",  # target-lexicon-0.13.5/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review
@@ -1054,7 +1077,7 @@ def python_artifact_evidence(path: Path) -> dict:
         stanzas = []
         for n, info in members.items():
             base = n.rsplit("/", 1)[-1]
-            if ".dist-info/" in n and (LICENSE_NAME.match(base) or n in declared_paths):
+            if ".dist-info/" in n and not info.is_dir() and (LICENSE_NAME.match(base) or n in declared_paths):
                 raw = zf.read(info)
                 text = raw.decode("utf-8", "replace")
                 file_stanzas, notice_consumed = parse_notice_stanzas(text)
@@ -1215,6 +1238,13 @@ def python_inventory(args, gaps: list[str]) -> list[dict]:
         if not artifacts:
             hold.append("no artifact examined, so no license text was verified")
         native_holds = vendored_native_license_holds(artifacts)
+        external = EXTERNAL_RUNTIME_DEPENDENCIES.get((name, version))
+        if external and not any(a["hash_binding"]["match"] and a["sha256"] == external["wheel_sha256"] for a in artifacts):
+            external = None
+        external_notes = []
+        if external:
+            external_notes = [f for f in native_holds if "license candidate file was not fully verified" not in f]
+            native_holds = [f for f in native_holds if f not in external_notes]
         if native_holds:
             hold.append(f"vendored native license evidence is not verified permissive: {native_holds}")
         unverified_candidates = sorted({
@@ -1237,7 +1267,9 @@ def python_inventory(args, gaps: list[str]) -> list[dict]:
                              "copyleft_text_not_in_declared_expression": uncovered}
             if not agrees:
                 hold.append("declared license text not found in a hash-bound artifact")
-            if uncovered:
+            if uncovered and external:
+                external_notes.append(f"artifact text also names {uncovered} (vendored native components; not redistributed)")
+            elif uncovered:
                 hold.append(f"artifact text also grants {uncovered}, which the declared expression does not name")
         else:
             cls_terms = {CLASSIFIER_SPDX.get(c) for c in classifiers} - {None}
@@ -1280,6 +1312,7 @@ def python_inventory(args, gaps: list[str]) -> list[dict]:
             "election_rationale": rationale,
             "artifacts_examined": artifacts,
             **scope_fields,
+            **({"external_runtime_dependency": external, "external_runtime_notes": external_notes} if external else {}),
         })
     return rows
 

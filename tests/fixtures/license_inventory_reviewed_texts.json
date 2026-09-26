@@ -1027,5 +1027,205 @@
         "text": "THE COPYRIGHT OWNER OR CONTRIBUTORS"
       }
     ]
+  },
+  {
+    "package": "build@1.6.0",
+    "ecosystem": "pypi",
+    "artifact_filename": "build-1.6.0-py3-none-any.whl",
+    "artifact_sha256": "f7aaf1ebbb79178a02ba248bb524f2176b256017e17e8e4bd4289c7b38cc2bad",
+    "member": "build-1.6.0.dist-info/licenses/LICENSE",
+    "raw_sha256": "aaf9a29ca5907971ccf07de025375db34539a8d5eeebce20b46099805722106f",
+    "normalized_sha256": "e0374e8fe0bcf2874d6fdadc44014ba4d725c39ac002b59a7172f45d08352c6d",
+    "identifier": "MIT",
+    "fixture": "py-exact-0115-20260926/text-review/texts/aaf9a29ca5907971ccf07de025375db34539a8d5eeebce20b46099805722106f.txt",
+    "text": "Copyright © 2019 Filipe Laíns <filipe.lains@gmail.com>\n\nPermission is hereby granted, free of charge, to any person obtaining a\ncopy of this software and associated documentation files (the \"Software\"),\nto deal in the Software without restriction, including without limitation\nthe rights to use, copy, modify, merge, publish, distribute, sublicense,\nand/or sell copies of the Software, and to permit persons to whom the\nSoftware is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice (including the next\nparagraph) shall be included in all copies or substantial portions of the\nSoftware.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL\nTHE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING\nFROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER\nDEALINGS IN THE SOFTWARE.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX Matching Guidelines against license-list-data v3.29.0 (31ba1a50) template/MIT.template.txt; every difference lies in a <<var>>/<<beginOptional>> span; copyright span holds only title/copyright lines",
+    "spdx_template_spans": [
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (c) <year> <copyright holders>  ",
+        "text": "Copyright © 2019 Filipe Laíns <filipe.lains@gmail.com>"
+      },
+      {
+        "span": "optional",
+        "template_original": "",
+        "text": "(including the next paragraph)"
+      }
+    ]
+  },
+  {
+    "package": "iniconfig@2.3.0",
+    "ecosystem": "pypi",
+    "artifact_filename": "iniconfig-2.3.0-py3-none-any.whl",
+    "artifact_sha256": "f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12",
+    "member": "iniconfig-2.3.0.dist-info/licenses/LICENSE",
+    "raw_sha256": "3409fa91f7ace557894632676656e32264fe5ef7581535725dc9a23774551bd4",
+    "normalized_sha256": "6185ea2dea9ee04c27ebcff90420479bd07abd86233717f16e3e90b5865f7919",
+    "identifier": "MIT",
+    "fixture": "py-exact-0115-20260926/text-review/texts/3409fa91f7ace557894632676656e32264fe5ef7581535725dc9a23774551bd4.txt",
+    "text": "The MIT License (MIT)\n\nCopyright (c) 2010 - 2023 Holger Krekel and others\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of\nthis software and associated documentation files (the \"Software\"), to deal in\nthe Software without restriction, including without limitation the rights to\nuse, copy, modify, merge, publish, distribute, sublicense, and/or sell copies\nof the Software, and to permit persons to whom the Software is furnished to do\nso, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX Matching Guidelines against license-list-data v3.29.0 (31ba1a50) template/MIT.template.txt; every difference lies in a <<var>>/<<beginOptional>> span; copyright span holds only title/copyright lines",
+    "spdx_template_spans": [
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (c) <year> <copyright holders>  ",
+        "text": "The MIT License (MIT) Copyright (c) 2010 - 2023 Holger Krekel and others"
+      }
+    ]
+  },
+  {
+    "package": "maturin@1.15.0",
+    "ecosystem": "pypi",
+    "artifact_filename": "maturin-1.15.0-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl",
+    "artifact_sha256": "653020a63525bb224e5ab0adf02e17a2e08bc86dbea7fc1399c9a56d7529b99e",
+    "member": "maturin-1.15.0.dist-info/licenses/license-mit (same bytes in maturin 1.14.1)",
+    "raw_sha256": "ea7882c559733766ad08343bde1d1ec80a4967c03a738fb8e0058ef6289f7b7c",
+    "normalized_sha256": "68830562168427457071504ddcc65411b8ed6694531eeeca13941ff3bddbdc03",
+    "identifier": "MIT",
+    "fixture": "py-exact-0115-20260926/text-review/texts/ea7882c559733766ad08343bde1d1ec80a4967c03a738fb8e0058ef6289f7b7c.txt",
+    "text": "Copyright (c) 2018 konstin\n\nPermission is hereby granted, free of charge, to any\nperson obtaining a copy of this software and associated\ndocumentation files (the \"Software\"), to deal in the\nSoftware without restriction, including without\nlimitation the rights to use, copy, modify, merge,\npublish, distribute, sublicense, and/or sell copies of\nthe Software, and to permit persons to whom the Software\nis furnished to do so, subject to the following\nconditions:\n\nThe above copyright notice and this permission notice\nshall be included in all copies or substantial portions\nof the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF\nANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED\nTO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A\nPARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT\nSHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\nCLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION\nOF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR\nIN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER\nDEALINGS IN THE SOFTWARE.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX Matching Guidelines against license-list-data v3.29.0 (31ba1a50) template/MIT.template.txt; every difference lies in a <<var>>/<<beginOptional>> span; copyright span holds only title/copyright lines",
+    "spdx_template_spans": [
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (c) <year> <copyright holders>  ",
+        "text": "Copyright (c) 2018 konstin"
+      }
+    ]
+  },
+  {
+    "package": "packaging@26.2",
+    "ecosystem": "pypi",
+    "artifact_filename": "packaging-26.2-py3-none-any.whl",
+    "artifact_sha256": "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e",
+    "member": "packaging-26.2.dist-info/licenses/LICENSE.BSD",
+    "raw_sha256": "b70e7e9b742f1cc6f948b34c16aa39ffece94196364bc88ff0d2180f0028fac5",
+    "normalized_sha256": "13c6a3608faee72d1b3a7aad6d1c8036408ed82d9a28a7cf0ef87d6acc4f91c9",
+    "identifier": "BSD-2-Clause",
+    "fixture": "py-exact-0115-20260926/text-review/texts/b70e7e9b742f1cc6f948b34c16aa39ffece94196364bc88ff0d2180f0028fac5.txt",
+    "text": "Copyright (c) Donald Stufft and individual contributors.\nAll rights reserved.\n\nRedistribution and use in source and binary forms, with or without\nmodification, are permitted provided that the following conditions are met:\n\n    1. Redistributions of source code must retain the above copyright notice,\n       this list of conditions and the following disclaimer.\n\n    2. Redistributions in binary form must reproduce the above copyright\n       notice, this list of conditions and the following disclaimer in the\n       documentation and/or other materials provided with the distribution.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND\nANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED\nWARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\nDISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE\nFOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\nDAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR\nSERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER\nCAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,\nOR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\nOF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX Matching Guidelines against license-list-data v3.29.0 (31ba1a50) template/BSD-2-Clause.template.txt; every difference lies in a <<var>>/<<beginOptional>> span; copyright span holds only title/copyright lines",
+    "spdx_template_spans": [
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (c) <year> <owner>.  ",
+        "text": "Copyright (c) Donald Stufft and individual contributors. All rights reserved."
+      },
+      {
+        "span": "optional",
+        "template_original": "",
+        "text": "SOFTWARE"
+      },
+      {
+        "span": "optional",
+        "template_original": "",
+        "text": "SOFTWARE"
+      }
+    ]
+  },
+  {
+    "package": "pluggy@1.6.0",
+    "ecosystem": "pypi",
+    "artifact_filename": "pluggy-1.6.0-py3-none-any.whl",
+    "artifact_sha256": "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746",
+    "member": "pluggy-1.6.0.dist-info/licenses/LICENSE",
+    "raw_sha256": "d6b65e6c213a5d0b577911d34d6e5949b9f59d76c238c5071a2f3fc16cfb2606",
+    "normalized_sha256": "85400eb183e986a1080ec91937527ea15fac79880d3e1612432d0c6ad14e99b3",
+    "identifier": "MIT",
+    "fixture": "py-exact-0115-20260926/text-review/texts/d6b65e6c213a5d0b577911d34d6e5949b9f59d76c238c5071a2f3fc16cfb2606.txt",
+    "text": "The MIT License (MIT)\n\nCopyright (c) 2015 holger krekel (rather uses bitbucket/hpk42)\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX Matching Guidelines against license-list-data v3.29.0 (31ba1a50) template/MIT.template.txt; every difference lies in a <<var>>/<<beginOptional>> span; copyright span holds only title/copyright lines",
+    "spdx_template_spans": [
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (c) <year> <copyright holders>  ",
+        "text": "The MIT License (MIT) Copyright (c) 2015 holger krekel (rather uses bitbucket/hpk42)"
+      }
+    ]
+  },
+  {
+    "package": "pygments@2.20.0",
+    "ecosystem": "pypi",
+    "artifact_filename": "pygments-2.20.0-py3-none-any.whl",
+    "artifact_sha256": "81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176",
+    "member": "pygments-2.20.0.dist-info/licenses/LICENSE",
+    "raw_sha256": "a9d66f1d526df02e29dce73436d34e56e8632f46c275bbdffc70569e882f9f17",
+    "normalized_sha256": "24977015e801cd4c9bbb8c6e8094c6644d5a03c6f466e678a0d7410d4f2b5699",
+    "identifier": "BSD-2-Clause",
+    "fixture": "py-exact-0115-20260926/text-review/texts/a9d66f1d526df02e29dce73436d34e56e8632f46c275bbdffc70569e882f9f17.txt",
+    "text": "Copyright (c) 2006-2022 by the respective authors (see AUTHORS file).\nAll rights reserved.\n\nRedistribution and use in source and binary forms, with or without\nmodification, are permitted provided that the following conditions are\nmet:\n\n* Redistributions of source code must retain the above copyright\n  notice, this list of conditions and the following disclaimer.\n\n* Redistributions in binary form must reproduce the above copyright\n  notice, this list of conditions and the following disclaimer in the\n  documentation and/or other materials provided with the distribution.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS\n\"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT\nLIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR\nA PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT\nOWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,\nSPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT\nLIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,\nDATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY\nTHEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT\n(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\nOF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX Matching Guidelines against license-list-data v3.29.0 (31ba1a50) template/BSD-2-Clause.template.txt; every difference lies in a <<var>>/<<beginOptional>> span; copyright span holds only title/copyright lines",
+    "spdx_template_spans": [
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (c) <year> <owner>.  ",
+        "text": "Copyright (c) 2006-2022 by the respective authors (see AUTHORS file). All rights reserved."
+      },
+      {
+        "span": "var:bullet",
+        "template_original": "1.",
+        "text": "*"
+      },
+      {
+        "span": "var:bullet",
+        "template_original": "2.",
+        "text": "*"
+      },
+      {
+        "span": "optional",
+        "template_original": "",
+        "text": "SOFTWARE"
+      },
+      {
+        "span": "var:copyrightHolderLiability",
+        "template_original": "THE COPYRIGHT HOLDER OR CONTRIBUTORS",
+        "text": "THE COPYRIGHT OWNER OR CONTRIBUTORS"
+      },
+      {
+        "span": "optional",
+        "template_original": "",
+        "text": "SOFTWARE"
+      }
+    ]
+  },
+  {
+    "package": "pyproject-hooks@1.2.0",
+    "ecosystem": "pypi",
+    "artifact_filename": "pyproject_hooks-1.2.0-py3-none-any.whl",
+    "artifact_sha256": "9e5c6bfa8dcc30091c74b0cf803c81fdd29d94f01992a7707bc97babb1141913",
+    "member": "pyproject_hooks-1.2.0.dist-info/LICENSE",
+    "raw_sha256": "1b22b049b5267d6dfc23a67bf4a84d8ec04b9fdfb1a51d360e42b4342c8b4154",
+    "normalized_sha256": "2606d3710f5ed51b359ab2e16d26861a0d2d721a25f84ff93d97798e4a3b59fd",
+    "identifier": "MIT",
+    "fixture": "py-exact-0115-20260926/text-review/texts/1b22b049b5267d6dfc23a67bf4a84d8ec04b9fdfb1a51d360e42b4342c8b4154.txt",
+    "text": "The MIT License (MIT)\n\nCopyright (c) 2017 Thomas Kluyver\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX Matching Guidelines against license-list-data v3.29.0 (31ba1a50) template/MIT.template.txt; every difference lies in a <<var>>/<<beginOptional>> span; copyright span holds only title/copyright lines",
+    "spdx_template_spans": [
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (c) <year> <copyright holders>  ",
+        "text": "The MIT License (MIT) Copyright (c) 2017 Thomas Kluyver"
+      }
+    ]
+  },
+  {
+    "package": "pytest@9.1.1",
+    "ecosystem": "pypi",
+    "artifact_filename": "pytest-9.1.1-py3-none-any.whl",
+    "artifact_sha256": "37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c",
+    "member": "pytest-9.1.1.dist-info/licenses/LICENSE",
+    "raw_sha256": "ca836a5f9ecca3b2f350230faa20a48fb8b145653b5568d784862df864706b9b",
+    "normalized_sha256": "25480d7a337b885c258cc7e7299af35c39a2d2e5e8ead3970a26b0e1a3cd2a3e",
+    "identifier": "MIT",
+    "fixture": "py-exact-0115-20260926/text-review/texts/ca836a5f9ecca3b2f350230faa20a48fb8b145653b5568d784862df864706b9b.txt",
+    "text": "The MIT License (MIT)\n\nCopyright (c) 2004 Holger Krekel and others\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of\nthis software and associated documentation files (the \"Software\"), to deal in\nthe Software without restriction, including without limitation the rights to\nuse, copy, modify, merge, publish, distribute, sublicense, and/or sell copies\nof the Software, and to permit persons to whom the Software is furnished to do\nso, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX Matching Guidelines against license-list-data v3.29.0 (31ba1a50) template/MIT.template.txt; every difference lies in a <<var>>/<<beginOptional>> span; copyright span holds only title/copyright lines",
+    "spdx_template_spans": [
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (c) <year> <copyright holders>  ",
+        "text": "The MIT License (MIT) Copyright (c) 2004 Holger Krekel and others"
+      }
+    ]
   }
 ]

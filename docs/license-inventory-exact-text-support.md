@@ -80,3 +80,20 @@ copyright-holder line for tectonic_cfg_support.
 
 **Release gate (recorded, not yet enforced):** the wheel NOTICE must also include cfg_aliases
 `NOTICES.md`.
+
+## Python side (2026-09-26)
+
+Coordinator verdict (user-delegated, 2026-09-26), not legal review. The same criterion as Cargo applies
+(SPDX matching template with every difference inside a `<<var>>`/`<<beginOptional>>` span, and the
+copyright span holding only title/copyright lines). Accepted: build, iniconfig, pluggy, pytest,
+pyproject-hooks, maturin (MIT) and pygments, packaging LICENSE.BSD (BSD-2-Clause).
+
+numpy 2.5.2 is recorded in `EXTERNAL_RUNTIME_DEPENDENCIES` as an external runtime dependency that
+fast-mlsirm never bundles, pinned to the official wheel sha256 3cdec01f...: its vendored native
+libraries (libgfortran, libquadmath, OpenBLAS) are reported as notes, not HOLD. Its own license
+candidate files must still verify.
+
+atheris 3.1.0 remains HOLD as CI-only (fuzz extra; never shipped).
+
+Zip directory entries (for example `numpy-2.5.2.dist-info/licenses/`) are no longer treated as
+empty license candidate files.
