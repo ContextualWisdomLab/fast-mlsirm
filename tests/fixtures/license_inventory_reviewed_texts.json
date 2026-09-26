@@ -1227,5 +1227,18 @@
         "text": "The MIT License (MIT) Copyright (c) 2004 Holger Krekel and others"
       }
     ]
+  },
+  {
+    "package": "numpy@2.5.2",
+    "ecosystem": "pypi",
+    "artifact_filename": "numpy-2.5.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "artifact_sha256": "3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8",
+    "member": "numpy-2.5.2.dist-info/licenses/numpy/_core/include/numpy/libdivide/LICENSE.txt",
+    "raw_sha256": "fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec",
+    "normalized_sha256": "3da00b73ff5ee4c197d90218545de9c1466494a14b19d93ed10cb7380cc279f4",
+    "identifier": "Zlib",
+    "fixture": "py-exact-0115-20260926/text-review/texts/fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec.txt",
+    "text": "  zlib License\n  ------------\n\n  Copyright (C) 2010 - 2019 ridiculous_fish, <libdivide@ridiculousfish.com>\n  Copyright (C) 2016 - 2019 Kim Walisch, <kim.walisch@gmail.com>\n\n  This software is provided 'as-is', without any express or implied\n  warranty.  In no event will the authors be held liable for any damages\n  arising from the use of this software.\n\n  Permission is granted to anyone to use this software for any purpose,\n  including commercial applications, and to alter it and redistribute it\n  freely, subject to the following restrictions:\n\n  1. The origin of this software must not be misrepresented; you must not\n     claim that you wrote the original software. If you use this software\n     in a product, an acknowledgment in the product documentation would be\n     appreciated but is not required.\n  2. Altered source versions must be plainly marked as such, and must not be\n     misrepresented as being the original software.\n  3. This notice may not be removed or altered from any source distribution.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; Zlib body identical to the reviewed foldhash Zlib body; differs only by the title 'zlib License', its '------------' underline and two copyright lines"
   }
 ]

@@ -269,6 +269,7 @@ def verified_standard_text(text: str) -> list[str]:
         "3a31f72fe7c9baf376c3da1d7d0154366be8ef0bab0a3f7531db4c2abf1ad062": "Zlib",
         "444399c3da8f18f32878c6f8b7348110f33985558ca7abe98d4c8ed26f013109": "Zlib",
         # 66 copyright-header/appendix-only variants, reviewed in s1 text-review-20260926.
+        "3da00b73ff5ee4c197d90218545de9c1466494a14b19d93ed10cb7380cc279f4": "Zlib",  # numpy 2.5.2 dist-info/licenses/numpy/_core/include/numpy/libdivide/LICENSE.txt: coordinator verdict (user-delegated, 2026-09-26), not legal review; title/underline/copyright only
         "25480d7a337b885c258cc7e7299af35c39a2d2e5e8ead3970a26b0e1a3cd2a3e": "MIT",  # pytest-9.1.1.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
         "2606d3710f5ed51b359ab2e16d26861a0d2d721a25f84ff93d97798e4a3b59fd": "MIT",  # pyproject_hooks-1.2.0.dist-info/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
         "24977015e801cd4c9bbb8c6e8094c6644d5a03c6f466e678a0d7410d4f2b5699": "BSD-2-Clause",  # pygments-2.20.0.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-2-Clause matching template
