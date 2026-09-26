@@ -62,3 +62,21 @@ remain HOLD: ten `objc2` family rows and `android_system_properties`, as in the
 HOLD); it is not the 158-row binding union. Windows and macOS candidate wheels
 and the published 12-wheel matrix have not been verified here. No final gate verdict follows
 from this Linux-only evidence.
+
+## Windows source graph follow-up
+
+The same extracted source was rerun with Cargo 1.97.1, `--locked --offline`,
+and `--filter-platform x86_64-pc-windows-msvc`. The target metadata SHA256 is
+`01360550ff35229a0452e49944e55d83f7cf39fa868b7c789e780f0dbf609690`.
+The verifier inventory SHA256 is
+`3495f86033b068e0fb4155cc38115caf2327b2d40804c859a86b3e66992c933b`
+with exit code zero and no completeness gaps. Its 119 binding target rows are
+117 PERMISSIVE third-party crates and two HOLD own crates. The own-crate HOLD
+is expected: this graph rerun used the hash-bound Linux CPython 3.12 wheel,
+whose third-party notice does not match the Windows graph. The newly generated
+Windows snapshot SHA256 is
+`834bbed269375c36f4b8ca867697c895e33b3f2a5b181accf728fb41593d22cd`;
+its 117 row objects exactly match the committed Windows snapshot. These files
+are under `inventory-windows-x86_64/` in the x86_64 build directory above.
+This establishes the third-party source graph only. A Windows wheel built from
+this source must still be checked against the Windows notice and source bytes.
