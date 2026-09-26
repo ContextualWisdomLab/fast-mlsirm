@@ -12,6 +12,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import sysconfig
 import tomllib
 
 from release_artifact_transport import (expected_maturin_binary_sha256, hash_file,
@@ -23,9 +24,9 @@ def _run(*args: str) -> str:
 
 
 def _python_packages_with_files() -> list[dict]:
-    """Hash RECORD-listed files from the interpreter running the build hook."""
+    """Hash installed files and refuse site packages omitted from RECORDs."""
     prefix = Path(sys.prefix).resolve()
-    result, total_files, total_bytes = [], 0, 0
+    result, total_files, total_bytes, claimed = [], 0, 0, set()
     for dist in distributions():
         name = re.sub(r"[-_.]+", "-", dist.metadata["Name"]).lower()
         files = dist.files
@@ -46,6 +47,9 @@ def _python_packages_with_files() -> list[dict]:
             if len(relative) > 512 or relative in seen:
                 raise ValueError("build interpreter distribution file is unsafe")
             seen.add(relative)
+            if relative in claimed:
+                raise ValueError("build interpreter distributions claim the same file")
+            claimed.add(relative)
             size = path.stat().st_size
             total_files += 1
             total_bytes += size
@@ -62,6 +66,17 @@ def _python_packages_with_files() -> list[dict]:
     result.sort(key=lambda item: item["name"])
     if len({item["name"] for item in result}) != len(result):
         raise ValueError("build interpreter has duplicate distributions")
+    paths = sysconfig.get_paths()
+    for root in {Path(paths[key]).resolve() for key in ("purelib", "platlib")}:
+        if not root.is_dir() or not root.is_relative_to(prefix):
+            raise ValueError("build interpreter site packages root is unsafe")
+        for path in root.rglob("*"):
+            if "__pycache__" in path.parts:
+                continue
+            if path.is_symlink():
+                raise ValueError("build interpreter site packages contains a symlink")
+            if path.is_file() and path.relative_to(prefix).as_posix() not in claimed:
+                raise ValueError("build interpreter site packages contains a file omitted from RECORD")
     return result
 
 

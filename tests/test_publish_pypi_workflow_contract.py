@@ -854,9 +854,20 @@ def test_build_package_inventory_hashes_installed_files(tmp_path: Path, monkeypa
 
     monkeypatch.setattr(inventory.__globals__["sys"], "prefix", str(prefix))
     monkeypatch.setitem(inventory.__globals__, "distributions", lambda: [Distribution()])
+    monkeypatch.setattr(inventory.__globals__["sysconfig"], "get_paths",
+                        lambda: {"purelib": str(target.parent), "platlib": str(target.parent)})
     assert inventory() == [{"name": "my-pkg", "version": "1.0", "files": [
         {"path": "site-packages/pkg.py", "size": len(b"installed bytes"),
          "sha256": hashlib.sha256(b"installed bytes").hexdigest()}]}]
+    orphan = target.with_name("unlisted.py")
+    orphan.write_bytes(b"unreviewed bytes")
+    with pytest.raises(ValueError, match="omitted from RECORD"):
+        inventory()
+    orphan.unlink()
+    orphan.symlink_to(target)
+    with pytest.raises(ValueError, match="contains a symlink"):
+        inventory()
+    orphan.unlink()
     Distribution.files = [PurePosixPath("../outside.py")]
     (tmp_path / "outside.py").write_bytes(b"foreign bytes")
     with pytest.raises(ValueError, match="unsafe"):
