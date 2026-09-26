@@ -1385,18 +1385,30 @@ pub struct PolyPersonFit {
 }
 
 /// Person-fit statistics for polytomous responses under a fitted GRM/GPCM: the
-/// standardized log-likelihood `l_z` (Drasgow, Levine & Williams, 1985) and its
+/// standardized log-likelihood `l_z` (Drasgow et al., 1985, pp. 71–72) and its
 /// estimated-trait correction `l_z*` (Snijders, 2001), evaluated at the EAP
-/// trait. With `l_0 = Σ_i log P_i(y_i|θ̂)`, `E = Σ_i Σ_k P_ik log P_ik`, and
+/// trait under `N(0,1)`. With `l_0 = Σ_i log P_i(y_i|θ̂)`,
+/// `E = Σ_i Σ_k P_ik log P_ik`, and
 /// `V = Σ_i (Σ_k P_ik (log P_ik)² − (Σ_k P_ik log P_ik)²)`,
 /// `l_z = (l_0 − E) / √V`; `l_z*` subtracts the covariance of the log-likelihood
 /// with the trait score (`c = ΣCov / ΣI`, `τ² = V − (ΣCov)²/ΣI`) and adds the
-/// MAP prior score `r_0 = −(θ̂ − μ)/σ²`. The score derivative `∂/∂θ log P_ik` is
+/// MAP prior score `r_0 = −(θ̂ − μ)/σ²`. Indeed,
+/// `log N(θ; μ, σ²) = const − (θ − μ)²/(2σ²)`, hence
+/// `d/dθ log N(θ; μ, σ²) = −(θ − μ)/σ²`; this enters the numerator as `c*r_0`.
+/// Applying Snijders' (2001) correction to polytomous EAP is an extrapolation;
+/// its original pinpoint was not verified here. Albers et al. (2016, p. 277,
+/// Equations 6–8) give the estimated-trait correction structure. The score
+/// derivative `∂/∂θ log P_ik` is
 /// taken by central difference, so the routine is model-agnostic. This reduces
 /// exactly to the binary [`crate::fitstats::person_fit`] `l_z` at `n_cat = 2`.
 /// Low (negative) values flag aberrant patterns.
 ///
 /// # References (APA 7th ed.)
+///
+/// Albers, C. J., Meijer, R. R., & Tendeiro, J. N. (2016). Derivation and
+///   applicability of asymptotic results for multiple subtests person-fit
+///   statistics. *Applied Psychological Measurement, 40*(4), 274–288.
+///   https://doi.org/10.1177/0146621615622832
 ///
 /// Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness
 ///   measurement with polychotomous item response models and standardized
@@ -1421,6 +1433,51 @@ pub fn poly_person_fit(
     prior_sd: f64,
     flag_threshold: f64,
 ) -> Result<PolyPersonFit, String> {
+    poly_person_fit_impl(
+        y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta, prior_mean,
+        prior_sd, flag_threshold, false,
+    )
+}
+
+/// Focal-prior variant for a fitted FIPC population: its `N(μ, σ²)` prior
+/// enters both EAP and `r_0`; see [`poly_person_fit`] for method and references.
+#[allow(clippy::too_many_arguments)]
+pub fn poly_person_fit_focal(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: PolyModel,
+    q_theta: usize,
+    prior_mean: f64,
+    prior_sd: f64,
+    flag_threshold: f64,
+) -> Result<PolyPersonFit, String> {
+    poly_person_fit_impl(
+        y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta, prior_mean,
+        prior_sd, flag_threshold, true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn poly_person_fit_impl(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: PolyModel,
+    q_theta: usize,
+    prior_mean: f64,
+    prior_sd: f64,
+    flag_threshold: f64,
+    focal_eap: bool,
+) -> Result<PolyPersonFit, String> {
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
@@ -1429,9 +1486,16 @@ pub fn poly_person_fit(
         return Err("prior_sd must be positive".into());
     }
     let z = n_cat - 1;
-    let (theta_eap, _sd) = score_poly_eap(
-        y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta,
-    )?;
+    let (theta_eap, _sd) = if focal_eap {
+        score_poly_eap_with_prior(
+            y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta, prior_mean,
+            prior_sd,
+        )?
+    } else {
+        score_poly_eap(
+            y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta,
+        )?
+    };
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     let cell = |i: usize, theta: f64| -> Vec<f64> {
         let a = slope[i];
@@ -2615,8 +2679,8 @@ pub fn poly_information_curves(
 /// EAP trait scores from polytomous responses given fitted item parameters
 /// (the Rust scoring companion to [`fit_poly_unidim`]). `slope[i]` is `a_i`;
 /// `cat_params` is flattened `n_items * (n_cat-1)` (GPCM intercepts or GRM
-/// thresholds). Returns `(theta_eap, theta_sd)` per person over a `theta~N(0,1)`
-/// Gauss-Hermite grid.
+/// thresholds). Returns `(theta_eap, theta_sd)` per person over a
+/// Gauss-Hermite grid shifted and scaled to `N(prior_mean, prior_sd²)`.
 ///
 /// # References
 ///
@@ -2624,7 +2688,7 @@ pub fn poly_information_curves(
 /// a microcomputer environment. *Applied Psychological Measurement, 6*(4),
 /// 431–444. https://doi.org/10.1177/014662168200600405
 #[allow(clippy::too_many_arguments)]
-pub fn score_poly_eap(
+fn score_poly_eap_with_prior(
     y: &[usize],
     observed: Option<&[bool]>,
     n_persons: usize,
@@ -2634,7 +2698,12 @@ pub fn score_poly_eap(
     cat_params: &[f64],
     model: PolyModel,
     q_theta: usize,
+    prior_mean: f64,
+    prior_sd: f64,
 ) -> Result<(Vec<f64>, Vec<f64>), String> {
+    if !prior_mean.is_finite() || !prior_sd.is_finite() || prior_sd <= 0.0 {
+        return Err("prior_mean must be finite and prior_sd must be finite and positive".into());
+    }
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
@@ -2658,7 +2727,11 @@ pub fn score_poly_eap(
         }
     }
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
-    let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
+    let (standard_nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
+    let nodes: Vec<f64> = standard_nodes
+        .iter()
+        .map(|&node| prior_mean + prior_sd * node)
+        .collect();
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
     let qn = nodes.len();
     let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
@@ -2711,6 +2784,22 @@ pub fn score_poly_eap(
         theta_sd[p] = (m2 - m1 * m1).max(0.0).sqrt();
     }
     Ok((theta_eap, theta_sd))
+}
+
+pub fn score_poly_eap(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: PolyModel,
+    q_theta: usize,
+) -> Result<(Vec<f64>, Vec<f64>), String> {
+    score_poly_eap_with_prior(
+        y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta, 0.0, 1.0,
+    )
 }
 
 /// Per-item generalized S-X² polytomous item-fit result.
