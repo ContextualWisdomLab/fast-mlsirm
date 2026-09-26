@@ -52,6 +52,9 @@ include = [{ path = "LICENSE", format = "sdist" }]
 pythonpath = [".", "python"]
 testpaths = ["tests"]
 xfail_strict = true
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
 
 [tool.interrogate]
 ignore-init-method = true
