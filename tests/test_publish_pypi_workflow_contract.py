@@ -528,7 +528,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@63863422a6f4f3a8df69b3ffa07879fe12cdb537" in central
+    assert "release-dependency-license-strix-gate.yml@f8c4eed05b2d996d2d4638d71de61e12d2e84244" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -577,12 +577,19 @@ def _admission_fixture(root: Path) -> dict:
         archive.addfile(member, io.BytesIO(data))
     payload["sdist"] = buffer.getvalue()
     sha = {leg: hashlib.sha256(data).hexdigest() for leg, data in payload.items()}
+    def build_env(leg: str) -> str:
+        target = leg.rsplit("-py", 1)[0] if leg != "sdist" else "sdist"
+        if target.endswith("linux-gnu"):
+            return "container:quay.io/pypa/fixture@sha256:" + "a" * 64
+        if target == "x86_64-pc-windows-msvc":
+            return "runner:windows/test/Windows/X64"
+        return "runner:macos/test/macOS/ARM64"
     (root / "dist").mkdir(parents=True)
     for leg, name in files.items():
         (root / "dist" / name).write_bytes(payload[leg])
     (root / "record").mkdir()
     rows = "".join(
-        f"{leg}\ttrue\tclean-target-repeat-same-env\t{sha[leg]}\t{sha[leg]}\t{files[leg]}\trunner:x\n"
+        f"{leg}\ttrue\tclean-target-repeat-same-env\t{sha[leg]}\t{sha[leg]}\t{files[leg]}\t{build_env(leg)}\n"
         for leg in sorted(files)
     )
     (root / "record" / "reproducibility-record.tsv").write_text(
@@ -597,13 +604,15 @@ def _admission_fixture(root: Path) -> dict:
     crate.mkdir(parents=True)
     (crate / "Cargo.toml").write_text('[package]\nname = "fast-mlsirm-py"\nversion = "0.11.4"\n')
     (crate / "Cargo.lock").write_text('version = 4\n[[package]]\nname = "fast-mlsirm-py"\nversion = "0.11.4"\n[[package]]\nname = "mlsirm-core"\nversion = "0.11.4"\n')
-    bundle_inventory = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))["bundle_inventory"]
+    transport = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
+    bundle_inventory = transport["bundle_inventory"]
+    expected_maturin = transport["expected_maturin_binary_sha256"]
     for leg in files:
         folder = root / "scope-evidence" / f"repro-digest-{leg}"
         folder.mkdir(parents=True)
         row = next(line for line in rows.splitlines() if line.startswith(f"{leg}\t"))
         (folder / f"{leg}.tsv").write_text(row + "\n")
-        inventory = bundle_inventory(root / "dist" / files[leg], leg, _RELEASE_COMMIT, "runner:x")
+        inventory = bundle_inventory(root / "dist" / files[leg], leg, _RELEASE_COMMIT, build_env(leg))
         (folder / f"{leg}.bundle.json").write_text(json.dumps(inventory, sort_keys=True) + "\n")
         if leg != "sdist":
             requirements = folder / f"{leg}.runtime-requirements.txt"
@@ -619,7 +628,7 @@ def _admission_fixture(root: Path) -> dict:
             (folder / dependency_archive_name).write_bytes(dependency_archive_bytes)
             runtime = {
                 "schema_version": 1, "source_sha": _RELEASE_COMMIT, "leg": leg,
-                "file": files[leg], "sha256": sha[leg], "build_env": "runner:x",
+                "file": files[leg], "sha256": sha[leg], "build_env": build_env(leg),
                 "uv_version": "uv 0.12.5", "python_version": version,
                 "implementation": "cpython", "sys_platform": system, "machine": machine,
                 "requirements_sha256": hashlib.sha256(requirements.read_bytes()).hexdigest(),
@@ -641,11 +650,13 @@ def _admission_fixture(root: Path) -> dict:
                      for name in ("fast-mlsirm-py", "mlsirm-core")]
             for build_pass in ("first", "second"):
                 build = {"schema_version": 1, "source_sha": _RELEASE_COMMIT, "leg": leg,
-                         "pass": build_pass, "build_env": "runner:x",
+                         "pass": build_pass, "build_env": build_env(leg),
                          "cargo_lock_sha256": hashlib.sha256((crate / "Cargo.lock").read_bytes()).hexdigest(),
                          "pyproject_sha256": hashlib.sha256((source / "pyproject.toml").read_bytes()).hexdigest(),
                          "cargo_version": "cargo 1.90.0", "rustc_version": "rustc 1.90.0",
-                         "maturin_version": "maturin 1.15.0", "python_version": f"Python {version}.0",
+                         "maturin_version": "maturin 1.15.0",
+                         "maturin_binary_sha256": expected_maturin(leg, build_env(leg)),
+                         "python_version": f"Python {version}.0",
                          "cargo_features": ["pyo3/extension-module"],
                          "cargo_targets": {triple: graph for triple in targets}}
                 (folder / f"{leg}.build-{build_pass}.json").write_text(json.dumps(build, sort_keys=True) + "\n")
@@ -659,7 +670,8 @@ def _admission_fixture(root: Path) -> dict:
         (bundle / "placeholder.txt").write_text("inert test artifact\n")
     listing = [{"id": index, "name": name, "workflow_run": {"id": _RUN_ID}, "expired": False, "digest": "sha256:" + "d" * 64}
                for index, name in enumerate(artifacts, 1)]
-    return {"legs": legs, "files": files, "listing": listing}
+    return {"legs": legs, "files": files, "listing": listing,
+            "build_env": {leg: build_env(leg) for leg in files}}
 
 
 def test_build_scope_receipts_bind_wheel_lock_and_repeat(tmp_path: Path) -> None:
@@ -673,13 +685,17 @@ def test_build_scope_receipts_bind_wheel_lock_and_repeat(tmp_path: Path) -> None
     first = json.loads((folder / f"{leg}.build-first.json").read_text())
     second = json.loads((folder / f"{leg}.build-second.json").read_text())
     verify = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))["verify_build_scope"]
-    row = {"target": leg, "build_env": "runner:x"}
+    row = {"target": leg, "build_env": fixture["build_env"][leg]}
     verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
     second["cargo_targets"][leg.rsplit("-py", 1)[0]][0]["version"] = "forged"
     with pytest.raises(ValueError, match="graph differs from selected lock"):
         verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
     second = json.loads((folder / f"{leg}.build-second.json").read_text())
     second["maturin_version"] = "maturin 1.14.1"
+    with pytest.raises(ValueError, match="toolchain or leg"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+    second = json.loads((folder / f"{leg}.build-second.json").read_text())
+    second["maturin_binary_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="toolchain or leg"):
         verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
 

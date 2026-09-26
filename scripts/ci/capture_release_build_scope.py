@@ -7,8 +7,11 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tomllib
+
+from release_artifact_transport import expected_maturin_binary_sha256, hash_file
 
 
 def _run(*args: str) -> str:
@@ -61,15 +64,21 @@ def capture(source: Path, environ: dict[str, str]) -> dict:
                                 packages[node["id"]]["source"])],
             "features": sorted(node["features"]),
         } for node in nodes), key=lambda row: (row["name"], row["version"], row["source"] or ""))
+    build_env = "container:" + image if image else "runner:" + "/".join(
+        environ[key] for key in ("ImageOS", "ImageVersion", "RUNNER_OS", "RUNNER_ARCH"))
+    maturin = shutil.which("maturin")
+    binary_sha = hash_file(Path(maturin)) if maturin else None
+    if binary_sha != expected_maturin_binary_sha256(leg, build_env):
+        raise ValueError("maturin executable differs from pinned release asset")
     return {
         "schema_version": 1, "source_sha": source_sha, "leg": leg, "pass": build_pass,
-        "build_env": "container:" + image if image else "runner:" + "/".join(
-            environ[key] for key in ("ImageOS", "ImageVersion", "RUNNER_OS", "RUNNER_ARCH")),
+        "build_env": build_env,
         "cargo_lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
         "pyproject_sha256": hashlib.sha256(pyproject.read_bytes()).hexdigest(),
         "cargo_version": _run("cargo", "--version"),
         "rustc_version": _run("rustc", "--version"),
         "maturin_version": _run("maturin", "--version"),
+        "maturin_binary_sha256": binary_sha,
         "python_version": _run(interpreter, "--version"),
         "cargo_features": ["pyo3/extension-module"], "cargo_targets": graphs,
     }

@@ -17,6 +17,35 @@ import zipfile
 CHUNK_BYTES = 64 * 1024  # I/O buffer, not an artifact acceptance limit.
 MAX_BUNDLE_BYTES = 1024 * 1024 * 1024
 MAX_RUNTIME_ARCHIVE_BYTES = 128 * 1024 * 1024
+# SHA-256 of the executable inside each official PyO3/maturin v1.15.0 asset:
+# https://github.com/PyO3/maturin/releases/tag/v1.15.0
+MATURIN_BINARY_SHA256 = {
+    "x86_64-unknown-linux-gnu": "7770f6d9cbe0497f69b9b60f001a9a92784767651658e778b9664e6ef9b8a29a",
+    "aarch64-unknown-linux-gnu": "f48ead340837d0a36f7ec429b25c918121a294e40e8061740796297844238c1c",
+    "universal2-apple-darwin/ARM64": "55b014193adf178c96c2b9d8c01f3f32dbf52d570338eb2d7a025444ad611532",
+    "universal2-apple-darwin/X64": "37a8e94a0552f29c3f13468d24fee81461a39d16b61357a30dae54c18379592d",
+    "x86_64-pc-windows-msvc": "787779fa7f453d3444ac732689ad2bb8f1399b4d4e2af1ad9e00f84bb6460f07",
+}
+
+
+def expected_maturin_binary_sha256(leg: str, build_env: str) -> str:
+    target = leg.rsplit("-py", 1)[0]
+    if target == "universal2-apple-darwin":
+        if not build_env.startswith("runner:"):
+            raise ValueError("macOS build lacks runner identity")
+        key = f"{target}/{build_env.rsplit('/', 1)[-1]}"
+    elif target == "x86_64-pc-windows-msvc":
+        if not build_env.startswith("runner:") or not build_env.endswith("/X64"):
+            raise ValueError("Windows build lacks x64 runner identity")
+        key = target
+    else:
+        if not build_env.startswith("container:"):
+            raise ValueError("Linux build lacks container identity")
+        key = target
+    try:
+        return MATURIN_BINARY_SHA256[key]
+    except KeyError as error:
+        raise ValueError("unsupported maturin release target") from error
 
 
 def copy_and_hash(source, destination=None) -> str:
@@ -206,7 +235,7 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
               for item in tomllib.loads(lock.read_text(encoding="utf-8"))["package"]}
     keys = {"schema_version", "source_sha", "leg", "pass", "build_env",
             "cargo_lock_sha256", "pyproject_sha256", "cargo_version", "rustc_version",
-            "maturin_version", "python_version", "cargo_features", "cargo_targets"}
+            "maturin_version", "maturin_binary_sha256", "python_version", "cargo_features", "cargo_targets"}
     for receipt, build_pass in ((first, "first"), (second, "second")):
         if (type(receipt) is not dict or set(receipt) != keys
                 or receipt["schema_version"] != 1 or receipt["source_sha"] != source_sha
@@ -219,6 +248,7 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
                 or not receipt["python_version"].startswith(f"Python {python}.")
                 or not isinstance(receipt["maturin_version"], str)
                 or receipt["maturin_version"] != "maturin 1.15.0"
+                or receipt["maturin_binary_sha256"] != expected_maturin_binary_sha256(leg, row["build_env"])
                 or any(not isinstance(receipt[key], str) or not receipt[key]
                        for key in ("cargo_version", "rustc_version"))
                 or type(receipt["cargo_targets"]) is not dict

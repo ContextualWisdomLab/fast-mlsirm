@@ -78,8 +78,10 @@ Each wheel build now records the target-filtered Cargo graph, features, selected
 wheel-crate lock hash, and Rust/Python/maturin tool versions in its actual
 container or native runner. Both build passes must agree, and admission checks
 the receipts against the release source. The action now requests maturin 1.15.0,
-matching the version in `requirements/package.txt`; the standalone executable
-downloaded by the action still needs exact artifact provenance. The sdist and
+matching the version in `requirements/package.txt`; each build receipt also checks
+the executable hash against the corresponding official release asset. The
+standalone executable's licence and Strix review is still distinct from the
+PyPI package review. The sdist and
 wheel builds still need complete Python build-tool and native dependency evidence.
 File hashes establish the bundled bytes, but do not identify the origin or
 licence of each member or the libraries it loads.
