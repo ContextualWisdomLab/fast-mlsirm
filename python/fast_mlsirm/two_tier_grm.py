@@ -2,7 +2,7 @@
 Cai, Yang, & Hansen, 2011; Gibbons et al., 2007).
 
 Each item's ordered categories load a caller-supplied subset of the
-correlated primary dimensions plus at most one orthogonal specific factor.
+primary dimensions plus at most one orthogonal specific factor.
 Estimation is Bock-Aitkin marginal maximum likelihood (Cai et al., 2011,
 "Maximum Marginal Likelihood Estimation" section) with dimension reduction
 over the specific tier; the numerical work runs in Rust
@@ -19,11 +19,12 @@ decisions without a paper source are marked as implementation choices):
   comparison.
 - Two-tier latent covariance ``Sigma = [[G, 0], [0, diag(S)]]``: primaries
   ``theta_P ~ MVN(0, Phi)`` with ``Phi`` a correlation matrix (unit
-  diagonal, free off-diagonals — the single-group identification), specifics
+  diagonal, optionally fixed to identity), specifics
   orthogonal ``N(0, 1)`` (Chalmers, 2026, mirt ``bfactor`` documentation,
   "Details" section, which cites Cai, 2010). The bifactor model is the
   special case of one primary dimension (same source). The two-tier model
-  itself is Cai (2010) (abstract read; full text not accessible).
+  itself is Cai (2010, pp. 583-584, full text read). Fixing ``Phi = I`` is
+  an orthogonal-primary restriction of its covariance structure.
 - Caller-supplied confirmatory primary pattern (fixed zeros are never
   estimated); rotation with correlated primaries is the caller's
   identification responsibility (implementation scope choice; Cai, 2010, is a
@@ -71,8 +72,7 @@ References (APA 7th ed.):
 
     Cai, L. (2010). A two-tier full-information item factor analysis model
         with applications. *Psychometrika, 75*(4), 581-612.
-        https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text
-        not accessible — no equation locator is drawn from it)
+        https://doi.org/10.1007/s11336-010-9178-0 (full text read)
 
     Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
         item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
@@ -153,12 +153,14 @@ class TwoTierGrmFit:
     ``a_specific`` the ``n_items`` specific slopes (``0`` for specific-free
     items, canonicalized within each block); ``threshold`` the
     ``n_items x (n_cat-1)`` strictly decreasing boundary intercepts; ``phi``
-    the ``n_primary x n_primary`` estimated primary correlation matrix (unit
+    the ``n_primary x n_primary`` primary correlation matrix (unit
     diagonal); ``theta_p_eap`` / ``theta_p_sd`` the primary-factor EAPs and
     marginal posterior SDs (``n_persons x n_primary``); ``category_counts``
     the observed ``n_items x n_cat`` counts. ``termination_reason`` is
     ``"tolerance_met"`` or ``"max_iter_reached"``; ``best_start`` the winning
-    start in ``0..n_starts``.
+    start in ``0..n_starts``. ``primary_identification`` is
+    ``"orthogonal"`` when Phi was fixed to I or ``"correlated"`` when
+    its off-diagonal entries were estimated (Cai, 2010, pp. 583-584).
     """
 
     a_primary: np.ndarray
@@ -178,6 +180,7 @@ class TwoTierGrmFit:
     final_loglik_change: float
     best_start: int
     n_parameters: int
+    primary_identification: str
 
 
 def fit_two_tier_grm(
@@ -194,6 +197,7 @@ def fit_two_tier_grm(
     n_starts: int,
     seed: int,
     progress: object | None = None,
+    primary_correlation: str = "estimate",
 ) -> TwoTierGrmFit:
     """Fit the single-group polytomous two-tier GRM (compute in Rust).
 
@@ -233,7 +237,23 @@ def fit_two_tier_grm(
     Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation
         of item parameters: Application of an EM algorithm. *Psychometrika,
         46*(4), 443–459. https://doi.org/10.1007/BF02293801 (full text read)
+
+    ``primary_correlation='estimate'`` preserves the existing correlated-primary
+    fit; ``'identity'`` fixes Phi exactly to I (Cai, 2010, pp. 583-584).
+    In identity mode, distinct free-loading item sets for each primary pair
+    are necessary to rule out continuous orthogonal rotations; per-column
+    reflection canonicalization handles the remaining sign ambiguity.
+
+    References (APA 7th ed.): Cai, L. (2010). A two-tier full-information item
+    factor analysis model with applications. *Psychometrika, 75*(4), 581-612.
+    https://doi.org/10.1007/s11336-010-9178-0; Cai, L., Yang, J. S., &
+    Hansen, M. (2011). Generalized full-information item bifactor analysis.
+    *Psychological Methods, 16*(3), 221-248. https://doi.org/10.1037/a0023350.
     """
+    if not isinstance(primary_correlation, str) or primary_correlation not in (
+        "estimate", "identity"
+    ):
+        raise ValueError("primary_correlation must be 'estimate' or 'identity'")
     n_cat_int = _finite_integer_control(n_cat, "n_cat")
     if n_cat_int < 2:
         raise ValueError("n_cat must be >= 2")
@@ -278,6 +298,15 @@ def fit_two_tier_grm(
     if pmap.ndim != 2 or pmap.shape != (n_items, n_primary_int):
         raise ValueError("primary_map must be an n_items x n_primary boolean array")
     pmap_bool = np.asarray(pmap, dtype=bool)
+    if primary_correlation == "identity":
+        for d in range(n_primary_int):
+            for other in range(d + 1, n_primary_int):
+                if np.array_equal(pmap_bool[:, d], pmap_bool[:, other]):
+                    raise ValueError(
+                        "identity primary correlation requires distinct free-loading item sets "
+                        "for every pair of primary columns; identical free-loading item sets "
+                        f"at columns {d} and {other} admit orthogonal rotation"
+                    )
 
     smap = np.asarray(specific_map)
     if smap.ndim != 1 or smap.shape[0] != n_items:
@@ -349,6 +378,7 @@ def fit_two_tier_grm(
         int(n_starts_int),
         int(seed_int),
         rust_progress,
+        primary_correlation,
     )
     return TwoTierGrmFit(
         a_primary=np.asarray(res["a_primary"], dtype=np.float64).reshape(
@@ -380,6 +410,7 @@ def fit_two_tier_grm(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+        primary_identification=str(res["primary_identification"]),
     )
 
 
@@ -422,6 +453,7 @@ def two_tier_oakes_se(
     q_primary: int,
     q_specific: int,
     fd_step: float,
+    primary_correlation: str = "estimate",
 ) -> TwoTierOakesSe:
     """Observed-information SEs via Oakes (1999, eq. 6, p. 480) at given
     two-tier parameters (valid at every point, not only the MLE).
@@ -431,7 +463,20 @@ def two_tier_oakes_se(
 
     Implementation basis: Oakes (1999, eq. 6, p. 480); Cai et al. (2011,
     eq. 6, p. 227); Gibbons et al. (2007, eq. 15).
+    ``primary_correlation='identity'`` excludes fixed Phi from the information
+    matrix (Cai, 2010, pp. 583-584; Oakes, 1999, eq. 6, p. 480).
+
+    References (APA 7th ed.): Cai, L. (2010). A two-tier full-information item
+    factor analysis model with applications. *Psychometrika, 75*(4), 581-612.
+    https://doi.org/10.1007/s11336-010-9178-0; Oakes, D. (1999). Direct
+    calculation of the information matrix via the EM algorithm. *Journal of
+    the Royal Statistical Society: Series B, 61*(2), 479-482.
+    https://doi.org/10.1111/1467-9868.00188.
     """
+    if not isinstance(primary_correlation, str) or primary_correlation not in (
+        "estimate", "identity"
+    ):
+        raise ValueError("primary_correlation must be 'estimate' or 'identity'")
 
     n_cat_int = _finite_integer_control(n_cat, "n_cat")
     if n_cat_int < 2:
@@ -504,6 +549,7 @@ def two_tier_oakes_se(
         int(q_primary_int),
         int(q_specific_int),
         float(fd_float),
+        primary_correlation,
     )
     labels = [str(v) for v in res["labels"]]
     k = len(labels)
