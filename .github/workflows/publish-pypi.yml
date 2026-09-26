@@ -905,7 +905,7 @@ jobs:
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@8b3bb112578567a8b118e08e3e3cef92db1d5965
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@607a05687af534c60113d96f94fd258e4b36f4e0
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
@@ -1204,7 +1204,8 @@ jobs:
               transport.verify_build_scope(build_first, build_second, row, Path("release-source"),
                                            commit, members[f"{leg}.build-python.zip"])
               build_records.append({key: build_first[key] for key in
-                                    ("leg", "python_packages", "python_snapshot_sha256")})
+                                    ("leg", "python_packages", "python_snapshot_sha256",
+                                     "build_env", "maturin_version", "maturin_binary_sha256")})
               if leg != "sdist":
                   runtime = json.loads(members[f"{leg}.runtime.json"].read_text(encoding="utf-8"),
                                        object_pairs_hook=unique_object)

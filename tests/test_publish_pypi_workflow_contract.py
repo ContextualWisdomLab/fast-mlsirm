@@ -536,7 +536,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@8b3bb112578567a8b118e08e3e3cef92db1d5965" in central
+    assert "release-dependency-license-strix-gate.yml@607a05687af534c60113d96f94fd258e4b36f4e0" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -965,7 +965,28 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                                   "source_sha256": dependency_sha}}
         fixture_sha = hashlib.sha256(json.dumps(fixture, sort_keys=True,
                                                separators=(",", ":")).encode()).hexdigest()
-        archive_report = {"schema": "cwl.release-runtime-archive-licenses/2", "archives": [
+        tool_rows = {}
+        for leg in build_legs:
+            tool_receipt = json.loads((root / "scope-evidence" / f"repro-digest-{leg}" /
+                                       f"{leg}.build-first.json").read_text())
+            tool_sha = tool_receipt["maturin_binary_sha256"]
+            tool_key = f"github-release/maturin@1.15.0/sha256/{tool_sha}"
+            tool = tool_rows.setdefault(tool_key, {"key": tool_key,
+                "package_key": "github-release/maturin@1.15.0", "name": "maturin",
+                "version": "1.15.0", "source_sha256": tool_sha, "license": "Apache-2.0",
+                "legs": [], "build_envs": {}, "fixture": {"id": tool_key,
+                    "dependency": {"ecosystem": "github-release", "name": "maturin",
+                                   "version": "1.15.0", "source_sha256": tool_sha}}})
+            tool["legs"].append(leg)
+            tool["build_envs"][leg] = tool_receipt["build_env"]
+        for tool in tool_rows.values():
+            tool["fixture_sha256"] = hashlib.sha256(json.dumps(tool["fixture"], sort_keys=True,
+                separators=(",", ":")).encode()).hexdigest()
+        tool_bindings = [{"key": key, "name": "release-strix-binding-a2-"
+                          + hashlib.sha256(key.encode()).hexdigest(), "id": 1100 + index,
+                          "digest": "sha256:" + "f" * 64}
+                         for index, key in enumerate(sorted(tool_rows))]
+        archive_report = {"schema": "cwl.release-runtime-archive-licenses/3", "archives": [
             {"key": archive_key, "package_key": binding["key"], "name": "numpy",
              "version": "2.5.1", "source_sha256": dependency_sha,
              "license": "BSD-3-Clause", "fixture": fixture,
@@ -974,7 +995,8 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                                 "name": "pip", "version": "25.2", "source_sha256": build_sha,
                                 "license": "MIT", "fixture": build_fixture,
                                 "fixture_sha256": build_fixture_sha, "legs": build_legs,
-                                "snapshots": build_snapshots}]}
+                                "snapshots": build_snapshots}],
+            "build_tools": list(tool_rows.values())}
         archive_report_bytes = (json.dumps(archive_report, sort_keys=True) + "\n").encode()
         verdict_artifact = by_name["release-dependency-sealed-evidence--full-set-verdict"]
         report = {"schema": "cwl.release-dependency-gate/1", "result": "PASS",
@@ -990,7 +1012,10 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                                                "legs": _expected_legs()}],
                   "build_package_reviews": [{"key": build_key, "package_key": "pypi/pip@25.2",
                                              "source_sha256": build_sha, "license": "MIT",
-                                             "fixture_sha256": build_fixture_sha, "legs": build_legs}]}
+                                             "fixture_sha256": build_fixture_sha, "legs": build_legs}],
+                  "build_tool_reviews": [{field: tool[field] for field in
+                      ("key", "package_key", "source_sha256", "license", "fixture_sha256", "legs")}
+                      for tool in tool_rows.values()]}
         report_bytes = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()
         verdict = {"schema": "cwl.release-full-set-verdict/1", "result": "PASS", **identity,
                    "record_artifact_id": record_artifact["id"],
@@ -999,6 +1024,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                    "scope_evidence": scope_set["evidence"],
                    "runtime_archive_binding_artifacts": [archive_binding],
                    "build_package_binding_artifacts": [build_binding],
+                   "build_tool_binding_artifacts": tool_bindings,
                    "runtime_archive_license_sha256": hashlib.sha256(archive_report_bytes).hexdigest(),
                    "gate_report_sha256": hashlib.sha256(report_bytes).hexdigest()}
         buffer = io.BytesIO()
@@ -1015,7 +1041,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
         (root / "run-artifacts.jsonl").write_text("".join(json.dumps({
             **item, "workflow_run": {"id": _RUN_ID, "head_sha": "d" * 40},
             "created_at": "2026-09-26T12:01:00Z", "expired": False,
-        }) + "\n" for item in selected + [binding, archive_binding, build_binding]))
+        }) + "\n" for item in selected + [binding, archive_binding, build_binding, *tool_bindings]))
         (root / "run-attempt.json").write_text(json.dumps({
             "id": _RUN_ID, "run_attempt": 2, "head_sha": "d" * 40,
             "run_started_at": "2026-09-26T12:00:00Z",
@@ -1293,6 +1319,22 @@ def test_build_package_licence_and_strix_must_cover_installed_files(tmp_path: Pa
         verify({**verdict, "runtime_archive_license_sha256": hashlib.sha256(forged_bytes).hexdigest()},
                report, report_bytes, forged, forged_bytes, runtimes, builds,
                repository="owner/repo", source_sha=_RELEASE_COMMIT)
+    with pytest.raises(ValueError, match="complete dependency set"):
+        verify({**verdict, "build_tool_binding_artifacts": []}, report, report_bytes,
+               archive_report, archive_bytes, runtimes, builds,
+               repository="owner/repo", source_sha=_RELEASE_COMMIT)
+    forged = json.loads(archive_bytes)
+    forged["build_tools"][0]["build_envs"]["sdist"] = "runner:forged"
+    forged_bytes = (json.dumps(forged, sort_keys=True) + "\n").encode()
+    with pytest.raises(ValueError, match="build tool licence differs"):
+        verify({**verdict, "runtime_archive_license_sha256": hashlib.sha256(forged_bytes).hexdigest()},
+               report, report_bytes, forged, forged_bytes, runtimes, builds,
+               repository="owner/repo", source_sha=_RELEASE_COMMIT)
+    forged_builds = [dict(build) for build in builds]
+    forged_builds[0]["maturin_binary_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="build tool licence and Strix sets differ"):
+        verify(verdict, report, report_bytes, archive_report, archive_bytes,
+               runtimes, forged_builds, repository="owner/repo", source_sha=_RELEASE_COMMIT)
 
 
 def test_build_leg_captures_finished_distribution_bytes(tmp_path: Path) -> None:
