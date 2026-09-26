@@ -51,11 +51,3 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
-
-## 2025-05-18 - HTML 리포트 테마 텍스트 대비 향상
-**Learning:** 독립형 HTML 리포트에서 배경색을 CSS 변수(예: `var(--teal)`)로 지정하고 텍스트 색상을 `white`로 하드코딩하면, OS의 다크 모드 설정에 따라 배경색 변수의 명도/채도가 변경될 경우 텍스트 대비가 기준을 충족하지 못해 가독성이 떨어질 수 있음을 알게 되었습니다.
-**Action:** 시스템의 색상 테마 전반에 걸쳐 올바른 대비(contrast) 규정 준수를 보장하려면 HTML 리포트에서 텍스트에 하드코딩된 문자열 대신 배경 변수와 쌍을 이루는 테마별 CSS 변수(예: `color: var(--bg)`)를 항상 사용하십시오.
-
-## 2025-05-18 - 데이터 시각화 호버 전환 부드러움 향상
-**Learning:** 가로 막대 차트 행과 같이 데이터가 밀집된 시각화 요소에서 마우스를 가져갈 때 부드러운 전환 효과(예: `transition: background-color 0.15s ease-in-out`) 없이 배경색이 바뀌면 포인터 장치 사용자는 갑작스럽고 불편한 시각적 변화를 경험하게 됨을 알게 되었습니다.
-**Action:** 독립형 HTML 리포트의 대화형 요소나 호버 가능한 행에서는 시각적 변화가 갑작스럽게 일어나는 것을 방지하고 일관성을 유지하기 위해 `background-color`에 적절한 CSS 전환 효과를 항상 포함하십시오.

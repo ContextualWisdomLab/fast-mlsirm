@@ -624,7 +624,7 @@ body {
   top: -40px;
   left: 0;
   background: var(--teal);
-  color: var(--bg);
+  color: white;
   padding: 8px 16px;
   z-index: 100;
   transition: top 0.2s ease-in-out;
@@ -761,7 +761,6 @@ h3 {
   align-items: center;
   padding: 4px 8px;
   border-radius: 4px;
-  transition: background-color 0.15s ease-in-out;
 }
 
 .bar-row:hover {
