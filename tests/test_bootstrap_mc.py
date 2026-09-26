@@ -20,6 +20,8 @@ def test_rank_interval_and_percentile_match_order_statistics():
     assert linear_percentile(draws, 0.125) == pytest.approx(
         np.quantile(draws, 0.125, method="linear")
     )
+    assert linear_percentile(draws[::-1], 0.125) == pytest.approx(1.5)
+    assert mc_rank_interval(draws[::-1], 0.5, 0.8)["lo"] == 1.0
     assert binomial_quantile(10, 0.5, 0.025) == 2
     assert binomial_interval_coverage(10, 0.5, 2, 8) == pytest.approx(0.978515625)
 

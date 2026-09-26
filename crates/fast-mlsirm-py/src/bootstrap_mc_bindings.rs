@@ -21,7 +21,8 @@ fn py_binomial_interval_coverage(n: usize, p: f64, low: usize, high: usize) -> P
 
 #[pyfunction(name = "linear_percentile")]
 fn py_linear_percentile(values: PyReadonlyArray1<'_, f64>, p: f64) -> PyResult<f64> {
-    linear_percentile(values.as_slice()?, p).map_err(PyValueError::new_err)
+    let draws: Vec<f64> = values.as_array().iter().copied().collect();
+    linear_percentile(&draws, p).map_err(PyValueError::new_err)
 }
 
 #[pyfunction(name = "mc_rank_interval")]
@@ -31,8 +32,8 @@ fn py_mc_rank_interval(
     percentile: f64,
     confidence: f64,
 ) -> PyResult<Py<PyDict>> {
-    let result = mc_rank_interval(values.as_slice()?, percentile, confidence)
-        .map_err(PyValueError::new_err)?;
+    let draws: Vec<f64> = values.as_array().iter().copied().collect();
+    let result = mc_rank_interval(&draws, percentile, confidence).map_err(PyValueError::new_err)?;
     let out = PyDict::new(py);
     out.set_item("confidence", result.confidence)?;
     out.set_item("distribution", "Binomial(B, percentile)")?;
