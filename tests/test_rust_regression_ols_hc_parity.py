@@ -148,4 +148,6 @@ def test_report_values_use_rust_with_explicit_interval_level():
     with pytest.raises(ValueError):
         sample_mean_sd(np.array([1.0]))
     with pytest.raises(ValueError):
+        normal_wald_interval(2.0, 0.5, 0.0)
+    with pytest.raises(ValueError):
         normal_wald_interval(2.0, 0.5, 1.0)

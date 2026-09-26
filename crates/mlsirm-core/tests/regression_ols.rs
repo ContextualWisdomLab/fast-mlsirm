@@ -106,5 +106,6 @@ fn sample_moments_and_normal_wald_bounds() {
     assert!(sample_mean_sd(&[1.0]).is_err());
     assert!(sample_mean_sd(&[1.0, f64::NAN]).is_err());
     assert!(normal_wald_interval(2.0, -0.5, 0.95).is_err());
+    assert!(normal_wald_interval(2.0, 0.5, 0.0).is_err());
     assert!(normal_wald_interval(2.0, 0.5, 1.0).is_err());
 }

@@ -187,7 +187,7 @@ pub fn normal_wald_interval(
     if !estimate.is_finite() || !se.is_finite() || se < 0.0 {
         return Err("estimate and nonnegative SE must be finite".to_owned());
     }
-    if !confidence_level.is_finite() || !(0.0..1.0).contains(&confidence_level) {
+    if !confidence_level.is_finite() || confidence_level <= 0.0 || confidence_level >= 1.0 {
         return Err("confidence_level must be finite and in (0, 1)".to_owned());
     }
     let critical = crate::mokken::normal_upper_quantile((1.0 - confidence_level) / 2.0);
