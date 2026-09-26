@@ -118,7 +118,8 @@ def test_runtime_dependencies_require_matching_licensed_and_strix_bound_report()
     verdict = {"gate_report_sha256": hashlib.sha256(raw).hexdigest(),
                "binding_artifacts": [{"key": key}]}
     receipts = [{"leg": f"wheel-{index}",
-                 "locked_dependencies": [{"name": "numpy", "version": "2.5.1"}]}
+                 "locked_dependencies": [{"name": "numpy", "version": "2.5.1"}],
+                 "archives": [{"name": "numpy", "version": "2.5.1", "sha256": "d" * 64}]}
                 for index in range(12)]
 
     def check() -> None:
@@ -131,6 +132,7 @@ def test_runtime_dependencies_require_matching_licensed_and_strix_bound_report()
     for mutate in (
         lambda: verdict.update(gate_report_sha256="0" * 64),
         lambda: receipts[0]["locked_dependencies"][0].update(version="2.5.2"),
+        lambda: receipts[0]["archives"][0].update(sha256="0" * 64),
         lambda: verdict["binding_artifacts"][0].update(key="pypi/other@1"),
     ):
         original = (copy.deepcopy(verdict), copy.deepcopy(receipts))

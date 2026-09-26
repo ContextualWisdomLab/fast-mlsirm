@@ -35,6 +35,25 @@ def hash_file(path: Path) -> str:
         return copy_and_hash(source)
 
 
+def wheel_identity(path: Path) -> tuple[str, str]:
+    """Read one bounded wheel metadata header without installing the archive."""
+    if path.stat().st_size > MAX_RUNTIME_ARCHIVE_BYTES:
+        raise ValueError("runtime wheel archive exceeds size limit")
+    with zipfile.ZipFile(path) as archive:
+        metadata = [item for item in archive.infolist()
+                    if item.filename.endswith(".dist-info/METADATA")
+                    and len(PurePosixPath(item.filename).parts) == 2]
+        if len(metadata) != 1 or metadata[0].file_size > 1024 * 1024:
+            raise ValueError("runtime archive metadata is missing or oversized")
+        with archive.open(metadata[0]) as stream:
+            message = email.parser.Parser().parsestr(stream.read(1024 * 1024 + 1).decode("utf-8"))
+    name = re.sub(r"[-_.]+", "-", message.get("Name", "")).lower()
+    version = message.get("Version", "")
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) or not version:
+        raise ValueError("runtime archive metadata has no project identity")
+    return name, version
+
+
 def bundle_inventory(artifact: Path, leg: str, source_sha: str, build_env: str) -> dict:
     """Hash every regular member in the finished distribution; never extract it."""
     if not re.fullmatch(r"[0-9a-f]{40}", source_sha) or not leg or not build_env:
@@ -142,14 +161,16 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
         raise ValueError(f"{leg}: runtime archive set is incomplete")
     names, identities, total = set(), set(), 0
     for archive_row in archives:
-        if (type(archive_row) is not dict or set(archive_row) != {"file", "size", "sha256"}
+        if (type(archive_row) is not dict or set(archive_row) != {"file", "size", "sha256", "name", "version"}
                 or type(archive_row["file"]) is not str
                 or not re.fullmatch(r"[A-Za-z0-9_.+-]+\.whl", archive_row["file"])
                 or archive_row["file"] in names
                 or type(archive_row["size"]) is not int
                 or not 0 < archive_row["size"] <= MAX_RUNTIME_ARCHIVE_BYTES
                 or type(archive_row["sha256"]) is not str
-                or not re.fullmatch(r"[0-9a-f]{64}", archive_row["sha256"])):
+                or not re.fullmatch(r"[0-9a-f]{64}", archive_row["sha256"])
+                or type(archive_row["name"]) is not str
+                or type(archive_row["version"]) is not str):
             raise ValueError(f"{leg}: runtime archive identity is malformed")
         names.add(archive_row["file"])
         total += archive_row["size"]
@@ -159,17 +180,10 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
         if (archive_path is None or archive_path.stat().st_size != archive_row["size"]
                 or hash_file(archive_path) != archive_row["sha256"]):
             raise ValueError(f"{leg}: runtime archive bytes differ from receipt")
-        with zipfile.ZipFile(archive_path) as archive:
-            metadata = [item for item in archive.infolist()
-                        if item.filename.endswith(".dist-info/METADATA")
-                        and len(PurePosixPath(item.filename).parts) == 2]
-            if len(metadata) != 1 or metadata[0].file_size > 1024 * 1024:
-                raise ValueError(f"{leg}: runtime archive metadata is missing or oversized")
-            with archive.open(metadata[0]) as stream:
-                message = email.parser.Parser().parsestr(stream.read(1024 * 1024 + 1).decode("utf-8"))
-        name = re.sub(r"[-_.]+", "-", message.get("Name", "")).lower()
-        version = message.get("Version", "")
-        identities.add((name, version))
+        identity = wheel_identity(archive_path)
+        if identity != (archive_row["name"], archive_row["version"]):
+            raise ValueError(f"{leg}: runtime archive metadata differs from receipt")
+        identities.add(identity)
     expected_members = {f"{leg}.tsv", f"{leg}.bundle.json", f"{leg}.runtime.json",
                         f"{leg}.runtime-requirements.txt"} | names
     if set(evidence_members) != expected_members:

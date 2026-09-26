@@ -623,7 +623,8 @@ def _admission_fixture(root: Path) -> dict:
                                        "sha256": hashlib.sha256(extension_bytes).hexdigest()},
                 "archives": [{"file": dependency_archive_name,
                               "size": len(dependency_archive_bytes),
-                              "sha256": hashlib.sha256(dependency_archive_bytes).hexdigest()}],
+                              "sha256": hashlib.sha256(dependency_archive_bytes).hexdigest(),
+                              "name": "numpy", "version": "2.5.1"}],
             }
             (folder / f"{leg}.runtime.json").write_text(json.dumps(runtime, sort_keys=True) + "\n")
     artifacts = [f"dist-wheel-{leg}" for leg in legs] + [
@@ -718,7 +719,10 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                   "failures": [], "dependency_count": 1,
                   "dependencies": [{"key": binding["key"], "ecosystem": "pypi", "name": "numpy",
                                     "version": "2.5.1", "license": "BSD-3-Clause",
-                                    "source_sha256": "a" * 64, "fixture_sha256": "c" * 64}]}
+                                    "source_sha256": hashlib.sha256((root / "scope-evidence" /
+                                        f"repro-digest-{_expected_legs()[0]}" /
+                                        "numpy-2.5.1-py3-none-any.whl").read_bytes()).hexdigest(),
+                                    "fixture_sha256": "c" * 64}]}
         report_bytes = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()
         verdict = {"schema": "cwl.release-full-set-verdict/1", "result": "PASS", **identity,
                    "record_artifact_id": record_artifact["id"],

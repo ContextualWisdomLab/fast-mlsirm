@@ -24,9 +24,9 @@ verifies the selected immutable artifact IDs, ZIP and member digests. The
 central full-set verdict must match the same run and attempt, exact release
 source, all thirteen distribution rows, and the complete Strix binding set. Its
 selected artifact also carries the central dependency report. Admission checks
-the report hash named by the verdict and requires every installed wheel runtime
-dependency to appear in the licensed, Strix-bound dependency set. It then
-consumes the JSON from the same selected reproducibility artifact and recomputes
+the report hash named by the verdict and requires each installed dependency's
+exact wheel archive hash to appear in the licensed, Strix-bound dependency set.
+Admission then consumes the JSON from the same selected reproducibility artifact and recomputes
 every identity using exact release blobs and transported distribution bytes. Missing,
 duplicate, changed, cross-platform or promoted records refuse admission before
 the remaining platform-scope HOLD. No name-only fallback is added.
@@ -68,7 +68,9 @@ installed package list, and binds the extension hash to the published wheel.
 A changed, missing or cross-target receipt refuses admission before the scope
 HOLD. The macOS universal2 receipt exercises the runner architecture only; it
 does not prove installation on its other binary slice. The central licence and
-Strix gate has not yet consumed these target dependency wheel bytes.
+Strix gate has not yet collected every target dependency wheel; its current
+report supports only one source hash per package version, so different platform
+wheels under the same version remain HOLD.
 
 The sdist and wheel builds still need build and native dependency evidence.
 File hashes establish the bundled bytes, but do not identify the origin or

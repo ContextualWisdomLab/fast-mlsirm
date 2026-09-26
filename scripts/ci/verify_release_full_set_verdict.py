@@ -153,16 +153,18 @@ def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: 
             or report["dependency_count"] != len(dependencies)
             or not isinstance(bindings, list) or not bindings):
         raise ValueError("full dependency report has no complete dependency set")
-    keys = set()
+    sources = {}
     for row in dependencies:
         if (not isinstance(row, Mapping)
                 or row.get("ecosystem") not in ("pypi", "cargo")
                 or not all(isinstance(row.get(field), str) and row[field]
                            for field in ("key", "name", "version", "license", "source_sha256", "fixture_sha256"))
                 or row["key"] != f"{row['ecosystem']}/{row['name']}@{row['version']}"
-                or row["key"] in keys):
+                or not re.fullmatch(r"[0-9a-f]{64}", row["source_sha256"])
+                or row["key"] in sources):
             raise ValueError("full dependency report contains an invalid dependency")
-        keys.add(row["key"])
+        sources[row["key"]] = row["source_sha256"]
+    keys = set(sources)
     if (keys != {binding.get("key") for binding in bindings if isinstance(binding, Mapping)}
             or len(bindings) != len(keys) or len(runtime_records) != 12):
         raise ValueError("Strix bindings or wheel runtime receipts do not cover the dependency set")
@@ -170,6 +172,10 @@ def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: 
         for package in runtime["locked_dependencies"]:
             if f"pypi/{package['name']}@{package['version']}" not in keys:
                 raise ValueError(f"{runtime['leg']}: installed dependency lacks licence and Strix verdict: {package['name']}=={package['version']}")
+        for archive in runtime["archives"]:
+            key = f"pypi/{archive['name']}@{archive['version']}"
+            if sources.get(key) != archive["sha256"]:
+                raise ValueError(f"{runtime['leg']}: dependency archive lacks an exact licence and Strix verdict: {key}")
 
 
 def main() -> None:

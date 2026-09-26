@@ -12,7 +12,7 @@ import sys
 import tempfile
 import tomllib
 
-from release_artifact_transport import hash_file
+from release_artifact_transport import hash_file, wheel_identity
 
 
 def _run(*args: str, cwd: Path) -> str:
@@ -98,6 +98,11 @@ print(json.dumps({"member": "fast_mlsirm/" + extension.name, "sha256": digest.he
     release_package = {"name": "fast-mlsirm", "version": project["version"]}
     if release_package in before or installed != sorted([*before, release_package], key=lambda row: row["name"]):
         raise ValueError("runtime environment differs from locked dependencies plus wheel")
+    archive_rows = []
+    for path in archives:
+        name, version = wheel_identity(path)
+        archive_rows.append({"file": path.name, "size": path.stat().st_size,
+                             "sha256": hash_file(path), "name": name, "version": version})
     return {
         "schema_version": 1, "source_sha": source_sha, "leg": leg, "file": filename,
         "sha256": digest, "build_env": build_env, "uv_version": uv_version,
@@ -107,8 +112,7 @@ print(json.dumps({"member": "fast_mlsirm/" + extension.name, "sha256": digest.he
         "uv_lock_sha256": hash_file(source / "uv.lock"),
         "locked_dependencies": before, "installed": installed,
         "imported_extension": imported_extension,
-        "archives": [{"file": path.name, "size": path.stat().st_size, "sha256": hash_file(path)}
-                     for path in archives],
+        "archives": archive_rows,
     }
 
 
