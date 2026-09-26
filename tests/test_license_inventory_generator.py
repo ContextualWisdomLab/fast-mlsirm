@@ -57,11 +57,12 @@ REVIEWED = json.loads((Path(__file__).parent / "fixtures/license_inventory_revie
 @pytest.mark.parametrize("row", REVIEWED, ids=lambda r: r["package"])
 def test_reviewed_whole_license_bytes_and_mutations(row):
     text = row["text"]
+    identifiers = row.get("identifiers", [row.get("identifier")])
     assert hashlib.sha256(text.encode()).hexdigest() == row["raw_sha256"]
     normalized = L.re.sub(r"[ \t\r\n]+", " ", text).strip(" \t\r\n")
     assert hashlib.sha256(normalized.encode()).hexdigest() == row["normalized_sha256"]
-    assert L.verified_standard_text(text) == [row["identifier"]]
-    assert L.verified_standard_text(text.replace("\n", "\r\n")) == [row["identifier"]]
+    assert L.verified_standard_text(text) == identifiers
+    assert L.verified_standard_text(text.replace("\n", "\r\n")) == identifiers
     word = next(w for w in ("License", "software", "Redistribution") if w in text)
     for changed in (text.replace(word, "Restriction", 1),
                     text + "\nCommercial use is prohibited.", "extra\n" + text, text + "\nextra"):

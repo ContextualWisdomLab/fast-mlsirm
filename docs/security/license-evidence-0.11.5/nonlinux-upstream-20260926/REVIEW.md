@@ -135,6 +135,61 @@ The target-bundle selector, fail-closed macOS build guard, and built-wheel
 byte check are prepared in [draft PR #2174](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/2174)
 at `cf710bc1`; that branch is not part of this evidence checkout.
 
+## Integrated source candidate
+
+An isolated merge commit `1c08f1bcbd8f6d8be2b1b4f1be79640282dad787`
+combines this evidence branch at `56d9b6b1` with the release-notice branch at
+`cf710bc1`. Its only merge conflict was `uv.lock`: it selects NumPy 2.5.2,
+matching the reviewed 0.11.5 wheel input. The binding
+`crates/fast-mlsirm-py/Cargo.lock` remains SHA256
+`528414b582b256a6ab8ac68ceceb134e8ddb719774513ab8cc3a0e4eb22a177d`.
+`uv lock --check --offline`, 254 focused license tests, workflow `actionlint`,
+and the exact A3 Linux cp312 wheel/source check all passed on that merge tree.
+A [fresh manylinux2014 build](../integrated-linux-cp312-20260926/README.md)
+from its Git archive (SHA256
+`7d8b1e1c917d6be5eeeed822742b8ec31add587b96ad62bfb68c49ceaaca1b01`)
+produced a wheel byte-identical to the earlier A3 candidate (SHA256
+`d8ec1d497763abd943dfc5ba0defa93a67f141b8bab9adf04a02c8d09a9d43bb`).
+The integrated wheel's six license members matched its extracted source; its
+installed regression set passed 10 tests. This local artifact result covers
+Linux x86_64 CPython 3.12 only.
+
+Two further [integrated Linux x86_64 candidates](../integrated-linux-cp313-cp314-20260926/README.md)
+were built from the same source archive: CPython 3.13 wheel SHA256
+`0e31da23ec42da997dcaace8d58607a539d84a2b639e59d4896cb3f6ebb05300`
+and CPython 3.14 wheel SHA256
+`542a4ee486557b0741646dcbb8bb7eb925267f6c3e13c65f2ace447b336a8a93`.
+Each has six license files byte-identical to the integrated source and the
+matching native extension; the wheel license verifier returned no errors.
+`auditwheel` confirmed `manylinux_2_17_x86_64` for both. Thus three local
+Linux x86_64 wheel candidates have exact attribution evidence.
+
+A later integrated commit `68cb7143` also carries the target-snapshot pairing
+fix from draft PR #2174. Its Git archive SHA256 is
+`0be425c5b82b7e0e9c3c30635273e2c78d5c87bb42c132c5919ee1c4083d74f8`.
+The [ARM64 build record](../integrated-linux-aarch64-20260926/README.md)
+contains three locally built `manylinux_2_17_aarch64` candidates: CPython 3.12
+SHA256 `a663a645c241a3f13570ca017263ef857a11e856a1b240588fe93d74a41228bb`,
+3.13 SHA256 `13f8a6b637cc96d51b45a32513a5857fdabbae02c5293f8a66c45a4a57df39a7`,
+and 3.14 SHA256 `9bc29e9e07978b6fa0c1cc7a7ca220cb674f71a23ca39affb24ddb9e5c1e13a9`.
+Each wheel has six source-matching license members, an AArch64 extension, and
+no verifier errors. Six local Linux candidates now have exact attribution
+evidence. The six planned Windows/macOS wheel artifacts still lack final checks;
+macOS also retains ten Cargo HOLD rows. These are local candidates, not
+published-artifact verdicts.
+
+Using the integrated generator and reviewed fixture, rerun snapshots for
+Linux aarch64 and Windows x86_64 were byte-identical to the committed files
+(SHA256 `23452c4e7daaf7b36cbf2036ab4d1395d106b7bc5cfcef2bb4572d24ac4b476b`
+and `d39171f014f4b3603a564d2d9339e72d4fd5166b98714f7945dc8c727c69ed96`).
+Rendering them again against the hash-bound crate cache and upstream manifest
+produced notice SHA256
+`afa61d22b98ec3b8d4797c4af1dc9a6d159b2051a543e658c67f4d2404d2d87c`
+and `7a3537a1df4063760bfee6e720b7cc9105721748d3fffd29aed2732d155dde58`.
+Both macOS architecture inventories retained ten HOLD rows; their snapshot
+commands exited 1 at `block2@0.6.2 is HOLD, not PERMISSIVE` and wrote no file.
+These are source-graph checks, not final wheel evidence.
+
 ## Python companion-file follow-up
 
 The exact `packaging 26.2` and `pygments 2.20.0` wheel members described in
@@ -160,12 +215,48 @@ is `current-python-variant/inventory.json` on s1, SHA256
 `fd72fa5f302a5a89f1e9f2084980f314e5e4bcaf7af9678140ed5dacccc98583`.
 The focused tests passed: 241 tests.
 
+The next exact-member review accepted three NumPy 2.5.2 component files:
+`pcg64` and `sfc64` each contain a complete MIT grant, and `philox` contains
+a complete BSD three-clause grant with a punctuation variant. The pinned wheel,
+member hashes, and whole texts are recorded in [`SOURCES.md`](SOURCES.md).
+The verifier rerun exited zero with no completeness gaps. Only the NumPy
+Python row changed: its unverified candidate count fell from 11 to **8**,
+while its class and Python HOLD **3** stayed unchanged. The result is
+`current-python-numpy-simple-v2/inventory.json` on s1, SHA256
+`9cdb6efa48f437e5b68b3c74d758a2e2a146d09b872b56e3112b2a7804f34c14`.
+This rerun supplied an own-crate wheel source root required by the updated
+verifier, so its Cargo rows are not used for a before-and-after claim.
+The focused generator and SPDX tests passed: 247 tests.
+
+A further whole-file review accepted `highway` (Apache 2.0, BSD three-clause,
+CC0 1.0), `distributions` and `mt19937` (BSD three-clause and MIT), and
+`random/LICENSE.md` (NCSA and BSD three-clause). The short `splitmix64` CC0
+dedication is bound to the complete CC0 text in `highway/LICENSE` within the
+same exact wheel. Their raw member hashes and texts are in [`SOURCES.md`](SOURCES.md).
+The exact-input rerun exited zero with no completeness gaps; the NumPy Python
+row alone changed from 8 to **3** unverified candidates. Python HOLD remains
+**3**. The inventory is `current-python-numpy-expanded/inventory.json` on s1,
+SHA256 `092ea6066f3a36a9220bf5132473d90c9757330aef69b7225fc04d1de41dcefa`.
+The focused generator and SPDX tests passed: 251 tests.
+
+The [NumPy v2.5.2 project declaration](https://github.com/numpy/numpy/blob/v2.5.2/pyproject.toml)
+also labels `dragon4` as MIT and `lapack_lite` as BSD-3-Clause. Their exact
+wheel members contain the complete grants. The `dragon4` file explains its
+original Zlib grant and MIT permission; the `lapack_lite` file adds a patent/IP
+no-assurance disclaimer without another use condition. The pinned whole-file
+review accepted both. The next rerun exited zero with no completeness gaps,
+changed only the NumPy Python row, and reduced its unverified candidates from
+3 to **1**. Python HOLD remains **3**. The inventory is
+`current-python-numpy-two-more/inventory.json` on s1, SHA256
+`ab8260827b0f807933882aeefd6eddd4b0e859577efbd22896eda2634a203b78`.
+The focused generator and SPDX tests passed: 253 tests.
+
 The three Python HOLD rows still need separate evidence:
 
 | Package | Exact artifact finding | Why HOLD remains |
 | --- | --- | --- |
 | `atheris 3.1.0` | Three CPython wheels contain `asan_with_fuzzer.so`, `ubsan_with_fuzzer.so`, `ubsan_cxx_with_fuzzer.so`, and `libclang_rt.fuzzer_no_main.a`. | Their native files have no bound license notice stanza. The wheel's Apache license covers its own candidate file, but does not establish these components' grants. |
-| `numpy 2.5.2` | The pinned wheel (SHA256 `3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8`) still has 11 unverified license candidate files. | Several files combine component grants, and the main notice includes GPL/LGPL component text. The external-runtime decision does not waive all-candidate verification. |
+| `numpy 2.5.2` | The pinned wheel (SHA256 `3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8`) still has 1 unverified license candidate file. | The main notice lacks complete LGPL text. The external-runtime decision does not waive all-candidate verification. |
 | `sortedcontainers 2.4.0` | Its wheel `LICENSE` (SHA256 `1db7cae7fce6452e2e608e401a0f953e0133e4c2d75db69fb8ae851d2086f5b6`) is a short Apache header and URL. | The complete Apache 2.0 terms are absent from the hash-bound wheel candidate; a URL alone is not a verified full grant under the current rule. |
 
 The [Atheris 3.1.0 PyPI release](https://pypi.org/project/atheris/3.1.0/)
@@ -178,6 +269,12 @@ native-file hashes. [Upstream build code](https://github.com/google/atheris/blob
 shows that Atheris copies libFuzzer and combines it with ASan/UBSan, but that
 moving branch does not bind these exact wheel binaries to an LLVM version,
 source commit, or license notice. No native exception was added.
+On 2026-09-26 UTC, the [PyPI Integrity API](https://docs.pypi.org/api/integrity/)
+returned 404 (no provenance) for each of the three exact Atheris 3.1.0 wheel
+filenames above. Its [build script](https://github.com/google/atheris/blob/master/setup.py)
+can use a caller-selected `LIBFUZZER_LIB` or `CLANG_BIN`, so that moving source
+file cannot identify the LLVM inputs of the published wheels. The four native
+hashes remain HOLD until an exact build record or bound notice is available.
 The native SHA256 digests are `3d5fbe5d97101964713e476f85c21393d769a7ad3355538eba1e36590c68bed7`
 (`asan_with_fuzzer.so`), `60d06f6748c007c46c772b0abee959053973ee4b607a88f9f3db3562b2bbecaf`
 (`libclang_rt.fuzzer_no_main.a`), `d77a11a9024b34aa37c86b41f78be3ce2d7ce59067208c1fb662cd216c50eb1c`
@@ -188,10 +285,13 @@ NumPy's main wheel `LICENSE.txt` is SHA256
 `4860083caa0de2ac3292ca98bd074bd8f45d8b32624e37b1e70a240bff61e488`.
 It embeds full BSD, GCC runtime exception, and GPL 3 text, then names
 `libquadmath` as LGPL 2.1 or later with a short notice and a link instead of
-the complete LGPL text. Several other candidate files contain multiple
-component grants. Because the main candidate alone remains incomplete under
-the current all-candidate rule, accepting individual NumPy component hashes
-would not clear this row; it stays HOLD pending a complete, bound notice set.
+the complete LGPL text. This main candidate prevents NumPy from clearing the
+current all-candidate rule; the row stays HOLD.
+An exact-wheel scan on 2026-09-26 UTC checked all 1,044 ZIP members of the
+pinned NumPy wheel. Only this main `LICENSE.txt` mentions LGPL or the GNU Lesser
+General Public License; no member contains a `GNU Lesser General Public License
+Version 2.1` heading. The complete grant cannot be supplied by another member
+of this same wheel.
 
 The [sortedcontainers 2.4.0 source distribution](https://pypi.org/project/sortedcontainers/2.4.0/#files)
 has SHA256 `25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88`.
@@ -199,3 +299,7 @@ Its `LICENSE` bytes hash to the same
 `1db7cae7fce6452e2e608e401a0f953e0133e4c2d75db69fb8ae851d2086f5b6`
 as the wheel's short Apache header. The release source therefore supplies no
 missing full text; this row stays HOLD.
+The pinned wheel itself (SHA256
+`a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0`)
+has nine ZIP members. A whole-wheel scan found Apache references in its short
+`LICENSE` and `METADATA` members, but no Apache 2.0 terms-and-conditions body.
