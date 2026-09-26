@@ -530,6 +530,21 @@ def test_q_nuisance_has_no_node_count_cap(monkeypatch) -> None:
     assert np.all(np.isfinite(out.expected_total))
 
 
+def test_prediction_budget_counts_categories_before_rule_allocation(monkeypatch) -> None:
+    import fast_mlsirm.two_tier_grm as tt
+
+    def unexpected_rule(_q):
+        raise AssertionError("quadrature must not run for an oversized prediction")
+
+    monkeypatch.setattr(tt, "_probabilists_gauss_hermite", unexpected_rule)
+    ap = np.array([[1.0, 0.3]])
+    asp = np.array([0.5])
+    th = np.array([[1.0, 0.0, -1.0]])
+    smap = np.array([0], dtype=np.int64)
+    with pytest.raises(ValueError, match="20,000,000 prediction-cell limit"):
+        _call(ap, asp, th, smap, np.zeros(10_000), q=501)
+
+
 @pytest.mark.parametrize("bad", [0, -1, 2.0, "15", True])
 def test_q_nuisance_must_be_exact_integer_at_least_one(bad) -> None:
     ap = np.array([[1.0, 0.0]])

@@ -789,7 +789,9 @@ def expected_total_score_two_tier_given_primary(
     s_sd = _as_ref_sd(specific_ref_sd, n_specific, "specific_ref_sd")
 
     # Admission before any O(q) / O(q^2) allocation (was after the rule).
-    _raise_if_oversized_prediction_grid(int(grid.size) * int(q))
+    _raise_if_oversized_prediction_grid(
+        int(grid.size) * int(q) * (int(th.shape[1]) + 1)
+    )
     unit_nodes, unit_weights = _probabilists_gauss_hermite(q)
     unit_slope = np.ones(1, dtype=np.float64)
     expected_total = np.zeros(grid.size, dtype=np.float64)
@@ -838,8 +840,6 @@ def expected_total_score_two_tier_given_primary(
             var_L += (coef * sigma) ** 2
         sd_L = float(np.sqrt(var_L))
         nodes = mu_L + sd_L * unit_nodes
-        # Guard prediction budget before allocating the (n_grid x q) grid.
-        _raise_if_oversized_prediction_grid(int(grid.size) * int(q))
         base = a_f * grid[:, None] + nodes[None, :]
         expected = predict_expected_response_polytomous(cell, base.reshape(-1))
         expected_total += (
