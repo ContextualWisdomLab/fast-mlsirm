@@ -5,6 +5,8 @@ import hashlib
 import importlib.util
 import io
 import json
+import shutil
+import subprocess
 import tarfile
 from pathlib import Path
 
@@ -93,3 +95,28 @@ def test_libm_source_notices_keep_complete_conditions():
     assert sun and freebsd
     assert all("is preserved." in block for block in sun)
     assert all("SUCH DAMAGE." in block for block in freebsd)
+
+
+@pytest.mark.parametrize(("target", "expected"), [
+    ("x86_64-unknown-linux-gnu", "d46f307a2e8a49e2d638ee4e0b768c6c908c7786cb9106e74948561bf8cf0af0"),
+    ("aarch64-unknown-linux-gnu", "afa61d22b98ec3b8d4797c4af1dc9a6d159b2051a543e658c67f4d2404d2d87c"),
+    ("x86_64-pc-windows-msvc", "7a3537a1df4063760bfee6e720b7cc9105721748d3fffd29aed2732d155dde58"),
+    ("universal2-apple-darwin", None),
+])
+def test_wheel_notice_selection_is_target_bound(tmp_path, target, expected):
+    root = SCRIPT.parents[1]
+    shutil.copyfile(root / "LICENSE-THIRD-PARTY", tmp_path / "LICENSE-THIRD-PARTY")
+    source_dir = root / "docs/security/license-evidence-0.11.5/target-notices"
+    target_dir = tmp_path / "docs/security/license-evidence-0.11.5/target-notices"
+    target_dir.mkdir(parents=True)
+    for name in ("aarch64-unknown-linux-gnu", "x86_64-pc-windows-msvc"):
+        shutil.copyfile(source_dir / f"LICENSE-THIRD-PARTY-{name}",
+                        target_dir / f"LICENSE-THIRD-PARTY-{name}")
+    result = subprocess.run(["bash", str(root / "tools/select_third_party_license.sh"), target],
+                            cwd=tmp_path, capture_output=True, text=True, check=False)
+    if expected is None:
+        assert result.returncode != 0 and "no reviewed" in result.stderr
+        expected = "d46f307a2e8a49e2d638ee4e0b768c6c908c7786cb9106e74948561bf8cf0af0"
+    else:
+        assert result.returncode == 0, result.stderr
+    assert hashlib.sha256((tmp_path / "LICENSE-THIRD-PARTY").read_bytes()).hexdigest() == expected
