@@ -556,6 +556,12 @@ jobs:
     needs: [verify-release, sdist, wheels]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      distribution_set_artifact_id: ${{ steps.record-upload.outputs.artifact-id }}
+      distribution_set_artifact_digest: sha256:${{ steps.record-upload.outputs.artifact-digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -649,12 +655,102 @@ jobs:
               stream.write(summary)
           print(record.read_text(encoding="utf-8"))
           PY
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - name: List distribution artifacts from this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
+            --jq '.artifacts[]' > run-artifacts.jsonl
+      - name: Bind all verified distribution bytes to immutable artifact IDs
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_WHEEL_LEGS: "x86_64-unknown-linux-gnu-py3.12 x86_64-unknown-linux-gnu-py3.13 x86_64-unknown-linux-gnu-py3.14 aarch64-unknown-linux-gnu-py3.12 aarch64-unknown-linux-gnu-py3.13 aarch64-unknown-linux-gnu-py3.14 universal2-apple-darwin-py3.12 universal2-apple-darwin-py3.13 universal2-apple-darwin-py3.14 x86_64-pc-windows-msvc-py3.12 x86_64-pc-windows-msvc-py3.13 x86_64-pc-windows-msvc-py3.14"
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          legs = os.environ["EXPECTED_WHEEL_LEGS"].split()
+          expected_legs = set(legs) | {"sdist"}
+          if len(legs) != 12 or len(expected_legs) != 13:
+              raise SystemExit("distribution set requires 12 distinct wheel legs and one sdist")
+          lines = Path("reproducibility-record.tsv").read_text(encoding="utf-8").splitlines()
+          if len(lines) != 15 or not lines[0].startswith(
+              f"# release {os.environ['RELEASE_TAG']} @ {os.environ['RELEASE_COMMIT']}, SOURCE_DATE_EPOCH="
+          ) or lines[1].split("\t") != ["target", "byte_verified", "verification", "sha256", "rebuild_sha256", "file", "build_env"]:
+              raise SystemExit("reproducibility record header or row count differs from this release")
+          rows = {}
+          for line in lines[2:]:
+              fields = line.split("\t")
+              if len(fields) != 7 or fields[0] in rows:
+                  raise SystemExit("duplicate or malformed distribution row")
+              rows[fields[0]] = dict(zip(lines[1].split("\t"), fields))
+          if set(rows) != expected_legs:
+              raise SystemExit("reproducibility record does not cover the exact distribution legs")
+          files = {row["file"] for row in rows.values()}
+          paths = list(Path("dist").iterdir())
+          if (len(files) != 13 or len(paths) != 13 or files != {p.name for p in paths}
+                  or any(p.is_symlink() or not p.is_file() for p in paths)):
+              raise SystemExit("distribution files differ from the record")
+
+          seen = {}
+          for line in Path("run-artifacts.jsonl").read_text(encoding="utf-8").splitlines():
+              artifact = json.loads(line)
+              name = artifact.get("name")
+              if name in seen:
+                  raise SystemExit(f"duplicate same-run artifact name: {name}")
+              seen[name] = artifact
+          expected_names = {"dist-sdist"} | {f"dist-wheel-{leg}" for leg in legs}
+          if {name for name in seen if isinstance(name, str) and name.startswith("dist-")} != expected_names:
+              raise SystemExit("distribution artifact names differ from the exact 13-leg set")
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+          attempt = int(os.environ["GITHUB_RUN_ATTEMPT"])
+          if run_id < 1 or attempt < 1 or not re.fullmatch(r"[0-9a-f]{40}", os.environ["RELEASE_COMMIT"]):
+              raise SystemExit("invalid release execution identity")
+          distributions = []
+          ids = set()
+          for leg, row in sorted(rows.items()):
+              path = Path("dist") / row["file"]
+              with path.open("rb") as stream:
+                  sha = hashlib.file_digest(stream, "sha256").hexdigest()
+              if (not re.fullmatch(r"[0-9a-f]{64}", row["sha256"])
+                      or row["byte_verified"] != "true" or row["rebuild_sha256"] != sha
+                      or row["sha256"] != sha or path.name != row["file"]):
+                  raise SystemExit(f"{leg}: distribution bytes are not reproducibility verified")
+              name = "dist-sdist" if leg == "sdist" else f"dist-wheel-{leg}"
+              artifact = seen[name]
+              artifact_id = artifact.get("id")
+              digest = artifact.get("digest")
+              if (type(artifact_id) is not int or artifact_id <= 0 or artifact_id in ids
+                      or not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                      or (artifact.get("workflow_run") or {}).get("id") != run_id
+                      or artifact.get("expired") is not False):
+                  raise SystemExit(f"{name}: missing or foreign immutable artifact identity")
+              ids.add(artifact_id)
+              distributions.append({"leg": leg, "file": row["file"], "sha256": sha,
+                                    "artifact_id": artifact_id, "artifact_name": name,
+                                    "artifact_digest": digest})
+          manifest = {"schema_version": 1, "source_repository": os.environ["GITHUB_REPOSITORY"],
+                      "source_sha": os.environ["RELEASE_COMMIT"], "run_id": run_id,
+                      "run_attempt": attempt, "distributions": distributions}
+          Path("release-gate-distribution-set.json").write_text(
+              json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
+          )
+          PY
+      - id: record-upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: reproducibility-record
           path: |
             reproducibility-record.tsv
             release-scope-identities.json
+            release-gate-distribution-set.json
 
   # R5b: nothing is tagged, released or published unless this job proves, for
   # this exact run, that the 13 distribution files are the reproducibility-
