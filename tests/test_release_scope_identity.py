@@ -81,11 +81,11 @@ def test_workflow_producer_transport_and_actual_consumer_hold(scope_fixture):
     assert sum(r["kind"] == "sdist" for r in records) == 1
     assert all(v == {"status": "UNKNOWN", "evidence": None} for r in records for v in r["scopes"].values())
     start = WORKFLOW.index('          scope_records = json.loads(Path("downloaded/reproducibility-record/release-scope-identities.json")')
-    end = WORKFLOW.index('          # The current central handoff', start)
+    end = WORKFLOW.index('          # The target-specific runtime/build/dev/optional/native/bundled', start)
     import types
     with pytest.raises(ValueError, match="evidence UNKNOWN"):
         exec(textwrap.dedent(WORKFLOW[start:end]), {"json": json, "Path": Path, "rows": rows, "commit": sha, "transport": types.SimpleNamespace(**M)})
-    assert "trusted same-run full licence/Strix gate-success contract is not wired" in WORKFLOW[end:]
+    assert "platform-complete scope inventory is not verified" in WORKFLOW[end:]
     assert 'name: reproducibility-record\n          path: |\n            reproducibility-record.tsv\n            release-scope-identities.json' in WORKFLOW
     assert not Path("admitted-manifest.tsv").exists()
 

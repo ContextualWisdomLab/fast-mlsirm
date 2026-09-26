@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 
 import pytest
 
@@ -26,7 +27,8 @@ def _case() -> dict:
                  "artifact_id": 99, "artifact_name": "dist-sdist", "artifact_digest": DIGEST})
     manifest = {"schema_version": 1, **identity, "distributions": rows}
     name = "release-dependency-sealed-evidence--full-set-verdict"
-    binding = {"key": "pypi/example@1", "name": "release-strix-binding-a2-" + "e" * 64,
+    binding = {"key": "pypi/example@1", "name": "release-strix-binding-a2-"
+               + hashlib.sha256(b"pypi/example@1").hexdigest(),
                "id": 102, "digest": DIGEST}
     verdict = {"schema": "cwl.release-full-set-verdict/1", "result": "PASS", **identity,
                "record_artifact_id": 100, "record_artifact_digest": DIGEST,
@@ -89,8 +91,12 @@ def test_rejects_forged_missing_stale_or_changed_verdict() -> None:
     def changed_verdict_digest(case):
         case["artifacts"][1]["digest"] = "sha256:" + "f" * 64
 
+    def changed_binding_key(case):
+        case["verdict"]["binding_artifacts"][0]["key"] = "pypi/other@1"
+
     for mutate in (other_run, stale, wrong_source, changed_file, missing_file,
-                   missing_binding, extra_binding, wrong_attempt, changed_verdict_digest):
+                   missing_binding, extra_binding, wrong_attempt, changed_verdict_digest,
+                   changed_binding_key):
         case = _case()
         mutate(case)
         with pytest.raises(ValueError):

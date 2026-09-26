@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from datetime import datetime
@@ -46,6 +47,7 @@ def verify_full_set_verdict(
 ) -> None:
     """Require the same successful run, exact distribution rows, and binding IDs."""
     if (not SHA.fullmatch(source_sha) or not SHA.fullmatch(control_sha)
+            or re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) is None
             or type(run_id) is not int or run_id <= 0
             or type(run_attempt) is not int or run_attempt <= 0
             or type(record_id) is not int or record_id <= 0
@@ -80,6 +82,9 @@ def verify_full_set_verdict(
     if any(manifest.get(key) != value or verdict.get(key) != value
            for key, value in expected.items()):
         raise ValueError("verdict or manifest differs from release identity")
+    if any(type(document.get(key)) is not int for document in (manifest, verdict)
+           for key in ("run_id", "run_attempt")):
+        raise ValueError("verdict or manifest execution identity is malformed")
     if (verdict.get("record_artifact_id") != record_id
             or verdict.get("record_artifact_digest") != record_digest
             or verdict.get("distributions") != manifest.get("distributions")):
@@ -97,7 +102,7 @@ def verify_full_set_verdict(
         if (not isinstance(name, str) or name != (
                 "dist-sdist" if row["leg"] == "sdist" else f"dist-wheel-{row['leg']}")
                 or name in distribution_names or type(artifact_id) is not int
-                or artifact_id in seen_ids or not isinstance(digest, str)
+                or artifact_id <= 0 or artifact_id in seen_ids or not isinstance(digest, str)
                 or not DIGEST.fullmatch(digest)):
             raise ValueError("duplicate or malformed distribution artifact identity")
         _artifact(listed.get(name), name, artifact_id, digest, run_id, control_sha, started)
@@ -114,9 +119,11 @@ def verify_full_set_verdict(
         if not isinstance(binding, Mapping):
             raise ValueError("malformed Strix binding identity")
         name, key, artifact_id, digest = (binding.get(field) for field in ("name", "key", "id", "digest"))
-        if (not isinstance(name, str) or not name.startswith(f"release-strix-binding-a{run_attempt}-")
+        expected_name = (f"release-strix-binding-a{run_attempt}-"
+                         + hashlib.sha256(key.encode()).hexdigest()) if isinstance(key, str) else ""
+        if (not isinstance(name, str) or name != expected_name
                 or not isinstance(key, str) or not key or name in seen_names or key in seen_keys
-                or type(artifact_id) is not int or artifact_id in seen_ids
+                or type(artifact_id) is not int or artifact_id <= 0 or artifact_id in seen_ids
                 or not isinstance(digest, str) or not DIGEST.fullmatch(digest)):
             raise ValueError("duplicate or malformed Strix binding identity")
         _artifact(listed.get(name), name, artifact_id, digest, run_id, control_sha, started)
