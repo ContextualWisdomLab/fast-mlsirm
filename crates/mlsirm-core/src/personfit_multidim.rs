@@ -392,7 +392,7 @@ pub fn person_fit_multidim_resampling(
         .ok_or("response size overflow")?;
     let mut simulated_y = vec![0; cells];
     let mut counts = vec![0usize; x.n_persons];
-    let mut state = seed.max(1);
+    let mut state = seed;
     let mut chol = Vec::with_capacity(x.n_groups);
     for g in 0..x.n_groups {
         let start = g * x.n_primary * x.n_primary;
