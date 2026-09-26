@@ -14,7 +14,8 @@ import subprocess
 import sys
 import tomllib
 
-from release_artifact_transport import expected_maturin_binary_sha256, hash_file
+from release_artifact_transport import (expected_maturin_binary_sha256, hash_file,
+                                        verify_python_snapshot, write_python_snapshot)
 
 
 def _run(*args: str) -> str:
@@ -38,11 +39,13 @@ def _python_packages_with_files() -> list[dict]:
             resolved = path.resolve()
             if (not logical or len(logical) > 512 or logical.startswith("/")
                     or "\\" in logical or any(ord(char) < 32 for char in logical)
-                    or logical in seen
                     or path.is_symlink() or not resolved.is_relative_to(prefix)
                     or not stat.S_ISREG(path.stat().st_mode)):
                 raise ValueError("build interpreter distribution file is unsafe")
-            seen.add(logical)
+            relative = resolved.relative_to(prefix).as_posix()
+            if len(relative) > 512 or relative in seen:
+                raise ValueError("build interpreter distribution file is unsafe")
+            seen.add(relative)
             size = path.stat().st_size
             total_files += 1
             total_bytes += size
@@ -51,7 +54,7 @@ def _python_packages_with_files() -> list[dict]:
             digest = hash_file(path)
             if path.stat().st_size != size:
                 raise ValueError("build interpreter distribution file changed during capture")
-            members.append({"path": logical, "size": size, "sha256": digest})
+            members.append({"path": relative, "size": size, "sha256": digest})
         if not members:
             raise ValueError("build interpreter distribution has no files")
         result.append({"name": name, "version": dist.version,
@@ -82,6 +85,10 @@ def capture(source: Path, environ: dict[str, str]) -> dict:
     if Path(_run(interpreter, "-c", "import sys; print(sys.executable)")).resolve() != Path(sys.executable).resolve():
         raise ValueError("build scope runs under a different Python interpreter")
     python_packages = _python_packages_with_files()
+    snapshot = source / "repro-digest" / f"{leg}.build-python.zip"
+    snapshot.parent.mkdir(exist_ok=True)
+    snapshot_sha = (write_python_snapshot(python_packages, Path(sys.prefix), snapshot)
+                    if build_pass == "first" else verify_python_snapshot(snapshot, python_packages))
     pyproject = source / "pyproject.toml"
     lock = source / "crates/fast-mlsirm-py/Cargo.lock"
     locked = {(item["name"], item["version"], item.get("source")): item.get("checksum")
@@ -128,6 +135,7 @@ def capture(source: Path, environ: dict[str, str]) -> dict:
         "maturin_binary_sha256": binary_sha,
         "python_version": _run(interpreter, "--version"),
         "python_packages": python_packages,
+        "python_snapshot_sha256": snapshot_sha,
         "cargo_features": [] if target == "sdist" else ["pyo3/extension-module"],
         "cargo_targets": graphs,
     }

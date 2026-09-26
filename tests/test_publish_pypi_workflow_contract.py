@@ -536,7 +536,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@616f5846bfc1b1572c217225975e06e88ea2f8b0" in central
+    assert "release-dependency-license-strix-gate.yml@95e4da9e9a5d729f8142a718e68e2adeb947b75c" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -547,6 +547,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
 
 
 def _admission_fixture(root: Path) -> dict:
+    import zipfile
     import json
     import runpy
     import zipfile
@@ -675,6 +676,10 @@ def _admission_fixture(root: Path) -> dict:
         graph = [{"name": name, "version": "0.11.4", "source": None,
                   "checksum": None, "features": []}
                  for name in ("fast-mlsirm-py", "mlsirm-core")]
+        snapshot = folder / f"{leg}.build-python.zip"
+        with zipfile.ZipFile(snapshot, "w") as archive:
+            archive.writestr("pip/pip/__init__.py", b"x")
+        snapshot_sha = hashlib.sha256(snapshot.read_bytes()).hexdigest()
         for build_pass in ("first", "second"):
             build = {"schema_version": 1, "source_sha": _RELEASE_COMMIT, "leg": leg,
                      "pass": build_pass, "build_env": build_env(leg),
@@ -685,7 +690,9 @@ def _admission_fixture(root: Path) -> dict:
                      "maturin_binary_sha256": expected_maturin(leg, build_env(leg)),
                      "python_version": f"Python {version}.0",
                      "python_packages": [{"name": "pip", "version": "25.2", "files": [
-                         {"path": "pip/__init__.py", "size": 1, "sha256": "a" * 64}]}],
+                         {"path": "pip/__init__.py", "size": 1,
+                          "sha256": hashlib.sha256(b"x").hexdigest()}]}],
+                     "python_snapshot_sha256": snapshot_sha,
                      "cargo_features": [] if target == "sdist" else ["pyo3/extension-module"],
                      "cargo_targets": {triple: graph for triple in targets}}
             (folder / f"{leg}.build-{build_pass}.json").write_text(json.dumps(build, sort_keys=True) + "\n")
@@ -715,25 +722,26 @@ def test_build_scope_receipts_bind_wheel_lock_and_repeat(tmp_path: Path) -> None
     second = json.loads((folder / f"{leg}.build-second.json").read_text())
     verify = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))["verify_build_scope"]
     row = {"target": leg, "build_env": fixture["build_env"][leg]}
-    verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+    snapshot = folder / f"{leg}.build-python.zip"
+    verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
     second["cargo_targets"][leg.rsplit("-py", 1)[0]][0]["version"] = "forged"
     with pytest.raises(ValueError, match="graph differs from selected lock"):
-        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
     second = json.loads((folder / f"{leg}.build-second.json").read_text())
     second["maturin_version"] = "maturin 1.14.1"
     with pytest.raises(ValueError, match="toolchain or leg"):
-        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
     second = json.loads((folder / f"{leg}.build-second.json").read_text())
     second["maturin_binary_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="toolchain or leg"):
-        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
     second = json.loads((folder / f"{leg}.build-second.json").read_text())
     second["python_packages"][0]["files"][0]["sha256"] = "b" * 64
-    with pytest.raises(ValueError, match="repeated build graphs or toolchains differ"):
-        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+    with pytest.raises(ValueError, match="snapshot member hash differs"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
     second["python_packages"][0]["files"][0]["path"] = "../../unexpected\\file"
     with pytest.raises(ValueError, match="distribution file is malformed"):
-        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
 
 
 def test_runtime_rejects_unaccounted_native_member(tmp_path: Path) -> None:
@@ -774,10 +782,11 @@ def test_sdist_build_receipts_report_no_compiled_cargo_graph(tmp_path: Path) -> 
     second = json.loads((folder / "sdist.build-second.json").read_text())
     verify = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))["verify_build_scope"]
     row = {"target": "sdist", "build_env": fixture["build_env"]["sdist"]}
-    verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+    snapshot = folder / "sdist.build-python.zip"
+    verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
     second["cargo_targets"] = {"x86_64-unknown-linux-gnu": []}
     with pytest.raises(ValueError, match="toolchain or leg"):
-        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT)
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
 
 
 def test_sdist_capture_records_runner_tools_without_cargo_metadata(tmp_path: Path, monkeypatch) -> None:
@@ -808,6 +817,7 @@ def test_sdist_capture_records_runner_tools_without_cargo_metadata(tmp_path: Pat
     monkeypatch.setitem(capture.__globals__, "_python_packages_with_files", lambda: packages)
     monkeypatch.setitem(capture.__globals__, "expected_maturin_binary_sha256", lambda *_: "asset-hash")
     monkeypatch.setitem(capture.__globals__, "hash_file", lambda _: "asset-hash")
+    monkeypatch.setitem(capture.__globals__, "write_python_snapshot", lambda *_: "asset-hash")
     monkeypatch.setattr(capture.__globals__["shutil"], "which", lambda _: "/tmp/maturin")
     receipt = capture(tmp_path / "release-source", {
         "CARGO_RELEASE_LEG": "sdist", "CARGO_RELEASE_SHA": _RELEASE_COMMIT,
@@ -819,6 +829,7 @@ def test_sdist_capture_records_runner_tools_without_cargo_metadata(tmp_path: Pat
     assert receipt["cargo_targets"] == {}
     assert receipt["cargo_features"] == []
     assert receipt["python_packages"] == packages
+    assert receipt["python_snapshot_sha256"] == "asset-hash"
 
 
 def test_build_package_inventory_hashes_installed_files(tmp_path: Path, monkeypatch) -> None:
@@ -1145,6 +1156,15 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
         lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / "extra.json").write_text("{}"),
         "scope evidence artifact members differ from build output",
     )
+    def snapshot(root: Path) -> Path:
+        return root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.build-python.zip"
+    refuse_bytes("missing-build-snapshot", lambda r, f: snapshot(r).unlink(),
+                 "scope evidence artifact members differ from build output")
+    def change_build_snapshot(root: Path, fixture: dict) -> None:
+        with zipfile.ZipFile(snapshot(root), "a") as archive:
+            archive.writestr("extra.txt", b"changed")
+    refuse_bytes("changed-build-snapshot", change_build_snapshot,
+                 "build snapshot members differ from installed files")
     refuse_bytes(
         "missing-consumer",
         lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / f"{first}.consumer.json").unlink(),

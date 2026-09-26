@@ -134,6 +134,60 @@ def bundle_inventory(artifact: Path, leg: str, source_sha: str, build_env: str) 
             "members": sorted(members, key=lambda item: item["path"])}
 
 
+def verify_python_snapshot(snapshot: Path, packages: list[dict]) -> str:
+    """Rehash every transported installed build file against its build receipt."""
+    expected = {}
+    for package in packages:
+        for file in package["files"]:
+            name = f"{package['name']}/{file['path']}"
+            if (not file["path"] or PurePosixPath(file["path"]).is_absolute()
+                    or str(PurePosixPath(file["path"])) != file["path"]
+                    or ".." in PurePosixPath(file["path"]).parts or name in expected):
+                raise ValueError("unsafe or duplicate build snapshot member")
+            expected[name] = file
+    if not expected or len(expected) > 50_000:
+        raise ValueError("build snapshot member set is empty or oversized")
+    total = 0
+    with zipfile.ZipFile(snapshot) as archive:
+        entries = archive.infolist()
+        if len(entries) != len(expected) or {item.filename for item in entries} != set(expected):
+            raise ValueError("build snapshot members differ from installed files")
+        for item in entries:
+            mode = item.external_attr >> 16
+            file = expected[item.filename]
+            total += item.file_size
+            if (item.is_dir() or stat.S_IFMT(mode) not in (0, stat.S_IFREG)
+                    or total > MAX_BUNDLE_BYTES or item.file_size != file["size"]):
+                raise ValueError("build snapshot member is unsafe or changed")
+            with archive.open(item) as stream:
+                if copy_and_hash(stream) != file["sha256"]:
+                    raise ValueError("build snapshot member hash differs from installed file")
+    return hash_file(snapshot)
+
+
+def write_python_snapshot(packages: list[dict], prefix: Path, snapshot: Path) -> str:
+    """Copy observed installed files into one deterministic bounded archive."""
+    if snapshot.exists() or snapshot.is_symlink():
+        raise ValueError("build snapshot already exists")
+    try:
+        with zipfile.ZipFile(snapshot, "x") as archive:
+            for package in packages:
+                for file in package["files"]:
+                    path = prefix / file["path"]
+                    if (path.is_symlink() or not path.resolve().is_relative_to(prefix.resolve())
+                            or not stat.S_ISREG(path.stat().st_mode)):
+                        raise ValueError("build snapshot source is unsafe")
+                    info = zipfile.ZipInfo(f"{package['name']}/{file['path']}", (1980, 1, 1, 0, 0, 0))
+                    info.compress_type = zipfile.ZIP_STORED
+                    info.external_attr = (stat.S_IFREG | 0o644) << 16
+                    with path.open("rb") as source, archive.open(info, "w") as target:
+                        copy_and_hash(source, target)
+        return verify_python_snapshot(snapshot, packages)
+    except Exception:
+        snapshot.unlink(missing_ok=True)
+        raise
+
+
 def native_binary_members(wheel: Path) -> set[str]:
     """Find packaged binaries by file type as well as their first bytes."""
     magic = (b"\x7fELF", b"MZ", b"\x00asm", b"!<arch>\n",
@@ -244,7 +298,7 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
         identities.add(identity)
     expected_members = {f"{leg}.tsv", f"{leg}.bundle.json", f"{leg}.runtime.json",
                         f"{leg}.runtime-requirements.txt", f"{leg}.build-first.json",
-                        f"{leg}.build-second.json", f"{leg}.consumer.json",
+                        f"{leg}.build-second.json", f"{leg}.build-python.zip", f"{leg}.consumer.json",
                         f"{leg}.consumer.whl"} | names
     if set(evidence_members) != expected_members:
         raise ValueError(f"{leg}: scope evidence artifact members differ from build output")
@@ -253,7 +307,8 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
         raise ValueError(f"{leg}: runtime archives do not match installed dependencies")
 
 
-def verify_build_scope(first: dict, second: dict, row: dict, source: Path, source_sha: str) -> None:
+def verify_build_scope(first: dict, second: dict, row: dict, source: Path,
+                       source_sha: str, snapshot: Path) -> None:
     """Check both build tool receipts and each wheel's Cargo graph."""
     leg = row["target"]
     target, python = ("sdist", "3.12") if leg == "sdist" else leg.rsplit("-py", 1)
@@ -266,7 +321,7 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
     keys = {"schema_version", "source_sha", "leg", "pass", "build_env",
             "cargo_lock_sha256", "pyproject_sha256", "cargo_version", "rustc_version",
             "maturin_version", "maturin_binary_sha256", "python_version",
-            "python_packages", "cargo_features", "cargo_targets"}
+            "python_packages", "python_snapshot_sha256", "cargo_features", "cargo_targets"}
     for receipt, build_pass in ((first, "first"), (second, "second")):
         if (type(receipt) is not dict or set(receipt) != keys
                 or receipt["schema_version"] != 1 or receipt["source_sha"] != source_sha
@@ -305,7 +360,9 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
                 if (type(file) is not dict or set(file) != {"path", "size", "sha256"}
                         or type(file["path"]) is not str or not file["path"]
                         or len(file["path"]) > 512 or file["path"].startswith("/")
-                        or "\\" in file["path"] or any(ord(char) < 32 for char in file["path"])
+                        or "\\" in file["path"] or ".." in PurePosixPath(file["path"]).parts
+                        or str(PurePosixPath(file["path"])) != file["path"]
+                        or any(ord(char) < 32 for char in file["path"])
                         or file["path"] in paths or type(file["size"]) is not int
                         or file["size"] < 0 or type(file["sha256"]) is not str
                         or not re.fullmatch(r"[0-9a-f]{64}", file["sha256"])):
@@ -317,6 +374,10 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path, sourc
                 raise ValueError(f"{leg}: build interpreter distribution files are unordered")
         if file_count > 50_000 or byte_count > MAX_BUNDLE_BYTES:
             raise ValueError(f"{leg}: build interpreter distribution files exceed limits")
+        if (type(receipt["python_snapshot_sha256"]) is not str
+                or not re.fullmatch(r"[0-9a-f]{64}", receipt["python_snapshot_sha256"])
+                or verify_python_snapshot(snapshot, packages) != receipt["python_snapshot_sha256"]):
+            raise ValueError(f"{leg}: build interpreter snapshot differs from receipt")
         for triple in targets:
             graph = receipt["cargo_targets"][triple]
             if type(graph) is not list or not graph:

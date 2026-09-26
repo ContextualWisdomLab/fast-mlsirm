@@ -905,7 +905,7 @@ jobs:
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@616f5846bfc1b1572c217225975e06e88ea2f8b0
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@95e4da9e9a5d729f8142a718e68e2adeb947b75c
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
@@ -1179,7 +1179,8 @@ jobs:
               name = f"repro-digest-{leg}"
               members = {path.name: path for path in (Path("downloaded") / name).iterdir()}
               expected_members = {f"{leg}.tsv", f"{leg}.bundle.json",
-                                  f"{leg}.build-first.json", f"{leg}.build-second.json"}
+                                  f"{leg}.build-first.json", f"{leg}.build-second.json",
+                                  f"{leg}.build-python.zip"}
               if leg != "sdist":
                   expected_members |= {f"{leg}.runtime.json", f"{leg}.runtime-requirements.txt",
                                        f"{leg}.consumer.json", f"{leg}.consumer.whl"}
@@ -1199,7 +1200,8 @@ jobs:
                                        object_pairs_hook=unique_object)
               build_second = json.loads(members[f"{leg}.build-second.json"].read_text(encoding="utf-8"),
                                         object_pairs_hook=unique_object)
-              transport.verify_build_scope(build_first, build_second, row, Path("release-source"), commit)
+              transport.verify_build_scope(build_first, build_second, row, Path("release-source"),
+                                           commit, members[f"{leg}.build-python.zip"])
               if leg != "sdist":
                   runtime = json.loads(members[f"{leg}.runtime.json"].read_text(encoding="utf-8"),
                                        object_pairs_hook=unique_object)
