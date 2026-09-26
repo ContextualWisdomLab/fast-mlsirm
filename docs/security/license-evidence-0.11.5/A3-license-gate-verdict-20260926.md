@@ -1,6 +1,6 @@
 # A3 license gate verdict — Linux x86_64 cp312, fast-mlsirm 0.11.5
 
-Status: **provisional for the examined Linux cp312 candidate** (coordinator verdict, user-delegated, 2026-09-26; not legal review). The actual-wheel inventory correction below needs independent re-review. Hosted checks, approval, and release remain pending.
+Status: **provisional for the examined Linux cp312 candidate** (coordinator verdict, user-delegated, 2026-09-26; not legal review). The actual-wheel inventory correction below needs independent re-review. Hosted checks, approval, and release remain pending. This is not a release-wide or PyPI publication verdict; on 2026-09-26, [PyPI project metadata](https://pypi.org/pypi/fast-mlsirm/json) listed no 0.11.5 files.
 Decision records: coordinator messages msg_60a758c73aad, msg_58e4fad25e39, msg_ee85fb3cb33f, msg_13c9108bac7d, msg_b5aa37b1b0c7, msg_411f3daec1fa.
 
 ## Scope

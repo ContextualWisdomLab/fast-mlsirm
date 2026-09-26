@@ -97,3 +97,35 @@ The three Python HOLD rows still need separate evidence:
 | `atheris 3.1.0` | Three CPython wheels contain `asan_with_fuzzer.so`, `ubsan_with_fuzzer.so`, `ubsan_cxx_with_fuzzer.so`, and `libclang_rt.fuzzer_no_main.a`. | Their native files have no bound license notice stanza. The wheel's Apache license covers its own candidate file, but does not establish these components' grants. |
 | `numpy 2.5.2` | The pinned wheel (SHA256 `3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8`) still has 11 unverified license candidate files. | Several files combine component grants, and the main notice includes GPL/LGPL component text. The external-runtime decision does not waive all-candidate verification. |
 | `sortedcontainers 2.4.0` | Its wheel `LICENSE` (SHA256 `1db7cae7fce6452e2e608e401a0f953e0133e4c2d75db69fb8ae851d2086f5b6`) is a short Apache header and URL. | The complete Apache 2.0 terms are absent from the hash-bound wheel candidate; a URL alone is not a verified full grant under the current rule. |
+
+The [Atheris 3.1.0 PyPI release](https://pypi.org/project/atheris/3.1.0/)
+has only three wheels and no source distribution. Their SHA256 digests are
+`ec5e11f21a4c197fe91f7aea2b2de88e623c73a21fc07b105ac6329a1588457b`
+(cp312), `f8a9f51ce8369026e8eb7b7174835e8c4c85a1a6db5d9add36c15100779d2a39`
+(cp313), and `315a0b5c819852b1ffe1ca72efc389c7724881f2c33e4aacb8c6bcec49bd5011`
+(cp314), matching the inventory inputs. All three contain the same four
+native-file hashes. [Upstream build code](https://github.com/google/atheris/blob/master/setup.py)
+shows that Atheris copies libFuzzer and combines it with ASan/UBSan, but that
+moving branch does not bind these exact wheel binaries to an LLVM version,
+source commit, or license notice. No native exception was added.
+The native SHA256 digests are `3d5fbe5d97101964713e476f85c21393d769a7ad3355538eba1e36590c68bed7`
+(`asan_with_fuzzer.so`), `60d06f6748c007c46c772b0abee959053973ee4b607a88f9f3db3562b2bbecaf`
+(`libclang_rt.fuzzer_no_main.a`), `d77a11a9024b34aa37c86b41f78be3ce2d7ce59067208c1fb662cd216c50eb1c`
+(`ubsan_cxx_with_fuzzer.so`), and `ffbe77bee5e88de99ad4b52622dcee38c9ea56a563ad63b1d4eeba35e6ae5d93`
+(`ubsan_with_fuzzer.so`).
+
+NumPy's main wheel `LICENSE.txt` is SHA256
+`4860083caa0de2ac3292ca98bd074bd8f45d8b32624e37b1e70a240bff61e488`.
+It embeds full BSD, GCC runtime exception, and GPL 3 text, then names
+`libquadmath` as LGPL 2.1 or later with a short notice and a link instead of
+the complete LGPL text. Several other candidate files contain multiple
+component grants. Because the main candidate alone remains incomplete under
+the current all-candidate rule, accepting individual NumPy component hashes
+would not clear this row; it stays HOLD pending a complete, bound notice set.
+
+The [sortedcontainers 2.4.0 source distribution](https://pypi.org/project/sortedcontainers/2.4.0/#files)
+has SHA256 `25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88`.
+Its `LICENSE` bytes hash to the same
+`1db7cae7fce6452e2e608e401a0f953e0133e4c2d75db69fb8ae851d2086f5b6`
+as the wheel's short Apache header. The release source therefore supplies no
+missing full text; this row stays HOLD.
