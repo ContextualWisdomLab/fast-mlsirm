@@ -20,13 +20,24 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fast_mlsirm.bifactor_grm import fit_bifactor_grm
+from fast_mlsirm.bifactor_grm import _u64_seed, fit_bifactor_grm
 
 N_PERSONS = 300
 N_ITEMS = 6
 N_SPECIFIC = 2
 N_CAT = 4
 SEED = 20260916
+
+
+def test_u64_seed_preserves_exact_integer_identity() -> None:
+    assert _u64_seed(2**53 + 1) == 2**53 + 1
+    assert _u64_seed(np.uint64(2**64 - 1)) == 2**64 - 1
+    assert _u64_seed(7.0) == 7
+    for bad in (2**64, -1, True, np.bool_(True), float(2**53), "7"):
+        with pytest.raises(ValueError):
+            _u64_seed(bad)
+
+
 SPECIFIC_MAP = np.array([0, 0, 0, 1, 1, 1], dtype=np.int64)
 TRUE_A_G = np.array([1.4, -1.1, 1.0, 1.2, 0.9, 1.1])
 TRUE_A_S = np.array([1.0, 0.9, 1.1, 1.0, 0.8, 0.9])
