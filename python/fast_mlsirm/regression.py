@@ -122,6 +122,32 @@ def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     }
 
 
+def sample_mean_sd(values: np.ndarray) -> tuple[float, float]:
+    """Return mean and sample SD with denominator n−1.
+
+    R Core Team. (n.d.). *Standard deviation*. R stats manual, Details.
+    https://stat.ethz.ch/R-manual/R-devel/library/stats/html/sd.html
+    """
+    arr = _as_float64_vector(values, "values")
+    return tuple(regression_core().sample_mean_sd(arr))
+
+
+def normal_wald_interval(
+    estimate: float, se: float, confidence_level: float
+) -> tuple[float, float]:
+    """Return an asymptotic normal-Wald interval under the supplied SE.
+
+    Pennsylvania State University, Department of Statistics. (n.d.).
+    *Lesson 13: Weighted least squares & logistic regressions*. STAT 501:
+    Regression methods, coefficient confidence interval equation.
+    https://online.stat.psu.edu/stat501/Lesson13
+    """
+    return tuple(
+        regression_core().normal_wald_interval(
+            float(estimate), float(se), float(confidence_level)
+        )
+    )
+
 def nested_ols_column_drop(
     x: np.ndarray, y: np.ndarray, drop_columns: list[int] | tuple[int, ...]
 ) -> dict[str, Any]:

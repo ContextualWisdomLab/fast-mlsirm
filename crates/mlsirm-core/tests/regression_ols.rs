@@ -2,6 +2,7 @@
 
 use mlsirm_core::regression::{
     chi2_sf_df1, f_sf, fit_ols, fit_ols_hc, linear_contrast, nested_ols_column_drop,
+    normal_wald_interval, sample_mean_sd,
     sandwich_vcov, t_sf, HcType,
 };
 
@@ -117,4 +118,19 @@ fn linear_contrast_and_tails() {
     assert_close(chi2_sf_df1(3.841458820694124), 0.05, 1e-6);
     assert_close(f_sf(3.841458820694124, 1.0, 1.0e8), 0.05, 5e-4);
     assert_close(t_sf(1.6448536269514722, 1.0e8), 0.05, 5e-4);
+}
+
+#[test]
+fn sample_moments_and_normal_wald_bounds() {
+    let (mean, sd) = sample_mean_sd(&[1.0, 2.0, 3.0]).unwrap();
+    assert_close(mean, 2.0, 1e-12);
+    assert_close(sd, 1.0, 1e-12);
+    let (low, high) = normal_wald_interval(2.0, 0.5, 0.95).unwrap();
+    assert_close(low, 1.02001800773, 1e-9);
+    assert_close(high, 2.97998199227, 1e-9);
+    assert!(sample_mean_sd(&[1.0]).is_err());
+    assert!(sample_mean_sd(&[1.0, f64::NAN]).is_err());
+    assert!(normal_wald_interval(2.0, -0.5, 0.95).is_err());
+    assert!(normal_wald_interval(2.0, 0.5, 0.0).is_err());
+    assert!(normal_wald_interval(2.0, 0.5, 1.0).is_err());
 }
