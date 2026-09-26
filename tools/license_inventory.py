@@ -110,7 +110,7 @@ CENTRAL_POLICY_MARKERS = ("GPL", "AGPL", "LGPL", "MPL", "EPL", "CDDL", "CC-BY-SA
 # LicenseRef-* - is UNKNOWN until a human reviews it and adds it here.
 PERMISSIVE_IDS = frozenset({
     "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "BSD-3-Clause-Open-MPI", "ISC", "Zlib",
-    "Unlicense", "Unicode-3.0", "0BSD", "CC0-1.0", "PSF-2.0",
+    "Unlicense", "Unicode-3.0", "0BSD", "CC0-1.0", "PSF-2.0", "NCSA",
 })
 WEAK_COPYLEFT_IDS = frozenset({"MPL-2.0"})
 COPYLEFT_IDS = frozenset({
@@ -260,6 +260,10 @@ REVIEWED_PYTHON_COMPANIONS = {
      "pygments-2.20.0.dist-info/licenses/AUTHORS",
      "0db603a5f4499f690c4425477ff664c166da325d3acc3b5a8d4de3db072443d0"):
         ("BSD-2-Clause",),
+    ("3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8",
+     "numpy-2.5.2.dist-info/licenses/numpy/random/src/splitmix64/LICENSE.md",
+     "268b0ca06759d31ea3ca68dd35f20e877916e927b1c2a835e4592a3c4354b1f9"):
+        ("CC0-1.0",),  # complete CC0 text in the same wheel's highway/LICENSE
 }
 
 
@@ -282,6 +286,10 @@ def verified_standard_text(text: str) -> list[str]:
         "f7d5577e303aa20d09c0e805214000a7002449cecafd4346b03cd06f3049a5b8": "MIT",  # numpy 2.5.2 pcg64: attribution followed by complete canonical MIT body
         "edf903a2906dd04e6c3657b707eea48d4185dd0ee566a8ce7557513e9d6e2df3": "MIT",  # numpy 2.5.2 sfc64: attribution followed by complete canonical MIT body
         "f94dd7ca63ee8edec5a4c637c97ea56881fdf10cf7537284ba68e73f2c4004f7": "BSD-3-Clause",  # numpy 2.5.2 philox: complete grant, exact punctuation variant
+        "a221b4e8807d25b93be0a461b696396d8d601b624d69b1571f2bca5365e9fe5b": ("Apache-2.0", "BSD-3-Clause", "CC0-1.0"),  # numpy 2.5.2 highway: all three complete component grants
+        "90f513821064ade1c5c862bb20a5139514ef954902afd55f6a1285eef4583ef4": ("BSD-3-Clause", "MIT"),  # numpy 2.5.2 distributions: NumPy BSD and Julia MIT grants
+        "440f36f86e9fdc0632eb2d45a3f74e5561086596c0483ae9624252caa3340400": ("BSD-3-Clause", "MIT"),  # numpy 2.5.2 mt19937: algorithm BSD and implementation MIT grants
+        "0837e29456761e9386ed577c7a8a5fc1a2c2a41f7d15cef80507ae2d07464fc6": ("NCSA", "BSD-3-Clause"),  # numpy 2.5.2 random: complete dual license, component files checked separately
         # Hash-pinned non-Linux review: full grants match the canonical body;
         # Windows omits the terminal period, while the two Apache files change
         # only appendix placeholder notation (glutin also fills copyright).
@@ -389,7 +397,7 @@ def verified_standard_text(text: str) -> list[str]:
     normalized = re.sub(r"[ \t\r\n]+", " ", text).strip(" \t\r\n")
     recognized = reviewed.get(sha256_bytes(normalized.encode("utf-8")))
     if recognized:
-        return [recognized]
+        return [recognized] if isinstance(recognized, str) else list(recognized)
     lines = text.replace("\r\n", "\n").replace("\r", "\n").strip().splitlines()
     while lines and not lines[0].strip():
         lines.pop(0)

@@ -53,12 +53,17 @@ and only while the stated complete sibling grant remains verified.
 | `3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8` (`numpy 2.5.2`) | [`numpy/random/src/pcg64/LICENSE.md`](python-companions/numpy-2.5.2-pcg64-LICENSE.md) | `e7d4f4fb20358f314210a892ae17351e04993813646f697ec387385ca2a36918` | Component attribution followed by the complete canonical MIT grant. |
 | same NumPy wheel | [`numpy/random/src/philox/LICENSE.md`](python-companions/numpy-2.5.2-philox-LICENSE.md) | `6f5828a57223d4cc7f8ea505a2623e7b978b242752c1515e355f46ba2cec1800` | Complete BSD three-clause grant. Its `conditions are met:` punctuation differs from the pinned [SPDX BSD-3-Clause template](https://github.com/spdx/license-list-data/blob/31ba1a50e5397e00a304dbadc76531740e89ee48/template/BSD-3-Clause.template.txt); accepted by exact normalized hash after individual review. |
 | same NumPy wheel | [`numpy/random/src/sfc64/LICENSE.md`](python-companions/numpy-2.5.2-sfc64-LICENSE.md) | `9d4098846018319cd68e228ee6220361787f73bccbf00237a85e4fc9621b998f` | Component attribution followed by the complete canonical MIT grant. |
+| same NumPy wheel | [`numpy/_core/src/highway/LICENSE`](python-companions/numpy-2.5.2-highway-LICENSE) | `e340270d4f64384569a91d546acb5b094d69ce47f0c015db77abb74dc6f815af` | Complete Apache 2.0, BSD three-clause, and CC0 1.0 texts for the stated Highway components. |
+| same NumPy wheel | [`numpy/random/src/distributions/LICENSE.md`](python-companions/numpy-2.5.2-distributions-LICENSE.md) | `469778be8f33d54e1bcaab28c281cc472916d2d273f835e55bc487d30503face` | Complete NumPy BSD three-clause and Julia MIT component grants. |
+| same NumPy wheel | [`numpy/random/src/mt19937/LICENSE.md`](python-companions/numpy-2.5.2-mt19937-LICENSE.md) | `0e111337b25494a773106695f0e799f642b8567aaacca4f116a74a8177179156` | Complete algorithm BSD three-clause and implementation MIT grants. |
+| same NumPy wheel | [`numpy/random/LICENSE.md`](python-companions/numpy-2.5.2-random-LICENSE.md) | `103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f` | Complete NCSA and BSD three-clause dual license. Separately named component licenses remain separate candidates. The [pinned NCSA template](https://github.com/spdx/license-list-data/blob/31ba1a50e5397e00a304dbadc76531740e89ee48/template/NCSA.template.txt) has SHA256 `0e021a87da89f75875f834eaeb784e37836ea283025652671054bf7c23235e14`. |
+| same NumPy wheel | [`numpy/random/src/splitmix64/LICENSE.md`](python-companions/numpy-2.5.2-splitmix64-LICENSE.md) | `268b0ca06759d31ea3ca68dd35f20e877916e927b1c2a835e4592a3c4354b1f9` | CC0 dedication and link; the full CC0 1.0 text is in the same hash-bound wheel's `highway/LICENSE`. This exact member is accepted only while that sibling remains verified. |
 
 The `hypothesis` MPL section, starting at `Mozilla Public License Version 2.0`,
 is whitespace-equivalent to the [SPDX v3.29.0 MPL 2.0 text](https://github.com/spdx/license-list-data/blob/31ba1a50e5397e00a304dbadc76531740e89ee48/text/MPL-2.0.txt)
 (SHA256 `66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172`).
 The introduction says some code has other original notices; this review
 verifies the wheel's license candidate file, not every source-level exception.
-The three NumPy members above come byte-for-byte from the [pinned PyPI wheel](https://pypi.org/project/numpy/2.5.2/)
+The NumPy members above come byte-for-byte from the [pinned PyPI wheel](https://pypi.org/project/numpy/2.5.2/)
 whose SHA256 is shown in the table. Their acceptance covers only those exact
-candidate files; eight other NumPy candidate files remain unverified.
+candidate files; three other NumPy candidate files remain unverified.
