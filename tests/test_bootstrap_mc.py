@@ -35,3 +35,12 @@ def test_mc_inputs_fail_closed():
         mc_rank_interval(np.array([1.0, 2.0]), 0.5, 0.95)
     with pytest.raises(ValueError, match="probability"):
         binomial_quantile(10, 0.5, np.nan)
+    oversized = np.zeros(1_000_001)
+    with pytest.raises(ValueError, match="1..=1000000"):
+        linear_percentile(oversized, 0.5)
+    with pytest.raises(ValueError, match="2..=1000000"):
+        mc_rank_interval(oversized, 0.5, 0.95)
+    assert linear_percentile(np.array([-1e308, 1e308]), 0.5) == 0.0
+    assert mc_rank_interval(np.arange(100, dtype=np.float64), 0.5, np.nextafter(1.0, 0.0))[
+        "count_high"
+    ] < 100

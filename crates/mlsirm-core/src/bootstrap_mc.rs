@@ -116,10 +116,7 @@ pub fn mc_rank_interval(
     confidence: f64,
 ) -> Result<McRankInterval, String> {
     let n = values.len();
-    if n < 2
-        || n > MAX_BOOTSTRAP_MC_DRAWS
-        || values.iter().any(|v| !v.is_finite())
-    {
+    if n < 2 || n > MAX_BOOTSTRAP_MC_DRAWS || values.iter().any(|v| !v.is_finite()) {
         return Err(format!(
             "values must contain 2..={MAX_BOOTSTRAP_MC_DRAWS} finite draws"
         ));
@@ -184,10 +181,7 @@ mod tests {
         let values = [5.0, 1.0, 4.0, 2.0, 3.0];
         assert_eq!(linear_percentile(&values, 0.25).unwrap(), 2.0);
         assert_eq!(linear_percentile(&values, 0.125).unwrap(), 1.5);
-        assert_eq!(
-            linear_percentile(&[-1.0e308, 1.0e308], 0.5).unwrap(),
-            0.0
-        );
+        assert_eq!(linear_percentile(&[-1.0e308, 1.0e308], 0.5).unwrap(), 0.0);
         let interval = mc_rank_interval(&values, 0.5, 0.8).unwrap();
         assert_eq!((interval.count_low, interval.count_high), (1, 4));
         assert_eq!(
@@ -203,8 +197,7 @@ mod tests {
 
         let extreme_confidence = f64::from_bits(1.0_f64.to_bits() - 1);
         let many_values: Vec<f64> = (0..100).map(f64::from).collect();
-        let extreme_interval =
-            mc_rank_interval(&many_values, 0.5, extreme_confidence).unwrap();
+        let extreme_interval = mc_rank_interval(&many_values, 0.5, extreme_confidence).unwrap();
         assert!(extreme_interval.count_high < many_values.len());
         assert_eq!(
             extreme_interval.count_high,
