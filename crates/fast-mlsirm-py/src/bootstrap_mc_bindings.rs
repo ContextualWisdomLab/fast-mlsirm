@@ -4,7 +4,7 @@ use mlsirm_core::bootstrap_mc::{
     binomial_interval_coverage, binomial_quantile, linear_percentile, mc_rank_interval,
     MAX_BOOTSTRAP_MC_DRAWS,
 };
-use numpy::PyReadonlyArray1;
+use numpy::{PyReadonlyArray1, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
