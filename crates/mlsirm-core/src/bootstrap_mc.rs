@@ -159,6 +159,10 @@ mod tests {
         let values = [5.0, 1.0, 4.0, 2.0, 3.0];
         assert_eq!(linear_percentile(&values, 0.25).unwrap(), 2.0);
         assert_eq!(linear_percentile(&values, 0.125).unwrap(), 1.5);
+        assert_eq!(
+            linear_percentile(&[-1.0e308, 1.0e308], 0.5).unwrap(),
+            0.0
+        );
         let interval = mc_rank_interval(&values, 0.5, 0.8).unwrap();
         assert_eq!((interval.count_low, interval.count_high), (1, 4));
         assert_eq!(
@@ -171,5 +175,15 @@ mod tests {
         assert!(mc_rank_interval(&[1.0, 2.0], 0.5, 0.95)
             .unwrap_err()
             .contains("increase B"));
+
+        let extreme_confidence = f64::from_bits(1.0_f64.to_bits() - 1);
+        let many_values: Vec<f64> = (0..100).map(f64::from).collect();
+        let extreme_interval =
+            mc_rank_interval(&many_values, 0.5, extreme_confidence).unwrap();
+        assert!(extreme_interval.count_high < many_values.len());
+        assert_eq!(
+            extreme_interval.count_high,
+            many_values.len() - extreme_interval.count_low
+        );
     }
 }

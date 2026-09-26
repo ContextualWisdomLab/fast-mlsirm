@@ -54,3 +54,14 @@ pub(super) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_mc_rank_interval, m)?)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn draw_limit_rejects_before_numpy_collection() {
+        assert!(validate_draw_count(MAX_BOOTSTRAP_MC_DRAWS + 1, 1).is_err());
+        assert!(validate_draw_count(MAX_BOOTSTRAP_MC_DRAWS + 1, 2).is_err());
+    }
+}
