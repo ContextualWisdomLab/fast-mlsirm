@@ -592,7 +592,7 @@ jobs:
         with:
           version: "0.12.5"
           enable-cache: false
-      - name: Capture isolated locked runtime and fuzz dependencies
+      - name: Capture isolated locked runtime and all optional dependencies
         shell: bash
         env:
           RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}

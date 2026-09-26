@@ -76,7 +76,7 @@ def capture(row_path: Path, dist: Path, source: Path, scratch: Path, source_sha:
         raise ValueError(f"runtime capture requires pinned uv 0.12.5, got {uv_version!r}")
 
     requirements = row_path.with_suffix(".runtime-requirements.txt")
-    _run("uv", "export", "--locked", "--no-dev", "--no-emit-project", "--extra", "fuzz",
+    _run("uv", "export", "--locked", "--no-dev", "--no-emit-project", "--all-extras",
          "--format", "requirements.txt", "--output-file", str(requirements), cwd=source)
     if list(row_path.parent.glob("*.whl")):
         raise ValueError("runtime archive destination is not empty")
