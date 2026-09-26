@@ -58,6 +58,19 @@ The verifier at this branch head was run against the same 0.11.5 inputs with the
 
 The 19 changed verdicts are the 12 Windows rows, `glutin_wgl_sys`, `jni-sys` ×2, `jni-sys-macros`, `gl_generator`, `khronos_api`, and `ndk-sys`. The remaining 11 are the ten `objc2` family rows above plus `android_system_properties`. Their separate text or publication evidence needs a decision before a non-Linux gate can pass; this review does not turn a pointer or Apache header into a full license text.
 
+The `android_system_properties 0.1.6` `.crate` matches the binding lock checksum
+`ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc`.
+Its `.cargo_vcs_info.json` names upstream commit
+[`f859a346ba256d92ef047e7a49d6a2f59972257b`](https://github.com/nical/android_system_properties/tree/f859a346ba256d92ef047e7a49d6a2f59972257b).
+The source archive for that exact commit (SHA256
+`e3394aa6d499ed0d060850ac9592eec175a3b043d034398cd682e4dc1d7ac96d`)
+contains the same short `LICENSE-APACHE` (SHA256
+`216486f29671a4262efe32af6d84a75bef398127f8c5f369b5c8305983887a06`)
+and `LICENSE-MIT` (SHA256
+`80f275e90d799911ed3830a7f242a2ef5a4ade2092fe0aa07bfb2d2cf2f2b95e`),
+with no separate full Apache terms. Thus the publication commit does not
+supply the missing candidate text; the Android union row remains HOLD.
+
 Reproduction inputs and outputs on s1: `/data/orca/workspaces/fmls-license-evidence/nonlinux-upstream-20260926/` (`rerun-current.sh`, `current-union/`, `current-linux/`).
 
 ## Target-filtered binding graph (2026-09-26 follow-up)
