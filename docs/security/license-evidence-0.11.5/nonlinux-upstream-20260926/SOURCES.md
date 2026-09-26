@@ -58,6 +58,8 @@ and only while the stated complete sibling grant remains verified.
 | same NumPy wheel | [`numpy/random/src/mt19937/LICENSE.md`](python-companions/numpy-2.5.2-mt19937-LICENSE.md) | `0e111337b25494a773106695f0e799f642b8567aaacca4f116a74a8177179156` | Complete algorithm BSD three-clause and implementation MIT grants. |
 | same NumPy wheel | [`numpy/random/LICENSE.md`](python-companions/numpy-2.5.2-random-LICENSE.md) | `103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f` | Complete NCSA and BSD three-clause dual license. Separately named component licenses remain separate candidates. The [pinned NCSA template](https://github.com/spdx/license-list-data/blob/31ba1a50e5397e00a304dbadc76531740e89ee48/template/NCSA.template.txt) has SHA256 `0e021a87da89f75875f834eaeb784e37836ea283025652671054bf7c23235e14`. |
 | same NumPy wheel | [`numpy/random/src/splitmix64/LICENSE.md`](python-companions/numpy-2.5.2-splitmix64-LICENSE.md) | `268b0ca06759d31ea3ca68dd35f20e877916e927b1c2a835e4592a3c4354b1f9` | CC0 dedication and link; the full CC0 1.0 text is in the same hash-bound wheel's `highway/LICENSE`. This exact member is accepted only while that sibling remains verified. |
+| same NumPy wheel | [`numpy/_core/src/multiarray/dragon4_LICENSE.txt`](python-companions/numpy-2.5.2-dragon4-LICENSE.txt) | `f7b14309e5f54e5022b26448eefd419988ada2aec01d3c1162d84a0ea8f21f2c` | Complete MIT grant plus an explanation of the original Zlib grant and permission to include the code under MIT. The [NumPy v2.5.2 project file](https://github.com/numpy/numpy/blob/v2.5.2/pyproject.toml) labels this member MIT. |
+| same NumPy wheel | [`numpy/linalg/lapack_lite/LICENSE.txt`](python-companions/numpy-2.5.2-lapack-lite-LICENSE.txt) | `a14cc25e10d40a3aa705b7de2fb764a6535d8ee9b2db4e1724900585457dfd55` | Complete BSD three-clause grant, template placeholders, and a no-assurance patent/IP disclaimer. The pinned NumPy project file labels this member BSD-3-Clause; the disclaimer adds no use condition. |
 
 The `hypothesis` MPL section, starting at `Mozilla Public License Version 2.0`,
 is whitespace-equivalent to the [SPDX v3.29.0 MPL 2.0 text](https://github.com/spdx/license-list-data/blob/31ba1a50e5397e00a304dbadc76531740e89ee48/text/MPL-2.0.txt)
@@ -66,4 +68,4 @@ The introduction says some code has other original notices; this review
 verifies the wheel's license candidate file, not every source-level exception.
 The NumPy members above come byte-for-byte from the [pinned PyPI wheel](https://pypi.org/project/numpy/2.5.2/)
 whose SHA256 is shown in the table. Their acceptance covers only those exact
-candidate files; three other NumPy candidate files remain unverified.
+candidate files; the main NumPy `LICENSE.txt` remains unverified.

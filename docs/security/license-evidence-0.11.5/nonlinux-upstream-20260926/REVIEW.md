@@ -239,12 +239,24 @@ row alone changed from 8 to **3** unverified candidates. Python HOLD remains
 SHA256 `092ea6066f3a36a9220bf5132473d90c9757330aef69b7225fc04d1de41dcefa`.
 The focused generator and SPDX tests passed: 251 tests.
 
+The [NumPy v2.5.2 project declaration](https://github.com/numpy/numpy/blob/v2.5.2/pyproject.toml)
+also labels `dragon4` as MIT and `lapack_lite` as BSD-3-Clause. Their exact
+wheel members contain the complete grants. The `dragon4` file explains its
+original Zlib grant and MIT permission; the `lapack_lite` file adds a patent/IP
+no-assurance disclaimer without another use condition. The pinned whole-file
+review accepted both. The next rerun exited zero with no completeness gaps,
+changed only the NumPy Python row, and reduced its unverified candidates from
+3 to **1**. Python HOLD remains **3**. The inventory is
+`current-python-numpy-two-more/inventory.json` on s1, SHA256
+`ab8260827b0f807933882aeefd6eddd4b0e859577efbd22896eda2634a203b78`.
+The focused generator and SPDX tests passed: 253 tests.
+
 The three Python HOLD rows still need separate evidence:
 
 | Package | Exact artifact finding | Why HOLD remains |
 | --- | --- | --- |
 | `atheris 3.1.0` | Three CPython wheels contain `asan_with_fuzzer.so`, `ubsan_with_fuzzer.so`, `ubsan_cxx_with_fuzzer.so`, and `libclang_rt.fuzzer_no_main.a`. | Their native files have no bound license notice stanza. The wheel's Apache license covers its own candidate file, but does not establish these components' grants. |
-| `numpy 2.5.2` | The pinned wheel (SHA256 `3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8`) still has 3 unverified license candidate files. | The main notice lacks complete LGPL text, while `dragon4` and `lapack_lite` need individual decisions on their additional statements. The external-runtime decision does not waive all-candidate verification. |
+| `numpy 2.5.2` | The pinned wheel (SHA256 `3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8`) still has 1 unverified license candidate file. | The main notice lacks complete LGPL text. The external-runtime decision does not waive all-candidate verification. |
 | `sortedcontainers 2.4.0` | Its wheel `LICENSE` (SHA256 `1db7cae7fce6452e2e608e401a0f953e0133e4c2d75db69fb8ae851d2086f5b6`) is a short Apache header and URL. | The complete Apache 2.0 terms are absent from the hash-bound wheel candidate; a URL alone is not a verified full grant under the current rule. |
 
 The [Atheris 3.1.0 PyPI release](https://pypi.org/project/atheris/3.1.0/)
@@ -267,12 +279,8 @@ NumPy's main wheel `LICENSE.txt` is SHA256
 `4860083caa0de2ac3292ca98bd074bd8f45d8b32624e37b1e70a240bff61e488`.
 It embeds full BSD, GCC runtime exception, and GPL 3 text, then names
 `libquadmath` as LGPL 2.1 or later with a short notice and a link instead of
-the complete LGPL text. The other two unverified members are
-`dragon4_LICENSE.txt`, which describes an MIT relicensing permission for
-original Zlib code, and `lapack_lite/LICENSE.txt`, which contains template
-placeholders and an additional patent disclaimer. Those statements need
-individual evidence. The main candidate alone prevents NumPy from clearing
-the current all-candidate rule; the row stays HOLD.
+the complete LGPL text. This main candidate prevents NumPy from clearing the
+current all-candidate rule; the row stays HOLD.
 
 The [sortedcontainers 2.4.0 source distribution](https://pypi.org/project/sortedcontainers/2.4.0/#files)
 has SHA256 `25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88`.

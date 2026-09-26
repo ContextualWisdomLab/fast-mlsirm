@@ -290,6 +290,8 @@ def verified_standard_text(text: str) -> list[str]:
         "90f513821064ade1c5c862bb20a5139514ef954902afd55f6a1285eef4583ef4": ("BSD-3-Clause", "MIT"),  # numpy 2.5.2 distributions: NumPy BSD and Julia MIT grants
         "440f36f86e9fdc0632eb2d45a3f74e5561086596c0483ae9624252caa3340400": ("BSD-3-Clause", "MIT"),  # numpy 2.5.2 mt19937: algorithm BSD and implementation MIT grants
         "0837e29456761e9386ed577c7a8a5fc1a2c2a41f7d15cef80507ae2d07464fc6": ("NCSA", "BSD-3-Clause"),  # numpy 2.5.2 random: complete dual license, component files checked separately
+        "509b197dd16044940bbfde7c2abee387cb0f335177ce69e39ad5c73e2dbc6433": "MIT",  # numpy 2.5.2 dragon4: full MIT grant and upstream relicensing note
+        "daf1efe4401bcf269192d7393bb675245c2fb1675bb6cd979d07cfa5cc54f0ed": "BSD-3-Clause",  # numpy 2.5.2 lapack_lite: full three clauses, extra no-assurance disclaimer
         # Hash-pinned non-Linux review: full grants match the canonical body;
         # Windows omits the terminal period, while the two Apache files change
         # only appendix placeholder notation (glutin also fills copyright).
