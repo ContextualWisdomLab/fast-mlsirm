@@ -195,3 +195,24 @@ def test_sdist_package_info_must_match_exact_source(scope_fixture, field, value)
             archive.addfile(member, io.BytesIO(data))
     with pytest.raises(ValueError, match="PKG-INFO differs"):
         M["scope_identity"](artifact, "sdist", source, sha, rows["sdist"]["build_env"])
+
+
+@pytest.mark.parametrize("path,data,error", [
+    ("untracked.py", b"print('unexpected')\n", "absent from release commit"),
+    ("Cargo.lock", b"changed lock\n", "differs from release commit"),
+])
+def test_sdist_source_members_must_match_exact_commit(scope_fixture, path, data, error):
+    source, sha, rows, _ = scope_fixture
+    artifact = Path("dist/fixture-1.tar.gz")
+    entries = {
+        "pyproject.toml": (source / "pyproject.toml").read_bytes(),
+        "PKG-INFO": b"Name: fixture\nVersion: 1\nRequires-Python: >=3.12\n",
+        path: data,
+    }
+    with tarfile.open(artifact, "w:gz") as archive:
+        for name, payload in entries.items():
+            member = tarfile.TarInfo("fixture-1/" + name)
+            member.size = len(payload)
+            archive.addfile(member, io.BytesIO(payload))
+    with pytest.raises(ValueError, match=error):
+        M["scope_identity"](artifact, "sdist", source, sha, rows["sdist"]["build_env"])

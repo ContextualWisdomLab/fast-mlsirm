@@ -16,7 +16,9 @@ carried all three. A filename tag alone still does not prove that both binary
 slices and their native imports were inspected.
 The sdist has a separate source identity, unique PKG-INFO/pyproject members under
 one root, pyproject bytes equal to the release source, and PKG-INFO name,
-version and Python requirement equal to that source declaration. These checks never
+version and Python requirement equal to that source declaration. Every other
+regular sdist member must match a tracked file in the exact release commit;
+extra, changed and unsafe members refuse admission. These checks never
 execute package code. Existing transport hashing remains chunked.
 
 `release-admission` first requires the pinned central gate job to succeed, then

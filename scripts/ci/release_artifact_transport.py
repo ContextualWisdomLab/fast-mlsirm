@@ -417,6 +417,27 @@ def scope_identity(artifact: Path, leg: str, source: Path, source_sha: str, buil
             raise ValueError("sdist declaration roots differ")
         if any(h != declarations["pyproject.toml"] for p, h in members.items() if p.endswith("/pyproject.toml")):
             raise ValueError("sdist pyproject differs from release source")
+        root = next(iter(members)).split("/", 1)[0]
+        seen = set()
+        with tarfile.open(artifact, "r:gz") as archive:
+            for member in archive:
+                if member.isdir():
+                    continue
+                parts = PurePosixPath(member.name).parts
+                if (not member.isfile() or member.name != str(PurePosixPath(member.name))
+                        or len(parts) < 2 or parts[0] != root or member.name in seen):
+                    raise ValueError("sdist contains an unsafe or duplicate source member")
+                seen.add(member.name)
+                path = "/".join(parts[1:])
+                if path == "PKG-INFO":
+                    continue
+                if path not in tracked:
+                    raise ValueError("sdist contains a source member absent from release commit")
+                expected = subprocess.check_output(
+                    ["git", "-C", str(source), "show", f"{source_sha}:{path}"])
+                with archive.extractfile(member) as stream:
+                    if copy_and_hash(stream) != hashlib.sha256(expected).hexdigest():
+                        raise ValueError("sdist source member differs from release commit")
         project = tomllib.loads(project_blob.decode("utf-8"))["project"]
         metadata = email.parser.Parser().parsestr(package_info.decode("utf-8"))
         if any(metadata.get_all(field) != [project[key]] for field, key in (
