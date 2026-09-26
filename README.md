@@ -1,6 +1,7 @@
 # fast-mlsirm
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ContextualWisdomLab/fast-mlsirm)
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/ContextualWisdomLab/fast-mlsirm?utm_source=badge)
 
 
 `fast-mlsirm` is an early high-performance toolkit for Multidimensional
