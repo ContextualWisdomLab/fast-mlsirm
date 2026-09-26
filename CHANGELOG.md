@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Saved multiple-group bifactor and two-tier GRM fits can now produce
+  per-person conditional `l_z`, posterior trait estimates, observed-item
+  counts, and caller-threshold flags. Optional seeded model resampling gives
+  an empirical lower-tail probability; no cross-loading `l_z*` or normal-null
+  calibration is claimed (#2116).
+
 ### Changed
 
 - Polytomous person fit now requires convergence by default, including for
