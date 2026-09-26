@@ -48,3 +48,8 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2025-05-19 - Euclidean distance allocations and Element-wise Scalar Reductions
+
+**Learning:** During M-step marginal calculations (e.g., `marginal.py`), expressions like `np.sum(diff * diff, axis=1)` allocate large 2D arrays before summing, resulting in a performance bottleneck for Euclidean distance. Similarly, reductions like `np.sum(A * B + C * D)` create intermediate matrices equivalent to the full sizes of `A` or `C`. Using `np.einsum('ij,ij->i', diff, diff)` entirely avoids the intermediate matrix, giving substantial speedups for larger arrays. Using `np.vdot(A, B) + np.vdot(C, D)` eliminates the element-wise temporary allocations.
+
+**Action:** Replace `(x * x).sum(axis=1)` with `np.einsum('ij,ij->i', x, x)` when calculating pairwise distances to avoid allocation overhead. Replace `np.sum(A * B)` with `np.vdot(A, B)` for scalar reductions of identically shaped arrays, avoiding temporary product arrays. Always comment the expected measurable speedup when applying this inside inner objective function loops.
