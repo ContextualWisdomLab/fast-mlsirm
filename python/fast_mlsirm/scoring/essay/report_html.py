@@ -230,6 +230,7 @@ tbody tr { transition: background-color 0.15s ease-in-out; }
 tbody tr:hover { background-color: rgba(128, 128, 128, 0.15); }
 code, pre { font-family: ui-monospace, monospace; }
 pre { max-height: 32rem; overflow: auto; padding: 16px; border: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
+.export-block pre { user-select: all; }
 .empty-state { font-style: italic; color: var(--muted); }
 @media (max-width: 640px) { .details-grid { grid-template-columns: 1fr; } .details-grid dd { margin-bottom: 8px; } }
 @media (prefers-reduced-motion: reduce) {
@@ -349,7 +350,7 @@ def _render_html(report: EssayScoreReport, title: str) -> str:
             '<h2 id="evidence-heading">Evidence references</h2>',
             evidence,
             "</section>",
-            '<section aria-labelledby="json-heading">',
+            '<section class="export-block" aria-labelledby="json-heading">',
             '<h2 id="json-heading">Canonical JSON</h2>',
             "<p>The complete deterministic report payload is available below for audit reconstruction.</p>",
             '<pre tabindex="0" role="region" aria-label="Canonical essay score report JSON">',
