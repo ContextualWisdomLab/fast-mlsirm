@@ -67,6 +67,16 @@ from .bifactor_grm import bifactor_oakes_se as bifactor_oakes_se, BifactorOakesS
 from .bifactor_multigroup import fit_bifactor_grm_multigroup as fit_bifactor_grm_multigroup, BifactorMultigroupFit as BifactorMultigroupFit
 from .two_tier_grm import fit_two_tier_grm as fit_two_tier_grm, TwoTierGrmFit as TwoTierGrmFit
 from .two_tier_grm import two_tier_oakes_se as two_tier_oakes_se, TwoTierOakesSe as TwoTierOakesSe
+from .two_tier_fipc import (
+    TwoTierGrmFipcFit as TwoTierGrmFipcFit,
+    TwoTierFipcGroupPersonScores as TwoTierFipcGroupPersonScores,
+    TwoTierReferenceExpectedScoreMoments as TwoTierReferenceExpectedScoreMoments,
+    execute_two_tier_fipc_group_person_score_payload as execute_two_tier_fipc_group_person_score_payload,
+    fit_and_score_two_tier_fipc_group_persons as fit_and_score_two_tier_fipc_group_persons,
+    fit_two_tier_grm_fipc as fit_two_tier_grm_fipc,
+    score_two_tier_fipc_group_persons as score_two_tier_fipc_group_persons,
+    two_tier_reference_expected_score_moments as two_tier_reference_expected_score_moments,
+)
 from .gpcm import fit_gpcm as fit_gpcm, GpcmFit as GpcmFit
 from .facets import fit_facets as fit_facets, FacetsFit as FacetsFit
 from .ksirt import analyze_ksirt as analyze_ksirt, ksirt_analysis as ksirt_analysis, KsirtResult as KsirtResult
@@ -410,6 +420,14 @@ __all__ = [  # noqa: RUF022
     "TwoTierGrmFit",
     "two_tier_oakes_se",
     "TwoTierOakesSe",
+    "TwoTierFipcGroupPersonScores",
+    "TwoTierGrmFipcFit",
+    "TwoTierReferenceExpectedScoreMoments",
+    "fit_two_tier_grm_fipc",
+    "fit_and_score_two_tier_fipc_group_persons",
+    "score_two_tier_fipc_group_persons",
+    "two_tier_reference_expected_score_moments",
+    "execute_two_tier_fipc_group_person_score_payload",
     "fit_gpcm",
     "GpcmFit",
     "fit_rsm",
