@@ -69,7 +69,7 @@ def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     assert "release tag does not target release_commit" in verify
     assert 'tomllib.load' in verify or 'tomllib.loads' in verify
     assert 'f"v{project[\'version\']}"' in verify
-    assert text.count("maturin-version: v1.14.1") == 4
+    assert text.count("maturin-version: v1.15.0") == 5
 
 
 def test_release_checkout_rejects_unvalidated_dispatch_sha_authority() -> None:
@@ -297,13 +297,23 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     assert len(builds) == 2
     for build in builds:
         assert "docker-options: -e SOURCE_DATE_EPOCH\n" in build
+        assert "before-script-linux: $CARGO_BUILD_PYTHON trusted-control/scripts/ci/capture_release_build_scope.py" in build
         assert "if:" not in build
+    assert wheels.count("python trusted-control/scripts/ci/capture_release_build_scope.py") == 2
 
     # Every publishable artifact (12 wheels + sdist) is rebuilt from a clean
     # target and compared; no leg may opt out of the double build.
     assert "verify-reproducible" not in wheels
     assert "--out dist-rebuild --target-dir target-rebuild" in builds[1]
     assert "- name: Rebuild sdist for byte-reproducibility check" in sdist
+    assert "- name: Capture first sdist build tools" in sdist
+    assert "- name: Capture second sdist build tools" in sdist
+    assert "needs: [verify-release, sdist]" in wheels
+    assert "- name: Verify and unpack the same-run sdist" in wheels
+    assert "- name: Build this wheel target from the verified sdist" in wheels
+    assert "working-directory: sdist-consumer/source" in wheels
+    assert "- name: Capture target sdist consumer wheel" in wheels
+    assert "- name: Install target sdist consumer wheel" in wheels
     assert "args: --out dist-rebuild" in sdist
     compare_wheel = _step_python(wheels, "Compare double-build wheel digests and record them")
     compare_sdist = _step_python(sdist, "Compare double-build sdist digests and record them")
@@ -331,6 +341,8 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     gate = _step_python(record, "Require a byte-verified row for every publishable artifact")
     assert "pattern: dist-*" in record
     assert "pattern: repro-digest-*" in record
+    assert "pattern: repro-digest-*\n          path: repro-digest\n          merge-multiple: false" in record
+    assert 'Path("repro-digest").glob("repro-digest-*/*.tsv")' in gate
     assert 'failures.append(f"{name}: no byte-verification row")' in gate
     assert 'row["sha256"] != sha or row["rebuild_sha256"] != sha' in gate
     assert "if failures:" in gate
@@ -348,6 +360,7 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     # suffixes, so the shipped release profile pins a single codegen unit.
     binding = (REPO_ROOT / "crates" / "fast-mlsirm-py" / "Cargo.toml").read_text(encoding="utf-8")
     assert re.search(r"(?m)^\[profile\.release\]\n(?:(?!\[).*\n)*?codegen-units = 1$", binding)
+    assert "cargo_manifest_path: crates/fast-mlsirm-py/Cargo.toml" in text
 
 
 def _sdist_without_license(path: Path) -> None:
@@ -523,7 +536,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@c203246ce6eb12dc601a8cb6d403c82d43fd2776" in central
+    assert "release-dependency-license-strix-gate.yml@e5103ddc59a95deaeb0320a07808699ed815953c" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -535,10 +548,13 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
 
 def _admission_fixture(root: Path) -> dict:
     import zipfile
+    import json
+    import runpy
+    import zipfile
     legs = _expected_legs()
     platforms = {"x86_64-unknown-linux-gnu": "manylinux2014_x86_64",
                  "aarch64-unknown-linux-gnu": "manylinux2014_aarch64",
-                 "universal2-apple-darwin": "macosx_11_0_universal2",
+                 "universal2-apple-darwin": "macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2",
                  "x86_64-pc-windows-msvc": "win_amd64"}
     files = {}
     for leg in legs:
@@ -547,36 +563,315 @@ def _admission_fixture(root: Path) -> dict:
         files[leg] = f"pkg-1.2.3-{cp}-{cp}-{platforms[target]}.whl"
     files["sdist"] = "pkg-1.2.3.tar.gz"
     payload = {leg: f"bytes of {name}".encode() for leg, name in files.items()}
+    extension_member = "fast_mlsirm/_core.fixture.so"
+    extension_bytes = b"synthetic extension member"
+    dependency_archive_name = "numpy-2.5.1-py3-none-any.whl"
+    dependency_buffer = io.BytesIO()
+    with zipfile.ZipFile(dependency_buffer, "w") as archive:
+        archive.writestr("numpy-2.5.1.dist-info/METADATA", "Name: numpy\nVersion: 2.5.1\n")
+    dependency_archive_bytes = dependency_buffer.getvalue()
     for leg in legs:
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
-            tag = "-".join(files[leg][:-4].rsplit("-", 3)[1:])
-            archive.writestr("pkg-1.2.3.dist-info/WHEEL", f"Wheel-Version: 1.0\nTag: {tag}\n")
+            _, abi, platform = files[leg][:-4].rsplit("-", 3)[1:]
+            tags = "".join(f"Tag: {abi}-{abi}-{part}\n" for part in platform.split("."))
+            archive.writestr("pkg-1.2.3.dist-info/WHEEL", f"Wheel-Version: 1.0\n{tags}")
+            archive.writestr("pkg-1.2.3.dist-info/METADATA", "Name: pkg\nVersion: 1.2.3\n")
+            archive.writestr(extension_member, extension_bytes)
         payload[leg] = buffer.getvalue()
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        data = b"Name: pkg\nVersion: 1.2.3\n"
+        member = tarfile.TarInfo("pkg-1.2.3/PKG-INFO")
+        member.size = len(data)
+        archive.addfile(member, io.BytesIO(data))
+    payload["sdist"] = buffer.getvalue()
     sha = {leg: hashlib.sha256(data).hexdigest() for leg, data in payload.items()}
+    def build_env(leg: str) -> str:
+        target = leg.rsplit("-py", 1)[0] if leg != "sdist" else "sdist"
+        if target == "sdist":
+            return "runner:ubuntu/test/Linux/X64"
+        if target.endswith("linux-gnu"):
+            return "container:quay.io/pypa/fixture@sha256:" + "a" * 64
+        if target == "x86_64-pc-windows-msvc":
+            return "runner:windows/test/Windows/X64"
+        return "runner:macos/test/macOS/ARM64"
     (root / "dist").mkdir(parents=True)
     for leg, name in files.items():
         (root / "dist" / name).write_bytes(payload[leg])
     (root / "record").mkdir()
     rows = "".join(
-        f"{leg}\ttrue\tclean-target-repeat-same-env\t{sha[leg]}\t{sha[leg]}\t{files[leg]}\trunner:x\n"
+        f"{leg}\ttrue\tclean-target-repeat-same-env\t{sha[leg]}\t{sha[leg]}\t{files[leg]}\t{build_env(leg)}\n"
         for leg in sorted(files)
     )
     (root / "record" / "reproducibility-record.tsv").write_text(
         f"# release {_RELEASE_TAG} @ {_RELEASE_COMMIT}, SOURCE_DATE_EPOCH=1\n"
         "target\tbyte_verified\tverification\tsha256\trebuild_sha256\tfile\tbuild_env\n" + rows
     )
+    source = root / "release-source"
+    source.mkdir()
+    (source / "uv.lock").write_text("fixture lock\n")
+    (source / "pyproject.toml").write_text('[project]\nname = "fast-mlsirm"\nversion = "1.2.3"\n')
+    crate = source / "crates/fast-mlsirm-py"
+    crate.mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[package]\nname = "fast-mlsirm-py"\nversion = "0.11.4"\n')
+    (crate / "Cargo.lock").write_text('version = 4\n[[package]]\nname = "fast-mlsirm-py"\nversion = "0.11.4"\n[[package]]\nname = "mlsirm-core"\nversion = "0.11.4"\n')
+    transport = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
+    bundle_inventory = transport["bundle_inventory"]
+    expected_maturin = transport["expected_maturin_binary_sha256"]
+    for leg in files:
+        folder = root / "scope-evidence" / f"repro-digest-{leg}"
+        folder.mkdir(parents=True)
+        row = next(line for line in rows.splitlines() if line.startswith(f"{leg}\t"))
+        (folder / f"{leg}.tsv").write_text(row + "\n")
+        inventory = bundle_inventory(root / "dist" / files[leg], leg, _RELEASE_COMMIT, build_env(leg))
+        (folder / f"{leg}.bundle.json").write_text(json.dumps(inventory, sort_keys=True) + "\n")
+        if leg != "sdist":
+            requirements = folder / f"{leg}.runtime-requirements.txt"
+            requirements.write_text("numpy==2.5.1 --hash=sha256:" + "a" * 64 + "\n")
+            target, version = leg.rsplit("-py", 1)
+            system, machine = {
+                "x86_64-unknown-linux-gnu": ("linux", "x86_64"),
+                "aarch64-unknown-linux-gnu": ("linux", "aarch64"),
+                "universal2-apple-darwin": ("darwin", "arm64"),
+                "x86_64-pc-windows-msvc": ("win32", "AMD64"),
+            }[target]
+            before = [{"name": "numpy", "version": "2.5.1"}]
+            (folder / dependency_archive_name).write_bytes(dependency_archive_bytes)
+            runtime = {
+                "schema_version": 1, "source_sha": _RELEASE_COMMIT, "leg": leg,
+                "file": files[leg], "sha256": sha[leg], "build_env": build_env(leg),
+                "uv_version": "uv 0.12.5", "python_version": version,
+                "implementation": "cpython", "sys_platform": system, "machine": machine,
+                "requirements_sha256": hashlib.sha256(requirements.read_bytes()).hexdigest(),
+                "uv_lock_sha256": hashlib.sha256((source / "uv.lock").read_bytes()).hexdigest(),
+                "locked_dependencies": before,
+                "installed": [{"name": "fast-mlsirm", "version": "1.2.3"}, *before],
+                "imported_extension": {"member": extension_member,
+                                       "sha256": hashlib.sha256(extension_bytes).hexdigest()},
+                "archives": [{"file": dependency_archive_name,
+                              "size": len(dependency_archive_bytes),
+                              "sha256": hashlib.sha256(dependency_archive_bytes).hexdigest(),
+                              "name": "numpy", "version": "2.5.1"}],
+            }
+            (folder / f"{leg}.runtime.json").write_text(json.dumps(runtime, sort_keys=True) + "\n")
+            (folder / f"{leg}.consumer.whl").write_bytes(payload[leg])
+            metadata = {item["path"]: item["sha256"] for item in inventory["members"]
+                        if item["path"].endswith((".dist-info/METADATA", ".dist-info/WHEEL"))}
+            receipt = {"schema_version": 1, "source_sha": _RELEASE_COMMIT,
+                       "leg": leg, "build_env": build_env(leg),
+                       "sdist_file": files["sdist"], "sdist_sha256": sha["sdist"],
+                       "file": files[leg], "published_sha256": sha[leg],
+                       "consumer_sha256": sha[leg], "metadata_members": metadata,
+                       "native_extension": {"member": extension_member,
+                                            "sha256": hashlib.sha256(extension_bytes).hexdigest()}}
+            receipt["installation"] = {key: runtime[key] for key in (
+                "uv_version", "python_version", "implementation", "sys_platform", "machine",
+                "requirements_sha256", "uv_lock_sha256", "locked_dependencies", "installed")}
+            receipt["installation"]["imported_extension"] = receipt["native_extension"]
+            (folder / f"{leg}.consumer.json").write_text(json.dumps(receipt, sort_keys=True) + "\n")
+        target, version = ("sdist", "3.12") if leg == "sdist" else leg.rsplit("-py", 1)
+        targets = ([] if target == "sdist" else ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+                   if target == "universal2-apple-darwin" else [target])
+        graph = [{"name": name, "version": "0.11.4", "source": None,
+                  "checksum": None, "features": []}
+                 for name in ("fast-mlsirm-py", "mlsirm-core")]
+        snapshot = folder / f"{leg}.build-python.zip"
+        with zipfile.ZipFile(snapshot, "w") as archive:
+            archive.writestr("pip/pip/__init__.py", b"x")
+        snapshot_sha = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+        for build_pass in ("first", "second"):
+            build = {"schema_version": 1, "source_sha": _RELEASE_COMMIT, "leg": leg,
+                     "pass": build_pass, "build_env": build_env(leg),
+                     "cargo_lock_sha256": hashlib.sha256((crate / "Cargo.lock").read_bytes()).hexdigest(),
+                     "pyproject_sha256": hashlib.sha256((source / "pyproject.toml").read_bytes()).hexdigest(),
+                     "cargo_version": "cargo 1.90.0", "rustc_version": "rustc 1.90.0",
+                     "maturin_version": "maturin 1.15.0",
+                     "maturin_binary_sha256": expected_maturin(leg, build_env(leg)),
+                     "python_version": f"Python {version}.0",
+                     "python_packages": [{"name": "pip", "version": "25.2", "files": [
+                         {"path": "pip/__init__.py", "size": 1,
+                          "sha256": hashlib.sha256(b"x").hexdigest()}]}],
+                     "python_snapshot_sha256": snapshot_sha,
+                     "cargo_features": [] if target == "sdist" else ["pyo3/extension-module"],
+                     "cargo_targets": {triple: graph for triple in targets}}
+            (folder / f"{leg}.build-{build_pass}.json").write_text(json.dumps(build, sort_keys=True) + "\n")
     artifacts = [f"dist-wheel-{leg}" for leg in legs] + [
         "dist-sdist", "reproducibility-record", "release-dependency-sealed-evidence",
         "release-dependency-sealed-evidence--full-set-verdict",
-    ]
-    for name in artifacts[-2:]:
+    ] + [f"repro-digest-{leg}" for leg in files]
+    for name in ("release-dependency-sealed-evidence", "release-dependency-sealed-evidence--full-set-verdict"):
         bundle = root / "evidence" / name
         bundle.mkdir(parents=True)
         (bundle / "placeholder.txt").write_text("inert test artifact\n")
     listing = [{"id": index, "name": name, "workflow_run": {"id": _RUN_ID}, "expired": False, "digest": "sha256:" + "d" * 64}
                for index, name in enumerate(artifacts, 1)]
-    return {"legs": legs, "files": files, "listing": listing}
+    return {"legs": legs, "files": files, "listing": listing,
+            "build_env": {leg: build_env(leg) for leg in files}}
+
+
+def test_build_scope_receipts_bind_wheel_lock_and_repeat(tmp_path: Path) -> None:
+    import json
+    import runpy
+    import pytest
+
+    fixture = _admission_fixture(tmp_path)
+    leg = fixture["legs"][0]
+    folder = tmp_path / "scope-evidence" / f"repro-digest-{leg}"
+    first = json.loads((folder / f"{leg}.build-first.json").read_text())
+    second = json.loads((folder / f"{leg}.build-second.json").read_text())
+    verify = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))["verify_build_scope"]
+    row = {"target": leg, "build_env": fixture["build_env"][leg]}
+    snapshot = folder / f"{leg}.build-python.zip"
+    verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
+    second["cargo_targets"][leg.rsplit("-py", 1)[0]][0]["version"] = "forged"
+    with pytest.raises(ValueError, match="graph differs from selected lock"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
+    second = json.loads((folder / f"{leg}.build-second.json").read_text())
+    second["maturin_version"] = "maturin 1.14.1"
+    with pytest.raises(ValueError, match="toolchain or leg"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
+    second = json.loads((folder / f"{leg}.build-second.json").read_text())
+    second["maturin_binary_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="toolchain or leg"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
+    second = json.loads((folder / f"{leg}.build-second.json").read_text())
+    second["python_packages"][0]["files"][0]["sha256"] = "b" * 64
+    with pytest.raises(ValueError, match="snapshot member hash differs"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
+    second["python_packages"][0]["files"][0]["path"] = "../../unexpected\\file"
+    with pytest.raises(ValueError, match="distribution file is malformed"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
+
+
+def test_runtime_rejects_unaccounted_native_member(tmp_path: Path) -> None:
+    import json
+    import runpy
+    import zipfile
+    import pytest
+
+    fixture = _admission_fixture(tmp_path)
+    leg = fixture["legs"][0]
+    folder = tmp_path / "scope-evidence" / f"repro-digest-{leg}"
+    distribution = tmp_path / "dist" / fixture["files"][leg]
+    with zipfile.ZipFile(distribution, "a") as archive:
+        archive.writestr("fast_mlsirm/hidden.dat", b"MZhidden native code")
+    transport = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
+    runtime = json.loads((folder / f"{leg}.runtime.json").read_text())
+    bundle = transport["bundle_inventory"](
+        distribution, leg, _RELEASE_COMMIT, fixture["build_env"][leg],
+    )
+    row = {"target": leg, "file": fixture["files"][leg],
+           "sha256": runtime["sha256"], "build_env": fixture["build_env"][leg]}
+    with pytest.raises(ValueError, match="unaccounted bundled native binary"):
+        transport["verify_runtime_inventory"](
+            runtime, folder / f"{leg}.runtime-requirements.txt", row,
+            tmp_path / "release-source", _RELEASE_COMMIT, bundle, distribution,
+            {path.name: path for path in folder.iterdir()},
+        )
+
+
+def test_sdist_build_receipts_report_no_compiled_cargo_graph(tmp_path: Path) -> None:
+    import json
+    import runpy
+    import pytest
+
+    fixture = _admission_fixture(tmp_path)
+    folder = tmp_path / "scope-evidence/repro-digest-sdist"
+    first = json.loads((folder / "sdist.build-first.json").read_text())
+    second = json.loads((folder / "sdist.build-second.json").read_text())
+    verify = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))["verify_build_scope"]
+    row = {"target": "sdist", "build_env": fixture["build_env"]["sdist"]}
+    snapshot = folder / "sdist.build-python.zip"
+    verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
+    second["cargo_targets"] = {"x86_64-unknown-linux-gnu": []}
+    with pytest.raises(ValueError, match="toolchain or leg"):
+        verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
+
+
+def test_sdist_capture_records_runner_tools_without_cargo_metadata(tmp_path: Path, monkeypatch) -> None:
+    import runpy
+
+    _admission_fixture(tmp_path)
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "scripts/ci"))
+    capture = runpy.run_path(str(REPO_ROOT / "scripts/ci/capture_release_build_scope.py"))["capture"]
+
+    def run(*args: str) -> str:
+        if args[:3] == ("git", "-C", str(tmp_path / "release-source")):
+            return _RELEASE_COMMIT
+        if args == ("python", "--version"):
+            return "Python 3.12.0"
+        if args[:2] == ("python", "-c"):
+            return sys.executable
+        if args == ("cargo", "--version"):
+            return "cargo 1.90.0"
+        if args == ("rustc", "--version"):
+            return "rustc 1.90.0"
+        if args == ("maturin", "--version"):
+            return "maturin 1.15.0"
+        raise AssertionError(f"unexpected command: {args}")
+
+    monkeypatch.setitem(capture.__globals__, "_run", run)
+    packages = [{"name": "pip", "version": "25.2", "files": [
+        {"path": "pip/__init__.py", "size": 1, "sha256": "a" * 64}]}]
+    monkeypatch.setitem(capture.__globals__, "_python_packages_with_files", lambda: packages)
+    monkeypatch.setitem(capture.__globals__, "expected_maturin_binary_sha256", lambda *_: "asset-hash")
+    monkeypatch.setitem(capture.__globals__, "hash_file", lambda _: "asset-hash")
+    monkeypatch.setitem(capture.__globals__, "write_python_snapshot", lambda *_: "asset-hash")
+    monkeypatch.setattr(capture.__globals__["shutil"], "which", lambda _: "/tmp/maturin")
+    receipt = capture(tmp_path / "release-source", {
+        "CARGO_RELEASE_LEG": "sdist", "CARGO_RELEASE_SHA": _RELEASE_COMMIT,
+        "CARGO_BUILD_PASS": "first", "CARGO_BUILD_PYTHON": "python",
+        "ImageOS": "ubuntu", "ImageVersion": "test",
+        "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64",
+    })
+    assert receipt["build_env"] == "runner:ubuntu/test/Linux/X64"
+    assert receipt["cargo_targets"] == {}
+    assert receipt["cargo_features"] == []
+    assert receipt["python_packages"] == packages
+    assert receipt["python_snapshot_sha256"] == "asset-hash"
+
+
+def test_build_package_inventory_hashes_installed_files(tmp_path: Path, monkeypatch) -> None:
+    import runpy
+    from pathlib import PurePosixPath
+    import pytest
+
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "scripts/ci"))
+    inventory = runpy.run_path(str(REPO_ROOT / "scripts/ci/capture_release_build_scope.py"))["_python_packages_with_files"]
+    prefix = tmp_path / "python"
+    target = prefix / "site-packages/pkg.py"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"installed bytes")
+
+    class Distribution:
+        metadata = {"Name": "My_Pkg"}
+        version = "1.0"
+        files = [PurePosixPath("site-packages/pkg.py")]
+
+        def locate_file(self, member):
+            return prefix / member
+
+    monkeypatch.setattr(inventory.__globals__["sys"], "prefix", str(prefix))
+    monkeypatch.setitem(inventory.__globals__, "distributions", lambda: [Distribution()])
+    monkeypatch.setattr(inventory.__globals__["sysconfig"], "get_paths",
+                        lambda: {"purelib": str(target.parent), "platlib": str(target.parent)})
+    assert inventory() == [{"name": "my-pkg", "version": "1.0", "files": [
+        {"path": "site-packages/pkg.py", "size": len(b"installed bytes"),
+         "sha256": hashlib.sha256(b"installed bytes").hexdigest()}]}]
+    orphan = target.with_name("unlisted.py")
+    orphan.write_bytes(b"unreviewed bytes")
+    with pytest.raises(ValueError, match="omitted from RECORD"):
+        inventory()
+    orphan.unlink()
+    orphan.symlink_to(target)
+    with pytest.raises(ValueError, match="contains a symlink"):
+        inventory()
+    orphan.unlink()
+    Distribution.files = [PurePosixPath("../outside.py")]
+    (tmp_path / "outside.py").write_bytes(b"foreign bytes")
+    with pytest.raises(ValueError, match="unsafe"):
+        inventory()
 
 
 def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> subprocess.CompletedProcess:
@@ -597,6 +892,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
             # Missing files still reach the admission check as an empty mismatch.
             artifacts.append((name, [path] if path.exists() else []))
         artifacts += [(p.name, list(p.iterdir())) for p in (root / "evidence").iterdir()]
+        artifacts += [(p.name, list(p.iterdir())) for p in (root / "scope-evidence").iterdir()]
         recorded_names = {line.split("\t")[5] for line in record[2:]}
         extras = [p for p in (root / "dist").iterdir() if p.name not in recorded_names]
         for name, paths in artifacts:
@@ -632,26 +928,121 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
         identity = {"source_repository": "owner/repo", "source_sha": _RELEASE_COMMIT,
                     "control_sha": "d" * 40, "run_id": _RUN_ID, "run_attempt": 2}
         manifest = {"schema_version": 1, **identity, "distributions": distributions}
+        scope_set = {"schema_version": 1, **identity, "evidence": [
+            {"leg": leg, "artifact_id": by_name[f"repro-digest-{leg}"]["id"],
+             "artifact_name": f"repro-digest-{leg}",
+             "artifact_digest": by_name[f"repro-digest-{leg}"]["digest"]}
+            for leg in sorted([*_expected_legs(), "sdist"])
+        ]}
         record_artifact = by_name["reproducibility-record"]
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             for path in (root / "record").iterdir():
                 archive.writestr(path.name, path.read_bytes())
             archive.writestr("release-gate-distribution-set.json", json.dumps(manifest))
+            archive.writestr("release-scope-evidence-set.json", json.dumps(scope_set))
             archive.writestr("release-scope-identities.json", "[]")
         archives[record_artifact["id"]] = buffer.getvalue()
         record_artifact["digest"] = "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()
-        binding = {"key": "pypi/example@1", "name": "release-strix-binding-a2-"
-                   + hashlib.sha256(b"pypi/example@1").hexdigest(),
+        binding = {"key": "pypi/numpy@2.5.1", "name": "release-strix-binding-a2-"
+                   + hashlib.sha256(b"pypi/numpy@2.5.1").hexdigest(),
                    "id": 1000, "digest": "sha256:" + "b" * 64}
+        dependency_sha = hashlib.sha256((root / "scope-evidence" /
+            f"repro-digest-{_expected_legs()[0]}" / "numpy-2.5.1-py3-none-any.whl").read_bytes()).hexdigest()
+        archive_key = f"{binding['key']}/sha256/{dependency_sha}"
+        archive_binding = {"key": archive_key, "name": "release-strix-binding-a2-"
+                           + hashlib.sha256(archive_key.encode()).hexdigest(),
+                           "id": 1001, "digest": "sha256:" + "c" * 64}
+        build_receipt = json.loads((root / "scope-evidence" / "repro-digest-sdist" /
+                                    "sdist.build-first.json").read_text())
+        build_package = build_receipt["python_packages"][0]
+        build_sha = hashlib.sha256(json.dumps(build_package, sort_keys=True,
+                                              separators=(",", ":")).encode()).hexdigest()
+        build_key = f"pypi/pip@25.2/sha256/{build_sha}"
+        build_binding = {"key": build_key, "name": "release-strix-binding-a2-"
+                         + hashlib.sha256(build_key.encode()).hexdigest(),
+                         "id": 1002, "digest": "sha256:" + "e" * 64}
+        build_fixture = {"id": build_key,
+                         "dependency": {"ecosystem": "pypi", "name": "pip", "version": "25.2",
+                                        "source_sha256": build_sha}}
+        build_fixture_sha = hashlib.sha256(json.dumps(build_fixture, sort_keys=True,
+                                                      separators=(",", ":")).encode()).hexdigest()
+        build_legs = sorted([*_expected_legs(), "sdist"])
+        build_snapshots = {leg: json.loads((root / "scope-evidence" / f"repro-digest-{leg}" /
+                                           f"{leg}.build-first.json").read_text())["python_snapshot_sha256"]
+                           for leg in build_legs}
+        fixture = {"id": archive_key,
+                   "dependency": {"ecosystem": "pypi", "name": "numpy", "version": "2.5.1",
+                                  "source_sha256": dependency_sha}}
+        fixture_sha = hashlib.sha256(json.dumps(fixture, sort_keys=True,
+                                               separators=(",", ":")).encode()).hexdigest()
+        tool_rows = {}
+        for leg in build_legs:
+            tool_receipt = json.loads((root / "scope-evidence" / f"repro-digest-{leg}" /
+                                       f"{leg}.build-first.json").read_text())
+            tool_sha = tool_receipt["maturin_binary_sha256"]
+            tool_key = f"github-release/maturin@1.15.0/sha256/{tool_sha}"
+            tool = tool_rows.setdefault(tool_key, {"key": tool_key,
+                "package_key": "github-release/maturin@1.15.0", "name": "maturin",
+                "version": "1.15.0", "source_sha256": tool_sha, "license": "Apache-2.0",
+                "legs": [], "build_envs": {}, "fixture": {"id": tool_key,
+                    "dependency": {"ecosystem": "github-release", "name": "maturin",
+                                   "version": "1.15.0", "source_sha256": tool_sha}}})
+            tool["legs"].append(leg)
+            tool["build_envs"][leg] = tool_receipt["build_env"]
+        for tool in tool_rows.values():
+            tool["fixture_sha256"] = hashlib.sha256(json.dumps(tool["fixture"], sort_keys=True,
+                separators=(",", ":")).encode()).hexdigest()
+        tool_bindings = [{"key": key, "name": "release-strix-binding-a2-"
+                          + hashlib.sha256(key.encode()).hexdigest(), "id": 1100 + index,
+                          "digest": "sha256:" + "f" * 64}
+                         for index, key in enumerate(sorted(tool_rows))]
+        archive_report = {"schema": "cwl.release-runtime-archive-licenses/3", "archives": [
+            {"key": archive_key, "package_key": binding["key"], "name": "numpy",
+             "version": "2.5.1", "source_sha256": dependency_sha,
+             "license": "BSD-3-Clause", "fixture": fixture,
+             "fixture_sha256": fixture_sha, "legs": _expected_legs()}],
+            "build_packages": [{"key": build_key, "package_key": "pypi/pip@25.2",
+                                "name": "pip", "version": "25.2", "source_sha256": build_sha,
+                                "license": "MIT", "fixture": build_fixture,
+                                "fixture_sha256": build_fixture_sha, "legs": build_legs,
+                                "snapshots": build_snapshots}],
+            "build_tools": list(tool_rows.values())}
+        archive_report_bytes = (json.dumps(archive_report, sort_keys=True) + "\n").encode()
         verdict_artifact = by_name["release-dependency-sealed-evidence--full-set-verdict"]
+        report = {"schema": "cwl.release-dependency-gate/1", "result": "PASS",
+                  "stage": "full", "source_repository": "owner/repo", "source_sha": _RELEASE_COMMIT,
+                  "failures": [], "dependency_count": 1,
+                  "dependencies": [{"key": binding["key"], "ecosystem": "pypi", "name": "numpy",
+                                    "version": "2.5.1", "license": "BSD-3-Clause",
+                                    "source_sha256": dependency_sha,
+                                    "fixture_sha256": "c" * 64}],
+                  "runtime_archive_reviews": [{"key": archive_key, "package_key": binding["key"],
+                                               "source_sha256": dependency_sha,
+                                               "license": "BSD-3-Clause", "fixture_sha256": fixture_sha,
+                                               "legs": _expected_legs()}],
+                  "build_package_reviews": [{"key": build_key, "package_key": "pypi/pip@25.2",
+                                             "source_sha256": build_sha, "license": "MIT",
+                                             "fixture_sha256": build_fixture_sha, "legs": build_legs}],
+                  "build_tool_reviews": [{field: tool[field] for field in
+                      ("key", "package_key", "source_sha256", "license", "fixture_sha256", "legs")}
+                      for tool in tool_rows.values()]}
+        report_bytes = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()
         verdict = {"schema": "cwl.release-full-set-verdict/1", "result": "PASS", **identity,
                    "record_artifact_id": record_artifact["id"],
                    "record_artifact_digest": record_artifact["digest"],
-                   "distributions": distributions, "binding_artifacts": [binding]}
+                   "distributions": distributions, "binding_artifacts": [binding],
+                   "scope_evidence": scope_set["evidence"],
+                   "runtime_archive_binding_artifacts": [archive_binding],
+                   "build_package_binding_artifacts": [build_binding],
+                   "build_tool_binding_artifacts": tool_bindings,
+                   "runtime_archive_license_sha256": hashlib.sha256(archive_report_bytes).hexdigest(),
+                   "gate_report_sha256": hashlib.sha256(report_bytes).hexdigest()}
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             archive.writestr("full-set-verdict.json", json.dumps(verdict))
+            archive.writestr("gate-report.json", report_bytes)
+            archive.writestr("runtime-archive-license-report.json", archive_report_bytes)
         archives[verdict_artifact["id"]] = buffer.getvalue()
         verdict_artifact["digest"] = "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()
         module = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
@@ -661,7 +1052,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
         (root / "run-artifacts.jsonl").write_text("".join(json.dumps({
             **item, "workflow_run": {"id": _RUN_ID, "head_sha": "d" * 40},
             "created_at": "2026-09-26T12:01:00Z", "expired": False,
-        }) + "\n" for item in selected + [binding]))
+        }) + "\n" for item in selected + [binding, archive_binding, build_binding, *tool_bindings]))
         (root / "run-attempt.json").write_text(json.dumps({
             "id": _RUN_ID, "run_attempt": 2, "head_sha": "d" * 40,
             "run_started_at": "2026-09-26T12:00:00Z",
@@ -736,6 +1127,9 @@ def test_distribution_set_manifest_binds_exact_same_run_bytes(tmp_path: Path) ->
     assert (manifest["run_id"], manifest["run_attempt"]) == (_RUN_ID, 2)
     assert len(manifest["distributions"]) == 13
     assert len({row["artifact_id"] for row in manifest["distributions"]}) == 13
+    scope_set = json.loads((tmp_path / "ok/release-scope-evidence-set.json").read_text())
+    assert len(scope_set["evidence"]) == 13
+    assert not {row["artifact_id"] for row in scope_set["evidence"]} & {row["artifact_id"] for row in manifest["distributions"]}
 
     def tamper_sdist(root: Path, items: list[dict]) -> list[dict]:
         (root / "dist/pkg-1.2.3.tar.gz").write_bytes(b"altered")
@@ -749,6 +1143,8 @@ def test_distribution_set_manifest_binds_exact_same_run_bytes(tmp_path: Path) ->
         ("duplicate-id", lambda root, items: [dict(a, id=1) if a["name"] == "dist-sdist" else a for a in items]),
         ("extra", lambda root, items: items + [dict(items[0], name="dist-wheel-extra")]),
         ("tampered", tamper_sdist),
+        ("missing-scope", lambda root, items: [a for a in items if a["name"] != "repro-digest-sdist"]),
+        ("stale-scope", lambda root, items: [dict(a, created_at="2026-09-26T11:59:59Z") if a["name"] == "repro-digest-sdist" else a for a in items]),
     ]
     for name, mutate in cases:
         result = run(name, mutate)
@@ -758,6 +1154,7 @@ def test_distribution_set_manifest_binds_exact_same_run_bytes(tmp_path: Path) ->
 
 def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -> None:
     import json
+    import zipfile
 
     fixture = _admission_fixture(tmp_path / "ok")
     ok_set = _run_admission(tmp_path / "ok", _SET_STEP, fixture["listing"])
@@ -765,6 +1162,7 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
     ok_bytes = _run_admission(tmp_path / "ok", _BYTES_STEP)
     # The synthetic verdict passes; the deliberately empty scope inventory still refuses.
     assert ok_bytes.returncode != 0 and "scope identity set missing" in ok_bytes.stderr
+
     assert not (tmp_path / "ok" / "admitted-manifest.tsv").exists()
 
     def refuse_set(name: str, mutate, expected: str) -> None:
@@ -787,6 +1185,7 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
     refuse_set("duplicate", lambda l: l + [l[0]], "duplicate artifact name")
     refuse_set("extra-dist", lambda l: l + [dict(l[0], name="dist-wheel-extra")], "unexpected publishable")
     refuse_set("missing-dist", lambda l: [a for a in l if a["name"] != "dist-sdist"], "dist-sdist: not uploaded")
+    refuse_set("missing-scope", lambda l: [a for a in l if a["name"] != "repro-digest-sdist"], "repro-digest-sdist: not uploaded")
     refuse_set("missing-ids", lambda l: [{k: v for k, v in a.items() if k != "id"} for a in l], "immutable artifact ID")
     refuse_set("duplicate-ids", lambda l: [dict(a, id=1) for a in l], "immutable artifact ID")
 
@@ -812,6 +1211,162 @@ def test_release_admission_admits_only_verified_same_run_bytes(tmp_path: Path) -
                  "reproducibility record is not bound")
     refuse_bytes("record-unverified", lambda r, f: record_mutation(r, "\ttrue\t", "\tfalse\t"),
                  "record row is not byte-verified")
+    refuse_bytes(
+        "changed-scope-row",
+        lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / f"{first}.tsv").write_text("forged\n"),
+        "scope evidence row differs from reproducibility record",
+    )
+    refuse_bytes(
+        "extra-scope-member",
+        lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / "extra.json").write_text("{}"),
+        "scope evidence artifact members differ from build output",
+    )
+    def snapshot(root: Path) -> Path:
+        return root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.build-python.zip"
+    refuse_bytes("missing-build-snapshot", lambda r, f: snapshot(r).unlink(),
+                 "scope evidence artifact members differ from build output")
+    def change_build_snapshot(root: Path, fixture: dict) -> None:
+        with zipfile.ZipFile(snapshot(root), "a") as archive:
+            archive.writestr("extra.txt", b"changed")
+    refuse_bytes("changed-build-snapshot", change_build_snapshot,
+                 "build snapshot members differ from installed files")
+    refuse_bytes(
+        "missing-consumer",
+        lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / f"{first}.consumer.json").unlink(),
+        "scope evidence artifact members differ from build output",
+    )
+    def change_consumer(root: Path, fixture: dict) -> None:
+        path = root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.consumer.whl"
+        with zipfile.ZipFile(path, "a") as archive:
+            archive.writestr("extra.txt", b"changed")
+    refuse_bytes("changed-consumer", change_consumer,
+                 "sdist consumer receipt differs from selected artifacts")
+    def forge_bundle(root: Path, fixture: dict) -> None:
+        path = root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.bundle.json"
+        payload = json.loads(path.read_text())
+        payload["members"][0]["sha256"] = "0" * 64
+        path.write_text(json.dumps(payload))
+
+    refuse_bytes("forged-bundle", forge_bundle,
+                 "build-leg bundle inventory differs from distribution bytes")
+    def forge_runtime(root: Path, fixture: dict) -> None:
+        path = root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime.json"
+        payload = json.loads(path.read_text())
+        payload["source_sha"] = "f" * 40
+        path.write_text(json.dumps(payload))
+
+    refuse_bytes("forged-runtime", forge_runtime,
+                 "runtime inventory differs from selected source or wheel")
+    def forge_runtime_target(root: Path, fixture: dict) -> None:
+        path = root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime.json"
+        payload = json.loads(path.read_text())
+        payload["sys_platform"] = "win32" if payload["sys_platform"] != "win32" else "linux"
+        path.write_text(json.dumps(payload))
+
+    refuse_bytes("wrong-runtime-target", forge_runtime_target,
+                 "runtime interpreter differs from wheel target")
+    def forge_extension_hash(root: Path, fixture: dict) -> None:
+        path = root / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime.json"
+        payload = json.loads(path.read_text())
+        payload["imported_extension"]["sha256"] = "0" * 64
+        path.write_text(json.dumps(payload))
+
+    refuse_bytes("forged-imported-extension", forge_extension_hash,
+                 "imported extension differs from selected wheel member")
+    refuse_bytes(
+        "changed-runtime-archive",
+        lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / "numpy-2.5.1-py3-none-any.whl").write_bytes(b"forged"),
+        "runtime archive bytes differ from receipt",
+    )
+    refuse_bytes(
+        "missing-runtime",
+        lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime.json").unlink(),
+        "scope evidence artifact members differ from build output",
+    )
+    refuse_bytes(
+        "changed-runtime-requirements",
+        lambda r, f: (r / "scope-evidence" / f"repro-digest-{first}" / f"{first}.runtime-requirements.txt").write_text("forged\n"),
+        "runtime inventory differs from selected source or wheel",
+    )
+
+
+def test_build_package_licence_and_strix_must_cover_installed_files(tmp_path: Path) -> None:
+    import json
+    import runpy
+    import pytest
+
+    _admission_fixture(tmp_path)
+    result = _run_admission(tmp_path, _BYTES_STEP)
+    assert "scope identity set missing" in result.stderr
+    folder = tmp_path / "downloaded/release-dependency-sealed-evidence--full-set-verdict"
+    verdict = json.loads((folder / "full-set-verdict.json").read_text())
+    report_bytes = (folder / "gate-report.json").read_bytes()
+    report = json.loads(report_bytes)
+    archive_bytes = (folder / "runtime-archive-license-report.json").read_bytes()
+    archive_report = json.loads(archive_bytes)
+    legs = [*_expected_legs(), "sdist"]
+    scopes = [tmp_path / "scope-evidence" / f"repro-digest-{leg}" for leg in legs]
+    builds = [json.loads((path / f"{leg}.build-first.json").read_text()) for leg, path in zip(legs, scopes)]
+    runtimes = [json.loads((path / f"{leg}.runtime.json").read_text())
+                for leg, path in zip(legs, scopes) if leg != "sdist"]
+    verify = runpy.run_path(str(REPO_ROOT / "scripts/ci/verify_release_full_set_verdict.py"))[
+        "verify_runtime_dependency_coverage"]
+    verify(verdict, report, report_bytes, archive_report, archive_bytes, runtimes, builds,
+           repository="owner/repo", source_sha=_RELEASE_COMMIT)
+    bad = dict(archive_report, build_packages=[])
+    bad_bytes = (json.dumps(bad, sort_keys=True) + "\n").encode()
+    with pytest.raises(ValueError, match="complete dependency set"):
+        verify({**verdict, "runtime_archive_license_sha256": hashlib.sha256(bad_bytes).hexdigest()},
+               report, report_bytes, bad, bad_bytes, runtimes, builds,
+               repository="owner/repo", source_sha=_RELEASE_COMMIT)
+    with pytest.raises(ValueError, match="complete dependency set"):
+        verify({**verdict, "build_package_binding_artifacts": []}, report, report_bytes,
+               archive_report, archive_bytes, runtimes, builds,
+               repository="owner/repo", source_sha=_RELEASE_COMMIT)
+    forged = json.loads(archive_bytes)
+    forged["build_packages"][0]["snapshots"]["sdist"] = "0" * 64
+    forged_bytes = (json.dumps(forged, sort_keys=True) + "\n").encode()
+    with pytest.raises(ValueError, match="build package licence differs"):
+        verify({**verdict, "runtime_archive_license_sha256": hashlib.sha256(forged_bytes).hexdigest()},
+               report, report_bytes, forged, forged_bytes, runtimes, builds,
+               repository="owner/repo", source_sha=_RELEASE_COMMIT)
+    with pytest.raises(ValueError, match="complete dependency set"):
+        verify({**verdict, "build_tool_binding_artifacts": []}, report, report_bytes,
+               archive_report, archive_bytes, runtimes, builds,
+               repository="owner/repo", source_sha=_RELEASE_COMMIT)
+    forged = json.loads(archive_bytes)
+    forged["build_tools"][0]["build_envs"]["sdist"] = "runner:forged"
+    forged_bytes = (json.dumps(forged, sort_keys=True) + "\n").encode()
+    with pytest.raises(ValueError, match="build tool licence differs"):
+        verify({**verdict, "runtime_archive_license_sha256": hashlib.sha256(forged_bytes).hexdigest()},
+               report, report_bytes, forged, forged_bytes, runtimes, builds,
+               repository="owner/repo", source_sha=_RELEASE_COMMIT)
+    forged_builds = [dict(build) for build in builds]
+    forged_builds[0]["maturin_binary_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="build tool licence and Strix sets differ"):
+        verify(verdict, report, report_bytes, archive_report, archive_bytes,
+               runtimes, forged_builds, repository="owner/repo", source_sha=_RELEASE_COMMIT)
+
+
+def test_build_leg_captures_finished_distribution_bytes(tmp_path: Path) -> None:
+    import json
+
+    fixture = _admission_fixture(tmp_path)
+    leg = fixture["legs"][0]
+    row = tmp_path / "scope-evidence" / f"repro-digest-{leg}" / f"{leg}.tsv"
+    inventory = row.with_suffix(".bundle.json")
+    expected = json.loads(inventory.read_text())
+    inventory.unlink()
+    command = [sys.executable, str(REPO_ROOT / "scripts/ci/capture_release_bundle.py"),
+               str(row), str(tmp_path / "dist")]
+    result = subprocess.run(command, env={**os.environ, "RELEASE_COMMIT": _RELEASE_COMMIT},
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(inventory.read_text()) == expected
+    row.write_text(row.read_text().replace("\ttrue\t", "\tfalse\t"))
+    result = subprocess.run(command, env={**os.environ, "RELEASE_COMMIT": _RELEASE_COMMIT},
+                            capture_output=True, text=True)
+    assert result.returncode != 0 and "not byte-verified" in result.stderr
 
 
 
@@ -874,9 +1429,8 @@ def test_release_admission_ignores_legitimate_non_distribution_artifacts(tmp_pat
     legs = _expected_legs()
     diagnostics = [
         f"release-dependency-{kind}-report--license-evidence-{leg}" for kind in ("license", "gate") for leg in legs
-    ] + [f"license-pair-{leg}" for leg in legs] + [f"repro-digest-{leg}" for leg in legs] + [
-        "repro-digest-sdist"] + [f"repro-rebuild-{leg}" for leg in legs] + ["repro-rebuild-sdist"]
-    assert len(diagnostics) == 24 + 12 + 13 + 13
+    ] + [f"license-pair-{leg}" for leg in legs] + [f"repro-rebuild-{leg}" for leg in legs] + ["repro-rebuild-sdist"]
+    assert len(diagnostics) == 24 + 12 + 13
 
     def listing_with(root: Path, extra: list[str]) -> list[dict]:
         listing = _admission_fixture(root)["listing"]
