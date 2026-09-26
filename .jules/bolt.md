@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2025-05-19 - Fast reduction of categorical boolean masks over 2D arrays
+**Learning:** `np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)` uses slow python loops, intermediate array allocations, and boolean indexing to aggregate categorical data.
+**Action:** Always replace python loops and boolean reductions over dimensions like categories with dense matrix multiplications. Using `((y[:, i, None] == k_range).astype(post.dtype).T @ post).T` skips python level loops, avoids explicit full `np.stack` calls, and pushes the aggregation into highly-optimized C/BLAS matrix multiplications. Avoid using `copy=False` in `.astype()` to prevent ValueErrors and maintain compatibility with NumPy 2.0.
