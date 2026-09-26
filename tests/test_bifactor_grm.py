@@ -46,6 +46,36 @@ def test_u64_seed_preserves_exact_integer_identity() -> None:
             _u64_seed(bad)
 
 
+def test_fit_forwards_full_width_seed_to_rust_boundary(monkeypatch) -> None:
+    captured: dict[str, int] = {}
+
+    class _SeedProbeCore:
+        def fit_bifactor_grm(self, *args):
+            captured["seed"] = args[12]
+            raise RuntimeError("seed reached Rust boundary")
+
+    monkeypatch.setattr("fast_mlsirm.fitstats._core_module", lambda: _SeedProbeCore())
+    responses = np.array([[0, 1, 0, 1], [1, 0, 1, 0]], dtype=np.int64)
+    specific_map = np.array([0, 0, 1, 1], dtype=np.int64)
+    seed = 2**53 + 1
+
+    with pytest.raises(RuntimeError, match="seed reached Rust boundary"):
+        fit_bifactor_grm(
+            responses,
+            specific_map,
+            n_cat=2,
+            n_specific=2,
+            q_general=3,
+            q_specific=3,
+            max_iter=1,
+            tol=1e-6,
+            n_starts=1,
+            seed=seed,
+        )
+
+    assert captured["seed"] == seed
+
+
 SPECIFIC_MAP = np.array([0, 0, 0, 1, 1, 1], dtype=np.int64)
 TRUE_A_G = np.array([1.4, -1.1, 1.0, 1.2, 0.9, 1.1])
 TRUE_A_S = np.array([1.0, 0.9, 1.1, 1.0, 0.8, 0.9])
