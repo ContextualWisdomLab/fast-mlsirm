@@ -256,8 +256,26 @@ def test_progress_callback_does_not_change_fit() -> None:
     np.testing.assert_allclose(silent.phi, with_progress.phi)
 
 
+def test_orthogonal_primary_fit_preserves_progress_contract() -> None:
+    """Fixed-Phi identification and opt-in EM reporting compose without drift."""
+    y = _simulate(SEED)
+    reports: list[object] = []
+
+    fit = _fit(
+        y,
+        max_iter=2,
+        tol=1e-12,
+        primary_correlation="identity",
+        progress=reports.append,
+    )
+
+    assert reports
+    assert len(reports) == len(fit.loglik_trace)
+    assert fit.primary_identification == "orthogonal"
+    np.testing.assert_array_equal(fit.phi, np.eye(N_PRIMARY))
+
+
 def test_progress_none_rejects_non_callable() -> None:
     y = _simulate(SEED)
     with pytest.raises(TypeError, match="progress must be a callable"):
         _fit(y, progress=object())
-
