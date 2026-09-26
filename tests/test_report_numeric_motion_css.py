@@ -50,6 +50,13 @@ def test_rendered_report_uses_tabular_numerals_without_opacity_transitions(tmp_p
     bar_row_hover_rule = _rule_body(style, ".bar-row:hover")
     assert "background: var(--hover-bg);" in bar_row_hover_rule
 
+    bar_row_focus_rule = _rule_body(style, ".bar-row:focus:not(:focus-visible)")
+    assert "outline: none;" in bar_row_focus_rule
+
+    bar_row_focus_visible_rule = _rule_body(style, ".bar-row:focus-visible")
+    assert "outline: 3px solid var(--teal);" in bar_row_focus_visible_rule
+    assert "background: var(--hover-bg);" in bar_row_focus_visible_rule
+
     table_row_rule = _rule_body(style, "tbody tr")
     assert "transition: background-color 0.15s ease-in-out;" in table_row_rule
     assert "opacity" not in table_row_rule
@@ -58,9 +65,12 @@ def test_rendered_report_uses_tabular_numerals_without_opacity_transitions(tmp_p
     assert "background: var(--hover-bg);" in hover_rule
 
     assert "@media (prefers-reduced-motion: reduce)" in style
-    reduced_motion = style.split("@media (prefers-reduced-motion: reduce)", 1)[1]
-    reduced_motion = reduced_motion.split("@media (max-width: 720px)", 1)[0]
-    assert "transition-duration: 0.01ms !important;" in reduced_motion
+    reduced_motion = style.split("@media (prefers-reduced-motion: reduce)")[1]
+    assert "transition: none !important;" in reduced_motion
+
+    reduced_motion_global = style.split("@media (prefers-reduced-motion: reduce)")[-1]
+    reduced_motion_global = reduced_motion_global.split("@media (max-width: 720px)", 1)[0]
+    assert "transition-duration: 0.01ms !important;" in reduced_motion_global
 
 
 def test_rendered_report_preserves_keyboard_focus_on_main(tmp_path) -> None:

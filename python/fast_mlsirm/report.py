@@ -356,7 +356,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
         chart_rows.append(
             "\n".join(
                 [
-                    '<div class="bar-row">',
+                    f'<div class="bar-row" tabindex="0" role="region" aria-label="{escape(_row_label(row, index))} bar chart row">',
                     f'<span class="bar-label">{escape(_row_label(row, index))}</span>',
                     '<div class="bar-track" aria-hidden="true">',
                     f'<div class="bar-fill" style="width: {width:.1f}%"></div>',
@@ -766,6 +766,22 @@ h3 {
 
 .bar-row:hover {
   background: var(--hover-bg);
+}
+
+.bar-row:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.bar-row:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: -2px;
+  background: var(--hover-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar-row {
+    transition: none !important;
+  }
 }
 
 .bar-label,
