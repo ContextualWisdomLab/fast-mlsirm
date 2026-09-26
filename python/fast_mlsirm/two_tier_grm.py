@@ -526,3 +526,438 @@ def two_tier_oakes_se(
         positive_definite=bool(res["positive_definite"]),
         non_pd_reason=None if reason_raw is None else str(reason_raw),
     )
+
+
+@dataclass(frozen=True)
+class TwoTierExpectedTotalGivenPrimary:
+    """Expected raw total ``E[T | theta_focal]`` after integrating nuisance traits.
+
+    ``theta_focal`` is the caller grid (or per-person focal EAPs); ``expected_total``
+    matches it elementwise.
+
+    **Prior contract (explicit, fail-closed).** Non-focal primaries and specifics
+    are integrated as *independent* Gaussians under
+    ``nuisance_prior="independent_standardized"``, each with its own reference
+    mean/sd vector (``primary_ref_*`` / ``specific_ref_*``). This path does
+    **not** implement ``Phi``-conditional nuisance. ``Phi == I`` on a fit is a
+    necessary numeric gate only — not proof that the fit was estimated under
+    orthogonal identification; :func:`expected_total_score_two_tier_from_fit`
+    additionally requires an explicit consumer confirmation flag.
+
+    Example (not a universal library contract): a general + method-factor
+    two-primary model with specifics, fitted under orthogonal identification,
+    uses ``focal_primary=0`` (general) with the method factor and specifics
+    as independent reference nuisances.
+    """
+
+    theta_focal: np.ndarray
+    expected_total: np.ndarray
+    focal_primary: int
+    q_nuisance: int
+    n_items: int
+    prior: str
+    primary_ref_mean: np.ndarray
+    primary_ref_sd: np.ndarray
+    specific_ref_mean: np.ndarray
+    specific_ref_sd: np.ndarray
+
+
+def _require_identity_phi(phi: np.ndarray, *, atol: float = 0.0) -> None:
+    """Fail closed unless ``phi`` is exactly the identity (unit diagonal, zero off)."""
+    p = np.asarray(phi, dtype=np.float64)
+    if p.ndim != 2 or p.shape[0] != p.shape[1]:
+        raise ValueError("phi must be a square primary correlation matrix")
+    eye = np.eye(p.shape[0], dtype=np.float64)
+    if not np.allclose(p, eye, atol=atol, rtol=0.0):
+        raise ValueError(
+            "expected_total_score_two_tier_from_fit requires Phi == I as a "
+            "necessary numeric gate for orthogonal primary identification. "
+            "Correlated Phi needs conditional nuisance integration (not "
+            "implemented); do not pass estimated Phi≈I as a substitute."
+        )
+
+
+def _as_ref_mean(value: object, n: int, name: str) -> np.ndarray:
+    """Scalar broadcasts; array must be shape ``(n,)`` and finite."""
+    if n < 0:
+        raise ValueError(f"{name}: n must be >= 0")
+    if n == 0:
+        arr = np.asarray(value, dtype=np.float64)
+        if np.ndim(arr) == 0:
+            return np.zeros(0, dtype=np.float64)
+        arr = np.asarray(arr, dtype=np.float64).reshape(-1)
+        if arr.size != 0:
+            raise ValueError(f"{name} must be empty or scalar when n=0")
+        return np.zeros(0, dtype=np.float64)
+    if np.isscalar(value) or (isinstance(value, np.ndarray) and np.ndim(value) == 0):
+        out = np.full(n, float(value), dtype=np.float64)  # type: ignore[arg-type]
+    else:
+        out = np.asarray(value, dtype=np.float64)
+        if out.shape != (n,):
+            raise ValueError(f"{name} must be scalar or shape ({n},), got {out.shape}")
+    if not np.all(np.isfinite(out)):
+        raise ValueError(f"{name} must be finite (NaN/Inf rejected)")
+    return out
+
+
+def _as_ref_sd(value: object, n: int, name: str) -> np.ndarray:
+    """Like :func:`_as_ref_mean` but every entry must be finite and ``> 0``."""
+    out = _as_ref_mean(value, n, name)
+    if out.size and np.any(out <= 0.0):
+        raise ValueError(f"{name} entries must be > 0")
+    return out
+
+
+def _as_specific_map_int64(
+    specific_map: object,
+    *,
+    n_items: int,
+    n_specific: int | None = None,
+) -> np.ndarray:
+    """Validate ``specific_map`` before ``int64`` cast (no silent truncation/wrap).
+
+    Rejects non-finite floats and non-integral values such as ``0.5`` before
+    ``astype(np.int64)``. Also rejects unsigned / oversized values that cannot
+    be represented in ``int64`` without wraparound (e.g. ``uint64`` max → ``-1``,
+    ``2**63`` → ``int64`` min). Entries must be ``-1`` (specific-free) or
+    integers in ``0..2**63-1``; when ``n_specific`` is given, also
+    ``< n_specific``.
+    """
+    smap = np.asarray(specific_map)
+    if smap.ndim != 1 or smap.shape[0] != n_items:
+        raise ValueError("specific_map must be a 1-D array of length n_items")
+    if smap.dtype.kind == "f":
+        if not bool(np.isfinite(smap).all()):
+            raise ValueError("specific_map entries must be finite integers")
+        if bool((smap != np.floor(smap)).any()):
+            raise ValueError("specific_map entries must be integers")
+    elif smap.dtype.kind not in ("b", "i", "u"):
+        raise ValueError("specific_map entries must be integers")
+
+    # Pre-cast range check via Python int (no dtype wraparound).
+    i64_max = int(np.iinfo(np.int64).max)
+    for x in smap.ravel():
+        try:
+            iv = int(x)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("specific_map entries must be integers") from exc
+        if iv < -1 or iv > i64_max:
+            raise ValueError(
+                "specific_map entries must be -1 (specific-free) or integers "
+                f"in 0..{i64_max} without wrapping into int64"
+            )
+        if n_specific is not None and iv >= int(n_specific):
+            raise ValueError(
+                "specific_map entries must be -1 (specific-free) or in "
+                f"0..{int(n_specific) - 1}"
+            )
+
+    try:
+        smap_int = smap.astype(np.int64, copy=False)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("specific_map entries must be integers") from exc
+    # Post-cast sentinel/range (defensive; pre-cast already enforced).
+    if bool((smap_int < -1).any()):
+        raise ValueError(
+            "specific_map entries must be -1 (specific-free) or >= 0"
+        )
+    if n_specific is not None and bool((smap_int >= int(n_specific)).any()):
+        raise ValueError(
+            "specific_map entries must be -1 (specific-free) or in "
+            f"0..{int(n_specific) - 1}"
+        )
+    return smap_int
+
+
+def _probabilists_gauss_hermite(q: int) -> tuple[np.ndarray, np.ndarray]:
+    """Probabilists' Gauss-Hermite rule for any ``q >= 1`` via Golub & Welsch.
+
+    Nodes are the eigenvalues of the symmetric tridiagonal Jacobi matrix of the
+    ``He_n`` recurrence (``alpha_k = 0``, ``beta_k = k``); weights are the
+    squared first eigenvector components, normalized to sum to one (Golub &
+    Welsch, 1969, eq. 2.1-2.2, pp. 222-223; Section 3, p. 225). Unlike the
+    closed-form weight formula in ``numpy.polynomial.hermite_e.hermegauss``,
+    which returns NaN weights from about ``q = 481`` because ``1 / He_{n-1}^2``
+    overflows, tail weights here underflow to ``0.0`` and never become NaN.
+    This mirrors ``crates/mlsirm-core/src/quadrature.rs``
+    ``gauss_hermite_probabilists`` (#1929).
+
+    Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature
+    rules. *Mathematics of Computation, 23*(106), 221-230.
+    https://doi.org/10.1090/S0025-5718-69-99647-1
+    """
+    if q == 1:
+        return np.zeros(1), np.ones(1)
+    # Allocation guard instead of a node-count cap (cf. the Rust core's
+    # checked_mul guard, #1929): the dense q x q float64 Jacobi matrix must be
+    # representable, and allocation/eigensolver failures fail loudly.
+    itemsize = np.dtype(np.float64).itemsize
+    if q > int(np.iinfo(np.intp).max) // (q * itemsize):
+        raise ValueError(
+            f"q_nuisance={q} needs a {q}x{q} Jacobi matrix that is not "
+            "representable on this platform"
+        )
+    try:
+        off = np.sqrt(np.arange(1, q, dtype=np.float64))
+        jacobi = np.diag(off, 1) + np.diag(off, -1)
+        nodes, vectors = np.linalg.eigh(jacobi)
+    except (MemoryError, np.linalg.LinAlgError) as exc:
+        raise ValueError(
+            f"q_nuisance={q}: Gauss-Hermite rule construction failed "
+            f"({type(exc).__name__})"
+        ) from exc
+    weights = vectors[0, :] ** 2
+    weights = weights / weights.sum()
+    if not (np.all(np.isfinite(nodes)) and np.all(np.isfinite(weights))):
+        raise ValueError(f"Gauss-Hermite rule with q={q} is not finite")
+    return nodes, weights
+
+
+def expected_total_score_two_tier_given_primary(
+    a_primary: np.ndarray,
+    a_specific: np.ndarray,
+    threshold: np.ndarray,
+    specific_map: np.ndarray,
+    theta_focal: np.ndarray,
+    *,
+    focal_primary: int,
+    q_nuisance: int,
+    nuisance_prior: str,
+    primary_ref_mean: object = 0.0,
+    primary_ref_sd: object = 1.0,
+    specific_ref_mean: object = 0.0,
+    specific_ref_sd: object = 1.0,
+) -> TwoTierExpectedTotalGivenPrimary:
+    """Expected raw total given one two-tier primary, nuisances integrated out.
+
+    Linearity of expectation: ``E[T|theta_f] = sum_i E[Y_i|theta_f]``. Each
+    item's conditional expectation marginalizes independent Gaussian nuisances.
+    Because those nuisances enter only through the linear predictor
+    ``L = sum_k a_k Z_k`` and independent Gaussians yield
+    ``L ~ N(sum a_k mu_k, sum (a_k sigma_k)^2)``, the product rule collapses to
+    a single 1-D Gauss-Hermite integral with ``q_nuisance`` nodes (required; no
+    default — issue #1929). This avoids ``q^n`` meshgrid allocation. Any exact
+    integer ``q_nuisance >= 1`` is accepted with no node-count cap (maintainer
+    steering 2026-09-16/17, item 1). Resource safety comes from allocation
+    guards instead, mirroring the Rust core's ``checked_mul`` guard: the
+    prediction-cell admission check runs before the rule is built, the dense
+    ``q x q`` Jacobi matrix must be representable, and an allocation or
+    eigensolver failure raises ``ValueError``.
+
+    Reference distributions are **per primary / per specific dimension**. A
+    scalar mean/sd broadcasts identical values across dimensions (producer
+    contracts that fix every nuisance to N(0,1) may pass scalars and should
+    record that basis). Distinct W vs S reference variances must pass arrays;
+    bundling unequal variances into one scalar changes the integral.
+
+    Example (general + method factor + specifics, orthogonal ID):
+    ``focal_primary=0`` (general); items without a method-factor loading
+    integrate one specific; method-loaded items integrate ``(S_d, W)`` jointly. Reverse keys use unconstrained (possibly negative)
+    slopes. This example is not a universal contract for all two-tier fits.
+
+    Parameters
+    ----------
+    nuisance_prior
+        Must be ``"independent_standardized"``.
+    primary_ref_mean, primary_ref_sd
+        Length-``n_primary`` (or scalar broadcast). Focal slot is unused.
+    specific_ref_mean, specific_ref_sd
+        Length-``n_specific`` (or scalar broadcast), indexed by ``specific_map``.
+    """
+    from .polytomous import (
+        _NUMPY_INTEGER_SCALAR_TYPES,
+        PolytomousFit,
+        _bounded_integer,
+        _is_exact_type,
+        predict_expected_response_polytomous,
+    )
+    from ._polytomous_prediction_admission import _raise_if_oversized_prediction_grid
+
+    if nuisance_prior != "independent_standardized":
+        raise ValueError(
+            "nuisance_prior must be 'independent_standardized' (explicit orthogonal "
+            "nuisance contract); Phi-conditional nuisance is not implemented"
+        )
+
+    ap = np.asarray(a_primary, dtype=np.float64)
+    asp = np.asarray(a_specific, dtype=np.float64)
+    th = np.asarray(threshold, dtype=np.float64)
+    grid = np.asarray(theta_focal, dtype=np.float64)
+
+    if ap.ndim != 2 or ap.shape[0] == 0:
+        raise ValueError("a_primary must be a non-empty n_items x n_primary array")
+    n_items, n_primary = ap.shape
+    if asp.shape != (n_items,):
+        raise ValueError("a_specific must have shape (n_items,)")
+    smap = _as_specific_map_int64(specific_map, n_items=n_items)
+    if th.ndim != 2 or th.shape[0] != n_items or th.shape[1] < 1:
+        raise ValueError("threshold must be n_items x (n_cat-1) with n_cat>=2")
+    if not np.all(np.isfinite(ap)) or not np.all(np.isfinite(asp)) or not np.all(
+        np.isfinite(th)
+    ):
+        raise ValueError("a_primary, a_specific, and threshold must be finite")
+    if np.any(np.diff(th, axis=1) >= 0.0):
+        raise ValueError(
+            "threshold rows must be strictly decreasing (GRM category support)"
+        )
+    if grid.ndim != 1 or grid.size < 1:
+        raise ValueError("theta_focal must be a non-empty 1-D array")
+    if not np.all(np.isfinite(grid)):
+        raise ValueError("theta_focal must be finite")
+
+    focal = _bounded_integer(focal_primary, "focal_primary", 0, n_primary - 1)
+    # Exact integer >= 1, no node-count cap (maintainer steering item 1).
+    q_type = type(q_nuisance)
+    if q_type is int:
+        q = q_nuisance
+    elif _is_exact_type(q_type, _NUMPY_INTEGER_SCALAR_TYPES):
+        q = int(q_nuisance)
+    else:
+        raise ValueError("q_nuisance must be an integer >= 1")
+    if q < 1:
+        raise ValueError("q_nuisance must be an integer >= 1")
+
+    # When n_specific is not supplied by the fit wrapper, derive from the map.
+    # Fail closed on huge representable indices that would allocate max(map)+1
+    # reference vectors (confirmatory: at most one distinct specific id per item
+    # ⇒ derived n_specific cannot exceed n_items).
+    n_specific = int(smap.max()) + 1 if np.any(smap >= 0) else 0
+    if n_specific > n_items:
+        raise ValueError(
+            "specific_map implies n_specific="
+            f"{n_specific} > n_items={n_items}; pass a dense 0..K-1 map "
+            "or use from_fit (which supplies fit.n_specific)"
+        )
+    p_mean = _as_ref_mean(primary_ref_mean, n_primary, "primary_ref_mean")
+    p_sd = _as_ref_sd(primary_ref_sd, n_primary, "primary_ref_sd")
+    s_mean = _as_ref_mean(specific_ref_mean, n_specific, "specific_ref_mean")
+    s_sd = _as_ref_sd(specific_ref_sd, n_specific, "specific_ref_sd")
+
+    # Admission before any O(q) / O(q^2) allocation (was after the rule).
+    _raise_if_oversized_prediction_grid(
+        int(grid.size) * int(q) * (int(th.shape[1]) + 1)
+    )
+    unit_nodes, unit_weights = _probabilists_gauss_hermite(q)
+    unit_slope = np.ones(1, dtype=np.float64)
+    expected_total = np.zeros(grid.size, dtype=np.float64)
+
+    # Independent Gaussian nuisances enter only through the linear predictor
+    # L = sum_k a_k Z_k. For independent Z_k ~ N(mu_k, sigma_k^2),
+    # L ~ N(sum a_k mu_k, sum (a_k sigma_k)^2), so the product GH meshgrid
+    # collapses to a single 1-D GH axis (exact continuous integral; finite-q
+    # product vs collapse agree to ~1e-10 at q=21 in measured fixtures).
+    for item in range(n_items):
+        a_f = float(ap[item, focal])
+        nuisance: list[tuple[float, float, float]] = []
+        for p in range(n_primary):
+            if p == focal:
+                continue
+            coef = float(ap[item, p])
+            if coef != 0.0:
+                nuisance.append((coef, float(p_mean[p]), float(p_sd[p])))
+        sid = int(smap[item])
+        if sid >= 0 and float(asp[item]) != 0.0:
+            nuisance.append(
+                (float(asp[item]), float(s_mean[sid]), float(s_sd[sid]))
+            )
+
+        cell = PolytomousFit(
+            model="grm",
+            slope=unit_slope,
+            cat_params=th[item : item + 1],
+            loglik=float("nan"),
+            n_iter=0,
+            converged=True,
+            termination_reason="marginalized",
+        )
+
+        if not nuisance:
+            base = a_f * grid
+            expected_total += predict_expected_response_polytomous(
+                cell, base.reshape(-1)
+            ).ravel()
+            continue
+
+        mu_L = 0.0
+        var_L = 0.0
+        for coef, mu, sigma in nuisance:
+            mu_L += coef * mu
+            var_L += (coef * sigma) ** 2
+        sd_L = float(np.sqrt(var_L))
+        nodes = mu_L + sd_L * unit_nodes
+        base = a_f * grid[:, None] + nodes[None, :]
+        expected = predict_expected_response_polytomous(cell, base.reshape(-1))
+        expected_total += (
+            expected.reshape(base.shape) * unit_weights[None, :]
+        ).sum(axis=1)
+
+    return TwoTierExpectedTotalGivenPrimary(
+        theta_focal=grid.copy(),
+        expected_total=expected_total,
+        focal_primary=int(focal),
+        q_nuisance=int(q),
+        n_items=int(n_items),
+        prior="independent_standardized",
+        primary_ref_mean=p_mean.copy(),
+        primary_ref_sd=p_sd.copy(),
+        specific_ref_mean=s_mean.copy(),
+        specific_ref_sd=s_sd.copy(),
+    )
+
+
+def expected_total_score_two_tier_from_fit(
+    fit: TwoTierGrmFit,
+    theta_focal: np.ndarray,
+    *,
+    focal_primary: int,
+    q_nuisance: int,
+    specific_map: np.ndarray,
+    orthogonal_primary_identification: bool,
+    primary_ref_mean: object = 0.0,
+    primary_ref_sd: object = 1.0,
+    specific_ref_mean: object = 0.0,
+    specific_ref_sd: object = 1.0,
+) -> TwoTierExpectedTotalGivenPrimary:
+    """Fit wrapper with dual gates: ``Phi == I`` and consumer ID confirmation.
+
+    ``fit.phi == I`` is necessary but **not sufficient** evidence that the fit
+    was estimated under orthogonal primary identification (a numeric matrix can
+    be identity for other reasons). Callers must pass
+    ``orthogonal_primary_identification=True`` only when the consuming research
+    / estimation contract itself fixes orthogonal primaries. ``TwoTierGrmFit``
+    does not yet carry identification metadata; this flag is the explicit
+    consumer confirmation until such metadata exists.
+    """
+    if orthogonal_primary_identification is not True:
+        raise ValueError(
+            "orthogonal_primary_identification must be True: Phi==I alone does "
+            "not prove the fit used orthogonal primary identification; the "
+            "consumer must confirm that research/estimation contract"
+        )
+    if int(fit.n_primary) != int(np.asarray(fit.a_primary).shape[1]):
+        raise ValueError("fit.n_primary inconsistent with a_primary shape")
+    n_items = int(np.asarray(fit.a_primary).shape[0])
+    smap = _as_specific_map_int64(
+        specific_map, n_items=n_items, n_specific=int(fit.n_specific)
+    )
+    n_specific = int(smap.max()) + 1 if np.any(smap >= 0) else 0
+    if n_specific != int(fit.n_specific):
+        raise ValueError(
+            f"specific_map implies n_specific={n_specific} but fit.n_specific="
+            f"{fit.n_specific}"
+        )
+    _require_identity_phi(fit.phi, atol=0.0)
+    return expected_total_score_two_tier_given_primary(
+        fit.a_primary,
+        fit.a_specific,
+        fit.threshold,
+        smap,
+        theta_focal,
+        focal_primary=focal_primary,
+        q_nuisance=q_nuisance,
+        nuisance_prior="independent_standardized",
+        primary_ref_mean=primary_ref_mean,
+        primary_ref_sd=primary_ref_sd,
+        specific_ref_mean=specific_ref_mean,
+        specific_ref_sd=specific_ref_sd,
+    )
