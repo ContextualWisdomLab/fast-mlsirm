@@ -22,6 +22,20 @@ pub struct McRankInterval {
     pub hi: f64,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct McPercentileIntervalPrecision {
+    pub lower_endpoint: f64,
+    pub upper_endpoint: f64,
+    pub interval_halfwidth: f64,
+    pub lower_rank: McRankInterval,
+    pub upper_rank: McRankInterval,
+    pub lower_error_bound: f64,
+    pub upper_error_bound: f64,
+    pub worst_error_fraction: f64,
+    pub allowed_fraction: f64,
+    pub meets_tolerance: bool,
+}
+
 fn validate_binomial(n: usize, p: f64) -> Result<(), String> {
     if n > MAX_BOOTSTRAP_MC_DRAWS {
         return Err(format!("n must not exceed {MAX_BOOTSTRAP_MC_DRAWS}"));
@@ -163,6 +177,67 @@ pub fn mc_rank_interval(
     })
 }
 
+/// Bound Monte Carlo error of both percentile endpoints relative to interval half-width.
+///
+/// Rank bounds use the binomial order-statistic construction for independent
+/// draws (Lu, 2020, NIST TN 2119, sec. 5.3). `confidence` is per endpoint;
+/// callers choose any simultaneous-coverage adjustment and tolerance.
+/// This calculation does not assess bootstrap-refit validity or sampling error.
+pub fn mc_percentile_interval_precision(
+    values: &[f64],
+    lower_percentile: f64,
+    upper_percentile: f64,
+    confidence: f64,
+    allowed_fraction: f64,
+) -> Result<McPercentileIntervalPrecision, String> {
+    if !lower_percentile.is_finite()
+        || !upper_percentile.is_finite()
+        || !(0.0 < lower_percentile
+            && lower_percentile < upper_percentile
+            && upper_percentile < 1.0)
+    {
+        return Err("require 0 < lower_percentile < upper_percentile < 1".into());
+    }
+    if !allowed_fraction.is_finite() || allowed_fraction < 0.0 {
+        return Err("allowed_fraction must be finite and nonnegative".into());
+    }
+    let lower_endpoint = linear_percentile(values, lower_percentile)?;
+    let upper_endpoint = linear_percentile(values, upper_percentile)?;
+    let lower_rank = mc_rank_interval(values, lower_percentile, confidence)?;
+    let upper_rank = mc_rank_interval(values, upper_percentile, confidence)?;
+    let width = upper_endpoint - lower_endpoint;
+    let interval_halfwidth = if width.is_finite() {
+        width / 2.0
+    } else {
+        upper_endpoint / 2.0 - lower_endpoint / 2.0
+    };
+    if !interval_halfwidth.is_finite() || interval_halfwidth <= 0.0 {
+        return Err("percentile interval half-width must be positive and finite".into());
+    }
+    let lower_error_bound = (lower_endpoint - lower_rank.lo)
+        .abs()
+        .max((lower_rank.hi - lower_endpoint).abs());
+    let upper_error_bound = (upper_endpoint - upper_rank.lo)
+        .abs()
+        .max((upper_rank.hi - upper_endpoint).abs());
+    let worst_error_fraction = lower_error_bound.max(upper_error_bound) / interval_halfwidth;
+    if !worst_error_fraction.is_finite() {
+        return Err("endpoint error fraction must be finite".into());
+    }
+    Ok(McPercentileIntervalPrecision {
+        lower_endpoint,
+        upper_endpoint,
+        interval_halfwidth,
+        lower_rank,
+        upper_rank,
+        lower_error_bound,
+        upper_error_bound,
+        worst_error_fraction,
+        allowed_fraction,
+        meets_tolerance: worst_error_fraction <= allowed_fraction,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,6 +277,27 @@ mod tests {
         assert_eq!(
             extreme_interval.count_high,
             many_values.len() - extreme_interval.count_low
+        );
+    }
+
+    #[test]
+    fn percentile_precision_requires_finite_observed_rank_bounds() {
+        let values: Vec<f64> = (0..100).map(f64::from).collect();
+        let loose = mc_percentile_interval_precision(&values, 0.25, 0.75, 0.8, 1.0).unwrap();
+        assert_eq!((loose.lower_endpoint, loose.upper_endpoint), (24.75, 74.25));
+        assert!(loose.worst_error_fraction > 0.0);
+        assert!(loose.meets_tolerance);
+        assert!(
+            !mc_percentile_interval_precision(&values, 0.25, 0.75, 0.8, 0.0)
+                .unwrap()
+                .meets_tolerance
+        );
+        assert!(mc_percentile_interval_precision(&values, 0.75, 0.25, 0.8, 1.0).is_err());
+        assert!(mc_percentile_interval_precision(&[1.0; 100], 0.25, 0.75, 0.8, 1.0).is_err());
+        assert!(
+            mc_percentile_interval_precision(&values[..5], 0.025, 0.975, 0.995, 1.0)
+                .unwrap_err()
+                .contains("increase B")
         );
     }
 }

@@ -67,6 +67,7 @@ from ._core import (
     binomial_interval_coverage as binomial_interval_coverage,
     binomial_quantile as binomial_quantile,
     linear_percentile as linear_percentile,
+    mc_percentile_interval_precision as mc_percentile_interval_precision,
     mc_rank_interval as mc_rank_interval,
 )
 from .personfit_multidim import compute_person_fit_multidim as compute_person_fit_multidim
@@ -381,6 +382,7 @@ __all__ = list(_legacy_init.__all__) + [
     "binomial_quantile",
     "binomial_interval_coverage",
     "linear_percentile",
+    "mc_percentile_interval_precision",
     "mc_rank_interval",
 ]
 

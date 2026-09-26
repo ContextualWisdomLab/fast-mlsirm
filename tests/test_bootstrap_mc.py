@@ -7,6 +7,7 @@ from fast_mlsirm import (
     binomial_interval_coverage,
     binomial_quantile,
     linear_percentile,
+    mc_percentile_interval_precision,
     mc_rank_interval,
 )
 
@@ -44,3 +45,21 @@ def test_mc_inputs_fail_closed():
     assert mc_rank_interval(np.arange(100, dtype=np.float64), 0.5, np.nextafter(1.0, 0.0))[
         "count_high"
     ] < 100
+
+
+def test_percentile_interval_precision_is_library_owned():
+    draws = np.arange(100, dtype=np.float64)
+    loose = mc_percentile_interval_precision(draws, 0.25, 0.75, 0.8, 1.0)
+    strict = mc_percentile_interval_precision(draws[::-1], 0.25, 0.75, 0.8, 0.0)
+    assert (loose["lower_endpoint"], loose["upper_endpoint"]) == (24.75, 74.25)
+    assert loose["meets_tolerance"] is True
+    assert strict["meets_tolerance"] is False
+    assert strict["worst_error_fraction"] == loose["worst_error_fraction"]
+    assert loose["lower_rank"] == mc_rank_interval(draws, 0.25, 0.8)
+    assert loose["upper_rank"] == mc_rank_interval(draws, 0.75, 0.8)
+    with pytest.raises(ValueError, match="half-width"):
+        mc_percentile_interval_precision(np.ones(100), 0.25, 0.75, 0.8, 1.0)
+    with pytest.raises(ValueError, match="increase B"):
+        mc_percentile_interval_precision(draws[:5], 0.025, 0.975, 0.995, 1.0)
+    with pytest.raises(ValueError, match="allowed_fraction"):
+        mc_percentile_interval_precision(draws, 0.25, 0.75, 0.8, np.nan)
