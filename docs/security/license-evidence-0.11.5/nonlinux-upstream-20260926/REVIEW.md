@@ -9,6 +9,20 @@ therefore concerns the prepared 0.11.5 build inputs and locally built wheel,
 not a published 0.11.5 PyPI artifact matrix. A release-wide verdict requires
 the exact built artifacts for every intended target.
 
+The later 0.11.5 prep commit `58b7b23f` includes a
+`LICENSE-THIRD-PARTY` (SHA256
+`d46f307a2e8a49e2d638ee4e0b768c6c908c7786cb9106e74948561bf8cf0af0`)
+whose header explicitly names `x86_64-unknown-linux-gnu` and 101 entries.
+Its binding `Cargo.lock` SHA256 is
+`528414b582b256a6ab8ac68ceceb134e8ddb719774513ab8cc3a0e4eb22a177d`.
+Its wheel workflow has no target-specific notice regeneration step. The
+earlier Linux build input checked by the verifier instead produced wheel
+SHA256 `3192b63f773bca1cfaecacddaed11bb6d806b699ad9e63c7a5f615275a77bf8b`
+with only `dist-info/licenses/LICENSE`. The separately reviewed A3 wheel is
+SHA256 `2c48a45752a1d9301923c54c264cd166e56505ce543f02d193635edcfb1b0e6f`.
+These hashes cannot share one attribution verdict. A target-matched notice
+bundle must be checked in each final wheel before release-wide acceptance.
+
 The input is the 0.11.5 union inventory from `rerun-785e675c` (SHA256 `f079cf2bf0d341a31a575a3672923965c5a3f7a795a32be8db1eb37b25ac5186`). Every registry archive was bound to its `Cargo.lock` SHA256. For crates without an archive license file, [`upstream-evidence.json`](upstream-evidence.json) binds the local text to the archive's `.cargo_vcs_info.json` commit and path; [`SOURCES.md`](SOURCES.md) records the raw URL and SHA256 of each file.
 
 ## Six distinct unverified archive texts
@@ -80,6 +94,41 @@ does not supply the complete grants. The `copying.rs` paths in the snapshot
 are Rust source or tests, not additional license documents. This confirms the
 ten macOS target HOLD rows cannot be cleared by an overlooked license file in
 that pinned source tree.
+
+## Target-specific attribution bundles
+
+The prep branch's `tools/third_party_licenses.py` was run against the target
+inventories above, the current reviewed-text fixture (SHA256
+`57930c0f32ff995895a0599fc1fd162f1c7139055013bfab7238dd250c862f78`),
+the hash-bound Cargo registry cache, and this review's upstream manifest.
+The script rechecked every crate archive and license-member SHA256 while
+rendering. Reproduction files are on s1 at
+`/data/orca/workspaces/fmls-license-evidence/target-notices-20260926/`;
+the copied generator's SHA256 is
+`eb173ffae71c6a9e0dc45a80bda19df5e68bde71dff9c17ca9acf2fb86f606fa`.
+
+| Target | Crate entries | Snapshot SHA256 | Generated notice SHA256 |
+| --- | ---: | --- | --- |
+| `aarch64-unknown-linux-gnu` | 101 | `23452c4e7daaf7b36cbf2036ab4d1395d106b7bc5cfcef2bb4572d24ac4b476b` | `afa61d22b98ec3b8d4797c4af1dc9a6d159b2051a543e658c67f4d2404d2d87c` |
+| `x86_64-pc-windows-msvc` | 117 | `d39171f014f4b3603a564d2d9339e72d4fd5166b98714f7945dc8c727c69ed96` | `7a3537a1df4063760bfee6e720b7cc9105721748d3fffd29aed2732d155dde58` |
+
+The Windows bundle has 18 crates absent from the Linux aarch64 bundle, while
+the latter has two absent from Windows. A macOS snapshot deliberately failed
+with `block2@0.6.2 is HOLD, not PERMISSIVE` and exit code 1; it wrote no
+snapshot or notice bundle. These outputs are candidate attribution inputs,
+not a verdict on a published wheel.
+
+An exact local macOS candidate built from prep commit `58b7b23f` with Rust
+1.97.1 and maturin 1.14.1 is
+`fast_mlsirm-0.11.5-cp314-cp314-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl`
+(SHA256 `0b0dae09fb5dda2656abd2fcd8cf44259e32abe0510f5c57571932896c17b19b`).
+Its `_core` binary has both `x86_64` and `arm64` slices. Inside the wheel,
+`dist-info/licenses/LICENSE-THIRD-PARTY` has SHA256
+`d46f307a2e8a49e2d638ee4e0b768c6c908c7786cb9106e74948561bf8cf0af0`
+and says `Target: x86_64-unknown-linux-gnu. Entries: 101`. This directly
+confirms that the prep workflow would copy the Linux attribution into a macOS
+wheel. The candidate is local only and fails the macOS license gate; it must
+not be represented as a released artifact.
 
 ## Python companion-file follow-up
 
