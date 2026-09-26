@@ -747,7 +747,7 @@ pub struct SeeResult {
 }
 
 /// Type-7 (linear-interpolated, NumPy-default) quantile of a pre-sorted slice.
-fn quantile_type7(sorted: &[f64], p: f64) -> f64 {
+pub(crate) fn quantile_type7(sorted: &[f64], p: f64) -> f64 {
     let n = sorted.len();
     if n == 1 {
         return sorted[0];
