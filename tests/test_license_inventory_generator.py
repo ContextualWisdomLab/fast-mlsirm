@@ -685,6 +685,16 @@ def test_registry_crate_without_license_file_is_hold(tmp_path):
     assert "contains no license file" in " ".join(row["hold_reasons"])
 
 
+def test_rust_source_named_copying_is_not_a_license_unless_declared(tmp_path):
+    cache = tmp_path / "cache"
+    _crate(cache, "dep", "1.0", {"src/copying.rs": "fn copying() {}"})
+    archive = next(cache.glob("*/dep-1.0.crate")).read_bytes()
+    assert L.read_crate_license_files(archive, hashlib.sha256(archive).hexdigest(), None)[0] == []
+    files, errors = L.read_crate_license_files(archive, hashlib.sha256(archive).hexdigest(), "src/copying.rs")
+    assert not errors
+    assert [f["path"] for f in files] == ["src/copying.rs"]
+
+
 def test_cargo_metadata_mit_does_not_hide_separate_lgpl_text(tmp_path):
     """A permissive declaration cannot erase an additional copyleft grant."""
     args = _rust_args(tmp_path)

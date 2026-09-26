@@ -264,6 +264,12 @@ def verified_standard_text(text: str) -> list[str]:
     # layout whitespace only; headers, case, extra terms and component notices
     # are never stripped. It grants no exemption from all-candidate validation.
     reviewed = {
+        # Hash-pinned non-Linux review: full grants match the canonical body;
+        # Windows omits the terminal period, while the two Apache files change
+        # only appendix placeholder notation (glutin also fills copyright).
+        "1f17794ed0a91f046d197aec731e880a0d318af4832967ff8d86580a16520f6e": "MIT",  # windows family license-mit
+        "372f45e927bea5f3620bbd5ff3fa9e88b5460843fc5ba5a1e15a7c695ef998d4": "Apache-2.0",  # glutin_wgl_sys LICENSE
+        "958e28cd3f37c23ec02881fe20cb82d4151668349e1c7beb2daea4ce2640dcf0": "Apache-2.0",  # jni-sys LICENSE-APACHE
         "0ffddef9e48f8a09aed5caf2d44f7ba1c1be2d9b8e0a6f693b1635b2d5566645": "Apache-2.0",
         "59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99": "Apache-2.0",
         "3a31f72fe7c9baf376c3da1d7d0154366be8ef0bab0a3f7531db4c2abf1ad062": "Zlib",
@@ -586,7 +592,10 @@ def read_crate_license_files(
             parts = normalized.split("/")
             relative = "/".join(parts[1:])
             base = parts[-1]
-            if member.isfile() and (LICENSE_NAME.match(base) or (declared and relative == declared)):
+            # A source file such as objc2-foundation/src/copying.rs is not a
+            # license document unless Cargo explicitly declares that path.
+            if member.isfile() and ((LICENSE_NAME.match(base) and not base.endswith(".rs"))
+                                    or (declared and relative == declared)):
                 raw = tf.extractfile(member).read()
                 out.append({"path": relative, "sha256": sha256_bytes(raw),
                             "artifact_sha256": artifact_sha256,
