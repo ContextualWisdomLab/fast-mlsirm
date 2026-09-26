@@ -83,3 +83,13 @@ def test_committed_file_matches_committed_snapshot_header():
     assert f"snapshot sha256 {hashlib.sha256(snap.read_bytes()).hexdigest()}" in text
     assert f"Entries: {len(json.loads(snap.read_text())['rows'])}." in text
     assert T.MARKER in text
+
+
+def test_libm_source_notices_keep_complete_conditions():
+    text = (SCRIPT.parents[1] / "NOTICE-libm-0.2.16-source-notices.txt").read_text()
+    blocks = text.split("### block ")[1:]
+    sun = [block for block in blocks if "provided that this notice" in block]
+    freebsd = [block for block in blocks if "2. Redistributions in binary form" in block]
+    assert sun and freebsd
+    assert all("is preserved." in block for block in sun)
+    assert all("SUCH DAMAGE." in block for block in freebsd)

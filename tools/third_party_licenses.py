@@ -141,17 +141,17 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--out", required=True)
     args = ap.parse_args(argv)
     if args.cmd == "snapshot":
-        inventory = json.loads(Path(args.inventory).read_text())
+        inventory = json.loads(Path(args.inventory).read_text(encoding="utf-8"))
         if inventory["summary"].get("cargo_binding_target") != args.binding_target:
             raise SystemExit("inventory was not produced for --binding-target")
-        snap = snapshot(inventory, json.loads(Path(args.reviewed_fixture).read_text()), args.binding_target)
+        snap = snapshot(inventory, json.loads(Path(args.reviewed_fixture).read_text(encoding="utf-8")), args.binding_target)
         snap["source_inventory_sha256"] = sha256(Path(args.inventory).read_bytes())
-        Path(args.out).write_text(json.dumps(snap, indent=1, sort_keys=True) + "\n")
+        Path(args.out).write_text(json.dumps(snap, indent=1, sort_keys=True) + "\n", encoding="utf-8")
         return 0
     snap_bytes = Path(args.snapshot).read_bytes()
     snap = json.loads(snap_bytes)
     upstream_path = Path(args.upstream_evidence) if args.upstream_evidence else None
-    upstream = json.loads(upstream_path.read_text()) if upstream_path else {}
+    upstream = json.loads(upstream_path.read_text(encoding="utf-8")) if upstream_path else {}
     body, notices = render(snap, Path(args.cargo_registry_cache), upstream, upstream_path.parent if upstream_path else Path("."))
     header = [
         "THIRD-PARTY LICENSES for the Rust crates statically linked into fast_mlsirm/_core",
@@ -162,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         "This repository's own crates (mlsirm-core, fast-mlsirm-py) are covered by LICENSE.",
         "",
     ]
-    Path(args.out).write_text("\n".join(header) + body)
+    Path(args.out).write_text("\n".join(header) + body, encoding="utf-8")
     print(f"entries={len(snap['rows'])} apache_notices={notices}")
     return 0
 

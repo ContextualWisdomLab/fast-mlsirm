@@ -10,6 +10,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 2 (1 files) e.g. ['src/math/acos.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_acos.c */
@@ -17,6 +20,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunSoft, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 3 (1 files) e.g. ['src/math/acosf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_acosf.c */
@@ -24,6 +30,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 4 (1 files) e.g. ['src/math/asin.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_asin.c */
@@ -31,6 +40,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunSoft, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 5 (1 files) e.g. ['src/math/asinf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_asinf.c */
@@ -38,6 +50,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 6 (1 files) e.g. ['src/math/atan.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/s_atan.c */
@@ -45,6 +60,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 7 (1 files) e.g. ['src/math/atan2.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_atan2.c */
@@ -52,6 +70,10 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunSoft, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*
+*/
 
 ### block 8 (1 files) e.g. ['src/math/atan2f.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_atan2f.c */
@@ -59,6 +81,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 9 (1 files) e.g. ['src/math/atanf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/s_atanf.c */
@@ -66,6 +91,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 10 (1 files) e.g. ['src/math/cbrt.rs']
 /* SPDX-License-Identifier: MIT */
@@ -78,6 +106,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 12 (1 files) e.g. ['src/math/cos.rs']
 // origin: FreeBSD /usr/src/lib/msun/src/s_cos.c */
@@ -85,6 +116,8 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 // Developed at SunPro, a Sun Microsystems, Inc. business.
 // Permission to use, copy, modify, and distribute this
 // software is freely granted, provided that this notice
+// is preserved.
+// ====================================================
 
 ### block 13 (1 files) e.g. ['src/math/cosf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/s_cosf.c */
@@ -92,6 +125,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 14 (1 files) e.g. ['src/math/erf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/s_erf.c */
@@ -99,6 +135,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 15 (1 files) e.g. ['src/math/erff.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/s_erff.c */
@@ -106,24 +145,58 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 16 (1 files) e.g. ['src/math/exp.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_exp.c */
 * Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 17 (1 files) e.g. ['src/math/exp2.rs']
 // origin: FreeBSD /usr/src/lib/msun/src/s_exp2.c */
 // Copyright (c) 2005 David Schultz <das@FreeBSD.ORG>
 // 1. Redistributions of source code must retain the above copyright
 // 2. Redistributions in binary form must reproduce the above copyright
+//    notice, this list of conditions and the following disclaimer in the
+//    documentation and/or other materials provided with the distribution.
+//
+// THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+// ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+// OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+// LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+// OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+// SUCH DAMAGE.
 
 ### block 18 (1 files) e.g. ['src/math/exp2f.rs']
 // origin: FreeBSD /usr/src/lib/msun/src/s_exp2f.c
 // Copyright (c) 2005 David Schultz <das@FreeBSD.ORG>
 // 1. Redistributions of source code must retain the above copyright
 // 2. Redistributions in binary form must reproduce the above copyright
+//    notice, this list of conditions and the following disclaimer in the
+//    documentation and/or other materials provided with the distribution.
+//
+// THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+// ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+// OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+// LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+// OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+// SUCH DAMAGE.
 
 ### block 19 (1 files) e.g. ['src/math/expf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_expf.c */
@@ -131,6 +204,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 20 (1 files) e.g. ['src/math/expm1.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/s_expm1.c */
@@ -138,6 +214,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 21 (1 files) e.g. ['src/math/expm1f.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/s_expm1f.c */
@@ -145,6 +224,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 22 (1 files) e.g. ['src/math/fma.rs']
 /* SPDX-License-Identifier: MIT */
@@ -182,6 +264,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunSoft, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 30 (1 files) e.g. ['src/math/j0f.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_j0f.c */
@@ -189,6 +274,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 31 (1 files) e.g. ['src/math/j1.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_j1.c */
@@ -196,6 +284,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunSoft, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 32 (1 files) e.g. ['src/math/j1f.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_j1f.c */
@@ -203,6 +294,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 33 (1 files) e.g. ['src/math/jn.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_jn.c */
@@ -210,6 +304,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunSoft, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 34 (1 files) e.g. ['src/math/jnf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_jnf.c */
@@ -217,6 +314,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 35 (1 files) e.g. ['src/math/k_cos.rs']
 // origin: FreeBSD /usr/src/lib/msun/src/k_cos.c
@@ -224,7 +324,8 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 // Developed at SunSoft, a Sun Microsystems, Inc. business.
 // Permission to use, copy, modify, and distribute this
 // software is freely granted, provided that this notice
-//         under FreeBSD, so don't pessimize things by forcibly clipping
+// is preserved.
+// ====================================================
 
 ### block 36 (1 files) e.g. ['src/math/k_cosf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/k_cosf.c */
@@ -232,6 +333,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 37 (1 files) e.g. ['src/math/k_sin.rs']
 // origin: FreeBSD /usr/src/lib/msun/src/k_sin.c
@@ -239,6 +343,8 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 // Developed at SunSoft, a Sun Microsystems, Inc. business.
 // Permission to use, copy, modify, and distribute this
 // software is freely granted, provided that this notice
+// is preserved.
+// ====================================================
 
 ### block 38 (1 files) e.g. ['src/math/k_sinf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/k_sinf.c */
@@ -246,18 +352,26 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 39 (1 files) e.g. ['src/math/k_tan.rs']
 // origin: FreeBSD /usr/src/lib/msun/src/k_tan.c */
 // Copyright 2004 Sun Microsystems, Inc.  All Rights Reserved.
 // Permission to use, copy, modify, and distribute this
 // software is freely granted, provided that this notice
+// is preserved.
+// ====================================================
 
 ### block 40 (1 files) e.g. ['src/math/k_tanf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/k_tan.c */
 * Copyright 2004 Sun Microsystems, Inc.  All Rights Reserved.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 41 (1 files) e.g. ['src/math/lgamma_r.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_lgamma_r.c */
@@ -265,6 +379,10 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunSoft, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*
+*/
 
 ### block 42 (1 files) e.g. ['src/math/lgammaf_r.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_lgammaf_r.c */
@@ -272,6 +390,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 43 (1 files) e.g. ['src/math/log.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_log.c */
@@ -279,6 +400,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunSoft, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 44 (1 files) e.g. ['src/math/log10.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_log10.c */
@@ -286,6 +410,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunSoft, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 45 (1 files) e.g. ['src/math/log10f.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_log10f.c */
@@ -293,6 +420,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 46 (1 files) e.g. ['src/math/log1p.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/s_log1p.c */
@@ -300,6 +430,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 47 (1 files) e.g. ['src/math/log1pf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/s_log1pf.c */
@@ -307,6 +440,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 48 (1 files) e.g. ['src/math/log2.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_log2.c */
@@ -314,6 +450,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunSoft, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 49 (1 files) e.g. ['src/math/log2f.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_log2f.c */
@@ -321,6 +460,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 50 (1 files) e.g. ['src/math/logf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_logf.c */
@@ -328,12 +470,18 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 51 (1 files) e.g. ['src/math/pow.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_pow.c */
 * Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 52 (1 files) e.g. ['src/math/powf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_powf.c */
@@ -341,6 +489,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 53 (1 files) e.g. ['src/math/rem_pio2.rs']
 // origin: FreeBSD /usr/src/lib/msun/src/e_rem_pio2.c
@@ -348,6 +499,10 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 // Developed at SunPro, a Sun Microsystems, Inc. business.
 // Permission to use, copy, modify, and distribute this
 // software is freely granted, provided that this notice
+// is preserved.
+// ====================================================
+//
+// Optimized by Bruce D. Evans. */
 
 ### block 54 (1 files) e.g. ['src/math/rem_pio2_large.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/k_rem_pio2.c */
@@ -355,6 +510,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunSoft, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 55 (1 files) e.g. ['src/math/rem_pio2f.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/e_rem_pio2f.c */
@@ -362,6 +520,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 56 (1 files) e.g. ['src/math/sin.rs']
 // origin: FreeBSD /usr/src/lib/msun/src/s_sin.c */
@@ -369,6 +530,8 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 // Developed at SunPro, a Sun Microsystems, Inc. business.
 // Permission to use, copy, modify, and distribute this
 // software is freely granted, provided that this notice
+// is preserved.
+// ====================================================
 
 ### block 57 (1 files) e.g. ['src/math/sincos.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/s_sin.c */
@@ -376,6 +539,9 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
 ### block 58 (1 files) e.g. ['src/math/support/env.rs']
 //! this; most existing ports from musl use a form of `force_eval!` to raise exceptions, but this
@@ -386,6 +552,8 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 // Developed at SunPro, a Sun Microsystems, Inc. business.
 // Permission to use, copy, modify, and distribute this
 // software is freely granted, provided that this notice
+// is preserved.
+// ====================================================
 
 ### block 60 (1 files) e.g. ['src/math/tanf.rs']
 /* origin: FreeBSD /usr/src/lib/msun/src/s_tanf.c */
@@ -393,4 +561,7 @@ which is compiled into fast_mlsirm._core. Each block lists the source files that
 * Developed at SunPro, a Sun Microsystems, Inc. business.
 * Permission to use, copy, modify, and distribute this
 * software is freely granted, provided that this notice
+* is preserved.
+* ====================================================
+*/
 
