@@ -525,7 +525,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@7358be68c07a60842f7ba86765d03ec355f567be" in central
+    assert "release-dependency-license-strix-gate.yml@4dab93c56265f08689bb0a000c03ae5bd75709e9" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -713,26 +713,48 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
         binding = {"key": "pypi/numpy@2.5.1", "name": "release-strix-binding-a2-"
                    + hashlib.sha256(b"pypi/numpy@2.5.1").hexdigest(),
                    "id": 1000, "digest": "sha256:" + "b" * 64}
+        dependency_sha = hashlib.sha256((root / "scope-evidence" /
+            f"repro-digest-{_expected_legs()[0]}" / "numpy-2.5.1-py3-none-any.whl").read_bytes()).hexdigest()
+        archive_key = f"{binding['key']}/sha256/{dependency_sha}"
+        archive_binding = {"key": archive_key, "name": "release-strix-binding-a2-"
+                           + hashlib.sha256(archive_key.encode()).hexdigest(),
+                           "id": 1001, "digest": "sha256:" + "c" * 64}
+        fixture = {"id": archive_key,
+                   "dependency": {"ecosystem": "pypi", "name": "numpy", "version": "2.5.1",
+                                  "source_sha256": dependency_sha}}
+        fixture_sha = hashlib.sha256(json.dumps(fixture, sort_keys=True,
+                                               separators=(",", ":")).encode()).hexdigest()
+        archive_report = {"schema": "cwl.release-runtime-archive-licenses/1", "archives": [
+            {"key": archive_key, "package_key": binding["key"], "name": "numpy",
+             "version": "2.5.1", "source_sha256": dependency_sha,
+             "license": "BSD-3-Clause", "fixture": fixture,
+             "fixture_sha256": fixture_sha, "legs": _expected_legs()}]}
+        archive_report_bytes = (json.dumps(archive_report, sort_keys=True) + "\n").encode()
         verdict_artifact = by_name["release-dependency-sealed-evidence--full-set-verdict"]
         report = {"schema": "cwl.release-dependency-gate/1", "result": "PASS",
                   "stage": "full", "source_repository": "owner/repo", "source_sha": _RELEASE_COMMIT,
                   "failures": [], "dependency_count": 1,
                   "dependencies": [{"key": binding["key"], "ecosystem": "pypi", "name": "numpy",
                                     "version": "2.5.1", "license": "BSD-3-Clause",
-                                    "source_sha256": hashlib.sha256((root / "scope-evidence" /
-                                        f"repro-digest-{_expected_legs()[0]}" /
-                                        "numpy-2.5.1-py3-none-any.whl").read_bytes()).hexdigest(),
-                                    "fixture_sha256": "c" * 64}]}
+                                    "source_sha256": dependency_sha,
+                                    "fixture_sha256": "c" * 64}],
+                  "runtime_archive_reviews": [{"key": archive_key, "package_key": binding["key"],
+                                               "source_sha256": dependency_sha,
+                                               "license": "BSD-3-Clause", "fixture_sha256": fixture_sha,
+                                               "legs": _expected_legs()}]}
         report_bytes = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()
         verdict = {"schema": "cwl.release-full-set-verdict/1", "result": "PASS", **identity,
                    "record_artifact_id": record_artifact["id"],
                    "record_artifact_digest": record_artifact["digest"],
                    "distributions": distributions, "binding_artifacts": [binding],
+                   "runtime_archive_binding_artifacts": [archive_binding],
+                   "runtime_archive_license_sha256": hashlib.sha256(archive_report_bytes).hexdigest(),
                    "gate_report_sha256": hashlib.sha256(report_bytes).hexdigest()}
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             archive.writestr("full-set-verdict.json", json.dumps(verdict))
             archive.writestr("gate-report.json", report_bytes)
+            archive.writestr("runtime-archive-license-report.json", archive_report_bytes)
         archives[verdict_artifact["id"]] = buffer.getvalue()
         verdict_artifact["digest"] = "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()
         module = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
@@ -742,7 +764,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
         (root / "run-artifacts.jsonl").write_text("".join(json.dumps({
             **item, "workflow_run": {"id": _RUN_ID, "head_sha": "d" * 40},
             "created_at": "2026-09-26T12:01:00Z", "expired": False,
-        }) + "\n" for item in selected + [binding]))
+        }) + "\n" for item in selected + [binding, archive_binding]))
         (root / "run-attempt.json").write_text(json.dumps({
             "id": _RUN_ID, "run_attempt": 2, "head_sha": "d" * 40,
             "run_started_at": "2026-09-26T12:00:00Z",

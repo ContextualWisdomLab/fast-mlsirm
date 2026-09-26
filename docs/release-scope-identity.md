@@ -67,10 +67,12 @@ hash. Admission rehashes each dependency wheel, checks its metadata against the
 installed package list, and binds the extension hash to the published wheel.
 A changed, missing or cross-target receipt refuses admission before the scope
 HOLD. The macOS universal2 receipt exercises the runner architecture only; it
-does not prove installation on its other binary slice. The central licence and
-Strix gate has not yet collected every target dependency wheel; its current
-report supports only one source hash per package version, so different platform
-wheels under the same version remain HOLD.
+does not prove installation on its other binary slice. The central gate
+prescreens each transported runtime wheel SHA before Strix, scans a distinct
+fixture for each approved SHA, and seals the licence report and Strix artifact
+identities into its full-set verdict. Admission checks that set against the
+twelve installed-wheel receipts. A missing or mismatched platform wheel
+remains HOLD.
 
 The sdist and wheel builds still need build and native dependency evidence.
 File hashes establish the bundled bytes, but do not identify the origin or

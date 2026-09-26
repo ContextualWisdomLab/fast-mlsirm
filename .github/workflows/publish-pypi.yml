@@ -838,7 +838,7 @@ jobs:
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@7358be68c07a60842f7ba86765d03ec355f567be
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@4dab93c56265f08689bb0a000c03ae5bd75709e9
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
@@ -1144,12 +1144,15 @@ jobs:
           verifier_spec.loader.exec_module(verifier)
           verdict_name = os.environ["VERDICT_NAME"]
           verdict_members = {path.name: path for path in (Path("downloaded") / verdict_name).iterdir()}
-          if set(verdict_members) != {"full-set-verdict.json", "gate-report.json"}:
+          if set(verdict_members) != {"full-set-verdict.json", "gate-report.json",
+                                      "runtime-archive-license-report.json"}:
               raise SystemExit("central verdict artifact does not contain the exact dependency report")
           verdict = json.loads(verdict_members["full-set-verdict.json"].read_text(encoding="utf-8"),
                                object_pairs_hook=unique_object)
           report_bytes = verdict_members["gate-report.json"].read_bytes()
           report = json.loads(report_bytes, object_pairs_hook=unique_object)
+          archive_report_bytes = verdict_members["runtime-archive-license-report.json"].read_bytes()
+          archive_report = json.loads(archive_report_bytes, object_pairs_hook=unique_object)
           verifier.verify_full_set_verdict(
               json.loads(Path("downloaded/reproducibility-record/release-gate-distribution-set.json").read_text()),
               verdict,
@@ -1163,7 +1166,8 @@ jobs:
               verdict_name=verdict_name,
           )
           verifier.verify_runtime_dependency_coverage(
-              verdict, report, report_bytes, runtime_records,
+              verdict, report, report_bytes, archive_report, archive_report_bytes,
+              runtime_records,
               repository=os.environ["REPOSITORY"], source_sha=commit,
           )
 
