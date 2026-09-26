@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 101858)
-Total output lines: 10890
-
 use std::collections::HashMap;
 use std::ops::ControlFlow;
 
@@ -5107,7 +5104,239 @@ fn fit_marginal(
         "single" => PopulationSpec::Single,
         "singlefree" => PopulationSpec::SingleFree,
         "multigroup" => PopulationSpec::Multigroup {
-            group_id: ids.ok_or_else(|| Py…1858 tokens truncated…Array1<'_, f64>,
+            group_id: ids.ok_or_else(|| PyValueError::new_err("multigroup requires pop_id"))?,
+            n_groups: n_pop,
+        },
+        "multilevel" => PopulationSpec::Multilevel {
+            cluster_id: ids.ok_or_else(|| PyValueError::new_err("multilevel requires pop_id"))?,
+            n_clusters: n_pop,
+        },
+        _ => {
+            return Err(PyValueError::new_err(
+                "pop_kind must be one of ['single', 'multigroup', 'multilevel']",
+            ))
+        }
+    };
+    let rule = XiRuleKind::parse(xi_rule)
+        .ok_or_else(|| PyValueError::new_err("xi_rule must be one of ['gh', 'qmc', 'mc']"))?;
+    let mcfg = MarginalConfig {
+        q_theta,
+        q_xi,
+        q_u,
+        max_iter,
+        tol,
+        m_steps,
+        xi_rule: rule,
+        xi_points,
+        xi_seed,
+        zero_inflation,
+        ..MarginalConfig::default()
+    };
+    let penalty = PenaltyConfig {
+        lambda_b,
+        lambda_alpha,
+        mu_alpha,
+        lambda_zeta,
+        lambda_tau,
+        mu_tau,
+        ..PenaltyConfig::lsirm_prior()
+    };
+    let anchors: Option<Anchors> = match (&anchor_fixed, &anchor_alpha, &anchor_b, &anchor_zeta) {
+        (None, None, None, None) => None,
+        (Some(f), Some(a), Some(b_arr), Some(z)) => Some(Anchors {
+            fixed: f.as_slice()?.to_vec(),
+            alpha: a.as_slice()?.to_vec(),
+            b: b_arr.as_slice()?.to_vec(),
+            zeta: z.as_slice()?.to_vec(),
+            tau: anchor_tau,
+        }),
+        _ => {
+            return Err(PyValueError::new_err(
+                "anchors require anchor_fixed, anchor_alpha, anchor_b and anchor_zeta together",
+            ))
+        }
+    };
+    let covariate: Option<ItemCovariate> = match &covariate_w {
+        Some(w) => Some(ItemCovariate {
+            w: w.as_slice()?.to_vec(),
+            init_delta: covariate_init_delta,
+        }),
+        None => None,
+    };
+    let res = core_fit_marginal_full(
+        y.as_slice()?,
+        observed.as_slice()?,
+        &factors,
+        &config,
+        &pop,
+        &mcfg,
+        &penalty,
+        device,
+        anchors.as_ref(),
+        covariate.as_ref(),
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("alpha", res.alpha)?;
+    out.set_item("b", res.b)?;
+    out.set_item("zeta", res.zeta)?;
+    out.set_item("tau", res.tau)?;
+    out.set_item("theta_eap", res.theta_eap)?;
+    out.set_item("theta_sd", res.theta_sd)?;
+    out.set_item("xi_eap", res.xi_eap)?;
+    out.set_item("mu", res.mu)?;
+    out.set_item("sigma", res.sigma)?;
+    out.set_item("sigma_u", res.sigma_u)?;
+    out.set_item("u_eap", res.u_eap)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("delta", res.delta)?;
+    out.set_item("pi_zero", res.pi_zero)?;
+    out.set_item("zero_responsibility", res.zero_responsibility)?;
+    if let Some(&ll) = res.loglik_trace.last() {
+        let ic = mlsirm_core::fitstats::information_criteria(ll, res.n_parameters, n_persons);
+        let icd = pyo3::types::PyDict::new(py);
+        icd.set_item("aic", ic.aic)?;
+        icd.set_item("bic", ic.bic)?;
+        icd.set_item("aicc", ic.aicc)?;
+        icd.set_item("sabic", ic.sabic)?;
+        icd.set_item("caic", ic.caic)?;
+        icd.set_item("n_parameters", ic.n_parameters)?;
+        icd.set_item("n", ic.n)?;
+        out.set_item("ic", icd)?;
+    }
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    Ok(out.into())
+}
+
+fn parse_xi_rule(name: &str, q_xi: usize, xi_points: usize, xi_seed: u64) -> PyResult<XiRule> {
+    match XiRuleKind::parse(name) {
+        Some(XiRuleKind::GaussHermite) => Ok(XiRule::GaussHermite { q_xi }),
+        Some(XiRuleKind::Halton) => Ok(XiRule::Halton {
+            n: xi_points,
+            shift_seed: xi_seed,
+        }),
+        Some(XiRuleKind::MonteCarlo) => Ok(XiRule::MonteCarlo {
+            n: xi_points,
+            seed: xi_seed.max(1),
+        }),
+        None => Err(PyValueError::new_err(
+            "xi_rule must be one of ['gh', 'qmc', 'mc']",
+        )),
+    }
+}
+
+macro_rules! bank_from_args {
+    ($alpha:expr, $b:expr, $zeta:expr, $tau:expr, $factor_id:expr, $model:expr,
+     $n_dims:expr, $latent_dim:expr, $eps:expr, $factors:ident, $bank:ident) => {
+        let $factors = convert_factor_id($factor_id.as_slice()?, $n_dims)?;
+        let $bank = ItemBank {
+            alpha: $alpha.as_slice()?,
+            b: $b.as_slice()?,
+            zeta: $zeta.as_slice()?,
+            tau: $tau,
+            factor_id: &$factors,
+            model_type: parse_model_type($model)?,
+            n_dims: $n_dims,
+            latent_dim: $latent_dim,
+            eps_distance: $eps,
+        };
+    };
+}
+
+/// EAP scoring of response vectors against frozen item parameters.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
+    xi_points = 256, xi_seed = 0, device = "auto",
+))]
+fn score_bank_eap(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    xi_rule: &str,
+    q_xi: usize,
+    xi_points: usize,
+    xi_seed: u64,
+    device: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
+    let dev = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown device: {device}")))?;
+    let res = core_score_eap_device(
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        &prior,
+        q_theta,
+        rule,
+        dev,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta_eap", res.theta_eap)?;
+    out.set_item("theta_sd", res.theta_sd)?;
+    out.set_item("xi_eap", res.xi_eap)?;
+    out.set_item("loglik", res.loglik)?;
+    Ok(out.into())
+}
+
+/// MAP scoring (posterior Newton) against frozen item parameters.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, prior_mean, prior_sd, max_iter = 100, tol = 1e-6,
+))]
+fn score_bank_map(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
     prior_sd: PyReadonlyArray1<'_, f64>,
     max_iter: usize,
     tol: f64,
