@@ -46,6 +46,17 @@ def _fit_kw(**over):
     return kw
 
 
+def test_public_bootstrap_doc_distinguishes_heuristic_from_accuracy_criterion():
+    """Public API documentation identifies the heuristic and cited contrast."""
+    public_doc = " ".join((run_bifactor_bootstrap.__doc__ or "").split())
+    assert "Andrews and Buchinsky (2000, pp. 23–24)" in public_doc
+    assert "repository heuristic" in public_doc
+    assert (
+        "A three-step method for choosing the number of bootstrap repetitions"
+        in public_doc
+    )
+
+
 def test_endpoint_movement_exact_values():
     """_endpoint_movement measures max endpoint shift over half-width."""
     prev_lo = np.array([0.0, 1.0, 5.0])

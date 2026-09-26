@@ -354,8 +354,18 @@ def run_bifactor_bootstrap(
         converges, a ``RuntimeError`` carrying the first replicate's error
         is raised instead of returning empty summaries.
 
-    The early stop is a heuristic. Use an independently specified Monte Carlo
-    accuracy audit before treating the intervals as final.
+    Method boundary:
+        The implemented early stop is a repository heuristic. Andrews and
+        Buchinsky (2000, pp. 23–24) define a different ``(pdb, τ)``
+        percentage-deviation criterion relative to the ideal
+        infinite-repetition bootstrap quantity; this function does not
+        implement that criterion. Use an independently specified Monte Carlo
+        accuracy audit before treating the intervals as final.
+
+    References:
+        Andrews, D. W. K., & Buchinsky, M. (2000). A three-step method for
+        choosing the number of bootstrap repetitions. *Econometrica, 68*(1),
+        23–51. https://www.jstor.org/stable/2999474
     """
     n_replicates = _require_int(n_replicates, "n_replicates", 1)
     batch_size = _require_int(batch_size, "batch_size", 1)
