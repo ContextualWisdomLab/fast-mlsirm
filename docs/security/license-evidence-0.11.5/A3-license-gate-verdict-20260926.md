@@ -7,7 +7,7 @@ Decision records: coordinator messages msg_60a758c73aad, msg_58e4fad25e39, msg_e
 - Source: #2157 head `58b7b23f7a154c8391c130ebc3aab2dde50bb84b`. Its Cargo lockfiles and crate manifests are unchanged from the inventoried `26cd4c83` input; the later changes add attribution, documentation, and the complete libm source notices.
 - Candidate artifact checked: `fast_mlsirm-0.11.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`
   SHA256 `d8ec1d497763abd943dfc5ba0defa93a67f141b8bab9adf04a02c8d09a9d43bb` (built from the exact head on s1; source archive SHA256 `f8a15e7513f63b765773d5de5fa7c15bc205b3f8e6f24a1cb30097cc923094bb`). `auditwheel` reports `manylinux_2_17_x86_64`; the installed pair passed 10 regression tests.
-- Cargo binding graph for `x86_64-unknown-linux-gnu`: 103 rows, **HOLD 0 after the actual-wheel correction below**; union of all targets: 158 rows, HOLD 30 (non-Linux, deferred to 12-wheel expansion). The #2170 parent head `bce6de42` alone has 0.11.4 manifests and does not prove the 0.11.5 result.
+- Cargo binding graph for `x86_64-unknown-linux-gnu`: 103 rows, **HOLD 0 after the actual-wheel correction below**. At the A3 snapshot, the 158-row all-target union had 30 HOLD (non-Linux, deferred to 12-wheel expansion); the [later non-Linux review](nonlinux-upstream-20260926/REVIEW.md) records the reduced count and remaining target-specific gaps. The #2170 parent head `bce6de42` alone has 0.11.4 manifests and does not prove the 0.11.5 result.
 
 ## Actual-wheel correction and binding
 

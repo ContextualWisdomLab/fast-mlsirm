@@ -129,9 +129,9 @@ and says `Target: x86_64-unknown-linux-gnu. Entries: 101`. This directly
 confirms that the prep workflow would copy the Linux attribution into a macOS
 wheel. The candidate is local only and fails the macOS license gate; it must
 not be represented as a released artifact.
-The target-bundle selector and fail-closed macOS build guard are prepared in
-local commit `89c8f989` on `seonghobae/license-target-notices-20260926`;
-that branch is not part of this evidence checkout.
+The target-bundle selector, fail-closed macOS build guard, and built-wheel
+byte check are prepared in [draft PR #2174](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/2174)
+at `cf710bc1`; that branch is not part of this evidence checkout.
 
 ## Python companion-file follow-up
 
