@@ -30,8 +30,14 @@ then numerical/reproducibility risk; aesthetic refactors out of scope.
 
 In one module (verified by reading the cited ranges):
 
-1. **Domain estimation** — Bock–Aitkin EM, Gibbons–Hedeker reduction,
-   M-step Newton (`m_step_item`, `run_single_start`, `fit_*`).
+1. **Domain estimation** — marginal-likelihood EM, bifactor dimension
+   reduction, and the local M-step Newton solver (`m_step_item`,
+   `run_single_start`, `fit_*`). Bock and Aitkin (1981, p. 447) describe
+   quadrature-based E and M steps; Gibbons and Hedeker (1992, pp. 425–428,
+   Equations 8 and 15–17) derive the two-dimensional bifactor reduction for
+   binary responses. Gibbons et al. (2007, pp. 7–9, Equations 13–16) extend
+   that reduction to graded responses. Newton iteration here is the local
+   numerical solver for the item M-step.
 2. **Input / identification validation** — `validate`,
    `validate_multigroup_cfg`, category-observed checks (~L340,
    multigroup free-item category checks ~L2455).
@@ -167,8 +173,7 @@ sampled bifactor → two-tier reduction test
 | **0001** | Domain-neutral measurement; no hosted runtime | **Yes** — no product HTTP/ORM in core |
 | **0002** | Rust owns production numerics; GPU ⊂ Rust device | **Yes** |
 | **0027** | `bifactor_grm` + `gpu_bifactor` + bootstrap; CPU reference | **Yes** (direct GPU call is intentional) |
-| **0028** | Verb-first public names; **no unsourced defaults** | **Policy**, not module layout; bifactor `q_*` /
-  `max_iter` / `tol` already required at Python edge (#1963) |
+| **0028** | Verb-first public names; **no unsourced defaults** | **Policy**, not module layout; bifactor `q_*` / `max_iter` / `tol` already required at Python edge (#1963) |
 
 ### Ubiquitous language
 
@@ -265,3 +270,18 @@ reproducibility; **P2** structure debt with measured churn; **P3** clarity.
 **Not done (explicitly):** extracting `bifactor_grm` into multiple files;
 introducing an E-step trait; running CP3 timing on `10.6.0.11` (load
 15+); implementing pattern reduction itself (#2003 implementation).
+
+## References
+
+Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
+item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
+443–459. https://doi.org/10.1007/BF02293801
+
+Gibbons, R. D., & Hedeker, D. R. (1992). Full-information item bi-factor
+analysis. *Psychometrika, 57*(3), 423–436. https://doi.org/10.1007/BF02295430
+
+Gibbons, R. D., Bock, R. D., Hedeker, D. R., Weiss, D. J., Segawa, E.,
+Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., & Stover, A.
+(2007). Full-information item bifactor analysis of graded response data.
+*Applied Psychological Measurement, 31*(1), 4–19.
+https://doi.org/10.1177/0146621606289485
