@@ -4,9 +4,8 @@
 """Stopping rule, per-replicate reporting, validation, and CPU/GPU parity
 for the joint person bootstrap.
 
-Implementation basis: Andrews, D. W. K., & Buchinsky, M. (2000). A
-three-step method for choosing the number of bootstrap repetitions.
-*Econometrica, 68*(1), 23–51. https://www.jstor.org/stable/2999474
+The endpoint-movement early stop is a heuristic, not an Andrews–Buchinsky
+``(pdb, τ)`` accuracy rule.
 """
 
 import numpy as np

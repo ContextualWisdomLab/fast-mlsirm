@@ -12,29 +12,26 @@ from the converged replicates. Replicate count, batch size, Monte Carlo
 stopping ratio, and compute budget are caller arguments; this module defines
 no study-specific defaults for them.
 
-Implementation basis
---------------------
-The replicate-number stopping rule is a sequential application of the accuracy
-framework of Andrews and Buchinsky (2000, §§ 2–4): a finite-``B`` bootstrap
-quantity is accurate when its percentage deviation from the ideal (``B`` → ∞)
-bootstrap quantity is small. The caller-supplied ``mc_stopping_ratio`` plays
-the role of their percentage-deviation bound ``pdb`` (expressed as a
-fraction): after each batch, the percentile interval endpoints of every free
-parameter are recomputed from all converged replicates so far, and the run
-stops once the maximum endpoint movement relative to the interval half-width
-falls below ``mc_stopping_ratio``. Because the ideal endpoints are unknown
-mid-run, successive-batch endpoint movement is used as the observable proxy;
-the compute budget always caps the run. Bias-corrected-and-accelerated (BCa)
-intervals are out of scope.
+Stopping rule
+-------------
+After each batch, the percentile interval endpoints of every free parameter
+are recomputed from all converged replicates. The optional early stop compares
+the maximum endpoint movement between successive batches with the current
+interval half-width. This is a heuristic convergence diagnostic. It does not
+estimate Monte Carlo error or satisfy the ``(pdb, τ)`` accuracy criterion of
+Andrews and Buchinsky (2000, pp. 23–24), which concerns percentage deviation
+from the ideal infinite-repetition bootstrap quantity. The compute budget
+always caps the run. Bias-corrected-and-accelerated (BCa) intervals are out
+of scope.
 
 References
 ----------
 - Andrews, D. W. K., & Buchinsky, M. (2000). A three-step method for choosing
   the number of bootstrap repetitions. *Econometrica, 68*(1), 23–51.
   https://www.jstor.org/stable/2999474 (full text: Cowles Foundation Paper
-  No. 1001, http://dido.econ.yale.edu/~dwka/pub/p1001.pdf; see eqs.
-  (4.1)–(4.4) for the batch-size formulae and § 6 for the 95% interval
-  simulations motivating the default ``ci_level``).
+  No. 1001, http://dido.econ.yale.edu/~dwka/pub/p1001.pdf). This paper
+  defines a different accuracy criterion; it is not the basis of the early
+  stopping rule above.
 - Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E.,
   Bhaumik, D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., & Stover,
   A. (2007). Full-information item bifactor analysis of graded response
@@ -122,12 +119,7 @@ def _generate_bootstrap_indices(
 ) -> np.ndarray:
     """Generate bootstrap sample indices, with stratification if multiple groups.
 
-    Implementation basis: nonparametric iid person resampling within each
-    known group (the resampling scheme to which Andrews and Buchinsky (2000,
-    § 2) apply their replicate-number results for iid data; Andrews, D. W. K.,
-    & Buchinsky, M. (2000). A three-step method for choosing the number of
-    bootstrap repetitions. *Econometrica, 68*(1), 23–51.
-    https://www.jstor.org/stable/2999474).
+    Nonparametric person resampling is stratified within each known group.
     """
     if group_ids is None or n_groups <= 1:
         return rng.integers(0, n_persons, size=n_persons, endpoint=False)
@@ -264,9 +256,8 @@ def _endpoint_movement(
 
     Entries with zero half-width (parameters that are constant across
     replicates, e.g. pinned reference-group moments) carry no Monte Carlo
-    uncertainty and are excluded. This is the observable proxy for the
-    percentage deviation of finite-``B`` interval endpoints from their ideal
-    counterparts in Andrews and Buchinsky (2000, §§ 2–4).
+    uncertainty and are excluded. Batch-to-batch movement does not estimate
+    deviation from the ideal infinite-repetition interval.
     """
     half = (new_hi - new_lo) / 2.0
     live = half > 0
@@ -319,12 +310,12 @@ def run_bifactor_bootstrap(
             no study-specific default is defined by this module).
         batch_size: Replicates per batch; the stopping rule and the compute
             budget are evaluated at batch boundaries.
-        mc_stopping_ratio: Bound on the Monte Carlo error of the percentile
-            interval endpoints relative to the interval half-width, in the
-            role of the percentage-deviation bound ``pdb`` of Andrews and
-            Buchinsky (2000, §§ 2–4). Must satisfy ``0 <= ratio < 1``;
-            ``0`` disables early stopping (the run completes all requested
-            replicates within budget).
+        mc_stopping_ratio: Heuristic bound on successive-batch percentile
+            endpoint movement relative to the current interval half-width.
+            It does not bound Monte Carlo error or implement an Andrews–Buchinsky
+            ``(pdb, τ)`` rule. Must satisfy ``0 <= ratio < 1``; ``0`` disables
+            early stopping (the run completes all requested replicates within
+            budget).
         compute_budget_seconds: Wall-clock budget; batch execution stops when
             the elapsed time reaches this bound.
         q_general/q_specific: Required Gauss-Hermite node counts (any integer
@@ -363,10 +354,8 @@ def run_bifactor_bootstrap(
         converges, a ``RuntimeError`` carrying the first replicate's error
         is raised instead of returning empty summaries.
 
-    References:
-        Andrews, D. W. K., & Buchinsky, M. (2000). A three-step method for
-        choosing the number of bootstrap repetitions. *Econometrica, 68*(1),
-        23–51. https://www.jstor.org/stable/2999474
+    The early stop is a heuristic. Use an independently specified Monte Carlo
+    accuracy audit before treating the intervals as final.
     """
     n_replicates = _require_int(n_replicates, "n_replicates", 1)
     batch_size = _require_int(batch_size, "batch_size", 1)
