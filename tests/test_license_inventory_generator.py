@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import sys
 import tarfile
 import zipfile
 from argparse import Namespace
@@ -61,7 +62,8 @@ def test_reviewed_whole_license_bytes_and_mutations(row):
     assert hashlib.sha256(normalized.encode()).hexdigest() == row["normalized_sha256"]
     assert L.verified_standard_text(text) == [row["identifier"]]
     assert L.verified_standard_text(text.replace("\n", "\r\n")) == [row["identifier"]]
-    for changed in (text.replace("License", "Restriction", 1) if "License" in text else text.replace("software", "hardware", 1),
+    word = next(w for w in ("License", "software", "Redistribution") if w in text)
+    for changed in (text.replace(word, "Restriction", 1),
                     text + "\nCommercial use is prohibited.", "extra\n" + text, text + "\nextra"):
         assert changed != text
         assert L.verified_standard_text(changed) == []
@@ -1171,3 +1173,346 @@ def test_windows_notice_pattern_normalization_is_notice_side_only():
     """Only notice patterns are converted; the canonical-path gate itself is unchanged."""
     assert L.notice_files_pattern_to_posix("pkg.libs\\libscipy_openblas*.dll") == "pkg.libs/libscipy_openblas*.dll"
     assert L.normalized_archive_path("pkg.libs\\libscipy_openblas64_.dll") is None
+
+
+def _target_meta(tmp_path: Path, packages: list[tuple[str, str]], nodes: list[str]) -> str:
+    path = tmp_path / "target-meta.json"
+    path.write_text(json.dumps({
+        "packages": [{"id": f"{n}@{v}", "name": n, "version": v} for n, v in packages],
+        "resolve": {"nodes": [{"id": i} for i in nodes]},
+    }))
+    return str(path)
+
+
+def test_binding_target_graph_marks_rows_and_absent_filter_is_unchanged(tmp_path):
+    """Target-filtered metadata marks graph membership; without it rows carry no target field."""
+    args = _rust_args(tmp_path)
+    (plain,) = L.rust_inventory(args, [])
+    assert "in_binding_target_graph" not in plain
+    for nodes, expected in ((["dep@1.0"], True), ([], False)):
+        args.cargo_metadata_binding_target = _target_meta(tmp_path, [("dep", "1.0")], nodes)
+        args.binding_target = "x86_64-unknown-linux-gnu"
+        gaps = []
+        (row,) = L.rust_inventory(args, gaps)
+        assert (row["in_binding_target_graph"], gaps) == (expected, [])
+        assert {k: v for k, v in row.items() if k != "in_binding_target_graph"} == plain
+
+
+def test_binding_target_package_outside_binding_lock_is_a_gap(tmp_path):
+    args = _rust_args(tmp_path)
+    args.cargo_metadata_binding_target = _target_meta(tmp_path, [("dep", "1.0"), ("ghost", "9.9")], ["dep@1.0", "ghost@9.9"])
+    args.binding_target = "x86_64-unknown-linux-gnu"
+    gaps = []
+    L.rust_inventory(args, gaps)
+    assert gaps == ["cargo binding target x86_64-unknown-linux-gnu: ghost@9.9 is not in the binding Cargo.lock"]
+
+
+def test_binding_target_flags_must_be_paired(tmp_path):
+    with pytest.raises(SystemExit):
+        L.main(["--cargo-metadata-workspace", "x", "--cargo-metadata-binding", "x", "--cargo-lock-workspace", "x",
+                "--cargo-lock-binding", "x", "--cargo-registry-cache", "x", "--wheel-sbom", "x", "--tree-dir", "x",
+                "--uv-lock", "x", "--requirements", "x", "--python-scope", "x", "--pypi-meta-dir", "x",
+                "--pypi-artifact-dir", "x", "--out", str(tmp_path / "o.json"), "--binding-target", "x86_64-unknown-linux-gnu"])
+
+
+def _upstream_args(tmp_path: Path, *, crate_sha1="a" * 40, recorded_sha1="a" * 40, text=None, recorded_text=None):
+    """dep 1.0 whose hash-bound .crate has no license file, plus an upstream evidence record."""
+    args = _rust_args(tmp_path)
+    vcs = json.dumps({"git": {"sha1": crate_sha1}, "path_in_vcs": "dep"})
+    digest = _crate(Path(args.cargo_registry_cache), "dep", "1.0", {"Cargo.toml": "", ".cargo_vcs_info.json": vcs})
+    lock = Path(args.cargo_lock_workspace)
+    content = lock.read_text()
+    lock.write_text(content.replace(L.tomllib.loads(content)["package"][0]["checksum"], digest))
+    text = L.MIT_CANONICAL_BODY if text is None else text
+    (tmp_path / "LICENSE-MIT").write_text(text)
+    evidence = tmp_path / "upstream.json"
+    evidence.write_text(json.dumps({"dep@1.0": {
+        "repository": "https://example.invalid/dep", "vcs_sha1": recorded_sha1, "path_in_vcs": "dep",
+        "files": [{"path": "LICENSE-MIT", "url": "https://example.invalid/LICENSE-MIT", "local_path": "LICENSE-MIT",
+                   "sha256": hashlib.sha256((recorded_text if recorded_text is not None else text).encode()).hexdigest()}],
+    }}))
+    return args, str(evidence)
+
+
+def test_upstream_license_evidence_binds_only_with_matching_commit_and_hash(tmp_path):
+    args, evidence = _upstream_args(tmp_path)
+    (plain,) = L.rust_inventory(args, [])
+    assert plain["license_class"] == "HOLD" and "license_text_origin" not in plain
+    assert "the hash-bound .crate contains no license file" in plain["hold_reasons"]
+    args.cargo_upstream_license_evidence = evidence
+    (row,) = L.rust_inventory(args, [])
+    assert (row["license_class"], row["hold_reasons"], row["license_text_origin"]) == ("PERMISSIVE", [], "upstream-vcs")
+    assert row["license_files_in_artifact"][0]["vcs_sha1"] == "a" * 40
+
+
+@pytest.mark.parametrize("case", ["sha1-mismatch", "file-hash-mismatch", "extra-condition"])
+def test_upstream_license_evidence_mismatch_stays_hold(tmp_path, case):
+    kwargs = {
+        "sha1-mismatch": {"crate_sha1": "b" * 40},
+        "file-hash-mismatch": {"recorded_text": L.MIT_CANONICAL_BODY + " "},
+        "extra-condition": {"text": L.MIT_CANONICAL_BODY + "\nCommercial use is prohibited.\n"},
+    }[case]
+    args, evidence = _upstream_args(tmp_path, **kwargs)
+    args.cargo_upstream_license_evidence = evidence
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    if case != "extra-condition":
+        assert row["license_files_in_artifact"] == [] and "license_text_origin" not in row
+
+
+def _own_crate_args(tmp_path: Path, *, wheel_version="1.0", license_member=True, license_text=None,
+                    extra_license_files=None):
+    """One path crate 'own 1.0' with no LICENSE beside Cargo.toml, plus a published wheel."""
+    crate_dir = tmp_path / "own"
+    crate_dir.mkdir()
+    (crate_dir / "Cargo.toml").write_text("")
+    lock = tmp_path / "Cargo.lock"
+    lock.write_text('version = 4\n[[package]]\nname = "own"\nversion = "1.0"\n')
+    meta = tmp_path / "meta.json"
+    meta.write_text(json.dumps({"packages": [{"name": "own", "version": "1.0", "source": None, "license": "MIT",
+                                              "license_file": None, "manifest_path": str(crate_dir / "Cargo.toml")}]}))
+    sbom = tmp_path / "sbom.json"
+    sbom.write_text(json.dumps({"components": []}))
+    (tmp_path / "tree").mkdir()
+    wheel = tmp_path / "own-1.0-py3-none-any.whl"
+    extra_license_files = extra_license_files or {}
+    (tmp_path / "LICENSE").write_text(license_text or L.MIT_CANONICAL_BODY)
+    for name, text in extra_license_files.items():
+        (tmp_path / name).write_text(text)
+    with zipfile.ZipFile(wheel, "w") as zf:
+        declarations = "".join(f"License-File: {name}\n" for name in extra_license_files)
+        zf.writestr("own-1.0.dist-info/METADATA", f"Metadata-Version: 2.4\nName: own\nVersion: {wheel_version}\nLicense-File: LICENSE\n{declarations}")
+        if license_member:
+            zf.writestr("own-1.0.dist-info/licenses/LICENSE", license_text or L.MIT_CANONICAL_BODY)
+        for name, text in extra_license_files.items():
+            zf.writestr(f"own-1.0.dist-info/licenses/{name}", text)
+    args = Namespace(cargo_metadata_workspace=str(meta), cargo_metadata_binding=str(meta), cargo_lock_workspace=str(lock),
+                     cargo_lock_binding=str(lock), cargo_registry_cache=str(tmp_path / "cache"), wheel_sbom=str(sbom),
+                     tree_dir=str(tmp_path / "tree"), own_crate_wheel_source_root=str(tmp_path))
+    return args, str(wheel), hashlib.sha256(wheel.read_bytes()).hexdigest()
+
+
+def test_own_crate_binds_to_published_wheel_license_and_absent_flag_is_unchanged(tmp_path):
+    args, wheel, digest = _own_crate_args(tmp_path)
+    (plain,) = L.rust_inventory(args, [])
+    assert plain["license_class"] == "HOLD" and "license_text_origin" not in plain
+    args.own_crate_wheel, args.own_crate_wheel_sha256 = wheel, digest
+    (row,) = L.rust_inventory(args, [])
+    assert (row["license_class"], row["hold_reasons"], row["license_text_origin"]) == ("PERMISSIVE", [], "published-wheel")
+    assert row["license_files_in_artifact"][0]["artifact_sha256"] == digest
+
+
+def test_own_crate_wheel_notices_are_recorded_but_not_own_license_candidates(tmp_path):
+    args, wheel, digest = _own_crate_args(tmp_path, extra_license_files={
+        "NOTICE": "Attribution notice; see LICENSE.",
+    })
+    args.own_crate_wheel, args.own_crate_wheel_sha256 = wheel, digest
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "PERMISSIVE" and row["hold_reasons"] == []
+    assert {f["path"].rsplit("/", 1)[-1]: f["wheel_role"] for f in row["license_files_in_artifact"]} == {
+        "LICENSE": "own-license", "NOTICE": "distribution-notice",
+    }
+    assert all(not f["verified_standard_text"] for f in row["license_files_in_artifact"]
+               if f["wheel_role"] != "own-license")
+
+
+def test_own_crate_wheel_unknown_notice_owner_stays_hold(tmp_path):
+    args, wheel, digest = _own_crate_args(tmp_path, extra_license_files={"NOTICE-unknown-1.0.txt": "Notice"})
+    args.own_crate_wheel, args.own_crate_wheel_sha256 = wheel, digest
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert any("no unique component" in reason for reason in row["hold_reasons"])
+
+
+def test_own_crate_wheel_notice_source_mismatch_stays_hold(tmp_path):
+    args, wheel, digest = _own_crate_args(tmp_path, extra_license_files={"NOTICE": "Original notice"})
+    (tmp_path / "NOTICE").write_text("Changed notice")
+    args.own_crate_wheel, args.own_crate_wheel_sha256 = wheel, digest
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert any("differs from source" in reason for reason in row["hold_reasons"])
+
+
+def verify_actual_a3_wheel_license_roles(wheel_path: Path, source_root: Path):
+    """Explicit artifact check; run this file with wheel and exact source paths."""
+    expected = ("d8ec1d497763abd9" "43dfc5ba0defa93a"
+                "67f141b8bab9adf0" "4a02c8d09a9d43bb")
+    version, files, errors = L.own_crate_wheel_license_files(
+        wheel_path, expected, {("cfg_aliases", "0.2.2"), ("libm", "0.2.16")}, source_root)
+    assert (version, errors, len(files)) == ("0.11.5", [], 6)
+    expected_files = {
+        "LICENSE": "08f1fd81fb120bc468b69dc3e58ea0dc23c216305c766e45e107f56c76559e3f",
+        "LICENSE-THIRD-PARTY": "d46f307a2e8a49e2d638ee4e0b768c6c908c7786cb9106e74948561bf8cf0af0",
+        "NOTICE": "7192b2614bfee6e95283ef9db9f5fe41c2acb579f5cd30e6482445e42fca0ae5",
+        "NOTICE-cfg_aliases-0.2.2-NOTICES.md": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee",
+        "NOTICE-libm-0.2.16-LICENSE.txt": "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7",
+        "NOTICE-libm-0.2.16-source-notices.txt": "9e949a13f66c0f9b60b73b54e8ab2940ccff92d704c46c53103b1028e2cc75ba",
+    }
+    assert {f["path"].split("/licenses/", 1)[1]: f["sha256"] for f in files} == expected_files
+    assert all(hashlib.sha256((source_root / name).read_bytes()).hexdigest() == digest
+               for name, digest in expected_files.items())
+    assert all(f["artifact_sha256"] == expected for f in files)
+    assert [f["wheel_role"] for f in files].count("own-license") == 1
+    assert {f["wheel_component"] for f in files if f["wheel_role"] == "third-party-notice"} == {
+        "cfg_aliases@0.2.2", "libm@0.2.16"}
+    assert all(not f["verified_standard_text"] for f in files if f["wheel_role"] != "own-license")
+
+
+@pytest.mark.parametrize("case", ["wheel-sha-mismatch", "version-mismatch", "license-member-missing"])
+def test_own_crate_wheel_mismatch_stays_hold(tmp_path, case):
+    args, wheel, digest = _own_crate_args(
+        tmp_path, wheel_version="9.9" if case == "version-mismatch" else "1.0",
+        license_member=case != "license-member-missing")
+    args.own_crate_wheel = wheel
+    args.own_crate_wheel_sha256 = "0" * 64 if case == "wheel-sha-mismatch" else digest
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD" and "license_text_origin" not in row
+    assert row["license_files_in_artifact"] == []
+
+
+# Exact reviewed pointer-notice bytes (s1 text-review-20260926 texts/23860c2a..., 01c266bc...).
+UNICODE_WIDTH_COPYRIGHT = 'Licensed under the Apache License, Version 2.0\n<LICENSE-APACHE or\nhttp://www.apache.org/licenses/LICENSE-2.0> or the MIT\nlicense <LICENSE-MIT or http://opensource.org/licenses/MIT>,\nat your option. All files in the project carrying such\nnotice may not be copied, modified, or distributed except\naccording to those terms.\n'
+MEMCHR_COPYING = 'This project is dual-licensed under the Unlicense and MIT licenses.\n\nYou may use this code under the terms of either license.\n'
+
+
+
+def test_pointer_notice_map_holds_exactly_the_reviewed_texts():
+    for text, names in ((UNICODE_WIDTH_COPYRIGHT, ("Apache-2.0", "MIT")), (MEMCHR_COPYING, ("Unlicense", "MIT")),
+                        ("MIT OR Apache-2.0", ("MIT", "Apache-2.0"))):
+        normalized = L.re.sub(r"[ \t\r\n]+", " ", text).strip(" \t\r\n")
+        assert L.POINTER_NOTICES[hashlib.sha256(normalized.encode()).hexdigest()] == names
+        assert L.verified_standard_text(text) == []
+
+
+def _pointer_args(tmp_path: Path, *, pointer="MIT OR Apache-2.0", with_apache=True, declared="MIT OR Apache-2.0"):
+    args = _rust_args(tmp_path)
+    apache = next(r["text"] for r in REVIEWED if r["identifier"] == "Apache-2.0")
+    files = {"LICENSE": pointer, "LICENSE-MIT": L.MIT_CANONICAL_BODY}
+    if with_apache:
+        files["LICENSE-APACHE"] = apache
+    digest = _crate(Path(args.cargo_registry_cache), "dep", "1.0", files)
+    lock = Path(args.cargo_lock_workspace)
+    content = lock.read_text()
+    lock.write_text(content.replace(L.tomllib.loads(content)["package"][0]["checksum"], digest))
+    meta = Path(args.cargo_metadata_workspace)
+    meta.write_text(meta.read_text().replace('"MIT OR Apache-2.0"', json.dumps(declared)))
+    return args
+
+
+def test_reviewed_pointer_is_satisfied_only_with_the_flag(tmp_path):
+    args = _pointer_args(tmp_path)
+    (plain,) = L.rust_inventory(args, [])
+    assert plain["license_class"] == "HOLD"
+    assert all("pointer_notice" not in f for f in plain["license_files_in_artifact"])
+    args.reviewed_pointer_notices = True
+    (row,) = L.rust_inventory(args, [])
+    assert (row["license_class"], row["hold_reasons"]) == ("PERMISSIVE", [])
+    (pointer,) = [f for f in row["license_files_in_artifact"] if f["path"] == "LICENSE"]
+    assert pointer["pointer_notice"] == {"names": ["MIT", "Apache-2.0"], "satisfied": True}
+
+
+@pytest.mark.parametrize("case", ["a-unreviewed-pointer", "b-named-text-missing", "c-declared-mismatch"])
+def test_reviewed_pointer_violation_stays_hold(tmp_path, case):
+    args = _pointer_args(tmp_path, **{
+        "a-unreviewed-pointer": {"pointer": "MIT OR Apache-2.0 OR BSD-3-Clause"},
+        "b-named-text-missing": {"with_apache": False},
+        "c-declared-mismatch": {"declared": "MIT"},
+    }[case])
+    args.reviewed_pointer_notices = True
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert not any(f.get("pointer_notice", {}).get("satisfied") for f in row["license_files_in_artifact"])
+
+
+def test_reviewed_unicode_license_satisfies_and_conjunct(tmp_path):
+    """MIT AND Unicode-3.0 passes only with the exact reviewed Unicode text in the crate."""
+    unicode = next(r["text"] for r in REVIEWED if r["identifier"] == "Unicode-3.0")
+    for text, expected in ((unicode, "PERMISSIVE"), (unicode + "\nNo commercial use.", "HOLD")):
+        (tmp_path / expected).mkdir()
+        args = _pointer_args(tmp_path / expected, pointer=L.MIT_CANONICAL_BODY, with_apache=False,
+                             declared="MIT AND Unicode-3.0")
+        digest = _crate(Path(args.cargo_registry_cache), "dep", "1.0",
+                        {"LICENSE-MIT": L.MIT_CANONICAL_BODY, "LICENSE-UNICODE": text})
+        lock = Path(args.cargo_lock_workspace)
+        content = lock.read_text()
+        lock.write_text(content.replace(L.tomllib.loads(content)["package"][0]["checksum"], digest))
+        (row,) = L.rust_inventory(args, [])
+        assert row["license_class"] == expected
+
+
+def test_documented_exception_is_pinned_to_crate_and_member_hash(tmp_path, monkeypatch):
+    """An exception applies only to the exact (crate sha, member sha) pair it names."""
+    text = "Combined notice: MIT for the crate; third-party parts under notice-preserving terms.\n"
+    args = _rust_args(tmp_path)
+    digest = _crate(Path(args.cargo_registry_cache), "dep", "1.0", {"LICENSE.txt": text})
+    lock = Path(args.cargo_lock_workspace)
+    content = lock.read_text()
+    lock.write_text(content.replace(L.tomllib.loads(content)["package"][0]["checksum"], digest))
+    member = hashlib.sha256(text.encode()).hexdigest()
+    (plain,) = L.rust_inventory(args, [])
+    assert plain["license_class"] == "HOLD"
+    monkeypatch.setitem(L.DOCUMENTED_EXCEPTIONS, (digest, member), {"identifier": "MIT"})
+    (row,) = L.rust_inventory(args, [])
+    assert (row["license_class"], row["license_files_in_artifact"][0]["documented_exception"]) == ("PERMISSIVE", {"identifier": "MIT"})
+    monkeypatch.delitem(L.DOCUMENTED_EXCEPTIONS, (digest, member))
+    monkeypatch.setitem(L.DOCUMENTED_EXCEPTIONS, ("0" * 64, member), {"identifier": "MIT"})
+    (other,) = L.rust_inventory(args, [])
+    assert other["license_class"] == "HOLD"
+
+
+CFG_ALIASES_NOTICES = '# 3rd Party Notices\n\nThe `cfg_aliases!` macro uses a lot of the code from [`tectonic_cfg_support::target_cfg!`] macro which is under the following license:\n\n[`tectonic_cfg_support::target_cfg!`]: https://github.com/tectonic-typesetting/tectonic/blob/f2439b936470ad27bdf92882064bc4702ee01899/cfg_support/src/lib.rs#L166\n\n    tectonic_cfg_support is licensed under the MIT License.\n\n    Permission is hereby granted, free of charge, to any person obtaining a copy\n    of this software and associated documentation files (the “Software”), to deal\n    in the Software without restriction, including without limitation the rights\n    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n    copies of the Software, and to permit persons to whom the Software is\n    furnished to do so, subject to the following conditions:\n\n    The above copyright notice and this permission notice shall be included in all\n    copies or substantial portions of the Software.\n\n    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n    SOFTWARE.\n---\n'
+
+
+def test_cfg_aliases_notice_exception_is_pinned_to_the_0_2_2_crate(tmp_path):
+    """The same NOTICES.md bytes in any crate other than the pinned cfg_aliases 0.2.2 stay HOLD."""
+    member = hashlib.sha256(CFG_ALIASES_NOTICES.encode()).hexdigest()
+    pinned = [k for k, v in L.DOCUMENTED_EXCEPTIONS.items() if v.get("package") == "cfg_aliases@0.2.2"]
+    assert pinned == [("f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527", member)]
+    assert L.DOCUMENTED_EXCEPTIONS[pinned[0]]["classification"] == "third-party MIT attribution notice"
+    args = _rust_args(tmp_path)
+    digest = _crate(Path(args.cargo_registry_cache), "dep", "1.0", {"LICENSE-MIT": L.MIT_CANONICAL_BODY, "NOTICES.md": CFG_ALIASES_NOTICES})
+    lock = Path(args.cargo_lock_workspace)
+    content = lock.read_text()
+    lock.write_text(content.replace(L.tomllib.loads(content)["package"][0]["checksum"], digest))
+    (row,) = L.rust_inventory(args, [])
+    assert row["license_class"] == "HOLD"
+    assert not any(f.get("documented_exception") for f in row["license_files_in_artifact"])
+
+
+def test_wheel_directory_entry_is_not_a_license_candidate(tmp_path):
+    """A zip directory entry such as pkg-1.0.dist-info/licenses/ is not an (empty) license file."""
+    wheel = tmp_path / "pkg-1.0-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as zf:
+        zf.writestr("pkg-1.0.dist-info/METADATA", "Metadata-Version: 2.4\nName: pkg\nVersion: 1.0\n\n")
+        zf.writestr(zipfile.ZipInfo("pkg-1.0.dist-info/licenses/"), "")
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+    paths = [f["path"] for f in L.python_artifact_evidence(wheel)["license_files"]]
+    assert paths == ["pkg-1.0.dist-info/licenses/LICENSE"]
+
+
+@pytest.mark.parametrize("pinned", [True, False])
+def test_external_runtime_dependency_is_pinned_to_its_wheel(tmp_path, monkeypatch, pinned):
+    """Vendored-native findings become notes only for the exact pinned wheel of an external dependency."""
+    args = _python_args(tmp_path, expression="MIT", license_text=False)
+    wheel = Path(args.pypi_artifact_dir) / "pkg-1.0-py3-none-any.whl"
+    digest = _native_wheel(wheel, native_license=None, bind_notice=False)
+    Path(args.uv_lock).write_text(
+        'version = 1\n[[package]]\nname = "pkg"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://x/pkg.whl", hash = "sha256:{digest}" }}]\n'
+    )
+    monkeypatch.setitem(L.EXTERNAL_RUNTIME_DEPENDENCIES, ("pkg", "1.0"),
+                        {"wheel_sha256": digest if pinned else "0" * 64, "classification": "external"})
+    (row,) = L.python_inventory(args, [])
+    if pinned:
+        assert (row["license_class"], row["vendored_native_license_holds"]) == ("PERMISSIVE", [])
+        assert "no bound notice stanza" in " ".join(row["external_runtime_notes"])
+    else:
+        assert row["license_class"] == "HOLD" and "external_runtime_dependency" not in row
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        raise SystemExit("usage: test_license_inventory_generator.py WHEEL EXACT_SOURCE_ROOT")
+    verify_actual_a3_wheel_license_roles(Path(sys.argv[1]), Path(sys.argv[2]))
+    print("actual A3 wheel license roles and six source hashes verified")

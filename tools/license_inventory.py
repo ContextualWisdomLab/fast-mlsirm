@@ -200,6 +200,63 @@ def detect(text: str) -> list[str]:
     return found
 
 
+# Reviewed pointer notices (normalized sha256 -> licenses they point to), from s1
+# text-review-20260926. A pointer is not a license text: with --reviewed-pointer-notices it
+# is satisfied only when every named license has a verified full text in the same
+# hash-bound .crate and the names equal the declared SPDX expression's terms.
+# Documented exceptions: a hash-pinned (crate sha256, member sha256) whose text is not a single
+# standard license but was accepted as the named identifier. Coordinator verdict (user-delegated,
+# 2026-09-26), not legal review. Evidence: s1 libm-notice-20260926 (PROPOSAL.md bdeac27d).
+# Release gate: the wheel third-party notices must include cfg_aliases NOTICES.md, libm LICENSE.txt and its Sun
+# (freely granted, notice preserved) x50, BSD-2-Clause (David Schultz) x2 and MIT (core-math) x8
+# source notices.
+DOCUMENTED_EXCEPTIONS = {
+    ("b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981",
+     "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7"): {
+        "identifier": "MIT",
+        "classification": "notice-preserving permissive",
+        "package": "libm@0.2.16",
+        "member": "LICENSE.txt",
+        "notice_families": {"Sun freely-granted (notice preserved)": 50, "BSD-2-Clause": 2, "MIT (core-math)": 8},
+        "basis": "coordinator verdict (user-delegated, 2026-09-26), not legal review",
+    },
+    # cfg_aliases NOTICES.md: attribution notice for code from tectonic_cfg_support (MIT). The embedded
+    # MIT text matches the SPDX v3.29.0 MIT matching template (curly-quote equivalence) but has NO
+    # copyright-holder line (recorded gap). Release gate: the wheel NOTICE must include this file.
+    ("f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527",
+     "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee"): {
+        "identifier": "MIT",
+        "classification": "third-party MIT attribution notice",
+        "package": "cfg_aliases@0.2.2",
+        "member": "NOTICES.md",
+        "gaps": ["no copyright-holder line for tectonic_cfg_support"],
+        "basis": "coordinator verdict (user-delegated, 2026-09-26), not legal review",
+    },
+}
+
+
+# External runtime dependencies: installed separately by users, never bundled in fast-mlsirm
+# artifacts. For the pinned official wheel only, findings about that wheel's own vendored native
+# libraries (and copyleft labels that describe them) are recorded as notes, not HOLD, because
+# fast-mlsirm does not redistribute them. The dependency's own license candidate files must
+# still verify. Coordinator verdict (user-delegated, 2026-09-26), not legal review.
+EXTERNAL_RUNTIME_DEPENDENCIES = {
+    ("numpy", "2.5.2"): {
+        "wheel_sha256": "3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8",
+        "wheel": "numpy-2.5.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        "classification": "external runtime dependency, not bundled in fast-mlsirm artifacts",
+        "basis": "coordinator verdict (user-delegated, 2026-09-26), not legal review",
+    },
+}
+
+
+POINTER_NOTICES = {
+    "9fba058782d4dbf4eda66df225dfc11e8afdc5618f6bc36c2dafbb087cda3971": ("Apache-2.0", "MIT"),  # unicode-width COPYRIGHT 23860c2a
+    "7e7a2c785f3db52a3daf64a62b76b09b940355e4fe1b7f7092f473b7663416b1": ("Unlicense", "MIT"),  # memchr-family COPYING 01c266bc
+    "db11fec9946737df39ca3898d9cd8c10ec6f6c3a884a6802b0ad0b81b4e8f23a": ("MIT", "Apache-2.0"),  # typenum LICENSE db11fec9
+}
+
+
 def verified_standard_text(text: str) -> list[str]:
     """Return licenses whose complete canonical grant has no extra conditions."""
     # Reviewed entire archive members, with source hashes and exact bytes in
@@ -211,6 +268,99 @@ def verified_standard_text(text: str) -> list[str]:
         "59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99": "Apache-2.0",
         "3a31f72fe7c9baf376c3da1d7d0154366be8ef0bab0a3f7531db4c2abf1ad062": "Zlib",
         "444399c3da8f18f32878c6f8b7348110f33985558ca7abe98d4c8ed26f013109": "Zlib",
+        # 66 copyright-header/appendix-only variants, reviewed in s1 text-review-20260926.
+        "b23006212431a278f48cfb7935b9e8673c4a71c1fff8b362ea12c61f1998109b": "BSD-3-Clause",  # numpy 2.5.2 numpy/ma/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-3-Clause matching template
+        "70187aea756fe37032368ccb3efa2c4ef1bc3e9ff6e47d7c68a51bd7f877d411": "BSD-3-Clause",  # numpy 2.5.2 numpy/fft/pocketfft/LICENSE.md: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-3-Clause matching template
+        "40f76b14cc5d5ffdd540b61d9dc810d4b5cd2902178927fe7f47e10e5c7e4e5e": "BSD-3-Clause",  # numpy 2.5.2 numpy/_core/src/umath/svml/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-3-Clause matching template
+        "93932bc60d62d69d966eafa280727f77c60ee8d990e989026d79b367ee942a06": "BSD-3-Clause",  # numpy 2.5.2 numpy/_core/src/npysort/x86-simd-sort/LICENSE.md: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-3-Clause matching template
+        "be60a8f5c03bdf6254b521f8824fdf0bada44c2232185a16134777126343949d": "0BSD",  # numpy 2.5.2 numpy/_core/src/common/pythoncapi-compat/COPYING: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX 0BSD matching template
+        "3da00b73ff5ee4c197d90218545de9c1466494a14b19d93ed10cb7380cc279f4": "Zlib",  # numpy 2.5.2 dist-info/licenses/numpy/_core/include/numpy/libdivide/LICENSE.txt: coordinator verdict (user-delegated, 2026-09-26), not legal review; title/underline/copyright only
+        "25480d7a337b885c258cc7e7299af35c39a2d2e5e8ead3970a26b0e1a3cd2a3e": "MIT",  # pytest-9.1.1.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
+        "2606d3710f5ed51b359ab2e16d26861a0d2d721a25f84ff93d97798e4a3b59fd": "MIT",  # pyproject_hooks-1.2.0.dist-info/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
+        "24977015e801cd4c9bbb8c6e8094c6644d5a03c6f466e678a0d7410d4f2b5699": "BSD-2-Clause",  # pygments-2.20.0.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-2-Clause matching template
+        "85400eb183e986a1080ec91937527ea15fac79880d3e1612432d0c6ad14e99b3": "MIT",  # pluggy-1.6.0.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
+        "13c6a3608faee72d1b3a7aad6d1c8036408ed82d9a28a7cf0ef87d6acc4f91c9": "BSD-2-Clause",  # packaging-26.2.dist-info/licenses/LICENSE.BSD: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-2-Clause matching template
+        "68830562168427457071504ddcc65411b8ed6694531eeeca13941ff3bddbdc03": "MIT",  # maturin-1.15.0.dist-info/licenses/license-mit (same bytes in maturin 1.14.1): coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
+        "6185ea2dea9ee04c27ebcff90420479bd07abd86233717f16e3e90b5865f7919": "MIT",  # iniconfig-2.3.0.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
+        "e0374e8fe0bcf2874d6fdadc44014ba4d725c39ac002b59a7172f45d08352c6d": "MIT",  # build-1.6.0.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
+        "25c95a7b50ce321f537754cab2f5b1de56413ccdcbc492671d569851d62ce276": "BSD-2-Clause",  # zerocopy-0.8.57/LICENSE-BSD (same bytes in zerocopy-derive): coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-2-Clause template var spans
+        "bbb0c7a72cdfa383f0a62db4e19033942ed3f909eac4e865334e22e1c0a17c92": "MIT",  # bytemuck-1.25.2/LICENSE-MIT (same bytes in bytemuck_derive): coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT template optional span
+        "f42a00ac54d036890559853a40f95622ab3e63d52173f5714284134b2af11e3c": "Apache-2.0 WITH LLVM-exception",  # target-lexicon-0.13.5/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review
+        "a66ace7bb1d24a3290b823ae25fcd5f95fc5a3dd5af95c45dd77dc37ee593bcd": "BSD-2-Clause",  # numpy-0.29.0/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review
+        "272a160fd2085e79bc5aa395e9fbbc267d0830e5b66757677a87ce93f4401727": "MIT",  # ndarray-0.17.2/LICENSE-MIT: coordinator verdict (user-delegated, 2026-09-26), not legal review
+        "f7539d10705fa2869dabf2d5ecaf51ed026d337e26865967e8d431a30b71833a": "MIT",  # matrixmultiply-0.3.11/LICENSE-MIT: coordinator verdict (user-delegated, 2026-09-26), not legal review
+        "02b0b107669e54b03f028ee6b07c3e35be05a7fe60495a5933a55324885abf0f": "Apache-2.0",  # ash-0.38.0+1.3.281/LICENSE-APACHE: coordinator verdict (user-delegated, 2026-09-26), not legal review
+        "121aea2578cd98e64faa0ca32acfd4f83551b1ecd293730a9541a4f5a37bf85c": "ISC",  # libloading-0.8.9/LICENSE: ISC with copyright header only (no-template-reclass STANDARD_COPYRIGHT_ONLY)
+        "2069c208cba553e43cd0b730df8a0c10bf1b1101b96f661e2f1307c73b9722e3": "Unlicense",  # UNLICENSE 7e12e5df, byte-identical to SPDX v3.29.0 (memchr/termcolor/winapi-util)
+        "21b7ffe46249356209d64748a5179bf37a704880d8af02c77bd65d20800503f0": "Unicode-3.0",  # unicode-ident LICENSE-UNICODE f7db8105, byte-identical to SPDX v3.29.0
+        "f5ac0308cf2b3f96a0f49a8c0c9e4a2a02c483afc72a646af8de1f356983de06": "MIT",  # fast-mlsirm LICENSE (wheel dist-info/licenses/LICENSE; own crates bind via --own-crate-wheel)
+        "1834e4a70e47109cc013a1fa4f34cb0e5b32753be1247a116ec1f1357b87115f": "MIT",  # upstream aclysma/profiling@8271551172eb LICENSE-MIT (profiling-1.0.18 .crate has none)
+        "8b496867ab4da1182d754c6dbd948db3e0f08598d6c685155f4481f9afc98d86": "Apache-2.0",  # deranged-0.5.8/LICENSE-Apache
+        "52b86d7cac180bbb9dca8ebe3c9e66ac7cc8e704735ef151a514b6beff85600e": "Apache-2.0",  # futures-core-0.3.34/LICENSE-APACHE
+        "6cd11fd5f811c88bac0b0e9d03c79ee8f72ef808a31fe7b31109f5d1d6a46d88": "Apache-2.0",  # gpu-allocator-0.28.0/LICENSE-APACHE
+        "ad90af82d790fc53e9b247434d2ae5382df1941b6a380c1c16d43bbb7cfce7f1": "Apache-2.0",  # powerfmt-0.2.0/LICENSE-Apache
+        "c8f231e806990fbae26a329908ad335584ee2448af43f743e40353675841e373": "Apache-2.0",  # pyo3-0.29.2/LICENSE-APACHE
+        "3c2971a948fcb684bfb692b3dc13aee15e9a8bcafc7444e160ba33d93c0c392e": "Apache-2.0",  # typenum-1.20.1/LICENSE-APACHE
+        "145806f1918280735937d8be844ea1da8d912251b1a234ce3406e9338e8cf9e0": "Apache-2.0",  # windows-0.62.2/license-apache-2.0
+        "534e8240bf07aab05c15a12e0599b8daa248f6bbcc84c82894ace32ddfc2858e": "Apache-2.0",  # zerocopy-0.8.57/LICENSE-APACHE
+        "2bcdc0b2d0f39f744a3295a725725ffd3f7477a8a76c76ac671e26e1b5af4bf5": "MIT",  # android_system_properties-0.1.6/LICENSE-MIT
+        "625eb062458d42d2eb8c69913a4ad35e01753490350d8de9cddddb6cde8d7e62": "MIT",  # arrayvec-0.7.8/LICENSE-MIT
+        "4bd94c8c3a98fcffa62cb91de62dd4a75996040e775e973ef428b28be8a5420a": "MIT",  # ash-0.38.0+1.3.281/LICENSE-MIT
+        "9cee45046fedfd0bde5b25dc3bba824c92b6e4e7bfe89d3f58ec5e664cba579a": "MIT",  # autocfg-1.5.1/LICENSE-MIT
+        "71bc93e83568101862883f070290bd873f1d9a720727e99ab96f3ede6b2dc91d": "MIT",  # bit-set-0.10.0/LICENSE-MIT
+        "5376f07638d3fd777c45e872500a3a11b785b79c2fff2d67bc0361d0d87f5a80": "MIT",  # bit-vec-0.9.1/LICENSE-MIT
+        "c25311c4c60e634637fe8148151c9fc62b749205a8c83ad0bd02baeaf71c3209": "MIT",  # bitflags-2.13.2/LICENSE-MIT
+        "5df37ed67c513072d5fe279e179bd1d8a49dd20fd61b1f1c7f1f07379fc17591": "MIT",  # block-buffer-0.10.4/LICENSE-MIT
+        "d36be0aa3bf9c24679d232041f324b417567b6d61db00e9c8267de3c67432ec7": "MIT",  # bumpalo-3.20.3/LICENSE-MIT
+        "6bf6d79db7f6f622c369dc3a36429c9bfd0351ddfdcadd046e0bcf575f3d2614": "MIT",  # cfg-if-1.0.5/LICENSE-MIT
+        "ceb65ec3e793eb098d672594a12fde934db8508b7de6238d7f23a8567625eaac": "MIT",  # cfg_aliases-0.2.2/LICENSE
+        "516c5a27fb50acd9d2fba2432afd0a729065a19d020989ffdd66b327a918de84": "MIT",  # cpufeatures-0.2.17/LICENSE-MIT
+        "12af027810fb17f70ee3df906c5793979ce4564607114e46a301b7a54a72a9f4": "MIT",  # crunchy-0.2.4/LICENSE
+        "6e40c7393f7c3a7f8d7e950067d6c6fddeace4d29cea85bb10c3e824fb2a8c5d": "MIT",  # crypto-common-0.1.7/LICENSE-MIT
+        "b99d57e1913bd860d1145d49a14715bd65e077dd15c4efb70c0ec29d05508cce": "MIT",  # deranged-0.5.8/LICENSE-MIT
+        "c84ea1490b494b7687fcce5d4af0cd51a6b3ca99d8d169941882391934f277c9": "MIT",  # digest-0.10.7/LICENSE-MIT
+        "164b92de4d5de31acc77023494891c3ea72283296eff6e69f0c2fb35e35a7d2e": "MIT",  # dlib-0.5.3/LICENSE.txt
+        "e723f0aaad2740b74a5042e19c02f312c567b0b26ccbc5eacc7b6fb4023d13ca": "MIT",  # document-features-0.2.12/LICENSE-MIT
+        "3c7d8bcc6f358ab370c9153e0ca3a77ad0589daa316d23f17f58e1e89ac8b2a6": "MIT",  # equivalent-1.0.2/LICENSE-MIT
+        "be1847dc49ef1ef89acc076d21a0499c7dd8131db9b5322a2a0333f4a16c1c64": "MIT",  # futures-core-0.3.34/LICENSE-MIT
+        "2f1ac698186584433271fd1c5ea35ec0da31cacfa13d75ae278969ddeed12f78": "MIT",  # generic-array-0.14.7/LICENSE
+        "b0696be97bff992e45b18754fc0ae85b18c4f0142d6c317c05deec6692d9b8ff": "MIT",  # gpu-allocator-0.28.0/LICENSE-MIT
+        "7e1f7cb813ec8afdb27afbb7162b48874c3f6c5b55f2affcbc5f4c132d8861c4": "MIT",  # hashbrown-0.16.1/LICENSE-MIT
+        "d1442c3bc874608ba5ed80a044a1f7aa115565c30214e2e4ef8563acf0309d39": "MIT",  # heck-0.5.0/LICENSE-MIT
+        "72c966073ea33b7014ce2d23cc0bba6d184017cca50703ee4808c02af4624f46": "MIT",  # indexmap-2.14.2/LICENSE-MIT
+        "f416d58a13d825df923c71e898567758b3f595c706a9b5da23abfbd94737dcc7": "MIT",  # jni-sys-0.3.1/LICENSE-MIT
+        "6ebd8d40ce1b5685fdb9b3689d815d802022732e8504c1c513bc9d309575758c": "MIT",  # libc-0.2.189/LICENSE-MIT
+        "1816a1f362c89aa6d4b41fd44c14a8f6dc2bc788ac03877e48cb76d3e1b15784": "MIT",  # litrs-1.0.0/LICENSE-MIT
+        "2810737fc58c4fa01c84559aa0b48db577fb0d7e0f871a2459b2551976b9a446": "MIT",  # lock_api-0.4.14/LICENSE-MIT
+        "952115fb93510335fd97e1e479516553fa0c4da1b49acddf9cd5d18392a3e1cf": "MIT",  # memchr-2.8.3/LICENSE-MIT
+        "1876d90fad39cffe11fb7db9bce71ac60795643b00c71d8f88661558b4426586": "MIT",  # naga-30.0.1/LICENSE.MIT
+        "5e7a18f489b9b089f6946ccfc5190ab073199054b7ed58fe65fe8650ebc3b9ea": "MIT",  # num-conv-0.2.2/LICENSE-MIT
+        "e0d942dfe6038ddff3ec62d78064580c23119971b55a8854bba4b612757fffc0": "MIT",  # ordered-float-5.5.0/LICENSE-MIT
+        "31639cdc357735ba41f11654af24649688897149e857718df92dbd4fb746fad4": "MIT",  # pollster-1.0.1/LICENSE-MIT
+        "93bb3b571eb0df578c76b844cefc929ed8573413c763cafcd36c63408251e8ba": "MIT",  # powerfmt-0.2.0/LICENSE-MIT
+        "8195dbce873a94a4c279100e99a9cbc0e90472044b06669aa4fe183801d214d1": "MIT",  # presser-0.3.1/LICENSE-MIT
+        "500e97bb9db8f7ed04ac270750cad498669224f165ed554531894f1cfb963434": "MIT",  # pyo3-0.29.2/LICENSE-MIT
+        "3ad193b1e1de2efd71d467fda89d0d906e508d2e9980464444f48c95a7d1cb61": "MIT",  # range-alloc-0.1.5/LICENSE.MIT
+        "279ce0b86b8d12d7f1ee41a38e62214daaca48e151ce43e111eae0869ad48009": "MIT",  # raw-window-handle-0.6.2/LICENSE-MIT.md
+        "f6b06eca855bbfd854ba2f545c684dade8593e27cc95877587fa21a8932100bb": "MIT",  # rawpointer-0.2.1/LICENSE-MIT
+        "d26280807255cbdc7b6df0416ed435765790c9775574466d6c3c5b7fb496e2d6": "MIT",  # redox_syscall-0.5.18/LICENSE
+        "cbb061a9e2168fff25c66311fea587c24dd6cbd8f2849ac87d60beabff88b30f": "MIT",  # renderdoc-sys-1.1.0/LICENSE-MIT
+        "4e212f4528c9ceca0d7a6dbcc0833cd19a84fb113fff70144bd4c172324bdf5b": "MIT",  # scopeguard-1.2.0/LICENSE-MIT
+        "5327d3e76b455dce2f1110d7717bb6a8e4efd8673a3ba5282338f5a60dd90153": "MIT",  # sha2-0.10.9/LICENSE-MIT
+        "075c3581049481a7dccdf4c1e643fdb764c29b7e8ffd832ab423f8f1f420c1f3": "MIT",  # slab-0.4.12/LICENSE
+        "2736d79caea349a8296cf4b17009aee66cb09683beee42232e27a86252aab766": "MIT",  # smallvec-1.16.1/LICENSE-MIT
+        "8ec9de4a8300964b9806862de209aea912c02413c5303f040ef1d25734679296": "MIT",  # static_assertions-1.1.0/LICENSE-MIT
+        "a8f60d2a6461811c1f38b179a651379ea28ec38b6158314a957e372a3b93f91a": "MIT",  # time-0.3.55/LICENSE-MIT
+        "574f47f354afb5af89b1ea4de48bbb1d4e9064c334fe590ee35895ab39b3d3da": "MIT",  # typenum-1.20.1/LICENSE-MIT
+        "de1bcb73d8f5f58556f70ed0681b98700bdbfd33a6bf554d245c3caddafb3463": "MIT",  # uuid-1.26.1/LICENSE-MIT
+        "8963f9b21e899360aa4add8b67cc1c9d6319a073011db97829381fc267d515a3": "MIT",  # version_check-0.9.5/LICENSE-MIT
+        "a38abdc9d438e7c88550e68100ad09f16ebe90d0f4529c47ea5764725a6ed15f": "MIT",  # wayland-sys-0.31.11/LICENSE.txt
+        "dd83c703f6d90d1dfff17f4d18c26c26da327ae1398a27398913bf3333587df4": "MIT",  # winapi-util-0.1.11/LICENSE-MIT
+        "502292ebd8d883e73d2b433a3bb4531fe5c7d917959377f1cb6e75bf4cbd89ad": "MIT",  # xml-rs-0.8.29/LICENSE
+        "bc6715c4aa80f44647f3afe233cbc0409cad091d77fb94925a257770714f42c3": "MIT",  # zerocopy-0.8.57/LICENSE-MIT
+        "7ab00508d3cf6798339908ff677796063e2d9260adeb67d22e0cd66b864a2bbb": "Zlib",  # bytemuck-1.25.2/LICENSE-ZLIB
+        "6533009df0e5dd56f0a2d720b4396123453b4e6d212224b755c0f9b3573754bd": "Zlib",  # raw-window-handle-0.6.2/LICENSE-ZLIB.md
+        "e9e88becb88223fa0cdb694393e9dc1aa6cfc803d3805e60a6d66bc990647011": "Zlib",  # slotmap-1.1.1/LICENSE
     }
     normalized = re.sub(r"[ \t\r\n]+", " ", text).strip(" \t\r\n")
     recognized = reviewed.get(sha256_bytes(normalized.encode("utf-8")))
@@ -414,7 +564,7 @@ def normalized_archive_path(path: str) -> str | None:
 
 
 def read_crate_license_files(
-    data: bytes, artifact_sha256: str, declared_license_file: str | None
+    data: bytes, artifact_sha256: str, declared_license_file: str | None, pointer_rule: bool = False
 ) -> tuple[list[dict], list[str]]:
     """Read every license-named member and the metadata-declared license file."""
     out = []
@@ -445,7 +595,137 @@ def read_crate_license_files(
                             "verified_standard_text": verified_standard_text(
                                 raw.decode("utf-8", "replace")
                             )})
+                if pointer_rule:
+                    text = raw.decode("utf-8", "replace")
+                    names = POINTER_NOTICES.get(sha256_bytes(re.sub(r"[ \t\r\n]+", " ", text).strip(" \t\r\n").encode()))
+                    if names:
+                        out[-1]["pointer_notice"] = {"names": list(names)}
     return out, errors
+
+
+def bind_upstream_license_files(archive: bytes, name: str, version: str, entry: dict, base: Path) -> tuple[list[dict], list[str]]:
+    """Use upstream license files for a hash-bound .crate that ships none.
+
+    Binds only when the in-crate .cargo_vcs_info.json names the recorded commit
+    and path and every local file matches its recorded sha256; otherwise no
+    file is returned and the row stays HOLD.
+    """
+    errors = []
+    try:
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tf:
+            vcs = json.loads(tf.extractfile(f"{name}-{version}/.cargo_vcs_info.json").read())
+    except (KeyError, AttributeError, ValueError, tarfile.TarError):
+        return [], ["upstream license evidence: the .crate has no readable .cargo_vcs_info.json"]
+    sha1 = vcs.get("git", {}).get("sha1")
+    if sha1 != entry.get("vcs_sha1"):
+        errors.append(f"upstream license evidence: .cargo_vcs_info.json sha1 {sha1!r} != recorded {entry.get('vcs_sha1')!r}")
+    if vcs.get("path_in_vcs", "") != entry.get("path_in_vcs", ""):
+        errors.append("upstream license evidence: .cargo_vcs_info.json path_in_vcs differs from the record")
+    files = []
+    for f in entry.get("files") or []:
+        try:
+            raw = (base / f["local_path"]).read_bytes()
+        except OSError as exc:
+            errors.append(f"upstream license evidence: {f.get('path')!r} unreadable: {exc}")
+            continue
+        if sha256_bytes(raw) != f["sha256"]:
+            errors.append(f"upstream license evidence: {f['path']!r} sha256 does not match the record")
+            continue
+        text = raw.decode("utf-8", "replace")
+        files.append({"path": f["path"], "sha256": f["sha256"], "artifact_sha256": None,
+                      "declared_license_file": False, "detected": detect(text),
+                      "verified_standard_text": verified_standard_text(text),
+                      "origin": "upstream-vcs", "repository": entry.get("repository"),
+                      "vcs_sha1": entry.get("vcs_sha1"), "url": f.get("url")})
+    if not entry.get("files"):
+        errors.append("upstream license evidence lists no files")
+    return ([], errors) if errors else (files, [])
+
+
+def own_crate_wheel_license_files(
+    wheel: Path, expected_sha256: str, package_keys: set[tuple[str, str]],
+    source_root: Path, target_keys: set[tuple[str, str]] | None = None,
+) -> tuple[str | None, list[dict], list[str]]:
+    """Return (METADATA Version, license files, errors) from the published wheel for this repository's crates.
+
+    Files are returned only when the wheel sha256 matches and every declared
+    METADATA License-File member has a known role and exists; otherwise HOLD.
+    """
+    try:
+        data = wheel.read_bytes()
+    except OSError as exc:
+        return None, [], [f"own-crate wheel unreadable: {exc}"]
+    digest = sha256_bytes(data)
+    if digest != expected_sha256:
+        return None, [], [f"own-crate wheel sha256 {digest} != expected {expected_sha256}"]
+    errors, files = [], []
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        metas = [n for n in zf.namelist() if n.count("/") == 1 and n.endswith(".dist-info/METADATA")]
+        if len(metas) != 1:
+            return None, [], ["own-crate wheel has no single top-level .dist-info/METADATA"]
+        message = BytesParser(policy=policy.compat32).parsebytes(zf.read(metas[0]))
+        versions = message.get_all("Version", [])
+        declared = [str(v).strip() for v in message.get_all("License-File", [])]
+        if len(versions) != 1:
+            errors.append("own-crate wheel METADATA has no single Version")
+        if not declared:
+            errors.append("own-crate wheel METADATA declares no License-File")
+        dist_info = metas[0].rsplit("/", 1)[0]
+        for value in declared:
+            rel = normalized_archive_path(value)
+            member = f"{dist_info}/licenses/{rel}" if rel else None
+            if member is None or member not in zf.namelist():
+                errors.append(f"own-crate wheel License-File member is absent: {value!r}")
+                continue
+            raw = zf.read(member)
+            text = raw.decode("utf-8", "replace")
+            try:
+                source_raw = read_stable_bytes(source_root / rel)
+            except OSError as exc:
+                errors.append(f"own-crate wheel License-File source unreadable: {value!r}: {exc}")
+                continue
+            if source_raw != raw:
+                errors.append(f"own-crate wheel License-File differs from source: {value!r}")
+                continue
+            if rel == "LICENSE":
+                role, component = "own-license", "fast-mlsirm"
+            elif rel == "LICENSE-THIRD-PARTY":
+                role, component = "third-party-license-aggregate", "cargo binding graph"
+                try:
+                    snapshot_raw = read_stable_bytes(source_root / "tools/third_party_licenses.snapshot.json")
+                    snapshot = json.loads(snapshot_raw)
+                    snapshot_rows = {(r["name"], r["version"]) for r in snapshot["rows"]}
+                    snapshot_sha = sha256_bytes(snapshot_raw)
+                    source_sha = snapshot["source_inventory_sha256"]
+                    header = text[:1000]
+                    if (f"snapshot sha256 {snapshot_sha}" not in header
+                            or f"source inventory sha256 {source_sha}" not in header
+                            or f"Entries: {len(snapshot_rows)}." not in header
+                            or len(snapshot_rows) != len(snapshot["rows"])):
+                        errors.append("own-crate wheel third-party aggregate does not match its source snapshot")
+                    if target_keys is not None and snapshot_rows != {
+                        key for key in target_keys if key[0] not in {"mlsirm-core", "fast-mlsirm-py"}
+                    }:
+                        errors.append("own-crate wheel third-party snapshot differs from the binding target graph")
+                except (OSError, ValueError, KeyError, TypeError) as exc:
+                    errors.append(f"own-crate wheel third-party snapshot unreadable: {exc}")
+            elif rel == "NOTICE":
+                role, component = "distribution-notice", "fast-mlsirm"
+            else:
+                owners = [(name, version) for name, version in package_keys
+                          if rel.startswith(f"NOTICE-{name}-{version}-")]
+                if len(owners) != 1:
+                    errors.append(f"own-crate wheel License-File has no unique component: {value!r}")
+                    continue
+                role, component = "third-party-notice", f"{owners[0][0]}@{owners[0][1]}"
+            files.append({"path": member, "sha256": sha256_bytes(raw), "artifact_sha256": digest,
+                          "declared_license_file": True, "detected": detect(text),
+                          "verified_standard_text": verified_standard_text(text), "origin": "published-wheel",
+                          "wheel_role": role, "wheel_component": component})
+        if not any(f["wheel_role"] == "own-license" for f in files):
+            errors.append("own-crate wheel METADATA declares no own LICENSE")
+    version = str(versions[0]).strip() if len(versions) == 1 else None
+    return version, ([] if errors else files), errors
 
 
 def license_files_in_dir(root: Path) -> list[dict]:
@@ -474,6 +754,15 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
     binding_meta = json.loads(Path(args.cargo_metadata_binding).read_text())
     ws_lock = cargo_lock_packages(Path(args.cargo_lock_workspace))
     binding_lock = cargo_lock_packages(Path(args.cargo_lock_binding))
+    # Optional per-target binding graph: `cargo metadata --filter-platform <triple>` resolve nodes.
+    # Absent, rows and summary are unchanged (union over the binding Cargo.lock).
+    target_keys = None
+    if getattr(args, "cargo_metadata_binding_target", None):
+        target_meta = json.loads(Path(args.cargo_metadata_binding_target).read_text())
+        node_ids = {n["id"] for n in target_meta["resolve"]["nodes"]}
+        target_keys = {(p["name"], p["version"]) for p in target_meta["packages"] if p["id"] in node_ids}
+        for key in sorted(target_keys - set(binding_lock)):
+            gaps.append(f"cargo binding target {args.binding_target}: {key[0]}@{key[1]} is not in the binding Cargo.lock")
     sbom = json.loads(Path(args.wheel_sbom).read_text())
 
     def walk(components):
@@ -487,6 +776,12 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
     linked = read_target_sets(Path(args.tree_dir), "linked")
     build = read_target_sets(Path(args.tree_dir), "build")
     cache = Path(args.cargo_registry_cache)
+    upstream_path = getattr(args, "cargo_upstream_license_evidence", None)
+    upstream = json.loads(Path(upstream_path).read_text()) if upstream_path else {}
+    own_wheel = (own_crate_wheel_license_files(Path(args.own_crate_wheel), args.own_crate_wheel_sha256,
+                                               set(ws_lock) | set(binding_lock),
+                                               Path(args.own_crate_wheel_source_root), target_keys)
+                 if getattr(args, "own_crate_wheel", None) else None)
 
     # Completeness: the lock files are the expected set; metadata must match them.
     for label, lock, meta in (("workspace", ws_lock, ws_meta), ("binding", binding_lock, binding_meta)):
@@ -520,28 +815,55 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
                            "measured": measured, "measured_origin": ".crate bytes in the cargo registry cache",
                            "match": bound}
             files, archive_errors = read_crate_license_files(
-                archive_bytes, measured, p.get("license_file") if p else None
+                archive_bytes, measured, p.get("license_file") if p else None,
+                bool(getattr(args, "reviewed_pointer_notices", False)),
             ) if bound else ([], [])
             hold.extend(archive_errors)
+            for f in files:
+                exception = DOCUMENTED_EXCEPTIONS.get((measured, f["sha256"]))
+                if exception and not f["verified_standard_text"]:
+                    f["verified_standard_text"] = [exception["identifier"]]
+                    f["documented_exception"] = exception
+            text_origin = None
+            if bound and not files and f"{name}@{version}" in upstream:
+                files, upstream_errors = bind_upstream_license_files(
+                    archive_bytes, name, version, upstream[f"{name}@{version}"], Path(upstream_path).parent)
+                hold.extend(upstream_errors)
+                text_origin = "upstream-vcs" if files else None
             if not bound:
                 hold.append("the .crate bytes are missing or do not match the Cargo.lock checksum")
             if read_error:
                 hold.append(f"the .crate source path was not stable: {read_error}")
             if bound and not files:
                 hold.append("the hash-bound .crate contains no license file")
-            if bound and p and p.get("license_file") and not any(
+            if bound and text_origin and p and p.get("license_file"):
+                hold.append("Cargo metadata license_file is absent from the hash-bound .crate")
+            if bound and not text_origin and p and p.get("license_file") and not any(
                 f["declared_license_file"] for f in files
             ):
                 hold.append("Cargo metadata license_file is absent from the hash-bound .crate")
             origin = ("package metadata (Cargo.toml license); license files read from the .crate whose sha256 "
                       "equals the Cargo.lock checksum" + ("" if files else "; the .crate contains NO license file")
                       ) if bound else "UNVERIFIED: no hash-bound .crate, license text not read"
+            if text_origin:
+                origin = ("package metadata (Cargo.toml license); the hash-bound .crate contains NO license file; "
+                          "license files from upstream at the commit named by its .cargo_vcs_info.json, sha256-pinned")
         elif source is None and p is not None:
+            text_origin = None
             source_hash = None
             files = license_files_in_dir(Path(p["manifest_path"]).parent)
             origin = "package metadata (Cargo.toml license); this repository's own source"
+            if own_wheel is not None:
+                wheel_version, wheel_files, wheel_errors = own_wheel
+                hold.extend(wheel_errors)
+                if not wheel_errors and wheel_version != version:
+                    hold.append(f"own-crate wheel METADATA Version {wheel_version!r} != crate version {version!r}")
+                elif not wheel_errors:
+                    files = files + wheel_files
+                    text_origin = "published-wheel"
+                    origin += "; license files from the sha256-pinned published wheel's METADATA License-File"
         else:
-            source_hash, files, origin = None, [], "UNVERIFIED: unsupported source"
+            source_hash, files, origin, text_origin = None, [], "UNVERIFIED: unsupported source", None
             hold.append(f"unsupported source {source!r}")
         if p is None:
             hold.append("no cargo metadata row for this lock entry")
@@ -549,15 +871,34 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
         norm = normalize_spdx(declared)
         elected, rationale = elect(norm)
         ident = f"{name}@{version}"
-        file_labels = {label for f in files for label in f["detected"]}
+        # The wheel also declares distribution and third-party notices. Keep
+        # their bytes and owners in the row, but do not test them as this
+        # crate's own grant or promote them to verified license text.
+        license_candidates = [f for f in files if f.get("wheel_role") in (None, "own-license")]
+        for f in license_candidates:
+            if "pointer_notice" not in f:
+                continue
+            names = set(f["pointer_notice"]["names"])
+            full = {lbl for g in license_candidates if g is not f and g.get("artifact_sha256") == f["artifact_sha256"]
+                    for lbl in g.get("verified_standard_text", [])}
+            missing = sorted(names - full)
+            mismatch = names != set(spdx_terms(norm))
+            f["pointer_notice"]["satisfied"] = not missing and not mismatch
+            if missing:
+                hold.append(f"reviewed pointer {f['path']!r} names {missing} without a verified full text in this .crate")
+            if mismatch:
+                hold.append(f"reviewed pointer {f['path']!r} names {sorted(names)} but the declared expression is {norm!r}")
+        satisfied_pointers = {f["path"] for f in license_candidates if f.get("pointer_notice", {}).get("satisfied")}
+        file_labels = {label for f in license_candidates for label in f["detected"]}
         verified_labels = {
-            label for f in files for label in f.get("verified_standard_text", [])
+            label for f in license_candidates for label in f.get("verified_standard_text", [])
         }
-        unrecognized_files = sorted(f["path"] for f in files if not f["detected"])
+        unrecognized_files = sorted(f["path"] for f in license_candidates if not f["detected"] and f["path"] not in satisfied_pointers
+                                    and not f.get("documented_exception"))
         if unrecognized_files:
             hold.append(f"license candidate text is unrecognized: {unrecognized_files}")
         unverified_files = sorted(
-            f["path"] for f in files if not f.get("verified_standard_text")
+            f["path"] for f in license_candidates if not f.get("verified_standard_text") and f["path"] not in satisfied_pointers
         )
         if unverified_files:
             hold.append(f"license candidate text is not canonically verified: {unverified_files}")
@@ -600,9 +941,12 @@ def rust_inventory(args, gaps: list[str]) -> list[dict]:
             "in_wheel_sbom": key in sbom_set,
             "linked_into_core_for_targets": sorted(t for t, s in linked.items() if ident in s),
             "compiled_at_build_for_targets": sorted(t for t, s in build.items() if ident in s),
+            **({"license_text_origin": text_origin} if text_origin else {}),
         })
     for row in rows:
         row["in_published_artifact_scope"] = row["in_binding_lock_graph"]
+        if target_keys is not None:
+            row["in_binding_target_graph"] = (row["name"], row["version"]) in target_keys
         row["scope_note"] = (
             "compiled into fast_mlsirm/_core for the listed targets" if row["linked_into_core_for_targets"]
             else "build-time only (proc-macro/build script) for the listed targets" if row["compiled_at_build_for_targets"]
@@ -790,7 +1134,7 @@ def python_artifact_evidence(path: Path) -> dict:
         stanzas = []
         for n, info in members.items():
             base = n.rsplit("/", 1)[-1]
-            if ".dist-info/" in n and (LICENSE_NAME.match(base) or n in declared_paths):
+            if ".dist-info/" in n and not info.is_dir() and (LICENSE_NAME.match(base) or n in declared_paths):
                 raw = zf.read(info)
                 text = raw.decode("utf-8", "replace")
                 file_stanzas, notice_consumed = parse_notice_stanzas(text)
@@ -951,6 +1295,13 @@ def python_inventory(args, gaps: list[str]) -> list[dict]:
         if not artifacts:
             hold.append("no artifact examined, so no license text was verified")
         native_holds = vendored_native_license_holds(artifacts)
+        external = EXTERNAL_RUNTIME_DEPENDENCIES.get((name, version))
+        if external and not any(a["hash_binding"]["match"] and a["sha256"] == external["wheel_sha256"] for a in artifacts):
+            external = None
+        external_notes = []
+        if external:
+            external_notes = [f for f in native_holds if "license candidate file was not fully verified" not in f]
+            native_holds = [f for f in native_holds if f not in external_notes]
         if native_holds:
             hold.append(f"vendored native license evidence is not verified permissive: {native_holds}")
         unverified_candidates = sorted({
@@ -973,7 +1324,9 @@ def python_inventory(args, gaps: list[str]) -> list[dict]:
                              "copyleft_text_not_in_declared_expression": uncovered}
             if not agrees:
                 hold.append("declared license text not found in a hash-bound artifact")
-            if uncovered:
+            if uncovered and external:
+                external_notes.append(f"artifact text also names {uncovered} (vendored native components; not redistributed)")
+            elif uncovered:
                 hold.append(f"artifact text also grants {uncovered}, which the declared expression does not name")
         else:
             cls_terms = {CLASSIFIER_SPDX.get(c) for c in classifiers} - {None}
@@ -1016,6 +1369,7 @@ def python_inventory(args, gaps: list[str]) -> list[dict]:
             "election_rationale": rationale,
             "artifacts_examined": artifacts,
             **scope_fields,
+            **({"external_runtime_dependency": external, "external_runtime_notes": external_notes} if external else {}),
         })
     return rows
 
@@ -1036,7 +1390,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pypi-meta-dir", required=True)
     ap.add_argument("--pypi-artifact-dir", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--cargo-metadata-binding-target", help="cargo metadata --filter-platform output for --binding-target")
+    ap.add_argument("--binding-target", help="target triple of --cargo-metadata-binding-target")
+    ap.add_argument("--reviewed-pointer-notices", action="store_true",
+                    help="accept POINTER_NOTICES files whose named licenses are verified in the same .crate and match the declared expression")
+    ap.add_argument("--own-crate-wheel", help="published wheel whose METADATA License-File binds this repository's own crates")
+    ap.add_argument("--own-crate-wheel-sha256", help="expected sha256 of --own-crate-wheel")
+    ap.add_argument("--own-crate-wheel-source-root", help="exact-head source tree for every wheel License-File and third-party snapshot")
+    ap.add_argument("--cargo-upstream-license-evidence",
+                    help="JSON {name@version: {repository, vcs_sha1, path_in_vcs, files: [{path, url, sha256, local_path}]}}; "
+                         "local_path is relative to this file")
     args = ap.parse_args(argv)
+    if bool(args.cargo_metadata_binding_target) != bool(args.binding_target):
+        ap.error("--cargo-metadata-binding-target and --binding-target must be given together")
+    if len([x for x in (args.own_crate_wheel, args.own_crate_wheel_sha256,
+                       args.own_crate_wheel_source_root) if x]) not in (0, 3):
+        ap.error("--own-crate-wheel, --own-crate-wheel-sha256 and --own-crate-wheel-source-root must be given together")
 
     gaps: list[str] = []
     rust = rust_inventory(args, gaps)
@@ -1052,6 +1421,10 @@ def main(argv: list[str] | None = None) -> int:
         "cargo_without_license_file_in_crate": [f"{r['name']}@{r['version']}" for r in rust if not r["license_files_in_artifact"] and r["source"] != "path (this repository)"],
         "cargo_elected_text_missing": [f"{r['name']}@{r['version']}" for r in rust if not r["elected_text_present_in_artifact"] and r["source"] != "path (this repository)"],
         "cargo_crate_hash_unbound": [f"{r['name']}@{r['version']}" for r in rust if r["source_hash"] is not None and not r["source_hash"]["match"]],
+        **({"cargo_binding_target": args.binding_target,
+            "cargo_binding_target_graph_packages": sum(r["in_binding_target_graph"] for r in rust),
+            "cargo_binding_target_by_class": {c: sum(r["in_binding_target_graph"] and r["license_class"] == c for r in rust) for c in CLASSES}}
+           if args.binding_target else {}),
         "pypi_packages": len(python),
         "pypi_metadata_unknown": [f"{r['name']}@{r['version']}" for r in python if r["license_class_from_metadata"] == "UNKNOWN"],
         "pypi_by_class": {c: [f"{r['name']}@{r['version']}" for r in python if r["license_class"] == c] for c in CLASSES if c != "PERMISSIVE"},
