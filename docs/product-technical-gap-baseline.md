@@ -5,6 +5,16 @@ Observed at: **2026-08-25T05:20:00Z**<br>
 Protected-main basis: **`9c12eab15fb8a187b135f9be1961f0693a431c23`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
+## 2026-09-26 proposed release-source trust repair
+
+Status: **Proposed in PR #2135; not protected-main authority**
+
+| Gap | Exact evidence | Owner/action | Remaining gate |
+|---|---|---|---|
+| `RELEASE-PUBLISH-CHECKOUT-AUTHORITY-01` | CodeQL PR run `35928328723` rejected caller-controlled `release_commit` / `control_plane_commit` checkout. RED contract `3e1571ad343a7800fd4a7d01779bf7b2f2789624` observed 6 raw release refs, 2 raw control-plane refs, and no verified output. | `fast-mlsirm` PR #2135 now checks out protected `github.sha` first, canonicalizes the requested release commit, proves it is an ancestor of that trusted control plane, emits the verified commit once, and makes every release-source consumer use that output. Exact repair head before this documentation update: `36246d99b1c3cfffaacf1234f62aac16013519fe`. | Fresh exact-head hosted security/quality Checks, resolution of the CodeQL thread, independent approval, ordinary merge, immutable package release, then the `contextual-orchestrator` consumer pin update. |
+
+Local exact-head evidence at `36246d99b1c3cfffaacf1234f62aac16013519fe`: YAML parsed as one workflow with 8 jobs; Python contract source compiled; all 16 tests in `tests/test_publish_pypi_workflow_contract.py` passed, including real Git-history ancestor, sibling, missing-object, control-plane mismatch, and noncanonical-SHA cases. This is focused local evidence only; it does not replace hosted Checks or release evidence.
+
 ## 1. Purpose and authority
 
 This document answers one bounded question:
