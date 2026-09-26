@@ -269,6 +269,11 @@ def verified_standard_text(text: str) -> list[str]:
         "3a31f72fe7c9baf376c3da1d7d0154366be8ef0bab0a3f7531db4c2abf1ad062": "Zlib",
         "444399c3da8f18f32878c6f8b7348110f33985558ca7abe98d4c8ed26f013109": "Zlib",
         # 66 copyright-header/appendix-only variants, reviewed in s1 text-review-20260926.
+        "b23006212431a278f48cfb7935b9e8673c4a71c1fff8b362ea12c61f1998109b": "BSD-3-Clause",  # numpy 2.5.2 numpy/ma/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-3-Clause matching template
+        "70187aea756fe37032368ccb3efa2c4ef1bc3e9ff6e47d7c68a51bd7f877d411": "BSD-3-Clause",  # numpy 2.5.2 numpy/fft/pocketfft/LICENSE.md: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-3-Clause matching template
+        "40f76b14cc5d5ffdd540b61d9dc810d4b5cd2902178927fe7f47e10e5c7e4e5e": "BSD-3-Clause",  # numpy 2.5.2 numpy/_core/src/umath/svml/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-3-Clause matching template
+        "93932bc60d62d69d966eafa280727f77c60ee8d990e989026d79b367ee942a06": "BSD-3-Clause",  # numpy 2.5.2 numpy/_core/src/npysort/x86-simd-sort/LICENSE.md: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX BSD-3-Clause matching template
+        "be60a8f5c03bdf6254b521f8824fdf0bada44c2232185a16134777126343949d": "0BSD",  # numpy 2.5.2 numpy/_core/src/common/pythoncapi-compat/COPYING: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX 0BSD matching template
         "3da00b73ff5ee4c197d90218545de9c1466494a14b19d93ed10cb7380cc279f4": "Zlib",  # numpy 2.5.2 dist-info/licenses/numpy/_core/include/numpy/libdivide/LICENSE.txt: coordinator verdict (user-delegated, 2026-09-26), not legal review; title/underline/copyright only
         "25480d7a337b885c258cc7e7299af35c39a2d2e5e8ead3970a26b0e1a3cd2a3e": "MIT",  # pytest-9.1.1.dist-info/licenses/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template
         "2606d3710f5ed51b359ab2e16d26861a0d2d721a25f84ff93d97798e4a3b59fd": "MIT",  # pyproject_hooks-1.2.0.dist-info/LICENSE: coordinator verdict (user-delegated, 2026-09-26), not legal review; SPDX MIT matching template

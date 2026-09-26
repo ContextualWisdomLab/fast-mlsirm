@@ -1240,5 +1240,200 @@
     "fixture": "py-exact-0115-20260926/text-review/texts/fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec.txt",
     "text": "  zlib License\n  ------------\n\n  Copyright (C) 2010 - 2019 ridiculous_fish, <libdivide@ridiculousfish.com>\n  Copyright (C) 2016 - 2019 Kim Walisch, <kim.walisch@gmail.com>\n\n  This software is provided 'as-is', without any express or implied\n  warranty.  In no event will the authors be held liable for any damages\n  arising from the use of this software.\n\n  Permission is granted to anyone to use this software for any purpose,\n  including commercial applications, and to alter it and redistribute it\n  freely, subject to the following restrictions:\n\n  1. The origin of this software must not be misrepresented; you must not\n     claim that you wrote the original software. If you use this software\n     in a product, an acknowledgment in the product documentation would be\n     appreciated but is not required.\n  2. Altered source versions must be plainly marked as such, and must not be\n     misrepresented as being the original software.\n  3. This notice may not be removed or altered from any source distribution.\n",
     "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; Zlib body identical to the reviewed foldhash Zlib body; differs only by the title 'zlib License', its '------------' underline and two copyright lines"
+  },
+  {
+    "package": "numpy@2.5.2",
+    "ecosystem": "pypi",
+    "artifact_filename": "numpy-2.5.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "artifact_sha256": "3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8",
+    "member": "numpy-2.5.2.dist-info/licenses/numpy/_core/src/common/pythoncapi-compat/COPYING",
+    "raw_sha256": "3f2c1ffa76383a55ae0aac01c9737cd70050dff63e1f026694fbe9d662573c98",
+    "normalized_sha256": "be60a8f5c03bdf6254b521f8824fdf0bada44c2232185a16134777126343949d",
+    "identifier": "0BSD",
+    "fixture": "py-exact-0115-20260926/text-review/texts/3f2c1ffa76383a55ae0aac01c9737cd70050dff63e1f026694fbe9d662573c98.txt",
+    "text": "BSD Zero Clause License\n\nCopyright Contributors to the pythoncapi_compat project.\n\nPermission to use, copy, modify, and/or distribute this software for any\npurpose with or without fee is hereby granted.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH\nREGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY\nAND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,\nINDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM\nLOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR\nOTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR\nPERFORMANCE OF THIS SOFTWARE.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; tools/spdx_template_match.py (strict) against license-list-data v3.29.0 (31ba1a50) template/0BSD.template.txt sha 5b5b3cf0d303e1bed3144433e570f46f92810f6d9cb31073fb089786ff5472ff",
+    "spdx_template_spans": [
+      {
+        "span": "optional",
+        "template_original": "",
+        "text": "BSD Zero Clause License"
+      },
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (C) YEAR by AUTHOR EMAIL",
+        "text": "Copyright Contributors to the pythoncapi_compat project."
+      }
+    ]
+  },
+  {
+    "package": "numpy@2.5.2",
+    "ecosystem": "pypi",
+    "artifact_filename": "numpy-2.5.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "artifact_sha256": "3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8",
+    "member": "numpy-2.5.2.dist-info/licenses/numpy/_core/src/npysort/x86-simd-sort/LICENSE.md",
+    "raw_sha256": "211e7d737d6179a08f791ebb0a99897ce7cd2457410c542876d125576edfe910",
+    "normalized_sha256": "93932bc60d62d69d966eafa280727f77c60ee8d990e989026d79b367ee942a06",
+    "identifier": "BSD-3-Clause",
+    "fixture": "py-exact-0115-20260926/text-review/texts/211e7d737d6179a08f791ebb0a99897ce7cd2457410c542876d125576edfe910.txt",
+    "text": "BSD 3-Clause License\n\nCopyright (c) 2022, Intel. All rights reserved.\n\nRedistribution and use in source and binary forms, with or without\nmodification, are permitted provided that the following conditions are met:\n\n1. Redistributions of source code must retain the above copyright notice, this\n   list of conditions and the following disclaimer.\n\n2. Redistributions in binary form must reproduce the above copyright notice,\n   this list of conditions and the following disclaimer in the documentation\n   and/or other materials provided with the distribution.\n\n3. Neither the name of the copyright holder nor the names of its\n   contributors may be used to endorse or promote products derived from\n   this software without specific prior written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"\nAND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE\nIMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\nDISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE\nFOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\nDAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR\nSERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER\nCAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,\nOR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\nOF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; tools/spdx_template_match.py (strict) against license-list-data v3.29.0 (31ba1a50) template/BSD-3-Clause.template.txt sha c42368b683ceef1ad41b6f17999adf3b7534e3c47fbdd51449ed6690edb1fc5f",
+    "spdx_template_spans": [
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (c) <year> <owner>.",
+        "text": "BSD 3-Clause License Copyright (c) 2022, Intel. All rights reserved."
+      },
+      {
+        "span": "optional",
+        "template_original": "",
+        "text": "specific"
+      }
+    ]
+  },
+  {
+    "package": "numpy@2.5.2",
+    "ecosystem": "pypi",
+    "artifact_filename": "numpy-2.5.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "artifact_sha256": "3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8",
+    "member": "numpy-2.5.2.dist-info/licenses/numpy/_core/src/umath/svml/LICENSE",
+    "raw_sha256": "c17011467b4fe6e20fbfbeda4df09e58c2bca5480a063e55735a4000a379aad9",
+    "normalized_sha256": "40f76b14cc5d5ffdd540b61d9dc810d4b5cd2902178927fe7f47e10e5c7e4e5e",
+    "identifier": "BSD-3-Clause",
+    "fixture": "py-exact-0115-20260926/text-review/texts/c17011467b4fe6e20fbfbeda4df09e58c2bca5480a063e55735a4000a379aad9.txt",
+    "text": "Copyright (c) 2005-2021, NumPy Developers.\nAll rights reserved.\n\nRedistribution and use in source and binary forms, with or without\nmodification, are permitted provided that the following conditions are\nmet:\n\n    * Redistributions of source code must retain the above copyright\n       notice, this list of conditions and the following disclaimer.\n\n    * Redistributions in binary form must reproduce the above\n       copyright notice, this list of conditions and the following\n       disclaimer in the documentation and/or other materials provided\n       with the distribution.\n\n    * Neither the name of the NumPy Developers nor the names of any\n       contributors may be used to endorse or promote products derived\n       from this software without specific prior written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS\n\"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT\nLIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR\nA PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT\nOWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,\nSPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT\nLIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,\nDATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY\nTHEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT\n(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\nOF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; tools/spdx_template_match.py (strict) against license-list-data v3.29.0 (31ba1a50) template/BSD-3-Clause.template.txt sha c42368b683ceef1ad41b6f17999adf3b7534e3c47fbdd51449ed6690edb1fc5f",
+    "spdx_template_spans": [
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (c) <year> <owner>.",
+        "text": "Copyright (c) 2005-2021, NumPy Developers. All rights reserved."
+      },
+      {
+        "span": "var:bullet",
+        "template_original": "1.",
+        "text": ""
+      },
+      {
+        "span": "var:bullet",
+        "template_original": "2.",
+        "text": ""
+      },
+      {
+        "span": "var:bullet",
+        "template_original": "3.",
+        "text": ""
+      },
+      {
+        "span": "var:organizationClause3",
+        "template_original": "Neither the name of the copyright holder nor the names of its contributors may",
+        "text": "Neither the name of the NumPy Developers nor the names of any contributors may"
+      },
+      {
+        "span": "optional",
+        "template_original": "",
+        "text": "specific"
+      },
+      {
+        "span": "var:copyrightHolderLiability",
+        "template_original": "THE COPYRIGHT HOLDER OR CONTRIBUTORS",
+        "text": "THE COPYRIGHT OWNER OR CONTRIBUTORS"
+      }
+    ]
+  },
+  {
+    "package": "numpy@2.5.2",
+    "ecosystem": "pypi",
+    "artifact_filename": "numpy-2.5.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "artifact_sha256": "3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8",
+    "member": "numpy-2.5.2.dist-info/licenses/numpy/fft/pocketfft/LICENSE.md",
+    "raw_sha256": "a85ca13fdf90160b64a0698215868c13b74d835ad0a4e2ba44713b8c5058a056",
+    "normalized_sha256": "70187aea756fe37032368ccb3efa2c4ef1bc3e9ff6e47d7c68a51bd7f877d411",
+    "identifier": "BSD-3-Clause",
+    "fixture": "py-exact-0115-20260926/text-review/texts/a85ca13fdf90160b64a0698215868c13b74d835ad0a4e2ba44713b8c5058a056.txt",
+    "text": "Copyright (C) 2010-2018 Max-Planck-Society\nAll rights reserved.\n\nRedistribution and use in source and binary forms, with or without modification,\nare permitted provided that the following conditions are met:\n\n* Redistributions of source code must retain the above copyright notice, this\n  list of conditions and the following disclaimer.\n* Redistributions in binary form must reproduce the above copyright notice, this\n  list of conditions and the following disclaimer in the documentation and/or\n  other materials provided with the distribution.\n* Neither the name of the copyright holder nor the names of its contributors may\n  be used to endorse or promote products derived from this software without\n  specific prior written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND\nANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED\nWARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\nDISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR\nANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES\n(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;\nLOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON\nANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT\n(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS\nSOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; tools/spdx_template_match.py (strict) against license-list-data v3.29.0 (31ba1a50) template/BSD-3-Clause.template.txt sha c42368b683ceef1ad41b6f17999adf3b7534e3c47fbdd51449ed6690edb1fc5f",
+    "spdx_template_spans": [
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (c) <year> <owner>.",
+        "text": "Copyright (C) 2010-2018 Max-Planck-Society All rights reserved."
+      },
+      {
+        "span": "var:bullet",
+        "template_original": "1.",
+        "text": ""
+      },
+      {
+        "span": "var:bullet",
+        "template_original": "2.",
+        "text": ""
+      },
+      {
+        "span": "var:bullet",
+        "template_original": "3.",
+        "text": ""
+      },
+      {
+        "span": "optional",
+        "template_original": "",
+        "text": "specific"
+      }
+    ]
+  },
+  {
+    "package": "numpy@2.5.2",
+    "ecosystem": "pypi",
+    "artifact_filename": "numpy-2.5.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "artifact_sha256": "3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8",
+    "member": "numpy-2.5.2.dist-info/licenses/numpy/ma/LICENSE",
+    "raw_sha256": "05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6",
+    "normalized_sha256": "b23006212431a278f48cfb7935b9e8673c4a71c1fff8b362ea12c61f1998109b",
+    "identifier": "BSD-3-Clause",
+    "fixture": "py-exact-0115-20260926/text-review/texts/05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6.txt",
+    "text": "* Copyright (c) 2006, University of Georgia and Pierre G.F. Gerard-Marchant\n* All rights reserved.\n* Redistribution and use in source and binary forms, with or without\n* modification, are permitted provided that the following conditions are met:\n*\n*     * Redistributions of source code must retain the above copyright\n*       notice, this list of conditions and the following disclaimer.\n*     * Redistributions in binary form must reproduce the above copyright\n*       notice, this list of conditions and the following disclaimer in the\n*       documentation and/or other materials provided with the distribution.\n*     * Neither the name of the University of Georgia nor the\n*       names of its contributors may be used to endorse or promote products\n*       derived from this software without specific prior written permission.\n*\n* THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND ANY\n* EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED\n* WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\n* DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE FOR ANY\n* DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES\n* (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;\n* LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND\n* ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT\n* (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS\n* SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
+    "verdict": "ACCEPT: coordinator verdict (user-delegated, 2026-09-26), not legal review; tools/spdx_template_match.py (strict) against license-list-data v3.29.0 (31ba1a50) template/BSD-3-Clause.template.txt sha c42368b683ceef1ad41b6f17999adf3b7534e3c47fbdd51449ed6690edb1fc5f",
+    "spdx_template_spans": [
+      {
+        "span": "var:copyright",
+        "template_original": "Copyright (c) <year> <owner>.",
+        "text": "Copyright (c) 2006, University of Georgia and Pierre G.F. Gerard-Marchant All rights reserved."
+      },
+      {
+        "span": "var:bullet",
+        "template_original": "1.",
+        "text": "*"
+      },
+      {
+        "span": "var:bullet",
+        "template_original": "2.",
+        "text": "*"
+      },
+      {
+        "span": "var:bullet",
+        "template_original": "3.",
+        "text": "*"
+      },
+      {
+        "span": "var:organizationClause3",
+        "template_original": "Neither the name of the copyright holder nor the names of its contributors may",
+        "text": "Neither the name of the University of Georgia nor the names of its contributors may"
+      },
+      {
+        "span": "optional",
+        "template_original": "",
+        "text": "specific"
+      },
+      {
+        "span": "var:copyrightHolderAsIs",
+        "template_original": "BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS",
+        "text": "BY THE REGENTS AND CONTRIBUTORS"
+      },
+      {
+        "span": "var:copyrightHolderLiability",
+        "template_original": "THE COPYRIGHT HOLDER OR CONTRIBUTORS",
+        "text": "THE REGENTS OR CONTRIBUTORS"
+      }
+    ]
   }
 ]
