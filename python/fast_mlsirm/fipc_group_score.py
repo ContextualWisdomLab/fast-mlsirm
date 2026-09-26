@@ -71,8 +71,8 @@ def score_poly_fipc_group_persons(
     default; #1929). Domain group labels (age bands, waves, sites) are the
     caller's responsibility — pass one group's response matrix per call.
 
-    EAP uses the fitted focal prior ``N(mu, sigma^2)`` from the FIPC result
-    (Kim, 2006), not a dropped ``N(0, 1)`` via :func:`score_polytomous`.
+    EAP uses the fitted Gaussian focal prior ``N(mu, sigma^2)`` from the
+    FIPC result. Kim (2006) describes a different, fixed-node weight update.
     An unconverged calibration raises before any interpretation-facing score
     is computed.
 

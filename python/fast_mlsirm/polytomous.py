@@ -2433,10 +2433,11 @@ def fit_poly_fipc(
     is a length-``n_items`` boolean array pinning items at ``anchor_slope``
     / ``anchor_cat_params`` (``n_items x (n_cat-1)``, strictly decreasing
     per anchored row) from a reference calibration; the remaining items and
-    the focal ``N(mu, sigma^2)`` are estimated by MML-EM with the prior
-    updated after every M-step — the MWU-MEM method (Kim, 2006, eqs. 14-15,
-    pp. 361-362; Paek & Young, 2005). ``q_theta`` is a caller-owned
-    Gauss-Hermite count (one of 7, 11, 15, 21, 31, 41, 61, 81, 121).
+    the focal ``N(mu, sigma^2)`` are estimated by MML-EM with its Gaussian
+    moments updated after every M-step. Kim (2006, eqs. 14–15, pp. 361–362)
+    describes updates to weights at fixed ability points; that is a distinct
+    prior-update model. ``q_theta`` is a required caller-owned Gauss-Hermite
+    count in 1..4096; numerical adequacy needs a convergence check.
 
     References
     ----------
