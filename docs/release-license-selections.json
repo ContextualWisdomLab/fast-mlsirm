@@ -111,6 +111,50 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "bit-set",
+    "version": "0.8.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3",
+    "license_members": [
+      {
+        "member": "bit-set-0.8.0/LICENSE-APACHE",
+        "raw_sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+      },
+      {
+        "member": "bit-set-0.8.0/LICENSE-MIT",
+        "raw_sha256": "f51ac2c59a222f7476ce507ca879960e2b64ea64bb2786eefdbeb7b0b538d1b7"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/bit-set-0.8.0-MIT.txt",
+      "sha256": "92efcb2cb539e8a539d4d260768c725a1cea1f81ffafe176fe9d4a67df4322eb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "bit-vec",
+    "version": "0.8.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7",
+    "license_members": [
+      {
+        "member": "bit-vec-0.8.0/LICENSE-APACHE",
+        "raw_sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+      },
+      {
+        "member": "bit-vec-0.8.0/LICENSE-MIT",
+        "raw_sha256": "f51ac2c59a222f7476ce507ca879960e2b64ea64bb2786eefdbeb7b0b538d1b7"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/bit-vec-0.8.0-MIT.txt",
+      "sha256": "92efcb2cb539e8a539d4d260768c725a1cea1f81ffafe176fe9d4a67df4322eb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "bit-vec",
     "version": "0.9.1",
     "chosen": "MIT",
@@ -129,6 +173,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/bit-vec-0.9.1-MIT.txt",
       "sha256": "f51ac2c59a222f7476ce507ca879960e2b64ea64bb2786eefdbeb7b0b538d1b7"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "bitflags",
+    "version": "2.13.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8",
+    "license_members": [
+      {
+        "member": "bitflags-2.13.0/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "bitflags-2.13.0/LICENSE-MIT",
+        "raw_sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/bitflags-2.13.0-MIT.txt",
+      "sha256": "8f1b7d19623b42e90cb47e346a80f94254731eb0c615235621668a5ced723c6c"
     }
   },
   {
@@ -226,6 +292,32 @@
   {
     "ecosystem": "cargo",
     "name": "bytemuck_derive",
+    "version": "1.10.2",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "f9abbd1bc6865053c427f7198e6af43bfdedc55ab791faed4fbd361d789575ff",
+    "license_members": [
+      {
+        "member": "bytemuck_derive-1.10.2/LICENSE-APACHE",
+        "raw_sha256": "e3ba223bb1423f0aad8c3dfce0fe3148db48926d41e6fbc3afbbf5ff9e1c89cb"
+      },
+      {
+        "member": "bytemuck_derive-1.10.2/LICENSE-MIT",
+        "raw_sha256": "9df9ba60a11af705f2e451b53762686e615d86f76b169cf075c3237730dbd7e2"
+      },
+      {
+        "member": "bytemuck_derive-1.10.2/LICENSE-ZLIB",
+        "raw_sha256": "84b34dd7608f7fb9b17bd588a6bf392bf7de504e2716f024a77d89f1b145a151"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/bytemuck_derive-1.10.2-MIT.txt",
+      "sha256": "9800e834613c07cae574aafa08f0dd65909f4cf65de397661833417ca27ebfc9"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "bytemuck_derive",
     "version": "1.12.1",
     "chosen": "MIT",
     "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper 1d6530d7b08d6bb1cd679735f1f16e2e7bd40a23. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
@@ -252,6 +344,28 @@
   {
     "ecosystem": "cargo",
     "name": "cfg-if",
+    "version": "1.0.4",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801",
+    "license_members": [
+      {
+        "member": "cfg-if-1.0.4/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "cfg-if-1.0.4/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/cfg-if-1.0.4-MIT.txt",
+      "sha256": "faa488900802ab01f1491de4fa97143fffff640a6d179af559f4f21cc4d53cbb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "cfg-if",
     "version": "1.0.5",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -269,6 +383,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/cfg-if-1.0.5-MIT.txt",
       "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "cfg_aliases",
+    "version": "0.2.1",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724",
+    "license_members": [
+      {
+        "member": "cfg_aliases-0.2.1/LICENSE",
+        "raw_sha256": "31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812"
+      },
+      {
+        "member": "cfg_aliases-0.2.1/NOTICES.md",
+        "raw_sha256": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/cfg_aliases-0.2.1-MIT.txt",
+      "sha256": "71378756fdf2a30940f9c2cff76b43b1e712c34db54076260ff6e15ebafef907"
     }
   },
   {
@@ -463,6 +599,50 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "fastrand",
+    "version": "2.4.1",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6",
+    "license_members": [
+      {
+        "member": "fastrand-2.4.1/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "fastrand-2.4.1/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/fastrand-2.4.1-MIT.txt",
+      "sha256": "312dcab7dc22fd18357aa055967115f0a93d6b6ab8c3db975b8da24761d3554b"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "futures-core",
+    "version": "0.3.32",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "7e3450815272ef58cec6d564423f6e755e25379b217b0bc688e295ba24df6b1d",
+    "license_members": [
+      {
+        "member": "futures-core-0.3.32/LICENSE-APACHE",
+        "raw_sha256": "275c491d6d1160553c32fd6127061d7f9606c3ea25abfad6ca3f6ed088785427"
+      },
+      {
+        "member": "futures-core-0.3.32/LICENSE-MIT",
+        "raw_sha256": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/futures-core-0.3.32-MIT.txt",
+      "sha256": "7e93788481326285a513877af210c28cdd111cd3dad660772cdf0d897c3eda2a"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "futures-core",
     "version": "0.3.34",
     "chosen": "MIT",
@@ -486,6 +666,28 @@
   {
     "ecosystem": "cargo",
     "name": "futures-task",
+    "version": "0.3.32",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "037711b3d59c33004d3856fbdc83b99d4ff37a24768fa1be9ce3538a1cde4393",
+    "license_members": [
+      {
+        "member": "futures-task-0.3.32/LICENSE-APACHE",
+        "raw_sha256": "275c491d6d1160553c32fd6127061d7f9606c3ea25abfad6ca3f6ed088785427"
+      },
+      {
+        "member": "futures-task-0.3.32/LICENSE-MIT",
+        "raw_sha256": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/futures-task-0.3.32-MIT.txt",
+      "sha256": "7e93788481326285a513877af210c28cdd111cd3dad660772cdf0d897c3eda2a"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "futures-task",
     "version": "0.3.34",
     "chosen": "MIT",
     "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper 1d6530d7b08d6bb1cd679735f1f16e2e7bd40a23. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
@@ -503,6 +705,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/futures-task-0.3.34-MIT.txt",
       "sha256": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "futures-util",
+    "version": "0.3.32",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "389ca41296e6190b48053de0321d02a77f32f8a5d2461dd38762c0593805c6d6",
+    "license_members": [
+      {
+        "member": "futures-util-0.3.32/LICENSE-APACHE",
+        "raw_sha256": "275c491d6d1160553c32fd6127061d7f9606c3ea25abfad6ca3f6ed088785427"
+      },
+      {
+        "member": "futures-util-0.3.32/LICENSE-MIT",
+        "raw_sha256": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/futures-util-0.3.32-MIT.txt",
+      "sha256": "7e93788481326285a513877af210c28cdd111cd3dad660772cdf0d897c3eda2a"
     }
   },
   {
@@ -702,6 +926,28 @@
   {
     "ecosystem": "cargo",
     "name": "indexmap",
+    "version": "2.14.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9",
+    "license_members": [
+      {
+        "member": "indexmap-2.14.0/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "indexmap-2.14.0/LICENSE-MIT",
+        "raw_sha256": "ecc269ef87fd38a1d98e30bfac9ba964a9dbd9315c3770fed98d4d7cb5882055"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/indexmap-2.14.0-MIT.txt",
+      "sha256": "471e0ce9b88118308ea73eaae342ad72a573828e8df0549eb4bd4462e0f9c534"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "indexmap",
     "version": "2.14.2",
     "chosen": "MIT",
     "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
@@ -790,6 +1036,28 @@
   {
     "ecosystem": "cargo",
     "name": "js-sys",
+    "version": "0.3.103",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "53b44bfcdb3f8d5837a46dae1ca9660a837176eee74a28b229bc626816589102",
+    "license_members": [
+      {
+        "member": "js-sys-0.3.103/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "js-sys-0.3.103/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/js-sys-0.3.103-MIT.txt",
+      "sha256": "faa488900802ab01f1491de4fa97143fffff640a6d179af559f4f21cc4d53cbb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "js-sys",
     "version": "0.3.105",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -834,6 +1102,28 @@
   {
     "ecosystem": "cargo",
     "name": "libc",
+    "version": "0.2.186",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66",
+    "license_members": [
+      {
+        "member": "libc-0.2.186/LICENSE-APACHE",
+        "raw_sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+      },
+      {
+        "member": "libc-0.2.186/LICENSE-MIT",
+        "raw_sha256": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/libc-0.2.186-MIT.txt",
+      "sha256": "b0f253a2e70e63997cfc26bc0aca3427f4d54614df596a2c0b14bdbe099bb7bc"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "libc",
     "version": "0.2.189",
     "chosen": "MIT",
     "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
@@ -851,6 +1141,32 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/libc-0.2.189-MIT.txt",
       "sha256": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "linux-raw-sys",
+    "version": "0.12.1",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53",
+    "license_members": [
+      {
+        "member": "linux-raw-sys-0.12.1/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "linux-raw-sys-0.12.1/LICENSE-Apache-2.0_WITH_LLVM-exception",
+        "raw_sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+      },
+      {
+        "member": "linux-raw-sys-0.12.1/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/linux-raw-sys-0.12.1-MIT.txt",
+      "sha256": "a42ad7fab02c47e674f38c17d0c38de23ecbf45f4436cb181474ab04d1600781"
     }
   },
   {
@@ -895,6 +1211,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/lock_api-0.4.14-MIT.txt",
       "sha256": "c9a75f18b9ab2927829a208fc6aa2cf4e63b8420887ba29cdb265d6619ae82d5"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "log",
+    "version": "0.4.33",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad",
+    "license_members": [
+      {
+        "member": "log-0.4.33/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "log-0.4.33/LICENSE-MIT",
+        "raw_sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/log-0.4.33-MIT.txt",
+      "sha256": "8f1b7d19623b42e90cb47e346a80f94254731eb0c615235621668a5ced723c6c"
     }
   },
   {
@@ -970,6 +1308,28 @@
   {
     "ecosystem": "cargo",
     "name": "naga",
+    "version": "30.0.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "23bf0a141a9ab6f07dbb492db53245e464bc9db42f407772d9ae03d83a2c1033",
+    "license_members": [
+      {
+        "member": "naga-30.0.0/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "naga-30.0.0/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/naga-30.0.0-MIT.txt",
+      "sha256": "7befe01ecbf9c15d343f956f925a788170c30c1ac3bd6b51f3bb38fecb739f24"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "naga",
     "version": "30.0.1",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -987,6 +1347,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/naga-30.0.1-MIT.txt",
       "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "naga-types",
+    "version": "30.0.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "658200ddc25c6c7b860747516d132d1b284c0fafb7a380233acee9a72fb30e11",
+    "license_members": [
+      {
+        "member": "naga-types-30.0.0/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "naga-types-30.0.0/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/naga-types-30.0.0-MIT.txt",
+      "sha256": "7befe01ecbf9c15d343f956f925a788170c30c1ac3bd6b51f3bb38fecb739f24"
     }
   },
   {
@@ -1146,6 +1528,24 @@
   {
     "ecosystem": "cargo",
     "name": "ordered-float",
+    "version": "5.3.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "b7d950ca161dc355eaf28f82b11345ed76c6e1f6eb1f4f4479e0323b9e2fbd0e",
+    "license_members": [
+      {
+        "member": "ordered-float-5.3.0/LICENSE-MIT",
+        "raw_sha256": "f7715d38a3fa1b4ac97c5729740752505a39cb92ee83ab5b102aeb5eaa7cdea4"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/ordered-float-5.3.0-MIT.txt",
+      "sha256": "f7715d38a3fa1b4ac97c5729740752505a39cb92ee83ab5b102aeb5eaa7cdea4"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "ordered-float",
     "version": "5.5.0",
     "chosen": "MIT",
     "rationale": "Every captured licence and notice matches a reviewed whole-text digest in central helper 60394b645e68719a2c3980c75ba35cd4b1b7d7b7. Retain complete grants, exceptions and third-party notices together. No Strix or whole-release approval.",
@@ -1230,6 +1630,28 @@
   {
     "ecosystem": "cargo",
     "name": "pkg-config",
+    "version": "0.3.33",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e",
+    "license_members": [
+      {
+        "member": "pkg-config-0.3.33/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "pkg-config-0.3.33/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/pkg-config-0.3.33-MIT.txt",
+      "sha256": "faa488900802ab01f1491de4fa97143fffff640a6d179af559f4f21cc4d53cbb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "pkg-config",
     "version": "0.3.34",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -1274,6 +1696,28 @@
   {
     "ecosystem": "cargo",
     "name": "portable-atomic",
+    "version": "1.13.1",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49",
+    "license_members": [
+      {
+        "member": "portable-atomic-1.13.1/LICENSE-APACHE",
+        "raw_sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+      },
+      {
+        "member": "portable-atomic-1.13.1/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/portable-atomic-1.13.1-MIT.txt",
+      "sha256": "b346d622c7ce9ecb6da821f554af208f28f45693a15b73bbbe0a4c1e43cee22a"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "portable-atomic",
     "version": "1.15.0",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 5185799fd5602eea570df3b066e8b45fcc6e1b37. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -1291,6 +1735,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/portable-atomic-1.15.0-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "portable-atomic-util",
+    "version": "0.2.7",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618",
+    "license_members": [
+      {
+        "member": "portable-atomic-util-0.2.7/LICENSE-APACHE",
+        "raw_sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+      },
+      {
+        "member": "portable-atomic-util-0.2.7/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/portable-atomic-util-0.2.7-MIT.txt",
+      "sha256": "b346d622c7ce9ecb6da821f554af208f28f45693a15b73bbbe0a4c1e43cee22a"
     }
   },
   {
@@ -1357,6 +1823,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/presser-0.3.1-MIT.txt",
       "sha256": "090a294a492ab2f41388252312a65cf2f0e423330b721a68c6665ac64766753b"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "proc-macro2",
+    "version": "1.0.106",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934",
+    "license_members": [
+      {
+        "member": "proc-macro2-1.0.106/LICENSE-APACHE",
+        "raw_sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+      },
+      {
+        "member": "proc-macro2-1.0.106/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/proc-macro2-1.0.106-MIT.txt",
+      "sha256": "6d14e5bfb3154bf33e54d805b9ce36debfb0d91644e6cbc0c197265c284bb285"
     }
   },
   {
@@ -1497,6 +1985,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/pyo3-macros-backend-0.29.2-MIT.txt",
       "sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "quote",
+    "version": "1.0.46",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "dfbc457d0c7a0759a614551b11a6409e5951f6c7537be1f1b7682b9ae9230368",
+    "license_members": [
+      {
+        "member": "quote-1.0.46/LICENSE-APACHE",
+        "raw_sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+      },
+      {
+        "member": "quote-1.0.46/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/quote-1.0.46-MIT.txt",
+      "sha256": "6d14e5bfb3154bf33e54d805b9ce36debfb0d91644e6cbc0c197265c284bb285"
     }
   },
   {
@@ -1699,6 +2209,32 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "rustix",
+    "version": "1.1.4",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190",
+    "license_members": [
+      {
+        "member": "rustix-1.1.4/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "rustix-1.1.4/LICENSE-Apache-2.0_WITH_LLVM-exception",
+        "raw_sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+      },
+      {
+        "member": "rustix-1.1.4/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/rustix-1.1.4-MIT.txt",
+      "sha256": "a42ad7fab02c47e674f38c17d0c38de23ecbf45f4436cb181474ab04d1600781"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "rustversion",
     "version": "1.0.23",
     "chosen": "MIT",
@@ -1744,6 +2280,28 @@
   {
     "ecosystem": "cargo",
     "name": "serde",
+    "version": "1.0.228",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e",
+    "license_members": [
+      {
+        "member": "serde-1.0.228/LICENSE-APACHE",
+        "raw_sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+      },
+      {
+        "member": "serde-1.0.228/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/serde-1.0.228-MIT.txt",
+      "sha256": "6d14e5bfb3154bf33e54d805b9ce36debfb0d91644e6cbc0c197265c284bb285"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "serde",
     "version": "1.0.229",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 5185799fd5602eea570df3b066e8b45fcc6e1b37. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -1766,6 +2324,28 @@
   {
     "ecosystem": "cargo",
     "name": "serde_core",
+    "version": "1.0.228",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "41d385c7d4ca58e59fc732af25c3983b67ac852c1a25000afe1175de458b67ad",
+    "license_members": [
+      {
+        "member": "serde_core-1.0.228/LICENSE-APACHE",
+        "raw_sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+      },
+      {
+        "member": "serde_core-1.0.228/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/serde_core-1.0.228-MIT.txt",
+      "sha256": "6d14e5bfb3154bf33e54d805b9ce36debfb0d91644e6cbc0c197265c284bb285"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "serde_core",
     "version": "1.0.229",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 5185799fd5602eea570df3b066e8b45fcc6e1b37. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -1783,6 +2363,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/serde_core-1.0.229-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "serde_derive",
+    "version": "1.0.228",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79",
+    "license_members": [
+      {
+        "member": "serde_derive-1.0.228/LICENSE-APACHE",
+        "raw_sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+      },
+      {
+        "member": "serde_derive-1.0.228/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/serde_derive-1.0.228-MIT.txt",
+      "sha256": "6d14e5bfb3154bf33e54d805b9ce36debfb0d91644e6cbc0c197265c284bb285"
     }
   },
   {
@@ -1890,6 +2492,28 @@
   {
     "ecosystem": "cargo",
     "name": "smallvec",
+    "version": "1.15.2",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90",
+    "license_members": [
+      {
+        "member": "smallvec-1.15.2/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "smallvec-1.15.2/LICENSE-MIT",
+        "raw_sha256": "0b28172679e0009b655da42797c03fd163a3379d5cfa67ba1f1655e974a2a1a9"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/smallvec-1.15.2-MIT.txt",
+      "sha256": "6b111fd71d6b6f379aecbf971ee143a4937c81830ced2313605728f5bcf227ce"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "smallvec",
     "version": "1.16.1",
     "chosen": "MIT",
     "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper aaafbbbf1feb0c9d36191be04f5ba4bf92bb45af. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
@@ -1929,6 +2553,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/static_assertions-1.1.0-MIT.txt",
       "sha256": "ea084a2373ebc1f0902c09266e7bf25a05ab3814c1805bb017ffa7308f90c061"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "syn",
+    "version": "2.0.118",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "1b9ae57f904213ebb649ce6895b8a66c66f0203b9319718f69a5612a065b1422",
+    "license_members": [
+      {
+        "member": "syn-2.0.118/LICENSE-APACHE",
+        "raw_sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+      },
+      {
+        "member": "syn-2.0.118/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/syn-2.0.118-MIT.txt",
+      "sha256": "6d14e5bfb3154bf33e54d805b9ce36debfb0d91644e6cbc0c197265c284bb285"
     }
   },
   {
@@ -2022,6 +2668,28 @@
   {
     "ecosystem": "cargo",
     "name": "thiserror",
+    "version": "2.0.18",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4",
+    "license_members": [
+      {
+        "member": "thiserror-2.0.18/LICENSE-APACHE",
+        "raw_sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+      },
+      {
+        "member": "thiserror-2.0.18/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/thiserror-2.0.18-MIT.txt",
+      "sha256": "6d14e5bfb3154bf33e54d805b9ce36debfb0d91644e6cbc0c197265c284bb285"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "thiserror",
     "version": "2.0.20",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 5185799fd5602eea570df3b066e8b45fcc6e1b37. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -2039,6 +2707,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/thiserror-2.0.20-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "thiserror-impl",
+    "version": "2.0.18",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5",
+    "license_members": [
+      {
+        "member": "thiserror-impl-2.0.18/LICENSE-APACHE",
+        "raw_sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+      },
+      {
+        "member": "thiserror-impl-2.0.18/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/thiserror-impl-2.0.18-MIT.txt",
+      "sha256": "6d14e5bfb3154bf33e54d805b9ce36debfb0d91644e6cbc0c197265c284bb285"
     }
   },
   {
@@ -2158,6 +2848,32 @@
   {
     "ecosystem": "cargo",
     "name": "unicode-ident",
+    "version": "1.0.24",
+    "chosen": "MIT AND Unicode-3.0",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT AND Unicode-3.0 and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75",
+    "license_members": [
+      {
+        "member": "unicode-ident-1.0.24/LICENSE-APACHE",
+        "raw_sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+      },
+      {
+        "member": "unicode-ident-1.0.24/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      {
+        "member": "unicode-ident-1.0.24/LICENSE-UNICODE",
+        "raw_sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/unicode-ident-1.0.24-MIT-Unicode-3.0.txt",
+      "sha256": "9a0d4c5bb6567a6a9070ac9ef74425ff2315b5a6e82245b3bb11f1f00c29cba5"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "unicode-ident",
     "version": "1.0.26",
     "chosen": "MIT AND Unicode-3.0",
     "rationale": "Read the complete checksum-matched archive grants. Select MIT AND Unicode-3.0; retain every captured full licence text, including mandatory Unicode terms. This does not attest to Strix review or overall release scope.",
@@ -2206,6 +2922,28 @@
   {
     "ecosystem": "cargo",
     "name": "uuid",
+    "version": "1.25.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "f053576934f05a761a402421fbbe3d425d9366f75f978806a037b3ca481abecc",
+    "license_members": [
+      {
+        "member": "uuid-1.25.0/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "uuid-1.25.0/LICENSE-MIT",
+        "raw_sha256": "436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/uuid-1.25.0-MIT.txt",
+      "sha256": "e924b44a952a345dff67124a5d1d0218a44f17653502a4ab22ff1fe26547b2b8"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "uuid",
     "version": "1.26.1",
     "chosen": "MIT",
     "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper aaafbbbf1feb0c9d36191be04f5ba4bf92bb45af. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
@@ -2249,6 +2987,76 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "wait-timeout",
+    "version": "0.2.1",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "09ac3b126d3914f9849036f826e054cbabdc8519970b8998ddaf3b5bd3c65f11",
+    "license_members": [
+      {
+        "member": "wait-timeout-0.2.1/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wait-timeout-0.2.1/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wait-timeout-0.2.1-MIT.txt",
+      "sha256": "faa488900802ab01f1491de4fa97143fffff640a6d179af559f4f21cc4d53cbb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wasip2",
+    "version": "1.0.4+wasi-0.2.12",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487",
+    "license_members": [
+      {
+        "member": "wasip2-1.0.4+wasi-0.2.12/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wasip2-1.0.4+wasi-0.2.12/LICENSE-Apache-2.0_WITH_LLVM-exception",
+        "raw_sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+      },
+      {
+        "member": "wasip2-1.0.4+wasi-0.2.12/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wasip2-1.0.4+wasi-0.2.12-MIT.txt",
+      "sha256": "a42ad7fab02c47e674f38c17d0c38de23ecbf45f4436cb181474ab04d1600781"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wasm-bindgen",
+    "version": "0.2.126",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "4b067c0c11094aef6b7a801c1e34a26affafdf3d051dba08456b868789aaf9a4",
+    "license_members": [
+      {
+        "member": "wasm-bindgen-0.2.126/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wasm-bindgen-0.2.126/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wasm-bindgen-0.2.126-MIT.txt",
+      "sha256": "faa488900802ab01f1491de4fa97143fffff640a6d179af559f4f21cc4d53cbb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "wasm-bindgen",
     "version": "0.2.128",
     "chosen": "MIT",
@@ -2267,6 +3075,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/wasm-bindgen-0.2.128-MIT.txt",
       "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wasm-bindgen-futures",
+    "version": "0.4.76",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "c62df1340f32221cb9c54d6a27b030e3dba64361d4a95bed55f9aacb44da291d",
+    "license_members": [
+      {
+        "member": "wasm-bindgen-futures-0.4.76/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wasm-bindgen-futures-0.4.76/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wasm-bindgen-futures-0.4.76-MIT.txt",
+      "sha256": "faa488900802ab01f1491de4fa97143fffff640a6d179af559f4f21cc4d53cbb"
     }
   },
   {
@@ -2294,6 +3124,28 @@
   {
     "ecosystem": "cargo",
     "name": "wasm-bindgen-macro",
+    "version": "0.2.126",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "167ce5e579f6bcf889c4f7175a8a5a585de84e8ff93976ce393efa5f2837aab1",
+    "license_members": [
+      {
+        "member": "wasm-bindgen-macro-0.2.126/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wasm-bindgen-macro-0.2.126/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wasm-bindgen-macro-0.2.126-MIT.txt",
+      "sha256": "faa488900802ab01f1491de4fa97143fffff640a6d179af559f4f21cc4d53cbb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wasm-bindgen-macro",
     "version": "0.2.128",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -2316,6 +3168,28 @@
   {
     "ecosystem": "cargo",
     "name": "wasm-bindgen-macro-support",
+    "version": "0.2.126",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "f3997c7839262f4ef12cf90b818d6340c18e80f263f1a94bf157d0ec4420380e",
+    "license_members": [
+      {
+        "member": "wasm-bindgen-macro-support-0.2.126/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wasm-bindgen-macro-support-0.2.126/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wasm-bindgen-macro-support-0.2.126-MIT.txt",
+      "sha256": "faa488900802ab01f1491de4fa97143fffff640a6d179af559f4f21cc4d53cbb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wasm-bindgen-macro-support",
     "version": "0.2.128",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -2333,6 +3207,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/wasm-bindgen-macro-support-0.2.128-MIT.txt",
       "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wasm-bindgen-shared",
+    "version": "0.2.126",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "dc1b4cb0cc549fcf58d7dfc081778139b3d283a081644e833e84682ad71cea24",
+    "license_members": [
+      {
+        "member": "wasm-bindgen-shared-0.2.126/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wasm-bindgen-shared-0.2.126/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wasm-bindgen-shared-0.2.126-MIT.txt",
+      "sha256": "faa488900802ab01f1491de4fa97143fffff640a6d179af559f4f21cc4d53cbb"
     }
   },
   {
@@ -2378,6 +3274,28 @@
   {
     "ecosystem": "cargo",
     "name": "web-sys",
+    "version": "0.3.103",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "8622dcb61c0bcc9fffa6938bed81210af2da9a7e4a1a834b2e37a59b6dfb6141",
+    "license_members": [
+      {
+        "member": "web-sys-0.3.103/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "web-sys-0.3.103/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/web-sys-0.3.103-MIT.txt",
+      "sha256": "faa488900802ab01f1491de4fa97143fffff640a6d179af559f4f21cc4d53cbb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "web-sys",
     "version": "0.3.105",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -2395,6 +3313,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/web-sys-0.3.105-MIT.txt",
       "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu",
+    "version": "30.0.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "6d8f4bd44d92da5270f03409dba9f952dab24f128e05d6a554926101d1bf9114",
+    "license_members": [
+      {
+        "member": "wgpu-30.0.0/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-30.0.0/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-30.0.0-MIT.txt",
+      "sha256": "7befe01ecbf9c15d343f956f925a788170c30c1ac3bd6b51f3bb38fecb739f24"
     }
   },
   {
@@ -2422,6 +3362,28 @@
   {
     "ecosystem": "cargo",
     "name": "wgpu-core",
+    "version": "30.0.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "08763620e76fc980bca7bf84de82568614487a53172dd968d89187282eb87fa2",
+    "license_members": [
+      {
+        "member": "wgpu-core-30.0.0/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-core-30.0.0/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-core-30.0.0-MIT.txt",
+      "sha256": "7befe01ecbf9c15d343f956f925a788170c30c1ac3bd6b51f3bb38fecb739f24"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-core",
     "version": "30.0.1",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -2439,6 +3401,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/wgpu-core-30.0.1-MIT.txt",
       "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-core-deps-apple",
+    "version": "30.0.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "3283b6da70d7fc892de95840215aa36381b5d0cbc479e88ee2b173c7b992b225",
+    "license_members": [
+      {
+        "member": "wgpu-core-deps-apple-30.0.0/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-core-deps-apple-30.0.0/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-core-deps-apple-30.0.0-MIT.txt",
+      "sha256": "7befe01ecbf9c15d343f956f925a788170c30c1ac3bd6b51f3bb38fecb739f24"
     }
   },
   {
@@ -2466,6 +3450,28 @@
   {
     "ecosystem": "cargo",
     "name": "wgpu-core-deps-emscripten",
+    "version": "30.0.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "85dcf2b2e5c2afb9eda64c570a87a4e570304bf39e52eddbaaf222d655b656ad",
+    "license_members": [
+      {
+        "member": "wgpu-core-deps-emscripten-30.0.0/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-core-deps-emscripten-30.0.0/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-core-deps-emscripten-30.0.0-MIT.txt",
+      "sha256": "7befe01ecbf9c15d343f956f925a788170c30c1ac3bd6b51f3bb38fecb739f24"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-core-deps-emscripten",
     "version": "30.0.1",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -2483,6 +3489,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/wgpu-core-deps-emscripten-30.0.1-MIT.txt",
       "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-core-deps-windows-linux-android",
+    "version": "30.0.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "f76bc9c1c186ff3d9054e0d224c93c8c1c79d6653907c5249a5c1ea1a2cb1e43",
+    "license_members": [
+      {
+        "member": "wgpu-core-deps-windows-linux-android-30.0.0/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-core-deps-windows-linux-android-30.0.0/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-core-deps-windows-linux-android-30.0.0-MIT.txt",
+      "sha256": "7befe01ecbf9c15d343f956f925a788170c30c1ac3bd6b51f3bb38fecb739f24"
     }
   },
   {
@@ -2510,6 +3538,28 @@
   {
     "ecosystem": "cargo",
     "name": "wgpu-hal",
+    "version": "30.0.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "cf765132d8d5f50e192e7880464890c13f4e7457aafe8e5466e8174586e9f101",
+    "license_members": [
+      {
+        "member": "wgpu-hal-30.0.0/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-hal-30.0.0/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-hal-30.0.0-MIT.txt",
+      "sha256": "7befe01ecbf9c15d343f956f925a788170c30c1ac3bd6b51f3bb38fecb739f24"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-hal",
     "version": "30.0.1",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -2532,6 +3582,28 @@
   {
     "ecosystem": "cargo",
     "name": "wgpu-naga-bridge",
+    "version": "30.0.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "c9eaac644e5008925c78567d272b9d66ef83da55a53cc17fc7daade7bb6e66e5",
+    "license_members": [
+      {
+        "member": "wgpu-naga-bridge-30.0.0/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-naga-bridge-30.0.0/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-naga-bridge-30.0.0-MIT.txt",
+      "sha256": "7befe01ecbf9c15d343f956f925a788170c30c1ac3bd6b51f3bb38fecb739f24"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-naga-bridge",
     "version": "30.0.1",
     "chosen": "MIT",
     "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
@@ -2549,6 +3621,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/wgpu-naga-bridge-30.0.1-MIT.txt",
       "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-types",
+    "version": "30.0.0",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "1a9c93c2b35edde326df60ffdee4c0f5864eac3011d6768b70d43f028ad93565",
+    "license_members": [
+      {
+        "member": "wgpu-types-30.0.0/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-types-30.0.0/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-types-30.0.0-MIT.txt",
+      "sha256": "7befe01ecbf9c15d343f956f925a788170c30c1ac3bd6b51f3bb38fecb739f24"
     }
   },
   {
@@ -2865,6 +3959,50 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "wit-bindgen",
+    "version": "0.57.1",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e",
+    "license_members": [
+      {
+        "member": "wit-bindgen-0.57.1/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wit-bindgen-0.57.1/LICENSE-Apache-2.0_WITH_LLVM-exception",
+        "raw_sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+      },
+      {
+        "member": "wit-bindgen-0.57.1/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wit-bindgen-0.57.1-MIT.txt",
+      "sha256": "a42ad7fab02c47e674f38c17d0c38de23ecbf45f4436cb181474ab04d1600781"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "xml-rs",
+    "version": "0.8.28",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f",
+    "license_members": [
+      {
+        "member": "xml-rs-0.8.28/LICENSE",
+        "raw_sha256": "0dc18d924dc0a5f41172a393012843a5eaaef338e795b3645da9cc3b6068220b"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/xml-rs-0.8.28-MIT.txt",
+      "sha256": "0dc18d924dc0a5f41172a393012843a5eaaef338e795b3645da9cc3b6068220b"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "xml-rs",
     "version": "0.8.29",
     "chosen": "MIT",
@@ -2879,6 +4017,32 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/xml-rs-0.8.29-MIT.txt",
       "sha256": "0dc18d924dc0a5f41172a393012843a5eaaef338e795b3645da9cc3b6068220b"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "zerocopy",
+    "version": "0.8.54",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "b7cbbc0a705a0fd05cc3676525980d2bf5a9bc4adac6d6475209a7887cf59d19",
+    "license_members": [
+      {
+        "member": "zerocopy-0.8.54/LICENSE-APACHE",
+        "raw_sha256": "9d185ac6703c4b0453974c0d85e9eee43e6941009296bb1f5eb0b54e2329e9f3"
+      },
+      {
+        "member": "zerocopy-0.8.54/LICENSE-BSD",
+        "raw_sha256": "83c1763356e822adde0a2cae748d938a73fdc263849ccff6b27776dff213bd32"
+      },
+      {
+        "member": "zerocopy-0.8.54/LICENSE-MIT",
+        "raw_sha256": "1a2f5c12ddc934d58956aa5dbdd3255fe55fd957633ab7d0d39e4f0daa73f7df"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/zerocopy-0.8.54-MIT.txt",
+      "sha256": "a615eb33e5f7f454919acd17ef221cdbdb3310b29905be7bf054fbb9c1cc68b4"
     }
   },
   {
@@ -2905,6 +4069,32 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/zerocopy-0.8.57-MIT.txt",
       "sha256": "1a2f5c12ddc934d58956aa5dbdd3255fe55fd957633ab7d0d39e4f0daa73f7df"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "zerocopy-derive",
+    "version": "0.8.54",
+    "chosen": "MIT",
+    "rationale": "All captured whole licence texts match reviewed digests or exact references backed by full grants in central helper fbb48ec3265f1dcfba34529f6f4325e02e2ac023. Select MIT and retain all captured notices for this root-lock identity. This is not Strix or complete release scope acceptance.",
+    "archive_sha256": "e2e817b7b52d0c7358d3246da9d69935ebb18116b2b102b4230dac079b4862f5",
+    "license_members": [
+      {
+        "member": "zerocopy-derive-0.8.54/LICENSE-APACHE",
+        "raw_sha256": "9d185ac6703c4b0453974c0d85e9eee43e6941009296bb1f5eb0b54e2329e9f3"
+      },
+      {
+        "member": "zerocopy-derive-0.8.54/LICENSE-BSD",
+        "raw_sha256": "83c1763356e822adde0a2cae748d938a73fdc263849ccff6b27776dff213bd32"
+      },
+      {
+        "member": "zerocopy-derive-0.8.54/LICENSE-MIT",
+        "raw_sha256": "1a2f5c12ddc934d58956aa5dbdd3255fe55fd957633ab7d0d39e4f0daa73f7df"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/zerocopy-derive-0.8.54-MIT.txt",
+      "sha256": "a615eb33e5f7f454919acd17ef221cdbdb3310b29905be7bf054fbb9c1cc68b4"
     }
   },
   {
