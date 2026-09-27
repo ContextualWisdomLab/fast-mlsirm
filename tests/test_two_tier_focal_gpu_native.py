@@ -122,3 +122,18 @@ def test_actual_gpu_six_latent_continuous_population_recovery():
     )
 
     test_native_six_latent_continuous_gaussian_recovery(device="gpu", gpu_memory_budget_bytes=1 << 30)
+
+
+@pytest.mark.skipif(
+    os.environ.get("FOCAL_GPU_NATIVE") != "1",
+    reason="requires actual GPU; run with FOCAL_GPU_NATIVE=1",
+)
+def test_actual_gpu_reference_focal_expected_score_pipeline():
+    """Reuse the reference→fixed-bank focal→reference-curve contract.
+
+    Cai (2010), Appendices A/B; source and limits are in the reused test.
+    """
+    from test_two_tier_focal_gaussian_recovery_native import (
+        test_native_reference_focal_expected_score_pipeline,
+    )
+    test_native_reference_focal_expected_score_pipeline(device="gpu")

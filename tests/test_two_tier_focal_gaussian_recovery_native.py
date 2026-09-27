@@ -29,22 +29,20 @@ import random
 import sys
 
 import numpy as np
-from fast_mlsirm import fit_two_tier_grm_focal_orthogonal
+from fast_mlsirm import (
+    expected_total_score_two_tier_from_fit,
+    fit_two_tier_grm,
+    fit_two_tier_grm_focal_orthogonal,
+    score_two_tier_grm_orthogonal,
+)
 
 
-def test_native_six_latent_continuous_gaussian_recovery(
-    device="cpu", gpu_memory_budget_bytes=None
-):
-    """Recover all six nonstandard Gaussian means/SDs at two node counts.
+def _continuous_six_latent_fixture(n_persons, mean, sd, seed):
+    """Reuse Cai (2010) eqs.4–7,11–12 generator; see module sources.
 
-    Sources and implementation-choice limits are in the module docstring.
-    GRM probabilities below independently instantiate Cai p.589 eqs.11-12
-    only to generate synthetic test responses; estimation remains native Rust.
+    Test-only continuous draws; parameters and seed are explicit fixture inputs.
     """
-    seed = 20260927
     rng = random.Random(seed)
-    mean = np.array([0.30, -0.25, 0.20, -0.30, 0.35, -0.15])
-    sd = np.array([1.15, 0.85, 0.80, 1.20, 1.10, 0.90])
     wording = {4, 5, 6, 9, 12, 14, 15}
     ap = np.array(
         [
@@ -56,7 +54,7 @@ def test_native_six_latent_continuous_gaussian_recovery(
     sm = np.repeat(np.arange(4), 4)
     threshold = np.tile([1.2, 0.0, -1.2], (16, 1))
     rows = []
-    for _ in range(4096):
+    for _ in range(n_persons):
         theta = [rng.gauss(float(m), float(s)) for m, s in zip(mean, sd)]
         row = []
         for i in range(16):
@@ -73,6 +71,24 @@ def test_native_six_latent_continuous_gaussian_recovery(
         rows.append(row)
     responses = np.array(rows, dtype=np.int64)
     digest = hashlib.sha256(responses.astype("<i8").tobytes()).hexdigest()
+    return responses, ap, asp, sm, threshold, digest
+
+
+def test_native_six_latent_continuous_gaussian_recovery(
+    device="cpu", gpu_memory_budget_bytes=None
+):
+    """Recover all six nonstandard Gaussian means/SDs at two node counts.
+
+    Sources and implementation-choice limits are in the module docstring.
+    GRM probabilities below independently instantiate Cai p.589 eqs.11-12
+    only to generate synthetic test responses; estimation remains native Rust.
+    """
+    seed = 20260927
+    mean = np.array([0.30, -0.25, 0.20, -0.30, 0.35, -0.15])
+    sd = np.array([1.15, 0.85, 0.80, 1.20, 1.10, 0.90])
+    responses, ap, asp, sm, threshold, digest = _continuous_six_latent_fixture(
+        4096, mean, sd, seed
+    )
     fits = []
     for nodes in (15, 21):
         fit = fit_two_tier_grm_focal_orthogonal(
@@ -118,3 +134,69 @@ def test_native_six_latent_continuous_gaussian_recovery(
         fits.append(fit)
     assert np.max(np.abs(fits[0].latent_mean - fits[1].latent_mean)) < 0.04
     assert np.max(np.abs(fits[0].latent_sd - fits[1].latent_sd)) < 0.04
+
+
+def test_native_reference_focal_expected_score_pipeline(device="cpu"):
+    """Fit reference items, fix that bank, score under the final focal prior.
+
+    Cai (2010), pp.587–590 eqs.4–12 and pp.608–609 Appendices A/B supply
+    the fitted model and posterior moments. Expected scores use the common
+    reference density (STAT414 lesson26.1, cited/read in that API).
+    Sample sizes, seeds, seven-node fit/score grid and 121/241 nuisance grids
+    are synthetic bridge choices, not study precision or population recovery.
+    All estimation and numerical scores are existing library calls.
+    """
+    reference_y, ap, _, sm, _, ref_hash = _continuous_six_latent_fixture(
+        512, np.zeros(6), np.ones(6), 20260928,
+    )
+    focal_y, _, _, _, _, focal_hash = _continuous_six_latent_fixture(
+        512, np.array([0.30, -0.25, 0.20, -0.30, 0.35, -0.15]),
+        np.array([1.15, 0.85, 0.80, 1.20, 1.10, 0.90]), 20260929,
+    )
+    print(json.dumps({"phase": "inputs", "reference_sha256": ref_hash,
+                      "focal_sha256": focal_hash, "device": device}), flush=True)
+    reference = fit_two_tier_grm(
+        reference_y, ap != 0, sm, n_cat=4, n_primary=2, n_specific=4,
+        q_primary=7, q_specific=7, max_iter=2000, tol=1e-6,
+        n_starts=2, seed=20260928, primary_correlation="identity",
+    )
+    print(json.dumps({"phase": "reference", "converged": reference.converged,
+                      "reason": reference.termination_reason,
+                      "updates": reference.n_iter}), flush=True)
+    assert reference.converged, reference.termination_reason
+    assert reference.primary_identification == "orthogonal"
+    snapshots = [a.copy() for a in
+                 (reference.a_primary, reference.a_specific, reference.threshold)]
+    controls = dict(
+        responses=focal_y, primary_map=ap != 0, specific_map=sm,
+        a_primary=reference.a_primary, a_specific=reference.a_specific,
+        threshold=reference.threshold, n_cat=4, n_primary=2, n_specific=4,
+        q_primary=7, q_specific=7, device=device, cache_item_tables=True,
+        gpu_memory_budget_bytes=(1 << 30) if device == "gpu" else None,
+    )
+    focal = fit_two_tier_grm_focal_orthogonal(
+        **controls, latent_mean=np.zeros(6), latent_sd=np.ones(6),
+        max_iter=2000, tol=1e-6,
+    )
+    print(json.dumps({"phase": "focal", "converged": focal.converged,
+                      "reason": focal.termination_reason, "updates": focal.n_iter,
+                      "backend": focal.scores.backend}), flush=True)
+    assert focal.converged, focal.termination_reason
+    assert focal.scores.backend == device
+    scored = score_two_tier_grm_orthogonal(
+        **controls, latent_mean=focal.latent_mean, latent_sd=focal.latent_sd,
+    )
+    np.testing.assert_allclose(scored.mean, focal.scores.mean, atol=1e-10, rtol=0)
+    for actual, snapshot in zip(
+        (reference.a_primary, reference.a_specific, reference.threshold), snapshots,
+    ):
+        np.testing.assert_array_equal(actual, snapshot)
+    curves = [expected_total_score_two_tier_from_fit(
+        reference, sm, scored.mean[:, 0], focal_primary=0, q_nuisance=q,
+        orthogonal_primary_identification=True,
+        primary_ref_mean=np.zeros(2), primary_ref_sd=np.ones(2),
+        specific_ref_mean=np.zeros(4), specific_ref_sd=np.ones(4),
+    ) for q in (121, 241)]
+    np.testing.assert_array_equal(curves[0].theta_focal, scored.mean[:, 0])
+    np.testing.assert_allclose(curves[0].expected_total, curves[1].expected_total,
+                               atol=1e-8, rtol=0)
