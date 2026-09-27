@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="3" failures="0" skipped="0" tests="3" time="6.921" timestamp="2026-09-28T02:36:21.313612+09:00" hostname="Seonghoui-MacBookPro-2.local"><testcase classname="" name="tests.test_bootstrap_shared_indices" time="0.000"><error message="collection failure">ImportError while importing test module '/private/tmp/fmls-regression-source-20260928/tests/test_bootstrap_shared_indices.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/seonghobae/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bootstrap_shared_indices.py:7: in &lt;module&gt;
+    import fast_mlsirm.bifactor_bootstrap as bb
+python/fast_mlsirm/__init__.py:37: in &lt;module&gt;
+    from .interaction_map import ResidualInteractionMap as ResidualInteractionMap
+python/fast_mlsirm/interaction_map.py:10: in &lt;module&gt;
+    from . import _core
+E   ImportError: cannot import name '_core' from partially initialized module 'fast_mlsirm' (most likely due to a circular import) (/private/tmp/fmls-regression-source-20260928/python/fast_mlsirm/__init__.py)</error></testcase><testcase classname="" name="tests.test_bootstrap_failure_receipts" time="0.000"><error message="collection failure">ImportError while importing test module '/private/tmp/fmls-regression-source-20260928/tests/test_bootstrap_failure_receipts.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/seonghobae/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bootstrap_failure_receipts.py:4: in &lt;module&gt;
+    import fast_mlsirm.bifactor_bootstrap as bb
+python/fast_mlsirm/__init__.py:37: in &lt;module&gt;
+    from .interaction_map import ResidualInteractionMap as ResidualInteractionMap
+python/fast_mlsirm/interaction_map.py:10: in &lt;module&gt;
+    from . import _core
+E   ImportError: cannot import name '_core' from partially initialized module 'fast_mlsirm' (most likely due to a circular import) (/private/tmp/fmls-regression-source-20260928/python/fast_mlsirm/__init__.py)</error></testcase><testcase classname="" name="tests.test_bootstrap_slope_prior" time="0.000"><error message="collection failure">ImportError while importing test module '/private/tmp/fmls-regression-source-20260928/tests/test_bootstrap_slope_prior.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Users/seonghobae/.local/share/uv/python/cpython-3.12.14-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bootstrap_slope_prior.py:5: in &lt;module&gt;
+    import fast_mlsirm.bifactor_bootstrap as bb
+python/fast_mlsirm/__init__.py:37: in &lt;module&gt;
+    from .interaction_map import ResidualInteractionMap as ResidualInteractionMap
+python/fast_mlsirm/interaction_map.py:10: in &lt;module&gt;
+    from . import _core
+E   ImportError: cannot import name '_core' from partially initialized module 'fast_mlsirm' (most likely due to a circular import) (/private/tmp/fmls-regression-source-20260928/python/fast_mlsirm/__init__.py)</error></testcase></testsuite></testsuites>

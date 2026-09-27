@@ -1,0 +1,10 @@
+{
+  "guard_head": "a14fa79",
+  "guard_sha256": "1416ffd8524363152f8960877209e075663f4701d1aede198a61edb9cf9299d2",
+  "input": "actual prior current-head three-case JUnit",
+  "input_sha256": "669eabaeb5c34767e6511bacc48bbf4e60f48a7c48eeff0682eeb4b85def4439",
+  "exit": 1,
+  "rejected_missing_fourth": true,
+  "message": "All four hardware contracts must execute",
+  "scope": "Negative actual workflow-consumer check; not positive hosted four-contract acceptance."
+}

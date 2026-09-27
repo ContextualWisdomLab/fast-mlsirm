@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="97.600" timestamp="2026-09-28T03:11:23.683390+09:00" hostname="Seonghoui-MacBookPro-2.local"><testcase classname="tests.test_joint_two_tier_score_bootstrap" name="test_joint_five_scale_resample_uses_actual_gpu" time="95.716"><failure message="Failed: Traceback (most recent call last):&#10;  File &quot;/private/tmp/fmls-regression-source-20260928/python/fast_mlsirm/two_tier_focal.py&quot;, line 566, in run_joint_two_tier_score_bootstrap&#10;    outputs[name] = fit_score_two_tier_groups(&#10;                    ^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;  File &quot;/private/tmp/fmls-regression-source-20260928/python/fast_mlsirm/two_tier_focal.py&quot;, line 460, in fit_score_two_tier_groups&#10;    raise error&#10;RuntimeError: group 0: loglik_decreased">@pytest.mark.skipif(os.environ.get("FOCAL_GPU_NATIVE") != "1",
+                        reason="requires explicitly enabled actual GPU hardware")
+    def test_joint_five_scale_resample_uses_actual_gpu():
+        """Exercise one shared resample through five real Cai2010 fit/score paths.
+    
+        Efron1979 resampling and Cai2010 numerical source contracts are inherited
+        from the producers. Five synthetic six-latent response matrices use the
+        existing continuous Gaussian fixture with different declared seeds. One
+        replicate and seven fit/nine score nodes test execution, not uncertainty
+        precision, study convergence or population recovery. No stub fitting.
+        """
+        from fast_mlsirm.two_tier_focal import run_joint_two_tier_score_bootstrap
+        from test_two_tier_focal_gaussian_recovery_native import _continuous_six_latent_fixture
+    
+        ids = np.arange(1024)
+        groups = np.tile([0, 1], 512)
+        controls = dict(
+            reference_group=1, n_cat=4, n_primary=2, n_specific=4, focal_primary=0,
+            initial_mean=np.zeros((2, 6)), initial_sd=np.ones((2, 6)),
+            fit_q_primary=7, fit_q_specific=7, score_q_primary=9, score_q_specific=9,
+            q_nuisance=121, max_iter=2000, tol=1e-6, n_starts=2, seed=20260928,
+            device="gpu", gpu_memory_budget_bytes=1 &lt;&lt; 30, cache_item_tables=True,
+        )
+        scales = {}
+        for i in range(5):
+            ref, ap, _, sm, _, _ = _continuous_six_latent_fixture(
+                512, np.zeros(6), np.ones(6), 20260928 + 2 * i,
+            )
+            focal, _, _, _, _, _ = _continuous_six_latent_fixture(
+                512, np.array([.30, -.25, .20, -.30, .35, -.15]),
+                np.array([1.15, .85, .80, 1.20, 1.10, .90]), 20260929 + 2 * i,
+            )
+            y = np.stack([focal, ref], axis=1).reshape(1024, 16)
+            scales[str(i)] = dict(person_ids=ids, responses=y, primary_map=ap != 0,
+                                  specific_map=sm, controls=controls)
+        out = run_joint_two_tier_score_bootstrap(
+            scales, ids, groups, n_groups=2, n_replicates=1, base_seed=20260928,
+        )
+        if out["records"][0]["failure"] is not None:
+&gt;           pytest.fail(out["records"][0]["failure"]["traceback"])
+E           Failed: Traceback (most recent call last):
+E             File "/private/tmp/fmls-regression-source-20260928/python/fast_mlsirm/two_tier_focal.py", line 566, in run_joint_two_tier_score_bootstrap
+E               outputs[name] = fit_score_two_tier_groups(
+E                               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E             File "/private/tmp/fmls-regression-source-20260928/python/fast_mlsirm/two_tier_focal.py", line 460, in fit_score_two_tier_groups
+E               raise error
+E           RuntimeError: group 0: loglik_decreased
+
+tests/test_joint_two_tier_score_bootstrap.py:113: Failed</failure></testcase></testsuite></testsuites>

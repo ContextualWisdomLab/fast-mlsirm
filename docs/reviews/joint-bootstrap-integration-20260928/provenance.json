@@ -1,0 +1,32 @@
+{
+  "tested_head": "d542fd5dd0ed923c06f82686e7ed20034df767cc",
+  "parents": [
+    "0ee35a6e9c278b70461dc345190b2c8433b24207",
+    "ca9cf58eb95207545c693b730ecae4cb482b28bc"
+  ],
+  "native_install_exit": 0,
+  "test_exit": 0,
+  "passed": 89,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "cases_by_module": {
+    "tests.test_bootstrap_shared_indices": 32,
+    "tests.test_bootstrap_failure_receipts": 14,
+    "tests.test_bootstrap_slope_prior": 8,
+    "tests.test_two_tier_expected_raw": 29,
+    "tests.test_two_tier_focal_native_api": 2,
+    "tests.test_two_tier_focal_six_latent_native": 3,
+    "tests.test_two_tier_focal_gpu_native": 1
+  },
+  "installed_core_sha256": "0d9a3c907914a1e7c383a2f19971415b26295a48b292fded4e764b08d7f60a57",
+  "first_attempt": "Before native install completed, three collection errors from missing _core. Preserved; not a numerical test failure or acceptance.",
+  "scope": "Shared-plan/prior/failure bookkeeping uses stubs; selected expected-score and real-native API/six-latent/GPU short contracts run against installed combined core. Not full joint worker, population recovery, actual-data or release acceptance.",
+  "remaining": [
+    "full joint replicate producer",
+    "current-head required CI and nonauthor review",
+    "normal integration",
+    "immutable release",
+    "actual-data convergence and sensitivity"
+  ]
+}

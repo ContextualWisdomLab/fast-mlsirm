@@ -1,0 +1,7 @@
+{
+  "scope": "20 missing expected-score test/helper function docstrings; all functions in this file now documented. Not whole-library source audit or bot threshold acceptance.",
+  "executable_AST_check": "identical after function docstrings removed; module source note only afterward",
+  "tests": "29 passed3.06s; exit0; original log/JUnit preserved",
+  "numerical_source": "Existing curve function docstrings with Penn State independent Gaussian theorem and Golub/Welsch quadrature; from-fit admission is an implementation contract",
+  "pending": "Current new head hosted checks/review; full joint producer, release and study acceptance."
+}
