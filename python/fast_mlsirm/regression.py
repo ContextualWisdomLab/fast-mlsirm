@@ -145,9 +145,19 @@ def contrast(
 ) -> dict[str, Any]:
     """Estimate ``vec @ beta`` under ``vcov`` with Wald χ²(1) and t/F tails.
 
-    When ``df`` is omitted, the t/F residual degrees of freedom default to
-    ``NaN``-guarded failure in Rust unless supplied; callers should pass
-    ``n - k`` from the matching fit.
+    ``df`` is required: Python rejects omission before calling Rust. Pass
+    ``n - k`` from the matching fit for the t/F reference distributions.
+
+    Source and scope: statsmodels Developers, ``RegressionResults.t_test``
+    manual, Parameters ``r_matrix``, ``cov_p`` and ``use_t``:
+    https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html
+    The documented linear hypothesis is ``R beta = q`` with caller-selected
+    covariance and t/normal reference. This API fixes ``q=0`` for one row.
+    ``RegressionResults.cov_params``, Notes, documents pre/post-multiplication:
+    https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.cov_params.html
+    Applied to supplied ``V``, variance is ``vec @ V @ vec`` and the standard
+    error is its square root. This does not validate the supplied covariance
+    estimator or make HC3 finite-sample t inference exact.
     """
     beta_arr = _as_float64_vector(np.asarray(beta, dtype=np.float64), "beta")
     vec_arr = _as_float64_vector(
@@ -265,6 +275,10 @@ def conditional_slope(
     For the H1–H5 design ``Y ~ X*W*Z + X*E`` (length-10 ``beta``/``vcov``),
     ``focal`` is ``\"X\"`` or ``\"Z\"``. SE is ``sqrt(c' V c)`` from the Rust
     contrast path (Aiken & West, 1991, ch. 2; Hayes, 2018, ch. 7–8).
+    The coefficient vector is obtained by differentiating this explicitly
+    declared polynomial; that algebra does not select a study hypothesis or
+    moderator probe. See :func:`contrast` for the opened linear-hypothesis
+    and covariance-transformation manuals and reference-distribution scope.
     """
     if type(focal) is not str:
         raise ValueError('focal must be a string ("X" or "Z")')
@@ -300,6 +314,10 @@ def slope_difference(
     ``probes_a`` / ``probes_b`` are ``(x, w, z, e)`` on the centered scale.
     The contrast equals the difference of the two simple-slope weight
     vectors (Hayes, 2018, ch. 7–8 conditional-effect pairwise comparison).
+    With ``c = c_a - c_b``, :func:`contrast` applies ``c @ V @ c`` once,
+    retaining covariance between the two slopes. Its source manuals and
+    inference scope apply here; adding the slopes' separate variances would
+    omit their covariance. Probes remain caller-defined estimands.
     """
     if type(focal) is not str:
         raise ValueError('focal must be a string ("X" or "Z")')
