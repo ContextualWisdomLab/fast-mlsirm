@@ -421,12 +421,43 @@ def verify_cargo_graph_closure(receipts: list[dict], source: Path, source_sha: s
         for python in ("3.12", "3.13", "3.14")}
     if (len(receipts) != 13 or {record.get("leg") for record in receipts} != expected_legs):
         raise ValueError("Cargo closure receipts do not cover all release legs")
+    tracked = subprocess.check_output(
+        ["git", "-C", str(source), "ls-tree", "-r", "--name-only", source_sha], text=True
+    ).splitlines()
+    declarations = {path for path in tracked if Path(path).name in ("Cargo.toml", "Cargo.lock")
+                    or path.endswith((".cargo/config", ".cargo/config.toml"))}
+    required = {"crates/fast-mlsirm-py/Cargo.toml", "crates/fast-mlsirm-py/Cargo.lock",
+                "crates/mlsirm-core/Cargo.toml"}
+    if not required <= declarations:
+        raise ValueError("Cargo closure source declarations are missing")
+    for relative in sorted(declarations):
+        path = source / relative
+        if (path.is_symlink() or not path.is_file()
+                or any((source / parent).is_symlink() for parent in Path(relative).parents)):
+            raise ValueError("Cargo closure source declaration is not a regular file")
+        blob = subprocess.check_output(
+            ["git", "-C", str(source), "show", f"{source_sha}:{relative}"])
+        if hash_file(path) != hashlib.sha256(blob).hexdigest():
+            raise ValueError("Cargo closure source declaration differs from selected commit")
+    for relative in declarations:
+        for parent in Path(relative).parents:
+            for name in ("config", "config.toml"):
+                config = parent / ".cargo" / name
+                path = source / config
+                if (path.exists() or path.is_symlink()) and config.as_posix() not in declarations:
+                    raise ValueError("Cargo closure contains an untracked configuration")
     manifest = source / "crates/fast-mlsirm-py/Cargo.toml"
     lock = tomllib.loads((source / "crates/fast-mlsirm-py/Cargo.lock").read_text(encoding="utf-8"))
     locked = {(item["name"], item["version"], item.get("source")): item.get("checksum")
               for item in lock["package"]}
     graphs = {}
     for receipt in receipts:
+        target = receipt["leg"].rsplit("-py", 1)[0]
+        expected_targets = (set() if target == "sdist" else
+                            {"aarch64-apple-darwin", "x86_64-apple-darwin"}
+                            if target == "universal2-apple-darwin" else {target})
+        if type(receipt.get("cargo_targets")) is not dict or set(receipt["cargo_targets"]) != expected_targets:
+            raise ValueError(f"{receipt['leg']}: Cargo closure target graph set is incomplete")
         for triple, reported in receipt["cargo_targets"].items():
             if triple not in graphs:
                 metadata = json.loads(subprocess.check_output(

@@ -436,3 +436,54 @@ def test_selection_report_binds_immutable_choices_and_archive(tmp_path):
         changed[field] = value
         with pytest.raises(ValueError):
             verify(changed, source, sha)
+
+
+@pytest.mark.parametrize("changed", ["Cargo.toml", "Cargo.lock", "crates/mlsirm-core/Cargo.toml",
+                                   "crates/fast-mlsirm-py/Cargo.toml",
+                                   "crates/fast-mlsirm-py/Cargo.lock", ".cargo/config.toml"])
+def test_cargo_closure_rejects_changed_source_before_cargo(tmp_path, monkeypatch, changed):
+    source = tmp_path / "source"
+    source.mkdir()
+    for relative in ("Cargo.toml", "Cargo.lock", "crates/mlsirm-core/Cargo.toml",
+                     "crates/fast-mlsirm-py/Cargo.toml", "crates/fast-mlsirm-py/Cargo.lock"):
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# committed declaration\n")
+    for args in [("init", "-q"), ("add", "."),
+                 ("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
+                  "commit", "-qm", "source")]:
+        subprocess.run(["git", "-C", str(source), *args], check=True, capture_output=True)
+    sha = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    path = source / changed
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("# changed after source selection\n")
+    legs = re.search(r'EXPECTED_WHEEL_LEGS: "([^"]+)"', WORKFLOW).group(1).split() + ["sdist"]
+    receipts = [{"leg": leg, "cargo_targets": {}} for leg in legs]
+    original = subprocess.check_output
+
+    def no_cargo(command, **kwargs):
+        assert command[0] != "cargo"
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "check_output", no_cargo)
+    with pytest.raises(ValueError, match="source declaration differs|untracked configuration"):
+        M["verify_cargo_graph_closure"](receipts, source, sha)
+
+
+def test_cargo_closure_requires_every_target_graph(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    for relative in ("crates/mlsirm-core/Cargo.toml", "crates/fast-mlsirm-py/Cargo.toml",
+                     "crates/fast-mlsirm-py/Cargo.lock"):
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("package = []\n" if relative.endswith(".lock") else "# fixture\n")
+    for args in [("init", "-q"), ("add", "."),
+                 ("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
+                  "commit", "-qm", "source")]:
+        subprocess.run(["git", "-C", str(source), *args], check=True, capture_output=True)
+    sha = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    legs = re.search(r'EXPECTED_WHEEL_LEGS: "([^"]+)"', WORKFLOW).group(1).split() + ["sdist"]
+    receipts = [{"leg": leg, "cargo_targets": {}} for leg in legs]
+    with pytest.raises(ValueError, match="target graph set is incomplete"):
+        M["verify_cargo_graph_closure"](receipts, source, sha)
