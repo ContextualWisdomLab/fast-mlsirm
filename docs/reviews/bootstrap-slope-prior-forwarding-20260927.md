@@ -47,3 +47,22 @@ Not accepted yet: native recovery/interval behavior, full exact-head hosted
 checks, nonauthor approval, merged immutable release and install hash; joint
 DT/E/AC/Z/Y refitting/scoring/regression and study replicates. The existing
 batch endpoint movement heuristic is not an Andrews–Buchinsky accuracy rule.
+
+## Integrated source correction and final scoped check
+
+An ordinary merge preserves PR #2188 head
+eae402c905a2b886f69d5ae1a64e3b605e3fcca1. Its correction removes the unsupported
+Andrews–Buchinsky attribution from the endpoint-movement heuristic. The actual
+Cowles PDF was opened: PDF page 2 is printed 23 and PDF page 3 is printed 24.
+Printed 24 defines percentage deviation from the ideal quantity and its
+probability bound, different from successive-batch movement. No stopping
+algorithm is replaced in this integration.
+
+At integration head 83a7fcc9e0c146ec96c6b7758c2dab18e9c94fd5, the two new test
+files plus the inherited public-doc source-boundary check passed: 23 passed,
+0.06 seconds. A first post-merge invocation failed before collection because
+the sparse merge removed hydrated Python files; they were restored from that
+exact head before the successful invocation. The subsequent evidence-note
+append also initially failed on a missing sparse file; the PR opened at the
+already-tested code head. The note is now restored and updated in a follow-up.
+No native MAP result or active job restart is established by these operations.
