@@ -2,6 +2,10 @@
 //!
 //! Numerical work lives in `mlsirm-core::regression`. This binding validates
 //! NumPy layout, delegates to the core, and marshals results into Python dicts.
+//! Binding source: rust-numpy 0.29.0 `PyReadonlyArray::as_array` and
+//! `PyArray::from_slice`; PyO3 0.29.0 `PyDictMethods::set_item` (crate sources
+//! at <https://crates.io/crates/numpy/0.29.0> and
+//! <https://crates.io/crates/pyo3/0.29.0>).
 
 use mlsirm_core::regression::{
     absolute_differences, centered_product_design, compare_ols_column_subset, chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc,
@@ -13,10 +17,12 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 use pyo3::wrap_pyfunction;
 
+/// Forward an HC label to the core's MacKinnon–White estimator selector.
 fn parse_hc(hc: &str) -> PyResult<HcType> {
     HcType::parse(hc).map_err(PyValueError::new_err)
 }
 
+/// Pack the core OLS/HC result with the PyO3/rust-numpy APIs cited above.
 fn fit_dict(py: Python<'_>, fit: &OlsFit, vcov: &[f64], hc: &str) -> PyResult<Py<PyDict>> {
     let out = PyDict::new(py);
     out.set_item("n", fit.n)?;
@@ -33,6 +39,7 @@ fn fit_dict(py: Python<'_>, fit: &OlsFit, vcov: &[f64], hc: &str) -> PyResult<Py
     Ok(out.into())
 }
 
+/// Pack a core linear restriction result with the PyO3 API cited above.
 fn contrast_dict(
     py: Python<'_>,
     result: mlsirm_core::regression::ContrastResult,
@@ -75,6 +82,9 @@ fn py_centered_product_design(
     Ok(out.into())
 }
 
+/// Delegate OLS/HC0–HC3 to core; see MacKinnon & White (1985), equations
+/// 1–12, in `mlsirm_core::regression`'s module documentation. Array access
+/// follows the rust-numpy 0.29.0 source cited above.
 #[pyfunction(name = "fit_ols_hc", signature = (x, y, hc="HC3"))]
 fn py_fit_ols_hc(
     py: Python<'_>,
@@ -161,6 +171,9 @@ fn py_compare_ols_column_subset(py: Python<'_>, x: PyReadonlyArray2<'_, f64>, y:
     Ok(out.into())
 }
 
+/// Delegate the one-row restriction to core. Source: statsmodels Developers,
+/// `RegressionResults.t_test`, `r_matrix`, `cov_p`, and `use_t`:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 #[pyfunction(name = "linear_contrast")]
 fn py_linear_contrast(
     py: Python<'_>,
@@ -176,12 +189,17 @@ fn py_linear_contrast(
     contrast_dict(py, result)
 }
 
+/// Export the core's caller-selected interaction design; its docstring cites
+/// Aiken & West (1991, ch. 2) and Hayes (2018, ch. 7).
 #[pyfunction(name = "xwz_e_design_row")]
 fn py_xwz_e_design_row(py: Python<'_>, x: f64, w: f64, z: f64, e: f64) -> Py<PyArray1<f64>> {
     let row = xwz_e_design_row(x, w, z, e);
     PyArray1::from_slice(py, &row).into()
 }
 
+/// Delegate a mean prediction. Source: statsmodels Developers,
+/// `RegressionResults.predict`, Notes on positional column matching:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.predict.html>.
 #[pyfunction(name = "design_row_dot")]
 fn py_design_row_dot(
     row: PyReadonlyArray1<'_, f64>,
@@ -190,6 +208,9 @@ fn py_design_row_dot(
     design_row_dot(row.as_slice()?, beta.as_slice()?).map_err(PyValueError::new_err)
 }
 
+/// Delegate a derivative-weight linear restriction. Source: statsmodels
+/// Developers, `RegressionResults.t_test`, `r_matrix` and `cov_p`:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 #[pyfunction(
     name = "conditional_slope",
     signature = (beta, vcov, focal, x, w, z, e, df)
@@ -210,6 +231,9 @@ fn py_conditional_slope(
     contrast_dict(py, result)
 }
 
+/// Delegate one restriction formed from two derivative-weight rows. Source:
+/// statsmodels Developers, `RegressionResults.t_test`, `r_matrix`:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 #[pyfunction(name = "slope_difference")]
 fn py_slope_difference(
     py: Python<'_>,
@@ -232,16 +256,22 @@ fn py_slope_difference(
     contrast_dict(py, result)
 }
 
+/// Delegate the χ²(1) survival function; source is `mlsirm_core::fitstats`
+/// and its documented distribution contract.
 #[pyfunction(name = "chi2_sf_df1")]
 fn py_chi2_sf_df1(q: f64) -> f64 {
     chi2_sf_df1(q)
 }
 
+/// Delegate the F survival function; core cites Press et al. (2007, §6.4)
+/// for regularized incomplete-beta evaluation.
 #[pyfunction(name = "f_sf")]
 fn py_f_sf(f: f64, df1: f64, df2: f64) -> f64 {
     f_sf(f, df1, df2)
 }
 
+/// Delegate the Student-t survival function; core cites Press et al.
+/// (2007, §6.4) for regularized incomplete-beta evaluation.
 #[pyfunction(name = "t_sf")]
 fn py_t_sf(t: f64, df: f64) -> f64 {
     t_sf(t, df)

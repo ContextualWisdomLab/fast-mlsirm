@@ -336,6 +336,8 @@ pub fn compare_ols_column_subset(x: &[f64], y: &[f64], n: usize, k: usize,
 }
 
 /// Linear contrast `c'β` under a supplied covariance matrix.
+/// Source: statsmodels Developers, `RegressionResults.t_test`, `r_matrix`
+/// and `cov_p`: <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 #[derive(Clone, Debug)]
 pub struct ContrastResult {
     /// Point estimate `c'β`.
@@ -359,6 +361,8 @@ pub struct ContrastResult {
 }
 
 /// Fit OLS by normal equations and compute the hat diagonal.
+/// Source: MacKinnon & White (1985), eqs. 1–2 and 7–12, with the
+/// working-paper locator and full citation in this module's References.
 ///
 /// `x` is row-major `n × k`, `y` length `n`. Fails closed on rank deficiency,
 /// non-finite inputs, or hat values outside `[0, 1)`.
@@ -438,6 +442,8 @@ pub fn fit_ols(x: &[f64], y: &[f64], n: usize, k: usize) -> Result<OlsFit, Strin
 }
 
 /// Sandwich covariance `V` for the requested HC type (row-major `k × k`).
+/// Source: MacKinnon & White (1985), eqs. 5–12; the HC0–HC3 definitions
+/// and omitted optional HC3 scaling are stated in this module's Estimators.
 pub fn sandwich_vcov(fit: &OlsFit, x: &[f64], hc: HcType) -> Result<Vec<f64>, String> {
     let n = fit.n;
     let k = fit.k;
@@ -517,6 +523,8 @@ pub fn sandwich_vcov(fit: &OlsFit, x: &[f64], hc: HcType) -> Result<Vec<f64>, St
 }
 
 /// Fit OLS and return the requested HC sandwich covariance in one call.
+/// Source: MacKinnon & White (1985), eqs. 1–12; see this module's
+/// Estimators for the implemented HC variants and their limits.
 pub fn fit_ols_hc(
     x: &[f64],
     y: &[f64],
@@ -530,6 +538,9 @@ pub fn fit_ols_hc(
 }
 
 /// Linear contrast under `vcov` with Wald χ²(1) and t/F tails at `df = n - k`.
+/// Source: statsmodels Developers, `RegressionResults.t_test`, `r_matrix`,
+/// `cov_p`, and `use_t`:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 pub fn linear_contrast(
     beta: &[f64],
     vcov: &[f64],
@@ -638,6 +649,9 @@ pub fn xwz_e_design_row(x: f64, w: f64, z: f64, e: f64) -> [f64; XWZ_E_K] {
 }
 
 /// Dot product of a design row with `β` (predicted mean at probes).
+/// Source: statsmodels Developers, `RegressionResults.predict`, Notes:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.predict.html>.
+/// The caller supplies the fitted model's exact column order.
 pub fn design_row_dot(row: &[f64], beta: &[f64]) -> Result<f64, String> {
     if row.len() != beta.len() {
         return Err(format!(
@@ -701,6 +715,10 @@ pub fn conditional_slope_weights(
 }
 
 /// Simple slope estimate + Wald/t/F via [`linear_contrast`].
+/// Source: statsmodels Developers, `RegressionResults.t_test`, for the
+/// one-row linear restriction and supplied covariance; the weights are
+/// the derivatives displayed in this module's H1–H5 parameterization:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 pub fn conditional_slope(
     beta: &[f64],
     vcov: &[f64],
@@ -722,6 +740,9 @@ pub fn conditional_slope(
 }
 
 /// Difference of two simple slopes (same focal, two probe tuples `(x,w,z,e)`).
+/// Source: statsmodels Developers, `RegressionResults.t_test`, linear
+/// restriction `Rβ=0`; here `R` is the difference of the two slope-weight
+/// rows. <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 pub fn slope_difference(
     beta: &[f64],
     vcov: &[f64],
