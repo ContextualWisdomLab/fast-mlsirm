@@ -599,6 +599,28 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "errno",
+    "version": "0.3.14",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the complete Apache obligations, including all differences from the reviewed typenum Apache text. Choose MIT and retain every captured full notice. Whole-text digests are pinned by central helper 7cd4141eff5dff7a62f0dd152c2182f411343874. No Strix or whole-release acceptance.",
+    "archive_sha256": "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb",
+    "license_members": [
+      {
+        "member": "errno-0.3.14/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "errno-0.3.14/LICENSE-MIT",
+        "raw_sha256": "8764a597675778ddfd4e25f81b08a05dbcf089ac05662df7613fe67f150e3aa2"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/errno-0.3.14-MIT.txt",
+      "sha256": "c91a78681e269f9b5b80262696ec717ea7d0217bad86e3ec20a40751ae67b857"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "fastrand",
     "version": "2.4.1",
     "chosen": "MIT",
@@ -767,6 +789,50 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/generic-array-0.14.7-MIT.txt",
       "sha256": "c09aae9d3c77b531f56351a9947bc7446511d6b025b3255312d3e3442a9a7583"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "getrandom",
+    "version": "0.3.4",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the complete Apache obligations, including all differences from the reviewed typenum Apache text. Choose MIT and retain every captured full notice. Whole-text digests are pinned by central helper 7cd4141eff5dff7a62f0dd152c2182f411343874. No Strix or whole-release acceptance.",
+    "archive_sha256": "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd",
+    "license_members": [
+      {
+        "member": "getrandom-0.3.4/LICENSE-APACHE",
+        "raw_sha256": "aaff376532ea30a0cd5330b9502ad4a4c8bf769c539c87ffe78819d188a18ebf"
+      },
+      {
+        "member": "getrandom-0.3.4/LICENSE-MIT",
+        "raw_sha256": "29e9fe5074bd27e0e5d5d110394fbbcd841baee2651a3c4b4560a632702cede4"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/getrandom-0.3.4-MIT.txt",
+      "sha256": "fdb1a160c21fe8ac6222921e1cb1898911fabaff8b3c598a8c6d73ea77476f9c"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "getrandom",
+    "version": "0.4.3",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the complete Apache obligations, including all differences from the reviewed typenum Apache text. Choose MIT and retain every captured full notice. Whole-text digests are pinned by central helper 7cd4141eff5dff7a62f0dd152c2182f411343874. No Strix or whole-release acceptance.",
+    "archive_sha256": "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099",
+    "license_members": [
+      {
+        "member": "getrandom-0.4.3/LICENSE-APACHE",
+        "raw_sha256": "aaff376532ea30a0cd5330b9502ad4a4c8bf769c539c87ffe78819d188a18ebf"
+      },
+      {
+        "member": "getrandom-0.4.3/LICENSE-MIT",
+        "raw_sha256": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/getrandom-0.4.3-MIT.txt",
+      "sha256": "215350f4caff61187005f3bfed2af37750a73ed1ba30371f3f88ace8259842a3"
     }
   },
   {
@@ -1805,6 +1871,28 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "ppv-lite86",
+    "version": "0.2.21",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the complete Apache obligations, including all differences from the reviewed typenum Apache text. Choose MIT and retain every captured full notice. Whole-text digests are pinned by central helper 7cd4141eff5dff7a62f0dd152c2182f411343874. No Strix or whole-release acceptance.",
+    "archive_sha256": "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9",
+    "license_members": [
+      {
+        "member": "ppv-lite86-0.2.21/LICENSE-APACHE",
+        "raw_sha256": "0218327e7a480793ffdd4eb792379a9709e5c135c7ba267f709d6f6d4d70af0a"
+      },
+      {
+        "member": "ppv-lite86-0.2.21/LICENSE-MIT",
+        "raw_sha256": "4cada0bd02ea3692eee6f16400d86c6508bbd3bafb2b65fed0419f36d4f83e8f"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/ppv-lite86-0.2.21-MIT.txt",
+      "sha256": "4aba58f8150202b637fbacb6754e1fc8b074d7371616a8bc04ef52c07572b50e"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "presser",
     "version": "0.3.1",
     "chosen": "MIT",
@@ -1867,6 +1955,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/proc-macro2-1.0.107-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "proptest",
+    "version": "1.11.0",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the complete Apache obligations, including all differences from the reviewed typenum Apache text. Choose MIT and retain every captured full notice. Whole-text digests are pinned by central helper 7cd4141eff5dff7a62f0dd152c2182f411343874. No Strix or whole-release acceptance.",
+    "archive_sha256": "4b45fcc2344c680f5025fe57779faef368840d0bd1f42f216291f0dc4ace4744",
+    "license_members": [
+      {
+        "member": "proptest-1.11.0/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "proptest-1.11.0/LICENSE-MIT",
+        "raw_sha256": "d8e0806926ce9f0a5030c382ecc0ffdf6de6fbea5c69a458435fd443fa7a5b92"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/proptest-1.11.0-MIT.txt",
+      "sha256": "f7dd159ac9189a124c98557a2f1c98b3fb5c57186eb602134405cfc8bd9cb27e"
     }
   },
   {
@@ -1989,6 +2099,28 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "quick-error",
+    "version": "1.2.3",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the complete Apache obligations, including all differences from the reviewed typenum Apache text. Choose MIT and retain every captured full notice. Whole-text digests are pinned by central helper 7cd4141eff5dff7a62f0dd152c2182f411343874. No Strix or whole-release acceptance.",
+    "archive_sha256": "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0",
+    "license_members": [
+      {
+        "member": "quick-error-1.2.3/LICENSE-APACHE",
+        "raw_sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08"
+      },
+      {
+        "member": "quick-error-1.2.3/LICENSE-MIT",
+        "raw_sha256": "058f01fe181608d027fcde7e528fc03ea3cf90f30903c407644b0a9bbc54f500"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/quick-error-1.2.3-MIT.txt",
+      "sha256": "ce807b2fb49bf4b366d4296c920543602f0b658fc3917e94b341eeac36e85ca1"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "quote",
     "version": "1.0.46",
     "chosen": "MIT",
@@ -2029,6 +2161,94 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/quote-1.0.47-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "rand",
+    "version": "0.9.4",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the complete Apache obligations, including all differences from the reviewed typenum Apache text. Choose MIT and retain every captured full notice. Whole-text digests are pinned by central helper 7cd4141eff5dff7a62f0dd152c2182f411343874. No Strix or whole-release acceptance.",
+    "archive_sha256": "44c5af06bb1b7d3216d91932aed5265164bf384dc89cd6ba05cf59a35f5f76ea",
+    "license_members": [
+      {
+        "member": "rand-0.9.4/LICENSE-APACHE",
+        "raw_sha256": "35242e7a83f69875e6edeff02291e688c97caafe2f8902e4e19b49d3e78b4cab"
+      },
+      {
+        "member": "rand-0.9.4/LICENSE-MIT",
+        "raw_sha256": "209fbbe0ad52d9235e37badf9cadfe4dbdc87203179c0899e738b39ade42177b"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/rand-0.9.4-MIT.txt",
+      "sha256": "c351fbab5f47cee9271b144edad2ef525f5d6475006de5b0503321da27678d6a"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "rand_chacha",
+    "version": "0.9.0",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the complete Apache obligations, including all differences from the reviewed typenum Apache text. Choose MIT and retain every captured full notice. Whole-text digests are pinned by central helper 7cd4141eff5dff7a62f0dd152c2182f411343874. No Strix or whole-release acceptance.",
+    "archive_sha256": "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb",
+    "license_members": [
+      {
+        "member": "rand_chacha-0.9.0/LICENSE-APACHE",
+        "raw_sha256": "35242e7a83f69875e6edeff02291e688c97caafe2f8902e4e19b49d3e78b4cab"
+      },
+      {
+        "member": "rand_chacha-0.9.0/LICENSE-MIT",
+        "raw_sha256": "209fbbe0ad52d9235e37badf9cadfe4dbdc87203179c0899e738b39ade42177b"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/rand_chacha-0.9.0-MIT.txt",
+      "sha256": "c351fbab5f47cee9271b144edad2ef525f5d6475006de5b0503321da27678d6a"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "rand_core",
+    "version": "0.9.5",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the complete Apache obligations, including all differences from the reviewed typenum Apache text. Choose MIT and retain every captured full notice. Whole-text digests are pinned by central helper 7cd4141eff5dff7a62f0dd152c2182f411343874. No Strix or whole-release acceptance.",
+    "archive_sha256": "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c",
+    "license_members": [
+      {
+        "member": "rand_core-0.9.5/LICENSE-APACHE",
+        "raw_sha256": "6df43f6f4b5d4587f3d8d71e45532c688fd168afa5fe89d571cb32fa09c4ef51"
+      },
+      {
+        "member": "rand_core-0.9.5/LICENSE-MIT",
+        "raw_sha256": "209fbbe0ad52d9235e37badf9cadfe4dbdc87203179c0899e738b39ade42177b"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/rand_core-0.9.5-MIT.txt",
+      "sha256": "548172031b1406c79246b5586750aaf5f78306232ef5d4bb416f8f81f047ebed"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "rand_xorshift",
+    "version": "0.4.0",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the complete Apache obligations, including all differences from the reviewed typenum Apache text. Choose MIT and retain every captured full notice. Whole-text digests are pinned by central helper 7cd4141eff5dff7a62f0dd152c2182f411343874. No Strix or whole-release acceptance.",
+    "archive_sha256": "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a",
+    "license_members": [
+      {
+        "member": "rand_xorshift-0.4.0/LICENSE-APACHE",
+        "raw_sha256": "35242e7a83f69875e6edeff02291e688c97caafe2f8902e4e19b49d3e78b4cab"
+      },
+      {
+        "member": "rand_xorshift-0.4.0/LICENSE-MIT",
+        "raw_sha256": "209fbbe0ad52d9235e37badf9cadfe4dbdc87203179c0899e738b39ade42177b"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/rand_xorshift-0.4.0-MIT.txt",
+      "sha256": "c351fbab5f47cee9271b144edad2ef525f5d6475006de5b0503321da27678d6a"
     }
   },
   {
@@ -2253,6 +2473,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/rustversion-1.0.23-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "rusty-fork",
+    "version": "0.3.1",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the complete Apache obligations, including all differences from the reviewed typenum Apache text. Choose MIT and retain every captured full notice. Whole-text digests are pinned by central helper 7cd4141eff5dff7a62f0dd152c2182f411343874. No Strix or whole-release acceptance.",
+    "archive_sha256": "cc6bf79ff24e648f6da1f8d1f011e9cac26491b619e6b9280f2b47f1774e6ee2",
+    "license_members": [
+      {
+        "member": "rusty-fork-0.3.1/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "rusty-fork-0.3.1/LICENSE-MIT",
+        "raw_sha256": "d8e0806926ce9f0a5030c382ecc0ffdf6de6fbea5c69a458435fd443fa7a5b92"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/rusty-fork-0.3.1-MIT.txt",
+      "sha256": "f7dd159ac9189a124c98557a2f1c98b3fb5c57186eb602134405cfc8bd9cb27e"
     }
   },
   {
@@ -2637,6 +2879,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/target-lexicon-0.13.5-Apache-2.0-LLVM-exception.txt",
       "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "tempfile",
+    "version": "3.27.0",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the complete Apache obligations, including all differences from the reviewed typenum Apache text. Choose MIT and retain every captured full notice. Whole-text digests are pinned by central helper 7cd4141eff5dff7a62f0dd152c2182f411343874. No Strix or whole-release acceptance.",
+    "archive_sha256": "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd",
+    "license_members": [
+      {
+        "member": "tempfile-3.27.0/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "tempfile-3.27.0/LICENSE-MIT",
+        "raw_sha256": "8b427f5bc501764575e52ba4f9d95673cf8f6d80a86d0d06599852e1a9a20a36"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/tempfile-3.27.0-MIT.txt",
+      "sha256": "56e5714226978591caf3bf3a67fa0bee60a12067373bbc0370d256dd95da1111"
     }
   },
   {
