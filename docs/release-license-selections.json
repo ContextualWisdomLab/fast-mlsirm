@@ -221,6 +221,28 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "cpufeatures",
+    "version": "0.2.17",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280",
+    "license_members": [
+      {
+        "member": "cpufeatures-0.2.17/LICENSE-APACHE",
+        "raw_sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5"
+      },
+      {
+        "member": "cpufeatures-0.2.17/LICENSE-MIT",
+        "raw_sha256": "ae9baa7beea910273c2f384c2a6b721fb7bd02bda3436074a1072e4ee689f985"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/cpufeatures-0.2.17-MIT.txt",
+      "sha256": "ae9baa7beea910273c2f384c2a6b721fb7bd02bda3436074a1072e4ee689f985"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "crunchy",
     "version": "0.2.4",
     "chosen": "MIT",
@@ -239,6 +261,50 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "crypto-common",
+    "version": "0.1.7",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a",
+    "license_members": [
+      {
+        "member": "crypto-common-0.1.7/LICENSE-APACHE",
+        "raw_sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5"
+      },
+      {
+        "member": "crypto-common-0.1.7/LICENSE-MIT",
+        "raw_sha256": "3521672491a3479422d5fe1aca6645dd2984090f85da6e5205abfb18fb7a6897"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/crypto-common-0.1.7-MIT.txt",
+      "sha256": "3521672491a3479422d5fe1aca6645dd2984090f85da6e5205abfb18fb7a6897"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "digest",
+    "version": "0.10.7",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292",
+    "license_members": [
+      {
+        "member": "digest-0.10.7/LICENSE-APACHE",
+        "raw_sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5"
+      },
+      {
+        "member": "digest-0.10.7/LICENSE-MIT",
+        "raw_sha256": "9e0dfd2dd4173a530e238cb6adb37aa78c34c6bc7444e0e10c1ab5d8881f63ba"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/digest-0.10.7-MIT.txt",
+      "sha256": "9e0dfd2dd4173a530e238cb6adb37aa78c34c6bc7444e0e10c1ab5d8881f63ba"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "dlib",
     "version": "0.5.3",
     "chosen": "MIT",
@@ -253,6 +319,50 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/dlib-0.5.3-MIT.txt",
       "sha256": "10e5daea68c3ab7da6468ea51860e9d4ac87ea6a9a2d34127beff17b7193b618"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "document-features",
+    "version": "0.2.12",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61",
+    "license_members": [
+      {
+        "member": "document-features-0.2.12/LICENSE-APACHE",
+        "raw_sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+      },
+      {
+        "member": "document-features-0.2.12/LICENSE-MIT",
+        "raw_sha256": "aa893340d14b9844625be6a50ac644169a01b52f0211cbf81b09e1874c8cd81d"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/document-features-0.2.12-MIT.txt",
+      "sha256": "aa893340d14b9844625be6a50ac644169a01b52f0211cbf81b09e1874c8cd81d"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "equivalent",
+    "version": "1.0.2",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f",
+    "license_members": [
+      {
+        "member": "equivalent-1.0.2/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "equivalent-1.0.2/LICENSE-MIT",
+        "raw_sha256": "7365cc8878a1d7ce155a58c4ca09c3d7a6be413efa5334a80ea842912b669349"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/equivalent-1.0.2-MIT.txt",
+      "sha256": "7365cc8878a1d7ce155a58c4ca09c3d7a6be413efa5334a80ea842912b669349"
     }
   },
   {
@@ -289,6 +399,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/glutin_wgl_sys-0.6.1-Apache-2.0.txt",
       "sha256": "a4445427440043e8ce6fadf7a43fb906cb0d7f6c573a560a9f142cf9f9bf8ff4"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "half",
+    "version": "2.7.1",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b",
+    "license_members": [
+      {
+        "member": "half-2.7.1/LICENSE-APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "half-2.7.1/LICENSE-MIT",
+        "raw_sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/half-2.7.1-MIT.txt",
+      "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1"
     }
   },
   {
@@ -359,6 +491,28 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "indexmap",
+    "version": "2.14.2",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855",
+    "license_members": [
+      {
+        "member": "indexmap-2.14.2/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "indexmap-2.14.2/LICENSE-MIT",
+        "raw_sha256": "ecc269ef87fd38a1d98e30bfac9ba964a9dbd9315c3770fed98d4d7cb5882055"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/indexmap-2.14.2-MIT.txt",
+      "sha256": "ecc269ef87fd38a1d98e30bfac9ba964a9dbd9315c3770fed98d4d7cb5882055"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "itoa",
     "version": "1.0.18",
     "chosen": "MIT",
@@ -421,6 +575,50 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/khronos-egl-6.0.0-Apache-2.0.txt",
       "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "libc",
+    "version": "0.2.189",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2",
+    "license_members": [
+      {
+        "member": "libc-0.2.189/LICENSE-APACHE",
+        "raw_sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+      },
+      {
+        "member": "libc-0.2.189/LICENSE-MIT",
+        "raw_sha256": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/libc-0.2.189-MIT.txt",
+      "sha256": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "litrs",
+    "version": "1.0.0",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092",
+    "license_members": [
+      {
+        "member": "litrs-1.0.0/LICENSE-APACHE",
+        "raw_sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+      },
+      {
+        "member": "litrs-1.0.0/LICENSE-MIT",
+        "raw_sha256": "7dc1552e88f49132cb358b1b962fc5e79fa42d70bcbb88c526d33e45b8e98036"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/litrs-1.0.0-MIT.txt",
+      "sha256": "7dc1552e88f49132cb358b1b962fc5e79fa42d70bcbb88c526d33e45b8e98036"
     }
   },
   {
@@ -561,6 +759,28 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "ndarray",
+    "version": "0.17.2",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "520080814a7a6b4a6e9070823bb24b4531daac8c4627e08ba5de8c5ef2f2752d",
+    "license_members": [
+      {
+        "member": "ndarray-0.17.2/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "ndarray-0.17.2/LICENSE-MIT",
+        "raw_sha256": "1fd6747d2c8e80f9fa766f57c5888864774621deb85cc2838ccaed727db32d45"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/ndarray-0.17.2-MIT.txt",
+      "sha256": "1fd6747d2c8e80f9fa766f57c5888864774621deb85cc2838ccaed727db32d45"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "num-complex",
     "version": "0.4.6",
     "chosen": "MIT",
@@ -579,6 +799,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/num-complex-0.4.6-MIT.txt",
       "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "num-conv",
+    "version": "0.2.2",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text matches a reviewed whole-text digest in central helper 9ac9d86e81ea407a8a0ece4ed02e801a443d817a. Choose MIT and preserve its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441",
+    "license_members": [
+      {
+        "member": "num-conv-0.2.2/LICENSE-Apache",
+        "raw_sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+      },
+      {
+        "member": "num-conv-0.2.2/LICENSE-MIT",
+        "raw_sha256": "e2e245f2b566d0bfafb0f6a04c16b82d710c4e6e7d799e39bb4ef6e541b85b98"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/num-conv-0.2.2-MIT.txt",
+      "sha256": "e2e245f2b566d0bfafb0f6a04c16b82d710c4e6e7d799e39bb4ef6e541b85b98"
     }
   },
   {
