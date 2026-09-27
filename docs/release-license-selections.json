@@ -199,6 +199,60 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "crunchy",
+    "version": "0.2.4",
+    "chosen": "MIT",
+    "rationale": "The complete bundled grant matches its reviewed whole-text digest in central helper b4b5341be7da60cdf59ce13d3866c3c513235443. Retain the full copyright, grant and conditions in distributions. This single-grant record binds notice retention; no Strix or whole-release approval.",
+    "archive_sha256": "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5",
+    "license_members": [
+      {
+        "member": "crunchy-0.2.4/LICENSE",
+        "raw_sha256": "3eab77734a181b2a2e8418af9004f960f715f04aac4d76a26cf774f63a7b13d1"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/crunchy-0.2.4-MIT.txt",
+      "sha256": "3eab77734a181b2a2e8418af9004f960f715f04aac4d76a26cf774f63a7b13d1"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "dlib",
+    "version": "0.5.3",
+    "chosen": "MIT",
+    "rationale": "The complete bundled grant matches its reviewed whole-text digest in central helper b4b5341be7da60cdf59ce13d3866c3c513235443. Retain the full copyright, grant and conditions in distributions. This single-grant record binds notice retention; no Strix or whole-release approval.",
+    "archive_sha256": "ab8ecd87370524b461f8557c119c405552c396ed91fc0a8eec68679eab26f94a",
+    "license_members": [
+      {
+        "member": "dlib-0.5.3/LICENSE.txt",
+        "raw_sha256": "10e5daea68c3ab7da6468ea51860e9d4ac87ea6a9a2d34127beff17b7193b618"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/dlib-0.5.3-MIT.txt",
+      "sha256": "10e5daea68c3ab7da6468ea51860e9d4ac87ea6a9a2d34127beff17b7193b618"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "generic-array",
+    "version": "0.14.7",
+    "chosen": "MIT",
+    "rationale": "The complete bundled grant matches its reviewed whole-text digest in central helper b4b5341be7da60cdf59ce13d3866c3c513235443. Retain the full copyright, grant and conditions in distributions. This single-grant record binds notice retention; no Strix or whole-release approval.",
+    "archive_sha256": "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a",
+    "license_members": [
+      {
+        "member": "generic-array-0.14.7/LICENSE",
+        "raw_sha256": "c09aae9d3c77b531f56351a9947bc7446511d6b025b3255312d3e3442a9a7583"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/generic-array-0.14.7-MIT.txt",
+      "sha256": "c09aae9d3c77b531f56351a9947bc7446511d6b025b3255312d3e3442a9a7583"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "hashbrown",
     "version": "0.16.1",
     "chosen": "MIT",
@@ -915,6 +969,24 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "redox_syscall",
+    "version": "0.5.18",
+    "chosen": "MIT",
+    "rationale": "The complete bundled grant matches its reviewed whole-text digest in central helper b4b5341be7da60cdf59ce13d3866c3c513235443. Retain the full copyright, grant and conditions in distributions. This single-grant record binds notice retention; no Strix or whole-release approval.",
+    "archive_sha256": "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d",
+    "license_members": [
+      {
+        "member": "redox_syscall-0.5.18/LICENSE",
+        "raw_sha256": "efcfee7981ff72431fffb06925cad00a23dce079ed4354f61030ad5abdb78829"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/redox_syscall-0.5.18-MIT.txt",
+      "sha256": "efcfee7981ff72431fffb06925cad00a23dce079ed4354f61030ad5abdb78829"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "rustc-hash",
     "version": "1.1.0",
     "chosen": "MIT",
@@ -1065,6 +1137,42 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/serde_json-1.0.151-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "slab",
+    "version": "0.4.12",
+    "chosen": "MIT",
+    "rationale": "The complete bundled grant matches its reviewed whole-text digest in central helper b4b5341be7da60cdf59ce13d3866c3c513235443. Retain the full copyright, grant and conditions in distributions. This single-grant record binds notice retention; no Strix or whole-release approval.",
+    "archive_sha256": "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5",
+    "license_members": [
+      {
+        "member": "slab-0.4.12/LICENSE",
+        "raw_sha256": "8ce0830173fdac609dfb4ea603fdc002c2f4af0dc9b1a005653f5da9cf534b18"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/slab-0.4.12-MIT.txt",
+      "sha256": "8ce0830173fdac609dfb4ea603fdc002c2f4af0dc9b1a005653f5da9cf534b18"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "slotmap",
+    "version": "1.1.1",
+    "chosen": "Zlib",
+    "rationale": "The complete bundled grant matches its reviewed whole-text digest in central helper b4b5341be7da60cdf59ce13d3866c3c513235443. Retain the full copyright, grant and conditions in distributions. This single-grant record binds notice retention; no Strix or whole-release approval.",
+    "archive_sha256": "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038",
+    "license_members": [
+      {
+        "member": "slotmap-1.1.1/LICENSE",
+        "raw_sha256": "6cec81441b2ab2b5090954c1fb5d0bcca81b86487b5849061fa8952d20ef67d4"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/slotmap-1.1.1-Zlib.txt",
+      "sha256": "6cec81441b2ab2b5090954c1fb5d0bcca81b86487b5849061fa8952d20ef67d4"
     }
   },
   {
@@ -1399,6 +1507,24 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/wasm-bindgen-shared-0.2.128-MIT.txt",
       "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wayland-sys",
+    "version": "0.31.11",
+    "chosen": "MIT",
+    "rationale": "The complete bundled grant matches its reviewed whole-text digest in central helper b4b5341be7da60cdf59ce13d3866c3c513235443. Retain the full copyright, grant and conditions in distributions. This single-grant record binds notice retention; no Strix or whole-release approval.",
+    "archive_sha256": "d8eab23fefc9e41f8e841df4a9c707e8a8c4ed26e944ef69297184de2785e3be",
+    "license_members": [
+      {
+        "member": "wayland-sys-0.31.11/LICENSE.txt",
+        "raw_sha256": "1cb6f4dee8c649f175736380495f0af0c753c87f22d50931692968bb24bf2161"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wayland-sys-0.31.11-MIT.txt",
+      "sha256": "1cb6f4dee8c649f175736380495f0af0c753c87f22d50931692968bb24bf2161"
     }
   },
   {
@@ -1861,6 +1987,24 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/windows-threading-0.2.1-MIT.txt",
       "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "xml-rs",
+    "version": "0.8.29",
+    "chosen": "MIT",
+    "rationale": "The complete bundled grant matches its reviewed whole-text digest in central helper b4b5341be7da60cdf59ce13d3866c3c513235443. Retain the full copyright, grant and conditions in distributions. This single-grant record binds notice retention; no Strix or whole-release approval.",
+    "archive_sha256": "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7",
+    "license_members": [
+      {
+        "member": "xml-rs-0.8.29/LICENSE",
+        "raw_sha256": "0dc18d924dc0a5f41172a393012843a5eaaef338e795b3645da9cc3b6068220b"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/xml-rs-0.8.29-MIT.txt",
+      "sha256": "0dc18d924dc0a5f41172a393012843a5eaaef338e795b3645da9cc3b6068220b"
     }
   }
 ]
