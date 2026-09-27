@@ -23,6 +23,50 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "android_system_properties",
+    "version": "0.1.5",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the separate Apache application notice in the checksum-matched archive. Choose the independently granted MIT alternative and retain both original texts. The short Apache reference is not treated as a full Apache grant. No Strix or whole-release approval.",
+    "archive_sha256": "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311",
+    "license_members": [
+      {
+        "member": "android_system_properties-0.1.5/LICENSE-APACHE",
+        "raw_sha256": "216486f29671a4262efe32af6d84a75bef398127f8c5f369b5c8305983887a06"
+      },
+      {
+        "member": "android_system_properties-0.1.5/LICENSE-MIT",
+        "raw_sha256": "80f275e90d799911ed3830a7f242a2ef5a4ade2092fe0aa07bfb2d2cf2f2b95e"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/android_system_properties-0.1.5-MIT.txt",
+      "sha256": "577d15ca3281e621a28a5bd7233420d099e7c28d794947b278baea595cd7dfff"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "android_system_properties",
+    "version": "0.1.6",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the separate Apache application notice in the checksum-matched archive. Choose the independently granted MIT alternative and retain both original texts. The short Apache reference is not treated as a full Apache grant. No Strix or whole-release approval.",
+    "archive_sha256": "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc",
+    "license_members": [
+      {
+        "member": "android_system_properties-0.1.6/LICENSE-APACHE",
+        "raw_sha256": "216486f29671a4262efe32af6d84a75bef398127f8c5f369b5c8305983887a06"
+      },
+      {
+        "member": "android_system_properties-0.1.6/LICENSE-MIT",
+        "raw_sha256": "80f275e90d799911ed3830a7f242a2ef5a4ade2092fe0aa07bfb2d2cf2f2b95e"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/android_system_properties-0.1.6-MIT.txt",
+      "sha256": "577d15ca3281e621a28a5bd7233420d099e7c28d794947b278baea595cd7dfff"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "arrayvec",
     "version": "0.7.8",
     "chosen": "MIT",
