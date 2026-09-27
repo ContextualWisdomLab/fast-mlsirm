@@ -195,5 +195,24 @@ Remote main ancestry and verifier/template/fixture byte equality were
 verified after merge. The reviewed license stack is now adopted in main.
 This does not clear the remaining HOLDs or prove release artifact acceptance.
 
+## Standalone fuzz lock repair adopted
+
+PR2173 merged exact head `841ec40fb31c49832427d47df1797adf851dd3c9` into
+main at `6cb7a2caad1c014f5933e303e9c8fddf1b8cd079`, 2026-09-27T13:35:55Z.
+Its sole diff against main was fuzz/Cargo.lock. In a source archive of that
+exact head, cargo metadata --locked resolved 151 packages without altering
+the lock (SHA256 `4289848b06599ae426ff09e4e5449d3b013a0579f198b89b1f0a436729462def`).
+The first offline attempt lacked cached arbitrary1.4.2; fetching the existing
+locked dependencies resolved that environmental limitation. No compile was
+claimed from this metadata check. Hosted address fuzzing, final CodeQL and
+security scans had succeeded, and review threads were empty.
+
+The Python aggregate failure log explicitly reported a cancelled matrix;
+the historical compatibility CodeQL failure reported a pending dispatch
+verdict, rather than a vulnerability. The draft flag was removed before the
+authorized exact-head bypass. Remote main ancestry and equality of the fuzz
+lock blob were verified after merge. Keep fresh hosted jobs separate from
+these historical receipts and retain all remaining license/artifact HOLDs.
+
 The Goal remains active. This document is an RCA and execution plan, not a
 release-wide license verdict or proof of completed hosted gates.
