@@ -12,7 +12,7 @@ jobs:
     # Branch protection requires a deterministic Actions-language CodeQL check
     # on PRs. Default setup remains the repository's code-scanning upload owner.
     name: Analyze (actions)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow_ref == 'ContextualWisdomLab/fast-mlsirm/.github/workflows/codeql.yml@refs/heads/main' && '{"group":"CWL central CodeQL","labels":["self-hosted","Linux","X64"]}' || '"ubuntu-latest"') }}
     permissions:
       contents: read
       security-events: write
@@ -24,13 +24,19 @@ jobs:
       - uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
         with:
           upload: never
+          output: codeql-results/actions
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: codeql-diagnostic-actions-${{ github.sha }}
+          path: codeql-results/actions/*.sarif
+          if-no-files-found: error
 
   analyze-python:
     # Default setup already owns ordinary Python code-scanning uploads.
     # Retain a no-upload advanced diagnostic only for explicit operator runs.
     if: github.event_name == 'workflow_dispatch'
     name: Analyze (python)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow_ref == 'ContextualWisdomLab/fast-mlsirm/.github/workflows/codeql.yml@refs/heads/main' && '{"group":"CWL central CodeQL","labels":["self-hosted","Linux","X64"]}' || '"ubuntu-latest"') }}
     permissions:
       contents: read
       security-events: write
@@ -42,3 +48,9 @@ jobs:
       - uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
         with:
           upload: never
+          output: codeql-results/python
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: codeql-diagnostic-python-${{ github.sha }}
+          path: codeql-results/python/*.sarif
+          if-no-files-found: error
