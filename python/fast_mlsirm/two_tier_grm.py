@@ -675,10 +675,13 @@ def _probabilists_gauss_hermite(q: int) -> tuple[np.ndarray, np.ndarray]:
     Nodes are the eigenvalues of the symmetric tridiagonal Jacobi matrix of the
     ``He_n`` recurrence (``alpha_k = 0``, ``beta_k = k``); weights are the
     squared first eigenvector components, normalized to sum to one (Golub &
-    Welsch, 1969, eq. 2.1-2.2, pp. 222-223; Section 3, p. 225). Unlike the
-    closed-form weight formula in ``numpy.polynomial.hermite_e.hermegauss``,
-    which returns NaN weights from about ``q = 481`` because ``1 / He_{n-1}^2``
-    overflows, tail weights here underflow to ``0.0`` and never become NaN.
+    Welsch, 1969, eqs. 2.1-2.2 and 2.4-2.6, pp. 222-223). The Hermite
+    recurrence is NIST DLMF, eq. 18.9.1 and Table 18.9.1 (He row):
+    https://dlmf.nist.gov/18.9.E1 and https://dlmf.nist.gov/18.9.T1.
+    Specializing that recurrence gives zero diagonal and sqrt(k) off-diagonal.
+    Normalizing the standard-normal measure gives mu_0=1 in eq. 2.6.
+    Dense NumPy eigh and a final weight normalization are implementation
+    choices; finite-result checks do not establish arbitrary-node accuracy.
     This mirrors ``crates/mlsirm-core/src/quadrature.rs``
     ``gauss_hermite_probabilists`` (#1929).
 
@@ -754,6 +757,24 @@ def expected_total_score_two_tier_given_primary(
     ``focal_primary=0`` (general); items without a method-factor loading
     integrate one specific; method-loaded items integrate ``(S_d, W)`` jointly. Reverse keys use unconstrained (possibly negative)
     slopes. This example is not a universal contract for all two-tier fits.
+
+    Source and scope
+    ----------------
+    Pennsylvania State University, Department of Statistics (n.d.), STAT 414,
+    lesson 26.1, "Sums of Independent Normal Random Variables", theorem and
+    MGF proof: https://online.stat.psu.edu/stat414/Lesson26 . This explicitly
+    gives the normal linear-combination mean and variance. Applying it to
+    each item's independent Gaussian linear predictor, then summing category
+    expectations, is our derivation; it does not require independence between
+    item responses. Correlated or non-Gaussian nuisances do not meet this
+    contract. Finite-q quadrature remains an approximation and requires
+    caller sensitivity checks; the theorem does not prescribe a node count.
+    Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature
+    rules. Mathematics of Computation, 23(106), 221-230, eqs. 2.2 and 2.6,
+    pp. 223: https://doi.org/10.1090/S0025-5718-69-99647-1 .
+    Passing a person's focal EAP evaluates this conditional curve at that
+    point; it does not integrate the curve over that person's posterior and
+    must not be described as the posterior expected raw total.
 
     Parameters
     ----------
