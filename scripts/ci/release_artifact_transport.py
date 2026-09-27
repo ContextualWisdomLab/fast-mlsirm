@@ -778,9 +778,9 @@ def scope_identity(artifact: Path, leg: str, source: Path, source_sha: str, buil
     }
 
 
-def verify_scope_identities(records: list[dict], rows: dict, distributions: dict,
-                            source: Path, source_sha: str) -> None:
-    """Rebind every record, then refuse unresolved scope before final admission."""
+def verify_scope_declarations(records: list[dict], rows: dict, distributions: dict,
+                              source: Path, source_sha: str) -> None:
+    """Rebind declarations without claiming that any scope is accepted."""
     if not isinstance(records, list) or len(records) != len(rows):
         raise ValueError("scope identity set missing or duplicated")
     seen = set()
@@ -796,8 +796,12 @@ def verify_scope_identities(records: list[dict], rows: dict, distributions: dict
             raise ValueError(f"{leg}: scope identity or unresolved evidence changed")
         if record["sha256"] != row["sha256"]:
             raise ValueError(f"{leg}: scope artifact differs from reproducibility record")
-    # Deliberately no positive sentinel until a trusted collector and its full
-    # expected-set contract exist. All identities are checked before this HOLD.
+
+
+def verify_scope_identities(records: list[dict], rows: dict, distributions: dict,
+                            source: Path, source_sha: str) -> None:
+    """Rebind every record, then refuse unresolved scope before final admission."""
+    verify_scope_declarations(records, rows, distributions, source, source_sha)
     raise ValueError("release scope HOLD: runtime/build/dev/optional/native/bundled evidence UNKNOWN")
 
 

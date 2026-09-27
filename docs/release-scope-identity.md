@@ -138,7 +138,7 @@ The six scopes have distinct sources of truth:
   not yet promoted to an accepted scope identity. The admission verifier now
   compares wheel and sdist dependency metadata with the committed source for
   every release target and extra using the hash-locked packaging parser. This
-  runs after the scope HOLD is lifted; it does not yet certify the full runtime
+  runs before the final scope HOLD; it does not yet certify the full runtime
   closure. The pinned maturin release legitimately rewrites marker names and
   order, so a raw string comparison would reject valid distributions.
 - **Build and dev:** record the build environment's installed Python tools and

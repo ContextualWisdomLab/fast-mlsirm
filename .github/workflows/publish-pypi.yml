@@ -1387,7 +1387,7 @@ jobs:
               row["file"]: Path("downloaded") / ("dist-sdist" if leg == "sdist" else f"dist-wheel-{leg}") / row["file"]
               for leg, row in rows.items()
           }
-          transport.verify_scope_identities(scope_records, rows, distribution_paths, Path("release-source"), commit)
+          transport.verify_scope_declarations(scope_records, rows, distribution_paths, Path("release-source"), commit)
           for leg, row in rows.items():
               transport.verify_distribution_requirements(distribution_paths[row["file"]], leg,
                                                          Path("release-source"), commit)
