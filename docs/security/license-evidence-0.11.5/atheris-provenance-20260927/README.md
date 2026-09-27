@@ -32,3 +32,24 @@ Next evidence requirement: an authenticated release build record binding the
 three exact wheel hashes to source/toolchain inputs, or reproduced matching
 native bytes with complete input and component-notice provenance. Do not add
 these lead hashes to the verifier's accepted wheel/native fixtures yet.
+
+## Build-path and archive follow-up
+
+The complete pinned setup.py was read. `get_libfuzzer_lib` accepts an
+environment-selected archive; `BuildExt.build_extensions` can upgrade it
+before copying it into the wheel. The sanitizer siblings are combined with
+the selected libFuzzer using a caller-selected C++ linker (otherwise Clang
+or GCC). Those tool and archive choices are additional reproducibility inputs.
+
+The exact cp312 wheel and native archive were rehashed on s1 before `ar t`
+and `nm -g` inspection. They match the previously recorded wheel hash
+`ec5e11f21a4c197fe91f7aea2b2de88e623c73a21fc07b105ac6329a1588457b`
+and archive hash
+`60d06f6748c007c46c772b0abee959053973ee4b607a88f9f3db3562b2bbecaf`.
+The archive has 24 members (retained in wheel-libfuzzer-members.txt), no
+wrapper-named or temporary-named member, and defines LLVMFuzzerRunDriver.
+The pinned version-check script therefore classifies it as up-to-date;
+this does not require executing untrusted setup.py or its shell scripts.
+This symbol also exists in the pinned LLVM source, so it is consistent with
+that source lead but does not distinguish it from later LLVM versions.
+No native license acceptance follows from this compatibility check.
