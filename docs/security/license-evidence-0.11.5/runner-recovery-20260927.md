@@ -319,5 +319,5 @@ The existing fast2135 CodeQL proof run36235138881 is terminal failure at
 dispatch succeeded; compatibility enforcement jobs108401985319/331 failed.
 No actual vulnerability inference follows from this status. Its unresolved
 review requires producer evidence; do not resolve from dispatch success.
-Latest main de71b9ee includes canonical Strix capacity continuation2348; its
+Latest main de71b9ee includes canonical Strix capacity continuation2448; its
 merge-tree with candidate is clean. Do not duplicate that owner repair.
