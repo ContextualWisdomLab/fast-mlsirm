@@ -4590,5 +4590,299 @@
       "path": "python/fast_mlsirm/_licenses/regex-syntax-0.8.11-MIT-AND-Unicode-DFS-2016.txt",
       "sha256": "a7306c45484eeaa075dc92dcab009ce9d1e412d14c4be0f31bdf8e16d41c2474"
     }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "libm",
+    "version": "0.2.16",
+    "chosen": "MIT AND BSD-2-Clause AND SunPro",
+    "rationale": "The checksum-bound libm 0.2.16 LICENSE explicitly delegates third-party notice retention to source files. All 69 reviewed source members match immutable upstream dfd2203a4d6110820ad7bb65cafe1bf331a03a3d. Central helper 6d5e0d22f26c27e44e127309fda2e974b69d79d0 requires the complete package grant and all exact source members, with independent BSD/Sun obligations recorded. Retain the unchanged package LICENSE and all 19 distinct complete notice comments with member attribution; this is not Strix or release approval.",
+    "archive_sha256": "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981",
+    "license_members": [
+      {
+        "member": "libm-0.2.16/LICENSE.txt",
+        "raw_sha256": "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7"
+      },
+      {
+        "member": "libm-0.2.16/src/math/acos.rs",
+        "raw_sha256": "efd83a6138061209867f06421c6a756b8ca3aab5c6c0a85c4aba31bedb299da5"
+      },
+      {
+        "member": "libm-0.2.16/src/math/acosf.rs",
+        "raw_sha256": "c5c9c74d267725bbe5f9319e6f4a396af6ce46c890b601d3f963a5d74d12e4c3"
+      },
+      {
+        "member": "libm-0.2.16/src/math/asin.rs",
+        "raw_sha256": "9693a7cb61674ec6fe22be9db8fe20276729c48b1562fd86d5421e372a0a12e4"
+      },
+      {
+        "member": "libm-0.2.16/src/math/asinf.rs",
+        "raw_sha256": "25f6b7bbf46fc5aac4ebdd9e00118239747dcd28a79b90b858ddc4633d773d65"
+      },
+      {
+        "member": "libm-0.2.16/src/math/atan.rs",
+        "raw_sha256": "54181dbddf4f77b90b32b9f6819ac989da570dc02b791f3685d20a23d51324be"
+      },
+      {
+        "member": "libm-0.2.16/src/math/atan2.rs",
+        "raw_sha256": "7d028d4d397f7484b8feed7b228eda65b84acac94d27729d236d5df95e38d8f0"
+      },
+      {
+        "member": "libm-0.2.16/src/math/atan2f.rs",
+        "raw_sha256": "b9497b5adb75e2788c404fd121aa64dcfa0e9357b67af3b3e7e6d4624dae1ca1"
+      },
+      {
+        "member": "libm-0.2.16/src/math/atanf.rs",
+        "raw_sha256": "197762f16ed5951236e17d0869c529e857acc329cc287df019ff69e5401f3b4d"
+      },
+      {
+        "member": "libm-0.2.16/src/math/cbrt.rs",
+        "raw_sha256": "1ed98a0943c46ca48e32af54b6baeb80b6e8da5dda550005711fcb26bfcf12c2"
+      },
+      {
+        "member": "libm-0.2.16/src/math/cbrtf.rs",
+        "raw_sha256": "7a2b4f190e8618c52cb23b47c040a4b4eacca739c68393cf14fb3f5d73988127"
+      },
+      {
+        "member": "libm-0.2.16/src/math/cos.rs",
+        "raw_sha256": "6e81752899c471bd42d04bdf08e0b22bc10a29f92fa2a343281b995fd342f035"
+      },
+      {
+        "member": "libm-0.2.16/src/math/cosf.rs",
+        "raw_sha256": "f48aa954f199fe4f54fd73b4e7886a75f2c08afba7fc31c6a36db5b5f90ced69"
+      },
+      {
+        "member": "libm-0.2.16/src/math/erf.rs",
+        "raw_sha256": "5a69f440d5ca88a5c4a45119837c45b14238836a036675230e10fec41d293a3b"
+      },
+      {
+        "member": "libm-0.2.16/src/math/erff.rs",
+        "raw_sha256": "62c30876390e532d7dc9ac1f1f1c1f654065fba2b2e534e531964d79e1766196"
+      },
+      {
+        "member": "libm-0.2.16/src/math/exp.rs",
+        "raw_sha256": "1d486e847e1752fb9ce74a714096a11adcac935dacd4f17625ff63819103a80d"
+      },
+      {
+        "member": "libm-0.2.16/src/math/exp2.rs",
+        "raw_sha256": "e7270f15a682b69a49e042c80503c206d37c6c895f2c63da59a5e2431fa5fedc"
+      },
+      {
+        "member": "libm-0.2.16/src/math/exp2f.rs",
+        "raw_sha256": "3b4b5cb2e5674e1ce66a6051710738c1a6edc1d1638686fe9c78f0af4792a634"
+      },
+      {
+        "member": "libm-0.2.16/src/math/expf.rs",
+        "raw_sha256": "33b01180ebd01bb2911379476c5411fd05b066f2e17ef66e48c4dde83a7f01c0"
+      },
+      {
+        "member": "libm-0.2.16/src/math/expm1.rs",
+        "raw_sha256": "6cc612ca7cf1384dc15f541b301a1f176efbc79536aff1293408b3121cc30ad3"
+      },
+      {
+        "member": "libm-0.2.16/src/math/expm1f.rs",
+        "raw_sha256": "2b517f1bcb6279c906aad737f08c83ac30d7871e3beff266ea50a01fa18ccc81"
+      },
+      {
+        "member": "libm-0.2.16/src/math/fma.rs",
+        "raw_sha256": "16e72470f5c4407c44183cf06f5868f216c92e0532f3fb387b57dbccf815e2a7"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/ceil.rs",
+        "raw_sha256": "66b3def2b00ed9dd6a4f59c73765a050853dfe06c828fdf731987ac99e7c2a88"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/floor.rs",
+        "raw_sha256": "7d4f15369abefa27645d6deda51d30febbe60ee9dca76e72a9364d574d0711c0"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/fma.rs",
+        "raw_sha256": "ba44930a56d7c1953ab0c96c7c767911c9dc6967083700c8ef02f43672c8482f"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/fmax.rs",
+        "raw_sha256": "68d923950c3f1eab68baeab24679ab50918b663904839bc349ef666d9467518f"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/fmaximum.rs",
+        "raw_sha256": "c4b8b7080821a2dc65d0a50baf717ccd9ee20b813ce6d6d3f9f01b5700b674fa"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/fmaximum_num.rs",
+        "raw_sha256": "2f2d41e1f0160eb73469fa63db27d881b5b8eabc6d62fae7ca1b4b03eb35c5d5"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/fmin.rs",
+        "raw_sha256": "9bbdece9606e5eac57f3a91a5db7aab814c8e2b28b6df1813723c6b5715efc55"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/fminimum.rs",
+        "raw_sha256": "a6a33085356610eced23957ca86456b7dbe95e0f9d916298d59ce8bd90076b02"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/fminimum_num.rs",
+        "raw_sha256": "f5db65654e690adea16da83839d62a707cc814c998fd4a77e63caaaea1472256"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/fmod.rs",
+        "raw_sha256": "11aae62d08d656d815184eafd78a3b2d5764b6ce308b89e3819cd049bc491fe7"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/rint.rs",
+        "raw_sha256": "deec183fd0da6c0a47ab272a256990cea4f9231db7faff314697886457d6841a"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/sqrt.rs",
+        "raw_sha256": "c58e48ec07404d618109ad45332efe46c5246f42a2ddefdf5b25ba19e4ca9a0f"
+      },
+      {
+        "member": "libm-0.2.16/src/math/generic/trunc.rs",
+        "raw_sha256": "46dd2cc35f6da25099ea2202264d8da3330b5ff1a962a8afb671b54b6ef6002d"
+      },
+      {
+        "member": "libm-0.2.16/src/math/j0.rs",
+        "raw_sha256": "1cb991f0151a626744ad1832d4aedfaca681bcfcecc797de5ac5e9baf2342006"
+      },
+      {
+        "member": "libm-0.2.16/src/math/j0f.rs",
+        "raw_sha256": "de97374b6a0019fd8b3d1f553be1708018546491d3b4a5fc650ee2dcdfc9620e"
+      },
+      {
+        "member": "libm-0.2.16/src/math/j1.rs",
+        "raw_sha256": "e0a10746fd11a458d55ee61e758d9f016ff0f2203a07eb9907b5aca709a40469"
+      },
+      {
+        "member": "libm-0.2.16/src/math/j1f.rs",
+        "raw_sha256": "27b586c94d510aa653923b6b83cfec174e1f5da326d9120b0a0135b1190e32dc"
+      },
+      {
+        "member": "libm-0.2.16/src/math/jn.rs",
+        "raw_sha256": "ba36d25d4bbada83aadb3b2986879b7d88b91adb7b502061d21bf96ff3942194"
+      },
+      {
+        "member": "libm-0.2.16/src/math/jnf.rs",
+        "raw_sha256": "b3861e19644ae669fe17db81d91aeaee9c9f9051b59957ab674017684c98fe32"
+      },
+      {
+        "member": "libm-0.2.16/src/math/k_cos.rs",
+        "raw_sha256": "d4867527877c846aa8e2a0b43cf06f03e2d94c321a548acaf8d5171c09ff4057"
+      },
+      {
+        "member": "libm-0.2.16/src/math/k_cosf.rs",
+        "raw_sha256": "8f76089d014e217b96c9eca520271e64d467dc0d6542bf313dd70eb96c040f7f"
+      },
+      {
+        "member": "libm-0.2.16/src/math/k_sin.rs",
+        "raw_sha256": "dfe6524cb2d530ec51eb1a2ab233aeb65b3f12177c1fb2f50f044ea41170f5d8"
+      },
+      {
+        "member": "libm-0.2.16/src/math/k_sinf.rs",
+        "raw_sha256": "cf0e8bbe8d73a6704b7f1f710f5b9d31f190f1c633e894d4f69c4e3bc359eba3"
+      },
+      {
+        "member": "libm-0.2.16/src/math/k_tan.rs",
+        "raw_sha256": "dc3f8ece9187bbd65792a7d1068e676092e9c2a0886f28c80579f9bd94d744b7"
+      },
+      {
+        "member": "libm-0.2.16/src/math/k_tanf.rs",
+        "raw_sha256": "3381d2d4865bfc98e87aadb96bd8986f7691a389569a58fb1cb8db74fb5d9c20"
+      },
+      {
+        "member": "libm-0.2.16/src/math/lgamma_r.rs",
+        "raw_sha256": "5d56169c077b5b9f88902e2d243a7a4b4d06b89295aa84283d6fa15d9c244032"
+      },
+      {
+        "member": "libm-0.2.16/src/math/lgammaf_r.rs",
+        "raw_sha256": "0bc2b5e0eec7666973adaca536f4d5fe978c8793bb340484fff9e5e7abb425f0"
+      },
+      {
+        "member": "libm-0.2.16/src/math/log.rs",
+        "raw_sha256": "df5f4d1325e89621bfcd9cf7788d0d7e20a6ef7f429110fe35b370b3c9362615"
+      },
+      {
+        "member": "libm-0.2.16/src/math/log10.rs",
+        "raw_sha256": "4a96dd2b6a2a505497f2bb7ea956a50491d068dab1b6055a573aec1724a52e40"
+      },
+      {
+        "member": "libm-0.2.16/src/math/log10f.rs",
+        "raw_sha256": "784a576dd4a4071f4f67c670eb9b221cb03014818c4b2d71afbcbd2211431caf"
+      },
+      {
+        "member": "libm-0.2.16/src/math/log1p.rs",
+        "raw_sha256": "bb8ce741e54d8f001d9c12450a14a663bd413014da2ade9ba1f5fbc9ff0c9a88"
+      },
+      {
+        "member": "libm-0.2.16/src/math/log1pf.rs",
+        "raw_sha256": "8736222a9b9004b061f1339bb819c63c6b54414d4a01ef79d5f5a5f0a70677b5"
+      },
+      {
+        "member": "libm-0.2.16/src/math/log2.rs",
+        "raw_sha256": "1ec0cdd94bf4435ff0402d209089b1bdbcb1ba9a4cd5f77807f9c84cf534f980"
+      },
+      {
+        "member": "libm-0.2.16/src/math/log2f.rs",
+        "raw_sha256": "7b3b17ba08df6b5a57dacf6f945bfe1a3c088bee0eb11e201ac5affc7f65925a"
+      },
+      {
+        "member": "libm-0.2.16/src/math/logf.rs",
+        "raw_sha256": "c7dfa5e89fcca0411624fdc594f64c62d5dfa3b91f061fcb7ac3aea18414f238"
+      },
+      {
+        "member": "libm-0.2.16/src/math/pow.rs",
+        "raw_sha256": "c5566d0f48682d107e8803b0ed204ff3521503348f18a4f26cbe3f47fef15192"
+      },
+      {
+        "member": "libm-0.2.16/src/math/powf.rs",
+        "raw_sha256": "819971cb8e927d80113aded3cfe90dcd501c031e0eb1c562b58842fddd1751be"
+      },
+      {
+        "member": "libm-0.2.16/src/math/rem_pio2.rs",
+        "raw_sha256": "5a040ab09dc356bca6d57712327151ed43003e2bac156553e3eb87d1cdefd2d1"
+      },
+      {
+        "member": "libm-0.2.16/src/math/rem_pio2_large.rs",
+        "raw_sha256": "986b5b9ad2c8fba828aee47bf198eab97fab243359ab03eb09783d98ca5847b5"
+      },
+      {
+        "member": "libm-0.2.16/src/math/rem_pio2f.rs",
+        "raw_sha256": "fb34bab63f8d143dfefa4ef2e31e8166bf21f3c67f1519bfc3ca4fb8eb28cafe"
+      },
+      {
+        "member": "libm-0.2.16/src/math/sin.rs",
+        "raw_sha256": "b48cebd120fc2ac93a6563059cabda28a72c8680304eb8335b92b412235cc232"
+      },
+      {
+        "member": "libm-0.2.16/src/math/sincos.rs",
+        "raw_sha256": "a9c414e828c2e78b6bce4d5e4237b1baa93e81d78421aed5cedeab43df64067f"
+      },
+      {
+        "member": "libm-0.2.16/src/math/sincosf.rs",
+        "raw_sha256": "c39b6e3b52be83ccf4015ff105dab55e693577ebfc43745881750e73eebc6fa6"
+      },
+      {
+        "member": "libm-0.2.16/src/math/sinf.rs",
+        "raw_sha256": "b17db34d5da39a0f336d831abcb700fab69402c915321823870f1845e66c03d2"
+      },
+      {
+        "member": "libm-0.2.16/src/math/support/int_traits/narrowing_div.rs",
+        "raw_sha256": "5f5378e33f1da56090d0dce2514926ab465dce65b89ad4ee2f7da07a92f8d5de"
+      },
+      {
+        "member": "libm-0.2.16/src/math/support/modular.rs",
+        "raw_sha256": "cf6a562d6bdf16336f31d41c59e828ad47f85388849d20d6d3b59fc1c3e388a2"
+      },
+      {
+        "member": "libm-0.2.16/src/math/tan.rs",
+        "raw_sha256": "2ea87ca18526753db6d149635ed6c895c8fbafd1e0fa7a9c04f7dc44b4eae986"
+      },
+      {
+        "member": "libm-0.2.16/src/math/tanf.rs",
+        "raw_sha256": "f7140c4193a57709acde5d290c8f83435562da42924c54cab0aa3a4f26095190"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/libm-0.2.16-MIT-AND-BSD-2-Clause-AND-SunPro.txt",
+      "sha256": "c31b5f0e8a3b8b1bab7c8fc217959760899fe0f60bf624a70dd708184829ca6c"
+    }
   }
 ]
