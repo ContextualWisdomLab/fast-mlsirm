@@ -643,6 +643,28 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "fnv",
+    "version": "1.0.7",
+    "chosen": "MIT",
+    "rationale": "Read the complete bundled MIT grant in the checksum-matched archive. The Cargo-only reviewed legacy pair adapter preserves explicit choice and whole-text validation. Retain the MIT copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1",
+    "license_members": [
+      {
+        "member": "fnv-1.0.7/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "fnv-1.0.7/LICENSE-MIT",
+        "raw_sha256": "65fdb6c76cd61612070c066eec9ecdb30ee74fb27859d0d9af58b9f499fd0c3e"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/fnv-1.0.7-MIT.txt",
+      "sha256": "65fdb6c76cd61612070c066eec9ecdb30ee74fb27859d0d9af58b9f499fd0c3e"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "futures-core",
     "version": "0.3.32",
     "chosen": "MIT",
