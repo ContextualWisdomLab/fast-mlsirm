@@ -5082,5 +5082,31 @@
       "path": "python/fast_mlsirm/_licenses/shlex-2.0.1-MIT.txt",
       "sha256": "4455bf75a91154108304cb283e0fea9948c14f13e20d60887cf2552449dea3b1"
     }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "libfuzzer-sys",
+    "version": "0.4.13",
+    "chosen": "MIT AND NCSA AND Apache-2.0 WITH LLVM-exception",
+    "rationale": "Select the complete wrapper MIT alternative and preserve the declared NCSA obligation. All 56 vendored files equal LLVM a47b42eb9f9b302167b4fc413e6c92798d65dd0b; 55 file headers name Apache-2.0 WITH LLVM-exception, retained as an independent conjunct. The complete pinned compiler-rt modern and legacy licence texts and original CREDITS.TXT are retained unchanged; legacy NCSA alone does not clear modern contributions.",
+    "archive_sha256": "a9fd2f41a1cba099f79a0b6b6c35656cf7c03351a7bae8ff0f28f25270f929d2",
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/libfuzzer-sys-0.4.13-MIT-AND-NCSA-AND-Apache-2.0-WITH-LLVM-exception.txt",
+      "sha256": "a8614e5d482d21436e04b36797b047b7e3f0befcc0bf8bd5d110d8c0b2d9f61b"
+    },
+    "upstream_licenses": [
+      {
+        "url": "https://raw.githubusercontent.com/rust-fuzz/libfuzzer/719e4efb9b8857ebaa782ae59376c8cbb78fed0f/LICENSE-MIT",
+        "sha256": "0621878e61f0d0fda054bcbe02df75192c28bde1ecc8289cbd86aeba2dd72720"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/llvm/llvm-project/a47b42eb9f9b302167b4fc413e6c92798d65dd0b/compiler-rt/LICENSE.TXT",
+        "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/llvm/llvm-project/a47b42eb9f9b302167b4fc413e6c92798d65dd0b/compiler-rt/CREDITS.TXT",
+        "sha256": "a9901f47a089da41e4690682d00ce4cedaa2baf41fedbe79beee366d43ac2461"
+      }
+    ]
   }
 ]
