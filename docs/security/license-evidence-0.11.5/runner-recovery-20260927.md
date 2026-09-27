@@ -105,5 +105,21 @@ Do not duplicate that existing fix or treat old queued workflow snapshots as
 proof that the current fix failed. Follow the canary and verify fresh-head
 lookup timing before changing allocation again.
 
+## Additional capacity observed at 2026-09-27 12:54 UTC
+
+The organization now exposes six online runners. Newly registered runner
+`cwlab-s2-01` (ID 1065083) has the control label and is already in group 6,
+alongside cwlab-s1-01 and cwlab-s1-05. It changed from idle to busy during
+observation. The scheduler workflow's exact main ref remains admitted by
+the group's restricted workflow list; no group broadening is needed.
+Canary job 108620080034 is still live queued without assigned runner.
+
+Guest lifecycle records also show contextual-orchestrator run 36315207621
+completing its Actions compatibility shard successfully in about ten seconds
+(12:52:32–12:52:42 UTC). Its recorded workflow SHA is
+`7dbd1e5a1d976cc117756b70849b8534334eb827`, so this is operational capacity
+evidence, not a measurement of central #2433's new source. Keep that
+distinction when assessing the fresh lookup fix.
+
 The Goal remains active. This document is an RCA and execution plan, not a
 release-wide license verdict or proof of completed hosted gates.
