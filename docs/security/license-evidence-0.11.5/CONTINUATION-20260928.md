@@ -21,3 +21,7 @@ All 55 bundled WebGL extension XML files lack an inline grant/copyright notice. 
 ### Later WebGL MIT grant found
 
 Current immutable WebGL main 714857a28445e8f5d8d6ae1c78498578009534d8 has a full MIT LICENSE and repository-wide README statement. No bundled historical XML is byte-identical at current paths (0/55). Next inspect MIT introduction history and scope; no external rights request has been sent and no gate change has been deployed. New full-grant/source-comparison receipts are retained with the preceding historical-source audit.
+
+### Historical grant narrowed to eight XML versions
+
+First WebGL LICENSE introduced ca07c9628d207b5cc560ee6eac32ceeb1c39a2ed on March 30, 2019. At that licensed commit, 47/55 bundled XML members are exact matches. Eight earlier versions still require explicit scope evidence; a local draft is retained and not sent. F advanced to NumPy compilation at 20:47:04 UTC. Next finish F, exact E/F comparison and existing native/NOTICE checks; after 20:57:44 REST reset, inspect current canaries and five pools.
