@@ -4,7 +4,7 @@
 //! NumPy layout, delegates to the core, and marshals results into Python dicts.
 
 use mlsirm_core::regression::{
-    centered_product_design, compare_ols_column_subset, chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc,
+    absolute_differences, centered_product_design, compare_ols_column_subset, chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc,
     linear_contrast, normal_wald_interval, residual_summary, slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
 };
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
@@ -129,6 +129,17 @@ fn py_residual_summary(py: Python<'_>, y: PyReadonlyArray1<'_, f64>, residuals: 
     Ok(out.into())
 }
 
+/// Marshal aligned-vector differences; core absolute_differences cites the
+/// actual NumPy subtract/absolute/max manual definitions and narrower scope.
+#[pyfunction(name = "absolute_differences")]
+fn py_absolute_differences(py: Python<'_>, a: PyReadonlyArray1<'_, f64>, b: PyReadonlyArray1<'_, f64>) -> PyResult<Py<PyDict>> {
+    let (differences, maximum) = absolute_differences(a.as_slice()?, b.as_slice()?).map_err(PyValueError::new_err)?;
+    let out = PyDict::new(py);
+    out.set_item("differences", PyArray1::from_slice(py, &differences))?;
+    out.set_item("max_abs_diff", maximum)?;
+    Ok(out.into())
+}
+
 /// Marshal native actual-design subset comparison; source and limitations:
 /// core compare_ols_column_subset, statsmodels compare_f_test lines2813–2865.
 #[pyfunction(name = "compare_ols_column_subset")]
@@ -239,6 +250,7 @@ fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_normal_wald_interval, m)?)?;
     m.add_function(wrap_pyfunction!(py_residual_summary, m)?)?;
     m.add_function(wrap_pyfunction!(py_compare_ols_column_subset, m)?)?;
+    m.add_function(wrap_pyfunction!(py_absolute_differences, m)?)?;
     m.add_function(wrap_pyfunction!(py_xwz_e_design_row, m)?)?;
     m.add_function(wrap_pyfunction!(py_design_row_dot, m)?)?;
     m.add_function(wrap_pyfunction!(py_conditional_slope, m)?)?;

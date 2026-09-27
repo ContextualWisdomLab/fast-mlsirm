@@ -170,6 +170,29 @@ def test_regression_core_exports_without_scipy_rscript():
     assert "rscript" not in src.lower()
 
 
+def test_native_absolute_differences_finite_aligned_contract():
+    """Check manual-defined differences against independent NumPy arithmetic.
+
+    NumPy subtract/absolute/max Returns sections define the operations;
+    this native API has a narrower finite, same-length vector domain.
+    """
+    from fast_mlsirm.regression import absolute_differences
+    a = np.array([-2., 0., 3., 1e-100])
+    b = np.array([1., -0., 2., 0.])
+    got = absolute_differences(a, b)
+    np.testing.assert_array_equal(got["differences"], np.abs(a-b))
+    assert got["max_abs_diff"] == float(np.max(np.abs(a-b)))
+    same = absolute_differences(a, a)
+    assert same["max_abs_diff"] == 0
+    for left, right in [(np.array([]), np.array([])), (a, b[:1]),
+                         (np.array([np.nan]), np.array([0.])),
+                         (np.array([np.inf]), np.array([0.])),
+                         (np.array([1e308]), np.array([-1e308])),
+                         (a.astype(complex), b), (a.reshape(2,2), b)]:
+        with pytest.raises(ValueError):
+            absolute_differences(left, right)
+
+
 def test_actual_column_subset_comparison_and_rejection():
     """Check nested RSS/F against independent NumPy least squares.
 

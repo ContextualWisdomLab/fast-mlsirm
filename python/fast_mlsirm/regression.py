@@ -169,6 +169,24 @@ def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     }
 
 
+def absolute_differences(a, b):
+    """Native per-entry absolute difference and maximum for aligned real vectors.
+
+    Sources: NumPy Developers (n.d.), NumPy v2.5 manual, Returns sections:
+    https://numpy.org/doc/stable/reference/generated/numpy.subtract.html
+    https://numpy.org/doc/stable/reference/generated/numpy.absolute.html
+    https://numpy.org/doc/stable/reference/generated/numpy.max.html
+    Caller owns identifier/order matching and acceptance thresholds. No
+    broadcasting, empty vectors, nonfinite inputs or overflow are admitted.
+    This calculates descriptive differences, not scientific validity.
+    """
+    left = _as_float64_vector(a, "a")
+    right = _as_float64_vector(b, "b", expected_length=left.size)
+    raw = regression_core().absolute_differences(left, right)
+    return {"differences": np.asarray(raw["differences"], dtype=np.float64),
+            "max_abs_diff": float(raw["max_abs_diff"])}
+
+
 def compare_ols_column_subset(x, y, keep, *, intercept_column):
     """Native full/restricted OLS summaries on one actual design and response.
 

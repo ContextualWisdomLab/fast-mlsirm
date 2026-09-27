@@ -247,6 +247,31 @@ pub fn residual_summary(y: &[f64], residuals: &[f64], rank: usize, has_intercept
     Ok((sse, total, r2, adjusted))
 }
 
+/// Absolute differences of aligned real vectors and their maximum.
+/// Sources actually read: NumPy Developers (n.d.), NumPy v2.5 manual,
+/// subtract (Returns), absolute (Returns), max (Returns):
+/// <https://numpy.org/doc/stable/reference/generated/numpy.subtract.html>,
+/// <https://numpy.org/doc/stable/reference/generated/numpy.absolute.html>,
+/// <https://numpy.org/doc/stable/reference/generated/numpy.max.html>.
+/// This narrower contract rejects empty/mismatched/nonfinite vectors and
+/// overflow, performs no broadcasting and does not certify row alignment.
+pub fn absolute_differences(a: &[f64], b: &[f64]) -> Result<(Vec<f64>, f64), String> {
+    if a.is_empty() || a.len() != b.len() {
+        return Err("absolute differences need nonempty matching vectors".to_owned());
+    }
+    let mut differences = Vec::with_capacity(a.len());
+    let mut maximum = 0.0_f64;
+    for (&left, &right) in a.iter().zip(b) {
+        let difference = (left - right).abs();
+        if !left.is_finite() || !right.is_finite() || !difference.is_finite() {
+            return Err("absolute differences need finite inputs and arithmetic".to_owned());
+        }
+        maximum = maximum.max(difference);
+        differences.push(difference);
+    }
+    Ok((differences, maximum))
+}
+
 /// Compare a proper column-subset OLS model on the exact same response/rows.
 /// Source actually read: statsmodels Developers (n.d.), RegressionResults
 /// compare_f_test, lines2813–2865, and R² definitions lines2125–2237:
