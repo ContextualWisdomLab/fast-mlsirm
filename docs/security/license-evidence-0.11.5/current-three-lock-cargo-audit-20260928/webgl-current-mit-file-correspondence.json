@@ -1,0 +1,374 @@
+{
+  "commit": "714857a28445e8f5d8d6ae1c78498578009534d8",
+  "rows": [
+    {
+      "path": "extensions/ANGLE_instanced_arrays/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/ANGLE_instanced_arrays/extension.xml",
+      "crate_sha256": "213f7e7636e8df0c390a18ad1339618335d7744970837998a191c275f7d1a95c",
+      "current_sha256": "e7cbda1a2f4f97c2231a9933b266144e10cb3bae8e4e4e80b2b93462c3854785",
+      "match": false
+    },
+    {
+      "path": "extensions/EXT_blend_minmax/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/EXT_blend_minmax/extension.xml",
+      "crate_sha256": "d1798c0faf13dfa7930032994f5a47c07b6f2f44b45d033059bfcffb7c1d579c",
+      "current_sha256": "d391a5cfa891963905afd187598a50d933c391c7567143cfc760438f49d85ade",
+      "match": false
+    },
+    {
+      "path": "extensions/EXT_color_buffer_float/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/EXT_color_buffer_float/extension.xml",
+      "crate_sha256": "48dacbcce0e0e96c206fc6dd2050266680ba24c2f6b254c3a6871c8715639d36",
+      "current_sha256": "1d248cba6b358a1d61afc7f22f07dda0c778885e04a3afad65c5f6a280b90e50",
+      "match": false
+    },
+    {
+      "path": "extensions/EXT_color_buffer_half_float/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/EXT_color_buffer_half_float/extension.xml",
+      "crate_sha256": "1900351880046b495af97e6d38e9f3213538b133f74625a4dd73165d43e7710c",
+      "current_sha256": "1a8f4504f636b4504f04ed3db1e5896b7c6de53b30d26a76c33b75a0d7ccce19",
+      "match": false
+    },
+    {
+      "path": "extensions/EXT_disjoint_timer_query/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/EXT_disjoint_timer_query/extension.xml",
+      "crate_sha256": "5f3502d9359932bb19cb866ad01a35f774851e7290ef7cbafcaa0d67175a29d5",
+      "current_sha256": "43611a7b288793dc3500a9b11ee313d0872dc00a72e06e952219c716d4e3e7a8",
+      "match": false
+    },
+    {
+      "path": "extensions/EXT_disjoint_timer_query_webgl2/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/EXT_disjoint_timer_query_webgl2/extension.xml",
+      "crate_sha256": "81f643d90164e86c2a98b4053d7f8db233dc3c3339422f3f575df7da9ba8a518",
+      "current_sha256": "91255d3ecc77d4fc88f53f40b3e44c75e0c1a5d60703f61a4825e8aece95aeec",
+      "match": false
+    },
+    {
+      "path": "extensions/EXT_float_blend/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/EXT_float_blend/extension.xml",
+      "crate_sha256": "5a298482adee7bb1fcc8f613a8aa9b61bb71bf5523fac56da45bb68136e451b8",
+      "current_sha256": "e97b3f0f2603b175211187c0a8626ee904624cace807622a9520bd8809e2641c",
+      "match": false
+    },
+    {
+      "path": "extensions/EXT_frag_depth/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/EXT_frag_depth/extension.xml",
+      "crate_sha256": "d19cf823811272352972ac4cb1d37405dcf63a91c48c1dd046e475487fecf9ea",
+      "current_sha256": "1de23c865faa08d1b18a6d7b90624d9bf981f70255be1c6ef6b3ec9118a7095f",
+      "match": false
+    },
+    {
+      "path": "extensions/EXT_sRGB/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/EXT_sRGB/extension.xml",
+      "crate_sha256": "7688ba25fa05558fbae72b21661e5bece2c36e899fe78da83bc8a172db9622fd",
+      "current_sha256": "31941ee3adc0e45519fe50360e30ad4e0aabae52f081a375e6fcb2c0de671976",
+      "match": false
+    },
+    {
+      "path": "extensions/EXT_shader_texture_lod/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/EXT_shader_texture_lod/extension.xml",
+      "crate_sha256": "f1e5741d5d12d6e9a6bbc95049da2ec62ee55a4d1b6ec7b03e87e9f91282c6cb",
+      "current_sha256": "c5b51a50fc5a373f14852573b4ab0d3eecb6d5cdeb55e4d21ba2150f01880e9f",
+      "match": false
+    },
+    {
+      "path": "extensions/EXT_texture_compression_bptc/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/EXT_texture_compression_bptc/extension.xml",
+      "crate_sha256": "823b0280845da20a584b3ad6e85052bb158c4e69add38c3f80899facdf9fda90",
+      "current_sha256": "7e8dcb269b1f9cde51264126bb32b05ecb2d6a3caaae96494120a31dce5460bc",
+      "match": false
+    },
+    {
+      "path": "extensions/EXT_texture_compression_rgtc/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/EXT_texture_compression_rgtc/extension.xml",
+      "crate_sha256": "6b95c30aa46b81a4bcde2a07df0c89cded028387ee1cc3a7e5d0aabf5f0d219e",
+      "current_sha256": "50a1625e0493bc607c7bb8d2e5e65798fae89348131506b031e005fde6e07d37",
+      "match": false
+    },
+    {
+      "path": "extensions/EXT_texture_filter_anisotropic/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/EXT_texture_filter_anisotropic/extension.xml",
+      "crate_sha256": "131ed0429a9951c05ae5c30859179f47c99b9bd6f47ca2825bdecf791f0188b6",
+      "current_sha256": "97aeffd354726cf7b595e76d09e5fe688c9edb6a2cdb67a950ecf95c626cdf9e",
+      "match": false
+    },
+    {
+      "path": "extensions/KHR_parallel_shader_compile/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/KHR_parallel_shader_compile/extension.xml",
+      "crate_sha256": "6e13b581cae0c8a6f41a484d98e55bb805b599081f54cfe737253238fe797395",
+      "current_sha256": "673791063e615e4ffb39af63ee71f3b0472d5aaa90ec1ab5f5791df2df67f999",
+      "match": false
+    },
+    {
+      "path": "extensions/OES_element_index_uint/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/OES_element_index_uint/extension.xml",
+      "crate_sha256": "734f7a90af440ea559fa0fe777144aaef8acc7de94a8c3ce153a75ff85cb1f6b",
+      "current_sha256": "32077672969376850e7148d7a769fe05121e9edd505ffbe6982ba96ff1c267fa",
+      "match": false
+    },
+    {
+      "path": "extensions/OES_fbo_render_mipmap/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/OES_fbo_render_mipmap/extension.xml",
+      "crate_sha256": "43bede667b814b80e15b5af463620c53f6fa9e1a610c2e9756ad2fa55b9f7589",
+      "current_sha256": "24bd36c648d1d40557526686e06a10f59da6afb58fd47c77bae6af6ac7f1c2c6",
+      "match": false
+    },
+    {
+      "path": "extensions/OES_standard_derivatives/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/OES_standard_derivatives/extension.xml",
+      "crate_sha256": "2fa53259457d9f6042194bfb13c0db4b3c63d2d99d9e44f057d8fe4d5b28fe69",
+      "current_sha256": "a3d789362123fb9bdfe110ef745ecb20a3ea9dd6e7246b529fb274dba2f1619e",
+      "match": false
+    },
+    {
+      "path": "extensions/OES_texture_float/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/OES_texture_float/extension.xml",
+      "crate_sha256": "42a782fcc2cafd3df9ea33c9259343c66b3fbd2ebfc216dc20ee6be53481f042",
+      "current_sha256": "8d936e69371035215746227c26941c275f62281358713b9210d50135170272b7",
+      "match": false
+    },
+    {
+      "path": "extensions/OES_texture_float_linear/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/OES_texture_float_linear/extension.xml",
+      "crate_sha256": "98041c4427f5abf741eb2c34e23f9b8c84090d4d5b4e2e0f1b04f9b53c73259a",
+      "current_sha256": "5fc6116d302170aeb7035b68005687e14090f9325ade26532ac7a4a45c44ea0f",
+      "match": false
+    },
+    {
+      "path": "extensions/OES_texture_half_float/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/OES_texture_half_float/extension.xml",
+      "crate_sha256": "14cb4ce4e6f259fcb6ce0d988c4e81880299f28343cdcba4f7abbf8956207529",
+      "current_sha256": "26a50d8bb99320f4e8335102b67a432801c90f1acc6653f31c353624f67e014d",
+      "match": false
+    },
+    {
+      "path": "extensions/OES_texture_half_float_linear/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/OES_texture_half_float_linear/extension.xml",
+      "crate_sha256": "d2f29c9a9bf31e757fc8c6da277cdb813350a1504be773c3bd105bfa92e45502",
+      "current_sha256": "8e2dbb64eb0219cc2f3b8d7395a01a299a6f5151c4a2536be4ac9d85597b8b88",
+      "match": false
+    },
+    {
+      "path": "extensions/OES_vertex_array_object/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/OES_vertex_array_object/extension.xml",
+      "crate_sha256": "8262ec860c2af3b23daacc27a17bcf29054bcc03baf59f90779c4e53fc469f41",
+      "current_sha256": "d18f0ae67a17ad5749d2cd9a3aebecf16feeedc769942df9f60e9ae6ba9d35ca",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_color_buffer_float/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_color_buffer_float/extension.xml",
+      "crate_sha256": "d68800fe416384a951fe45fdbcb324494d848cbecdecbdcacf7bbafe8a2aae93",
+      "current_sha256": "1bc90db1887847c0095b53376afd06a75485bcf315557520aa385ce1804606fb",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_compressed_texture_astc/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_compressed_texture_astc/extension.xml",
+      "crate_sha256": "9ba9c29e7e09aa8ec950ec70c79eae42c6f844d354b49fc88d9f048318a9c400",
+      "current_sha256": "ef0ab1d8508c03e5090f0a9670848bbe4fd02ac7f84683aa8c28a4f41510b3bd",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_compressed_texture_etc/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_compressed_texture_etc/extension.xml",
+      "crate_sha256": "d926f0a7f533ea6ce43215a7e90f35064e1a51df539e04c49a2e918f69943aad",
+      "current_sha256": "204257b08f18acbee86620a40daf643bf714c5d81334990314c91f4dcb30eafa",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_compressed_texture_etc1/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_compressed_texture_etc1/extension.xml",
+      "crate_sha256": "02a008b04a5b40e274023defe3a2fb94f06a2150c059ae703c282faa6b6b4b0e",
+      "current_sha256": "ff4b406502874cf6e31b01faadf623363099ab15f60cd50128c119a75f45e269",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_compressed_texture_pvrtc/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_compressed_texture_pvrtc/extension.xml",
+      "crate_sha256": "1570f8ebb56480908e46706683182a097928e8e0a2e992e3eab8f1a2c16124c9",
+      "current_sha256": "64ab9c52355459450c12762052fb1f9f06fdc96ac392d3966a625ba0cfdf79e0",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_compressed_texture_s3tc/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_compressed_texture_s3tc/extension.xml",
+      "crate_sha256": "87585ba713ad1a8dd5c04fd24a7068a0cf88799ea697e940752c68698de0c707",
+      "current_sha256": "27a23ab00feca10dbe5a5c6900e4014074f1074d4a537cad2285b5a855b4e604",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_compressed_texture_s3tc_srgb/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_compressed_texture_s3tc_srgb/extension.xml",
+      "crate_sha256": "e22e01bd35b437adabfc7592f5eb6d750fdaabac61b0f79561fe58e860843993",
+      "current_sha256": "371d482f324be09547be7f439223bf864096fb33a86defeb7f75339204643f16",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_debug_renderer_info/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_debug_renderer_info/extension.xml",
+      "crate_sha256": "af71073e0031b0296b7e5b609cdd272458cbae434a7fa31649054be0969a72e0",
+      "current_sha256": "ac7640d842351eaf25fd493352885a274380b20f473343a7f64d59dd89b38b4a",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_debug_shaders/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_debug_shaders/extension.xml",
+      "crate_sha256": "fc8c59747ee8cc289aa269c6ac5b6a45f7dc036d509209ace8db7062481a1abe",
+      "current_sha256": "ce29976d5c1901b791480e337b8ac357f7efcdfdb8f1efe845a80cf51dd1b3f8",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_depth_texture/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_depth_texture/extension.xml",
+      "crate_sha256": "5d91c9b8252b9f3a19f3f6a2f861a660d200446cfcaf09fa2a337e6f6b2dd5bd",
+      "current_sha256": "c7e214a4ff1a2394f32d5610665bacfc00bf072bcf994bfe5202de9b4fd46a22",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_draw_buffers/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_draw_buffers/extension.xml",
+      "crate_sha256": "9b465aa066d86ba044ad1604f6a3ce9f9e9a3afe3b4d36750a60870a67697fa1",
+      "current_sha256": "a85cb1baa5f0781b446039baf54e1a49331c68f33bc05a49484dc98bd4fc1cd1",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_lose_context/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_lose_context/extension.xml",
+      "crate_sha256": "71defc6045fefdf7b14cd2d1fe4a432d504b2567e7acb1e77b8737aea7ba1bb0",
+      "current_sha256": "2c67fc505cbb8585a937f5efbe931382f1e955fe5d3ef4f2eac5260312ca5ac9",
+      "match": false
+    },
+    {
+      "path": "extensions/WEBGL_multiview/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_multiview/extension.xml",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "path": "extensions/WEBGL_security_sensitive_resources/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/WEBGL_security_sensitive_resources/extension.xml",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "path": "extensions/proposals/EXT_clip_cull_distance/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/proposals/EXT_clip_cull_distance/extension.xml",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "path": "extensions/proposals/EXT_multi_draw_arrays/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/proposals/EXT_multi_draw_arrays/extension.xml",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "path": "extensions/proposals/WEBGL_blend_equation_advanced_coherent/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/proposals/WEBGL_blend_equation_advanced_coherent/extension.xml",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "path": "extensions/proposals/WEBGL_debug/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/proposals/WEBGL_debug/extension.xml",
+      "crate_sha256": "c8cdbb65c17dfe4851e7a56094c492b835f76f06a9cdb1b3fd273584357864b1",
+      "current_sha256": "4849efad2f581eeb11c24882b7d2c0e4345f9f979b1a8d820d0ea10cf8bb6e6d",
+      "match": false
+    },
+    {
+      "path": "extensions/proposals/WEBGL_dynamic_texture/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/proposals/WEBGL_dynamic_texture/extension.xml",
+      "crate_sha256": "7f5bc906ba61037befd4acd9fc39209d2e4bd8eea20ba01f34ebe4700bfd1806",
+      "current_sha256": "43185a6f805fc9d7c94cbdf68092bc921a2bd8a53d1b4650b9f1af914ea7f85c",
+      "match": false
+    },
+    {
+      "path": "extensions/proposals/WEBGL_subarray_uploads/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/proposals/WEBGL_subarray_uploads/extension.xml",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "path": "extensions/proposals/WEBGL_texture_multisample/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/proposals/WEBGL_texture_multisample/extension.xml",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "path": "extensions/proposals/WEBGL_texture_source_iframe/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/proposals/WEBGL_texture_source_iframe/extension.xml",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "path": "extensions/proposals/WEBGL_video_texture/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/proposals/WEBGL_video_texture/extension.xml",
+      "crate_sha256": "b9e0ffa1cf37c827b9be82d71adcd40ce44d05e434a87d174b289c7a5b9d30b0",
+      "current_sha256": "8095a7c15076f332f65bfe3a7d17049e17fb5ed5dbdef72ca6a976fb43848a92",
+      "match": false
+    },
+    {
+      "path": "extensions/rejected/EXT_texture_storage/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/rejected/EXT_texture_storage/extension.xml",
+      "crate_sha256": "9fb3883d1b6d73e09b03129a30845031e0b27c9003b9fb0e2f2b2b2d5a9dbb1e",
+      "current_sha256": "25abcefc49c10b850447f48847e03460b83755718757b24eb44e40620393c3cc",
+      "match": false
+    },
+    {
+      "path": "extensions/rejected/OES_depth24/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/rejected/OES_depth24/extension.xml",
+      "crate_sha256": "159c541fc025c3d454887cdedd1ff5c19ed17e9356c63d95510d70c586502af7",
+      "current_sha256": "d2ce09c3f24de986eb54d42a51dd6619ead7d5e486ebd6d52b1ba82ac2e93655",
+      "match": false
+    },
+    {
+      "path": "extensions/rejected/WEBGL_compressed_texture_atc/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/rejected/WEBGL_compressed_texture_atc/extension.xml",
+      "crate_sha256": "43eab8d74ffb5799f2410a884d79bd4574531070a53947c334d71910c5a9bdee",
+      "current_sha256": "54f6e3daf5a00b572af620be14dfd0951983e444ae9334cb113e76ca4cda539f",
+      "match": false
+    },
+    {
+      "path": "extensions/rejected/WEBGL_debug_shader_precision/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/rejected/WEBGL_debug_shader_precision/extension.xml",
+      "crate_sha256": "f618d6f82e21cf78146e86c396a3d7b3dd51cf778ab2dc7a504834d835abc5c8",
+      "current_sha256": "c3b14ef10e9729b185c746e862727d6e6c21fd38cedb3651adfa41f46cb674c5",
+      "match": false
+    },
+    {
+      "path": "extensions/rejected/WEBGL_draw_elements_no_range_check/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/rejected/WEBGL_draw_elements_no_range_check/extension.xml",
+      "crate_sha256": "a3a616760a9cca44ecca27e8a8afd49679974f1bf0dfd4624231bcffaf4aec54",
+      "current_sha256": "9b439688682722b5bda8dde5682cb7bb5e14a1dd55466b16aa4d314ae4423602",
+      "match": false
+    },
+    {
+      "path": "extensions/rejected/WEBGL_get_buffer_sub_data_async/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/rejected/WEBGL_get_buffer_sub_data_async/extension.xml",
+      "crate_sha256": "188b33f4972e400550bbd1be58f29d9a0bc24a8da09203edc2f3e6f1a595679b",
+      "current_sha256": "b960ff7b9058af175a2c81a5fe1437281caeeee9532d715ccdea5dd0a5e653b8",
+      "match": false
+    },
+    {
+      "path": "extensions/rejected/WEBGL_shared_resources/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/rejected/WEBGL_shared_resources/extension.xml",
+      "crate_sha256": "cab1d86d6c853c11acf42044c4caea97103c70440c87688979c9f1cc18d622a6",
+      "current_sha256": "8b0f3211b04727f50813375bf01879a402c783634b572c5700edf56a36bf600d",
+      "match": false
+    },
+    {
+      "path": "extensions/rejected/WEBGL_subscribe_uniform/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/rejected/WEBGL_subscribe_uniform/extension.xml",
+      "crate_sha256": "7ec77103308177cdfa0efbc995f62151622c30bab46a4ee191e04520c51965ae",
+      "current_sha256": "90a7dcd647f257fbde108dedf671a491a8e8feeb8edfea5f80b8d0b2d6cc9c94",
+      "match": false
+    },
+    {
+      "path": "extensions/rejected/WEBGL_texture_from_depth_video/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/rejected/WEBGL_texture_from_depth_video/extension.xml",
+      "crate_sha256": "eabf2a9003050f8ef5ceb4d5cc0fafc98977aef407fb4060d08d704884a3d462",
+      "current_sha256": "bf9198ba1245ed2d17a8a29ddd63d95f91559226b56880c7044cc10414b594c4",
+      "match": false
+    },
+    {
+      "path": "extensions/template/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/714857a28445e8f5d8d6ae1c78498578009534d8/extensions/template/extension.xml",
+      "crate_sha256": "8da65e0a5d053bf36373c6fcfdf7d8fa2738c48345671cf61b62e30ba9cce117",
+      "current_sha256": "578b354475a5ba8b0f47662680ef5c9460d2561232eb2e82fb015e8c037723a6",
+      "match": false
+    }
+  ]
+}

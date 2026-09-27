@@ -1,0 +1,22 @@
+[
+  {
+    "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/c987f075bfdca44119175c41f547d849c08983a3/extensions/README.md",
+    "sha256": "e8833be4aa5faa4e93178a031200aebc3ef25804886c6112cd09a8a97c74a99a",
+    "size": 396
+  },
+  {
+    "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/c987f075bfdca44119175c41f547d849c08983a3/extensions/extension.xsl",
+    "sha256": "89017aee1e5cbc74300ff948efce4da6a6e325f52f4ddff7edfb315e8048a639",
+    "size": 15712
+  },
+  {
+    "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/c987f075bfdca44119175c41f547d849c08983a3/extensions/standards.xsl",
+    "sha256": "4cafeba4b889588e6e52d6791d80e5873ed7877baf13b2cbd6fd67913967f251",
+    "size": 1726
+  },
+  {
+    "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/c987f075bfdca44119175c41f547d849c08983a3/specs/latest/1.0/index.html",
+    "sha256": "b1b5647fabbc2aa9aae6cf49cb563b40c9c112e3cf2b937e4a187b4b16fc3e80",
+    "size": 255698
+  }
+]

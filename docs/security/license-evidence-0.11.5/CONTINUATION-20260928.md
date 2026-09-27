@@ -13,3 +13,11 @@ Next useful work: actual canary execution/runner receipt; terminal F comparison 
 ### Live continuation at 2026-09-27 20:40 UTC
 
 NDK ten source members and all 66 Khronos submodule XML/IDL members now match immutable publisher-linked Git sources. Composite third-party grants remain under investigation; no gate/election changes. Source-correspondence receipts are in current-three-lock-cargo-audit-20260928. REST core requests are currently rate-limited until 20:57:44 UTC; retry actual canary job endpoints after that time, without creating duplicate runs. F container b4f22eca5772 is running with PID 2780124; combined build handle 87273 remains live. Next: verify WebGL extension grant scope, await F terminal evidence, compare E/F exact artifact bytes, then consume current-head canary logs after runner assignment. Goal remains active; release/tag/PyPI publication is not complete.
+
+### WebGL scope narrowed, 2026-09-27 20:46 UTC
+
+All 55 bundled WebGL extension XML files lack an inline grant/copyright notice. Two IDL grants do not establish XML scope. Exact-tree README/XSL/specification checks and current Khronos primary legal guidance are recorded in current-three-lock-cargo-audit-20260928; rights remain unproven, no gate or platform changes. F is verified running with Docker PID 2780124. REST retry remains deferred until 20:57:44 UTC.
+
+### Later WebGL MIT grant found
+
+Current immutable WebGL main 714857a28445e8f5d8d6ae1c78498578009534d8 has a full MIT LICENSE and repository-wide README statement. No bundled historical XML is byte-identical at current paths (0/55). Next inspect MIT introduction history and scope; no external rights request has been sent and no gate change has been deployed. New full-grant/source-comparison receipts are retained with the preceding historical-source audit.

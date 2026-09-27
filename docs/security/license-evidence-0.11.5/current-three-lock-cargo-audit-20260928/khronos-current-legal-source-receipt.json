@@ -1,0 +1,22 @@
+[
+  {
+    "url": "https://www.khronos.org/legal/terms-of-use/",
+    "sha256": "12d6759bdb3c1969350c7a6b2779d6b23625f84c32339d9c34e5fa1470d31c37",
+    "size": 32290,
+    "redistributed": false,
+    "scope": "current unversioned guidance; not a historical WebGL file grant"
+  },
+  {
+    "url": "https://www.khronos.org/legal/Khronos_Specification_Copyright_License_Header",
+    "sha256": "a19c448b44487645cdbc75f08ac42c0b8cc6fd0d3040e0fd3ec3bde3918ea952",
+    "size": 29182,
+    "redistributed": false,
+    "scope": "current unversioned guidance; not a historical WebGL file grant"
+  },
+  {
+    "url": "https://registry.khronos.org/Sample/specs/html/sample.html",
+    "download_error": "HTTP Error 403: Forbidden",
+    "browser_text_read": true,
+    "redistributed": false
+  }
+]
