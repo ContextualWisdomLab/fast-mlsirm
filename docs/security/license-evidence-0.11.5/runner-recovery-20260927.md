@@ -241,3 +241,30 @@ head `baba52d8914779502511915b1da01f8457d58650` integrated current base
 CodeRabbit/Devin succeeded, review threads were empty, and hosted jobs were
 queued. User-authorized exact-head admin bypass used. Retain the full
 central release stack and downstream immutable-helper adoption as next work.
+
+## Current-main integration and effective helper adoption
+
+Central #2347 conflicts with main `23f36cd56fbe245a06e7a9727cb28d9511154645`
+only in two concurrent documentation additions. Isolated ordinary merge
+`c9ca98d5e95cbaa2d0e8052c98b2ea7e8055a0be` preserves both additions and
+imports current CodeQL/Noema/Strix controls. Source workspace
+`/tmp/fmls-central-license-fix-20260927` is clean. Full pytest is live under
+exec session `99090`, PID12873, log `/tmp/fmls-central-main-integration-tests.log`;
+do not duplicate or treat observation timeout as a terminal result.
+
+Effective helper RCA: release workflow still pinned d67a7175 and thus did not
+use merged #2446. Guard test separately retained obsolete aea63e11; its RED
+result was 1 failed/2 passed. Commit a3ce4427 in
+`/tmp/fmls-central-helper-adoption-20260927` updates all three fixed checkout
+pins and guards to immutable c9ca98d5, scripts tree
+`cb887976a40493f0e2a945ff1d0f21519f4b5634`, unchanged Strix lock blob.
+57 identity/workflow tests pass; all three shipped guards pass against the
+actual clean Git checkout with an unrelated caller SHA. Actionlint with
+shellcheck disabled and own diff check pass. Proposed stacked PR:
+https://github.com/ContextualWisdomLab/.github/pull/2449 .
+
+Global ad-hoc Ruff E9/F/I reports 250 existing dynamic-export/import issues;
+no broad lint success claimed. The current-main imported noema transport file
+also has an existing trailing blank line; no unrelated rewrite was made.
+Latest six runners are online/busy, including s2. Canary36321971364 remains
+authoritatively queued; keep that handle. Release grant/artifact HOLDs unchanged.
