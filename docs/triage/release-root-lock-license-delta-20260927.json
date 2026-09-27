@@ -1,5 +1,5 @@
 {
-  "source_sha": "4d541637ff93d22a647284e84f91dc78e5da86a7",
+  "source_sha": "69ed28cac167cfdec32f188740b1bcf10db69b0b",
   "helper_sha": "fbb48ec3265f1dcfba34529f6f4325e02e2ac023",
   "scope": "Root lock identities absent from wheel lock; licence-only, not authenticated platform/dev closure or Strix acceptance",
   "root_cargo_lock_sha256": "88bb9a25b3f95e560da7ffd3ade079e0860bf4b9dfd3c595e674a17b7d7fb9ea",
@@ -33,13 +33,8 @@
         "bit-set-0.8.0/LICENSE-MIT": "f51ac2c59a222f7476ce507ca879960e2b64ea64bb2786eefdbeb7b0b538d1b7"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/bit-vec@0.8.0",
@@ -51,13 +46,8 @@
         "bit-vec-0.8.0/LICENSE-MIT": "f51ac2c59a222f7476ce507ca879960e2b64ea64bb2786eefdbeb7b0b538d1b7"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/bitflags@2.13.0",
@@ -69,13 +59,8 @@
         "bitflags-2.13.0/LICENSE-MIT": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/bytemuck_derive@1.10.2",
@@ -88,13 +73,8 @@
         "bytemuck_derive-1.10.2/LICENSE-ZLIB": "84b34dd7608f7fb9b17bd588a6bf392bf7de504e2716f024a77d89f1b145a151"
       },
       "license_text_count": 3,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Zlib OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/cfg-if@1.0.4",
@@ -106,13 +86,8 @@
         "cfg-if-1.0.4/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/cfg_aliases@0.2.1",
@@ -155,13 +130,8 @@
         "fastrand-2.4.1/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/fnv@1.0.7",
@@ -191,13 +161,8 @@
         "futures-core-0.3.32/LICENSE-MIT": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/futures-task@0.3.32",
@@ -209,13 +174,8 @@
         "futures-task-0.3.32/LICENSE-MIT": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/futures-util@0.3.32",
@@ -227,13 +187,8 @@
         "futures-util-0.3.32/LICENSE-MIT": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/getrandom@0.3.4",
@@ -281,13 +236,8 @@
         "indexmap-2.14.0/LICENSE-MIT": "ecc269ef87fd38a1d98e30bfac9ba964a9dbd9315c3770fed98d4d7cb5882055"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/js-sys@0.3.103",
@@ -299,13 +249,8 @@
         "js-sys-0.3.103/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/libc@0.2.186",
@@ -317,13 +262,8 @@
         "libc-0.2.186/LICENSE-MIT": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/linux-raw-sys@0.12.1",
@@ -336,13 +276,8 @@
         "linux-raw-sys-0.12.1/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 3,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/log@0.4.33",
@@ -354,13 +289,8 @@
         "log-0.4.33/LICENSE-MIT": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/naga@30.0.0",
@@ -372,13 +302,8 @@
         "naga-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/naga-types@30.0.0",
@@ -390,13 +315,8 @@
         "naga-types-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/ordered-float@5.3.0",
@@ -420,13 +340,8 @@
         "pkg-config-0.3.33/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/portable-atomic@1.13.1",
@@ -438,13 +353,8 @@
         "portable-atomic-1.13.1/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/portable-atomic-util@0.2.7",
@@ -456,13 +366,8 @@
         "portable-atomic-util-0.2.7/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/ppv-lite86@0.2.21",
@@ -492,13 +397,8 @@
         "proc-macro2-1.0.106/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/proptest@1.11.0",
@@ -546,13 +446,8 @@
         "quote-1.0.46/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/r-efi@5.3.0",
@@ -694,13 +589,8 @@
         "rustix-1.1.4/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 3,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/rusty-fork@0.3.1",
@@ -730,13 +620,8 @@
         "serde-1.0.228/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/serde_core@1.0.228",
@@ -748,13 +633,8 @@
         "serde_core-1.0.228/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/serde_derive@1.0.228",
@@ -766,13 +646,8 @@
         "serde_derive-1.0.228/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/smallvec@1.15.2",
@@ -784,13 +659,8 @@
         "smallvec-1.15.2/LICENSE-MIT": "0b28172679e0009b655da42797c03fd163a3379d5cfa67ba1f1655e974a2a1a9"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/syn@2.0.118",
@@ -802,13 +672,8 @@
         "syn-2.0.118/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/tempfile@3.27.0",
@@ -838,13 +703,8 @@
         "thiserror-2.0.18/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/thiserror-impl@2.0.18",
@@ -856,13 +716,8 @@
         "thiserror-impl-2.0.18/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/unarray@0.1.4",
@@ -893,13 +748,8 @@
         "unicode-ident-1.0.24/LICENSE-UNICODE": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1"
       },
       "license_text_count": 3,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/uuid@1.25.0",
@@ -911,13 +761,8 @@
         "uuid-1.25.0/LICENSE-MIT": "436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wait-timeout@0.2.1",
@@ -929,13 +774,8 @@
         "wait-timeout-0.2.1/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wasip2@1.0.4+wasi-0.2.12",
@@ -948,13 +788,8 @@
         "wasip2-1.0.4+wasi-0.2.12/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 3,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wasm-bindgen@0.2.126",
@@ -966,13 +801,8 @@
         "wasm-bindgen-0.2.126/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wasm-bindgen-futures@0.4.76",
@@ -984,13 +814,8 @@
         "wasm-bindgen-futures-0.4.76/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wasm-bindgen-macro@0.2.126",
@@ -1002,13 +827,8 @@
         "wasm-bindgen-macro-0.2.126/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wasm-bindgen-macro-support@0.2.126",
@@ -1020,13 +840,8 @@
         "wasm-bindgen-macro-support-0.2.126/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wasm-bindgen-shared@0.2.126",
@@ -1038,13 +853,8 @@
         "wasm-bindgen-shared-0.2.126/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/web-sys@0.3.103",
@@ -1056,13 +866,8 @@
         "web-sys-0.3.103/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wgpu@30.0.0",
@@ -1074,13 +879,8 @@
         "wgpu-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wgpu-core@30.0.0",
@@ -1092,13 +892,8 @@
         "wgpu-core-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wgpu-core-deps-apple@30.0.0",
@@ -1110,13 +905,8 @@
         "wgpu-core-deps-apple-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wgpu-core-deps-emscripten@30.0.0",
@@ -1128,13 +918,8 @@
         "wgpu-core-deps-emscripten-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wgpu-core-deps-windows-linux-android@30.0.0",
@@ -1146,13 +931,8 @@
         "wgpu-core-deps-windows-linux-android-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wgpu-hal@30.0.0",
@@ -1164,13 +944,8 @@
         "wgpu-hal-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wgpu-naga-bridge@30.0.0",
@@ -1182,13 +957,8 @@
         "wgpu-naga-bridge-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wgpu-types@30.0.0",
@@ -1200,13 +970,8 @@
         "wgpu-types-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/wit-bindgen@0.57.1",
@@ -1219,13 +984,8 @@
         "wit-bindgen-0.57.1/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
       },
       "license_text_count": 3,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/xml-rs@0.8.28",
@@ -1250,13 +1010,8 @@
         "zerocopy-0.8.54/LICENSE-MIT": "1a2f5c12ddc934d58956aa5dbdd3255fe55fd957633ab7d0d39e4f0daa73f7df"
       },
       "license_text_count": 3,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression BSD-2-Clause OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/zerocopy-derive@0.8.54",
@@ -1269,17 +1024,25 @@
         "zerocopy-derive-0.8.54/LICENSE-MIT": "1a2f5c12ddc934d58956aa5dbdd3255fe55fd957633ab7d0d39e4f0daa73f7df"
       },
       "license_text_count": 3,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression BSD-2-Clause OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     }
   ],
   "summary": {
-    "FAIL": 68,
-    "PASS": 3
+    "FAIL": 18,
+    "PASS": 53
+  },
+  "superseded_receipt": {
+    "sha256": "e614b4dc781bb0f81a64c4baaf5bd2e6f412ae7d88c93851571b3aed93bb1a74",
+    "source_sha": "4d541637ff93d22a647284e84f91dc78e5da86a7",
+    "helper_sha": "fbb48ec3265f1dcfba34529f6f4325e02e2ac023"
+  },
+  "source_license_selections_sha256": "297d9e0881869f61fe146556b8419b928ac4a8a71aa1bdb1bd0be0397bee4315",
+  "packaging_status": {
+    "notice_files": 186,
+    "source_notice_hashes_verified": true,
+    "wheel_sdist_186_notice_verification": "NOT_VERIFIED",
+    "build_failure": "maturin cargo metadata rustc -vV terminated by SIGKILL on three attempts; direct rustc -vV and cargo metadata probes succeeded",
+    "prior_133_notice_check": "Prior CPython 3.14/macOS arm64 0.11.4 wheel and sdist checked 133 notices only. Not evidence for these 186 notice files."
   }
 }
