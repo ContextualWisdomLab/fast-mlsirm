@@ -21,3 +21,13 @@ The alternative Cython wheel was subsequently installed offline with --require-h
 ## Fresh locked build C started
 
 The reused candidate recipe now runs in a new workspace with exclusive C/D output directories, input hash checks, project-local backend .venv, --require-hashes, --no-build-isolation, --no-index, immutable existing image, and a network-disabled container. CPU2 and memory6GiB were confirmed through actual Docker inspection; both BLAS make and NumPy Meson compilation are limited to two workers. The invalid-label rejection and bash syntax checks passed. Build C is live (session53000/container848e53d51044), starting OpenBLAS at17:58:04UTC. Poll the same process/container; never restart because observation timed out. D has not started. This start receipt is not a completed build or rights verdict. Existing A/B candidates were preserved.
+
+## Fresh C artifact checks
+
+Build C completed with repaired-wheel SHA256 `e3c109b6c8ad1cb2701968229c5c04c829cf34817a615cb3c4cd8a9309d93a02`. All six selected backend versions match the captured freeze. The wheel contains 20 ELF members and bundles only the previously audited OpenBLAS library.
+
+Reused the hash-bound notice repair tool with explicit source/hash/output arguments. Output SHA256 is `5d30ea057ea1f73b8e6599250146968bbadabfc464177cb3bf096e865dacc3be`; two independent repacks match, RECORD coverage/hashes pass, and every original native/source member is unchanged. An incorrect source hash failed before writing output.
+
+Installed offline with require-hashes into the separate s1 `fmls-numpy-fresh-C-install-20260928/.venv`. Existing solve/inverse, embedded notice and loader checks passed. GNU runtimes resolve to OS packages. Static DT_NEEDED inspection covered all 20 ELF members; none directly require libgfortran/libquadmath. A temporary delay was observed in a dpkg-query child blocked on disk I/O, after numerical checks had already completed; the original process finished successfully without restart.
+
+These are CPython 3.12 Linux x86_64 candidate checks, not full numerical/ABI acceptance, original license-HOLD closure, or the published 12-wheel matrix. Independent compilation D remains running; repack equality is not compilation reproducibility.

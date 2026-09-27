@@ -1,0 +1,34 @@
+[
+  {
+    "package": "arbitrary@1.4.2",
+    "url": "https://static.crates.io/crates/arbitrary/arbitrary-1.4.2.crate",
+    "artifact_sha256": "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1",
+    "member": "arbitrary-1.4.2/LICENSE-MIT",
+    "member_sha256": "15656cc11a8331f28c0986b8ab97220d3e76f98e60ed388b5ffad37dfac4710c",
+    "exact_fixture_match": true
+  },
+  {
+    "package": "libfuzzer-sys@0.4.13",
+    "url": "https://static.crates.io/crates/libfuzzer-sys/libfuzzer-sys-0.4.13.crate",
+    "artifact_sha256": "a9fd2f41a1cba099f79a0b6b6c35656cf7c03351a7bae8ff0f28f25270f929d2",
+    "member": "libfuzzer-sys-0.4.13/LICENSE-MIT",
+    "member_sha256": "0621878e61f0d0fda054bcbe02df75192c28bde1ecc8289cbd86aeba2dd72720",
+    "exact_fixture_match": true
+  },
+  {
+    "package": "shlex@2.0.1",
+    "url": "https://static.crates.io/crates/shlex/shlex-2.0.1.crate",
+    "artifact_sha256": "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba",
+    "member": "shlex-2.0.1/LICENSE-MIT",
+    "member_sha256": "4455bf75a91154108304cb283e0fea9948c14f13e20d60887cf2552449dea3b1",
+    "exact_fixture_match": true
+  },
+  {
+    "package": "shlex@2.0.1",
+    "url": "https://static.crates.io/crates/shlex/shlex-2.0.1.crate",
+    "artifact_sha256": "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba",
+    "member": "shlex-2.0.1/LICENSE-APACHE",
+    "member_sha256": "553fffcd9b1cb158bc3e9edc35da85ca5c3b3d7d2e61c883ebcfa8a65814b583",
+    "exact_fixture_match": true
+  }
+]

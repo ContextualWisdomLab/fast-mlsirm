@@ -1,0 +1,207 @@
+{
+  "wheel_sha256": "e3c109b6c8ad1cb2701968229c5c04c829cf34817a615cb3c4cd8a9309d93a02",
+  "elf_members": [
+    {
+      "member": "numpy/_core/_multiarray_tests.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "524c310e4058831b5ca64086b402cfb859827b281d3fef7714d5ce79e6b00780",
+      "bytes": 146912
+    },
+    {
+      "member": "numpy/_core/_multiarray_umath.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "f9fd73bbb5ed15df7e247e2941ccf0d7670748abcf8570b8cbe410fd79b75bf8",
+      "bytes": 10638601
+    },
+    {
+      "member": "numpy/_core/_operand_flag_tests.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "d985fc6e648abe43a0d11d9e9c1c49c15a3020936c6105c159cc9ab2ff2e41f0",
+      "bytes": 16800
+    },
+    {
+      "member": "numpy/_core/_rational_tests.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "78af03cdcfceda20ddb0063c7eb1b6fa149c79710173644c7e0a5b8b75142b91",
+      "bytes": 65848
+    },
+    {
+      "member": "numpy/_core/_simd.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "246f69e4549844be855b901c91ec21123dfc45af200abc393f2888266d1fdb18",
+      "bytes": 1506088
+    },
+    {
+      "member": "numpy/_core/_struct_ufunc_tests.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "895b0c3376a227d8f2f9f35465876cd6b381daa177effa7a3070c7d31bba8688",
+      "bytes": 16936
+    },
+    {
+      "member": "numpy/_core/_umath_tests.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "56dcb67e8abfe3d9e5d8c1c8775d9e1c02b86042a5328556bc3d3ccaff1aa328",
+      "bytes": 50360
+    },
+    {
+      "member": "numpy/fft/_pocketfft_umath.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "29a1547b480b7ddc1e45cdc772b3f4b614cccced70204181bf5d3ad138a04ebb",
+      "bytes": 539296
+    },
+    {
+      "member": "numpy/linalg/_umath_linalg.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "83950a08ea027a083acd9b7a550b36d1358c65846f1a450502000d74861e4972",
+      "bytes": 233073
+    },
+    {
+      "member": "numpy/linalg/lapack_lite.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "5c5385a1701fde82cd2e52af40e72208467ba19c987b3939d09093f0b96ebdb1",
+      "bytes": 31225
+    },
+    {
+      "member": "numpy/random/_bounded_integers.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "3407b1678beef5386c9af25da96ee8b9846048043c6c79158e03bda4882b7977",
+      "bytes": 317000
+    },
+    {
+      "member": "numpy/random/_common.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "e774e609dbd8451d3b660a6f5768bb4b319f20c2844cbb71c26f5e7d35254675",
+      "bytes": 258912
+    },
+    {
+      "member": "numpy/random/_generator.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "2e5ac1bace423ab8b2a2871e002c1c1d734e0c4a229356a0be0b8560b1fd5d51",
+      "bytes": 845808
+    },
+    {
+      "member": "numpy/random/_mt19937.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "0c0671027613822b8cf33b92b0bf4153ae3ea5f48f8f38d44e9b0e6240445574",
+      "bytes": 139336
+    },
+    {
+      "member": "numpy/random/_pcg64.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "8401a81f44e65e6c8c9c9fedc5d43ba726871b559d8591f1e0b94e6a2f9938fc",
+      "bytes": 151344
+    },
+    {
+      "member": "numpy/random/_philox.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "db755b4a39aa392da246b9dd53a4c819d257ed4ae196a1b239cf713d105098a7",
+      "bytes": 131184
+    },
+    {
+      "member": "numpy/random/_sfc64.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "0da8f5afde074726ff541cb6927d194b1484d6d24932a64184a7cfc900fbab36",
+      "bytes": 96336
+    },
+    {
+      "member": "numpy/random/bit_generator.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "a2500866472c48579e29f37b8cc6552eea3292748df5830c8fe910c9d5da1386",
+      "bytes": 245424
+    },
+    {
+      "member": "numpy/random/mtrand.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "6b911418cf03d3cbc04dab36cc5c3c3c672e7bd11f5c76d8c4be5ea6d2e51a8c",
+      "bytes": 666552
+    },
+    {
+      "member": "numpy.libs/libscipy_openblas64_-940c6557.so",
+      "sha256": "2f8c860582f15f078fecaeff596b55947935d10a8284182ec983cd2b05ee46a0",
+      "bytes": 24446705
+    }
+  ],
+  "license_members": [
+    {
+      "member": "numpy/_core/include/numpy/random/LICENSE.txt",
+      "sha256": "fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec",
+      "bytes": 1018
+    },
+    {
+      "member": "numpy/ma/LICENSE",
+      "sha256": "05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6",
+      "bytes": 1593
+    },
+    {
+      "member": "numpy/random/LICENSE.md",
+      "sha256": "103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f",
+      "bytes": 3511
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/LICENSE.txt",
+      "sha256": "1be1df33863f97a7bc1c4d67980bd6c69c9a6fef0a5ee76e6ad6cb91e56e8491",
+      "bytes": 1543
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/_core/include/numpy/libdivide/LICENSE.txt",
+      "sha256": "fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec",
+      "bytes": 1018
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/_core/src/common/pythoncapi-compat/COPYING",
+      "sha256": "3f2c1ffa76383a55ae0aac01c9737cd70050dff63e1f026694fbe9d662573c98",
+      "bytes": 690
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/_core/src/highway/LICENSE",
+      "sha256": "e340270d4f64384569a91d546acb5b094d69ce47f0c015db77abb74dc6f815af",
+      "bytes": 20785
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/_core/src/multiarray/dragon4_LICENSE.txt",
+      "sha256": "f7b14309e5f54e5022b26448eefd419988ada2aec01d3c1162d84a0ea8f21f2c",
+      "bytes": 1414
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/_core/src/npysort/x86-simd-sort/LICENSE.md",
+      "sha256": "211e7d737d6179a08f791ebb0a99897ce7cd2457410c542876d125576edfe910",
+      "bytes": 1514
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/_core/src/umath/svml/LICENSE",
+      "sha256": "c17011467b4fe6e20fbfbeda4df09e58c2bca5480a063e55735a4000a379aad9",
+      "bytes": 1543
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/fft/pocketfft/LICENSE.md",
+      "sha256": "a85ca13fdf90160b64a0698215868c13b74d835ad0a4e2ba44713b8c5058a056",
+      "bytes": 1498
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/linalg/lapack_lite/LICENSE.txt",
+      "sha256": "a14cc25e10d40a3aa705b7de2fb764a6535d8ee9b2db4e1724900585457dfd55",
+      "bytes": 2266
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/ma/LICENSE",
+      "sha256": "05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6",
+      "bytes": 1593
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/random/LICENSE.md",
+      "sha256": "103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f",
+      "bytes": 3511
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/random/src/distributions/LICENSE.md",
+      "sha256": "469778be8f33d54e1bcaab28c281cc472916d2d273f835e55bc487d30503face",
+      "bytes": 2745
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/random/src/mt19937/LICENSE.md",
+      "sha256": "0e111337b25494a773106695f0e799f642b8567aaacca4f116a74a8177179156",
+      "bytes": 2926
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/random/src/pcg64/LICENSE.md",
+      "sha256": "e7d4f4fb20358f314210a892ae17351e04993813646f697ec387385ca2a36918",
+      "bytes": 1154
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/random/src/philox/LICENSE.md",
+      "sha256": "6f5828a57223d4cc7f8ea505a2623e7b978b242752c1515e355f46ba2cec1800",
+      "bytes": 1509
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/random/src/sfc64/LICENSE.md",
+      "sha256": "9d4098846018319cd68e228ee6220361787f73bccbf00237a85e4fc9621b998f",
+      "bytes": 1226
+    },
+    {
+      "member": "numpy-2.5.2.dist-info/licenses/numpy/random/src/splitmix64/LICENSE.md",
+      "sha256": "268b0ca06759d31ea3ca68dd35f20e877916e927b1c2a835e4592a3c4354b1f9",
+      "bytes": 332
+    }
+  ]
+}

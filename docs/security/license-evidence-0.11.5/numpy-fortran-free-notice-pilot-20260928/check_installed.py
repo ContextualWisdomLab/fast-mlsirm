@@ -1,4 +1,5 @@
 """Bounded install/NOTICE/native-loader smoke check, not release acceptance."""
+import argparse
 import hashlib
 import importlib.metadata
 import json
@@ -8,8 +9,11 @@ import sys
 
 import numpy as np
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--sha256", default="011ba92963c8fd230f3e81ac8f20af6c91e08bb139f0497cdb6ede1cc95c9a06")
+args = parser.parse_args()
 wheel = next((Path(__file__).parent / "input").glob("*.whl"))
-assert hashlib.sha256(wheel.read_bytes()).hexdigest() == "011ba92963c8fd230f3e81ac8f20af6c91e08bb139f0497cdb6ede1cc95c9a06"
+assert hashlib.sha256(wheel.read_bytes()).hexdigest() == args.sha256
 distribution = importlib.metadata.distribution("numpy")
 assert distribution.version == "2.5.2"
 assert "OPENBLAS-0.3.34-NOTICES.txt" in distribution.metadata.get_all("License-File")

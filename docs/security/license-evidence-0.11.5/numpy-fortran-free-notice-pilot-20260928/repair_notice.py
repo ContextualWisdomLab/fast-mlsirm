@@ -1,4 +1,5 @@
 """Repair this hash-bound local candidate; never modify or publish its input."""
+import argparse
 import base64
 import csv
 import hashlib
@@ -8,9 +9,17 @@ from pathlib import Path
 import zipfile
 
 root = Path(__file__).resolve().parent
-source = next((root / "candidate-input").glob("*.whl"))
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--source", type=Path)
+parser.add_argument("--sha256")
+parser.add_argument("--output", type=Path)
+args = parser.parse_args()
+if any((args.source, args.sha256, args.output)) and not all((args.source, args.sha256, args.output)):
+    parser.error("--source, --sha256 and --output must be supplied together")
+source = args.source or next((root / "candidate-input").glob("*.whl"))
+output_root = args.output or root
 notice = (root / "OPENBLAS-0.3.34-NOTICES.txt").read_bytes()
-assert hashlib.sha256(source.read_bytes()).hexdigest() == "c6fbea224227ebfcb80d694be15f74c72a06c901833f3f073df3405ade4e07a9"
+assert hashlib.sha256(source.read_bytes()).hexdigest() == (args.sha256 or "c6fbea224227ebfcb80d694be15f74c72a06c901833f3f073df3405ade4e07a9")
 assert hashlib.sha256(notice).hexdigest() == "9f21f7061f26cdc6f173c29a5a2754c68326d7b397c6bc75bfb4f7543ed21ba4"
 
 
@@ -57,8 +66,8 @@ csv.writer(output, lineterminator="\n").writerows(rows)
 entries[record] = (entries[record][0], output.getvalue().encode())
 paths = []
 for label in ("A", "B"):
-    folder = root / label
-    folder.mkdir(exist_ok=True)
+    folder = output_root / label
+    folder.mkdir(parents=True, exist_ok=True)
     path = folder / source.name
     with zipfile.ZipFile(path, "x") as z:
         for _, (info, data) in sorted(entries.items()):
@@ -73,5 +82,5 @@ receipt = {"status": "local notice repair only; release HOLD", "input_sha256": h
            "output_sha256": hashlib.sha256(paths[0].read_bytes()).hexdigest(), "notice_sha256": hashlib.sha256(notice).hexdigest(),
            "record_verified": True, "repeat_repack_identical": True, "unchanged_native_and_source_members": True,
            "changed_existing_members": [metadata, record], "added_member": notice_name}
-(root / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+(output_root / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
 print(json.dumps(receipt, indent=2))

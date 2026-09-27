@@ -1,0 +1,25 @@
+{
+  "status": "local install/NOTICE/loader smoke only; release HOLD",
+  "numpy_path": "/data/orca/workspaces/fmls-numpy-fresh-C-install-20260928/.venv/lib/python3.12/site-packages/numpy/__init__.py",
+  "python": "3.12.11 (main, Sep 18 2025, 19:47:19) [Clang 20.1.4 ]",
+  "wheel_sha256": "5d30ea057ea1f73b8e6599250146968bbadabfc464177cb3bf096e865dacc3be",
+  "embedded_notice_verified": true,
+  "solve_and_inverse_smoke": true,
+  "loaded_gfortran_quadmath": false,
+  "gnu_runtime_providers": [
+    {
+      "loaded_path": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+      "resolved_path": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+      "ownership_query_path": "/lib/x86_64-linux-gnu/libgcc_s.so.1",
+      "provider_query_exit": 0,
+      "provider": "libgcc-s1:amd64: /lib/x86_64-linux-gnu/libgcc_s.so.1"
+    },
+    {
+      "loaded_path": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.30",
+      "resolved_path": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.30",
+      "ownership_query_path": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.30",
+      "provider_query_exit": 0,
+      "provider": "libstdc++6:amd64: /usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.30"
+    }
+  ]
+}
