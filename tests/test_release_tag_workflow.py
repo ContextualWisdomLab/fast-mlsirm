@@ -62,7 +62,9 @@ def test_release_dispatch_requires_an_explicit_source_commit():
     assert "release_commit must be a canonical" in text
     assert "merge-base --is-ancestor" in text
     assert "release commit must be an ancestor of the default branch" in text
-    assert "ref: ${{ inputs.release_commit }}" in text
+    assert "ref: ${{ inputs.release_commit }}" not in text
+    assert "ref: ${{ github.sha }}" in text
+    assert text.index("merge-base --is-ancestor") < text.index('git checkout --detach "$canonical_release_commit"')
     assert text.index(validation) < text.index(checkout)
 
 
