@@ -23,6 +23,94 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "arrayvec",
+    "version": "0.7.8",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text in the checksum-matched source archive matches a reviewed whole-text digest in central helper 37c885f6c7fadf4cddaed502a3aa5c880b608d22. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56",
+    "license_members": [
+      {
+        "member": "arrayvec-0.7.8/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "arrayvec-0.7.8/LICENSE-MIT",
+        "raw_sha256": "4da95ec4ecb65b738d470b7d762894ad9c97da93e6cbfb18b570fc2c96f4b871"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/arrayvec-0.7.8-MIT.txt",
+      "sha256": "4da95ec4ecb65b738d470b7d762894ad9c97da93e6cbfb18b570fc2c96f4b871"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "autocfg",
+    "version": "1.5.1",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text in the checksum-matched source archive matches a reviewed whole-text digest in central helper 37c885f6c7fadf4cddaed502a3aa5c880b608d22. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53",
+    "license_members": [
+      {
+        "member": "autocfg-1.5.1/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "autocfg-1.5.1/LICENSE-MIT",
+        "raw_sha256": "27995d58ad5c1145c1a8cd86244ce844886958a35eb2b78c6b772748669999ac"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/autocfg-1.5.1-MIT.txt",
+      "sha256": "27995d58ad5c1145c1a8cd86244ce844886958a35eb2b78c6b772748669999ac"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "bit-set",
+    "version": "0.10.0",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text in the checksum-matched source archive matches a reviewed whole-text digest in central helper 37c885f6c7fadf4cddaed502a3aa5c880b608d22. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "09ec2f926cc3060f09db9ebc5b52823d85268d24bb917e472c0c4bea35780a7d",
+    "license_members": [
+      {
+        "member": "bit-set-0.10.0/LICENSE-APACHE",
+        "raw_sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+      },
+      {
+        "member": "bit-set-0.10.0/LICENSE-MIT",
+        "raw_sha256": "6b56ddc7cd80419e5e22e075f2252d720f6cbe17e3e2c17383095ee2712bcffa"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/bit-set-0.10.0-MIT.txt",
+      "sha256": "6b56ddc7cd80419e5e22e075f2252d720f6cbe17e3e2c17383095ee2712bcffa"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "bit-vec",
+    "version": "0.9.1",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text in the checksum-matched source archive matches a reviewed whole-text digest in central helper 37c885f6c7fadf4cddaed502a3aa5c880b608d22. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "b71798fca2c1fe1086445a7258a4bc81e6e49dcd24c8d0dd9a1e57395b603f51",
+    "license_members": [
+      {
+        "member": "bit-vec-0.9.1/LICENSE-APACHE",
+        "raw_sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+      },
+      {
+        "member": "bit-vec-0.9.1/LICENSE-MIT",
+        "raw_sha256": "f51ac2c59a222f7476ce507ca879960e2b64ea64bb2786eefdbeb7b0b538d1b7"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/bit-vec-0.9.1-MIT.txt",
+      "sha256": "f51ac2c59a222f7476ce507ca879960e2b64ea64bb2786eefdbeb7b0b538d1b7"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "bitflags",
     "version": "2.13.2",
     "chosen": "MIT",
@@ -41,6 +129,50 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/bitflags-2.13.2-MIT.txt",
       "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "block-buffer",
+    "version": "0.10.4",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text in the checksum-matched source archive matches a reviewed whole-text digest in central helper 37c885f6c7fadf4cddaed502a3aa5c880b608d22. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71",
+    "license_members": [
+      {
+        "member": "block-buffer-0.10.4/LICENSE-APACHE",
+        "raw_sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5"
+      },
+      {
+        "member": "block-buffer-0.10.4/LICENSE-MIT",
+        "raw_sha256": "d5c22aa3118d240e877ad41c5d9fa232f9c77d757d4aac0c2f943afc0a95e0ef"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/block-buffer-0.10.4-MIT.txt",
+      "sha256": "d5c22aa3118d240e877ad41c5d9fa232f9c77d757d4aac0c2f943afc0a95e0ef"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "bumpalo",
+    "version": "3.20.3",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text in the checksum-matched source archive matches a reviewed whole-text digest in central helper 37c885f6c7fadf4cddaed502a3aa5c880b608d22. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649",
+    "license_members": [
+      {
+        "member": "bumpalo-3.20.3/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "bumpalo-3.20.3/LICENSE-MIT",
+        "raw_sha256": "65f94e99ddaf4f5d1782a6dae23f35d4293a9a01444a13135a6887017d353cee"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/bumpalo-3.20.3-MIT.txt",
+      "sha256": "65f94e99ddaf4f5d1782a6dae23f35d4293a9a01444a13135a6887017d353cee"
     }
   },
   {
