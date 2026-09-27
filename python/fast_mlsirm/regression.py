@@ -169,6 +169,26 @@ def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     }
 
 
+def prediction_difference(beta, vcov, row_a, row_b, *, df):
+    """Native difference of two declared linear mean predictions.
+
+    Source: statsmodels Developers (n.d.), RegressionResults.t_test manual,
+    Parameters r_matrix/cov_p/use_t, linear hypothesis Rb=q.
+    https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html
+    Native R=row_a-row_b uses one covariance contrast, retaining covariance
+    between predictions. Caller declares rows and corresponding fit covariance.
+    This is a mean contrast, not a future-observation prediction interval.
+    Zero contrast variance, invalid inputs and overflow reject through the
+    existing contrast contract. Normal endpoints are a separate explicit call.
+    """
+    coefficients = _as_float64_vector(beta, "beta")
+    covariance = _vcov_flat(vcov, coefficients.size)
+    a = _as_float64_vector(row_a, "row_a", expected_length=coefficients.size)
+    b = _as_float64_vector(row_b, "row_b", expected_length=coefficients.size)
+    raw = regression_core().prediction_difference(coefficients, covariance, a, b, _require_df(df))
+    return _contrast_result(raw)
+
+
 def absolute_differences(a, b):
     """Native per-entry absolute difference and maximum for aligned real vectors.
 

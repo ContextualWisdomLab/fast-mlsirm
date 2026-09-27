@@ -247,6 +247,23 @@ pub fn residual_summary(y: &[f64], residuals: &[f64], rank: usize, has_intercept
     Ok((sse, total, r2, adjusted))
 }
 
+/// Difference of two declared linear predictions as one covariance contrast.
+/// Source actually read: statsmodels Developers (n.d.), RegressionResults.t_test,
+/// Parameters r_matrix/cov_p/use_t, linear hypothesis Rb=q:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
+/// R = row_a-row_b. Reusing linear_contrast retains the predictions' covariance;
+/// this compares mean predictions, not future-observation prediction intervals.
+pub fn prediction_difference(beta: &[f64], vcov: &[f64], row_a: &[f64], row_b: &[f64], df: f64)
+    -> Result<ContrastResult, String>
+{
+    if row_a.len() != beta.len() || row_b.len() != beta.len()
+        || row_a.iter().chain(row_b).any(|v| !v.is_finite()) {
+        return Err("prediction rows must be finite and match beta length".to_owned());
+    }
+    let weights: Vec<f64> = row_a.iter().zip(row_b).map(|(a,b)| a-b).collect();
+    linear_contrast(beta, vcov, &weights, df)
+}
+
 /// Absolute differences of aligned real vectors and their maximum.
 /// Sources actually read: NumPy Developers (n.d.), NumPy v2.5 manual,
 /// subtract (Returns), absolute (Returns), max (Returns):

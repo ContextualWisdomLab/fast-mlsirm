@@ -170,6 +170,29 @@ def test_regression_core_exports_without_scipy_rscript():
     assert "rscript" not in src.lower()
 
 
+def test_native_prediction_difference_retains_cross_prediction_covariance():
+    """Independent linear-hypothesis oracle; statsmodels t_test manual basis.
+
+    Difference variance uses shared covariance, not sum of marginal variances.
+    """
+    from fast_mlsirm.regression import prediction_difference
+    beta = np.array([.2, -.5, .7])
+    v = np.array([[.3, .02, .01], [.02, .2, .03], [.01, .03, .4]])
+    a, b = np.array([1., -2., 1.]), np.array([1., -2., -1.])
+    got = prediction_difference(beta, v, a, b, df=30.)
+    weights = a-b
+    np.testing.assert_allclose(got["estimate"], weights @ beta, atol=1e-14)
+    np.testing.assert_allclose(got["SE"], np.sqrt(weights @ v @ weights), atol=1e-14)
+    reverse = prediction_difference(beta, v, b, a, df=30.)
+    assert reverse["estimate"] == -got["estimate"]
+    assert reverse["SE"] == got["SE"]
+    assert reverse["p_chi2"] == got["p_chi2"]
+    for left, right in [(a[:2], b), (a, a), (a*np.inf, b),
+                        (np.full(3, 1e308), np.full(3, -1e308))]:
+        with pytest.raises(ValueError):
+            prediction_difference(beta, v, left, right, df=30.)
+
+
 def test_native_absolute_differences_finite_aligned_contract():
     """Check manual-defined differences against independent NumPy arithmetic.
 
