@@ -196,6 +196,7 @@ def score_two_tier_grm_orthogonal(
     q_specific,
     device="cpu",
     gpu_memory_budget_bytes=None,
+    cache_item_tables=False,
 ):
     """Score fixed items under declared independent Gaussian latent factors.
 
@@ -211,12 +212,19 @@ def score_two_tier_grm_orthogonal(
     GPU requires positive gpu_memory_budget_bytes: a caller-owned total budget
     for simultaneous input, posterior, intermediate and readback buffers.
     wgpu 30 Limits constrain individual buffers, not physical VRAM:
-    https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html. Driver overhead and
-    competing allocations can still fail through Device::push_error_scope:
+    https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html. Driver overhead and competing allocations can still fail.
+    cache_item_tables=True opts CPU into caching identical fixed item/node
+    probabilities (Cai, 2010, p.588 eq.9; Appendices A/B). It trades
+    O(items * primary_grid * specific_nodes * categories) f64 storage for
+    avoiding repeated probability evaluations. Default CPU scoring streams;
+    GPU always requires its tables. Tables rebuild after each density update.
+    Competing allocations can still fail through Device::push_error_scope:
     https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope.
     """
     if not isinstance(device, str) or device not in ("cpu", "gpu"):
         raise ValueError("device must be cpu or gpu")
+    if not isinstance(cache_item_tables, bool):
+        raise ValueError("cache_item_tables must be boolean")
     if device == "gpu":
         gpu_memory_budget_bytes = _bounded_integer(
             gpu_memory_budget_bytes, "gpu_memory_budget_bytes", 1, 2**64 - 1
@@ -243,9 +251,10 @@ def score_two_tier_grm_orthogonal(
         )
     result = (
         core.score_two_tier_grm_orthogonal(*args)
-        if device == "cpu"
+        if device == "cpu" and not cache_item_tables
         else core.score_two_tier_grm_orthogonal(
-            *args, device=device, gpu_memory_budget_bytes=gpu_memory_budget_bytes
+            *args, device=device, gpu_memory_budget_bytes=gpu_memory_budget_bytes,
+            cache_item_tables=cache_item_tables
         )
     )
     return _person_scores(result, shape, gpu_memory_budget_bytes if device == "gpu" else None)
@@ -270,6 +279,7 @@ def fit_two_tier_grm_focal_orthogonal(
     tol,
     device="cpu",
     gpu_memory_budget_bytes=None,
+    cache_item_tables=False,
 ):
     """Fit all latent means/SDs with every item fixed and factors independent.
 
@@ -294,14 +304,21 @@ def fit_two_tier_grm_focal_orthogonal(
     GPU requires positive gpu_memory_budget_bytes: a caller-owned total budget
     for simultaneous input, posterior, intermediate and readback buffers.
     wgpu 30 Limits constrain individual buffers, not physical VRAM:
-    https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html. Driver overhead and
-    competing allocations can still fail through Device::push_error_scope:
+    https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html. Driver overhead and competing allocations can still fail.
+    cache_item_tables=True opts CPU into caching identical fixed item/node
+    probabilities (Cai, 2010, p.588 eq.9; Appendices A/B). It trades
+    O(items * primary_grid * specific_nodes * categories) f64 storage for
+    avoiding repeated probability evaluations. Default CPU scoring streams;
+    GPU always requires its tables. Tables rebuild after each density update.
+    Competing allocations can still fail through Device::push_error_scope:
     https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope.
     """
     cap = _bounded_integer(max_iter, "max_iter", 1, int(np.iinfo(np.uintp).max))
     tolerance = _positive_real(tol, "tol")
     if not isinstance(device, str) or device not in ("cpu", "gpu"):
         raise ValueError("device must be cpu or gpu")
+    if not isinstance(cache_item_tables, bool):
+        raise ValueError("cache_item_tables must be boolean")
     if device == "gpu":
         gpu_memory_budget_bytes = _bounded_integer(
             gpu_memory_budget_bytes, "gpu_memory_budget_bytes", 1, 2**64 - 1
@@ -328,9 +345,10 @@ def fit_two_tier_grm_focal_orthogonal(
         )
     result = (
         core.fit_two_tier_grm_focal_orthogonal(*args, cap, tolerance)
-        if device == "cpu"
+        if device == "cpu" and not cache_item_tables
         else core.fit_two_tier_grm_focal_orthogonal(
-            *args, cap, tolerance, device=device, gpu_memory_budget_bytes=gpu_memory_budget_bytes
+            *args, cap, tolerance, device=device, gpu_memory_budget_bytes=gpu_memory_budget_bytes,
+            cache_item_tables=cache_item_tables
         )
     )
     return TwoTierGrmFocalFit(

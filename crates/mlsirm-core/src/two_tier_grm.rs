@@ -1077,6 +1077,49 @@ pub(crate) fn e_step_with_moments(
     (loglik, counts, s_bar_sum)
 }
 
+/// Reuse fixed item/node GRM probabilities across persons in one score call.
+/// Cai (2010), p.588 eq.9 and pp.608-609 Appendices A/B: the item response
+/// probabilities condition on nodes and item parameters, not the person.
+/// This caches the existing f64 function without altering arithmetic or nodes;
+/// affine parameters and tables are rebuilt for every focal EM score call.
+/// Memory is O(sum_items(grid * specific_nodes * categories)); CPU streaming
+/// remains the default and callers explicitly opt into this memory tradeoff.
+/// Rust Vec::try_reserve_exact reports capacity/allocation errors:
+/// https://doc.rust-lang.org/std/vec/struct.Vec.html#method.try_reserve_exact
+fn item_logprob_tables(
+    v: &Validated,
+    params: &[ItemParams],
+    coords: &[f64],
+    ts: &[f64],
+    grid: usize,
+) -> Result<Vec<Vec<f64>>, String> {
+    (0..v.n_items)
+        .map(|i| {
+            let h_count = if v.item_block[i].is_some() {
+                ts.len()
+            } else {
+                1
+            };
+            let len = grid
+                .checked_mul(h_count)
+                .and_then(|n| n.checked_mul(v.n_cat))
+                .ok_or("item/node probability cache size overflows")?;
+            let mut table = Vec::new();
+            table
+                .try_reserve_exact(len)
+                .map_err(|e| format!("item/node probability cache allocation failed: {e}"))?;
+            for g in 0..grid {
+                for h in 0..h_count {
+                    for cat in 0..v.n_cat {
+                        table.push(item_cat_logprob(v, params, coords, ts, i, g, h, cat));
+                    }
+                }
+            }
+            Ok(table)
+        })
+        .collect()
+}
+
 /// GPU reduced posterior contraction for every shared and specific dimension.
 /// Cai (2010), pp.608-609, Appendices A/B, DOI 10.1007/s11336-010-9178-0:
 /// flatten the shared product grid without marginalizing its dimensions,
@@ -1193,20 +1236,7 @@ fn e_step_gpu_person_moments(
     }
     // Log-probability tables depend on items/nodes, never on the person.
     // Reuse the exact CPU GRM probability implementation on the host.
-    let tables: Vec<Vec<f64>> = (0..v.n_items)
-        .map(|i| {
-            let h_count = if v.item_block[i].is_some() { qs } else { 1 };
-            let mut table = Vec::with_capacity(grid * h_count * v.n_cat);
-            for g in 0..grid {
-                for h in 0..h_count {
-                    for cat in 0..v.n_cat {
-                        table.push(item_cat_logprob(v, params, coords, ts, i, g, h, cat));
-                    }
-                }
-            }
-            table
-        })
-        .collect();
+    let tables = item_logprob_tables(v, params, coords, ts, grid)?;
     let tables_groups = vec![tables];
     // Existing group-reduction kernels are omitted on this posterior route.
     // The first primary coordinate is supplied only for the retained buffer
@@ -2444,6 +2474,7 @@ pub fn score_two_tier_grm_orthogonal(
         q_specific,
         crate::Device::Cpu,
         None,
+        false,
     )
 }
 
@@ -2456,6 +2487,8 @@ pub fn score_two_tier_grm_orthogonal(
 /// Limits (per-buffer only) and Device::push_error_scope (allocation errors):
 /// https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope
 /// Driver overhead and other live allocations can still cause a reported error.
+/// CPU cache_item_tables explicitly enables the item_logprob_tables memory
+/// tradeoff; false retains the streaming path. GPU always needs its tables.
 #[allow(clippy::too_many_arguments)]
 pub fn score_two_tier_grm_orthogonal_with_device(
     a_primary: &[f64],
@@ -2476,6 +2509,7 @@ pub fn score_two_tier_grm_orthogonal_with_device(
     q_specific: usize,
     device: crate::Device,
     gpu_memory_budget_bytes: Option<u64>,
+    cache_item_tables: bool,
 ) -> Result<TwoTierGrmPersonScores, String> {
     // Fit-only controls are irrelevant to fixed-bank scoring, as in the
     // existing marginal-loglik evaluator; data/shape checks remain shared.
@@ -2565,6 +2599,9 @@ pub fn score_two_tier_grm_orthogonal_with_device(
     // No free items: do not allocate category-count tables for fixed-bank scoring.
     let loglik = match device {
         crate::Device::Cpu => {
+            let tables = cache_item_tables
+                .then(|| item_logprob_tables(&v, &params, &coords, ts, v.grid_size))
+                .transpose()?;
             let (ll, _, _) = e_step_with_moments(
                 &v,
                 y,
@@ -2578,7 +2615,7 @@ pub fn score_two_tier_grm_orthogonal_with_device(
                 q_specific,
                 Some(&mut moments),
                 false,
-                None,
+                tables.as_deref(),
             );
             ll
         }
@@ -2733,6 +2770,7 @@ pub fn fit_two_tier_grm_focal_orthogonal(
         tol,
         crate::Device::Cpu,
         None,
+        false,
     )
 }
 
@@ -2745,6 +2783,8 @@ pub fn fit_two_tier_grm_focal_orthogonal(
 /// Limits (per-buffer only) and Device::push_error_scope (allocation errors):
 /// https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope
 /// Driver overhead and other live allocations can still cause a reported error.
+/// CPU cache_item_tables explicitly enables the item_logprob_tables memory
+/// tradeoff; false retains the streaming path. GPU always needs its tables.
 #[allow(clippy::too_many_arguments)]
 pub fn fit_two_tier_grm_focal_orthogonal_with_device(
     a_primary: &[f64],
@@ -2767,6 +2807,7 @@ pub fn fit_two_tier_grm_focal_orthogonal_with_device(
     tol: f64,
     device: crate::Device,
     gpu_memory_budget_bytes: Option<u64>,
+    cache_item_tables: bool,
 ) -> Result<TwoTierGrmFocalFit, String> {
     if max_iter == 0 || !tol.is_finite() || tol <= 0.0 {
         return Err("max_iter must be positive and tol finite and positive".into());
@@ -2791,6 +2832,7 @@ pub fn fit_two_tier_grm_focal_orthogonal_with_device(
             q_specific,
             device,
             gpu_memory_budget_bytes,
+            cache_item_tables,
         )
     };
     // Establish all input/parameter shape contracts before indexing below.

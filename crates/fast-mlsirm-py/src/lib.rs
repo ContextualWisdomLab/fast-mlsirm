@@ -2012,7 +2012,7 @@ fn two_tier_focal_person_dict(
 /// https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, primary_map, specific_map, a_primary, a_specific, threshold, latent_mean, latent_sd, n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific, device="cpu", gpu_memory_budget_bytes=None))]
+#[pyo3(signature = (y, observed, primary_map, specific_map, a_primary, a_specific, threshold, latent_mean, latent_sd, n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific, device="cpu", gpu_memory_budget_bytes=None, cache_item_tables=false))]
 fn score_two_tier_grm_orthogonal(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -2033,6 +2033,7 @@ fn score_two_tier_grm_orthogonal(
     q_specific: usize,
     device: &str,
     gpu_memory_budget_bytes: Option<u64>,
+    cache_item_tables: bool,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let device = parse_device(device)?;
     let obs = observed.as_slice()?.to_vec();
@@ -2072,6 +2073,7 @@ fn score_two_tier_grm_orthogonal(
                 q_specific,
                 device,
                 gpu_memory_budget_bytes,
+                cache_item_tables,
             )
         })
         .map_err(PyValueError::new_err)?;
@@ -2101,7 +2103,7 @@ fn score_two_tier_grm_orthogonal(
 /// https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, primary_map, specific_map, a_primary, a_specific, threshold, latent_mean, latent_sd, n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific, max_iter, tol, device="cpu", gpu_memory_budget_bytes=None))]
+#[pyo3(signature = (y, observed, primary_map, specific_map, a_primary, a_specific, threshold, latent_mean, latent_sd, n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific, max_iter, tol, device="cpu", gpu_memory_budget_bytes=None, cache_item_tables=false))]
 fn fit_two_tier_grm_focal_orthogonal(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -2124,6 +2126,7 @@ fn fit_two_tier_grm_focal_orthogonal(
     tol: f64,
     device: &str,
     gpu_memory_budget_bytes: Option<u64>,
+    cache_item_tables: bool,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let device = parse_device(device)?;
     let obs = observed.as_slice()?.to_vec();
@@ -2165,6 +2168,7 @@ fn fit_two_tier_grm_focal_orthogonal(
                 tol,
                 device,
                 gpu_memory_budget_bytes,
+                cache_item_tables,
             )
         })
         .map_err(PyValueError::new_err)?;

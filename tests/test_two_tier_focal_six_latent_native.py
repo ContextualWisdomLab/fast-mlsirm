@@ -11,11 +11,13 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from fast_mlsirm import score_two_tier_grm_orthogonal
 
 
-def test_six_latent_native_matches_rust_full_product_fixture():
+@pytest.mark.parametrize("cache_item_tables", [False, True])
+def test_six_latent_native_matches_rust_full_product_fixture(cache_item_tables):
     """Check joint shared G/W, four specifics, four categories and missingness.
 
     Cai (2010), p.609 Appendix B supplies the moments definition. Fixture
@@ -44,6 +46,7 @@ def test_six_latent_native_matches_rust_full_product_fixture():
         n_specific=4,
         q_primary=5,
         q_specific=5,
+        cache_item_tables=cache_item_tables,
     )
     for actual, key in (
         (scores.mean, "person_mean"),

@@ -93,6 +93,7 @@ def test_native_six_latent_continuous_gaussian_recovery(
             tol=1e-6,
             device=device,
             gpu_memory_budget_bytes=gpu_memory_budget_bytes,
+            cache_item_tables=True,
         )
         print(
             json.dumps(
