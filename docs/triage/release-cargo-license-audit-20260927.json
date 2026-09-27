@@ -1,6 +1,6 @@
 {
-  "source_sha": "4d541637ff93d22a647284e84f91dc78e5da86a7",
-  "helper_sha": "fbb48ec3265f1dcfba34529f6f4325e02e2ac023",
+  "source_sha": "a472c7d9bd18185266043592d3cfc1a2a26eb10a",
+  "helper_sha": "7cd4141eff5dff7a62f0dd152c2182f411343874",
   "scope": "local Cargo licence-only; no Strix or release approval",
   "dependencies": [
     {
@@ -2034,7 +2034,7 @@
     "regular_files_only": true
   },
   "source_cargo_lock_sha256": "f778041936d0b4490976e86746ed2749b529fe79e825be6349bd85e1e7c3dbaf",
-  "source_license_selections_sha256": "352642c31490b0ff32d9f4ddc4c68eb45b9cf121fc190e338cf5f87f25548b0c",
+  "source_license_selections_sha256": "b90ec33721fb89315ae1f7bf557ad67656a0e56dc13a0dffcb046e87c7da198a",
   "summary": {
     "results": {
       "PASS": 138,
@@ -2069,8 +2069,8 @@
     "limitation": "Licence-only recheck; preceding receipts bind historical audit hashes. No Strix or release acceptance."
   },
   "superseded_receipt": {
-    "sha256": "4b445b94112d7383b26ac6fc6b2665c9849ee1fbc5ea420fac6ad61e89e4f47e",
-    "source_sha": "ab171d433d6bee580af74e8eb186dd7a9aa5bfce",
-    "helper_sha": "3aebd56b42edafcb58a2f0944af5cf9d877c0aea"
+    "sha256": "f27ddec5a99884436d93753f6aabb7b9b15c79743c871b2329b797de2ce19db1",
+    "source_sha": "4d541637ff93d22a647284e84f91dc78e5da86a7",
+    "helper_sha": "fbb48ec3265f1dcfba34529f6f4325e02e2ac023"
   }
 }

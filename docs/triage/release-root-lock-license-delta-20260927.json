@@ -1,6 +1,6 @@
 {
-  "source_sha": "69ed28cac167cfdec32f188740b1bcf10db69b0b",
-  "helper_sha": "fbb48ec3265f1dcfba34529f6f4325e02e2ac023",
+  "source_sha": "a472c7d9bd18185266043592d3cfc1a2a26eb10a",
+  "helper_sha": "7cd4141eff5dff7a62f0dd152c2182f411343874",
   "scope": "Root lock identities absent from wheel lock; licence-only, not authenticated platform/dev closure or Strix acceptance",
   "root_cargo_lock_sha256": "88bb9a25b3f95e560da7ffd3ade079e0860bf4b9dfd3c595e674a17b7d7fb9ea",
   "wheel_cargo_lock_sha256": "f778041936d0b4490976e86746ed2749b529fe79e825be6349bd85e1e7c3dbaf",
@@ -112,13 +112,8 @@
         "errno-0.3.14/LICENSE-MIT": "8764a597675778ddfd4e25f81b08a05dbcf089ac05662df7613fe67f150e3aa2"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/fastrand@2.4.1",
@@ -200,13 +195,8 @@
         "getrandom-0.3.4/LICENSE-MIT": "29e9fe5074bd27e0e5d5d110394fbbcd841baee2651a3c4b4560a632702cede4"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/getrandom@0.4.3",
@@ -218,13 +208,8 @@
         "getrandom-0.4.3/LICENSE-MIT": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/indexmap@2.14.0",
@@ -379,13 +364,8 @@
         "ppv-lite86-0.2.21/LICENSE-MIT": "4cada0bd02ea3692eee6f16400d86c6508bbd3bafb2b65fed0419f36d4f83e8f"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/proc-macro2@1.0.106",
@@ -410,13 +390,8 @@
         "proptest-1.11.0/LICENSE-MIT": "d8e0806926ce9f0a5030c382ecc0ffdf6de6fbea5c69a458435fd443fa7a5b92"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/quick-error@1.2.3",
@@ -428,13 +403,8 @@
         "quick-error-1.2.3/LICENSE-MIT": "058f01fe181608d027fcde7e528fc03ea3cf90f30903c407644b0a9bbc54f500"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/quote@1.0.46",
@@ -497,13 +467,8 @@
         "rand-0.9.4/LICENSE-MIT": "209fbbe0ad52d9235e37badf9cadfe4dbdc87203179c0899e738b39ade42177b"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/rand_chacha@0.9.0",
@@ -515,13 +480,8 @@
         "rand_chacha-0.9.0/LICENSE-MIT": "209fbbe0ad52d9235e37badf9cadfe4dbdc87203179c0899e738b39ade42177b"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/rand_core@0.9.5",
@@ -533,13 +493,8 @@
         "rand_core-0.9.5/LICENSE-MIT": "209fbbe0ad52d9235e37badf9cadfe4dbdc87203179c0899e738b39ade42177b"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/rand_xorshift@0.4.0",
@@ -551,13 +506,8 @@
         "rand_xorshift-0.4.0/LICENSE-MIT": "209fbbe0ad52d9235e37badf9cadfe4dbdc87203179c0899e738b39ade42177b"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/regex-syntax@0.8.11",
@@ -602,13 +552,8 @@
         "rusty-fork-0.3.1/LICENSE-MIT": "d8e0806926ce9f0a5030c382ecc0ffdf6de6fbea5c69a458435fd443fa7a5b92"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/serde@1.0.228",
@@ -685,13 +630,8 @@
         "tempfile-3.27.0/LICENSE-MIT": "8b427f5bc501764575e52ba4f9d95673cf8f6d80a86d0d06599852e1a9a20a36"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/thiserror@2.0.18",
@@ -1029,31 +969,29 @@
     }
   ],
   "summary": {
-    "FAIL": 18,
-    "PASS": 53
+    "FAIL": 6,
+    "PASS": 65
   },
   "superseded_receipt": {
-    "sha256": "e614b4dc781bb0f81a64c4baaf5bd2e6f412ae7d88c93851571b3aed93bb1a74",
-    "source_sha": "4d541637ff93d22a647284e84f91dc78e5da86a7",
+    "sha256": "3877486da7baba0ddfca416759439462ffb5f46ea7885bfe109903b55052dfbd",
+    "source_sha": "69ed28cac167cfdec32f188740b1bcf10db69b0b",
     "helper_sha": "fbb48ec3265f1dcfba34529f6f4325e02e2ac023"
   },
-  "source_license_selections_sha256": "297d9e0881869f61fe146556b8419b928ac4a8a71aa1bdb1bd0be0397bee4315",
+  "source_license_selections_sha256": "b90ec33721fb89315ae1f7bf557ad67656a0e56dc13a0dffcb046e87c7da198a",
   "packaging_status": {
-    "notice_files": 186,
+    "notice_files": 198,
     "source_notice_hashes_verified": true,
-    "wheel_sdist_186_notice_verification": "PASS",
-    "prior_133_notice_check": "Prior CPython 3.14/macOS arm64 0.11.4 wheel and sdist checked 133 notices only. Not evidence for these 186 notice files.",
-    "initial_build_failure": "maturin cargo metadata rustc -vV terminated by SIGKILL on three attempts; direct rustc -vV and cargo metadata probes succeeded",
-    "build_source_sha": "310cb0435b693ec5d527977c1499a6cc3d224e11",
+    "wheel_sdist_notice_verification": "PASS",
+    "build_source_sha": "a472c7d9bd18185266043592d3cfc1a2a26eb10a",
     "successful_invocation_prefix": "arch -arm64 /tmp/fmls-admission-venv/bin/maturin",
     "artifacts": [
       {
         "file": "fast_mlsirm-0.11.4-cp314-cp314-macosx_11_0_arm64.whl",
-        "sha256": "b85e137c88dd288bfa6524024ba947981949d809c924e9e70bcac7e625ac9bc9"
+        "sha256": "e7070d9c08fc1ee702d6403a4f944cd89566ed65a2d35eac0bc2ba19dd144ceb"
       },
       {
         "file": "fast_mlsirm-0.11.4.tar.gz",
-        "sha256": "0d089ce5d77fcd279404dabf1cf34f55acf700e3c904853c0e11ae92ac686e95"
+        "sha256": "6e46ced13674962d48a4d44cded36682a1bf4ad192f5d0f59d794595c22a674d"
       }
     ],
     "limitation": "Local development CPython3.14 macOS arm64 0.11.4 wheel and sdist only; not 0.11.5, universal2, 13-distribution hosted or Strix acceptance."
