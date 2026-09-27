@@ -233,3 +233,11 @@ not missing grants, Apple SDK applicability questions, or release HOLDs.
 REST Actions job lookup hit the current API rate limit; preserve canary
 `36321971364` rather than dispatching a duplicate. Hourly automation
 `7c92d308-5b01-4788-8dca-9172a1a66e2d` remains enabled.
+
+Central PR2446 merged at `09f3ba1dbad4c4d92209b1c0bedd71db16142d6f`
+into the #2347 branch at 2026-09-27T14:00:05Z (not main). Exact reviewed
+head `baba52d8914779502511915b1da01f8457d58650` integrated current base
+`b994c9cb6d3a9e96b3c1ee4246a1171c46499be8`; 131 focused tests passed,
+CodeRabbit/Devin succeeded, review threads were empty, and hosted jobs were
+queued. User-authorized exact-head admin bypass used. Retain the full
+central release stack and downstream immutable-helper adoption as next work.
