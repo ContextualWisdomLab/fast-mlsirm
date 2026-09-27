@@ -1057,3 +1057,111 @@ fn focal_gaussian_recovers_declared_distribution() {
         }
     }
 }
+
+/// Same-node posterior oracle for shared G/W and four specific blocks.
+/// Cai (2010), DOI 10.1007/s11336-010-9178-0, pp.589-590 eqs.11-12,15-16 and
+/// pp.608-609 Appendices A/B: integrate shared primary dimensions jointly,
+/// and use posterior first/second moments for EAP and variance.
+/// This synthetic 16-item layout mirrors the study's G+4+W loading pattern;
+/// parameters and five-point nodes are test choices, not study estimates or
+/// evidence of quadrature adequacy, identification or population recovery.
+#[test]
+fn six_latent_crossed_primary_scores_match_full_product() {
+    use crate::two_tier_grm::score_two_tier_grm_orthogonal;
+    let wording = [4_usize, 5, 6, 9, 12, 14, 15];
+    let mut ap = vec![0.0; 32];
+    let mut asp = vec![0.0; 16];
+    let mut threshold = vec![0.0; 48];
+    let mut pm = vec![false; 32];
+    let sm: Vec<i32> = (0..16).map(|i| (i / 4) as i32).collect();
+    for i in 0..16 {
+        pm[2 * i] = true;
+        ap[2 * i] = 0.65 + 0.15 * (i % 4) as f64;
+        if wording.contains(&i) {
+            pm[2 * i + 1] = true;
+            ap[2 * i + 1] = if i % 2 == 0 { 0.45 } else { -0.5 };
+        }
+        asp[i] = 0.35 + 0.2 * (i % 3) as f64;
+        for (k, value) in [1.0, 0.1, -0.9].iter().enumerate() {
+            threshold[3 * i + k] = value + 0.04 * (i % 5) as f64;
+        }
+    }
+    let mu = [0.4, -0.3, 0.2, -0.5, 0.6, -0.2];
+    let sd = [1.2, 0.8, 0.9, 1.1, 0.7, 1.3];
+    let y: Vec<usize> = (0..48).map(|i| (i + i / 16) % 4).collect();
+    let mut mask = vec![true; 48];
+    for i in 0..16 {
+        mask[16 + i] = !(4..8).contains(&i) && i != 12;
+        mask[32 + i] = false;
+    }
+    let scores = score_two_tier_grm_orthogonal(
+        &ap,
+        &asp,
+        &threshold,
+        &mu,
+        &sd,
+        &y,
+        Some(&mask),
+        &pm,
+        &sm,
+        3,
+        16,
+        2,
+        4,
+        4,
+        5,
+        5,
+    )
+    .unwrap();
+    let (nodes, weights) = crate::quadrature::gh_rule(5).unwrap();
+    let mut total_loglik = 0.0;
+    for person in 0..3 {
+        let mut mass = 0.0;
+        let mut first = [0.0; 6];
+        let mut second = [0.0; 6];
+        for code in 0..5_usize.pow(6) {
+            let mut remaining = code;
+            let mut theta = [0.0; 6];
+            let mut probability = 1.0;
+            for dim in 0..6 {
+                let h = remaining % 5;
+                remaining /= 5;
+                theta[dim] = mu[dim] + sd[dim] * nodes[h];
+                probability *= weights[h];
+            }
+            for i in 0..16 {
+                if !mask[person * 16 + i] {
+                    continue;
+                }
+                let eta = ap[2 * i] * theta[0]
+                    + ap[2 * i + 1] * theta[1]
+                    + asp[i] * theta[2 + sm[i] as usize];
+                let mut cumulative = [1.0, 0.0, 0.0, 0.0, 0.0];
+                for k in 0..3 {
+                    cumulative[k + 1] = 1.0 / (1.0 + (-(eta + threshold[3 * i + k])).exp());
+                }
+                let category = y[person * 16 + i];
+                probability *= cumulative[category] - cumulative[category + 1];
+            }
+            mass += probability;
+            for dim in 0..6 {
+                first[dim] += probability * theta[dim];
+                second[dim] += probability * theta[dim] * theta[dim];
+            }
+        }
+        total_loglik += mass.ln();
+        for dim in 0..6 {
+            let mean = first[dim] / mass;
+            let raw_second = second[dim] / mass;
+            let posterior_sd = (raw_second - mean * mean).sqrt();
+            assert!((scores.mean[person * 6 + dim] - mean).abs() < 1e-10);
+            assert!((scores.second[person * 6 + dim] - raw_second).abs() < 1e-10);
+            assert!((scores.sd[person * 6 + dim] - posterior_sd).abs() < 1e-10);
+            if person == 2 {
+                assert!((scores.mean[person * 6 + dim] - mu[dim]).abs() < 1e-12);
+                assert!((scores.sd[person * 6 + dim] - sd[dim]).abs() < 1e-12);
+            }
+        }
+    }
+    assert!((scores.loglik - total_loglik).abs() < 1e-10);
+}

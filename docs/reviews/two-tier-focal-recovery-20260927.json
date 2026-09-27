@@ -211,5 +211,30 @@
     "mutation": "force final latent mean zero before scoring",
     "exit_code": 101,
     "result": "\nrunning 1 test\nrecovery n=4000 q=15 reason=loglik_decreased updates=10 mean=[0.41664255983392584, 0.0] sd=[1.1809365865573742, 0.8307519671627349] delta=-0.07249538691030466\n\nthread 'focal_gaussian_recovers_declared_distribution' (539774264) panicked at /private/tmp/two-tier-focal-recovery-mutant-20260927.rs:2328:9:\nloglik_decreased\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\ntest focal_gaussian_recovers_declared_distribution ... FAILED\n\nfailures:\n\nfailures:\n    focal_gaussian_recovers_declared_distribution\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 3.43s\n\n"
+  },
+  "six_latent_test": {
+    "sha256": "9e784690be0e54a694ae58172766577b1585ff3cdcae56d7434b6f6e09fd4c82",
+    "kernel_source_unchanged": true,
+    "result": "\nrunning 1 test\ntest six_latent_crossed_primary_scores_match_full_product ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.02s\n\n",
+    "source_pages": {
+      "pdf": [
+        9,
+        10,
+        28,
+        29
+      ],
+      "printed": [
+        589,
+        590,
+        608,
+        609
+      ]
+    },
+    "scope": "same-node finite-sum posterior identity, not six-dimensional recovery",
+    "negative_control": {
+      "mutation": "second-primary slope ignores declared SD",
+      "exit_code": 101,
+      "result": "\nrunning 1 test\n\nthread 'six_latent_crossed_primary_scores_match_full_product' (539844405) panicked at /private/tmp/two-tier-six-latent-mutant-20260927.rs:2349:13:\nassertion failed: (scores.mean[person * 6 + dim] - mean).abs() < 1e-10\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\ntest six_latent_crossed_primary_scores_match_full_product ... FAILED\n\nfailures:\n\nfailures:\n    six_latent_crossed_primary_scores_match_full_product\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s\n\n"
+    }
   }
 }
