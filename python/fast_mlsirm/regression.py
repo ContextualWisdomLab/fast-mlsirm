@@ -169,6 +169,37 @@ def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     }
 
 
+def normal_wald_interval(estimate, se, *, alpha):
+    """Return normal-Wald lower/upper endpoints and the critical value (Rust).
+
+    Alpha is required and caller owned, with 0 < alpha < 1. SE must be positive.
+    This uses normal inference, not a finite-sample t interval, and does not
+    validate covariance or include measurement-model uncertainty. Lower-tail
+    evaluation avoids cancellation for small alpha; underflow/overflow fail.
+
+    References
+    ----------
+    statsmodels Developers. (n.d.). ContrastResults.conf_int [Source manual,
+    lines94-117]. https://www.statsmodels.org/stable/_modules/statsmodels/stats/contrast.html
+    QuantLib Developers. (n.d.). InverseCumulativeNormal [Source manual,
+    normaldistribution.hpp lines118-138, .cpp lines53-103].
+    https://github.com/lballabio/QuantLib/blob/master/ql/math/distributions/normaldistribution.hpp
+    Native nodes.inv_normal_cdf reuses its Acklam rational approximation;
+    this is not the optional Halley refinement to machine precision.
+    """
+    values = []
+    for name, value in (("estimate", estimate), ("se", se), ("alpha", alpha)):
+        raw = np.asarray(value)
+        if raw.ndim != 0 or raw.dtype.kind not in "iuf":
+            raise ValueError(f"{name} must be a real scalar")
+        val = float(raw)
+        if not np.isfinite(val):
+            raise ValueError(f"{name} must be finite")
+        values.append(val)
+    raw = regression_core().normal_wald_interval(*values)
+    return {key: float(raw[key]) for key in ("lower", "upper", "critical", "alpha")}
+
+
 def contrast(
     beta: np.ndarray,
     vcov: np.ndarray,

@@ -5,7 +5,7 @@
 
 use mlsirm_core::regression::{
     centered_product_design, chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc,
-    linear_contrast, slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
+    linear_contrast, normal_wald_interval, slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
 };
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -102,6 +102,20 @@ fn py_fit_ols_hc(
     fit_dict(py, &fit, &vcov, &hc.to_ascii_uppercase())
 }
 
+/// Marshal normal-Wald results from the Rust source contract; no arithmetic.
+/// Sources: statsmodels Developers (n.d.), ContrastResults.conf_int;
+/// QuantLib Developers (n.d.), InverseCumulativeNormal. See core doc references.
+#[pyfunction(name = "normal_wald_interval")]
+fn py_normal_wald_interval(py: Python<'_>, estimate: f64, se: f64, alpha: f64) -> PyResult<Py<PyDict>> {
+    let (lower, upper, critical) = normal_wald_interval(estimate, se, alpha).map_err(PyValueError::new_err)?;
+    let out = PyDict::new(py);
+    out.set_item("lower", lower)?;
+    out.set_item("upper", upper)?;
+    out.set_item("critical", critical)?;
+    out.set_item("alpha", alpha)?;
+    Ok(out.into())
+}
+
 #[pyfunction(name = "linear_contrast")]
 fn py_linear_contrast(
     py: Python<'_>,
@@ -195,6 +209,7 @@ fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_centered_product_design, m)?)?;
     m.add_function(wrap_pyfunction!(py_fit_ols_hc, m)?)?;
     m.add_function(wrap_pyfunction!(py_linear_contrast, m)?)?;
+    m.add_function(wrap_pyfunction!(py_normal_wald_interval, m)?)?;
     m.add_function(wrap_pyfunction!(py_xwz_e_design_row, m)?)?;
     m.add_function(wrap_pyfunction!(py_design_row_dot, m)?)?;
     m.add_function(wrap_pyfunction!(py_conditional_slope, m)?)?;

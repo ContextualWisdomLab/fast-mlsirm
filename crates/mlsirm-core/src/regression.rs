@@ -474,6 +474,37 @@ pub fn linear_contrast(
     })
 }
 
+/// Normal-Wald endpoints for a supplied estimate and positive standard error.
+/// statsmodels Developers (n.d.), ContrastResults.conf_int, source lines94-117:
+/// https://www.statsmodels.org/stable/_modules/statsmodels/stats/contrast.html
+/// Reuse nodes::inv_normal_cdf and normal symmetry for q=-Phi^-1(alpha/2),
+/// avoiding cancellation in 1-alpha/2. Alpha is caller owned. This normal-only
+/// interval does not validate the covariance or include measurement uncertainty.
+/// QuantLib Developers (n.d.), InverseCumulativeNormal, rational approximation:
+/// https://github.com/lballabio/QuantLib/blob/master/ql/math/distributions/normaldistribution.hpp
+/// (lines118-138; coefficients/tails in normaldistribution.cpp lines53-103).
+/// This existing approximation is not Halley-refined machine precision.
+pub fn normal_wald_interval(estimate: f64, se: f64, alpha: f64) -> Result<(f64, f64, f64), String> {
+    if !estimate.is_finite() || !se.is_finite() || se <= 0.0 {
+        return Err("estimate must be finite and se finite positive".into());
+    }
+    if !alpha.is_finite() || alpha <= 0.0 || alpha >= 1.0 {
+        return Err("alpha must be finite and strictly between zero and one".into());
+    }
+    let tail = alpha / 2.0;
+    if tail == 0.0 {
+        return Err("alpha/2 underflows; lower-tail probability is unrepresentable".into());
+    }
+    let critical = -crate::nodes::inv_normal_cdf(tail);
+    let width = critical * se;
+    let lower = estimate - width;
+    let upper = estimate + width;
+    if !critical.is_finite() || critical <= 0.0 || !lower.is_finite() || !upper.is_finite() || lower >= upper {
+        return Err("normal Wald interval is not finite at supplied inputs".into());
+    }
+    Ok((lower, upper, critical))
+}
+
 /// Number of columns in the H1–H5 design `Y ~ X*W*Z + X*E`.
 pub const XWZ_E_K: usize = 10;
 
