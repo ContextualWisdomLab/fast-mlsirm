@@ -54,7 +54,7 @@ def test_release_builds_are_bound_to_the_reviewed_source_commit() -> None:
     assert "ref: ${{ inputs.release_commit }}" not in text
     assert "ref: ${{ inputs.control_plane_commit }}" not in text
     for job in (sdist, wheels):
-        assert "ref: ${{ needs.verify-release.outputs.release_commit }}" in job
+        assert "ref: ${{ needs.verify-release.outputs.release_commit }}" not in job
         assert "persist-credentials: false" in job
         assert "ref: ${{ inputs.release_tag }}" not in job
 
@@ -95,7 +95,7 @@ def test_release_checkout_rejects_unvalidated_dispatch_sha_authority() -> None:
         "create-tag-and-release",
     ):
         job = _job_block(text, job_name)
-        assert "ref: ${{ needs.verify-release.outputs.release_commit }}" in job
+        assert "ref: ${{ needs.verify-release.outputs.release_commit }}" not in job
 
 
 def test_wheels_cover_supported_cpython_versions_on_every_platform() -> None:
@@ -115,14 +115,21 @@ def test_wheels_cover_supported_cpython_versions_on_every_platform() -> None:
     assert "name: dist-wheel-${{ matrix.target }}-py${{ matrix.python-version }}" in wheels
 
 
-def test_direct_publish_ancestry_guard_against_real_git_history(tmp_path: Path) -> None:
-    verify = _job_block(_workflow_text(), "verify-release")
-    name = "Validate and select release source ancestry"
+@pytest.mark.parametrize("job_name", ["verify-release", "sdist", "wheels", "macos-x86-runtime", "reproducibility-record", "release-admission", "create-tag-and-release"])
+def test_direct_publish_ancestry_guard_against_real_git_history(tmp_path: Path, job_name: str) -> None:
+    verify = _job_block(_workflow_text(), job_name)
+    name = "Validate and select release source ancestry" if job_name == "verify-release" else "Validate release ancestry in this job"
     step = verify.split(f"- name: {name}\n", 1)[1].split("\n      - ", 1)[0]
     script = textwrap.dedent(step.split("        run: |\n", 1)[1])
     assert verify.index("ref: ${{ github.sha }}") < verify.index(name)
-    assert verify.index(name) < verify.index("Require release tag and source commit")
-    assert 'CONTROL_PLANE_COMMIT: ${{ inputs.control_plane_commit }}' in step
+    if job_name == "verify-release":
+        assert verify.index(name) < verify.index("Require release tag and source commit")
+        assert 'CONTROL_PLANE_COMMIT: ${{ inputs.control_plane_commit }}' in step
+    else:
+        assert 'CONTROL_PLANE_COMMIT: ${{ github.sha }}' in step
+        assert 'RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}' in step
+        assert "ref: ${{ needs.verify-release.outputs.release_commit }}" not in verify
+        assert "fetch-depth: 0" in verify
     assert 'shell: bash --noprofile --norc -e -o pipefail {0}' in step
     assert "fetch-tags: true" in verify
 
@@ -166,7 +173,8 @@ def test_direct_publish_ancestry_guard_against_real_git_history(tmp_path: Path) 
         assert marker.exists() is allowed
         if allowed:
             assert git("rev-parse", "HEAD") == release
-            assert output.read_text() == f"value={release}\n"
+            if job_name == "verify-release":
+                assert output.read_text() == f"value={release}\n"
         assert git("tag", "--list") == ""
 
 
@@ -647,7 +655,7 @@ def test_universal2_x86_runtime_capture_precedes_release_record() -> None:
     assert "runs-on: macos-15-intel" in job
     assert 'python-version: ["3.12", "3.13", "3.14"]' in job
     assert "architecture: x64" in job
-    assert "ref: ${{ needs.verify-release.outputs.release_commit }}" in job
+    assert "ref: ${{ needs.verify-release.outputs.release_commit }}" not in job
     assert "ref: ${{ github.sha }}\n          path: trusted-control" in job
     assert "name: dist-wheel-${{ env.LEG }}" in job
     assert "name: repro-digest-${{ env.LEG }}" in job

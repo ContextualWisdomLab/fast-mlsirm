@@ -184,8 +184,38 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.verify-release.outputs.release_commit }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
+      - name: Validate release ancestry in this job
+        env:
+          CONTROL_PLANE_COMMIT: ${{ github.sha }}
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          if ! printf '%s' "$RELEASE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "release_commit must be a canonical 40-character lowercase SHA-1" >&2
+            exit 1
+          fi
+          trusted_control_commit="$(git rev-parse HEAD)"
+          if [ "$trusted_control_commit" != "$CONTROL_PLANE_COMMIT" ]; then
+            echo "checked-out protected control plane does not match control_plane_commit" >&2
+            exit 1
+          fi
+          canonical_release_commit="$(git rev-parse --verify "$RELEASE_COMMIT^{commit}" 2>/dev/null)" || {
+            echo "release_commit is unavailable for ancestry verification" >&2
+            exit 1
+          }
+          if [ "$canonical_release_commit" != "$RELEASE_COMMIT" ]; then
+            echo "release_commit did not resolve to its canonical commit identity" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$canonical_release_commit" "$trusted_control_commit"; then
+            echo "release commit must be an ancestor of the publication control plane" >&2
+            exit 1
+          fi
+          git checkout --detach "$canonical_release_commit"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -463,8 +493,38 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.verify-release.outputs.release_commit }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
+      - name: Validate release ancestry in this job
+        env:
+          CONTROL_PLANE_COMMIT: ${{ github.sha }}
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          if ! printf '%s' "$RELEASE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "release_commit must be a canonical 40-character lowercase SHA-1" >&2
+            exit 1
+          fi
+          trusted_control_commit="$(git rev-parse HEAD)"
+          if [ "$trusted_control_commit" != "$CONTROL_PLANE_COMMIT" ]; then
+            echo "checked-out protected control plane does not match control_plane_commit" >&2
+            exit 1
+          fi
+          canonical_release_commit="$(git rev-parse --verify "$RELEASE_COMMIT^{commit}" 2>/dev/null)" || {
+            echo "release_commit is unavailable for ancestry verification" >&2
+            exit 1
+          }
+          if [ "$canonical_release_commit" != "$RELEASE_COMMIT" ]; then
+            echo "release_commit did not resolve to its canonical commit identity" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$canonical_release_commit" "$trusted_control_commit"; then
+            echo "release commit must be an ancestor of the publication control plane" >&2
+            exit 1
+          fi
+          git checkout --detach "$canonical_release_commit"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: ${{ matrix.python-version }}
@@ -666,8 +726,38 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.verify-release.outputs.release_commit }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
+      - name: Validate release ancestry in this job
+        env:
+          CONTROL_PLANE_COMMIT: ${{ github.sha }}
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          if ! printf '%s' "$RELEASE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "release_commit must be a canonical 40-character lowercase SHA-1" >&2
+            exit 1
+          fi
+          trusted_control_commit="$(git rev-parse HEAD)"
+          if [ "$trusted_control_commit" != "$CONTROL_PLANE_COMMIT" ]; then
+            echo "checked-out protected control plane does not match control_plane_commit" >&2
+            exit 1
+          fi
+          canonical_release_commit="$(git rev-parse --verify "$RELEASE_COMMIT^{commit}" 2>/dev/null)" || {
+            echo "release_commit is unavailable for ancestry verification" >&2
+            exit 1
+          }
+          if [ "$canonical_release_commit" != "$RELEASE_COMMIT" ]; then
+            echo "release_commit did not resolve to its canonical commit identity" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$canonical_release_commit" "$trusted_control_commit"; then
+            echo "release commit must be an ancestor of the publication control plane" >&2
+            exit 1
+          fi
+          git checkout --detach "$canonical_release_commit"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
@@ -725,9 +815,40 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.verify-release.outputs.release_commit }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
           path: release-source
           persist-credentials: false
+      - name: Validate release ancestry in this job
+        env:
+          CONTROL_PLANE_COMMIT: ${{ github.sha }}
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+        working-directory: release-source
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          if ! printf '%s' "$RELEASE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "release_commit must be a canonical 40-character lowercase SHA-1" >&2
+            exit 1
+          fi
+          trusted_control_commit="$(git rev-parse HEAD)"
+          if [ "$trusted_control_commit" != "$CONTROL_PLANE_COMMIT" ]; then
+            echo "checked-out protected control plane does not match control_plane_commit" >&2
+            exit 1
+          fi
+          canonical_release_commit="$(git rev-parse --verify "$RELEASE_COMMIT^{commit}" 2>/dev/null)" || {
+            echo "release_commit is unavailable for ancestry verification" >&2
+            exit 1
+          }
+          if [ "$canonical_release_commit" != "$RELEASE_COMMIT" ]; then
+            echo "release_commit did not resolve to its canonical commit identity" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$canonical_release_commit" "$trusted_control_commit"; then
+            echo "release commit must be an ancestor of the publication control plane" >&2
+            exit 1
+          fi
+          git checkout --detach "$canonical_release_commit"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           pattern: dist-*
@@ -994,9 +1115,40 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.verify-release.outputs.release_commit }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
           path: release-source
           persist-credentials: false
+      - name: Validate release ancestry in this job
+        env:
+          CONTROL_PLANE_COMMIT: ${{ github.sha }}
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+        working-directory: release-source
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          if ! printf '%s' "$RELEASE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "release_commit must be a canonical 40-character lowercase SHA-1" >&2
+            exit 1
+          fi
+          trusted_control_commit="$(git rev-parse HEAD)"
+          if [ "$trusted_control_commit" != "$CONTROL_PLANE_COMMIT" ]; then
+            echo "checked-out protected control plane does not match control_plane_commit" >&2
+            exit 1
+          fi
+          canonical_release_commit="$(git rev-parse --verify "$RELEASE_COMMIT^{commit}" 2>/dev/null)" || {
+            echo "release_commit is unavailable for ancestry verification" >&2
+            exit 1
+          }
+          if [ "$canonical_release_commit" != "$RELEASE_COMMIT" ]; then
+            echo "release_commit did not resolve to its canonical commit identity" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$canonical_release_commit" "$trusted_control_commit"; then
+            echo "release commit must be an ancestor of the publication control plane" >&2
+            exit 1
+          fi
+          git checkout --detach "$canonical_release_commit"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
@@ -1428,8 +1580,38 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.verify-release.outputs.release_commit }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
+      - name: Validate release ancestry in this job
+        env:
+          CONTROL_PLANE_COMMIT: ${{ github.sha }}
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          if ! printf '%s' "$RELEASE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "release_commit must be a canonical 40-character lowercase SHA-1" >&2
+            exit 1
+          fi
+          trusted_control_commit="$(git rev-parse HEAD)"
+          if [ "$trusted_control_commit" != "$CONTROL_PLANE_COMMIT" ]; then
+            echo "checked-out protected control plane does not match control_plane_commit" >&2
+            exit 1
+          fi
+          canonical_release_commit="$(git rev-parse --verify "$RELEASE_COMMIT^{commit}" 2>/dev/null)" || {
+            echo "release_commit is unavailable for ancestry verification" >&2
+            exit 1
+          }
+          if [ "$canonical_release_commit" != "$RELEASE_COMMIT" ]; then
+            echo "release_commit did not resolve to its canonical commit identity" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$canonical_release_commit" "$trusted_control_commit"; then
+            echo "release commit must be an ancestor of the publication control plane" >&2
+            exit 1
+          fi
+          git checkout --detach "$canonical_release_commit"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
