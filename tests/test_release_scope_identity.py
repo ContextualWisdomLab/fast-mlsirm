@@ -64,7 +64,7 @@ def scope_fixture(tmp_path, monkeypatch):
     return source, sha, rows, records
 
 
-def test_workflow_producer_transport_and_actual_consumer_hold(scope_fixture):
+def test_workflow_producer_transport_and_actual_declaration_consumer(scope_fixture):
     source, sha, rows, records = scope_fixture
     payload = io.BytesIO()
     with zipfile.ZipFile(payload, "w") as z:
@@ -82,7 +82,7 @@ def test_workflow_producer_transport_and_actual_consumer_hold(scope_fixture):
     assert sum(r["kind"] == "sdist" for r in records) == 1
     assert all(v == {"status": "UNKNOWN", "evidence": None} for r in records for v in r["scopes"].values())
     start = WORKFLOW.index('          scope_records = json.loads(Path("downloaded/reproducibility-record/release-scope-identities.json")')
-    end = WORKFLOW.index('          # The target-specific runtime/build/dev/optional/native/bundled', start)
+    end = WORKFLOW.index('          # Source declarations cannot approve a closure.', start)
     import types
     calls = []
     transport = types.SimpleNamespace(**M)
@@ -90,14 +90,14 @@ def test_workflow_producer_transport_and_actual_consumer_hold(scope_fixture):
     transport.verify_bundled_license_notices = lambda *args: None
     transport.verify_license_selection_report = lambda *args: None
     transport.verify_cargo_graph_closure = lambda *args: calls.append("cargo")
-    hold_end = WORKFLOW.index("\n          PY", end)
-    with pytest.raises(SystemExit, match="platform-complete scope inventory"):
-        exec(textwrap.dedent(WORKFLOW[start:hold_end]), {
-            "json": json, "Path": Path, "rows": rows, "commit": sha,
-            "transport": transport, "build_graph_receipts": [], "report": {},
-            "verifier": types.SimpleNamespace(verify_cargo_dependency_coverage=lambda *args, **kwargs: calls.append("review"))})
+    # This focused check covers transported declarations only. Complete admission
+    # is exercised separately with real Git/Cargo and all actual verifiers.
+    exec(textwrap.dedent(WORKFLOW[start:end]), {
+        "json": json, "Path": Path, "rows": rows, "commit": sha,
+        "transport": transport, "build_graph_receipts": [], "report": {},
+        "verifier": types.SimpleNamespace(verify_cargo_dependency_coverage=lambda *args, **kwargs: calls.append("review"))})
     assert calls == [*(["metadata"] * 13), "cargo", "review"]
-    assert "platform-complete scope inventory is not verified" in WORKFLOW[end:]
+    assert 'Path("admitted-manifest.tsv").open("x"' in WORKFLOW[end:]
     assert 'name: reproducibility-record\n          path: |\n            reproducibility-record.tsv\n            release-scope-identities.json' in WORKFLOW
     assert not Path("admitted-manifest.tsv").exists()
 

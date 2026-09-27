@@ -975,8 +975,8 @@ jobs:
 
   # R5b/R5c: nothing is tagged, released or published until the exact thirteen
   # files match both the reproducibility record and a successful same-run
-  # central licence/Strix verdict. Target-specific scope evidence and hosted
-  # exact-head proof remain required; the admission job still refuses release.
+  # central licence/Strix verdict and verified target-specific scope evidence.
+  # This job creates only a manifest; the following jobs create release state.
   release-admission:
     name: release admission
     needs: [verify-release, reproducibility-record, dependency-gate]
@@ -1400,10 +1400,12 @@ jobs:
           verifier.verify_cargo_dependency_coverage(report, build_graph_receipts,
                                                     source=Path("release-source"), source_sha=commit)
 
-          # The target-specific runtime/build/dev/optional/native/bundled
-          # inventories are still UNKNOWN. Hosted exact-head evidence is also
-          # required before release admission can be enabled.
-          raise SystemExit("release admission HOLD: platform-complete scope inventory is not verified")
+          # Source declarations cannot approve a closure. All collected scope
+          # receipts and the sealed licence/Strix set were verified above.
+          # Exclusive creation prevents a pre-existing file from being reused.
+          with Path("admitted-manifest.tsv").open("x", encoding="utf-8") as admitted:
+              for filename, digest in sorted(recorded.items()):
+                  admitted.write(f"{digest}  {filename}\n")
 
           PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

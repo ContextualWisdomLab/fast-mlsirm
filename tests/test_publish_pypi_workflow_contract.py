@@ -546,7 +546,13 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     assert "full_set_verdict_artifact_id" in admission
     assert "full_set_verdict_artifact_digest" in admission
     assert "verify_release_full_set_verdict.py" in admission
-    assert "release admission HOLD: platform-complete scope inventory is not verified" in admission
+    writer = 'with Path("admitted-manifest.tsv").open("x", encoding="utf-8")'
+    for check in ("verify_full_set_verdict", "verify_runtime_dependency_coverage",
+                  "verify_native_link_inventory", "verify_scope_declarations",
+                  "verify_distribution_requirements", "verify_bundled_license_notices",
+                  "verify_license_selection_report", "verify_cargo_graph_closure",
+                  "verify_cargo_dependency_coverage"):
+        assert admission.index(check) < admission.index(writer)
 
 
 def test_admission_reexports_source_requirements_before_verifying_receipts(tmp_path: Path) -> None:
@@ -613,8 +619,7 @@ def test_universal2_x86_runtime_capture_precedes_release_record() -> None:
     assert "python scripts/ci/capture_release_runtime.py" not in job
     assert "name: repro-macos-x86-${{ env.LEG }}" in job
     assert "needs: [verify-release, sdist, wheels, macos-x86-runtime]" in record
-    assert "release admission HOLD: platform-complete scope inventory is not verified" in _job_block(
-        workflow, "release-admission")
+    assert "runtime_variants.append(runtime)" in _job_block(workflow, "release-admission")
 
 
 def _admission_fixture(root: Path) -> dict:
@@ -1025,6 +1030,8 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
     import runpy
     import zipfile
 
+    selected = []
+
     if listing is not None:
         (root / "run-artifacts.jsonl").write_text("".join(json.dumps(item) + "\n" for item in listing))
     if step == _BYTES_STEP and not (root / "downloaded").exists():
@@ -1237,6 +1244,8 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
         (root / "trusted-control").symlink_to(REPO_ROOT, target_is_directory=True)
         if os.environ.get("CWL_GATE_FIXTURE_ROOT"):
             (root / "trusted-gate").symlink_to(os.environ["CWL_GATE_FIXTURE_ROOT"], target_is_directory=True)
+    if step == _BYTES_STEP and not selected:
+        selected = json.loads((root / "selected-artifacts.json").read_text())
     script = _step_python(_job_block(_workflow_text(), "release-admission"), step)
     env = {**os.environ, "EXPECTED_WHEEL_LEGS": " ".join(_expected_legs()), "RUN_ID": str(_RUN_ID),
            "RELEASE_COMMIT": _RELEASE_COMMIT, "RELEASE_TAG": _RELEASE_TAG, "REPOSITORY": "owner/repo",
@@ -1845,19 +1854,26 @@ def _complete_admission_fixture(root: Path, monkeypatch) -> dict:
     return fixture
 
 
-def test_complete_admission_consumer_reaches_final_hold_with_real_source_and_cargo(
+def test_complete_admission_writes_only_verified_manifest_with_real_source_and_cargo(
         tmp_path, monkeypatch):
-    _complete_admission_fixture(tmp_path, monkeypatch)
+    fixture = _complete_admission_fixture(tmp_path, monkeypatch)
     result = _run_admission(tmp_path, _BYTES_STEP)
-    assert result.returncode != 0, result.stdout
-    assert "release admission HOLD: platform-complete scope inventory is not verified" in result.stderr, result.stderr
-    assert not (tmp_path / "admitted-manifest.tsv").exists()
+    assert result.returncode == 0, result.stderr
+    expected = "".join(f"{hashlib.sha256((tmp_path / 'dist' / name).read_bytes()).hexdigest()}  {name}\n"
+                       for name in sorted(fixture["files"].values()))
+    manifest = (tmp_path / "admitted-manifest.tsv").read_text()
+    assert manifest == expected and len(manifest.splitlines()) == 13
+    # The shipped release sinks compare this exact sha256sum-compatible form.
+    for sink in ("release-assets", "publish-pypi"):
+        body = _job_block(_workflow_text(), sink)
+        assert "diff -u admitted.tsv downloaded.tsv" in body
 
 
 @pytest.mark.parametrize("corruption,expected", [
     ("source-lock", "source declaration differs from selected commit"),
     ("omitted-cargo-node", "Cargo graph differs from selected source closure"),
     ("asserted-complete-scope", "scope identity or unresolved evidence changed"),
+    ("existing-manifest", "FileExistsError"),
 ])
 def test_complete_admission_refuses_self_consistent_transport_with_unverified_scope(
         tmp_path, monkeypatch, corruption, expected):
@@ -1876,6 +1892,8 @@ def test_complete_admission_refuses_self_consistent_transport_with_unverified_sc
             record["cargo_targets"] = {triple: [node for node in graph if node["name"] != "pyo3"]
                                        for triple, graph in record["cargo_targets"].items()}
             path.write_text(json.dumps(record) + "\n")
+    elif corruption == "existing-manifest":
+        (tmp_path / "admitted-manifest.tsv").write_text("untrusted pre-existing bytes\n")
     else:
         path = tmp_path / "record/release-scope-identities.json"
         records = json.loads(path.read_text())
@@ -1886,5 +1904,35 @@ def test_complete_admission_refuses_self_consistent_transport_with_unverified_sc
     # mismatch rather than relying on an earlier archive transport failure.
     result = _run_admission(tmp_path, _BYTES_STEP)
     assert result.returncode != 0 and expected in result.stderr, result.stderr
-    assert "release admission HOLD:" not in result.stderr
-    assert not (tmp_path / "admitted-manifest.tsv").exists()
+    if corruption == "existing-manifest":
+        assert (tmp_path / "admitted-manifest.tsv").read_text() == "untrusted pre-existing bytes\n"
+    else:
+        assert not (tmp_path / "admitted-manifest.tsv").exists()
+
+
+@pytest.mark.parametrize("corruption,expected", [
+    ("foreign-attempt", "workflow attempt differs from the release"),
+    ("tampered-distribution", "downloaded artifact members changed after digest verification"),
+])
+def test_full_admission_writes_no_manifest_for_foreign_run_or_changed_transport(
+        tmp_path, monkeypatch, corruption, expected):
+    import json
+
+    fixture = _complete_admission_fixture(tmp_path, monkeypatch)
+    manifest = tmp_path / "admitted-manifest.tsv"
+    manifest.write_text("private test sentinel\n")
+    first = _run_admission(tmp_path, _BYTES_STEP)
+    assert "FileExistsError" in first.stderr, first.stderr
+    manifest.unlink()
+    if corruption == "foreign-attempt":
+        path = tmp_path / "run-attempt.json"
+        attempt = json.loads(path.read_text())
+        attempt["run_attempt"] += 1
+        path.write_text(json.dumps(attempt) + "\n")
+    else:
+        leg = fixture["legs"][0]
+        path = tmp_path / "downloaded" / f"dist-wheel-{leg}" / fixture["files"][leg]
+        path.write_bytes(path.read_bytes() + b"changed after transport")
+    result = _run_admission(tmp_path, _BYTES_STEP)
+    assert result.returncode != 0 and expected in result.stderr, result.stderr
+    assert not manifest.exists()

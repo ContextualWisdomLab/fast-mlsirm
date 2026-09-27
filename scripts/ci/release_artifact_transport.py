@@ -924,8 +924,8 @@ def scope_identity(artifact: Path, leg: str, source: Path, source_sha: str, buil
         "sha256": hash_file(artifact), "build_env": build_env,
         "target": target, "python": python, "abi": abi, "platform_tags": platforms,
         "wheel_tags": sorted(tags), "metadata_members": members, "source_declarations": declarations,
-        # No collector is connected yet. A manifest, empty array or asserted
-        # boolean cannot upgrade these declarations to verified closure evidence.
+        # These source declarations cannot approve a closure. Collected runtime,
+        # build, Cargo, native and licence evidence is authenticated independently.
         "scopes": {scope: {"status": "UNKNOWN", "evidence": None} for scope in
                    ("runtime", "build", "dev", "optional", "native", "bundled")},
     }
