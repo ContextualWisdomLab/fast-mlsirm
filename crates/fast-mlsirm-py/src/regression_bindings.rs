@@ -52,6 +52,11 @@ fn contrast_dict(
 }
 
 /// Marshal the native NumPy-manual centering/std/product contract without arithmetic.
+/// Sources read from installed packages: rust-numpy contributors (n.d.),
+/// rust-numpy 0.29.0 source, PyReadonlyArray::as_array (src/borrow/mod.rs) and
+/// PyArray::from_slice (src/array.rs); <https://crates.io/crates/numpy/0.29.0>.
+/// PyO3 contributors (n.d.), PyO3 0.29.0 source, PyDictMethods::set_item
+/// (src/types/dict.rs); <https://crates.io/crates/pyo3/0.29.0>.
 #[pyfunction(name = "centered_product_design")]
 fn py_centered_product_design(
     py: Python<'_>,

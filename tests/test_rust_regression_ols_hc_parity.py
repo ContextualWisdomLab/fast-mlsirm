@@ -44,6 +44,8 @@ def test_native_centered_products_match_manual_and_reject_invalid_controls():
             centered_product_design(values, terms, ddof=ddof)
     with pytest.raises(ValueError, match="SD"):
         centered_product_design(np.ones((5, 2)), terms, ddof=1)
+    with pytest.raises(ValueError, match="SD"):
+        centered_product_design(np.full((1000, 2), .1), terms, ddof=1)
     with pytest.raises(ValueError, match="finite"):
         centered_product_design(values * np.nan, terms, ddof=1)
     with pytest.raises(ValueError, match="product"):

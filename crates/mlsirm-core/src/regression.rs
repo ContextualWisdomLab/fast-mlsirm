@@ -100,6 +100,8 @@ pub struct CenteredProductDesign {
 /// empty term yields 1. Terms, intercept, centering and ddof are caller choices.
 /// No standardization, term dropping, missing-value omission or rank repair.
 /// Finite inputs, positive finite SDs and finite derived products are required.
+/// Exact constant columns are rejected before accumulation; floating-point
+/// mean error must not turn zero variation into an accepted positive SD.
 pub fn centered_product_design(
     x: &[f64],
     n: usize,
@@ -115,6 +117,11 @@ pub fn centered_product_design(
     }
     if x.iter().any(|v| !v.is_finite()) {
         return Err("input columns must be finite".into());
+    }
+    for j in 0..k {
+        if x.chunks_exact(k).all(|row| row[j] == x[j]) {
+            return Err(format!("column {j} is constant and has zero SD"));
+        }
     }
     let mut centers = vec![0.0; k];
     for row in x.chunks_exact(k) {
