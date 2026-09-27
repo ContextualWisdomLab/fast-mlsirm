@@ -356,7 +356,7 @@ fn validate_data(
     if n_primary < 1 {
         return Err("n_primary must be >= 1".into());
     }
-    // Cai (2010), p.588 eq.7 and p.589 eqs.11-12: removing every
+    // Cai (2010), p.587 eq.7 and p.589 eqs.11-12: removing every
     // specific loading leaves the primary-only model; no dummy dimension.
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());

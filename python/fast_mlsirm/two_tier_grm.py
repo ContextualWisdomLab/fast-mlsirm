@@ -192,7 +192,7 @@ def fit_two_tier_grm(
     loading items); ``specific_map`` is a length-``n_items`` integer array
     with ``-1`` for specific-free items and ``0..n_specific-1`` otherwise
     (every specific factor needs at least two items). n_specific=0 with
-    an all -1 map is the primary-only reduction of Cai (2010), p.588
+    an all -1 map is the primary-only reduction of Cai (2010), p.587
     equation7 and p.589 equations11-12; n_primary=1 is unidimensional.
     ``q_primary``/``q_specific`` are required Gauss-Hermite node counts
     (any ``int >= 1``; #1929 removed the fixed-table cap, so any node count
@@ -221,7 +221,7 @@ def fit_two_tier_grm(
     Hansen, M. (2011). Generalized full-information item bifactor analysis.
     *Psychological Methods, 16*(3), 221-248. https://doi.org/10.1037/a0023350.
     """
-    # Cai (2010), pp.588-589 eqs.7/11/12: all specific-free items
+    # Cai (2010), pp.587-589 eqs.7/11/12: all specific-free items
     # with n_specific=0 retain only the declared primary dimensions.
     if not isinstance(primary_correlation, str) or primary_correlation not in (
         "estimate", "identity"

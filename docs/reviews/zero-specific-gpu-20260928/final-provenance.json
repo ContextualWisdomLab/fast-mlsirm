@@ -29,7 +29,7 @@
   "study_values_produced": false,
   "immutable_release_accepted": false,
   "source_basis": {
-    "Cai2010": "printed pp.588-589 equations7/11/12, pp.608-609 Appendix A/B, actually opened full text; zero-specific reduction is an algebraic specialization",
+    "Cai2010": "printed p.587 equation7, p.588 optional-specific passage, p.589 equations11-12, pp.608-609 Appendix A/B; actually opened full text; zero-specific reduction is an algebraic specialization",
     "wgpu30": "installed wgpu-core-30.0.0/src/binding_model.rs:166-167 BindingZeroSize, actually opened; unread 4-byte bindings retain ns=0"
   },
   "remaining": "six current-head hosted GPU contracts, general required CI, substantive nonauthor review, normal merge, immutable release, actual study models"

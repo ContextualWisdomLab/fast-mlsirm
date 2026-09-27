@@ -146,7 +146,7 @@ def test_actual_gpu_reference_focal_expected_score_pipeline():
 def test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior():
     """Verify the primary-only reduction and estimated-prior GPU route.
 
-    Cai (2010), p.588 eq.7 and p.589 eqs.11-12 remove the specific term.
+    Cai (2010), p.587 eq.7 and p.589 eqs.11-12 remove the specific term.
     Compare the standard-normal case with the separate unidimensional Rust
     EAP implementation, then compare nonstandard-prior CPU/GPU moments and
     one EM update (not convergence/recovery). Bounds are measured regression

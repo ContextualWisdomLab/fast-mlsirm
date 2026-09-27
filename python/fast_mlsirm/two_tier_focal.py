@@ -91,7 +91,7 @@ def _native_inputs(
     """Shape the declared two-tier model (Cai, 2010, p. 587, eqs. 4-7).
 
     n_specific=0 and an all -1 map remove every specific loading from
-    Cai (2010), p.588 eq.7 and p.589 eqs.11-12: a primary-only model.
+    Cai (2010), p.587 eq.7 and p.589 eqs.11-12: a primary-only model.
     No unused latent dimension is introduced.
     Maps/categories are checked before narrowing casts. Native integer-width
     bounds are transport constraints, not scientific settings or node caps.
