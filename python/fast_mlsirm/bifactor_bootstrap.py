@@ -81,7 +81,16 @@ def _require_gh_nodes(value: object, name: str) -> int:
 
 @dataclass
 class BifactorBootstrapResult:
-    """Summary and replicate storage of a joint person bootstrap run."""
+    """Summary and replicate storage of a joint person bootstrap run.
+
+    replicate_ids and replicate_errors align with all completed flags;
+    converged_replicate_ids identifies rows in the converged parameter arrays.
+    Empty error strings denote successful fits. Defaults preserve construction
+    compatibility; only the runner populates complete receipts. This is a
+    provenance contract, not a statistical estimator. Python Software
+    Foundation, Python dataclasses manual, field defaults and field order:
+    https://docs.python.org/3/library/dataclasses.html .
+    """
 
     n_requested: int
     n_replicates: int  # replicates actually completed (≤ n_requested)
@@ -111,6 +120,9 @@ class BifactorBootstrapResult:
     ci_upper_threshold: np.ndarray
     wall_clock_seconds: float
     throughput_replicates_per_second: float
+    replicate_ids: tuple[int, ...] = ()
+    converged_replicate_ids: tuple[int, ...] = ()
+    replicate_errors: tuple[str, ...] = ()
     device: str = "cpu"
 
 
@@ -215,7 +227,8 @@ def _fit_single_replicate(
                 float(fit.loglik_trace[-1]) if len(fit.loglik_trace) else float("nan")
             )
             return (
-                rep_idx, bool(fit.converged), a_g, a_s, thr, means, sds, spec, ll, "",
+                rep_idx, bool(fit.converged), a_g, a_s, thr, means, sds, spec, ll,
+                "" if fit.converged else f"fit not converged: {getattr(fit, 'termination_reason', 'unreported')}",
             )
         fit = fit_bifactor_grm_multigroup(
             responses=y_boot,
@@ -243,7 +256,8 @@ def _fit_single_replicate(
         spec = np.asarray(fit.specific_sd, dtype=np.float64)
         ll = float(fit.loglik_trace[-1]) if len(fit.loglik_trace) else float("nan")
         return (
-            rep_idx, bool(fit.converged), a_g, a_s, thr, means, sds, spec, ll, "",
+            rep_idx, bool(fit.converged), a_g, a_s, thr, means, sds, spec, ll,
+                "" if fit.converged else f"fit not converged: {getattr(fit, 'termination_reason', 'unreported')}",
         )
     except Exception as exc:  # noqa: BLE001 — replicate failure is data, reported via flags
         return _nan_result(False, f"{type(exc).__name__}: {exc}")
@@ -361,7 +375,12 @@ def run_bifactor_bootstrap(
         ``converged`` and excluded from all summary statistics; failed
         replicates are never substituted or imputed. When no replicate
         converges, a ``RuntimeError`` carrying the first replicate's error
-        is raised instead of returning empty summaries.
+        is raised instead of returning empty summaries. Its replicate_ids,
+        converged_replicate_ids, replicate_errors and converged attributes
+        preserve the same completed-replicate receipt as a successful result.
+        These attributes are an implementation reporting contract; RuntimeError
+        remains the exception type (Python Software Foundation, Built-in
+        Exceptions manual: https://docs.python.org/3/library/exceptions.html ).
 
     References:
         Andrews, D. W. K., & Buchinsky, M. (2000). A three-step method for
@@ -490,10 +509,15 @@ def run_bifactor_bootstrap(
     n_conv = len(conv)
     if n_conv == 0:
         first_err = done[0][9] if done else "no replicate completed"
-        raise RuntimeError(
+        error = RuntimeError(
             f"joint person bootstrap: 0/{completed_reps} replicates converged; "
             f"first replicate error: {first_err}"
         )
+        error.replicate_ids = tuple(r[0] for r in done)
+        error.converged_replicate_ids = ()
+        error.replicate_errors = tuple(r[9] for r in done)
+        error.converged = flags
+        raise error
 
     m1 = n_cat - 1
     if group_ids is None or n_groups <= 1:
@@ -614,5 +638,8 @@ def run_bifactor_bootstrap(
         ci_upper_threshold=hi_th_s,
         wall_clock_seconds=elapsed,
         throughput_replicates_per_second=throughput,
+        replicate_ids=tuple(r[0] for r in done),
+        converged_replicate_ids=tuple(r[0] for r in conv),
+        replicate_errors=tuple(r[9] for r in done),
         device=device,
     )
