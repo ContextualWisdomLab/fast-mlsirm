@@ -177,11 +177,32 @@ def _real_square_matrix(value: np.ndarray, name: str) -> np.ndarray:
     return matrix
 
 
-def second_order_test(hessian: np.ndarray, tol: float = 1e-8) -> dict[str, float | bool | np.ndarray]:
+def second_order_test(hessian: np.ndarray, tol: float = 1e-8) -> dict[str, float | bool | str | np.ndarray]:
     """Check whether the Hessian/information matrix is positive definite.
 
     Eigenvalue diagnostics are owned by the compiled Rust core
     (``second_order_test``); Python validates shape and marshals the matrix.
+    Condition fields describe the symmetrized input in the matrix 2-norm,
+    independently of the positive-definiteness test. Singular matrices return
+    an infinite condition and zero reciprocal; f64 underflow/overflow can also
+    produce those limits. Small eigenvalues may have low relative accuracy.
+    The condition formula is derived from the cited norm definition and
+    orthogonal eigendecomposition. Matrix scaling in our Jacobi implementation
+    is a tested implementation choice; no LAPACK error guarantee is claimed.
+
+    References
+    ----------
+    Anderson, E., Bai, Z., Bischof, C., Blackford, S., Demmel, J., Dongarra, J.,
+    Du Croz, J., Greenbaum, A., Hammarling, S., McKenney, A., & Sorensen, D.
+    (1999). LAPACK users' guide (3rd ed.). Society for Industrial and Applied
+    Mathematics. https://www.netlib.org/lapack/lug/
+    "How to Measure Errors," table 4.2 and condition/RCOND paragraphs:
+    https://www.netlib.org/lapack/lug/node75.html
+    "Error Bounds for the Symmetric Eigenproblem," eigendecomposition and ANORM:
+    https://www.netlib.org/lapack/lug/node89.html
+    "Further Details: Error Bounds for the Symmetric Eigenproblem," small
+    eigenvalue relative-accuracy limitation:
+    https://www.netlib.org/lapack/lug/node90.html
     """
     matrix = _real_square_matrix(hessian, "hessian")
     from . import _core as core
@@ -191,6 +212,9 @@ def second_order_test(hessian: np.ndarray, tol: float = 1e-8) -> dict[str, float
         "passed": bool(result["passed"]),
         "min_eigenvalue": float(result["min_eigenvalue"]),
         "eigenvalues": np.asarray(result["eigenvalues"], dtype=np.float64),
+        "condition_number_2": float(result["condition_number_2"]),
+        "reciprocal_condition_number_2": float(result["reciprocal_condition_number_2"]),
+        "condition_matrix": result["condition_matrix"],
     }
 
 

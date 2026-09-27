@@ -10348,10 +10348,16 @@ fn second_order_test(
     let n = shape[0];
     let (passed, min_eigenvalue, eigenvalues) =
         core_second_order_test(hessian.as_slice()?, n, tol).map_err(PyValueError::new_err)?;
+    let (condition, reciprocal_condition) =
+        mlsirm_core::inference::symmetric_condition_from_eigenvalues(&eigenvalues)
+            .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("passed", passed)?;
     out.set_item("min_eigenvalue", min_eigenvalue)?;
     out.set_item("eigenvalues", eigenvalues)?;
+    out.set_item("condition_number_2", condition)?;
+    out.set_item("reciprocal_condition_number_2", reciprocal_condition)?;
+    out.set_item("condition_matrix", "symmetrized_input")?;
     Ok(out.into())
 }
 

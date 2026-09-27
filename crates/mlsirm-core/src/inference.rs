@@ -72,7 +72,7 @@ pub fn second_order_test(
     let mut symmetric = hessian.to_vec();
     for i in 0..n {
         for j in (i + 1)..n {
-            let mean = 0.5 * (symmetric[i * n + j] + symmetric[j * n + i]);
+            let mean = 0.5 * symmetric[i * n + j] + 0.5 * symmetric[j * n + i];
             symmetric[i * n + j] = mean;
             symmetric[j * n + i] = mean;
         }
@@ -83,6 +83,36 @@ pub fn second_order_test(
     let min_eigenvalue = evals.first().copied().unwrap_or(f64::NAN);
     let passed = evals.iter().all(|&lam| lam > tol);
     Ok((passed, min_eigenvalue, evals))
+}
+
+/// 2-norm condition and reciprocal for a real symmetric matrix's eigenvalues.
+/// Singular matrices return (infinity, zero); small eigenvalues retain f64 error.
+/// The ratio is derived from the norm definition and orthogonal eigendecomposition.
+/// Our Jacobi scaling repair is an implementation choice, not a LAPACK guarantee.
+///
+/// Reference: Anderson, E., Bai, Z., Bischof, C., Blackford, S., Demmel, J.,
+/// Dongarra, J., Du Croz, J., Greenbaum, A., Hammarling, S., McKenney, A., &
+/// Sorensen, D. (1999). *LAPACK users' guide* (3rd ed.). Society for Industrial
+/// and Applied Mathematics. <https://www.netlib.org/lapack/lug/>.
+/// "How to Measure Errors," table 4.2 and condition/RCOND paragraphs:
+/// <https://www.netlib.org/lapack/lug/node75.html>.
+/// "Error Bounds for the Symmetric Eigenproblem," eigendecomposition and ANORM:
+/// <https://www.netlib.org/lapack/lug/node89.html>.
+/// "Further Details," small eigenvalue relative-accuracy limitation:
+/// <https://www.netlib.org/lapack/lug/node90.html>.
+pub fn symmetric_condition_from_eigenvalues(eigenvalues: &[f64]) -> Result<(f64, f64), String> {
+    if eigenvalues.is_empty() || eigenvalues.iter().any(|x| !x.is_finite()) {
+        return Err("eigenvalues must be nonempty and finite".into());
+    }
+    let smallest = eigenvalues
+        .iter()
+        .map(|x| x.abs())
+        .fold(f64::INFINITY, f64::min);
+    let largest = eigenvalues.iter().map(|x| x.abs()).fold(0.0, f64::max);
+    if smallest == 0.0 {
+        return Ok((f64::INFINITY, 0.0));
+    }
+    Ok((largest / smallest, smallest / largest))
 }
 
 /// Assemble a dense central finite-difference Hessian from scalar objective values.
@@ -249,10 +279,21 @@ fn pseudoinverse_symmetric(matrix: &[f64], p: usize, rcond: f64) -> Result<Vec<f
     Ok(inv)
 }
 
+/// Symmetric eigendecomposition with uniform input scaling and restored eigenvalues.
+///
+/// Scaling basis: LAPACK 3.12.1, DSYEV source, lines 219–240 (machine range and
+/// matrix scaling) and 265–275 (eigenvalue restoration):
+/// <https://netlib.org/lapack/explore-html/d8/d1c/group__heev_ga8995c47a7578fef733189df3490258ff.html>.
+/// DSYEV uses tridiagonal reduction, not this existing cyclic Jacobi iteration.
+/// Normalizing the maximum entry to one is our choice to make the existing
+/// absolute off-diagonal tolerance relative to input scale; it is checked by
+/// the rotated-matrix scale regression, not claimed as the DSYEV algorithm.
 fn jacobi_symmetric_eigen(matrix: &[f64], p: usize) -> Result<(Vec<f64>, Vec<f64>), String> {
     const JACOBI_MAX_SWEEPS: usize = 64;
     const JACOBI_TOL: f64 = 1e-14;
-    let mut a = matrix.to_vec();
+    let scale = matrix.iter().map(|x| x.abs()).fold(0.0, f64::max);
+    let divisor = if scale == 0.0 { 1.0 } else { scale };
+    let mut a: Vec<f64> = matrix.iter().map(|x| x / divisor).collect();
     let mut v = vec![0.0; p * p];
     for i in 0..p {
         v[i * p + i] = 1.0;
@@ -267,7 +308,10 @@ fn jacobi_symmetric_eigen(matrix: &[f64], p: usize) -> Result<(Vec<f64>, Vec<f64
         if off < JACOBI_TOL {
             let mut evals = vec![0.0; p];
             for i in 0..p {
-                evals[i] = a[i * p + i];
+                evals[i] = a[i * p + i] * divisor;
+            }
+            if evals.iter().any(|x| !x.is_finite()) {
+                return Err("eigenvalues exceed finite float64 range".into());
             }
             return Ok((evals, v));
         }
@@ -311,6 +355,59 @@ mod tests {
     use super::*;
 
     #[test]
+    fn symmetric_condition_handles_sign_singularity_and_overflow() {
+        assert_eq!(
+            symmetric_condition_from_eigenvalues(&[-4., 2.]).unwrap(),
+            (2., 0.5)
+        );
+        assert_eq!(
+            symmetric_condition_from_eigenvalues(&[0., 0.]).unwrap(),
+            (f64::INFINITY, 0.)
+        );
+        assert_eq!(
+            symmetric_condition_from_eigenvalues(&[0., 2.]).unwrap(),
+            (f64::INFINITY, 0.)
+        );
+        let (condition, reciprocal) =
+            symmetric_condition_from_eigenvalues(&[1e-300, 1e300]).unwrap();
+        assert!(condition.is_infinite());
+        assert_eq!(reciprocal, 0.);
+        for invalid in [vec![], vec![f64::NAN], vec![f64::INFINITY]] {
+            assert!(symmetric_condition_from_eigenvalues(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn second_order_condition_is_rotation_and_scale_invariant() {
+        for scale in [1., 1e-300, 1e300] {
+            // A 45-degree rotation of diag(1, 3).
+            let h = [2. * scale, scale, scale, 2. * scale];
+            let (_, _, eigenvalues) = second_order_test(&h, 2, 0.).unwrap();
+            let (condition, reciprocal) =
+                symmetric_condition_from_eigenvalues(&eigenvalues).unwrap();
+            assert!(
+                (condition - 3.).abs() < 1e-12,
+                "scale={scale} condition={condition}"
+            );
+            assert!((reciprocal - 1. / 3.).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn shared_jacobi_scaling_preserves_rank_one_pseudoinverse() {
+        for scale in [1., 1e-300, 1e300] {
+            let h = [scale, scale, scale, scale];
+            let inverse = vcov_from_hessian(&h, 2, 1e-10).unwrap();
+            // The Moore–Penrose inverse of this rank-one matrix has 1/(4s)
+            // in every entry; multiplying by s avoids overflowing 4s.
+            for value in inverse {
+                assert!((value * scale - 0.25).abs() < 1e-12,
+                        "scale={scale} inverse={value}");
+            }
+        }
+    }
+
+    #[test]
     fn second_order_detects_positive_definite() {
         let h = [4.0, 1.0, 1.0, 3.0];
         let (passed, min_ev, evals) = second_order_test(&h, 2, 1e-8).unwrap();
@@ -335,7 +432,8 @@ mod tests {
         let step = 1e-3;
         let base = 0.0;
         let a = [2.0, 1.0, 1.0, 4.0];
-        let quad = |x0: f64, x1: f64| 0.5 * (a[0] * x0 * x0 + 2.0 * a[1] * x0 * x1 + a[3] * x1 * x1);
+        let quad =
+            |x0: f64, x1: f64| 0.5 * (a[0] * x0 * x0 + 2.0 * a[1] * x0 * x1 + a[3] * x1 * x1);
         let diag_plus = [quad(step, 0.0), quad(0.0, step)];
         let diag_minus = [quad(-step, 0.0), quad(0.0, -step)];
         let off_pp = [quad(step, step)];
@@ -372,11 +470,7 @@ mod tests {
 
     #[test]
     fn nonfinite_hessian_fails_closed() {
-        for h in [
-            [f64::NAN],
-            [f64::INFINITY],
-            [f64::NEG_INFINITY],
-        ] {
+        for h in [[f64::NAN], [f64::INFINITY], [f64::NEG_INFINITY]] {
             let err = vcov_from_hessian(&h, 1, 1e-10).unwrap_err();
             assert!(
                 err.contains("finite"),
@@ -424,7 +518,12 @@ mod tests {
             }
         }
         for i in 0..4 {
-            assert!((recon[i] - h[i]).abs() < 1e-8, "recon={:?} h={:?}", recon, h);
+            assert!(
+                (recon[i] - h[i]).abs() < 1e-8,
+                "recon={:?} h={:?}",
+                recon,
+                h
+            );
         }
     }
 }
