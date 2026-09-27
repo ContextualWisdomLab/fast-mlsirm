@@ -99,8 +99,9 @@ pub(crate) struct ReducedEstepOutputs {
 
 /// Normalized GPU posterior weights for arbitrary shared product-grid nodes.
 /// Cai (2010), pp.608-609, Appendices A/B, DOI 10.1007/s11336-010-9178-0.
-/// `primary[(person * qg) + node]`; `joint[((person * ns + block) * qg
-/// + node) * qs + specific_node]`. Contract these with every primary
+/// `primary[(person * qg) + node]`;
+/// `joint[((person * ns + block) * qg + node) * qs + specific_node]`.
+/// Contract these with every primary
 /// coordinate; the shared-node index does not imply a single primary factor.
 /// Weights are computed in WGSL f32 and widened, not recomputed in f64:
 /// https://www.w3.org/TR/WGSL/#floating-point-types. Numerical parity and
@@ -444,6 +445,12 @@ fn e_step_reduced_gpu_inner(
     let device = &ctx.device;
     let limits = device.limits();
     let max_wg = limits.max_compute_workgroups_per_dimension;
+    // wgpu 30 Device::push_error_scope captures allocation/dispatch errors;
+    // its thread-local RAII guards also pop safely on early Option returns.
+    // https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope
+    let oom = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+    let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
 
     let np = inputs.n_persons;
     let ni = inputs.n_items;
@@ -453,18 +460,31 @@ fn e_step_reduced_gpu_inner(
     let qs = inputs.qs;
     let ng = inputs.n_groups;
     let stride = qg * qs;
+    // Retain one-element bindings untouched by the posterior kernels
+    // (Cai, Appendix B); wgpu 30 device buffers must be nonempty.
+    // https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.create_buffer_from_hal
+    let counts_len = if collect_posteriors {
+        1
+    } else {
+        ng * ni * stride * nc
+    };
+    let moments_len = if collect_posteriors {
+        1
+    } else {
+        ng * (3 + 2 * ns)
+    };
 
     // Fail closed on storage binding budget before allocating (Metal/WebGPU
     // report these at runtime; never hardcode a byte cap).
     let buffer_lens = [
-        np * ni,               // yobs as i32 — sized separately below
-        np * qg,               // genlog / postg
-        np * ns * qg,          // logi
-        np * ns * qg * qs,     // blockacc / joint
-        np,                    // ll
-        np * ns,               // anyobs
-        ng * ni * stride * nc, // counts
-        ng * (3 + 2 * ns),     // moments
+        np * ni,           // yobs as i32 — sized separately below
+        np * qg,           // genlog / postg
+        np * ns * qg,      // logi
+        np * ns * qg * qs, // blockacc / joint
+        np,                // ll
+        np * ns,           // anyobs
+        counts_len,        // counts (unused posterior binding: one element)
+        moments_len,       // moments (unused posterior binding: one element)
     ];
     for &len in &buffer_lens[1..] {
         if !storage_buffer_fits(&limits, len) {
@@ -572,8 +592,8 @@ fn e_step_reduced_gpu_inner(
     let postg_buf = output_buffer(device, "postg", np * qg);
     let joint_buf = output_buffer(device, "joint", np * ns * qg * qs);
     let anyobs_buf = output_buffer(device, "anyobs", np * ns);
-    let counts_buf = output_buffer(device, "counts", ng * ni * stride * nc);
-    let moments_buf = output_buffer(device, "moments", ng * (3 + 2 * ns));
+    let counts_buf = output_buffer(device, "counts", counts_len);
+    let moments_buf = output_buffer(device, "moments", moments_len);
 
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("bifactor_reduced_estep"),
@@ -746,8 +766,10 @@ fn e_step_reduced_gpu_inner(
     }
 
     let ll_staging = staging_buffer(device, "ll_read", np);
-    let counts_staging = staging_buffer(device, "counts_read", ng * ni * stride * nc);
-    let moments_staging = staging_buffer(device, "moments_read", ng * (3 + 2 * ns));
+    let counts_staging =
+        (!collect_posteriors).then(|| staging_buffer(device, "counts_read", counts_len));
+    let moments_staging =
+        (!collect_posteriors).then(|| staging_buffer(device, "moments_read", moments_len));
     let primary_staging =
         collect_posteriors.then(|| staging_buffer(device, "primary_read", np * qg));
     let joint_staging =
@@ -757,8 +779,8 @@ fn e_step_reduced_gpu_inner(
         copies.push((&postg_buf, primary_staging.as_ref()?, np * qg));
         copies.push((&joint_buf, joint_staging.as_ref()?, np * ns * qg * qs));
     } else {
-        copies.push((&counts_buf, &counts_staging, ng * ni * stride * nc));
-        copies.push((&moments_buf, &moments_staging, ng * (3 + 2 * ns)));
+        copies.push((&counts_buf, counts_staging.as_ref()?, counts_len));
+        copies.push((&moments_buf, moments_staging.as_ref()?, moments_len));
     }
     let read = submit_and_readback(ctx, encoder, &copies)?;
     let mut iter = read.into_iter();
@@ -795,6 +817,12 @@ fn e_step_reduced_gpu_inner(
         }
     }
 
+    let internal_error = pollster::block_on(internal.pop());
+    let validation_error = pollster::block_on(validation.pop());
+    let allocation_error = pollster::block_on(oom.pop());
+    if internal_error.is_some() || validation_error.is_some() || allocation_error.is_some() {
+        return None;
+    }
     Some(ReducedEstepOutputs {
         loglik,
         person_posteriors,
