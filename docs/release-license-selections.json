@@ -1063,6 +1063,28 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "presser",
+    "version": "0.3.1",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper aaafbbbf1feb0c9d36191be04f5ba4bf92bb45af. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa",
+    "license_members": [
+      {
+        "member": "presser-0.3.1/LICENSE-APACHE",
+        "raw_sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+      },
+      {
+        "member": "presser-0.3.1/LICENSE-MIT",
+        "raw_sha256": "090a294a492ab2f41388252312a65cf2f0e423330b721a68c6665ac64766753b"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/presser-0.3.1-MIT.txt",
+      "sha256": "090a294a492ab2f41388252312a65cf2f0e423330b721a68c6665ac64766753b"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "proc-macro2",
     "version": "1.0.107",
     "chosen": "MIT",
@@ -1225,6 +1247,28 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "range-alloc",
+    "version": "0.1.5",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper aaafbbbf1feb0c9d36191be04f5ba4bf92bb45af. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "ca45419789ae5a7899559e9512e58ca889e41f04f1f2445e9f4b290ceccd1d08",
+    "license_members": [
+      {
+        "member": "range-alloc-0.1.5/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "range-alloc-0.1.5/LICENSE.MIT",
+        "raw_sha256": "ba00052102ed87948bb8822d6e1c496260c83042887b22bb5caad922ec025a60"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/range-alloc-0.1.5-MIT.txt",
+      "sha256": "ba00052102ed87948bb8822d6e1c496260c83042887b22bb5caad922ec025a60"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "raw-window-metal",
     "version": "1.1.0",
     "chosen": "MIT",
@@ -1283,6 +1327,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/redox_syscall-0.5.18-MIT.txt",
       "sha256": "efcfee7981ff72431fffb06925cad00a23dce079ed4354f61030ad5abdb78829"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "renderdoc-sys",
+    "version": "1.1.0",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper aaafbbbf1feb0c9d36191be04f5ba4bf92bb45af. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832",
+    "license_members": [
+      {
+        "member": "renderdoc-sys-1.1.0/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "renderdoc-sys-1.1.0/LICENSE-MIT",
+        "raw_sha256": "24b2f2eff5a7622e87162823e260f00c6dfbce0e26d585d3d28c785f1edc80ed"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/renderdoc-sys-1.1.0-MIT.txt",
+      "sha256": "24b2f2eff5a7622e87162823e260f00c6dfbce0e26d585d3d28c785f1edc80ed"
     }
   },
   {
@@ -1349,6 +1415,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/rustversion-1.0.23-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "scopeguard",
+    "version": "1.2.0",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper aaafbbbf1feb0c9d36191be04f5ba4bf92bb45af. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49",
+    "license_members": [
+      {
+        "member": "scopeguard-1.2.0/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "scopeguard-1.2.0/LICENSE-MIT",
+        "raw_sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/scopeguard-1.2.0-MIT.txt",
+      "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
     }
   },
   {
@@ -1441,6 +1529,28 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "sha2",
+    "version": "0.10.9",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper aaafbbbf1feb0c9d36191be04f5ba4bf92bb45af. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283",
+    "license_members": [
+      {
+        "member": "sha2-0.10.9/LICENSE-APACHE",
+        "raw_sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5"
+      },
+      {
+        "member": "sha2-0.10.9/LICENSE-MIT",
+        "raw_sha256": "b4eb00df6e2a4d22518fcaa6a2b4646f249b3a3c9814509b22bd2091f1392ff1"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/sha2-0.10.9-MIT.txt",
+      "sha256": "b4eb00df6e2a4d22518fcaa6a2b4646f249b3a3c9814509b22bd2091f1392ff1"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "slab",
     "version": "0.4.12",
     "chosen": "MIT",
@@ -1473,6 +1583,50 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/slotmap-1.1.1-Zlib.txt",
       "sha256": "6cec81441b2ab2b5090954c1fb5d0bcca81b86487b5849061fa8952d20ef67d4"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "smallvec",
+    "version": "1.16.1",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper aaafbbbf1feb0c9d36191be04f5ba4bf92bb45af. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891",
+    "license_members": [
+      {
+        "member": "smallvec-1.16.1/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "smallvec-1.16.1/LICENSE-MIT",
+        "raw_sha256": "0b28172679e0009b655da42797c03fd163a3379d5cfa67ba1f1655e974a2a1a9"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/smallvec-1.16.1-MIT.txt",
+      "sha256": "0b28172679e0009b655da42797c03fd163a3379d5cfa67ba1f1655e974a2a1a9"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "static_assertions",
+    "version": "1.1.0",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper aaafbbbf1feb0c9d36191be04f5ba4bf92bb45af. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f",
+    "license_members": [
+      {
+        "member": "static_assertions-1.1.0/LICENSE-APACHE",
+        "raw_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      },
+      {
+        "member": "static_assertions-1.1.0/LICENSE-MIT",
+        "raw_sha256": "ea084a2373ebc1f0902c09266e7bf25a05ab3814c1805bb017ffa7308f90c061"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/static_assertions-1.1.0-MIT.txt",
+      "sha256": "ea084a2373ebc1f0902c09266e7bf25a05ab3814c1805bb017ffa7308f90c061"
     }
   },
   {
@@ -1693,6 +1847,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/unicode-width-0.2.2-MIT.txt",
       "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "uuid",
+    "version": "1.26.1",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper aaafbbbf1feb0c9d36191be04f5ba4bf92bb45af. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce",
+    "license_members": [
+      {
+        "member": "uuid-1.26.1/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "uuid-1.26.1/LICENSE-MIT",
+        "raw_sha256": "436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/uuid-1.26.1-MIT.txt",
+      "sha256": "436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d"
     }
   },
   {
@@ -2041,6 +2217,32 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/wgpu-types-30.0.1-MIT.txt",
       "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "winapi-util",
+    "version": "0.1.11",
+    "chosen": "MIT",
+    "rationale": "Every captured licence text, including reference notices when present, passes the whole-text evaluator in central helper aaafbbbf1feb0c9d36191be04f5ba4bf92bb45af. Choose MIT and retain its full copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22",
+    "license_members": [
+      {
+        "member": "winapi-util-0.1.11/COPYING",
+        "raw_sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f"
+      },
+      {
+        "member": "winapi-util-0.1.11/LICENSE-MIT",
+        "raw_sha256": "cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14"
+      },
+      {
+        "member": "winapi-util-0.1.11/UNLICENSE",
+        "raw_sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/winapi-util-0.1.11-MIT.txt",
+      "sha256": "cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14"
     }
   },
   {
