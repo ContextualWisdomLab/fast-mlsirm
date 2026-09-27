@@ -297,7 +297,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/OpenGL-Registry",
                 "submodule_commit": "85d924a5165e7206f4c73c8c10307658dc2bbe10",
-                "submodule_path": "xml/gl.xml"
+                "submodule_path": "xml/gl.xml",
+                "licence_notice_review": {
+                  "classification": "Apache-2.0_reference_notice",
+                  "notice_text": "\nCopyright (c) 2013-2018 The Khronos Group Inc.\n\nLicensed under the Apache License, Version 2.0 (the \"License\");\nyou may not use this file except in compliance with the License.\nYou may obtain a copy of the License at\n\n    http://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software\ndistributed under the License is distributed on an \"AS IS\" BASIS,\nWITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\nSee the License for the specific language governing permissions and\nlimitations under the License.\n\n------------------------------------------------------------------------\n\nThis file, gl.xml, is the OpenGL and OpenGL API Registry. The canonical\nversion of the registry, together with documentation, schema, and Python\ngenerator scripts used to generate C header files for OpenGL and OpenGL ES,\ncan always be found in the Khronos Registry at\n        https://github.com/KhronosGroup/OpenGL-Registry\n    ",
+                  "notice_sha256": "7da4f970dbddc732a045e82c6298655102cfdafe21db4f30635f0e8d8b5a215d",
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api/xml/glx.xml",
@@ -307,7 +313,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/OpenGL-Registry",
                 "submodule_commit": "85d924a5165e7206f4c73c8c10307658dc2bbe10",
-                "submodule_path": "xml/glx.xml"
+                "submodule_path": "xml/glx.xml",
+                "licence_notice_review": {
+                  "classification": "Apache-2.0_reference_notice",
+                  "notice_text": "\nCopyright (c) 2013-2018 The Khronos Group Inc.\n\nLicensed under the Apache License, Version 2.0 (the \"License\");\nyou may not use this file except in compliance with the License.\nYou may obtain a copy of the License at\n\n    http://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software\ndistributed under the License is distributed on an \"AS IS\" BASIS,\nWITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\nSee the License for the specific language governing permissions and\nlimitations under the License.\n\n------------------------------------------------------------------------\n\nThis file, glx.xml, is the GLX API Registry. The canonical version of the\nregistry, together with documentation, schema, and Python generator scripts\nused to generate C header files for GLX, can always be found in the Khronos\nRegistry at\n        https://github.com/KhronosGroup/OpenGL-Registry\n    ",
+                  "notice_sha256": "bb6d1433171e4a2cba5241101f2ace3db9df3bdbdead10f1a7ed7dd8a4fc5cae",
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api/xml/wgl.xml",
@@ -317,10 +329,19 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/OpenGL-Registry",
                 "submodule_commit": "85d924a5165e7206f4c73c8c10307658dc2bbe10",
-                "submodule_path": "xml/wgl.xml"
+                "submodule_path": "xml/wgl.xml",
+                "licence_notice_review": {
+                  "classification": "Apache-2.0_reference_notice",
+                  "notice_text": "\nCopyright (c) 2013-2018 The Khronos Group Inc.\n\nLicensed under the Apache License, Version 2.0 (the \"License\");\nyou may not use this file except in compliance with the License.\nYou may obtain a copy of the License at\n\n    http://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software\ndistributed under the License is distributed on an \"AS IS\" BASIS,\nWITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\nSee the License for the specific language governing permissions and\nlimitations under the License.\n\n------------------------------------------------------------------------\n\nThis file, wgl.xml, is the WGL API Registry. The older \".spec\" file\nformat has been retired and will no longer be updated with new\nextensions and API versions. The canonical version of the registry,\ntogether with documentation, schema, and Python generator scripts used\nto generate C header files for WGL, can always be found in the Khronos\nRegistry at\n        https://github.com/KhronosGroup/OpenGL-Registry\n    ",
+                  "notice_sha256": "0e658e29afa1efb28879143fdba54dd347784b7b73ea0fe187d7ef5c26d1b435",
+                  "whole_file_licence_acceptance": false
+                }
               }
             ],
-            "root_license_files": []
+            "root_license_files": [],
+            "licence_notice_counts": {
+              "Apache-2.0_reference_notice": 3
+            }
           },
           {
             "path": "khronos_api/api_egl",
@@ -336,10 +357,19 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/EGL-Registry",
                 "submodule_commit": "b6b558e7042d67fc7543383bb0e13a075f21d8ab",
-                "submodule_path": "api/egl.xml"
+                "submodule_path": "api/egl.xml",
+                "licence_notice_review": {
+                  "classification": "Khronos_Materials_permission_notice",
+                  "notice_text": "\n    Copyright (c) 2013-2017 The Khronos Group Inc.\n\n    Permission is hereby granted, free of charge, to any person obtaining a\n    copy of this software and/or associated documentation files (the\n    \"Materials\"), to deal in the Materials without restriction, including\n    without limitation the rights to use, copy, modify, merge, publish,\n    distribute, sublicense, and/or sell copies of the Materials, and to\n    permit persons to whom the Materials are furnished to do so, subject to\n    the following conditions:\n\n    The above copyright notice and this permission notice shall be included\n    in all copies or substantial portions of the Materials.\n\n    THE MATERIALS ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF\n    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\n    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\n    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\n    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE\n    MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.\n    ",
+                  "notice_sha256": "2bb1070a6c73dfd28f509fa2d3380cc29999899bccd7487b29a0c88cc0270c02",
+                  "whole_file_licence_acceptance": false
+                }
               }
             ],
-            "root_license_files": []
+            "root_license_files": [],
+            "licence_notice_counts": {
+              "Khronos_Materials_permission_notice": 1
+            }
           },
           {
             "path": "khronos_api/api_webgl",
@@ -355,7 +385,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/ANGLE_instanced_arrays/extension.xml"
+                "submodule_path": "extensions/ANGLE_instanced_arrays/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/EXT_blend_minmax/extension.xml",
@@ -365,7 +401,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/EXT_blend_minmax/extension.xml"
+                "submodule_path": "extensions/EXT_blend_minmax/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/EXT_color_buffer_float/extension.xml",
@@ -375,7 +417,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/EXT_color_buffer_float/extension.xml"
+                "submodule_path": "extensions/EXT_color_buffer_float/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/EXT_color_buffer_half_float/extension.xml",
@@ -385,7 +433,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/EXT_color_buffer_half_float/extension.xml"
+                "submodule_path": "extensions/EXT_color_buffer_half_float/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/EXT_disjoint_timer_query/extension.xml",
@@ -395,7 +449,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/EXT_disjoint_timer_query/extension.xml"
+                "submodule_path": "extensions/EXT_disjoint_timer_query/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/EXT_disjoint_timer_query_webgl2/extension.xml",
@@ -405,7 +465,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/EXT_disjoint_timer_query_webgl2/extension.xml"
+                "submodule_path": "extensions/EXT_disjoint_timer_query_webgl2/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/EXT_float_blend/extension.xml",
@@ -415,7 +481,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/EXT_float_blend/extension.xml"
+                "submodule_path": "extensions/EXT_float_blend/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/EXT_frag_depth/extension.xml",
@@ -425,7 +497,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/EXT_frag_depth/extension.xml"
+                "submodule_path": "extensions/EXT_frag_depth/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/EXT_sRGB/extension.xml",
@@ -435,7 +513,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/EXT_sRGB/extension.xml"
+                "submodule_path": "extensions/EXT_sRGB/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/EXT_shader_texture_lod/extension.xml",
@@ -445,7 +529,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/EXT_shader_texture_lod/extension.xml"
+                "submodule_path": "extensions/EXT_shader_texture_lod/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/EXT_texture_compression_bptc/extension.xml",
@@ -455,7 +545,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/EXT_texture_compression_bptc/extension.xml"
+                "submodule_path": "extensions/EXT_texture_compression_bptc/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/EXT_texture_compression_rgtc/extension.xml",
@@ -465,7 +561,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/EXT_texture_compression_rgtc/extension.xml"
+                "submodule_path": "extensions/EXT_texture_compression_rgtc/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/EXT_texture_filter_anisotropic/extension.xml",
@@ -475,7 +577,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/EXT_texture_filter_anisotropic/extension.xml"
+                "submodule_path": "extensions/EXT_texture_filter_anisotropic/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/KHR_parallel_shader_compile/extension.xml",
@@ -485,7 +593,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/KHR_parallel_shader_compile/extension.xml"
+                "submodule_path": "extensions/KHR_parallel_shader_compile/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/OES_element_index_uint/extension.xml",
@@ -495,7 +609,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/OES_element_index_uint/extension.xml"
+                "submodule_path": "extensions/OES_element_index_uint/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/OES_fbo_render_mipmap/extension.xml",
@@ -505,7 +625,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/OES_fbo_render_mipmap/extension.xml"
+                "submodule_path": "extensions/OES_fbo_render_mipmap/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/OES_standard_derivatives/extension.xml",
@@ -515,7 +641,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/OES_standard_derivatives/extension.xml"
+                "submodule_path": "extensions/OES_standard_derivatives/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/OES_texture_float/extension.xml",
@@ -525,7 +657,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/OES_texture_float/extension.xml"
+                "submodule_path": "extensions/OES_texture_float/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/OES_texture_float_linear/extension.xml",
@@ -535,7 +673,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/OES_texture_float_linear/extension.xml"
+                "submodule_path": "extensions/OES_texture_float_linear/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/OES_texture_half_float/extension.xml",
@@ -545,7 +689,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/OES_texture_half_float/extension.xml"
+                "submodule_path": "extensions/OES_texture_half_float/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/OES_texture_half_float_linear/extension.xml",
@@ -555,7 +705,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/OES_texture_half_float_linear/extension.xml"
+                "submodule_path": "extensions/OES_texture_half_float_linear/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/OES_vertex_array_object/extension.xml",
@@ -565,7 +721,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/OES_vertex_array_object/extension.xml"
+                "submodule_path": "extensions/OES_vertex_array_object/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_color_buffer_float/extension.xml",
@@ -575,7 +737,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_color_buffer_float/extension.xml"
+                "submodule_path": "extensions/WEBGL_color_buffer_float/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_compressed_texture_astc/extension.xml",
@@ -585,7 +753,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_compressed_texture_astc/extension.xml"
+                "submodule_path": "extensions/WEBGL_compressed_texture_astc/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_compressed_texture_etc/extension.xml",
@@ -595,7 +769,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_compressed_texture_etc/extension.xml"
+                "submodule_path": "extensions/WEBGL_compressed_texture_etc/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_compressed_texture_etc1/extension.xml",
@@ -605,7 +785,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_compressed_texture_etc1/extension.xml"
+                "submodule_path": "extensions/WEBGL_compressed_texture_etc1/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_compressed_texture_pvrtc/extension.xml",
@@ -615,7 +801,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_compressed_texture_pvrtc/extension.xml"
+                "submodule_path": "extensions/WEBGL_compressed_texture_pvrtc/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_compressed_texture_s3tc/extension.xml",
@@ -625,7 +817,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_compressed_texture_s3tc/extension.xml"
+                "submodule_path": "extensions/WEBGL_compressed_texture_s3tc/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_compressed_texture_s3tc_srgb/extension.xml",
@@ -635,7 +833,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_compressed_texture_s3tc_srgb/extension.xml"
+                "submodule_path": "extensions/WEBGL_compressed_texture_s3tc_srgb/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_debug_renderer_info/extension.xml",
@@ -645,7 +849,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_debug_renderer_info/extension.xml"
+                "submodule_path": "extensions/WEBGL_debug_renderer_info/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_debug_shaders/extension.xml",
@@ -655,7 +865,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_debug_shaders/extension.xml"
+                "submodule_path": "extensions/WEBGL_debug_shaders/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_depth_texture/extension.xml",
@@ -665,7 +881,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_depth_texture/extension.xml"
+                "submodule_path": "extensions/WEBGL_depth_texture/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_draw_buffers/extension.xml",
@@ -675,7 +897,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_draw_buffers/extension.xml"
+                "submodule_path": "extensions/WEBGL_draw_buffers/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_lose_context/extension.xml",
@@ -685,7 +913,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_lose_context/extension.xml"
+                "submodule_path": "extensions/WEBGL_lose_context/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_multiview/extension.xml",
@@ -695,7 +929,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_multiview/extension.xml"
+                "submodule_path": "extensions/WEBGL_multiview/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/WEBGL_security_sensitive_resources/extension.xml",
@@ -705,7 +945,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/WEBGL_security_sensitive_resources/extension.xml"
+                "submodule_path": "extensions/WEBGL_security_sensitive_resources/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/proposals/EXT_clip_cull_distance/extension.xml",
@@ -715,7 +961,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/proposals/EXT_clip_cull_distance/extension.xml"
+                "submodule_path": "extensions/proposals/EXT_clip_cull_distance/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/proposals/EXT_multi_draw_arrays/extension.xml",
@@ -725,7 +977,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/proposals/EXT_multi_draw_arrays/extension.xml"
+                "submodule_path": "extensions/proposals/EXT_multi_draw_arrays/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/proposals/WEBGL_blend_equation_advanced_coherent/extension.xml",
@@ -735,7 +993,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/proposals/WEBGL_blend_equation_advanced_coherent/extension.xml"
+                "submodule_path": "extensions/proposals/WEBGL_blend_equation_advanced_coherent/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/proposals/WEBGL_debug/extension.xml",
@@ -745,7 +1009,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/proposals/WEBGL_debug/extension.xml"
+                "submodule_path": "extensions/proposals/WEBGL_debug/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/proposals/WEBGL_dynamic_texture/extension.xml",
@@ -755,7 +1025,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/proposals/WEBGL_dynamic_texture/extension.xml"
+                "submodule_path": "extensions/proposals/WEBGL_dynamic_texture/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/proposals/WEBGL_subarray_uploads/extension.xml",
@@ -765,7 +1041,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/proposals/WEBGL_subarray_uploads/extension.xml"
+                "submodule_path": "extensions/proposals/WEBGL_subarray_uploads/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/proposals/WEBGL_texture_multisample/extension.xml",
@@ -775,7 +1057,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/proposals/WEBGL_texture_multisample/extension.xml"
+                "submodule_path": "extensions/proposals/WEBGL_texture_multisample/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/proposals/WEBGL_texture_source_iframe/extension.xml",
@@ -785,7 +1073,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/proposals/WEBGL_texture_source_iframe/extension.xml"
+                "submodule_path": "extensions/proposals/WEBGL_texture_source_iframe/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/proposals/WEBGL_video_texture/extension.xml",
@@ -795,7 +1089,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/proposals/WEBGL_video_texture/extension.xml"
+                "submodule_path": "extensions/proposals/WEBGL_video_texture/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/rejected/EXT_texture_storage/extension.xml",
@@ -805,7 +1105,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/rejected/EXT_texture_storage/extension.xml"
+                "submodule_path": "extensions/rejected/EXT_texture_storage/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/rejected/OES_depth24/extension.xml",
@@ -815,7 +1121,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/rejected/OES_depth24/extension.xml"
+                "submodule_path": "extensions/rejected/OES_depth24/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/rejected/WEBGL_compressed_texture_atc/extension.xml",
@@ -825,7 +1137,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/rejected/WEBGL_compressed_texture_atc/extension.xml"
+                "submodule_path": "extensions/rejected/WEBGL_compressed_texture_atc/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/rejected/WEBGL_debug_shader_precision/extension.xml",
@@ -835,7 +1153,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/rejected/WEBGL_debug_shader_precision/extension.xml"
+                "submodule_path": "extensions/rejected/WEBGL_debug_shader_precision/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/rejected/WEBGL_draw_elements_no_range_check/extension.xml",
@@ -845,7 +1169,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/rejected/WEBGL_draw_elements_no_range_check/extension.xml"
+                "submodule_path": "extensions/rejected/WEBGL_draw_elements_no_range_check/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/rejected/WEBGL_get_buffer_sub_data_async/extension.xml",
@@ -855,7 +1185,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/rejected/WEBGL_get_buffer_sub_data_async/extension.xml"
+                "submodule_path": "extensions/rejected/WEBGL_get_buffer_sub_data_async/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/rejected/WEBGL_shared_resources/extension.xml",
@@ -865,7 +1201,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/rejected/WEBGL_shared_resources/extension.xml"
+                "submodule_path": "extensions/rejected/WEBGL_shared_resources/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/rejected/WEBGL_subscribe_uniform/extension.xml",
@@ -875,7 +1217,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/rejected/WEBGL_subscribe_uniform/extension.xml"
+                "submodule_path": "extensions/rejected/WEBGL_subscribe_uniform/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/rejected/WEBGL_texture_from_depth_video/extension.xml",
@@ -885,7 +1233,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/rejected/WEBGL_texture_from_depth_video/extension.xml"
+                "submodule_path": "extensions/rejected/WEBGL_texture_from_depth_video/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/extensions/template/extension.xml",
@@ -895,7 +1249,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "extensions/template/extension.xml"
+                "submodule_path": "extensions/template/extension.xml",
+                "licence_notice_review": {
+                  "classification": "no_explicit_licence_notice_found",
+                  "notice_text": null,
+                  "notice_sha256": null,
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/specs/latest/1.0/webgl.idl",
@@ -905,7 +1265,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "specs/latest/1.0/webgl.idl"
+                "submodule_path": "specs/latest/1.0/webgl.idl",
+                "licence_notice_review": {
+                  "classification": "Khronos_Materials_permission_notice",
+                  "notice_text": "// Copyright (c) 2018 The Khronos Group Inc.\n//\n// Permission is hereby granted, free of charge, to any person obtaining a\n// copy of this software and/or associated documentation files (the\n// \"Materials\"), to deal in the Materials without restriction, including\n// without limitation the rights to use, copy, modify, merge, publish,\n// distribute, sublicense, and/or sell copies of the Materials, and to\n// permit persons to whom the Materials are furnished to do so, subject to\n// the following conditions:\n//\n// The above copyright notice and this permission notice shall be included\n// in all copies or substantial portions of the Materials.\n//\n// THE MATERIALS ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF\n// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\n// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE\n// MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.",
+                  "notice_sha256": "516c68bf9415cf84f7bc6e3b6775ec6964d57956b01dfc18b0ebd3d5c21315f3",
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_webgl/specs/latest/2.0/webgl2.idl",
@@ -915,10 +1281,21 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "KhronosGroup/WebGL",
                 "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
-                "submodule_path": "specs/latest/2.0/webgl2.idl"
+                "submodule_path": "specs/latest/2.0/webgl2.idl",
+                "licence_notice_review": {
+                  "classification": "Khronos_Materials_permission_notice",
+                  "notice_text": "// Copyright (c) 2018 The Khronos Group Inc.\n//\n// Permission is hereby granted, free of charge, to any person obtaining a\n// copy of this software and/or associated documentation files (the\n// \"Materials\"), to deal in the Materials without restriction, including\n// without limitation the rights to use, copy, modify, merge, publish,\n// distribute, sublicense, and/or sell copies of the Materials, and to\n// permit persons to whom the Materials are furnished to do so, subject to\n// the following conditions:\n//\n// The above copyright notice and this permission notice shall be included\n// in all copies or substantial portions of the Materials.\n//\n// THE MATERIALS ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF\n// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\n// IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\n// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\n// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE\n// MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.",
+                  "notice_sha256": "516c68bf9415cf84f7bc6e3b6775ec6964d57956b01dfc18b0ebd3d5c21315f3",
+                  "whole_file_licence_acceptance": false
+                }
               }
             ],
-            "root_license_files": []
+            "root_license_files": [],
+            "licence_notice_counts": {
+              "no_explicit_licence_notice_found": 55,
+              "Khronos_Materials_permission_notice": 2
+            },
+            "licence_scope_limitation": "55 packaged extension XML files have no explicit copyright/licence/permission/legal notice. Exact-commit README.md, CONTRIBUTING.md and specs/latest/1.0/index.html do not establish their redistribution grant. Two IDL files have their own Khronos Materials grants. No parent Apache inheritance or whole-file clearance is asserted."
           },
           {
             "path": "khronos_api/api_angle",
@@ -934,7 +1311,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "google/angle",
                 "submodule_commit": "7403dd2cd3764fe96660fe09892e764e9ae1dbca",
-                "submodule_path": "scripts/egl.xml"
+                "submodule_path": "scripts/egl.xml",
+                "licence_notice_review": {
+                  "classification": "Khronos_Materials_permission_notice",
+                  "notice_text": "\n    Copyright (c) 2013-2017 The Khronos Group Inc.\n\n    Permission is hereby granted, free of charge, to any person obtaining a\n    copy of this software and/or associated documentation files (the\n    \"Materials\"), to deal in the Materials without restriction, including\n    without limitation the rights to use, copy, modify, merge, publish,\n    distribute, sublicense, and/or sell copies of the Materials, and to\n    permit persons to whom the Materials are furnished to do so, subject to\n    the following conditions:\n\n    The above copyright notice and this permission notice shall be included\n    in all copies or substantial portions of the Materials.\n\n    THE MATERIALS ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\n    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF\n    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\n    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\n    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\n    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE\n    MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.\n    ",
+                  "notice_sha256": "2bb1070a6c73dfd28f509fa2d3380cc29999899bccd7487b29a0c88cc0270c02",
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_angle/scripts/egl_angle_ext.xml",
@@ -944,7 +1327,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "google/angle",
                 "submodule_commit": "7403dd2cd3764fe96660fe09892e764e9ae1dbca",
-                "submodule_path": "scripts/egl_angle_ext.xml"
+                "submodule_path": "scripts/egl_angle_ext.xml",
+                "licence_notice_review": {
+                  "classification": "ANGLE_BSD_style_reference_notice",
+                  "notice_text": "\n    Copyright 2018 The ANGLE Project Authors. All rights reserved.\n    Use of this source code is governed by a BSD-style license that can be\n    found in the LICENSE file.\n\n    egl_angle_ext.xml\n        Includes data used to auto-generate ANGLE classes.\n    ",
+                  "notice_sha256": "fd2c1df341ac64aec9985e49a334f2f380f1af393e5a5f9052e7b4bb6ec8cecb",
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_angle/scripts/gl.xml",
@@ -954,7 +1343,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "google/angle",
                 "submodule_commit": "7403dd2cd3764fe96660fe09892e764e9ae1dbca",
-                "submodule_path": "scripts/gl.xml"
+                "submodule_path": "scripts/gl.xml",
+                "licence_notice_review": {
+                  "classification": "Apache-2.0_reference_notice",
+                  "notice_text": "\nCopyright (c) 2013-2018 The Khronos Group Inc.\n\nLicensed under the Apache License, Version 2.0 (the \"License\");\nyou may not use this file except in compliance with the License.\nYou may obtain a copy of the License at\n\n    http://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software\ndistributed under the License is distributed on an \"AS IS\" BASIS,\nWITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\nSee the License for the specific language governing permissions and\nlimitations under the License.\n\n------------------------------------------------------------------------\n\nThis file, gl.xml, is the OpenGL and OpenGL API Registry. The canonical\nversion of the registry, together with documentation, schema, and Python\ngenerator scripts used to generate C header files for OpenGL and OpenGL ES,\ncan always be found in the Khronos Registry at\n        https://github.com/KhronosGroup/OpenGL-Registry\n    ",
+                  "notice_sha256": "7da4f970dbddc732a045e82c6298655102cfdafe21db4f30635f0e8d8b5a215d",
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_angle/scripts/gl_angle_ext.xml",
@@ -964,7 +1359,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "google/angle",
                 "submodule_commit": "7403dd2cd3764fe96660fe09892e764e9ae1dbca",
-                "submodule_path": "scripts/gl_angle_ext.xml"
+                "submodule_path": "scripts/gl_angle_ext.xml",
+                "licence_notice_review": {
+                  "classification": "ANGLE_BSD_style_reference_notice",
+                  "notice_text": "\n    Copyright 2018 The ANGLE Project Authors. All rights reserved.\n    Use of this source code is governed by a BSD-style license that can be\n    found in the LICENSE file.\n\n    gl_angle_ext.xml\n        Includes data used to auto-generate ANGLE classes.\n    ",
+                  "notice_sha256": "ce088b39d012e76928f81935bc2db10070cc0b8604b161feddf5e6ee7c5dad1b",
+                  "whole_file_licence_acceptance": false
+                }
               },
               {
                 "member": "api_angle/scripts/wgl.xml",
@@ -974,7 +1375,13 @@
                 "upstream_blob_oid": null,
                 "submodule_repository": "google/angle",
                 "submodule_commit": "7403dd2cd3764fe96660fe09892e764e9ae1dbca",
-                "submodule_path": "scripts/wgl.xml"
+                "submodule_path": "scripts/wgl.xml",
+                "licence_notice_review": {
+                  "classification": "Apache-2.0_reference_notice",
+                  "notice_text": "\nCopyright (c) 2013-2018 The Khronos Group Inc.\n\nLicensed under the Apache License, Version 2.0 (the \"License\");\nyou may not use this file except in compliance with the License.\nYou may obtain a copy of the License at\n\n    http://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software\ndistributed under the License is distributed on an \"AS IS\" BASIS,\nWITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\nSee the License for the specific language governing permissions and\nlimitations under the License.\n\n------------------------------------------------------------------------\n\nThis file, wgl.xml, is the WGL API Registry. The older \".spec\" file\nformat has been retired and will no longer be updated with new\nextensions and API versions. The canonical version of the registry,\ntogether with documentation, schema, and Python generator scripts used\nto generate C header files for WGL, can always be found in the Khronos\nRegistry at\n        https://github.com/KhronosGroup/OpenGL-Registry\n    ",
+                  "notice_sha256": "0e658e29afa1efb28879143fdba54dd347784b7b73ea0fe187d7ef5c26d1b435",
+                  "whole_file_licence_acceptance": false
+                }
               }
             ],
             "root_license_files": [
@@ -982,7 +1389,21 @@
                 "path": "LICENSE",
                 "git_blob_oid": "0f65fd60fd68d465a2283378849f16532f5ee4f1"
               }
-            ]
+            ],
+            "licence_notice_counts": {
+              "Khronos_Materials_permission_notice": 1,
+              "ANGLE_BSD_style_reference_notice": 2,
+              "Apache-2.0_reference_notice": 2
+            },
+            "root_licence_review": {
+              "path": "LICENSE",
+              "git_blob_oid": "0f65fd60fd68d465a2283378849f16532f5ee4f1",
+              "sha256": "bf4da21bd20bcfb5b60b7ecc67fa864a79be049e21d6178076887f178dd6c71a",
+              "full_text": "// Copyright 2018 The ANGLE Project Authors.\n// All rights reserved.\n//\n// Redistribution and use in source and binary forms, with or without\n// modification, are permitted provided that the following conditions\n// are met:\n//\n//     Redistributions of source code must retain the above copyright\n//     notice, this list of conditions and the following disclaimer.\n//\n//     Redistributions in binary form must reproduce the above\n//     copyright notice, this list of conditions and the following\n//     disclaimer in the documentation and/or other materials provided\n//     with the distribution.\n//\n//     Neither the name of TransGaming Inc., Google Inc., 3DLabs Inc.\n//     Ltd., nor the names of their contributors may be used to endorse\n//     or promote products derived from this software without specific\n//     prior written permission.\n//\n// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS\n// \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT\n// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS\n// FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE\n// COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,\n// INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,\n// BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;\n// LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER\n// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT\n// LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN\n// ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE\n// POSSIBILITY OF SUCH DAMAGE.\n",
+              "classification": "BSD_style_three_condition_grant",
+              "acceptance": false,
+              "limitation": "Two ANGLE extension XML headers refer to this grant; other imported XML files retain distinct Khronos notices."
+            }
           }
         ],
         "excluded_metadata_count": 2,
