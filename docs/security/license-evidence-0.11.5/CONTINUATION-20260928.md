@@ -25,3 +25,7 @@ Current immutable WebGL main 714857a28445e8f5d8d6ae1c78498578009534d8 has a full
 ### Historical grant narrowed to eight XML versions
 
 First WebGL LICENSE introduced ca07c9628d207b5cc560ee6eac32ceeb1c39a2ed on March 30, 2019. At that licensed commit, 47/55 bundled XML members are exact matches. Eight earlier versions still require explicit scope evidence; a local draft is retained and not sent. F advanced to NumPy compilation at 20:47:04 UTC. Next finish F, exact E/F comparison and existing native/NOTICE checks; after 20:57:44 REST reset, inspect current canaries and five pools.
+
+### E native validation completed, 2026-09-27 20:54 UTC
+
+Existing check_installed.py and check_native.py passed on notice-repaired E in a new exclusive offline uv CP312 environment. Installed notice hash, solve/inverse smoke and all 20 ELF dependency checks pass; no gfortran/quadmath loaded or DT_NEEDED. Receipts are in numpy-stable-source-path-repeat-20260928. Full numerical/ABI/provider acceptance and the published matrix remain incomplete. F remains on live combined handle 87273, compiling NumPy since 20:47:04 UTC.

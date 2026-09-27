@@ -1,0 +1,142 @@
+{
+  "status": "static DT_NEEDED audit only",
+  "elf_count": 20,
+  "no_gfortran_or_quadmath_needed": true,
+  "members": [
+    {
+      "member": "numpy.libs/libscipy_openblas64_-940c6557.so",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "libc.so.6",
+        "ld-linux-x86-64.so.2"
+      ]
+    },
+    {
+      "member": "numpy/_core/_multiarray_tests.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/_core/_multiarray_umath.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libscipy_openblas64_-940c6557.so",
+        "libstdc++.so.6",
+        "libm.so.6",
+        "libgcc_s.so.1",
+        "libc.so.6",
+        "ld-linux-x86-64.so.2"
+      ]
+    },
+    {
+      "member": "numpy/_core/_operand_flag_tests.cpython-312-x86_64-linux-gnu.so",
+      "needed": []
+    },
+    {
+      "member": "numpy/_core/_rational_tests.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/_core/_simd.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/_core/_struct_ufunc_tests.cpython-312-x86_64-linux-gnu.so",
+      "needed": []
+    },
+    {
+      "member": "numpy/_core/_umath_tests.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/fft/_pocketfft_umath.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libstdc++.so.6",
+        "libm.so.6",
+        "libgcc_s.so.1",
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/linalg/_umath_linalg.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libscipy_openblas64_-940c6557.so",
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/linalg/lapack_lite.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libscipy_openblas64_-940c6557.so"
+      ]
+    },
+    {
+      "member": "numpy/random/_bounded_integers.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/random/_common.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/random/_generator.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/random/_mt19937.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/random/_pcg64.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/random/_philox.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/random/_sfc64.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/random/bit_generator.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libc.so.6"
+      ]
+    },
+    {
+      "member": "numpy/random/mtrand.cpython-312-x86_64-linux-gnu.so",
+      "needed": [
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    }
+  ]
+}
