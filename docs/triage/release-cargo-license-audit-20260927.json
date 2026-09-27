@@ -1,6 +1,6 @@
 {
-  "source_sha": "a472c7d9bd18185266043592d3cfc1a2a26eb10a",
-  "helper_sha": "7cd4141eff5dff7a62f0dd152c2182f411343874",
+  "source_sha": "78d457144e8e8aacebfc0de1d02c5b6933e3df82",
+  "helper_sha": "f5bddad07874b6e540a8d02449d11f2f6e060240",
   "scope": "local Cargo licence-only; no Strix or release approval",
   "dependencies": [
     {
@@ -19,13 +19,8 @@
       "key": "cargo/android_system_properties@0.1.6",
       "archive_sha256": "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc",
       "expression": "MIT OR Apache-2.0",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "android_system_properties-0.1.6/LICENSE-APACHE": "216486f29671a4262efe32af6d84a75bef398127f8c5f369b5c8305983887a06",
         "android_system_properties-0.1.6/LICENSE-MIT": "80f275e90d799911ed3830a7f242a2ef5a4ade2092fe0aa07bfb2d2cf2f2b95e"
@@ -2034,15 +2029,15 @@
     "regular_files_only": true
   },
   "source_cargo_lock_sha256": "f778041936d0b4490976e86746ed2749b529fe79e825be6349bd85e1e7c3dbaf",
-  "source_license_selections_sha256": "b90ec33721fb89315ae1f7bf557ad67656a0e56dc13a0dffcb046e87c7da198a",
+  "source_license_selections_sha256": "8971251c5629e39687d873f733781a21250b39bb0d89d10a6b2a7a1ce9c1c798",
   "summary": {
     "results": {
-      "PASS": 138,
-      "FAIL": 18
+      "PASS": 139,
+      "FAIL": 17
     },
     "failure_codes": {
-      "LICENSE_SELECTION_REQUIRED": 10,
       "LICENSE_TEXT_MISSING": 15,
+      "LICENSE_SELECTION_REQUIRED": 9,
       "LICENSE_TEXT_UNVERIFIED": 3
     },
     "without_captured_license_text": [
@@ -2064,13 +2059,13 @@
     ]
   },
   "collector_recheck": {
-    "helper_script_sha256": "9a701da7d8519000d6242af08fbc8ee32168324499890752761e4d7b5de99d81",
+    "helper_script_sha256": "6d35122e0ee2fc58a46dfe4b3f89e31d6b4a88fe423234bf6844bf729af26a57",
     "archives_verified": 156,
     "limitation": "Licence-only recheck; preceding receipts bind historical audit hashes. No Strix or release acceptance."
   },
   "superseded_receipt": {
-    "sha256": "f27ddec5a99884436d93753f6aabb7b9b15c79743c871b2329b797de2ce19db1",
-    "source_sha": "4d541637ff93d22a647284e84f91dc78e5da86a7",
-    "helper_sha": "fbb48ec3265f1dcfba34529f6f4325e02e2ac023"
+    "sha256": "4ffe473f51494371cd50dca74d4d1c06d4e1d0d09151924680054a0b6f2dab7a",
+    "source_sha": "a472c7d9bd18185266043592d3cfc1a2a26eb10a",
+    "helper_sha": "7cd4141eff5dff7a62f0dd152c2182f411343874"
   }
 }
