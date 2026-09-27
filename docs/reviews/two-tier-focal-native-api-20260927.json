@@ -1,0 +1,26 @@
+{
+  "parent": "f03c3aa39fb1616ca57ea5ef67420c6831151705",
+  "native_test": "1 failed on installed old native extension; missing new score export; rebuilt binding unverified",
+  "files": [
+    {
+      "path": "crates/fast-mlsirm-py/src/lib.rs",
+      "sha256": "16c14afbfe5bd600dc30126fa3b1b31c9d903241a8d4b84ceccb5bf26f2598b5",
+      "bytes": 414661
+    },
+    {
+      "path": "tests/test_two_tier_focal_native_api.py",
+      "sha256": "97187a13180ca95a206c1c1edc5513243731fff3ca209b3e8eb418ac85267d51",
+      "bytes": 2299
+    },
+    {
+      "path": "/private/tmp/pyo3-029-python-marker.html",
+      "sha256": "4ae2de20088599cd0f8813d36f64d6c6f3a5018bbc623fc1ca368fc015b3bdbb",
+      "bytes": 95381
+    },
+    {
+      "path": "/Users/seonghobae/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-0.29.0/src/marker.rs",
+      "sha256": "6f5cdc68a1188d53b782c6ea767582d8cf4a2d85bd9735c202887e24ef5ec705",
+      "bytes": 37093
+    }
+  ]
+}

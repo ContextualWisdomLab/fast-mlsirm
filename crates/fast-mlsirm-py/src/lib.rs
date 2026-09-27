@@ -53,19 +53,12 @@ use mlsirm_core::sampling_design::{
 };
 
 use mlsirm_core::bifactor_grm::{
-    fit_bifactor_grm as core_fit_bifactor_grm,
-    fit_bifactor_grm_fipc as core_fit_bifactor_grm_fipc,
+    fit_bifactor_grm as core_fit_bifactor_grm, fit_bifactor_grm_fipc as core_fit_bifactor_grm_fipc,
     fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup, BifactorFipcConfig,
     BifactorGrmConfig, BifactorMultigroupConfig,
 };
 use mlsirm_core::bifactor_oakes::{
     bifactor_oakes_se as core_bifactor_oakes_se, BifactorOakesConfig,
-};
-use mlsirm_core::personfit_multidim::{
-    person_fit_multidim as core_person_fit_multidim, MultidimPersonFitInput,
-};
-use mlsirm_core::two_tier_oakes::{
-    two_tier_oakes_se as core_two_tier_oakes_se, TwoTierOakesConfig,
 };
 use mlsirm_core::cdm::{
     fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina, fit_ho_cdm as core_fit_ho_cdm,
@@ -121,7 +114,6 @@ use mlsirm_core::fitstats::{
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
-use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
     gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, phi_lambda as core_phi_lambda,
@@ -136,16 +128,19 @@ use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::mokken::{aisp as core_mokken_aisp, coef_h as core_mokken_coef_h};
 use mlsirm_core::nominal::{fit_nominal as core_fit_nominal_model, NominalConfig};
 use mlsirm_core::parallel::parallel_analysis as core_parallel_analysis;
+use mlsirm_core::personfit_multidim::{
+    person_fit_multidim as core_person_fit_multidim, MultidimPersonFitInput,
+};
 use mlsirm_core::personfit_np::person_fit_np as core_person_fit_np;
 use mlsirm_core::poly::{
     fit_nominal as core_fit_nominal, fit_poly_fipc as core_fit_poly_fipc,
-    fit_poly_unidim as core_fit_poly_unidim,
-    gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
-    poly_cat_simulate as core_poly_cat_simulate, poly_dif_sweep as core_poly_dif,
-    poly_information_curves as core_poly_information_curves,
-    poly_person_fit as core_poly_person_fit, poly_person_fit_focal as core_poly_person_fit_focal, poly_s_x2 as core_poly_s_x2,
-    score_poly_eap as core_score_poly_eap, u3_poly_bootstrap_cutoff as core_u3_poly_cutoff,
-    u3_poly_person_fit as core_u3_poly_person_fit, PolyModel,
+    fit_poly_unidim as core_fit_poly_unidim, gpcm_logprobs as core_gpcm_logprobs,
+    grm_logprobs as core_grm_logprobs, poly_cat_simulate as core_poly_cat_simulate,
+    poly_dif_sweep as core_poly_dif, poly_information_curves as core_poly_information_curves,
+    poly_person_fit as core_poly_person_fit, poly_person_fit_focal as core_poly_person_fit_focal,
+    poly_s_x2 as core_poly_s_x2, score_poly_eap as core_score_poly_eap,
+    u3_poly_bootstrap_cutoff as core_u3_poly_cutoff, u3_poly_person_fit as core_u3_poly_person_fit,
+    PolyModel,
 };
 use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
 use mlsirm_core::rasch_cml::{
@@ -190,6 +185,15 @@ use mlsirm_core::standard_setting::hofstee as core_hofstee;
 use mlsirm_core::subscores::subscores as core_subscores;
 use mlsirm_core::test_form::assemble_test_form_greedy as core_assemble_test_form_greedy;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
+use mlsirm_core::two_tier_grm::{
+    fit_two_tier_grm as core_fit_two_tier_grm,
+    fit_two_tier_grm_focal_orthogonal as core_fit_two_tier_grm_focal,
+    score_two_tier_grm_orthogonal as core_score_two_tier_grm_focal, TwoTierGrmConfig,
+    TwoTierGrmPersonScores,
+};
+use mlsirm_core::two_tier_oakes::{
+    two_tier_oakes_se as core_two_tier_oakes_se, TwoTierOakesConfig,
+};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
 use mlsirm_core::utility::{
     selection_utility as core_selection_utility, taylor_russell as core_taylor_russell,
@@ -1970,6 +1974,184 @@ fn fit_two_tier_grm(
     out.set_item("n_parameters", res.n_parameters)?;
     out.set_item("primary_identification", res.primary_identification)?;
     Ok(out.into())
+}
+
+/// Convert Rust person posterior results without doing numerical work in Python.
+/// Cai (2010), p. 609 Appendix B, DOI 10.1007/s11336-010-9178-0:
+/// means and second moments describe the full response posterior; SD is not
+/// uncertainty including estimated item parameters. Arrays remain person-major,
+/// primaries followed by specifics, and are reshaped by the Python consumer.
+fn two_tier_focal_person_dict(
+    py: Python<'_>,
+    res: TwoTierGrmPersonScores,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("person_mean", res.mean)?;
+    out.set_item("person_second", res.second)?;
+    out.set_item("person_sd", res.sd)?;
+    out.set_item("loglik", res.loglik)?;
+    Ok(out.into())
+}
+
+/// Fixed-item focal two-tier Rust API. Cai (2010), p. 587 equations 4-6,
+/// pp. 608-609 Appendices A/B, DOI 10.1007/s11336-010-9178-0.
+/// Independent Gaussian factors and all-fixed items are explicit restrictions.
+/// All numerical estimation/scoring and convergence records stay in Rust.
+/// Own NumPy buffers before Python::detach (PyO3 0.29, Python::detach API,
+/// https://docs.rs/pyo3/0.29.0/pyo3/marker/struct.Python.html#method.detach):
+/// only owned Rust vectors/scalars cross the detached closure, so concurrent
+/// Python writes cannot mutate the running calculation's inputs.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, primary_map, specific_map, a_primary, a_specific, threshold, latent_mean, latent_sd, n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific))]
+fn score_two_tier_grm_orthogonal(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    primary_map: PyReadonlyArray1<'_, bool>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    a_primary: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    latent_mean: PyReadonlyArray1<'_, f64>,
+    latent_sd: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let obs = observed.as_slice()?.to_vec();
+    let yy = poly_responses(y.as_slice()?, Some(&obs), n_cat)?;
+    let pm = primary_map.as_slice()?.to_vec();
+    let sm: Vec<i32> = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            i32::try_from(v)
+                .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+        })
+        .collect::<PyResult<_>>()?;
+    let ap = a_primary.as_slice()?.to_vec();
+    let asp = a_specific.as_slice()?.to_vec();
+    let d = threshold.as_slice()?.to_vec();
+    let mu = latent_mean.as_slice()?.to_vec();
+    let sd = latent_sd.as_slice()?.to_vec();
+    let res = py
+        .detach(|| {
+            core_score_two_tier_grm_focal(
+                &ap,
+                &asp,
+                &d,
+                &mu,
+                &sd,
+                &yy,
+                Some(&obs),
+                &pm,
+                &sm,
+                n_persons,
+                n_items,
+                n_primary,
+                n_specific,
+                n_cat,
+                q_primary,
+                q_specific,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
+    two_tier_focal_person_dict(py, res)
+}
+
+/// Fixed-item focal two-tier Rust API. Cai (2010), p. 587 equations 4-6,
+/// pp. 608-609 Appendices A/B, DOI 10.1007/s11336-010-9178-0.
+/// Independent Gaussian factors and all-fixed items are explicit restrictions.
+/// All numerical estimation/scoring and convergence records stay in Rust.
+/// Own NumPy buffers before Python::detach (PyO3 0.29, Python::detach API,
+/// https://docs.rs/pyo3/0.29.0/pyo3/marker/struct.Python.html#method.detach):
+/// only owned Rust vectors/scalars cross the detached closure, so concurrent
+/// Python writes cannot mutate the running calculation's inputs.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, primary_map, specific_map, a_primary, a_specific, threshold, latent_mean, latent_sd, n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific, max_iter, tol))]
+fn fit_two_tier_grm_focal_orthogonal(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    primary_map: PyReadonlyArray1<'_, bool>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    a_primary: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    latent_mean: PyReadonlyArray1<'_, f64>,
+    latent_sd: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let obs = observed.as_slice()?.to_vec();
+    let yy = poly_responses(y.as_slice()?, Some(&obs), n_cat)?;
+    let pm = primary_map.as_slice()?.to_vec();
+    let sm: Vec<i32> = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            i32::try_from(v)
+                .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+        })
+        .collect::<PyResult<_>>()?;
+    let ap = a_primary.as_slice()?.to_vec();
+    let asp = a_specific.as_slice()?.to_vec();
+    let d = threshold.as_slice()?.to_vec();
+    let mu = latent_mean.as_slice()?.to_vec();
+    let sd = latent_sd.as_slice()?.to_vec();
+    let res = py
+        .detach(|| {
+            core_fit_two_tier_grm_focal(
+                &ap,
+                &asp,
+                &d,
+                &mu,
+                &sd,
+                &yy,
+                Some(&obs),
+                &pm,
+                &sm,
+                n_persons,
+                n_items,
+                n_primary,
+                n_specific,
+                n_cat,
+                q_primary,
+                q_specific,
+                max_iter,
+                tol,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
+    let out = two_tier_focal_person_dict(py, res.scores)?;
+    let dict = out.bind(py);
+    dict.set_item("latent_mean", res.latent_mean)?;
+    dict.set_item("latent_sd", res.latent_sd)?;
+    dict.set_item("loglik_trace", res.loglik_trace)?;
+    dict.set_item("n_iter", res.n_iter)?;
+    dict.set_item("converged", res.converged)?;
+    dict.set_item("termination_reason", res.termination_reason)?;
+    dict.set_item("final_loglik_change", res.final_loglik_change)?;
+    dict.set_item("initial_mean", res.initial_mean)?;
+    dict.set_item("initial_sd", res.initial_sd)?;
+    dict.set_item("q_primary", res.q_primary)?;
+    dict.set_item("q_specific", res.q_specific)?;
+    dict.set_item("max_iter", res.max_iter)?;
+    dict.set_item("tol", res.tol)?;
+    Ok(out)
 }
 
 /// Observed-information SEs for the confirmatory two-tier GRM via Oakes
@@ -7376,25 +7558,50 @@ fn multidim_person_fit(
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
     let yy = poly_responses(y.as_slice()?, obs, n_cat)?;
-    let groups = group.as_slice()?.iter().map(|&g| {
-        usize::try_from(g).map_err(|_| PyValueError::new_err("group entries must be non-negative"))
-    }).collect::<PyResult<Vec<_>>>()?;
-    let smap = specific_map.as_slice()?.iter().map(|&s| {
-        i32::try_from(s).map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
-    }).collect::<PyResult<Vec<_>>>()?;
+    let groups = group
+        .as_slice()?
+        .iter()
+        .map(|&g| {
+            usize::try_from(g)
+                .map_err(|_| PyValueError::new_err("group entries must be non-negative"))
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    let smap = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&s| {
+            i32::try_from(s)
+                .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+        })
+        .collect::<PyResult<Vec<_>>>()?;
     let input = MultidimPersonFitInput {
-        y: &yy, observed: obs, group: &groups, specific_map: &smap,
-        a_primary: a_primary.as_slice()?, a_specific: a_specific.as_slice()?,
-        threshold: threshold.as_slice()?, primary_mean: primary_mean.as_slice()?,
-        primary_cov: primary_cov.as_slice()?, specific_sd: specific_sd.as_slice()?,
-        n_persons, n_items, n_primary, n_specific, n_groups, n_cat,
-        q_primary, q_specific, flag_threshold,
+        y: &yy,
+        observed: obs,
+        group: &groups,
+        specific_map: &smap,
+        a_primary: a_primary.as_slice()?,
+        a_specific: a_specific.as_slice()?,
+        threshold: threshold.as_slice()?,
+        primary_mean: primary_mean.as_slice()?,
+        primary_cov: primary_cov.as_slice()?,
+        specific_sd: specific_sd.as_slice()?,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_groups,
+        n_cat,
+        q_primary,
+        q_specific,
+        flag_threshold,
     };
     let result = core_person_fit_multidim(&input).map_err(PyValueError::new_err)?;
-    let null_p_value = n_reps.map(|reps| {
-        mlsirm_core::personfit_multidim::person_fit_multidim_resampling(&input, reps, seed)
-            .map_err(PyValueError::new_err)
-    }).transpose()?;
+    let null_p_value = n_reps
+        .map(|reps| {
+            mlsirm_core::personfit_multidim::person_fit_multidim_resampling(&input, reps, seed)
+                .map_err(PyValueError::new_err)
+        })
+        .transpose()?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("lz", result.lz)?;
     out.set_item("primary_eap", result.primary_eap)?;
@@ -10537,6 +10744,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bifactor_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_two_tier_grm, m)?)?;
+    m.add_function(wrap_pyfunction!(score_two_tier_grm_orthogonal, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_two_tier_grm_focal_orthogonal, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
