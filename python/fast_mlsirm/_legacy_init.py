@@ -73,6 +73,11 @@ from .two_tier_focal import (
     TwoTierGrmPersonScores as TwoTierGrmPersonScores,
 )
 from .two_tier_grm import two_tier_oakes_se as two_tier_oakes_se, TwoTierOakesSe as TwoTierOakesSe
+from .two_tier_grm import (
+    expected_total_score_two_tier_given_primary,
+    expected_total_score_two_tier_from_fit,
+    TwoTierExpectedTotalGivenPrimary,
+)
 from .gpcm import fit_gpcm as fit_gpcm, GpcmFit as GpcmFit
 from .facets import fit_facets as fit_facets, FacetsFit as FacetsFit
 from .ksirt import analyze_ksirt as analyze_ksirt, ksirt_analysis as ksirt_analysis, KsirtResult as KsirtResult
@@ -633,4 +638,10 @@ __all__ = [  # noqa: RUF022
     "simulate",
     "standard_errors_from_vcov",
     "vcov_from_hessian",
+]
+
+__all__ += [
+    "expected_total_score_two_tier_given_primary",
+    "expected_total_score_two_tier_from_fit",
+    "TwoTierExpectedTotalGivenPrimary",
 ]
