@@ -53,3 +53,13 @@ this does not require executing untrusted setup.py or its shell scripts.
 This symbol also exists in the pinned LLVM source, so it is consistent with
 that source lead but does not distinguish it from later LLVM versions.
 No native license acceptance follows from this compatibility check.
+
+## Public CI receipt
+
+The exact source commit has one public Builds push run,
+[27645691616](https://github.com/google/atheris/actions/runs/27645691616).
+Job 81756860359 failed at Run pytype checks; build job 81757708148 was
+skipped. Its artifacts endpoint returned total_count 0 at inspection on
+2026-09-27 UTC. The other two runs on this commit are dependency graph
+automation, not wheel publication. This public CI execution is therefore
+not the missing authenticated publisher record for the three PyPI wheels.
