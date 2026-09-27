@@ -279,6 +279,15 @@ fn pseudoinverse_symmetric(matrix: &[f64], p: usize, rcond: f64) -> Result<Vec<f
     Ok(inv)
 }
 
+/// Symmetric eigendecomposition with uniform input scaling and restored eigenvalues.
+///
+/// Scaling basis: LAPACK 3.12.1, DSYEV source, lines 219–240 (machine range and
+/// matrix scaling) and 265–275 (eigenvalue restoration):
+/// <https://netlib.org/lapack/explore-html/d8/d1c/group__heev_ga8995c47a7578fef733189df3490258ff.html>.
+/// DSYEV uses tridiagonal reduction, not this existing cyclic Jacobi iteration.
+/// Normalizing the maximum entry to one is our choice to make the existing
+/// absolute off-diagonal tolerance relative to input scale; it is checked by
+/// the rotated-matrix scale regression, not claimed as the DSYEV algorithm.
 fn jacobi_symmetric_eigen(matrix: &[f64], p: usize) -> Result<(Vec<f64>, Vec<f64>), String> {
     const JACOBI_MAX_SWEEPS: usize = 64;
     const JACOBI_TOL: f64 = 1e-14;
