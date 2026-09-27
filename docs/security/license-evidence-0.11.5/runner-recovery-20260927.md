@@ -346,6 +346,33 @@ Ruff E9/F, actionlint(shellcheck disabled), own diff check pass. Helper source
 `88f38292ed543660de94eee44a110fe47a9a5974`. Exact PRhead
 `55de728e8704b4217300c5580cd8cf7e9ddb5076`; full tests LIVE exec1628,
 log `/tmp/fmls-root-review-repairs-full-tests.log`. Preserve this process.
-Original2450 reviewer-thread adoption happens only after verified merge;
+Original2347 reviewer-thread adoption happens only after verified merge;
 artifact namespace, obsolete directive docs, and Noema content-reader finding
 remain separate root2347 work. License and release artifact HOLDs unchanged.
+
+## Terminal review repairs and current root integration
+
+PR2450 is merged into root2347 at `17d293e5ae1012154c70a1cb81d9df83dd1a2705`
+(2026-09-27T14:47:48Z). Exact-head full suite exec1628 is TERMINAL:
+4956 passed, 4 skipped, 40 subtests in318.63s. Source/workflow equality and
+ancestry verified; Python3.10 and hook-alias root threads resolved after adoption.
+
+PR2451 is merged into root2347 at `79be9bd3d2d1aeea62f0c32659d22318521b0a6c`
+(14:50:57Z). Existing custom-name validation already prevented the originally
+reported foo/report collision. A different valid sibling collision remained:
+license-evidence-a versus license-evidence-a--full-set-verdict. Custom full-set
+verdicts now use a distinct report prefix, preserving the default name.58
+workflow contracts and actionlint(shellcheck disabled) pass. Merge ancestry and
+source equality verified; corresponding root thread resolved.
+
+Remaining root2347 repairs are isolated at
+`/tmp/fmls-central-final-review-repairs-20260927`, branch
+`codex/release-root-final-review-repairs-20260927`, headb7bdcc95. Noema previously
+projected away Contents API size/encoding, conflating omitted bodies with empty
+files. The shared reader now validates metadata and byte count, reports omitted
+bodies unavailable through existing callers, and preserves real zero-byte files.
+Historical source-policy documentation corrected; actual install binding refusals
+asserted.146 focused tests passed,1 skipped. Root2347 is not yet main.
+
+Canary36321971364/job108627427635 remains queued at the latest live observation;
+no duplicate dispatch. All license and published-artifact acceptance gaps remain.
