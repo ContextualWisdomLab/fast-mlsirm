@@ -1,0 +1,14 @@
+{
+  "sources": [
+    {
+      "filename": "efron1979-bootstrap-20260927.pdf",
+      "bytes": 454675,
+      "sha256": "5fb9b4563e472ad4ae97be05463ffff22b82577d7a236a5c0c9076568921d60a"
+    },
+    {
+      "filename": "Andrews_Buchinsky_2000_three_step_bootstrap.pdf",
+      "bytes": 217955,
+      "sha256": "56e3d7c6394ddc177228925ef2c5a4fe763cafb0e5a38274de7ae7b41795c964"
+    }
+  ]
+}

@@ -54,7 +54,7 @@ import os
 import time
 import numpy as np
 
-from .bifactor_grm import fit_bifactor_grm
+from .bifactor_grm import _slope_prior_pair, fit_bifactor_grm
 from .bifactor_multigroup import fit_bifactor_grm_multigroup
 
 
@@ -123,6 +123,8 @@ class BifactorBootstrapResult:
     replicate_ids: tuple[int, ...] = ()
     converged_replicate_ids: tuple[int, ...] = ()
     replicate_errors: tuple[str, ...] = ()
+    slope_prior_mu: float | None = None
+    slope_prior_sd: float | None = None
     device: str = "cpu"
 
 
@@ -171,6 +173,8 @@ def _fit_single_replicate(
     rep_seed: int,
     estimate_specific_vars: bool,
     device: str,
+    slope_prior_mu: float | None = None,
+    slope_prior_sd: float | None = None,
 ) -> tuple:
     """Execute one bootstrap resample and fit.
 
@@ -216,6 +220,8 @@ def _fit_single_replicate(
                 n_starts=n_starts,
                 seed=rep_seed,
                 device=device,
+                slope_prior_mu=slope_prior_mu,
+                slope_prior_sd=slope_prior_sd,
             )
             a_g = np.asarray(fit.a_general, dtype=np.float64)
             a_s = np.asarray(fit.a_specific, dtype=np.float64)
@@ -245,6 +251,8 @@ def _fit_single_replicate(
             seed=rep_seed,
             estimate_specific_vars=estimate_specific_vars,
             device=device,
+            slope_prior_mu=slope_prior_mu,
+            slope_prior_sd=slope_prior_sd,
         )
         # Multigroup arrays are (n_groups, ...): the bootstrap resamples
         # persons, so per-replicate summaries keep the group axis.
@@ -320,6 +328,8 @@ def run_bifactor_bootstrap(
     n_jobs: int = -1,
     device: str = "cpu",
     estimate_specific_vars: bool = False,
+    slope_prior_mu: float | None = None,
+    slope_prior_sd: float | None = None,
 ) -> BifactorBootstrapResult:
     """Run joint person bootstrap replications with parallel workers.
 
@@ -370,6 +380,20 @@ def run_bifactor_bootstrap(
             replicate/bootstrap/draw count with no Monte-Carlo-error
             justification on file.
         estimate_specific_vars: Multigroup focal specific-variance estimation.
+        slope_prior_mu/slope_prior_sd: Both omitted selects the existing MML
+            estimator; both provided are passed unchanged to every single-
+            or multigroup MAP refit. Use the same caller-specified prior as
+            the target fit. This routine neither chooses nor estimates it.
+            The shared fit-API validator rejects incomplete or invalid pairs.
+
+    Estimator preservation:
+        Efron (1979, Section 2, printed pp. 2–3, equations 2.4–2.5) applies
+        the specified statistic R to resampled data. Passing the target
+        fit's fixed prior to each refit is this implementation's application
+        of that same-statistic principle. The paper does not prescribe a
+        GRM slope prior, its hyperparameters, or MAP interval coverage.
+        These empirical resampling summaries are not posterior credible
+        intervals or a proof of frequentist coverage.
 
     Returns:
         BifactorBootstrapResult with replicate matrices, empirical SEs,
@@ -386,6 +410,9 @@ def run_bifactor_bootstrap(
         Exceptions manual: https://docs.python.org/3/library/exceptions.html ).
 
     References:
+        Efron, B. (1979). Bootstrap methods: Another look at the jackknife.
+        *The Annals of Statistics, 7*(1), 1–26.
+        https://doi.org/10.1214/aos/1176344552
         Andrews, D. W. K., & Buchinsky, M. (2000). A three-step method for
         choosing the number of bootstrap repetitions. *Econometrica, 68*(1),
         23–51. https://www.jstor.org/stable/2999474
@@ -401,6 +428,7 @@ def run_bifactor_bootstrap(
         These checks enforce the existing stratum contract, not a choice of
         scientifically appropriate strata.
     """
+    slope_prior_mu, slope_prior_sd = _slope_prior_pair(slope_prior_mu, slope_prior_sd)
     n_replicates = _require_int(n_replicates, "n_replicates", 1)
     batch_size = _require_int(batch_size, "batch_size", 1)
     n_starts = _require_int(n_starts, "n_starts", 1)
@@ -485,7 +513,7 @@ def run_bifactor_bootstrap(
         tasks.append((
             b, y_arr, smap_arr, n_cat, n_specific, g_arr, n_groups, anchor_arr,
             q_general, q_specific, max_iter, float(tol), n_starts, rep_seed,
-            estimate_specific_vars, device,
+            estimate_specific_vars, device, slope_prior_mu, slope_prior_sd,
         ))
 
     results: list = [None] * n_replicates
@@ -549,6 +577,8 @@ def run_bifactor_bootstrap(
         error.replicate_ids = tuple(r[0] for r in done)
         error.converged_replicate_ids = ()
         error.replicate_errors = tuple(r[9] for r in done)
+        error.slope_prior_mu = slope_prior_mu
+        error.slope_prior_sd = slope_prior_sd
         error.converged = flags
         raise error
 
@@ -674,5 +704,7 @@ def run_bifactor_bootstrap(
         replicate_ids=tuple(r[0] for r in done),
         converged_replicate_ids=tuple(r[0] for r in conv),
         replicate_errors=tuple(r[9] for r in done),
+        slope_prior_mu=slope_prior_mu,
+        slope_prior_sd=slope_prior_sd,
         device=device,
     )
