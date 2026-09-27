@@ -150,7 +150,7 @@
 //! rule (`quadrature::require_gh_rule`, any `n >= 1`, no table cap per
 //! #1929), and working-set sizes that would overflow `usize` are rejected
 //! by checked arithmetic. Everything else is
-//! lower-bounded only (`n_primary >= 1`, `n_specific >= 1`, `n_cat >= 2`,
+//! lower-bounded only (`n_primary >= 1`, `n_specific >= 0`, `n_cat >= 2`,
 //! `max_iter >= 1`, `n_starts >= 1`, `newton_iter >= 1`, finite positive
 //! `tol`/`ridge`). `seed` drives ONLY the random-start jitter
 //! (Gauss-Hermite quadrature is deterministic), and start `t` derives
@@ -356,9 +356,8 @@ fn validate_data(
     if n_primary < 1 {
         return Err("n_primary must be >= 1".into());
     }
-    if n_specific < 1 {
-        return Err("n_specific must be >= 1".into());
-    }
+    // Cai (2010), p.588 eq.7 and p.589 eqs.11-12: removing every
+    // specific loading leaves the primary-only model; no dummy dimension.
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
@@ -1181,11 +1180,11 @@ fn e_step_gpu_person_moments(
         grid,
         grid,
         grid,
-        v.n_specific.checked_mul(grid).ok_or("GPU size overflows")?,
-        joint_per_person,
-        joint_per_person,
-        joint_per_person,
-        v.n_specific,
+        v.n_specific.checked_mul(grid).ok_or("GPU size overflows")?.max(1),
+        joint_per_person.max(1),
+        joint_per_person.max(1),
+        if v.n_specific == 0 { 0 } else { joint_per_person },
+        v.n_specific.max(1),
     ]
     .into_iter()
     .try_fold(0usize, |a, b| a.checked_add(b))
@@ -1205,11 +1204,11 @@ fn e_step_gpu_person_moments(
         v.n_items,
         v.n_items,
         v.n_specific.checked_add(1).ok_or("GPU size overflows")?,
-        v.blocks.iter().map(Vec::len).sum(),
+        v.blocks.iter().map(Vec::len).sum::<usize>().max(1),
         grid,
         qs,
         grid,
-        v.n_specific.checked_mul(qs).ok_or("GPU size overflows")?,
+        v.n_specific.checked_mul(qs).ok_or("GPU size overflows")?.max(1),
         2,
     ]
     .into_iter()

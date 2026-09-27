@@ -487,7 +487,7 @@ fn e_step_reduced_gpu_inner(
         moments_len,       // moments (unused posterior binding: one element)
     ];
     for &len in &buffer_lens[1..] {
-        if !storage_buffer_fits(&limits, len) {
+        if !storage_buffer_fits(&limits, len.max(1)) {
             return None;
         }
     }
@@ -564,7 +564,10 @@ fn e_step_reduced_gpu_inner(
     let mk_init = |label: &str, bytes: &[u8]| {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(label),
-            contents: bytes,
+            // Empty specific-factor arrays have no mathematical entries. Keep
+            // an unread 4-byte binding; WGSL loops still use dims.ns=0.
+            // wgpu-core 30 binding_model.rs rejects zero-size bindings.
+            contents: if bytes.is_empty() { &[0u8; 4] } else { bytes },
             usage: wgpu::BufferUsages::STORAGE,
         })
     };
@@ -586,12 +589,12 @@ fn e_step_reduced_gpu_inner(
     let ts_buf = mk_init("ts", bytemuck::cast_slice(&ts));
 
     let genlog_buf = output_buffer(device, "genlog", np * qg);
-    let logi_buf = output_buffer(device, "logi", np * ns * qg);
-    let blockacc_buf = output_buffer(device, "blockacc", np * ns * qg * qs);
+    let logi_buf = output_buffer(device, "logi", (np * ns * qg).max(1));
+    let blockacc_buf = output_buffer(device, "blockacc", (np * ns * qg * qs).max(1));
     let ll_buf = output_buffer(device, "ll", np);
     let postg_buf = output_buffer(device, "postg", np * qg);
-    let joint_buf = output_buffer(device, "joint", np * ns * qg * qs);
-    let anyobs_buf = output_buffer(device, "anyobs", np * ns);
+    let joint_buf = output_buffer(device, "joint", (np * ns * qg * qs).max(1));
+    let anyobs_buf = output_buffer(device, "anyobs", (np * ns).max(1));
     let counts_buf = output_buffer(device, "counts", counts_len);
     let moments_buf = output_buffer(device, "moments", moments_len);
 
@@ -773,11 +776,13 @@ fn e_step_reduced_gpu_inner(
     let primary_staging =
         collect_posteriors.then(|| staging_buffer(device, "primary_read", np * qg));
     let joint_staging =
-        collect_posteriors.then(|| staging_buffer(device, "joint_read", np * ns * qg * qs));
+        (collect_posteriors && ns > 0).then(|| staging_buffer(device, "joint_read", np * ns * qg * qs));
     let mut copies = vec![(&ll_buf, &ll_staging, np)];
     if collect_posteriors {
         copies.push((&postg_buf, primary_staging.as_ref()?, np * qg));
-        copies.push((&joint_buf, joint_staging.as_ref()?, np * ns * qg * qs));
+        if ns > 0 {
+            copies.push((&joint_buf, joint_staging.as_ref()?, np * ns * qg * qs));
+        }
     } else {
         copies.push((&counts_buf, counts_staging.as_ref()?, counts_len));
         copies.push((&moments_buf, moments_staging.as_ref()?, moments_len));
@@ -787,7 +792,9 @@ fn e_step_reduced_gpu_inner(
     let ll_vec = iter.next()?;
     let (counts_vec, moments_vec, person_posteriors) = if collect_posteriors {
         let primary = iter.next()?.into_iter().map(f64::from).collect();
-        let joint = iter.next()?.into_iter().map(f64::from).collect();
+        let joint = if ns == 0 { Vec::new() } else {
+            iter.next()?.into_iter().map(f64::from).collect()
+        };
         (
             Vec::new(),
             vec![0.0; ng * (3 + 2 * ns)],
