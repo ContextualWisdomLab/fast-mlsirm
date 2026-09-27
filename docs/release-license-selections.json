@@ -4972,5 +4972,115 @@
       "path": "python/fast_mlsirm/_licenses/spirv-0.4.0+sdk-1.4.341.0-Apache-2.0-AND-MIT-Khronos-old.txt",
       "sha256": "fb183918865585d4d2443f1425d54374b6746b6c66f5c103a25ef0d569b8c90e"
     }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "arbitrary",
+    "version": "1.4.2",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT and Apache-2.0 licence members of the checksum-matched crate archive. Select the MIT alternative and bundle its unchanged full copyright, permission and warranty text. This election does not establish overall release approval.",
+    "archive_sha256": "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1",
+    "license_members": [
+      {
+        "member": "arbitrary-1.4.2/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "arbitrary-1.4.2/LICENSE-MIT",
+        "raw_sha256": "15656cc11a8331f28c0986b8ab97220d3e76f98e60ed388b5ffad37dfac4710c"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/arbitrary-1.4.2-MIT.txt",
+      "sha256": "15656cc11a8331f28c0986b8ab97220d3e76f98e60ed388b5ffad37dfac4710c"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "cc",
+    "version": "1.2.66",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT and Apache-2.0 licence members of the checksum-matched crate archive. Select the MIT alternative and bundle its unchanged full copyright, permission and warranty text. This election does not establish overall release approval.",
+    "archive_sha256": "f5d6cac793997bd970000024b2934968efe83b382de4fdcf4fcb46b6ee4ad996",
+    "license_members": [
+      {
+        "member": "cc-1.2.66/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "cc-1.2.66/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/cc-1.2.66-MIT.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "find-msvc-tools",
+    "version": "0.1.9",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT and Apache-2.0 licence members of the checksum-matched crate archive. Select the MIT alternative and bundle its unchanged full copyright, permission and warranty text. This election does not establish overall release approval.",
+    "archive_sha256": "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582",
+    "license_members": [
+      {
+        "member": "find-msvc-tools-0.1.9/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "find-msvc-tools-0.1.9/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/find-msvc-tools-0.1.9-MIT.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "jobserver",
+    "version": "0.1.35",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT and Apache-2.0 licence members of the checksum-matched crate archive. Select the MIT alternative and bundle its unchanged full copyright, permission and warranty text. This election does not establish overall release approval.",
+    "archive_sha256": "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3",
+    "license_members": [
+      {
+        "member": "jobserver-0.1.35/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "jobserver-0.1.35/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/jobserver-0.1.35-MIT.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "shlex",
+    "version": "2.0.1",
+    "chosen": "MIT",
+    "rationale": "Read the complete MIT grant and the separate Apache application notice in the checksum-matched crate archive. Select the independently granted MIT alternative and bundle its unchanged full copyright, permission and warranty text. The short Apache reference is not treated as a complete Apache grant. This election does not establish overall release approval.",
+    "archive_sha256": "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba",
+    "license_members": [
+      {
+        "member": "shlex-2.0.1/LICENSE-APACHE",
+        "raw_sha256": "553fffcd9b1cb158bc3e9edc35da85ca5c3b3d7d2e61c883ebcfa8a65814b583"
+      },
+      {
+        "member": "shlex-2.0.1/LICENSE-MIT",
+        "raw_sha256": "4455bf75a91154108304cb283e0fea9948c14f13e20d60887cf2552449dea3b1"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/shlex-2.0.1-MIT.txt",
+      "sha256": "4455bf75a91154108304cb283e0fea9948c14f13e20d60887cf2552449dea3b1"
+    }
   }
 ]
