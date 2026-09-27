@@ -66,3 +66,40 @@ exact head before the successful invocation. The subsequent evidence-note
 append also initially failed on a missing sparse file; the PR opened at the
 already-tested code head. The note is now restored and updated in a follow-up.
 No native MAP result or active job restart is established by these operations.
+
+## Explicit common-person plans
+
+The runner accepts `bootstrap_indices` with shape (requested replicates, persons).
+It rejects noninteger, negative, out-of-range and wrong-shape values before
+conversion or dispatch. Multigroup rows must preserve each slot's group,
+matching the existing internal stratified sampling contract. A copied,
+read-only snapshot prevents caller mutation from changing later replicates.
+Workers consume supplied rows directly and never redraw them. Omitted plans
+keep the existing sampler and have no supplied-plan digest.
+
+The result and all-failed exception record `bootstrap_indices_sha256` over two
+little-endian uint64 dimensions followed by C-order little-endian int64 indices.
+It identifies the full requested plan; completed IDs still determine which rows
+actually ran. This serialization is explicitly an implementation choice.
+The caller must retain the plan and validate the same ordered person keys
+across models. Hash equality alone does not prove participant identity, iid
+resampling, successful fits or complete replicate execution.
+
+Opened sources, recorded in the runner and worker docstrings:
+
+- Efron (1979), Section 2, printed p. 3 / PDF p. 4, eqs. 2.4–2.5 (image previously directly viewed, source hash above): applying a specified statistic to a given empirical resample. Sharing one person-row plan across model calls is the implementation's application of this definition. It is not an Efron validation of this study's joint estimator or chosen strata.
+- NumPy Developers, online reference, Indexing on ndarrays, Advanced indexing / Integer array indexing: https://numpy.org/doc/stable/user/basics.indexing.html . Integer arrays select rows and advanced indexing yields a copy. Negative indexing is supported by NumPy; this API explicitly forbids it so person row identity remains zero-based and unambiguous.
+- Python Software Foundation, hashlib manual, Hash algorithms / Hash Objects: https://docs.python.org/3/library/hashlib.html . The SHA-256 interface hashes supplied byte buffers; the serialization format above is this API's contract.
+
+Before implementation, the first new test failed at the public call with an
+unexpected bootstrap_indices keyword. After implementation, 33 checks passed
+in 0.06 seconds: two synthetic models receive identical indexed persons on
+both single/multigroup real-worker routes (including parallel dispatch), big-
+and little-endian plans hash equally, bad plans fail before workers, caller
+mutation cannot change later rows, and all-failed runs retain the plan hash.
+The previous prior, stratum/failure and source-boundary checks also pass.
+Tested Python module SHA-256: `9bd55ada525cbc10c9d998033ef8e8b1b8f73582c6ff9cd7c277d537c1e9c1b4`.
+These are module-overlay tests with synthetic fit outcomes, not native MAP
+refits or actual study estimates. Joint two-tier E refits, score/regression
+output per replicate, convergence/sensitivity and immutable-release acceptance
+remain required. No separate sampling engine or study-specific strata are added.

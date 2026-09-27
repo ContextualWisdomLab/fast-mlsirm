@@ -35,6 +35,7 @@ def test_real_worker_forwards_prior_and_result_records_it(monkeypatch, n_groups,
     assert (calls[0]['slope_prior_mu'], calls[0]['slope_prior_sd']) == (mu, sd)
     assert (result.slope_prior_mu, result.slope_prior_sd) == (mu, sd)
     assert result.replicate_ids == result.converged_replicate_ids == (0,)
+    assert result.bootstrap_indices_sha256 is None
 
 
 @pytest.mark.parametrize('mu,sd', [(0., None), (0., -.5), (np.bool_(True), .5)])

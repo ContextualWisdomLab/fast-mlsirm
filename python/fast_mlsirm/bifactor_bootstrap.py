@@ -45,6 +45,7 @@ References
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
 from dataclasses import dataclass
 import math
 import os
@@ -123,6 +124,7 @@ class BifactorBootstrapResult:
     slope_prior_mu: float | None = None
     slope_prior_sd: float | None = None
     device: str = "cpu"
+    bootstrap_indices_sha256: str | None = None
 
 
 def _generate_bootstrap_indices(
@@ -167,19 +169,27 @@ def _fit_single_replicate(
     device: str,
     slope_prior_mu: float | None = None,
     slope_prior_sd: float | None = None,
+    bootstrap_indices: np.ndarray | None = None,
 ) -> tuple:
     """Execute one bootstrap resample and fit.
 
     The replicate seed derives deterministically from the caller-supplied
     ``base_seed`` and the replicate index, so CPU and GPU runs with the same
-    ``base_seed`` draw identical resamples and identical start jitter and
-    match replicate-by-replicate up to device precision.
+    ``base_seed`` draw identical resamples when no indices are supplied.
+    A supplied row bypasses the draw and uses the runner's validated snapshot.
+    Fits still receive the same initialization seed. Supplying one row to
+    multiple models applies the same empirical resample to each statistic
+    (Efron, 1979, Section 2, printed p. 3, eqs. 2.4–2.5; see the runner's
+    reference and the caller's required ordered-person-key check).
     """
     rng = np.random.Generator(np.random.PCG64(rep_seed))
     n_persons = responses.shape[0]
     n_items = responses.shape[1]
 
-    indices = _generate_bootstrap_indices(n_persons, group_ids, n_groups, rng)
+    indices = (
+        _generate_bootstrap_indices(n_persons, group_ids, n_groups, rng)
+        if bootstrap_indices is None else bootstrap_indices
+    )
     y_boot = responses[indices]
     g_boot = group_ids[indices] if group_ids is not None else None
 
@@ -321,6 +331,7 @@ def run_bifactor_bootstrap(
     estimate_specific_vars: bool = False,
     slope_prior_mu: float | None = None,
     slope_prior_sd: float | None = None,
+    bootstrap_indices: np.ndarray | None = None,
 ) -> BifactorBootstrapResult:
     """Run joint person bootstrap replications with parallel workers.
 
@@ -376,6 +387,31 @@ def run_bifactor_bootstrap(
             or multigroup MAP refit. Use the same caller-specified prior as
             the target fit. This routine neither chooses nor estimates it.
             The shared fit-API validator rejects incomplete or invalid pairs.
+        bootstrap_indices: Optional integer matrix of shape
+            ``(n_replicates, n_persons)``. Row b supplies the exact zero-based
+            person indices for replicate b, with replacement. All entries
+            must be in ``0..n_persons-1``. In multigroup runs, each sampled
+            index must belong to the original slot's group, preserving the
+            existing stratified scheme. The plan is copied before dispatch;
+            its rows bypass internal draws. Omitted selects existing draws.
+            Share the same plan across models only after confirming identical
+            ordered person keys. This routine cannot verify that cross-model
+            identity or that a supplied plan is an iid random sample.
+            Fit initialization still uses the replicate seed from base_seed.
+
+    Shared-plan provenance:
+        ``bootstrap_indices_sha256`` hashes the entire supplied plan, including
+        requested rows not reached because of budget or early stopping. Encoding:
+        two little-endian uint64 dimensions followed by C-order little-endian
+        int64 indices. It is None for internally generated draws. Retain the
+        plan and ordered source keys; replicate_ids selects completed rows.
+        This encoding is an implementation contract, not a statistical rule.
+        NumPy Developers, Indexing on ndarrays, Advanced indexing / Integer
+        array indexing (integer selection returns a copy):
+        https://numpy.org/doc/stable/user/basics.indexing.html
+        Python Software Foundation, hashlib, Hash algorithms / Hash Objects
+        (SHA-256 over byte buffers, update and hexdigest):
+        https://docs.python.org/3/library/hashlib.html
 
     Estimator preservation:
         Efron (1979, Section 2, printed pp. 2–3, equations 2.4–2.5) applies
@@ -497,6 +533,26 @@ def run_bifactor_bootstrap(
             raise ValueError("group_ids must represent every declared group")
     anchor_arr = np.asarray(anchor_mask, dtype=bool) if anchor_mask is not None else None
 
+    indices_arr = None
+    indices_sha256 = None
+    if bootstrap_indices is not None:
+        raw_indices = np.asarray(bootstrap_indices)
+        if raw_indices.shape != (n_replicates, n_persons):
+            raise ValueError("bootstrap_indices must have shape (n_replicates, n_persons)")
+        if raw_indices.dtype.kind not in ("i", "u"):
+            raise ValueError("bootstrap_indices must contain integer indices")
+        if bool((raw_indices < 0).any()) or bool((raw_indices >= n_persons).any()):
+            raise ValueError("bootstrap_indices must be in 0..n_persons-1")
+        indices_arr = np.array(raw_indices, dtype="<i8", order="C", copy=True)
+        if g_arr is not None and n_groups > 1:
+            for row in indices_arr:
+                if bool((g_arr[row] != g_arr).any()):
+                    raise ValueError("bootstrap_indices must preserve each slot's group")
+        indices_arr.flags.writeable = False
+        plan_hash = hashlib.sha256(np.asarray(indices_arr.shape, dtype="<u8").tobytes())
+        plan_hash.update(memoryview(indices_arr))
+        indices_sha256 = plan_hash.hexdigest()
+
     start_time = time.perf_counter()
     if n_jobs <= 0:
         n_jobs = max(1, os.cpu_count() or 1)
@@ -513,6 +569,7 @@ def run_bifactor_bootstrap(
             b, y_arr, smap_arr, n_cat, n_specific, g_arr, n_groups, anchor_arr,
             q_general, q_specific, max_iter, float(tol), n_starts, rep_seed,
             estimate_specific_vars, device, slope_prior_mu, slope_prior_sd,
+            None if indices_arr is None else indices_arr[b],
         ))
 
     results: list = [None] * n_replicates
@@ -578,6 +635,7 @@ def run_bifactor_bootstrap(
         error.replicate_errors = tuple(r[9] for r in done)
         error.slope_prior_mu = slope_prior_mu
         error.slope_prior_sd = slope_prior_sd
+        error.bootstrap_indices_sha256 = indices_sha256
         error.converged = flags
         raise error
 
@@ -706,4 +764,5 @@ def run_bifactor_bootstrap(
         slope_prior_mu=slope_prior_mu,
         slope_prior_sd=slope_prior_sd,
         device=device,
+        bootstrap_indices_sha256=indices_sha256,
     )
