@@ -822,6 +822,50 @@ def test_build_scope_receipts_bind_wheel_lock_and_repeat(tmp_path: Path) -> None
         verify(first, second, row, tmp_path / "release-source", _RELEASE_COMMIT, snapshot)
 
 
+def test_admission_recomputes_complete_cargo_graph(tmp_path: Path, monkeypatch) -> None:
+    import json
+    import runpy
+
+    import pytest
+
+    source = tmp_path / "release-source"
+    crate = source / "crates/fast-mlsirm-py"
+    crate.mkdir(parents=True)
+    (crate / "Cargo.lock").write_text(
+        'version = 4\n[[package]]\nname = "fast-mlsirm-py"\nversion = "0.11.4"\n'
+        '[[package]]\nname = "mlsirm-core"\nversion = "0.11.4"\n')
+    graph = [{"name": name, "version": "0.11.4", "source": None,
+              "checksum": None, "features": []}
+             for name in ("fast-mlsirm-py", "mlsirm-core")]
+    metadata = {"packages": [
+        {"id": name, "name": name, "version": "0.11.4", "source": None}
+        for name in ("fast-mlsirm-py", "mlsirm-core")],
+        "resolve": {"root": "fast-mlsirm-py", "nodes": [
+            {"id": name, "features": []}
+            for name in ("fast-mlsirm-py", "mlsirm-core")]}}
+    commands = []
+    def output(command, *, text, cwd=None):
+        commands.append(command)
+        return _RELEASE_COMMIT + "\n" if command[0] == "git" else json.dumps(metadata)
+    transport = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
+    monkeypatch.setattr(transport["subprocess"], "check_output", output)
+    receipts = []
+    for leg in ["sdist", *_expected_legs()]:
+        target = leg.rsplit("-py", 1)[0]
+        triples = ([] if leg == "sdist" else
+                   ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+                   if target == "universal2-apple-darwin" else [target])
+        receipts.append({"leg": leg, "cargo_targets": {triple: graph for triple in triples}})
+    verify = transport["verify_cargo_graph_closure"]
+    verify(receipts, source, _RELEASE_COMMIT)
+    assert len([command for command in commands if command[0] == "cargo"]) == 5
+    receipts[1]["cargo_targets"][receipts[1]["leg"].rsplit("-py", 1)[0]] = graph[:1]
+    with pytest.raises(ValueError, match="differs from selected source closure"):
+        verify(receipts, source, _RELEASE_COMMIT)
+    admission = _job_block(_workflow_text(), "release-admission")
+    assert "transport.verify_cargo_graph_closure(build_graph_receipts, Path(\"release-source\"), commit)" in admission
+
+
 def test_runtime_rejects_unaccounted_native_member(tmp_path: Path) -> None:
     import json
     import runpy

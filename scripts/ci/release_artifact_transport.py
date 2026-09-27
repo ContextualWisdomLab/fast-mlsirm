@@ -408,6 +408,48 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path,
         raise ValueError(f"{leg}: repeated build graphs or toolchains differ")
 
 
+def verify_cargo_graph_closure(receipts: list[dict], source: Path, source_sha: str) -> None:
+    """Recompute each target graph from the selected source and reject omitted nodes."""
+    if (not re.fullmatch(r"[0-9a-f]{40}", source_sha) or subprocess.check_output(
+            ["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip() != source_sha):
+        raise ValueError("Cargo closure source checkout mismatch")
+    expected_legs = {"sdist"} | {
+        f"{target}-py{python}" for target in (
+            "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
+            "universal2-apple-darwin", "x86_64-pc-windows-msvc")
+        for python in ("3.12", "3.13", "3.14")}
+    if (len(receipts) != 13 or {record.get("leg") for record in receipts} != expected_legs):
+        raise ValueError("Cargo closure receipts do not cover all release legs")
+    manifest = source / "crates/fast-mlsirm-py/Cargo.toml"
+    lock = tomllib.loads((source / "crates/fast-mlsirm-py/Cargo.lock").read_text(encoding="utf-8"))
+    locked = {(item["name"], item["version"], item.get("source")): item.get("checksum")
+              for item in lock["package"]}
+    graphs = {}
+    for receipt in receipts:
+        for triple, reported in receipt["cargo_targets"].items():
+            if triple not in graphs:
+                metadata = json.loads(subprocess.check_output(
+                    ["cargo", "metadata", "--locked", "--format-version", "1",
+                     "--filter-platform", triple, "--manifest-path", str(manifest),
+                     "--features", "pyo3/extension-module"], text=True, cwd=source,
+                ))
+                packages = {item["id"]: item for item in metadata["packages"]}
+                nodes = metadata["resolve"]["nodes"]
+                if metadata["resolve"]["root"] not in {node["id"] for node in nodes}:
+                    raise ValueError(f"{triple}: source Cargo graph lacks wheel crate")
+                graphs[triple] = sorted(({
+                    "name": packages[node["id"]]["name"],
+                    "version": packages[node["id"]]["version"],
+                    "source": packages[node["id"]]["source"],
+                    "checksum": locked[(packages[node["id"]]["name"],
+                                        packages[node["id"]]["version"],
+                                        packages[node["id"]]["source"])],
+                    "features": sorted(node["features"]),
+                } for node in nodes), key=lambda row: (row["name"], row["version"], row["source"] or ""))
+            if reported != graphs[triple]:
+                raise ValueError(f"{receipt['leg']}: Cargo graph differs from selected source closure")
+
+
 def verify_sdist_consumer(receipt: dict, consumer: Path, direct: Path, row: dict,
                           sdist_row: dict, source_sha: str, runtime: dict) -> None:
     """Bind one target's sdist rebuild to the published wheel and source archive."""

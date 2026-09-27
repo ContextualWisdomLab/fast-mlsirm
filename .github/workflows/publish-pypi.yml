@@ -1263,6 +1263,7 @@ jobs:
               return value
           runtime_records = []
           build_records = []
+          build_graph_receipts = []
           for leg, row in rows.items():
               name = f"repro-digest-{leg}"
               members = {path.name: path for path in (Path("downloaded") / name).iterdir()}
@@ -1290,6 +1291,7 @@ jobs:
                                         object_pairs_hook=unique_object)
               transport.verify_build_scope(build_first, build_second, row, Path("release-source"),
                                            commit, members[f"{leg}.build-python.zip"])
+              build_graph_receipts.append(build_first)
               build_records.append({key: build_first[key] for key in
                                     ("leg", "python_packages", "python_snapshot_sha256",
                                      "build_env", "maturin_version", "maturin_binary_sha256")})
@@ -1380,6 +1382,7 @@ jobs:
               for leg, row in rows.items()
           }
           transport.verify_scope_identities(scope_records, rows, distribution_paths, Path("release-source"), commit)
+          transport.verify_cargo_graph_closure(build_graph_receipts, Path("release-source"), commit)
 
           # The target-specific runtime/build/dev/optional/native/bundled
           # inventories are still UNKNOWN. Hosted exact-head evidence is also
