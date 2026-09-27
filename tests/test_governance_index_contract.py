@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import pytest
+
 _ROOT = Path(__file__).resolve().parents[1]
 _INDEX = _ROOT / "docs" / "GOVERNANCE_INDEX.md"
 _DOC = _ROOT / "docs" / "doctoring" / "governance_index.md"
@@ -34,3 +36,16 @@ def test_governance_doctoring_cites_multilevel_literature() -> None:
     citations = [urlsplit(url) for url in re.findall(r"https://[^\s)>\]]+", note)]
     assert any(url.scheme == "https" and url.hostname == "doi.org"
                and url.path.startswith("/10.") for url in citations)
+
+
+@pytest.mark.parametrize("url", [
+    "https://example.invalid/https://doi.org/10.1007/example",
+    "https://doi.org.example.invalid/10.1007/example",
+    "https://doi.org@example.invalid/10.1007/example",
+])
+def test_governance_doctoring_rejects_misleading_doi_hosts(tmp_path, monkeypatch, url):
+    document = tmp_path / "citation.md"
+    document.write_text(f"Fox Jeon Kang {url}", encoding="utf-8")
+    monkeypatch.setitem(globals(), "_DOC", document)
+    with pytest.raises(AssertionError):
+        test_governance_doctoring_cites_multilevel_literature()
