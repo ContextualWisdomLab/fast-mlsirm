@@ -80,6 +80,22 @@ def test_high_quadrature_count_has_finite_expected_scores() -> None:
     assert report.monotone
 
 
+def test_nuisance_scale_survives_large_focal_loading() -> None:
+    large = check_focal_expected_total_score_monotonicity(
+        _Fit(np.array([[1.0e8, 1.0]])),
+        0,
+        np.array([-1.0e-8, 0.0, 1.0e-8]),
+        q_nuisance=41,
+    )
+    reference = check_focal_expected_total_score_monotonicity(
+        _Fit(np.array([[1.0, 1.0]])),
+        0,
+        np.array([-1.0, 0.0, 1.0]),
+        q_nuisance=41,
+    )
+    np.testing.assert_allclose(large.expected_total, reference.expected_total, atol=1e-12)
+
+
 def test_a_negative_focal_slope_is_what_makes_the_curve_decrease() -> None:
     """The derivative constrains the FOCAL column only."""
     slope = np.array([[0.30, -1.80], [0.25, 1.60], [0.20, -1.40], [-2.40, 0.90]])
