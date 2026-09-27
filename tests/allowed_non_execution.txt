@@ -54,3 +54,8 @@ tests/test_bifactor_bootstrap_benchmark.py::test_joint_bootstrap_cpu_vs_gpu_wall
 # `tests/test_fuzz_properties.py` is Hypothesis evidence, not an Atheris
 # harness. The `fuzz` job installs `.[fuzz]`, executes this pytest module,
 # and rejects any collection/runtime skip; it therefore needs no allowlist row.
+
+# Actual hardware is enforced by the required python aggregate and its
+# focal-gpu-native prerequisite; unavailable/failed hardware prevents acceptance.
+tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_score_and_focal_update # actual hardware owned by focal-gpu-native required through python (reviewed 2026-09-27)
+tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_continuous_population_recovery # actual hardware owned by focal-gpu-native required through python (reviewed 2026-09-27)

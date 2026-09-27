@@ -47,15 +47,58 @@ jobs:
 
   python:
     name: python
-    needs: python-matrix
+    needs: [python-matrix, focal-gpu-native]
     if: ${{ always() && (github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed')) }}
     runs-on: ubuntu-latest
     steps:
-      - name: Require every CPython matrix leg
+      - name: Require every CPython matrix leg and actual GPU evidence
         run: |
           echo "python-matrix result=${{ needs.python-matrix.result }}"
           test "${{ needs.python-matrix.result }}" = "success"
+          test "${{ needs.focal-gpu-native.result }}" = "success"
 
+
+  focal-gpu-native:
+    # Hardware runner must be isolated from research data and credentials.
+    # GitHub Docs, "Adding self-hosted runners", security warning:
+    # https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners
+    # The required python aggregate rejects skipped/failed hardware evidence.
+    if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: [self-hosted, linux, x64, focal-gpu-isolated]
+    timeout-minutes: 90
+    env:
+      FOCAL_GPU_NATIVE: "1"
+      FOCAL_GPU_RECOVERY: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.97.1
+      - name: Build isolated Python environment and native core
+        run: |
+          python -m venv .venv-focal-gpu
+          .venv-focal-gpu/bin/python -m pip install --require-hashes -r requirements/ci.txt
+          .venv-focal-gpu/bin/python -m pip install --no-deps --no-build-isolation -e .
+      - name: Execute both actual hardware contracts
+        run: |
+          .venv-focal-gpu/bin/python -m pytest -q -s --junitxml=focal-gpu-junit.xml \
+            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_score_and_focal_update \
+            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_continuous_population_recovery
+      - name: Reject missing or nonexecuted hardware contracts
+        run: |
+          .venv-focal-gpu/bin/python - <<'PY'
+          from xml.etree import ElementTree
+
+          cases = ElementTree.parse("focal-gpu-junit.xml").getroot().findall(".//testcase")
+          assert len(cases) == 2, "Both hardware contracts must execute"
+          for case in cases:
+              assert not any(case.find(tag) is not None for tag in ("skipped", "failure", "error")), "Hardware contracts must pass without skips"
+          PY
 
   rust:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
