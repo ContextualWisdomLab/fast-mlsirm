@@ -87,6 +87,7 @@ def test_workflow_producer_transport_and_actual_consumer_hold(scope_fixture):
     calls = []
     transport = types.SimpleNamespace(**M)
     transport.verify_distribution_requirements = lambda *args: calls.append("metadata")
+    transport.verify_bundled_license_notices = lambda *args: None
     transport.verify_cargo_graph_closure = lambda *args: calls.append("cargo")
     hold_end = WORKFLOW.index("\n          PY", end)
     with pytest.raises(SystemExit, match="platform-complete scope inventory"):
@@ -355,3 +356,29 @@ def test_sdist_consumer_receipt_binds_both_finished_distributions(scope_fixture,
     with pytest.raises(ValueError, match="unaccounted consumer bundled native binary"):
         M["verify_sdist_consumer"](forged, consumer_wheel, direct,
                                    rows[leg], rows["sdist"], sha, runtime)
+
+
+def test_selected_licence_notice_must_survive_distribution(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    path = "python/fast_mlsirm/_licenses/example-MIT.txt"
+    body = b"Permission notice retained verbatim."
+    (source / path).parent.mkdir(parents=True)
+    (source / path).write_bytes(body)
+    (source / "docs").mkdir()
+    digest = hashlib.sha256(body).hexdigest()
+    (source / "docs/release-license-selections.json").write_text(json.dumps([
+        {"bundled_notice": {"path": path, "sha256": digest}}]))
+    env = {**os.environ, "GIT_AUTHOR_NAME": "fixture", "GIT_COMMITTER_NAME": "fixture",
+           "GIT_AUTHOR_EMAIL": "fixture@example.invalid", "GIT_COMMITTER_EMAIL": "fixture@example.invalid"}
+    for args in (("init", "-q"), ("add", "."), ("commit", "-qm", "notice")):
+        subprocess.run(["git", "-C", str(source), *args], env=env, check=True, capture_output=True)
+    sha = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    verify = M["verify_bundled_license_notices"]
+    (source / path).write_bytes(b"mutable replacement")
+    for kind, member in (("wheel", path.removeprefix("python/")), ("sdist", "root/" + path)):
+        inventory = {"leg": "sdist" if kind == "sdist" else "target-py3.14", "members": [{"path": member, "sha256": digest}]}
+        verify(inventory, source, sha)
+        for members in ([], [{"path": member, "sha256": "a" * 64}]):
+            with pytest.raises(ValueError, match="omits or changes"):
+                verify({"leg": "sdist" if kind == "sdist" else "target-py3.14", "members": members}, source, sha)

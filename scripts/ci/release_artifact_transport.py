@@ -534,6 +534,36 @@ def verify_distribution_requirements(distribution: Path, leg: str, source: Path,
                     raise ValueError(f"{leg}: distribution requirements differ from source for {platform}/{machine}/py{python}/{extra}")
 
 
+def verify_bundled_license_notices(inventory: dict, source: Path, source_sha: str) -> None:
+    """Require selected licence notices in the finished distribution's hashed inventory."""
+    if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        raise ValueError("licence notices lack exact source SHA")
+    declaration = "docs/release-license-selections.json"
+    entry = subprocess.check_output(
+        ["git", "-C", str(source), "ls-tree", source_sha, "--", declaration], text=True)
+    if not entry:
+        return
+    if not entry.startswith("100644 blob "):
+        raise ValueError("licence selections must be a regular source blob")
+    selections = json.loads(subprocess.check_output(
+        ["git", "-C", str(source), "show", f"{source_sha}:{declaration}"]))
+    members = {member["path"]: member["sha256"] for member in inventory["members"]}
+    for selection in selections:
+        notice = selection.get("bundled_notice", {})
+        path, digest = notice.get("path"), notice.get("sha256")
+        if (not isinstance(path, str) or not re.fullmatch(r"python/fast_mlsirm/_licenses/[A-Za-z0-9_.+-]+[.]txt", path)
+                or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+            raise ValueError("selected licence lacks a complete bundled notice")
+        content = subprocess.check_output(["git", "-C", str(source), "show", f"{source_sha}:{path}"])
+        if hashlib.sha256(content).hexdigest() != digest:
+            raise ValueError("licence notice differs from selected source")
+        expected = path.removeprefix("python/")
+        matches = [sha for member, sha in members.items()
+                   if (member == expected if inventory["leg"] != "sdist" else member.endswith("/" + path))]
+        if matches != [digest]:
+            raise ValueError("distribution omits or changes a selected licence notice")
+
+
 def verify_sdist_consumer(receipt: dict, consumer: Path, direct: Path, row: dict,
                           sdist_row: dict, source_sha: str, runtime: dict) -> None:
     """Bind one target's sdist rebuild to the published wheel and source archive."""
