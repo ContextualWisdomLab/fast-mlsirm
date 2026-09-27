@@ -39,8 +39,10 @@ Runtime, build, dev, optional, native and bundled scope entries are explicitly
 or an asserted boolean cannot certify any scope. In particular, hashing every
 Cargo lock does not establish the features/targets used in compiled wheels;
 METADATA hashes do not establish resolved marker or optional dependency closure.
-The central licence and Strix verdict has its own authenticated path; it does
-not claim platform scope completeness.
+The central licence and Strix verdict has its own authenticated path. Admission
+now verifies transported runtime archives, installed build-tool snapshots,
+the pinned maturin executable, and direct native links against that verdict.
+Those receipts have not yet been promoted to complete scope identities.
 The current `requirements/package.txt` pins NumPy 2.5.2 while `uv.lock`
 installs NumPy 2.5.1. These are distinct build and runtime environments; each
 needs its own exact archive evidence. Matching their version strings would not
@@ -69,7 +71,10 @@ interpreter identity, requirements hash, `uv.lock` hash and imported extension
 hash. Admission rehashes each dependency wheel, checks its metadata against the
 installed package list, and binds the extension hash to the published wheel.
 A changed, missing or cross-target receipt refuses admission before the scope
-HOLD. The macOS universal2 receipt exercises the runner architecture only; it
+HOLD. Admission also recomputes the `uv export --all-extras` dependency body
+from the exact release source and refuses a requirements file that omits a
+declared optional dependency. The macOS universal2 receipt exercises the
+runner architecture only; it
 does not prove installation on its other binary slice. The central gate
 prescreens each transported runtime wheel SHA before Strix, scans a distinct
 fixture for each approved SHA, and seals the licence report and Strix artifact
@@ -88,9 +93,10 @@ tool identities for both packaging passes and explicitly records no compiled
 Cargo graph. The action now requests maturin 1.15.0,
 matching the version in `requirements/package.txt`; each build receipt also checks
 the executable hash against the corresponding official release asset. The
-standalone executable's licence and Strix review is still distinct from the
-PyPI package review. The sdist and
-wheel builds still need complete Python build-tool and native dependency evidence.
+standalone executable's licence and Strix review is distinct from the
+PyPI package review and is now sealed in the central verdict. The sdist and
+wheel builds still need hosted confirmation of their collected build snapshots
+and complete target-specific native dependency evidence.
 Each wheel target now also rebuilds from the same-run sdist after checking its
 digest and every packaged source member against the release commit. The separate
 consumer wheel and receipt stay in that target's immutable scope artifact;
@@ -101,13 +107,17 @@ using the already captured hash-locked dependency archives. Its receipt records
 the installed package set and imported extension hash; admission compares both
 with the target runtime and consumer wheel evidence. Hosted target results and
 the remaining build/development dependency closure still need verification.
-File hashes establish the bundled bytes, but do not identify the origin or
-licence of each member or the libraries it loads.
+File hashes establish the bundled bytes. The central gate now checks direct
+native links in finished wheels, runtime dependency archives, build-tool
+snapshots, and pinned maturin assets; this does not prove that every supported
+runtime architecture can install and import the wheel.
 Admission now refuses a published or consumer wheel with an additional
 recognized native binary, including ELF, PE, Mach-O and other checked headers
 under a non-library filename.
-This still leaves linked system-library identities and target-specific loads
-to verify.
+The macOS universal2 x86_64 slice still needs a separate installed-dependency
+and import receipt when the existing runner executes arm64, including licence
+and Strix review for any x86_64-specific dependency archives. The same
+target-specific acceptance check must cover all twelve hosted wheel legs.
 Admission must validate those claims against the corresponding distribution
 SHA and build environment before the scope HOLD can be removed.
 
