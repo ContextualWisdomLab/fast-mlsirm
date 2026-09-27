@@ -1,0 +1,5 @@
+Follow-up on the observed Noema failure: job 108686621178 exited 139 in Python logging before any model verdict. Independent read-only probing on the actual runner established that the selected Python 3.12.14 executable loaded the 3.12.3 shared runtime. Central fix #2468 is now merged as e45f1b144aef900d734ff4c900f9e0010fd5a32d; the complete merged tree equals the independently tested integration tree 3728fb0df136a60bd19e81a349c6fe1f78af891b. Its exact startup prefix reports the correct 3.12.14 on that runner.
+
+The old Noema job materializes the immutable workflow commit, so retrying that old run would not demonstrate consumption of the fix. No hosted Noema PASS is claimed. The failure is recorded as infrastructure runtime failure, rather than a source-review verdict.
+
+The notice-only PR exact head remains dd0f8435f432b17201bfc515d27b01e5a98f6964 with no unresolved threads. Independent official archive/license validation and 277 focused tests passed; actual sdist verification covered all 219 notices in the combined #2232/#2233 candidate. Maintainer-authorized bypass follows those independent checks; security/review gates remain enabled.

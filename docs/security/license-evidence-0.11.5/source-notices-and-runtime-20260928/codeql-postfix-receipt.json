@@ -1,0 +1,27 @@
+{
+  "run_id": 36337444591,
+  "source_commit": "b869ad337147203da352513b161ff50e34a21c0b",
+  "jobs": [
+    {
+      "language": "python",
+      "job_id": 108670898154,
+      "sha256": "d72c98a9ed5f37196c8f3a179a03715fae90df53f0969d1a3fe41b08161525a7",
+      "findings": 0,
+      "runner_id": 1063157,
+      "runner_name": "cwlab-s1-03",
+      "runner_group_id": 4,
+      "status": "success"
+    },
+    {
+      "language": "actions",
+      "job_id": 108670898279,
+      "sha256": "0e535caad665aab4fa7b7fef7f2be932dd4b219ada128272e4e31908f6ac7484",
+      "findings": 0,
+      "runner_id": 1063157,
+      "runner_name": "cwlab-s1-03",
+      "runner_group_id": 4,
+      "status": "success"
+    }
+  ],
+  "scope": "Manual no-upload diagnostic; default CodeQL remains upload owner. Not current-main hosted acceptance."
+}

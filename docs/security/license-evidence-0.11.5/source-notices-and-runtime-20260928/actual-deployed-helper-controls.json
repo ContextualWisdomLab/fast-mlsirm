@@ -1,0 +1,88 @@
+[
+  {
+    "subject": "cargo/arbitrary@1.4.2",
+    "actual_declared_expression": "MIT OR Apache-2.0",
+    "chosen": "MIT",
+    "archive_and_source_lock_match": true,
+    "positive": "PASS",
+    "negative_controls": {
+      "no-choice": [
+        "LICENSE_SELECTION_REQUIRED",
+        "selection disallowed"
+      ],
+      "no-mit": [
+        "LICENSE_TEXT_MISSING"
+      ]
+    }
+  },
+  {
+    "subject": "cargo/cc@1.2.66",
+    "actual_declared_expression": "MIT OR Apache-2.0",
+    "chosen": "MIT",
+    "archive_and_source_lock_match": true,
+    "positive": "PASS",
+    "negative_controls": {
+      "no-choice": [
+        "LICENSE_SELECTION_REQUIRED",
+        "selection disallowed"
+      ],
+      "no-mit": [
+        "LICENSE_TEXT_MISSING"
+      ]
+    }
+  },
+  {
+    "subject": "cargo/find-msvc-tools@0.1.9",
+    "actual_declared_expression": "MIT OR Apache-2.0",
+    "chosen": "MIT",
+    "archive_and_source_lock_match": true,
+    "positive": "PASS",
+    "negative_controls": {
+      "no-choice": [
+        "LICENSE_SELECTION_REQUIRED",
+        "selection disallowed"
+      ],
+      "no-mit": [
+        "LICENSE_TEXT_MISSING"
+      ]
+    }
+  },
+  {
+    "subject": "cargo/jobserver@0.1.35",
+    "actual_declared_expression": "MIT OR Apache-2.0",
+    "chosen": "MIT",
+    "archive_and_source_lock_match": true,
+    "positive": "PASS",
+    "negative_controls": {
+      "no-choice": [
+        "LICENSE_SELECTION_REQUIRED",
+        "selection disallowed"
+      ],
+      "no-mit": [
+        "LICENSE_TEXT_MISSING"
+      ]
+    }
+  },
+  {
+    "subject": "cargo/shlex@2.0.1",
+    "actual_declared_expression": "MIT OR Apache-2.0",
+    "chosen": "MIT",
+    "archive_and_source_lock_match": true,
+    "positive": "PASS",
+    "negative_controls": {
+      "no-choice": [
+        "LICENSE_SELECTION_REQUIRED",
+        "selection disallowed"
+      ],
+      "no-mit": [
+        "LICENSE_TEXT_UNVERIFIED"
+      ]
+    }
+  },
+  {
+    "subject": "cargo/libfuzzer-sys@0.4.13",
+    "chosen": "MIT AND NCSA AND Apache-2.0 WITH LLVM-exception",
+    "positive": "PASS",
+    "source_notice_authenticated_against_real_git_commit": true
+  }
+]

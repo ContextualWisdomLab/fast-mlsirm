@@ -1,0 +1,15 @@
+{
+  "artifact": "/tmp/fmls-source-notice-219-sdist-20260928/fast_mlsirm-0.11.4.tar.gz",
+  "sha256": "94edeb4952b0be38621494899e47710acf7e0f5ffd9bbad78aef6e8f4a73d22c",
+  "artifact_version": "0.11.4",
+  "tool": "maturin1.15.0",
+  "selected_notices": 219,
+  "existing_exact_source_bundled_notice_verifier": "PASS",
+  "selection_manifest_present_in_sdist": false,
+  "selection_manifest_contract": "authenticated from exact source Git blob; not required as distribution member",
+  "limits": [
+    "Local sdist only; no wheel/native ABI acceptance",
+    "Not0.11.5 publication",
+    "Whole dependency license closure unproven"
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "base_selections_preserved": 213,
+  "first_pr_selections": 218,
+  "second_pr_selections": 219,
+  "five_archives": [
+    {
+      "package": "arbitrary@1.4.2",
+      "archive_sha256": "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1",
+      "publisher_url": "https://static.crates.io/crates/arbitrary/arbitrary-1.4.2.crate",
+      "license_member_count": 2,
+      "unchanged_full_mit_notice": true
+    },
+    {
+      "package": "cc@1.2.66",
+      "archive_sha256": "f5d6cac793997bd970000024b2934968efe83b382de4fdcf4fcb46b6ee4ad996",
+      "publisher_url": "https://static.crates.io/crates/cc/cc-1.2.66.crate",
+      "license_member_count": 2,
+      "unchanged_full_mit_notice": true
+    },
+    {
+      "package": "find-msvc-tools@0.1.9",
+      "archive_sha256": "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582",
+      "publisher_url": "https://static.crates.io/crates/find-msvc-tools/find-msvc-tools-0.1.9.crate",
+      "license_member_count": 2,
+      "unchanged_full_mit_notice": true
+    },
+    {
+      "package": "jobserver@0.1.35",
+      "archive_sha256": "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3",
+      "publisher_url": "https://static.crates.io/crates/jobserver/jobserver-0.1.35.crate",
+      "license_member_count": 2,
+      "unchanged_full_mit_notice": true
+    },
+    {
+      "package": "shlex@2.0.1",
+      "archive_sha256": "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba",
+      "publisher_url": "https://static.crates.io/crates/shlex/shlex-2.0.1.crate",
+      "license_member_count": 2,
+      "unchanged_full_mit_notice": true
+    }
+  ],
+  "libfuzzer_notice_sha256": "a8614e5d482d21436e04b36797b047b7e3f0befcc0bf8bd5d110d8c0b2d9f61b",
+  "libfuzzer_full_composite_exact": true
+}

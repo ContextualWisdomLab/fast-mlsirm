@@ -1,0 +1,74 @@
+[
+  {
+    "member": "numpy/__config__.py",
+    "C_sha256": "9bdd582b3303398948156b6bbe50eecc963c0131928cc5816fd05c28ebc088d6",
+    "D_sha256": "d58cc2e4e817b1352754335ccfc483e615dc4a01ddd58111bacb8f5de5974e0f",
+    "C_bytes": 5001,
+    "D_bytes": 5001,
+    "ELF": false
+  },
+  {
+    "member": "numpy/_core/_multiarray_umath.cpython-312-x86_64-linux-gnu.so",
+    "C_sha256": "f9fd73bbb5ed15df7e247e2941ccf0d7670748abcf8570b8cbe410fd79b75bf8",
+    "D_sha256": "044167825685945e0f304968ce3d45037ef7da8a66d8aae1f5113bec49f8aa6a",
+    "C_bytes": 10638601,
+    "D_bytes": 10638601,
+    "ELF": true
+  },
+  {
+    "member": "numpy/linalg/_umath_linalg.cpython-312-x86_64-linux-gnu.so",
+    "C_sha256": "83950a08ea027a083acd9b7a550b36d1358c65846f1a450502000d74861e4972",
+    "D_sha256": "269e5aa80d3a985c23cb2359a80bff33172f132de4f4cedf0413c1a3b5fdfb2d",
+    "C_bytes": 233073,
+    "D_bytes": 233073,
+    "ELF": true
+  },
+  {
+    "member": "numpy/linalg/lapack_lite.cpython-312-x86_64-linux-gnu.so",
+    "C_sha256": "5c5385a1701fde82cd2e52af40e72208467ba19c987b3939d09093f0b96ebdb1",
+    "D_sha256": "e1c6a8aa11251a65d02a73266f177eb09df64afc658a7ef23777fc883045ed9c",
+    "C_bytes": 31225,
+    "D_bytes": 31225,
+    "ELF": true
+  },
+  {
+    "member": "numpy/random/_common.cpython-312-x86_64-linux-gnu.so",
+    "C_sha256": "e774e609dbd8451d3b660a6f5768bb4b319f20c2844cbb71c26f5e7d35254675",
+    "D_sha256": "973858bf4de4f119774e4fc8864db5fbae43714db6f991020573aecf77689d6c",
+    "C_bytes": 258912,
+    "D_bytes": 258912,
+    "ELF": true
+  },
+  {
+    "member": "numpy/random/_mt19937.cpython-312-x86_64-linux-gnu.so",
+    "C_sha256": "0c0671027613822b8cf33b92b0bf4153ae3ea5f48f8f38d44e9b0e6240445574",
+    "D_sha256": "6c7cb8391a6859e0badf423b69955c815f8954e42026aaf17df9367f43b38cdd",
+    "C_bytes": 139336,
+    "D_bytes": 139336,
+    "ELF": true
+  },
+  {
+    "member": "numpy/random/_philox.cpython-312-x86_64-linux-gnu.so",
+    "C_sha256": "db755b4a39aa392da246b9dd53a4c819d257ed4ae196a1b239cf713d105098a7",
+    "D_sha256": "26b19bf17f3a82186da9b95ca1b9071d0ff0e42732cfe8d5054be4815ae17984",
+    "C_bytes": 131184,
+    "D_bytes": 131184,
+    "ELF": true
+  },
+  {
+    "member": "numpy/random/bit_generator.cpython-312-x86_64-linux-gnu.so",
+    "C_sha256": "a2500866472c48579e29f37b8cc6552eea3292748df5830c8fe910c9d5da1386",
+    "D_sha256": "d10a14c7fc4d45c322a1c9134678a45d1d89411edb04d1b99e5ca1d9b450cc34",
+    "C_bytes": 245424,
+    "D_bytes": 245424,
+    "ELF": true
+  },
+  {
+    "member": "numpy-2.5.2.dist-info/RECORD",
+    "C_sha256": "da0486bcd268af6740cec91aa7d127ed3387b873c02d1bb02a2a3c8999e4ce06",
+    "D_sha256": "9a457d1f75c601c37546b7eda872eedb5f4694f1ea5653a6be351d140ca6d728",
+    "C_bytes": 86437,
+    "D_bytes": 86437,
+    "ELF": false
+  }
+]
