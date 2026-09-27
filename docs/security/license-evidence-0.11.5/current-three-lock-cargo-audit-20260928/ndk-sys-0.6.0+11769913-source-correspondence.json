@@ -1,0 +1,86 @@
+{
+  "url": "https://codeload.github.com/rust-mobile/ndk/tar.gz/49bbbba16c58ff63cb8a0ad0eca5a9fb7ecaec25",
+  "sha256": "c324b1566e992a10152d137eaf638feff9e88a3628948475cb47831024bef453",
+  "crate": "ndk-sys-0.6.0+11769913",
+  "rows": [
+    {
+      "member": ".cargo_vcs_info.json",
+      "sha256": "04855a5c956a06190b9aae90fe172c8857d1afbf8fd676acc4c555161537b06e",
+      "upstream_path": "ndk-sys/.cargo_vcs_info.json",
+      "match": null
+    },
+    {
+      "member": ".gitignore",
+      "sha256": "6b937008e0a58a438c32574627db6961a4d2aff4bf5c703d4e45cb56ef3b168a",
+      "upstream_path": "ndk-sys/.gitignore",
+      "match": true
+    },
+    {
+      "member": "CHANGELOG.md",
+      "sha256": "7910d431a63bb1437708f9a75435419941b2b27ba15e50ecafb159c2564e5d84",
+      "upstream_path": "ndk-sys/CHANGELOG.md",
+      "match": true
+    },
+    {
+      "member": "Cargo.toml",
+      "sha256": "228e4432b6367f8c8348757f9798732b331b1748c116a0af9d2a1ef02b92eaa8",
+      "upstream_path": "ndk-sys/Cargo.toml",
+      "match": false
+    },
+    {
+      "member": "Cargo.toml.orig",
+      "sha256": "c860c6b92e9c7fb701d0ab8ba09b2ec6f35c78a3c609fcc32e73581b3e230eb1",
+      "upstream_path": "ndk-sys/Cargo.toml",
+      "match": true
+    },
+    {
+      "member": "README.md",
+      "sha256": "27fdcf69714fcf6f81b1d2fe4e185cd698056681dfa539c716d33bb9bcc9ff6f",
+      "upstream_path": "ndk-sys/README.md",
+      "match": null
+    },
+    {
+      "member": "generate_bindings.sh",
+      "sha256": "ac09eddd85323507a4b4a77634163b0da94c3e3f9f04ad061300c024b974ab1c",
+      "upstream_path": "ndk-sys/generate_bindings.sh",
+      "match": true
+    },
+    {
+      "member": "src/ffi_aarch64.rs",
+      "sha256": "d93eb87810876180e906cf02b599dbb299c581384b38e5c3e9617000e1fd332e",
+      "upstream_path": "ndk-sys/src/ffi_aarch64.rs",
+      "match": true
+    },
+    {
+      "member": "src/ffi_arm.rs",
+      "sha256": "62b88068ea170726581c6b7077e2ae07dca3dc1f636af1cac20bf3cf4ccaefb3",
+      "upstream_path": "ndk-sys/src/ffi_arm.rs",
+      "match": true
+    },
+    {
+      "member": "src/ffi_i686.rs",
+      "sha256": "ede1fa2a87d3c15697e0fd452d4cdf6c35ee889046064e3b2c7bfcbc629914c5",
+      "upstream_path": "ndk-sys/src/ffi_i686.rs",
+      "match": true
+    },
+    {
+      "member": "src/ffi_x86_64.rs",
+      "sha256": "0a4fc4dc60378ca3433927d1ad500fa9e33e7069e974fa3f89a3c97e7fcabf6b",
+      "upstream_path": "ndk-sys/src/ffi_x86_64.rs",
+      "match": true
+    },
+    {
+      "member": "src/lib.rs",
+      "sha256": "22999084db740073e1db22d0d47ed56035cc665c1ce353c1753a8e9cb917efdd",
+      "upstream_path": "ndk-sys/src/lib.rs",
+      "match": true
+    },
+    {
+      "member": "wrapper.h",
+      "sha256": "43f5ed0d881f221df76be881760da0ec9f355c2fc1dc11461975cc21cd297092",
+      "upstream_path": "ndk-sys/wrapper.h",
+      "match": true
+    }
+  ],
+  "gitmodules": ""
+}

@@ -7,3 +7,13 @@ Current official Apple Xcode/SDK agreement sections 2.2, 2.4, 2.5 and 2.7 were r
 The exact ndk commit 49bbbba1 provides complete upstream MIT and Apache texts; exact gl-rs commit f150967b provides the complete Apache text. The deployed recognizer identifies those texts. They are retained with URL and SHA256, but archive/source correspondence and independent generated-input grants remain to investigate before adding any source-notice allowance. No archive gate row was cleared by this fetch.
 
 `cargo tree --locked --offline --target all --invert` traces root r-efi 5.3.0 through getrandom 0.3.4 → rand_core/rand 0.9 → proptest 1.11.0, a core dev dependency; r-efi 6.0.0 enters through getrandom 0.4.3 → tempfile → proptest/rusty-fork. Proptest std explicitly enables rand/os_rng; merely disabling unused fork/timeout would not remove both subjects. No features/dependencies were weakened or downgraded. Current test/CI code has no explicit fork/timeout settings; full equivalence and security would still need verification before any dependency change.
+
+## Immutable source correspondence, 2026-09-27 20:40 UTC
+
+NDK codeload at `49bbbba16c58ff63cb8a0ad0eca5a9fb7ecaec25` matches ten actual archive members: all four generated Rust files, lib.rs, generation script, wrapper, original Cargo.toml, changelog and gitignore. Normalized Cargo.toml differs as expected; publisher VCS metadata and crate README need separate handling. The script identifies Android build 11769913 and its SDK headers; upstream source equality does not establish every generated-input redistribution condition.
+
+Khronos parent source matches Cargo.toml.orig, README, build.rs and src/lib.rs. Native Git ls-tree authenticates the four submodule commit locators. All 66 bundled submodule XML/IDL members match their respective immutable raw source bytes; per-member URLs and SHA256 pairs are recorded in khronos-submodule-source-correspondence.json.
+
+ANGLE-specific extension XML explicitly points to its BSD-style LICENSE. Its complete 1643-byte source LICENSE is retained (SHA256 bf4da21bd20bcfb5b60b7ecc67fa864a79be049e21d6178076887f178dd6c71a). EGL XML and WebGL IDL contain full Materials permission grants; OpenGL XML contains Apache application notices. WebGL extension XML scope still needs primary grant verification. No election, gate waiver or new supplemental notice acceptance has been deployed.
+
+GitHub REST requests returned HTTP 403 with core remaining=0, used=5693 and reset=2026-09-27T20:57:44Z. The rate_limit endpoint reported a conflicting full budget; actual resource response headers govern retry timing. Current canary execution cannot be refreshed during that interval. NumPy F remains running (Docker PID 2780124); no restart or duplicate build.
