@@ -321,6 +321,35 @@ pub(crate) fn validate(
     n_cat: usize,
     cfg: &TwoTierGrmConfig,
 ) -> Result<Validated, String> {
+    validate_data(
+        y,
+        observed,
+        primary_map,
+        specific_map,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_cat,
+        cfg,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_data(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    cfg: &TwoTierGrmConfig,
+    require_category_coverage: bool,
+) -> Result<Validated, String> {
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
     }
@@ -451,26 +480,28 @@ pub(crate) fn validate(
             }
         }
     }
-    // Unobserved categories leave the adjacent ordered boundary pair
-    // pinned only to each other (Cai et al., 2011, eq. 7): fail loudly
-    // naming the item and category.
-    for i in 0..n_items {
-        let mut seen = vec![false; n_cat];
-        let mut any = false;
-        for p in 0..n_persons {
-            if is_obs(p, i) {
-                any = true;
-                seen[y[p * n_items + i]] = true;
+    if require_category_coverage {
+        // Unobserved categories leave the adjacent ordered boundary pair
+        // pinned only to each other (Cai et al., 2011, eq. 7): fail loudly
+        // naming the item and category.
+        for i in 0..n_items {
+            let mut seen = vec![false; n_cat];
+            let mut any = false;
+            for p in 0..n_persons {
+                if is_obs(p, i) {
+                    any = true;
+                    seen[y[p * n_items + i]] = true;
+                }
             }
-        }
-        if !any {
-            return Err(format!("item {i} has no observed responses"));
-        }
-        if let Some(k) = (0..n_cat).find(|&k| !seen[k]) {
-            return Err(format!(
-                "item {i} category {k} is never observed (unidentified GRM boundary); every \
+            if !any {
+                return Err(format!("item {i} has no observed responses"));
+            }
+            if let Some(k) = (0..n_cat).find(|&k| !seen[k]) {
+                return Err(format!(
+                    "item {i} category {k} is never observed (unidentified GRM boundary); every \
                  declared category must be observed"
-            ));
+                ));
+            }
         }
     }
     Ok(Validated {
@@ -845,7 +876,7 @@ pub(crate) fn e_step(
     qs: usize,
 ) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
     e_step_with_moments(
-        v, y, observed, params, log_w, log_ws, coords, ts, n_grid, qs, None,
+        v, y, observed, params, log_w, log_ws, coords, ts, n_grid, qs, None, true,
     )
 }
 
@@ -881,6 +912,7 @@ pub(crate) fn e_step_with_moments(
     n_grid: usize,
     qs: usize,
     mut moments: Option<&mut LatentPosteriorMoments>,
+    collect_counts: bool,
 ) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
     let p = v.n_primary;
     let n_latent = p + v.n_specific;
@@ -892,13 +924,15 @@ pub(crate) fn e_step_with_moments(
     }
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
     let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
-    for i in 0..v.n_items {
-        let n_nodes = if v.item_block[i].is_some() {
-            n_grid * qs
-        } else {
-            n_grid
-        };
-        counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+    if collect_counts {
+        for i in 0..v.n_items {
+            let n_nodes = if v.item_block[i].is_some() {
+                n_grid * qs
+            } else {
+                n_grid
+            };
+            counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+        }
     }
     // Per-person scratch: O(n_grid) for primary marginals + O(S * qs) for
     // the active primary node's specific-tier block (not O(S * n_grid * qs)).
@@ -967,13 +1001,15 @@ pub(crate) fn e_step_with_moments(
                 *slot += post * coords[g * p + j] * coords[g * p + k];
             }
         }
-        for &i in &v.specific_free {
-            if !is_obs(pp, i) {
-                continue;
-            }
-            let yc = y[pp * v.n_items + i];
-            for g in 0..n_grid {
-                counts[i][g][yc] += post_g[g];
+        if collect_counts {
+            for &i in &v.specific_free {
+                if !is_obs(pp, i) {
+                    continue;
+                }
+                let yc = y[pp * v.n_items + i];
+                for g in 0..n_grid {
+                    counts[i][g][yc] += post_g[g];
+                }
             }
         }
         // Pass 2: joint (g, h) posteriors for block items — recompute the
@@ -1009,12 +1045,14 @@ pub(crate) fn e_step_with_moments(
                         m.mean[slot] += post * ts[h];
                         m.second[slot] += post * ts[h] * ts[h];
                     }
-                    for &i in members {
-                        if !is_obs(pp, i) {
-                            continue;
+                    if collect_counts {
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * v.n_items + i];
+                            counts[i][g * qs + h][yc] += post;
                         }
-                        let yc = y[pp * v.n_items + i];
-                        counts[i][g * qs + h][yc] += post;
                     }
                 }
             }
@@ -2078,6 +2116,187 @@ pub(crate) fn pack_params(
             d: thresholds[i * v.m1..(i + 1) * v.m1].to_vec(),
         })
         .collect()
+}
+
+/// Person posterior moments under a caller-declared orthogonal Gaussian prior.
+/// Arrays are person-major; primary dimensions precede specifics. `sd` is
+/// posterior SD, not uncertainty including estimation of the fixed item bank.
+#[derive(Debug)]
+pub struct TwoTierGrmPersonScores {
+    pub mean: Vec<f64>,
+    pub second: Vec<f64>,
+    pub sd: Vec<f64>,
+    pub loglik: f64,
+}
+
+/// Score fixed two-tier GRM items under independent focal Gaussian factors.
+///
+/// Cai (2010), *Psychometrika*, 75, 581-612,
+/// https://doi.org/10.1007/s11336-010-9178-0, p. 587 equations 4-6 defines
+/// primary/specific means and covariance; p. 609 Appendix B gives posterior
+/// first/second moments. Identity primary correlation is an explicit model
+/// restriction here. Item parameters remain on the anchored reference metric.
+/// Derived substitution `theta_d = mean_d + sd_d*z_d` makes working slopes
+/// `a_d*sd_d` and adds `sum(a_d*mean_d)` to intercepts. Only temporary working
+/// parameters change; inputs and their signs are preserved. Posterior moments
+/// then transform back to the reference metric. This affine substitution is
+/// a derivation from the Gaussian model, not a fitted latent-distribution rule.
+///
+/// `latent_mean`/`latent_sd` have length `n_primary+n_specific`, primaries
+/// first. All means must be finite, all SDs finite and positive. Quadrature
+/// counts are explicit caller choices; same-node finite-sum equality does not
+/// establish continuous-integral accuracy. Missing blocks and entirely missing
+/// persons retain the declared prior. Category coverage is not required when
+/// scoring an already fixed bank; observed categories still must be valid.
+/// No item fitting, reflection canonicalization, or distribution fitting occurs.
+#[allow(clippy::too_many_arguments)]
+pub fn score_two_tier_grm_orthogonal(
+    a_primary: &[f64],
+    a_specific: &[f64],
+    thresholds: &[f64],
+    latent_mean: &[f64],
+    latent_sd: &[f64],
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+) -> Result<TwoTierGrmPersonScores, String> {
+    // Fit-only controls are irrelevant to fixed-bank scoring, as in the
+    // existing marginal-loglik evaluator; data/shape checks remain shared.
+    let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: true,
+        q_primary,
+        q_specific,
+        max_iter: 1,
+        tol: 1.0,
+        n_starts: 1,
+        seed: 0,
+        newton_iter: 1,
+        ridge: 1.0,
+    };
+    let v = validate_data(
+        y,
+        observed,
+        primary_map,
+        specific_map,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_cat,
+        &cfg,
+        false,
+    )?;
+    let n_latent = n_primary
+        .checked_add(n_specific)
+        .ok_or_else(|| "latent dimension count overflows usize".to_string())?;
+    let n_scores = n_persons
+        .checked_mul(n_latent)
+        .ok_or_else(|| "person score size overflows usize".to_string())?;
+    if latent_mean.len() != n_latent || latent_sd.len() != n_latent {
+        return Err("latent_mean and latent_sd must have length n_primary+n_specific".into());
+    }
+    if latent_mean.iter().any(|x| !x.is_finite())
+        || latent_sd.iter().any(|x| !x.is_finite() || *x <= 0.0)
+    {
+        return Err("latent means must be finite and SDs finite and positive".into());
+    }
+    let phi_size = n_primary
+        .checked_mul(n_primary)
+        .ok_or_else(|| "primary correlation size overflows usize".to_string())?;
+    let mut phi = vec![0.0; phi_size];
+    for d in 0..n_primary {
+        phi[d * n_primary + d] = 1.0;
+    }
+    check_param_shapes(&v, primary_map, a_primary, a_specific, thresholds, &phi)?;
+    let mut params = pack_params(&v, a_primary, a_specific, thresholds);
+    for (i, par) in params.iter_mut().enumerate() {
+        let mut shift = 0.0;
+        for d in 0..n_primary {
+            shift += par.a_p[d] * latent_mean[d];
+            par.a_p[d] *= latent_sd[d];
+        }
+        if let Some(a) = par.a_s.as_mut() {
+            let d = n_primary + v.item_block[i].expect("specific loading has a block");
+            shift += *a * latent_mean[d];
+            *a *= latent_sd[d];
+        }
+        for intercept in &mut par.d {
+            *intercept += shift;
+        }
+        if par.d.windows(2).any(|w| w[0] <= w[1]) {
+            return Err("transformed thresholds lose strict ordering".into());
+        }
+        if !shift.is_finite()
+            || par
+                .a_p
+                .iter()
+                .chain(par.a_s.iter())
+                .chain(par.d.iter())
+                .any(|x| !x.is_finite())
+        {
+            return Err("non-finite transformed item parameter".into());
+        }
+    }
+    let (tz, wz) = gh_rule(q_primary)?;
+    let (ts, ws) = gh_rule(q_specific)?;
+    let (coords, log_w) = build_primary_grid(tz, wz, n_primary, v.grid_size);
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    let mut moments = LatentPosteriorMoments {
+        mean: vec![0.0; n_scores],
+        second: vec![0.0; n_scores],
+    };
+    // No free items: do not allocate category-count tables for fixed-bank scoring.
+    let (loglik, _, _) = e_step_with_moments(
+        &v,
+        y,
+        observed,
+        &params,
+        &log_w,
+        &log_ws,
+        &coords,
+        ts,
+        v.grid_size,
+        q_specific,
+        Some(&mut moments),
+        false,
+    );
+    if !loglik.is_finite() {
+        return Err("non-finite focal score loglikelihood".into());
+    }
+    let mut sd = vec![0.0; n_scores];
+    for i in 0..n_scores {
+        let d = i % n_latent;
+        let z_mean = moments.mean[i];
+        let z_second = moments.second[i];
+        // Evaluate variance before adding the focal mean, avoiding cancellation
+        // from a large mean. Negative/nonfinite variance fails, never clamps.
+        let z_var = z_second - z_mean * z_mean;
+        if !z_var.is_finite() || z_var < 0.0 {
+            return Err("invalid focal posterior variance".into());
+        }
+        sd[i] = latent_sd[d] * z_var.sqrt();
+        moments.mean[i] = latent_mean[d] + latent_sd[d] * z_mean;
+        moments.second[i] = latent_mean[d] * latent_mean[d]
+            + 2.0 * latent_mean[d] * latent_sd[d] * z_mean
+            + latent_sd[d] * latent_sd[d] * z_second;
+        if !moments.mean[i].is_finite() || !moments.second[i].is_finite() || !sd[i].is_finite() {
+            return Err("non-finite focal posterior moment".into());
+        }
+    }
+    Ok(TwoTierGrmPersonScores {
+        mean: moments.mean,
+        second: moments.second,
+        sd,
+        loglik,
+    })
 }
 
 #[cfg(test)]

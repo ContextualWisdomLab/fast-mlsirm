@@ -642,6 +642,7 @@ fn latent_moments_match_full_grid_with_missing_blocks() {
         4,
         2,
         Some(&mut moments),
+        true,
     );
     let old = e_step(
         &v,
@@ -659,6 +660,28 @@ fn latent_moments_match_full_grid_with_missing_blocks() {
         result, old,
         "opting into moments must preserve existing outputs"
     );
+    let expected_mean = moments.mean.clone();
+    let expected_second = moments.second.clone();
+    let no_counts = e_step_with_moments(
+        &v,
+        &y,
+        Some(&obs),
+        &pars,
+        &log_w,
+        &log_ws,
+        &coords,
+        &ts,
+        4,
+        2,
+        Some(&mut moments),
+        false,
+    );
+    assert!(no_counts.1.is_empty());
+    assert_eq!(no_counts.0, result.0);
+    assert_eq!(no_counts.2, result.2);
+    assert_eq!(moments.mean, expected_mean);
+    assert_eq!(moments.second, expected_second);
+
     let mut brute_ll = 0.0;
     for person in 0..3 {
         let mut mass = 0.0;
@@ -706,4 +729,151 @@ fn latent_moments_match_full_grid_with_missing_blocks() {
     for s in 0..2 {
         assert!((moments.mean[8 + 2 + s] - (ws[0] * ts[0] + ws[1] * ts[1])).abs() < 1e-12);
     }
+}
+
+#[test]
+fn focal_scores_match_physical_full_grid_and_missing_prior() {
+    use crate::two_tier_grm::{gh_rule, score_two_tier_grm_orthogonal};
+    let a_p = [0.7, -0.4, 0.8, -0.2, 0.9, 0.1, 1.0, 0.2, 1.1, 0.4];
+    let a_s = [0.5, 0.2, -0.1, -0.4, 0.0];
+    let threshold = [0.8, -0.6, 0.8, -0.6, 0.8, -0.6, 0.8, -0.6, 0.8, -0.6];
+    let primary = [true; 10];
+    let specific = [0, 0, 1, 1, -1];
+    let mean = [0.4, -0.2, 0.7, -0.6];
+    let sd = [1.1, 0.8, 0.9, 1.3];
+    let y = [0, 1, 2, 0, 1, 0, 0, 0, 0, 0];
+    let observed = [
+        true, true, true, true, true, false, false, false, false, false,
+    ];
+    let bank_before = (a_p, a_s, threshold);
+    let score = score_two_tier_grm_orthogonal(
+        &a_p,
+        &a_s,
+        &threshold,
+        &mean,
+        &sd,
+        &y,
+        Some(&observed),
+        &primary,
+        &specific,
+        2,
+        5,
+        2,
+        2,
+        3,
+        7,
+        7,
+    )
+    .unwrap();
+    assert_eq!((a_p, a_s, threshold), bank_before);
+    let (z, w) = gh_rule(7).unwrap();
+    let mut full_loglik = 0.0;
+    for person in 0..2 {
+        let mut mass = 0.0;
+        let mut first = [0.0; 4];
+        let mut second = [0.0; 4];
+        // Physical latent grid keeps original slopes/intercepts untouched.
+        for g0 in 0..7 {
+            for g1 in 0..7 {
+                for h0 in 0..7 {
+                    for h1 in 0..7 {
+                        let index = [g0, g1, h0, h1];
+                        let mut latent = [0.0; 4];
+                        let mut weight = 1.0;
+                        for d in 0..4 {
+                            latent[d] = mean[d] + sd[d] * z[index[d]];
+                            weight *= w[index[d]];
+                        }
+                        for i in 0..5 {
+                            if !observed[person * 5 + i] {
+                                continue;
+                            }
+                            let mut base = a_p[i * 2] * latent[0] + a_p[i * 2 + 1] * latent[1];
+                            if specific[i] >= 0 {
+                                base += a_s[i] * latent[2 + specific[i] as usize];
+                            }
+                            weight *= crate::poly::grm_logprobs(base, &threshold[i * 2..i * 2 + 2])
+                                [y[person * 5 + i]]
+                                .exp();
+                        }
+                        mass += weight;
+                        for d in 0..4 {
+                            first[d] += weight * latent[d];
+                            second[d] += weight * latent[d] * latent[d];
+                        }
+                    }
+                }
+            }
+        }
+        full_loglik += mass.ln();
+        for d in 0..4 {
+            assert!((score.mean[person * 4 + d] - first[d] / mass).abs() < 1e-12);
+            assert!((score.second[person * 4 + d] - second[d] / mass).abs() < 1e-12);
+            let var = second[d] / mass - (first[d] / mass).powi(2);
+            assert!((score.sd[person * 4 + d] - var.sqrt()).abs() < 1e-12);
+        }
+    }
+    assert!((score.loglik - full_loglik).abs() < 1e-12);
+    for d in 0..4 {
+        assert!((score.mean[4 + d] - mean[d]).abs() < 1e-12);
+        assert!((score.sd[4 + d] - sd[d]).abs() < 1e-12);
+    }
+    let call = |mu: &[f64], sigma: &[f64], observed: &[bool], responses: &[usize]| {
+        score_two_tier_grm_orthogonal(
+            &a_p,
+            &a_s,
+            &threshold,
+            mu,
+            sigma,
+            responses,
+            Some(observed),
+            &primary,
+            &specific,
+            2,
+            5,
+            2,
+            2,
+            3,
+            7,
+            7,
+        )
+    };
+    assert!(call(&mean, &[1.0, 0.0, 1.0, 1.0], &observed, &y).is_err());
+    assert!(call(&mean, &[1.0, f64::NAN, 1.0, 1.0], &observed, &y).is_err());
+    assert!(call(&[f64::INFINITY, 0.0, 0.0, 0.0], &sd, &observed, &y).is_err());
+    assert!(call(&[0.0], &sd, &observed, &y).is_err());
+    let mut bad = y;
+    bad[0] = 3;
+    assert!(call(&mean, &sd, &observed, &bad).is_err());
+    // Missing placeholders are ignored when their observation flag is false.
+    bad[0] = 0;
+    bad[5] = usize::MAX;
+    assert!(call(&mean, &sd, &observed, &bad).is_ok());
+    assert!(call(&[1e308; 4], &sd, &observed, &y).is_err());
+    // The same fixed-bank responses may omit categories for scoring, while
+    // the existing fitter still requires category coverage before estimating.
+    let cfg = crate::two_tier_grm::TwoTierGrmConfig {
+        estimate_primary_correlation: true,
+        q_primary: 7,
+        q_specific: 7,
+        max_iter: 1,
+        tol: 1.0,
+        n_starts: 1,
+        seed: 0,
+        newton_iter: 1,
+        ridge: 1.0,
+    };
+    let fitted_validation = crate::two_tier_grm::validate(
+        &y,
+        Some(&observed),
+        &primary,
+        &specific,
+        2,
+        5,
+        2,
+        2,
+        3,
+        &cfg,
+    );
+    assert!(matches!(fitted_validation, Err(message) if message.contains("never observed")));
 }
