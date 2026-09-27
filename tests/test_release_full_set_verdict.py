@@ -38,14 +38,20 @@ def test_native_links_require_exact_wheels_extensions_and_sealed_bytes() -> None
                            "links": [{"arch": arch, "format": "native", "needed": ["system"]}
                                      for arch in arches]})
     distributions.append({"leg": "sdist", "file": "source.tar.gz", "sha256": "c" * 64})
-    native = {"schema": "cwl.release-native-links/1", "source_sha": SOURCE, "wheels": wheels}
+    analyzer = {"path": "/usr/lib/llvm-18/bin/llvm-readobj", "version": "18.1.3",
+                "sha256": "d" * 64}
+    native = {"schema": "cwl.release-native-links/1", "source_sha": SOURCE,
+              "analyzer": analyzer, "wheels": wheels}
     raw = json.dumps(native).encode()
     verdict = {"distributions": distributions,
-               "native_links_sha256": hashlib.sha256(raw).hexdigest()}
+               "native_links_sha256": hashlib.sha256(raw).hexdigest(),
+               "native_link_analyzer": analyzer}
     verify_native_link_inventory(verdict, native, raw, runtimes, SOURCE)
 
     with pytest.raises(ValueError, match="sealed verdict"):
         verify_native_link_inventory(verdict, native, raw + b" ", runtimes, SOURCE)
+    with pytest.raises(ValueError, match="analyzer"):
+        verify_native_link_inventory({**verdict, "native_link_analyzer": None}, native, raw, runtimes, SOURCE)
     missing = copy.deepcopy(native)
     missing["wheels"].pop()
     with pytest.raises(ValueError, match="twelve wheels"):

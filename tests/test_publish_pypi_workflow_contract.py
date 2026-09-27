@@ -536,7 +536,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@878a0568b6b43191575f43b01d88425359041780" in central
+    assert "release-dependency-license-strix-gate.yml@0c557f7e0ab8295ee153705c34f42e25a6be24e3" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -1028,7 +1028,10 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                       ("key", "package_key", "source_sha256", "license", "fixture_sha256", "legs")}
                       for tool in tool_rows.values()]}
         report_bytes = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()
+        analyzer = {"path": "/usr/lib/llvm-18/bin/llvm-readobj", "version": "18.1.3",
+                    "sha256": "d" * 64}
         native = {"schema": "cwl.release-native-links/1", "source_sha": _RELEASE_COMMIT,
+                  "analyzer": analyzer,
                   "wheels": []}
         for distribution in distributions:
             leg = distribution["leg"]
@@ -1055,6 +1058,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                    "build_tool_binding_artifacts": tool_bindings,
                    "runtime_archive_license_sha256": hashlib.sha256(archive_report_bytes).hexdigest(),
                    "native_links_sha256": hashlib.sha256(native_bytes).hexdigest(),
+                   "native_link_analyzer": analyzer,
                    "gate_report_sha256": hashlib.sha256(report_bytes).hexdigest()}
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:

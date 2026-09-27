@@ -186,6 +186,14 @@ def verify_native_link_inventory(verdict: Any, native: Any, native_bytes: bytes,
             or native.get("schema") != "cwl.release-native-links/1"
             or native.get("source_sha") != source_sha):
         raise ValueError("native link inventory differs from sealed verdict")
+    analyzer = native.get("analyzer")
+    if (not isinstance(analyzer, Mapping) or set(analyzer) != {"path", "version", "sha256"}
+            or verdict.get("native_link_analyzer") != analyzer
+            or not isinstance(analyzer["path"], str) or not analyzer["path"].startswith("/")
+            or analyzer["version"] != "18.1.3"
+            or not isinstance(analyzer["sha256"], str)
+            or not re.fullmatch(r"[0-9a-f]{64}", analyzer["sha256"])):
+        raise ValueError("native link analyzer differs from sealed verdict")
     distributions = verdict.get("distributions")
     wheels = native.get("wheels")
     if (not isinstance(distributions, list) or not isinstance(wheels, list)
