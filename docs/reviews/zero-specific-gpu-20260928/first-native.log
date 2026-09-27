@@ -1,0 +1,80 @@
+F{"backend": "gpu", "n_specific": 0, "reference_group": 1, "primary_nodes": 121, "reference_iterations": 14, "focal_iterations": 33}
+.
+=================================== FAILURES ===================================
+_____ test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior ______
+
+    @pytest.mark.skipif(
+        os.environ.get("FOCAL_GPU_NATIVE") != "1",
+        reason="requires actual GPU; run with FOCAL_GPU_NATIVE=1",
+    )
+    def test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior():
+        """Verify the primary-only reduction and estimated-prior GPU route.
+    
+        Cai (2010), p.588 eq.7 and p.589 eqs.11-12 remove the specific term.
+        Compare the standard-normal case with the separate unidimensional Rust
+        EAP implementation, then compare nonstandard-prior CPU/GPU moments and
+        one EM update (not convergence/recovery). Bounds are measured regression
+        tolerances inherited from this module, not research acceptance settings.
+    
+        References
+        ----------
+        Cai, L. (2010). A two-tier full-information item factor analysis model
+        with applications. Psychometrika, 75(4), 581-612.
+        https://doi.org/10.1007/s11336-010-9178-0
+        """
+        from fast_mlsirm.polytomous import PolytomousFit, score_polytomous
+    
+        y = np.array([[0, 1, 2, 1], [2, 0, 1, 2], [1, np.nan, 0, 2],
+                      [np.nan, np.nan, np.nan, np.nan]], dtype=float)
+        a = np.array([0.8, 1.2, 0.9, 1.1])
+        d = np.array([[0.8, -0.7], [0.4, -1.0], [1.2, -0.2], [0.5, -0.9]])
+        kwargs = dict(responses=y, primary_map=np.ones((4, 1), dtype=bool),
+                      specific_map=np.full(4, -1, dtype=np.int64),
+                      a_primary=a[:, None], a_specific=np.zeros(4), threshold=d,
+                      n_cat=3, n_primary=1, n_specific=0,
+                      q_primary=15, q_specific=1)
+        standard = score_two_tier_grm_orthogonal(
+            **kwargs, latent_mean=np.zeros(1), latent_sd=np.ones(1), device="cpu")
+        independent = score_polytomous(
+            y, PolytomousFit(model="grm", slope=a, cat_params=d,
+                             loglik=0.0, n_iter=0), q_theta=15)
+        np.testing.assert_allclose(standard.mean[:, 0], independent["theta_eap"],
+                                   rtol=0, atol=1e-12)
+        np.testing.assert_allclose(standard.sd[:, 0], independent["theta_sd"],
+                                   rtol=0, atol=1e-12)
+        prior = dict(latent_mean=np.array([0.4]), latent_sd=np.array([1.2]))
+        cpu = score_two_tier_grm_orthogonal(**kwargs, **prior, device="cpu")
+        gpu = score_two_tier_grm_orthogonal(
+            **kwargs, **prior, device="gpu", gpu_memory_budget_bytes=1 << 20)
+        assert gpu.backend == "gpu"
+        assert gpu.mean.shape == (4, 1)
+        for name in ("mean", "second", "sd"):
+            np.testing.assert_allclose(getattr(gpu, name), getattr(cpu, name),
+                                       rtol=0, atol=1e-5)
+        assert abs(cpu.loglik - gpu.loglik) < 1e-10
+        assert not np.allclose(cpu.mean, standard.mean)
+        np.testing.assert_allclose(gpu.mean[-1], prior["latent_mean"], atol=1e-5)
+        np.testing.assert_allclose(gpu.sd[-1], prior["latent_sd"], atol=1e-5)
+        fit_cpu = fit_two_tier_grm_focal_orthogonal(
+            **kwargs, **prior, max_iter=1, tol=1e-6, device="cpu")
+        fit_gpu = fit_two_tier_grm_focal_orthogonal(
+            **kwargs, **prior, max_iter=1, tol=1e-6, device="gpu",
+            gpu_memory_budget_bytes=1 << 20)
+        assert fit_gpu.scores.backend == "gpu"
+        assert fit_cpu.n_iter == fit_gpu.n_iter == 1
+        np.testing.assert_allclose(fit_gpu.latent_mean, fit_cpu.latent_mean, atol=1e-5)
+        np.testing.assert_allclose(fit_gpu.latent_sd, fit_cpu.latent_sd, atol=1e-5)
+        with pytest.raises(ValueError, match="specific_map"):
+            score_two_tier_grm_orthogonal(
+                **{**kwargs, "specific_map": np.zeros(4, dtype=np.int64)},
+                **prior, device="gpu", gpu_memory_budget_bytes=1 << 20)
+>       with pytest.raises(ValueError, match="specific-free"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'specific-free'
+E         Actual message: 'fixed pattern positions must have zero slopes'
+
+tests/test_two_tier_focal_gpu_native.py:207: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior
+1 failed, 1 passed, 3 deselected in 7.66s

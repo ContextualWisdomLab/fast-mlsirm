@@ -1,0 +1,36 @@
+{
+  "source_commit": "ffd9d42fd93bd8abe97508b89d8f1e632dad0e54",
+  "core_path": "/private/tmp/fmls-zero-specific-gpu-20260928/python/fast_mlsirm/_core.cpython-312-darwin.so",
+  "core_sha256": "d352aa23f60408bb5c418d4fa53e8ccb2e2185639f25aff874c87e265dd56fda",
+  "exit_code": 0,
+  "passed": 3,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "cases": [
+    {
+      "classname": "tests.test_two_tier_focal_gpu_native",
+      "name": "test_actual_gpu_six_latent_score_and_focal_update",
+      "time": "0.209"
+    },
+    {
+      "classname": "tests.test_two_tier_focal_gpu_native",
+      "name": "test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior",
+      "time": "0.010"
+    },
+    {
+      "classname": "tests.test_two_tier_focal_gpu_native",
+      "name": "test_actual_gpu_primary_only_group_pipeline",
+      "time": "0.835"
+    }
+  ],
+  "reference_backend": "cpu",
+  "focal_and_score_backend": "gpu",
+  "study_values_produced": false,
+  "immutable_release_accepted": false,
+  "source_basis": {
+    "Cai2010": "printed pp.588-589 equations7/11/12, pp.608-609 Appendix A/B, actually opened full text; zero-specific reduction is an algebraic specialization",
+    "wgpu30": "installed wgpu-core-30.0.0/src/binding_model.rs:166-167 BindingZeroSize, actually opened; unread 4-byte bindings retain ns=0"
+  },
+  "remaining": "six current-head hosted GPU contracts, general required CI, substantive nonauthor review, normal merge, immutable release, actual study models"
+}
