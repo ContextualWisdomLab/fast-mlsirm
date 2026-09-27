@@ -516,3 +516,33 @@ No unresolved review threads; CodeRabbit and Devin successful; hosted jobs
 queued. Maintainer-authorized exact-head bypass applied to this bounded leaf.
 The root #2135 main merge and current-head security proof remain pending.
 Original Cargo 11/Python 3 HOLD and published 12-wheel acceptance are unchanged.
+
+
+## Release controller merged to main, 2026-09-28
+
+PR #2226 aligns the pre-existing release-tag contract with trusted-first
+checkout. Source 0d370455d983a8bd4a2ca9c1d45fc316312eeb92 merged into #2135
+at 5b35a1f1e15d79be0ec14cd2a3531d0cdfe8872e, 16:24:10Z Sep27.
+Changed release/tag/changelog/runtime/transport/scope/full-verdict suites:
+113 passed in 83.10s; publisher/fuzz contracts previously 44 passed.
+Latest Trivy DB downloaded 2026-09-28T01:22:41+09:00; local vuln-only scan
+with severity HIGH,CRITICAL and ignore-unfixed found zero findings in
+Cargo.lock (143 packages), binding Cargo.lock (26), fuzz Cargo.lock (11),
+and uv.lock (11). This is local dependency evidence, not hosted Security Scan
+or hosted CodeQL acceptance. DB and JSON scan receipts are in /tmp/fmls-2135-*.
+
+PR #2135 MERGED to main at b020c5b21559de67d22f917850bc00e050ec601f,
+2026-09-27T16:26:32Z, using maintainer-authorized exact-head bypass of
+capacity-stalled hosted checks. Candidate 5b35a1f1 includes main6cb7a2ca;
+merge ancestry and entire tree equality verified. Both entry workflows remain
+workflow_dispatch-only. The central same-run licence/Strix gate is required,
+followed by complete matrix/source/runtime/full-verdict admission before any
+tag/release/PyPI write. CodeRabbit and Devin were SUCCESS immediately before
+merge, no new unresolved threads. The existing CodeQL proof thread was left
+unresolved; no terminal hosted GREEN was claimed or gate weakened.
+
+Remote v0.11.5 tag is still absent after merge. Original Cargo11/Python3 HOLD,
+distinct current closure rights, and published12-wheel matrix remain pending.
+Open historical release stack2176/2178/2179/2180 needs source-equivalence
+reconciliation against main before any further merge. PR2126 stays draft
+until release-specific acceptance; main controller integration is complete.
