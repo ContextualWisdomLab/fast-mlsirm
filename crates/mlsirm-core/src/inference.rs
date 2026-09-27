@@ -86,8 +86,20 @@ pub fn second_order_test(
 }
 
 /// 2-norm condition and reciprocal for a real symmetric matrix's eigenvalues.
-/// LAPACK Users' Guide: How to Measure Errors, table 4.2; Symmetric Eigenproblem.
 /// Singular matrices return (infinity, zero); small eigenvalues retain f64 error.
+/// The ratio is derived from the norm definition and orthogonal eigendecomposition.
+/// Our Jacobi scaling repair is an implementation choice, not a LAPACK guarantee.
+///
+/// Reference: Anderson, E., Bai, Z., Bischof, C., Blackford, S., Demmel, J.,
+/// Dongarra, J., Du Croz, J., Greenbaum, A., Hammarling, S., McKenney, A., &
+/// Sorensen, D. (1999). *LAPACK users' guide* (3rd ed.). Society for Industrial
+/// and Applied Mathematics. <https://www.netlib.org/lapack/lug/>.
+/// "How to Measure Errors," table 4.2 and condition/RCOND paragraphs:
+/// <https://www.netlib.org/lapack/lug/node75.html>.
+/// "Error Bounds for the Symmetric Eigenproblem," eigendecomposition and ANORM:
+/// <https://www.netlib.org/lapack/lug/node89.html>.
+/// "Further Details," small eigenvalue relative-accuracy limitation:
+/// <https://www.netlib.org/lapack/lug/node90.html>.
 pub fn symmetric_condition_from_eigenvalues(eigenvalues: &[f64]) -> Result<(f64, f64), String> {
     if eigenvalues.is_empty() || eigenvalues.iter().any(|x| !x.is_finite()) {
         return Err("eigenvalues must be nonempty and finite".into());
