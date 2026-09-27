@@ -244,8 +244,14 @@ def fit_two_tier_grm_focal_orthogonal(
     latent_mean/sd are explicit initialization; no defaults or hidden restart.
     Rust returns final scores even on nonconvergence for diagnostic records.
     A likelihood decrease or update cap remains nonconvergence. Preserve the
-    fixed bank/maps with this fit. Recovery, identification and quadrature
-    accuracy remain separate acceptance conditions; this wrapper computes none.
+    fixed bank/maps with this fit. Native fitting rejects an observed loading
+    matrix that fails its necessary free-mean rank guard (derived from Cai,
+    2010, p. 589 eq. 11; LAPACK DGETF2 Purpose/INFO and pivot loop,
+    https://www.netlib.org/lapack/double/dgetf2.f). The column-normalized
+    max(rows, columns)*machine-epsilon threshold is an implementation choice,
+    not a source-prescribed scientific cutoff or DGELSY effective rank.
+    Passing does not prove variance/joint identification, population recovery
+    or quadrature accuracy; these remain separate acceptance conditions.
     """
     cap = _bounded_integer(max_iter, "max_iter", 1, int(np.iinfo(np.uintp).max))
     tolerance = _positive_real(tol, "tol")

@@ -2068,6 +2068,11 @@ fn score_two_tier_grm_orthogonal(
 /// pp. 608-609 Appendices A/B, DOI 10.1007/s11336-010-9178-0.
 /// Independent Gaussian factors and all-fixed items are explicit restrictions.
 /// All numerical estimation/scoring and convergence records stay in Rust.
+/// Native fitting rejects a failing observed-loading free-mean rank guard:
+/// derived from Cai (2010), p.589 eq.11; LAPACK DGETF2 Purpose/INFO,
+/// https://www.netlib.org/lapack/double/dgetf2.f. Its normalized dimension*EPSILON
+/// threshold is an implementation choice, not a scientific cutoff or DGELSY
+/// effective rank. Passing does not prove variance/joint identification.
 /// Own NumPy buffers before Python::detach (PyO3 0.29, Python::detach API,
 /// https://docs.rs/pyo3/0.29.0/pyo3/marker/struct.Python.html#method.detach):
 /// only owned Rust vectors/scalars cross the detached closure, so concurrent
