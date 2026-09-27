@@ -905,7 +905,7 @@ jobs:
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@0c557f7e0ab8295ee153705c34f42e25a6be24e3
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@89370d5b53d41d2a6773f7ba16b82297f538b841
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
