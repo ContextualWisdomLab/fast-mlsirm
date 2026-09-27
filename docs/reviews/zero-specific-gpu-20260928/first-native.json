@@ -1,0 +1,10 @@
+{
+  "source_commit": "346f82b4e798ddf8dbfa84ef34fa6fea261a35d7",
+  "core_sha256": "d352aa23f60408bb5c418d4fa53e8ccb2e2185639f25aff874c87e265dd56fda",
+  "exit_code": 1,
+  "passed": 1,
+  "failed": 1,
+  "failure": "negative-input error-message regex mismatch; actual fixed pattern positions must have zero slopes",
+  "actual_group_pipeline_passed": true,
+  "research_acceptance": false
+}

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.132" timestamp="2026-09-28T04:38:35.348790+09:00" hostname="Seonghoui-MacBookPro-2.local"><testcase classname="tests.test_two_tier_focal_gpu_native" name="test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior" time="0.001"><failure message="ValueError: n_specific must be an integer between 1 and 18446744073709551615">@pytest.mark.skipif(
+        os.environ.get("FOCAL_GPU_NATIVE") != "1",
+        reason="requires actual GPU; run with FOCAL_GPU_NATIVE=1",
+    )
+    def test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior():
+        """Verify the primary-only reduction and estimated-prior GPU route.
+    
+        Cai (2010), p.588 eq.7 and p.589 eqs.11-12 remove the specific term.
+        Compare the standard-normal case with the separate unidimensional Rust
+        EAP implementation, then compare nonstandard-prior CPU/GPU moments and
+        one EM update (not convergence/recovery). Bounds are measured regression
+        tolerances inherited from this module, not research acceptance settings.
+    
+        References
+        ----------
+        Cai, L. (2010). A two-tier full-information item factor analysis model
+        with applications. Psychometrika, 75(4), 581-612.
+        https://doi.org/10.1007/s11336-010-9178-0
+        """
+        from fast_mlsirm.polytomous import PolytomousFit, score_polytomous
+    
+        y = np.array([[0, 1, 2, 1], [2, 0, 1, 2], [1, np.nan, 0, 2],
+                      [np.nan, np.nan, np.nan, np.nan]], dtype=float)
+        a = np.array([0.8, 1.2, 0.9, 1.1])
+        d = np.array([[0.8, -0.7], [0.4, -1.0], [1.2, -0.2], [0.5, -0.9]])
+        kwargs = dict(responses=y, primary_map=np.ones((4, 1), dtype=bool),
+                      specific_map=np.full(4, -1, dtype=np.int64),
+                      a_primary=a[:, None], a_specific=np.zeros(4), threshold=d,
+                      n_cat=3, n_primary=1, n_specific=0,
+                      q_primary=15, q_specific=1)
+&gt;       standard = score_two_tier_grm_orthogonal(
+            **kwargs, latent_mean=np.zeros(1), latent_sd=np.ones(1), device="cpu")
+
+tests/test_two_tier_focal_gpu_native.py:172: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../fmls-regression-source-20260928/python/fast_mlsirm/two_tier_focal.py:232: in score_two_tier_grm_orthogonal
+    args, shape = _native_inputs(
+../fmls-regression-source-20260928/python/fast_mlsirm/two_tier_focal.py:100: in _native_inputs
+    s = _bounded_integer(n_specific, "n_specific", 1, usize)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = 0, name = 'n_specific', lower = 1, upper = 18446744073709551615
+
+    def _bounded_integer(value, name: str, lower: int, upper: int) -&gt; int:
+        """Validate an exact supported integer in ``[lower, upper]`` and return it."""
+        value_type = type(value)
+        if value_type is int:
+            validated = value
+        elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
+            validated = int(value)
+        else:
+            raise ValueError(f"{name} must be an integer between {lower} and {upper}")
+        if not lower &lt;= validated &lt;= upper:
+&gt;           raise ValueError(f"{name} must be an integer between {lower} and {upper}")
+E           ValueError: n_specific must be an integer between 1 and 18446744073709551615
+
+../fmls-regression-source-20260928/python/fast_mlsirm/polytomous.py:87: ValueError</failure></testcase></testsuite></testsuites>

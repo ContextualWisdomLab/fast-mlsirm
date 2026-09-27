@@ -24,8 +24,11 @@
 //! https://doi.org/10.1007/BF02295430
 
 use crate::bifactor_grm::{
-    bifactor_grm_marginal_loglik, bifactor_grm_marginal_loglik_brute, fit_bifactor_grm,
-    BifactorGrmConfig,
+    add_lnorm_abs_slope_prior, bifactor_grm_marginal_loglik, bifactor_grm_marginal_loglik_brute,
+    checked_em_loglik_change, em_objective_name, fit_bifactor_grm, fit_bifactor_grm_multigroup,
+    gh_rule, lnorm_abs_slope_prior_curvature, run_single_start, slope_prior_neg_log, validate,
+    BifactorGrmConfig, BifactorMultigroupConfig, BifactorMultigroupResult, ItemParams,
+    SlopePrior,
 };
 
 // ---------------------------------------------------------------------------
@@ -131,8 +134,431 @@ fn valid_config() -> BifactorGrmConfig {
         seed: 42,
         newton_iter: 3,
         ridge: 1e-8,
+        slope_prior: SlopePrior::None,
         device: crate::Device::Cpu,
     }
+}
+
+#[test]
+fn lnorm_abs_slope_prior_has_signed_support_and_jacobian() {
+    let (a, mu, sd, h) = (-1.7, 0.2, 0.8, 1e-6);
+    let mut nll = 0.0;
+    let mut grad = 0.0;
+    add_lnorm_abs_slope_prior(a, mu, sd, &mut nll, &mut grad);
+    let mut plus = 0.0;
+    let mut minus = 0.0;
+    let mut ignored_grad = 0.0;
+    add_lnorm_abs_slope_prior(a + h, mu, sd, &mut plus, &mut ignored_grad);
+    add_lnorm_abs_slope_prior(a - h, mu, sd, &mut minus, &mut ignored_grad);
+    let fd = (plus - minus) / (2.0 * h);
+    assert!(nll.is_finite());
+    assert!((grad - fd).abs() < 1e-6, "analytic={grad}, fd={fd}");
+}
+
+#[test]
+fn lnorm_abs_slope_prior_keeps_zero_outside_support() {
+    let mut nll = 0.0;
+    let mut grad = 0.0;
+    add_lnorm_abs_slope_prior(0.0, 0.0, 1.0, &mut nll, &mut grad);
+    assert!(nll.is_infinite() && nll.is_sign_positive());
+    assert_eq!(grad, 0.0);
+}
+
+#[test]
+fn lnorm_abs_slope_prior_curvature_matches_fd_of_gradient() {
+    let (mu, sd) = (0.2, 0.8);
+    // Signed slopes on both sides, including the near-zero domain where the
+    // curvature grows like 1/a^2 (relative FD step keeps a +/- h same-signed).
+    for a in [-1.7, -0.3, -1e-3, 1e-3, 0.4, 2.5] {
+        let h = 1e-6 * f64::abs(a);
+        let grad_at = |x: f64| {
+            let (mut nll, mut g) = (0.0, 0.0);
+            add_lnorm_abs_slope_prior(x, mu, sd, &mut nll, &mut g);
+            g
+        };
+        let fd = (grad_at(a + h) - grad_at(a - h)) / (2.0 * h);
+        let analytic = lnorm_abs_slope_prior_curvature(a, mu, sd);
+        let rel = (analytic - fd).abs() / analytic.abs().max(1.0);
+        assert!(rel < 1e-5, "a={a}: analytic={analytic}, fd={fd}");
+    }
+    assert!(lnorm_abs_slope_prior_curvature(0.0, mu, sd).is_infinite());
+}
+
+/// Mean distance of every estimated slope's `ln|a|` from `mu`.
+fn mean_log_slope_gap(a_g: &[f64], a_s: &[f64], mu: f64) -> f64 {
+    let all: Vec<f64> = a_g.iter().chain(a_s.iter()).copied().collect();
+    all.iter().map(|a| (a.abs().ln() - mu).abs()).sum::<f64>() / all.len() as f64
+}
+
+fn prior_fit_config(slope_prior: SlopePrior) -> BifactorGrmConfig {
+    BifactorGrmConfig {
+        max_iter: 60,
+        newton_iter: 10,
+        slope_prior,
+        ..valid_config()
+    }
+}
+
+#[test]
+fn real_prior_fit_pulls_slopes_toward_prior_and_records_provenance() {
+    let (y, n_persons) = tiny_data();
+    let fit = |prior| {
+        fit_bifactor_grm(
+            &y,
+            None,
+            &TINY_SPECIFIC_MAP,
+            n_persons,
+            TINY_N_ITEMS,
+            TINY_N_SPECIFIC,
+            TINY_N_CAT,
+            &prior_fit_config(prior),
+        )
+        .expect("tiny fit must run")
+    };
+    let mu = 0.5f64.ln();
+    let prior = SlopePrior::Lognormal { mu, sd: 0.1 };
+    let mml = fit(SlopePrior::None);
+    let map = fit(prior);
+    assert_eq!(mml.slope_prior, SlopePrior::None);
+    assert_eq!(map.slope_prior, prior);
+    let gap_mml = mean_log_slope_gap(&mml.a_general, &mml.a_specific, mu);
+    let gap_map = mean_log_slope_gap(&map.a_general, &map.a_specific, mu);
+    assert!(
+        gap_map < gap_mml && gap_map < 0.25,
+        "MAP slopes must sit near exp(mu): gap_map={gap_map}, gap_mml={gap_mml}"
+    );
+}
+
+fn tiny_multigroup(n_groups: usize, slope_prior: SlopePrior) -> BifactorMultigroupResult {
+    let (y, n_persons) = tiny_data();
+    let group_id: Vec<usize> = (0..n_persons).map(|p| p % n_groups).collect();
+    fit_mg(&y, &group_id, n_groups, &TINY_SPECIFIC_MAP, None, slope_prior)
+        .expect("tiny multigroup fit must run")
+}
+
+fn fit_mg(
+    y: &[usize],
+    group_id: &[usize],
+    n_groups: usize,
+    specific_map: &[i32],
+    anchor: Option<&[bool]>,
+    slope_prior: SlopePrior,
+) -> Result<BifactorMultigroupResult, String> {
+    let base = prior_fit_config(slope_prior);
+    let cfg = BifactorMultigroupConfig {
+        q_general: base.q_general,
+        q_specific: base.q_specific,
+        max_iter: base.max_iter,
+        tol: base.tol,
+        n_starts: base.n_starts,
+        seed: base.seed,
+        newton_iter: base.newton_iter,
+        ridge: base.ridge,
+        slope_prior,
+        ..BifactorMultigroupConfig::default()
+    };
+    let n_items = specific_map.len();
+    fit_bifactor_grm_multigroup(
+        y,
+        None,
+        group_id,
+        n_groups,
+        specific_map,
+        group_id.len(),
+        n_items,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        anchor,
+        &cfg,
+    )
+}
+
+// Two-group simulated design for native MG prior tests: six items (three per
+// specific, the identified design of the Oakes unit tests), group 1 shifted
+// on the general factor. The 12-person toy data is too small for MG: its MML
+// comparison fit trips the EM likelihood guard (native RED 2026-09-21, run 2),
+// independently of any prior.
+const SIX_SPECIFIC_MAP: [i32; 6] = [0, 0, 0, 1, 1, 1];
+
+struct Lcg(u64);
+
+impl Lcg {
+    fn uniform(&mut self) -> f64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (((self.0 >> 11) as f64) + 0.5) / ((1u64 << 53) as f64)
+    }
+
+    fn standard_normal(&mut self) -> f64 {
+        let u1 = self.uniform().clamp(1e-12, 1.0 - 1e-12);
+        let u2 = self.uniform();
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+    }
+}
+
+/// `P(Y >= k) = logistic(a_G tG + a_S tS + d_k)`, group 1 has `tG ~ N(0.5, 1)`.
+fn simulate_two_groups(n_per_group: usize, seed: u64) -> (Vec<usize>, Vec<usize>) {
+    let a_g = [1.3, 1.1, 0.9, 1.2, 1.0, 0.8];
+    let a_s = [1.0, 0.9, 1.1, 0.8, 1.0, 0.9];
+    let d = [1.2, -0.8, 1.0, -1.0, 1.3, -0.7, 1.1, -0.9, 0.9, -1.1, 1.2, -0.8];
+    let mut rng = Lcg(seed);
+    let (mut y, mut group_id) = (Vec::new(), Vec::new());
+    for g in 0..2 {
+        for _ in 0..n_per_group {
+            let tg = rng.standard_normal() + 0.5 * g as f64;
+            let ts = [rng.standard_normal(), rng.standard_normal()];
+            for i in 0..6 {
+                let base = a_g[i] * tg + a_s[i] * ts[i / 3];
+                let u = rng.uniform();
+                let mut cat = 0usize;
+                for k in 0..2 {
+                    if u < 1.0 / (1.0 + (-(base + d[i * 2 + k])).exp()) {
+                        cat += 1;
+                    } else {
+                        break;
+                    }
+                }
+                y.push(cat);
+            }
+            group_id.push(g);
+        }
+    }
+    (y, group_id)
+}
+
+fn sim_mg(anchor: Option<&[bool]>, slope_prior: SlopePrior) -> BifactorMultigroupResult {
+    let (y, group_id) = simulate_two_groups(200, 20_260_921);
+    fit_mg(&y, &group_id, 2, &SIX_SPECIFIC_MAP, anchor, slope_prior)
+        .expect("simulated two-group fit must run")
+}
+
+/// Prior far from the generating slopes so MAP visibly moves them.
+const FAR_MU: f64 = -1.2039728043259361; // ln(0.3)
+
+fn far_prior() -> SlopePrior {
+    SlopePrior::Lognormal { mu: FAR_MU, sd: 0.03 }
+}
+
+#[test]
+fn multigroup_prior_acts_on_common_items_under_default_anchor() {
+    // `anchor = None` makes every item common (estimated from pooled
+    // counts). Before the fix the prior was skipped for common items, so it
+    // was a silent no-op here.
+    let mml = sim_mg(None, SlopePrior::None);
+    let map = sim_mg(None, far_prior());
+    assert_eq!(mml.slope_prior, SlopePrior::None);
+    assert_eq!(map.slope_prior, far_prior());
+    let all: Vec<usize> = (0..6).collect();
+    let gap_mml = rows_gap(&mml, 0, &all);
+    let gap_map = rows_gap(&map, 0, &all);
+    assert!(
+        gap_map < 0.5 * gap_mml,
+        "common-item slopes must carry the prior: gap_map={gap_map}, gap_mml={gap_mml}"
+    );
+    // Common items stay identical across groups.
+    assert_eq!(map.a_general[0], map.a_general[1]);
+    assert_eq!(map.a_specific[0], map.a_specific[1]);
+    // Regression (native RED 2026-09-21, run 1): under the prior the observed
+    // log-likelihood legitimately DECREASES while the log posterior ascends;
+    // the old likelihood-only guard rejected such fits.
+    assert!(
+        map.loglik_trace.windows(2).any(|w| w[1] < w[0]),
+        "fixture must exercise a likelihood decrease: {:?}",
+        map.loglik_trace
+    );
+    assert_monotone(&map.em_objective_trace);
+    // No duplicated prior for shared items: every item is common, so the
+    // prior enters once per item (group-0 row), not once per group.
+    let gap = map.em_objective_trace.last().unwrap() - map.loglik_trace.last().unwrap();
+    let expected = -slope_prior_neg_log(far_prior(), &item_rows(&map, 0, &all));
+    assert!((gap - expected).abs() < 1e-9, "gap={gap}, expected={expected}");
+}
+
+#[test]
+fn multigroup_prior_acts_on_common_and_free_items_with_partial_anchor() {
+    // Items 0,1,3,4 common (pooled, shared); items 2 and 5 free per group.
+    let anchor = [true, true, false, true, true, false];
+    let (common, free) = ([0usize, 1, 3, 4], [2usize, 5]);
+    let mml = sim_mg(Some(&anchor), SlopePrior::None);
+    let map = sim_mg(Some(&anchor), far_prior());
+    for (label, items) in [("common", &common[..]), ("free", &free[..])] {
+        for g in 0..2 {
+            let (gap_mml, gap_map) = (rows_gap(&mml, g, items), rows_gap(&map, g, items));
+            assert!(
+                gap_map < 0.5 * gap_mml,
+                "{label} items, group {g}: gap_map={gap_map}, gap_mml={gap_mml}"
+            );
+        }
+    }
+    for &i in &common {
+        assert_eq!(map.a_general[0][i], map.a_general[1][i], "common item {i} shared");
+    }
+    assert_monotone(&map.em_objective_trace);
+    // Common items enter the prior once; free items once per group.
+    let mut rows = item_rows(&map, 0, &[0, 1, 2, 3, 4, 5]);
+    rows.extend(item_rows(&map, 1, &free));
+    let gap = map.em_objective_trace.last().unwrap() - map.loglik_trace.last().unwrap();
+    let expected = -slope_prior_neg_log(far_prior(), &rows);
+    assert!((gap - expected).abs() < 1e-9, "gap={gap}, expected={expected}");
+}
+
+fn rows_gap(r: &BifactorMultigroupResult, g: usize, items: &[usize]) -> f64 {
+    let a_g: Vec<f64> = items.iter().map(|&i| r.a_general[g][i]).collect();
+    let a_s: Vec<f64> = items.iter().map(|&i| r.a_specific[g][i]).collect();
+    mean_log_slope_gap(&a_g, &a_s, FAR_MU)
+}
+
+fn assert_monotone(trace: &[f64]) {
+    for w in trace.windows(2) {
+        assert!(w[1] >= w[0] - 1e-9 * (1.0 + w[0].abs()), "objective decreased: {trace:?}");
+    }
+}
+
+/// Slope rows of group `g` (|a| is all the prior sees, so reflection
+/// canonicalization of the reported signs is irrelevant).
+fn item_rows(r: &BifactorMultigroupResult, g: usize, items: &[usize]) -> Vec<ItemParams> {
+    items
+        .iter()
+        .map(|&i| ItemParams {
+            a_g: r.a_general[g][i],
+            a_s: Some(r.a_specific[g][i]),
+            d: Vec::new(),
+        })
+        .collect()
+}
+
+/// Reproducer kept on purpose (not a green test): the ORIGINAL 12-person
+/// two-group toy fixture fails in plain MML, with no slope prior, because the
+/// multigroup EM observed-data log-likelihood decreases (iteration 9, delta
+/// -6.141380e-3 with `anchor = None`; iteration 20, delta -1.514901e-1 with
+/// anchor `[T, T, F, F]`). The released 0.11.4 binary (no AC changes; zero
+/// diff in `bifactor_grm.rs` from v0.11.4 to 99c228a8) reproduces both
+/// errors bit-for-bit, so this is pre-existing MG MML behavior outside the
+/// slope-prior scope. Run with `--ignored` once the MG EM owner fixes it.
+#[test]
+#[ignore = "pre-existing MG MML EM likelihood decrease on the 12-person toy fixture; tracked gap"]
+fn reproducer_multigroup_mml_on_toy_fixture_runs() {
+    let (y, n_persons) = tiny_data();
+    let group_id: Vec<usize> = (0..n_persons).map(|p| p % 2).collect();
+    for anchor in [None, Some(&[true, true, false, false][..])] {
+        fit_mg(&y, &group_id, 2, &TINY_SPECIFIC_MAP, anchor, SlopePrior::None)
+            .expect("MG MML on the toy fixture must run");
+    }
+}
+
+#[test]
+fn em_guard_rejects_a_real_log_posterior_decrease() {
+    let prior = SlopePrior::Lognormal { mu: 0.0, sd: 1.0 };
+    let err = checked_em_loglik_change(-10.0, Some(-9.0), 3, em_objective_name(prior))
+        .expect_err("a posterior decrease must be rejected");
+    assert!(err.contains("log posterior") && err.contains("decreased"), "{err}");
+    assert_eq!(
+        checked_em_loglik_change(-9.0, Some(-10.0), 3, em_objective_name(prior)),
+        Ok(Some(1.0))
+    );
+}
+
+#[test]
+fn no_prior_objective_trace_is_the_loglik_trace_bit_for_bit() {
+    let (y, n_persons) = tiny_data();
+    let single = fit_bifactor_grm(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &prior_fit_config(SlopePrior::None),
+    )
+    .expect("tiny fit must run");
+    assert_eq!(single.em_objective_trace, single.loglik_trace);
+    let mg = sim_mg(None, SlopePrior::None);
+    assert_eq!(mg.em_objective_trace, mg.loglik_trace);
+}
+
+#[test]
+fn multistart_ranks_starts_by_log_posterior() {
+    let (y, n_persons) = tiny_data();
+    let prior = SlopePrior::Lognormal { mu: 0.5f64.ln(), sd: 0.3 };
+    let cfg = BifactorGrmConfig {
+        n_starts: 3,
+        ..prior_fit_config(prior)
+    };
+    let fit = fit_bifactor_grm(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("multi-start prior fit must run");
+    let v = validate(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("valid tiny problem");
+    let (tg, wg) = gh_rule(cfg.q_general).expect("rule");
+    let (ts, ws) = gh_rule(cfg.q_specific).expect("rule");
+    let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    let finals: Vec<(f64, f64)> = (0..cfg.n_starts)
+        .map(|start| {
+            let o = run_single_start(
+                &v, &y, None, &cfg, tg, ts, &log_wg, &log_ws, tg.len(), ts.len(), start,
+            )
+            .expect("start runs");
+            (*o.em_objective_trace.last().unwrap(), *o.loglik_trace.last().unwrap())
+        })
+        .collect();
+    let best_objective = finals.iter().map(|f| f.0).fold(f64::NEG_INFINITY, f64::max);
+    assert_eq!(finals[fit.best_start].0, best_objective, "starts: {finals:?}");
+    assert_eq!(*fit.em_objective_trace.last().unwrap(), best_objective);
+}
+
+#[test]
+fn multigroup_single_group_prior_matches_single_group_fit() {
+    let prior = SlopePrior::Lognormal { mu: 0.5f64.ln(), sd: 0.1 };
+    let (y, n_persons) = tiny_data();
+    let single = fit_bifactor_grm(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &prior_fit_config(prior),
+    )
+    .expect("tiny fit must run");
+    let mg = tiny_multigroup(1, prior);
+    assert_eq!(mg.a_general[0], single.a_general);
+    assert_eq!(mg.a_specific[0], single.a_specific);
+    assert_eq!(mg.slope_prior, prior);
+}
+
+#[test]
+fn slope_prior_rejects_invalid_hyperparameters() {
+    assert!(SlopePrior::Lognormal { mu: f64::NAN, sd: 1.0 }
+        .validate()
+        .is_err());
+    assert!(SlopePrior::Lognormal { mu: 0.0, sd: 0.0 }
+        .validate()
+        .is_err());
+    assert!(SlopePrior::Lognormal { mu: 0.0, sd: f64::INFINITY }
+        .validate()
+        .is_err());
 }
 
 fn valid_data() -> (Vec<usize>, usize) {
@@ -637,6 +1063,7 @@ fn dense_quadrature_fit_never_claims_tolerance_at_start_slopes() {
         seed: 20260917,
         newton_iter: 5,
         ridge: 1e-4,
+        slope_prior: crate::bifactor_grm::SlopePrior::None,
         device: crate::Device::Cpu,
     };
     let fit = fit_bifactor_grm(

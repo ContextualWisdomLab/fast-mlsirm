@@ -1,0 +1,17 @@
+{
+  "tested_head": "83daa56092db49701683b04d9e9b6dd22eb3e714",
+  "exit": 0,
+  "passed": 1,
+  "seconds": 100.87,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "core_sha256": "0d9a3c907914a1e7c383a2f19971415b26295a48b292fded4e764b08d7f60a57",
+  "scope": "Actual M1 GPU grouped reference/focal scoring, interleaved slots, final-prior independent rescore, real nonconverged fit record. Single synthetic scale, not whole joint bootstrap or study acceptance.",
+  "next_head_changes": "Explicit GPU-test opt-in and four-contract workflow guard only; production function unchanged.",
+  "remaining": [
+    "full multi-scale shared-replicate/regression/estimand worker",
+    "current-head hosted gates and nonauthor review",
+    "release and actual-data acceptance"
+  ]
+}

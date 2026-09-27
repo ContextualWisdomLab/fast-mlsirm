@@ -3,6 +3,13 @@
 The fixture is a general primary plus one further primary with a nested
 loading pattern, which is the smallest design that exercises the fixed-primary
 conditioning path. Synthetic data only.
+
+Source contract: ``expected_total_score_two_tier_given_primary`` documents
+Penn State STAT414 lesson26.1's independent-normal linear-combination theorem
+and Golub/Welsch (1969), eqs2.2/2.6, for the quadrature construction.
+``expected_total_score_two_tier_from_fit`` documents producer/consumer
+orthogonal-identification gates. Test seeds, node counts and tolerances are
+fixture choices; these checks do not license study precision or acceptance.
 """
 from __future__ import annotations
 
@@ -24,6 +31,9 @@ _PRIOR = "independent_standardized"
 
 
 def _call(ap, asp, th, smap, grid, *, q=21, focal=0, **kw):
+    """Call the documented independent-Gaussian curve contract with explicit nodes; 21
+    is a synthetic fixture choice, not a scientific default.
+    """
     return expected_total_score_two_tier_given_primary(
         ap,
         asp,
@@ -38,6 +48,9 @@ def _call(ap, asp, th, smap, grid, *, q=21, focal=0, **kw):
 
 
 def test_q_nuisance_and_prior_required() -> None:
+    """Require caller node count and independent prior per the curve API source
+    contract; correlated nuisance integration is not implemented.
+    """
     ap = np.array([[1.0, 0.0], [1.2, 0.0]])
     asp = np.array([0.5, 0.4])
     th = np.array([[1.0, 0.0, -1.0], [0.5, -0.2, -1.2]])
@@ -95,6 +108,9 @@ def test_matches_bifactor_monotonicity_when_no_extra_primary() -> None:
 
 
 def test_wording_cross_loads_change_curve_vs_specific_only() -> None:
+    """Exercise extra-primary marginalization under the independent-normal linear-
+    predictor source contract.
+    """
     a_g = np.array([1.0, 1.0, 1.0, 1.0])
     a_w = np.array([0.0, 0.0, 0.8, 0.8])
     a_s = np.array([0.5, 0.5, 0.5, 0.5])
@@ -108,6 +124,9 @@ def test_wording_cross_loads_change_curve_vs_specific_only() -> None:
 
 
 def test_person_eap_points_accepted_without_ascending_grid() -> None:
+    """Preserve unordered and duplicate caller EAP points; this evaluates a conditional
+    curve rather than posterior expected totals.
+    """
     ap = np.array([[1.0, 0.4], [1.1, 0.0]])
     asp = np.array([0.5, 0.6])
     th = np.array([[0.5, -0.5], [0.2, -0.8]])
@@ -119,6 +138,7 @@ def test_person_eap_points_accepted_without_ascending_grid() -> None:
 
 
 def test_category_support_rejects_nondecreasing_thresholds() -> None:
+    """Enforce the decreasing category-intercept contract before GRM prediction."""
     ap = np.array([[1.0]])
     asp = np.array([0.0])
     smap = np.array([-1], dtype=np.int64)
@@ -130,6 +150,9 @@ def test_category_support_rejects_nondecreasing_thresholds() -> None:
 
 
 def test_reverse_keyed_negative_g_slope_reverses_total_trend() -> None:
+    """Exercise signed GRM loadings in the source-contract curve; this does not choose
+    a study reverse-key map.
+    """
     th = np.array([[1.5, 0.0, -1.5], [1.5, 0.0, -1.5]])
     smap = np.array([-1, -1], dtype=np.int64)
     asp = np.zeros(2)
@@ -169,6 +192,9 @@ def test_per_dimension_ref_sd_changes_integral_vs_scalar_bundle() -> None:
 
 
 def test_ref_distribution_rejects_bad_shape_nan_nonpositive() -> None:
+    """Reject reference distributions outside the finite, positive-SD independent-
+    Gaussian source contract.
+    """
     ap = np.array([[1.0, 0.4], [1.0, 0.0]])
     asp = np.array([0.5, 0.5])
     th = np.array([[1.0, 0.0, -1.0], [1.0, 0.0, -1.0]])
@@ -210,6 +236,9 @@ def _two_primary_four_specific_fixture() -> tuple[np.ndarray, np.ndarray, np.nda
 
 
 def test_two_primary_quantitative_bounds_and_method_factor_effect() -> None:
+    """Check synthetic category-support bounds and method-load effects through the
+    documented Gaussian nuisance integral.
+    """
     ap, a_s, th, smap = _two_primary_four_specific_fixture()
     grid = np.linspace(-3.0, 3.0, 13)
     # Producer case: all nuisance refs fixed at N(0,1) — scalar broadcast documented.
@@ -228,6 +257,9 @@ def test_two_primary_quantitative_bounds_and_method_factor_effect() -> None:
 
 
 def test_two_primary_distinct_method_vs_specific_reference_variances() -> None:
+    """Retain dimension-specific Gaussian scales in the source-contract integral,
+    without scalar bundling.
+    """
     ap, a_s, th, smap = _two_primary_four_specific_fixture()
     grid = np.array([-1.0, 0.0, 1.0])
     unit = _call(ap, a_s, th, smap, grid, q=11)
@@ -248,6 +280,9 @@ def test_two_primary_distinct_method_vs_specific_reference_variances() -> None:
 
 
 def test_monte_carlo_reference_two_nuisance_item() -> None:
+    """Compare quadrature with a seeded synthetic two-normal Monte Carlo check of the
+    curve derivation; the 0.02 tolerance is fixture-specific.
+    """
     a_g, a_w, a_s = 1.0, 0.7, 0.5
     th = np.array([[1.0, 0.0, -1.0]])
     g0 = 0.5
@@ -279,6 +314,9 @@ def test_monte_carlo_reference_two_nuisance_item() -> None:
 
 
 def _stub_fit(*, phi: np.ndarray, n_specific: int = 1) -> TwoTierGrmFit:
+    """Construct a synthetic producer-ID fixture for the from-fit admission contract;
+    no model is estimated here.
+    """
     ap = np.array([[1.0, 0.0], [1.0, 0.4]])
     asp = np.array([0.5, 0.5])
     th = np.array([[1.0, 0.0, -1.0], [1.0, 0.0, -1.0]])
@@ -305,6 +343,9 @@ def _stub_fit(*, phi: np.ndarray, n_specific: int = 1) -> TwoTierGrmFit:
 
 
 def test_from_fit_dual_gates_phi_and_consumer_identification() -> None:
+    """Check the from-fit implementation contract requiring numeric identity Phi and
+    explicit consumer confirmation.
+    """
     smap = np.array([0, 0], dtype=np.int64)
     grid = np.array([0.0, 1.0])
     ok = expected_total_score_two_tier_from_fit(
@@ -511,13 +552,17 @@ def test_gauss_hermite_rule_is_finite_and_exact_at_study_node_counts() -> None:
 
 
 def test_q_nuisance_has_no_node_count_cap(monkeypatch) -> None:
-    """Node counts above the old 4096 bound reach rule construction (steering item 1)."""
+    """Node counts above the old 4096 bound reach rule construction (steering item 1).
+    """
     import fast_mlsirm.two_tier_grm as tt
 
     seen: list[int] = []
     real = tt._probabilists_gauss_hermite
 
     def _spy(q: int):
+        """Record requested node count and substitute 15 nodes; checks admission only,
+        not integration at the requested count.
+        """
         seen.append(q)
         return real(15)  # stand-in rule so the test stays fast
 
@@ -532,9 +577,15 @@ def test_q_nuisance_has_no_node_count_cap(monkeypatch) -> None:
 
 
 def test_prediction_budget_counts_categories_before_rule_allocation(monkeypatch) -> None:
+    """Check documented prediction-cell admission before quadrature allocation; this is
+    an implementation budget, not statistical accuracy.
+    """
     import fast_mlsirm.two_tier_grm as tt
 
     def unexpected_rule(_q):
+        """Fail if the prediction-cell admission contract permits quadrature
+        allocation.
+        """
         raise AssertionError("quadrature must not run for an oversized prediction")
 
     monkeypatch.setattr(tt, "_probabilists_gauss_hermite", unexpected_rule)
@@ -548,6 +599,9 @@ def test_prediction_budget_counts_categories_before_rule_allocation(monkeypatch)
 
 @pytest.mark.parametrize("bad", [0, -1, 2.0, "15", True])
 def test_q_nuisance_must_be_exact_integer_at_least_one(bad) -> None:
+    """Enforce the documented quadrature API integer domain without truncation or
+    coercion.
+    """
     ap = np.array([[1.0, 0.0]])
     asp = np.array([0.5])
     th = np.array([[1.0, 0.0, -1.0]])
@@ -565,8 +619,13 @@ def test_unrepresentable_rule_fails_before_allocation() -> None:
 
 
 def test_from_fit_requires_producer_identification_before_calculation(monkeypatch):
+    """Reject nonorthogonal/unknown producer identity before the from-fit conditional-
+    curve calculation.
+    """
     import fast_mlsirm.two_tier_grm as module
     def forbidden(*args, **kwargs):
+        """Fail if calculation runs before the documented producer/map admission gate.
+        """
         raise AssertionError("calculation reached before producer identification")
     monkeypatch.setattr(module, "expected_total_score_two_tier_given_primary", forbidden)
     fit = _stub_fit(phi=np.eye(2))
@@ -580,8 +639,13 @@ def test_from_fit_requires_producer_identification_before_calculation(monkeypatc
 
 
 def test_specific_free_map_rejects_nonzero_slope_before_quadrature(monkeypatch):
+    """Reject a specific-free sentinel with nonzero specific slope before either public
+    curve path integrates.
+    """
     import fast_mlsirm.two_tier_grm as module
     def forbidden(*args, **kwargs):
+        """Fail if calculation runs before the documented producer/map admission gate.
+        """
         raise AssertionError("quadrature reached for contradictory specific map")
     monkeypatch.setattr(module, "_probabilists_gauss_hermite", forbidden)
     fit = _stub_fit(phi=np.eye(2))

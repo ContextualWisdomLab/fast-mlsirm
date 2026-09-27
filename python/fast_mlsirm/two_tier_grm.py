@@ -96,6 +96,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._seed import _u64_seed
+
 
 def _finite_integer_control(value: object, name: str) -> int:
     """Normalize a trusted finite integer-valued scalar without callbacks."""
@@ -125,21 +127,6 @@ def _positive_real_control(value: object, name: str) -> float:
     return numeric
 
 
-def _u64_seed(value: object) -> int:
-    """Normalize the deterministic start seed without callbacks."""
-
-    if isinstance(value, bool):
-        raise ValueError("seed must be a non-negative integer")
-    try:
-        numeric = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError("seed must be a non-negative integer") from None
-    if not np.isfinite(numeric) or numeric != np.floor(numeric):
-        raise ValueError("seed must be a non-negative integer")
-    seed = int(numeric)
-    if not 0 <= seed < 2**64:
-        raise ValueError("seed must be in [0, 2**64)")
-    return seed
 
 
 @dataclass
@@ -204,7 +191,9 @@ def fit_two_tier_grm(
     free confirmatory primary slopes (each primary needs at least two
     loading items); ``specific_map`` is a length-``n_items`` integer array
     with ``-1`` for specific-free items and ``0..n_specific-1`` otherwise
-    (every specific factor needs at least two items).
+    (every specific factor needs at least two items). n_specific=0 with
+    an all -1 map is the primary-only reduction of Cai (2010), p.587
+    equation7 and p.589 equations11-12; n_primary=1 is unidimensional.
     ``q_primary``/``q_specific`` are required Gauss-Hermite node counts
     (any ``int >= 1``; #1929 removed the fixed-table cap, so any node count
     the Rust core's arbitrary-``n`` Golub-Welsch quadrature resolves is
@@ -232,6 +221,8 @@ def fit_two_tier_grm(
     Hansen, M. (2011). Generalized full-information item bifactor analysis.
     *Psychological Methods, 16*(3), 221-248. https://doi.org/10.1037/a0023350.
     """
+    # Cai (2010), pp.587-589 eqs.7/11/12: all specific-free items
+    # with n_specific=0 retain only the declared primary dimensions.
     if not isinstance(primary_correlation, str) or primary_correlation not in (
         "estimate", "identity"
     ):
@@ -243,8 +234,8 @@ def fit_two_tier_grm(
     if n_primary_int < 1:
         raise ValueError("n_primary must be >= 1")
     n_specific_int = _finite_integer_control(n_specific, "n_specific")
-    if n_specific_int < 1:
-        raise ValueError("n_specific must be >= 1")
+    if n_specific_int < 0:
+        raise ValueError("n_specific must be >= 0")
     q_primary_int = _finite_integer_control(q_primary, "q_primary")
     if q_primary_int < 1:
         raise ValueError("q_primary must be >= 1")
@@ -444,8 +435,8 @@ def two_tier_oakes_se(
     if n_primary_int < 1:
         raise ValueError("n_primary must be >= 1")
     n_specific_int = _finite_integer_control(n_specific, "n_specific")
-    if n_specific_int < 1:
-        raise ValueError("n_specific must be >= 1")
+    if n_specific_int < 0:
+        raise ValueError("n_specific must be >= 0")
     q_primary_int = _finite_integer_control(q_primary, "q_primary")
     if q_primary_int < 1:
         raise ValueError("q_primary must be >= 1")

@@ -1,0 +1,8 @@
+{
+  "exit_code": 1,
+  "stdout": "",
+  "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 12, in <module>\nAssertionError: All six hardware contracts must execute\n",
+  "actual_cases": 3,
+  "required_cases": 6,
+  "result": "actual partial JUnit rejected by actual CI consumer"
+}
