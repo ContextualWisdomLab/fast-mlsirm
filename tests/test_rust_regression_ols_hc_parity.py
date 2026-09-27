@@ -18,6 +18,7 @@ from fast_mlsirm import (
     fit_ols_hc,
     nested_ols_column_drop,
     normal_wald_interval,
+    paired_abs_differences,
     sample_mean_sd,
 )
 from fast_mlsirm.regression import f_sf, t_sf
@@ -88,6 +89,7 @@ def test_fit_ols_hc3_parity_atol_1e6():
     x, y = _synthetic_design()
     ref = _reference_fit_ols_hc3(x, y)
     got = fit_ols_hc(x, y, hc="HC3")
+    assert got["design_rank"] == x.shape[1]
     np.testing.assert_allclose(got["beta"], ref["beta"], atol=1e-6, rtol=0.0)
     np.testing.assert_allclose(got["vcov"], ref["vcov"], atol=1e-6, rtol=0.0)
     np.testing.assert_allclose(got["se"], ref["se"], atol=1e-6, rtol=0.0)
@@ -185,3 +187,8 @@ def test_report_values_use_rust_with_explicit_interval_level():
         normal_wald_interval(2.0, 0.5, 0.0)
     with pytest.raises(ValueError):
         normal_wald_interval(2.0, 0.5, 1.0)
+    paired = paired_abs_differences(np.array([1.0, -2.0]), np.array([1.25, -1.5]))
+    np.testing.assert_array_equal(paired["abs_diff"], [0.25, 0.5])
+    assert paired["max_abs_diff"] == 0.5
+    with pytest.raises(ValueError):
+        paired_abs_differences(np.array([1.0]), np.array([1.0, 2.0]))

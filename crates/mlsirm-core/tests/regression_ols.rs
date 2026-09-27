@@ -2,7 +2,7 @@
 
 use mlsirm_core::regression::{
     chi2_sf_df1, f_sf, fit_ols, fit_ols_hc, linear_contrast, nested_ols_column_drop,
-    normal_wald_interval, sample_mean_sd,
+    normal_wald_interval, paired_abs_differences, sample_mean_sd,
     sandwich_vcov, t_sf, HcType,
 };
 
@@ -133,4 +133,9 @@ fn sample_moments_and_normal_wald_bounds() {
     assert!(normal_wald_interval(2.0, -0.5, 0.95).is_err());
     assert!(normal_wald_interval(2.0, 0.5, 0.0).is_err());
     assert!(normal_wald_interval(2.0, 0.5, 1.0).is_err());
+    let (differences, maximum) = paired_abs_differences(&[1.0, -2.0], &[1.25, -1.5]).unwrap();
+    assert_eq!(differences, vec![0.25, 0.5]);
+    assert_eq!(maximum, 0.5);
+    assert!(paired_abs_differences(&[1.0], &[1.0, 2.0]).is_err());
+    assert!(paired_abs_differences(&[f64::NAN], &[1.0]).is_err());
 }
