@@ -15,3 +15,5 @@ Remaining work: bind backend native build provenance and bundled component grant
 ## Same-version pure Cython alternative
 
 Official cython-3.3.0-py3-none-any.whl SHA-256 9b24b5c8cd536946b62086fcafee6d5509d3f549f72d553d2336af87ffbe0da1 contains no ELF members. Its 312 source members match the official sdist. A separate six-package hash lock changes only Cython artifact hash, retaining all versions. This is prepared evidence, not an installed/build-tested selection; original lock and prior builds are unchanged. A fresh build must use the alternative lock explicitly if selected and validate generated code and numerical results.
+
+The alternative Cython wheel was subsequently installed offline with --require-hashes into a separate s1 project .venv (CPython3.12.11). check_pure_codegen.py verified pinned wheel bytes, module location, version, no installed Cython .so files, and successful generation of a C extension source. See codegen-receipt.json. This proves the pure code generator starts and translates a typed function; it does not prove a NumPy compilation or numerical/ABI acceptance. The six-tool alternative lock is still not adopted by a fresh NumPy build.

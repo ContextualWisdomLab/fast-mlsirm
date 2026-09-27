@@ -1,0 +1,8 @@
+{
+  "python": "3.12.11 (main, Sep 18 2025, 19:47:19) [Clang 20.1.4 ]",
+  "cython": "3.3.0",
+  "cython_module": "/data/orca/workspaces/fmls-numpy-pure-cython-smoke-20260928/.venv/lib/python3.12/site-packages/Cython/__init__.py",
+  "native_cython_modules": 0,
+  "generated_c_sha256": "26466ffb313456a06c9bfbae65004f4ccba0ab7e6ee321d64c0477e779329516",
+  "scope": "pure Python code generator smoke only; no compiled numerical or NumPy verdict"
+}
