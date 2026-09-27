@@ -367,3 +367,117 @@ def fit_two_tier_grm_focal_orthogonal(
         int(result["max_iter"]),
         float(result["tol"]),
     )
+
+
+def fit_score_two_tier_groups(
+    responses, group_ids, primary_map, specific_map, *, n_groups,
+    reference_group, n_cat, n_primary, n_specific, focal_primary,
+    initial_mean, initial_sd, fit_q_primary, fit_q_specific,
+    score_q_primary, score_q_specific, q_nuisance, max_iter, tol,
+    n_starts, seed, device, gpu_memory_budget_bytes, cache_item_tables,
+):
+    """Fit a reference bank and score each group on its common raw metric.
+
+    Reuses Cai (2010), pp.587–590 equations4–12 and pp.608–609 Appendices
+    A/B through fit_two_tier_grm, fixed-bank focal Gaussian EM and EAP scoring.
+    DOI: https://doi.org/10.1007/s11336-010-9178-0 . Orthogonal identification
+    fixes the reference latent distribution to independent N(0,1). Each
+    nonreference group estimates all means/SDs with the reference items fixed.
+    This anchored composition is caller design, not an empirical validity or
+    recovery claim licensed by the single-sample paper.
+
+    Final group priors score each person's focal EAP. The common reference
+    nuisance curve uses expected_total_score_two_tier_from_fit's independent
+    Gaussian theorem (Penn State STAT414 lesson26.1) and quadrature source
+    contract; it is a curve evaluated at EAP, not posterior expected raw total.
+    Fit, score and nuisance nodes are separate caller choices. Initial mean/SD
+    arrays have shape (n_groups, n_primary+n_specific); the reference row must
+    be zero/one. device='gpu' keeps existing strict GPU/no-fallback behavior
+    for focal fitting and scoring; reference item fitting uses its CPU API.
+
+    Reuses the bootstrap group-admission contract for labels0..n_groups-1.
+    Outputs retain input row slots, actual fits and group score records.
+    Nonconvergence raises RuntimeError with group_id and fit attributes, so a
+    joint replicate caller can record the actual failure rather than combine
+    partially successful scales. Source: Python Built-in Exceptions manual,
+    https://docs.python.org/3/library/exceptions.html#RuntimeError . This is
+    one scale's production path, not bootstrap interval or precision acceptance.
+    """
+    from .bifactor_bootstrap import _bootstrap_groups
+    from .two_tier_grm import (
+        fit_two_tier_grm, expected_total_score_two_tier_from_fit,
+    )
+
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be persons x items")
+    n_groups, groups = _bootstrap_groups(y.shape[0], group_ids, n_groups)
+    if groups is None:
+        raise ValueError("group_ids must be explicit")
+    reference_group = _bounded_integer(reference_group, "reference_group", 0, n_groups - 1)
+    n_primary = _bounded_integer(n_primary, "n_primary", 1, int(np.iinfo(np.uintp).max))
+    n_specific = _bounded_integer(n_specific, "n_specific", 0, int(np.iinfo(np.uintp).max))
+    focal_primary = _bounded_integer(focal_primary, "focal_primary", 0, n_primary - 1)
+    mean = np.asarray(initial_mean, dtype=np.float64)
+    sd = np.asarray(initial_sd, dtype=np.float64)
+    if mean.shape != (n_groups, n_primary + n_specific) or sd.shape != mean.shape:
+        raise ValueError("initial mean/SD must be groups x latent dimensions")
+    if not np.isfinite(mean).all() or not np.isfinite(sd).all() or (sd <= 0).any():
+        raise ValueError("initial mean/SD must be finite with positive SD")
+    if (mean[reference_group] != 0).any() or (sd[reference_group] != 1).any():
+        raise ValueError("reference distribution must be independent N(0,1)")
+    rows = {g: np.flatnonzero(groups == g) for g in range(n_groups)}
+    reference = fit_two_tier_grm(
+        y[rows[reference_group]], primary_map, specific_map,
+        n_cat=n_cat, n_primary=n_primary, n_specific=n_specific,
+        q_primary=fit_q_primary, q_specific=fit_q_specific,
+        max_iter=max_iter, tol=tol, n_starts=n_starts, seed=seed,
+        primary_correlation="identity",
+    )
+    fits = {reference_group: reference}
+    scores = {}
+    theta = np.empty(y.shape[0], dtype=np.float64)
+    expected = np.empty(y.shape[0], dtype=np.float64)
+    for g in [reference_group] + [g for g in range(n_groups) if g != reference_group]:
+        controls = dict(
+            responses=y[rows[g]], primary_map=primary_map, specific_map=specific_map,
+            a_primary=reference.a_primary, a_specific=reference.a_specific,
+            threshold=reference.threshold, n_cat=n_cat, n_primary=n_primary,
+            n_specific=n_specific, device=device,
+            gpu_memory_budget_bytes=gpu_memory_budget_bytes,
+            cache_item_tables=cache_item_tables,
+        )
+        if g != reference_group:
+            fits[g] = fit_two_tier_grm_focal_orthogonal(
+                **controls, latent_mean=mean[g], latent_sd=sd[g],
+                q_primary=fit_q_primary, q_specific=fit_q_specific,
+                max_iter=max_iter, tol=tol,
+            )
+        if not fits[g].converged:
+            error = RuntimeError(f"group {g}: {fits[g].termination_reason}")
+            error.group_id = g
+            error.fit = fits[g]
+            raise error
+        group_mean = mean[g] if g == reference_group else fits[g].latent_mean
+        group_sd = sd[g] if g == reference_group else fits[g].latent_sd
+        scores[g] = score_two_tier_grm_orthogonal(
+            **controls, latent_mean=group_mean, latent_sd=group_sd,
+            q_primary=score_q_primary, q_specific=score_q_specific,
+        )
+        theta[rows[g]] = scores[g].mean[:, focal_primary]
+        expected[rows[g]] = expected_total_score_two_tier_from_fit(
+            reference, theta[rows[g]], specific_map=specific_map,
+            focal_primary=focal_primary, q_nuisance=q_nuisance,
+            orthogonal_primary_identification=True,
+            primary_ref_mean=np.zeros(n_primary), primary_ref_sd=np.ones(n_primary),
+            specific_ref_mean=np.zeros(n_specific), specific_ref_sd=np.ones(n_specific),
+        ).expected_total
+    return dict(reference_fit=reference, group_fits=fits, group_rows=rows,
+                group_scores=scores, theta=theta, expected_total=expected,
+                settings=dict(reference_group=reference_group, focal_primary=focal_primary,
+                              fit_q_primary=fit_q_primary, fit_q_specific=fit_q_specific,
+                              score_q_primary=score_q_primary, score_q_specific=score_q_specific,
+                              q_nuisance=q_nuisance, max_iter=max_iter, tol=tol,
+                              n_starts=n_starts, seed=seed, device=device,
+                              gpu_memory_budget_bytes=gpu_memory_budget_bytes,
+                              cache_item_tables=cache_item_tables))
