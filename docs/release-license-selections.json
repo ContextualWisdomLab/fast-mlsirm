@@ -23,6 +23,50 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "bitflags",
+    "version": "2.13.2",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06",
+    "license_members": [
+      {
+        "member": "bitflags-2.13.2/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "bitflags-2.13.2/LICENSE-MIT",
+        "raw_sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/bitflags-2.13.2-MIT.txt",
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "cfg-if",
+    "version": "1.0.5",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600",
+    "license_members": [
+      {
+        "member": "cfg-if-1.0.5/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "cfg-if-1.0.5/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/cfg-if-1.0.5-MIT.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "itoa",
     "version": "1.0.18",
     "chosen": "MIT",
@@ -41,6 +85,160 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/itoa-1.0.18-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "js-sys",
+    "version": "0.3.105",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "ce57d20d1ea864ce2ac172ab472d409214f4fd359f0b2a2775abdf522e2af99e",
+    "license_members": [
+      {
+        "member": "js-sys-0.3.105/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "js-sys-0.3.105/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/js-sys-0.3.105-MIT.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "log",
+    "version": "0.4.34",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6",
+    "license_members": [
+      {
+        "member": "log-0.4.34/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "log-0.4.34/LICENSE-MIT",
+        "raw_sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/log-0.4.34-MIT.txt",
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "naga",
+    "version": "30.0.1",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "a616d2fb8c89516ac2723a581f69d6c18576046bed761bd6b305e5618e6ae130",
+    "license_members": [
+      {
+        "member": "naga-30.0.1/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "naga-30.0.1/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/naga-30.0.1-MIT.txt",
+      "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "naga-types",
+    "version": "30.0.1",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "590afbf58a6f4f62873cd5cff4468061844bafa1cdf399cc954537c22d768d49",
+    "license_members": [
+      {
+        "member": "naga-types-30.0.1/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "naga-types-30.0.1/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/naga-types-30.0.1-MIT.txt",
+      "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "num-complex",
+    "version": "0.4.6",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495",
+    "license_members": [
+      {
+        "member": "num-complex-0.4.6/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "num-complex-0.4.6/LICENSE-MIT",
+        "raw_sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/num-complex-0.4.6-MIT.txt",
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "num-integer",
+    "version": "0.1.47",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "7ce2d95d4b3734dc35aa2f45e1aa22cd416814592a4f9d9205e11affd5b8e10b",
+    "license_members": [
+      {
+        "member": "num-integer-0.1.47/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "num-integer-0.1.47/LICENSE-MIT",
+        "raw_sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/num-integer-0.1.47-MIT.txt",
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "num-traits",
+    "version": "0.2.19",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841",
+    "license_members": [
+      {
+        "member": "num-traits-0.2.19/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "num-traits-0.2.19/LICENSE-MIT",
+        "raw_sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/num-traits-0.2.19-MIT.txt",
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
     }
   },
   {
@@ -85,6 +283,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/pin-project-lite-0.2.17-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "pkg-config",
+    "version": "0.3.34",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548",
+    "license_members": [
+      {
+        "member": "pkg-config-0.3.34/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "pkg-config-0.3.34/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/pkg-config-0.3.34-MIT.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
     }
   },
   {
@@ -151,6 +371,124 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/proc-macro2-1.0.107-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "pyo3",
+    "version": "0.29.2",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "4688ddedf473e32662b9b067670129a8afb8c18e351482c70d62ba4a88171e8b",
+    "license_members": [
+      {
+        "member": "pyo3-0.29.2/LICENSE-APACHE",
+        "raw_sha256": "32c76dbe0e73d79100d5ece77c158399f2e2541bc5c78548a4ba45c1cb53c5c9"
+      },
+      {
+        "member": "pyo3-0.29.2/LICENSE-MIT",
+        "raw_sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
+      },
+      {
+        "member": "pyo3-0.29.2/pyo3-runtime/LICENSE-APACHE",
+        "raw_sha256": "32c76dbe0e73d79100d5ece77c158399f2e2541bc5c78548a4ba45c1cb53c5c9"
+      },
+      {
+        "member": "pyo3-0.29.2/pyo3-runtime/LICENSE-MIT",
+        "raw_sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/pyo3-0.29.2-MIT.txt",
+      "sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "pyo3-build-config",
+    "version": "0.29.2",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "f41027e41b4bd03f6e60f9f417fe24a6341a6bb744edd62b6f709f2a52ea30e9",
+    "license_members": [
+      {
+        "member": "pyo3-build-config-0.29.2/LICENSE-APACHE",
+        "raw_sha256": "32c76dbe0e73d79100d5ece77c158399f2e2541bc5c78548a4ba45c1cb53c5c9"
+      },
+      {
+        "member": "pyo3-build-config-0.29.2/LICENSE-MIT",
+        "raw_sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/pyo3-build-config-0.29.2-MIT.txt",
+      "sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "pyo3-ffi",
+    "version": "0.29.2",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "e591a95526fead067432c3b3a33fc74770b87b1e04e73671090d9c2055a2b327",
+    "license_members": [
+      {
+        "member": "pyo3-ffi-0.29.2/LICENSE-APACHE",
+        "raw_sha256": "32c76dbe0e73d79100d5ece77c158399f2e2541bc5c78548a4ba45c1cb53c5c9"
+      },
+      {
+        "member": "pyo3-ffi-0.29.2/LICENSE-MIT",
+        "raw_sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/pyo3-ffi-0.29.2-MIT.txt",
+      "sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "pyo3-macros",
+    "version": "0.29.2",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "73225868fc1cd84eef2c3c230ddb91273bf1de46aeb8a4248da76d32a0924a1c",
+    "license_members": [
+      {
+        "member": "pyo3-macros-0.29.2/LICENSE-APACHE",
+        "raw_sha256": "32c76dbe0e73d79100d5ece77c158399f2e2541bc5c78548a4ba45c1cb53c5c9"
+      },
+      {
+        "member": "pyo3-macros-0.29.2/LICENSE-MIT",
+        "raw_sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/pyo3-macros-0.29.2-MIT.txt",
+      "sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "pyo3-macros-backend",
+    "version": "0.29.2",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "571575aa3749fa6216757dd47d2a3e7ef360f329a40f0666a9fbd14889024952",
+    "license_members": [
+      {
+        "member": "pyo3-macros-backend-0.29.2/LICENSE-APACHE",
+        "raw_sha256": "32c76dbe0e73d79100d5ece77c158399f2e2541bc5c78548a4ba45c1cb53c5c9"
+      },
+      {
+        "member": "pyo3-macros-backend-0.29.2/LICENSE-MIT",
+        "raw_sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/pyo3-macros-backend-0.29.2-MIT.txt",
+      "sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
     }
   },
   {
@@ -415,6 +753,314 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/thiserror-impl-2.0.20-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wasm-bindgen",
+    "version": "0.2.128",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "aecb87a33d3b0c5e3b7aa46336eaf486cffafbd281b195e4c8b80d50df2351bf",
+    "license_members": [
+      {
+        "member": "wasm-bindgen-0.2.128/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wasm-bindgen-0.2.128/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wasm-bindgen-0.2.128-MIT.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wasm-bindgen-futures",
+    "version": "0.4.78",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "6ef4c5d3d2cdf5c54f4231181768f5510842e350db025faf1f7163b1030ed928",
+    "license_members": [
+      {
+        "member": "wasm-bindgen-futures-0.4.78/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wasm-bindgen-futures-0.4.78/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wasm-bindgen-futures-0.4.78-MIT.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wasm-bindgen-macro",
+    "version": "0.2.128",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "a690d511e3c1a8b3a55e33511e3c2c00c78415cd23650f32b808627f5696b9ed",
+    "license_members": [
+      {
+        "member": "wasm-bindgen-macro-0.2.128/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wasm-bindgen-macro-0.2.128/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wasm-bindgen-macro-0.2.128-MIT.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wasm-bindgen-macro-support",
+    "version": "0.2.128",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "411e4887f0071ef2d2164a9d5fdf2d20efbef78fccd3a78b0c10a1dc5295e48a",
+    "license_members": [
+      {
+        "member": "wasm-bindgen-macro-support-0.2.128/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wasm-bindgen-macro-support-0.2.128/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wasm-bindgen-macro-support-0.2.128-MIT.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wasm-bindgen-shared",
+    "version": "0.2.128",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "81941cd78d0c92026c33e5e01312845a4cb1e9af3407f9134b100dd03144103e",
+    "license_members": [
+      {
+        "member": "wasm-bindgen-shared-0.2.128/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "wasm-bindgen-shared-0.2.128/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wasm-bindgen-shared-0.2.128-MIT.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "web-sys",
+    "version": "0.3.105",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "9fbddc4a036f00ec4f18c83445bd3115cb306a91da554919a099d9222fe4a7f8",
+    "license_members": [
+      {
+        "member": "web-sys-0.3.105/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "web-sys-0.3.105/LICENSE-MIT",
+        "raw_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/web-sys-0.3.105-MIT.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu",
+    "version": "30.0.1",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "527ccdf43dd5b2e8676eed9984ce00e2bbb0a1b85b70c1969dcb6cd2eb55ab9e",
+    "license_members": [
+      {
+        "member": "wgpu-30.0.1/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-30.0.1/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-30.0.1-MIT.txt",
+      "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-core",
+    "version": "30.0.1",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "14c018fce9b6270aa203c2fdd56f3cce996713534bd757e4ea58c8560b121f14",
+    "license_members": [
+      {
+        "member": "wgpu-core-30.0.1/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-core-30.0.1/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-core-30.0.1-MIT.txt",
+      "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-core-deps-apple",
+    "version": "30.0.1",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "061f3d319a40d39d00b1ecc2c33b89fe21d4e6fe01859df3500a3a8ecccd6b68",
+    "license_members": [
+      {
+        "member": "wgpu-core-deps-apple-30.0.1/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-core-deps-apple-30.0.1/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-core-deps-apple-30.0.1-MIT.txt",
+      "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-core-deps-emscripten",
+    "version": "30.0.1",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "d98b86cf4abf524a902dd35f18ca6a3f08fc2ae9847c8f10b48e30491b1f0b86",
+    "license_members": [
+      {
+        "member": "wgpu-core-deps-emscripten-30.0.1/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-core-deps-emscripten-30.0.1/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-core-deps-emscripten-30.0.1-MIT.txt",
+      "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-core-deps-windows-linux-android",
+    "version": "30.0.1",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "7586165fd5f6d881cb9ce4bb71f40d6caab2c0f1837e3fc1d9788a197fb6004f",
+    "license_members": [
+      {
+        "member": "wgpu-core-deps-windows-linux-android-30.0.1/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-core-deps-windows-linux-android-30.0.1/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-core-deps-windows-linux-android-30.0.1-MIT.txt",
+      "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-hal",
+    "version": "30.0.1",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "b6b7fb58561a792bc237628ba0792e332de418fefe145f13b5ed8201e6d52f58",
+    "license_members": [
+      {
+        "member": "wgpu-hal-30.0.1/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-hal-30.0.1/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-hal-30.0.1-MIT.txt",
+      "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-naga-bridge",
+    "version": "30.0.1",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "d2f62e73117bb7a62bfd9c5a5841438a823f6566c6442a808ee269d2d055c081",
+    "license_members": [
+      {
+        "member": "wgpu-naga-bridge-30.0.1/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-naga-bridge-30.0.1/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-naga-bridge-30.0.1-MIT.txt",
+      "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "wgpu-types",
+    "version": "30.0.1",
+    "chosen": "MIT",
+    "rationale": "All collected licence-like members of the checksum-matched crate exactly match previously reviewed whole-text digests in central helper 1568ca18d74eeab07a3ef43c46064a5ac77f5ca7. Choose the MIT grant and retain its copyright and permission notices in redistributed copies. This is not Strix or whole-release approval.",
+    "archive_sha256": "99dad6f1fbdbbdb4c278a6508b059d44688f5cebddf78d005a46a31340269286",
+    "license_members": [
+      {
+        "member": "wgpu-types-30.0.1/LICENSE.APACHE",
+        "raw_sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      },
+      {
+        "member": "wgpu-types-30.0.1/LICENSE.MIT",
+        "raw_sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/wgpu-types-30.0.1-MIT.txt",
+      "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
     }
   },
   {

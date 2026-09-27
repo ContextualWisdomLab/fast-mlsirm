@@ -58,15 +58,15 @@ crates/fast-mlsirm-py/Cargo.toml` reports 125 external packages whose declared
 licence contains `OR`. This is the unfiltered release graph, not one target's
 compiled dependency count.
 
-The pinned central control `08517d467d2fc88857205d6a08634d03088ad8b7`
-uses helper `d3f5602cd33438ac1d7e63759dfc4840ca794814`. Both capture paths
+The pinned central control `53767c64c8d1a92142b2b6b46c8f35729726b22d`
+uses helper `1568ca18d74eeab07a3ef43c46064a5ac77f5ca7`. Both capture paths
 read `docs/release-license-selections.json` from the exact source commit,
 never from mutable checkout bytes. The fixed path must be a regular Git blob;
 duplicate dependency selections refuse capture. The dependency report binds
 the file SHA-256, and its hash is already sealed in the full-set verdict.
 Absent files still leave `OR` dependencies refused before Strix credentials.
 
-Thirty-one selections now choose MIT only where every collected licence-like
+Sixty selections now choose MIT only where every collected licence-like
 member exactly matches a previously reviewed full-text digest. Every archive
 was rehashed against the wheel-root Cargo lock. Each selection records its
 archive checksum, raw member hashes and the selected notice's packaged path
@@ -77,7 +77,7 @@ hashes with the direct wheel; recalculating a forged consumer archive hash
 cannot authorize a missing or changed notice.
 
 The notices use the existing mixed Python package layout, without a new
-packaging hook. Local maturin 1.15.0 builds retained all thirty-one exact notice
+packaging hook. Local maturin 1.15.0 builds retained all sixty exact notice
 files in the arm64 CPython 3.14 wheel and sdist; this is not evidence for the
 other hosted wheel targets. Other selections and full-text reviews remain
 missing. Notice retention does not attest to Strix or whole-release approval.
