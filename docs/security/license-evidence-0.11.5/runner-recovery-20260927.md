@@ -495,3 +495,24 @@ profileapplies; no profilechange. RESTrate_limitreported5000butotherGETs403,
 so useavailableconnector/GraphQLanddeferquota-churn. License/publishedmatrix
 acceptance unchanged; NumPyFortran-freereplacement remainsseparateunfinished
 work documented inoriginalevidence/#2136.
+
+
+## Release-tag trusted-source ordering, 2026-09-28
+
+The sibling Release Tag entry point still selected raw release input before
+ancestry verification. PR #2225 starts checkout at github.sha, checks the
+trusted dispatch identity and canonical commit-object identity, proves ancestry,
+and only then selects the release commit. Publication gates and triggers remain
+unchanged; this merge does not publish artifacts.
+
+Source: 2e21b572a26016148ee848604b2fb0d70984223f.
+Merged into #2135: 476940464022e0dd7adaf0f64c08f2048c0206dc,
+2026-09-27T16:16:10Z. Source ancestry and both affected file bytes match.
+Previous source fails the regression. Real Git DAG covers ancestors, sibling,
+absent commit, and annotated-tag object; rejection preserves trusted HEAD.
+Publish/release and fuzz platform contracts: 44 passed in 253.75s.
+actionlint with ShellCheck disabled and git diff --check pass.
+No unresolved review threads; CodeRabbit and Devin successful; hosted jobs
+queued. Maintainer-authorized exact-head bypass applied to this bounded leaf.
+The root #2135 main merge and current-head security proof remain pending.
+Original Cargo 11/Python 3 HOLD and published 12-wheel acceptance are unchanged.
