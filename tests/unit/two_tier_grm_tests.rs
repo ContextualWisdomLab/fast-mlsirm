@@ -877,3 +877,106 @@ fn focal_scores_match_physical_full_grid_and_missing_prior() {
     );
     assert!(matches!(fitted_validation, Err(message) if message.contains("never observed")));
 }
+
+#[test]
+fn focal_em_preserves_one_step_moments_and_termination_receipts() {
+    use crate::two_tier_grm::{fit_two_tier_grm_focal_orthogonal, score_two_tier_grm_orthogonal};
+    let ap = [0.7, -0.4, 0.8, -0.2, 0.9, 0.1, 1.0, 0.2, 1.1, 0.4];
+    let asp = [0.5, 0.2, -0.1, -0.4, 0.0];
+    let threshold = [0.8, -0.6, 0.8, -0.6, 0.8, -0.6, 0.8, -0.6, 0.8, -0.6];
+    let primary = [true; 10];
+    let specific = [0, 0, 1, 1, -1];
+    let y = [0, 1, 2, 0, 1, 1, 2, 0, 1, 2, 2, 0, 1, 2, 0];
+    let mu = [0.4, -0.2, 0.7, -0.6];
+    let sd = [1.1, 0.8, 0.9, 1.3];
+    let initial = score_two_tier_grm_orthogonal(
+        &ap, &asp, &threshold, &mu, &sd, &y, None, &primary, &specific, 3, 5, 2, 2, 3, 7, 7,
+    )
+    .unwrap();
+    let run = |q, cap, tol, observed: Option<&[bool]>| {
+        fit_two_tier_grm_focal_orthogonal(
+            &ap, &asp, &threshold, &mu, &sd, &y, observed, &primary, &specific, 3, 5, 2, 2, 3, q,
+            q, cap, tol,
+        )
+    };
+    let fit = run(7, 1, 1e-14, None).unwrap();
+    assert_eq!(fit.n_iter, 1);
+    assert_eq!(fit.loglik_trace.len(), 2);
+    assert_eq!(fit.loglik_trace[0], initial.loglik);
+    assert_eq!(fit.loglik_trace[1], fit.scores.loglik);
+    assert_eq!(
+        fit.final_loglik_change,
+        fit.loglik_trace[1] - fit.loglik_trace[0]
+    );
+    assert_eq!(fit.initial_mean, mu);
+    assert_eq!(fit.initial_sd, sd);
+    assert_eq!(fit.q_primary, 7);
+    assert_eq!(fit.q_specific, 7);
+    assert_eq!(fit.max_iter, 1);
+    assert_eq!(fit.tol, 1e-14);
+    for d in 0..4 {
+        let m = (0..3)
+            .map(|person| initial.mean[person * 4 + d])
+            .sum::<f64>()
+            / 3.0;
+        // Independent raw-second-moment identity at moderate mean values.
+        let var = (0..3)
+            .map(|person| initial.second[person * 4 + d])
+            .sum::<f64>()
+            / 3.0
+            - m * m;
+        assert!((fit.latent_mean[d] - m).abs() < 1e-12);
+        assert!((fit.latent_sd[d] - var.sqrt()).abs() < 1e-12);
+    }
+    for q in [2, 7] {
+        let result = run(q, 12, 1e-6, None).unwrap();
+        assert_eq!(result.loglik_trace.len(), result.n_iter + 1);
+        assert_eq!(*result.loglik_trace.last().unwrap(), result.scores.loglik);
+        assert_eq!(
+            result.converged,
+            result.termination_reason == "tolerance_met"
+        );
+        match result.termination_reason {
+            "loglik_decreased" => assert!(result.final_loglik_change < 0.0),
+            "tolerance_met" => assert!(
+                result.final_loglik_change >= 0.0 && result.final_loglik_change <= result.tol
+            ),
+            "max_iter_reached" => assert_eq!(result.n_iter, result.max_iter),
+            other => panic!("unexpected termination {other}"),
+        }
+        eprintln!(
+            "toy q={q}: {}, updates={}",
+            result.termination_reason, result.n_iter
+        );
+    }
+    // Moving coarse GH nodes can decrease the evaluated likelihood. Retain
+    // that evaluated state and stop without reporting convergence.
+    let decreased = fit_two_tier_grm_focal_orthogonal(
+        &ap, &asp, &threshold, &[0.0; 4], &[2.0; 4], &y, None, &primary, &specific, 3, 5, 2, 2, 3,
+        2, 2, 30, 1e-12,
+    )
+    .unwrap();
+    assert!(!decreased.converged);
+    assert_eq!(decreased.termination_reason, "loglik_decreased");
+    assert!(decreased.final_loglik_change < 0.0);
+    assert!(decreased.n_iter < decreased.max_iter);
+    assert_eq!(
+        *decreased.loglik_trace.last().unwrap(),
+        decreased.scores.loglik
+    );
+    // Loose synthetic tolerance tests the convergence branch, not a study setting.
+    let stopped = run(7, 1, 1e6, None).unwrap();
+    assert!(stopped.converged);
+    assert_eq!(stopped.termination_reason, "tolerance_met");
+    assert_eq!(stopped.n_iter, 1);
+    assert!(run(7, 0, 1e-6, None).is_err());
+    assert!(run(7, 1, 0.0, None).is_err());
+    assert!(run(7, 1, f64::INFINITY, None).is_err());
+    assert!(run(7, 1, 1e-6, Some(&[false; 15])).is_err());
+    let mut mask = [true; 15];
+    for person in 0..3 {
+        mask[person * 5 + 2] = false;
+        mask[person * 5 + 3] = false;
+    }
+    assert!(run(7, 1, 1e-6, Some(&mask)).is_err());
+}

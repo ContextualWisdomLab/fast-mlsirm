@@ -2299,6 +2299,187 @@ pub fn score_two_tier_grm_orthogonal(
     })
 }
 
+/// Fixed-item focal Gaussian population fit with actual evaluated person scores.
+/// `n_iter` counts distribution updates; the likelihood trace includes the
+/// caller's initial distribution plus each updated distribution. A decreasing
+/// finite-grid likelihood stops with `converged=false` and retains that state.
+#[derive(Debug)]
+pub struct TwoTierGrmFocalFit {
+    pub latent_mean: Vec<f64>,
+    pub latent_sd: Vec<f64>,
+    pub scores: TwoTierGrmPersonScores,
+    pub loglik_trace: Vec<f64>,
+    pub n_iter: usize,
+    pub converged: bool,
+    pub termination_reason: &'static str,
+    pub final_loglik_change: f64,
+    pub initial_mean: Vec<f64>,
+    pub initial_sd: Vec<f64>,
+    pub q_primary: usize,
+    pub q_specific: usize,
+    pub max_iter: usize,
+    pub tol: f64,
+}
+
+/// Fit all primary/specific Gaussian means/SDs with all item parameters fixed.
+///
+/// Cai (2010), *Psychometrika*, 75, 581-612,
+/// https://doi.org/10.1007/s11336-010-9178-0, p. 587 equations 4-6 defines
+/// latent Gaussian means/variances; pp. 608-609 Appendix A gives their
+/// complete-data M-step density objectives and Appendix B posterior moments.
+/// Derived Gaussian EM update: `mu_new = mean(E[theta|Y])` and
+/// `var_new = mean(Var[theta|Y] + (E[theta|Y]-mu_new)^2)` with denominator N.
+/// The latter is the same second-moment update without subtracting squared
+/// population means. Independent Gaussian factors restrict all covariances
+/// to zero. Item inputs stay fixed, including signs and reference metric.
+/// This anchored focal application is a caller design; the single-sample
+/// paper does not establish its empirical FIPC recovery or interval coverage.
+/// This is not Kim (2006)'s fixed-node discrete-weight MWU-MEM.
+///
+/// Initialization, quadrature counts, positive finite tolerance and update cap
+/// are required caller choices. The scorer moves GH nodes with the Gaussian
+/// distribution (affine substitution), so finite quadrature need not inherit
+/// exact-integral EM monotonicity. Every negative likelihood change stops as
+/// `loglik_decreased`, without claiming convergence or replacing that result.
+/// Nonnegative change <= tol stops as `tolerance_met`; exhausting max_iter
+/// reports `max_iter_reached`. These are numerical rules, not a sourced study
+/// tolerance or accuracy guarantee. Positive variance is required; no ridge,
+/// floor, hidden restart, or variance clamp is introduced. All-missing data
+/// and latent dimensions without any observed nonzero loading are rejected.
+/// This necessary information check does not prove joint identification.
+/// Fixed items permit missing categories; any stricter resample rejection
+/// policy is explicitly owned by the caller, not implied fit validity.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_two_tier_grm_focal_orthogonal(
+    a_primary: &[f64],
+    a_specific: &[f64],
+    thresholds: &[f64],
+    initial_mean: &[f64],
+    initial_sd: &[f64],
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+) -> Result<TwoTierGrmFocalFit, String> {
+    if max_iter == 0 || !tol.is_finite() || tol <= 0.0 {
+        return Err("max_iter must be positive and tol finite and positive".into());
+    }
+    let score = |mu: &[f64], sd: &[f64]| {
+        score_two_tier_grm_orthogonal(
+            a_primary,
+            a_specific,
+            thresholds,
+            mu,
+            sd,
+            y,
+            observed,
+            primary_map,
+            specific_map,
+            n_persons,
+            n_items,
+            n_primary,
+            n_specific,
+            n_cat,
+            q_primary,
+            q_specific,
+        )
+    };
+    // Establish all input/parameter shape contracts before indexing below.
+    let mut scores = score(initial_mean, initial_sd)?;
+    let is_observed = |i: usize| {
+        (0..n_persons).any(|person| observed.is_none_or(|mask| mask[person * n_items + i]))
+    };
+    let n_latent = initial_mean.len();
+    for d in 0..n_latent {
+        let informative = (0..n_items).any(|i| {
+            is_observed(i)
+                && if d < n_primary {
+                    a_primary[i * n_primary + d] != 0.0
+                } else {
+                    specific_map[i] == (d - n_primary) as i32 && a_specific[i] != 0.0
+                }
+        });
+        if !informative {
+            return Err(format!(
+                "latent dimension {d} has no observed nonzero loading"
+            ));
+        }
+    }
+    let mut latent_mean = initial_mean.to_vec();
+    let mut latent_sd = initial_sd.to_vec();
+    let mut trace = vec![scores.loglik];
+    let mut converged = false;
+    let mut reason = "max_iter_reached";
+    let mut n_iter = 0;
+    let mut final_change = 0.0;
+    for iteration in 1..=max_iter {
+        let mut mu = vec![0.0; n_latent];
+        for person in 0..n_persons {
+            for (d, value) in mu.iter_mut().enumerate() {
+                *value += scores.mean[person * n_latent + d] / n_persons as f64;
+            }
+        }
+        let mut sd = vec![0.0; n_latent];
+        for person in 0..n_persons {
+            for (d, value) in sd.iter_mut().enumerate() {
+                let i = person * n_latent + d;
+                let delta = scores.mean[i] - mu[d];
+                *value += (scores.sd[i] * scores.sd[i] + delta * delta) / n_persons as f64;
+            }
+        }
+        for (d, variance) in sd.iter_mut().enumerate() {
+            if !mu[d].is_finite() || !variance.is_finite() || *variance <= 0.0 {
+                return Err(format!(
+                    "invalid Gaussian moment update at iteration {iteration}, dimension {d}"
+                ));
+            }
+            *variance = variance.sqrt();
+        }
+        let next = score(&mu, &sd)
+            .map_err(|error| format!("focal scoring failed after update {iteration}: {error}"))?;
+        final_change = next.loglik - scores.loglik;
+        trace.push(next.loglik);
+        latent_mean = mu;
+        latent_sd = sd;
+        scores = next;
+        n_iter = iteration;
+        if final_change < 0.0 {
+            reason = "loglik_decreased";
+            break;
+        }
+        if final_change <= tol {
+            converged = true;
+            reason = "tolerance_met";
+            break;
+        }
+    }
+    Ok(TwoTierGrmFocalFit {
+        latent_mean,
+        latent_sd,
+        scores,
+        loglik_trace: trace,
+        n_iter,
+        converged,
+        termination_reason: reason,
+        final_loglik_change: final_change,
+        initial_mean: initial_mean.to_vec(),
+        initial_sd: initial_sd.to_vec(),
+        q_primary,
+        q_specific,
+        max_iter,
+        tol,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_grm_tests.rs"]
 mod tests;
