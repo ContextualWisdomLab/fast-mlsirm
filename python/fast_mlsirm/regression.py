@@ -83,6 +83,39 @@ def _as_float64_vector(y: object, name: str, *, expected_length: int | None = No
     return arr
 
 
+def centered_product_design(x: np.ndarray, terms, *, ddof: int) -> dict[str, Any]:
+    """Native column means/SDs and products of centered predictors.
+
+    NumPy Developers (n.d.-a, Notes; n.d.-b, Notes) define sum/N and N-ddof.
+    References: NumPy Developers. (n.d.-a). numpy.mean. In NumPy v2.5 manual.
+    https://numpy.org/doc/stable/reference/generated/numpy.mean.html
+    NumPy Developers. (n.d.-b). numpy.std. In NumPy v2.5 manual.
+    https://numpy.org/doc/stable/reference/generated/numpy.std.html
+    ddof=1 gives the square root of unbiased variance, not unbiased SD.
+    Every term is a sequence of input column indices; an empty term is 1,
+    repeated indices give powers, and order is retained. The caller declares
+    terms, intercept and ddof. No study model, probes or term selection is
+    inferred. All input columns need positive finite SDs. Native code rejects
+    nonfinite derived products; this function only validates/marshals arrays.
+    """
+    from .polytomous import _bounded_integer
+
+    values = _as_float64_matrix(x, "x")
+    ddof = _bounded_integer(ddof, "ddof", 0, values.shape[0] - 1)
+    if not isinstance(terms, (list, tuple)) or not 0 < len(terms) <= MAX_PARAMETERS:
+        raise ValueError("terms must be a nonempty list/tuple within the parameter limit")
+    admitted = []
+    for term in terms:
+        if not isinstance(term, (list, tuple)):
+            raise ValueError("each term must be a list/tuple of input column indices")
+        admitted.append([_bounded_integer(j, "term index", 0, values.shape[1] - 1)
+                         for j in term])
+    raw = regression_core().centered_product_design(values, admitted, ddof)
+    return {"centers": np.asarray(raw["centers"], dtype=np.float64),
+            "sds": np.asarray(raw["sds"], dtype=np.float64),
+            "design": np.asarray(raw["design"], dtype=np.float64).reshape(values.shape[0], len(terms))}
+
+
 def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     """Fit OLS and return HC sandwich covariance.
 

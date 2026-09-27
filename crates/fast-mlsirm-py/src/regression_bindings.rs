@@ -4,8 +4,8 @@
 //! NumPy layout, delegates to the core, and marshals results into Python dicts.
 
 use mlsirm_core::regression::{
-    chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc, linear_contrast,
-    slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
+    centered_product_design, chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc,
+    linear_contrast, slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
 };
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -48,6 +48,25 @@ fn contrast_dict(
     out.set_item("f_stat", result.f_stat)?;
     out.set_item("p_f", result.p_f)?;
     out.set_item("df", result.df)?;
+    Ok(out.into())
+}
+
+/// Marshal the native NumPy-manual centering/std/product contract without arithmetic.
+#[pyfunction(name = "centered_product_design")]
+fn py_centered_product_design(
+    py: Python<'_>,
+    x: PyReadonlyArray2<'_, f64>,
+    terms: Vec<Vec<usize>>,
+    ddof: usize,
+) -> PyResult<Py<PyDict>> {
+    let shape = x.shape();
+    let values: Vec<f64> = x.as_array().iter().copied().collect();
+    let result = centered_product_design(&values, shape[0], shape[1], &terms, ddof)
+        .map_err(PyValueError::new_err)?;
+    let out = PyDict::new(py);
+    out.set_item("centers", PyArray1::from_slice(py, &result.centers))?;
+    out.set_item("sds", PyArray1::from_slice(py, &result.sds))?;
+    out.set_item("design", PyArray1::from_slice(py, &result.design))?;
     Ok(out.into())
 }
 
@@ -100,7 +119,10 @@ fn py_xwz_e_design_row(py: Python<'_>, x: f64, w: f64, z: f64, e: f64) -> Py<PyA
 }
 
 #[pyfunction(name = "design_row_dot")]
-fn py_design_row_dot(row: PyReadonlyArray1<'_, f64>, beta: PyReadonlyArray1<'_, f64>) -> PyResult<f64> {
+fn py_design_row_dot(
+    row: PyReadonlyArray1<'_, f64>,
+    beta: PyReadonlyArray1<'_, f64>,
+) -> PyResult<f64> {
     design_row_dot(row.as_slice()?, beta.as_slice()?).map_err(PyValueError::new_err)
 }
 
@@ -119,17 +141,8 @@ fn py_conditional_slope(
     e: f64,
     df: f64,
 ) -> PyResult<Py<PyDict>> {
-    let result = conditional_slope(
-        beta.as_slice()?,
-        vcov.as_slice()?,
-        focal,
-        x,
-        w,
-        z,
-        e,
-        df,
-    )
-    .map_err(PyValueError::new_err)?;
+    let result = conditional_slope(beta.as_slice()?, vcov.as_slice()?, focal, x, w, z, e, df)
+        .map_err(PyValueError::new_err)?;
     contrast_dict(py, result)
 }
 
@@ -174,6 +187,7 @@ fn py_t_sf(t: f64, df: f64) -> f64 {
 #[pyo3(name = "_regression_core")]
 fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("XWZ_E_K", XWZ_E_K)?;
+    m.add_function(wrap_pyfunction!(py_centered_product_design, m)?)?;
     m.add_function(wrap_pyfunction!(py_fit_ols_hc, m)?)?;
     m.add_function(wrap_pyfunction!(py_linear_contrast, m)?)?;
     m.add_function(wrap_pyfunction!(py_xwz_e_design_row, m)?)?;

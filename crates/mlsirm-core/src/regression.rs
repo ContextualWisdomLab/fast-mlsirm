@@ -78,6 +78,90 @@
 
 use crate::fitstats::{chi2_sf, ln_gamma};
 
+/// Native centering, declared-ddof SDs and caller-selected product columns.
+pub struct CenteredProductDesign {
+    /// Arithmetic means in input column order.
+    pub centers: Vec<f64>,
+    /// SDs with denominator n-ddof, not claimed unbiased SD estimates.
+    pub sds: Vec<f64>,
+    /// Row-major products in caller term order; an empty term is an intercept.
+    pub design: Vec<f64>,
+}
+
+/// Build products of mean-centered columns; no model terms are chosen here.
+///
+/// NumPy Developers (n.d.-a/b), NumPy 2.5 manual Notes, define sum/N and
+/// sqrt(sum((x-mean)^2)/(N-ddof)); ddof=1 corrects variance bias, not SD bias:
+/// References: NumPy Developers. (n.d.-a). numpy.mean. In NumPy v2.5 manual.
+/// <https://numpy.org/doc/stable/reference/generated/numpy.mean.html>
+/// NumPy Developers. (n.d.-b). numpy.std. In NumPy v2.5 manual.
+/// <https://numpy.org/doc/stable/reference/generated/numpy.std.html>.
+/// Terms contain input column indices; repeated indices yield powers and an
+/// empty term yields 1. Terms, intercept, centering and ddof are caller choices.
+/// No standardization, term dropping, missing-value omission or rank repair.
+/// Finite inputs, positive finite SDs and finite derived products are required.
+pub fn centered_product_design(
+    x: &[f64],
+    n: usize,
+    k: usize,
+    terms: &[Vec<usize>],
+    ddof: usize,
+) -> Result<CenteredProductDesign, String> {
+    if k == 0 || n <= ddof || n.checked_mul(k) != Some(x.len()) {
+        return Err("input shape must be positive with n > ddof".into());
+    }
+    if terms.is_empty() || terms.iter().flatten().any(|&j| j >= k) {
+        return Err("terms must be nonempty with valid input column indices".into());
+    }
+    if x.iter().any(|v| !v.is_finite()) {
+        return Err("input columns must be finite".into());
+    }
+    let mut centers = vec![0.0; k];
+    for row in x.chunks_exact(k) {
+        for (j, &v) in row.iter().enumerate() {
+            centers[j] += v / n as f64;
+        }
+    }
+    let mut sds = vec![0.0; k];
+    for row in x.chunks_exact(k) {
+        for (j, &v) in row.iter().enumerate() {
+            let delta = v - centers[j];
+            sds[j] += delta * delta / (n - ddof) as f64;
+        }
+    }
+    for (j, sd) in sds.iter_mut().enumerate() {
+        *sd = sd.sqrt();
+        if !centers[j].is_finite() || !sd.is_finite() || *sd <= 0.0 {
+            return Err(format!(
+                "column {j} has nonfinite center or nonpositive/nonfinite SD"
+            ));
+        }
+    }
+    let size = n
+        .checked_mul(terms.len())
+        .ok_or("design shape overflows usize")?;
+    let mut design = Vec::new();
+    design
+        .try_reserve_exact(size)
+        .map_err(|e| format!("design allocation failed: {e}"))?;
+    for row in x.chunks_exact(k) {
+        for term in terms {
+            let value = term
+                .iter()
+                .fold(1.0, |product, &j| product * (row[j] - centers[j]));
+            if !value.is_finite() {
+                return Err("centered product is nonfinite".into());
+            }
+            design.push(value);
+        }
+    }
+    Ok(CenteredProductDesign {
+        centers,
+        sds,
+        design,
+    })
+}
+
 /// Heteroskedasticity-consistent sandwich estimator family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HcType {
@@ -391,18 +475,7 @@ pub const XWZ_E_K: usize = 10;
 /// Column order: `(Intercept), X, W, Z, E, X:W, X:Z, W:Z, X:E, X:W:Z`
 /// (Aiken & West, 1991, ch. 2 product terms; Hayes, 2018, ch. 7).
 pub fn xwz_e_design_row(x: f64, w: f64, z: f64, e: f64) -> [f64; XWZ_E_K] {
-    [
-        1.0,
-        x,
-        w,
-        z,
-        e,
-        x * w,
-        x * z,
-        w * z,
-        x * e,
-        x * w * z,
-    ]
+    [1.0, x, w, z, e, x * w, x * z, w * z, x * e, x * w * z]
 }
 
 /// Dot product of a design row with `β` (predicted mean at probes).

@@ -16,6 +16,40 @@ from fast_mlsirm import chi2_sf_df1, contrast, fit_ols_hc
 from fast_mlsirm.regression import f_sf, t_sf
 
 
+def test_native_centered_products_match_manual_and_reject_invalid_controls():
+    """NumPy 2.5 mean/std Notes parity through the actual Rust API.
+
+    Tests declared term order, repeated-column powers, intercept and both
+    population/sample denominators. Noninteger controls, degenerate inputs
+    and nonfinite products are errors. Synthetic values are not study output.
+    """
+    from fast_mlsirm.regression import centered_product_design
+
+    values = np.array([[1., 8.], [2., 3.], [4., 5.], [7., 2.], [9., 6.]])
+    terms = [[], [1], [0, 1], [0], [1, 1]]
+    centered = values - values.mean(axis=0)
+    expected = np.column_stack([np.ones(5), centered[:, 1],
+                                centered[:, 0] * centered[:, 1], centered[:, 0],
+                                centered[:, 1] ** 2])
+    for ddof in (0, 1):
+        got = centered_product_design(values, terms, ddof=ddof)
+        np.testing.assert_allclose(got["centers"], values.mean(axis=0), atol=1e-14)
+        np.testing.assert_allclose(got["sds"], values.std(axis=0, ddof=ddof), atol=1e-14)
+        np.testing.assert_allclose(got["design"], expected, atol=1e-14)
+    for bad in ([[2]], [[.5]], [[True]], [[-1]], []):
+        with pytest.raises(ValueError):
+            centered_product_design(values, bad, ddof=1)
+    for ddof in (True, .5, -1, 5):
+        with pytest.raises(ValueError):
+            centered_product_design(values, terms, ddof=ddof)
+    with pytest.raises(ValueError, match="SD"):
+        centered_product_design(np.ones((5, 2)), terms, ddof=1)
+    with pytest.raises(ValueError, match="finite"):
+        centered_product_design(values * np.nan, terms, ddof=1)
+    with pytest.raises(ValueError, match="product"):
+        centered_product_design(values * 1e50, [[0] * 10], ddof=1)
+
+
 def _reference_fit_ols_hc3(x: np.ndarray, y: np.ndarray) -> dict:
     """NumPy reference matching late-life HC3 meat (sandwich::vcovHC HC3)."""
     n, k = x.shape
