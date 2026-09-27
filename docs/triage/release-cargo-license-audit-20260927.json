@@ -1,6 +1,6 @@
 {
-  "source_sha": "ab171d433d6bee580af74e8eb186dd7a9aa5bfce",
-  "helper_sha": "3aebd56b42edafcb58a2f0944af5cf9d877c0aea",
+  "source_sha": "4d541637ff93d22a647284e84f91dc78e5da86a7",
+  "helper_sha": "fbb48ec3265f1dcfba34529f6f4325e02e2ac023",
   "scope": "local Cargo licence-only; no Strix or release approval",
   "dependencies": [
     {
@@ -281,6 +281,10 @@
         {
           "code": "LICENSE_SELECTION_REQUIRED",
           "detail": "dual-licensed expression Zlib OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        },
+        {
+          "code": "LICENSE_TEXT_MISSING",
+          "detail": "declared Zlib OR Apache-2.0 OR MIT but the distribution bundles no license text"
         }
       ],
       "license_member_sha256": {},
@@ -543,6 +547,10 @@
         {
           "code": "LICENSE_SELECTION_REQUIRED",
           "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        },
+        {
+          "code": "LICENSE_TEXT_MISSING",
+          "detail": "declared MIT OR Apache-2.0 but the distribution bundles no license text"
         }
       ],
       "license_member_sha256": {},
@@ -740,6 +748,10 @@
         {
           "code": "LICENSE_SELECTION_REQUIRED",
           "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        },
+        {
+          "code": "LICENSE_TEXT_MISSING",
+          "detail": "declared MIT OR Apache-2.0 but the distribution bundles no license text"
         }
       ],
       "license_member_sha256": {},
@@ -837,6 +849,10 @@
         {
           "code": "LICENSE_SELECTION_REQUIRED",
           "detail": "dual-licensed expression Zlib OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        },
+        {
+          "code": "LICENSE_TEXT_MISSING",
+          "detail": "declared Zlib OR Apache-2.0 OR MIT but the distribution bundles no license text"
         }
       ],
       "license_member_sha256": {},
@@ -851,6 +867,10 @@
         {
           "code": "LICENSE_SELECTION_REQUIRED",
           "detail": "dual-licensed expression Zlib OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        },
+        {
+          "code": "LICENSE_TEXT_MISSING",
+          "detail": "declared Zlib OR Apache-2.0 OR MIT but the distribution bundles no license text"
         }
       ],
       "license_member_sha256": {},
@@ -910,6 +930,10 @@
         {
           "code": "LICENSE_SELECTION_REQUIRED",
           "detail": "dual-licensed expression Zlib OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        },
+        {
+          "code": "LICENSE_TEXT_MISSING",
+          "detail": "declared Zlib OR Apache-2.0 OR MIT but the distribution bundles no license text"
         }
       ],
       "license_member_sha256": {},
@@ -924,6 +948,10 @@
         {
           "code": "LICENSE_SELECTION_REQUIRED",
           "detail": "dual-licensed expression Zlib OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        },
+        {
+          "code": "LICENSE_TEXT_MISSING",
+          "detail": "declared Zlib OR Apache-2.0 OR MIT but the distribution bundles no license text"
         }
       ],
       "license_member_sha256": {},
@@ -938,6 +966,10 @@
         {
           "code": "LICENSE_SELECTION_REQUIRED",
           "detail": "dual-licensed expression Zlib OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        },
+        {
+          "code": "LICENSE_TEXT_MISSING",
+          "detail": "declared Zlib OR Apache-2.0 OR MIT but the distribution bundles no license text"
         }
       ],
       "license_member_sha256": {},
@@ -1095,6 +1127,10 @@
         {
           "code": "LICENSE_SELECTION_REQUIRED",
           "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        },
+        {
+          "code": "LICENSE_TEXT_MISSING",
+          "detail": "declared MIT OR Apache-2.0 but the distribution bundles no license text"
         }
       ],
       "license_member_sha256": {},
@@ -2006,7 +2042,7 @@
     },
     "failure_codes": {
       "LICENSE_SELECTION_REQUIRED": 10,
-      "LICENSE_TEXT_MISSING": 6,
+      "LICENSE_TEXT_MISSING": 15,
       "LICENSE_TEXT_UNVERIFIED": 3
     },
     "without_captured_license_text": [
@@ -2028,13 +2064,13 @@
     ]
   },
   "collector_recheck": {
-    "helper_script_sha256": "a66046f2faf162ddd715ae489e2fedbe1d2b50c048a5b0e569856d3441a83bb2",
+    "helper_script_sha256": "9a701da7d8519000d6242af08fbc8ee32168324499890752761e4d7b5de99d81",
     "archives_verified": 156,
     "limitation": "Licence-only recheck; preceding receipts bind historical audit hashes. No Strix or release acceptance."
   },
   "superseded_receipt": {
-    "sha256": "bff50c2643c4a128ed91f90b1fa9c338a2068544dba9c9b821b7b405e0929149",
-    "source_sha": "f2a0d84fab1149cc227232098ed60f7ef20e636f",
-    "helper_sha": "71290da5c61a08a69b516c18440c655190d31287"
+    "sha256": "4b445b94112d7383b26ac6fc6b2665c9849ee1fbc5ea420fac6ad61e89e4f47e",
+    "source_sha": "ab171d433d6bee580af74e8eb186dd7a9aa5bfce",
+    "helper_sha": "3aebd56b42edafcb58a2f0944af5cf9d877c0aea"
   }
 }

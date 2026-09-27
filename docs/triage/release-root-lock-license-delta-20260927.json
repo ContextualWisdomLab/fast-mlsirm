@@ -1,0 +1,1285 @@
+{
+  "source_sha": "4d541637ff93d22a647284e84f91dc78e5da86a7",
+  "helper_sha": "fbb48ec3265f1dcfba34529f6f4325e02e2ac023",
+  "scope": "Root lock identities absent from wheel lock; licence-only, not authenticated platform/dev closure or Strix acceptance",
+  "root_cargo_lock_sha256": "88bb9a25b3f95e560da7ffd3ade079e0860bf4b9dfd3c595e674a17b7d7fb9ea",
+  "wheel_cargo_lock_sha256": "f778041936d0b4490976e86746ed2749b529fe79e825be6349bd85e1e7c3dbaf",
+  "dependencies": [
+    {
+      "key": "cargo/android_system_properties@0.1.5",
+      "expression": "MIT/Apache-2.0",
+      "archive_sha256": "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311",
+      "manifest_sha256": "e9e8c037cdef7adc9794b17c13e5a014421524d67ea5048bc09cf70ef13c782c",
+      "license_member_sha256": {
+        "android_system_properties-0.1.5/LICENSE-APACHE": "216486f29671a4262efe32af6d84a75bef398127f8c5f369b5c8305983887a06",
+        "android_system_properties-0.1.5/LICENSE-MIT": "80f275e90d799911ed3830a7f242a2ef5a4ade2092fe0aa07bfb2d2cf2f2b95e"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/bit-set@0.8.0",
+      "expression": "Apache-2.0 OR MIT",
+      "archive_sha256": "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3",
+      "manifest_sha256": "f718d1e3b585881b737a689fdcc34b7df64818b14093907d5c4546e29692ea8f",
+      "license_member_sha256": {
+        "bit-set-0.8.0/LICENSE-APACHE": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90",
+        "bit-set-0.8.0/LICENSE-MIT": "f51ac2c59a222f7476ce507ca879960e2b64ea64bb2786eefdbeb7b0b538d1b7"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/bit-vec@0.8.0",
+      "expression": "Apache-2.0 OR MIT",
+      "archive_sha256": "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7",
+      "manifest_sha256": "3ffdb0eaead44d902d6db061fec67c139107b79a1044b974fa56560644cb3a92",
+      "license_member_sha256": {
+        "bit-vec-0.8.0/LICENSE-APACHE": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90",
+        "bit-vec-0.8.0/LICENSE-MIT": "f51ac2c59a222f7476ce507ca879960e2b64ea64bb2786eefdbeb7b0b538d1b7"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/bitflags@2.13.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8",
+      "manifest_sha256": "7fd26ca6a1546a98958b029f794a69e4f146d2d5ae387b784e6dda6111226a63",
+      "license_member_sha256": {
+        "bitflags-2.13.0/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "bitflags-2.13.0/LICENSE-MIT": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/bytemuck_derive@1.10.2",
+      "expression": "Zlib OR Apache-2.0 OR MIT",
+      "archive_sha256": "f9abbd1bc6865053c427f7198e6af43bfdedc55ab791faed4fbd361d789575ff",
+      "manifest_sha256": "c2683761caf8e89c5e5fbab992dc469da82a83af7b68d9d5fb2fade979c26bda",
+      "license_member_sha256": {
+        "bytemuck_derive-1.10.2/LICENSE-APACHE": "e3ba223bb1423f0aad8c3dfce0fe3148db48926d41e6fbc3afbbf5ff9e1c89cb",
+        "bytemuck_derive-1.10.2/LICENSE-MIT": "9df9ba60a11af705f2e451b53762686e615d86f76b169cf075c3237730dbd7e2",
+        "bytemuck_derive-1.10.2/LICENSE-ZLIB": "84b34dd7608f7fb9b17bd588a6bf392bf7de504e2716f024a77d89f1b145a151"
+      },
+      "license_text_count": 3,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression Zlib OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/cfg-if@1.0.4",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801",
+      "manifest_sha256": "281d508beb1fe3927cf03d3f2f8c9a5117b1e4fe97ae21b9026cf318e8c35273",
+      "license_member_sha256": {
+        "cfg-if-1.0.4/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "cfg-if-1.0.4/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/cfg_aliases@0.2.1",
+      "expression": "MIT",
+      "archive_sha256": "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724",
+      "manifest_sha256": "120227a96e9faeebfd1323d7faa3a0ec51e6d873cded83e3a5dc7e31e183b254",
+      "license_member_sha256": {
+        "cfg_aliases-0.2.1/LICENSE": "31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812",
+        "cfg_aliases-0.2.1/NOTICES.md": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee"
+      },
+      "license_text_count": 2,
+      "result": "PASS",
+      "failures": []
+    },
+    {
+      "key": "cargo/errno@0.3.14",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb",
+      "manifest_sha256": "a25f16ccaa127602fc0cc9d1c80186619a0b8f42331a27b6f04b6bfa4aa29de2",
+      "license_member_sha256": {
+        "errno-0.3.14/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "errno-0.3.14/LICENSE-MIT": "8764a597675778ddfd4e25f81b08a05dbcf089ac05662df7613fe67f150e3aa2"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/fastrand@2.4.1",
+      "expression": "Apache-2.0 OR MIT",
+      "archive_sha256": "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6",
+      "manifest_sha256": "ddcc0b1f1d0e93ae66a584509e180edab478b934de68dc675044f0950a91cf7e",
+      "license_member_sha256": {
+        "fastrand-2.4.1/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "fastrand-2.4.1/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/fnv@1.0.7",
+      "expression": "Apache-2.0 / MIT",
+      "archive_sha256": "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1",
+      "manifest_sha256": "0854ced32611c6389356c0b43ae663da9d4480376c5f0825b82eb442dd84e8d8",
+      "license_member_sha256": {
+        "fnv-1.0.7/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "fnv-1.0.7/LICENSE-MIT": "65fdb6c76cd61612070c066eec9ecdb30ee74fb27859d0d9af58b9f499fd0c3e"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_UNPARSEABLE",
+          "detail": "'Apache-2.0 / MIT' is not a valid SPDX expression: unexpected character '/' in license expression"
+        }
+      ]
+    },
+    {
+      "key": "cargo/futures-core@0.3.32",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "7e3450815272ef58cec6d564423f6e755e25379b217b0bc688e295ba24df6b1d",
+      "manifest_sha256": "8e1fc1b21e82013b3accf43c8fc1bcdddeb3d41c810110fb83a61558a49742c3",
+      "license_member_sha256": {
+        "futures-core-0.3.32/LICENSE-APACHE": "275c491d6d1160553c32fd6127061d7f9606c3ea25abfad6ca3f6ed088785427",
+        "futures-core-0.3.32/LICENSE-MIT": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/futures-task@0.3.32",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "037711b3d59c33004d3856fbdc83b99d4ff37a24768fa1be9ce3538a1cde4393",
+      "manifest_sha256": "32f63e3cf3ba8660b2890fc63c07b9872cb3e3c0d955b63d220fc274a819f380",
+      "license_member_sha256": {
+        "futures-task-0.3.32/LICENSE-APACHE": "275c491d6d1160553c32fd6127061d7f9606c3ea25abfad6ca3f6ed088785427",
+        "futures-task-0.3.32/LICENSE-MIT": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/futures-util@0.3.32",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "389ca41296e6190b48053de0321d02a77f32f8a5d2461dd38762c0593805c6d6",
+      "manifest_sha256": "154c37245e36982072655c79b83a9ba932a263824228ef6ddbd15cf1e4f47153",
+      "license_member_sha256": {
+        "futures-util-0.3.32/LICENSE-APACHE": "275c491d6d1160553c32fd6127061d7f9606c3ea25abfad6ca3f6ed088785427",
+        "futures-util-0.3.32/LICENSE-MIT": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/getrandom@0.3.4",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd",
+      "manifest_sha256": "5fd1d61c342777480822b8f8259a7bd8cbf6c2486a3d389b2d5b235f667a7952",
+      "license_member_sha256": {
+        "getrandom-0.3.4/LICENSE-APACHE": "aaff376532ea30a0cd5330b9502ad4a4c8bf769c539c87ffe78819d188a18ebf",
+        "getrandom-0.3.4/LICENSE-MIT": "29e9fe5074bd27e0e5d5d110394fbbcd841baee2651a3c4b4560a632702cede4"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/getrandom@0.4.3",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099",
+      "manifest_sha256": "4f107fe4ceacee71d0068cfbbc69554b3d8523a1fcbb99b17e9fa0d008961ff9",
+      "license_member_sha256": {
+        "getrandom-0.4.3/LICENSE-APACHE": "aaff376532ea30a0cd5330b9502ad4a4c8bf769c539c87ffe78819d188a18ebf",
+        "getrandom-0.4.3/LICENSE-MIT": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/indexmap@2.14.0",
+      "expression": "Apache-2.0 OR MIT",
+      "archive_sha256": "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9",
+      "manifest_sha256": "0057dba2c19b1fc812bc3a98d0b01994071028a3497463358c98b98212792de8",
+      "license_member_sha256": {
+        "indexmap-2.14.0/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "indexmap-2.14.0/LICENSE-MIT": "ecc269ef87fd38a1d98e30bfac9ba964a9dbd9315c3770fed98d4d7cb5882055"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/js-sys@0.3.103",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "53b44bfcdb3f8d5837a46dae1ca9660a837176eee74a28b229bc626816589102",
+      "manifest_sha256": "c4268bc3487f52e4f6b5b582f0c981651fda8e14ad5ff835620a34ee0318e0e7",
+      "license_member_sha256": {
+        "js-sys-0.3.103/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "js-sys-0.3.103/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/libc@0.2.186",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66",
+      "manifest_sha256": "9a45433b9dc5f1dcd397062608a320c2ab472319e79566ea4646dfff3ca67821",
+      "license_member_sha256": {
+        "libc-0.2.186/LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "libc-0.2.186/LICENSE-MIT": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/linux-raw-sys@0.12.1",
+      "expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "archive_sha256": "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53",
+      "manifest_sha256": "1d24fe227d87b23fc5220ddf2ca4708e5e0d794a3f77961b71cd8140bf33faa5",
+      "license_member_sha256": {
+        "linux-raw-sys-0.12.1/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "linux-raw-sys-0.12.1/LICENSE-Apache-2.0_WITH_LLVM-exception": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+        "linux-raw-sys-0.12.1/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 3,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/log@0.4.33",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad",
+      "manifest_sha256": "30526edc6bcb57820b7500b686f98bd63fe768645914a0646504527c1b727225",
+      "license_member_sha256": {
+        "log-0.4.33/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "log-0.4.33/LICENSE-MIT": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/naga@30.0.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "23bf0a141a9ab6f07dbb492db53245e464bc9db42f407772d9ae03d83a2c1033",
+      "manifest_sha256": "bebaa398cf92fd7c649a05834e1d3678615b8065d1406be5cee1bc794f45431e",
+      "license_member_sha256": {
+        "naga-30.0.0/LICENSE.APACHE": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+        "naga-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/naga-types@30.0.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "658200ddc25c6c7b860747516d132d1b284c0fafb7a380233acee9a72fb30e11",
+      "manifest_sha256": "5f5264b55cc963feba563bfbbbc03b833746c78960e6eeb22eb7ed0f74707e73",
+      "license_member_sha256": {
+        "naga-types-30.0.0/LICENSE.APACHE": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+        "naga-types-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/ordered-float@5.3.0",
+      "expression": "MIT",
+      "archive_sha256": "b7d950ca161dc355eaf28f82b11345ed76c6e1f6eb1f4f4479e0323b9e2fbd0e",
+      "manifest_sha256": "e44ad6902d5fc5d201fa0ce46eb2fe3a6a69e651add7b22959b176d1e81a8852",
+      "license_member_sha256": {
+        "ordered-float-5.3.0/LICENSE-MIT": "f7715d38a3fa1b4ac97c5729740752505a39cb92ee83ab5b102aeb5eaa7cdea4"
+      },
+      "license_text_count": 1,
+      "result": "PASS",
+      "failures": []
+    },
+    {
+      "key": "cargo/pkg-config@0.3.33",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e",
+      "manifest_sha256": "37ce80d4e6e58a7cfd605a9f298da4dd9f43dc4412382b40a9d06fc925298da3",
+      "license_member_sha256": {
+        "pkg-config-0.3.33/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "pkg-config-0.3.33/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/portable-atomic@1.13.1",
+      "expression": "Apache-2.0 OR MIT",
+      "archive_sha256": "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49",
+      "manifest_sha256": "3366d6ebb1bada583bfdad414effb4776e4d090e22fd5bbd61c5b8a3560fa17b",
+      "license_member_sha256": {
+        "portable-atomic-1.13.1/LICENSE-APACHE": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+        "portable-atomic-1.13.1/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/portable-atomic-util@0.2.7",
+      "expression": "Apache-2.0 OR MIT",
+      "archive_sha256": "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618",
+      "manifest_sha256": "7e675f1b51996fcdb653b99655c23c961b22a69d1c416e496151f9ee677b8838",
+      "license_member_sha256": {
+        "portable-atomic-util-0.2.7/LICENSE-APACHE": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+        "portable-atomic-util-0.2.7/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/ppv-lite86@0.2.21",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9",
+      "manifest_sha256": "aa9337145bd03a6e76fd42c2ee5f07c5c23ff6b2eb73cfc35c3070d76c5bacb8",
+      "license_member_sha256": {
+        "ppv-lite86-0.2.21/LICENSE-APACHE": "0218327e7a480793ffdd4eb792379a9709e5c135c7ba267f709d6f6d4d70af0a",
+        "ppv-lite86-0.2.21/LICENSE-MIT": "4cada0bd02ea3692eee6f16400d86c6508bbd3bafb2b65fed0419f36d4f83e8f"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/proc-macro2@1.0.106",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934",
+      "manifest_sha256": "7408af188c9656c1c2a6012f61026df0e2dfc0275e0edf1e01f1d59b3e39c194",
+      "license_member_sha256": {
+        "proc-macro2-1.0.106/LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "proc-macro2-1.0.106/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/proptest@1.11.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "4b45fcc2344c680f5025fe57779faef368840d0bd1f42f216291f0dc4ace4744",
+      "manifest_sha256": "5f4e8f0f10653f121aabdf4dd7f2712d06b7cc7a1fdcea98b18d5d731d33fa2a",
+      "license_member_sha256": {
+        "proptest-1.11.0/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "proptest-1.11.0/LICENSE-MIT": "d8e0806926ce9f0a5030c382ecc0ffdf6de6fbea5c69a458435fd443fa7a5b92"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/quick-error@1.2.3",
+      "expression": "MIT/Apache-2.0",
+      "archive_sha256": "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0",
+      "manifest_sha256": "1f24b567c7f10b4ec44f5baf033d27da39f659c09df0e8a057437d10ecdd551a",
+      "license_member_sha256": {
+        "quick-error-1.2.3/LICENSE-APACHE": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08",
+        "quick-error-1.2.3/LICENSE-MIT": "058f01fe181608d027fcde7e528fc03ea3cf90f30903c407644b0a9bbc54f500"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/quote@1.0.46",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "dfbc457d0c7a0759a614551b11a6409e5951f6c7537be1f1b7682b9ae9230368",
+      "manifest_sha256": "317b213af73aaf00108f9003cc69798538660e5e509a439d3482746612333912",
+      "license_member_sha256": {
+        "quote-1.0.46/LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "quote-1.0.46/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/r-efi@5.3.0",
+      "expression": "MIT OR Apache-2.0 OR LGPL-2.1-or-later",
+      "archive_sha256": "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f",
+      "manifest_sha256": "dba000c0173b09b1e3b69afa42a715b5ab64355e6502ce6d9d1767c7845cf402",
+      "license_member_sha256": {},
+      "license_text_count": 0,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 OR LGPL-2.1-or-later requires an explicit selection with a recorded rationale"
+        },
+        {
+          "code": "LICENSE_TEXT_MISSING",
+          "detail": "declared MIT OR Apache-2.0 OR LGPL-2.1-or-later but the distribution bundles no license text"
+        }
+      ]
+    },
+    {
+      "key": "cargo/r-efi@6.0.0",
+      "expression": "MIT OR Apache-2.0 OR LGPL-2.1-or-later",
+      "archive_sha256": "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf",
+      "manifest_sha256": "a021f9fb0645cc5de5770cf7f41594c1deff4b388eca933b289752aa52666829",
+      "license_member_sha256": {},
+      "license_text_count": 0,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 OR LGPL-2.1-or-later requires an explicit selection with a recorded rationale"
+        },
+        {
+          "code": "LICENSE_TEXT_MISSING",
+          "detail": "declared MIT OR Apache-2.0 OR LGPL-2.1-or-later but the distribution bundles no license text"
+        }
+      ]
+    },
+    {
+      "key": "cargo/rand@0.9.4",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "44c5af06bb1b7d3216d91932aed5265164bf384dc89cd6ba05cf59a35f5f76ea",
+      "manifest_sha256": "9543c929e4d8fc322e530d03dda65c242a3afd00319decdbc1a2f65611db9a2c",
+      "license_member_sha256": {
+        "rand-0.9.4/LICENSE-APACHE": "35242e7a83f69875e6edeff02291e688c97caafe2f8902e4e19b49d3e78b4cab",
+        "rand-0.9.4/LICENSE-MIT": "209fbbe0ad52d9235e37badf9cadfe4dbdc87203179c0899e738b39ade42177b"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/rand_chacha@0.9.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb",
+      "manifest_sha256": "f413a8d1156cb6c7271427e5f406ed65e3056e2422224ad5d13f7d40a0c35803",
+      "license_member_sha256": {
+        "rand_chacha-0.9.0/LICENSE-APACHE": "35242e7a83f69875e6edeff02291e688c97caafe2f8902e4e19b49d3e78b4cab",
+        "rand_chacha-0.9.0/LICENSE-MIT": "209fbbe0ad52d9235e37badf9cadfe4dbdc87203179c0899e738b39ade42177b"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/rand_core@0.9.5",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c",
+      "manifest_sha256": "e5fe39a2caf72988fae221f41b825ad42ad19dc2a55486d9c7d740a67a2bf599",
+      "license_member_sha256": {
+        "rand_core-0.9.5/LICENSE-APACHE": "6df43f6f4b5d4587f3d8d71e45532c688fd168afa5fe89d571cb32fa09c4ef51",
+        "rand_core-0.9.5/LICENSE-MIT": "209fbbe0ad52d9235e37badf9cadfe4dbdc87203179c0899e738b39ade42177b"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/rand_xorshift@0.4.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a",
+      "manifest_sha256": "7f81d59d8270e6b5552550a3d4a2bb9605478910f9c380ec70a14b8ee05fadbf",
+      "license_member_sha256": {
+        "rand_xorshift-0.4.0/LICENSE-APACHE": "35242e7a83f69875e6edeff02291e688c97caafe2f8902e4e19b49d3e78b4cab",
+        "rand_xorshift-0.4.0/LICENSE-MIT": "209fbbe0ad52d9235e37badf9cadfe4dbdc87203179c0899e738b39ade42177b"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/regex-syntax@0.8.11",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4",
+      "manifest_sha256": "10c3f14629c0900ac452dd6d55a62aab561bbabbdf5774a802c8d223933cfa3b",
+      "license_member_sha256": {
+        "regex-syntax-0.8.11/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "regex-syntax-0.8.11/LICENSE-MIT": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+        "regex-syntax-0.8.11/src/unicode_tables/LICENSE-UNICODE": "74db5baf44a41b1000312c673544b3374e4198af5605c7f9080a402cec42cfa3"
+      },
+      "license_text_count": 3,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/rustix@1.1.4",
+      "expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "archive_sha256": "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190",
+      "manifest_sha256": "13302af30f997a373ad50b7aa668d9612483e85be6b455e09d95bbd59fb5296f",
+      "license_member_sha256": {
+        "rustix-1.1.4/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "rustix-1.1.4/LICENSE-Apache-2.0_WITH_LLVM-exception": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+        "rustix-1.1.4/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 3,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/rusty-fork@0.3.1",
+      "expression": "MIT/Apache-2.0",
+      "archive_sha256": "cc6bf79ff24e648f6da1f8d1f011e9cac26491b619e6b9280f2b47f1774e6ee2",
+      "manifest_sha256": "1678cba256f1a553d40dae184c1310f86991d817244f865aa944300178279a61",
+      "license_member_sha256": {
+        "rusty-fork-0.3.1/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "rusty-fork-0.3.1/LICENSE-MIT": "d8e0806926ce9f0a5030c382ecc0ffdf6de6fbea5c69a458435fd443fa7a5b92"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/serde@1.0.228",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e",
+      "manifest_sha256": "d7fc24e39691a0831eaa0eac677b46ecbae407a40fa816b904759822d10f42e8",
+      "license_member_sha256": {
+        "serde-1.0.228/LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "serde-1.0.228/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/serde_core@1.0.228",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "41d385c7d4ca58e59fc732af25c3983b67ac852c1a25000afe1175de458b67ad",
+      "manifest_sha256": "b1c07acb994f88418a0bbb0d393f76c4ca4276d9f4497ca734eb182286169ea8",
+      "license_member_sha256": {
+        "serde_core-1.0.228/LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "serde_core-1.0.228/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/serde_derive@1.0.228",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79",
+      "manifest_sha256": "3de014980e9645f2e33779acd06919c9f3b717a79e10f56004918d12c4365c27",
+      "license_member_sha256": {
+        "serde_derive-1.0.228/LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "serde_derive-1.0.228/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/smallvec@1.15.2",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90",
+      "manifest_sha256": "93c1f8da58bf139f7a3447c6d2a98a9e764d77b96cc44497d7356f1e3c2e8e5a",
+      "license_member_sha256": {
+        "smallvec-1.15.2/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "smallvec-1.15.2/LICENSE-MIT": "0b28172679e0009b655da42797c03fd163a3379d5cfa67ba1f1655e974a2a1a9"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/syn@2.0.118",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "1b9ae57f904213ebb649ce6895b8a66c66f0203b9319718f69a5612a065b1422",
+      "manifest_sha256": "1c16fbf1de1ba3bc6d8080b1dddc7c009ea067c78559557613c500b68923236c",
+      "license_member_sha256": {
+        "syn-2.0.118/LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "syn-2.0.118/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/tempfile@3.27.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd",
+      "manifest_sha256": "4ffd8ce684ce8f34075633101c8e627761387b5e66e5efe95010b0aa1414bf1b",
+      "license_member_sha256": {
+        "tempfile-3.27.0/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "tempfile-3.27.0/LICENSE-MIT": "8b427f5bc501764575e52ba4f9d95673cf8f6d80a86d0d06599852e1a9a20a36"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/thiserror@2.0.18",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4",
+      "manifest_sha256": "bc8ab0d1d8f4577fd77547771d96bbb0429cac23d94d9e4f6f4d408ac9e38440",
+      "license_member_sha256": {
+        "thiserror-2.0.18/LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "thiserror-2.0.18/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/thiserror-impl@2.0.18",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5",
+      "manifest_sha256": "81bd886e7a10da9cbc42f4130028699f7e0cb6d4c50b62f782fb096056a16010",
+      "license_member_sha256": {
+        "thiserror-impl-2.0.18/LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "thiserror-impl-2.0.18/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/unarray@0.1.4",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94",
+      "manifest_sha256": "5084b7528b0a23607bd6a60cb15b524a5b60400b3905813200dbc272f08f0e05",
+      "license_member_sha256": {
+        "unarray-0.1.4/LICENSE-APACHE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "unarray-0.1.4/LICENSE-MIT": "002c2696d92b5c8cf956c11072baa58eaf9f6ade995c031ea635c6a1ee342ad1"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/unicode-ident@1.0.24",
+      "expression": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "archive_sha256": "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75",
+      "manifest_sha256": "0bb9c0e006a21355cb85c7df72e78dd8ba6fffbb7dc3f1e7a4c19af53cd354da",
+      "license_member_sha256": {
+        "unicode-ident-1.0.24/LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+        "unicode-ident-1.0.24/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+        "unicode-ident-1.0.24/LICENSE-UNICODE": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1"
+      },
+      "license_text_count": 3,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/uuid@1.25.0",
+      "expression": "Apache-2.0 OR MIT",
+      "archive_sha256": "f053576934f05a761a402421fbbe3d425d9366f75f978806a037b3ca481abecc",
+      "manifest_sha256": "dc0a1d89c8581a242a7f6a649180df35350a94c8b05e40f8156955d6052c6eb6",
+      "license_member_sha256": {
+        "uuid-1.25.0/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "uuid-1.25.0/LICENSE-MIT": "436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wait-timeout@0.2.1",
+      "expression": "MIT/Apache-2.0",
+      "archive_sha256": "09ac3b126d3914f9849036f826e054cbabdc8519970b8998ddaf3b5bd3c65f11",
+      "manifest_sha256": "b7125bf2e61f202c7f3074892ab58b5bbc66893026fb0dea17dadae1ad84f0d5",
+      "license_member_sha256": {
+        "wait-timeout-0.2.1/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "wait-timeout-0.2.1/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wasip2@1.0.4+wasi-0.2.12",
+      "expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "archive_sha256": "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487",
+      "manifest_sha256": "a4cf47d49115ca7543113c3c4c136e0cdd3dfff344eefa0f64ee8c5200e99fa9",
+      "license_member_sha256": {
+        "wasip2-1.0.4+wasi-0.2.12/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "wasip2-1.0.4+wasi-0.2.12/LICENSE-Apache-2.0_WITH_LLVM-exception": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+        "wasip2-1.0.4+wasi-0.2.12/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 3,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wasm-bindgen@0.2.126",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "4b067c0c11094aef6b7a801c1e34a26affafdf3d051dba08456b868789aaf9a4",
+      "manifest_sha256": "97f2a3cf67d36d1f94880de0d1ca70063e81a5d977cc6289b34c222a4f715ba6",
+      "license_member_sha256": {
+        "wasm-bindgen-0.2.126/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "wasm-bindgen-0.2.126/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wasm-bindgen-futures@0.4.76",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "c62df1340f32221cb9c54d6a27b030e3dba64361d4a95bed55f9aacb44da291d",
+      "manifest_sha256": "2cc6ff326916ae8f373a6dcf441670eb83ffddc32dbb8b6297af4052def9e2eb",
+      "license_member_sha256": {
+        "wasm-bindgen-futures-0.4.76/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "wasm-bindgen-futures-0.4.76/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wasm-bindgen-macro@0.2.126",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "167ce5e579f6bcf889c4f7175a8a5a585de84e8ff93976ce393efa5f2837aab1",
+      "manifest_sha256": "0b87a00b67a63cd51d385ca1908c95ba96a39b7a8e60df84a9d1dc39aa7d6f69",
+      "license_member_sha256": {
+        "wasm-bindgen-macro-0.2.126/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "wasm-bindgen-macro-0.2.126/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wasm-bindgen-macro-support@0.2.126",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "f3997c7839262f4ef12cf90b818d6340c18e80f263f1a94bf157d0ec4420380e",
+      "manifest_sha256": "d082298cff86a201af404d9ff5f60d798518bcedf873df755989c9d7ec1e0d87",
+      "license_member_sha256": {
+        "wasm-bindgen-macro-support-0.2.126/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "wasm-bindgen-macro-support-0.2.126/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wasm-bindgen-shared@0.2.126",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "dc1b4cb0cc549fcf58d7dfc081778139b3d283a081644e833e84682ad71cea24",
+      "manifest_sha256": "c9b178847a1df8f4cfc354268b56593642d6057855e57cb5135ccf2ca7237483",
+      "license_member_sha256": {
+        "wasm-bindgen-shared-0.2.126/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "wasm-bindgen-shared-0.2.126/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/web-sys@0.3.103",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "8622dcb61c0bcc9fffa6938bed81210af2da9a7e4a1a834b2e37a59b6dfb6141",
+      "manifest_sha256": "83ccb2df0484e0eb224722933fa997896fb526f7572a9156a4cc7300314e9d88",
+      "license_member_sha256": {
+        "web-sys-0.3.103/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "web-sys-0.3.103/LICENSE-MIT": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wgpu@30.0.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "6d8f4bd44d92da5270f03409dba9f952dab24f128e05d6a554926101d1bf9114",
+      "manifest_sha256": "a414351422b45d5d453ec8502da7d6e3e7b976594b942cd5da1f64b23540d3cb",
+      "license_member_sha256": {
+        "wgpu-30.0.0/LICENSE.APACHE": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+        "wgpu-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wgpu-core@30.0.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "08763620e76fc980bca7bf84de82568614487a53172dd968d89187282eb87fa2",
+      "manifest_sha256": "2f789c81e309b9ffcaa5e1c4bb09006d717b6839e0a363a1f0a01ce11c924b0a",
+      "license_member_sha256": {
+        "wgpu-core-30.0.0/LICENSE.APACHE": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+        "wgpu-core-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wgpu-core-deps-apple@30.0.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "3283b6da70d7fc892de95840215aa36381b5d0cbc479e88ee2b173c7b992b225",
+      "manifest_sha256": "d9fe46082ea7d8646f8a3135bf6a7f4daffa3fc57d70e3618ca72ebc04b00125",
+      "license_member_sha256": {
+        "wgpu-core-deps-apple-30.0.0/LICENSE.APACHE": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+        "wgpu-core-deps-apple-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wgpu-core-deps-emscripten@30.0.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "85dcf2b2e5c2afb9eda64c570a87a4e570304bf39e52eddbaaf222d655b656ad",
+      "manifest_sha256": "c75ba889ff844a79f616b0ab2def6deeb4a98b7c015002e7511a6938ea9a12f6",
+      "license_member_sha256": {
+        "wgpu-core-deps-emscripten-30.0.0/LICENSE.APACHE": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+        "wgpu-core-deps-emscripten-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wgpu-core-deps-windows-linux-android@30.0.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "f76bc9c1c186ff3d9054e0d224c93c8c1c79d6653907c5249a5c1ea1a2cb1e43",
+      "manifest_sha256": "2065031082ee0e8667d9e1e43407be99b596d936a7cdda9acb49e9bc986563a5",
+      "license_member_sha256": {
+        "wgpu-core-deps-windows-linux-android-30.0.0/LICENSE.APACHE": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+        "wgpu-core-deps-windows-linux-android-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wgpu-hal@30.0.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "cf765132d8d5f50e192e7880464890c13f4e7457aafe8e5466e8174586e9f101",
+      "manifest_sha256": "f77dcb073e8018830af2a3eafdb31423f80a794af57440d2cee225124ec5b929",
+      "license_member_sha256": {
+        "wgpu-hal-30.0.0/LICENSE.APACHE": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+        "wgpu-hal-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wgpu-naga-bridge@30.0.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "c9eaac644e5008925c78567d272b9d66ef83da55a53cc17fc7daade7bb6e66e5",
+      "manifest_sha256": "6aba1a253f4b553b20db8d997b3e9ad945eb71ad781c38de1a3bc9adf6fa3a30",
+      "license_member_sha256": {
+        "wgpu-naga-bridge-30.0.0/LICENSE.APACHE": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+        "wgpu-naga-bridge-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wgpu-types@30.0.0",
+      "expression": "MIT OR Apache-2.0",
+      "archive_sha256": "1a9c93c2b35edde326df60ffdee4c0f5864eac3011d6768b70d43f028ad93565",
+      "manifest_sha256": "1787f0e57923f4b2f61a4ae8d05275fc5455f534c52398d46d9f16f776afd6ea",
+      "license_member_sha256": {
+        "wgpu-types-30.0.0/LICENSE.APACHE": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+        "wgpu-types-30.0.0/LICENSE.MIT": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21"
+      },
+      "license_text_count": 2,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression MIT OR Apache-2.0 requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/wit-bindgen@0.57.1",
+      "expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "archive_sha256": "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e",
+      "manifest_sha256": "bb7fe08cf7f552712e29c7373c058d5fe74d650f954c2462e523e40fee273f9f",
+      "license_member_sha256": {
+        "wit-bindgen-0.57.1/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "wit-bindgen-0.57.1/LICENSE-Apache-2.0_WITH_LLVM-exception": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+        "wit-bindgen-0.57.1/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      },
+      "license_text_count": 3,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/xml-rs@0.8.28",
+      "expression": "MIT",
+      "archive_sha256": "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f",
+      "manifest_sha256": "eafb2ca7babfbee4ec441df6587e99595196a9a27e8d7af74ed30a48f80f6394",
+      "license_member_sha256": {
+        "xml-rs-0.8.28/LICENSE": "0dc18d924dc0a5f41172a393012843a5eaaef338e795b3645da9cc3b6068220b"
+      },
+      "license_text_count": 1,
+      "result": "PASS",
+      "failures": []
+    },
+    {
+      "key": "cargo/zerocopy@0.8.54",
+      "expression": "BSD-2-Clause OR Apache-2.0 OR MIT",
+      "archive_sha256": "b7cbbc0a705a0fd05cc3676525980d2bf5a9bc4adac6d6475209a7887cf59d19",
+      "manifest_sha256": "794ad995b627ce06c6d8481ce9c5d1797bf32d38092278dc6569b60be86700dc",
+      "license_member_sha256": {
+        "zerocopy-0.8.54/LICENSE-APACHE": "9d185ac6703c4b0453974c0d85e9eee43e6941009296bb1f5eb0b54e2329e9f3",
+        "zerocopy-0.8.54/LICENSE-BSD": "83c1763356e822adde0a2cae748d938a73fdc263849ccff6b27776dff213bd32",
+        "zerocopy-0.8.54/LICENSE-MIT": "1a2f5c12ddc934d58956aa5dbdd3255fe55fd957633ab7d0d39e4f0daa73f7df"
+      },
+      "license_text_count": 3,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression BSD-2-Clause OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    },
+    {
+      "key": "cargo/zerocopy-derive@0.8.54",
+      "expression": "BSD-2-Clause OR Apache-2.0 OR MIT",
+      "archive_sha256": "e2e817b7b52d0c7358d3246da9d69935ebb18116b2b102b4230dac079b4862f5",
+      "manifest_sha256": "49d547984c8d3d41c6bd558217fb7cbe328ca1c0fe173a25cb8d538461108331",
+      "license_member_sha256": {
+        "zerocopy-derive-0.8.54/LICENSE-APACHE": "9d185ac6703c4b0453974c0d85e9eee43e6941009296bb1f5eb0b54e2329e9f3",
+        "zerocopy-derive-0.8.54/LICENSE-BSD": "83c1763356e822adde0a2cae748d938a73fdc263849ccff6b27776dff213bd32",
+        "zerocopy-derive-0.8.54/LICENSE-MIT": "1a2f5c12ddc934d58956aa5dbdd3255fe55fd957633ab7d0d39e4f0daa73f7df"
+      },
+      "license_text_count": 3,
+      "result": "FAIL",
+      "failures": [
+        {
+          "code": "LICENSE_SELECTION_REQUIRED",
+          "detail": "dual-licensed expression BSD-2-Clause OR Apache-2.0 OR MIT requires an explicit selection with a recorded rationale"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "FAIL": 68,
+    "PASS": 3
+  }
+}
