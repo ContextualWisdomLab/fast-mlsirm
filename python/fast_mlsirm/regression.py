@@ -172,6 +172,12 @@ def normal_wald_interval(estimate: float, se: float, critical: float) -> tuple[f
     return tuple(regression_core().normal_wald_interval(float(estimate), float(se), float(critical)))
 
 
+def sample_mean_sd(values: np.ndarray) -> tuple[float, float]:
+    """Return the arithmetic mean and sample SD from the Rust core."""
+    arr = _as_float64_vector(values, "values")
+    return tuple(regression_core().sample_mean_sd(arr))
+
+
 def nested_ols_summary(
     y: np.ndarray,
     full_residuals: np.ndarray,

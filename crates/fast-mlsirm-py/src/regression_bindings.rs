@@ -5,8 +5,8 @@
 
 use mlsirm_core::regression::{
     chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc, linear_contrast,
-    nested_ols_summary, normal_wald_interval, slope_difference, t_sf, xwz_e_design_row, HcType,
-    OlsFit, XWZ_E_K,
+    nested_ols_summary, normal_wald_interval, sample_mean_sd, slope_difference, t_sf,
+    xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
 };
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -97,6 +97,11 @@ fn py_linear_contrast(
 #[pyfunction(name = "normal_wald_interval")]
 fn py_normal_wald_interval(estimate: f64, se: f64, critical: f64) -> PyResult<(f64, f64)> {
     normal_wald_interval(estimate, se, critical).map_err(PyValueError::new_err)
+}
+
+#[pyfunction(name = "sample_mean_sd")]
+fn py_sample_mean_sd(values: PyReadonlyArray1<'_, f64>) -> PyResult<(f64, f64)> {
+    sample_mean_sd(values.as_slice()?).map_err(PyValueError::new_err)
 }
 
 #[pyfunction(name = "nested_ols_summary")]
@@ -206,6 +211,7 @@ fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_fit_ols_hc, m)?)?;
     m.add_function(wrap_pyfunction!(py_linear_contrast, m)?)?;
     m.add_function(wrap_pyfunction!(py_normal_wald_interval, m)?)?;
+    m.add_function(wrap_pyfunction!(py_sample_mean_sd, m)?)?;
     m.add_function(wrap_pyfunction!(py_nested_ols_summary, m)?)?;
     m.add_function(wrap_pyfunction!(py_xwz_e_design_row, m)?)?;
     m.add_function(wrap_pyfunction!(py_design_row_dot, m)?)?;

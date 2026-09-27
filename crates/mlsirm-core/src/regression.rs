@@ -350,6 +350,21 @@ pub fn normal_wald_interval(estimate: f64, se: f64, critical: f64) -> Result<(f6
     Ok((lo, hi))
 }
 
+/// Arithmetic mean and sample standard deviation (denominator `n - 1`).
+pub fn sample_mean_sd(values: &[f64]) -> Result<(f64, f64), String> {
+    if values.len() < 2 || !values.iter().all(|v| v.is_finite()) {
+        return Err("sample mean/SD requires at least two finite values".to_owned());
+    }
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    let variance =
+        values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (values.len() - 1) as f64;
+    let sd = variance.sqrt();
+    if !mean.is_finite() || !sd.is_finite() {
+        return Err("non-finite sample mean/SD".to_owned());
+    }
+    Ok((mean, sd))
+}
+
 /// Summarize caller-verified nested OLS fits on the same response rows.
 /// Both designs must contain an intercept for centered R² interpretation.
 pub fn nested_ols_summary(

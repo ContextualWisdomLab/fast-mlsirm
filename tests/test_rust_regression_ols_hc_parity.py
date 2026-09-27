@@ -14,6 +14,7 @@ import pytest
 
 from fast_mlsirm import (
     chi2_sf_df1, contrast, fit_ols_hc, nested_ols_summary, normal_wald_interval,
+    sample_mean_sd,
 )
 from fast_mlsirm.regression import f_sf, t_sf
 
@@ -139,6 +140,7 @@ def test_reported_interval_and_nested_ols_summary_use_public_rust_api():
     assert summary["classical_p"] == f_sf(summary["classical_F"], summary["df1"], summary["df2"])
     lo, hi = normal_wald_interval(2.0, 0.5, 1.96)
     assert (lo, hi) == pytest.approx((1.02, 2.98))
+    assert sample_mean_sd(np.array([1.0, 2.0, 3.0])) == pytest.approx((2.0, 1.0))
     with pytest.raises(ValueError):
         nested_ols_summary(y[:-1], full["residuals"], reduced["residuals"], x.shape[1], x.shape[1] - 1)
 
