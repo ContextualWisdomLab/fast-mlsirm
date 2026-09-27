@@ -5,7 +5,8 @@
 
 use mlsirm_core::regression::{
     chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc, linear_contrast,
-    nested_ols_column_drop, normal_wald_interval, sample_mean_sd, slope_difference, t_sf,
+    nested_ols_column_drop, normal_wald_interval, paired_absolute_differences, sample_mean_sd,
+    slope_difference, t_sf,
     xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
 };
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
@@ -210,6 +211,20 @@ fn py_sample_mean_sd(values: PyReadonlyArray1<'_, f64>) -> PyResult<(f64, f64)> 
     sample_mean_sd(values.as_slice()?).map_err(PyValueError::new_err)
 }
 
+#[pyfunction(name = "paired_absolute_differences")]
+fn py_paired_absolute_differences(
+    py: Python<'_>,
+    left: PyReadonlyArray1<'_, f64>,
+    right: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<PyDict>> {
+    let (differences, maximum) = paired_absolute_differences(left.as_slice()?, right.as_slice()?)
+        .map_err(PyValueError::new_err)?;
+    let out = PyDict::new(py);
+    out.set_item("per_pair_abs_diff", PyArray1::from_slice(py, &differences))?;
+    out.set_item("max_abs_diff", maximum)?;
+    Ok(out.into())
+}
+
 #[pyfunction(name = "normal_wald_interval")]
 fn py_normal_wald_interval(
     estimate: f64,
@@ -234,6 +249,7 @@ fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_f_sf, m)?)?;
     m.add_function(wrap_pyfunction!(py_t_sf, m)?)?;
     m.add_function(wrap_pyfunction!(py_sample_mean_sd, m)?)?;
+    m.add_function(wrap_pyfunction!(py_paired_absolute_differences, m)?)?;
     m.add_function(wrap_pyfunction!(py_normal_wald_interval, m)?)?;
     Ok(())
 }

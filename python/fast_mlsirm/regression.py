@@ -132,6 +132,17 @@ def sample_mean_sd(values: np.ndarray) -> tuple[float, float]:
     return tuple(regression_core().sample_mean_sd(arr))
 
 
+def paired_absolute_differences(left: np.ndarray, right: np.ndarray) -> dict[str, Any]:
+    """Return paired absolute differences and their maximum from the Rust core."""
+    a = _as_float64_vector(left, "left")
+    b = _as_float64_vector(right, "right", expected_length=a.size)
+    raw = regression_core().paired_absolute_differences(a, b)
+    return {
+        "per_pair_abs_diff": np.asarray(raw["per_pair_abs_diff"], dtype=np.float64),
+        "max_abs_diff": float(raw["max_abs_diff"]),
+    }
+
+
 def normal_wald_interval(
     estimate: float, se: float, confidence_level: float
 ) -> tuple[float, float]:
