@@ -579,3 +579,13 @@ numpy-fortran-free-notice-pilot-20260928/. Original source/candidates preserved.
 Full NumPy tests, fresh hash-locked compilation, all target providers, current
 fast-mlsirm numeric/ABI approval and published12-wheel matrix remain unproven.
 OriginalCargo11/Python3 baseline is not cleared by this localnotice repair.
+
+## Protected-main CodeQL admission, 2026-09-28
+
+PR #2228 merged at `f0670e8c98fc3cbacbfe058fa335d063be881c5d`. Run `36335996100` completed both Actions and Python analysis on `cwlab-s1-03` (runner 1063157, group 4). Actual downloaded SARIF contains 12 Actions cache-poisoning findings in `publish-pypi.yml` and zero Python findings. Job success is not a zero-finding verdict. Default setup remains configured and owns uploads; this diagnostic used `upload: never`.
+
+The default generated workflow is `dynamic/github-code-scanning/codeql`, not repository `codeql.yml`. Its virtual path cannot be admitted by the group exact-workflow API (HTTP 400: workflow does not exist). The real protected-main repository workflow was admitted instead; PR and non-main contexts retain hosted runners.
+
+After group admission updates, a fresh API read found only fast-mlsirm in selected repositories. Restored and verified the union of the prior two repositories plus fast-mlsirm: `.github` (1274066402), `contextual-orchestrator` (1277018702), `fast-mlsirm` (1283452575). Exact three workflow refs remain restricted. The operation that reset the list is not isolated between the group PATCH and individual-repository PUT; future group updates require explicit post-write repository-set verification. No runner or active VM was restarted.
+
+Next action: each publishing job must checkout the protected dispatch commit, independently verify canonical release identity and ancestry, then detach to the reviewed source before executing build/admission code. Existing actual Git-history tests cover acceptance and sibling/absent/moved-control rejection. Re-run one current-main CodeQL diagnostic after the verified fix is integrated; do not disable default setup before results are inspected. Original grant HOLDs and published-wheel acceptance remain unchanged.

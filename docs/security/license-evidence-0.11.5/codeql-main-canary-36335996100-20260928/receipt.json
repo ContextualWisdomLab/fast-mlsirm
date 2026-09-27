@@ -1,0 +1,242 @@
+{
+  "run_id": 36335996100,
+  "source_commit": "f0670e8c98fc3cbacbfe058fa335d063be881c5d",
+  "upload_owner_changed": false,
+  "analyses": [
+    {
+      "file": "python/python.sarif",
+      "sha256": "5b1d526a7e1dd09bfedb137854723b37d6228ae0e3059d51fccb9b48f7f2d69f",
+      "findings": []
+    },
+    {
+      "file": "actions/actions.sarif",
+      "sha256": "1bdfa616413abe840299ef807d237386150a4cbbcafd86161d8f2917ccd6fd12",
+      "findings": [
+        {
+          "rule": "actions/cache-poisoning/poisonable-step",
+          "location": {
+            "artifactLocation": {
+              "uri": ".github/workflows/publish-pypi.yml",
+              "uriBaseId": "%SRCROOT%",
+              "index": 0
+            },
+            "region": {
+              "startLine": 203,
+              "startColumn": 9,
+              "endLine": 207,
+              "endColumn": 7
+            }
+          }
+        },
+        {
+          "rule": "actions/cache-poisoning/poisonable-step",
+          "location": {
+            "artifactLocation": {
+              "uri": ".github/workflows/publish-pypi.yml",
+              "uriBaseId": "%SRCROOT%",
+              "index": 0
+            },
+            "region": {
+              "startLine": 213,
+              "startColumn": 9,
+              "endLine": 223,
+              "endColumn": 7
+            }
+          }
+        },
+        {
+          "rule": "actions/cache-poisoning/poisonable-step",
+          "location": {
+            "artifactLocation": {
+              "uri": ".github/workflows/publish-pypi.yml",
+              "uriBaseId": "%SRCROOT%",
+              "index": 0
+            },
+            "region": {
+              "startLine": 359,
+              "startColumn": 9,
+              "endLine": 363,
+              "endColumn": 7
+            }
+          }
+        },
+        {
+          "rule": "actions/cache-poisoning/poisonable-step",
+          "location": {
+            "artifactLocation": {
+              "uri": ".github/workflows/publish-pypi.yml",
+              "uriBaseId": "%SRCROOT%",
+              "index": 0
+            },
+            "region": {
+              "startLine": 492,
+              "startColumn": 9,
+              "endLine": 500,
+              "endColumn": 7
+            }
+          }
+        },
+        {
+          "rule": "actions/cache-poisoning/poisonable-step",
+          "location": {
+            "artifactLocation": {
+              "uri": ".github/workflows/publish-pypi.yml",
+              "uriBaseId": "%SRCROOT%",
+              "index": 0
+            },
+            "region": {
+              "startLine": 512,
+              "startColumn": 9,
+              "endLine": 517,
+              "endColumn": 7
+            }
+          }
+        },
+        {
+          "rule": "actions/cache-poisoning/poisonable-step",
+          "location": {
+            "artifactLocation": {
+              "uri": ".github/workflows/publish-pypi.yml",
+              "uriBaseId": "%SRCROOT%",
+              "index": 0
+            },
+            "region": {
+              "startLine": 585,
+              "startColumn": 9,
+              "endLine": 591,
+              "endColumn": 7
+            }
+          }
+        },
+        {
+          "rule": "actions/cache-poisoning/poisonable-step",
+          "location": {
+            "artifactLocation": {
+              "uri": ".github/workflows/publish-pypi.yml",
+              "uriBaseId": "%SRCROOT%",
+              "index": 0
+            },
+            "region": {
+              "startLine": 595,
+              "startColumn": 9,
+              "endLine": 603,
+              "endColumn": 7
+            }
+          }
+        },
+        {
+          "rule": "actions/cache-poisoning/poisonable-step",
+          "location": {
+            "artifactLocation": {
+              "uri": ".github/workflows/publish-pypi.yml",
+              "uriBaseId": "%SRCROOT%",
+              "index": 0
+            },
+            "region": {
+              "startLine": 611,
+              "startColumn": 9,
+              "endLine": 615,
+              "endColumn": 7
+            }
+          }
+        },
+        {
+          "rule": "actions/cache-poisoning/poisonable-step",
+          "location": {
+            "artifactLocation": {
+              "uri": ".github/workflows/publish-pypi.yml",
+              "uriBaseId": "%SRCROOT%",
+              "index": 0
+            },
+            "region": {
+              "startLine": 626,
+              "startColumn": 9,
+              "endLine": 632,
+              "endColumn": 7
+            }
+          }
+        },
+        {
+          "rule": "actions/cache-poisoning/poisonable-step",
+          "location": {
+            "artifactLocation": {
+              "uri": ".github/workflows/publish-pypi.yml",
+              "uriBaseId": "%SRCROOT%",
+              "index": 0
+            },
+            "region": {
+              "startLine": 632,
+              "startColumn": 9,
+              "endLine": 638,
+              "endColumn": 7
+            }
+          }
+        },
+        {
+          "rule": "actions/cache-poisoning/poisonable-step",
+          "location": {
+            "artifactLocation": {
+              "uri": ".github/workflows/publish-pypi.yml",
+              "uriBaseId": "%SRCROOT%",
+              "index": 0
+            },
+            "region": {
+              "startLine": 692,
+              "startColumn": 9,
+              "endLine": 700,
+              "endColumn": 7
+            }
+          }
+        },
+        {
+          "rule": "actions/cache-poisoning/poisonable-step",
+          "location": {
+            "artifactLocation": {
+              "uri": ".github/workflows/publish-pypi.yml",
+              "uriBaseId": "%SRCROOT%",
+              "index": 0
+            },
+            "region": {
+              "startLine": 1143,
+              "startColumn": 9,
+              "endLine": 1411,
+              "endColumn": 7
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "jobs": [
+    {
+      "id": 108666833232,
+      "name": "Analyze (actions)",
+      "conclusion": "success",
+      "runner_id": 1063157,
+      "runner_name": "cwlab-s1-03",
+      "runner_group_id": 4
+    },
+    {
+      "id": 108666833419,
+      "name": "Analyze (python)",
+      "conclusion": "success",
+      "runner_id": 1063157,
+      "runner_name": "cwlab-s1-03",
+      "runner_group_id": 4
+    }
+  ],
+  "group_repositories": [
+    {
+      "id": 1274066402,
+      "full_name": "ContextualWisdomLab/.github"
+    },
+    {
+      "id": 1277018702,
+      "full_name": "ContextualWisdomLab/contextual-orchestrator"
+    },
+    {
+      "id": 1283452575,
+      "full_name": "ContextualWisdomLab/fast-mlsirm"
+    }
+  ]
+}
