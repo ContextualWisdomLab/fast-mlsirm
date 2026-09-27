@@ -9503,7 +9503,7 @@
   ],
   "required_closure": [
     "Recover publisher-authenticated full grant texts applying to these exact versions and original copyright notices.",
-    "Identify exact SDK/header inputs and applicable source-specific redistribution permission, or publisher/rights-holder clarification covering these Rust generated outputs.",
+    "Authenticate exact Xcode 26.0.1 SDK/header inputs and applicable source-specific redistribution permission, or publisher/rights-holder clarification covering these exact Rust generated outputs.",
     "Retain current fail-closed refusal until both publisher and generated-input scopes are verified."
   ],
   "limitations": [
@@ -9518,5 +9518,13 @@
     "unmatched_packaged_lockfiles": 6,
     "changed_files": 0,
     "scope": "Original source bytes including exact Git-linked generated repository; not licence applicability or SDK production input evidence."
+  },
+  "producer_documentation": {
+    "parent_commit": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+    "objc2_lib_rs_sha256": "f991783f61ee116a12487b861faab96c85a3c734b928eaf843a978f175cfa3dc",
+    "header_translator_readme_sha256": "d91b6d6c06870aff03582328312fbada59b82098cf20c38eb307227d613942e7",
+    "scope": "Translator README fully read; SDK/Xcode policy paragraphs in objc2 lib.rs read. Documentation identifies intended producer versions, not an authenticated generation receipt or header licence chain.",
+    "documented_xcode_version": "26.0.1",
+    "objc2_lib_rs_locator": "lines 72-89; version declaration line 76"
   }
 }
