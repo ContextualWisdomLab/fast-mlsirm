@@ -1,0 +1,20 @@
+{
+  "change_deployed": false,
+  "reason": "Existing exact-archive negative contract forbids MIT hiding bundled GNU terms; preserving the gate is required by the active goal.",
+  "local": {
+    "failed": 2,
+    "passed": 927,
+    "seconds": 19.68
+  },
+  "CI_mode": {
+    "failed": 2,
+    "passed": 927,
+    "seconds": 16.94
+  },
+  "failed_test": "tests/test_release_dependency_gate.py::test_actual_r_efi_authors_is_hash_bound_and_denied",
+  "versions": [
+    "5.3.0",
+    "6.0.0"
+  ],
+  "reversion": "Only owned uncommitted patch/new fixtures/tests were removed; no existing negative test edited."
+}
