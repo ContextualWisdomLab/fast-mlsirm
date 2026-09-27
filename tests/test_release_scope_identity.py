@@ -424,6 +424,11 @@ def test_selection_report_binds_immutable_choices_and_archive(tmp_path):
     verify = M["verify_license_selection_report"]
     declaration.write_text("mutable replacement")
     verify(report, source, sha)
+    added_single_licence = copy.deepcopy(report)
+    added_single_licence["dependencies"].append({
+        "key": "cargo/unselected@1", "license": "ISC", "source_sha256": "c" * 64})
+    with pytest.raises(ValueError, match="lack source-bound bundled notice"):
+        verify(added_single_licence, source, sha)
     for field, value in (("license", "Apache-2.0"), ("license_selection_rationale", "unreviewed"),
                          ("source_sha256", "b" * 64)):
         changed = copy.deepcopy(report)

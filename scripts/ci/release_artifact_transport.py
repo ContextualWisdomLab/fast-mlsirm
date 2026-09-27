@@ -621,10 +621,14 @@ def verify_license_selection_report(report: dict, source: Path, source_sha: str)
     """Bind central licence decisions to the immutable source selection file."""
     if not re.fullmatch(r"[0-9a-f]{40}", source_sha) or report.get("source_sha") != source_sha:
         raise ValueError("licence selection report differs from release source")
+    decisions = {row["key"]: row for row in report["dependencies"]}
+    cargo_keys = {key for key in decisions if key.startswith("cargo/")}
     declaration = "docs/release-license-selections.json"
     entry = subprocess.check_output(
         ["git", "-C", str(source), "ls-tree", source_sha, "--", declaration], text=True)
     if not entry:
+        if cargo_keys:
+            raise ValueError("reviewed Cargo dependencies lack source-bound bundled notice selections")
         if report.get("license_selections_sha256") != "":
             raise ValueError("licence selection digest differs from absent source file")
         return
@@ -633,8 +637,12 @@ def verify_license_selection_report(report: dict, source: Path, source_sha: str)
     blob = subprocess.check_output(["git", "-C", str(source), "show", f"{source_sha}:{declaration}"])
     if report.get("license_selections_sha256") != hashlib.sha256(blob).hexdigest():
         raise ValueError("licence selection digest differs from release source")
-    decisions = {row["key"]: row for row in report["dependencies"]}
-    for choice in json.loads(blob):
+    selections = json.loads(blob)
+    selected_keys = {f"{choice['ecosystem']}/{choice['name']}@{choice['version']}"
+                     for choice in selections}
+    if not cargo_keys <= selected_keys:
+        raise ValueError("reviewed Cargo dependencies lack source-bound bundled notice selections")
+    for choice in selections:
         key = f"{choice['ecosystem']}/{choice['name']}@{choice['version']}"
         decision = decisions.get(key, {})
         if (decision.get("license") != choice["chosen"]
