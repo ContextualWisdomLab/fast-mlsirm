@@ -12,6 +12,7 @@
 
 ### Changed
 
+- `python/fast_mlsirm/ata.py`의 불리언 배열 조건 카운트에서 `np.sum` 대신 `np.count_nonzero`를 사용하여 중간 정수 배열 메모리 할당을 방지하고 성능을 개선했습니다.
 - Polytomous person fit now requires convergence by default, including for
   duck-typed fits with unknown convergence. `allow_unconverged=True` permits
   diagnostic use only for legacy or duck-typed fits and marks the result

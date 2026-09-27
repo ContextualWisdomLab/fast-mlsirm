@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-05-19 - Replacing np.sum with np.count_nonzero for boolean arrays
+**Learning:** `np.sum(boolean_array)` evaluates by allocating an intermediate integer array in memory before summing the elements.
+**Action:** Use `np.count_nonzero(boolean_array)` which avoids the intermediate integer allocation and is significantly faster and more memory-efficient when calculating the true conditions within boolean arrays.
