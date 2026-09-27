@@ -177,6 +177,10 @@ jobs:
     timeout-minutes: 15
     env:
       SOURCE_DATE_EPOCH: ${{ needs.verify-release.outputs.source_date_epoch }}
+      CARGO_RELEASE_SHA: ${{ needs.verify-release.outputs.release_commit }}
+      CARGO_RELEASE_LEG: sdist
+      CARGO_BUILD_IMAGE: ""
+      CARGO_BUILD_PYTHON: python
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -185,18 +189,31 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted-control
+          persist-credentials: false
       - name: Build sdist
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
         with:
           command: sdist
-          maturin-version: v1.14.1
+          maturin-version: v1.15.0
           args: --out dist
+      - name: Capture first sdist build tools
+        env:
+          CARGO_BUILD_PASS: first
+        run: python trusted-control/scripts/ci/capture_release_build_scope.py
       - name: Rebuild sdist for byte-reproducibility check
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
         with:
           command: sdist
-          maturin-version: v1.14.1
+          maturin-version: v1.15.0
           args: --out dist-rebuild
+      - name: Capture second sdist build tools
+        env:
+          CARGO_BUILD_PASS: second
+        run: python trusted-control/scripts/ci/capture_release_build_scope.py
       # Historical release tags predate the pyproject include workaround for
       # maturin omitting LICENSE from mixed-layout sdists while still writing
       # License-File metadata. Inject the checked-out LICENSE when missing so
@@ -339,6 +356,10 @@ jobs:
           (out / f"{leg}.tsv").write_text(row + "\n", encoding="utf-8")
           print(row)
           PY
+      - name: Capture finished sdist members from the build leg
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+        run: python trusted-control/scripts/ci/capture_release_bundle.py repro-digest/sdist.tsv dist
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dist-sdist
@@ -354,11 +375,15 @@ jobs:
 
   wheels:
     name: wheels (${{ matrix.target }}, py${{ matrix.python-version }})
-    needs: verify-release
+    needs: [verify-release, sdist]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     env:
       SOURCE_DATE_EPOCH: ${{ needs.verify-release.outputs.source_date_epoch }}
+      CARGO_RELEASE_SHA: ${{ needs.verify-release.outputs.release_commit }}
+      CARGO_RELEASE_LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
+      CARGO_BUILD_IMAGE: ${{ matrix.container }}
+      CARGO_BUILD_PYTHON: ${{ matrix.interpreter }}
     strategy:
       fail-fast: false
       matrix:
@@ -443,31 +468,52 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: ${{ matrix.python-version }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted-control
+          persist-credentials: false
       # maturin-action forwards only allow-listed env prefixes (CARGO_, RUST,
       # MATURIN_, ...) into the manylinux container, so SOURCE_DATE_EPOCH must
       # be passed explicitly via docker-options for the Linux legs. Native
       # macOS/Windows builds inherit it from the job env.
       - name: Build wheel
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+        env:
+          CARGO_BUILD_PASS: first
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
-          maturin-version: v1.14.1
+          maturin-version: v1.15.0
           docker-options: -e SOURCE_DATE_EPOCH
+          before-script-linux: $CARGO_BUILD_PYTHON trusted-control/scripts/ci/capture_release_build_scope.py
           args: --release --out dist -i ${{ matrix.interpreter }}
+      - name: Capture first native-runner build graph
+        if: ${{ runner.os != 'Linux' }}
+        env:
+          CARGO_BUILD_PASS: first
+        run: python trusted-control/scripts/ci/capture_release_build_scope.py
       # Clean-target second build (fresh cargo target dir) for EVERY leg. The
       # reproducibility record fails closed on any publishable artifact
       # without a matching byte-verified row.
       - name: Rebuild wheel for byte-reproducibility check
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+        env:
+          CARGO_BUILD_PASS: second
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
-          maturin-version: v1.14.1
+          maturin-version: v1.15.0
           docker-options: -e SOURCE_DATE_EPOCH
+          before-script-linux: $CARGO_BUILD_PYTHON trusted-control/scripts/ci/capture_release_build_scope.py
           args: --release --out dist-rebuild --target-dir target-rebuild -i ${{ matrix.interpreter }}
+      - name: Capture second native-runner build graph
+        if: ${{ runner.os != 'Linux' }}
+        env:
+          CARGO_BUILD_PASS: second
+        run: python trusted-control/scripts/ci/capture_release_build_scope.py
       - name: Compare double-build wheel digests and record them
         shell: bash
         env:
@@ -536,6 +582,59 @@ jobs:
           (out / f"{leg}.tsv").write_text(row + "\n", encoding="utf-8")
           print(row)
           PY
+      - name: Capture finished wheel members from the build leg
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+          LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
+        run: python trusted-control/scripts/ci/capture_release_bundle.py "repro-digest/$LEG.tsv" dist
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: "0.12.5"
+          enable-cache: false
+      - name: Capture isolated locked runtime and all optional dependencies
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+          LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
+        run: |
+          set -euo pipefail
+          python trusted-control/scripts/ci/capture_release_runtime.py "repro-digest/$LEG.tsv" dist "$RUNNER_TEMP"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: dist-sdist
+          path: sdist-input
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: repro-digest-sdist
+          path: sdist-proof
+      - name: Verify and unpack the same-run sdist
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+        run: python trusted-control/scripts/ci/release_sdist_consumer.py prepare sdist-proof/sdist.tsv sdist-input sdist-consumer
+      - name: Build this wheel target from the verified sdist
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+        with:
+          command: build
+          working-directory: sdist-consumer/source
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          container: ${{ matrix.container }}
+          maturin-version: v1.15.0
+          docker-options: -e SOURCE_DATE_EPOCH
+          args: --release --out dist-consumer -i ${{ matrix.interpreter }}
+      - name: Capture target sdist consumer wheel
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+          LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
+        run: python trusted-control/scripts/ci/release_sdist_consumer.py capture "repro-digest/$LEG.tsv" dist sdist-consumer repro-digest
+      - name: Install target sdist consumer wheel
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+          LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
+        run: python trusted-control/scripts/ci/release_sdist_consumer.py install "repro-digest/$LEG.tsv" repro-digest "$RUNNER_TEMP"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dist-wheel-${{ matrix.target }}-py${{ matrix.python-version }}
@@ -549,13 +648,75 @@ jobs:
           name: repro-digest-${{ matrix.target }}-py${{ matrix.python-version }}
           path: repro-digest
 
+  macos-x86-runtime:
+    name: macOS x86 runtime ${{ matrix.python-version }}
+    needs: [verify-release, wheels]
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    env:
+      RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+      LEG: universal2-apple-darwin-py${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.verify-release.outputs.release_commit }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted-control
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: "0.12.5"
+          enable-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: dist-wheel-${{ env.LEG }}
+          path: dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: repro-digest-${{ env.LEG }}
+          path: build-proof
+      - name: Capture x86_64 installed dependencies and imported wheel
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          test "$(python -c 'import platform; print(platform.machine())')" = x86_64
+          mkdir runtime-proof
+          cp "build-proof/$LEG.tsv" "runtime-proof/$LEG.tsv"
+          python trusted-control/scripts/ci/capture_release_runtime.py "runtime-proof/$LEG.tsv" dist "$RUNNER_TEMP"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: repro-macos-x86-${{ env.LEG }}
+          path: runtime-proof
+
   # Publication gate: release-assets and publish-pypi need this job, so a
   # publishable artifact without a matching byte-verified row blocks both.
   reproducibility-record:
     name: reproducibility record
-    needs: [verify-release, sdist, wheels]
+    needs: [verify-release, sdist, wheels, macos-x86-runtime]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      distribution_set_artifact_id: ${{ steps.record-upload.outputs.artifact-id }}
+      distribution_set_artifact_digest: sha256:${{ steps.record-upload.outputs.artifact-digest }}
+      selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}
+      selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -576,7 +737,7 @@ jobs:
         with:
           pattern: repro-digest-*
           path: repro-digest
-          merge-multiple: true
+          merge-multiple: false
       - name: Require a byte-verified row for every publishable artifact
         env:
           RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
@@ -591,7 +752,7 @@ jobs:
 
           header = ["target", "byte_verified", "verification", "sha256", "rebuild_sha256", "file", "build_env"]
           rows = {}
-          for path in sorted(Path("repro-digest").glob("*.tsv")):
+          for path in sorted(Path("repro-digest").glob("repro-digest-*/*.tsv")):
               for line in path.read_text(encoding="utf-8").splitlines():
                   fields = line.split("\t")
                   if len(fields) != len(header):
@@ -649,23 +810,176 @@ jobs:
               stream.write(summary)
           print(record.read_text(encoding="utf-8"))
           PY
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - name: List distribution artifacts from this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
+            --jq '.artifacts[]' > run-artifacts.jsonl
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
+            > run-attempt.json
+      - name: Bind all verified distribution bytes to immutable artifact IDs
+        id: bind-distributions
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_WHEEL_LEGS: "x86_64-unknown-linux-gnu-py3.12 x86_64-unknown-linux-gnu-py3.13 x86_64-unknown-linux-gnu-py3.14 aarch64-unknown-linux-gnu-py3.12 aarch64-unknown-linux-gnu-py3.13 aarch64-unknown-linux-gnu-py3.14 universal2-apple-darwin-py3.12 universal2-apple-darwin-py3.13 universal2-apple-darwin-py3.14 x86_64-pc-windows-msvc-py3.12 x86_64-pc-windows-msvc-py3.13 x86_64-pc-windows-msvc-py3.14"
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          from datetime import datetime
+          from pathlib import Path
+
+          legs = os.environ["EXPECTED_WHEEL_LEGS"].split()
+          expected_legs = set(legs) | {"sdist"}
+          if len(legs) != 12 or len(expected_legs) != 13:
+              raise SystemExit("distribution set requires 12 distinct wheel legs and one sdist")
+          lines = Path("reproducibility-record.tsv").read_text(encoding="utf-8").splitlines()
+          if len(lines) != 15 or not lines[0].startswith(
+              f"# release {os.environ['RELEASE_TAG']} @ {os.environ['RELEASE_COMMIT']}, SOURCE_DATE_EPOCH="
+          ) or lines[1].split("\t") != ["target", "byte_verified", "verification", "sha256", "rebuild_sha256", "file", "build_env"]:
+              raise SystemExit("reproducibility record header or row count differs from this release")
+          rows = {}
+          for line in lines[2:]:
+              fields = line.split("\t")
+              if len(fields) != 7 or fields[0] in rows:
+                  raise SystemExit("duplicate or malformed distribution row")
+              rows[fields[0]] = dict(zip(lines[1].split("\t"), fields))
+          if set(rows) != expected_legs:
+              raise SystemExit("reproducibility record does not cover the exact distribution legs")
+          files = {row["file"] for row in rows.values()}
+          paths = list(Path("dist").iterdir())
+          if (len(files) != 13 or len(paths) != 13 or files != {p.name for p in paths}
+                  or any(p.is_symlink() or not p.is_file() for p in paths)):
+              raise SystemExit("distribution files differ from the record")
+
+          seen = {}
+          for line in Path("run-artifacts.jsonl").read_text(encoding="utf-8").splitlines():
+              artifact = json.loads(line)
+              name = artifact.get("name")
+              if name in seen:
+                  raise SystemExit(f"duplicate same-run artifact name: {name}")
+              seen[name] = artifact
+          expected_names = {"dist-sdist"} | {f"dist-wheel-{leg}" for leg in legs}
+          if {name for name in seen if isinstance(name, str) and name.startswith("dist-")} != expected_names:
+              raise SystemExit("distribution artifact names differ from the exact 13-leg set")
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+          attempt = int(os.environ["GITHUB_RUN_ATTEMPT"])
+          control_sha = os.environ["GITHUB_SHA"]
+          if (run_id < 1 or attempt < 1
+                  or not re.fullmatch(r"[0-9a-f]{40}", os.environ["RELEASE_COMMIT"])
+                  or not re.fullmatch(r"[0-9a-f]{40}", control_sha)):
+              raise SystemExit("invalid release execution identity")
+          run = json.loads(Path("run-attempt.json").read_text(encoding="utf-8"))
+          if (run.get("id") != run_id or run.get("run_attempt") != attempt
+                  or run.get("head_sha") != control_sha):
+              raise SystemExit("workflow attempt does not match the release control plane")
+          def timestamp(value):
+              if not isinstance(value, str):
+                  raise SystemExit("missing workflow or artifact timestamp")
+              parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+              if parsed.tzinfo is None:
+                  raise SystemExit("workflow or artifact timestamp has no timezone")
+              return parsed
+          attempt_started = timestamp(run.get("run_started_at"))
+          distributions = []
+          ids = set()
+          for leg, row in sorted(rows.items()):
+              path = Path("dist") / row["file"]
+              with path.open("rb") as stream:
+                  sha = hashlib.file_digest(stream, "sha256").hexdigest()
+              if (not re.fullmatch(r"[0-9a-f]{64}", row["sha256"])
+                      or row["byte_verified"] != "true" or row["rebuild_sha256"] != sha
+                      or row["sha256"] != sha or path.name != row["file"]):
+                  raise SystemExit(f"{leg}: distribution bytes are not reproducibility verified")
+              name = "dist-sdist" if leg == "sdist" else f"dist-wheel-{leg}"
+              artifact = seen[name]
+              artifact_id = artifact.get("id")
+              digest = artifact.get("digest")
+              if (type(artifact_id) is not int or artifact_id <= 0 or artifact_id in ids
+                      or not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                      or (artifact.get("workflow_run") or {}).get("id") != run_id
+                      or (artifact.get("workflow_run") or {}).get("head_sha") != control_sha
+                      or timestamp(artifact.get("created_at")) <= attempt_started
+                      or artifact.get("expired") is not False):
+                  raise SystemExit(f"{name}: missing or foreign immutable artifact identity")
+              ids.add(artifact_id)
+              distributions.append({"leg": leg, "file": row["file"], "sha256": sha,
+                                    "artifact_id": artifact_id, "artifact_name": name,
+                                    "artifact_digest": digest})
+          scope_evidence = []
+          expected_scope_names = {f"repro-digest-{leg}" for leg in expected_legs}
+          if {name for name in seen if name.startswith("repro-digest-")} != expected_scope_names:
+              raise SystemExit("scope evidence artifacts differ from the exact 13-leg set")
+          for leg in sorted(expected_legs):
+              name = f"repro-digest-{leg}"
+              artifact = seen[name]
+              artifact_id, digest = artifact.get("id"), artifact.get("digest")
+              if (type(artifact_id) is not int or artifact_id <= 0 or artifact_id in ids
+                      or not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                      or (artifact.get("workflow_run") or {}).get("id") != run_id
+                      or (artifact.get("workflow_run") or {}).get("head_sha") != control_sha
+                      or timestamp(artifact.get("created_at")) <= attempt_started
+                      or artifact.get("expired") is not False):
+                  raise SystemExit(f"{name}: missing or foreign immutable artifact identity")
+              ids.add(artifact_id)
+              scope_evidence.append({"leg": leg, "artifact_id": artifact_id,
+                                     "artifact_name": name, "artifact_digest": digest})
+          manifest = {"schema_version": 1, "source_repository": os.environ["GITHUB_REPOSITORY"],
+                      "source_sha": os.environ["RELEASE_COMMIT"], "control_sha": control_sha, "run_id": run_id,
+                      "run_attempt": attempt, "distributions": distributions}
+          Path("release-gate-distribution-set.json").write_text(
+              json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
+          )
+          scope_set = {"schema_version": 1, "source_repository": os.environ["GITHUB_REPOSITORY"],
+                       "source_sha": os.environ["RELEASE_COMMIT"], "control_sha": control_sha,
+                       "run_id": run_id, "run_attempt": attempt, "evidence": scope_evidence}
+          Path("release-scope-evidence-set.json").write_text(
+              json.dumps(scope_set, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"selected_wheel_filename={rows['x86_64-unknown-linux-gnu-py3.12']['file']}\n")
+              output.write(f"selected_sdist_filename={rows['sdist']['file']}\n")
+          PY
+      - id: record-upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: reproducibility-record
           path: |
             reproducibility-record.tsv
             release-scope-identities.json
+            release-gate-distribution-set.json
+            release-scope-evidence-set.json
 
-  # R5b: nothing is tagged, released or published unless this job proves, for
-  # this exact run, that the 13 distribution files are the reproducibility-
-  # verified bytes of release_commit AND that each of the 12 wheel legs carries a
-  # sealed licence evidence bundle over exactly those bytes. The licence gate
-  # callers are not wired yet (R5c; central B1/B2 open), so this job currently
-  # refuses every release. That is intentional fail-closed behaviour: there is
-  # no skip, default or placeholder verdict.
+  dependency-gate:
+    name: complete dependency licence and Strix gate
+    needs: [verify-release, reproducibility-record]
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@ab2e9db12ae0c5dea3a5bc71a08603ddbcc76e39
+    with:
+      source_repository: ${{ github.repository }}
+      source_sha: ${{ needs.verify-release.outputs.release_commit }}
+      ecosystems: python,cargo
+      python_lock_path: requirements/package.txt
+      cargo_manifest_path: crates/fast-mlsirm-py/Cargo.toml
+      cargo_dev_manifest_path: crates/mlsirm-core/Cargo.toml
+      distribution_set_artifact_id: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_id }}
+      distribution_set_artifact_digest: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_digest }}
+      wheel_filename: ${{ needs.reproducibility-record.outputs.selected_wheel_filename }}
+      sdist_filename: ${{ needs.reproducibility-record.outputs.selected_sdist_filename }}
+    secrets: inherit
+
+  # R5b/R5c: nothing is tagged, released or published until the exact thirteen
+  # files match both the reproducibility record and a successful same-run
+  # central licence/Strix verdict and verified target-specific scope evidence.
+  # This job creates only a manifest; the following jobs create release state.
   release-admission:
     name: release admission
-    needs: [verify-release, reproducibility-record]
+    needs: [verify-release, reproducibility-record, dependency-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -688,12 +1002,6 @@ jobs:
           ref: ${{ github.sha }}
           path: trusted-control
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ContextualWisdomLab/.github
-          ref: d4d80fda02f0d44998611ee9d35d434e946ca4d3
-          path: trusted-gate
-          persist-credentials: false
       - name: List this run's artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -701,7 +1009,18 @@ jobs:
           set -euo pipefail
           gh api --paginate "repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100" \
             --jq '.artifacts[]' > run-artifacts.jsonl
+          gh api "repos/$REPOSITORY/actions/runs/$RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
+            > run-attempt.json
       - name: Require the exact same-run artifact set
+        env:
+          RECORD_ID: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_id }}
+          RECORD_DIGEST: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_digest }}
+          VERDICT_ID: ${{ needs.dependency-gate.outputs.full_set_verdict_artifact_id }}
+          VERDICT_DIGEST: ${{ needs.dependency-gate.outputs.full_set_verdict_artifact_digest }}
+          VERDICT_NAME: ${{ format('{0}--full-set-verdict', needs.dependency-gate.outputs.evidence_artifact_name) }}
+          SEALED_NAME: ${{ needs.dependency-gate.outputs.evidence_artifact_name }}
+          SEALED_ID: ${{ needs.dependency-gate.outputs.evidence_artifact_id }}
+          SEALED_DIGEST: ${{ needs.dependency-gate.outputs.evidence_artifact_digest }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -709,9 +1028,8 @@ jobs:
           import os
           import re
 
-          # 13 distribution artifacts (12 wheels + sdist) and 12 licence evidence
-          # bundles (one per wheel leg, each sealing that wheel and the sdist) are
-          # two different sets and are checked separately.
+          # The central job's success authenticates the complete verdict;
+          # immutable IDs and digests bind its two evidence artifacts here.
           legs = os.environ["EXPECTED_WHEEL_LEGS"].split()
           if len(legs) != 12 or len(set(legs)) != 12:
               raise SystemExit(f"expected 12 distinct wheel legs, got {legs!r}")
@@ -727,17 +1045,17 @@ jobs:
                       raise SystemExit(f"duplicate artifact name in this run: {name}")
                   seen[name] = artifact
           distributions = {"dist-sdist"} | {f"dist-wheel-{leg}" for leg in legs}
-          evidence = {f"license-evidence-{leg}" for leg in legs}
+          scope_evidence = {"repro-digest-sdist"} | {f"repro-digest-{leg}" for leg in legs}
+          intel_evidence = {f"repro-macos-x86-universal2-apple-darwin-py{version}"
+                            for version in ("3.12", "3.13", "3.14")}
+          evidence = {os.environ["VERDICT_NAME"], os.environ["SEALED_NAME"]}
           failures = []
           selected = []
           ids = set()
           missing_evidence = sorted(evidence - set(seen))
           if missing_evidence:
-              failures.append(
-                  f"licence evidence missing for {len(missing_evidence)} of 12 wheel legs; "
-                  "the licence gate is not wired (R5c, central B1/B2 open), so publication is refused"
-              )
-          for name in sorted(distributions | evidence | {"reproducibility-record"}):
+              failures.append(f"central release evidence missing: {missing_evidence}")
+          for name in sorted(distributions | scope_evidence | intel_evidence | evidence | {"reproducibility-record"}):
               artifact = seen.get(name)
               if artifact is None:
                   failures.append(f"{name}: not uploaded by this run")
@@ -753,34 +1071,91 @@ jobs:
                   failures.append(f"{name}: missing or duplicate immutable artifact ID")
               else:
                   ids.add(artifact_id)
+              if name == "reproducibility-record" and (
+                  str(artifact_id) != os.environ["RECORD_ID"]
+                  or artifact.get("digest") != os.environ["RECORD_DIGEST"]
+              ):
+                  failures.append("reproducibility record differs from producer output")
+              if name == os.environ["VERDICT_NAME"] and (
+                  str(artifact_id) != os.environ["VERDICT_ID"]
+                  or artifact.get("digest") != os.environ["VERDICT_DIGEST"]
+              ):
+                  failures.append("full-set verdict differs from central gate output")
+              if name == os.environ["SEALED_NAME"] and (
+                  str(artifact_id) != os.environ["SEALED_ID"]
+                  or artifact.get("digest") != os.environ["SEALED_DIGEST"]
+              ):
+                  failures.append("sealed pair evidence differs from central gate output")
               selected.append({"id": artifact_id, "name": name, "digest": artifact.get("digest")})
           unexpected = sorted(
               name for name in seen
-              if name.startswith(("dist-", "license-evidence-")) and name not in distributions | evidence
+              if name.startswith(("dist-", "repro-digest-", "repro-macos-x86-", "license-evidence-"))
+              and name not in distributions | scope_evidence | intel_evidence | evidence
           )
           failures += [f"{name}: unexpected publishable or evidence artifact" for name in unexpected]
           if failures:
               raise SystemExit("release admission refused:\n" + "\n".join(failures))
           with open("selected-artifacts.json", "w", encoding="utf-8") as output:
               json.dump(selected, output, sort_keys=True)
-          print(f"same-run artifacts: {len(distributions)} distribution artifacts, {len(evidence)} licence evidence bundles")
+          print(f"same-run artifacts: {len(distributions)} distributions and {len(evidence)} central evidence bundles")
           PY
       - name: Download selected immutable IDs and verify archive digests
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -I trusted-control/scripts/ci/release_artifact_transport.py "$REPOSITORY"
-      - name: Admit exactly the verified bytes of release_commit
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: "0.12.5"
+          enable-cache: false
+      - name: Recompute the complete source dependency export
         run: |
           set -euo pipefail
+          uv export --project release-source --locked --offline --no-dev --no-emit-project --all-extras \
+            --format requirements.txt --no-header --output-file "$RUNNER_TEMP/release-requirements.txt"
           python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          expected = (Path(os.environ["RUNNER_TEMP"]) / "release-requirements.txt").read_bytes()
+          for leg in os.environ["EXPECTED_WHEEL_LEGS"].split():
+              captured = (Path("downloaded") / f"repro-digest-{leg}" /
+                          f"{leg}.runtime-requirements.txt").read_bytes()
+              lines = captured.split(b"\n", 2)
+              if (len(lines) != 3
+                      or lines[0] != b"# This file was autogenerated by uv via the following command:"
+                      or not lines[1].startswith(b"#    uv export ")
+                      or lines[2] != expected):
+                  raise SystemExit(f"{leg}: runtime requirements differ from release source export")
+              if leg.startswith("universal2-apple-darwin-"):
+                  intel = (Path("downloaded") / f"repro-macos-x86-{leg}" /
+                           f"{leg}.runtime-requirements.txt").read_bytes().split(b"\n", 2)
+                  if (len(intel) != 3 or intel[0] != lines[0]
+                          or not intel[1].startswith(b"#    uv export ")
+                          or intel[2] != expected):
+                      raise SystemExit(f"{leg}: Intel runtime requirements differ from release source export")
+          PY
+      - name: Provision hash-locked metadata parser
+        run: |
+          set -euo pipefail
+          uv venv "$RUNNER_TEMP/release-admission-venv"
+          uv pip install --python "$RUNNER_TEMP/release-admission-venv/bin/python" \
+            --require-hashes -r trusted-control/requirements/package.txt
+      - name: Admit exactly the verified bytes of release_commit
+        env:
+          RECORD_ID: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_id }}
+          RECORD_DIGEST: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_digest }}
+          VERDICT_ID: ${{ needs.dependency-gate.outputs.full_set_verdict_artifact_id }}
+          VERDICT_DIGEST: ${{ needs.dependency-gate.outputs.full_set_verdict_artifact_digest }}
+          VERDICT_NAME: ${{ format('{0}--full-set-verdict', needs.dependency-gate.outputs.evidence_artifact_name) }}
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/release-admission-venv/bin/python" - <<'PY'
           import hashlib
           import importlib.util
           import io
           import json
           import os
           import re
-          import subprocess
-          import sys
           import zipfile
           from pathlib import Path
 
@@ -823,13 +1198,15 @@ jobs:
               platforms = {
                   "x86_64-unknown-linux-gnu": r"manylinux(?:2014|_2_[0-9]+)_x86_64",
                   "aarch64-unknown-linux-gnu": r"manylinux(?:2014|_2_[0-9]+)_aarch64",
-                  "universal2-apple-darwin": r"macosx_[0-9]+_[0-9]+_universal2",
+                  "universal2-apple-darwin": r"macosx_[0-9]+_[0-9]+_(?:x86_64|arm64|universal2)",
                   "x86_64-pc-windows-msvc": r"win_amd64",
               }
               parts = rows[leg]["file"].removesuffix(".whl").rsplit("-", 3)
               if (not rows[leg]["file"].endswith(".whl") or len(parts) != 4
                       or parts[1:3] != [cp, cp]
-                      or not all(re.fullmatch(platforms[target], p) for p in parts[3].split("."))):
+                      or not all(re.fullmatch(platforms[target], p) for p in parts[3].split("."))
+                      or (target == "universal2-apple-darwin"
+                          and not any(p.endswith("_universal2") for p in parts[3].split(".")))):
                   raise SystemExit(f"{leg}: wheel filename platform/ABI mismatch")
           if not rows["sdist"]["file"].endswith(".tar.gz"):
               raise SystemExit("sdist filename must end with .tar.gz")
@@ -864,62 +1241,145 @@ jobs:
           recorded = {row["file"]: row["sha256"] for row in rows.values()}
           if dist != recorded:
               failures.append(f"distribution files differ from the record: files={sorted(dist)!r}")
-
-          # Each of the 12 evidence bundles seals that leg's wheel and the same sdist.
-          sdist_row = rows["sdist"]
-          sealed_sdists = set()
-          for leg in legs:
-              name = f"license-evidence-{leg}"
-              bundle = Path("downloaded") / name
-              try:
-                  identity = json.loads((bundle / "source-identity.json").read_text(encoding="utf-8"))
-                  listed = {}
-                  for entry in (bundle / "checksums.sha256").read_text(encoding="utf-8").splitlines():
-                      digest, member = entry.split("  ", 1)
-                      listed[member] = digest
-              except (OSError, ValueError) as error:
-                  failures.append(f"{name}: unreadable sealed evidence ({error})")
-                  continue
-              members = {p.name for p in bundle.iterdir() if p.is_file()} - {"checksums.sha256"}
-              if set(listed) != members or any(sha256(bundle / m) != d for m, d in listed.items()):
-                  failures.append(f"{name}: checksums.sha256 does not match the bundle contents")
-              wheel = identity.get("artifacts", {}).get("wheel", {})
-              sdist = identity.get("artifacts", {}).get("sdist", {})
-              expected = {
-                  "source_repository": os.environ["REPOSITORY"],
-                  "source_sha": commit,
-                  "evidence_artifact_name": name,
-              }
-              for key, value in expected.items():
-                  if identity.get(key) != value:
-                      failures.append(f"{name}: {key}={identity.get(key)!r}, expected {value!r}")
-              if (wheel.get("filename"), wheel.get("sha256")) != (rows[leg]["file"], rows[leg]["sha256"]):
-                  failures.append(f"{name}: sealed wheel is not the recorded {leg} wheel")
-              if (sdist.get("filename"), sdist.get("sha256")) != (sdist_row["file"], sdist_row["sha256"]):
-                  failures.append(f"{name}: sealed sdist is not the recorded sdist")
-              sealed_sdists.add(sdist.get("sha256"))
-              # Reuse the organization-owned six-member verifier. This checks
-              # inert archive bytes/SBOM/source, not licence-gate authorization.
-              try:
-                  outer = next(a for a in selected if a["name"] == name)
-                  args = [sys.executable, "-I", "trusted-gate/scripts/ci/verify_exact_artifact_sbom_handoff.py",
-                          "--source-repository", os.environ["REPOSITORY"], "--source-sha", commit,
-                          "--evidence-artifact-name", name, "--evidence-artifact-digest", outer["digest"],
-                          "--evidence-root", str(bundle), "--predicate-type", identity["predicate_type"],
-                          "--cyclonedx-schema", identity["cyclonedx_schema"],
-                          "--source-identity-sha256", sha256(bundle / "source-identity.json"),
-                          "--checksum-sha256", sha256(bundle / "checksums.sha256"),
-                          "--output-manifest", f"verified-{name}.json"]
-                  for label, item in (("wheel", wheel), ("sdist", sdist)):
-                      for key in ("filename", "sha256", "sbom_filename", "sbom_sha256"):
-                          args += [f"--{label}-{key.replace('_', '-')}", item[key]]
-                  subprocess.run(args, check=True, stdout=subprocess.DEVNULL)
-              except (KeyError, StopIteration, subprocess.CalledProcessError) as error:
-                  failures.append(f"{name}: central sealed handoff rejected ({error})")
-          if len(sealed_sdists) > 1:
-              failures.append(f"the 12 sdist seals diverge: {sorted(map(str, sealed_sdists))!r}")
           if failures:
               raise SystemExit("release admission refused:\n" + "\n".join(failures))
+
+          scope_set = json.loads(Path("downloaded/reproducibility-record/release-scope-evidence-set.json").read_text())
+          scope_names = {f"repro-digest-{leg}" for leg in rows}
+          expected_scope_set = {
+              "schema_version": 1, "source_repository": os.environ["REPOSITORY"],
+              "source_sha": commit, "control_sha": os.environ["GITHUB_SHA"],
+              "run_id": int(os.environ["RUN_ID"]), "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "evidence": [
+                  {"leg": leg, "artifact_id": item["id"], "artifact_name": name,
+                   "artifact_digest": item["digest"]}
+                  for leg in sorted(rows)
+                  for name in [f"repro-digest-{leg}"]
+                  for item in selected if item["name"] == name
+              ],
+          }
+          if (scope_set != expected_scope_set or len(scope_set.get("evidence", [])) != 13
+                  or {item["name"] for item in selected if item["name"].startswith("repro-digest-")} != scope_names):
+              raise SystemExit("scope evidence set differs from selected same-run artifacts")
+          def unique_object(pairs):
+              value = {}
+              for key, item in pairs:
+                  if key in value:
+                      raise ValueError(f"duplicate bundle inventory key: {key}")
+                  value[key] = item
+              return value
+          runtime_records = []
+          build_records = []
+          build_graph_receipts = []
+          for leg, row in rows.items():
+              name = f"repro-digest-{leg}"
+              members = {path.name: path for path in (Path("downloaded") / name).iterdir()}
+              expected_members = {f"{leg}.tsv", f"{leg}.bundle.json",
+                                  f"{leg}.build-first.json", f"{leg}.build-second.json",
+                                  f"{leg}.build-python.zip"}
+              if leg != "sdist":
+                  expected_members |= {f"{leg}.runtime.json", f"{leg}.runtime-requirements.txt",
+                                       f"{leg}.consumer.json", f"{leg}.consumer.whl"}
+              if (leg == "sdist" and set(members) != expected_members
+                      or leg != "sdist" and not expected_members <= set(members)):
+                  raise SystemExit(f"{leg}: scope evidence artifact members differ from build output")
+              if members[f"{leg}.tsv"].read_text(encoding="utf-8") != "\t".join(row[key] for key in header) + "\n":
+                  raise SystemExit(f"{leg}: scope evidence row differs from reproducibility record")
+              artifact_name = "dist-sdist" if leg == "sdist" else f"dist-wheel-{leg}"
+              distribution = Path("downloaded") / artifact_name / row["file"]
+              expected_bundle = transport.bundle_inventory(distribution, leg, commit, row["build_env"])
+              observed_bundle = json.loads(members[f"{leg}.bundle.json"].read_text(encoding="utf-8"),
+                                           object_pairs_hook=unique_object)
+              if observed_bundle != expected_bundle:
+                  raise SystemExit(f"{leg}: build-leg bundle inventory differs from distribution bytes")
+              build_first = json.loads(members[f"{leg}.build-first.json"].read_text(encoding="utf-8"),
+                                       object_pairs_hook=unique_object)
+              build_second = json.loads(members[f"{leg}.build-second.json"].read_text(encoding="utf-8"),
+                                        object_pairs_hook=unique_object)
+              transport.verify_build_scope(build_first, build_second, row, Path("release-source"),
+                                           commit, members[f"{leg}.build-python.zip"])
+              build_graph_receipts.append(build_first)
+              build_records.append({key: build_first[key] for key in
+                                    ("leg", "python_packages", "python_snapshot_sha256",
+                                     "build_env", "maturin_version", "maturin_binary_sha256")})
+              if leg != "sdist":
+                  runtime = json.loads(members[f"{leg}.runtime.json"].read_text(encoding="utf-8"),
+                                       object_pairs_hook=unique_object)
+                  transport.verify_runtime_inventory(
+                      runtime, members[f"{leg}.runtime-requirements.txt"], row,
+                      Path("release-source"), commit, expected_bundle, distribution, members,
+                  )
+                  consumer = json.loads(members[f"{leg}.consumer.json"].read_text(encoding="utf-8"),
+                                        object_pairs_hook=unique_object)
+                  transport.verify_sdist_consumer(
+                      consumer, members[f"{leg}.consumer.whl"], distribution, row,
+                      rows["sdist"], commit, runtime,
+                  )
+                  runtime_records.append(runtime)
+
+          runtime_variants = []
+          for version in ("3.12", "3.13", "3.14"):
+              leg = f"universal2-apple-darwin-py{version}"
+              row = rows[leg]
+              members = {path.name: path for path in
+                         (Path("downloaded") / f"repro-macos-x86-{leg}").iterdir()}
+              if not {f"{leg}.tsv", f"{leg}.runtime.json",
+                      f"{leg}.runtime-requirements.txt"} <= members.keys():
+                  raise SystemExit(f"{leg}: Intel runtime evidence is incomplete")
+              if members[f"{leg}.tsv"].read_text(encoding="utf-8") != "\t".join(
+                      row[key] for key in header) + "\n":
+                  raise SystemExit(f"{leg}: Intel runtime row differs from selected wheel")
+              distribution = Path("downloaded") / f"dist-wheel-{leg}" / row["file"]
+              bundle = transport.bundle_inventory(distribution, leg, commit, row["build_env"])
+              runtime = json.loads(members[f"{leg}.runtime.json"].read_text(encoding="utf-8"),
+                                   object_pairs_hook=unique_object)
+              transport.verify_runtime_inventory(
+                  runtime, members[f"{leg}.runtime-requirements.txt"], row,
+                  Path("release-source"), commit, bundle, distribution, members,
+                  runtime_only=True,
+              )
+              runtime_variants.append(runtime)
+
+          # The central job result is required by `needs`; its immutable verdict
+          # must independently match the record and all current-attempt artifacts.
+          verifier_spec = importlib.util.spec_from_file_location(
+              "full_verdict", "trusted-control/scripts/ci/verify_release_full_set_verdict.py"
+          )
+          verifier = importlib.util.module_from_spec(verifier_spec)
+          verifier_spec.loader.exec_module(verifier)
+          verdict_name = os.environ["VERDICT_NAME"]
+          verdict_members = {path.name: path for path in (Path("downloaded") / verdict_name).iterdir()}
+          if set(verdict_members) != {"full-set-verdict.json", "gate-report.json",
+                                      "runtime-archive-license-report.json", "release-native-links.json"}:
+              raise SystemExit("central verdict artifact does not contain the exact dependency report")
+          verdict = json.loads(verdict_members["full-set-verdict.json"].read_text(encoding="utf-8"),
+                               object_pairs_hook=unique_object)
+          report_bytes = verdict_members["gate-report.json"].read_bytes()
+          report = json.loads(report_bytes, object_pairs_hook=unique_object)
+          archive_report_bytes = verdict_members["runtime-archive-license-report.json"].read_bytes()
+          archive_report = json.loads(archive_report_bytes, object_pairs_hook=unique_object)
+          native_bytes = verdict_members["release-native-links.json"].read_bytes()
+          native = json.loads(native_bytes, object_pairs_hook=unique_object)
+          verifier.verify_full_set_verdict(
+              json.loads(Path("downloaded/reproducibility-record/release-gate-distribution-set.json").read_text()),
+              scope_set,
+              verdict,
+              [json.loads(line) for line in Path("run-artifacts.jsonl").read_text().splitlines()],
+              json.loads(Path("run-attempt.json").read_text()),
+              repository=os.environ["REPOSITORY"], source_sha=commit,
+              control_sha=os.environ["GITHUB_SHA"], run_id=int(os.environ["RUN_ID"]),
+              run_attempt=int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              record_id=int(os.environ["RECORD_ID"]), record_digest=os.environ["RECORD_DIGEST"],
+              verdict_id=int(os.environ["VERDICT_ID"]), verdict_digest=os.environ["VERDICT_DIGEST"],
+              verdict_name=verdict_name,
+          )
+          verifier.verify_runtime_dependency_coverage(
+              verdict, report, report_bytes, archive_report, archive_report_bytes,
+              runtime_records, runtime_variants, build_records,
+              repository=os.environ["REPOSITORY"], source_sha=commit,
+          )
+          verifier.verify_native_link_inventory(verdict, native, native_bytes,
+                                                runtime_records, commit)
 
           # The same immutable-ID transport receipt covers this JSON alongside
           # the TSV. Recompute its source/archive bindings before any admission.
@@ -928,13 +1388,24 @@ jobs:
               row["file"]: Path("downloaded") / ("dist-sdist" if leg == "sdist" else f"dist-wheel-{leg}") / row["file"]
               for leg, row in rows.items()
           }
-          transport.verify_scope_identities(scope_records, rows, distribution_paths, Path("release-source"), commit)
+          transport.verify_scope_declarations(scope_records, rows, distribution_paths, Path("release-source"), commit)
+          for leg, row in rows.items():
+              transport.verify_distribution_requirements(distribution_paths[row["file"]], leg,
+                                                         Path("release-source"), commit)
+              transport.verify_bundled_license_notices(
+                  transport.bundle_inventory(distribution_paths[row["file"]], leg, commit, row["build_env"]),
+                  Path("release-source"), commit)
+          transport.verify_license_selection_report(report, Path("release-source"), commit)
+          transport.verify_cargo_graph_closure(build_graph_receipts, Path("release-source"), commit)
+          verifier.verify_cargo_dependency_coverage(report, build_graph_receipts,
+                                                    source=Path("release-source"), source_sha=commit)
 
-          # The current central handoff does not authenticate a same-run full
-          # licence/Strix verdict or platform-complete inventory. A caller can
-          # manufacture a structurally valid seal. Do not publish a manifest
-          # until the trusted gate-success contract is wired (B2/B3/R5c).
-          raise SystemExit("release admission HOLD: trusted same-run full licence/Strix gate-success contract is not wired")
+          # Source declarations cannot approve a closure. All collected scope
+          # receipts and the sealed licence/Strix set were verified above.
+          # Exclusive creation prevents a pre-existing file from being reused.
+          with Path("admitted-manifest.tsv").open("x", encoding="utf-8") as admitted:
+              for filename, digest in sorted(recorded.items()):
+                  admitted.write(f"{digest}  {filename}\n")
 
           PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
