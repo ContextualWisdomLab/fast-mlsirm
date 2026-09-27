@@ -1,0 +1,15 @@
+{
+  "E_completed_UTC": "2026-09-27T20:21:54Z",
+  "E_OpenBLAS_sha256": "940c6557fc88fb9f30124e3b37d79f8c1abec07c1b8b93ead0407f336ba8f476",
+  "E_raw_wheel_sha256": "8c33877da71e3f794954ac6850034eeff98af944a41d7efa5f165894195127b5",
+  "E_repaired_wheel_sha256": "36da5477c6013940efdcef1fff6b29395ea3d11de19a703ebb720b05b4a14202",
+  "E_complete_notice_wheel_sha256": "91c7a71387703c23a9bcf953adcc7b0d3ec8f41e6e9a090afaa3a6532c6c8604",
+  "complete_notice_sha256": "9f21f7061f26cdc6f173c29a5a2754c68326d7b397c6bc75bfb4f7543ed21ba4",
+  "notice_repack_repeat_identical": true,
+  "RECORD_verified": true,
+  "original_native_source_members_unchanged_by_notice_repair": true,
+  "F_started_UTC": "2026-09-27T20:22:02Z",
+  "F_container_prefix": "b4f22eca5772",
+  "combined_live_session_id": 87273,
+  "scope": "E completed, F repeat pending. Notice repair is reproducible packaging only, not compiled-wheel reproducibility or numerical/ABI acceptance."
+}

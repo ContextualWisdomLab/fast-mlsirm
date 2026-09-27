@@ -1,0 +1,49 @@
+{
+  "repository": "ContextualWisdomLab/fast-mlsirm",
+  "pr": 2240,
+  "pr_state": "MERGED",
+  "rows": [
+    {
+      "id": 36345940008,
+      "name": "Required Noema Review ContextualWisdomLab/fast-mlsirm#2240@8683d08e364b737265679c54bfa4792f8f4ac13d",
+      "head_sha": "8683d08e364b737265679c54bfa4792f8f4ac13d",
+      "prior_status": "completed",
+      "running_jobs": 0,
+      "action": "no new cancellation",
+      "observed_status": "completed",
+      "observed_conclusion": "cancelled"
+    },
+    {
+      "id": 36345939861,
+      "name": "Required OpenCode Review ContextualWisdomLab/fast-mlsirm#2240@8683d08e364b737265679c54bfa4792f8f4ac13d",
+      "head_sha": "8683d08e364b737265679c54bfa4792f8f4ac13d",
+      "prior_status": "queued",
+      "running_jobs": 0,
+      "action": "direct REST cancellation requested",
+      "observed_status": "completed",
+      "observed_conclusion": "cancelled"
+    },
+    {
+      "id": 36345939922,
+      "name": "Required PR Review Merge Scheduler",
+      "head_sha": "8683d08e364b737265679c54bfa4792f8f4ac13d",
+      "prior_status": "queued",
+      "running_jobs": 0,
+      "action": "direct REST cancellation requested",
+      "observed_status": "completed",
+      "observed_conclusion": "cancelled"
+    },
+    {
+      "id": 36345939929,
+      "name": "Strix Security Scan ContextualWisdomLab/fast-mlsirm#2240@8683d08e364b737265679c54bfa4792f8f4ac13d",
+      "head_sha": "8683d08e364b737265679c54bfa4792f8f4ac13d",
+      "prior_status": "queued",
+      "running_jobs": 0,
+      "action": "direct REST cancellation requested",
+      "observed_status": "completed",
+      "observed_conclusion": "cancelled"
+    }
+  ],
+  "CLI_error": "gh run cancel could not find the run; direct GET and POST REST endpoints worked",
+  "scope": "Only owned obsolete PR-head review/scheduler runs. Current-main canaries, vulnerability scans, CI matrix and running jobs untouched."
+}
