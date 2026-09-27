@@ -12,7 +12,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fast_mlsirm import focal_expected_total_score_monotonicity
+from fast_mlsirm import (
+    check_focal_expected_total_score_monotonicity,
+    focal_expected_total_score_monotonicity,
+)
 
 N_CAT = 4
 THRESHOLDS = np.array([1.2, 0.0, -1.2])
@@ -66,6 +69,15 @@ def test_the_nuisance_collapse_matches_direct_integration() -> None:
     # 200k draws over three dimensions; the residual is sampling noise, and the
     # quadrature is the exact side of the comparison.
     np.testing.assert_allclose(report.expected_total, reference, atol=5e-3)
+
+
+def test_high_quadrature_count_has_finite_expected_scores() -> None:
+    grid = np.array([-1.0, 0.0, 1.0])
+    report = check_focal_expected_total_score_monotonicity(
+        _Fit(np.array([[1.0, 0.5]])), 0, grid, q_nuisance=481
+    )
+    assert np.isfinite(report.expected_total).all()
+    assert report.monotone
 
 
 def test_a_negative_focal_slope_is_what_makes_the_curve_decrease() -> None:
