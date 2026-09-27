@@ -1,0 +1,16 @@
+{
+  "stage": "C",
+  "state": "RUNNING_OPENBLAS_BUILD",
+  "workspace": "/data/orca/workspaces/fmls-numpy-pinned-backend-build-20260928",
+  "exec_session_id": 53000,
+  "container_id": "848e53d51044",
+  "image_digest": "ae21cd1c8220f773f9b5934f3b845d677494d4cd4b8981c1e416f654e8afa74e",
+  "image_id": "705368385f1b0623fe5012373f6454b087bb1388f39e5a3c0c2add630466bfd1",
+  "memory_bytes": 6442450944,
+  "nano_cpus": 2000000000,
+  "network_mode": "none",
+  "started_openblas_utc": "2026-09-27T17:58:04Z",
+  "script_sha256": "d42e61f0acac9de7dc96c84bb51cb68cc7eef761cbc9973485232521fa017fe4",
+  "input_manifest_sha256": "234b217687029f7137d4ea56ca330828f26e9edbe9613a4e95aabaf2a2732a55",
+  "final_build_or_license_verdict": null
+}
