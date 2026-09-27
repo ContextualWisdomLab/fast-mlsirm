@@ -1,0 +1,5 @@
+{"phase": "inputs", "reference_sha256": "3873036f75205706179df5e44566823761d8e39f31deb77d5646299b156e8b78", "focal_sha256": "e969e380728349c86af705858615345ac05cbe55ec708346f4adb5bb55f85e41", "device": "gpu"}
+{"phase": "reference", "converged": true, "reason": "tolerance_met", "updates": 20}
+{"phase": "focal", "converged": true, "reason": "tolerance_met", "updates": 68, "backend": "gpu"}
+.
+1 passed in 55.49s

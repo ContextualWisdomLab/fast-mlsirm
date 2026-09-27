@@ -1,0 +1,9 @@
+# Actual reference/focal/curve bridge
+
+The pipeline uses the existing continuous P2/S4 sixteen-item generator with separate reference/focal seeds, 512 persons each and all four categories. Generator extraction preserves the original N4096 recovery input hash. Reference fitting fixes primary correlations to identity; the focal model fixes every reference item parameter and estimates all six Gaussian means/SDs on actual GPU. Explicit rescoring uses the final focal density, while the common expected-score curve retains reference N(0,I) nuisances. The item bank remains byte-equal and the 121/241 nuisance-grid comparison passes.
+
+Current native pipeline: **1 passed, exit0, zero skips/errors/failures**; reference20 and focal68 tolerance-met updates. Core/test/input hashes and raw output/JUnit are retained. First attempt fails at the final call with TypeError due to specific_map supplied positionally to a keyword-only API; preserve its complete report. Correction changes only that call, not data or numerical controls.
+
+Scientific/source scope is in the actual test docstrings: Cai2010 equations4–12 and AppendicesA/B; expected-score theorem from opened STAT414 lesson26.1; Python3.12 random/pairwise generator manuals. The seven-node fit/score grid is a synthetic execution contract, not study precision or recovery. Prior35-test integration proof remains separately bound to its own input head.
+
+The required GPU workflow adds this third contract and checks its exact name alongside the existing score/update and continuous recovery contracts. Running its actual XML guard against the original two-test JUnit rejects the missing new contract (gate-negative.json). This negative check is not positive current-head CI acceptance. Current-head full hardware workflow, ordinary required CI, substantive nonauthor review, normal integration/release and actual study convergence/sensitivity/full shared-person bootstrap remain.

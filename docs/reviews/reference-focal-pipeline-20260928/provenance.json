@@ -1,0 +1,39 @@
+{
+  "tested_head": "78b3be2ffbf58caa8fe5892f48ba750a281eb0c1",
+  "exit_code": 0,
+  "host": "Seonghoui-MacBookPro-2.local",
+  "python": "3.12.14",
+  "device": "gpu",
+  "sample_per_group": 512,
+  "reference_seed": 20260928,
+  "focal_seed": 20260929,
+  "fit_score_nodes": 7,
+  "nuisance_nodes": [
+    121,
+    241
+  ],
+  "max_iter": 2000,
+  "tol": 1e-06,
+  "n_starts_reference": 2,
+  "reference_updates": 20,
+  "focal_updates": 68,
+  "reference_input_sha256": "3873036f75205706179df5e44566823761d8e39f31deb77d5646299b156e8b78",
+  "focal_input_sha256": "e969e380728349c86af705858615345ac05cbe55ec708346f4adb5bb55f85e41",
+  "original_recovery_input_sha256_preserved": "062e7a22c0fffda853787293eed3d44fd6cbdd00c9eab91208c6a3de33cf0831",
+  "core_path": "/private/tmp/fmls-focal-expected-integration-20260928/python/fast_mlsirm/_core.cpython-312-darwin.so",
+  "core_sha256": "beba873f90f55b742c3b5b3e46b0c14db9c6f14c5433f5cb6768a2c48664b4a7",
+  "junit": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "1",
+    "time": "55.286",
+    "timestamp": "2026-09-28T01:47:39.988390+09:00",
+    "hostname": "Seonghoui-MacBookPro-2.local"
+  },
+  "junit_sha256": "e4afad58e3cbc792a34c0e9913f0ec38340b325f73047aa4967d803a849016d9",
+  "output_sha256": "725344e613eeb9eb60651ac19c8d286282c694cca06033400d69f2c6991c18a2",
+  "scope": "Synthetic actual native reference fit, fixed-bank GPU focal fit, explicit final-prior GPU rescore, invariant item bank and common reference expected-score curve. Not population recovery, study fit or full five-scale bootstrap/accepted release.",
+  "first_failure": "first-attempt/ retains TypeError from incorrect keyword-only API invocation; numerical settings and inputs unchanged."
+}

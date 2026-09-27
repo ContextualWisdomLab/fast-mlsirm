@@ -87,7 +87,7 @@ jobs:
           export PATH="$PWD/.venv-focal-gpu/bin:$PATH"
           .venv-focal-gpu/bin/python -m pip install --require-hashes -r requirements/ci.txt
           .venv-focal-gpu/bin/python -m pip install --no-deps --no-build-isolation -e .
-      - name: Execute both actual hardware contracts
+      - name: Execute all three actual hardware contracts
         run: |
           .venv-focal-gpu/bin/python -m pytest -q -s --junitxml=focal-gpu-junit.xml \
             tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_score_and_focal_update \
