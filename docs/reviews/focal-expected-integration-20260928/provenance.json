@@ -1,0 +1,221 @@
+{
+  "source_head": "95b003dee5c742d3a411a09d8e3a752966630e9f",
+  "parents": [
+    "5d915651a0fcecae8708da7e3d4d739cc77a999e",
+    "c85304aa97b10d33b7460920e04c70f528ec4724"
+  ],
+  "host": "Seonghoui-MacBookPro-2.local",
+  "python": "3.12.14",
+  "files": {
+    "core": {
+      "path": "/private/tmp/fmls-focal-expected-integration-20260928/python/fast_mlsirm/_core.cpython-312-darwin.so",
+      "sha256": "beba873f90f55b742c3b5b3e46b0c14db9c6f14c5433f5cb6768a2c48664b4a7"
+    },
+    "focal": {
+      "path": "/private/tmp/fmls-focal-expected-integration-20260928/python/fast_mlsirm/two_tier_focal.py",
+      "sha256": "f0b0aff0de70a547c72aa80cc4877d7242bbeb07371c2cfad1702601ed055a6a"
+    },
+    "expected": {
+      "path": "/private/tmp/fmls-focal-expected-integration-20260928/python/fast_mlsirm/two_tier_grm.py",
+      "sha256": "be110470d8a6c71244be54659884a983b7503ebd310e004711661dcd89569712"
+    }
+  },
+  "scope": "Installed merged candidate and explicit focal-to-reference-curve bridge; synthetic proof only, not complete study worker or accepted release.",
+  "source_read": {
+    "url": "https://online.stat.psu.edu/stat414/Lesson26",
+    "section": "26.1 theorem and MGF proof",
+    "html_sha256": "2321ce992909584705597514d919d438b9589feac0b1f9be724940171114c926",
+    "web_fetch": "502; direct HTTPS200 and theorem/proof read"
+  },
+  "exit_code": 0,
+  "junit": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "35",
+    "time": "3.556",
+    "timestamp": "2026-09-28T01:36:53.849321+09:00",
+    "hostname": "Seonghoui-MacBookPro-2.local",
+    "sha256": "58d687c7ce3ab6ef5393a2d478d12c9d079be7be3bf2643c6063c8eb1e9252d5",
+    "cases": [
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_q_nuisance_and_prior_required",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_matches_bifactor_monotonicity_when_no_extra_primary",
+        "time": "1.949"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_wording_cross_loads_change_curve_vs_specific_only",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_person_eap_points_accepted_without_ascending_grid",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_category_support_rejects_nondecreasing_thresholds",
+        "time": "0.000"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_reverse_keyed_negative_g_slope_reverses_total_trend",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_per_dimension_ref_sd_changes_integral_vs_scalar_bundle",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_ref_distribution_rejects_bad_shape_nan_nonpositive",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_two_primary_quantitative_bounds_and_method_factor_effect",
+        "time": "0.003"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_two_primary_distinct_method_vs_specific_reference_variances",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_monte_carlo_reference_two_nuisance_item",
+        "time": "0.017"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_from_fit_dual_gates_phi_and_consumer_identification",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_specific_map_rejects_noninteger_before_int64_cast",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_specific_map_rejects_uint64_wraparound_boundaries",
+        "time": "0.000"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_specific_map_rejects_sparse_index_inflating_n_specific",
+        "time": "0.000"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_collapsed_gh_matches_product_meshgrid_reference",
+        "time": "0.002"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_study_node_counts_stabilize_on_two_primary_fixture[q_pair0]",
+        "time": "0.029"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_study_node_counts_stabilize_on_two_primary_fixture[q_pair1]",
+        "time": "0.062"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_gauss_hermite_rule_is_finite_and_exact_at_study_node_counts",
+        "time": "0.157"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_q_nuisance_has_no_node_count_cap",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_prediction_budget_counts_categories_before_rule_allocation",
+        "time": "0.000"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_q_nuisance_must_be_exact_integer_at_least_one[0]",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_q_nuisance_must_be_exact_integer_at_least_one[-1]",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_q_nuisance_must_be_exact_integer_at_least_one[2.0]",
+        "time": "0.000"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_q_nuisance_must_be_exact_integer_at_least_one[15]",
+        "time": "0.000"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_q_nuisance_must_be_exact_integer_at_least_one[True]",
+        "time": "0.000"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_unrepresentable_rule_fails_before_allocation",
+        "time": "0.000"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_from_fit_requires_producer_identification_before_calculation",
+        "time": "0.000"
+      },
+      {
+        "classname": "tests.test_two_tier_expected_raw",
+        "name": "test_specific_free_map_rejects_nonzero_slope_before_quadrature",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_focal_native_api",
+        "name": "test_fixed_bank_focal_native_score_fit_and_returned_state",
+        "time": "0.036"
+      },
+      {
+        "classname": "tests.test_two_tier_focal_native_api",
+        "name": "test_public_python_focal_fit_and_rescore_use_real_native_extension",
+        "time": "0.001"
+      },
+      {
+        "classname": "tests.test_two_tier_focal_six_latent_native",
+        "name": "test_six_latent_native_matches_rust_full_product_fixture[False]",
+        "time": "0.002"
+      },
+      {
+        "classname": "tests.test_two_tier_focal_six_latent_native",
+        "name": "test_six_latent_native_matches_rust_full_product_fixture[True]",
+        "time": "0.002"
+      },
+      {
+        "classname": "tests.test_two_tier_focal_six_latent_native",
+        "name": "test_native_focal_g_scores_use_explicit_reference_expected_score_curve",
+        "time": "0.017"
+      },
+      {
+        "classname": "tests.test_two_tier_focal_gpu_native",
+        "name": "test_actual_gpu_six_latent_score_and_focal_update",
+        "time": "0.746"
+      }
+    ]
+  },
+  "output_sha256": "30069656f10d1c926724a0302a02f8e42beb4ce6c5a583ac3378f0193e088099",
+  "rust_source_delta_from_gpu_parent": []
+}
