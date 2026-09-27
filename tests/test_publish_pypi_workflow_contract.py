@@ -537,7 +537,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@8334ab0a16cbcb6483cdd05c212db7e9ee6a0071" in central
+    assert "release-dependency-license-strix-gate.yml@bd65571fff0769ac44ee6196526cd3853baf2e70" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -1633,3 +1633,27 @@ def test_release_admission_ignores_legitimate_non_distribution_artifacts(tmp_pat
     ):
         result = _run_admission(tmp_path / name, _SET_STEP, listing_with(tmp_path / name, extra))
         assert result.returncode != 0 and expected in result.stderr, (name, result.stderr)
+
+
+def test_primary_macos_runtime_cannot_duplicate_intel_coverage(tmp_path: Path) -> None:
+    import json
+    import runpy
+    import pytest
+
+    fixture = _admission_fixture(tmp_path)
+    leg = "universal2-apple-darwin-py3.12"
+    folder = tmp_path / "scope-evidence" / f"repro-digest-{leg}"
+    distribution = tmp_path / "dist" / fixture["files"][leg]
+    transport = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
+    runtime = json.loads((folder / f"{leg}.runtime.json").read_text())
+    bundle = transport["bundle_inventory"](distribution, leg, _RELEASE_COMMIT, fixture["build_env"][leg])
+    row = {"target": leg, "file": fixture["files"][leg],
+           "sha256": transport["hash_file"](distribution), "build_env": fixture["build_env"][leg]}
+    members = {path.name: path for path in folder.iterdir()}
+    verify = transport["verify_runtime_inventory"]
+    verify(runtime, folder / f"{leg}.runtime-requirements.txt", row,
+           tmp_path / "release-source", _RELEASE_COMMIT, bundle, distribution, members)
+    runtime["machine"] = "x86_64"
+    with pytest.raises(ValueError, match="primary macOS runtime interpreter is not arm64"):
+        verify(runtime, folder / f"{leg}.runtime-requirements.txt", row,
+               tmp_path / "release-source", _RELEASE_COMMIT, bundle, distribution, members)

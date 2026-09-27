@@ -291,6 +291,8 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
             or record["sys_platform"] != platforms[target][0]
             or record["machine"] not in platforms[target][1]):
         raise ValueError(f"{leg}: runtime interpreter differs from wheel target")
+    if not runtime_only and target == "universal2-apple-darwin" and record["machine"] != "arm64":
+        raise ValueError(f"{leg}: primary macOS runtime interpreter is not arm64")
     if runtime_only and (target != "universal2-apple-darwin" or record["machine"] != "x86_64"):
         raise ValueError(f"{leg}: Intel runtime interpreter is not x86_64")
     before, installed = record["locked_dependencies"], record["installed"]
