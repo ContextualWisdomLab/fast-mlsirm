@@ -536,7 +536,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@71290da5c61a08a69b516c18440c655190d31287" in central
+    assert "release-dependency-license-strix-gate.yml@3aebd56b42edafcb58a2f0944af5cf9d877c0aea" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -843,10 +843,24 @@ def test_admission_recomputes_complete_cargo_graph(tmp_path: Path, monkeypatch) 
         "resolve": {"root": "fast-mlsirm-py", "nodes": [
             {"id": name, "features": []}
             for name in ("fast-mlsirm-py", "mlsirm-core")]}}
+    declarations = {"crates/fast-mlsirm-py/Cargo.lock": (crate / "Cargo.lock").read_bytes(),
+                    "crates/fast-mlsirm-py/Cargo.toml": b'[package]\nname = "fast-mlsirm-py"\n',
+                    "crates/mlsirm-core/Cargo.toml": b'[package]\nname = "mlsirm-core"\n'}
+    for relative, content in declarations.items():
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
     commands = []
-    def output(command, *, text, cwd=None):
+    def output(command, *, text=False, cwd=None):
         commands.append(command)
-        return _RELEASE_COMMIT + "\n" if command[0] == "git" else json.dumps(metadata)
+        if command[0] != "git":
+            return json.dumps(metadata)
+        if "rev-parse" in command:
+            return _RELEASE_COMMIT + "\n"
+        if "ls-tree" in command:
+            return "\n".join(declarations) + "\n"
+        assert "show" in command
+        return declarations[command[-1].split(":", 1)[1]]
     transport = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
     monkeypatch.setattr(transport["subprocess"], "check_output", output)
     receipts = []
