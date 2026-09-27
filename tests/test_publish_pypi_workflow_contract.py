@@ -536,7 +536,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@eaecbe1b032c4466829dd006d6eda616bb07798a" in central
+    assert "release-dependency-license-strix-gate.yml@ee6d8e264e15a508367b1c64c90b47d882e80c35" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -1030,7 +1030,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
         report_bytes = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()
         analyzer = {"path": "/usr/lib/llvm-18/bin/llvm-readobj", "version": "18.1.3",
                     "sha256": "d" * 64}
-        native = {"schema": "cwl.release-native-links/1", "source_sha": _RELEASE_COMMIT,
+        native = {"schema": "cwl.release-native-links/2", "source_sha": _RELEASE_COMMIT,
                   "analyzer": analyzer,
                   "wheels": []}
         for distribution in distributions:
@@ -1044,7 +1044,8 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                                      "sha256": distribution["sha256"],
                                      "member": "fast_mlsirm/_core.fixture.so",
                                      "member_sha256": hashlib.sha256(b"synthetic extension member").hexdigest(),
-                                     "links": [{"arch": arch, "format": "fixture", "needed": []}
+                                     "links": [{"arch": arch, "format": "fixture", "needed": [],
+                                                "reviews": []}
                                                for arch in arches]})
         native["wheels"].sort(key=lambda row: row["leg"])
         native_bytes = (json.dumps(native, sort_keys=True) + "\n").encode()

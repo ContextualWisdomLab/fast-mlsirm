@@ -183,7 +183,7 @@ def verify_native_link_inventory(verdict: Any, native: Any, native_bytes: bytes,
     """Bind every wheel's scanned extension and dynamic links to the sealed verdict."""
     if (not isinstance(verdict, Mapping) or not isinstance(native, Mapping)
             or verdict.get("native_links_sha256") != hashlib.sha256(native_bytes).hexdigest()
-            or native.get("schema") != "cwl.release-native-links/1"
+            or native.get("schema") != "cwl.release-native-links/2"
             or native.get("source_sha") != source_sha):
         raise ValueError("native link inventory differs from sealed verdict")
     analyzer = native.get("analyzer")
@@ -224,10 +224,19 @@ def verify_native_link_inventory(verdict: Any, native: Any, native_bytes: bytes,
         if (target not in targets or not isinstance(links, list)
                 or len(links) != len(targets[target])
                 or {row.get("arch") for row in links if isinstance(row, Mapping)} != targets[target]
-                or any(not isinstance(row, Mapping) or set(row) != {"arch", "format", "needed"}
+                or any(not isinstance(row, Mapping) or set(row) != {"arch", "format", "needed", "reviews"}
                        or not isinstance(row["format"], str) or not row["format"]
                        or not isinstance(row["needed"], list)
                        or any(not isinstance(name, str) or not name for name in row["needed"])
+                       or not isinstance(row["reviews"], list)
+                       or len(row["reviews"]) != len(row["needed"])
+                       or any(not isinstance(review, Mapping)
+                              or set(review) != {"name", "kind", "basis"}
+                              or review["name"] != name
+                              or review["kind"] not in {"system-runtime", "interpreter-runtime",
+                                                       "external-runtime", "self-install-name"}
+                              or not isinstance(review["basis"], str) or not review["basis"]
+                              for name, review in zip(row["needed"], row["reviews"]))
                        for row in links)):
             raise ValueError("native link architectures or dependencies are incomplete")
         seen.add(leg)

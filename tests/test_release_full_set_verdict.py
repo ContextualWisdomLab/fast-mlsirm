@@ -35,12 +35,14 @@ def test_native_links_require_exact_wheels_extensions_and_sealed_bytes() -> None
             runtimes.append({"leg": leg, "imported_extension": {"member": member, "sha256": "b" * 64}})
             wheels.append({"leg": leg, "file": filename, "sha256": "a" * 64,
                            "member": member, "member_sha256": "b" * 64,
-                           "links": [{"arch": arch, "format": "native", "needed": ["system"]}
+                           "links": [{"arch": arch, "format": "native", "needed": ["system"],
+                                      "reviews": [{"name": "system", "kind": "system-runtime",
+                                                   "basis": "test platform runtime"}]}
                                      for arch in arches]})
     distributions.append({"leg": "sdist", "file": "source.tar.gz", "sha256": "c" * 64})
     analyzer = {"path": "/usr/lib/llvm-18/bin/llvm-readobj", "version": "18.1.3",
                 "sha256": "d" * 64}
-    native = {"schema": "cwl.release-native-links/1", "source_sha": SOURCE,
+    native = {"schema": "cwl.release-native-links/2", "source_sha": SOURCE,
               "analyzer": analyzer, "wheels": wheels}
     raw = json.dumps(native).encode()
     verdict = {"distributions": distributions,
@@ -65,6 +67,10 @@ def test_native_links_require_exact_wheels_extensions_and_sealed_bytes() -> None
     mac["links"].pop()
     with pytest.raises(ValueError, match="architectures"):
         verify_native_link_inventory(verdict, partial, raw, runtimes, SOURCE)
+    unreviewed = copy.deepcopy(native)
+    unreviewed["wheels"][0]["links"][0]["reviews"] = []
+    with pytest.raises(ValueError, match="dependencies are incomplete"):
+        verify_native_link_inventory(verdict, unreviewed, raw, runtimes, SOURCE)
 
 
 def _case() -> dict:
