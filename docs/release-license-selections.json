@@ -199,6 +199,28 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "cfg_aliases",
+    "version": "0.2.2",
+    "chosen": "MIT",
+    "rationale": "Every captured licence and notice matches a reviewed whole-text digest in central helper 60394b645e68719a2c3980c75ba35cd4b1b7d7b7. Retain complete grants, exceptions and third-party notices together. No Strix or whole-release approval.",
+    "archive_sha256": "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527",
+    "license_members": [
+      {
+        "member": "cfg_aliases-0.2.2/LICENSE",
+        "raw_sha256": "31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812"
+      },
+      {
+        "member": "cfg_aliases-0.2.2/NOTICES.md",
+        "raw_sha256": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/cfg_aliases-0.2.2-MIT.txt",
+      "sha256": "712d795495ea32e8eafd751f7648bb357cde31540a9e5ab5f06df837c1cd71f9"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "crunchy",
     "version": "0.2.4",
     "chosen": "MIT",
@@ -249,6 +271,24 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/generic-array-0.14.7-MIT.txt",
       "sha256": "c09aae9d3c77b531f56351a9947bc7446511d6b025b3255312d3e3442a9a7583"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "glutin_wgl_sys",
+    "version": "0.6.1",
+    "chosen": "Apache-2.0",
+    "rationale": "Every captured licence and notice matches a reviewed whole-text digest in central helper 60394b645e68719a2c3980c75ba35cd4b1b7d7b7. Retain complete grants, exceptions and third-party notices together. No Strix or whole-release approval.",
+    "archive_sha256": "2c4ee00b289aba7a9e5306d57c2d05499b2e5dc427f84ac708bd2c090212cf3e",
+    "license_members": [
+      {
+        "member": "glutin_wgl_sys-0.6.1/LICENSE",
+        "raw_sha256": "a4445427440043e8ce6fadf7a43fb906cb0d7f6c573a560a9f142cf9f9bf8ff4"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/glutin_wgl_sys-0.6.1-Apache-2.0.txt",
+      "sha256": "a4445427440043e8ce6fadf7a43fb906cb0d7f6c573a560a9f142cf9f9bf8ff4"
     }
   },
   {
@@ -605,6 +645,24 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/once_cell-1.21.4-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "ordered-float",
+    "version": "5.5.0",
+    "chosen": "MIT",
+    "rationale": "Every captured licence and notice matches a reviewed whole-text digest in central helper 60394b645e68719a2c3980c75ba35cd4b1b7d7b7. Retain complete grants, exceptions and third-party notices together. No Strix or whole-release approval.",
+    "archive_sha256": "8c7c9e0d9b23589f26070720bac724174bfec1083e82f7854cdd0267518343c0",
+    "license_members": [
+      {
+        "member": "ordered-float-5.5.0/LICENSE-MIT",
+        "raw_sha256": "f7715d38a3fa1b4ac97c5729740752505a39cb92ee83ab5b102aeb5eaa7cdea4"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/ordered-float-5.5.0-MIT.txt",
+      "sha256": "f7715d38a3fa1b4ac97c5729740752505a39cb92ee83ab5b102aeb5eaa7cdea4"
     }
   },
   {
@@ -1217,6 +1275,24 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/syn-3.0.6-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "target-lexicon",
+    "version": "0.13.5",
+    "chosen": "Apache-2.0 WITH LLVM-exception",
+    "rationale": "Every captured licence and notice matches a reviewed whole-text digest in central helper 60394b645e68719a2c3980c75ba35cd4b1b7d7b7. Retain complete grants, exceptions and third-party notices together. No Strix or whole-release approval.",
+    "archive_sha256": "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca",
+    "license_members": [
+      {
+        "member": "target-lexicon-0.13.5/LICENSE",
+        "raw_sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/target-lexicon-0.13.5-Apache-2.0-LLVM-exception.txt",
+      "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
     }
   },
   {
