@@ -204,7 +204,7 @@ def test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior():
         score_two_tier_grm_orthogonal(
             **{**kwargs, "specific_map": np.zeros(4, dtype=np.int64)},
             **prior, device="gpu", gpu_memory_budget_bytes=1 << 20)
-    with pytest.raises(ValueError, match="specific-free"):
+    with pytest.raises(ValueError, match="fixed pattern positions"):
         score_two_tier_grm_orthogonal(
             **{**kwargs, "a_specific": np.ones(4)},
             **prior, device="gpu", gpu_memory_budget_bytes=1 << 20)
