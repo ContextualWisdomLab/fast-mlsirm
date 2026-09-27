@@ -59,3 +59,8 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+
+## 2026-09-26 - [False Positive Semgrep SAST Suppressions]
+**Vulnerability:** Semgrep reported `python.lang.security.dangerous-globals-use.dangerous-globals-use` and `python.lang.security.audit.non-literal-import.non-literal-import` due to dynamic index to `globals()` and dynamic import loading in `dif.py` and `tools/inventory_public_api.py`.
+**Learning:** 내부 신뢰할 수 있는 모듈에 대한 동적 임포트나 전역 변수 조작은 일반적인 코드의 동적 조작이지만, SAST 도구(예: Semgrep)에서는 보안 취약점으로 오탐(false positive)될 수 있습니다.
+**Prevention:** 내부 도구 및 신뢰된 경로에 대해 작동하는 것이 확실한 경우, 해당 줄의 끝에 `# nosemgrep: <rule-id>` 와 같이 주석을 달아 오탐을 제외해야 합니다. 또한, 코드 포매터(예: ruff format)가 긴 줄을 줄바꿈하여 억제 주석이 분리되는 것을 방지하기 위해 `# fmt: skip`을 함께 추가해야 합니다.
