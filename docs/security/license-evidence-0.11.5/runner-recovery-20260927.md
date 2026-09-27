@@ -376,3 +376,30 @@ asserted.146 focused tests passed,1 skipped. Root2347 is not yet main.
 
 Canary36321971364/job108627427635 remains queued at the latest live observation;
 no duplicate dispatch. All license and published-artifact acceptance gaps remain.
+
+## Root review closure and latest-main integration (2026-09-28 KST)
+
+Central2452 merged into2347 at `5debaa2e5d16a4593bbb04308ee1092005eb8b4f`,
+2026-09-27T15:02:38Z, exactsourceb7bdcc95. All9 original root threads are now
+resolved after merge ancestry and affected-source byte equality verification.
+Noema metadata/byte validation, documentation correction, install-stage tests:
+146 passed,1 skipped; scoped production Ruff E9/F passed.
+
+Latest main `e07c7e1e6ddb7c2704ca1c51bdafb4b81b68e6b7` includes owner2383
+Noema draft-before-sidecar and2448 Strix capacity continuation. Both integrated
+conflict-free at `09ef3dc8010910dbe27296d11525f89c8af56536`, proposed PR2453:
+https://github.com/ContextualWisdomLab/.github/pull/2453
+Worktree `/tmp/fmls-central-main-final-integration-20260928`;178 Noema/workflow
+checks and2 Strix continuation tests pass. An initial test command named a
+nonexistent transport test and collected nothing; corrected command passed.
+No false test success inferred from that first invocation.
+
+Full root suite LIVE exec37740 atb7bdcc95, in
+`/tmp/fmls-central-final-review-repairs-20260927`; log
+`/tmp/fmls-central-final-root-suite.log`. Preserve/poll this current execution.
+Latest main integration changes9files; verify final outcome before main merge.
+Root2347 remains draft and not main. Hourly automation updated to these handles.
+
+Control s1-05 journal15:01–15:04UTC shows successive completed scope, queue,
+CodeQL compatibility, bootstrap and language-detect jobs; runner is progressing.
+Canary36321971364 stillQUEUED, no duplicate. License/release HOLDs unchanged.
