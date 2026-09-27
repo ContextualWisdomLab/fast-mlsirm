@@ -546,3 +546,36 @@ distinct current closure rights, and published12-wheel matrix remain pending.
 Open historical release stack2176/2178/2179/2180 needs source-equivalence
 reconciliation against main before any further merge. PR2126 stays draft
 until release-specific acceptance; main controller integration is complete.
+
+
+## Historical stack reconciliation and NumPy NOTICE pilot, 2026-09-28
+
+Historical release PR2176/2178/2179/2180 are CLOSED as superseded by main2135;
+branches were not deleted. Of the final historical stack's238changedfiles,
+232 are byte-identical to mainb020c5b2. Six reviewed differences add current
+centralmain pin, supplemental-notice verification and regressions, seven
+reviewed licence selections with206existingrows unchanged, and comment-only
+pyproject wording. No older stack merge was used to restore stale controls.
+Exact reconciliation receipt is historical-release-stack-reconciliation-20260928.json.
+
+Existing objc2 upstream issues826/836/23 were read with all returned comments.
+826 identifies later root licence additions at ee9a7ada;836 is closed without
+adding licences to archives;23 retains contributor relicensing questions.
+These are not an authenticated SDK grant or historical scope determination.
+The local publisher clarification drafts now acknowledge826/836 and focus on
+remaining scope/provenance. External posting permission was requested; no
+upstream message was sent while approval is pending.
+
+Fortran-free NumPy candidatec6fbea22 (actualrep_A, not official3cdec01f at the
+parent path) was copied and repaired with source-derived OpenBLAS/LAPACK
+notices. Source and all four notice hashes were rechecked on s1. OnlyMETADATA,
+RECORD and addedNOTICE change; all originalnative/sourcebytes are identical.
+Two independent repacks are identical011ba92963c8fd230f3e81ac8f20af6c91e08bb139f0497cdb6ede1cc95c9a06;
+this is not repeated compilation. Newuv-local/offline installation, installed
+NOTICE integrity, solve/inverse smoke and actualmaps check pass. No gfortran
+or quadmath loaded; libgcc_s/libstdc++ OSpackage providers recorded without
+automatic licence approval. Details/scripts/receipts in
+numpy-fortran-free-notice-pilot-20260928/. Original source/candidates preserved.
+Full NumPy tests, fresh hash-locked compilation, all target providers, current
+fast-mlsirm numeric/ABI approval and published12-wheel matrix remain unproven.
+OriginalCargo11/Python3 baseline is not cleared by this localnotice repair.

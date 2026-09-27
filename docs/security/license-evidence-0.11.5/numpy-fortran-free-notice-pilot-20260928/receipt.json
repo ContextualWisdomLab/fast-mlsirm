@@ -1,0 +1,14 @@
+{
+  "status": "local notice repair only; release HOLD",
+  "input_sha256": "c6fbea224227ebfcb80d694be15f74c72a06c901833f3f073df3405ade4e07a9",
+  "output_sha256": "011ba92963c8fd230f3e81ac8f20af6c91e08bb139f0497cdb6ede1cc95c9a06",
+  "notice_sha256": "9f21f7061f26cdc6f173c29a5a2754c68326d7b397c6bc75bfb4f7543ed21ba4",
+  "record_verified": true,
+  "repeat_repack_identical": true,
+  "unchanged_native_and_source_members": true,
+  "changed_existing_members": [
+    "numpy-2.5.2.dist-info/METADATA",
+    "numpy-2.5.2.dist-info/RECORD"
+  ],
+  "added_member": "numpy-2.5.2.dist-info/licenses/OPENBLAS-0.3.34-NOTICES.txt"
+}

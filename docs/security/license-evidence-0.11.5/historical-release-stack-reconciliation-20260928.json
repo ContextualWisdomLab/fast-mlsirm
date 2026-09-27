@@ -1,0 +1,30 @@
+{
+  "main_sha": "b020c5b21559de67d22f917850bc00e050ec601f",
+  "historical_heads": {
+    "2176": "6161280808c57c8503ad1bff0c710732424e9ecd",
+    "2178": "eee4cd70800b70928133eb7b650521b9517483d5",
+    "2179": "b5e0898923eea448a7fd9842b9dcb6a8055e3cc9",
+    "2180": "a35b95095df386e1727f0ff972ea2323bd34eb19"
+  },
+  "common_base": "1efddbc9fea37cd17474073239a4523eda8374c2",
+  "historical_changed_file_count": 238,
+  "byte_identical_file_count": 232,
+  "different_files": [
+    ".github/workflows/publish-pypi.yml",
+    "docs/release-license-selections.json",
+    "pyproject.toml",
+    "scripts/ci/release_artifact_transport.py",
+    "tests/test_publish_pypi_workflow_contract.py",
+    "tests/test_release_scope_identity.py"
+  ],
+  "unchanged_selection_rows": 206,
+  "additional_reviewed_selection_rows": 7,
+  "closed_as_superseded": [
+    2180,
+    2179,
+    2178,
+    2176
+  ],
+  "branches_deleted": false,
+  "release_acceptance": false
+}
