@@ -250,8 +250,28 @@ pub fn fit_ols(x: &[f64], y: &[f64], n: usize, k: usize) -> Result<OlsFit, Strin
         }
     }
 
-    let xtx_inv = invert_square(&xtx, k)
+    // Equilibrate the Gram matrix before the rank check: an absolute pivot
+    // threshold on raw X'X can accept dependent columns with different units.
+    // ponytail: normal equations still square conditioning; use QR/SVD if
+    // full-rank fits show unstable estimates under a scale sensitivity check.
+    let scales: Vec<f64> = (0..k).map(|j| xtx[j * k + j].sqrt()).collect();
+    if scales.iter().any(|s| !s.is_finite() || *s == 0.0) {
+        return Err("X'X has a non-finite or zero column norm".to_owned());
+    }
+    let scaled_xtx: Vec<f64> = (0..k * k)
+        .map(|i| (xtx[i] / scales[i / k]) / scales[i % k])
+        .collect();
+    if scaled_xtx.iter().any(|v| !v.is_finite()) {
+        return Err("X'X has a non-finite scaled entry".to_owned());
+    }
+    let scaled_inv = invert_square(&scaled_xtx, k)
         .ok_or_else(|| "X'X is singular; design is rank deficient".to_owned())?;
+    let xtx_inv: Vec<f64> = (0..k * k)
+        .map(|i| (scaled_inv[i] / scales[i / k]) / scales[i % k])
+        .collect();
+    if xtx_inv.iter().any(|v| !v.is_finite()) {
+        return Err("X'X inverse is non-finite".to_owned());
+    }
 
     let mut beta = vec![0.0_f64; k];
     for a in 0..k {
