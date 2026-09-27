@@ -1,0 +1,10 @@
+{
+  "tested_head": "2dcefea29f82324437e8418fb84bb866fd7c9ab9",
+  "core_sha256": "0d9a3c907914a1e7c383a2f19971415b26295a48b292fded4e764b08d7f60a57",
+  "exit": 1,
+  "failures": 1,
+  "seconds": 99.0,
+  "reason": "group 0: loglik_decreased",
+  "scope": "Actual M1 GPU joint synthetic resample; failed replicate is not accepted. Original output did not print scale or actual fit diagnostics.",
+  "next": "Retain failure and inspect increased-quadrature sensitivity; no tolerance weakening or automatic replacement."
+}

@@ -79,8 +79,10 @@ def test_joint_five_scale_resample_uses_actual_gpu():
     Efron1979 resampling and Cai2010 numerical source contracts are inherited
     from the producers. Five synthetic six-latent response matrices use the
     existing continuous Gaussian fixture with different declared seeds. One
-    replicate and seven fit/nine score nodes test execution, not uncertainty
+    replicate with 15/21 fit and score nodes tests execution, not uncertainty
     precision, study convergence or population recovery. No stub fitting.
+    The first 7/7 run terminates loglik_decreased and is preserved separately;
+    increased nodes are a sensitivity attempt, not a replacement replicate.
     """
     from fast_mlsirm.two_tier_focal import run_joint_two_tier_score_bootstrap
     from test_two_tier_focal_gaussian_recovery_native import _continuous_six_latent_fixture
@@ -90,7 +92,7 @@ def test_joint_five_scale_resample_uses_actual_gpu():
     controls = dict(
         reference_group=1, n_cat=4, n_primary=2, n_specific=4, focal_primary=0,
         initial_mean=np.zeros((2, 6)), initial_sd=np.ones((2, 6)),
-        fit_q_primary=7, fit_q_specific=7, score_q_primary=9, score_q_specific=9,
+        fit_q_primary=15, fit_q_specific=21, score_q_primary=15, score_q_specific=21,
         q_nuisance=121, max_iter=2000, tol=1e-6, n_starts=2, seed=20260928,
         device="gpu", gpu_memory_budget_bytes=1 << 30, cache_item_tables=True,
     )
@@ -110,7 +112,14 @@ def test_joint_five_scale_resample_uses_actual_gpu():
         scales, ids, groups, n_groups=2, n_replicates=1, base_seed=20260928,
     )
     if out["records"][0]["failure"] is not None:
-        pytest.fail(out["records"][0]["failure"]["traceback"])
+        failure = out["records"][0]["failure"]
+        fit = failure["fit"]
+        diagnostics = {key: getattr(fit, key, None) for key in (
+            "n_iter", "termination_reason", "final_loglik_change", "loglik_trace",
+            "latent_mean", "latent_sd", "q_primary", "q_specific", "tol",
+        )}
+        pytest.fail(f"scale={failure['scale']}, group={failure['group_id']}, "
+                    f"actual_fit={diagnostics}\n{failure['traceback']}")
     assert set(out["successful_replicates"]) == {0}
     indices = out["bootstrap_indices"][0]
     np.testing.assert_array_equal(groups[indices], groups)
@@ -121,4 +130,4 @@ def test_joint_five_scale_resample_uses_actual_gpu():
             np.testing.assert_array_equal(rows, np.flatnonzero(groups == group))
         assert got["theta"].shape == (1024,)
         assert np.isfinite(got["expected_total"]).all()
-        assert got["settings"]["score_q_primary"] == 9
+        assert got["settings"]["score_q_primary"] == 15
