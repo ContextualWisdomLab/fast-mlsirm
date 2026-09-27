@@ -12,7 +12,9 @@ import math
 import numpy as np
 import pytest
 
-from fast_mlsirm import chi2_sf_df1, contrast, fit_ols_hc
+from fast_mlsirm import (
+    chi2_sf_df1, contrast, fit_ols_hc, nested_ols_summary, normal_wald_interval,
+)
 from fast_mlsirm.regression import f_sf, t_sf
 
 
@@ -124,6 +126,21 @@ def test_distribution_tails_no_scipy():
     assert abs(chi2_sf_df1(3.841458820694124) - 0.05) < 1e-5
     assert abs(f_sf(3.841458820694124, 1.0, 1.0e8) - 0.05) < 5e-4
     assert abs(t_sf(1.6448536269514722, 1.0e8) - 0.05) < 5e-4
+
+
+def test_reported_interval_and_nested_ols_summary_use_public_rust_api():
+    x, y = _synthetic_design(n=80)
+    full = fit_ols_hc(x, y)
+    reduced = fit_ols_hc(x[:, :-1].copy(), y)
+    summary = nested_ols_summary(y, full["residuals"], reduced["residuals"], x.shape[1], x.shape[1] - 1)
+    sst = float(((y - y.mean()) ** 2).sum())
+    full_sse = float(full["residuals"] @ full["residuals"])
+    assert abs(summary["full_R2"] - (1.0 - full_sse / sst)) < 1e-10
+    assert summary["classical_p"] == f_sf(summary["classical_F"], summary["df1"], summary["df2"])
+    lo, hi = normal_wald_interval(2.0, 0.5, 1.96)
+    assert (lo, hi) == pytest.approx((1.02, 2.98))
+    with pytest.raises(ValueError):
+        nested_ols_summary(y[:-1], full["residuals"], reduced["residuals"], x.shape[1], x.shape[1] - 1)
 
 
 def test_regression_core_exports_without_scipy_rscript():

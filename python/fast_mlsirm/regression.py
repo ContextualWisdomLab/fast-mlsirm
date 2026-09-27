@@ -167,6 +167,33 @@ def contrast(
     }
 
 
+def normal_wald_interval(estimate: float, se: float, critical: float) -> tuple[float, float]:
+    """Return a normal-Wald interval using a caller-chosen critical value."""
+    return tuple(regression_core().normal_wald_interval(float(estimate), float(se), float(critical)))
+
+
+def nested_ols_summary(
+    y: np.ndarray,
+    full_residuals: np.ndarray,
+    reduced_residuals: np.ndarray,
+    k_full: int,
+    k_reduced: int,
+) -> dict[str, Any]:
+    """Report centered R² and partial F for caller-verified nested OLS fits.
+
+    The fits must use the same response rows and both designs must contain an
+    intercept. This function cannot establish nesting from residuals alone.
+    """
+    y_arr = _as_float64_vector(y, "y")
+    full_arr = _as_float64_vector(full_residuals, "full_residuals", expected_length=y_arr.size)
+    reduced_arr = _as_float64_vector(reduced_residuals, "reduced_residuals", expected_length=y_arr.size)
+    if type(k_full) is not int or type(k_reduced) is not int:
+        raise ValueError("k_full and k_reduced must be integers")
+    return dict(regression_core().nested_ols_summary(
+        y_arr, full_arr, reduced_arr, k_full, k_reduced
+    ))
+
+
 def xwz_e_design_row(x: float = 0.0, w: float = 0.0, z: float = 0.0, e: float = 0.0) -> np.ndarray:
     """Return the length-10 H1–H5 design row at centered probes.
 

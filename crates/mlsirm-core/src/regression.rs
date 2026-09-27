@@ -146,6 +146,19 @@ pub struct ContrastResult {
     pub df: f64,
 }
 
+/// Centered R² and classical partial-F summary for two OLS fits on the same rows.
+#[derive(Clone, Debug)]
+pub struct NestedOlsSummary {
+    pub full_r2: f64,
+    pub adjusted_r2: f64,
+    pub reduced_r2: f64,
+    pub delta_r2: f64,
+    pub f_stat: f64,
+    pub p_f: f64,
+    pub df1: usize,
+    pub df2: usize,
+}
+
 /// Fit OLS by normal equations and compute the hat diagonal.
 ///
 /// `x` is row-major `n × k`, `y` length `n`. Fails closed on rank deficiency,
@@ -315,6 +328,105 @@ pub fn fit_ols_hc(
     let fit = fit_ols(x, y, n, k)?;
     let vcov = sandwich_vcov(&fit, x, hc)?;
     Ok((fit, vcov))
+}
+
+/// Normal-Wald interval with a caller-chosen positive critical value.
+pub fn normal_wald_interval(estimate: f64, se: f64, critical: f64) -> Result<(f64, f64), String> {
+    if !estimate.is_finite()
+        || !se.is_finite()
+        || se < 0.0
+        || !critical.is_finite()
+        || critical <= 0.0
+    {
+        return Err(
+            "estimate, nonnegative SE, and positive critical value must be finite".to_owned(),
+        );
+    }
+    let lo = estimate - critical * se;
+    let hi = estimate + critical * se;
+    if !lo.is_finite() || !hi.is_finite() {
+        return Err("non-finite Wald interval".to_owned());
+    }
+    Ok((lo, hi))
+}
+
+/// Summarize caller-verified nested OLS fits on the same response rows.
+/// Both designs must contain an intercept for centered R² interpretation.
+pub fn nested_ols_summary(
+    y: &[f64],
+    full_residuals: &[f64],
+    reduced_residuals: &[f64],
+    k_full: usize,
+    k_reduced: usize,
+) -> Result<NestedOlsSummary, String> {
+    let n = y.len();
+    if n == 0
+        || full_residuals.len() != n
+        || reduced_residuals.len() != n
+        || k_reduced == 0
+        || k_reduced >= k_full
+        || k_full >= n
+    {
+        return Err(
+            "nested OLS summary requires matching nonempty rows and 0 < k_reduced < k_full < n"
+                .to_owned(),
+        );
+    }
+    if !y
+        .iter()
+        .chain(full_residuals)
+        .chain(reduced_residuals)
+        .all(|v| v.is_finite())
+    {
+        return Err("nested OLS summary inputs must be finite".to_owned());
+    }
+    let mean = y.iter().sum::<f64>() / n as f64;
+    let sst = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>();
+    let sse_full = full_residuals.iter().map(|v| v * v).sum::<f64>();
+    let sse_reduced = reduced_residuals.iter().map(|v| v * v).sum::<f64>();
+    if !sst.is_finite()
+        || sst <= 0.0
+        || !sse_full.is_finite()
+        || sse_full <= 0.0
+        || !sse_reduced.is_finite()
+    {
+        return Err("nested OLS summary requires finite positive SST and full SSE".to_owned());
+    }
+    let difference = sse_reduced - sse_full;
+    let tolerance = 64.0 * f64::EPSILON * sse_reduced.max(sse_full);
+    if difference < -tolerance {
+        return Err("reduced SSE is below full SSE; fits may not be nested".to_owned());
+    }
+    let sse_reduced = sse_reduced.max(sse_full);
+    let df1 = k_full - k_reduced;
+    let df2 = n - k_full;
+    let f_stat = ((sse_reduced - sse_full) / df1 as f64) / (sse_full / df2 as f64);
+    let full_r2 = 1.0 - sse_full / sst;
+    let reduced_r2 = 1.0 - sse_reduced / sst;
+    let out = NestedOlsSummary {
+        full_r2,
+        adjusted_r2: 1.0 - (1.0 - full_r2) * (n - 1) as f64 / df2 as f64,
+        reduced_r2,
+        delta_r2: full_r2 - reduced_r2,
+        f_stat,
+        p_f: f_sf(f_stat, df1 as f64, df2 as f64),
+        df1,
+        df2,
+    };
+    if ![
+        out.full_r2,
+        out.adjusted_r2,
+        out.reduced_r2,
+        out.delta_r2,
+        out.f_stat,
+        out.p_f,
+    ]
+    .iter()
+    .all(|v| v.is_finite())
+    {
+        return Err("non-finite nested OLS summary".to_owned());
+    }
+    Ok(out)
 }
 
 /// Linear contrast under `vcov` with Wald χ²(1) and t/F tails at `df = n - k`.
