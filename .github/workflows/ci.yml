@@ -87,12 +87,13 @@ jobs:
           export PATH="$PWD/.venv-focal-gpu/bin:$PATH"
           .venv-focal-gpu/bin/python -m pip install --require-hashes -r requirements/ci.txt
           .venv-focal-gpu/bin/python -m pip install --no-deps --no-build-isolation -e .
-      - name: Execute all three actual hardware contracts
+      - name: Execute all four actual hardware contracts
         run: |
           .venv-focal-gpu/bin/python -m pytest -q -s --junitxml=focal-gpu-junit.xml \
             tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_score_and_focal_update \
             tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_continuous_population_recovery \
-            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_reference_focal_expected_score_pipeline
+            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_reference_focal_expected_score_pipeline \
+            tests/test_two_tier_group_pipeline_native.py::test_group_pipeline_preserves_slots_priors_and_nonconvergence
       - name: Reject missing or nonexecuted hardware contracts
         run: |
           .venv-focal-gpu/bin/python - <<'PY'
@@ -103,8 +104,9 @@ jobs:
               "test_actual_gpu_six_latent_score_and_focal_update",
               "test_actual_gpu_six_latent_continuous_population_recovery",
               "test_actual_gpu_reference_focal_expected_score_pipeline",
+              "test_group_pipeline_preserves_slots_priors_and_nonconvergence",
           }
-          assert len(cases) == 3 and {case.get("name") for case in cases} == expected, "All three hardware contracts must execute"
+          assert len(cases) == 4 and {case.get("name") for case in cases} == expected, "All four hardware contracts must execute"
           for case in cases:
               assert not any(case.find(tag) is not None for tag in ("skipped", "failure", "error")), "Hardware contracts must pass without skips"
           PY

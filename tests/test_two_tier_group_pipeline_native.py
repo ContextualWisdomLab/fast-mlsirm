@@ -1,4 +1,5 @@
 """Actual grouped producer composition; synthetic choices are not study settings."""
+import os
 import numpy as np
 import pytest
 from fast_mlsirm.two_tier_focal import (
@@ -7,6 +8,8 @@ from fast_mlsirm.two_tier_focal import (
 from test_two_tier_focal_gaussian_recovery_native import _continuous_six_latent_fixture
 
 
+@pytest.mark.skipif(os.environ.get("FOCAL_GPU_NATIVE") != "1",
+                    reason="requires explicitly enabled actual GPU hardware")
 def test_group_pipeline_preserves_slots_priors_and_nonconvergence():
     """Exercise Cai2010 reference/focal/EAP composition on actual M1 GPU.
 
