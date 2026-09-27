@@ -114,10 +114,12 @@ runtime architecture can install and import the wheel.
 Admission now refuses a published or consumer wheel with an additional
 recognized native binary, including ELF, PE, Mach-O and other checked headers
 under a non-library filename.
-The macOS universal2 x86_64 slice still needs a separate installed-dependency
-and import receipt when the existing runner executes arm64, including licence
-and Strix review for any x86_64-specific dependency archives. The same
-target-specific acceptance check must cover all twelve hosted wheel legs.
+An Intel macOS job now captures a separate installed-dependency and import
+receipt for each universal2 wheel. The reproducibility record waits for those
+three jobs, but their artifacts are not yet in the immutable selected set or
+the central licence and Strix review. Their x86_64-specific dependency archive
+bytes must be bound and reviewed before admission can accept either slice.
+The same target-specific acceptance check must cover all twelve hosted wheel legs.
 Admission must validate those claims against the corresponding distribution
 SHA and build environment before the scope HOLD can be removed.
 

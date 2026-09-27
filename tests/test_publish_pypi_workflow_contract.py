@@ -589,6 +589,24 @@ def test_admission_reexports_source_requirements_before_verifying_receipts(tmp_p
     assert "runtime requirements differ from release source export" in failed.stderr
 
 
+def test_universal2_x86_runtime_capture_precedes_release_record() -> None:
+    workflow = _workflow_text()
+    job = _job_block(workflow, "macos-x86-runtime")
+    record = _job_block(workflow, "reproducibility-record")
+    assert "needs: [verify-release, wheels]" in job
+    assert "runs-on: macos-15-intel" in job
+    assert 'python-version: ["3.12", "3.13", "3.14"]' in job
+    assert "architecture: x64" in job
+    assert "ref: ${{ needs.verify-release.outputs.release_commit }}" in job
+    assert "name: dist-wheel-${{ env.LEG }}" in job
+    assert "name: repro-digest-${{ env.LEG }}" in job
+    assert "capture_release_runtime.py \"runtime-proof/$LEG.tsv\" dist" in job
+    assert "name: repro-macos-x86-${{ env.LEG }}" in job
+    assert "needs: [verify-release, sdist, wheels, macos-x86-runtime]" in record
+    assert "release admission HOLD: platform-complete scope inventory is not verified" in _job_block(
+        workflow, "release-admission")
+
+
 def _admission_fixture(root: Path) -> dict:
     import zipfile
     import json

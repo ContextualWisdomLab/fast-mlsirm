@@ -648,11 +648,60 @@ jobs:
           name: repro-digest-${{ matrix.target }}-py${{ matrix.python-version }}
           path: repro-digest
 
+  macos-x86-runtime:
+    name: macOS x86 runtime ${{ matrix.python-version }}
+    needs: [verify-release, wheels]
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    env:
+      RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
+      LEG: universal2-apple-darwin-py${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.verify-release.outputs.release_commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: "0.12.5"
+          enable-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: dist-wheel-${{ env.LEG }}
+          path: dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: repro-digest-${{ env.LEG }}
+          path: build-proof
+      - name: Capture x86_64 installed dependencies and imported wheel
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          test "$(python -c 'import platform; print(platform.machine())')" = x86_64
+          mkdir runtime-proof
+          cp "build-proof/$LEG.tsv" "runtime-proof/$LEG.tsv"
+          python scripts/ci/capture_release_runtime.py "runtime-proof/$LEG.tsv" dist "$RUNNER_TEMP"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: repro-macos-x86-${{ env.LEG }}
+          path: runtime-proof
+
   # Publication gate: release-assets and publish-pypi need this job, so a
   # publishable artifact without a matching byte-verified row blocks both.
   reproducibility-record:
     name: reproducibility record
-    needs: [verify-release, sdist, wheels]
+    needs: [verify-release, sdist, wheels, macos-x86-runtime]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
