@@ -79,7 +79,8 @@ does not prove installation on its other binary slice. The central gate
 prescreens each transported runtime wheel SHA before Strix, scans a distinct
 fixture for each approved SHA, and seals the licence report and Strix artifact
 identities into its full-set verdict. Admission checks that set against the
-twelve installed-wheel receipts. A missing or mismatched platform wheel
+twelve primary installed-wheel receipts and three Intel macOS receipts.
+A missing or mismatched platform wheel
 remains HOLD.
 
 Each wheel build now records the target-filtered Cargo graph, features, selected
@@ -87,8 +88,10 @@ wheel-crate lock hash, and Rust/Python/maturin tool versions in its actual
 container or native runner. It also hashes the actual RECORD-listed files of
 each Python distribution visible to the interpreter used by that build,
 separately from the runtime dependency install. Both build passes must agree,
-and admission checks
-the receipts against the release source. The sdist runner records the same
+and admission checks the receipts against the release source. Before any future
+positive admission, it also recomputes all five target Cargo graphs from that
+source and requires exact node and feature equality with the twelve wheel
+receipts. The sdist runner records the same
 tool identities for both packaging passes and explicitly records no compiled
 Cargo graph. The action now requests maturin 1.15.0,
 matching the version in `requirements/package.txt`; each build receipt also checks
@@ -116,9 +119,9 @@ recognized native binary, including ELF, PE, Mach-O and other checked headers
 under a non-library filename.
 An Intel macOS job now captures a separate installed-dependency and import
 receipt for each universal2 wheel. The reproducibility record waits for those
-three jobs, but their artifacts are not yet in the immutable selected set or
-the central licence and Strix review. Their x86_64-specific dependency archive
-bytes must be bound and reviewed before admission can accept either slice.
+three jobs. Their artifacts are now in the immutable selected set; the central
+licence and Strix verdict binds their x86_64-specific dependency archive bytes
+and rejects a native wheel with the wrong architecture before deduplication.
 The same target-specific acceptance check must cover all twelve hosted wheel legs.
 Admission must validate those claims against the corresponding distribution
 SHA and build environment before the scope HOLD can be removed.
@@ -132,7 +135,10 @@ The six scopes have distinct sources of truth:
   not a target installation. The `fuzz` extra now limits Atheris to its locked
   CPython/Linux x86_64 wheel targets; other targets retain Hypothesis only.
   The target installation receipt exercises this marker on the runner. It is
-  not yet promoted to an accepted scope identity.
+  not yet promoted to an accepted scope identity. Source declarations also
+  need a semantic comparison with wheel and sdist dependency metadata: the
+  pinned maturin release legitimately rewrites marker names and order, so a
+  raw string comparison would reject valid distributions.
 - **Build and dev:** record the build environment's installed Python tools and
   target-filtered Cargo resolution with the features used by the wheel build.
   `requirements/package.txt` and `Cargo.lock` constrain these scopes but do not
@@ -140,7 +146,12 @@ The six scopes have distinct sources of truth:
   digest-pinned manylinux container used by `maturin-action`; the surrounding
   runner's Python and Cargo inventories describe a different environment.
   The sdist tool receipts, observed installed-file hashes, and wheel Cargo
-  graphs cover part of this requirement. The hashes do not attest to files
+  graphs cover part of this requirement. The wheel-root lock and unfiltered
+  release graph each contain 158 package identities at this source revision;
+  the five release-target graphs cover 133, while 25 are gated to other targets.
+  The root workspace declares `proptest` for tests, outside the wheel-root
+  release graph; the development-scope decision must explicitly classify that
+  exclusion. File hashes do not attest to files
   omitted from an installed distribution's RECORD, licence review, Strix
   results, or the full dev environment.
 - **Native and bundled:** inspect every binary and packaged library in the
