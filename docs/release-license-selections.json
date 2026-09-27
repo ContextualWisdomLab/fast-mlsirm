@@ -475,6 +475,24 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "codespan-reporting",
+    "version": "0.13.1",
+    "chosen": "Apache-2.0",
+    "rationale": "Retain the complete licence text from the checksum-bound crate for redistribution. This single declared licence passes the whole-text evaluator in central helper 9d19d0de5244749a11554db2c48b93809198a3ef; this is not Strix or release approval.",
+    "archive_sha256": "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681",
+    "license_members": [
+      {
+        "member": "codespan-reporting-0.13.1/LICENSE",
+        "raw_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/codespan-reporting-0.13.1-Apache-2.0.txt",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "cpufeatures",
     "version": "0.2.17",
     "chosen": "MIT",
@@ -705,6 +723,24 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/fnv-1.0.7-MIT.txt",
       "sha256": "65fdb6c76cd61612070c066eec9ecdb30ee74fb27859d0d9af58b9f499fd0c3e"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "foldhash",
+    "version": "0.2.0",
+    "chosen": "Zlib",
+    "rationale": "Retain the complete licence text from the checksum-bound crate for redistribution. This single declared licence passes the whole-text evaluator in central helper 9d19d0de5244749a11554db2c48b93809198a3ef; this is not Strix or release approval.",
+    "archive_sha256": "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb",
+    "license_members": [
+      {
+        "member": "foldhash-0.2.0/LICENSE",
+        "raw_sha256": "b1181a40b2a7b25cf66fd01481713bc1005df082c53ef73e851e55071b102744"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/foldhash-0.2.0-Zlib.txt",
+      "sha256": "b1181a40b2a7b25cf66fd01481713bc1005df082c53ef73e851e55071b102744"
     }
   },
   {
@@ -1277,6 +1313,24 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "libloading",
+    "version": "0.8.9",
+    "chosen": "ISC",
+    "rationale": "Retain the complete licence text from the checksum-bound crate for redistribution. This single declared licence passes the whole-text evaluator in central helper 9d19d0de5244749a11554db2c48b93809198a3ef; this is not Strix or release approval.",
+    "archive_sha256": "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55",
+    "license_members": [
+      {
+        "member": "libloading-0.8.9/LICENSE",
+        "raw_sha256": "b29f8b01452350c20dd1af16ef83b598fea3053578ccc1c7a0ef40e57be2620f"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/libloading-0.8.9-ISC.txt",
+      "sha256": "b29f8b01452350c20dd1af16ef83b598fea3053578ccc1c7a0ef40e57be2620f"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "linux-raw-sys",
     "version": "0.12.1",
     "chosen": "MIT",
@@ -1633,6 +1687,24 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/num-traits-0.2.19-MIT.txt",
       "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "numpy",
+    "version": "0.29.0",
+    "chosen": "BSD-2-Clause",
+    "rationale": "Retain the complete licence text from the checksum-bound crate for redistribution. This single declared licence passes the whole-text evaluator in central helper 9d19d0de5244749a11554db2c48b93809198a3ef; this is not Strix or release approval.",
+    "archive_sha256": "6a5b15d63a5ff39e378daed0e1340d3a5964703ea9712eb09a0dc66fade996f4",
+    "license_members": [
+      {
+        "member": "numpy-0.29.0/LICENSE",
+        "raw_sha256": "57088c28c5ea50e729a06c3b04de70c41e496a5b753d75a744e2abbf60a2448f"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/numpy-0.29.0-BSD-2-Clause.txt",
+      "sha256": "57088c28c5ea50e729a06c3b04de70c41e496a5b753d75a744e2abbf60a2448f"
     }
   },
   {
@@ -4451,6 +4523,24 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/zerocopy-derive-0.8.57-MIT.txt",
       "sha256": "1a2f5c12ddc934d58956aa5dbdd3255fe55fd957633ab7d0d39e4f0daa73f7df"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "zmij",
+    "version": "1.0.23",
+    "chosen": "MIT",
+    "rationale": "Retain the complete licence text from the checksum-bound crate for redistribution. This single declared licence passes the whole-text evaluator in central helper 9d19d0de5244749a11554db2c48b93809198a3ef; this is not Strix or release approval.",
+    "archive_sha256": "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b",
+    "license_members": [
+      {
+        "member": "zmij-1.0.23/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/zmij-1.0.23-MIT.txt",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
     }
   }
 ]
