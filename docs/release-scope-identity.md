@@ -52,6 +52,22 @@ establish either scope's coverage.
 
 ### Licence selection transport and remaining review
 
+The [2026-09-27 local Cargo audit](triage/release-cargo-license-audit-20260927.json)
+records the exact source/helper commits, lock and selection digests, all 156
+external archive hashes, captured licence member hashes and evaluator failures.
+At that snapshot 75 passed the licence-only evaluator and 81 failed. Failure
+codes include 55 missing selections, six missing bundled texts, sixteen
+unverified texts and six unparseable declarations; codes can overlap within a
+package. No Strix, Python dependency, native or whole-release approval is claimed.
+
+The six missing-text packages carry upstream commit identities in the receipt:
+block2, gl_generator, khronos_api, objc2, objc2-encode and spirv. Those identities
+are retrieval leads, not verified upstream licence evidence. The collector also
+matches objc2-foundation's `copying.rs` source modules as licence-like files;
+classifying them must not silently certify the package's missing licence basis.
+These failures cannot be resolved merely by adding MIT selections. Preserve the
+strict denial until the archive/source licence evidence is established.
+
 At source/control head `1366799b193ea0a8dbad630e0a05dbd3b49c84dd`,
 `cargo metadata --locked --format-version 1 --manifest-path
 crates/fast-mlsirm-py/Cargo.toml` reports 125 external packages whose declared
