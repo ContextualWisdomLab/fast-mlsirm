@@ -91,14 +91,20 @@ jobs:
         run: |
           .venv-focal-gpu/bin/python -m pytest -q -s --junitxml=focal-gpu-junit.xml \
             tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_score_and_focal_update \
-            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_continuous_population_recovery
+            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_continuous_population_recovery \
+            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_reference_focal_expected_score_pipeline
       - name: Reject missing or nonexecuted hardware contracts
         run: |
           .venv-focal-gpu/bin/python - <<'PY'
           from xml.etree import ElementTree
 
           cases = ElementTree.parse("focal-gpu-junit.xml").getroot().findall(".//testcase")
-          assert len(cases) == 2, "Both hardware contracts must execute"
+          expected = {
+              "test_actual_gpu_six_latent_score_and_focal_update",
+              "test_actual_gpu_six_latent_continuous_population_recovery",
+              "test_actual_gpu_reference_focal_expected_score_pipeline",
+          }
+          assert len(cases) == 3 and {case.get("name") for case in cases} == expected, "All three hardware contracts must execute"
           for case in cases:
               assert not any(case.find(tag) is not None for tag in ("skipped", "failure", "error")), "Hardware contracts must pass without skips"
           PY

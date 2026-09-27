@@ -192,7 +192,8 @@ def test_native_reference_focal_expected_score_pipeline(device="cpu"):
     ):
         np.testing.assert_array_equal(actual, snapshot)
     curves = [expected_total_score_two_tier_from_fit(
-        reference, sm, scored.mean[:, 0], focal_primary=0, q_nuisance=q,
+        reference, scored.mean[:, 0], specific_map=sm,
+        focal_primary=0, q_nuisance=q,
         orthogonal_primary_identification=True,
         primary_ref_mean=np.zeros(2), primary_ref_sd=np.ones(2),
         specific_ref_mean=np.zeros(4), specific_ref_sd=np.ones(4),
