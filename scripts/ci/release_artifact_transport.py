@@ -534,6 +534,32 @@ def verify_distribution_requirements(distribution: Path, leg: str, source: Path,
                     raise ValueError(f"{leg}: distribution requirements differ from source for {platform}/{machine}/py{python}/{extra}")
 
 
+def verify_license_selection_report(report: dict, source: Path, source_sha: str) -> None:
+    """Bind central licence decisions to the immutable source selection file."""
+    if not re.fullmatch(r"[0-9a-f]{40}", source_sha) or report.get("source_sha") != source_sha:
+        raise ValueError("licence selection report differs from release source")
+    declaration = "docs/release-license-selections.json"
+    entry = subprocess.check_output(
+        ["git", "-C", str(source), "ls-tree", source_sha, "--", declaration], text=True)
+    if not entry:
+        if report.get("license_selections_sha256") != "":
+            raise ValueError("licence selection digest differs from absent source file")
+        return
+    if not entry.startswith("100644 blob "):
+        raise ValueError("licence selections must be a regular source blob")
+    blob = subprocess.check_output(["git", "-C", str(source), "show", f"{source_sha}:{declaration}"])
+    if report.get("license_selections_sha256") != hashlib.sha256(blob).hexdigest():
+        raise ValueError("licence selection digest differs from release source")
+    decisions = {row["key"]: row for row in report["dependencies"]}
+    for choice in json.loads(blob):
+        key = f"{choice['ecosystem']}/{choice['name']}@{choice['version']}"
+        decision = decisions.get(key, {})
+        if (decision.get("license") != choice["chosen"]
+                or decision.get("license_selection_rationale") != choice["rationale"]
+                or decision.get("source_sha256") != choice.get("archive_sha256")):
+            raise ValueError("central licence choice differs from release source")
+
+
 def verify_bundled_license_notices(inventory: dict, source: Path, source_sha: str) -> None:
     """Require selected licence notices in the finished distribution's hashed inventory."""
     if not re.fullmatch(r"[0-9a-f]{40}", source_sha):

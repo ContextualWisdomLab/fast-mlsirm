@@ -1394,6 +1394,7 @@ jobs:
               transport.verify_bundled_license_notices(
                   transport.bundle_inventory(distribution_paths[row["file"]], leg, commit, row["build_env"]),
                   Path("release-source"), commit)
+          transport.verify_license_selection_report(report, Path("release-source"), commit)
           transport.verify_cargo_graph_closure(build_graph_receipts, Path("release-source"), commit)
           verifier.verify_cargo_dependency_coverage(report, build_graph_receipts)
 

@@ -64,6 +64,9 @@ read `docs/release-license-selections.json` from the exact source commit,
 never from mutable checkout bytes. The fixed path must be a regular Git blob;
 duplicate dependency selections refuse capture. The dependency report binds
 the file SHA-256, and its hash is already sealed in the full-set verdict.
+Admission compares that digest with the immutable source blob and checks each
+selected licence, rationale and exact crate archive checksum against the
+authenticated dependency report. Missing or changed choices refuse admission.
 Absent files still leave `OR` dependencies refused before Strix credentials.
 
 Sixty selections now choose MIT only where every collected licence-like

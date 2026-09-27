@@ -88,6 +88,7 @@ def test_workflow_producer_transport_and_actual_consumer_hold(scope_fixture):
     transport = types.SimpleNamespace(**M)
     transport.verify_distribution_requirements = lambda *args: calls.append("metadata")
     transport.verify_bundled_license_notices = lambda *args: None
+    transport.verify_license_selection_report = lambda *args: None
     transport.verify_cargo_graph_closure = lambda *args: calls.append("cargo")
     hold_end = WORKFLOW.index("\n          PY", end)
     with pytest.raises(SystemExit, match="platform-complete scope inventory"):
@@ -401,3 +402,37 @@ def test_selected_licence_notice_must_survive_distribution(tmp_path):
         for members in ([], [{"path": member, "sha256": "a" * 64}]):
             with pytest.raises(ValueError, match="omits or changes"):
                 verify({"leg": "sdist" if kind == "sdist" else "target-py3.14", "members": members}, source, sha)
+
+
+def test_selection_report_binds_immutable_choices_and_archive(tmp_path):
+    source = tmp_path / "source"
+    (source / "docs").mkdir(parents=True)
+    choice = {"ecosystem": "cargo", "name": "example", "version": "1", "chosen": "MIT",
+              "rationale": "Reviewed exact archive text", "archive_sha256": "a" * 64}
+    blob = json.dumps([choice]).encode()
+    declaration = source / "docs/release-license-selections.json"
+    declaration.write_bytes(blob)
+    env = {**os.environ, "GIT_AUTHOR_NAME": "fixture", "GIT_COMMITTER_NAME": "fixture",
+           "GIT_AUTHOR_EMAIL": "fixture@example.invalid", "GIT_COMMITTER_EMAIL": "fixture@example.invalid"}
+    for args in (("init", "-q"), ("add", "."), ("commit", "-qm", "choices")):
+        subprocess.run(["git", "-C", str(source), *args], env=env, check=True, capture_output=True)
+    sha = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    report = {"source_sha": sha, "license_selections_sha256": hashlib.sha256(blob).hexdigest(),
+              "dependencies": [{"key": "cargo/example@1", "license": choice["chosen"],
+                                "license_selection_rationale": choice["rationale"],
+                                "source_sha256": choice["archive_sha256"]}]}
+    verify = M["verify_license_selection_report"]
+    declaration.write_text("mutable replacement")
+    verify(report, source, sha)
+    for field, value in (("license", "Apache-2.0"), ("license_selection_rationale", "unreviewed"),
+                         ("source_sha256", "b" * 64)):
+        changed = copy.deepcopy(report)
+        changed["dependencies"][0][field] = value
+        with pytest.raises(ValueError, match="choice differs"):
+            verify(changed, source, sha)
+    for field, value in (("license_selections_sha256", "b" * 64), ("source_sha", "b" * 40),
+                         ("dependencies", [])):
+        changed = copy.deepcopy(report)
+        changed[field] = value
+        with pytest.raises(ValueError):
+            verify(changed, source, sha)
