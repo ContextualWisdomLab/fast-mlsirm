@@ -4542,5 +4542,27 @@
       "path": "python/fast_mlsirm/_licenses/zmij-1.0.23-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
     }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "unarray",
+    "version": "0.1.4",
+    "chosen": "Apache-2.0",
+    "rationale": "The unchanged README in checksum-bound unarray 0.1.4 explicitly offers Apache-2.0 at the recipient option (upstream 0151bf12f216a1dc64f5e531a8a0bb8e6bdf09ca). Retain both original licence files, including the unselected MIT template without inventing a copyright holder. Central helper ee9662f5e3cb6e8609544538b8c08bf27a62dd85 independently verifies the full Apache grant and treats only this exact template/archive as reference; this is not Strix or release approval.",
+    "archive_sha256": "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94",
+    "license_members": [
+      {
+        "member": "unarray-0.1.4/LICENSE-APACHE",
+        "raw_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+      },
+      {
+        "member": "unarray-0.1.4/LICENSE-MIT",
+        "raw_sha256": "002c2696d92b5c8cf956c11072baa58eaf9f6ade995c031ea635c6a1ee342ad1"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/unarray-0.1.4-Apache-2.0.txt",
+      "sha256": "67cbde2fddb411f2260f1debbb1f3e5b2f0ba387969979aca3a1bf3935006cb4"
+    }
   }
 ]
