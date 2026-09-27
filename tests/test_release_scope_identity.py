@@ -133,7 +133,9 @@ def test_distribution_requirements_bind_source_extras_across_targets(tmp_path):
             archive.writestr("fast_mlsirm-0.11.4.dist-info/METADATA", changed)
         with pytest.raises(ValueError, match="requirements differ from source"):
             verify(wheel, "x86_64-unknown-linux-gnu-py3.14", source, source_sha)
-    assert "--require-hashes -r release-source/requirements/package.txt" in WORKFLOW
+    parser_step = WORKFLOW.split("- name: Provision hash-locked metadata parser", 1)[1].split("- name:", 1)[0]
+    assert "--require-hashes -r trusted-control/requirements/package.txt" in parser_step
+    assert "release-source/requirements" not in parser_step
     assert "transport.verify_distribution_requirements(distribution_paths[row[\"file\"]], leg," in WORKFLOW
 
 

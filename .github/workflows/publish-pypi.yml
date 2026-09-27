@@ -1138,7 +1138,7 @@ jobs:
           set -euo pipefail
           uv venv "$RUNNER_TEMP/release-admission-venv"
           uv pip install --python "$RUNNER_TEMP/release-admission-venv/bin/python" \
-            --require-hashes -r release-source/requirements/package.txt
+            --require-hashes -r trusted-control/requirements/package.txt
       - name: Admit exactly the verified bytes of release_commit
         env:
           RECORD_ID: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_id }}
