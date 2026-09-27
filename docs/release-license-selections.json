@@ -397,6 +397,32 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "memchr",
+    "version": "2.8.3",
+    "chosen": "MIT",
+    "rationale": "Both full MIT and Unlicense grants are independently recognized; the exact COPYING reference is validated only with both grants present by central helper 80c5f23ab269c172b76f02de58a79c42fab01032. Choose MIT and retain its copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98",
+    "license_members": [
+      {
+        "member": "memchr-2.8.3/COPYING",
+        "raw_sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f"
+      },
+      {
+        "member": "memchr-2.8.3/LICENSE-MIT",
+        "raw_sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+      },
+      {
+        "member": "memchr-2.8.3/UNLICENSE",
+        "raw_sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/memchr-2.8.3-MIT.txt",
+      "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "naga",
     "version": "30.0.1",
     "chosen": "MIT",
@@ -1083,6 +1109,32 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/syn-3.0.6-MIT.txt",
       "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "termcolor",
+    "version": "1.4.1",
+    "chosen": "MIT",
+    "rationale": "Both full MIT and Unlicense grants are independently recognized; the exact COPYING reference is validated only with both grants present by central helper 80c5f23ab269c172b76f02de58a79c42fab01032. Choose MIT and retain its copyright and permission notice. No Strix or whole-release approval.",
+    "archive_sha256": "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755",
+    "license_members": [
+      {
+        "member": "termcolor-1.4.1/COPYING",
+        "raw_sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f"
+      },
+      {
+        "member": "termcolor-1.4.1/LICENSE-MIT",
+        "raw_sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+      },
+      {
+        "member": "termcolor-1.4.1/UNLICENSE",
+        "raw_sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/termcolor-1.4.1-MIT.txt",
+      "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
     }
   },
   {
