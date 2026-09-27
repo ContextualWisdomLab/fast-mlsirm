@@ -1,0 +1,17 @@
+{
+  "tested_head": "5d2106a9d8212c5e7a4befbf6cff6bcb7ef8b483",
+  "core_sha256": "e3b4f41202ec64f78356b4c036c3e02733cd7e2a71ade028ec39ae5569b2e6fe",
+  "exit": 0,
+  "passed": 25,
+  "seconds": 1.12,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "scope": "One actual centered-design definition/admission check including repeated decimal constant; 24 existing regression/conditional-slope parity checks. Synthetic, not study or release acceptance.",
+  "first_failure": "first-constant.json",
+  "remaining": [
+    "current-head required CI and substantive review",
+    "normal merge and immutable release",
+    "study intervals, fit summaries and sensitivity arithmetic migration"
+  ]
+}
