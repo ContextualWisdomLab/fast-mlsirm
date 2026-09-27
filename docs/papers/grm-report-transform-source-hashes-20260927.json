@@ -1,0 +1,72 @@
+{
+  "zotero": [
+    [
+      {
+        "library": "users/0",
+        "key": "42M6RV58",
+        "title": "Full-information factor analysis for polytomous item responses",
+        "pdfs": [
+          "7MNUK7YV"
+        ]
+      }
+    ],
+    [
+      {
+        "library": "users/0",
+        "key": "LD97BKRG",
+        "title": "mirt: multidimensional item response theory [R package reference manual]",
+        "pdfs": []
+      },
+      {
+        "library": "users/0",
+        "key": "MTJVTFN3",
+        "title": "mirt: a multidimensional item response theory package for the R environment",
+        "pdfs": [
+          "IUL6W6A6"
+        ]
+      }
+    ],
+    [
+      {
+        "library": "groups/6347780",
+        "key": "JSEHDWSU",
+        "title": "Full-information factor analysis for polytomous item responses",
+        "pdfs": [
+          "KPDQJGF3"
+        ]
+      }
+    ],
+    [
+      {
+        "library": "groups/6347780",
+        "key": "RGWXH8H9",
+        "title": "mirt: a multidimensional item response theory package for the R environment",
+        "pdfs": [
+          "KT4E4Z2R"
+        ]
+      }
+    ]
+  ],
+  "pdfs": [
+    {
+      "attachment": "7MNUK7YV",
+      "filename": "Muraki, Carlson - 1995 - Full-Information Factor Analysis for Polytomous Item Responses - Applied Psychological Measurement.pdf",
+      "sha256": "d0f2f7711b34bf7049eb17866abb5ed6245bd31dfadfbc661f0ed99d738b4050"
+    },
+    {
+      "attachment": "KPDQJGF3",
+      "filename": "Muraki, Carlson - 1995 - Full-Information Factor Analysis for Polytomous Item Responses - Applied Psychological Measurement.pdf",
+      "sha256": "d0f2f7711b34bf7049eb17866abb5ed6245bd31dfadfbc661f0ed99d738b4050"
+    },
+    {
+      "attachment": "IUL6W6A6",
+      "filename": "Chalmers - 2012 - mirt A Multidimensional Item Response Theory Package for the R Environment(2).pdf",
+      "sha256": "e1db8d9b520078add9df0d9f714120bb242a56eac71e2906d359537e649fa8b2"
+    },
+    {
+      "attachment": "KT4E4Z2R",
+      "filename": "Chalmers - 2012 - mirt A Multidimensional Item Response Theory Package for the R Environment(2).pdf",
+      "sha256": "e1db8d9b520078add9df0d9f714120bb242a56eac71e2906d359537e649fa8b2"
+    }
+  ]
+}

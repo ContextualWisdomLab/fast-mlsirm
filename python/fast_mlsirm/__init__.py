@@ -17,6 +17,7 @@ from . import reliability as _reliability
 from . import scaling as _scaling
 from . import serving as _serving
 from . import validation as _validation
+from .report_transforms import orthogonal_grm_report as orthogonal_grm_report
 from ._cat_administration_resource_safety import (
     install as _install_cat_administration_resource_safety,
 )
@@ -303,6 +304,7 @@ except _PackageNotFoundError:
     __version__ = "0+unknown"
 
 __all__ = list(_legacy_init.__all__) + [
+    "orthogonal_grm_report",
     "CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1",
     "BifactorScoreabilityResult",
     "bifactor_scoreability",

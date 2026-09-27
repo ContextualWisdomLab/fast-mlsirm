@@ -17,6 +17,7 @@ pub mod inference;
 pub mod jmle_opt;
 pub mod gpcm;
 pub mod grm;
+pub mod grm_report;
 pub mod gtheory;
 pub mod ksirt;
 pub mod lineage_channel_weight;
