@@ -1,6 +1,6 @@
 {
-  "source_sha": "a472c7d9bd18185266043592d3cfc1a2a26eb10a",
-  "helper_sha": "7cd4141eff5dff7a62f0dd152c2182f411343874",
+  "source_sha": "fb910fb15274fbb110ef4ee45afe161a5fe8cc43",
+  "helper_sha": "f996ee53e8a6cb72cba56291a6179396420d4205",
   "scope": "Root lock identities absent from wheel lock; licence-only, not authenticated platform/dev closure or Strix acceptance",
   "root_cargo_lock_sha256": "88bb9a25b3f95e560da7ffd3ade079e0860bf4b9dfd3c595e674a17b7d7fb9ea",
   "wheel_cargo_lock_sha256": "f778041936d0b4490976e86746ed2749b529fe79e825be6349bd85e1e7c3dbaf",
@@ -138,13 +138,8 @@
         "fnv-1.0.7/LICENSE-MIT": "65fdb6c76cd61612070c066eec9ecdb30ee74fb27859d0d9af58b9f499fd0c3e"
       },
       "license_text_count": 2,
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_UNPARSEABLE",
-          "detail": "'Apache-2.0 / MIT' is not a valid SPDX expression: unexpected character '/' in license expression"
-        }
-      ]
+      "result": "PASS",
+      "failures": []
     },
     {
       "key": "cargo/futures-core@0.3.32",
@@ -969,29 +964,29 @@
     }
   ],
   "summary": {
-    "FAIL": 6,
-    "PASS": 65
+    "FAIL": 5,
+    "PASS": 66
   },
   "superseded_receipt": {
-    "sha256": "3877486da7baba0ddfca416759439462ffb5f46ea7885bfe109903b55052dfbd",
-    "source_sha": "69ed28cac167cfdec32f188740b1bcf10db69b0b",
-    "helper_sha": "fbb48ec3265f1dcfba34529f6f4325e02e2ac023"
+    "sha256": "3a779a246905f31430e1f953f12eff7b36b3ecfb0ec596fb5c909f003802b391",
+    "source_sha": "a472c7d9bd18185266043592d3cfc1a2a26eb10a",
+    "helper_sha": "7cd4141eff5dff7a62f0dd152c2182f411343874"
   },
-  "source_license_selections_sha256": "b90ec33721fb89315ae1f7bf557ad67656a0e56dc13a0dffcb046e87c7da198a",
+  "source_license_selections_sha256": "8ad0ca3440c1b9a997843de33d487628fd38c1e521b262a06dfb1e35230f2d22",
   "packaging_status": {
-    "notice_files": 198,
+    "notice_files": 199,
     "source_notice_hashes_verified": true,
     "wheel_sdist_notice_verification": "PASS",
-    "build_source_sha": "a472c7d9bd18185266043592d3cfc1a2a26eb10a",
+    "build_source_sha": "fb910fb15274fbb110ef4ee45afe161a5fe8cc43",
     "successful_invocation_prefix": "arch -arm64 /tmp/fmls-admission-venv/bin/maturin",
     "artifacts": [
       {
         "file": "fast_mlsirm-0.11.4-cp314-cp314-macosx_11_0_arm64.whl",
-        "sha256": "e7070d9c08fc1ee702d6403a4f944cd89566ed65a2d35eac0bc2ba19dd144ceb"
+        "sha256": "69f9e9dc3fa1bf76510841dcaaa8bbd81c34a705c812a83fdf2e916a2f749e34"
       },
       {
         "file": "fast_mlsirm-0.11.4.tar.gz",
-        "sha256": "6e46ced13674962d48a4d44cded36682a1bf4ad192f5d0f59d794595c22a674d"
+        "sha256": "ba03ca953092dc053032e1191c2a9ac632c188c0b8f919fe599fa810be7a9e2e"
       }
     ],
     "limitation": "Local development CPython3.14 macOS arm64 0.11.4 wheel and sdist only; not 0.11.5, universal2, 13-distribution hosted or Strix acceptance."
