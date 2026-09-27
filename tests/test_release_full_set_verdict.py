@@ -19,16 +19,18 @@ CONTROL = "b" * 40
 DIGEST = "sha256:" + "c" * 64
 
 
-def test_cargo_build_crates_require_exact_reviewed_archive_hash() -> None:
+def test_cargo_build_crates_require_exact_reviewed_archive_hash(tmp_path) -> None:
+    source, sha = _cargo_source(tmp_path)
     package = {"name": "serde", "version": "1.0", "source": "registry+index",
                "checksum": "d" * 64}
     records = [{"leg": "wheel", "cargo_targets": {"target": [package]}}]
-    report = {"dependencies": [{"key": "cargo/serde@1.0", "source_sha256": "d" * 64}]}
-    verify_cargo_dependency_coverage(report, records)
+    report = {"source_sha": sha, "dependencies": [{"key": "cargo/serde@1.0", "source_sha256": "d" * 64}]}
+    verify_cargo_dependency_coverage(report, records, source=source, source_sha=sha)
     for broken in ({"dependencies": []}, {"dependencies": [
             {"key": "cargo/serde@1.0", "source_sha256": "e" * 64}]}):
         with pytest.raises(ValueError, match="matching licence/Strix review"):
-            verify_cargo_dependency_coverage(broken, records)
+            broken["source_sha"] = sha
+            verify_cargo_dependency_coverage(broken, records, source=source, source_sha=sha)
 
 
 def test_native_links_require_exact_wheels_extensions_and_sealed_bytes() -> None:
@@ -226,3 +228,41 @@ def test_rejects_forged_missing_stale_or_changed_verdict() -> None:
         mutate(case)
         with pytest.raises(ValueError):
             _verify(case)
+
+
+def _cargo_source(tmp_path, *, development=False, conflict=False):
+    import subprocess
+    source = tmp_path / "source"
+    wheel = source / "crates/fast-mlsirm-py"
+    wheel.mkdir(parents=True)
+    lock = 'version=4\n[[package]]\nname="serde"\nversion="1.0"\nsource="registry+index"\nchecksum="' + "d" * 64 + '"\n'
+    (wheel / "Cargo.lock").write_text(lock)
+    if development:
+        lock += '[[package]]\nname="proptest"\nversion="1.0"\nsource="registry+index"\nchecksum="' + "e" * 64 + '"\n'
+    if conflict:
+        lock = lock.replace("d" * 64, "f" * 64)
+    (source / "Cargo.lock").write_text(lock)
+    for command in (("init", "-q"), ("add", "."),
+                    ("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "locks")):
+        subprocess.run(["git", "-C", str(source), *command], check=True)
+    sha = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    return source, sha
+
+
+@pytest.mark.parametrize("mutation", [None, "omitted_dev", "wrong_dev_hash", "conflict", "foreign_source"])
+def test_reviewed_cargo_set_covers_source_root_development_lock(tmp_path, mutation):
+    source, sha = _cargo_source(tmp_path, development=True, conflict=mutation == "conflict")
+    report = {"source_sha": sha, "dependencies": [
+        {"key": "cargo/serde@1.0", "source_sha256": "d" * 64},
+        {"key": "cargo/proptest@1.0", "source_sha256": "e" * 64}]}
+    if mutation == "omitted_dev":
+        report["dependencies"].pop()
+    elif mutation == "wrong_dev_hash":
+        report["dependencies"][-1]["source_sha256"] = "f" * 64
+    elif mutation == "foreign_source":
+        report["source_sha"] = "b" * 40
+    if mutation is None:
+        verify_cargo_dependency_coverage(report, [], source=source, source_sha=sha)
+    else:
+        with pytest.raises(ValueError):
+            verify_cargo_dependency_coverage(report, [], source=source, source_sha=sha)

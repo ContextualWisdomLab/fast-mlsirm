@@ -6,6 +6,8 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
+import tomllib
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
@@ -494,9 +496,34 @@ def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: 
         seen_tool_reviews.add(review["key"])
 
 
-def verify_cargo_dependency_coverage(report: dict, build_records: list[dict]) -> None:
-    """Require each verified build graph crate in the authenticated dependency report."""
+def verify_cargo_dependency_coverage(report: dict, build_records: list[dict], *,
+                                     source: Path, source_sha: str) -> None:
+    """Require build graphs and both immutable Cargo locks in the reviewed set."""
+    source = source.resolve(strict=True)
+    if (not SHA.fullmatch(source_sha) or report.get("source_sha") != source_sha
+            or subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip() != source_sha
+            or subprocess.check_output(["git", "-C", str(source), "rev-parse", "--show-toplevel"], text=True).strip() != str(source)):
+        raise ValueError("Cargo dependency coverage source differs from selected commit")
     reviewed = {row["key"]: row["source_sha256"] for row in report["dependencies"]}
+    locked = {}
+    for path in ("Cargo.lock", "crates/fast-mlsirm-py/Cargo.lock"):
+        try:
+            raw = subprocess.check_output(["git", "-C", str(source), "show", f"{source_sha}:{path}"])
+            packages = tomllib.loads(raw.decode("utf-8"))["package"]
+        except (OSError, subprocess.CalledProcessError, ValueError, KeyError) as error:
+            raise ValueError("Cargo source lock is missing or malformed") from error
+        for package in packages:
+            if package.get("source") is None:
+                continue
+            key = f"cargo/{package['name']}@{package['version']}"
+            checksum = package.get("checksum")
+            if (not isinstance(checksum, str) or not re.fullmatch(r"[0-9a-f]{64}", checksum)
+                    or key in locked and locked[key] != checksum):
+                raise ValueError("Cargo source locks disagree or lack a checksum")
+            locked[key] = checksum
+    for key, checksum in locked.items():
+        if reviewed.get(key) != checksum:
+            raise ValueError(f"{key}: Cargo source dependency lacks matching licence/Strix review")
     for record in build_records:
         for graph in record["cargo_targets"].values():
             for package in graph:

@@ -1397,7 +1397,8 @@ jobs:
                   Path("release-source"), commit)
           transport.verify_license_selection_report(report, Path("release-source"), commit)
           transport.verify_cargo_graph_closure(build_graph_receipts, Path("release-source"), commit)
-          verifier.verify_cargo_dependency_coverage(report, build_graph_receipts)
+          verifier.verify_cargo_dependency_coverage(report, build_graph_receipts,
+                                                    source=Path("release-source"), source_sha=commit)
 
           # The target-specific runtime/build/dev/optional/native/bundled
           # inventories are still UNKNOWN. Hosted exact-head evidence is also
