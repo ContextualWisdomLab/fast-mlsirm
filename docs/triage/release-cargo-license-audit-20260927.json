@@ -1,6 +1,6 @@
 {
-  "source_sha": "f29b31a12753c9fc1edd0185bc75793f07382138",
-  "helper_sha": "ba01766b9e813e6f9ee51e90d2bacd0dfbb7c8d5",
+  "source_sha": "41068c932c4a835d5f5167f05a57b016b1a8150d",
+  "helper_sha": "45407a00cf1d185e49cbcb1d2dd0e88bff1d0217",
   "scope": "local Cargo licence-only; no Strix or release approval",
   "dependencies": [
     {
@@ -195,17 +195,8 @@
       "key": "cargo/cfg_aliases@0.2.2",
       "archive_sha256": "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527",
       "expression": "MIT",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled cfg_aliases-0.2.2/LICENSE matches no recognized license text"
-        },
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled cfg_aliases-0.2.2/NOTICES.md matches no recognized license text"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "cfg_aliases-0.2.2/LICENSE": "31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812",
         "cfg_aliases-0.2.2/NOTICES.md": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee"
@@ -241,13 +232,8 @@
       "key": "cargo/crunchy@0.2.4",
       "archive_sha256": "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5",
       "expression": "MIT",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled crunchy-0.2.4/LICENSE matches no recognized license text"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "crunchy-0.2.4/LICENSE": "3eab77734a181b2a2e8418af9004f960f715f04aac4d76a26cf774f63a7b13d1"
       }
@@ -317,13 +303,8 @@
       "key": "cargo/dlib@0.5.3",
       "archive_sha256": "ab8ecd87370524b461f8557c119c405552c396ed91fc0a8eec68679eab26f94a",
       "expression": "MIT",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled dlib-0.5.3/LICENSE.txt matches no recognized license text"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "dlib-0.5.3/LICENSE.txt": "10e5daea68c3ab7da6468ea51860e9d4ac87ea6a9a2d34127beff17b7193b618"
       }
@@ -422,13 +403,8 @@
       "key": "cargo/generic-array@0.14.7",
       "archive_sha256": "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a",
       "expression": "MIT",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled generic-array-0.14.7/LICENSE matches no recognized license text"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "generic-array-0.14.7/LICENSE": "c09aae9d3c77b531f56351a9947bc7446511d6b025b3255312d3e3442a9a7583"
       }
@@ -476,13 +452,8 @@
       "key": "cargo/glutin_wgl_sys@0.6.1",
       "archive_sha256": "2c4ee00b289aba7a9e5306d57c2d05499b2e5dc427f84ac708bd2c090212cf3e",
       "expression": "Apache-2.0",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled glutin_wgl_sys-0.6.1/LICENSE matches no recognized license text"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "glutin_wgl_sys-0.6.1/LICENSE": "a4445427440043e8ce6fadf7a43fb906cb0d7f6c573a560a9f142cf9f9bf8ff4"
       }
@@ -762,13 +733,8 @@
       "key": "cargo/memchr@2.8.3",
       "archive_sha256": "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98",
       "expression": "Unlicense OR MIT",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Unlicense OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "memchr-2.8.3/COPYING": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
         "memchr-2.8.3/LICENSE-MIT": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
@@ -1031,13 +997,8 @@
       "key": "cargo/ordered-float@5.5.0",
       "archive_sha256": "8c7c9e0d9b23589f26070720bac724174bfec1083e82f7854cdd0267518343c0",
       "expression": "MIT",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled ordered-float-5.5.0/LICENSE-MIT matches no recognized license text"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "ordered-float-5.5.0/LICENSE-MIT": "f7715d38a3fa1b4ac97c5729740752505a39cb92ee83ab5b102aeb5eaa7cdea4"
       }
@@ -1302,13 +1263,8 @@
       "key": "cargo/redox_syscall@0.5.18",
       "archive_sha256": "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d",
       "expression": "MIT",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled redox_syscall-0.5.18/LICENSE matches no recognized license text"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "redox_syscall-0.5.18/LICENSE": "efcfee7981ff72431fffb06925cad00a23dce079ed4354f61030ad5abdb78829"
       }
@@ -1442,13 +1398,8 @@
       "key": "cargo/slab@0.4.12",
       "archive_sha256": "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5",
       "expression": "MIT",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled slab-0.4.12/LICENSE matches no recognized license text"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "slab-0.4.12/LICENSE": "8ce0830173fdac609dfb4ea603fdc002c2f4af0dc9b1a005653f5da9cf534b18"
       }
@@ -1457,13 +1408,8 @@
       "key": "cargo/slotmap@1.1.1",
       "archive_sha256": "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038",
       "expression": "Zlib",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled slotmap-1.1.1/LICENSE matches no recognized license text"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "slotmap-1.1.1/LICENSE": "6cec81441b2ab2b5090954c1fb5d0bcca81b86487b5849061fa8952d20ef67d4"
       }
@@ -1549,13 +1495,8 @@
       "key": "cargo/target-lexicon@0.13.5",
       "archive_sha256": "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca",
       "expression": "Apache-2.0 WITH LLVM-exception",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled target-lexicon-0.13.5/LICENSE matches no recognized license text"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "target-lexicon-0.13.5/LICENSE": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
       }
@@ -1564,13 +1505,8 @@
       "key": "cargo/termcolor@1.4.1",
       "archive_sha256": "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755",
       "expression": "Unlicense OR MIT",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_SELECTION_REQUIRED",
-          "detail": "dual-licensed expression Unlicense OR MIT requires an explicit selection with a recorded rationale"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "termcolor-1.4.1/COPYING": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
         "termcolor-1.4.1/LICENSE-MIT": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
@@ -1763,13 +1699,8 @@
       "key": "cargo/wayland-sys@0.31.11",
       "archive_sha256": "d8eab23fefc9e41f8e841df4a9c707e8a8c4ed26e944ef69297184de2785e3be",
       "expression": "MIT",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled wayland-sys-0.31.11/LICENSE.txt matches no recognized license text"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "wayland-sys-0.31.11/LICENSE.txt": "1cb6f4dee8c649f175736380495f0af0c753c87f22d50931692968bb24bf2161"
       }
@@ -2026,13 +1957,8 @@
       "key": "cargo/xml-rs@0.8.29",
       "archive_sha256": "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7",
       "expression": "MIT",
-      "result": "FAIL",
-      "failures": [
-        {
-          "code": "LICENSE_TEXT_UNVERIFIED",
-          "detail": "bundled xml-rs-0.8.29/LICENSE matches no recognized license text"
-        }
-      ],
+      "result": "PASS",
+      "failures": [],
       "license_member_sha256": {
         "xml-rs-0.8.29/LICENSE": "0dc18d924dc0a5f41172a393012843a5eaaef338e795b3645da9cc3b6068220b"
       }
@@ -2084,7 +2010,7 @@
   ],
   "limitations": [
     "Local licence-only evaluation; no Strix, hosted, native, Python, or complete release scope acceptance.",
-    "Filename-based licence capture matches the current raw collector depth; source modules named COPYING may require classification.",
+    "Filename-based licence capture uses the exact central collector without a depth limit; source modules named COPYING remain unverified.",
     "PASS means the current licence evaluator passed these captured texts and declarations, not an admission or redistribution-compliance certificate."
   ],
   "capture_rule": {
@@ -2101,26 +2027,26 @@
     "regular_files_only": true
   },
   "source_cargo_lock_sha256": "f778041936d0b4490976e86746ed2749b529fe79e825be6349bd85e1e7c3dbaf",
-  "source_license_selections_sha256": "1d5ea1d873203ed9f3df74efd4506da762bcc3d4ba4e77da4409f9486198b24c",
+  "source_license_selections_sha256": "3a36e260d2c32bbbe86398ba743be3a3362947dad13a2ab60c7e10046f4f9e11",
   "summary": {
     "results": {
-      "PASS": 87,
-      "FAIL": 69
+      "PASS": 101,
+      "FAIL": 55
     },
     "failure_codes": {
-      "LICENSE_SELECTION_REQUIRED": 49,
+      "LICENSE_SELECTION_REQUIRED": 47,
       "LICENSE_TEXT_MISSING": 6,
-      "LICENSE_TEXT_UNVERIFIED": 16
+      "LICENSE_TEXT_UNVERIFIED": 3
     }
   },
   "collector_recheck": {
-    "helper_script_sha256": "88facee28c377c5c25af77fc15dd829384bd9f1fce561f8e4a021bff6ea7ad98",
+    "helper_script_sha256": "245cbc50a790d085ba13fa2f7316670aca747366efae7eb666ad0db006939eaa",
     "archives_verified": 156,
     "limitation": "Licence-only recheck; preceding receipts bind historical audit hashes. No Strix or release acceptance."
   },
   "superseded_receipt": {
-    "sha256": "919473d828a1cf0e8f416d58b3a89ac7e1d93551dc3f5e5443a385aa4e43e38e",
-    "source_sha": "1e5decd5bdecf9e42262a8cfa5f03fc2ed8f41a5",
-    "helper_sha": "03d023cea44042d268e99d14e38ed1735e050b80"
+    "sha256": "c541527919c816066ac6b7b61703ec59e5bb367fbba9784727d8291c0a7200af",
+    "source_sha": "f29b31a12753c9fc1edd0185bc75793f07382138",
+    "helper_sha": "ba01766b9e813e6f9ee51e90d2bacd0dfbb7c8d5"
   }
 }
