@@ -1,0 +1,27 @@
+{
+  "central_2465": {
+    "head": "d0abbd633ce262ff48877d8309dc92abc764b156",
+    "base_tested": "a2ba7972fc4fbfa4cca805010c57c15e42635891",
+    "merge": "4b0c6b754fc30a0d0bf77f9c41650e1451476c26",
+    "tested_and_merged_tree": "5b92f72696aae71cfe35ce5d765bf280f4f7d504",
+    "local_tests": 957,
+    "github_actions_mode_tests": 957,
+    "independently_fetched_source_and_grant_files": 59
+  },
+  "central_2469": {
+    "head": "6e26b526b761a15db22dc637f425517633b0f2a9",
+    "merge": "f5864568aee369f7567bd7b8b0ac249f9ec4c513",
+    "helper_commit": "4b0c6b754fc30a0d0bf77f9c41650e1451476c26",
+    "scripts_tree": "f1b96f0a0af5cc30f8c8f2bb662727d41129f7dd",
+    "requirements_blob": "eb83beda177c9d2e4ca9b7e2888a1ccb55a123ac",
+    "local_tests": 58,
+    "github_actions_mode_tests": 58,
+    "affected_files_equal_merged_main": true
+  },
+  "limitations": [
+    "Hosted checks queued; exact-head maintainer-authorized bypass used",
+    "Fast caller pin adoption pending",
+    "Fast 2232/2233 source-notice stack still unmerged",
+    "No original HOLD clearance or published12-wheel acceptance"
+  ]
+}
