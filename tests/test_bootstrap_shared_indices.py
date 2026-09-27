@@ -81,3 +81,64 @@ def test_plan_snapshot_survives_caller_mutation_and_all_failed_run(monkeypatch):
     assert raised.value.bootstrap_indices_sha256 == expected_hash
     assert raised.value.replicate_ids == (0, 1)
     assert raised.value.replicate_errors == ('ValueError: synthetic failure',) * 2
+
+
+@pytest.mark.parametrize('leaf', ['bifactor_grm', 'bifactor_multigroup', 'two_tier_grm', 'grm'])
+@pytest.mark.parametrize('seed', [2**53+1, 2**64-1, np.uint64(2**64-1)])
+def test_fit_seed_admission_preserves_exact_integer_bits(leaf, seed):
+    import importlib
+    module = importlib.import_module('fast_mlsirm.' + leaf)
+    assert module._u64_seed(seed) == int(seed)
+
+
+@pytest.mark.parametrize('n_groups', [1, 2])
+def test_public_plan_matches_internal_draws_through_real_workers(monkeypatch, n_groups):
+    kw = arguments()
+    kw.update(base_seed=2**64-1, n_jobs=1)
+    if n_groups == 2:
+        kw.update(group_ids=np.array([0, 0, 1, 1]), n_groups=2)
+    seen = []
+    def fit(**args):
+        seen.append(args['responses'].ravel().tolist())
+        raise ValueError('synthetic outcome')
+    monkeypatch.setattr(bb, 'fit_bifactor_grm', fit)
+    monkeypatch.setattr(bb, 'fit_bifactor_grm_multigroup', fit)
+    plan = bb.generate_person_bootstrap_indices(4, 2, base_seed=kw['base_seed'],
+        group_ids=kw.get('group_ids'), n_groups=n_groups)
+    with pytest.raises(RuntimeError, match='0/2'):
+        bb.run_bifactor_bootstrap(**kw)
+    assert seen == plan.tolist()
+    seen.clear()
+    with pytest.raises(RuntimeError, match='0/2') as supplied:
+        bb.run_bifactor_bootstrap(**kw, bootstrap_indices=plan)
+    assert seen == plan.tolist()
+    assert supplied.value.bootstrap_indices_sha256 is not None
+
+
+@pytest.mark.parametrize('seed', [True, np.bool_(True), 1., '1', -1, 2**64])
+def test_public_generator_rejects_invalid_seed_before_sampling(monkeypatch, seed):
+    def forbidden(*args):
+        raise AssertionError('invalid seed reached sampling')
+    monkeypatch.setattr(bb, '_generate_bootstrap_indices', forbidden)
+    with pytest.raises(ValueError, match='base_seed'):
+        bb.generate_person_bootstrap_indices(4, 2, base_seed=seed)
+
+
+def test_public_generator_uses_existing_group_admission(monkeypatch):
+    def forbidden(*args):
+        raise AssertionError('invalid strata reached public sampler')
+    monkeypatch.setattr(bb, '_generate_bootstrap_indices', forbidden)
+    with pytest.raises(ValueError, match='group'):
+        bb.generate_person_bootstrap_indices(4, 2, base_seed=0,
+            group_ids=np.array([0., 0., .5, 1.]), n_groups=2)
+
+
+def test_seed_admission_does_not_call_integer_subclass_conversion():
+    from fast_mlsirm._seed import _u64_seed
+    class Trap(int):
+        def __int__(self):
+            raise AssertionError('caller conversion reached')
+        def __float__(self):
+            raise AssertionError('caller conversion reached')
+    with pytest.raises(ValueError, match='seed'):
+        _u64_seed(Trap(1))

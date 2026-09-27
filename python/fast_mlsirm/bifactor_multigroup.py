@@ -94,6 +94,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._seed import _u64_seed
+
 from .bifactor_grm import _optional_float, _slope_prior_pair
 
 
@@ -126,21 +128,6 @@ def _positive_real_control(value: object, name: str) -> float:
     return numeric
 
 
-def _u64_seed(value: object) -> int:
-    """Normalize the deterministic start seed without callbacks."""
-
-    if isinstance(value, bool):
-        raise ValueError("seed must be a non-negative integer")
-    try:
-        numeric = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError("seed must be a non-negative integer") from None
-    if not np.isfinite(numeric) or numeric != np.floor(numeric):
-        raise ValueError("seed must be a non-negative integer")
-    seed = int(numeric)
-    if not 0 <= seed < 2**64:
-        raise ValueError("seed must be in [0, 2**64)")
-    return seed
 
 
 @dataclass

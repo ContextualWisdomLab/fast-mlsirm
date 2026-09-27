@@ -103,3 +103,40 @@ These are module-overlay tests with synthetic fit outcomes, not native MAP
 refits or actual study estimates. Joint two-tier E refits, score/regression
 output per replicate, convergence/sensitivity and immutable-release acceptance
 remain required. No separate sampling engine or study-specific strata are added.
+
+## Library-owned public plan generation and exact seeds
+
+`generate_person_bootstrap_indices` is a public module API. It uses the
+existing sampler and replicate-seed schedule, with explicit person count,
+replicate count, master seed and optional caller-defined strata. Group
+admission is shared with the runner. Allocation is proportional to requested
+replicates times persons; no replication choice or new sampling engine is added.
+The existing additive seed schedule is a compatibility choice, not evidence of
+independent random streams. Preserve actual plan bytes and the environment.
+
+Inspection of all seven seed helpers corrected an initial broad suspicion:
+bifactor single/multigroup and two-tier normalized integer seeds through float,
+while GRM/GPCM/nominal/2PL already used exact integer admission. In the affected
+helper, integer 2**53+1 returned 2**53 and valid 2**64-1 raised ValueError. GRM's
+exact-type admission is extracted to `_seed.py` and reused by GRM, the three
+affected wrappers, the bootstrap master seed and the public generator. The
+already-correct GPCM/nominal/2PL helpers require no repair. Previously accepted
+float/string seeds in the affected wrappers now fail the documented integer
+seed boundary, consistent with GRM; bool/array/subclass callbacks are refused.
+The old no-callback claim did not hold for float conversion on arbitrary objects.
+
+Opened references are in implementation docstrings:
+
+- Python Software Foundation, Built-in Types, Numeric Types / Bitwise Operations: https://docs.python.org/3/library/stdtypes.html . Integer precision is unlimited; floating-point precision is finite. Integer masking retains the existing modulo-2**64 schedule.
+- NumPy Developers, Scalars, Integer types: https://numpy.org/doc/stable/reference/arrays.scalars.html . NumPy has fixed-width signed/unsigned integer scalar types; exact scalar admission reuses GRM's existing boundary.
+- Generator.integers, endpoint and range: https://numpy.org/doc/stable/reference/random/generated/numpy.random.Generator.integers.html ; Generator.choice, replacement/uniform probabilities: https://numpy.org/doc/stable/reference/random/generated/numpy.random.Generator.choice.html . These specify the existing sampler operations. Efron's empirical-resampling definition and its application limits remain as above.
+
+Before repair, the first exact-seed regression failed on 2**53+1. After the
+public generator and shared admission changes, 55 checks passed in 0.07 seconds.
+They include generated-plan vs real default-worker draws and supplied-plan
+round trips in both single/multigroup paths at the maximum unsigned seed,
+Python/NumPy exact seed bits at all four shared-fit callers, invalid seed and
+stratum admission, and callback refusal. Fit results remain synthetic in these
+routing checks. No native model-estimation or scientific output is established.
+The post-test annotation change affects only Python type hints; the source
+manifest below records the final module bytes.

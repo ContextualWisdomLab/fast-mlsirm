@@ -52,6 +52,7 @@ import os
 import time
 import numpy as np
 
+from ._seed import _u64_seed
 from .bifactor_grm import _slope_prior_pair, fit_bifactor_grm
 from .bifactor_multigroup import fit_bifactor_grm_multigroup
 
@@ -306,6 +307,83 @@ def _require_int(value: object, name: str, minimum: int) -> int:
     return value
 
 
+def _bootstrap_groups(
+    n_persons: int, group_ids: np.ndarray | None, n_groups: int,
+) -> tuple[int, np.ndarray | None]:
+    """Reuse runner stratum admission; see its NumPy validation references."""
+    n_groups = _require_int(n_groups, "n_groups", 1)
+    if n_persons < 1 or n_groups > n_persons:
+        raise ValueError("n_groups requires at least one person in every declared group")
+    g_arr = np.asarray(group_ids) if group_ids is not None else None
+    if g_arr is None:
+        if n_groups != 1:
+            raise ValueError("group_ids is required when n_groups > 1")
+    else:
+        if g_arr.ndim != 1 or g_arr.size != n_persons:
+            raise ValueError("group_ids must have length n_persons")
+        if g_arr.dtype.kind not in ("i", "u", "f"):
+            raise ValueError("group_ids must contain numeric integer labels")
+        if g_arr.dtype.kind == "f" and (
+            not bool(np.isfinite(g_arr).all())
+            or bool((g_arr != np.floor(g_arr)).any())
+        ):
+            raise ValueError("group_ids must contain finite integer labels")
+        if bool((g_arr < 0).any()) or bool((g_arr >= n_groups).any()):
+            raise ValueError("group_ids must be in 0..n_groups-1")
+        g_arr = g_arr.astype(np.int64, copy=False)
+        if np.unique(g_arr).size != n_groups:
+            raise ValueError("group_ids must represent every declared group")
+    return n_groups, g_arr
+
+
+def _replicate_seed(base_seed: int, rep: int) -> int:
+    """Retain the existing bootstrap seed schedule with exact integer arithmetic.
+
+    The additive step is a compatibility choice, not an independence proof.
+    Python Built-in Types, Bitwise Operations on Integer Types:
+    https://docs.python.org/3/library/stdtypes.html#bitwise-operations-on-integer-types
+    Masking an integer with 2**64-1 implements the existing modulo-2**64 wrap.
+    """
+    return (base_seed + rep * 0x9E37_79B9_7F4A_7C15) & 0xFFFF_FFFF_FFFF_FFFF
+
+
+def generate_person_bootstrap_indices(
+    n_persons: int, n_replicates: int, *, base_seed: int,
+    group_ids: np.ndarray | None = None, n_groups: int = 1,
+) -> np.ndarray:
+    """Generate a reusable (replicates, persons) zero-based index plan.
+
+    Uses the same sampler and per-replicate seed schedule as this module's
+    runner. The caller specifies persons, replicates, master seed and strata;
+    no study strata or replication count is chosen here. Share the plan only
+    across inputs with identical ordered person keys and retain its bytes.
+    Allocation is O(n_replicates*n_persons), with no imposed statistical cap.
+
+    Efron, B. (1979). Bootstrap methods: Another look at the jackknife.
+    The Annals of Statistics, 7(1), 1–26. Section 2, printed p. 3, eq. 2.4:
+    https://doi.org/10.1214/aos/1176344552
+    The empirical sample is drawn with replacement. Applying this separately
+    within caller-defined strata is this API's specified sampling scheme;
+    this source does not validate the caller's strata or joint estimator.
+    NumPy Developers, Generator.integers, Parameters (endpoint=False):
+    https://numpy.org/doc/stable/reference/random/generated/numpy.random.Generator.integers.html
+    Generator.choice, Parameters (replace=True, p omitted is uniform):
+    https://numpy.org/doc/stable/reference/random/generated/numpy.random.Generator.choice.html
+    Seed admission and compatibility schedule are documented in _u64_seed and
+    _replicate_seed. Preserve the produced plan and library/environment version
+    rather than assuming draw stability across future library versions.
+    """
+    n_persons = _require_int(n_persons, "n_persons", 1)
+    n_replicates = _require_int(n_replicates, "n_replicates", 1)
+    base_seed = _u64_seed(base_seed, name="base_seed")
+    n_groups, groups = _bootstrap_groups(n_persons, group_ids, n_groups)
+    plan = np.empty((n_replicates, n_persons), dtype=np.int64)
+    for rep in range(n_replicates):
+        rng = np.random.Generator(np.random.PCG64(_replicate_seed(base_seed, rep)))
+        plan[rep] = _generate_bootstrap_indices(n_persons, groups, n_groups, rng)
+    return plan
+
+
 def run_bifactor_bootstrap(
     responses: np.ndarray,
     specific_map: np.ndarray,
@@ -464,6 +542,7 @@ def run_bifactor_bootstrap(
         scientifically appropriate strata.
     """
     slope_prior_mu, slope_prior_sd = _slope_prior_pair(slope_prior_mu, slope_prior_sd)
+    base_seed = _u64_seed(base_seed, name="base_seed")
     n_replicates = _require_int(n_replicates, "n_replicates", 1)
     batch_size = _require_int(batch_size, "batch_size", 1)
     n_starts = _require_int(n_starts, "n_starts", 1)
@@ -509,28 +588,7 @@ def run_bifactor_bootstrap(
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y_arr.shape
     smap_arr = np.asarray(specific_map)
-    n_groups = _require_int(n_groups, "n_groups", 1)
-    if n_persons < 1 or n_groups > n_persons:
-        raise ValueError("n_groups requires at least one person in every declared group")
-    g_arr = np.asarray(group_ids) if group_ids is not None else None
-    if g_arr is None:
-        if n_groups != 1:
-            raise ValueError("group_ids is required when n_groups > 1")
-    else:
-        if g_arr.ndim != 1 or g_arr.size != n_persons:
-            raise ValueError("group_ids must have length n_persons")
-        if g_arr.dtype.kind not in ("i", "u", "f"):
-            raise ValueError("group_ids must contain numeric integer labels")
-        if g_arr.dtype.kind == "f" and (
-            not bool(np.isfinite(g_arr).all())
-            or bool((g_arr != np.floor(g_arr)).any())
-        ):
-            raise ValueError("group_ids must contain finite integer labels")
-        if bool((g_arr < 0).any()) or bool((g_arr >= n_groups).any()):
-            raise ValueError("group_ids must be in 0..n_groups-1")
-        g_arr = g_arr.astype(np.int64, copy=False)
-        if np.unique(g_arr).size != n_groups:
-            raise ValueError("group_ids must represent every declared group")
+    n_groups, g_arr = _bootstrap_groups(n_persons, group_ids, n_groups)
     anchor_arr = np.asarray(anchor_mask, dtype=bool) if anchor_mask is not None else None
 
     indices_arr = None
@@ -563,8 +621,7 @@ def run_bifactor_bootstrap(
     # Prepare replicate tasks with deterministic seeds.
     tasks = []
     for b in range(n_replicates):
-        # 64-bit golden-ratio step for uncorrelated replicate seeds.
-        rep_seed = int((base_seed + b * 0x9E37_79B9_7F4A_7C15) & 0xFFFF_FFFF_FFFF_FFFF)
+        rep_seed = _replicate_seed(base_seed, b)
         tasks.append((
             b, y_arr, smap_arr, n_cat, n_specific, g_arr, n_groups, anchor_arr,
             q_general, q_specific, max_iter, float(tol), n_starts, rep_seed,
