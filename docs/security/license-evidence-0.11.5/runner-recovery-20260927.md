@@ -410,3 +410,38 @@ ancestry and workflow/scripts/tests equality verified after merge.180 scoped
 checks, CodeRabbit/Devin success, zero threads; authorized bypass queuedCI.
 Root2347 stillnotmain. Full suiteexec37740/PID59472 remainsLIVE (33percent at
 15:07UTC); preserveprocess, pollterminalresult then finalroot/main review.
+
+## Full-suite RCA and release-main conflict repair
+
+Exec37740 TERMINAL:4953passed/5failed/7skipped/40subtests in772.12s.
+Four failures were sibling DOCX/deleted-file mocks returning nakedbase64 after
+Contents API metadata validation. Fifth was missingpip in the old shared audit
+venv; pip26.2.1 is already declared in central dev group, not a source failure.
+
+New independent worktree `/tmp/fmls-central-api-fixture-alignment-20260928`
+uses project-local uv environment, declared dev group installedoffline plus
+checked document requirementdefusedxml0.7.1. No skipped-failure workaround.
+208 Noema/document/deleted-file/materializer tests pass,2 skips. Only two
+mock files changed,8 additions/5 removals; production reader unchanged.
+PR2454 exactsource `2ec5573b0da77a8c153a6d8bfc1ee1a86aa10205` MERGED into2347
+at `10980edc8532a8cfaabd408b88b7b8411b4cc351`,15:20:17UTC. Review statuses
+CodeRabbit/DevinSUCCESS,zero threads. Ancestry and scripts/tests/workflows byte
+equality verified. Corrected full suite LIVE exec9812/PID55026; log
+`/tmp/fmls-central-final-corrected-full-suite.log`. Preserve/poll this process.
+Root2347 stillnotmain; no full-green claim yet.
+
+Fast2135 advanced by its owner to c470b0ee, pinningcentral09f3; preserved that
+change. Latestfastmain6cb7a2ca integrated separately in
+`/tmp/fmls-release-2135-main-alignment-20260928`. Solepyproject conflict resolved
+by retaining supportedAtheris marker, Hypothesis availability, and evidence
+pointer without old unqualified rightsclaim.43 completepublish/fuzz-platform
+tests pass; offlineuvlockcheck succeeds unchanged. Imported originallicense
+file whitespace remainsbyte-exact. PR2223 source7973efef MERGED into2135base
+at `477a8bdb6ab2aa2333dabfb9747aab4e31c5efc5`,15:18:52UTC; relevantbyte
+equality/ancestry verified. This is not2135mainmerge or publicationacceptance.
+
+Live runner audit:6online, CodeQLpool s1-03idle,other5busy. Fivegroup definitions
+(default, remediation, CodeQL, OpenCode, control) retain trustedworkflow scope;
+control includes bounded historicalpins added byotherowners. Canary36321971364
+stillqueued withselfhostedLinuxX64 labels; shipped source selectsgroupCWLcentral
+control. No off-pool reassignment/duplicate dispatch. Allgrant/artifactHOLDsremain.
