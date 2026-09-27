@@ -5,7 +5,11 @@ import hashlib
 import importlib.util
 import io
 import json
+import shutil
+import subprocess
+import sys
 import tarfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -93,3 +97,66 @@ def test_libm_source_notices_keep_complete_conditions():
     assert sun and freebsd
     assert all("is preserved." in block for block in sun)
     assert all("SUCH DAMAGE." in block for block in freebsd)
+
+
+@pytest.mark.parametrize(("target", "expected"), [
+    ("x86_64-unknown-linux-gnu", "d46f307a2e8a49e2d638ee4e0b768c6c908c7786cb9106e74948561bf8cf0af0"),
+    ("aarch64-unknown-linux-gnu", "afa61d22b98ec3b8d4797c4af1dc9a6d159b2051a543e658c67f4d2404d2d87c"),
+    ("x86_64-pc-windows-msvc", "7a3537a1df4063760bfee6e720b7cc9105721748d3fffd29aed2732d155dde58"),
+    ("universal2-apple-darwin", None),
+])
+def test_wheel_notice_selection_is_target_bound(tmp_path, target, expected):
+    root = SCRIPT.parents[1]
+    supported = expected is not None
+    shutil.copyfile(root / "LICENSE-THIRD-PARTY", tmp_path / "LICENSE-THIRD-PARTY")
+    (tmp_path / "tools").mkdir()
+    shutil.copyfile(root / "tools/third_party_licenses.snapshot.json",
+                    tmp_path / "tools/third_party_licenses.snapshot.json")
+    source_dir = root / "docs/security/license-evidence-0.11.5/target-notices"
+    target_dir = tmp_path / "docs/security/license-evidence-0.11.5/target-notices"
+    target_dir.mkdir(parents=True)
+    for name in ("aarch64-unknown-linux-gnu", "x86_64-pc-windows-msvc"):
+        shutil.copyfile(source_dir / f"LICENSE-THIRD-PARTY-{name}",
+                        target_dir / f"LICENSE-THIRD-PARTY-{name}")
+        shutil.copyfile(source_dir / f"{name}.snapshot.json", target_dir / f"{name}.snapshot.json")
+    if target == "aarch64-unknown-linux-gnu":
+        snapshot = target_dir / f"{target}.snapshot.json"
+        original = snapshot.read_bytes()
+        snapshot.write_bytes(original + b"\n")
+        mismatch = subprocess.run(["bash", str(root / "tools/select_third_party_license.sh"), target],
+                                  cwd=tmp_path, capture_output=True, text=True, check=False)
+        assert mismatch.returncode != 0 and "do not match" in mismatch.stderr
+        assert (tmp_path / "tools/third_party_licenses.snapshot.json").read_bytes() == (
+            root / "tools/third_party_licenses.snapshot.json").read_bytes()
+        snapshot.write_bytes(original)
+    result = subprocess.run(["bash", str(root / "tools/select_third_party_license.sh"), target],
+                            cwd=tmp_path, capture_output=True, text=True, check=False)
+    if expected is None:
+        assert result.returncode != 0 and "no reviewed" in result.stderr
+        expected = "d46f307a2e8a49e2d638ee4e0b768c6c908c7786cb9106e74948561bf8cf0af0"
+    else:
+        assert result.returncode == 0, result.stderr
+    assert hashlib.sha256((tmp_path / "LICENSE-THIRD-PARTY").read_bytes()).hexdigest() == expected
+    selected = (tmp_path / "tools/third_party_licenses.snapshot.json").read_bytes()
+    expected_snapshot = (root / "tools/third_party_licenses.snapshot.json" if not supported or
+                         target == "x86_64-unknown-linux-gnu" else source_dir / f"{target}.snapshot.json")
+    assert selected == expected_snapshot.read_bytes()
+
+
+def test_built_wheel_must_contain_selected_license_bytes(tmp_path):
+    root = SCRIPT.parents[1]
+    notice = root.joinpath("LICENSE-THIRD-PARTY").read_bytes()
+    tmp_path.joinpath("LICENSE-THIRD-PARTY").write_bytes(notice)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    wheel = dist / "fast_mlsirm-0.11.5-py3-none-any.whl"
+    member = "fast_mlsirm-0.11.5.dist-info/licenses/LICENSE-THIRD-PARTY"
+
+    for contents, valid in ((notice, True), (b"wrong target\n", False)):
+        with zipfile.ZipFile(wheel, "w") as archive:
+            archive.writestr(member, contents)
+        result = subprocess.run(
+            [sys.executable, str(root / "tools/verify_wheel_license.py"), "dist"],
+            cwd=tmp_path, capture_output=True, text=True, check=False,
+        )
+        assert (result.returncode == 0) is valid
