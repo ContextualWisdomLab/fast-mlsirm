@@ -1,0 +1,21 @@
+📦 Including license file `LICENSE`
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.12 at /private/tmp/fmls-native-normal-wald-20260928/.venv/bin/python
+🔗 Found pyo3 bindings
+📡 Using build options features, bindings from pyproject.toml
+Checked 6 packages in 17ms
+   Compiling mlsirm-core v0.11.4 (/private/tmp/fmls-native-normal-wald-20260928/crates/mlsirm-core)
+warning: function `gh_rule_unidim` is never used
+   --> /private/tmp/fmls-native-normal-wald-20260928/crates/mlsirm-core/src/quadrature.rs:911:15
+    |
+911 | pub(crate) fn gh_rule_unidim(q: usize) -> Option<(&'static [f64], &'static [f64])> {
+    |               ^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `mlsirm-core` (lib) generated 1 warning
+   Compiling fast-mlsirm-py v0.11.4 (/private/tmp/fmls-native-normal-wald-20260928/crates/fast-mlsirm-py)
+    Finished `release` profile [optimized] target(s) in 57.64s
+📦 Built wheel for CPython 3.12 to /var/folders/vq/nxtc622x2lg1xq3jpdktymdw0000gn/T/.tmp28NKoE/fast_mlsirm-0.11.4-cp312-cp312-macosx_11_0_arm64.whl
+✏️ Setting installed package as editable
+🛠 Installed fast-mlsirm-0.11.4

@@ -1,0 +1,8 @@
+{
+  "source_head": "41b102854fc7aeda897bae93367d7affff5b873f",
+  "core_path": "/private/tmp/fmls-native-normal-wald-20260928/python/fast_mlsirm/_core.cpython-312-darwin.so",
+  "core_sha256": "169673fe3ac6507c734e869800f1fccd6e7859635ab0c958d9c6d0557b5c4d8d",
+  "tests": 26,
+  "exit_status": 0,
+  "scope": "Synthetic native regression validation; not immutable release or study acceptance."
+}
