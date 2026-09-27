@@ -433,7 +433,7 @@ pub(crate) fn e_step_reduced_gpu_posteriors(
 ///
 /// References: Cai, L. (2010). A two-tier full-information item factor
 /// analysis model with applications. Psychometrika, 75(4), 581-612.
-/// https://doi.org/10.1007/s11336-010-9178-0 . gfx-rs Developers. (2026).
+/// https://doi.org/10.1007/s11336-010-9178-0 . gfx-rs Developers. (n.d.).
 /// wgpu-core (Version 30.0.0), src/binding_model.rs, BindingZeroSize.
 /// https://crates.io/crates/wgpu-core/30.0.0 (installed primary source read).
 #[cfg(all(feature = "gpu", not(coverage)))]
