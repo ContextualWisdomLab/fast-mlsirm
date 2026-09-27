@@ -425,6 +425,17 @@ pub(crate) fn e_step_reduced_gpu_posteriors(
     e_step_reduced_gpu_inner(inputs, true)
 }
 
+/// Dispatch the reduced probability products from Cai (2010), pp.608-609.
+/// For S=0 use the primary-only conditional probabilities (p.587 equation7,
+/// p.588 optional-specific passage, p.589 equations11-12). Empty specific
+/// arrays receive unread minimum bindings and no empty readback; shader ns
+/// remains zero, so this does not introduce an auxiliary latent dimension.
+///
+/// References: Cai, L. (2010). A two-tier full-information item factor
+/// analysis model with applications. Psychometrika, 75(4), 581-612.
+/// https://doi.org/10.1007/s11336-010-9178-0 . gfx-rs Developers. (2026).
+/// wgpu-core (Version 30.0.0), src/binding_model.rs, BindingZeroSize.
+/// https://crates.io/crates/wgpu-core/30.0.0 (installed primary source read).
 #[cfg(all(feature = "gpu", not(coverage)))]
 fn e_step_reduced_gpu_inner(
     inputs: &ReducedEstepInputs,

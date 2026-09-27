@@ -1168,7 +1168,9 @@ fn e_step_gpu_person_moments(
         .max(grid)
         .checked_mul(4)
         .ok_or("GPU posterior size overflows")?;
-    // This exact sum matches the live posterior-route buffers in gpu_bifactor:
+    // Count the live posterior-route buffers in gpu_bifactor. For S=0,
+    // charge each unread minimum binding per person conservatively, so
+    // batching stays within the caller budget (wgpu-core 30 BindingZeroSize).
     // three joint grids (blockacc, joint, readback), three primary grids
     // (genlog, postg, readback), logi, responses, group IDs, anyobs, ll/readback.
     // wgpu 30 Limits are per-buffer constraints, not physical VRAM:
