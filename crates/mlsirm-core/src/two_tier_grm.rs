@@ -814,8 +814,8 @@ fn item_cat_logprob(
     grm_logprobs(base, &par.d)[cat]
 }
 
-/// One reduced E-step sweep (Gibbons et al., 2007, eq. 15: the person
-/// marginal factored per primary node): observed-data loglik, expected
+/// One reduced E-step sweep (Cai, 2010, pp. 608-609, Appendix A,
+/// DOI 10.1007/s11336-010-9178-0): observed-data loglik, expected
 /// category counts per item (`counts[i][node][k]`, `node = g * qs + h` for
 /// block items, `node = g` for specific-free items), and the summed
 /// posterior primary second moment (`s_bar_sum[j * p + k] += sum_p sum_g
@@ -844,7 +844,52 @@ pub(crate) fn e_step(
     n_grid: usize,
     qs: usize,
 ) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
+    e_step_with_moments(
+        v, y, observed, params, log_w, log_ws, coords, ts, n_grid, qs, None,
+    )
+}
+
+/// Per-person posterior moments, primary dimensions followed by specifics.
+/// The caller allocates zeroed `n_persons * (n_primary + n_specific)` arrays.
+/// Mean/second moment are conditional on the full response pattern; the second
+/// moment is not posterior variance or parameter-estimation uncertainty.
+/// Cai (2010), p. 609, Appendix B, DOI 10.1007/s11336-010-9178-0.
+pub(crate) struct LatentPosteriorMoments {
+    pub(crate) mean: Vec<f64>,
+    pub(crate) second: Vec<f64>,
+}
+
+/// Shared reduced E-step with optional person posterior moments.
+/// Cai (2010), pp. 608-609, Appendices A/B, DOI 10.1007/s11336-010-9178-0:
+/// primary marginals and each block's joint (primary, specific) posterior
+/// supply E[t|Y] and E[t^2|Y]. Specific moments integrate the shared primary
+/// posterior even when that block is missing; dropping that person would
+/// corrupt a later latent-distribution M-step. All-missing patterns retain
+/// the supplied quadrature prior. This reports moments at caller-supplied
+/// nodes/weights, not proof of continuous-integral accuracy or a focal fit.
+/// Opt-in accumulation preserves the existing no-moment fit/Oakes path.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn e_step_with_moments(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws: &[f64],
+    coords: &[f64],
+    ts: &[f64],
+    n_grid: usize,
+    qs: usize,
+    mut moments: Option<&mut LatentPosteriorMoments>,
+) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
     let p = v.n_primary;
+    let n_latent = p + v.n_specific;
+    if let Some(m) = moments.as_deref_mut() {
+        assert_eq!(m.mean.len(), v.n_persons * n_latent);
+        assert_eq!(m.second.len(), v.n_persons * n_latent);
+        m.mean.fill(0.0);
+        m.second.fill(0.0);
+    }
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
     let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
     for i in 0..v.n_items {
@@ -909,6 +954,13 @@ pub(crate) fn e_step(
         }
         for g in 0..n_grid {
             let post = post_g[g];
+            if let Some(m) = moments.as_deref_mut() {
+                for d in 0..p {
+                    let t = coords[g * p + d];
+                    m.mean[pp * n_latent + d] += post * t;
+                    m.second[pp * n_latent + d] += post * t * t;
+                }
+            }
             for (jj, slot) in s_bar_sum.iter_mut().enumerate().take(p * p) {
                 let j = jj / p;
                 let k = jj % p;
@@ -928,7 +980,7 @@ pub(crate) fn e_step(
         // active primary node's specific-tier block on the fly.
         for (s, members) in v.blocks.iter().enumerate() {
             let any_obs = members.iter().any(|&i| is_obs(pp, i));
-            if !any_obs {
+            if !any_obs && moments.is_none() {
                 continue;
             }
             for g in 0..n_grid {
@@ -952,6 +1004,11 @@ pub(crate) fn e_step(
                 for h in 0..qs {
                     let log_post = log_w[g] + block_acc_g[s * qs + h] + others - log_lp;
                     let post = log_post.exp();
+                    if let Some(m) = moments.as_deref_mut() {
+                        let slot = pp * n_latent + p + s;
+                        m.mean[slot] += post * ts[h];
+                        m.second[slot] += post * ts[h] * ts[h];
+                    }
                     for &i in members {
                         if !is_obs(pp, i) {
                             continue;

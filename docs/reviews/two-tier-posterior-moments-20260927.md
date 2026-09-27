@@ -1,0 +1,13 @@
+# Two-tier posterior moments: bounded verification
+
+Issue #2209; base main 6dd48140c1a267315c7ad1e63a55a47661449c4a.
+
+The shared reduced E-step adds opt-in per-person primary and specific first/second posterior moments. The original e_step wrapper delegates without moments; existing fit/Oakes callers keep the original tuple contract. Missing blocks contribute their posterior moments even when no category-count work is needed. Supplied arrays reset before accumulation, so repeated use cannot append old mass. No focal distribution fit, Python export, or study estimate is produced here.
+
+Source actually inspected: Cai (2010), *Psychometrika, 75*, 581–612, DOI 10.1007/s11336-010-9178-0. Printed pp. 608–609 Appendices A/B, PDF28–29 (+580), text and images directly read. These give reduced primary/block posterior tables and E[t|Y], E[t²|Y] identities. The implementation evaluates finite sums at caller-supplied nodes and weights. The paper does not establish our quadrature accuracy or focal fit recovery. PDF SHA-256: `82aef96ee7a7bf66aa00db4ae8752188310582b89d66bcc44342111228ae6731`.
+
+One committed unit test independently enumerates the entire primary×specific×specific grid using asymmetric noncentered nodes, shared primary loadings, negative specific slopes, a specific-free item, and complete/partial/all-missing person patterns. It compares all first/second moments and loglikelihood within 1e-12, compares old versus opt-in tuples exactly, and checks all-missing prior means.
+
+Local verification: a small rustc --edition 2021 --test harness extracts the actual Validated/ItemParams types, actual e_step/e_step_with_moments and their probability helpers from the checkout, and grm_logprobs/log_sigmoid from the base poly.rs. The committed test compiles and passes (1 passed). Removing the missing-block moment guard in a temporary harness fails at person1 specific dimension2 (1 failed), then the original harness still passes. No replacement probability kernel is used. Standalone unused-field warnings concern Validated fields not used in the extracted subset. This is not a full Cargo workspace build, native Python wheel, current-head hosted acceptance, or actual-data fit. Full builds remain subject to the current resource/ownership constraints.
+
+rustfmt initially reports formatting differences in the new test; formatting is applied, rustfmt --check and git diff --check then pass. Next action: consume these moments in the source-grounded fixed-item Gaussian focal distribution fit, preserve anchor orientation/bytes, and expose focal person scores. Acceptance additionally requires recovery/sensitivity, full current-head gates, nonauthor review, immutable release and installed hashes.

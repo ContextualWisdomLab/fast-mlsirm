@@ -19,8 +19,8 @@
 //!
 //! Cai, L. (2010). A two-tier full-information item factor analysis model
 //! with applications. *Psychometrika, 75*(4), 581-612.
-//! https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text not
-//! accessible — no equation locator is drawn from it)
+//! https://doi.org/10.1007/s11336-010-9178-0 (the posterior-moment test below
+//! uses directly inspected pp. 608-609, Appendices A/B)
 //!
 //! Gibbons, R. D., Bock, R. D., Hedeker, D., Weiss, D. J., Segawa, E., Bhaumik,
 //! D. K., Kupfer, D. J., Frank, E., Grochocinski, V. J., & Stover, A. (2007).
@@ -580,4 +580,130 @@ fn non_convergence_is_reported_not_substituted() {
         fit.termination_reason, "max_iter_reached",
         "termination reason must say max_iter_reached"
     );
+}
+
+// Same-node oracle for Cai (2010), pp. 608-609, Appendices A/B. Enumerating
+// every specific-node combination independently checks the reduced posterior
+// without claiming continuous-integral accuracy or empirical fit recovery.
+#[test]
+fn latent_moments_match_full_grid_with_missing_blocks() {
+    use crate::two_tier_grm::{
+        e_step, e_step_with_moments, ItemParams, LatentPosteriorMoments, Validated,
+    };
+    let v = Validated {
+        n_persons: 3,
+        n_items: 5,
+        n_primary: 2,
+        n_specific: 2,
+        n_cat: 3,
+        m1: 2,
+        grid_size: 4,
+        free_primaries: vec![vec![0, 1]; 5],
+        blocks: vec![vec![0, 1], vec![2, 3]],
+        specific_free: vec![4],
+        item_block: vec![Some(0), Some(0), Some(1), Some(1), None],
+    };
+    let pars: Vec<ItemParams> = (0..5)
+        .map(|i| ItemParams {
+            a_p: vec![0.7 + i as f64 * 0.1, -0.4 + i as f64 * 0.2],
+            a_s: if i < 4 {
+                Some(0.5 - i as f64 * 0.3)
+            } else {
+                None
+            },
+            d: vec![0.8, -0.6],
+        })
+        .collect();
+    // Asymmetric, non-centered nodes/weights exercise first moments.
+    let coords = [-0.5, 0.2, -0.5, 1.1, 0.9, 0.2, 0.9, 1.1];
+    let wg: [f64; 4] = [0.1, 0.2, 0.3, 0.4];
+    let ts: [f64; 2] = [-0.7, 1.2];
+    let ws: [f64; 2] = [0.6, 0.4];
+    let log_w: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    let y = [0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 0, 0, 0, 0, 0];
+    let obs = [
+        true, true, true, true, true, false, false, true, true, true, false, false, false, false,
+        false,
+    ];
+    let mut moments = LatentPosteriorMoments {
+        mean: vec![123.0; 12],
+        second: vec![456.0; 12],
+    };
+    let result = e_step_with_moments(
+        &v,
+        &y,
+        Some(&obs),
+        &pars,
+        &log_w,
+        &log_ws,
+        &coords,
+        &ts,
+        4,
+        2,
+        Some(&mut moments),
+    );
+    let old = e_step(
+        &v,
+        &y,
+        Some(&obs),
+        &pars,
+        &log_w,
+        &log_ws,
+        &coords,
+        &ts,
+        4,
+        2,
+    );
+    assert_eq!(
+        result, old,
+        "opting into moments must preserve existing outputs"
+    );
+    let mut brute_ll = 0.0;
+    for person in 0..3 {
+        let mut mass = 0.0;
+        let mut first = [0.0; 4];
+        let mut second = [0.0; 4];
+        for g in 0..4 {
+            for h0 in 0..2 {
+                for h1 in 0..2 {
+                    let latent = [coords[g * 2], coords[g * 2 + 1], ts[h0], ts[h1]];
+                    let mut weight = wg[g] * ws[h0] * ws[h1];
+                    for i in 0..5 {
+                        if !obs[person * 5 + i] {
+                            continue;
+                        }
+                        let mut base = pars[i].a_p[0] * latent[0] + pars[i].a_p[1] * latent[1];
+                        if let Some(s) = v.item_block[i] {
+                            base += pars[i].a_s.unwrap() * latent[2 + s];
+                        }
+                        // Full-grid oracle uses probabilities, not reduced log-posterior algebra.
+                        weight *=
+                            crate::poly::grm_logprobs(base, &pars[i].d)[y[person * 5 + i]].exp();
+                    }
+                    mass += weight;
+                    for d in 0..4 {
+                        first[d] += weight * latent[d];
+                        second[d] += weight * latent[d] * latent[d];
+                    }
+                }
+            }
+        }
+        brute_ll += mass.ln();
+        for d in 0..4 {
+            assert!(
+                (moments.mean[person * 4 + d] - first[d] / mass).abs() < 1e-12,
+                "first moment person {person}, dimension {d}"
+            );
+            assert!(
+                (moments.second[person * 4 + d] - second[d] / mass).abs() < 1e-12,
+                "second moment person {person}, dimension {d}"
+            );
+        }
+    }
+    assert!((result.0 - brute_ll).abs() < 1e-12);
+    // Entirely missing persons retain the finite quadrature prior.
+    for s in 0..2 {
+        assert!((moments.mean[8 + 2 + s] - (ws[0] * ts[0] + ws[1] * ts[1])).abs() < 1e-12);
+    }
 }
