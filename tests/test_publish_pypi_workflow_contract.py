@@ -12,6 +12,8 @@ import tarfile
 import textwrap
 import time
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "publish-pypi.yml"
@@ -957,6 +959,12 @@ def test_sdist_capture_records_runner_tools_without_cargo_metadata(tmp_path: Pat
     monkeypatch.setitem(capture.__globals__, "hash_file", lambda _: "asset-hash")
     monkeypatch.setitem(capture.__globals__, "write_python_snapshot", lambda *_: "asset-hash")
     monkeypatch.setattr(capture.__globals__["shutil"], "which", lambda _: "/tmp/maturin")
+    from types import SimpleNamespace
+
+    monkeypatch.setitem(capture.__globals__, "sys", SimpleNamespace(
+        executable=sys.executable, prefix=sys.prefix, platform="linux",
+        implementation=SimpleNamespace(name="cpython")))
+    monkeypatch.setitem(capture.__globals__, "platform", SimpleNamespace(machine=lambda: "x86_64"))
     receipt = capture(tmp_path / "release-source", {
         "CARGO_RELEASE_LEG": "sdist", "CARGO_RELEASE_SHA": _RELEASE_COMMIT,
         "CARGO_BUILD_PASS": "first", "CARGO_BUILD_PYTHON": "python",
@@ -1657,3 +1665,58 @@ def test_primary_macos_runtime_cannot_duplicate_intel_coverage(tmp_path: Path) -
     with pytest.raises(ValueError, match="primary macOS runtime interpreter is not arm64"):
         verify(runtime, folder / f"{leg}.runtime-requirements.txt", row,
                tmp_path / "release-source", _RELEASE_COMMIT, bundle, distribution, members)
+
+
+@pytest.mark.parametrize("target,runner_arch,os_name,machine", [
+    ("sdist", "X64", "linux", "x86_64"),
+    ("x86_64-unknown-linux-gnu-py3.12", "X64", "linux", "x86_64"),
+    ("aarch64-unknown-linux-gnu-py3.12", "ARM64", "linux", "aarch64"),
+    ("universal2-apple-darwin-py3.12", "ARM64", "darwin", "arm64"),
+    ("universal2-apple-darwin-py3.12", "X64", "darwin", "x86_64"),
+    ("x86_64-pc-windows-msvc-py3.12", "X64", "win32", "AMD64"),
+])
+def test_build_capture_observes_actual_interpreter_before_snapshot(
+        tmp_path, monkeypatch, target, runner_arch, os_name, machine):
+    import runpy
+    from types import SimpleNamespace
+
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "scripts/ci"))
+    capture = runpy.run_path(str(REPO_ROOT / "scripts/ci/capture_release_build_scope.py"))["capture"]
+    actual = SimpleNamespace(executable=sys.executable, platform=os_name,
+                             implementation=SimpleNamespace(name="cpython"))
+    native = SimpleNamespace(machine=lambda: machine)
+    monkeypatch.setitem(capture.__globals__, "sys", actual)
+    monkeypatch.setitem(capture.__globals__, "platform", native)
+    def run(*args):
+        if args[0] == "git":
+            return _RELEASE_COMMIT
+        return "Python 3.12.0" if args[-1] == "--version" else sys.executable
+    monkeypatch.setitem(capture.__globals__, "_run", run)
+    def inventory():
+        raise RuntimeError("validated interpreter reached snapshot inventory")
+    monkeypatch.setitem(capture.__globals__, "_python_packages_with_files", inventory)
+    environment = {"CARGO_RELEASE_LEG": target, "CARGO_RELEASE_SHA": _RELEASE_COMMIT,
+                   "CARGO_BUILD_PASS": "first", "CARGO_BUILD_PYTHON": "python",
+                   "RUNNER_ARCH": runner_arch}
+    if "linux-gnu" in target:
+        environment["CARGO_BUILD_IMAGE"] = "quay.io/test@sha256:" + "a" * 64
+    with pytest.raises(RuntimeError, match="validated interpreter"):
+        capture(tmp_path, environment)
+    for field, invalid in (("machine", "foreign-cpu"), ("platform", "foreign-os"),
+                           ("implementation", "pypy")):
+        native.machine = lambda: machine
+        actual.platform = os_name
+        actual.implementation.name = "cpython"
+        if field == "machine":
+            native.machine = lambda: invalid
+        elif field == "platform":
+            actual.platform = invalid
+        else:
+            actual.implementation.name = invalid
+        with pytest.raises(ValueError, match="actual build interpreter"):
+            capture(tmp_path, environment)
+    if os_name == "darwin":
+        actual.implementation.name = "cpython"
+        native.machine = lambda: "x86_64" if machine == "arm64" else "arm64"
+        with pytest.raises(ValueError, match="actual build interpreter"):
+            capture(tmp_path, environment)

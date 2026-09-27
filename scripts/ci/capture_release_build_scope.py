@@ -7,6 +7,7 @@ from importlib.metadata import distributions
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import stat
@@ -99,6 +100,18 @@ def capture(source: Path, environ: dict[str, str]) -> dict:
         raise ValueError("build interpreter differs from wheel target")
     if Path(_run(interpreter, "-c", "import sys; print(sys.executable)")).resolve() != Path(sys.executable).resolve():
         raise ValueError("build scope runs under a different Python interpreter")
+    expected_platform, machines = {
+        "sdist": ("linux", {"x86_64"}),
+        "x86_64-unknown-linux-gnu": ("linux", {"x86_64"}),
+        "aarch64-unknown-linux-gnu": ("linux", {"aarch64"}),
+        "universal2-apple-darwin": ("darwin", {
+            "ARM64": {"arm64"}, "X64": {"x86_64"},
+        }.get(environ.get("RUNNER_ARCH"), set())),
+        "x86_64-pc-windows-msvc": ("win32", {"AMD64", "x86_64"}),
+    }[target]
+    if (sys.implementation.name != "cpython" or sys.platform != expected_platform
+            or platform.machine() not in machines):
+        raise ValueError("actual build interpreter platform or architecture differs from target")
     python_packages = _python_packages_with_files()
     snapshot = source / "repro-digest" / f"{leg}.build-python.zip"
     snapshot.parent.mkdir(exist_ok=True)
