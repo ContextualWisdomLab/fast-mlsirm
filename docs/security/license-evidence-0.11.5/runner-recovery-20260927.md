@@ -30,6 +30,22 @@ their exact heads and finding no review threads, they were marked ready:
 Their earlier Actions CodeQL jobs succeeded. The new Python/Rust/package jobs
 were queued at inspection; skipped old jobs are not evidence of passing CI.
 
+### Notice CI integration
+
+At 12:43:21 UTC, #2174 was merged into its existing stacked base
+`codex/regression-hc3-producer-gap-20260925`, merge commit
+`9e01372f9ff525205ef453c2bd930a1e634ae049`. This is not adoption on main or
+publication. Immediately before the user-authorized admin merge, head remained
+`14887ecd1042664dc75676389663780c173a3e8e`, base remained
+`58b7b23f7a154c8391c130ebc3aab2dde50bb84b`, the PR was mergeable, and review
+threads were empty. CodeRabbit and Devin statuses and Actions CodeQL were
+successful; new general CI jobs remained queued. Ten focused tests,
+`actionlint` on the publication workflow, `bash -n` on the selector, and
+whitespace checks of changed code passed. The change selects reviewed target
+notices, rejects unsupported targets, and verifies built-wheel notice bytes.
+It changes no model implementation or dependency manifest. Hosted full-suite
+success and a release license gate are not claimed by this integration.
+
 A targeted dry-run scheduler dispatch for #2174 created run `36319361497`,
 job `108620080034`, on the central main above. It disables PR mutations,
 review dispatch, branch updates and merges. Its requested labels are
