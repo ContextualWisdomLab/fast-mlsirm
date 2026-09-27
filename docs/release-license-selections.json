@@ -1,0 +1,20 @@
+[
+  {
+    "ecosystem": "cargo",
+    "name": "allocator-api2",
+    "version": "0.2.21",
+    "chosen": "MIT",
+    "rationale": "Read both complete LICENSE-MIT and LICENSE-APACHE members of the checksum-matched crate archive. Choose the MIT grant for this release; retain its permission notice in redistributed copies. This selection does not attest to Strix review or overall release scope closure.",
+    "archive_sha256": "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923",
+    "license_members": [
+      {
+        "member": "allocator-api2-0.2.21/LICENSE-APACHE",
+        "raw_sha256": "20fe7b00e904ed690e3b9fd6073784d3fc428141dbd10b81c01fd143d0797f58"
+      },
+      {
+        "member": "allocator-api2-0.2.21/LICENSE-MIT",
+        "raw_sha256": "36516aefdc84c5d5a1e7485425913a22dbda69eb1930c5e84d6ae4972b5194b9"
+      }
+    ]
+  }
+]

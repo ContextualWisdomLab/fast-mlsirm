@@ -58,15 +58,19 @@ crates/fast-mlsirm-py/Cargo.toml` reports 125 external packages whose declared
 licence contains `OR`. This is the unfiltered release graph, not one target's
 compiled dependency count.
 
-The pinned central control `8b8fc5c9104f9fa974df5553e5286e26c7dcba87`
-uses helper `7a3f397c7b570ad3c8b0503d79205516d92d47f8`. Both capture paths
+The pinned central control `bfc5c54641b256a24a2ee25a30fda4253ed1454e`
+uses helper `5185799fd5602eea570df3b066e8b45fcc6e1b37`. Both capture paths
 read `docs/release-license-selections.json` from the exact source commit,
 never from mutable checkout bytes. The fixed path must be a regular Git blob;
 duplicate dependency selections refuse capture. The dependency report binds
 the file SHA-256, and its hash is already sealed in the full-set verdict.
 Absent files still leave `OR` dependencies refused before Strix credentials.
 
-Actual selections have not been supplied. Each entry needs ecosystem, name,
+One reviewed selection is now supplied for allocator-api2 0.2.21, with its
+checksum-matched archive and both complete licence member hashes. Central
+fixtures cover those exact texts and reject added conditions; this is not a
+whole-release licence or Strix approval. Other selections remain missing.
+Each entry needs ecosystem, name,
 version, chosen expression and a rationale supported by inspected archive
 licence text. Transport tests do not establish those package-specific reviews.
 Automatic name-based permissive choices are not review evidence. Existing
