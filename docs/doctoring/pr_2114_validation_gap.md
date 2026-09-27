@@ -43,6 +43,36 @@ does not establish that a target commit status was published.
 
 ## Remaining proof
 
+The original failed jobs are independently identifiable:
+
+| Gate | Original failed job | Required recovery evidence |
+| --- | --- | --- |
+| CodeQL Actions | [106839633565](https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/35735298245/job/106839633565) | Current-head analysis and required-wrapper settlement |
+| CodeQL Python | [106839633554](https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/35735298245/job/106839633554) | Current-head analysis and required-wrapper settlement |
+| Noema | [106842255571](https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/35735295741/job/106842255571) | Published exact-head model verdict and valid continuation authority |
+| Strix | [106845076759](https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/35735295779/job/106845076759) | Authoritative scan, trusted binder, and working provider path |
+| OpenCode | [106839384622](https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/35735295744/job/106839384622) | Authenticated independent verdict, coverage evidence, and wrapper settlement |
+
+The original CodeQL wrapper reported dispatch pending its terminal verdict.
+OpenCode reported that neither APPROVED nor CHANGES_REQUESTED from its
+authenticated reviewer identity was present on the head. Noema failed both
+preparation and re-dispatch; the latter recorded HTTP 403. Strix recorded
+provider unavailability and a missing binder, which need separate repairs.
+
+Central [PR #2429](https://github.com/ContextualWisdomLab/.github/pull/2429)
+landed as `24bdfe0b4fcd093cac4047433211d2cd59d53b43`. Its final Noema routing
+admits only the central repository, contextual-orchestrator, and fast-mlsirm,
+and requires the exact central main workflow identity. The model runner group
+received fast-mlsirm access while retaining repository and workflow restrictions.
+Ninety affected local tests passed, but the integration used administrative
+bypass with hosted checks queued and no independent approval. It is not live
+consumer verdict proof.
+
+Central [draft PR #2430](https://github.com/ContextualWisdomLab/.github/pull/2430)
+retains the missing Strix fixture runtime carryover. Forty-three relevant local
+tests passed; its full shell harness is still pending. This is partial carryover
+and does not retire every unique delta in central PR #2291.
+
 The five original failed-check gaps remain open until genuine current-head
 consumer runs prove the repaired gates. A queued job, an earlier head's green
 check, local test results, preserved SARIF, and an administrative merge each
