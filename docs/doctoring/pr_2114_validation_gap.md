@@ -69,8 +69,11 @@ bypass with hosted checks queued and no independent approval. It is not live
 consumer verdict proof.
 
 Central [draft PR #2430](https://github.com/ContextualWisdomLab/.github/pull/2430)
-retains the missing Strix fixture runtime carryover. Forty-three relevant local
-tests passed; its full shell harness is still pending. This is partial carryover
+retains the missing Strix fixture runtime carryover. Forty-four relevant local
+tests passed on `0d83b453731cc491403d80da3312be718fd61a72`; its frozen full
+shell harness is still pending. The predecessor full run failed four
+assertions in one source-preservation scenario, which the follow-up restored
+and verified with the actual targeted shell case. This is partial carryover
 and does not retire every unique delta in central PR #2291.
 
 The five original failed-check gaps remain open until genuine current-head
@@ -79,3 +82,29 @@ check, local test results, preserved SARIF, and an administrative merge each
 prove different things; none substitutes for all required terminal results.
 Release license and wheel machinery changes in contextual-orchestrator also
 do not establish an approved published artifact or deployed runtime version.
+
+## 2026-09-27 control routing and continuation delivery
+
+Central [PR #2432](https://github.com/ContextualWisdomLab/.github/pull/2432)
+landed as `7bc3e689493fd737fc619991b7349d6759a77f40`. Noema continuation
+now dispatches to the central handler with the existing central credential,
+while checking live head/base, repository and non-fork identity. Independent
+verification passed its 13 continuation contract tests; runtime dispatch and
+the actual model verdict remain unproven.
+
+Central [PR #2436](https://github.com/ContextualWisdomLab/.github/pull/2436)
+landed as `3b36b89ef7c820f715e2d28c08d25fe697fc1f23`. The prior consumer
+Strix admission job `108617323217` selected hosted `ubuntu-24.04`, so added
+self-hosted runners could not accept it. Four metadata-only jobs now use the
+existing control group when the workflow is exactly central main and the
+caller is central or fast-mlsirm. The scan image and evidence rules remain.
+Group 6 permits this central main workflow and preserves its restrictions.
+The baseline routing test failed; 21 affected tests, actionlint and whitespace
+checks passed after fresh-main integration. The merge used authorized admin
+bypass with hosted checks queued and no independent approval.
+
+The existing jobs on `4eaeb799a6647ea29f3f4902d9ca79a1377e795c` were queued
+without assigned runner fields at the last direct observation. Their source
+revision predates these repairs. This audit update produces a genuine new
+consumer head for verification against the delivered central policy. Neither
+old queue state nor new runner selection proves a terminal gate outcome.
