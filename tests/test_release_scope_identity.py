@@ -496,8 +496,10 @@ def test_cargo_closure_requires_every_target_graph(tmp_path):
 
 @pytest.mark.parametrize("mutation", [None, "missing-proof", "foreign-source", "changed-path", "changed-digest",
                                       "changed-archive", "foreign-upstream", "unselected-proof", "missing-notice",
-                                      "changed-notice", "symlink-notice"])
-def test_supplemental_license_notice_matches_real_source_git(tmp_path, mutation):
+                                      "changed-notice", "symlink-notice", "foreign-secondary", "missing-secondary",
+                                      "mutable-secondary"])
+@pytest.mark.parametrize("independent_input", [False, True])
+def test_supplemental_license_notice_matches_real_source_git(tmp_path, mutation, independent_input):
     source = tmp_path / "source"
     source.mkdir()
     path = "python/fast_mlsirm/_licenses/example.txt"
@@ -507,6 +509,11 @@ def test_supplemental_license_notice_matches_real_source_git(tmp_path, mutation)
     digest = hashlib.sha256(notice.read_bytes()).hexdigest()
     upstream = [{"url": "https://raw.githubusercontent.com/example/library/" + "1" * 40 + "/LICENSE",
                  "sha256": "2" * 64}]
+    if independent_input:
+        upstream.append({"url": "https://raw.githubusercontent.com/example/generator-input/" + "5" * 40 + "/LICENSE",
+                         "sha256": "6" * 64})
+    if mutation == "mutable-secondary":
+        upstream[-1]["url"] = "https://raw.githubusercontent.com/example/library/main/LICENSE"
     choice = {"ecosystem": "cargo", "name": "example", "version": "1", "chosen": "MIT",
               "rationale": "Exact source notice", "archive_sha256": "3" * 64,
               "bundled_notice": {"path": path, "sha256": digest}, "upstream_licenses": upstream}
@@ -539,6 +546,10 @@ def test_supplemental_license_notice_matches_real_source_git(tmp_path, mutation)
                         "changed-digest": ("sha256", "4" * 64), "changed-archive": ("archive_sha256", "4" * 64),
                         "foreign-upstream": ("upstream_commit", "4" * 40)}[mutation]
         proof[field] = value
+    elif mutation == "foreign-secondary":
+        proof["upstream_licenses"][-1]["url"] = "https://raw.githubusercontent.com/example/library/" + "7" * 40 + "/LICENSE"
+    elif mutation == "missing-secondary":
+        proof["upstream_licenses"].pop()
     # Dirty working-tree bytes cannot substitute for the selected source commit.
     if notice.is_file():
         notice.write_bytes(b"dirty replacement")

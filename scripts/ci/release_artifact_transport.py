@@ -665,8 +665,12 @@ def verify_license_selection_report(report: dict, source: Path, source_sha: str)
         commits = [re.fullmatch(r"https://raw[.]githubusercontent[.]com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/([0-9a-f]{40})/[A-Za-z0-9_./+-]+", row["url"])
                    for row in upstream]
         if (any(match is None for match in commits)
-                or len({match.group(1) for match in commits if match}) != 1):
-            raise ValueError("supplemental licences lack one immutable upstream commit")
+                or len({row["url"] for row in upstream}) != len(upstream)
+                or any(".." in row["url"].split("/") for row in upstream)):
+            raise ValueError("supplemental licences lack immutable upstream identities")
+        # The first source identifies the package upstream. Independent generated
+        # inputs may have other immutable commits; the authenticated central proof
+        # must match every selected URL and digest, in this exact order.
         notice = choice.get("bundled_notice", {})
         if not isinstance(notice, dict):
             raise ValueError("invalid supplemental source notice declaration")

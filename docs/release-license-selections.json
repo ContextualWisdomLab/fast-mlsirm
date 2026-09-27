@@ -4949,5 +4949,28 @@
       "path": "python/fast_mlsirm/_licenses/gl_generator-0.14.0-Apache-2.0.txt",
       "sha256": "305ae3699231206e6368f716edf58b71162813708f7e5f7316ecb7b821ffcf31"
     }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "spirv",
+    "version": "0.4.0+sdk-1.4.341.0",
+    "chosen": "Apache-2.0 AND MIT-Khronos-old",
+    "rationale": "All five original source, manifest, README and release configuration members match immutable rspirv upstream 8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4. Its exact generator consumes core plus all 15 extension grammars from SPIRV-Headers 04f10f650d514df88b76d25e83db360142c7b174. The full Khronos grant explicitly applies to all files except listed XML, JsonCpp and documentation paths; none of the 16 JSON inputs is an exception. Preserve the complete Apache and multi-scope Khronos licence files and every distinct original input notice, including unchanged Arm MIT markers. The generator input obligation is independent of the crate Apache declaration. Central helper 64ce023b6f55071a5fdce4567fef4e996c235512 binds the exact archive, both immutable upstreams, complete source notice bytes and applicable JSON grant scope. Consumer requires matching authenticated proof and notice bytes in every distribution. This is not regeneration, Strix or release approval.",
+    "archive_sha256": "d9571ea910ebd84c86af4b3ed27f9dbdc6ad06f17c5f96146b2b671e2976744f",
+    "license_members": [],
+    "upstream_licenses": [
+      {
+        "url": "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/LICENSE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/04f10f650d514df88b76d25e83db360142c7b174/LICENSE",
+        "sha256": "ea43b1de38a6f90c488800d66dec1ed671e68cda530266bc96951fb5b6307613"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/spirv-0.4.0+sdk-1.4.341.0-Apache-2.0-AND-MIT-Khronos-old.txt",
+      "sha256": "fb183918865585d4d2443f1425d54374b6746b6c66f5c103a25ef0d569b8c90e"
+    }
   }
 ]
