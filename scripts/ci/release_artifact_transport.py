@@ -211,12 +211,61 @@ def native_binary_members(wheel: Path) -> set[str]:
     return found
 
 
+
+def verify_runtime_requirement_coverage(record: dict, requirements: Path) -> None:
+    """Match the target install and archive hashes to the source export already rebound by admission."""
+    from packaging.requirements import Requirement
+    from packaging.utils import canonicalize_name
+
+    python = record["python_full_version"]
+    if (not isinstance(python, str) or not re.fullmatch(r"3\.[0-9]+\.[0-9]+", python)
+            or python.rsplit(".", 1)[0] != record["python_version"]):
+        raise ValueError("runtime full Python version differs from target")
+    platform = record["sys_platform"]
+    environment = {"python_version": record["python_version"], "python_full_version": python,
+                   "implementation_name": record["implementation"], "implementation_version": python,
+                   "platform_python_implementation": "CPython", "sys_platform": platform,
+                   "platform_machine": record["machine"],
+                   "platform_system": {"linux": "Linux", "darwin": "Darwin", "win32": "Windows"}[platform],
+                   "os_name": "nt" if platform == "win32" else "posix"}
+    if requirements.stat().st_size > 1024 * 1024:
+        raise ValueError("runtime requirements exceed size limit")
+    expected = {}
+    for line in re.sub(r"\\\r?\n", " ", requirements.read_text(encoding="utf-8")).splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        hashes = re.findall(r" --hash=sha256:([0-9a-f]{64})(?=\s|$)", line)
+        requirement = Requirement(re.sub(r" --hash=sha256:[0-9a-f]{64}(?=\s|$)", "", line))
+        specifiers = list(requirement.specifier)
+        if (not hashes or requirement.url or requirement.extras or len(specifiers) != 1
+                or specifiers[0].operator != "==" or "*" in specifiers[0].version):
+            raise ValueError("runtime export is not hash-locked to exact package versions")
+        if requirement.marker is not None:
+            expression = re.sub(r'"(?:\\.|[^"\\])*"', "", str(requirement.marker))
+            variables = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)) - {"and", "or", "not", "in"}
+            if not variables <= environment.keys():
+                raise ValueError("runtime export has an unsupported target marker")
+            if not requirement.marker.evaluate(environment):
+                continue
+        key = (canonicalize_name(requirement.name), specifiers[0].version)
+        if key in expected:
+            raise ValueError("runtime export duplicates a target dependency")
+        expected[key] = set(hashes)
+    installed = [(row["name"], row["version"]) for row in record["locked_dependencies"]]
+    if len(installed) != len(expected) or set(installed) != set(expected):
+        raise ValueError("runtime install omits or adds a source-export dependency")
+    for archive in record["archives"]:
+        if archive["sha256"] not in expected.get((archive["name"], archive["version"]), set()):
+            raise ValueError("runtime archive hash is absent from source export")
+
+
 def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
                              source: Path, source_sha: str, bundle: dict, distribution: Path,
                              evidence_members: dict[str, Path], *, runtime_only: bool = False) -> None:
     """Bind a target install receipt to the selected wheel and exact source lock."""
     keys = {"schema_version", "source_sha", "leg", "file", "sha256", "build_env",
-            "uv_version", "python_version", "implementation", "sys_platform", "machine",
+            "uv_version", "python_version", "python_full_version", "implementation", "sys_platform", "machine",
             "requirements_sha256", "uv_lock_sha256", "locked_dependencies", "installed",
             "imported_extension", "archives"}
     if type(record) is not dict or set(record) != keys or type(record["schema_version"]) is not int or record["schema_version"] != 1:
@@ -310,6 +359,7 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
     if (archives != sorted(archives, key=lambda item: item["file"])
             or identities != {(item["name"], item["version"]) for item in before}):
         raise ValueError(f"{leg}: runtime archives do not match installed dependencies")
+    verify_runtime_requirement_coverage(record, requirements)
 
 
 def verify_build_scope(first: dict, second: dict, row: dict, source: Path,

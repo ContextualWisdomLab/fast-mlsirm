@@ -112,6 +112,7 @@ def capture(row_path: Path, dist: Path, source: Path, scratch: Path, source_sha:
         "schema_version": 1, "source_sha": source_sha, "leg": leg, "file": filename,
         "sha256": digest, "build_env": build_env, "uv_version": uv_version,
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "python_full_version": platform.python_version(),
         "implementation": sys.implementation.name, "sys_platform": sys.platform,
         "machine": platform.machine(), "requirements_sha256": hash_file(requirements),
         "uv_lock_sha256": hash_file(source / "uv.lock"),

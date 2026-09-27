@@ -697,7 +697,7 @@ def _admission_fixture(root: Path) -> dict:
         (folder / f"{leg}.bundle.json").write_text(json.dumps(inventory, sort_keys=True) + "\n")
         if leg != "sdist":
             requirements = folder / f"{leg}.runtime-requirements.txt"
-            requirements.write_text("numpy==2.5.1 --hash=sha256:" + "a" * 64 + "\n")
+            requirements.write_text("numpy==2.5.1 --hash=sha256:" + hashlib.sha256(dependency_archive_bytes).hexdigest() + "\n")
             target, version = leg.rsplit("-py", 1)
             system, machine = {
                 "x86_64-unknown-linux-gnu": ("linux", "x86_64"),
@@ -711,6 +711,7 @@ def _admission_fixture(root: Path) -> dict:
                 "schema_version": 1, "source_sha": _RELEASE_COMMIT, "leg": leg,
                 "file": files[leg], "sha256": sha[leg], "build_env": build_env(leg),
                 "uv_version": "uv 0.12.5", "python_version": version,
+                "python_full_version": version + ".0",
                 "implementation": "cpython", "sys_platform": system, "machine": machine,
                 "requirements_sha256": hashlib.sha256(requirements.read_bytes()).hexdigest(),
                 "uv_lock_sha256": hashlib.sha256((source / "uv.lock").read_bytes()).hexdigest(),
