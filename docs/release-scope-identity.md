@@ -66,7 +66,7 @@ duplicate dependency selections refuse capture. The dependency report binds
 the file SHA-256, and its hash is already sealed in the full-set verdict.
 Absent files still leave `OR` dependencies refused before Strix credentials.
 
-Nineteen selections now choose MIT only where every collected licence-like
+Thirty-one selections now choose MIT only where every collected licence-like
 member exactly matches a previously reviewed full-text digest. Every archive
 was rehashed against the wheel-root Cargo lock. Each selection records its
 archive checksum, raw member hashes and the selected notice's packaged path
@@ -77,7 +77,7 @@ hashes with the direct wheel; recalculating a forged consumer archive hash
 cannot authorize a missing or changed notice.
 
 The notices use the existing mixed Python package layout, without a new
-packaging hook. Local maturin 1.15.0 builds retained all nineteen exact notice
+packaging hook. Local maturin 1.15.0 builds retained all thirty-one exact notice
 files in the arm64 CPython 3.14 wheel and sdist; this is not evidence for the
 other hosted wheel targets. Other selections and full-text reviews remain
 missing. Notice retention does not attest to Strix or whole-release approval.
