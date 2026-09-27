@@ -77,7 +77,7 @@ edits to the same translation unit.
 | `gpu_bifactor` (already separate) | device kernels + staging | EM policy |
 | `bifactor_grm_fipc` / multigroup facades | composition only | re-implement E-step |
 
-Split only behind characterization tests (see §5 and the companion PR).
+Split only behind characterization tests (see §5 and this PR).
 
 ---
 
@@ -248,8 +248,8 @@ reproducibility; **P2** structure debt with measured churn; **P3** clarity.
 
 | ID | Priority | Finding | Evidence | Action |
 |---|---|---|---|---|
-| F1 | **P0** | #2003 lacks an explicit E-step pattern-identity characterization | Hot loop L656–676; prior tests only GPU parity / NaN | **Fixed in companion PR** (duplicate scaling + shared block subvector + missing mask) |
-| F2 | **P0/P1** | GPU staging comment denied real deep copies | L567–570 before fix; #2006 type C | **Comment corrected in companion PR** |
+| F1 | **P0** | #2003 lacks an explicit E-step pattern-identity characterization | Hot loop L656–676; prior tests only GPU parity / NaN | **Fixed in this PR** (duplicate scaling + shared block subvector + missing mask) |
+| F2 | **P0/P1** | GPU staging comment denied real deep copies | L567–570 before fix; #2006 type C | **Comment corrected in this PR** |
 | F3 | **P2** | `bifactor_grm.rs` multi-reason churn | §1 git table | Issue: split plan behind tests; no drive-by split |
 | F4 | **P2** | PyO3 `lib.rs` registry is the OCP bottleneck | 10 765 lines; every model PR edits it | Issue: continue extracting bindings (pattern already started: `multilevel_bindings.rs` 462, `rotation_bindings.rs` 286, `ata_bindings.rs` 239) |
 | F5 | **P3** | `parallel.rs` name ≠ thread parallelism | Horn PA; rayon 0× | Issue: rename module / docs pointer for #2002 readers |
@@ -263,7 +263,7 @@ reproducibility; **P2** structure debt with measured churn; **P3** clarity.
 
 1. Audit report (this file).
 2. Characterization tests unblocking #2003 + corrected GPU staging comment
-   (companion PR).
+   (this PR).
 3. GitHub issues for F3–F6 (and #2001 clarification) opened from the
    measured rows above.
 

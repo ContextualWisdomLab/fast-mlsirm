@@ -638,11 +638,12 @@ fn estep_duplicate_persons_scale_loglik_and_counts() {
 /// The helper below mirrors `e_step`'s block loop at
 /// `crates/mlsirm-core/src/bifactor_grm.rs` (block accumulation through
 /// `log_sum_exp` over specific nodes). When #2003 lands a shared cache, keep
-/// this assertion and delete the mirror.
+/// this assertion and delete the mirror. Production E-step calls below also
+/// verify these integrals and masked expected counts at each general node.
 #[test]
 fn estep_shared_block_subvector_yields_identical_log_i() {
     use super::{
-        fill_logprob_tables, gh_rule, initial_params, log_sum_exp, validate,
+        e_step, fill_logprob_tables, gh_rule, initial_params, log_sum_exp, validate,
     };
 
     // Two persons share block-0 responses [1, 2] but differ on block 1.
@@ -657,7 +658,7 @@ fn estep_shared_block_subvector_yields_identical_log_i() {
         2, 1, 0, 2, // p3 — category coverage only
     ];
     let cfg = valid_config();
-    let v = validate(
+    let mut v = validate(
         &y,
         None,
         &TINY_SPECIFIC_MAP,
@@ -668,7 +669,7 @@ fn estep_shared_block_subvector_yields_identical_log_i() {
         &cfg,
     )
     .expect("shared-block fixture must validate");
-    let (tg, wg) = gh_rule(7).expect("Q=7 rule must exist");
+    let (tg, _) = gh_rule(7).expect("Q=7 rule must exist");
     let (ts, ws) = gh_rule(7).expect("Q=7 rule must exist");
     let qg = tg.len();
     let qs = ts.len();
@@ -737,7 +738,42 @@ fn estep_shared_block_subvector_yields_identical_log_i() {
         masked0, masked1,
         "identical category codes with different missing masks are distinct patterns"
     );
-    let _ = wg; // weights unused beyond log_ws; keep gh_rule paired.
+    // Pin each general node in turn and hide the other block. Production
+    // E-step loglik then equals the block-local integral computed above.
+    // Reuse the validated item layout; each call contains exactly one person.
+    let unmasked = [p0_b0, p1_b0, p2_b0];
+    v.n_persons = 1;
+    for g in 0..qg {
+        let mut log_wg = vec![f64::NEG_INFINITY; qg];
+        log_wg[g] = 0.0;
+        for person in 0..3 {
+            for mask_first in [false, true] {
+                let row = &y[person * TINY_N_ITEMS..(person + 1) * TINY_N_ITEMS];
+                let mask = [!mask_first, true, false, false];
+                let (ll, counts) = e_step(
+                    &v, row, Some(&mask), &tables, &log_wg, &log_ws,
+                    qg, qs, tg, ts, crate::Device::Cpu,
+                );
+                let expected = if mask_first {
+                    let terms: Vec<f64> = (0..qs)
+                        .map(|h| log_ws[h]
+                            + tables[1][(g * qs + h) * TINY_N_CAT + row[1]])
+                        .collect();
+                    log_sum_exp(&terms)
+                } else {
+                    unmasked[person][g]
+                };
+                assert!((ll - expected).abs() <= 1e-12,
+                    "production block integral differs: g={g}, person={person}, masked={mask_first}");
+                for i in 0..TINY_N_ITEMS {
+                    let total: f64 = counts[i].iter().flatten().sum();
+                    let expected_count = if mask[i] { 1.0 } else { 0.0 };
+                    assert!((total - expected_count).abs() <= 1e-12,
+                        "production expected count violates missing mask for item {i}");
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
