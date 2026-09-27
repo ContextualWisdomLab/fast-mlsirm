@@ -183,9 +183,9 @@ def nested_ols_column_drop(
     x_arr = _as_float64_matrix(x, "x")
     y_arr = _as_float64_vector(y, "y", expected_length=int(x_arr.shape[0]))
     if type(drop_columns) not in (list, tuple) or any(
-        type(column) is not int for column in drop_columns
+        type(column) is not int or column < 0 for column in drop_columns
     ):
-        raise ValueError("drop_columns must be a list or tuple of integer indices")
+        raise ValueError("drop_columns must be a list or tuple of non-negative integer indices")
     return dict(regression_core().nested_ols_column_drop(x_arr, y_arr, drop_columns))
 
 
