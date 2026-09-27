@@ -265,6 +265,15 @@ from .regression import (
     fit_ols_hc as fit_ols_hc,
 )
 from .regression import (
+    nested_ols_summary as nested_ols_summary,
+)
+from .regression import (
+    normal_wald_interval as normal_wald_interval,
+)
+from .regression import (
+    sample_mean_sd as sample_mean_sd,
+)
+from .regression import (
     slope_difference as slope_difference,
 )
 from .regression import (

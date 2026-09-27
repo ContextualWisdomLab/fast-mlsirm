@@ -5,7 +5,8 @@
 
 use mlsirm_core::regression::{
     chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc, linear_contrast,
-    slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
+    nested_ols_summary, normal_wald_interval, sample_mean_sd, slope_difference, t_sf,
+    xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
 };
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -78,6 +79,42 @@ fn py_fit_ols_hc(
     fit_dict(py, &fit, &vcov, &hc.to_ascii_uppercase())
 }
 
+#[pyfunction(name = "sample_mean_sd")]
+fn py_sample_mean_sd(values: PyReadonlyArray1<'_, f64>) -> PyResult<(f64, f64)> {
+    sample_mean_sd(values.as_slice()?).map_err(PyValueError::new_err)
+}
+
+#[pyfunction(name = "normal_wald_interval")]
+fn py_normal_wald_interval(estimate: f64, se: f64, confidence: f64) -> PyResult<(f64, f64)> {
+    normal_wald_interval(estimate, se, confidence).map_err(PyValueError::new_err)
+}
+
+#[pyfunction(name = "nested_ols_summary")]
+fn py_nested_ols_summary(
+    py: Python<'_>,
+    x: PyReadonlyArray2<'_, f64>,
+    y: PyReadonlyArray1<'_, f64>,
+    reduced_columns: Vec<usize>,
+) -> PyResult<Py<PyDict>> {
+    let shape = x.shape();
+    let n = shape[0];
+    let k = shape[1];
+    let x_vec: Vec<f64> = x.as_array().iter().copied().collect();
+    let result = nested_ols_summary(&x_vec, y.as_slice()?, n, k, &reduced_columns)
+        .map_err(PyValueError::new_err)?;
+    let out = PyDict::new(py);
+    out.set_item("n", result.n)?;
+    out.set_item("df1", result.df1)?;
+    out.set_item("df2", result.df2)?;
+    out.set_item("full_r2", result.full_r2)?;
+    out.set_item("adjusted_r2", result.adjusted_r2)?;
+    out.set_item("reduced_r2", result.reduced_r2)?;
+    out.set_item("delta_r2", result.delta_r2)?;
+    out.set_item("f_stat", result.f_stat)?;
+    out.set_item("p_f", result.p_f)?;
+    Ok(out.into())
+}
+
 #[pyfunction(name = "linear_contrast")]
 fn py_linear_contrast(
     py: Python<'_>,
@@ -100,7 +137,10 @@ fn py_xwz_e_design_row(py: Python<'_>, x: f64, w: f64, z: f64, e: f64) -> Py<PyA
 }
 
 #[pyfunction(name = "design_row_dot")]
-fn py_design_row_dot(row: PyReadonlyArray1<'_, f64>, beta: PyReadonlyArray1<'_, f64>) -> PyResult<f64> {
+fn py_design_row_dot(
+    row: PyReadonlyArray1<'_, f64>,
+    beta: PyReadonlyArray1<'_, f64>,
+) -> PyResult<f64> {
     design_row_dot(row.as_slice()?, beta.as_slice()?).map_err(PyValueError::new_err)
 }
 
@@ -119,17 +159,8 @@ fn py_conditional_slope(
     e: f64,
     df: f64,
 ) -> PyResult<Py<PyDict>> {
-    let result = conditional_slope(
-        beta.as_slice()?,
-        vcov.as_slice()?,
-        focal,
-        x,
-        w,
-        z,
-        e,
-        df,
-    )
-    .map_err(PyValueError::new_err)?;
+    let result = conditional_slope(beta.as_slice()?, vcov.as_slice()?, focal, x, w, z, e, df)
+        .map_err(PyValueError::new_err)?;
     contrast_dict(py, result)
 }
 
@@ -175,6 +206,9 @@ fn py_t_sf(t: f64, df: f64) -> f64 {
 fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("XWZ_E_K", XWZ_E_K)?;
     m.add_function(wrap_pyfunction!(py_fit_ols_hc, m)?)?;
+    m.add_function(wrap_pyfunction!(py_sample_mean_sd, m)?)?;
+    m.add_function(wrap_pyfunction!(py_normal_wald_interval, m)?)?;
+    m.add_function(wrap_pyfunction!(py_nested_ols_summary, m)?)?;
     m.add_function(wrap_pyfunction!(py_linear_contrast, m)?)?;
     m.add_function(wrap_pyfunction!(py_xwz_e_design_row, m)?)?;
     m.add_function(wrap_pyfunction!(py_design_row_dot, m)?)?;

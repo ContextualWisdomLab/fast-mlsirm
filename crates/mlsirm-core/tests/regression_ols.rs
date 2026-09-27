@@ -1,7 +1,8 @@
 //! Integration tests for OLS + HC sandwich (links the already-built library).
 
 use mlsirm_core::regression::{
-    chi2_sf_df1, f_sf, fit_ols, fit_ols_hc, linear_contrast, sandwich_vcov, t_sf, HcType,
+    chi2_sf_df1, f_sf, fit_ols, fit_ols_hc, linear_contrast, nested_ols_summary,
+    normal_wald_interval, sample_mean_sd, sandwich_vcov, t_sf, HcType,
 };
 
 fn assert_close(a: f64, b: f64, tol: f64) {
@@ -16,9 +17,7 @@ fn assert_close(a: f64, b: f64, tol: f64) {
 fn ols_recovers_exact_plane() {
     let n = 4usize;
     let k = 3usize;
-    let x = vec![
-        1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0,
-    ];
+    let x = vec![1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0];
     let y = vec![1.0, 3.0, 4.0, 6.0];
     let fit = fit_ols(&x, &y, n, k).expect("OLS");
     assert_close(fit.beta[0], 1.0, 1e-10);
@@ -92,4 +91,31 @@ fn linear_contrast_and_tails() {
     assert_close(chi2_sf_df1(3.841458820694124), 0.05, 1e-6);
     assert_close(f_sf(3.841458820694124, 1.0, 1.0e8), 0.05, 5e-4);
     assert_close(t_sf(1.6448536269514722, 1.0e8), 0.05, 5e-4);
+}
+
+#[test]
+fn reporting_quantities_use_same_rows_and_nested_design() {
+    let x = vec![
+        1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 2.0, 0.0, 1.0, 2.0, 1.0,
+    ];
+    let y = vec![1.0, 3.0, 2.0, 5.0, 4.0, 6.0];
+    let (mean, sd) = sample_mean_sd(&y).unwrap();
+    assert_close(mean, 3.5, 1e-12);
+    assert_close(sd, (17.5_f64 / 5.0).sqrt(), 1e-12);
+    let (lo, hi) = normal_wald_interval(2.0, 1.0, 0.95).unwrap();
+    assert_close(lo, 0.040036, 1e-5);
+    assert_close(hi, 3.959964, 1e-5);
+
+    let summary = nested_ols_summary(&x, &y, 6, 3, &[0, 1]).unwrap();
+    assert_eq!((summary.df1, summary.df2), (1, 3));
+    assert!(summary.full_r2 > summary.reduced_r2);
+    assert_close(
+        summary.delta_r2,
+        summary.full_r2 - summary.reduced_r2,
+        1e-12,
+    );
+    assert_close(summary.p_f, f_sf(summary.f_stat, 1.0, 3.0), 1e-12);
+    assert!(nested_ols_summary(&x, &y, 6, 3, &[1, 0]).is_err());
+    assert!(nested_ols_summary(&x, &y, 6, 3, &[0, 0]).is_err());
+    assert!(normal_wald_interval(0.0, 1.0, 1.0).is_err());
 }

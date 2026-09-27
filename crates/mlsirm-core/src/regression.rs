@@ -77,6 +77,7 @@
 //!     Cambridge University Press.
 
 use crate::fitstats::{chi2_sf, ln_gamma};
+use crate::mokken::normal_upper_quantile;
 
 /// Heteroskedasticity-consistent sandwich estimator family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -144,6 +145,123 @@ pub struct ContrastResult {
     pub p_f: f64,
     /// Residual degrees of freedom `n - k` used for t/F tails.
     pub df: f64,
+}
+
+/// Conventional fit comparison for two OLS models on the same rows and response.
+#[derive(Clone, Debug)]
+pub struct NestedOlsSummary {
+    pub n: usize,
+    pub df1: usize,
+    pub df2: usize,
+    pub full_r2: f64,
+    pub adjusted_r2: f64,
+    pub reduced_r2: f64,
+    pub delta_r2: f64,
+    pub f_stat: f64,
+    pub p_f: f64,
+}
+
+/// Arithmetic mean and sample standard deviation of finite observations.
+pub fn sample_mean_sd(values: &[f64]) -> Result<(f64, f64), String> {
+    if values.len() < 2 || values.iter().any(|v| !v.is_finite()) {
+        return Err("need at least two finite observations".to_owned());
+    }
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    let variance =
+        values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (values.len() - 1) as f64;
+    if !mean.is_finite() || !variance.is_finite() {
+        return Err("non-finite sample moment".to_owned());
+    }
+    Ok((mean, variance.sqrt()))
+}
+
+/// Two-sided normal Wald interval at the requested confidence level.
+pub fn normal_wald_interval(estimate: f64, se: f64, confidence: f64) -> Result<(f64, f64), String> {
+    if !estimate.is_finite() || !se.is_finite() || se < 0.0 {
+        return Err("estimate and nonnegative SE must be finite".to_owned());
+    }
+    if !confidence.is_finite() || !(0.0..1.0).contains(&confidence) || confidence == 0.0 {
+        return Err("confidence must be in (0, 1)".to_owned());
+    }
+    let margin = normal_upper_quantile((1.0 - confidence) / 2.0) * se;
+    let interval = (estimate - margin, estimate + margin);
+    if !interval.0.is_finite() || !interval.1.is_finite() {
+        return Err("non-finite Wald interval".to_owned());
+    }
+    Ok(interval)
+}
+
+/// Compare a full intercept OLS model with a reduced column subset.
+///
+/// `reduced_columns` contains unique full-design column indices, including
+/// column zero (the intercept). The classical extra-sum-of-squares F test
+/// assumes the usual homoskedastic OLS model; it is separate from HC tests.
+pub fn nested_ols_summary(
+    x: &[f64],
+    y: &[f64],
+    n: usize,
+    k: usize,
+    reduced_columns: &[usize],
+) -> Result<NestedOlsSummary, String> {
+    if k < 2 || reduced_columns.is_empty() || reduced_columns.len() >= k {
+        return Err("reduced design must have fewer columns than full design".to_owned());
+    }
+    if reduced_columns[0] != 0
+        || reduced_columns.windows(2).any(|pair| pair[0] >= pair[1])
+        || reduced_columns.iter().any(|&column| column >= k)
+    {
+        return Err(
+            "reduced columns must be sorted, unique, in range, and include intercept".to_owned(),
+        );
+    }
+    validate_design(x, y, n, k)?;
+    if (0..n).any(|i| x[i * k] != 1.0) {
+        return Err("first design column must be an intercept of ones".to_owned());
+    }
+    let full = fit_ols(x, y, n, k)?;
+    let kr = reduced_columns.len();
+    let mut reduced_x = Vec::with_capacity(n * kr);
+    for i in 0..n {
+        for &column in reduced_columns {
+            reduced_x.push(x[i * k + column]);
+        }
+    }
+    let reduced = fit_ols(&reduced_x, y, n, kr)?;
+    let sse_full = full.residuals.iter().map(|e| e * e).sum::<f64>();
+    let sse_reduced = reduced.residuals.iter().map(|e| e * e).sum::<f64>();
+    let (mean_y, _) = sample_mean_sd(y)?;
+    let sst = y.iter().map(|v| (v - mean_y).powi(2)).sum::<f64>();
+    if !sst.is_finite() || sst <= 0.0 || !sse_full.is_finite() || sse_full <= 0.0 {
+        return Err("need positive finite total and full residual sums of squares".to_owned());
+    }
+    let gain = sse_reduced - sse_full;
+    if gain < -1e-9 * sse_reduced.max(1.0) {
+        return Err("reduced SSE is below full SSE".to_owned());
+    }
+    let df1 = k - kr;
+    let df2 = n - k;
+    let full_r2 = 1.0 - sse_full / sst;
+    let reduced_r2 = 1.0 - sse_reduced / sst;
+    let adjusted_r2 = 1.0 - (1.0 - full_r2) * (n - 1) as f64 / df2 as f64;
+    let f_stat = gain.max(0.0) / df1 as f64 / (sse_full / df2 as f64);
+    let p_f = f_sf(f_stat, df1 as f64, df2 as f64);
+    if [full_r2, reduced_r2, adjusted_r2, f_stat, p_f]
+        .iter()
+        .any(|v| !v.is_finite())
+    {
+        return Err("non-finite nested-model summary".to_owned());
+    }
+    Ok(NestedOlsSummary {
+        n,
+        df1,
+        df2,
+        full_r2,
+        adjusted_r2,
+        reduced_r2,
+        delta_r2: full_r2 - reduced_r2,
+        f_stat,
+        p_f,
+    })
 }
 
 /// Fit OLS by normal equations and compute the hat diagonal.
@@ -391,18 +509,7 @@ pub const XWZ_E_K: usize = 10;
 /// Column order: `(Intercept), X, W, Z, E, X:W, X:Z, W:Z, X:E, X:W:Z`
 /// (Aiken & West, 1991, ch. 2 product terms; Hayes, 2018, ch. 7).
 pub fn xwz_e_design_row(x: f64, w: f64, z: f64, e: f64) -> [f64; XWZ_E_K] {
-    [
-        1.0,
-        x,
-        w,
-        z,
-        e,
-        x * w,
-        x * z,
-        w * z,
-        x * e,
-        x * w * z,
-    ]
+    [1.0, x, w, z, e, x * w, x * z, w * z, x * e, x * w * z]
 }
 
 /// Dot product of a design row with `β` (predicted mean at probes).

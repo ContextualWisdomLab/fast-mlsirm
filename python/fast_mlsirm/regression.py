@@ -122,6 +122,34 @@ def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     }
 
 
+def sample_mean_sd(values: np.ndarray) -> tuple[float, float]:
+    """Return the arithmetic mean and sample standard deviation."""
+    arr = _as_float64_vector(values, "values")
+    mean, sd = regression_core().sample_mean_sd(arr)
+    return float(mean), float(sd)
+
+
+def normal_wald_interval(
+    estimate: float, se: float, confidence: float
+) -> tuple[float, float]:
+    """Return a two-sided normal Wald interval."""
+    lo, hi = regression_core().normal_wald_interval(
+        float(estimate), float(se), float(confidence)
+    )
+    return float(lo), float(hi)
+
+
+def nested_ols_summary(
+    x: np.ndarray, y: np.ndarray, reduced_columns: list[int]
+) -> dict[str, float | int]:
+    """Compare nested intercept OLS models using a full-design column subset."""
+    x_arr = _as_float64_matrix(x, "x")
+    y_arr = _as_float64_vector(y, "y", expected_length=int(x_arr.shape[0]))
+    if type(reduced_columns) is not list or any(type(i) is not int for i in reduced_columns):
+        raise ValueError("reduced_columns must be a list of integer column indices")
+    return dict(regression_core().nested_ols_summary(x_arr, y_arr, reduced_columns))
+
+
 def contrast(
     beta: np.ndarray,
     vcov: np.ndarray,

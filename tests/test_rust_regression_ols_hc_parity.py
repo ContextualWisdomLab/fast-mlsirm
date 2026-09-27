@@ -12,7 +12,14 @@ import math
 import numpy as np
 import pytest
 
-from fast_mlsirm import chi2_sf_df1, contrast, fit_ols_hc
+from fast_mlsirm import (
+    chi2_sf_df1,
+    contrast,
+    fit_ols_hc,
+    nested_ols_summary,
+    normal_wald_interval,
+    sample_mean_sd,
+)
 from fast_mlsirm.regression import f_sf, t_sf
 
 
@@ -124,6 +131,29 @@ def test_distribution_tails_no_scipy():
     assert abs(chi2_sf_df1(3.841458820694124) - 0.05) < 1e-5
     assert abs(f_sf(3.841458820694124, 1.0, 1.0e8) - 0.05) < 5e-4
     assert abs(t_sf(1.6448536269514722, 1.0e8) - 0.05) < 5e-4
+
+
+def test_reporting_summary_parity_on_same_synthetic_rows():
+    x, y = _synthetic_design()
+    mean, sd = sample_mean_sd(y)
+    np.testing.assert_allclose([mean, sd], [y.mean(), y.std(ddof=1)], atol=1e-12)
+    reduced_columns = list(range(x.shape[1] - 1))
+    got = nested_ols_summary(x, y, reduced_columns)
+    full_sse = float(np.linalg.norm(y - x @ np.linalg.lstsq(x, y, rcond=None)[0]) ** 2)
+    red = x[:, reduced_columns]
+    red_sse = float(np.linalg.norm(y - red @ np.linalg.lstsq(red, y, rcond=None)[0]) ** 2)
+    sst = float(np.linalg.norm(y - y.mean()) ** 2)
+    np.testing.assert_allclose(
+        [got["full_r2"], got["reduced_r2"], got["delta_r2"], got["f_stat"]],
+        [1 - full_sse / sst, 1 - red_sse / sst, (red_sse - full_sse) / sst,
+         (red_sse - full_sse) / (full_sse / (len(y) - x.shape[1]))],
+        atol=1e-9,
+    )
+    assert got["df1"] == 1 and got["df2"] == len(y) - x.shape[1]
+    assert got["p_f"] == pytest.approx(f_sf(got["f_stat"], 1, got["df2"]))
+    assert normal_wald_interval(2.0, 1.0, 0.95) == pytest.approx((0.040036, 3.959964), abs=1e-5)
+    with pytest.raises(ValueError):
+        nested_ols_summary(x, y, [1, 0])
 
 
 def test_regression_core_exports_without_scipy_rscript():
