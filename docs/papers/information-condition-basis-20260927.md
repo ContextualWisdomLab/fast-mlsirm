@@ -18,3 +18,7 @@ Validation:
 - Installed API against the older b4661fe7 candidate: fails with KeyError condition_number_2. No skip fallback. New native build and installed tests remain pending.
 
 Full crate/PyO3 build, hosted gates, non-author review and immutable release/install provenance remain required. No actual study matrix or reported study value is produced here. Related: #2200.
+
+## Shared-caller regression
+
+The Jacobi repair also affects vcov_from_hessian through pseudoinverse_symmetric. A real Rust call on rank-one matrices with common scales 1, 1e-300 and 1e300 preserves the known pseudoinverse entries (checked after multiplying by the input scale to avoid test overflow). Standalone inference module execution now passes 10 tests. This synthetic regression does not establish actual study ACOV validity or installed PyO3 acceptance. The current-head hosted checks were queued and both PRs had no submitted non-author review at the 2026-09-27 observation; queued checks are not passing evidence.

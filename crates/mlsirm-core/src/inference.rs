@@ -394,6 +394,20 @@ mod tests {
     }
 
     #[test]
+    fn shared_jacobi_scaling_preserves_rank_one_pseudoinverse() {
+        for scale in [1., 1e-300, 1e300] {
+            let h = [scale, scale, scale, scale];
+            let inverse = vcov_from_hessian(&h, 2, 1e-10).unwrap();
+            // The Moore–Penrose inverse of this rank-one matrix has 1/(4s)
+            // in every entry; multiplying by s avoids overflowing 4s.
+            for value in inverse {
+                assert!((value * scale - 0.25).abs() < 1e-12,
+                        "scale={scale} inverse={value}");
+            }
+        }
+    }
+
+    #[test]
     fn second_order_detects_positive_definite() {
         let h = [4.0, 1.0, 1.0, 3.0];
         let (passed, min_ev, evals) = second_order_test(&h, 2, 1e-8).unwrap();
