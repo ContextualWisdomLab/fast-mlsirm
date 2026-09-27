@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2023-10-24 - Avoiding broadcast array allocations in reductions
+**Learning:** Python operations such as `(expected * weights[None, :]).sum(axis=1)` where a 2D array is multiplied element-wise by a broadcasted 1D array and then reduced across the columns will allocate a massive, temporary `(N, M)` array in memory. This is especially problematic in integrations with many quadrature nodes.
+**Action:** Replace `(A * B[None, :]).sum(axis=1)` with the mathematically equivalent direct matrix multiplication `A @ B`. This completely avoids the intermediate broadcast array allocation and delegates the computation to highly optimized BLAS routines, significantly boosting performance.
