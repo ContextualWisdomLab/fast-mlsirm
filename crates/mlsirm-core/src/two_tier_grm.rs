@@ -1085,7 +1085,10 @@ pub(crate) fn e_step_with_moments(
 /// mixed precision, not an f64 GPU calculation (WGSL floating-point types,
 /// https://www.w3.org/TR/WGSL/#floating-point-types). Positive finite masses
 /// are renormalized before contraction; nonfinite/negative weights fail.
-/// Person batches derive from wgpu 30.0.0 buffer limits, not quadrature caps:
+/// Person batches obey a caller-owned total buffer byte budget and wgpu
+/// 30.0.0 per-buffer limits; count all fixed inputs, simultaneous intermediate
+/// and posterior buffers, and their readback copies. This resource policy
+/// does not change node counts and does not estimate physical VRAM:
 /// https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html. GPU unavailability or
 /// failure is an error. The shared Appendix A f64 host reduction evaluates
 /// likelihood from the original f64 item tables for convergence certification;
@@ -1103,6 +1106,7 @@ fn e_step_gpu_person_moments(
     coords: &[f64],
     ts: &[f64],
     moments: &mut LatentPosteriorMoments,
+    memory_budget_bytes: u64,
 ) -> Result<f64, String> {
     use crate::gpu_bifactor::{e_step_reduced_gpu_posteriors, ReducedEstepInputs};
     let ctx = crate::gpu::GpuContext::get().ok_or("GPU adapter unavailable")?;
@@ -1117,20 +1121,75 @@ fn e_step_gpu_person_moments(
         .and_then(|n| n.checked_mul(qs))
         .ok_or("GPU posterior dimensions overflow")?;
     let limits = ctx.device.limits();
-    let bytes_per_person = joint_per_person
+    let binding_bytes_per_person = joint_per_person
         .max(v.n_items)
         .max(grid)
-        .checked_mul(std::mem::size_of::<f32>())
+        .checked_mul(4)
         .ok_or("GPU posterior size overflows")?;
-    let budget = limits
+    // This exact sum matches the live posterior-route buffers in gpu_bifactor:
+    // three joint grids (blockacc, joint, readback), three primary grids
+    // (genlog, postg, readback), logi, responses, group IDs, anyobs, ll/readback.
+    // wgpu 30 Limits are per-buffer constraints, not physical VRAM:
+    // https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html
+    // The caller's total byte budget is a resource policy, not an accuracy cutoff.
+    let per_person_elements = [
+        v.n_items,
+        3,
+        grid,
+        grid,
+        grid,
+        v.n_specific.checked_mul(grid).ok_or("GPU size overflows")?,
+        joint_per_person,
+        joint_per_person,
+        joint_per_person,
+        v.n_specific,
+    ]
+    .into_iter()
+    .try_fold(0usize, |a, b| a.checked_add(b))
+    .ok_or("GPU simultaneous buffer size overflows")?;
+    let table_elements = v
+        .item_block
+        .iter()
+        .try_fold(0usize, |sum, block| {
+            grid.checked_mul(if block.is_some() { qs } else { 1 })
+                .and_then(|n| n.checked_mul(v.n_cat))
+                .and_then(|n| sum.checked_add(n))
+        })
+        .ok_or("GPU table size overflows")?;
+    let fixed_elements = [
+        8,
+        table_elements,
+        v.n_items,
+        v.n_items,
+        v.n_specific.checked_add(1).ok_or("GPU size overflows")?,
+        v.blocks.iter().map(Vec::len).sum(),
+        grid,
+        qs,
+        grid,
+        v.n_specific.checked_mul(qs).ok_or("GPU size overflows")?,
+        2,
+    ]
+    .into_iter()
+    .try_fold(0usize, |a, b| a.checked_add(b))
+    .ok_or("GPU fixed buffer size overflows")?;
+    let fixed_bytes = fixed_elements.checked_mul(4).ok_or("GPU size overflows")? as u64;
+    let person_bytes = per_person_elements
+        .checked_mul(4)
+        .ok_or("GPU size overflows")? as u64;
+    let available = memory_budget_bytes
+        .checked_sub(fixed_bytes)
+        .ok_or("GPU fixed inputs exceed gpu_memory_budget_bytes")?;
+    let binding_budget = limits
         .max_storage_buffer_binding_size
         .min(limits.max_buffer_size);
-    let batch = usize::try_from(budget / bytes_per_person as u64)
-        .map_err(|_| "GPU batch size overflows usize")?
-        .min(v.n_persons)
-        .min(u32::MAX as usize / joint_per_person.max(1));
+    let batch = usize::try_from(
+        (available / person_bytes).min(binding_budget / binding_bytes_per_person as u64),
+    )
+    .map_err(|_| "GPU batch size overflows usize")?
+    .min(v.n_persons)
+    .min(u32::MAX as usize / joint_per_person.max(1));
     if batch == 0 {
-        return Err("GPU cannot bind one person's posterior at declared grid".into());
+        return Err("GPU cannot fit one person's simultaneous buffers within gpu_memory_budget_bytes and device limits".into());
     }
     // Log-probability tables depend on items/nodes, never on the person.
     // Reuse the exact CPU GRM probability implementation on the host.
@@ -1251,6 +1310,7 @@ fn e_step_gpu_person_moments(
     _coords: &[f64],
     _ts: &[f64],
     _moments: &mut LatentPosteriorMoments,
+    _memory_budget_bytes: u64,
 ) -> Result<f64, String> {
     Err("focal GPU scoring requires a GPU-enabled build".into())
 }
@@ -2383,6 +2443,7 @@ pub fn score_two_tier_grm_orthogonal(
         q_primary,
         q_specific,
         crate::Device::Cpu,
+        None,
     )
 }
 
@@ -2391,6 +2452,10 @@ pub fn score_two_tier_grm_orthogonal(
 /// contraction; see https://www.w3.org/TR/WGSL/#floating-point-types.
 /// GPU failure is an error and no CPU fallback is accepted. `Auto` is rejected
 /// so the caller declares the route; parity and convergence remain required.
+/// GPU requires a positive caller-owned total buffer byte budget. See wgpu 30
+/// Limits (per-buffer only) and Device::push_error_scope (allocation errors):
+/// https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope
+/// Driver overhead and other live allocations can still cause a reported error.
 #[allow(clippy::too_many_arguments)]
 pub fn score_two_tier_grm_orthogonal_with_device(
     a_primary: &[f64],
@@ -2410,6 +2475,7 @@ pub fn score_two_tier_grm_orthogonal_with_device(
     q_primary: usize,
     q_specific: usize,
     device: crate::Device,
+    gpu_memory_budget_bytes: Option<u64>,
 ) -> Result<TwoTierGrmPersonScores, String> {
     // Fit-only controls are irrelevant to fixed-bank scoring, as in the
     // existing marginal-loglik evaluator; data/shape checks remain shared.
@@ -2526,6 +2592,9 @@ pub fn score_two_tier_grm_orthogonal_with_device(
             &coords,
             ts,
             &mut moments,
+            gpu_memory_budget_bytes
+                .filter(|&n| n > 0)
+                .ok_or("GPU requires a positive gpu_memory_budget_bytes")?,
         )?,
         crate::Device::Auto => return Err("focal device must be explicit cpu or gpu".into()),
     };
@@ -2663,6 +2732,7 @@ pub fn fit_two_tier_grm_focal_orthogonal(
         max_iter,
         tol,
         crate::Device::Cpu,
+        None,
     )
 }
 
@@ -2671,6 +2741,10 @@ pub fn fit_two_tier_grm_focal_orthogonal(
 /// contraction; see https://www.w3.org/TR/WGSL/#floating-point-types.
 /// GPU failure is an error and no CPU fallback is accepted. `Auto` is rejected
 /// so the caller declares the route; parity and convergence remain required.
+/// GPU requires a positive caller-owned total buffer byte budget. See wgpu 30
+/// Limits (per-buffer only) and Device::push_error_scope (allocation errors):
+/// https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope
+/// Driver overhead and other live allocations can still cause a reported error.
 #[allow(clippy::too_many_arguments)]
 pub fn fit_two_tier_grm_focal_orthogonal_with_device(
     a_primary: &[f64],
@@ -2692,6 +2766,7 @@ pub fn fit_two_tier_grm_focal_orthogonal_with_device(
     max_iter: usize,
     tol: f64,
     device: crate::Device,
+    gpu_memory_budget_bytes: Option<u64>,
 ) -> Result<TwoTierGrmFocalFit, String> {
     if max_iter == 0 || !tol.is_finite() || tol <= 0.0 {
         return Err("max_iter must be positive and tol finite and positive".into());
@@ -2715,6 +2790,7 @@ pub fn fit_two_tier_grm_focal_orthogonal_with_device(
             q_primary,
             q_specific,
             device,
+            gpu_memory_budget_bytes,
         )
     };
     // Establish all input/parameter shape contracts before indexing below.

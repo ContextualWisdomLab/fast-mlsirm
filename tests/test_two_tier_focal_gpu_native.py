@@ -54,9 +54,23 @@ def test_actual_gpu_six_latent_score_and_focal_update():
         "q_specific": 5,
     }
     cpu = score_two_tier_grm_orthogonal(**kwargs, device="cpu")
-    gpu = score_two_tier_grm_orthogonal(**kwargs, device="gpu")
+    gpu = score_two_tier_grm_orthogonal(**kwargs, device="gpu", gpu_memory_budget_bytes=1 << 30)
+    # Resource budgets are test choices, not scientific accuracy settings.
+    # 16 KiB forces this fixture through multiple person batches.
+    batched = score_two_tier_grm_orthogonal(
+        **kwargs, device="gpu", gpu_memory_budget_bytes=16384
+    )
+    for name in ("mean", "second", "sd"):
+        np.testing.assert_allclose(getattr(batched, name), getattr(gpu, name),
+                                   rtol=0, atol=1e-5)
+    with pytest.raises(ValueError, match="GPU fixed inputs exceed"):
+        score_two_tier_grm_orthogonal(
+            **kwargs, device="gpu", gpu_memory_budget_bytes=1
+        )
     assert cpu.backend == "cpu"
     assert gpu.backend == "gpu"
+    assert gpu.gpu_memory_budget_bytes == 1 << 30
+    assert batched.gpu_memory_budget_bytes == 16384
     for name in ("mean", "second", "sd"):
         np.testing.assert_allclose(
             getattr(gpu, name), getattr(cpu, name), rtol=0, atol=1e-5
@@ -66,7 +80,7 @@ def test_actual_gpu_six_latent_score_and_focal_update():
         **kwargs, max_iter=1, tol=1e-6, device="cpu"
     )
     fit_gpu = fit_two_tier_grm_focal_orthogonal(
-        **kwargs, max_iter=1, tol=1e-6, device="gpu"
+        **kwargs, max_iter=1, tol=1e-6, device="gpu", gpu_memory_budget_bytes=1 << 30
     )
     assert fit_gpu.scores.backend == "gpu"
     assert fit_cpu.n_iter == fit_gpu.n_iter == 1
@@ -78,6 +92,8 @@ def test_actual_gpu_six_latent_score_and_focal_update():
         json.dumps(
             {
                 "backend": gpu.backend,
+                "gpu_memory_budget_bytes": 1 << 30,
+                "batched_memory_budget_bytes": 16384,
                 "score_loglik_delta": gpu.loglik - cpu.loglik,
                 "fit_mean_max_delta": float(
                     np.max(np.abs(fit_gpu.latent_mean - fit_cpu.latent_mean))
@@ -105,4 +121,4 @@ def test_actual_gpu_six_latent_continuous_population_recovery():
         test_native_six_latent_continuous_gaussian_recovery,
     )
 
-    test_native_six_latent_continuous_gaussian_recovery(device="gpu")
+    test_native_six_latent_continuous_gaussian_recovery(device="gpu", gpu_memory_budget_bytes=1 << 30)

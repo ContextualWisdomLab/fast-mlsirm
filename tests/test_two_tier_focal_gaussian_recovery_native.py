@@ -32,7 +32,9 @@ import numpy as np
 from fast_mlsirm import fit_two_tier_grm_focal_orthogonal
 
 
-def test_native_six_latent_continuous_gaussian_recovery(device="cpu"):
+def test_native_six_latent_continuous_gaussian_recovery(
+    device="cpu", gpu_memory_budget_bytes=None
+):
     """Recover all six nonstandard Gaussian means/SDs at two node counts.
 
     Sources and implementation-choice limits are in the module docstring.
@@ -90,6 +92,7 @@ def test_native_six_latent_continuous_gaussian_recovery(device="cpu"):
             max_iter=500,
             tol=1e-6,
             device=device,
+            gpu_memory_budget_bytes=gpu_memory_budget_bytes,
         )
         print(
             json.dumps(

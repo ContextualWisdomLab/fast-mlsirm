@@ -31,6 +31,7 @@ class TwoTierGrmPersonScores:
     sd: np.ndarray
     loglik: float
     backend: str = "cpu"
+    gpu_memory_budget_bytes: int | None = None
 
 
 @dataclass
@@ -165,7 +166,7 @@ def _native_inputs(
     return args, (n, p + s)
 
 
-def _person_scores(result, shape):
+def _person_scores(result, shape, gpu_memory_budget_bytes=None):
     """Reshape native Cai (2010), Appendix B moments without recomputation."""
     return TwoTierGrmPersonScores(
         *(
@@ -174,6 +175,7 @@ def _person_scores(result, shape):
         ),
         float(result["loglik"]),
         str(result.get("backend", "cpu")),
+        gpu_memory_budget_bytes,
     )
 
 
@@ -193,6 +195,7 @@ def score_two_tier_grm_orthogonal(
     q_primary,
     q_specific,
     device="cpu",
+    gpu_memory_budget_bytes=None,
 ):
     """Score fixed items under declared independent Gaussian latent factors.
 
@@ -205,9 +208,19 @@ def score_two_tier_grm_orthogonal(
     https://www.w3.org/TR/WGSL/#floating-point-types). GPU failure raises;
     CPU software adapters and automatic CPU fallback are rejected. Numerical
     parity, convergence and integration sensitivity remain required.
+    GPU requires positive gpu_memory_budget_bytes: a caller-owned total budget
+    for simultaneous input, posterior, intermediate and readback buffers.
+    wgpu 30 Limits constrain individual buffers, not physical VRAM:
+    https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html. Driver overhead and
+    competing allocations can still fail through Device::push_error_scope:
+    https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope.
     """
     if not isinstance(device, str) or device not in ("cpu", "gpu"):
         raise ValueError("device must be cpu or gpu")
+    if device == "gpu":
+        gpu_memory_budget_bytes = _bounded_integer(
+            gpu_memory_budget_bytes, "gpu_memory_budget_bytes", 1, 2**64 - 1
+        )
     args, shape = _native_inputs(
         responses,
         primary_map,
@@ -231,9 +244,11 @@ def score_two_tier_grm_orthogonal(
     result = (
         core.score_two_tier_grm_orthogonal(*args)
         if device == "cpu"
-        else core.score_two_tier_grm_orthogonal(*args, device=device)
+        else core.score_two_tier_grm_orthogonal(
+            *args, device=device, gpu_memory_budget_bytes=gpu_memory_budget_bytes
+        )
     )
-    return _person_scores(result, shape)
+    return _person_scores(result, shape, gpu_memory_budget_bytes if device == "gpu" else None)
 
 
 def fit_two_tier_grm_focal_orthogonal(
@@ -254,6 +269,7 @@ def fit_two_tier_grm_focal_orthogonal(
     max_iter,
     tol,
     device="cpu",
+    gpu_memory_budget_bytes=None,
 ):
     """Fit all latent means/SDs with every item fixed and factors independent.
 
@@ -275,11 +291,21 @@ def fit_two_tier_grm_focal_orthogonal(
     https://www.w3.org/TR/WGSL/#floating-point-types). GPU failure raises;
     CPU software adapters and automatic CPU fallback are rejected. Numerical
     parity, convergence and integration sensitivity remain required.
+    GPU requires positive gpu_memory_budget_bytes: a caller-owned total budget
+    for simultaneous input, posterior, intermediate and readback buffers.
+    wgpu 30 Limits constrain individual buffers, not physical VRAM:
+    https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html. Driver overhead and
+    competing allocations can still fail through Device::push_error_scope:
+    https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope.
     """
     cap = _bounded_integer(max_iter, "max_iter", 1, int(np.iinfo(np.uintp).max))
     tolerance = _positive_real(tol, "tol")
     if not isinstance(device, str) or device not in ("cpu", "gpu"):
         raise ValueError("device must be cpu or gpu")
+    if device == "gpu":
+        gpu_memory_budget_bytes = _bounded_integer(
+            gpu_memory_budget_bytes, "gpu_memory_budget_bytes", 1, 2**64 - 1
+        )
     args, shape = _native_inputs(
         responses,
         primary_map,
@@ -304,13 +330,13 @@ def fit_two_tier_grm_focal_orthogonal(
         core.fit_two_tier_grm_focal_orthogonal(*args, cap, tolerance)
         if device == "cpu"
         else core.fit_two_tier_grm_focal_orthogonal(
-            *args, cap, tolerance, device=device
+            *args, cap, tolerance, device=device, gpu_memory_budget_bytes=gpu_memory_budget_bytes
         )
     )
     return TwoTierGrmFocalFit(
         np.asarray(result["latent_mean"], dtype=np.float64),
         np.asarray(result["latent_sd"], dtype=np.float64),
-        _person_scores(result, shape),
+        _person_scores(result, shape, gpu_memory_budget_bytes if device == "gpu" else None),
         np.asarray(result["loglik_trace"], dtype=np.float64),
         int(result["n_iter"]),
         bool(result["converged"]),
