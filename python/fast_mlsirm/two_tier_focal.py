@@ -481,3 +481,102 @@ def fit_score_two_tier_groups(
                               n_starts=n_starts, seed=seed, device=device,
                               gpu_memory_budget_bytes=gpu_memory_budget_bytes,
                               cache_item_tables=cache_item_tables))
+
+
+def run_joint_two_tier_score_bootstrap(
+    scales, person_ids, group_ids, *, n_groups, n_replicates, base_seed,
+):
+    """Refit/score every scale on one shared stratified person plan.
+
+    ``scales`` maps caller names to responses, person_ids, primary_map,
+    specific_map and controls for fit_score_two_tier_groups. Every input must
+    carry the identical ordered unique person keys before resampling. Study
+    scales, group definitions, maps and numerical settings are caller choices.
+
+    Reuses generate_person_bootstrap_indices's Efron (1979), section2 p.3
+    eq.2.4 empirical resampling contract (doi:10.1214/aos/1176344552), applied
+    within caller strata. One generated plan is used for all scales, retaining
+    cross-scale dependence. Its existing PCG64 seed schedule is a compatibility
+    choice, not a proof of independent numerical optimization starts. Group
+    fits and scores reuse the Cai2010 source contracts above. Regression,
+    estimands and interval/MC-precision acceptance are separate library calls;
+    these scored replicates alone are not complete hypothesis uncertainty.
+
+    Preserve plan bytes and SHA-256 over little-endian uint64 shape followed
+    by little-endian int64 indices, matching run_bifactor_bootstrap's contract
+    (Python hashlib manual: https://docs.python.org/3/library/hashlib.html).
+    Controls are bound before sampling using inspect.Signature.bind; required
+    or incompatible arguments raise TypeError (Python 3.12 inspect manual,
+    Signature.bind: https://docs.python.org/3.12/library/inspect.html#inspect.Signature.bind).
+    Each requested replicate gets a record. Failure in any scale discards its
+    partial outputs from the successful-replicate mapping and retains scale,
+    exception, traceback and actual failed fit when supplied by the producer.
+    No failures are replaced, silently skipped, or counted as joint success.
+    This sequential runner retains successful fit/score objects in memory:
+    O(replicates * scales * persons * latent dimensions) posterior storage.
+    """
+    import hashlib
+    import inspect
+    import traceback
+    from .bifactor_bootstrap import (
+        _bootstrap_groups, _replicate_seed, generate_person_bootstrap_indices,
+    )
+
+    from ._seed import _u64_seed
+
+    ids = np.asarray(person_ids)
+    if ids.ndim != 1 or ids.dtype.kind not in ("i", "u", "U", "S"):
+        raise ValueError("person_ids must be an integer or string vector")
+    if np.unique(ids).size != ids.size:
+        raise ValueError("person_ids must be unique before resampling")
+    n_groups, groups = _bootstrap_groups(ids.size, group_ids, n_groups)
+    if groups is None:
+        raise ValueError("group_ids must be explicit")
+    if not isinstance(scales, dict) or not scales:
+        raise ValueError("scales must be a nonempty mapping")
+    signature = inspect.signature(fit_score_two_tier_groups)
+    prepared = {}
+    for name, spec in scales.items():
+        if not isinstance(name, str) or not name:
+            raise ValueError("scale names must be nonempty strings")
+        if not np.array_equal(np.asarray(spec["person_ids"]), ids):
+            raise ValueError(f"scale {name}: ordered person keys differ")
+        y = np.asarray(spec["responses"])
+        if y.ndim != 2 or y.shape[0] != ids.size:
+            raise ValueError(f"scale {name}: response rows do not match person keys")
+        controls = dict(spec["controls"])
+        controls["seed"] = _u64_seed(controls["seed"])
+        signature.bind(y, groups, spec["primary_map"], spec["specific_map"],
+                       n_groups=n_groups, **controls)
+        prepared[name] = (y, spec["primary_map"], spec["specific_map"], controls)
+    plan = generate_person_bootstrap_indices(
+        ids.size, n_replicates, base_seed=base_seed,
+        group_ids=groups, n_groups=n_groups,
+    ).astype("<i8", copy=False)
+    plan.flags.writeable = False
+    digest = hashlib.sha256(np.asarray(plan.shape, dtype="<u8").tobytes())
+    digest.update(memoryview(plan))
+    successful = {}
+    records = []
+    for rep, indices in enumerate(plan):
+        outputs = {}
+        failed = None
+        for name, (y, primary_map, specific_map, controls) in prepared.items():
+            try:
+                outputs[name] = fit_score_two_tier_groups(
+                    y[indices], groups[indices], primary_map, specific_map,
+                    n_groups=n_groups,
+                    **(controls | {"seed": _replicate_seed(controls["seed"], rep)}),
+                )
+            except Exception as error:
+                failed = dict(scale=name, exception=error,
+                              traceback=traceback.format_exc(),
+                              group_id=getattr(error, "group_id", None),
+                              fit=getattr(error, "fit", None))
+                break
+        records.append(dict(replicate_id=rep, failure=failed))
+        if failed is None:
+            successful[rep] = outputs
+    return dict(bootstrap_indices=plan, bootstrap_indices_sha256=digest.hexdigest(),
+                records=records, successful_replicates=successful,
+                n_requested=plan.shape[0], n_completed=len(records))
