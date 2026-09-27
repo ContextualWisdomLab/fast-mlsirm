@@ -1,0 +1,6 @@
+Resolved 2 packages in 196ms
+   Building fast-mlsirm @ file:///private/tmp/fmls-regression-source-20260928
+      Built fast-mlsirm @ file:///private/tmp/fmls-regression-source-20260928
+Prepared 1 package in 7m 26s
+Installed 1 package in 15ms
+ + fast-mlsirm==0.11.4 (from file:///private/tmp/fmls-regression-source-20260928)
