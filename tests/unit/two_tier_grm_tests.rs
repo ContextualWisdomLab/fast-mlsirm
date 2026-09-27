@@ -1164,4 +1164,6 @@ fn six_latent_crossed_primary_scores_match_full_product() {
         }
     }
     assert!((scores.loglik - total_loglik).abs() < 1e-10);
+    // Reproduce the installed-native fixture with cargo test -- --nocapture.
+    eprintln!("SIX_FIXTURE={{\"a_primary\":{:?},\"a_specific\":{:?},\"threshold\":{:?},\"primary_map\":{:?},\"specific_map\":{:?},\"latent_mean\":{:?},\"latent_sd\":{:?},\"responses\":{:?},\"observed\":{:?},\"person_mean\":{:?},\"person_second\":{:?},\"person_sd\":{:?},\"loglik\":{}}}", ap,asp,threshold,pm,sm,mu,sd,y,mask,scores.mean,scores.second,scores.sd,scores.loglik);
 }

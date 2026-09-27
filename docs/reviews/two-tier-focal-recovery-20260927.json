@@ -236,5 +236,15 @@
       "exit_code": 101,
       "result": "\nrunning 1 test\n\nthread 'six_latent_crossed_primary_scores_match_full_product' (539844405) panicked at /private/tmp/two-tier-six-latent-mutant-20260927.rs:2349:13:\nassertion failed: (scores.mean[person * 6 + dim] - mean).abs() < 1e-10\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\ntest six_latent_crossed_primary_scores_match_full_product ... FAILED\n\nfailures:\n\nfailures:\n    six_latent_crossed_primary_scores_match_full_product\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s\n\n"
     }
+  },
+  "installed_six_latent": {
+    "installed_source_head": "9b00cf2dcb0cfd8ada2d68be29d721e696e8ef9f",
+    "wheel_sha256": "fbc6f290b9b578f0cb260fd7584c19153238853705116c9d9d5cc7dd5e9533ab",
+    "core_sha256": "bd9502556248cafe6b3628314542677577c7e05be121a210c3e18937f7ed9075",
+    "test_sha256": "972aaa6d5fa987534adea3867af7e5486f61e19f61707ae3b731964b0fc254cb",
+    "fixture_sha256": "0255cd82696b222e5e04369e706e054e2193652af6499b21a2bda07f25b004f4",
+    "result": "1 passed in 1.42s",
+    "exit_code": 0,
+    "scope": "real installed candidate native bridge, not full-suite/release/study acceptance"
   }
 }
