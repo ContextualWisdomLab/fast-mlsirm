@@ -735,6 +735,9 @@ def expected_total_score_two_tier_given_primary(
 
     Linearity of expectation: ``E[T|theta_f] = sum_i E[Y_i|theta_f]``. Each
     item's conditional expectation marginalizes independent Gaussian nuisances.
+    Specific-free items require zero specific slopes, matching the
+    :class:`TwoTierGrmFit` producer contract; contradictory inputs are rejected
+    before quadrature rather than discarding a modeled nuisance.
     Because those nuisances enter only through the linear predictor
     ``L = sum_k a_k Z_k`` and independent Gaussians yield
     ``L ~ N(sum a_k mu_k, sum (a_k sigma_k)^2)``, the product rule collapses to
@@ -817,6 +820,8 @@ def expected_total_score_two_tier_given_primary(
         np.isfinite(th)
     ):
         raise ValueError("a_primary, a_specific, and threshold must be finite")
+    if bool(np.any((smap == -1) & (asp != 0.0))):
+        raise ValueError("specific_map marks an item specific-free but its a_specific is nonzero")
     if np.any(np.diff(th, axis=1) >= 0.0):
         raise ValueError(
             "threshold rows must be strictly decreasing (GRM category support)"

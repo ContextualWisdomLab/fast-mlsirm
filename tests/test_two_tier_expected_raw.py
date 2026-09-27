@@ -353,7 +353,7 @@ def test_from_fit_dual_gates_phi_and_consumer_identification() -> None:
             specific_map=smap,
             orthogonal_primary_identification=True,
         )
-    with pytest.raises(ValueError, match="fit.n_specific"):
+    with pytest.raises(ValueError, match=r"fit\.n_specific"):
         expected_total_score_two_tier_from_fit(
             _stub_fit(phi=np.eye(2), n_specific=3),
             grid,
@@ -374,7 +374,7 @@ def test_specific_map_rejects_noninteger_before_int64_cast() -> None:
         _call(ap, asp, th, np.array([0.5, 0.0]), grid, q=5)
     with pytest.raises(ValueError, match="finite"):
         _call(ap, asp, th, np.array([0.0, np.nan]), grid, q=5)
-    with pytest.raises(ValueError, match="specific-free|without wrapping"):
+    with pytest.raises(ValueError, match=r"specific-free|without wrapping"):
         _call(ap, asp, th, np.array([-2, 0]), grid, q=5)
     # Valid ints still accepted (including float dtype that is integral).
     out = _call(ap, asp, th, np.array([0.0, 0.0]), grid, q=5)
@@ -400,23 +400,23 @@ def test_specific_map_rejects_uint64_wraparound_boundaries() -> None:
     assert u64_max.astype(np.int64)[0] == np.int64(-1)
     assert two63.astype(np.int64)[0] == np.iinfo(np.int64).min
 
-    with pytest.raises(ValueError, match="without wrapping|int64"):
+    with pytest.raises(ValueError, match=r"without wrapping|int64"):
         _as_specific_map_int64(u64_max, n_items=1)
-    with pytest.raises(ValueError, match="without wrapping|int64"):
+    with pytest.raises(ValueError, match=r"without wrapping|int64"):
         _as_specific_map_int64(two63, n_items=1)
 
     ap = np.array([[1.0]])
     asp = np.array([0.0])
     th = np.array([[1.0, 0.0, -1.0]])
     grid = np.array([0.0])
-    with pytest.raises(ValueError, match="without wrapping|int64"):
+    with pytest.raises(ValueError, match=r"without wrapping|int64"):
         _call(ap, asp, th, u64_max, grid, q=5)
-    with pytest.raises(ValueError, match="without wrapping|int64"):
+    with pytest.raises(ValueError, match=r"without wrapping|int64"):
         _call(ap, asp, th, two63, grid, q=5)
 
     fit = _stub_fit(phi=np.eye(2), n_specific=1)
     u64_pair = np.array([0, np.iinfo(np.uint64).max], dtype=np.uint64)
-    with pytest.raises(ValueError, match="without wrapping|int64"):
+    with pytest.raises(ValueError, match=r"without wrapping|int64"):
         expected_total_score_two_tier_from_fit(
             fit,
             grid,
@@ -572,8 +572,24 @@ def test_from_fit_requires_producer_identification_before_calculation(monkeypatc
     fit = _stub_fit(phi=np.eye(2))
     for identification in ("correlated", None):
         fit.primary_identification = identification
-        with pytest.raises(ValueError, match="fit.primary_identification"):
+        with pytest.raises(ValueError, match=r"fit\.primary_identification"):
             module.expected_total_score_two_tier_from_fit(
                 fit, np.array([0.0]), focal_primary=0, q_nuisance=121,
                 specific_map=np.array([0, 0]), orthogonal_primary_identification=True,
             )
+
+
+def test_specific_free_map_rejects_nonzero_slope_before_quadrature(monkeypatch):
+    import fast_mlsirm.two_tier_grm as module
+    def forbidden(*args, **kwargs):
+        raise AssertionError("quadrature reached for contradictory specific map")
+    monkeypatch.setattr(module, "_probabilists_gauss_hermite", forbidden)
+    fit = _stub_fit(phi=np.eye(2))
+    smap = np.array([-1, 0], dtype=np.int64)
+    with pytest.raises(ValueError, match=r"specific-free.*nonzero"):
+        _call(fit.a_primary, fit.a_specific, fit.threshold, smap, np.array([0.]), q=121)
+    with pytest.raises(ValueError, match=r"specific-free.*nonzero"):
+        module.expected_total_score_two_tier_from_fit(
+            fit, np.array([0.]), focal_primary=0, q_nuisance=121,
+            specific_map=smap, orthogonal_primary_identification=True,
+        )
