@@ -1,0 +1,40 @@
+{
+  "sources": [
+    {
+      "filename": "efron1979-bootstrap-20260927.pdf",
+      "bytes": 454675,
+      "sha256": "5fb9b4563e472ad4ae97be05463ffff22b82577d7a236a5c0c9076568921d60a"
+    },
+    {
+      "filename": "Andrews_Buchinsky_2000_three_step_bootstrap.pdf",
+      "bytes": 217955,
+      "sha256": "56e3d7c6394ddc177228925ef2c5a4fe763cafb0e5a38274de7ae7b41795c964"
+    }
+  ],
+  "public_plan_and_seed_checked_modules": [
+    {
+      "path": "python/fast_mlsirm/_seed.py",
+      "sha256": "f5be58b5ffa495b94ed90a7d45ce35867dcaba9e35ac66e6f4025379d4a48cd0"
+    },
+    {
+      "path": "python/fast_mlsirm/grm.py",
+      "sha256": "c0ddcb588df848bf4db8134cd1e9ca08273d9ea577fd79e5f56e920a7a212dd6"
+    },
+    {
+      "path": "python/fast_mlsirm/two_tier_grm.py",
+      "sha256": "de4e073245c77ad2d79f6755e07defddd9d5932ff7b5d6786da7519d7427e188"
+    },
+    {
+      "path": "python/fast_mlsirm/bifactor_grm.py",
+      "sha256": "90a7469af92528f22a086190207a4b36251f474a7ede45537871f43f5a02f849"
+    },
+    {
+      "path": "python/fast_mlsirm/bifactor_multigroup.py",
+      "sha256": "feebcbd29c349e04fdb59a0a7ed8d019c02713f8af7b92a11a27e1c5759722f2"
+    },
+    {
+      "path": "python/fast_mlsirm/bifactor_bootstrap.py",
+      "sha256": "f4d865cbb0961b6ab627c888859a937d5fe14fc1bc55014473a6123128348084"
+    }
+  ]
+}

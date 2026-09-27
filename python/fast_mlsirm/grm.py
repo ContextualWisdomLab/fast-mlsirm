@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._seed import _u64_seed
+
 from ._integration_rule import normalize_node_rule
 
 from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
@@ -81,19 +83,6 @@ def _positive_real_control(value: object, name: str) -> float:
     return numeric
 
 
-def _u64_seed(value: object) -> int:
-    """Normalize the deterministic integration seed without subclass callbacks."""
-
-    value_type = type(value)
-    if value_type is int:
-        seed = value
-    elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
-        seed = int(value)
-    else:
-        raise ValueError("xi_seed must be a non-negative integer")
-    if not 0 <= seed < 2**64:
-        raise ValueError("xi_seed must be in [0, 2**64)")
-    return seed
 
 
 def _response_array(value: np.ndarray) -> np.ndarray:
@@ -211,7 +200,7 @@ def fit_grm(
     xi_points_int = _finite_integer_control(xi_points, "xi_points")
     if not 1 <= xi_points_int <= _MAX_NODES:
         raise ValueError(f"xi_points must be between 1 and {_MAX_NODES}")
-    xi_seed_int = _u64_seed(xi_seed)
+    xi_seed_int = _u64_seed(xi_seed, name="xi_seed")
     tol_float = _positive_real_control(tol, "tol")
 
     y = _response_array(responses)
