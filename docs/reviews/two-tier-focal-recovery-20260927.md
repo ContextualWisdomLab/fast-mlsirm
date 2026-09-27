@@ -1,0 +1,13 @@
+# Fixed-item focal Gaussian recovery diagnostic
+
+Owner: main coordinator; issue #2209. Parent: native/Python PR #2213, source 9b00cf2dcb0cfd8ada2d68be29d721e696e8ef9f. This change adds a diagnostic, not a numerical algorithm or a study setting.
+
+The test independently computes 81 four-item, three-category response-pattern probabilities using the physical-coordinate full product grid for one primary and one specific dimension, with 31-point standard-normal quadrature. Two items load only on primary and two have mixed primary/specific loadings with opposite specific signs. Rounded expected counts produce 4,000 rows; no RNG or estimated-score generator is used. Declared truth is mean [0.4,-0.3], SD [1.2,0.8]. Fits start at mean zero/SD one, use 15/21 points, cap 300 updates and absolute likelihood tolerance 1e-6. The 0.04 recovery bound and these settings are fixture choices, not a literature-prescribed scientific threshold.
+
+Opened source: Cai (2010), DOI 10.1007/s11336-010-9178-0, printed pp.608-609/PDF pp.28-29, Appendices A/B. The primary and specific Gaussian latent-density M-step objectives and posterior moments justify the implemented EM application. The source does not establish recovery or identification of this bank, the six-dimensional E design, or any study setting. The test docstring states the source and this limit.
+
+The optimized standalone rustc harness uses actual extracted current Rust kernel bodies and shared quadrature/probability helpers. Exact-body checks and source/harness SHA-256 are in the companion JSON. The independent recovery test passed in 68.06 seconds. At 15 points: tolerance_met after 74 updates, mean [0.40018373678255853,-0.3011335167436134], SD [1.2002323136378323,0.7985263422382521]. At 21 points: tolerance_met after 73 updates, mean [0.4001455464560165,-0.3011377388515689], SD [1.2002296777253836,0.7985296059849143]. These are synthetic implementation diagnostics, not research estimates.
+
+Full Cargo/PyO3/wheel acceptance remains unverified. Parent current-head CI run 36308706615 is queued, and previous skipped draft jobs do not prove acceptance. Next: inspect actual native build/test, broaden recovery/identification to the adopted E structure and missing patterns, verify actual source-data quadrature/convergence, then nonauthor review, ordinary merge, immutable release and installed hashes. No study result is accepted by this diagnostic.
+
+Negative control: a temporary mutated harness forces the final latent mean to zero before every scoring update. The same independent test fails (exit 101, loglik_decreased after 10 updates); that mutation is not in the candidate. This checks detection of the specific-mean omission that would break the focal contract.

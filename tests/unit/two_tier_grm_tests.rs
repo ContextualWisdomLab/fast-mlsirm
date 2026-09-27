@@ -980,3 +980,80 @@ fn focal_em_preserves_one_step_moments_and_termination_receipts() {
     }
     assert!(run(7, 1, 1e-6, Some(&mask)).is_err());
 }
+
+/// Known-population diagnostic for the fixed-item Gaussian EM application.
+/// Source: Cai (2010), DOI 10.1007/s11336-010-9178-0, pp. 608-609,
+/// Appendices A/B (Gaussian latent-density objective and posterior moments).
+/// The fixture independently integrates response-pattern probabilities over
+/// two physical latent coordinates. Rounded expected counts remove RNG noise.
+/// This bank, count, quadrature and error tolerance are test choices; the
+/// source does not prescribe them or establish study-model identification.
+#[test]
+fn focal_gaussian_recovers_declared_distribution() {
+    use crate::two_tier_grm::fit_two_tier_grm_focal_orthogonal;
+    let ap = [1.2, 1.6, 0.5, 0.8];
+    let asp = [0.0, 0.0, 1.4, -1.6];
+    let d = [0.8, -0.7, 0.4, -1.0, 1.0, -0.5, 0.6, -0.9];
+    let pm = [true; 4];
+    let sm = [-1, -1, 0, 0];
+    let truth_mean = [0.4, -0.3];
+    let truth_sd = [1.2, 0.8];
+    let (nodes, weights) = crate::quadrature::gh_rule(31).unwrap();
+    let mut probabilities = vec![0.0_f64; 81];
+    for (g, &z) in nodes.iter().enumerate() {
+        let primary = truth_mean[0] + truth_sd[0] * z;
+        for (h, &zs) in nodes.iter().enumerate() {
+            let specific = truth_mean[1] + truth_sd[1] * zs;
+            let mut item = [[0.0; 3]; 4];
+            for i in 0..4 {
+                let eta = ap[i] * primary + asp[i] * specific;
+                let upper = 1.0 / (1.0 + (-(eta + d[2 * i])).exp());
+                let lower = 1.0 / (1.0 + (-(eta + d[2 * i + 1])).exp());
+                item[i] = [1.0 - upper, upper - lower, lower];
+            }
+            for (pattern, probability) in probabilities.iter_mut().enumerate() {
+                let mut code = pattern;
+                let mut value = weights[g] * weights[h];
+                for categories in &item {
+                    value *= categories[code % 3];
+                    code /= 3;
+                }
+                *probability += value;
+            }
+        }
+    }
+    assert!((probabilities.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+    let mut y = Vec::new();
+    for (pattern, probability) in probabilities.iter().enumerate() {
+        let count = (4000.0 * probability).round() as usize;
+        let mut code = pattern;
+        let mut row = [0; 4];
+        for category in &mut row {
+            *category = code % 3;
+            code /= 3;
+        }
+        for _ in 0..count {
+            y.extend_from_slice(&row);
+        }
+    }
+    let n = y.len() / 4;
+    for q in [15, 21] {
+        let fit = fit_two_tier_grm_focal_orthogonal(
+            &ap, &asp, &d, &[0.0; 2], &[1.0; 2], &y, None, &pm, &sm, n, 4, 1, 1, 3, q, q, 300, 1e-6,
+        )
+        .unwrap();
+        eprintln!(
+            "recovery n={n} q={q} reason={} updates={} mean={:?} sd={:?} delta={}",
+            fit.termination_reason,
+            fit.n_iter,
+            fit.latent_mean,
+            fit.latent_sd,
+            fit.final_loglik_change
+        );
+        assert!(fit.converged, "{}", fit.termination_reason);
+        for dim in 0..2 {
+            assert!((fit.latent_mean[dim] - truth_mean[dim]).abs() < 0.04);
+            assert!((fit.latent_sd[dim] - truth_sd[dim]).abs() < 0.04);
+        }
+    }
+}
