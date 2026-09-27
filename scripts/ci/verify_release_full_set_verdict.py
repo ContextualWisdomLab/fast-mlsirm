@@ -138,6 +138,28 @@ def verify_full_set_verdict(
         seen_ids.add(artifact_id)
     if {name for name in listed if name.startswith("repro-digest-")} != scope_names:
         raise ValueError("scope artifact set differs from the central verdict")
+    variants = verdict.get("runtime_variants")
+    expected_legs = {f"universal2-apple-darwin-py{version}" for version in ("3.12", "3.13", "3.14")}
+    if (not isinstance(variants, list) or len(variants) != 3
+            or {row.get("leg") for row in variants if isinstance(row, Mapping)} != expected_legs):
+        raise ValueError("central verdict lacks all Intel runtime artifacts")
+    variant_names = set()
+    for row in variants:
+        if not isinstance(row, Mapping) or set(row) != {
+                "leg", "arch", "artifact_id", "artifact_name", "artifact_digest"}:
+            raise ValueError("Intel runtime artifact identity is malformed")
+        leg, name, artifact_id, digest = (row[field] for field in
+                                         ("leg", "artifact_name", "artifact_id", "artifact_digest"))
+        if (row["arch"] != "x86_64" or name != f"repro-macos-x86-{leg}"
+                or name in variant_names or type(artifact_id) is not int
+                or artifact_id <= 0 or artifact_id in seen_ids
+                or not isinstance(digest, str) or not DIGEST.fullmatch(digest)):
+            raise ValueError("Intel runtime artifact is missing or duplicated")
+        _artifact(listed.get(name), name, artifact_id, digest, run_id, control_sha, started)
+        variant_names.add(name)
+        seen_ids.add(artifact_id)
+    if {name for name in listed if name.startswith("repro-macos-x86-")} != variant_names:
+        raise ValueError("Intel runtime artifact set differs from the central verdict")
     bindings = verdict.get("binding_artifacts")
     archive_bindings = verdict.get("runtime_archive_binding_artifacts")
     build_bindings = verdict.get("build_package_binding_artifacts")
@@ -246,7 +268,8 @@ def verify_native_link_inventory(verdict: Any, native: Any, native_bytes: bytes,
 
 def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: bytes,
                                        archive_report: Any, archive_report_bytes: bytes,
-                                       runtime_records: list[dict], build_records: list[dict], *,
+                                       runtime_records: list[dict], runtime_variants: list[dict],
+                                       build_records: list[dict], *,
                                        repository: str, source_sha: str) -> None:
     """Require every installed wheel dependency in the licensed, Strix-bound set."""
     if (not isinstance(verdict, Mapping) or not isinstance(report, Mapping)
@@ -301,8 +324,14 @@ def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: 
     if (keys != {binding.get("key") for binding in bindings if isinstance(binding, Mapping)}
             or len(bindings) != len(keys) or len(runtime_records) != 12):
         raise ValueError("Strix bindings or wheel runtime receipts do not cover the dependency set")
+    if (not isinstance(runtime_variants, list) or len(runtime_variants) != 3
+            or {row.get("leg") for row in runtime_variants if isinstance(row, Mapping)}
+            != {f"universal2-apple-darwin-py{version}" for version in ("3.12", "3.13", "3.14")}
+            or any(not isinstance(row, Mapping) or row.get("machine") != "x86_64"
+                   for row in runtime_variants)):
+        raise ValueError("Intel runtime receipts do not cover all universal2 wheels")
     expected_archives: dict[str, set[str]] = {}
-    for runtime in runtime_records:
+    for runtime in [*runtime_records, *runtime_variants]:
         locked = {f"pypi/{package['name']}@{package['version']}"
                   for package in runtime["locked_dependencies"]}
         archived = {f"pypi/{archive['name']}@{archive['version']}"

@@ -959,7 +959,7 @@ jobs:
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@faac193bb0ceb2136489002a87f5ffbf98a7c2b1
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@51db1d0c00c2eab36d051b5307541558bbc735c2
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
@@ -1045,6 +1045,8 @@ jobs:
                   seen[name] = artifact
           distributions = {"dist-sdist"} | {f"dist-wheel-{leg}" for leg in legs}
           scope_evidence = {"repro-digest-sdist"} | {f"repro-digest-{leg}" for leg in legs}
+          intel_evidence = {f"repro-macos-x86-universal2-apple-darwin-py{version}"
+                            for version in ("3.12", "3.13", "3.14")}
           evidence = {os.environ["VERDICT_NAME"], os.environ["SEALED_NAME"]}
           failures = []
           selected = []
@@ -1052,7 +1054,7 @@ jobs:
           missing_evidence = sorted(evidence - set(seen))
           if missing_evidence:
               failures.append(f"central release evidence missing: {missing_evidence}")
-          for name in sorted(distributions | scope_evidence | evidence | {"reproducibility-record"}):
+          for name in sorted(distributions | scope_evidence | intel_evidence | evidence | {"reproducibility-record"}):
               artifact = seen.get(name)
               if artifact is None:
                   failures.append(f"{name}: not uploaded by this run")
@@ -1086,8 +1088,8 @@ jobs:
               selected.append({"id": artifact_id, "name": name, "digest": artifact.get("digest")})
           unexpected = sorted(
               name for name in seen
-              if name.startswith(("dist-", "repro-digest-", "license-evidence-"))
-              and name not in distributions | scope_evidence | evidence
+              if name.startswith(("dist-", "repro-digest-", "repro-macos-x86-", "license-evidence-"))
+              and name not in distributions | scope_evidence | intel_evidence | evidence
           )
           failures += [f"{name}: unexpected publishable or evidence artifact" for name in unexpected]
           if failures:
@@ -1123,6 +1125,13 @@ jobs:
                       or not lines[1].startswith(b"#    uv export ")
                       or lines[2] != expected):
                   raise SystemExit(f"{leg}: runtime requirements differ from release source export")
+              if leg.startswith("universal2-apple-darwin-"):
+                  intel = (Path("downloaded") / f"repro-macos-x86-{leg}" /
+                           f"{leg}.runtime-requirements.txt").read_bytes().split(b"\n", 2)
+                  if (len(intel) != 3 or intel[0] != lines[0]
+                          or not intel[1].startswith(b"#    uv export ")
+                          or intel[2] != expected):
+                      raise SystemExit(f"{leg}: Intel runtime requirements differ from release source export")
           PY
       - name: Admit exactly the verified bytes of release_commit
         env:
@@ -1299,6 +1308,29 @@ jobs:
                   )
                   runtime_records.append(runtime)
 
+          runtime_variants = []
+          for version in ("3.12", "3.13", "3.14"):
+              leg = f"universal2-apple-darwin-py{version}"
+              row = rows[leg]
+              members = {path.name: path for path in
+                         (Path("downloaded") / f"repro-macos-x86-{leg}").iterdir()}
+              if not {f"{leg}.tsv", f"{leg}.runtime.json",
+                      f"{leg}.runtime-requirements.txt"} <= members.keys():
+                  raise SystemExit(f"{leg}: Intel runtime evidence is incomplete")
+              if members[f"{leg}.tsv"].read_text(encoding="utf-8") != "\t".join(
+                      row[key] for key in header) + "\n":
+                  raise SystemExit(f"{leg}: Intel runtime row differs from selected wheel")
+              distribution = Path("downloaded") / f"dist-wheel-{leg}" / row["file"]
+              bundle = transport.bundle_inventory(distribution, leg, commit, row["build_env"])
+              runtime = json.loads(members[f"{leg}.runtime.json"].read_text(encoding="utf-8"),
+                                   object_pairs_hook=unique_object)
+              transport.verify_runtime_inventory(
+                  runtime, members[f"{leg}.runtime-requirements.txt"], row,
+                  Path("release-source"), commit, bundle, distribution, members,
+                  runtime_only=True,
+              )
+              runtime_variants.append(runtime)
+
           # The central job result is required by `needs`; its immutable verdict
           # must independently match the record and all current-attempt artifacts.
           verifier_spec = importlib.util.spec_from_file_location(
@@ -1334,7 +1366,7 @@ jobs:
           )
           verifier.verify_runtime_dependency_coverage(
               verdict, report, report_bytes, archive_report, archive_report_bytes,
-              runtime_records, build_records,
+              runtime_records, runtime_variants, build_records,
               repository=os.environ["REPOSITORY"], source_sha=commit,
           )
           verifier.verify_native_link_inventory(verdict, native, native_bytes,

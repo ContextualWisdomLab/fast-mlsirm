@@ -212,7 +212,7 @@ def native_binary_members(wheel: Path) -> set[str]:
 
 def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
                              source: Path, source_sha: str, bundle: dict, distribution: Path,
-                             evidence_members: dict[str, Path]) -> None:
+                             evidence_members: dict[str, Path], *, runtime_only: bool = False) -> None:
     """Bind a target install receipt to the selected wheel and exact source lock."""
     keys = {"schema_version", "source_sha", "leg", "file", "sha256", "build_env",
             "uv_version", "python_version", "implementation", "sys_platform", "machine",
@@ -241,6 +241,8 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
             or record["sys_platform"] != platforms[target][0]
             or record["machine"] not in platforms[target][1]):
         raise ValueError(f"{leg}: runtime interpreter differs from wheel target")
+    if runtime_only and (target != "universal2-apple-darwin" or record["machine"] != "x86_64"):
+        raise ValueError(f"{leg}: Intel runtime interpreter is not x86_64")
     before, installed = record["locked_dependencies"], record["installed"]
     def valid_packages(packages):
         return (type(packages) is list and all(
@@ -296,10 +298,12 @@ def verify_runtime_inventory(record: dict, requirements: Path, row: dict,
         if identity != (archive_row["name"], archive_row["version"]):
             raise ValueError(f"{leg}: runtime archive metadata differs from receipt")
         identities.add(identity)
-    expected_members = {f"{leg}.tsv", f"{leg}.bundle.json", f"{leg}.runtime.json",
-                        f"{leg}.runtime-requirements.txt", f"{leg}.build-first.json",
-                        f"{leg}.build-second.json", f"{leg}.build-python.zip", f"{leg}.consumer.json",
-                        f"{leg}.consumer.whl"} | names
+    expected_members = {f"{leg}.tsv", f"{leg}.runtime.json",
+                        f"{leg}.runtime-requirements.txt"} | names
+    if not runtime_only:
+        expected_members |= {f"{leg}.bundle.json", f"{leg}.build-first.json",
+                             f"{leg}.build-second.json", f"{leg}.build-python.zip",
+                             f"{leg}.consumer.json", f"{leg}.consumer.whl"}
     if set(evidence_members) != expected_members:
         raise ValueError(f"{leg}: scope evidence artifact members differ from build output")
     if (archives != sorted(archives, key=lambda item: item["file"])

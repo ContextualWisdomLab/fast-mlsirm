@@ -88,6 +88,11 @@ def _case() -> dict:
                    "artifact_name": f"repro-digest-{row['leg']}", "artifact_digest": DIGEST}
                   for index, row in enumerate(rows)]
     scope_set = {"schema_version": 1, **identity, "evidence": scope_rows}
+    variants = [{"leg": f"universal2-apple-darwin-py{version}", "arch": "x86_64",
+                 "artifact_id": 300 + index,
+                 "artifact_name": f"repro-macos-x86-universal2-apple-darwin-py{version}",
+                 "artifact_digest": DIGEST}
+                for index, version in enumerate(("3.12", "3.13", "3.14"))]
     name = "release-dependency-sealed-evidence--full-set-verdict"
     binding = {"key": "pypi/example@1", "name": "release-strix-binding-a2-"
                + hashlib.sha256(b"pypi/example@1").hexdigest(),
@@ -111,7 +116,8 @@ def _case() -> dict:
                "build_package_binding_artifacts": [build_binding],
                "build_tool_binding_artifacts": [tool_binding],
                "runtime_archive_license_sha256": "f" * 64,
-               "scope_evidence": sorted(copy.deepcopy(scope_rows), key=lambda row: row["leg"])}
+               "scope_evidence": sorted(copy.deepcopy(scope_rows), key=lambda row: row["leg"]),
+               "runtime_variants": variants}
 
     def artifact(name: str, artifact_id: int) -> dict:
         return {"name": name, "id": artifact_id, "digest": DIGEST,
@@ -123,7 +129,8 @@ def _case() -> dict:
                           artifact(binding["name"], 102), artifact(archive_binding["name"], 103)]
                          + [artifact(build_binding["name"], 104), artifact(tool_binding["name"], 105)]
                          + [artifact(row["artifact_name"], row["artifact_id"]) for row in rows]
-                         + [artifact(row["artifact_name"], row["artifact_id"]) for row in scope_rows],
+                         + [artifact(row["artifact_name"], row["artifact_id"]) for row in scope_rows]
+                         + [artifact(row["artifact_name"], row["artifact_id"]) for row in variants],
             "attempt": {"id": 42, "run_attempt": 2, "head_sha": CONTROL,
                         "run_started_at": "2026-09-26T12:00:00Z"},
             "name": name}
@@ -186,10 +193,22 @@ def test_rejects_forged_missing_stale_or_changed_verdict() -> None:
         case["artifacts"] = [item for item in case["artifacts"]
                              if item["name"] != case["scope_set"]["evidence"][0]["artifact_name"]]
 
+    def missing_intel_artifact(case):
+        case["artifacts"] = [item for item in case["artifacts"]
+                             if item["name"] != case["verdict"]["runtime_variants"][0]["artifact_name"]]
+
+    def foreign_intel_artifact(case):
+        next(item for item in case["artifacts"] if item["name"].startswith("repro-macos-x86-"))[
+            "workflow_run"]["id"] = 1
+
+    def forged_intel_digest(case):
+        case["verdict"]["runtime_variants"][0]["artifact_digest"] = "sha256:" + "f" * 64
+
     for mutate in (other_run, stale, wrong_source, changed_file, missing_file,
                    missing_binding, extra_binding, wrong_attempt, changed_verdict_digest,
                    changed_binding_key, changed_scope_digest, foreign_scope_artifact,
-                   missing_scope_artifact):
+                   missing_scope_artifact, missing_intel_artifact,
+                   foreign_intel_artifact, forged_intel_digest):
         case = _case()
         mutate(case)
         with pytest.raises(ValueError):
