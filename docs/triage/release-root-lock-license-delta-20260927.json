@@ -1041,8 +1041,21 @@
   "packaging_status": {
     "notice_files": 186,
     "source_notice_hashes_verified": true,
-    "wheel_sdist_186_notice_verification": "NOT_VERIFIED",
-    "build_failure": "maturin cargo metadata rustc -vV terminated by SIGKILL on three attempts; direct rustc -vV and cargo metadata probes succeeded",
-    "prior_133_notice_check": "Prior CPython 3.14/macOS arm64 0.11.4 wheel and sdist checked 133 notices only. Not evidence for these 186 notice files."
+    "wheel_sdist_186_notice_verification": "PASS",
+    "prior_133_notice_check": "Prior CPython 3.14/macOS arm64 0.11.4 wheel and sdist checked 133 notices only. Not evidence for these 186 notice files.",
+    "initial_build_failure": "maturin cargo metadata rustc -vV terminated by SIGKILL on three attempts; direct rustc -vV and cargo metadata probes succeeded",
+    "build_source_sha": "310cb0435b693ec5d527977c1499a6cc3d224e11",
+    "successful_invocation_prefix": "arch -arm64 /tmp/fmls-admission-venv/bin/maturin",
+    "artifacts": [
+      {
+        "file": "fast_mlsirm-0.11.4-cp314-cp314-macosx_11_0_arm64.whl",
+        "sha256": "b85e137c88dd288bfa6524024ba947981949d809c924e9e70bcac7e625ac9bc9"
+      },
+      {
+        "file": "fast_mlsirm-0.11.4.tar.gz",
+        "sha256": "0d089ce5d77fcd279404dabf1cf34f55acf700e3c904853c0e11ae92ac686e95"
+      }
+    ],
+    "limitation": "Local development CPython3.14 macOS arm64 0.11.4 wheel and sdist only; not 0.11.5, universal2, 13-distribution hosted or Strix acceptance."
   }
 }
