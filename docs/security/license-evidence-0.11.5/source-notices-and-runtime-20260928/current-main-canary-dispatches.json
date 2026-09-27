@@ -1,0 +1,22 @@
+{
+  "recorded_UTC": "2026-09-27T19:55:17Z",
+  "control": {
+    "run_id": 36346060446,
+    "source_commit": "b6cebb36dc11afe409a7fee8a3262827255c029c",
+    "target_pr": 2157,
+    "target_head_observed": "9e01372f9ff525205ef453c2bd930a1e634ae049",
+    "dry_run": true,
+    "trigger_reviews": false,
+    "update_branches": false,
+    "enable_auto_merge": false,
+    "merge_mode": "disabled",
+    "status": "queued"
+  },
+  "CodeQL": {
+    "run_id": 36346059984,
+    "source_commit": "f54143b968c0f332fa8d49ed3c116fc7d51891b0",
+    "status": "queued",
+    "upload": "never"
+  },
+  "scope": "Dispatch receipts only. Assigned runner, execution and terminal acceptance remain to verify. Old owned canaries terminal before new dispatch; no duplicate or cancellation."
+}

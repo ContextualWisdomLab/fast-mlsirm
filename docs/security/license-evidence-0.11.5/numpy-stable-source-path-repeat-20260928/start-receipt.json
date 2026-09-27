@@ -1,0 +1,18 @@
+{
+  "prior_recipe_sha256": "d42e61f0acac9de7dc96c84bb51cb68cc7eef761cbc9973485232521fa017fe4",
+  "recipe_sha256": "47c0e5bb05f7baecee9820cd7a3a7442c0af71104a6b1d57eafce09a4700bc17",
+  "host": "s1.cluster.seonghobae.me",
+  "remote_root": "/data/orca/workspaces/fmls-numpy-pinned-backend-build-20260928",
+  "session_id": 87273,
+  "E_container_prefix": "bf6cc61ed90a",
+  "E_observed_state": "running",
+  "E_started_UTC": "2026-09-27T19:46:57Z",
+  "F_state": "not started; sequential after successful E",
+  "cpus": 2,
+  "memory_bytes": 6442450944,
+  "network": "none",
+  "source_date_epoch": 1790068752,
+  "input_hashes": "all nine checked and matched before E extraction",
+  "validation": "bash syntax passed; invalid label A rejected before output creation",
+  "scope": "Fresh native compilation repeat, not yet terminal or reproducibility acceptance"
+}

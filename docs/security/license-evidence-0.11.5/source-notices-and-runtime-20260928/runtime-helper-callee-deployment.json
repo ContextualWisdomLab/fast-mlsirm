@@ -1,0 +1,22 @@
+{
+  "central": {
+    "pr": 2472,
+    "source": "48e2598a6f4cb40152c8b791801a848cf4484fc0",
+    "merge": "b6cebb36dc11afe409a7fee8a3262827255c029c",
+    "complete_tree": "71f3ffb8dd00a4831cfc723ca9bcd39adf849a12",
+    "helper": "e45f1b144aef900d734ff4c900f9e0010fd5a32d",
+    "scripts_ci_tree": "7f902df89a925f89c4fae69a842508406cd0207c",
+    "requirements_blob": "eb83beda177c9d2e4ca9b7e2888a1ccb55a123ac",
+    "tests_local": 58,
+    "tests_CI": 58
+  },
+  "fast": {
+    "pr": 2240,
+    "source": "8683d08e364b737265679c54bfa4792f8f4ac13d",
+    "merge": "f54143b968c0f332fa8d49ed3c116fc7d51891b0",
+    "complete_tree": "74982ab4f9defe36abd46ff498845541ff353e7a",
+    "tests_publisher": 49,
+    "tests_seconds": 45.24
+  },
+  "verification": "Both complete merged trees equal the tested source trees; actionlint with ShellCheck disabled and diff checks passed. Exact source heads and unresolved threads audited before authorized bypass; hosted checks not claimed as passed. No tags/publication."
+}

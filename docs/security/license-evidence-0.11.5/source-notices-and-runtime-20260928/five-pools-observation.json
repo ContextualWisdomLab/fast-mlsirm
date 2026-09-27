@@ -1,0 +1,67 @@
+{
+  "time_precision": "Runner API observations from this continuation, recorded after calls; exact per-call timestamp not retained",
+  "pools": [
+    {
+      "group_id": 1,
+      "runners": []
+    },
+    {
+      "group_id": 3,
+      "runners": [
+        {
+          "id": 1061766,
+          "name": "cwlab-s1-02",
+          "busy": true,
+          "status": "online"
+        }
+      ]
+    },
+    {
+      "group_id": 4,
+      "runners": [
+        {
+          "id": 1063157,
+          "name": "cwlab-s1-03",
+          "busy": true,
+          "status": "online"
+        }
+      ]
+    },
+    {
+      "group_id": 5,
+      "runners": [
+        {
+          "id": 1063158,
+          "name": "cwlab-s1-04",
+          "busy": true,
+          "status": "online"
+        }
+      ]
+    },
+    {
+      "group_id": 6,
+      "runners": [
+        {
+          "id": 1061765,
+          "name": "cwlab-s1-01",
+          "busy": false,
+          "status": "online"
+        },
+        {
+          "id": 1063159,
+          "name": "cwlab-s1-05",
+          "busy": true,
+          "status": "online"
+        },
+        {
+          "id": 1065083,
+          "name": "cwlab-s2-01",
+          "busy": true,
+          "status": "online"
+        }
+      ]
+    }
+  ],
+  "scope": "Runner occupancy only; not proof of org-wide concurrency cause. No assignments/ACLs changed.",
+  "recorded_UTC": "2026-09-27T19:55:17Z"
+}
