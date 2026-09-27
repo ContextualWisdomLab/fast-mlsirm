@@ -1,0 +1,8 @@
+{
+  "source_head": "52eed4ddc6af68bf22393c83c4292a56186ca44c",
+  "host": "Seonghoui-MacBookPro-2.local",
+  "native_core_sha256": "0dcbd77b28383122d5d12fcd03193777c28ecb45faa9f460137be3d28685f8b0",
+  "test_source_sha256": "83853451a0de5833305e2a32d9b0397c99fe64897d5aa6b68706e83fdb36df0b",
+  "scope": "actual compiled CPU cache candidate continuous synthetic recovery, same declared settings, not study estimates",
+  "old_cpu_run": "s1 PID3826021 preserved; different implementation under test"
+}
