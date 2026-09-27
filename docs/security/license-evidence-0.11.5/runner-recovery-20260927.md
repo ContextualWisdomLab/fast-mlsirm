@@ -460,3 +460,38 @@ and execution, not PR acceptance or license/release PASS. No duplicate dispatch.
 REST hitsharedrate ceiling at15:23UTC; connectorjoblogs supplied authoritative
 terminal evidence without inferring completion from an observation timeout.
 Correctedfullsuiteexec9812/PID55026 remainsLIVE; preserveexistingexecution.
+
+## Central root main merge and effective caller integration
+
+Corrected full exec9812 TERMINALGREEN:4970passed/7skipped/40subtests in899.57s.
+Root2347 exacthead10980edc, all9 originalthreadsresolved, CodeRabbit/DevinSUCCESS,
+hostedchecksqueued. Latestmaine07c7e1e included; tested2ec5573b androot10980edc
+scripts/tests/workflows byte-equal. Authorizedcapacitybypassmainmerge:
+`422defa2f03645b54dccc4d0da6e332a131dae75`,15:33:28UTC. Rootancestor andaffected
+source equality verified aftermerge. No fulltestexecutionremainslive.
+
+FastPR2224 sourcee8e76554 MERGED into2135base at
+`192cb703663747ed126f42e118e0a2d2f6706009`,15:41:39UTC. Caller nowpinscentral
+mergedmain422defa2, whose3guards reallycheckouthelper5a29e0a5.14central/admission
+checks pass (parentfullpublish/fuzz43pass),7requiredinputs/10suppliedkeys match
+actualshippedcallee;defaultverdictnamepreserved. actionlint(ShellCheckdisabled)
+anddiffcheckpass. Mergeancestry/caller/testbyteequalityverified.
+
+Fast2135 remainsdraft/mergeable, currenthead192cb703. Its currentCodeQLPR run
+36330503923 isPENDING with0jobs (connectorconfirmed); priorhead477CodeQLPR
+36329094903 isalreadyCANCELLED. NativeCodeQLfast36330503979 actionsjob108651390549
+isQUEUED. Originalcachefindingcodewasrepairedat1efddbc9, butactualcurrentproducer
+proof remainsincomplete. Do notfabricateparentjobIDs, replayoldproofascurrent,
+orresolvefromsuccessfuldispatchalone. ProtectedcentralnativeCodeQLdispatcher
+requiresactualparentjobidentities andv2 exactbase/headmergeproduceridentity.
+LivePRmerge8af886402489f7f801664a7a60d8e70b53890e52 hasparents6cb7a2ca/192cb703.
+CodeQLVM03 hasactiveRunner.Worker290632; do notstartcompetingmanualscan.
+
+CurrentCodeQLPR runs-on predicates requirecanonicalworkflowref@main; no runtime
+proof of misrouting obtained, so no speculative selector broadening. Required
+workflowcontext andcalleecontext must notbeconflated. Codegenprofile hypothesis
+wasdisproved: bindingcrateexplicitlyexcludedfromrootworkspace, soitsownrelease
+profileapplies; no profilechange. RESTrate_limitreported5000butotherGETs403,
+so useavailableconnector/GraphQLanddeferquota-churn. License/publishedmatrix
+acceptance unchanged; NumPyFortran-freereplacement remainsseparateunfinished
+work documented inoriginalevidence/#2136.
