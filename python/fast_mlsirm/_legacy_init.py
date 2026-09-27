@@ -66,6 +66,12 @@ from .bifactor_grm import fit_bifactor_grm as fit_bifactor_grm, BifactorGrmFit a
 from .bifactor_grm import bifactor_oakes_se as bifactor_oakes_se, BifactorOakesSe as BifactorOakesSe
 from .bifactor_multigroup import fit_bifactor_grm_multigroup as fit_bifactor_grm_multigroup, BifactorMultigroupFit as BifactorMultigroupFit
 from .two_tier_grm import fit_two_tier_grm as fit_two_tier_grm, TwoTierGrmFit as TwoTierGrmFit
+from .two_tier_focal import (
+    fit_two_tier_grm_focal_orthogonal as fit_two_tier_grm_focal_orthogonal,
+    score_two_tier_grm_orthogonal as score_two_tier_grm_orthogonal,
+    TwoTierGrmFocalFit as TwoTierGrmFocalFit,
+    TwoTierGrmPersonScores as TwoTierGrmPersonScores,
+)
 from .two_tier_grm import two_tier_oakes_se as two_tier_oakes_se, TwoTierOakesSe as TwoTierOakesSe
 from .gpcm import fit_gpcm as fit_gpcm, GpcmFit as GpcmFit
 from .facets import fit_facets as fit_facets, FacetsFit as FacetsFit
@@ -407,6 +413,10 @@ __all__ = [  # noqa: RUF022
     "fit_bifactor_grm_multigroup",
     "BifactorMultigroupFit",
     "fit_two_tier_grm",
+    "fit_two_tier_grm_focal_orthogonal",
+    "score_two_tier_grm_orthogonal",
+    "TwoTierGrmFocalFit",
+    "TwoTierGrmPersonScores",
     "TwoTierGrmFit",
     "two_tier_oakes_se",
     "TwoTierOakesSe",
