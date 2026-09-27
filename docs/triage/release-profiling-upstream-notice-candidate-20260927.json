@@ -86,5 +86,40 @@
     "Crate contains no licence text. Current gate remains LICENSE_TEXT_MISSING; recognising the upstream MIT whole text does not create supplemental evidence or waive this failure.",
     "This candidate preserves original licence bytes; it is not a release selection, Strix verdict, legal certification or release acceptance."
   ],
-  "next_action": "Add a source-bound supplemental evidence contract that separately authenticates the exact upstream commit, licence bytes and crate source correspondence, proves original licence bytes bundled in every release distribution, and rejects forged/foreign/missing supplemental evidence. Keep profiling refused until those checks pass."
+  "next_action": "Reuse gate(source_root=...) and its exact release source_sha to read the committed selected notice via regular Git blob. Require profiling exact crate checksum, reviewed upstream commit/source correspondence and both original licence bodies; record separate source-notice provenance without pretending these are crate members. Consumer must bind that provenance to source selections and all 13 distribution notice bytes. Test missing/foreign source, changed notice, wrong archive, absent proof and forged report. Do not accept caller supplied licence text or waive other missing archives.",
+  "current_gate_refusal": [
+    {
+      "code": "LICENSE_TEXT_MISSING",
+      "subject": "cargo/profiling@1.0.18",
+      "detail": "declared MIT OR Apache-2.0 but the distribution bundles no license text"
+    }
+  ],
+  "helper_sha": "8952186761a930e31910488690734cbde8058525",
+  "workflow_sha": "b6b8c6bdf2db8f92058e2aac9ff1396294dfd2cb",
+  "local_packaging": {
+    "source_sha": "55a0343d4165845f8c237971830e9acbfc97b209",
+    "artifacts": [
+      {
+        "file": "fast_mlsirm-0.11.4-cp314-cp314-macosx_11_0_arm64.whl",
+        "sha256": "6df58869a818f3cc8493ceec67dccc303082e83bade4c7a979f0e4bf82741c5b",
+        "209_existing_selected_notices": "EXACT_MATCH",
+        "profiling_upstream_notice_candidate": "EXACT_MATCH"
+      },
+      {
+        "file": "fast_mlsirm-0.11.4.tar.gz",
+        "sha256": "baa7d2f3d8611c2a39497b375dba1bee02cc1e05e667fd08d0ff74a41e9550af",
+        "209_existing_selected_notices": "EXACT_MATCH",
+        "profiling_upstream_notice_candidate": "EXACT_MATCH"
+      }
+    ],
+    "limitations": "Local 0.11.4 CPython 3.14 macOS ARM only; exact preservation is not supplemental licence admission or 0.11.5 release acceptance."
+  },
+  "checks": {
+    "central_related_tests": 767,
+    "central_workflow_tests": 30,
+    "central_changed_files_ruff": "PASS",
+    "fast_related_tests": 92,
+    "actionlint": "PASS",
+    "fast_workflow_ruff": "No new findings"
+  }
 }
