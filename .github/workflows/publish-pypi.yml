@@ -668,6 +668,11 @@ jobs:
         with:
           ref: ${{ needs.verify-release.outputs.release_commit }}
           persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted-control
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: ${{ matrix.python-version }}
@@ -691,7 +696,7 @@ jobs:
           test "$(python -c 'import platform; print(platform.machine())')" = x86_64
           mkdir runtime-proof
           cp "build-proof/$LEG.tsv" "runtime-proof/$LEG.tsv"
-          python scripts/ci/capture_release_runtime.py "runtime-proof/$LEG.tsv" dist "$RUNNER_TEMP"
+          python trusted-control/scripts/ci/capture_release_runtime.py "runtime-proof/$LEG.tsv" dist "$RUNNER_TEMP"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: repro-macos-x86-${{ env.LEG }}

@@ -598,9 +598,11 @@ def test_universal2_x86_runtime_capture_precedes_release_record() -> None:
     assert 'python-version: ["3.12", "3.13", "3.14"]' in job
     assert "architecture: x64" in job
     assert "ref: ${{ needs.verify-release.outputs.release_commit }}" in job
+    assert "ref: ${{ github.sha }}\n          path: trusted-control" in job
     assert "name: dist-wheel-${{ env.LEG }}" in job
     assert "name: repro-digest-${{ env.LEG }}" in job
-    assert "capture_release_runtime.py \"runtime-proof/$LEG.tsv\" dist" in job
+    assert "python trusted-control/scripts/ci/capture_release_runtime.py \"runtime-proof/$LEG.tsv\" dist" in job
+    assert "python scripts/ci/capture_release_runtime.py" not in job
     assert "name: repro-macos-x86-${{ env.LEG }}" in job
     assert "needs: [verify-release, sdist, wheels, macos-x86-runtime]" in record
     assert "release admission HOLD: platform-complete scope inventory is not verified" in _job_block(
