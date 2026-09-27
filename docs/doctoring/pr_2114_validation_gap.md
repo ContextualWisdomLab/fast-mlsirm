@@ -68,13 +68,17 @@ Ninety affected local tests passed, but the integration used administrative
 bypass with hosted checks queued and no independent approval. It is not live
 consumer verdict proof.
 
-Central [draft PR #2430](https://github.com/ContextualWisdomLab/.github/pull/2430)
-retains the missing Strix fixture runtime carryover. Forty-four relevant local
-tests passed on `0d83b453731cc491403d80da3312be718fd61a72`; its frozen full
-shell harness is still pending. The predecessor full run failed four
-assertions in one source-preservation scenario, which the follow-up restored
-and verified with the actual targeted shell case. This is partial carryover
-and does not retire every unique delta in central PR #2291.
+Central [PR #2430](https://github.com/ContextualWisdomLab/.github/pull/2430)
+landed as `ec38bffa3ca144c562dabd4ed239d5cacd083078`. The frozen full shell
+harness on `0d83b453731cc491403d80da3312be718fd61a72` terminated with exit
+zero and `test_strix_quick_gate: PASS`. The predecessor's four failed
+assertions were confined to one source-preservation case and were repaired.
+Final candidate `5095d01a446f580de3018d413988cff6ec978972` integrated fresh
+central main without changing the tested harness or production gate bytes;
+44 boundary/runtime/binder tests passed again. The merge used authorized
+administrative bypass; hosted checks were queued or cancelled and there was
+no independent approval. This partial carryover does not retire every unique
+delta in central PR #2291 or prove an actual provider scan.
 
 The five original failed-check gaps remain open until genuine current-head
 consumer runs prove the repaired gates. A queued job, an earlier head's green
@@ -108,3 +112,17 @@ without assigned runner fields at the last direct observation. Their source
 revision predates these repairs. This audit update produces a genuine new
 consumer head for verification against the delivered central policy. Neither
 old queue state nor new runner selection proves a terminal gate outcome.
+
+## Consumer source-selection receipt
+
+On consumer head `9043db95bd994f81e7a69079d0c866a846d6fd22`, new Strix
+admission job `108620946861` and Noema admission job `108620947289` both
+selected `self-hosted`, `linux`, `x64`, `cwlab-control`. Direct job responses
+were still queued with no assigned runner; this proves policy selection only.
+Control group membership confirmed both runners have all required labels,
+and both were busy in that subsequent observation. Nonatomic snapshots do
+not establish a scheduling defect or a complete capacity forecast.
+
+The present update records #2430 delivery and produces a new genuine consumer
+head using that delivered central source. The five required terminal proofs
+remain outstanding.
