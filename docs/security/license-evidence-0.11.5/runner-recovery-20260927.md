@@ -321,3 +321,31 @@ No actual vulnerability inference follows from this status. Its unresolved
 review requires producer evidence; do not resolve from dispatch success.
 Latest main de71b9ee includes canonical Strix capacity continuation2448; its
 merge-tree with candidate is clean. Do not duplicate that owner repair.
+
+## Shared hook inspection and Python3.10 review repair
+
+Central proposed PR https://github.com/ContextualWisdomLab/.github/pull/2450
+(branch codex/release-gate-review-repairs-20260927, helper-adoption worktree)
+repairs two verified2347 findings. Eight real-gate alias cases reproduced RED.
+The shared scanner now uses stdlib AST for import aliases and dangerous
+references, retains all previous patterns, accumulates alias bindings rather
+than overwriting them, and recognizes Rust process/network namespaces.
+Benign os.path use remains admitted. This is static capability inspection,
+not a proof of complete behavioral sandboxing.
+
+Strix fixture now includes captured hook source text, not only filenames;
+same-named body changes invalidate the existing fixture digest. No dependency
+hook is executed. Python3.10 fallback reuses already-declared tomli; complete
+module import and TOML parsing passed with actual tomli under simulated absent
+tomllib, not an actual Python3.10 interpreter claim.
+
+Focused gate/capture/whole-text/fanout/collector suite236 passes;57 workflow
+contracts and all3 actual Git guards pass. compileall, production-module
+Ruff E9/F, actionlint(shellcheck disabled), own diff check pass. Helper source
+`5a29e0a5f487799c68f788c42cdc243df27315b8`, scripts tree
+`88f38292ed543660de94eee44a110fe47a9a5974`. Exact PRhead
+`55de728e8704b4217300c5580cd8cf7e9ddb5076`; full tests LIVE exec1628,
+log `/tmp/fmls-root-review-repairs-full-tests.log`. Preserve this process.
+Original2450 reviewer-thread adoption happens only after verified merge;
+artifact namespace, obsolete directive docs, and Noema content-reader finding
+remain separate root2347 work. License and release artifact HOLDs unchanged.
