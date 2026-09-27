@@ -216,3 +216,20 @@ these historical receipts and retain all remaining license/artifact HOLDs.
 
 The Goal remains active. This document is an RCA and execution plan, not a
 release-wide license verdict or proof of completed hosted gates.
+
+## Central Rust source candidate RCA
+
+Central release collector at exact parent `37a178bf05d0fcfc8557b46699f27d35eab6cae5`
+selected `objc2-foundation/src/copying.rs` by conventional filename prefix.
+All archive capture/rebinding callers share `archive_license_evidence`; the
+fix excludes `.rs` only from implicit discovery and preserves explicitly
+declared Cargo/Python license paths. Regression reproduced before repair;
+131 focused gate/full-text tests pass after repair. Central PR
+https://github.com/ContextualWisdomLab/.github/pull/2446 is stacked on #2347
+at commit `eb297a5b` in isolated worktree
+`/tmp/fmls-central-license-fix-20260927`. This removes a false candidate,
+not missing grants, Apple SDK applicability questions, or release HOLDs.
+
+REST Actions job lookup hit the current API rate limit; preserve canary
+`36321971364` rather than dispatching a duplicate. Hourly automation
+`7c92d308-5b01-4788-8dca-9172a1a66e2d` remains enabled.
