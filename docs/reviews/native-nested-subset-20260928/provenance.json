@@ -1,0 +1,9 @@
+{
+  "source_head": "a7bb7171352473cc056822589bbf89ba9624cbe0",
+  "core_path": "/private/tmp/fmls-native-normal-wald-20260928/python/fast_mlsirm/_core.cpython-312-darwin.so",
+  "core_sha256": "05796a4e8041653b5190c7f3171708de1f3c8406a35491225ea034932016210c",
+  "native_tests": 28,
+  "native_exit": 0,
+  "scope": "synthetic actual-design subset validation; no immutable release or study acceptance",
+  "classical_f_assumptions": "homoscedastic uncorrelated errors, not certified by this function"
+}
