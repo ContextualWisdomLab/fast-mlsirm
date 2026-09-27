@@ -563,8 +563,12 @@ pub(crate) fn e_step(
     #[cfg(all(feature = "gpu", not(coverage)))]
     {
         if device == crate::Device::Gpu || device == crate::Device::Auto {
-            // Small host-side staging wrappers (no table data is duplicated
-            // beyond this Vec-of-Vec shell): the GPU path flattens them.
+            // Host-side staging for the GPU path: `tables.to_vec()`,
+            // `tg.to_vec()`, and `ts.to_vec()` (replicated per specific)
+            // are real deep copies on every E-step call. Only `tables`
+            // changes across EM iterations; `tg`/`ts`/`log_w*`/`y`/`blocks`
+            // are fit-invariant (#2006 type C/D). The GPU kernel then
+            // flattens these Vec-of-Vec shells into device buffers.
             let tables_wrapped = vec![tables.to_vec()];
             let tg_wrapped = vec![tg.to_vec()];
             let ts_wrapped = vec![vec![ts.to_vec(); v.n_specific]];
