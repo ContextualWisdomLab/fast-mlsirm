@@ -81,7 +81,16 @@ def _require_gh_nodes(value: object, name: str) -> int:
 
 @dataclass
 class BifactorBootstrapResult:
-    """Summary and replicate storage of a joint person bootstrap run."""
+    """Summary and replicate storage of a joint person bootstrap run.
+
+    replicate_ids and replicate_errors align with all completed flags;
+    converged_replicate_ids identifies rows in the converged parameter arrays.
+    Empty error strings denote successful fits. Defaults preserve construction
+    compatibility; only the runner populates complete receipts. This is a
+    provenance contract, not a statistical estimator. Python Software
+    Foundation, Python dataclasses manual, field defaults and field order:
+    https://docs.python.org/3/library/dataclasses.html .
+    """
 
     n_requested: int
     n_replicates: int  # replicates actually completed (≤ n_requested)
@@ -111,6 +120,9 @@ class BifactorBootstrapResult:
     ci_upper_threshold: np.ndarray
     wall_clock_seconds: float
     throughput_replicates_per_second: float
+    replicate_ids: tuple[int, ...] = ()
+    converged_replicate_ids: tuple[int, ...] = ()
+    replicate_errors: tuple[str, ...] = ()
     device: str = "cpu"
 
 
@@ -215,7 +227,8 @@ def _fit_single_replicate(
                 float(fit.loglik_trace[-1]) if len(fit.loglik_trace) else float("nan")
             )
             return (
-                rep_idx, bool(fit.converged), a_g, a_s, thr, means, sds, spec, ll, "",
+                rep_idx, bool(fit.converged), a_g, a_s, thr, means, sds, spec, ll,
+                "" if fit.converged else f"fit not converged: {getattr(fit, 'termination_reason', 'unreported')}",
             )
         fit = fit_bifactor_grm_multigroup(
             responses=y_boot,
@@ -243,7 +256,8 @@ def _fit_single_replicate(
         spec = np.asarray(fit.specific_sd, dtype=np.float64)
         ll = float(fit.loglik_trace[-1]) if len(fit.loglik_trace) else float("nan")
         return (
-            rep_idx, bool(fit.converged), a_g, a_s, thr, means, sds, spec, ll, "",
+            rep_idx, bool(fit.converged), a_g, a_s, thr, means, sds, spec, ll,
+                "" if fit.converged else f"fit not converged: {getattr(fit, 'termination_reason', 'unreported')}",
         )
     except Exception as exc:  # noqa: BLE001 — replicate failure is data, reported via flags
         return _nan_result(False, f"{type(exc).__name__}: {exc}")
@@ -332,7 +346,10 @@ def run_bifactor_bootstrap(
             fixed-table cap, issue #1929); no default is offered.
         group_ids: Optional 1-D group membership indices (``None`` selects
             the single-group estimator).
-        n_groups: Number of groups.
+        n_groups: Positive integer number of groups. With ``group_ids``, every
+            declared label ``0..n_groups-1`` must occur. Without ``group_ids``,
+            only ``n_groups=1`` is valid. Numeric labels must be finite exact
+            integers; conversion must not silently change stratum membership.
         anchor_mask: Optional multigroup anchor mask (``None`` = all common).
         n_jobs: Number of parallel workers (-1 for all logical cores).
         base_seed: Master seed for deterministic replication. Required,
@@ -361,12 +378,28 @@ def run_bifactor_bootstrap(
         ``converged`` and excluded from all summary statistics; failed
         replicates are never substituted or imputed. When no replicate
         converges, a ``RuntimeError`` carrying the first replicate's error
-        is raised instead of returning empty summaries.
+        is raised instead of returning empty summaries. Its replicate_ids,
+        converged_replicate_ids, replicate_errors and converged attributes
+        preserve the same completed-replicate receipt as a successful result.
+        These attributes are an implementation reporting contract; RuntimeError
+        remains the exception type (Python Software Foundation, Built-in
+        Exceptions manual: https://docs.python.org/3/library/exceptions.html ).
 
     References:
         Andrews, D. W. K., & Buchinsky, M. (2000). A three-step method for
         choosing the number of bootstrap repetitions. *Econometrica, 68*(1),
         23–51. https://www.jstor.org/stable/2999474
+
+        NumPy Developers. NumPy reference manual, ``ndarray.astype``,
+        Parameters (``casting``) and Examples:
+        https://numpy.org/doc/stable/reference/generated/numpy.ndarray.astype.html
+        The default unsafe cast can truncate fractional labels. Validate
+        labels before conversion. ``numpy.empty``, Notes:
+        https://numpy.org/doc/stable/reference/generated/numpy.empty.html
+        Every element must be written before reading; requiring all labels
+        to belong to declared strata guarantees the sampler fills every row.
+        These checks enforce the existing stratum contract, not a choice of
+        scientifically appropriate strata.
     """
     n_replicates = _require_int(n_replicates, "n_replicates", 1)
     batch_size = _require_int(batch_size, "batch_size", 1)
@@ -413,9 +446,28 @@ def run_bifactor_bootstrap(
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y_arr.shape
     smap_arr = np.asarray(specific_map)
-    g_arr = np.asarray(group_ids, dtype=np.int64) if group_ids is not None else None
-    if g_arr is not None and (g_arr.ndim != 1 or g_arr.size != n_persons):
-        raise ValueError("group_ids must have length n_persons")
+    n_groups = _require_int(n_groups, "n_groups", 1)
+    if n_persons < 1 or n_groups > n_persons:
+        raise ValueError("n_groups requires at least one person in every declared group")
+    g_arr = np.asarray(group_ids) if group_ids is not None else None
+    if g_arr is None:
+        if n_groups != 1:
+            raise ValueError("group_ids is required when n_groups > 1")
+    else:
+        if g_arr.ndim != 1 or g_arr.size != n_persons:
+            raise ValueError("group_ids must have length n_persons")
+        if g_arr.dtype.kind not in ("i", "u", "f"):
+            raise ValueError("group_ids must contain numeric integer labels")
+        if g_arr.dtype.kind == "f" and (
+            not bool(np.isfinite(g_arr).all())
+            or bool((g_arr != np.floor(g_arr)).any())
+        ):
+            raise ValueError("group_ids must contain finite integer labels")
+        if bool((g_arr < 0).any()) or bool((g_arr >= n_groups).any()):
+            raise ValueError("group_ids must be in 0..n_groups-1")
+        g_arr = g_arr.astype(np.int64, copy=False)
+        if np.unique(g_arr).size != n_groups:
+            raise ValueError("group_ids must represent every declared group")
     anchor_arr = np.asarray(anchor_mask, dtype=bool) if anchor_mask is not None else None
 
     start_time = time.perf_counter()
@@ -490,10 +542,15 @@ def run_bifactor_bootstrap(
     n_conv = len(conv)
     if n_conv == 0:
         first_err = done[0][9] if done else "no replicate completed"
-        raise RuntimeError(
+        error = RuntimeError(
             f"joint person bootstrap: 0/{completed_reps} replicates converged; "
             f"first replicate error: {first_err}"
         )
+        error.replicate_ids = tuple(r[0] for r in done)
+        error.converged_replicate_ids = ()
+        error.replicate_errors = tuple(r[9] for r in done)
+        error.converged = flags
+        raise error
 
     m1 = n_cat - 1
     if group_ids is None or n_groups <= 1:
@@ -614,5 +671,8 @@ def run_bifactor_bootstrap(
         ci_upper_threshold=hi_th_s,
         wall_clock_seconds=elapsed,
         throughput_replicates_per_second=throughput,
+        replicate_ids=tuple(r[0] for r in done),
+        converged_replicate_ids=tuple(r[0] for r in conv),
+        replicate_errors=tuple(r[9] for r in done),
         device=device,
     )
