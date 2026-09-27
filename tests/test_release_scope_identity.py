@@ -286,6 +286,7 @@ def test_sdist_consumer_receipt_binds_both_finished_distributions(scope_fixture,
     direct = Path("dist") / rows[leg]["file"]
     with zipfile.ZipFile(direct, "a") as archive:
         archive.writestr("fast_mlsirm/_core.fixture.so", b"native extension")
+        archive.writestr("fast_mlsirm/_licenses/example-MIT.txt", b"retained licence notice")
     rows[leg]["sha256"] = M["hash_file"](direct)
     sdist = Path("dist") / rows["sdist"]["file"]
     sdist_input = Path("sdist-input")
@@ -339,6 +340,24 @@ def test_sdist_consumer_receipt_binds_both_finished_distributions(scope_fixture,
                and "--no-index" in args and "--no-cache" in args for args in calls)
     M["verify_sdist_consumer"](receipt, output / f"{leg}.consumer.whl", direct,
                                rows[leg], rows["sdist"], sha, runtime)
+    consumer_wheel = output / f"{leg}.consumer.whl"
+    original = consumer_wheel.read_bytes()
+    with zipfile.ZipFile(consumer_wheel) as archive:
+        members = {entry.filename: archive.read(entry) for entry in archive.infolist()}
+    for replacement in (None, b"changed licence notice"):
+        with zipfile.ZipFile(consumer_wheel, "w") as archive:
+            for name, body in members.items():
+                if name.startswith("fast_mlsirm/_licenses/"):
+                    if replacement is None:
+                        continue
+                    body = replacement
+                archive.writestr(name, body)
+        forged_notice = copy.deepcopy(receipt)
+        forged_notice["consumer_sha256"] = M["hash_file"](consumer_wheel)
+        with pytest.raises(ValueError, match="omits or changes licence notices"):
+            M["verify_sdist_consumer"](forged_notice, consumer_wheel, direct,
+                                       rows[leg], rows["sdist"], sha, runtime)
+    consumer_wheel.write_bytes(original)
     forged_install = copy.deepcopy(receipt)
     forged_install["installation"]["installed"] = []
     with pytest.raises(ValueError, match="consumer receipt differs"):

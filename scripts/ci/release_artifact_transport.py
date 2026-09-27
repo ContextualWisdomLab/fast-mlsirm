@@ -577,6 +577,11 @@ def verify_sdist_consumer(receipt: dict, consumer: Path, direct: Path, row: dict
     def metadata_members(bundle: dict) -> dict[str, str]:
         return {item["path"]: item["sha256"] for item in bundle["members"]
                 if item["path"].endswith((".dist-info/METADATA", ".dist-info/WHEEL"))}
+    notices = [{item["path"]: item["sha256"] for item in bundle["members"]
+                if item["path"].startswith("fast_mlsirm/_licenses/")}
+               for bundle in (published, inventory)]
+    if notices[0] != notices[1]:
+        raise ValueError(f"{leg}: consumer wheel omits or changes licence notices")
     metadata = metadata_members(inventory)
     extension = [item for item in inventory["members"]
                  if item["path"].startswith("fast_mlsirm/_core.")

@@ -58,8 +58,8 @@ crates/fast-mlsirm-py/Cargo.toml` reports 125 external packages whose declared
 licence contains `OR`. This is the unfiltered release graph, not one target's
 compiled dependency count.
 
-The pinned central control `bfc5c54641b256a24a2ee25a30fda4253ed1454e`
-uses helper `5185799fd5602eea570df3b066e8b45fcc6e1b37`. Both capture paths
+The pinned central control `08517d467d2fc88857205d6a08634d03088ad8b7`
+uses helper `d3f5602cd33438ac1d7e63759dfc4840ca794814`. Both capture paths
 read `docs/release-license-selections.json` from the exact source commit,
 never from mutable checkout bytes. The fixed path must be a regular Git blob;
 duplicate dependency selections refuse capture. The dependency report binds
@@ -71,7 +71,10 @@ member exactly matches a previously reviewed full-text digest. Every archive
 was rehashed against the wheel-root Cargo lock. Each selection records its
 archive checksum, raw member hashes and the selected notice's packaged path
 and hash. Admission checks that each notice matches the committed source and
-is present unchanged in the hashed finished distribution inventory.
+is present unchanged in the hashed finished distribution inventory. The sdist
+consumer verifier also requires exact equality of packaged notice paths and
+hashes with the direct wheel; recalculating a forged consumer archive hash
+cannot authorize a missing or changed notice.
 
 The notices use the existing mixed Python package layout, without a new
 packaging hook. Local maturin 1.15.0 builds retained all nineteen exact notice
