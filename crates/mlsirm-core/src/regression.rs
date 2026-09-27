@@ -365,6 +365,19 @@ pub fn sample_mean_sd(values: &[f64]) -> Result<(f64, f64), String> {
     Ok((mean, sd))
 }
 
+/// Absolute paired differences and their maximum for aligned finite values.
+pub fn paired_abs_differences(a: &[f64], b: &[f64]) -> Result<(Vec<f64>, f64), String> {
+    if a.is_empty() || a.len() != b.len() || !a.iter().chain(b).all(|v| v.is_finite()) {
+        return Err("paired differences require equal nonempty finite vectors".to_owned());
+    }
+    let differences: Vec<f64> = a.iter().zip(b).map(|(x, y)| (x - y).abs()).collect();
+    if !differences.iter().all(|v| v.is_finite()) {
+        return Err("non-finite paired difference".to_owned());
+    }
+    let maximum = differences.iter().copied().fold(0.0_f64, f64::max);
+    Ok((differences, maximum))
+}
+
 /// Summarize caller-verified nested OLS fits on the same response rows.
 /// Both designs must contain an intercept for centered R² interpretation.
 pub fn nested_ols_summary(

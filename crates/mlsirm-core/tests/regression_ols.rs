@@ -2,7 +2,7 @@
 
 use mlsirm_core::regression::{
     chi2_sf_df1, f_sf, fit_ols, fit_ols_hc, linear_contrast, nested_ols_summary,
-    normal_wald_interval, sample_mean_sd, sandwich_vcov, t_sf, HcType,
+    normal_wald_interval, paired_abs_differences, sample_mean_sd, sandwich_vcov, t_sf, HcType,
 };
 
 fn assert_close(a: f64, b: f64, tol: f64) {
@@ -123,4 +123,8 @@ fn reported_interval_and_nested_fit_are_rust_owned() {
     assert_close(mean, 2.0, 1e-12);
     assert_close(sd, 1.0, 1e-12);
     assert!(sample_mean_sd(&[1.0]).is_err());
+    let (differences, maximum) = paired_abs_differences(&[1.0, -2.0], &[1.25, -1.5]).unwrap();
+    assert_eq!(differences, vec![0.25, 0.5]);
+    assert_eq!(maximum, 0.5);
+    assert!(paired_abs_differences(&[1.0], &[1.0, 2.0]).is_err());
 }

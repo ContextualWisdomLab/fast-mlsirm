@@ -99,7 +99,8 @@ def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     -------
     dict
         Keys include ``beta``, ``vcov`` (row-major flat ``k*k``), ``se``,
-        ``hat_diagonal``, ``residuals``, ``n``, ``k``, ``df``, ``sigma2``, ``hc``.
+        ``hat_diagonal``, ``residuals``, ``n``, ``k``, ``design_rank``, ``df``, ``sigma2``, ``hc``.
+        Successful fitting establishes ``design_rank == k``; singular designs fail.
     """
     hc_label = _require_hc(hc)
     x_arr = _as_float64_matrix(x, "x")
@@ -111,6 +112,7 @@ def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     return {
         "n": int(raw["n"]),
         "k": k,
+        "design_rank": int(raw["design_rank"]),
         "hc": str(raw["hc"]),
         "df": float(raw["df"]),
         "sigma2": float(raw["sigma2"]),
@@ -176,6 +178,15 @@ def sample_mean_sd(values: np.ndarray) -> tuple[float, float]:
     """Return the arithmetic mean and sample SD from the Rust core."""
     arr = _as_float64_vector(values, "values")
     return tuple(regression_core().sample_mean_sd(arr))
+
+
+def paired_abs_differences(a: np.ndarray, b: np.ndarray) -> dict[str, Any]:
+    """Return finite aligned absolute differences and their maximum."""
+    left = _as_float64_vector(a, "a")
+    right = _as_float64_vector(b, "b", expected_length=left.size)
+    raw = regression_core().paired_abs_differences(left, right)
+    return {"abs_diff": np.asarray(raw["abs_diff"], dtype=np.float64),
+            "max_abs_diff": float(raw["max_abs_diff"])}
 
 
 def nested_ols_summary(

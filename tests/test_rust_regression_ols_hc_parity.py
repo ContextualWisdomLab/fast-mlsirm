@@ -14,7 +14,7 @@ import pytest
 
 from fast_mlsirm import (
     chi2_sf_df1, contrast, fit_ols_hc, nested_ols_summary, normal_wald_interval,
-    sample_mean_sd,
+    paired_abs_differences, sample_mean_sd,
 )
 from fast_mlsirm.regression import f_sf, t_sf
 
@@ -84,11 +84,14 @@ def test_fit_ols_hc3_parity_atol_1e6():
     x, y = _synthetic_design()
     ref = _reference_fit_ols_hc3(x, y)
     got = fit_ols_hc(x, y, hc="HC3")
+    assert got["design_rank"] == x.shape[1]
     np.testing.assert_allclose(got["beta"], ref["beta"], atol=1e-6, rtol=0.0)
     np.testing.assert_allclose(got["vcov"], ref["vcov"], atol=1e-6, rtol=0.0)
     np.testing.assert_allclose(got["se"], ref["se"], atol=1e-6, rtol=0.0)
     np.testing.assert_allclose(got["hat_diagonal"], ref["hat"], atol=1e-6, rtol=0.0)
     np.testing.assert_allclose(got["residuals"], ref["resid"], atol=1e-6, rtol=0.0)
+    with pytest.raises(ValueError, match="rank deficient"):
+        fit_ols_hc(np.column_stack([x, x[:, 1]]), y, hc="HC3")
 
 
 @pytest.mark.parametrize("hc", ["HC0", "HC1", "HC2", "HC3"])
@@ -141,6 +144,9 @@ def test_reported_interval_and_nested_ols_summary_use_public_rust_api():
     lo, hi = normal_wald_interval(2.0, 0.5, 1.96)
     assert (lo, hi) == pytest.approx((1.02, 2.98))
     assert sample_mean_sd(np.array([1.0, 2.0, 3.0])) == pytest.approx((2.0, 1.0))
+    paired = paired_abs_differences(np.array([1.0, -2.0]), np.array([1.25, -1.5]))
+    np.testing.assert_array_equal(paired["abs_diff"], [0.25, 0.5])
+    assert paired["max_abs_diff"] == 0.5
     with pytest.raises(ValueError):
         nested_ols_summary(y[:-1], full["residuals"], reduced["residuals"], x.shape[1], x.shape[1] - 1)
 

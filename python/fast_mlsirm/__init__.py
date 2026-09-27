@@ -270,6 +270,9 @@ from .regression import (
     normal_wald_interval as normal_wald_interval,
 )
 from .regression import (
+    paired_abs_differences as paired_abs_differences,
+)
+from .regression import (
     sample_mean_sd as sample_mean_sd,
 )
 from .regression import (
@@ -366,6 +369,7 @@ __all__ = list(_legacy_init.__all__) + [
     "fit_ols_hc",
     "nested_ols_summary",
     "normal_wald_interval",
+    "paired_abs_differences",
     "sample_mean_sd",
     "slope_difference",
     "t_sf",
