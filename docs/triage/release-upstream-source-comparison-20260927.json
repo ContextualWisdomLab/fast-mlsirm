@@ -1,0 +1,1896 @@
+{
+  "schema": "local.upstream-source-comparison/1",
+  "source_sha": "1e5decd5bdecf9e42262a8cfa5f03fc2ed8f41a5",
+  "upstream_retrieval_receipt_sha256": "4a1aee90bb335aba0859da588c489012fe6fae57c3c7f2d0a42f31112c143daa",
+  "acceptance": false,
+  "licence_applicability_verified": false,
+  "limitations": [
+    "Cargo.toml and .cargo_vcs_info.json are separately hashed, not independently regenerated or matched to Git source.",
+    "Four packaged Cargo.lock files remain unmatched; no automatic generated-file exemption is applied.",
+    "Submodule source equality does not establish submodule licence applicability; no root-licence inheritance is assumed.",
+    "No central gate supplement or full-scope/Strix acceptance is created."
+  ],
+  "dependencies": [
+    {
+      "key": "cargo/block2@0.6.2",
+      "crate_archive_sha256": "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5",
+      "repository": "madsmtm/objc2",
+      "commit": "b4167b582b2f75f9a1be75495c41b765344fd03c",
+      "comparison": {
+        "matched_count": 14,
+        "unmatched_count": 1,
+        "matched": [
+          {
+            "member": "CHANGELOG.md",
+            "upstream_path": "crates/block2/CHANGELOG.md",
+            "sha256": "36c27561beba905bb52eb4c942884ba51cf120f437861f2928408191e20835c6",
+            "git_blob_oid": "3a2dddb12eb8f872b616f5c30ae642ceec226e56"
+          },
+          {
+            "member": "Cargo.toml.orig",
+            "upstream_path": "crates/block2/Cargo.toml",
+            "sha256": "d18aec0c39956f1a29b6d157c13ec51ce53d7c2a2982c307528215f8870720ac",
+            "git_blob_oid": "cc3f58295a573cc74849a638fe1c129afd88bf18"
+          },
+          {
+            "member": "README.md",
+            "upstream_path": "crates/block2/README.md",
+            "sha256": "99073a83cfe6ee090546e3063f41251f7309fe2a017c4add8494e4ad7990d058",
+            "git_blob_oid": "61741dbd5b4bfca3bcf03fd6f4286f2eac522e84"
+          },
+          {
+            "member": "src/abi.rs",
+            "upstream_path": "crates/block2/src/abi.rs",
+            "sha256": "a953849cf8a30c0f94e76408bb83533074d5730134b82cb5f2e1953c5d3b4013",
+            "git_blob_oid": "888e4772c89c4c44311184a1b233abd00fb65105"
+          },
+          {
+            "member": "src/block.rs",
+            "upstream_path": "crates/block2/src/block.rs",
+            "sha256": "8c555d194c036c2c04e1df39b66b95437b14c3331fcdbad720934b4dbee5efdf",
+            "git_blob_oid": "0d907dcee174346a8c0b6008e37e8bd6437bf1d0"
+          },
+          {
+            "member": "src/debug.rs",
+            "upstream_path": "crates/block2/src/debug.rs",
+            "sha256": "e8c67ef2beaff33110e2d1fa0c4a3acd051780f8e985addfa734cdc93945d332",
+            "git_blob_oid": "967359f606df98c3da5ca279a96e0dc037be79d8"
+          },
+          {
+            "member": "src/encoding.rs",
+            "upstream_path": "crates/block2/src/encoding.rs",
+            "sha256": "9f8116277ba304ee47089e311d176a9612d3ca56bd89e031d83346e873224054",
+            "git_blob_oid": "dc1ab2784471bfec3df4c026cc5948a61e42554d"
+          },
+          {
+            "member": "src/ffi.rs",
+            "upstream_path": "crates/block2/src/ffi.rs",
+            "sha256": "6c1ff08f74f3219cf91d7c76d32aaa39834a3acfae54df6e544f23ec889b2259",
+            "git_blob_oid": "0129230aec55f590e1485ee0bac3f2a7fc34ce5a"
+          },
+          {
+            "member": "src/global.rs",
+            "upstream_path": "crates/block2/src/global.rs",
+            "sha256": "3a17009b513ef9f18fd76b333e72f1ed082d63db1674bfffcf74bb5be40c4d57",
+            "git_blob_oid": "bc1797a8839cd78f2b49284fdaa27119c7ef438d"
+          },
+          {
+            "member": "src/lib.rs",
+            "upstream_path": "crates/block2/src/lib.rs",
+            "sha256": "75e11b6c8d0d45df8ddbd44cbb65c96b41c57b9dd95bc9a089428b3d2eccb654",
+            "git_blob_oid": "b3c58fb2c43c2cc9c49b6b331842e8eec7b44917"
+          },
+          {
+            "member": "src/rc_block.rs",
+            "upstream_path": "crates/block2/src/rc_block.rs",
+            "sha256": "fe821a8d5c05562a1a310283d432c8f28f0d13d18a75b3e5ca00b8941052c65e",
+            "git_blob_oid": "026cbfac2cb54fa2975268861c70eedf04dd8865"
+          },
+          {
+            "member": "src/stack.rs",
+            "upstream_path": "crates/block2/src/stack.rs",
+            "sha256": "4ab335be7ce0aff1e36e00b69120d30721c58fc35d876712cdeaf895a86de72f",
+            "git_blob_oid": "bdde24c783714c30ca2f69a33ed2384622ebba5b"
+          },
+          {
+            "member": "src/traits.rs",
+            "upstream_path": "crates/block2/src/traits.rs",
+            "sha256": "7af1d39a56afd41cf6c49d99f895d2670c455d68135f69ad4b29cd578154dcdb",
+            "git_blob_oid": "59bbb3a88a51ae9d532c0ae978dcb58e97ab3c4b"
+          },
+          {
+            "member": "translation-config.toml",
+            "upstream_path": "crates/block2/translation-config.toml",
+            "sha256": "15250688351cbf65e6a4544e1b2d85d3941d59b203fea54ec90e6e11545fe72b",
+            "git_blob_oid": "c6de6d04472a7740c01743a15b4f07db440c9015"
+          }
+        ],
+        "unmatched": [
+          {
+            "member": "Cargo.lock",
+            "upstream_path": "crates/block2/Cargo.lock",
+            "sha256": "993576b7d3ca78ec0a4d7acfb67c0dea2fee6c50166e11e7e52ef75fbb40474c",
+            "git_blob_oid": "59bdb10f32564aef30e42c2d4299a4b86e847df0",
+            "upstream_blob_oid": null
+          }
+        ],
+        "excluded_metadata_count": 2,
+        "excluded_metadata": [
+          {
+            "member": ".cargo_vcs_info.json",
+            "sha256": "5b87885cad87999d141e83cc8af4b073192f584b2b92cea77e2d87636621a264",
+            "classification": "Package metadata excluded from Git source comparison; generation not reproduced"
+          },
+          {
+            "member": "Cargo.toml",
+            "sha256": "e325c51f01145af3e11f2ee5ce7c47f10697d936c1d90b9ee81a0cf4f700f6d7",
+            "classification": "Package metadata excluded from Git source comparison; generation not reproduced"
+          }
+        ],
+        "all_compared_nonmetadata_members_match": false
+      }
+    },
+    {
+      "key": "cargo/gl_generator@0.14.0",
+      "crate_archive_sha256": "1a95dfc23a2b4a9a2f5ab41d194f8bfda3cabec42af4e39f08c339eb2a0c124d",
+      "repository": "brendanzab/gl-rs",
+      "commit": "ea503e8d5fb6d73c6030e6191ce738cd3bf3433e",
+      "comparison": {
+        "matched_count": 15,
+        "unmatched_count": 0,
+        "matched": [
+          {
+            "member": "Cargo.toml.orig",
+            "upstream_path": "gl_generator/Cargo.toml",
+            "sha256": "4daaaac088657de6c5b6223ca9f890b8b5621f073068c65c0d759b0625d36280",
+            "git_blob_oid": "e49ff88c9812101d5a7c048e0146ba7bb50ec62d"
+          },
+          {
+            "member": "generators/debug_struct_gen.rs",
+            "upstream_path": "gl_generator/generators/debug_struct_gen.rs",
+            "sha256": "6fecccf8e57d4be93ea2657328d6e111ca44bc69542a5522cd7360d80ca64630",
+            "git_blob_oid": "98fbcef15886e3cb3dfc7c05a8c796499211a61c"
+          },
+          {
+            "member": "generators/global_gen.rs",
+            "upstream_path": "gl_generator/generators/global_gen.rs",
+            "sha256": "1696013af16bb92a3fa7cf3802a57ec6f7ba460322ede33aa2af30fc9911bd98",
+            "git_blob_oid": "82c471097910e99b9e43002c332be4c7df098017"
+          },
+          {
+            "member": "generators/mod.rs",
+            "upstream_path": "gl_generator/generators/mod.rs",
+            "sha256": "100a1da965bf11eaa9fad48a06c7856b60f48363a4a707e34ba97938bedae0b8",
+            "git_blob_oid": "659d2ecaf4bd8404a1f1a5ffdeb40b9423cd1512"
+          },
+          {
+            "member": "generators/static_gen.rs",
+            "upstream_path": "gl_generator/generators/static_gen.rs",
+            "sha256": "925a9401e27358a466baadfb660056a24394cf2fa21f5613e2d7f50ab8935e71",
+            "git_blob_oid": "8d15de0103a36a385fc838b16ce7245a6c7f788b"
+          },
+          {
+            "member": "generators/static_struct_gen.rs",
+            "upstream_path": "gl_generator/generators/static_struct_gen.rs",
+            "sha256": "eb08e6e59b0e0947c4ab263a0749efbb28430c5741634c413a2be011fcdad88f",
+            "git_blob_oid": "c03a3e09dde3069dca6a0e46ff8a9a7f67e15da8"
+          },
+          {
+            "member": "generators/struct_gen.rs",
+            "upstream_path": "gl_generator/generators/struct_gen.rs",
+            "sha256": "fa1bcda4501a597922be7c7ef4ad13738536a9c97529996671e264acd709c680",
+            "git_blob_oid": "6fcc3af00eb3e6f2900d92f3b87bc09b2b12672f"
+          },
+          {
+            "member": "generators/templates/types/egl.rs",
+            "upstream_path": "gl_generator/generators/templates/types/egl.rs",
+            "sha256": "d1785a30f1098e101302ba74ba4c22cf95ac44b17edf221dbb9d890f4bd635a2",
+            "git_blob_oid": "877638ab9883a54ee6cf1ec10a3a8bcd61401105"
+          },
+          {
+            "member": "generators/templates/types/gl.rs",
+            "upstream_path": "gl_generator/generators/templates/types/gl.rs",
+            "sha256": "d72f91355febec875c40899a44c5575bd04993f7cf5c6e289eec872a2a161b20",
+            "git_blob_oid": "90e4620104ff58e40cbe06bf69a5ade7d3b408f0"
+          },
+          {
+            "member": "generators/templates/types/glx.rs",
+            "upstream_path": "gl_generator/generators/templates/types/glx.rs",
+            "sha256": "f444166d117b96afed2d8d13db6cd3369d6c59704f296e76202269f411bbd4a8",
+            "git_blob_oid": "b0078da0a1499c3b66da8c3fa6973eadcf3b39a5"
+          },
+          {
+            "member": "generators/templates/types/wgl.rs",
+            "upstream_path": "gl_generator/generators/templates/types/wgl.rs",
+            "sha256": "9d626e0959374c694c19a36d4dd34dae2f37acf3cb94e9bd4d242a16b41a970d",
+            "git_blob_oid": "a376d4fa05894104c552e50f2c3b36608231d803"
+          },
+          {
+            "member": "lib.rs",
+            "upstream_path": "gl_generator/lib.rs",
+            "sha256": "6f47da878479b503b5202bda84ad8935607264ac03c0b68203109fad9cd479db",
+            "git_blob_oid": "ebeb07be2556dbc27040f1b64159b15c35d9bed3"
+          },
+          {
+            "member": "README.md",
+            "upstream_path": "gl_generator/README.md",
+            "sha256": "52d8fee4681c879f2c964fd30e3faf0c907e8bf676eab7b44beab5c5bbd5c284",
+            "git_blob_oid": "36d3e707b6c9adc64560b1c8b5ecf513503ff6d3"
+          },
+          {
+            "member": "registry/mod.rs",
+            "upstream_path": "gl_generator/registry/mod.rs",
+            "sha256": "84eed5c113b322e5267b2b130987e6bb726b4e7c38ce50292cd6cc57b8e06994",
+            "git_blob_oid": "385b2dfea120dd6f0e9ae1fd9db1fe58ce505ceb"
+          },
+          {
+            "member": "registry/parse.rs",
+            "upstream_path": "gl_generator/registry/parse.rs",
+            "sha256": "5cb781082014f143b06ef7d3678f3c4ca59133a5732d4e136fd750b78fb9453f",
+            "git_blob_oid": "c1a11a6c5fc8f0bb121fc26a1bbd45f5eeb37fcf"
+          }
+        ],
+        "unmatched": [],
+        "excluded_metadata_count": 2,
+        "excluded_metadata": [
+          {
+            "member": "Cargo.toml",
+            "sha256": "f586015aa2816b3c34d89f5e6a6539172efcd7f3ed055a0fab433ea83e2a0f0f",
+            "classification": "Package metadata excluded from Git source comparison; generation not reproduced"
+          },
+          {
+            "member": ".cargo_vcs_info.json",
+            "sha256": "3a04551479651e2330918d90182cbd9a286b491fe2d386c5ee1459c1d4c220d2",
+            "classification": "Package metadata excluded from Git source comparison; generation not reproduced"
+          }
+        ],
+        "all_compared_nonmetadata_members_match": true
+      }
+    },
+    {
+      "key": "cargo/khronos_api@3.1.0",
+      "crate_archive_sha256": "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc",
+      "repository": "brendanzab/gl-rs",
+      "commit": "f150967b1c44ae888e6676f93f639ebc82771bdc",
+      "comparison": {
+        "matched_count": 4,
+        "unmatched_count": 0,
+        "matched": [
+          {
+            "member": "Cargo.toml.orig",
+            "upstream_path": "khronos_api/Cargo.toml",
+            "sha256": "4a1ac66b226935a2ce69cca4c1c56be36cea83a5da382514db5ea967568e3ca9",
+            "git_blob_oid": "17fc4705ea36bd1737cb631be3773ee218e97965"
+          },
+          {
+            "member": "README.md",
+            "upstream_path": "khronos_api/README.md",
+            "sha256": "45772358ebfb8a7554056ce7faab27c3dc73d881ba4be66891d39e4830657877",
+            "git_blob_oid": "71576fa9f5194a79fec7fbfdafb467203ef8638b"
+          },
+          {
+            "member": "build.rs",
+            "upstream_path": "khronos_api/build.rs",
+            "sha256": "88b55daa5f6f0c90e1ab906c08b74834671316bdadc88d7cc25adfa19fc57e62",
+            "git_blob_oid": "54fbe012094ebdb5503296f1c82aebc57990ecff"
+          },
+          {
+            "member": "src/lib.rs",
+            "upstream_path": "khronos_api/src/lib.rs",
+            "sha256": "befbc0e187097e6c9da1ecbd79e0e1af462b6f6466108247745f6aa38abe0673",
+            "git_blob_oid": "c0bcbb3d0a811fc8ce6005ce4fa31d664078c361"
+          }
+        ],
+        "unmatched": [],
+        "submodules": [
+          {
+            "path": "khronos_api/api",
+            "repository": "KhronosGroup/OpenGL-Registry",
+            "commit": "85d924a5165e7206f4c73c8c10307658dc2bbe10",
+            "matched_count": 3,
+            "matched": [
+              {
+                "member": "api/xml/gl.xml",
+                "upstream_path": "khronos_api/api/xml/gl.xml",
+                "sha256": "7dae830ddacefd2af92aef2b438ff89f90fb5496f596dec8282b212eb4fc51e3",
+                "git_blob_oid": "324b11716c2b1ac88f7bc4f2322a8c76c7f8ac23",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/OpenGL-Registry",
+                "submodule_commit": "85d924a5165e7206f4c73c8c10307658dc2bbe10",
+                "submodule_path": "xml/gl.xml"
+              },
+              {
+                "member": "api/xml/glx.xml",
+                "upstream_path": "khronos_api/api/xml/glx.xml",
+                "sha256": "338cee03c97e78aa167dd667407ab973f4bc656c58cf9002aa54fa78b2f9ff32",
+                "git_blob_oid": "f9035767bd129cedb19ecaf7981f97daed535703",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/OpenGL-Registry",
+                "submodule_commit": "85d924a5165e7206f4c73c8c10307658dc2bbe10",
+                "submodule_path": "xml/glx.xml"
+              },
+              {
+                "member": "api/xml/wgl.xml",
+                "upstream_path": "khronos_api/api/xml/wgl.xml",
+                "sha256": "41e0a2182217b099b1628757956cb103cea9660e830f4d2f9fa07bf3a3679feb",
+                "git_blob_oid": "49277ed4649ab2d38d3d8fc3e528532143e9c2fa",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/OpenGL-Registry",
+                "submodule_commit": "85d924a5165e7206f4c73c8c10307658dc2bbe10",
+                "submodule_path": "xml/wgl.xml"
+              }
+            ],
+            "root_license_files": []
+          },
+          {
+            "path": "khronos_api/api_egl",
+            "repository": "KhronosGroup/EGL-Registry",
+            "commit": "b6b558e7042d67fc7543383bb0e13a075f21d8ab",
+            "matched_count": 1,
+            "matched": [
+              {
+                "member": "api_egl/api/egl.xml",
+                "upstream_path": "khronos_api/api_egl/api/egl.xml",
+                "sha256": "523fc17745545daca85c5b107b4a4c1a23dd3de39f70e499c77249e3dd6569ec",
+                "git_blob_oid": "ab0a6518b7fe227a13be216f083dea19dc29ddca",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/EGL-Registry",
+                "submodule_commit": "b6b558e7042d67fc7543383bb0e13a075f21d8ab",
+                "submodule_path": "api/egl.xml"
+              }
+            ],
+            "root_license_files": []
+          },
+          {
+            "path": "khronos_api/api_webgl",
+            "repository": "KhronosGroup/WebGL",
+            "commit": "c987f075bfdca44119175c41f547d849c08983a3",
+            "matched_count": 57,
+            "matched": [
+              {
+                "member": "api_webgl/extensions/ANGLE_instanced_arrays/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/ANGLE_instanced_arrays/extension.xml",
+                "sha256": "213f7e7636e8df0c390a18ad1339618335d7744970837998a191c275f7d1a95c",
+                "git_blob_oid": "4962e1fed264173c0d6658a5088738ee5aefc050",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/ANGLE_instanced_arrays/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/EXT_blend_minmax/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/EXT_blend_minmax/extension.xml",
+                "sha256": "d1798c0faf13dfa7930032994f5a47c07b6f2f44b45d033059bfcffb7c1d579c",
+                "git_blob_oid": "6d32712aa554d462c83bcc8f2ce68a2327b9a6d6",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/EXT_blend_minmax/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/EXT_color_buffer_float/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/EXT_color_buffer_float/extension.xml",
+                "sha256": "48dacbcce0e0e96c206fc6dd2050266680ba24c2f6b254c3a6871c8715639d36",
+                "git_blob_oid": "594b3f906a9d7135f7020e3032f281c391445765",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/EXT_color_buffer_float/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/EXT_color_buffer_half_float/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/EXT_color_buffer_half_float/extension.xml",
+                "sha256": "1900351880046b495af97e6d38e9f3213538b133f74625a4dd73165d43e7710c",
+                "git_blob_oid": "4385cd6d04ba8ec15fdeacc7b214d436beb0f791",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/EXT_color_buffer_half_float/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/EXT_disjoint_timer_query/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/EXT_disjoint_timer_query/extension.xml",
+                "sha256": "5f3502d9359932bb19cb866ad01a35f774851e7290ef7cbafcaa0d67175a29d5",
+                "git_blob_oid": "6b630aa8e12681ff1f5a1d070dad0244ffb966a0",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/EXT_disjoint_timer_query/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/EXT_disjoint_timer_query_webgl2/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/EXT_disjoint_timer_query_webgl2/extension.xml",
+                "sha256": "81f643d90164e86c2a98b4053d7f8db233dc3c3339422f3f575df7da9ba8a518",
+                "git_blob_oid": "188bcd4b62db47357fe8afc0d07a9bd30bf9a3b0",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/EXT_disjoint_timer_query_webgl2/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/EXT_float_blend/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/EXT_float_blend/extension.xml",
+                "sha256": "5a298482adee7bb1fcc8f613a8aa9b61bb71bf5523fac56da45bb68136e451b8",
+                "git_blob_oid": "2836759eab936d8f69fb7d4d78a2cf590811ba05",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/EXT_float_blend/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/EXT_frag_depth/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/EXT_frag_depth/extension.xml",
+                "sha256": "d19cf823811272352972ac4cb1d37405dcf63a91c48c1dd046e475487fecf9ea",
+                "git_blob_oid": "08006fb4f17cd014fa9e41d0dd4355075213dbe7",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/EXT_frag_depth/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/EXT_sRGB/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/EXT_sRGB/extension.xml",
+                "sha256": "7688ba25fa05558fbae72b21661e5bece2c36e899fe78da83bc8a172db9622fd",
+                "git_blob_oid": "b08cfe69837aa5f9e92a8c8dc76b5a8aa541ab9f",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/EXT_sRGB/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/EXT_shader_texture_lod/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/EXT_shader_texture_lod/extension.xml",
+                "sha256": "f1e5741d5d12d6e9a6bbc95049da2ec62ee55a4d1b6ec7b03e87e9f91282c6cb",
+                "git_blob_oid": "7cf8467d41820f6e5426590b01c9d80673fdb2f7",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/EXT_shader_texture_lod/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/EXT_texture_compression_bptc/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/EXT_texture_compression_bptc/extension.xml",
+                "sha256": "823b0280845da20a584b3ad6e85052bb158c4e69add38c3f80899facdf9fda90",
+                "git_blob_oid": "c08e98b7600656b668bb67b3f26d08a36b4e854d",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/EXT_texture_compression_bptc/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/EXT_texture_compression_rgtc/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/EXT_texture_compression_rgtc/extension.xml",
+                "sha256": "6b95c30aa46b81a4bcde2a07df0c89cded028387ee1cc3a7e5d0aabf5f0d219e",
+                "git_blob_oid": "02617fc6fa626ab24a250a16e27e53712e989908",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/EXT_texture_compression_rgtc/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/EXT_texture_filter_anisotropic/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/EXT_texture_filter_anisotropic/extension.xml",
+                "sha256": "131ed0429a9951c05ae5c30859179f47c99b9bd6f47ca2825bdecf791f0188b6",
+                "git_blob_oid": "d4e12b9c4f1a2a32b116812e0f257805e8f02e45",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/EXT_texture_filter_anisotropic/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/KHR_parallel_shader_compile/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/KHR_parallel_shader_compile/extension.xml",
+                "sha256": "6e13b581cae0c8a6f41a484d98e55bb805b599081f54cfe737253238fe797395",
+                "git_blob_oid": "ca057858a7d5ac9a9542a2b00c04f5b29a18ceb5",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/KHR_parallel_shader_compile/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/OES_element_index_uint/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/OES_element_index_uint/extension.xml",
+                "sha256": "734f7a90af440ea559fa0fe777144aaef8acc7de94a8c3ce153a75ff85cb1f6b",
+                "git_blob_oid": "22e037041447b4e21bfe120b398b0a0a111861c8",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/OES_element_index_uint/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/OES_fbo_render_mipmap/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/OES_fbo_render_mipmap/extension.xml",
+                "sha256": "43bede667b814b80e15b5af463620c53f6fa9e1a610c2e9756ad2fa55b9f7589",
+                "git_blob_oid": "621b915efc5579ae5f8362e3be5e0671895e97b3",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/OES_fbo_render_mipmap/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/OES_standard_derivatives/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/OES_standard_derivatives/extension.xml",
+                "sha256": "2fa53259457d9f6042194bfb13c0db4b3c63d2d99d9e44f057d8fe4d5b28fe69",
+                "git_blob_oid": "ebfb89ee40e3373dd4c777930d42d7d880c7227b",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/OES_standard_derivatives/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/OES_texture_float/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/OES_texture_float/extension.xml",
+                "sha256": "42a782fcc2cafd3df9ea33c9259343c66b3fbd2ebfc216dc20ee6be53481f042",
+                "git_blob_oid": "aa87af975d5018bc41dee4d3342e80fcc8f75de4",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/OES_texture_float/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/OES_texture_float_linear/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/OES_texture_float_linear/extension.xml",
+                "sha256": "98041c4427f5abf741eb2c34e23f9b8c84090d4d5b4e2e0f1b04f9b53c73259a",
+                "git_blob_oid": "62e940946644cfb088046ba5e7bbf1a93db6add9",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/OES_texture_float_linear/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/OES_texture_half_float/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/OES_texture_half_float/extension.xml",
+                "sha256": "14cb4ce4e6f259fcb6ce0d988c4e81880299f28343cdcba4f7abbf8956207529",
+                "git_blob_oid": "27902073d5cab26895983409dcd1738ad6b69b03",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/OES_texture_half_float/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/OES_texture_half_float_linear/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/OES_texture_half_float_linear/extension.xml",
+                "sha256": "d2f29c9a9bf31e757fc8c6da277cdb813350a1504be773c3bd105bfa92e45502",
+                "git_blob_oid": "a17276c87bb26969db5a9e5735005342d566aa9e",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/OES_texture_half_float_linear/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/OES_vertex_array_object/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/OES_vertex_array_object/extension.xml",
+                "sha256": "8262ec860c2af3b23daacc27a17bcf29054bcc03baf59f90779c4e53fc469f41",
+                "git_blob_oid": "3e1c53f9aa24fec8d3ecf78151d1280efb843d52",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/OES_vertex_array_object/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_color_buffer_float/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_color_buffer_float/extension.xml",
+                "sha256": "d68800fe416384a951fe45fdbcb324494d848cbecdecbdcacf7bbafe8a2aae93",
+                "git_blob_oid": "d4ac50ae6a9690b624c1f424a1a431fe612796b7",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_color_buffer_float/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_compressed_texture_astc/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_compressed_texture_astc/extension.xml",
+                "sha256": "9ba9c29e7e09aa8ec950ec70c79eae42c6f844d354b49fc88d9f048318a9c400",
+                "git_blob_oid": "255e57b07b864220459fedc90292c5b06fc9c35c",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_compressed_texture_astc/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_compressed_texture_etc/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_compressed_texture_etc/extension.xml",
+                "sha256": "d926f0a7f533ea6ce43215a7e90f35064e1a51df539e04c49a2e918f69943aad",
+                "git_blob_oid": "c6ad533974f1ad1671a7f42757799b18df4e6008",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_compressed_texture_etc/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_compressed_texture_etc1/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_compressed_texture_etc1/extension.xml",
+                "sha256": "02a008b04a5b40e274023defe3a2fb94f06a2150c059ae703c282faa6b6b4b0e",
+                "git_blob_oid": "2ffc7549b002469f3215bbabce68e6f2c3c0a91b",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_compressed_texture_etc1/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_compressed_texture_pvrtc/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_compressed_texture_pvrtc/extension.xml",
+                "sha256": "1570f8ebb56480908e46706683182a097928e8e0a2e992e3eab8f1a2c16124c9",
+                "git_blob_oid": "b67d1881afc3f8b070448c475565125c0bc9bb67",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_compressed_texture_pvrtc/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_compressed_texture_s3tc/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_compressed_texture_s3tc/extension.xml",
+                "sha256": "87585ba713ad1a8dd5c04fd24a7068a0cf88799ea697e940752c68698de0c707",
+                "git_blob_oid": "579531a1749ab28be962696f9f7ab1cb253ef08d",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_compressed_texture_s3tc/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_compressed_texture_s3tc_srgb/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_compressed_texture_s3tc_srgb/extension.xml",
+                "sha256": "e22e01bd35b437adabfc7592f5eb6d750fdaabac61b0f79561fe58e860843993",
+                "git_blob_oid": "2e824cc6c63c81fd0a31be12c0e041c83d45baf4",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_compressed_texture_s3tc_srgb/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_debug_renderer_info/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_debug_renderer_info/extension.xml",
+                "sha256": "af71073e0031b0296b7e5b609cdd272458cbae434a7fa31649054be0969a72e0",
+                "git_blob_oid": "59e60ac02d5aae48351dccd0e139253b4c9024db",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_debug_renderer_info/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_debug_shaders/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_debug_shaders/extension.xml",
+                "sha256": "fc8c59747ee8cc289aa269c6ac5b6a45f7dc036d509209ace8db7062481a1abe",
+                "git_blob_oid": "1b5f5d3be633f39a0ed426548a8683629e76b657",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_debug_shaders/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_depth_texture/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_depth_texture/extension.xml",
+                "sha256": "5d91c9b8252b9f3a19f3f6a2f861a660d200446cfcaf09fa2a337e6f6b2dd5bd",
+                "git_blob_oid": "f23dca9e5cddeb46fde08e728ad7932b4eea81ec",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_depth_texture/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_draw_buffers/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_draw_buffers/extension.xml",
+                "sha256": "9b465aa066d86ba044ad1604f6a3ce9f9e9a3afe3b4d36750a60870a67697fa1",
+                "git_blob_oid": "106ebce4fb9d05fafa434cd891abce8735cad67c",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_draw_buffers/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_lose_context/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_lose_context/extension.xml",
+                "sha256": "71defc6045fefdf7b14cd2d1fe4a432d504b2567e7acb1e77b8737aea7ba1bb0",
+                "git_blob_oid": "8c7d0f16366af294b9468a45526ecd0c2987bce4",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_lose_context/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_multiview/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_multiview/extension.xml",
+                "sha256": "474fa0ccaa7150e32060fa9ff5357b43d08cfe34930118525a2e4bee698fda0a",
+                "git_blob_oid": "fb22e01b600d32e3dd87ba60642a2660e5d5bb36",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_multiview/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/WEBGL_security_sensitive_resources/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/WEBGL_security_sensitive_resources/extension.xml",
+                "sha256": "99634c2e0117d7abb9b44bbd64d8c4e8c8ebbcfe6342222dfc624b05e8532249",
+                "git_blob_oid": "de81d178d3b70f9e6e988204d4c12c7fc4ed32a7",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/WEBGL_security_sensitive_resources/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/proposals/EXT_clip_cull_distance/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/proposals/EXT_clip_cull_distance/extension.xml",
+                "sha256": "a4f9b465b1e1efa0367a8fbbada7a6156ffb3e4ee1c677a0d220a7ea1402a260",
+                "git_blob_oid": "5fc51d379698e9d52e73207ba1baad2e63ebd439",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/proposals/EXT_clip_cull_distance/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/proposals/EXT_multi_draw_arrays/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/proposals/EXT_multi_draw_arrays/extension.xml",
+                "sha256": "47f3ab7d17e28152b7873db5da9afbee058a61caacebba6b7fd9df4a569683a3",
+                "git_blob_oid": "b520e8d7815c1fc826d3a9c9afb44cbdaa8168c6",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/proposals/EXT_multi_draw_arrays/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/proposals/WEBGL_blend_equation_advanced_coherent/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/proposals/WEBGL_blend_equation_advanced_coherent/extension.xml",
+                "sha256": "4c8d195e8cc21207e372ef596cfb58ada985289c6b1212fad912d8f0ad0563a8",
+                "git_blob_oid": "b08bb8f5531641be322477cfa289f221ab061188",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/proposals/WEBGL_blend_equation_advanced_coherent/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/proposals/WEBGL_debug/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/proposals/WEBGL_debug/extension.xml",
+                "sha256": "c8cdbb65c17dfe4851e7a56094c492b835f76f06a9cdb1b3fd273584357864b1",
+                "git_blob_oid": "3daa9e0c70a9c0373bcb16ba5d837cd3b1ef578b",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/proposals/WEBGL_debug/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/proposals/WEBGL_dynamic_texture/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/proposals/WEBGL_dynamic_texture/extension.xml",
+                "sha256": "7f5bc906ba61037befd4acd9fc39209d2e4bd8eea20ba01f34ebe4700bfd1806",
+                "git_blob_oid": "c300876096ac9e49c24b93d7bdda004303eeb19b",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/proposals/WEBGL_dynamic_texture/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/proposals/WEBGL_subarray_uploads/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/proposals/WEBGL_subarray_uploads/extension.xml",
+                "sha256": "87cde732f220d4b54faaef1e6d5efc6174849c1b54983908084659f525c7f40f",
+                "git_blob_oid": "995e0dbe5d75bdfb43a5fc1595c2ed6528dcadc3",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/proposals/WEBGL_subarray_uploads/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/proposals/WEBGL_texture_multisample/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/proposals/WEBGL_texture_multisample/extension.xml",
+                "sha256": "338f0fc6f62bf875a0f7b19e4c284ed48e5a76e791e55414843659cf402636da",
+                "git_blob_oid": "e1230d82e6905b798b8521ea0946612fc17af4bb",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/proposals/WEBGL_texture_multisample/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/proposals/WEBGL_texture_source_iframe/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/proposals/WEBGL_texture_source_iframe/extension.xml",
+                "sha256": "378beada6abe201a0ebdb68a3935e8bf27f620ae2653d696a38df9e499808eda",
+                "git_blob_oid": "1484a49ad19a78aadd26d2f9abf8dfbcaae72ed4",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/proposals/WEBGL_texture_source_iframe/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/proposals/WEBGL_video_texture/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/proposals/WEBGL_video_texture/extension.xml",
+                "sha256": "b9e0ffa1cf37c827b9be82d71adcd40ce44d05e434a87d174b289c7a5b9d30b0",
+                "git_blob_oid": "764e6044af534e368fc61a24196549a1507267bf",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/proposals/WEBGL_video_texture/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/rejected/EXT_texture_storage/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/rejected/EXT_texture_storage/extension.xml",
+                "sha256": "9fb3883d1b6d73e09b03129a30845031e0b27c9003b9fb0e2f2b2b2d5a9dbb1e",
+                "git_blob_oid": "e1c434ef4e083c7af81efa28ad1a33be83cc177b",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/rejected/EXT_texture_storage/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/rejected/OES_depth24/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/rejected/OES_depth24/extension.xml",
+                "sha256": "159c541fc025c3d454887cdedd1ff5c19ed17e9356c63d95510d70c586502af7",
+                "git_blob_oid": "05fd2a39fbf90f698bafda780f1afe0d45160b58",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/rejected/OES_depth24/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/rejected/WEBGL_compressed_texture_atc/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/rejected/WEBGL_compressed_texture_atc/extension.xml",
+                "sha256": "43eab8d74ffb5799f2410a884d79bd4574531070a53947c334d71910c5a9bdee",
+                "git_blob_oid": "a08906974c0be7a6e68eb897d29a6ef1a1d7c72d",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/rejected/WEBGL_compressed_texture_atc/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/rejected/WEBGL_debug_shader_precision/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/rejected/WEBGL_debug_shader_precision/extension.xml",
+                "sha256": "f618d6f82e21cf78146e86c396a3d7b3dd51cf778ab2dc7a504834d835abc5c8",
+                "git_blob_oid": "f017bca85d8f20a4780f92b7a8ed664ddb36f564",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/rejected/WEBGL_debug_shader_precision/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/rejected/WEBGL_draw_elements_no_range_check/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/rejected/WEBGL_draw_elements_no_range_check/extension.xml",
+                "sha256": "a3a616760a9cca44ecca27e8a8afd49679974f1bf0dfd4624231bcffaf4aec54",
+                "git_blob_oid": "c38a12726218ff81dd0e375ac8ac72e8d0abb3ac",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/rejected/WEBGL_draw_elements_no_range_check/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/rejected/WEBGL_get_buffer_sub_data_async/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/rejected/WEBGL_get_buffer_sub_data_async/extension.xml",
+                "sha256": "188b33f4972e400550bbd1be58f29d9a0bc24a8da09203edc2f3e6f1a595679b",
+                "git_blob_oid": "b224f6dbc3d4ad85784bc93a61535b6ce66bc087",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/rejected/WEBGL_get_buffer_sub_data_async/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/rejected/WEBGL_shared_resources/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/rejected/WEBGL_shared_resources/extension.xml",
+                "sha256": "cab1d86d6c853c11acf42044c4caea97103c70440c87688979c9f1cc18d622a6",
+                "git_blob_oid": "c512f89b672fe569fbb56df6710ffc953b14ee01",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/rejected/WEBGL_shared_resources/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/rejected/WEBGL_subscribe_uniform/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/rejected/WEBGL_subscribe_uniform/extension.xml",
+                "sha256": "7ec77103308177cdfa0efbc995f62151622c30bab46a4ee191e04520c51965ae",
+                "git_blob_oid": "ee85cdd4bdfae3845bb120f9e55765d56f0a0570",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/rejected/WEBGL_subscribe_uniform/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/rejected/WEBGL_texture_from_depth_video/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/rejected/WEBGL_texture_from_depth_video/extension.xml",
+                "sha256": "eabf2a9003050f8ef5ceb4d5cc0fafc98977aef407fb4060d08d704884a3d462",
+                "git_blob_oid": "da3cf2b595a0d25801333a8d74868197953f9c81",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/rejected/WEBGL_texture_from_depth_video/extension.xml"
+              },
+              {
+                "member": "api_webgl/extensions/template/extension.xml",
+                "upstream_path": "khronos_api/api_webgl/extensions/template/extension.xml",
+                "sha256": "8da65e0a5d053bf36373c6fcfdf7d8fa2738c48345671cf61b62e30ba9cce117",
+                "git_blob_oid": "b80d3cad8802e6232a0d58b29fd254b36f2ac6de",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "extensions/template/extension.xml"
+              },
+              {
+                "member": "api_webgl/specs/latest/1.0/webgl.idl",
+                "upstream_path": "khronos_api/api_webgl/specs/latest/1.0/webgl.idl",
+                "sha256": "9bd8707845fb68ff349f95b320582160423ee4cdf47294cbd980933b3b25dae9",
+                "git_blob_oid": "826dfff0c58e9307be669a1890eedcc1a521ac63",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "specs/latest/1.0/webgl.idl"
+              },
+              {
+                "member": "api_webgl/specs/latest/2.0/webgl2.idl",
+                "upstream_path": "khronos_api/api_webgl/specs/latest/2.0/webgl2.idl",
+                "sha256": "4e9ba68c298e76e85f312f86d474975da4ce656e35c2ad4a8c706437d50253a1",
+                "git_blob_oid": "8c565276dec052684f19cda7b0a37e4867a84bed",
+                "upstream_blob_oid": null,
+                "submodule_repository": "KhronosGroup/WebGL",
+                "submodule_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+                "submodule_path": "specs/latest/2.0/webgl2.idl"
+              }
+            ],
+            "root_license_files": []
+          },
+          {
+            "path": "khronos_api/api_angle",
+            "repository": "google/angle",
+            "commit": "7403dd2cd3764fe96660fe09892e764e9ae1dbca",
+            "matched_count": 5,
+            "matched": [
+              {
+                "member": "api_angle/scripts/egl.xml",
+                "upstream_path": "khronos_api/api_angle/scripts/egl.xml",
+                "sha256": "523fc17745545daca85c5b107b4a4c1a23dd3de39f70e499c77249e3dd6569ec",
+                "git_blob_oid": "ab0a6518b7fe227a13be216f083dea19dc29ddca",
+                "upstream_blob_oid": null,
+                "submodule_repository": "google/angle",
+                "submodule_commit": "7403dd2cd3764fe96660fe09892e764e9ae1dbca",
+                "submodule_path": "scripts/egl.xml"
+              },
+              {
+                "member": "api_angle/scripts/egl_angle_ext.xml",
+                "upstream_path": "khronos_api/api_angle/scripts/egl_angle_ext.xml",
+                "sha256": "98c60fa9fe46f50dd4e101c2262b4293adeeae48a18c39ad63dc085e639b6096",
+                "git_blob_oid": "e1029bd0035bda38039545842323955fbcde3bf8",
+                "upstream_blob_oid": null,
+                "submodule_repository": "google/angle",
+                "submodule_commit": "7403dd2cd3764fe96660fe09892e764e9ae1dbca",
+                "submodule_path": "scripts/egl_angle_ext.xml"
+              },
+              {
+                "member": "api_angle/scripts/gl.xml",
+                "upstream_path": "khronos_api/api_angle/scripts/gl.xml",
+                "sha256": "baac3f2e27b4949773f4ee2e6ed8e43a2ae96a428b9d73ae9d1e9c0c404cae1f",
+                "git_blob_oid": "3466dd7061b6e7ebc0809bfe635ea541ed8f9c00",
+                "upstream_blob_oid": null,
+                "submodule_repository": "google/angle",
+                "submodule_commit": "7403dd2cd3764fe96660fe09892e764e9ae1dbca",
+                "submodule_path": "scripts/gl.xml"
+              },
+              {
+                "member": "api_angle/scripts/gl_angle_ext.xml",
+                "upstream_path": "khronos_api/api_angle/scripts/gl_angle_ext.xml",
+                "sha256": "dcf1ca2ce9536bd2ea6cab6e93ce0a37821793a9ed12f280f005a3459e2905e8",
+                "git_blob_oid": "121ec91966ef6a5ce9d9a92e4e82961ab22ba404",
+                "upstream_blob_oid": null,
+                "submodule_repository": "google/angle",
+                "submodule_commit": "7403dd2cd3764fe96660fe09892e764e9ae1dbca",
+                "submodule_path": "scripts/gl_angle_ext.xml"
+              },
+              {
+                "member": "api_angle/scripts/wgl.xml",
+                "upstream_path": "khronos_api/api_angle/scripts/wgl.xml",
+                "sha256": "41e0a2182217b099b1628757956cb103cea9660e830f4d2f9fa07bf3a3679feb",
+                "git_blob_oid": "49277ed4649ab2d38d3d8fc3e528532143e9c2fa",
+                "upstream_blob_oid": null,
+                "submodule_repository": "google/angle",
+                "submodule_commit": "7403dd2cd3764fe96660fe09892e764e9ae1dbca",
+                "submodule_path": "scripts/wgl.xml"
+              }
+            ],
+            "root_license_files": [
+              {
+                "path": "LICENSE",
+                "git_blob_oid": "0f65fd60fd68d465a2283378849f16532f5ee4f1"
+              }
+            ]
+          }
+        ],
+        "excluded_metadata_count": 2,
+        "excluded_metadata": [
+          {
+            "member": "Cargo.toml",
+            "sha256": "490cb629224597d30ed4f13789d4cfd0d94ffd84ac95472fa308e724245a54af",
+            "classification": "Package metadata excluded from Git source comparison; generation not reproduced"
+          },
+          {
+            "member": ".cargo_vcs_info.json",
+            "sha256": "09de2fe5ad503839def621c48b94a7d74f29393acd482b49c0cccf2fe0664da1",
+            "classification": "Package metadata excluded from Git source comparison; generation not reproduced"
+          }
+        ],
+        "all_compared_nonmetadata_members_match": true
+      }
+    },
+    {
+      "key": "cargo/objc2@0.6.4",
+      "crate_archive_sha256": "3a12a8ed07aefc768292f076dc3ac8c48f3781c8f2d5851dd3d98950e8c5a89f",
+      "repository": "madsmtm/objc2",
+      "commit": "8852b424193ca41602281b3d7540d7c8ed51e49a",
+      "comparison": {
+        "matched_count": 117,
+        "unmatched_count": 1,
+        "matched": [
+          {
+            "member": "CHANGELOG.md",
+            "upstream_path": "crates/objc2/CHANGELOG.md",
+            "sha256": "8f21b22a21576e1f7550684d41381391092856aaecf32cbeafe9912bf15e3638",
+            "git_blob_oid": "3802e2ff04b808c9254ae937f2ca265c8f8381bf"
+          },
+          {
+            "member": "Cargo.toml.orig",
+            "upstream_path": "crates/objc2/Cargo.toml",
+            "sha256": "edff06609a6f76ba4aa4ead2f6219826f6c4fd82075fa178029085f37f931536",
+            "git_blob_oid": "7fbc44dc579f84f300f3dab81624b5648e0f3edc"
+          },
+          {
+            "member": "README.md",
+            "upstream_path": "crates/objc2/README.md",
+            "sha256": "5da56f1508a87b982a23e6bad2ff09b329f7fcf9181ea15eac17788f8d1c6824",
+            "git_blob_oid": "d1cd73edadbf8bc6ec50ad3444e852f8526a78eb"
+          },
+          {
+            "member": "benches/autorelease.rs",
+            "upstream_path": "crates/objc2/benches/autorelease.rs",
+            "sha256": "6f9f81edbeb5cd4cf7798bd886f430c5c8e5666e2e238f7c0f874148d2d5dbd3",
+            "git_blob_oid": "d120dfe0569a6652564313fd260f373f0fbb5ea1"
+          },
+          {
+            "member": "build.rs",
+            "upstream_path": "crates/objc2/build.rs",
+            "sha256": "f13d2effabc1cfa07fa5018c78eadc645914d676c034adf78acb24b8b419ce7a",
+            "git_blob_oid": "4e6c358b52ee010ca8bfdd8633c53c3de99e3d2e"
+          },
+          {
+            "member": "examples/class_with_lifetime.rs",
+            "upstream_path": "crates/objc2/examples/class_with_lifetime.rs",
+            "sha256": "c024a68f936d8214cb8f721d55fb2edec76cbd3664224982d5fb6184575afc7e",
+            "git_blob_oid": "28f503c81c6d4d91d5186f245682e711786f0dc0"
+          },
+          {
+            "member": "examples/encode_core_graphics.rs",
+            "upstream_path": "crates/objc2/examples/encode_core_graphics.rs",
+            "sha256": "2956272edc7dfd8dcaaeebc8a746fe8ad9ac18e25e80be421d854bf0a7c5e127",
+            "git_blob_oid": "d349fca8033c3525c83eb08db4672c0d1d0ba721"
+          },
+          {
+            "member": "examples/encode_nsstring.rs",
+            "upstream_path": "crates/objc2/examples/encode_nsstring.rs",
+            "sha256": "28ca48e1436d5029cf501d3399ad66b6797db51bf17541050794ca24703f1259",
+            "git_blob_oid": "7b48cc7576f76e91f6c6b8d20e8000659c290122"
+          },
+          {
+            "member": "examples/encode_nsuinteger.rs",
+            "upstream_path": "crates/objc2/examples/encode_nsuinteger.rs",
+            "sha256": "13c6e9698aa9784b5ea4442e07fdadd22e7225b96658d8e71dfea8ce11305b92",
+            "git_blob_oid": "7983fa11b5bb81158c34c77c2995c052788baa10"
+          },
+          {
+            "member": "examples/encode_opaque_type.rs",
+            "upstream_path": "crates/objc2/examples/encode_opaque_type.rs",
+            "sha256": "22e342d68e588194809c03d74387d6f1dfa12a2a7f95cb2361982c91dc7f59fb",
+            "git_blob_oid": "16cab044e69920d5209c4b7cabf8f6612c1740dc"
+          },
+          {
+            "member": "examples/hello_world_app.rs",
+            "upstream_path": "crates/objc2/examples/hello_world_app.rs",
+            "sha256": "2ee658a67711ade00203ee3b82b4dfd1a4b25da165419f424e61d22d2c2ccdb2",
+            "git_blob_oid": "b1ad0a8b5f9c68a8c7e123354f4588e99bdf6ad5"
+          },
+          {
+            "member": "examples/introspection.rs",
+            "upstream_path": "crates/objc2/examples/introspection.rs",
+            "sha256": "c7bfa73b4ab3c46c43d36f649c65746ea6551a2c9bcf23b42acf772fea37b052",
+            "git_blob_oid": "7bcc516cb9989bf25ebbdad603454b88b509fbc0"
+          },
+          {
+            "member": "src/__framework_prelude.rs",
+            "upstream_path": "crates/objc2/src/__framework_prelude.rs",
+            "sha256": "3b43544dfb4cd70a1925e0ae525bad71ec9c774e7949434e2e4f1186790fb5e5",
+            "git_blob_oid": "b7ab99b515d7cb33e665477e50ba333be38b9c67"
+          },
+          {
+            "member": "src/__macro_helpers/cache.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/cache.rs",
+            "sha256": "c6ca0617b800e62d48a37012a91c0416f7a3204af054c517478fbd54939a7392",
+            "git_blob_oid": "b9a155421e3ba5b40bd071ad00473270db9849a4"
+          },
+          {
+            "member": "src/__macro_helpers/class.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/class.rs",
+            "sha256": "d6b9eaba1c76755c64afa5f807e374f1c342ea9ec2804c1682ae8702a2bad7b4",
+            "git_blob_oid": "7736a827251cd3bbeda707ecfa2ea21478964610"
+          },
+          {
+            "member": "src/__macro_helpers/common_selectors.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/common_selectors.rs",
+            "sha256": "eddc8fce7f3466d70d837e025c880e4c64e422bdb940ead2631f5a2cc8267ce8",
+            "git_blob_oid": "a0bb8d618f5d232e94a867c40a962db1b86e7c10"
+          },
+          {
+            "member": "src/__macro_helpers/convert.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/convert.rs",
+            "sha256": "9c9a65a2f843edaf108b9d5463b4d2d8dc70463646d9c1d6518a96d40aec4837",
+            "git_blob_oid": "877e4bf10555115a0b8a8cf2bb15748ae4aa63ae"
+          },
+          {
+            "member": "src/__macro_helpers/define_class.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/define_class.rs",
+            "sha256": "5becb1ca2366a192f0a88f97e575c366cf52f6f31237414bcb69d7863a3eceee",
+            "git_blob_oid": "24336229928daef87aa84731c036f19308fae317"
+          },
+          {
+            "member": "src/__macro_helpers/defined_ivars.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/defined_ivars.rs",
+            "sha256": "3558b3e1bbdef8eb226bf9936294679f1d113155f765503f0979cfce4be1670e",
+            "git_blob_oid": "a58ef0a6dd17e06beb7b630940f890d88e678df3"
+          },
+          {
+            "member": "src/__macro_helpers/image_info.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/image_info.rs",
+            "sha256": "60b5184a019f9c22cbcbaadf075fbdc26867f18bc5ecc30b775d72a7b74cfe70",
+            "git_blob_oid": "66b2c10cc0bdaf521fb70b48893dbe9068ffe655"
+          },
+          {
+            "member": "src/__macro_helpers/method_family.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/method_family.rs",
+            "sha256": "63fa84b3c6c90cc308e337b1e00ee30dca50dbdcd68570f9a5de0b585be63c67",
+            "git_blob_oid": "ec27bb796f4fba8b6b686d3027ea1583327baff1"
+          },
+          {
+            "member": "src/__macro_helpers/mod.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/mod.rs",
+            "sha256": "10f1feb68d0cb2766326a9efa76d226f679805654a4e6e5f590fcacf2ab715d0",
+            "git_blob_oid": "516838872d1fd2086b8bfc9bbe002af5dd69ce93"
+          },
+          {
+            "member": "src/__macro_helpers/module_info.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/module_info.rs",
+            "sha256": "79c7db4ba7b31136b2fd977083d3b73ba15412f688e57005f3bc5eef81712144",
+            "git_blob_oid": "b52c980a6ca8ad1535f525e70ca56cbc87885003"
+          },
+          {
+            "member": "src/__macro_helpers/msg_send_retained.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/msg_send_retained.rs",
+            "sha256": "8b7c1495cca13c9a1011882c4726b7060523069278455adbc93b7712eed47387",
+            "git_blob_oid": "11632daefe81197ece1b1eba2f0402779d259b4d"
+          },
+          {
+            "member": "src/__macro_helpers/null_error.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/null_error.rs",
+            "sha256": "8485815fca5a4d3a088e363df7d7a8f0ab7960523f3eda6cef501d9a6e7306e2",
+            "git_blob_oid": "fb5ad19c7a7843d5817482df27c92033d48ca263"
+          },
+          {
+            "member": "src/__macro_helpers/os_version/apple.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/os_version/apple.rs",
+            "sha256": "e08dcc685ff32f8219e5823b0d7e2a70c5534ec13c39d26bf08c9fea703dcb1c",
+            "git_blob_oid": "37259e72947efff040a9f969cc33844a54919281"
+          },
+          {
+            "member": "src/__macro_helpers/os_version.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/os_version.rs",
+            "sha256": "1b1d06cd9da04159fbda4553c74b619c78b9b5d5641ed880f2342ab7cdf890c9",
+            "git_blob_oid": "fa7e6474b15452c5226743dd7b80ab24064d8063"
+          },
+          {
+            "member": "src/__macro_helpers/retain_semantics.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/retain_semantics.rs",
+            "sha256": "1ba51abbc11ab6d7e59390a3979d491dde4361f8ec25d748a05ae1217b6566e4",
+            "git_blob_oid": "be3d3eae2c4cc6090398043c8bf0207c90157cb1"
+          },
+          {
+            "member": "src/__macro_helpers/sync_unsafe_cell.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/sync_unsafe_cell.rs",
+            "sha256": "5b6f6200c45721ae759464b47016fb7738c6181684bbed9b85faf27fc4e2c5fc",
+            "git_blob_oid": "979de8390353d773def5a3f721772333c5237ac6"
+          },
+          {
+            "member": "src/__macro_helpers/writeback.rs",
+            "upstream_path": "crates/objc2/src/__macro_helpers/writeback.rs",
+            "sha256": "a0dfe60e4cbd763039b9daf67df2f4722e6e0cfede6e2b96e154b9246a2a01a9",
+            "git_blob_oid": "9e1d09ffaf020ef9222ac3ae00f900244c009390"
+          },
+          {
+            "member": "src/downcast.rs",
+            "upstream_path": "crates/objc2/src/downcast.rs",
+            "sha256": "c14c9fd8afb52de1f4e30ca9019e5cdb788dc70fc004ad76b2a427932d897c44",
+            "git_blob_oid": "537e4c2088099d63ec2eaa83fd07f7686fd11cff"
+          },
+          {
+            "member": "src/encode.rs",
+            "upstream_path": "crates/objc2/src/encode.rs",
+            "sha256": "7e50e644d065b07afb2528dbef6d8fe8c4a90adaf947b93240eec93866cc2f60",
+            "git_blob_oid": "470dfa3a9d95a21ef95300343ac2d25f3c62c6c5"
+          },
+          {
+            "member": "src/exception.rs",
+            "upstream_path": "crates/objc2/src/exception.rs",
+            "sha256": "495502e59fef75d7a1eac3bfb7f6ea83c21d46d42bc39f4a700cac28c2ed88c6",
+            "git_blob_oid": "0e850871cfa4236e68c37736add09559841ccd54"
+          },
+          {
+            "member": "src/ffi/class.rs",
+            "upstream_path": "crates/objc2/src/ffi/class.rs",
+            "sha256": "3684bfb7d5a9e2ad687b838d0ebabccd8ccf5a86e03c68c95d4a6c8ddf27d59e",
+            "git_blob_oid": "42ec4c1a9a7f900ca47da7320db1033dfecfa71d"
+          },
+          {
+            "member": "src/ffi/constants.rs",
+            "upstream_path": "crates/objc2/src/ffi/constants.rs",
+            "sha256": "8b455a460298406039e45ebb4cd9e3b5efd3707f70bd535965b79076e7987015",
+            "git_blob_oid": "888e2ba1e2d4fd2e67496d1824005965eac1dde2"
+          },
+          {
+            "member": "src/ffi/exception.rs",
+            "upstream_path": "crates/objc2/src/ffi/exception.rs",
+            "sha256": "72da85269cc5a813b7f1b208e91c1500f8d3560d5975a812f15a129d1aa1def5",
+            "git_blob_oid": "08a1e2337af9431f555dba5418465f681dbe2bfd"
+          },
+          {
+            "member": "src/ffi/libc.rs",
+            "upstream_path": "crates/objc2/src/ffi/libc.rs",
+            "sha256": "74010389a3b1b37923fb26259edf8ec9fc633d3fb9e95590f666534db265da46",
+            "git_blob_oid": "72e8304ae1e45d3607bd7c624bf0ea4b92d00b17"
+          },
+          {
+            "member": "src/ffi/message.rs",
+            "upstream_path": "crates/objc2/src/ffi/message.rs",
+            "sha256": "4d44f8e84dc37273172d68e50f3376b6617c0ab6e943352b4b899c29ac8da5b0",
+            "git_blob_oid": "f4d3d6eb03b6febcbb5751d1642d286a5f1eb18d"
+          },
+          {
+            "member": "src/ffi/method.rs",
+            "upstream_path": "crates/objc2/src/ffi/method.rs",
+            "sha256": "b83c2332b7feb59358162e7ffcd842a07a20dd81c92ba8aafe19aa0fb3dad966",
+            "git_blob_oid": "fa9131a72be343ad2f78fc012061100443ef736f"
+          },
+          {
+            "member": "src/ffi/mod.rs",
+            "upstream_path": "crates/objc2/src/ffi/mod.rs",
+            "sha256": "aa5bc001dd11f17266850b591d138648ce0c756f2d64a3caab2d37231e84abbf",
+            "git_blob_oid": "c04d4da7e43bc364cac60dea37852d07349f9285"
+          },
+          {
+            "member": "src/ffi/object.rs",
+            "upstream_path": "crates/objc2/src/ffi/object.rs",
+            "sha256": "190e54d96a4102babc3eaaf9993eea9cfaf5b7354602bc173d12c423e0f2c67e",
+            "git_blob_oid": "031e48f549efaa85c279935606a53860c89861c5"
+          },
+          {
+            "member": "src/ffi/property.rs",
+            "upstream_path": "crates/objc2/src/ffi/property.rs",
+            "sha256": "f84371a8cda2adc46a912d964e3c485df64084ac304efaa084547a1045588701",
+            "git_blob_oid": "102639365ec036b670123c19725ed872595f9727"
+          },
+          {
+            "member": "src/ffi/protocol.rs",
+            "upstream_path": "crates/objc2/src/ffi/protocol.rs",
+            "sha256": "3dce40d519d164481276025355c6f152fd074a950d25846e914d683f6f3bb1b3",
+            "git_blob_oid": "a171256760e0f2de78d7a530701f96d8e928f63f"
+          },
+          {
+            "member": "src/ffi/rc.rs",
+            "upstream_path": "crates/objc2/src/ffi/rc.rs",
+            "sha256": "054d470dbbc03865bb855f0fadf8ea7acab3468c8445b02e8d21bf01363f3d2d",
+            "git_blob_oid": "f4c94d10ec531967290286204165c6026da11362"
+          },
+          {
+            "member": "src/ffi/selector.rs",
+            "upstream_path": "crates/objc2/src/ffi/selector.rs",
+            "sha256": "6cfe0fe35af9b5183124bf896d49e32ccfdd14f56d2fb5ad841a14aa9ecfcf81",
+            "git_blob_oid": "e756d030ece36c0eb2ff1f335b773b8bbd9f1c4d"
+          },
+          {
+            "member": "src/ffi/types.rs",
+            "upstream_path": "crates/objc2/src/ffi/types.rs",
+            "sha256": "40a2f02aee7bced6527b1a689ca24c7a2c99f3952af6381c2ed1c75436ac0682",
+            "git_blob_oid": "4cfa45227302001cdab802b1250af96fec25bceb"
+          },
+          {
+            "member": "src/ffi/various.rs",
+            "upstream_path": "crates/objc2/src/ffi/various.rs",
+            "sha256": "eb06351c93c05d30c8420e0b115bd7b9f31a544d1eda2709c61b1d29b078e909",
+            "git_blob_oid": "4eaa150b22be435704753a1bbd66fde097ce3d1b"
+          },
+          {
+            "member": "src/lib.rs",
+            "upstream_path": "crates/objc2/src/lib.rs",
+            "sha256": "0b1aca96163494d81006235bd7555b21e5938509757f16e7290258fd460cf4b2",
+            "git_blob_oid": "273615d798b87c9565712fe3430c2af99e96767a"
+          },
+          {
+            "member": "src/macros/__attribute_helpers.rs",
+            "upstream_path": "crates/objc2/src/macros/__attribute_helpers.rs",
+            "sha256": "9c847b0565fd126b558b16bbc3153e502a943b39f51e0bf268c26b23fc5c7e9d",
+            "git_blob_oid": "09393813439f4b4c64dd32f7661ba6e66a3714dc"
+          },
+          {
+            "member": "src/macros/__fallback.rs",
+            "upstream_path": "crates/objc2/src/macros/__fallback.rs",
+            "sha256": "ecff35fcff4de9cea0abaf298a36fb1b2904548614d0fad07987674768232b44",
+            "git_blob_oid": "29e0bf49ce609534f79aae83acd666f034111f9b"
+          },
+          {
+            "member": "src/macros/__method_msg_send.rs",
+            "upstream_path": "crates/objc2/src/macros/__method_msg_send.rs",
+            "sha256": "d0e5bfc8fc7a18f8298e1dbac53b9baa0669e5165a119ed6219c8ba2e6eeddec",
+            "git_blob_oid": "f1fe4a8d5ee9bd400b7504e3111e63ff21a9f79a"
+          },
+          {
+            "member": "src/macros/__msg_send_parse.rs",
+            "upstream_path": "crates/objc2/src/macros/__msg_send_parse.rs",
+            "sha256": "0b24e4f4fe0cb75eb5833c5ca618082d7d6b9792d2d78d9d42c1a272066a3895",
+            "git_blob_oid": "2bb0d1be9966feb849739be1f2019151bea06f0c"
+          },
+          {
+            "member": "src/macros/__rewrite_self_param.rs",
+            "upstream_path": "crates/objc2/src/macros/__rewrite_self_param.rs",
+            "sha256": "d154cf8c13f8a3f070e57cdb55a3c26afbebe5c385420bfae7005b702009cee3",
+            "git_blob_oid": "e483512d5f018c9d06157a6371c3f80ffe7549f2"
+          },
+          {
+            "member": "src/macros/available.rs",
+            "upstream_path": "crates/objc2/src/macros/available.rs",
+            "sha256": "f4460527852761a3c6dfb26d31f1a40d6c4bb8abb13023314cc6a8b879b7bc9a",
+            "git_blob_oid": "6b95a7d982857466e2f50692138e4602dc3cb09b"
+          },
+          {
+            "member": "src/macros/cf_objc2_type.rs",
+            "upstream_path": "crates/objc2/src/macros/cf_objc2_type.rs",
+            "sha256": "352b1c68fbb8cb998a5e71952551af90776ab1cee775e15fc5458c77c8c56cd7",
+            "git_blob_oid": "8cdd9726a6f4aa0b712812882f5b2e5d63aa4b24"
+          },
+          {
+            "member": "src/macros/define_class.rs",
+            "upstream_path": "crates/objc2/src/macros/define_class.rs",
+            "sha256": "b731297bf607ac57d7129dcbd0bd6a8919e6dd46cd3a8e6322b2e0288ef01da8",
+            "git_blob_oid": "b2167d148ec79b10c5bd676c5a1003a6a583f1ab"
+          },
+          {
+            "member": "src/macros/extern_class.rs",
+            "upstream_path": "crates/objc2/src/macros/extern_class.rs",
+            "sha256": "7887d0921c9c43e4cfb51de42e8b0e255e154632d85e1680f57d7fcf44cfaca4",
+            "git_blob_oid": "41be515d2ee3277df98d71ec0e61e58eeb24ec4b"
+          },
+          {
+            "member": "src/macros/extern_conformance.rs",
+            "upstream_path": "crates/objc2/src/macros/extern_conformance.rs",
+            "sha256": "143ef0bbce2b3b2c448bcfd4ab38678759afb3ac794fa9d2ccfda018e372611d",
+            "git_blob_oid": "c5c5332b5ad6255ad81f9f4437b1e3740a020826"
+          },
+          {
+            "member": "src/macros/extern_methods.rs",
+            "upstream_path": "crates/objc2/src/macros/extern_methods.rs",
+            "sha256": "7dc7fb5d2b9f639c94b1b2fda69d6bd00d8944560415aef9698ff826ee028456",
+            "git_blob_oid": "2d0d99b10ae8a5f73b166cb0c857f0d75df21ac5"
+          },
+          {
+            "member": "src/macros/extern_protocol.rs",
+            "upstream_path": "crates/objc2/src/macros/extern_protocol.rs",
+            "sha256": "d898543ce0d89a2496285ebb1757434777453cafd328b6e9b43d65ebfd649e31",
+            "git_blob_oid": "59936da3e5a81d52c49b1bc2c1547a8ab620a88a"
+          },
+          {
+            "member": "src/macros/mod.rs",
+            "upstream_path": "crates/objc2/src/macros/mod.rs",
+            "sha256": "0385ab935ec5b30f948b43eff0988f05035d68b8ee4980a62bcb790c3b70bc5f",
+            "git_blob_oid": "1bef19e9ba0c7eb8dd6439adf26d258891492e16"
+          },
+          {
+            "member": "src/main_thread_marker.rs",
+            "upstream_path": "crates/objc2/src/main_thread_marker.rs",
+            "sha256": "66676a96c255c1b5215860722b3e47f4c4ec8033b0237798ba261ff456b32be7",
+            "git_blob_oid": "3417ede90d84f5bb57ef522f0acca68f8e7e15f2"
+          },
+          {
+            "member": "src/rc/allocated_partial_init.rs",
+            "upstream_path": "crates/objc2/src/rc/allocated_partial_init.rs",
+            "sha256": "d8426764a264132bd7cba61ca7ad6d8e91d89eab30811fa64b6ebf02e303ce86",
+            "git_blob_oid": "83e6ab4ee99a4469a27e630429aa78084704cd09"
+          },
+          {
+            "member": "src/rc/autorelease.rs",
+            "upstream_path": "crates/objc2/src/rc/autorelease.rs",
+            "sha256": "87d6a8d19e69b0eaf85c4b99ee3ee15e02c314f325e5e61520b6e35a3d2be799",
+            "git_blob_oid": "4666a76aac7ee63cab21fb4cdb256b048c2b411f"
+          },
+          {
+            "member": "src/rc/mod.rs",
+            "upstream_path": "crates/objc2/src/rc/mod.rs",
+            "sha256": "dc67a96d20009a3ca9556f1a914668b0200bfb9701fc3e391a8518f25252116f",
+            "git_blob_oid": "b12ab52d1b11abde231d479063016b232c6fcd02"
+          },
+          {
+            "member": "src/rc/retained.rs",
+            "upstream_path": "crates/objc2/src/rc/retained.rs",
+            "sha256": "deaa939673ac1b7bf3d2c40b77a4d86fd06b805b301b1bdca10a220ed4e1b551",
+            "git_blob_oid": "3b8678b85f25fe4c4c47f302280fc15abc203d72"
+          },
+          {
+            "member": "src/rc/retained_forwarding_impls.rs",
+            "upstream_path": "crates/objc2/src/rc/retained_forwarding_impls.rs",
+            "sha256": "70c6c9e0e3089c5b5ffbb0535dfb63f355dab2932a20f87b8442cf4ff5f62518",
+            "git_blob_oid": "d4c61a21974f4952d77cb63c9600c7d8a18cc0fe"
+          },
+          {
+            "member": "src/rc/retained_traits.rs",
+            "upstream_path": "crates/objc2/src/rc/retained_traits.rs",
+            "sha256": "f4bb85802ce464ccd2ebe6f6a68b41537dd7444e1765862459e6ed4500721070",
+            "git_blob_oid": "9654d19c5dd543c85faba64d5939393c9b2399fd"
+          },
+          {
+            "member": "src/rc/test_object.rs",
+            "upstream_path": "crates/objc2/src/rc/test_object.rs",
+            "sha256": "0bb97ac9015559c6a1c904d3c313c7ab24facdfd7cd7ece2e3d0ded5ca7a884f",
+            "git_blob_oid": "5251b22b696b6b949321e321841ca359d481dd7a"
+          },
+          {
+            "member": "src/rc/weak.rs",
+            "upstream_path": "crates/objc2/src/rc/weak.rs",
+            "sha256": "d052b7cbfbacd471a99a0ad8864c69dc12da1b39ca4b5d91dfd07b1a92c5b0e9",
+            "git_blob_oid": "d7e59bcacf3586b1a7d130a317e1527e3d6acdff"
+          },
+          {
+            "member": "src/runtime/__nsstring.rs",
+            "upstream_path": "crates/objc2/src/runtime/__nsstring.rs",
+            "sha256": "9e4c567499e53a4e00c1ca93973ed13df1d35745828f535a2980d17b33f708b6",
+            "git_blob_oid": "f631b3b0b41ddc5c0d1042f152d53bdec0fa9438"
+          },
+          {
+            "member": "src/runtime/bool.rs",
+            "upstream_path": "crates/objc2/src/runtime/bool.rs",
+            "sha256": "c60b4efb1a78a4ccc4b25a8dea79cdd818d4595224c096337097745d2befae98",
+            "git_blob_oid": "7f1072a29e3c574c5d3f89e791742c1adecf0009"
+          },
+          {
+            "member": "src/runtime/define.rs",
+            "upstream_path": "crates/objc2/src/runtime/define.rs",
+            "sha256": "9411701b1cf4789db48e555838a7f53deac3c2f827f5d97614d73f6fc44ec1a6",
+            "git_blob_oid": "a60ae931000e9a4a8fbda96624bd63743725c385"
+          },
+          {
+            "member": "src/runtime/malloc.rs",
+            "upstream_path": "crates/objc2/src/runtime/malloc.rs",
+            "sha256": "03eecda4e60dfb4f53a6a691ed9df0d61fc72bae84d5d74e605ba1995ded61c7",
+            "git_blob_oid": "b9e7b229b4d5419b5655c6a4af73c302d9f053c4"
+          },
+          {
+            "member": "src/runtime/message_receiver.rs",
+            "upstream_path": "crates/objc2/src/runtime/message_receiver.rs",
+            "sha256": "9576e377840f1707fd2457b3f5530d2da9f6279278858648f1951a78b1b16f6f",
+            "git_blob_oid": "16a139a3848c75142514e4043d591052d5983559"
+          },
+          {
+            "member": "src/runtime/method_encoding_iter.rs",
+            "upstream_path": "crates/objc2/src/runtime/method_encoding_iter.rs",
+            "sha256": "f0de5d29b8b02d54a99f42eb5be57659483a3462d51bc57f0776b8871126492a",
+            "git_blob_oid": "da85c946846bcad4f38cd61c6924e38f96c86893"
+          },
+          {
+            "member": "src/runtime/method_implementation.rs",
+            "upstream_path": "crates/objc2/src/runtime/method_implementation.rs",
+            "sha256": "49251266843291a69f4f49278549b335bc2b3bd8e2fab355f4bc1eab4df486ab",
+            "git_blob_oid": "c12dbda4597e024955cc818b157be5421f29dfec"
+          },
+          {
+            "member": "src/runtime/mod.rs",
+            "upstream_path": "crates/objc2/src/runtime/mod.rs",
+            "sha256": "accb4533fec9dbfc9ca51090663def2308aac72c66ec9cbf85649c4d2729c4c6",
+            "git_blob_oid": "2d56a987e54c0953c0e91896bf8f1d4505d68f17"
+          },
+          {
+            "member": "src/runtime/nsobject.rs",
+            "upstream_path": "crates/objc2/src/runtime/nsobject.rs",
+            "sha256": "8a71f82aaee35148c403705358331c1756f010af045b23393d74a6a7dfda7c60",
+            "git_blob_oid": "f281d8e0911e213236bac30c31678d4d024f5314"
+          },
+          {
+            "member": "src/runtime/nsproxy.rs",
+            "upstream_path": "crates/objc2/src/runtime/nsproxy.rs",
+            "sha256": "b7d477291c9830c0e01efe1c09e1707638f53c09755040141d643eedbe987090",
+            "git_blob_oid": "d0b7246d24b9b4d45c546ca40218e5a97be08cc0"
+          },
+          {
+            "member": "src/runtime/nszone.rs",
+            "upstream_path": "crates/objc2/src/runtime/nszone.rs",
+            "sha256": "9c6257e20aed110997483f0f7e0ce8df7b51331da36780a9a7cd32960d1c97ea",
+            "git_blob_oid": "0eb46acba0f31d598515cff59f950c09ce64dd28"
+          },
+          {
+            "member": "src/runtime/protocol_object.rs",
+            "upstream_path": "crates/objc2/src/runtime/protocol_object.rs",
+            "sha256": "fdd6760cca194e14ea251646b5c2179a3085179913930de5d52d025c1542d5c6",
+            "git_blob_oid": "46cd71c413091cc44b6b5fdd90eb37f430fab97c"
+          },
+          {
+            "member": "src/runtime/retain_release_fast.rs",
+            "upstream_path": "crates/objc2/src/runtime/retain_release_fast.rs",
+            "sha256": "0abc01b25d42902d7083cebed12b0fb1a72b9733679c7892fe7c3ebbeea36b6e",
+            "git_blob_oid": "fe6fade4b38fa393e97cf48d715a84936a580e79"
+          },
+          {
+            "member": "src/test_utils.rs",
+            "upstream_path": "crates/objc2/src/test_utils.rs",
+            "sha256": "51a8c6fe416f4a0c70edcc6e229f4879e33ec98da5d311245d4cf9775b6e9e57",
+            "git_blob_oid": "0260c36212d55b15a119b3137b3aa533ccd444f8"
+          },
+          {
+            "member": "src/top_level_traits.rs",
+            "upstream_path": "crates/objc2/src/top_level_traits.rs",
+            "sha256": "a1a2e14da886728e70afe46577a0237524dce04f0776b9e07fa67c321bbe914a",
+            "git_blob_oid": "eef2988c489f64c9ab3324e408010827bddcf2e9"
+          },
+          {
+            "member": "src/topics/about_generated/CHANGELOG.md",
+            "upstream_path": "crates/objc2/src/topics/about_generated/CHANGELOG.md",
+            "sha256": "a144fd97f913a56b6102f012fbb7aec4f7ee4fb0be11af5ae2be1210c957d758",
+            "git_blob_oid": "06a7b3f7a740c3a28581b061d5c47f7efb69ca81"
+          },
+          {
+            "member": "src/topics/about_generated/README.md",
+            "upstream_path": "crates/objc2/src/topics/about_generated/README.md",
+            "sha256": "c02f1533decd37d991c2f6a4db356ea19ef3add9d638604827a886474534e18d",
+            "git_blob_oid": "1e57d33eb025039a4f130d7da19536e25e4f3756"
+          },
+          {
+            "member": "src/topics/about_generated/cargo_features.md",
+            "upstream_path": "crates/objc2/src/topics/about_generated/cargo_features.md",
+            "sha256": "ce950336c5dac8835c9e11144d2fc9858d324f87e480bd916d3c29e495ca4a45",
+            "git_blob_oid": "5ce907dbb5f186aaec8a4af7f9732dc831eba638"
+          },
+          {
+            "member": "src/topics/about_generated/deref.md",
+            "upstream_path": "crates/objc2/src/topics/about_generated/deref.md",
+            "sha256": "16259698a4619bcec756b09268d97ff3972fa64892e4023a72f8a4d07aa3ec4e",
+            "git_blob_oid": "75b5646d23076ee2315028ce3d4d5210e1c4cc7e"
+          },
+          {
+            "member": "src/topics/about_generated/list.rs",
+            "upstream_path": "crates/objc2/src/topics/about_generated/list.rs",
+            "sha256": "dd8920b8979c7e846d1990adb1a53f6d6aade3246eac6b258962e3aa40ba3c8b",
+            "git_blob_oid": "db8ca1e077103961458e6b1ad4d83981dd7afdef"
+          },
+          {
+            "member": "src/topics/about_generated/list_data.md",
+            "upstream_path": "crates/objc2/src/topics/about_generated/list_data.md",
+            "sha256": "a4dc51aec1b245f1a7ff7e009e47c7256feb532abdb9a646e416ea39a471bcd4",
+            "git_blob_oid": "0f16aebbfeb46ac5791fb0d4903b557f142a913a"
+          },
+          {
+            "member": "src/topics/about_generated/list_unsupported.md",
+            "upstream_path": "crates/objc2/src/topics/about_generated/list_unsupported.md",
+            "sha256": "cbc4a9b00f0f4a56e8becb701f40edf3fe8956ad638abe0e3f970ed214a24e0b",
+            "git_blob_oid": "79a657702521ea68d667b0aa9e17b357ca5ee7a2"
+          },
+          {
+            "member": "src/topics/about_generated/mod.rs",
+            "upstream_path": "crates/objc2/src/topics/about_generated/mod.rs",
+            "sha256": "622ea407c1e50eb271cebaf3f396c97ed0b21fdb8a27b11e4f1ea2cf046630ce",
+            "git_blob_oid": "de127ce59b95330ff9a54dd3a2d78bc9e2d0e437"
+          },
+          {
+            "member": "src/topics/alternatives.md",
+            "upstream_path": "crates/objc2/src/topics/alternatives.md",
+            "sha256": "97afe7040a3fa79575318d690b7677272bf157a7e2a06d30a62e2a4d75625dc9",
+            "git_blob_oid": "d160afca355971989948704090cf8fd137b935de"
+          },
+          {
+            "member": "src/topics/crate_interop.md",
+            "upstream_path": "crates/objc2/src/topics/crate_interop.md",
+            "sha256": "5b3903ddfa1b95303a115557cc98b92e7dda4b4cc382d8a1bb800e336e2f048c",
+            "git_blob_oid": "ef50ba56bf0c152f50b2a702c0f20b34dc9b095a"
+          },
+          {
+            "member": "src/topics/cross_compiling.md",
+            "upstream_path": "crates/objc2/src/topics/cross_compiling.md",
+            "sha256": "9593b68727129df6ed86a0ac00dfaa3d4e64fbda7e5b7ef040f623fcf8569d0b",
+            "git_blob_oid": "8788c3896f3991bd399f46c3f56531587daf92b0"
+          },
+          {
+            "member": "src/topics/goals.md",
+            "upstream_path": "crates/objc2/src/topics/goals.md",
+            "sha256": "b91c3726bdcb53e7dedcd2f115827740a43814676a3e35307c8bf275cb20ed69",
+            "git_blob_oid": "f79c089bee2efc701d617c908f3c9518379e693f"
+          },
+          {
+            "member": "src/topics/interior_mutability.md",
+            "upstream_path": "crates/objc2/src/topics/interior_mutability.md",
+            "sha256": "b10448576894e65d76c108a2d6c3b4bf98a0671db5309bb5581b0ecf70ed5716",
+            "git_blob_oid": "a4b513dce486302846e0e2423114fb37c908d529"
+          },
+          {
+            "member": "src/topics/kvo.md",
+            "upstream_path": "crates/objc2/src/topics/kvo.md",
+            "sha256": "bb6842a3604e9a2daf01533c60122bd62a35013b9dbc08631564d4dc1d895086",
+            "git_blob_oid": "c1c8995ef918612bb1ee775a579f195283abb312"
+          },
+          {
+            "member": "src/topics/layered_safety.md",
+            "upstream_path": "crates/objc2/src/topics/layered_safety.md",
+            "sha256": "eecb31c528430175828fc317993c70ff8c809d34aa98b9bc83910708c7e94fbf",
+            "git_blob_oid": "efa26242614335b4a04ec188f7cb708a0f77f117"
+          },
+          {
+            "member": "src/topics/migrating_from_objc.md",
+            "upstream_path": "crates/objc2/src/topics/migrating_from_objc.md",
+            "sha256": "35f1a70af3489ca928082015cd11ba601688f35471e621fd461b8d3cba8c2358",
+            "git_blob_oid": "4a891ac1d47d3ac05f2da6c2620e0bbfd1d34f0e"
+          },
+          {
+            "member": "src/topics/mod.rs",
+            "upstream_path": "crates/objc2/src/topics/mod.rs",
+            "sha256": "1fce09b8caa364a938fdc0db61eeb7ee41f4b2ab8ad9f6ab7443c2fed0e50719",
+            "git_blob_oid": "f46e274150c1b72a4c9f137775837bfc7c03862b"
+          },
+          {
+            "member": "src/topics/mvc.md",
+            "upstream_path": "crates/objc2/src/topics/mvc.md",
+            "sha256": "bbcabe6375413bf15b654df3197ccbbb5e6bad00852c838622317515be4ba85e",
+            "git_blob_oid": "c4e97dfeb6fc38e67c787cc9af1a8c4595ee400e"
+          },
+          {
+            "member": "src/topics/run_loop.md",
+            "upstream_path": "crates/objc2/src/topics/run_loop.md",
+            "sha256": "b57a4d247c7f8713f9a54847202a2ae7b72f57fc4470f273a5b7b86b4823503a",
+            "git_blob_oid": "023b39da10b6f565ee39f39a776b45102f4697da"
+          },
+          {
+            "member": "src/topics/swift.md",
+            "upstream_path": "crates/objc2/src/topics/swift.md",
+            "sha256": "dc3409869719d3a750b0c3d947159661c36bbf7ede05deb1df8a1cee43173e44",
+            "git_blob_oid": "6e8d46f8f8fc79e32b2c9730bf309e2210a3cb77"
+          },
+          {
+            "member": "src/topics/weak_property.md",
+            "upstream_path": "crates/objc2/src/topics/weak_property.md",
+            "sha256": "91d42bf7af831d58f7f20602de8300efd36ac3752afb8f5d542e33a125424f1c",
+            "git_blob_oid": "548e1ee974a43bec159d9400cb4fc396612052c4"
+          },
+          {
+            "member": "src/verify.rs",
+            "upstream_path": "crates/objc2/src/verify.rs",
+            "sha256": "a178a560ffaf8c96ba315e05f2acc9677e62d4e26dc10dc9a3b0e5e772391618",
+            "git_blob_oid": "030eaea3d0432fd51203cf38dfae17200f20b26a"
+          },
+          {
+            "member": "tests/backtrace.rs",
+            "upstream_path": "crates/objc2/tests/backtrace.rs",
+            "sha256": "327cb9bcf097cd4f18cf1c621d4c2caf5fc05991538a031bae4e6e62faa645ad",
+            "git_blob_oid": "faa50d0f5dc8b43753e1aa89ec2099b8d9d6f651"
+          },
+          {
+            "member": "tests/define_class.rs",
+            "upstream_path": "crates/objc2/tests/define_class.rs",
+            "sha256": "aeebeb833df580cc5b0ebf8cb543f05b8d7d55beec7bd853a6900281d27398a5",
+            "git_blob_oid": "5da92bbe77f8dc0c31b048233f43bd406fb661aa"
+          },
+          {
+            "member": "tests/define_class_self.rs",
+            "upstream_path": "crates/objc2/tests/define_class_self.rs",
+            "sha256": "8cd90ad92d9310e0ae99c264d9027f827630495dd3d9083a0e4b792fe6d67a6d",
+            "git_blob_oid": "438b2f733f6c3507ccdbbd43ddf434e7711cb86b"
+          },
+          {
+            "member": "tests/extern_class.rs",
+            "upstream_path": "crates/objc2/tests/extern_class.rs",
+            "sha256": "51eba9a0c4f191564974dbcd2830faf1e71dedae303af4701357d7ff385442b7",
+            "git_blob_oid": "54fe6631758d55e010c092e8094b5348cb5a829f"
+          },
+          {
+            "member": "tests/macros_mainthreadmarker.rs",
+            "upstream_path": "crates/objc2/tests/macros_mainthreadmarker.rs",
+            "sha256": "cc4833bfe276cdbffc15aa274d8bcd2342231eea0950be5585398268289be61c",
+            "git_blob_oid": "62065a24ab58df266f6f9589af5d796e32bb83da"
+          },
+          {
+            "member": "tests/no_prelude.rs",
+            "upstream_path": "crates/objc2/tests/no_prelude.rs",
+            "sha256": "a3ca86cf91ffea6cdc5508ba37fbaeba8f2a8d8cee0cb3b19b907b292717e316",
+            "git_blob_oid": "2ba9cae919fe760863eb9038b66ea2581549a41d"
+          },
+          {
+            "member": "tests/protocol_shared_retain_count.rs",
+            "upstream_path": "crates/objc2/tests/protocol_shared_retain_count.rs",
+            "sha256": "7d736ea5ca1b077881060bf18d164ae9d97f83365d5cb5e9dc6626a35f027686",
+            "git_blob_oid": "c3ed4e4119d250e16b6aae886174e97e97df888b"
+          },
+          {
+            "member": "tests/track_caller.rs",
+            "upstream_path": "crates/objc2/tests/track_caller.rs",
+            "sha256": "7a80738661cbf3f7f354b905b51602918e982bb05d60a2ee47ae653c05a55530",
+            "git_blob_oid": "4e2512224fd1b32f1ba2d460e0669b264ca9c137"
+          },
+          {
+            "member": "tests/use_macros.rs",
+            "upstream_path": "crates/objc2/tests/use_macros.rs",
+            "sha256": "ed033ef5d7ac6f3512c69b6e8979b219630a906708abb4922aff6b6829c07f7b",
+            "git_blob_oid": "7b5c463d875e998fcc495d350f3dca87a08e59e6"
+          },
+          {
+            "member": "translation-config.toml",
+            "upstream_path": "crates/objc2/translation-config.toml",
+            "sha256": "d3334f8efc03d8e4faec97bf695c56a180832a25535639b0ea773ae016678a8d",
+            "git_blob_oid": "42ba15eeaa27f3fe0c8bfab81dad13c0c4f9c964"
+          }
+        ],
+        "unmatched": [
+          {
+            "member": "Cargo.lock",
+            "upstream_path": "crates/objc2/Cargo.lock",
+            "sha256": "a415472baba3563dbed2dc67e6d7e578b8cd22943b7ece806b123def6e87cf07",
+            "git_blob_oid": "25434b35a42a0f731dbca4784f5842530e16a02b",
+            "upstream_blob_oid": null
+          }
+        ],
+        "excluded_metadata_count": 2,
+        "excluded_metadata": [
+          {
+            "member": ".cargo_vcs_info.json",
+            "sha256": "45343a7cb8cebbb23c2804f99a14f01f6618ce0956dba62f387fb9ffaf00eff7",
+            "classification": "Package metadata excluded from Git source comparison; generation not reproduced"
+          },
+          {
+            "member": "Cargo.toml",
+            "sha256": "74bfa13bee2c7362432f22886f9749743c78d32eed5916e26a06ff56ae84c901",
+            "classification": "Package metadata excluded from Git source comparison; generation not reproduced"
+          }
+        ],
+        "all_compared_nonmetadata_members_match": false
+      }
+    },
+    {
+      "key": "cargo/objc2-encode@4.1.0",
+      "crate_archive_sha256": "ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33",
+      "repository": "madsmtm/objc2",
+      "commit": "8d214f5477365ffcbcbb7de058c86ed9a518efb7",
+      "comparison": {
+        "matched_count": 9,
+        "unmatched_count": 1,
+        "matched": [
+          {
+            "member": "CHANGELOG.md",
+            "upstream_path": "crates/objc2-encode/CHANGELOG.md",
+            "sha256": "998a091c4482ecaf0d4d2f99cb61ea7edfcae91e30a9c65e419c974c44e97fe4",
+            "git_blob_oid": "0b7aa2cc5eb1f79dad6651a54862060e6df9600f"
+          },
+          {
+            "member": "Cargo.toml.orig",
+            "upstream_path": "crates/objc2-encode/Cargo.toml",
+            "sha256": "12972b1faf213492f9e78226f23642c461284b739f7be5437d9401465a2869a6",
+            "git_blob_oid": "23b775fc8c647005b853e1aa48c5452d776a2cde"
+          },
+          {
+            "member": "README.md",
+            "upstream_path": "crates/objc2-encode/README.md",
+            "sha256": "e980a74b88a62193f7908df3c27e7915f38559870f5e033ddb77fbed65e024a5",
+            "git_blob_oid": "1c5c000792afefa6d39c85780b9f83a19ad249a9"
+          },
+          {
+            "member": "src/encoding.rs",
+            "upstream_path": "crates/objc2-encode/src/encoding.rs",
+            "sha256": "fef7c5d6b4911edf74e49d0c04ff4478211daa47d9a6b442a855907809344f9b",
+            "git_blob_oid": "60920b8bbbc4ac75c94e9887dded960e0a146319"
+          },
+          {
+            "member": "src/encoding_box.rs",
+            "upstream_path": "crates/objc2-encode/src/encoding_box.rs",
+            "sha256": "ebeef60bf38dc37ad37a7305978225e12c76274ebf7d399b1dc26aa54afd6366",
+            "git_blob_oid": "799900174c5e2b852d9a0fc59a36169e2e92ed5d"
+          },
+          {
+            "member": "src/helper.rs",
+            "upstream_path": "crates/objc2-encode/src/helper.rs",
+            "sha256": "fb6b0ec5ced5922b144eefd92568e5ff65472af995fcd71457166ca305a9ccff",
+            "git_blob_oid": "1ef04d52eafb58c3d457107a62c30d4897617463"
+          },
+          {
+            "member": "src/lib.rs",
+            "upstream_path": "crates/objc2-encode/src/lib.rs",
+            "sha256": "6d526334bf38275d812335c1f18542adfb5c0a247a4b822342e6770a03c5491d",
+            "git_blob_oid": "63dd05390a990ba7eea13776f5de5bf11abe879f"
+          },
+          {
+            "member": "src/parse.rs",
+            "upstream_path": "crates/objc2-encode/src/parse.rs",
+            "sha256": "2b1b995653f09e33b112dad74e97dfcb70c6e760e4c663e3c65c1d767009caaf",
+            "git_blob_oid": "ce4272de4703b20e1f6c089db0a5554fe97280d6"
+          },
+          {
+            "member": "src/static_str.rs",
+            "upstream_path": "crates/objc2-encode/src/static_str.rs",
+            "sha256": "22cc1d7cb7901a05263115efc47b91ddd6f4022f583d5d353556bbbc372f1679",
+            "git_blob_oid": "e368eab70c328765330addabe54ec0a30e37fb7a"
+          }
+        ],
+        "unmatched": [
+          {
+            "member": "Cargo.lock",
+            "upstream_path": "crates/objc2-encode/Cargo.lock",
+            "sha256": "c2d878335c2920d350d861cec5dd4ee60dab3d2a4481b1c6851d55c7412ec233",
+            "git_blob_oid": "6f1d4acd7fc0266d3c16774cd5b7b570c8d0d82c",
+            "upstream_blob_oid": null
+          }
+        ],
+        "excluded_metadata_count": 2,
+        "excluded_metadata": [
+          {
+            "member": ".cargo_vcs_info.json",
+            "sha256": "b23c761215887d90ac44e18b18c8b386f93139c65a4a14f110e22405830cb3f1",
+            "classification": "Package metadata excluded from Git source comparison; generation not reproduced"
+          },
+          {
+            "member": "Cargo.toml",
+            "sha256": "cf9a8cc812710344d7fe618a5e615530baeeceae5c2826b9d5bb557dc419f159",
+            "classification": "Package metadata excluded from Git source comparison; generation not reproduced"
+          }
+        ],
+        "all_compared_nonmetadata_members_match": false
+      }
+    },
+    {
+      "key": "cargo/spirv@0.4.0+sdk-1.4.341.0",
+      "crate_archive_sha256": "d9571ea910ebd84c86af4b3ed27f9dbdc6ad06f17c5f96146b2b671e2976744f",
+      "repository": "gfx-rs/rspirv",
+      "commit": "8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4",
+      "comparison": {
+        "matched_count": 5,
+        "unmatched_count": 1,
+        "matched": [
+          {
+            "member": "Cargo.toml.orig",
+            "upstream_path": "spirv/Cargo.toml",
+            "sha256": "4d19e7aaeba0b0dd52eaa00bb592dfc6015813385fc47badcee396c353cc1d61",
+            "git_blob_oid": "d625405b9fefc9db73adaaa5389092cfb6ef27af"
+          },
+          {
+            "member": "README.md",
+            "upstream_path": "spirv/README.md",
+            "sha256": "af6ace1b0c00e63c3dd0af5754fb33512005f3709b7a621cc7ed184656ee4c14",
+            "git_blob_oid": "ac81f54f1cba4c7385643e6b28a845501a057fb2"
+          },
+          {
+            "member": "autogen_spirv.rs",
+            "upstream_path": "spirv/autogen_spirv.rs",
+            "sha256": "2260b34bd7b8a757be33f835ecc7431f7b791c39e9fa30a0acf47c03ae60b436",
+            "git_blob_oid": "ca7fc4514ec50b0d8c37479831628ee48473638b"
+          },
+          {
+            "member": "lib.rs",
+            "upstream_path": "spirv/lib.rs",
+            "sha256": "54127a130c4ef2cdbf7882a1cd6ebde88ae09b755bd8a1c086e21101da9684e9",
+            "git_blob_oid": "ba2a92973b10060a06d401255a44692ae47d56d1"
+          },
+          {
+            "member": "release.toml",
+            "upstream_path": "spirv/release.toml",
+            "sha256": "a9c4eb6eaa1b3b8eb7ff742ec4963be32ec1ec7664c8a52218cc74898bad3ec4",
+            "git_blob_oid": "bd5789db7574f7d1287a24cb7bfbfbdcb697f9be"
+          }
+        ],
+        "unmatched": [
+          {
+            "member": "Cargo.lock",
+            "upstream_path": "spirv/Cargo.lock",
+            "sha256": "4fabc06ee4a16fa2f1ca2a529f097656b84dd62ba0463af093d97a3bc0aa2032",
+            "git_blob_oid": "d6f6888be7c141f98057b52d04fc94b85dca6be7",
+            "upstream_blob_oid": null
+          }
+        ],
+        "excluded_metadata_count": 2,
+        "excluded_metadata": [
+          {
+            "member": ".cargo_vcs_info.json",
+            "sha256": "d6c805477fb7dd3f7ac6cd6589be6e91acb67f4976954a144278258409b8fa04",
+            "classification": "Package metadata excluded from Git source comparison; generation not reproduced"
+          },
+          {
+            "member": "Cargo.toml",
+            "sha256": "ccfb331b7ceec409f22af871472a4421fadc2bc37cd3b7b79416e0136d56a00d",
+            "classification": "Package metadata excluded from Git source comparison; generation not reproduced"
+          }
+        ],
+        "all_compared_nonmetadata_members_match": false
+      }
+    }
+  ]
+}

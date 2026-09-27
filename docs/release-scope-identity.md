@@ -68,7 +68,14 @@ proves retrieval and manifest identity, not full crate-source coverage or
 licence applicability. The Apache root texts for gl-rs and rspirv match an
 already reviewed complete-text digest. The objc2 root document links MIT and
 explicitly raises unresolved Apple SDK-derived redistribution implications;
-it is not a complete MIT grant that may be substituted into capture. All six
+it is not a complete MIT grant that may be substituted into capture. The [packaged source comparison](triage/release-upstream-source-comparison-20260927.json)
+now checks every compared source member against the exact upstream Git blob.
+`gl_generator` has fifteen direct matches. `khronos_api` has four direct matches
+and sixty-six matches to four pinned submodule commits: OpenGL-Registry,
+EGL-Registry, WebGL and ANGLE. Their licences need separate applicability
+checks; gl-rs root Apache text is not automatically inherited by these files.
+Package metadata is recorded separately without claiming regeneration, and
+four other packages' included Cargo.lock files remain unmatched. All six
 missing-text failures remain until valid source-bound evidence is accepted. The collector also
 matches objc2-foundation's `copying.rs` source modules as licence-like files;
 classifying them must not silently certify the package's missing licence basis.
