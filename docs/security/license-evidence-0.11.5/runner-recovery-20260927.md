@@ -160,5 +160,22 @@ The new canary is run 36321971364/job 108627427635, central source
 `eb59914a0b8bf37b2abfb4ac0c083d1043a263dc`, targeting the open PR2157.
 It was confirmed queued after creation. Follow this exact handle.
 
+## Subsequent stack merges at 2026-09-27 13:24 UTC
+
+PR2154 merged exact head `dd1ca669969c57984fc48f9c69ad63b2abda9a5f`
+into the soname-binding base at `66d2fd3efbbb3067066f130d26eaf370b3908c51`.
+PR2152 then merged that exact head into the primary evidence branch at
+`186da53c9b87c111bcb80dbeb2bdaf082430707c`. Each PR was mergeable,
+had no unresolved review threads, and had successful CodeRabbit and Devin
+contexts before its authorized bypass. Hosted test jobs remained queued.
+The Windows pattern conversion and soname/copyleft-label diffs were reviewed;
+both resulting verifier/test/fixture trees equal the integrated source that
+passed all 253 focused tests. Canonical archive paths remain strict and
+runtime-exception copyleft findings stay HOLD.
+
+Next integrate primary evidence PR2139 into main after auditing its current
+base/head and complete diff. These stacked merges do not by themselves prove
+main adoption, successful hosted gates or release acceptance.
+
 The Goal remains active. This document is an RCA and execution plan, not a
 release-wide license verdict or proof of completed hosted gates.
