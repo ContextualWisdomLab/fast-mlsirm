@@ -4930,5 +4930,24 @@
       "path": "python/fast_mlsirm/_licenses/jni-sys-macros-0.4.1-MIT.txt",
       "sha256": "d94eb8f006bda6a622d61a8b26fa0b763c7fc3479b40a24e32ef928e596e280c"
     }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "gl_generator",
+    "version": "0.14.0",
+    "chosen": "Apache-2.0",
+    "rationale": "All 15 original source, manifest and README members match immutable upstream ea503e8d5fb6d73c6030e6191ce738cd3bf3433e. The original manifest and nine Rust file application notices specify Apache-2.0. Retain the full unchanged root Apache grant and both complete original attribution notices; the upstream repository has no separate NOTICE file. Central helper d49c413e81399007389985a3324108337283df70 binds exact archive, upstream grant and complete committed notice hashes. Consumer requires matching source proof and notice bytes in every distribution. This is not Strix or release approval.",
+    "archive_sha256": "1a95dfc23a2b4a9a2f5ab41d194f8bfda3cabec42af4e39f08c339eb2a0c124d",
+    "license_members": [],
+    "upstream_licenses": [
+      {
+        "url": "https://raw.githubusercontent.com/brendanzab/gl-rs/ea503e8d5fb6d73c6030e6191ce738cd3bf3433e/LICENSE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/gl_generator-0.14.0-Apache-2.0.txt",
+      "sha256": "305ae3699231206e6368f716edf58b71162813708f7e5f7316ecb7b821ffcf31"
+    }
   }
 ]
