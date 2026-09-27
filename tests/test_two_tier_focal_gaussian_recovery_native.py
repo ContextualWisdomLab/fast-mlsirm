@@ -10,6 +10,8 @@ Opened Python 3.12 manual, random.gauss, random.choices and Notes on
 Reproducibility: https://docs.python.org/3.12/library/random.html.
 Opened exact CPython 3.12.11 implementation, Random.gauss/choices:
 https://github.com/python/cpython/blob/v3.12.11/Lib/random.py.
+Opened Python 3.12 itertools.pairwise for consecutive category differences:
+https://docs.python.org/3.12/library/itertools.html#itertools.pairwise.
 Use one private Random instance in one thread; record Python version and input
 hash because gauss/choices are not guaranteed unchanged across Python versions.
 
@@ -20,17 +22,17 @@ actual-study convergence, or acceptance of a library release.
 """
 
 import hashlib
+import itertools
 import json
 import math
 import random
 import sys
 
 import numpy as np
-
 from fast_mlsirm import fit_two_tier_grm_focal_orthogonal
 
 
-def test_native_six_latent_continuous_gaussian_recovery():
+def test_native_six_latent_continuous_gaussian_recovery(device="cpu"):
     """Recover all six nonstandard Gaussian means/SDs at two node counts.
 
     Sources and implementation-choice limits are in the module docstring.
@@ -62,7 +64,7 @@ def test_native_six_latent_continuous_gaussian_recovery():
                 + [1.0 / (1.0 + math.exp(-(eta + d))) for d in threshold[i]]
                 + [0.0]
             )
-            probability = [a - b for a, b in zip(cumulative, cumulative[1:])]
+            probability = [a - b for a, b in itertools.pairwise(cumulative)]
             assert min(probability) >= 0.0
             assert abs(sum(probability) - 1.0) < 1e-14
             row.append(rng.choices(range(4), weights=probability, k=1)[0])
@@ -87,6 +89,7 @@ def test_native_six_latent_continuous_gaussian_recovery():
             q_specific=nodes,
             max_iter=500,
             tol=1e-6,
+            device=device,
         )
         print(
             json.dumps(

@@ -88,3 +88,21 @@ def test_actual_gpu_six_latent_score_and_focal_update():
             }
         )
     )
+
+
+@pytest.mark.skipif(
+    os.environ.get("FOCAL_GPU_RECOVERY") != "1",
+    reason="prespecified continuous six-latent GPU recovery; FOCAL_GPU_RECOVERY=1",
+)
+def test_actual_gpu_six_latent_continuous_population_recovery():
+    """Reuse the committed Gaussian generator and unchanged recovery criteria.
+
+    Cai (2010), Appendices A/B and Python 3.12 random sources are documented
+    in the shared fixture. GPU mixed precision follows this module's WGSL
+    citation. Preserve nonconvergence/failures; never tune after an outcome.
+    """
+    from test_two_tier_focal_gaussian_recovery_native import (
+        test_native_six_latent_continuous_gaussian_recovery,
+    )
+
+    test_native_six_latent_continuous_gaussian_recovery(device="gpu")
