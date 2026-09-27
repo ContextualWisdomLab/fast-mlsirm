@@ -131,12 +131,16 @@ def test_report_is_deterministic_and_returns_canonical_json_copy() -> None:
     assert first == second
     html_text, json_text = first
     assert html_text.startswith("<!doctype html>")
-    assert json_text == json.dumps(
-        inventory.to_manifest(),
-        ensure_ascii=False,
-        sort_keys=True,
-        indent=2,
-    ) + "\n"
+    assert (
+        json_text
+        == json.dumps(
+            inventory.to_manifest(),
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+        )
+        + "\n"
+    )
 
 
 def test_report_delegates_tamper_detection_to_strict_inventory_replay() -> None:
@@ -161,7 +165,10 @@ def test_report_escapes_untrusted_text_and_exposes_accessible_table_semantics() 
     assert "<caption>Capability × engine conformance evidence</caption>" in html_text
     assert '<th scope="col">Capability</th>' in html_text
     assert '<th scope="col">Execution status</th>' in html_text
-    assert "Exact values are shown in text; this report has no hover-only evidence." in html_text
+    assert (
+        "Exact values are shown in text; this report has no hover-only evidence."
+        in html_text
+    )
 
 
 def test_report_exposes_exact_inventory_and_run_provenance() -> None:
@@ -187,8 +194,14 @@ def test_report_renders_explicit_no_engine_and_no_run_states() -> None:
     html_text, _ = render_conformance_report(_canonical_json(_no_engine_inventory()))
 
     assert "no_independent_engine" in html_text
-    assert "No independent engine evidence rows are recorded for this inventory." in html_text
-    assert "No run provenance is recorded because this inventory contains no executed evidence." in html_text
+    assert (
+        "No independent engine evidence rows are recorded for this inventory."
+        in html_text
+    )
+    assert (
+        "No run provenance is recorded because this inventory contains no executed evidence."
+        in html_text
+    )
     assert "Not recorded" in html_text
 
 
@@ -234,7 +247,10 @@ def test_long_form_json_preserves_explicit_no_engine_state() -> None:
     assert row["execution_status"] == "not_executed"
     assert row["evidence_id"] is None
     assert row["engine_id"] is None
-    assert row["limitation"] == "No independent engine evidence row is recorded for this capability."
+    assert (
+        row["limitation"]
+        == "No independent engine evidence row is recorded for this capability."
+    )
 
 
 def test_long_form_json_rejects_tampered_manifest_before_projection() -> None:
@@ -244,3 +260,16 @@ def test_long_form_json_rejects_tampered_manifest_before_projection() -> None:
 
     with pytest.raises(ValueError, match="inventory_fingerprint"):
         render_conformance_long_form_json(json.dumps(manifest))
+
+
+def test_report_exposes_skip_link_for_keyboard_accessibility() -> None:
+    """A conformance report must include a functional, accessible skip link."""
+    html_text, _ = render_conformance_report(_canonical_json(_executed_inventory()))
+
+    assert (
+        '<a class="skip-link" href="#main-content">Skip to report content</a>'
+        in html_text
+    )
+    assert '<main id="main-content" tabindex="-1">' in html_text
+    assert ".skip-link { position: absolute" in html_text
+    assert ".skip-link:focus { top: 8px; }" in html_text
