@@ -61,8 +61,15 @@ unverified texts and six unparseable declarations; codes can overlap within a
 package. No Strix, Python dependency, native or whole-release approval is claimed.
 
 The six missing-text packages carry upstream commit identities in the receipt:
-block2, gl_generator, khronos_api, objc2, objc2-encode and spirv. Those identities
-are retrieval leads, not verified upstream licence evidence. The collector also
+block2, gl_generator, khronos_api, objc2, objc2-encode and spirv. The [exact-commit retrieval receipt](triage/release-upstream-license-evidence-20260927.json)
+now records root licence URLs, Git blob OIDs and SHA-256s for all six, with
+upstream manifests byte-identical to each archive's `Cargo.toml.orig`. This
+proves retrieval and manifest identity, not full crate-source coverage or
+licence applicability. The Apache root texts for gl-rs and rspirv match an
+already reviewed complete-text digest. The objc2 root document links MIT and
+explicitly raises unresolved Apple SDK-derived redistribution implications;
+it is not a complete MIT grant that may be substituted into capture. All six
+missing-text failures remain until valid source-bound evidence is accepted. The collector also
 matches objc2-foundation's `copying.rs` source modules as licence-like files;
 classifying them must not silently certify the package's missing licence basis.
 These failures cannot be resolved merely by adding MIT selections. Preserve the
