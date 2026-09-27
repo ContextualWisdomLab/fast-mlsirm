@@ -268,3 +268,29 @@ no broad lint success claimed. The current-main imported noema transport file
 also has an existing trailing blank line; no unrelated rewrite was made.
 Latest six runners are online/busy, including s2. Canary36321971364 remains
 authoritatively queued; keep that handle. Release grant/artifact HOLDs unchanged.
+
+## Terminal full-suite RCA and corrected executable helper
+
+Integrated-parent test session99090 is terminal: 4,936 passed, 8 failed,
+4 skipped, 40 subtests in604.79s. Exact log
+`/tmp/fmls-central-main-integration-tests.log`. Do not repeat that handle.
+Besides the already-repaired pin test, two production defects caused failures:
+install_is_authorized passed an extra GateError argument, and gate merged
+license_texts before validating its mapping shape. Commit
+`64bb4e7d32667980223c70afda81ffac97209630` removes the erroneous arguments
+and reuses the existing mapping validator. Two stale expected-code lists now
+retain both disagreement and missing-grant diagnoses. 143 focused tests pass.
+
+PR2449 exact current head `7bc87db7b8e783de481cdc478eaa089e33aa566d` pins
+all three checkouts/guards to corrected64bb4e7d, scripts tree
+`b15b746d2a1c38501c2ecd6f6c5962c27c9d11af`. 57 pin/workflow tests pass,
+three actual Git guards pass; actionlint and own diff check pass. Latest-head
+full suite is LIVE exec19087 PID62837, log
+`/tmp/fmls-central-2449-exact-tests.log` in helper-adoption worktree.
+This replaces the terminal predecessor; preserve the live process and inspect
+its exact result before merging2449/2347.
+
+A bounded live job audit showed the three old Noema runs were on GitHub hosted
+runners, not self-hosted control occupants. s1-05 journal shows control jobs
+complete and advance; historical compatibility jobs still consume five minutes.
+Current-main CodeQL controls are retained by this integration. Canary unchanged.
