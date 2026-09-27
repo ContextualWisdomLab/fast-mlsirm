@@ -1,6 +1,8 @@
 """Require the living governance index and its doctoring note."""
 
+import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 _ROOT = Path(__file__).resolve().parents[1]
 _INDEX = _ROOT / "docs" / "GOVERNANCE_INDEX.md"
@@ -29,4 +31,6 @@ def test_governance_doctoring_cites_multilevel_literature() -> None:
     """Doctoring note must cite multilevel / LSIRM literature."""
     note = _DOC.read_text(encoding="utf-8")
     assert "Fox" in note and "Jeon" in note and "Kang" in note
-    assert "https://doi.org/" in note
+    citations = [urlsplit(url) for url in re.findall(r"https://[^\s)>\]]+", note)]
+    assert any(url.scheme == "https" and url.hostname == "doi.org"
+               and url.path.startswith("/10.") for url in citations)
