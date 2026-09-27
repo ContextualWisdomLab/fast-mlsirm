@@ -2003,7 +2003,8 @@ fn two_tier_focal_person_dict(
 /// only owned Rust vectors/scalars cross the detached closure, so concurrent
 /// Python writes cannot mutate the running calculation's inputs.
 /// Explicit GPU route uses Cai (2010), pp.608-609 Appendices A/B,
-/// existing WGSL f32 posteriors and f64 host contractions. WGSL types:
+/// existing WGSL f32 posteriors, f64 host contractions and likelihood
+/// certification using the same original f64 item/node tables. WGSL types:
 /// https://www.w3.org/TR/WGSL/#floating-point-types. GPU failure raises;
 /// backend records actual dispatch, never an automatic CPU fallback.
 #[pyfunction]
@@ -2086,7 +2087,8 @@ fn score_two_tier_grm_orthogonal(
 /// only owned Rust vectors/scalars cross the detached closure, so concurrent
 /// Python writes cannot mutate the running calculation's inputs.
 /// Explicit GPU route uses Cai (2010), pp.608-609 Appendices A/B,
-/// existing WGSL f32 posteriors and f64 host contractions. WGSL types:
+/// existing WGSL f32 posteriors, f64 host contractions and likelihood
+/// certification using the same original f64 item/node tables. WGSL types:
 /// https://www.w3.org/TR/WGSL/#floating-point-types. GPU failure raises;
 /// backend records actual dispatch, never an automatic CPU fallback.
 #[pyfunction]

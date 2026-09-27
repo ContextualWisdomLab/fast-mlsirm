@@ -4,7 +4,7 @@ Cai (2010), pp.608-609 Appendices A/B, DOI 10.1007/s11336-010-9178-0,
 defines shared-product and shared-specific joint posterior moments. Reuse the
 existing Rust full-product fixture, including missing persons/blocks. GPU
 weights are WGSL f32 (https://www.w3.org/TR/WGSL/#floating-point-types), with
-f64 host contraction. Absolute 1e-5 moment/parameter and 1e-4 likelihood bounds
+f64 host contraction. Absolute 1e-5 moment/parameter and 1e-10 certified likelihood bounds
 are numerical regression choices, not scientific cutoffs or a coverage claim.
 A one-update comparison is not convergence or continuous population recovery.
 """
@@ -61,7 +61,7 @@ def test_actual_gpu_six_latent_score_and_focal_update():
         np.testing.assert_allclose(
             getattr(gpu, name), getattr(cpu, name), rtol=0, atol=1e-5
         )
-    assert abs(cpu.loglik - gpu.loglik) < 1e-4
+    assert abs(cpu.loglik - gpu.loglik) < 1e-10
     fit_cpu = fit_two_tier_grm_focal_orthogonal(
         **kwargs, max_iter=1, tol=1e-6, device="cpu"
     )

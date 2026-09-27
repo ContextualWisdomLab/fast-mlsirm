@@ -876,7 +876,7 @@ pub(crate) fn e_step(
     qs: usize,
 ) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
     e_step_with_moments(
-        v, y, observed, params, log_w, log_ws, coords, ts, n_grid, qs, None, true,
+        v, y, observed, params, log_w, log_ws, coords, ts, n_grid, qs, None, true, None,
     )
 }
 
@@ -899,6 +899,9 @@ pub(crate) struct LatentPosteriorMoments {
 /// the supplied quadrature prior. This reports moments at caller-supplied
 /// nodes/weights, not proof of continuous-integral accuracy or a focal fit.
 /// Opt-in accumulation preserves the existing no-moment fit/Oakes path.
+/// Optional f64 item/node tables cache the identical GRM log-probabilities;
+/// with neither moments nor counts requested, only Appendix A likelihood is
+/// evaluated. This certifies GPU convergence without f32 likelihood rounding.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn e_step_with_moments(
     v: &Validated,
@@ -913,6 +916,7 @@ pub(crate) fn e_step_with_moments(
     qs: usize,
     mut moments: Option<&mut LatentPosteriorMoments>,
     collect_counts: bool,
+    cached_tables: Option<&[Vec<f64>]>,
 ) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
     let p = v.n_primary;
     let n_latent = p + v.n_specific;
@@ -923,6 +927,15 @@ pub(crate) fn e_step_with_moments(
         m.second.fill(0.0);
     }
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
+    let log_prob = |i: usize, g: usize, h: usize, cat: usize| {
+        cached_tables.map_or_else(
+            || item_cat_logprob(v, params, coords, ts, i, g, h, cat),
+            |tables| {
+                let nh = if v.item_block[i].is_some() { qs } else { 1 };
+                tables[i][(g * nh + h) * v.n_cat + cat]
+            },
+        )
+    };
     let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
     if collect_counts {
         for i in 0..v.n_items {
@@ -955,7 +968,7 @@ pub(crate) fn e_step_with_moments(
             }
             let yc = y[pp * v.n_items + i];
             for g in 0..n_grid {
-                gen_log[g] += item_cat_logprob(v, params, coords, ts, i, g, 0, yc);
+                gen_log[g] += log_prob(i, g, 0, yc);
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
@@ -967,7 +980,7 @@ pub(crate) fn e_step_with_moments(
                             continue;
                         }
                         let yc = y[pp * v.n_items + i];
-                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        acc += log_prob(i, g, h, yc);
                     }
                     tmp_h[h] = acc;
                 }
@@ -983,6 +996,9 @@ pub(crate) fn e_step_with_moments(
         }
         let log_lp = log_sum_exp(&log_like_g);
         loglik += log_lp;
+        if moments.is_none() && !collect_counts {
+            continue;
+        }
         for g in 0..n_grid {
             post_g[g] = (log_like_g[g] - log_lp).exp();
         }
@@ -1027,7 +1043,7 @@ pub(crate) fn e_step_with_moments(
                             continue;
                         }
                         let yc = y[pp * v.n_items + i];
-                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        acc += log_prob(i, g, h, yc);
                     }
                     block_acc_g[s * qs + h] = acc;
                 }
@@ -1071,7 +1087,10 @@ pub(crate) fn e_step_with_moments(
 /// are renormalized before contraction; nonfinite/negative weights fail.
 /// Person batches derive from wgpu 30.0.0 buffer limits, not quadrature caps:
 /// https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html. GPU unavailability or
-/// failure is an error; the caller must evaluate numerical parity separately.
+/// failure is an error. The shared Appendix A f64 host reduction evaluates
+/// likelihood from the original f64 item tables for convergence certification;
+/// f32 GPU likelihood is never used to decide monotonicity or convergence.
+/// The caller must evaluate moment parity and integration sensitivity separately.
 #[cfg(all(feature = "gpu", not(coverage)))]
 #[allow(clippy::too_many_arguments)]
 fn e_step_gpu_person_moments(
@@ -1138,7 +1157,6 @@ fn e_step_gpu_person_moments(
     moments.mean.fill(0.0);
     moments.second.fill(0.0);
     let nl = v.n_primary + v.n_specific;
-    let mut loglik = 0.0;
     for start in (0..v.n_persons).step_by(batch) {
         let stop = (start + batch).min(v.n_persons);
         let inputs = ReducedEstepInputs {
@@ -1165,7 +1183,6 @@ fn e_step_gpu_person_moments(
         if !result.loglik.is_finite() {
             return Err("nonfinite GPU loglikelihood".into());
         }
-        loglik += result.loglik;
         let post = result
             .person_posteriors
             .ok_or("missing GPU person posteriors")?;
@@ -1196,6 +1213,26 @@ fn e_step_gpu_person_moments(
                 }
             }
         }
+    }
+    // Reuse the shared f64 reduction and already-built item/node tables.
+    // GPU still supplies all posterior moments; this is explicit certification.
+    let (loglik, _, _) = e_step_with_moments(
+        v,
+        y,
+        observed,
+        params,
+        log_w,
+        log_ws,
+        coords,
+        ts,
+        grid,
+        qs,
+        None,
+        false,
+        Some(&tables_groups[0]),
+    );
+    if !loglik.is_finite() {
+        return Err("nonfinite f64-certified GPU loglikelihood".into());
     }
     Ok(loglik)
 }
@@ -2475,6 +2512,7 @@ pub fn score_two_tier_grm_orthogonal_with_device(
                 q_specific,
                 Some(&mut moments),
                 false,
+                None,
             );
             ll
         }

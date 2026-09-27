@@ -200,7 +200,8 @@ def score_two_tier_grm_orthogonal(
     SDs and node counts. Arrays order primaries then specifics. Missing persons
     retain the quadrature prior. Accuracy requires node sensitivity evidence.
     Explicit device="gpu" uses existing WGSL f32 posterior kernels and Rust
-    f64 moment contraction (Cai, 2010, pp.608-609 Appendices A/B;
+    f64 moment contraction and f64 host likelihood certification
+    (Cai, 2010, pp.608-609 Appendices A/B;
     https://www.w3.org/TR/WGSL/#floating-point-types). GPU failure raises;
     CPU software adapters and automatic CPU fallback are rejected. Numerical
     parity, convergence and integration sensitivity remain required.
@@ -269,7 +270,8 @@ def fit_two_tier_grm_focal_orthogonal(
     Passing does not prove variance/joint identification, population recovery
     or quadrature accuracy; these remain separate acceptance conditions.
     Explicit device="gpu" uses existing WGSL f32 posterior kernels and Rust
-    f64 moment contraction (Cai, 2010, pp.608-609 Appendices A/B;
+    f64 moment contraction and f64 host likelihood certification
+    (Cai, 2010, pp.608-609 Appendices A/B;
     https://www.w3.org/TR/WGSL/#floating-point-types). GPU failure raises;
     CPU software adapters and automatic CPU fallback are rejected. Numerical
     parity, convergence and integration sensitivity remain required.
