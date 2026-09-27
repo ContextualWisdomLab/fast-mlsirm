@@ -2349,6 +2349,13 @@ pub struct TwoTierGrmFocalFit {
 /// This necessary information check does not prove joint identification.
 /// Fixed items permit missing categories; any stricter resample rejection
 /// policy is explicitly owned by the caller, not implied fit validity.
+/// The observed loading matrix must pass a column-normalized partial-pivot
+/// guard for free means: A*v=0 implies mu and mu+v have identical likelihood
+/// (derived from Cai, 2010, p.589 eq.11). LAPACK DGETF2 Purpose/INFO:
+/// https://www.netlib.org/lapack/double/dgetf2.f. The dimension*EPSILON pivot
+/// guard is an implementation choice, not a source-prescribed cutoff.
+/// Passing is necessary, not proof of variance/joint identification or a
+/// substitute for information, recovery, convergence and sensitivity checks.
 #[allow(clippy::too_many_arguments)]
 pub fn fit_two_tier_grm_focal_orthogonal(
     a_primary: &[f64],
@@ -2413,6 +2420,38 @@ pub fn fit_two_tier_grm_focal_orthogonal(
                 "latent dimension {d} has no observed nonzero loading"
             ));
         }
+    }
+    // Cai (2010), p.589 eq.11: fixed linear predictors depend on A * mu.
+    // A nullspace shift of mu leaves every response probability unchanged.
+    // Normalize columns and reuse partial-row-pivot elimination on A itself,
+    // avoiding the squared conditioning of A' A. DGETF2 source is cited in
+    // the shared helper. max(rows, cols)*EPSILON is an implementation guard,
+    // not a source-prescribed scientific threshold or DGELSY effective rank.
+    let mut loading_rows: Vec<Vec<f64>> = (0..n_items)
+        .filter(|&i| is_observed(i))
+        .map(|i| {
+            let mut row = vec![0.0; n_latent];
+            row[..n_primary].copy_from_slice(&a_primary[i * n_primary..(i + 1) * n_primary]);
+            if specific_map[i] >= 0 {
+                row[n_primary + specific_map[i] as usize] = a_specific[i];
+            }
+            row
+        })
+        .collect();
+    for d in 0..n_latent {
+        let scale = loading_rows
+            .iter()
+            .map(|row| row[d].abs())
+            .fold(0.0_f64, f64::max);
+        for row in &mut loading_rows {
+            row[d] /= scale;
+        }
+    }
+    let rank_guard = loading_rows.len().max(n_latent) as f64 * f64::EPSILON;
+    if !crate::lltm::gram_full_rank(&mut loading_rows, n_latent, rank_guard) {
+        return Err(
+            "observed fixed-item loadings lack numerical column rank for free latent means".into(),
+        );
     }
     let mut latent_mean = initial_mean.to_vec();
     let mut latent_sd = initial_sd.to_vec();

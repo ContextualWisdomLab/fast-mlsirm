@@ -1164,6 +1164,103 @@ fn six_latent_crossed_primary_scores_match_full_product() {
         }
     }
     assert!((scores.loglik - total_loglik).abs() < 1e-10);
+    // The six-dimensional crossed-primary bank must pass the mean-rank
+    // guard; this is a one-update contract check, not population recovery.
+    assert!(crate::two_tier_grm::fit_two_tier_grm_focal_orthogonal(
+        &ap,
+        &asp,
+        &threshold,
+        &mu,
+        &sd,
+        &y,
+        Some(&mask),
+        &pm,
+        &sm,
+        3,
+        16,
+        2,
+        4,
+        4,
+        5,
+        5,
+        1,
+        1e-6,
+    )
+    .is_ok());
     // Reproduce the installed-native fixture with cargo test -- --nocapture.
     eprintln!("SIX_FIXTURE={{\"a_primary\":{:?},\"a_specific\":{:?},\"threshold\":{:?},\"primary_map\":{:?},\"specific_map\":{:?},\"latent_mean\":{:?},\"latent_sd\":{:?},\"responses\":{:?},\"observed\":{:?},\"person_mean\":{:?},\"person_second\":{:?},\"person_sd\":{:?},\"loglik\":{}}}", ap,asp,threshold,pm,sm,mu,sd,y,mask,scores.mean,scores.second,scores.sd,scores.loglik);
+}
+
+/// Free latent means require an injective fixed-item predictor map.
+/// Derived from Cai (2010), p.589 eq.11, DOI 10.1007/s11336-010-9178-0:
+/// A*v=0 makes mu and mu+v observationally equivalent. The shared pivot
+/// guard follows the opened LAPACK DGETF2 Purpose/INFO/pivot loop; its
+/// caller threshold is an implementation guard, not DGELSY effective rank.
+#[test]
+fn focal_mean_rank_rejects_nullspaces_and_preserves_declared_scoring() {
+    use crate::two_tier_grm::{fit_two_tier_grm_focal_orthogonal, score_two_tier_grm_orthogonal};
+    let ap = [0.8, 1.2, 1.0, 0.6];
+    let asp = ap;
+    let d = [0.8, -0.6, 0.8, -0.6, 0.8, -0.6, 0.8, -0.6];
+    let y = [0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 0, 0, 1, 2, 1, 0];
+    let pm = [true; 4];
+    let sm = [0; 4];
+    let score = |mu: &[f64]| {
+        score_two_tier_grm_orthogonal(
+            &ap, &asp, &d, mu, &[1.0; 2], &y, None, &pm, &sm, 4, 4, 1, 1, 3, 5, 5,
+        )
+        .unwrap()
+    };
+    // Declared-prior scoring remains meaningful; fitting both means does not.
+    let a = score(&[0.0, 0.0]);
+    let b = score(&[0.5, -0.5]);
+    assert_eq!(a.loglik, b.loglik);
+    let fit = fit_two_tier_grm_focal_orthogonal(
+        &ap, &asp, &d, &[0.0; 2], &[1.0; 2], &y, None, &pm, &sm, 4, 4, 1, 1, 3, 5, 5, 1, 1e6,
+    );
+    assert!(matches!(fit, Err(message) if message.contains("column rank")));
+    // A third column can be a sum of two independent columns; detecting
+    // only pairwise duplicates or nonzero columns would miss this nullspace.
+    let ap3 = [1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, -1.0];
+    let asp3 = [1.0, 1.0, 2.0, 1.0];
+    let pm3 = [true; 8];
+    let fit3 = |asp: &[f64], mask: Option<&[bool]>| {
+        fit_two_tier_grm_focal_orthogonal(
+            &ap3, asp, &d, &[0.0; 3], &[1.0; 3], &y, mask, &pm3, &sm, 4, 4, 2, 1, 3, 5, 5, 1, 1e6,
+        )
+    };
+    assert!(matches!(fit3(&asp3,None),Err(message) if message.contains("column rank")));
+    let independent = [0.0, 0.0, 1.0, 1.0];
+    assert!(fit3(&independent, None).is_ok());
+    let mask: Vec<bool> = (0..16).map(|i| i % 4 == 0 || i % 4 == 2).collect();
+    assert!(
+        matches!(fit3(&independent,Some(&mask)),Err(message) if message.contains("column rank"))
+    );
+    // Existing square-Gram users keep their caller thresholds; the direct
+    // rectangular path avoids squaring the condition number.
+    let rank = |mut matrix: Vec<Vec<f64>>, cols, threshold| {
+        crate::lltm::gram_full_rank(&mut matrix, cols, threshold)
+    };
+    assert!(rank(vec![vec![1.0, 0.0], vec![0.0, 1.0]], 2, 1e-9));
+    assert!(!rank(vec![vec![1.0, 1.0], vec![1.0, 1.0]], 2, 1e-9));
+    assert!(rank(
+        vec![vec![0.0, 1.0], vec![1.0, 1.0], vec![2.0, -1.0]],
+        2,
+        3.0 * f64::EPSILON
+    ));
+    assert!(rank(
+        vec![vec![1.0, 1.0], vec![1.0, 1.0 + 1e-10]],
+        2,
+        2.0 * f64::EPSILON
+    ));
+    assert!(rank(
+        vec![vec![1.0, 0.0], vec![2.0, 0.0], vec![0.0, 1.0]],
+        2,
+        3.0 * f64::EPSILON
+    ));
+    assert!(!rank(vec![vec![1.0, 0.0]], 2, f64::EPSILON));
+    assert!(!rank(vec![vec![1.0], vec![0.0, 1.0]], 2, f64::EPSILON));
+    assert!(!rank(vec![vec![f64::NAN]], 1, f64::EPSILON));
+    assert!(!rank(vec![vec![1.0]], 1, f64::NAN));
+    assert!(!rank(vec![vec![0.0]], 1, 0.0));
 }
