@@ -2,6 +2,10 @@
 Cai (2010), pp.608-609: fixed item/node probabilities do not depend on person.
 Timing uses Python3.12 time.perf_counter; SHA256 binds actual library outputs.
 https://docs.python.org/3.12/library/time.html#time.perf_counter
+Opened median definition for three finite elapsed durations (not study statistics):
+https://docs.python.org/3.12/library/statistics.html#statistics.median
+Opened hashlib SHA256/update/hexdigest for binding native output bytes:
+https://docs.python.org/3.12/library/hashlib.html#hashlib.hash.update
 """
 import json,sys,time,hashlib,statistics
 from pathlib import Path
