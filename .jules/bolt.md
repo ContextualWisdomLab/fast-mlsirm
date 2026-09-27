@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2025-02-23 - Avoid intermediate boolean array allocations in loop
+
+**Learning:** When calculating categorical reductions over posteriors in `fit_gpcm_numpy` (`np.stack([post[y[:, i] == k].sum(axis=0) ...])`), using list comprehensions and boolean masking for each category creates large intermediate arrays and loops in Python, causing a significant performance bottleneck.
+**Action:** Vectorize over categories by broadcasting `k_range` and using matrix multiplication (`((y[:, i, None] == k_range).astype(post.dtype).T @ post).T`) to avoid allocating intermediate boolean arrays and Python-level loops. Always hoist array creations like `k_range = np.arange(k_cat)` outside the loop.
