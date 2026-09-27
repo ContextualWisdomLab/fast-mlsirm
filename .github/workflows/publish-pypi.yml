@@ -1392,6 +1392,7 @@ jobs:
               transport.verify_distribution_requirements(distribution_paths[row["file"]], leg,
                                                          Path("release-source"), commit)
           transport.verify_cargo_graph_closure(build_graph_receipts, Path("release-source"), commit)
+          verifier.verify_cargo_dependency_coverage(report, build_graph_receipts)
 
           # The target-specific runtime/build/dev/optional/native/bundled
           # inventories are still UNKNOWN. Hosted exact-head evidence is also

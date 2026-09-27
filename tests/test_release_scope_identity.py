@@ -92,8 +92,9 @@ def test_workflow_producer_transport_and_actual_consumer_hold(scope_fixture):
     with pytest.raises(SystemExit, match="platform-complete scope inventory"):
         exec(textwrap.dedent(WORKFLOW[start:hold_end]), {
             "json": json, "Path": Path, "rows": rows, "commit": sha,
-            "transport": transport, "build_graph_receipts": []})
-    assert calls == [*(["metadata"] * 13), "cargo"]
+            "transport": transport, "build_graph_receipts": [], "report": {},
+            "verifier": types.SimpleNamespace(verify_cargo_dependency_coverage=lambda *args: calls.append("review"))})
+    assert calls == [*(["metadata"] * 13), "cargo", "review"]
     assert "platform-complete scope inventory is not verified" in WORKFLOW[end:]
     assert 'name: reproducibility-record\n          path: |\n            reproducibility-record.tsv\n            release-scope-identities.json' in WORKFLOW
     assert not Path("admitted-manifest.tsv").exists()

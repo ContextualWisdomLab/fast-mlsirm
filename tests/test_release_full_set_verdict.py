@@ -9,6 +9,7 @@ import json
 import pytest
 
 from scripts.ci.verify_release_full_set_verdict import (
+    verify_cargo_dependency_coverage,
     verify_full_set_verdict, verify_native_link_inventory,
 )
 
@@ -16,6 +17,18 @@ from scripts.ci.verify_release_full_set_verdict import (
 SOURCE = "a" * 40
 CONTROL = "b" * 40
 DIGEST = "sha256:" + "c" * 64
+
+
+def test_cargo_build_crates_require_exact_reviewed_archive_hash() -> None:
+    package = {"name": "serde", "version": "1.0", "source": "registry+index",
+               "checksum": "d" * 64}
+    records = [{"leg": "wheel", "cargo_targets": {"target": [package]}}]
+    report = {"dependencies": [{"key": "cargo/serde@1.0", "source_sha256": "d" * 64}]}
+    verify_cargo_dependency_coverage(report, records)
+    for broken in ({"dependencies": []}, {"dependencies": [
+            {"key": "cargo/serde@1.0", "source_sha256": "e" * 64}]}):
+        with pytest.raises(ValueError, match="matching licence/Strix review"):
+            verify_cargo_dependency_coverage(broken, records)
 
 
 def test_native_links_require_exact_wheels_extensions_and_sealed_bytes() -> None:

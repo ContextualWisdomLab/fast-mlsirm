@@ -494,6 +494,21 @@ def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: 
         seen_tool_reviews.add(review["key"])
 
 
+def verify_cargo_dependency_coverage(report: dict, build_records: list[dict]) -> None:
+    """Require each verified build graph crate in the authenticated dependency report."""
+    reviewed = {row["key"]: row["source_sha256"] for row in report["dependencies"]}
+    for record in build_records:
+        for graph in record["cargo_targets"].values():
+            for package in graph:
+                if package["source"] is None:
+                    continue  # First-party path crates are bound by the selected source SHA.
+                key = f"cargo/{package['name']}@{package['version']}"
+                checksum = package["checksum"]
+                if (not isinstance(checksum, str) or not re.fullmatch(r"[0-9a-f]{64}", checksum)
+                        or reviewed.get(key) != checksum):
+                    raise ValueError(f"{record['leg']}: Cargo dependency lacks matching licence/Strix review")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     for name in ("manifest", "scope-set", "verdict", "artifacts", "attempt", "repository", "source-sha",
