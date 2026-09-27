@@ -84,5 +84,26 @@ be treated as a queue flake or bypassed as part of this recovery.
    target-specific inventories. Local Linux candidates and source graphs
    remain narrower evidence and cannot substitute for this matrix.
 
+## Follow-up at 2026-09-27 12:52 UTC
+
+Evidence PR #2175 was merged into its reviewed-texts base at
+`0dc785b1623eb0493ddd55ea8a892ee357acf56a`, from exact head
+`a240f26233f4093d68fac14ef09b555363528a35`. All 253 focused tests and all
+29 evidence checksums passed; both hosted review contexts succeeded and no
+review threads remained. Source-byte whitespace is deliberately retained.
+The Actions CodeQL job remained queued; authorized bypass is not its success.
+This stacked merge does not establish main adoption or publication.
+
+The fixed canary job 108620080034 remained queued. Independent guest logs
+show other scheduler jobs completing successfully on cwlab-s1-05. Naruon
+run 36315355984/job 108613158572 occupied that runner for about five minutes;
+its terminal error was a pending dispatch verdict, not a reported vulnerability.
+The old compatibility workflow enumerated the entire dispatch run history.
+Current central main `f6a50f6a` already bounds that lookup by the required
+run's creation time and dispatch event, and adds Actions read permission.
+Do not duplicate that existing fix or treat old queued workflow snapshots as
+proof that the current fix failed. Follow the canary and verify fresh-head
+lookup timing before changing allocation again.
+
 The Goal remains active. This document is an RCA and execution plan, not a
 release-wide license verdict or proof of completed hosted gates.
