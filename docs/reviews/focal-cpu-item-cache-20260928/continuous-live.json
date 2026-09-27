@@ -1,0 +1,30 @@
+{
+  "source_head": "52eed4ddc6af68bf22393c83c4292a56186ca44c",
+  "host": "Seonghoui-MacBookPro-2.local",
+  "native_core_sha256": "0dcbd77b28383122d5d12fcd03193777c28ecb45faa9f460137be3d28685f8b0",
+  "test_source_sha256": "83853451a0de5833305e2a32d9b0397c99fe64897d5aa6b68706e83fdb36df0b",
+  "scope": "actual compiled CPU cache candidate continuous synthetic recovery, same declared settings, not study estimates",
+  "old_cpu_run": "s1 PID3826021 preserved; different implementation under test",
+  "observed_at_utc": "2026-09-27T15:38:28.813494+00:00",
+  "pid": 8944,
+  "process_observation": "8944 02:43  96.7 .venv/bin/python",
+  "status": "live; no first-grid result or exit observed",
+  "settings": {
+    "n_persons": 4096,
+    "seed": 20260927,
+    "q_primary": [
+      15,
+      21
+    ],
+    "q_specific": [
+      15,
+      21
+    ],
+    "max_iter": 500,
+    "tol": 1e-06,
+    "cache_item_tables": true
+  },
+  "live_log": "/private/tmp/focal-cpu-cache-continuous-20260928/output.log",
+  "session_id": 27010,
+  "acceptance": "pending both grids convergence, all six means/SD recovery, cross-grid bounds and exit status"
+}

@@ -7,3 +7,5 @@ Baseline source 4fb92ba; experiment source 2d26508 committed before measurement.
 Two native full-product fixture checks and one actual Apple M1 GPU score/update parity check pass, zero skips/errors/failures. Initial default test command skips two GPU tests; actual hardware invocation explicitly enables FOCAL_GPU_NATIVE=1 and selects only the short parity node. Full candidate continuous population recovery remains pending. CPU cache memory grows with items × primary grid × specific nodes × categories; tables rebuild after every density update.
 
 Reproduce from the repository root: `.venv/bin/python docs/reviews/focal-cpu-item-cache-20260928/benchmark.py --cache`.
+
+API validation/native bridge/mean-rank checks: 21 passed, zero skips/errors/failures (`api-native.xml`). Full continuous recovery is live on the same isolated installed core, recorded in `continuous-live.json`; no terminal result is inferred.
