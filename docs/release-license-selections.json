@@ -177,6 +177,28 @@
   },
   {
     "ecosystem": "cargo",
+    "name": "khronos-egl",
+    "version": "6.0.0",
+    "chosen": "Apache-2.0",
+    "rationale": "Cargo legacy slash-separated dual licence pair, interpreted using the Cargo Book manifest licence fields and footnote 1. All captured licence texts match whole-text digests reviewed in central helper ceae674dca8619358cc8c2963e3c21fbab8a5416. Retain the chosen full licence notice. No Strix or whole-release approval. Choose Apache-2.0 to retain the original EGL grant discussed in the packaged README, without relying on its author's MIT relicensing assertion.",
+    "archive_sha256": "6aae1df220ece3c0ada96b8153459b67eebe9ae9212258bb0134ae60416fdf76",
+    "license_members": [
+      {
+        "member": "khronos-egl-6.0.0/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "khronos-egl-6.0.0/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/khronos-egl-6.0.0-Apache-2.0.txt",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    }
+  },
+  {
+    "ecosystem": "cargo",
     "name": "lock_api",
     "version": "0.4.14",
     "chosen": "MIT",
@@ -217,6 +239,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/log-0.4.34-MIT.txt",
       "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "matrixmultiply",
+    "version": "0.3.11",
+    "chosen": "MIT",
+    "rationale": "Cargo legacy slash-separated dual licence pair, interpreted using the Cargo Book manifest licence fields and footnote 1. All captured licence texts match whole-text digests reviewed in central helper ceae674dca8619358cc8c2963e3c21fbab8a5416. Retain the chosen full licence notice. No Strix or whole-release approval.",
+    "archive_sha256": "3f607c237553f086e7043417a51df26b2eb899d3caff94e6a67592ff992fedc7",
+    "license_members": [
+      {
+        "member": "matrixmultiply-0.3.11/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "matrixmultiply-0.3.11/LICENSE-MIT",
+        "raw_sha256": "792d075c7bad6dac258a44e799eb64cbf465e24d9932d27669be08c5ec957e27"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/matrixmultiply-0.3.11-MIT.txt",
+      "sha256": "792d075c7bad6dac258a44e799eb64cbf465e24d9932d27669be08c5ec957e27"
     }
   },
   {
@@ -437,6 +481,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/pkg-config-0.3.34-MIT.txt",
       "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "pollster",
+    "version": "1.0.1",
+    "chosen": "MIT",
+    "rationale": "Cargo legacy slash-separated dual licence pair, interpreted using the Cargo Book manifest licence fields and footnote 1. All captured licence texts match whole-text digests reviewed in central helper ceae674dca8619358cc8c2963e3c21fbab8a5416. Retain the chosen full licence notice. No Strix or whole-release approval.",
+    "archive_sha256": "bc6355899e1c9462875b6757c79f3caa011a1fdae12bbb1a2e72dd1f234f8336",
+    "license_members": [
+      {
+        "member": "pollster-1.0.1/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "pollster-1.0.1/LICENSE-MIT",
+        "raw_sha256": "cc02a53316678ca2575cc69d12daa7b1833935d4b7742c31fbab7bd74a481077"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/pollster-1.0.1-MIT.txt",
+      "sha256": "cc02a53316678ca2575cc69d12daa7b1833935d4b7742c31fbab7bd74a481077"
     }
   },
   {
@@ -665,6 +731,50 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/raw-window-metal-1.1.0-MIT.txt",
       "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "rawpointer",
+    "version": "0.2.1",
+    "chosen": "MIT",
+    "rationale": "Cargo legacy slash-separated dual licence pair, interpreted using the Cargo Book manifest licence fields and footnote 1. All captured licence texts match whole-text digests reviewed in central helper ceae674dca8619358cc8c2963e3c21fbab8a5416. Retain the chosen full licence notice. No Strix or whole-release approval.",
+    "archive_sha256": "60a357793950651c4ed0f3f52338f53b2f809f32d83a07f72909fa13e4c6c1e3",
+    "license_members": [
+      {
+        "member": "rawpointer-0.2.1/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "rawpointer-0.2.1/LICENSE-MIT",
+        "raw_sha256": "7576269ea71f767b99297934c0b2367532690f8c4badc695edf8e04ab6a1e545"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/rawpointer-0.2.1-MIT.txt",
+      "sha256": "7576269ea71f767b99297934c0b2367532690f8c4badc695edf8e04ab6a1e545"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "rustc-hash",
+    "version": "1.1.0",
+    "chosen": "MIT",
+    "rationale": "Cargo legacy slash-separated dual licence pair, interpreted using the Cargo Book manifest licence fields and footnote 1. All captured licence texts match whole-text digests reviewed in central helper ceae674dca8619358cc8c2963e3c21fbab8a5416. Retain the chosen full licence notice. No Strix or whole-release approval.",
+    "archive_sha256": "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2",
+    "license_members": [
+      {
+        "member": "rustc-hash-1.1.0/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "rustc-hash-1.1.0/LICENSE-MIT",
+        "raw_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/rustc-hash-1.1.0-MIT.txt",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
     }
   },
   {
@@ -973,6 +1083,28 @@
     "bundled_notice": {
       "path": "python/fast_mlsirm/_licenses/unicode-width-0.2.2-MIT.txt",
       "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0"
+    }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "version_check",
+    "version": "0.9.5",
+    "chosen": "MIT",
+    "rationale": "Cargo legacy slash-separated dual licence pair, interpreted using the Cargo Book manifest licence fields and footnote 1. All captured licence texts match whole-text digests reviewed in central helper ceae674dca8619358cc8c2963e3c21fbab8a5416. Retain the chosen full licence notice. No Strix or whole-release approval.",
+    "archive_sha256": "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a",
+    "license_members": [
+      {
+        "member": "version_check-0.9.5/LICENSE-APACHE",
+        "raw_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "member": "version_check-0.9.5/LICENSE-MIT",
+        "raw_sha256": "b7e650f3fce5c53249d1cdc608b54df156a97edd636cf9d23498d0cfe7aec63e"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/version_check-0.9.5-MIT.txt",
+      "sha256": "b7e650f3fce5c53249d1cdc608b54df156a97edd636cf9d23498d0cfe7aec63e"
     }
   },
   {
