@@ -2739,56 +2739,22 @@ pub fn fit_bifactor_grm_multigroup(
 }
 
 // ---------------------------------------------------------------------------
-// Fixed-item parameter calibration (FIPC) for the focal group (Kim, 2006,
-// MWU-MEM).
+// Fixed-item parameter calibration (FIPC) with a Gaussian focal distribution.
 //
-// A focal group responds to `anchor` items whose general/specific slopes and
-// boundary intercepts are FIXED at reference-calibration values plus new
-// (free) items. The fitter estimates the free-item parameters AND the focal
-// latent distribution — the general-factor mean/variance and, where
-// identified, the specific-factor variances — by Bock-Aitkin MML-EM with the
-// prior updated after EVERY M-step (Kim, 2006, MWU-MEM eqs. 14-15,
-// pp. 361-362; workflow Table 1, p. 362). There is no rescaling of the latent
-// points after an EM cycle (Kim, 2006, p. 362) and no reflection
-// canonicalization: the fixed anchors pin the orientation, including
-// reverse-keyed anchors with negative slopes.
+// Anchors pin item slopes and intercepts, including their signs. Free items
+// and focal Gaussian moments are updated in MML-EM. The general mean/SD are
+// estimated; specific means stay zero and their SDs are optionally estimated.
+// Nodes move as mu + sigma * X_t and tau_s * X_h with standard GH weights.
 //
-// # Implementation basis (APA 7th ed.; every locator verified against the
-// # cited source — no invented equation numbers)
-//
-// - Kim, S. (2006). A comparative study of IRT fixed parameter calibration
-//   methods. *Journal of Educational Measurement, 43*(4), 355-381.
-//   https://doi.org/10.1111/j.1745-3984.2006.00021.x — the MWU-MEM
-//   (multiple-weights updating / multiple EM) procedure: M-step item
-//   objective eq. 14 (pp. 361-362), posterior weight update eq. 15 (p. 362),
-//   the EM workflow Table 1 (p. 362), the no-rescale rule ("the ability
-//   points should not be rescaled after each EM cycle", p. 362), the fixed `N(0, 1)` person prior for the
-//   FPC baseline (p. 364), the mean-shift / variance-shift study conditions
-//   (pp. 364-365), and the recommendation to update the prior iteratively
-//   rather than fix it (pp. 377-378).
-// - Paek, I., & Young, M. J. (2005). Investigation of student growth recovery
-//   in a fixed-item linking procedure with a fixed-person prior distribution
-//   for mixed-format test data. *Applied Measurement in Education, 18*(2),
-//   199-215. https://doi.org/10.1207/s15324818ame1802_4 — a fixed person
-//   prior biases the focal growth/shift estimate, while iteratively updating
-//   the prior recovers it (abstract; cf. Kim, 2006, p. 378).
-// - Gibbons et al. (2007), eq. 9 (bifactor graded linear predictor) and eq.
-//   15 (person marginal factoring per general node), plus Gibbons & Hedeker
-//   (1992) for the bifactor EM with Stuart's reduction — the same reduction
-//   this module's E-step already implements (see the module docs).
-// - Bock, R. D., & Zimowski, M. F. (1997). Multiple group IRT. In W. J. van
-//   der Linden & R. K. Hambleton (Eds.), *Handbook of modern item response
-//   theory* (pp. 433-448). Springer.
-//   https://doi.org/10.1007/978-1-4757-2691-6_25 — the node-shift
-//   distribution form `theta_{G,t} = mu + sigma * X_t`,
-//   `theta_{S,s,h} = tau_s * X_h` with the shared Gauss-Hermite weights kept
-//   (conceptual; no equation locator claimed — it is exactly the pooling this
-//   crate's multigroup stage-2 already uses).
-//
-// The parametric-normal prior update (`mu`, `sigma`, and, when requested,
-// `tau_s` from E-step posterior moments) realizes Kim's discrete weight
-// update (eq. 15) inside the Bock-Zimowski parametric family: same
-// update-the-prior-after-every-M-step semantics, normal-family form.
+// Source comparison: Kim (2006), JEM 43(4), 355-381,
+// https://doi.org/10.1111/j.1745-3984.2006.00021.x,
+// p. 362 eqs. 14-15 updates discrete prior weights; p. 363 Table 1 and the
+// following paragraph require fixed ability points across EM cycles. This
+// moving-node Gaussian moment update is a distinct implementation choice,
+// not Kim's fixed-node MWU-MEM. Kim's reported recovery does not establish
+// recovery or interval validity for this implementation. The Gaussian update
+// and its sensitivity require their own source and empirical validation.
+// See docs/papers/bifactor-fipc-source-scope-20260927.md for inspected bytes.
 //
 // # Caller-owned numerics (no hidden clamps, no new constants)
 //
@@ -2900,7 +2866,7 @@ pub struct BifactorFipcResult {
     pub n_parameters: usize,
 }
 
-/// Fit the focal group with fixed anchor items (Kim, 2006, MWU-MEM) for the
+/// Fit the focal group with fixed anchor items and Gaussian moment updates for the
 /// polytomous bifactor GRM.
 ///
 /// `y`/`observed` are row-major `n_persons * n_items` focal responses
@@ -2912,9 +2878,11 @@ pub struct BifactorFipcResult {
 /// may be NEGATIVE (reverse-keyed anchors keep their signs bit-exact: no
 /// reflection canonicalization runs). The focal general mean/variance — plus
 /// the focal specific variances iff `cfg.estimate_specific_vars` — are
-/// re-estimated after EVERY M-step from E-step posterior moments (Kim, 2006,
-/// eqs. 14-15, pp. 361-362), with NO rescaling of the latent points (Kim,
-/// 2006, p. 362).
+/// re-estimated after every M-step from E-step posterior moments. Specific
+/// means remain zero. Nodes move with the fitted Gaussian moments, unlike
+/// Kim (2006, p. 362 eqs. 14-15; p. 363 Table 1 and following paragraph),
+/// whose MWU-MEM updates discrete weights at fixed ability points.
+/// This distinction and source DOI are documented immediately above.
 ///
 /// Returns `Err` on malformed input (shapes and config exactly like the
 /// existing fitters; at least one anchor required; fixed arrays finite with
@@ -3168,7 +3136,7 @@ pub fn fit_bifactor_grm_fipc(
         }
         // M-step, focal distribution (ESTIMATED, not pinned): general
         // `mu = mean EAP`, `var = mean posterior second moment - mu^2`
-        // (Bock-Aitkin/Bock-Zimowski moment update); specifics (when
+        // (Gaussian moment update); specifics (when
         // estimated) `tau^2 = mean posterior second moment at zero mean`.
         // Mirrors the stage-2 focal update including the loud-`Err` (no
         // clamping) style.
@@ -3211,8 +3179,8 @@ pub fn fit_bifactor_grm_fipc(
     // (mirrors `fit_bifactor_grm`'s final EAP loop, but with general nodes
     // `tg_focal[t] = mu + sigma * tg_std[t]` and specific nodes
     // `tau[s] * ts_std[h]`; the weights stay the standard ones — the
-    // node-shift reparameterization keeps the weights, cf. Bock & Zimowski,
-    // 1997).
+    // Gaussian change of variable keeps standard GH weights; this is not
+    // Kim's discrete weight-update procedure).
     let tg_focal: Vec<f64> = tg_std.iter().map(|&x| mu + sigma * x).collect();
     let ts_focal: Vec<Vec<f64>> = (0..v.n_specific)
         .map(|s| ts_std.iter().map(|&x| taus[s] * x).collect())

@@ -562,11 +562,14 @@ def fit_bifactor_grm_fipc(
     decreasing per anchored row) from a reference calibration, while the
     remaining items and the focal general mean/variance — plus the focal
     specific variances iff ``estimate_specific_vars`` — are estimated by
-    MML-EM with the prior updated after every M-step, the MWU-MEM method
-    (Kim, 2006, eqs. 14-15, pp. 361-362; Paek & Young, 2005). Slopes may be
-    negative (reverse-keyed anchors keep their signs bit-exact: no
-    reflection canonicalization, no rescaling of the latent points per Kim,
-    2006, p. 362). ``q_general``/``q_specific`` are caller-owned
+    MML-EM with Gaussian moments updated after every M-step. Specific means
+    remain zero, including when their variances are estimated. Kim (2006,
+    p. 362, eqs. 14-15; p. 363, Table 1 and following paragraph) describes
+    discrete weights updated at fixed ability points. This Gaussian family
+    instead moves nodes with its mean/SD; it is a distinct model choice and
+    does not inherit Kim's recovery evidence. Slopes may be negative;
+    reverse-keyed anchors keep their signs bit-exact, with no reflection
+    canonicalization. ``q_general``/``q_specific`` are caller-owned
     Gauss-Hermite node counts (any ``int >= 1``; #1929 removed the
     fixed-table cap).
 
