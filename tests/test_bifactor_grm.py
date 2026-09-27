@@ -21,6 +21,8 @@ import numpy as np
 import pytest
 
 from fast_mlsirm.bifactor_grm import _u64_seed, fit_bifactor_grm
+from fast_mlsirm.bifactor_multigroup import fit_bifactor_grm_multigroup
+from fast_mlsirm.two_tier_grm import fit_two_tier_grm
 
 N_PERSONS = 300
 N_ITEMS = 6
@@ -74,6 +76,38 @@ def test_fit_forwards_full_width_seed_to_rust_boundary(monkeypatch) -> None:
         )
 
     assert captured["seed"] == seed
+
+
+def test_related_fits_forward_full_width_seed_to_rust_boundary(monkeypatch) -> None:
+    captured: list[int] = []
+
+    class _SeedProbeCore:
+        def fit_bifactor_grm_multigroup(self, *args):
+            captured.append(args[15])
+            raise RuntimeError("seed reached Rust boundary")
+
+        def fit_two_tier_grm(self, *args):
+            captured.append(args[14])
+            raise RuntimeError("seed reached Rust boundary")
+
+    monkeypatch.setattr("fast_mlsirm.fitstats._core_module", lambda: _SeedProbeCore())
+    responses = np.array([[0, 1, 0, 1], [1, 0, 1, 0]], dtype=np.int64)
+    specific_map = np.array([0, 0, 1, 1], dtype=np.int64)
+    seed = 2**53 + 1
+
+    with pytest.raises(RuntimeError, match="seed reached Rust boundary"):
+        fit_bifactor_grm_multigroup(
+            responses, np.array([0, 1]), specific_map, 2, 2,
+            q_general=3, q_specific=3, max_iter=1, tol=1e-6,
+            n_starts=1, seed=seed,
+        )
+    with pytest.raises(RuntimeError, match="seed reached Rust boundary"):
+        fit_two_tier_grm(
+            responses, np.array([[1], [1], [1], [1]]), specific_map,
+            2, 1, 2, 3, 3, 1, 1e-6, 1, seed,
+        )
+
+    assert captured == [seed, seed]
 
 
 SPECIFIC_MAP = np.array([0, 0, 0, 1, 1, 1], dtype=np.int64)
