@@ -135,10 +135,12 @@ The six scopes have distinct sources of truth:
   not a target installation. The `fuzz` extra now limits Atheris to its locked
   CPython/Linux x86_64 wheel targets; other targets retain Hypothesis only.
   The target installation receipt exercises this marker on the runner. It is
-  not yet promoted to an accepted scope identity. Source declarations also
-  need a semantic comparison with wheel and sdist dependency metadata: the
-  pinned maturin release legitimately rewrites marker names and order, so a
-  raw string comparison would reject valid distributions.
+  not yet promoted to an accepted scope identity. The admission verifier now
+  compares wheel and sdist dependency metadata with the committed source for
+  every release target and extra using the hash-locked packaging parser. This
+  runs after the scope HOLD is lifted; it does not yet certify the full runtime
+  closure. The pinned maturin release legitimately rewrites marker names and
+  order, so a raw string comparison would reject valid distributions.
 - **Build and dev:** record the build environment's installed Python tools and
   target-filtered Cargo resolution with the features used by the wheel build.
   `requirements/package.txt` and `Cargo.lock` constrain these scopes but do not

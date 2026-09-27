@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import email.parser
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -448,6 +449,89 @@ def verify_cargo_graph_closure(receipts: list[dict], source: Path, source_sha: s
                 } for node in nodes), key=lambda row: (row["name"], row["version"], row["source"] or ""))
             if reported != graphs[triple]:
                 raise ValueError(f"{receipt['leg']}: Cargo graph differs from selected source closure")
+
+
+def verify_distribution_requirements(distribution: Path, leg: str, source: Path,
+                                     source_sha: str) -> None:
+    """Compare source and distribution dependencies for every release target and extra."""
+    from packaging.requirements import Requirement
+    from packaging.specifiers import SpecifierSet
+    from packaging.utils import canonicalize_name
+
+    if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        raise ValueError("distribution requirements lack exact source SHA")
+    project_blob = subprocess.check_output(
+        ["git", "-C", str(source), "show", f"{source_sha}:pyproject.toml"])
+    project = tomllib.loads(project_blob.decode("utf-8"))["project"]
+    optional = project.get("optional-dependencies", {})
+    if (type(optional) is not dict or any(type(name) is not str or type(items) is not list
+            or any(type(item) is not str for item in items) for name, items in optional.items())):
+        raise ValueError("source optional dependency declarations are malformed")
+    with (tarfile.open(distribution, "r:gz") if leg == "sdist" else zipfile.ZipFile(distribution)) as archive:
+        if leg == "sdist":
+            members = [item for item in archive if item.isfile()
+                       and len(PurePosixPath(item.name).parts) == 2
+                       and item.name.endswith("/PKG-INFO")]
+            content = archive.extractfile(members[0]).read(1024 * 1024 + 1) if len(members) == 1 and members[0].size <= 1024 * 1024 else b""
+        else:
+            members = [item for item in archive.infolist()
+                       if len(PurePosixPath(item.filename).parts) == 2
+                       and item.filename.endswith(".dist-info/METADATA")]
+            content = archive.read(members[0]) if len(members) == 1 and members[0].file_size <= 1024 * 1024 else b""
+    if not content or len(content) > 1024 * 1024:
+        raise ValueError(f"{leg}: distribution dependency metadata is missing or oversized")
+    metadata = email.parser.BytesParser().parsebytes(content)
+    if (metadata.get_all("Name") != [project["name"]]
+            or metadata.get_all("Version") != [project["version"]]
+            or len(metadata.get_all("Requires-Python", [])) != 1
+            or SpecifierSet(metadata["Requires-Python"]) != SpecifierSet(project["requires-python"])):
+        raise ValueError(f"{leg}: distribution identity differs from source")
+    extras = {canonicalize_name(name) for name in optional}
+    supplied = metadata.get_all("Provides-Extra", [])
+    if len(supplied) != len(extras) or {canonicalize_name(name) for name in supplied} != extras:
+        raise ValueError(f"{leg}: distribution extras differ from source")
+    declared = [("", Requirement(item)) for item in project.get("dependencies", [])]
+    declared += [(canonicalize_name(extra), Requirement(item))
+                 for extra, items in optional.items() for item in items]
+    observed = [Requirement(item) for item in metadata.get_all("Requires-Dist", [])]
+    allowed = {"python_version", "python_full_version", "implementation_name",
+               "implementation_version", "platform_python_implementation",
+               "sys_platform", "platform_machine", "platform_system", "os_name", "extra"}
+    for requirement in [*(item for _, item in declared), *observed]:
+        if requirement.marker is not None:
+            expression = re.sub(r'"(?:\\.|[^"\\])*"', "", str(requirement.marker))
+            variables = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)) - {"and", "or", "not", "in"}
+            if not variables <= allowed:
+                raise ValueError(f"{leg}: unsupported dependency marker variable")
+
+    def identity(requirement):
+        return (canonicalize_name(requirement.name), tuple(sorted(requirement.extras)),
+                requirement.specifier, requirement.url)
+
+    targets = ([("linux", "x86_64"), ("linux", "aarch64"),
+                ("darwin", "arm64"), ("darwin", "x86_64"), ("win32", "AMD64")]
+               if leg == "sdist" else {
+                   "x86_64-unknown-linux-gnu": [("linux", "x86_64")],
+                   "aarch64-unknown-linux-gnu": [("linux", "aarch64")],
+                   "universal2-apple-darwin": [("darwin", "arm64"), ("darwin", "x86_64")],
+                   "x86_64-pc-windows-msvc": [("win32", "AMD64")],
+               }[leg.rsplit("-py", 1)[0]])
+    pythons = ("3.12", "3.13", "3.14") if leg == "sdist" else (leg.rsplit("-py", 1)[1],)
+    for python in pythons:
+        for platform, machine in targets:
+            for extra in ("", *sorted(extras)):
+                environment = {"python_version": python, "python_full_version": f"{python}.0",
+                               "implementation_name": "cpython", "implementation_version": f"{python}.0",
+                               "platform_python_implementation": "CPython", "sys_platform": platform,
+                               "platform_machine": machine,
+                               "platform_system": {"linux": "Linux", "darwin": "Darwin", "win32": "Windows"}[platform],
+                               "os_name": "nt" if platform == "win32" else "posix", "extra": extra}
+                expected = Counter(identity(item) for group, item in declared
+                                   if group in ("", extra) and (item.marker is None or item.marker.evaluate(environment)))
+                actual = Counter(identity(item) for item in observed
+                                 if item.marker is None or item.marker.evaluate(environment))
+                if actual != expected:
+                    raise ValueError(f"{leg}: distribution requirements differ from source for {platform}/{machine}/py{python}/{extra}")
 
 
 def verify_sdist_consumer(receipt: dict, consumer: Path, direct: Path, row: dict,

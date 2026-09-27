@@ -91,6 +91,52 @@ def test_workflow_producer_transport_and_actual_consumer_hold(scope_fixture):
     assert not Path("admitted-manifest.tsv").exists()
 
 
+def test_distribution_requirements_bind_source_extras_across_targets(tmp_path):
+    source = tmp_path / "release-source"
+    source.mkdir()
+    (source / "pyproject.toml").write_text(
+        '[project]\nname="fast-mlsirm"\nversion="0.11.4"\nrequires-python=">=3.12"\n'
+        'dependencies=["numpy>=1.24"]\n[project.optional-dependencies]\n'
+        'dev=["pytest>=8"]\n'
+        'fuzz=["atheris>=2.3; implementation_name == \'cpython\' and sys_platform == \'linux\' '
+        'and platform_machine == \'x86_64\' and python_version < \'3.15\'"]\n')
+    env = {**os.environ, "GIT_AUTHOR_NAME": "fixture", "GIT_COMMITTER_NAME": "fixture",
+           "GIT_AUTHOR_EMAIL": "fixture@example.invalid", "GIT_COMMITTER_EMAIL": "fixture@example.invalid"}
+    for args in (("init", "-q"), ("add", "."), ("commit", "-qm", "fixture")):
+        subprocess.run(["git", "-C", str(source), *args], env=env, check=True, capture_output=True)
+    source_sha = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    metadata = ("Name: fast-mlsirm\nVersion: 0.11.4\nRequires-Python: >=3.12\n"
+                "Requires-Dist: numpy>=1.24\n"
+                "Requires-Dist: pytest>=8 ; extra == 'dev'\n"
+                "Requires-Dist: atheris>=2.3 ; python_full_version < '3.15' and "
+                "implementation_name == 'cpython' and platform_machine == 'x86_64' "
+                "and sys_platform == 'linux' and extra == 'fuzz'\n"
+                "Provides-Extra: dev\nProvides-Extra: fuzz\n")
+    wheel = tmp_path / "fast_mlsirm-0.11.4-cp314-cp314-manylinux2014_x86_64.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("fast_mlsirm-0.11.4.dist-info/METADATA", metadata)
+    sdist = tmp_path / "fast_mlsirm-0.11.4.tar.gz"
+    with tarfile.open(sdist, "w:gz") as archive:
+        data = metadata.encode()
+        member = tarfile.TarInfo("fast_mlsirm-0.11.4/PKG-INFO")
+        member.size = len(data)
+        archive.addfile(member, io.BytesIO(data))
+    verify = M["verify_distribution_requirements"]
+    verify(wheel, "x86_64-unknown-linux-gnu-py3.14", source, source_sha)
+    verify(sdist, "sdist", source, source_sha)
+    (source / "pyproject.toml").write_text("[project]\nname='tampered'\n")
+    verify(wheel, "x86_64-unknown-linux-gnu-py3.14", source, source_sha)
+    for changed in (metadata.replace("Requires-Dist: atheris>=2.3 ;", "Requires-Dist: atheris>=3 ;"),
+                    metadata.replace("Requires-Dist: atheris>=2.3 ;", "Requires-Dist: missing>=2.3 ;"),
+                    metadata.replace("sys_platform == 'linux'", "sys_platform == 'win32'")):
+        with zipfile.ZipFile(wheel, "w") as archive:
+            archive.writestr("fast_mlsirm-0.11.4.dist-info/METADATA", changed)
+        with pytest.raises(ValueError, match="requirements differ from source"):
+            verify(wheel, "x86_64-unknown-linux-gnu-py3.14", source, source_sha)
+    assert "--require-hashes -r release-source/requirements/package.txt" in WORKFLOW
+    assert "transport.verify_distribution_requirements(distribution_paths[row[\"file\"]], leg," in WORKFLOW
+
+
 @pytest.mark.parametrize("case", ["missing", "duplicate", "other-platform", "abi", "metadata", "lock", "source", "complete", "empty-scope", "wheel-as-sdist", "schema-bool"])
 def test_scope_record_mutations_refuse_before_generic_hold(scope_fixture, case):
     source, sha, rows, records = scope_fixture

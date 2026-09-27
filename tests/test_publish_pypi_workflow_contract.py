@@ -268,7 +268,7 @@ def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> N
 
 def _step_python(job: str, step_name: str) -> str:
     step = job.split(f"- name: {step_name}\n", 1)[1]
-    body = re.split(r"python3? - <<'PY'\n", step, maxsplit=1)[1].split("\n          PY\n", 1)[0]
+    body = step.split(" - <<'PY'\n", 1)[1].split("\n          PY\n", 1)[0]
     return textwrap.dedent(body)
 
 

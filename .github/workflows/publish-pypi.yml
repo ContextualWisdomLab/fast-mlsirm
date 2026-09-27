@@ -1133,6 +1133,12 @@ jobs:
                           or intel[2] != expected):
                       raise SystemExit(f"{leg}: Intel runtime requirements differ from release source export")
           PY
+      - name: Provision hash-locked metadata parser
+        run: |
+          set -euo pipefail
+          uv venv "$RUNNER_TEMP/release-admission-venv"
+          uv pip install --python "$RUNNER_TEMP/release-admission-venv/bin/python" \
+            --require-hashes -r release-source/requirements/package.txt
       - name: Admit exactly the verified bytes of release_commit
         env:
           RECORD_ID: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_id }}
@@ -1142,7 +1148,7 @@ jobs:
           VERDICT_NAME: ${{ format('{0}--full-set-verdict', needs.dependency-gate.outputs.evidence_artifact_name) }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          "$RUNNER_TEMP/release-admission-venv/bin/python" - <<'PY'
           import hashlib
           import importlib.util
           import io
@@ -1382,6 +1388,9 @@ jobs:
               for leg, row in rows.items()
           }
           transport.verify_scope_identities(scope_records, rows, distribution_paths, Path("release-source"), commit)
+          for leg, row in rows.items():
+              transport.verify_distribution_requirements(distribution_paths[row["file"]], leg,
+                                                         Path("release-source"), commit)
           transport.verify_cargo_graph_closure(build_graph_receipts, Path("release-source"), commit)
 
           # The target-specific runtime/build/dev/optional/native/bundled
