@@ -121,6 +121,8 @@ def test_nested_column_drop_uses_one_response_and_checks_design():
     x_three = np.column_stack((x, x[:, 1] ** 2))
     with pytest.raises(ValueError, match="sorted, unique"):
         nested_ols_column_drop(x_three, y, [1, 1])
+    with pytest.raises(ValueError, match="non-negative integer indices"):
+        nested_ols_column_drop(x, y, [-1])
     with pytest.raises(ValueError, match="constant intercept"):
         no_intercept = np.column_stack((x[:, 1], x[:, 1] ** 2))
         nested_ols_column_drop(no_intercept, y, [1])
