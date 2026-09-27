@@ -43,7 +43,8 @@ def test_mixed_and_all_failed_receipts(monkeypatch):
     assert raised.value.converged.tolist() == [False, False, False]
 
 
-def test_multigroup_real_worker_retains_flags_errors_and_parameter_row_ids(monkeypatch):
+@pytest.mark.parametrize("group_dtype", [np.int64, np.float64])
+def test_multigroup_real_worker_retains_flags_errors_and_parameter_row_ids(monkeypatch, group_dtype):
     from types import SimpleNamespace
     calls = []
     def fit(**kw):
@@ -60,7 +61,7 @@ def test_multigroup_real_worker_retains_flags_errors_and_parameter_row_ids(monke
     monkeypatch.setattr(bb, "fit_bifactor_grm_multigroup", fit)
     result = bb.run_bifactor_bootstrap(
         responses=np.array([[0.], [1.], [0.], [1.]]), specific_map=np.array([0]),
-        group_ids=np.array([0, 0, 1, 1]), n_groups=2,
+        group_ids=np.array([0, 0, 1, 1], dtype=group_dtype), n_groups=2,
         n_cat=2, n_specific=1, n_replicates=3, batch_size=3,
         mc_stopping_ratio=0., compute_budget_seconds=60.,
         q_general=1, q_specific=1, base_seed=0, ci_level=.95,
@@ -75,3 +76,25 @@ def test_multigroup_real_worker_retains_flags_errors_and_parameter_row_ids(monke
     assert result.replicate_threshold.shape == (1, 2, 1, 1)
     assert len(calls) == 3
     assert all(call["group"].tolist() == [0, 0, 1, 1] for call in calls)
+
+
+@pytest.mark.parametrize('groups,count', [
+    (np.array([0., .5]), 1), (np.array([0, 2]), 2),
+    (np.array([-1, 0]), 2), (np.array([0, 0]), 2),
+    (None, 2), (np.array([0, 1]), 1),
+    (np.array([0, 2**64-1], dtype=np.uint64), 2),
+    (np.array([0., np.nan]), 2), (np.array(['0', '1']), 2),
+    (np.array([False, True]), 2), (np.array([0, 1]), True),
+])
+def test_invalid_strata_fail_before_replicate_dispatch(monkeypatch, groups, count):
+    def worker(*args):
+        raise AssertionError('invalid strata reached replicate dispatch')
+    monkeypatch.setattr(bb, '_fit_single_replicate', worker)
+    with pytest.raises(ValueError, match='group'):
+        bb.run_bifactor_bootstrap(
+            responses=np.zeros((2, 1)), specific_map=np.array([0]),
+            group_ids=groups, n_groups=count,
+            n_cat=2, n_specific=1, n_replicates=1, batch_size=1,
+            mc_stopping_ratio=0., compute_budget_seconds=60.,
+            q_general=1, q_specific=1, base_seed=0, ci_level=.95,
+            max_iter=1, n_starts=1, tol=1e-6, n_jobs=1)
