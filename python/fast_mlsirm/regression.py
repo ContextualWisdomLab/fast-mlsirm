@@ -169,6 +169,29 @@ def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     }
 
 
+def compare_ols_column_subset(x, y, keep, *, intercept_column):
+    """Native full/restricted OLS summaries on one actual design and response.
+
+    Source: statsmodels Developers (n.d.), RegressionResults compare_f_test,
+    actual source lines2813–2865, R² definitions lines2125–2237.
+    https://www.statsmodels.org/stable/_modules/statsmodels/regression/linear_model.html
+    Keep selects a nonempty proper unique column subset retaining the declared
+    nonzero constant column. Both fits therefore share responses/row order and
+    nesting. Classical F/p assume homoscedastic, uncorrelated errors and are
+    not robust inference. Rank/zero-total/negative-SSE-improvement failures
+    reject; no silently clamped or certified inferential assumptions.
+    """
+    from .polytomous import _bounded_integer
+    values = _as_float64_matrix(x, "x")
+    response = _as_float64_vector(y, "y", expected_length=values.shape[0])
+    if not isinstance(keep, (list, tuple)) or not 0 < len(keep) < values.shape[1]:
+        raise ValueError("keep must be a nonempty proper column subset")
+    columns = [_bounded_integer(v, "keep column", 0, values.shape[1]-1) for v in keep]
+    intercept = _bounded_integer(intercept_column, "intercept_column", 0, values.shape[1]-1)
+    raw = regression_core().compare_ols_column_subset(values, response, columns, intercept)
+    return {key: float(value) for key, value in raw.items()}
+
+
 def residual_summary(y, residuals, *, rank, has_intercept):
     """Native unweighted SSE, declared total SS, R² and adjusted R².
 

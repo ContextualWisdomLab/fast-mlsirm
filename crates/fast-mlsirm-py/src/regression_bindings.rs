@@ -4,7 +4,7 @@
 //! NumPy layout, delegates to the core, and marshals results into Python dicts.
 
 use mlsirm_core::regression::{
-    centered_product_design, chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc,
+    centered_product_design, compare_ols_column_subset, chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc,
     linear_contrast, normal_wald_interval, residual_summary, slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
 };
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
@@ -129,6 +129,20 @@ fn py_residual_summary(py: Python<'_>, y: PyReadonlyArray1<'_, f64>, residuals: 
     Ok(out.into())
 }
 
+/// Marshal native actual-design subset comparison; source and limitations:
+/// core compare_ols_column_subset, statsmodels compare_f_test lines2813–2865.
+#[pyfunction(name = "compare_ols_column_subset")]
+fn py_compare_ols_column_subset(py: Python<'_>, x: PyReadonlyArray2<'_, f64>, y: PyReadonlyArray1<'_, f64>, keep: Vec<usize>, intercept_column: usize) -> PyResult<Py<PyDict>> {
+    let shape = x.shape();
+    let values: Vec<f64> = x.as_array().iter().copied().collect();
+    let result = compare_ols_column_subset(&values, y.as_slice()?, shape[0], shape[1], &keep, intercept_column).map_err(PyValueError::new_err)?;
+    let out = PyDict::new(py);
+    for (key, value) in ["full_r_squared", "adjusted_r_squared", "reduced_r_squared", "delta_r_squared", "classical_f", "classical_p", "df1", "df2"].iter().zip(result) {
+        out.set_item(*key, value)?;
+    }
+    Ok(out.into())
+}
+
 #[pyfunction(name = "linear_contrast")]
 fn py_linear_contrast(
     py: Python<'_>,
@@ -224,6 +238,7 @@ fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_linear_contrast, m)?)?;
     m.add_function(wrap_pyfunction!(py_normal_wald_interval, m)?)?;
     m.add_function(wrap_pyfunction!(py_residual_summary, m)?)?;
+    m.add_function(wrap_pyfunction!(py_compare_ols_column_subset, m)?)?;
     m.add_function(wrap_pyfunction!(py_xwz_e_design_row, m)?)?;
     m.add_function(wrap_pyfunction!(py_design_row_dot, m)?)?;
     m.add_function(wrap_pyfunction!(py_conditional_slope, m)?)?;

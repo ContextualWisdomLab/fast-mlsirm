@@ -170,6 +170,39 @@ def test_regression_core_exports_without_scipy_rscript():
     assert "rscript" not in src.lower()
 
 
+def test_actual_column_subset_comparison_and_rejection():
+    """Check nested RSS/F against independent NumPy least squares.
+
+    Source: statsmodels RegressionResults compare_f_test lines2813–2865;
+    classical inference assumes homoscedastic uncorrelated errors.
+    """
+    from fast_mlsirm.regression import compare_ols_column_subset
+    rng = np.random.default_rng(20260928)
+    x = np.column_stack([np.ones(80), rng.normal(size=(80, 3))])
+    y = x @ np.array([.2, -.5, .3, .7]) + rng.normal(size=80)
+    keep = [0, 1, 2]
+    got = compare_ols_column_subset(x, y, keep, intercept_column=0)
+    full = y-x @ np.linalg.lstsq(x, y, rcond=None)[0]
+    red = y-x[:, keep] @ np.linalg.lstsq(x[:, keep], y, rcond=None)[0]
+    sse, reduced = full @ full, red @ red
+    total = (y-y.mean()) @ (y-y.mean())
+    f = (reduced-sse)/sse*76
+    np.testing.assert_allclose([got[k] for k in ["full_r_squared", "adjusted_r_squared", "reduced_r_squared", "delta_r_squared", "classical_f", "df1", "df2"]],
+        [1-sse/total, 1-79/76*sse/total, 1-reduced/total, (reduced-sse)/total, f, 1, 76], rtol=1e-12, atol=1e-12)
+    assert 0 <= got["classical_p"] <= 1
+    permuted = compare_ols_column_subset(x, y, [2, 0, 1], intercept_column=0)
+    np.testing.assert_allclose(list(got.values()), list(permuted.values()), rtol=1e-12, atol=1e-12)
+    for columns, intercept in [([], 0), ([0,1,2,3], 0), ([0,0], 0),
+                                ([1,2], 0), ([0,4], 0), ([0,True], 0),
+                                ([0,1], 1), ([0,1], True)]:
+        with pytest.raises(ValueError):
+            compare_ols_column_subset(x, y, columns, intercept_column=intercept)
+    with pytest.raises(ValueError):
+        compare_ols_column_subset(np.column_stack([np.zeros(80), x[:,1:]]), y, keep, intercept_column=0)
+    with pytest.raises(ValueError):
+        compare_ols_column_subset(np.column_stack([x, x[:,1]]), y, keep, intercept_column=0)
+
+
 def test_native_residual_summary_intercept_and_degenerate_contract():
     """Validate source-defined summaries on actual OLS residuals and boundaries.
 

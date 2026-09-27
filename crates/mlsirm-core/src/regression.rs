@@ -247,6 +247,52 @@ pub fn residual_summary(y: &[f64], residuals: &[f64], rank: usize, has_intercept
     Ok((sse, total, r2, adjusted))
 }
 
+/// Compare a proper column-subset OLS model on the exact same response/rows.
+/// Source actually read: statsmodels Developers (n.d.), RegressionResults
+/// compare_f_test, lines2813–2865, and R² definitions lines2125–2237:
+/// <https://www.statsmodels.org/stable/_modules/statsmodels/regression/linear_model.html>.
+/// Both models retain a declared nonzero explicit constant column. Classical
+/// F/p assume homoscedastic, uncorrelated errors; this does not establish those
+/// assumptions or provide robust inference. Existing OLS and tail code are reused.
+pub fn compare_ols_column_subset(x: &[f64], y: &[f64], n: usize, k: usize,
+    keep: &[usize], intercept_column: usize) -> Result<[f64; 8], String>
+{
+    validate_design(x, y, n, k)?;
+    if keep.is_empty() || keep.len() >= k || intercept_column >= k
+        || !keep.contains(&intercept_column) {
+        return Err("comparison needs a proper nonempty subset retaining the intercept".to_owned());
+    }
+    let mut seen = vec![false; k];
+    for &col in keep {
+        if col >= k || seen[col] {
+            return Err("subset columns must be unique valid indices".to_owned());
+        }
+        seen[col] = true;
+    }
+    let constant = x[intercept_column];
+    if constant == 0.0 || (0..n).any(|i| x[i*k+intercept_column] != constant) {
+        return Err("declared intercept must be a nonzero constant column".to_owned());
+    }
+    let restricted: Vec<f64> = x.chunks_exact(k).flat_map(|row| keep.iter().map(move |&col| row[col])).collect();
+    let full = fit_ols(x, y, n, k)?;
+    let reduced = fit_ols(&restricted, y, n, keep.len())?;
+    let (sse, total, full_r2, adjusted) = residual_summary(y, &full.residuals, k, true)?;
+    let (reduced_sse, _, reduced_r2, _) = residual_summary(y, &reduced.residuals, keep.len(), true)?;
+    let improvement = reduced_sse - sse;
+    if sse <= 0.0 || improvement < 0.0 {
+        return Err("comparison needs positive full SSE and nonnegative SSE improvement".to_owned());
+    }
+    let df1 = (k - keep.len()) as f64;
+    let df2 = (n - k) as f64;
+    let f = improvement / df1 / sse * df2;
+    let p = f_sf(f, df1, df2);
+    let delta = improvement / total;
+    if !f.is_finite() || !p.is_finite() || !(0.0..=1.0).contains(&p) || !delta.is_finite() {
+        return Err("nonfinite comparison arithmetic".to_owned());
+    }
+    Ok([full_r2, adjusted, reduced_r2, delta, f, p, df1, df2])
+}
+
 /// Linear contrast `c'β` under a supplied covariance matrix.
 #[derive(Clone, Debug)]
 pub struct ContrastResult {
