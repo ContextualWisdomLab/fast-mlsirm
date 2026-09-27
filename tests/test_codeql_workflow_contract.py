@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 WORKFLOW_PATH = Path(__file__).parents[1] / ".github" / "workflows" / "codeql.yml"
+CODEQL_ACTION_SHA = "cdf488f595d80d6e07e03d4674febd5ab45fa938"
 
 
 def _job_block(workflow: str, job_id: str, next_job_id: str | None = None) -> str:
@@ -48,10 +49,10 @@ def test_advanced_jobs_do_not_upload_while_default_setup_is_enabled() -> None:
 
 
 def test_codeql_workflow_keeps_pinned_actions_and_least_permissions() -> None:
-    """The trigger repair must not loosen action pinning or workflow permissions."""
+    """Keep both CodeQL phases on one reviewed immutable release commit."""
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
 
     assert "permissions:\n  contents: read\n" in workflow
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in workflow
-    assert "github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd" in workflow
-    assert "github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd" in workflow
+    assert workflow.count(f"github/codeql-action/init@{CODEQL_ACTION_SHA}") == 2
+    assert workflow.count(f"github/codeql-action/analyze@{CODEQL_ACTION_SHA}") == 2
