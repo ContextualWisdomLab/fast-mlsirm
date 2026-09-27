@@ -29,9 +29,10 @@ Changelog = "https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/CHANGE
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "hypothesis>=6", "packaging>=23"]
-# Coverage-guided fuzzing harnesses (fuzz/atheris/*). Atheris is Apache-2.0 and
-# Hypothesis is MPL-2.0 and used only as a dev/test dependency. Atheris ships
-# wheels for CPython 3.8-3.12 on Linux/macOS.
+# Coverage-guided fuzzing harnesses (fuzz/atheris/*). Atheris is Apache-2.0 (its
+# PyPI metadata declares no license; see docs/security/license-evidence-0.11.5.md)
+# and Hypothesis is MPL-2.0; both are dev/test only. Atheris 3.1.0 ships wheels
+# for CPython 3.12-3.14 on Linux x86_64 only.
 fuzz = ["atheris>=2.3", "hypothesis>=6"]
 
 [project.scripts]
