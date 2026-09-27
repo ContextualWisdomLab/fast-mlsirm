@@ -492,3 +492,59 @@ def test_cargo_closure_requires_every_target_graph(tmp_path):
     receipts = [{"leg": leg, "cargo_targets": {}} for leg in legs]
     with pytest.raises(ValueError, match="target graph set is incomplete"):
         M["verify_cargo_graph_closure"](receipts, source, sha)
+
+
+@pytest.mark.parametrize("mutation", [None, "missing-proof", "foreign-source", "changed-path", "changed-digest",
+                                      "changed-archive", "foreign-upstream", "unselected-proof", "missing-notice",
+                                      "changed-notice", "symlink-notice"])
+def test_supplemental_license_notice_matches_real_source_git(tmp_path, mutation):
+    source = tmp_path / "source"
+    source.mkdir()
+    path = "python/fast_mlsirm/_licenses/example.txt"
+    notice = source / path
+    notice.parent.mkdir(parents=True)
+    notice.write_bytes(b"inert notice fixture")
+    digest = hashlib.sha256(notice.read_bytes()).hexdigest()
+    upstream = [{"url": "https://raw.githubusercontent.com/example/library/" + "1" * 40 + "/LICENSE",
+                 "sha256": "2" * 64}]
+    choice = {"ecosystem": "cargo", "name": "example", "version": "1", "chosen": "MIT",
+              "rationale": "Exact source notice", "archive_sha256": "3" * 64,
+              "bundled_notice": {"path": path, "sha256": digest}, "upstream_licenses": upstream}
+    if mutation == "missing-notice":
+        notice.unlink()
+    elif mutation == "changed-notice":
+        notice.write_bytes(b"changed bytes")
+    elif mutation == "symlink-notice":
+        notice.unlink()
+        notice.symlink_to("/missing")
+    elif mutation == "unselected-proof":
+        del choice["upstream_licenses"]
+    blob = json.dumps([choice]).encode()
+    declaration = source / "docs/release-license-selections.json"
+    declaration.parent.mkdir()
+    declaration.write_bytes(blob)
+    for args in [("init", "-q"), ("add", "."), ("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
+                                               "-c", "commit.gpgsign=false", "commit", "-qm", "source")]:
+        subprocess.run(["git", "-C", str(source), *args], check=True, capture_output=True)
+    sha = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    proof = {"source_sha": sha, "path": path, "sha256": digest, "archive_sha256": choice["archive_sha256"],
+             "upstream_commit": "1" * 40, "upstream_licenses": upstream}
+    report = {"source_sha": sha, "license_selections_sha256": hashlib.sha256(blob).hexdigest(),
+              "dependencies": [{"key": "cargo/example@1", "license": "MIT", "source_sha256": "3" * 64,
+                                "license_selection_rationale": choice["rationale"], "source_license_notice": proof}]}
+    if mutation == "missing-proof":
+        del report["dependencies"][0]["source_license_notice"]
+    elif mutation in {"foreign-source", "changed-path", "changed-digest", "changed-archive", "foreign-upstream"}:
+        field, value = {"foreign-source": ("source_sha", "4" * 40), "changed-path": ("path", path + ".other"),
+                        "changed-digest": ("sha256", "4" * 64), "changed-archive": ("archive_sha256", "4" * 64),
+                        "foreign-upstream": ("upstream_commit", "4" * 40)}[mutation]
+        proof[field] = value
+    # Dirty working-tree bytes cannot substitute for the selected source commit.
+    if notice.is_file():
+        notice.write_bytes(b"dirty replacement")
+    verify = M["verify_license_selection_report"]
+    if mutation is None:
+        verify(report, source, sha)
+    else:
+        with pytest.raises(ValueError):
+            verify(report, source, sha)

@@ -650,6 +650,42 @@ def verify_license_selection_report(report: dict, source: Path, source_sha: str)
                 or decision.get("license_selection_rationale") != choice["rationale"]
                 or decision.get("source_sha256") != choice.get("archive_sha256")):
             raise ValueError("central licence choice differs from release source")
+        upstream = choice.get("upstream_licenses")
+        proof = decision.get("source_license_notice")
+        if upstream is None:
+            if proof is not None:
+                raise ValueError("unselected supplemental source licence notice")
+            continue
+        if (not isinstance(upstream, list) or not upstream
+                or any(not isinstance(row, dict) or set(row) != {"url", "sha256"}
+                       or not isinstance(row["url"], str)
+                       or not isinstance(row["sha256"], str)
+                       or not re.fullmatch(r"[0-9a-f]{64}", row["sha256"]) for row in upstream)):
+            raise ValueError("invalid supplemental upstream licence identities")
+        commits = [re.fullmatch(r"https://raw[.]githubusercontent[.]com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/([0-9a-f]{40})/[A-Za-z0-9_./+-]+", row["url"])
+                   for row in upstream]
+        if (any(match is None for match in commits)
+                or len({match.group(1) for match in commits if match}) != 1):
+            raise ValueError("supplemental licences lack one immutable upstream commit")
+        notice = choice.get("bundled_notice", {})
+        if not isinstance(notice, dict):
+            raise ValueError("invalid supplemental source notice declaration")
+        expected = {"source_sha": source_sha, "path": notice.get("path"), "sha256": notice.get("sha256"),
+                    "archive_sha256": choice.get("archive_sha256"), "upstream_commit": commits[0].group(1),
+                    "upstream_licenses": upstream}
+        if proof != expected:
+            raise ValueError("supplemental licence notice proof differs from selected source")
+        path, digest = expected["path"], expected["sha256"]
+        if (not isinstance(path, str)
+                or not re.fullmatch(r"python/fast_mlsirm/_licenses/[A-Za-z0-9_.+-]+[.]txt", path)
+                or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+            raise ValueError("invalid supplemental source notice identity")
+        entry = subprocess.check_output(["git", "-C", str(source), "ls-tree", source_sha, "--", path], text=True)
+        if not entry.startswith("100644 blob "):
+            raise ValueError("supplemental notice must be a regular source blob")
+        content = subprocess.check_output(["git", "-C", str(source), "show", f"{source_sha}:{path}"])
+        if hashlib.sha256(content).hexdigest() != digest:
+            raise ValueError("supplemental source notice bytes differ")
 
 
 def verify_bundled_license_notices(inventory: dict, source: Path, source_sha: str) -> None:
