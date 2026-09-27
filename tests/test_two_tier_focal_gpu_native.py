@@ -56,9 +56,9 @@ def test_actual_gpu_six_latent_score_and_focal_update():
     cpu = score_two_tier_grm_orthogonal(**kwargs, device="cpu")
     gpu = score_two_tier_grm_orthogonal(**kwargs, device="gpu", gpu_memory_budget_bytes=1 << 30)
     # Resource budgets are test choices, not scientific accuracy settings.
-    # 16 KiB forces this fixture through multiple person batches.
+    # 40 KiB admits fixed inputs plus one person, forcing multiple batches.
     batched = score_two_tier_grm_orthogonal(
-        **kwargs, device="gpu", gpu_memory_budget_bytes=16384
+        **kwargs, device="gpu", gpu_memory_budget_bytes=40 * 1024
     )
     for name in ("mean", "second", "sd"):
         np.testing.assert_allclose(getattr(batched, name), getattr(gpu, name),
@@ -70,7 +70,7 @@ def test_actual_gpu_six_latent_score_and_focal_update():
     assert cpu.backend == "cpu"
     assert gpu.backend == "gpu"
     assert gpu.gpu_memory_budget_bytes == 1 << 30
-    assert batched.gpu_memory_budget_bytes == 16384
+    assert batched.gpu_memory_budget_bytes == 40 * 1024
     for name in ("mean", "second", "sd"):
         np.testing.assert_allclose(
             getattr(gpu, name), getattr(cpu, name), rtol=0, atol=1e-5
@@ -93,7 +93,7 @@ def test_actual_gpu_six_latent_score_and_focal_update():
             {
                 "backend": gpu.backend,
                 "gpu_memory_budget_bytes": 1 << 30,
-                "batched_memory_budget_bytes": 16384,
+                "batched_memory_budget_bytes": 40 * 1024,
                 "score_loglik_delta": gpu.loglik - cpu.loglik,
                 "fit_mean_max_delta": float(
                     np.max(np.abs(fit_gpu.latent_mean - fit_cpu.latent_mean))
