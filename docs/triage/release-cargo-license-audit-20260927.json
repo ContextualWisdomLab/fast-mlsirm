@@ -811,7 +811,8 @@
       ],
       "license_member_sha256": {
         "memchr-2.8.3/COPYING": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
-        "memchr-2.8.3/LICENSE-MIT": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+        "memchr-2.8.3/LICENSE-MIT": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+        "memchr-2.8.3/UNLICENSE": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
       }
     },
     {
@@ -1627,7 +1628,8 @@
       ],
       "license_member_sha256": {
         "termcolor-1.4.1/COPYING": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
-        "termcolor-1.4.1/LICENSE-MIT": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+        "termcolor-1.4.1/LICENSE-MIT": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+        "termcolor-1.4.1/UNLICENSE": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
       }
     },
     {
@@ -1944,7 +1946,8 @@
       ],
       "license_member_sha256": {
         "winapi-util-0.1.11/COPYING": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
-        "winapi-util-0.1.11/LICENSE-MIT": "cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14"
+        "winapi-util-0.1.11/LICENSE-MIT": "cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14",
+        "winapi-util-0.1.11/UNLICENSE": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
       }
     },
     {
@@ -2145,12 +2148,16 @@
     "PASS means the current licence evaluator passed these captured texts and declarations, not an admission or redistribution-compliance certificate."
   ],
   "capture_rule": {
-    "max_member_path_components": 4,
+    "implementation": "scripts/ci/release_dependency_gate.py:archive_license_evidence",
     "case_insensitive_basename_prefixes": [
       "LICENSE",
+      "LICENCE",
       "COPYING",
-      "NOTICE"
+      "NOTICE",
+      "UNLICENSE"
     ],
+    "member_path_depth_limit": null,
+    "declared_manifest_license_file_paths_included": true,
     "regular_files_only": true
   },
   "source_cargo_lock_sha256": "f778041936d0b4490976e86746ed2749b529fe79e825be6349bd85e1e7c3dbaf",
@@ -2166,5 +2173,17 @@
       "LICENSE_TEXT_UNVERIFIED": 16,
       "LICENSE_UNPARSEABLE": 6
     }
+  },
+  "collector_recheck": {
+    "superseded_audit_sha256": "0664afe018e4bbd698b87598990ad0bbdc0fb263dd4ea2a95fdb345a581353ef",
+    "helper_script_sha256": "30210c74084a221257366ce27b71982b6074a553906ba0118e284fbd0b5e3442",
+    "archives_verified": 156,
+    "additional_members": [
+      "memchr-2.8.3/UNLICENSE",
+      "termcolor-1.4.1/UNLICENSE",
+      "winapi-util-0.1.11/UNLICENSE"
+    ],
+    "result_counts_changed": false,
+    "limitation": "Licence-only recheck; prior receipts bind the superseded audit hash. No Strix or release acceptance."
   }
 }
