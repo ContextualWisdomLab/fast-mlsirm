@@ -170,6 +170,42 @@ def test_direct_publish_ancestry_guard_against_real_git_history(tmp_path: Path) 
         assert git("tag", "--list") == ""
 
 
+def test_release_tag_selects_only_verified_ancestors(tmp_path: Path) -> None:
+    job = _job_block(_release_tag_workflow_text(), "publish-release-tag")
+    name = "Verify the release source is on the current default-branch lineage"
+    step = job.split(f"- name: {name}\n", 1)[1].split("\n      - ", 1)[0]
+    script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+    assert "ref: ${{ inputs.release_commit }}" not in job
+    assert job.index("ref: ${{ github.sha }}") < job.index(name)
+
+    env = {**os.environ, "GIT_AUTHOR_NAME": "fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+           "GIT_COMMITTER_NAME": "fixture", "GIT_COMMITTER_EMAIL": "fixture@example.invalid"}
+
+    def git(*args: str) -> str:
+        return subprocess.check_output(["git", *args], cwd=tmp_path, env=env, text=True).strip()
+
+    git("init", "-q")
+    git("commit", "--allow-empty", "-qm", "root")
+    root = git("rev-parse", "HEAD")
+    git("commit", "--allow-empty", "-qm", "control")
+    control = git("rev-parse", "HEAD")
+    git("checkout", "--detach", "-q", root)
+    git("commit", "--allow-empty", "-qm", "sibling")
+    sibling = git("rev-parse", "HEAD")
+    git("tag", "-a", "-m", "tag object", "annotated", root)
+    tag_object = git("rev-parse", "annotated")
+    for release, allowed in ((root, True), (control, True), (sibling, False),
+                             ("0" * 40, False), (tag_object, False)):
+        git("checkout", "--detach", "-q", control)
+        result = subprocess.run(
+            ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script],
+            cwd=tmp_path, env={**env, "DISPATCH_SHA": control, "RELEASE_COMMIT": release},
+            capture_output=True, text=True,
+        )
+        assert (result.returncode == 0) is allowed, result.stderr
+        assert git("rev-parse", "HEAD") == (release if allowed else control)
+
+
 def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
     publish_text = _workflow_text()
     release_text = _release_tag_workflow_text()
