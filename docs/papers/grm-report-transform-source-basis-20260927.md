@@ -63,3 +63,9 @@ Full crate/PyO3 compilation, installed public API, full-suite tests, hosted gate
 non-author review, merge, immutable release and downstream accepted-fit parity
 remain pending. No study numbers are produced. Information condition diagnostics
 remain a separate unfinished part of issue #2200; this PR must not close it.
+
+## Installed API acceptance check
+
+`tests/test_grm_report_transform.py::test_installed_public_api_native_roundtrip_and_rejection` calls the public package export without mocking the native function. It checks a synthetic exact normal-ogive case, explicitly scaled logistic approximation metadata, and native metric/boundary rejection. It has no skip fallback.
+
+On 2026-09-27, the existing candidate installation at `/private/tmp/fmls-2183-candidate-20260927/python` fails this check with `ImportError: cannot import name orthogonal_grm_report`, as it predates this API. The three admission/dispatch checks pass separately (3 passed, 1 deselected). This failure does not validate the new binding. Rebuild and install this PR head, then run the entire test file without deselection before accepting the API.

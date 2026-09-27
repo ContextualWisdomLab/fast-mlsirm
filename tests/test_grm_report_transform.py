@@ -73,3 +73,31 @@ def test_wrapper_propagates_native_rejection(monkeypatch):
     monkeypatch.setattr(_core, "orthogonal_grm_report", reject, raising=False)
     with pytest.raises(ValueError, match="strictly decreasing"):
         _wrapper()(np.array([1.]), np.array([0., 1.]), input_metric="normal_ogive", scale=1.)
+
+
+def test_installed_public_api_native_roundtrip_and_rejection():
+    from fast_mlsirm import orthogonal_grm_report
+
+    report = orthogonal_grm_report(
+        np.array([2., 2.]), np.array([3., 0., -3.]),
+        input_metric="normal_ogive", scale=1.,
+    )
+    np.testing.assert_allclose(report["loadings"], [2 / 3, 2 / 3])
+    np.testing.assert_allclose(report["thresholds"], [-1., 0., 1.])
+    assert report["communality"] == pytest.approx(8 / 9)
+    assert report["uniqueness"] == pytest.approx(1 / 9)
+    assert report["approximate"] is False
+    assert report["input_metric"] == "normal_ogive" and report["scale"] == 1.
+    approximate = orthogonal_grm_report(
+        np.array([4., 4.]), np.array([6., 0., -6.]),
+        input_metric="logistic_approximation", scale=2.,
+    )
+    np.testing.assert_allclose(approximate["loadings"], report["loadings"])
+    np.testing.assert_allclose(approximate["thresholds"], report["thresholds"])
+    assert approximate["approximate"] is True
+    with pytest.raises(ValueError):
+        orthogonal_grm_report(np.array([1.]), np.array([0.]),
+                              input_metric="normal_ogive", scale=2.)
+    with pytest.raises(ValueError, match="strictly decreasing"):
+        orthogonal_grm_report(np.array([1.]), np.array([0., 1.]),
+                              input_metric="normal_ogive", scale=1.)
