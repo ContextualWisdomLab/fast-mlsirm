@@ -140,5 +140,25 @@ was accepted for the still-open PR2157 on main. It disables review triggers,
 auto-merge, branch updates and merge actions. Follow its new run handle;
 this is a current-source acceptance check, not a retry of the closed target.
 
+## License stack integration at 2026-09-27 13:21 UTC
+
+PR2170 merged from exact head `0dc785b1623eb0493ddd55ea8a892ee357acf56a`
+into the Windows-notice base at `dd1ca669969c57984fc48f9c69ad63b2abda9a5f`.
+Before the authorized bypass, the base was
+`163ffae3885ee205b58b2e7cb4f108771638377d`; the PR was mergeable,
+both review contexts succeeded, and no review threads remained. Its complete
+verifier diff was inspected; the tested verifier, template matcher, fixture
+and two test files were byte-identical to the integrated evidence checkout.
+The fresh focused run passed 253 tests. Hosted CI remained queued.
+
+PR2154 now has that merge as its head, against base
+`e38182f5e296dc46730a04088166214333b6421b`; it remains open and mergeable.
+Audit that new identity before the next stack merge. No main adoption or
+release acceptance is asserted by this stacked merge.
+
+The new canary is run 36321971364/job 108627427635, central source
+`eb59914a0b8bf37b2abfb4ac0c083d1043a263dc`, targeting the open PR2157.
+It was confirmed queued after creation. Follow this exact handle.
+
 The Goal remains active. This document is an RCA and execution plan, not a
 release-wide license verdict or proof of completed hosted gates.
