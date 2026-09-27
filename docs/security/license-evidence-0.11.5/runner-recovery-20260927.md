@@ -403,3 +403,10 @@ Root2347 remains draft and not main. Hourly automation updated to these handles.
 Control s1-05 journal15:01–15:04UTC shows successive completed scope, queue,
 CodeQL compatibility, bootstrap and language-detect jobs; runner is progressing.
 Canary36321971364 stillQUEUED, no duplicate. License/release HOLDs unchanged.
+
+PR2453 subsequently MERGED into2347 at
+`ddb459a6c57fb259c5d588d878c6c3481c3693da`,15:07:26UTC. Exact09ef3dc8
+ancestry and workflow/scripts/tests equality verified after merge.180 scoped
+checks, CodeRabbit/Devin success, zero threads; authorized bypass queuedCI.
+Root2347 stillnotmain. Full suiteexec37740/PID59472 remainsLIVE (33percent at
+15:07UTC); preserveprocess, pollterminalresult then finalroot/main review.
