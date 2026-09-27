@@ -57,16 +57,23 @@ REVIEWED = json.loads((Path(__file__).parent / "fixtures/license_inventory_revie
 @pytest.mark.parametrize("row", REVIEWED, ids=lambda r: r["package"])
 def test_reviewed_whole_license_bytes_and_mutations(row):
     text = row["text"]
+    identifiers = row.get("identifiers", [row.get("identifier")])
     assert hashlib.sha256(text.encode()).hexdigest() == row["raw_sha256"]
     normalized = L.re.sub(r"[ \t\r\n]+", " ", text).strip(" \t\r\n")
     assert hashlib.sha256(normalized.encode()).hexdigest() == row["normalized_sha256"]
-    assert L.verified_standard_text(text) == [row["identifier"]]
-    assert L.verified_standard_text(text.replace("\n", "\r\n")) == [row["identifier"]]
+    assert L.verified_standard_text(text) == identifiers
+    assert L.verified_standard_text(text.replace("\n", "\r\n")) == identifiers
     word = next(w for w in ("License", "software", "Redistribution") if w in text)
     for changed in (text.replace(word, "Restriction", 1),
                     text + "\nCommercial use is prohibited.", "extra\n" + text, text + "\nextra"):
         assert changed != text
         assert L.verified_standard_text(changed) == []
+
+
+def test_bsd_non_endorsement_clause_is_detected_case_insensitively():
+    colorama = next(row["text"] for row in REVIEWED if row["package"] == "colorama@0.4.6")
+    assert L.detect(colorama) == ["BSD-3-Clause"]
+    assert L.detect(colorama.replace("Neither the name", "NEITHER THE NAME")) == ["BSD-3-Clause"]
 
 
 @pytest.mark.parametrize("extra", [None, "COPYRIGHT", "missing-mit", "restricted", "LGPL"])
@@ -683,6 +690,16 @@ def test_registry_crate_without_license_file_is_hold(tmp_path):
     assert row["license_files_in_artifact"] == []
     assert row["license_class"] == "HOLD"
     assert "contains no license file" in " ".join(row["hold_reasons"])
+
+
+def test_rust_source_named_copying_is_not_a_license_unless_declared(tmp_path):
+    cache = tmp_path / "cache"
+    _crate(cache, "dep", "1.0", {"src/copying.rs": "fn copying() {}"})
+    archive = next(cache.glob("*/dep-1.0.crate")).read_bytes()
+    assert L.read_crate_license_files(archive, hashlib.sha256(archive).hexdigest(), None)[0] == []
+    files, errors = L.read_crate_license_files(archive, hashlib.sha256(archive).hexdigest(), "src/copying.rs")
+    assert not errors
+    assert [f["path"] for f in files] == ["src/copying.rs"]
 
 
 def test_cargo_metadata_mit_does_not_hide_separate_lgpl_text(tmp_path):
@@ -1488,6 +1505,28 @@ def test_wheel_directory_entry_is_not_a_license_candidate(tmp_path):
         zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
     paths = [f["path"] for f in L.python_artifact_evidence(wheel)["license_files"]]
     assert paths == ["pkg-1.0.dist-info/licenses/LICENSE"]
+
+
+def test_reviewed_python_companion_requires_exact_member_and_sibling_grant(tmp_path, monkeypatch):
+    wheel = tmp_path / "pkg-1.0-py3-none-any.whl"
+    companion = "Names of contributors, without license terms."
+    path = "pkg-1.0.dist-info/licenses/AUTHORS"
+    with zipfile.ZipFile(wheel, "w") as zf:
+        zf.writestr("pkg-1.0.dist-info/METADATA", "Metadata-Version: 2.4\nName: pkg\nVersion: 1.0\n\n")
+        zf.writestr("pkg-1.0.dist-info/licenses/LICENSE", MIT_TEXT)
+        zf.writestr(path, companion)
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    key = (digest, path, hashlib.sha256(companion.encode()).hexdigest())
+    monkeypatch.setitem(L.REVIEWED_PYTHON_COMPANIONS, key, ("MIT",))
+    files = {f["path"]: f for f in L.python_artifact_evidence(wheel)["license_files"]}
+    assert files[path]["candidate_verified"] is True
+    assert files[path]["reviewed_companion_grants"] == ["MIT"]
+    monkeypatch.setitem(L.REVIEWED_PYTHON_COMPANIONS, key, ("BSD-2-Clause",))
+    files = {f["path"]: f for f in L.python_artifact_evidence(wheel)["license_files"]}
+    assert files[path]["candidate_verified"] is False
+    monkeypatch.delitem(L.REVIEWED_PYTHON_COMPANIONS, key)
+    files = {f["path"]: f for f in L.python_artifact_evidence(wheel)["license_files"]}
+    assert files[path]["candidate_verified"] is False
 
 
 @pytest.mark.parametrize("pinned", [True, False])
