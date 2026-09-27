@@ -50,29 +50,27 @@ establish either scope's coverage.
 
 ## Evidence needed to remove the scope HOLD
 
-### Licence selection transport remains missing
+### Licence selection transport and remaining review
 
 At source/control head `1366799b193ea0a8dbad630e0a05dbd3b49c84dd`,
 `cargo metadata --locked --format-version 1 --manifest-path
 crates/fast-mlsirm-py/Cargo.toml` reports 125 external packages whose declared
-licence contains `OR`. Examples include allocator-api2 0.2.21 and arrayvec
-0.7.8 (`MIT OR Apache-2.0`). This count is from the unfiltered release graph;
-it is not a count of dependencies compiled for any one target.
+licence contains `OR`. This is the unfiltered release graph, not one target's
+compiled dependency count.
 
-The pinned central control `703c7e5d15e75899d4903f0b378918f8a9540277`
-loads explicit selections from the capture's `license-selections.json`, but
-neither workflow capture assembly nor the raw collector transports that file.
-Both licence prescreens therefore refuse an `OR` dependency without a recorded
-selection, before Strix credentials are read. Passing graph and archive binding
-checks alone cannot produce a positive release verdict.
+The pinned central control `8b8fc5c9104f9fa974df5553e5286e26c7dcba87`
+uses helper `7a3f397c7b570ad3c8b0503d79205516d92d47f8`. Both capture paths
+read `docs/release-license-selections.json` from the exact source commit,
+never from mutable checkout bytes. The fixed path must be a regular Git blob;
+duplicate dependency selections refuse capture. The dependency report binds
+the file SHA-256, and its hash is already sealed in the full-set verdict.
+Absent files still leave `OR` dependencies refused before Strix credentials.
 
-The next implementation must transport a selection file from the exact checked-out
-source commit into both capture paths, constrain its path to the source checkout,
-and bind its digest into the sealed evidence. Each entry needs the exact dependency
-identity, chosen expression and rationale supported by the inspected archive's
-licence text. Missing selections, changed source bytes and duplicate dependency
-entries must refuse admission. Automatic name-based permissive choices are not
-review evidence. Existing denied-licence and bundled-text checks remain required.
+Actual selections have not been supplied. Each entry needs ecosystem, name,
+version, chosen expression and a rationale supported by inspected archive
+licence text. Transport tests do not establish those package-specific reviews.
+Automatic name-based permissive choices are not review evidence. Existing
+denied-licence and bundled-text checks remain required.
 
 The build jobs now hash every regular member of each finished distribution and
 place a bundle inventory beside the TSV in their existing `repro-digest-*`
