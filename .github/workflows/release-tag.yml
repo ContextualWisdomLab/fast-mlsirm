@@ -68,7 +68,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-          ref: ${{ inputs.release_commit }}
+          ref: ${{ github.sha }}
       - name: Verify the release source is on the current default-branch lineage
         env:
           DISPATCH_SHA: ${{ github.sha }}
@@ -76,16 +76,22 @@ jobs:
         run: |
           set -euo pipefail
           checked_out_commit="$(git rev-parse HEAD)"
-          if [ "$checked_out_commit" != "$RELEASE_COMMIT" ]; then
-            echo "checked-out release source does not match release_commit" >&2
+          if [ "$checked_out_commit" != "$DISPATCH_SHA" ]; then
+            echo "checked-out control plane does not match the default-branch dispatch" >&2
             exit 1
           fi
-          if ! git cat-file -e "$DISPATCH_SHA^{commit}"; then
-            echo "default-branch dispatch commit is unavailable for ancestry verification" >&2
+          canonical_release_commit="$(git rev-parse --verify "$RELEASE_COMMIT^{commit}")"
+          if [ "$canonical_release_commit" != "$RELEASE_COMMIT" ]; then
+            echo "release_commit must identify a commit directly" >&2
             exit 1
           fi
           if ! git merge-base --is-ancestor "$RELEASE_COMMIT" "$DISPATCH_SHA"; then
             echo "release commit must be an ancestor of the default branch" >&2
+            exit 1
+          fi
+          git checkout --detach "$canonical_release_commit"
+          if [ "$(git rev-parse HEAD)" != "$canonical_release_commit" ]; then
+            echo "checked-out release source does not match release_commit" >&2
             exit 1
           fi
       - name: Verify the requested version is the released source version
