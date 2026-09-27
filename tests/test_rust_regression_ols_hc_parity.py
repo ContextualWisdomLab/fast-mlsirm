@@ -171,32 +171,28 @@ def test_regression_core_exports_without_scipy_rscript():
 
 
 def test_native_normal_wald_interval_matches_normal_reference_and_rejects_invalid_inputs():
-    """Check actual native normal intervals, tail stability and invalid inputs.
+    """Check native intervals against Python's independent normal quantile.
 
-    Source: statsmodels Developers (n.d.), ContrastResults.conf_int, actual
-    source lines94-117. QuantLib Developers (n.d.), InverseCumulativeNormal
-    source documents the rational approximation's relative error; tests use
-    measured numerical bounds, not scientific acceptance thresholds.
+    Sources: statsmodels Developers (n.d.), ContrastResults.conf_int, actual
+    source lines94-117; Python Software Foundation (n.d.), Python 3.12
+    statistics.NormalDist.inv_cdf manual. QuantLib's actual source documents
+    the existing rational approximation. Numerical bounds are regression
+    tolerances, not scientific acceptance settings. No optional oracle package.
     """
     from fast_mlsirm.regression import normal_wald_interval
-    from scipy.stats import norm
-    import statsmodels.api as sm
+    from statistics import NormalDist
     import pytest
 
-    rng = np.random.default_rng(20260928)
-    x = np.column_stack([np.ones(64), rng.normal(size=(64, 2))])
-    y = x @ np.array([0.2, -0.4, 0.7]) + rng.normal(size=64)
-    fit = sm.OLS(y, x).fit(cov_type="HC3", use_t=False)
-    vec = np.array([0.0, 1.0, -0.5])
-    result = fit.t_test(vec)
     for alpha in (0.05, 0.10, 0.01):
-        got = normal_wald_interval(float(result.effect[0]), float(result.sd[0]), alpha=alpha)
+        got = normal_wald_interval(-0.4, 0.17, alpha=alpha)
+        critical = -NormalDist().inv_cdf(alpha / 2)
         np.testing.assert_allclose([got["lower"], got["upper"]],
-                                   result.conf_int(alpha=alpha)[0], rtol=0, atol=1e-8)
+                                   [-0.4-critical*0.17, -0.4+critical*0.17],
+                                   rtol=0, atol=1e-8)
         assert got["alpha"] == alpha
     for alpha in (0.95, 0.05, 1e-12, 1e-100):
         got = normal_wald_interval(0.0, 1.0, alpha=alpha)
-        reference = norm.isf(alpha / 2)
+        reference = -NormalDist().inv_cdf(alpha / 2)
         np.testing.assert_allclose(got["critical"], reference, rtol=1.2e-9, atol=1e-12)
         assert got["lower"] == -got["upper"]
         assert got["upper"] > 0

@@ -1,0 +1,20 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_native_normal_wald_interval_matches_normal_reference_and_rejects_invalid_inputs _
+
+    def test_native_normal_wald_interval_matches_normal_reference_and_rejects_invalid_inputs():
+        """Check actual native normal intervals, tail stability and invalid inputs.
+    
+        Source: statsmodels Developers (n.d.), ContrastResults.conf_int, actual
+        source lines94-117. QuantLib Developers (n.d.), InverseCumulativeNormal
+        source documents the rational approximation's relative error; tests use
+        measured numerical bounds, not scientific acceptance thresholds.
+        """
+        from fast_mlsirm.regression import normal_wald_interval
+>       from scipy.stats import norm
+E       ModuleNotFoundError: No module named 'scipy'
+
+tests/test_rust_regression_ols_hc_parity.py:182: ModuleNotFoundError
+=========================== short test summary info ============================
+FAILED tests/test_rust_regression_ols_hc_parity.py::test_native_normal_wald_interval_matches_normal_reference_and_rejects_invalid_inputs
+1 failed, 9 deselected in 2.98s
