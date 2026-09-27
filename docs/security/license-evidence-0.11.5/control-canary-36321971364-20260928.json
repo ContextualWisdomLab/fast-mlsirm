@@ -1,0 +1,30 @@
+{
+  "schema_version": "fmls-control-canary/v1",
+  "repository": "ContextualWisdomLab/.github",
+  "run_id": 36321971364,
+  "job_id": 108627427635,
+  "conclusion": "success",
+  "runner_name": "cwlab-s1-05",
+  "runner_group_name": "cwl central control",
+  "workflow_source_sha": "eb59914a0b8bf37b2abfb4ac0c083d1043a263dc",
+  "target_repository": "ContextualWisdomLab/fast-mlsirm",
+  "target_pr": 2157,
+  "target_head_sha": "9e01372f9ff525205ef453c2bd930a1e634ae049",
+  "dry_run": true,
+  "target_decision": "WAIT",
+  "target_reason": "current head has no OpenCode approval",
+  "source": "GitHub workflow job steps and decoded job logs via connector",
+  "log_url": "https://github.com/ContextualWisdomLab/.github/actions/runs/36321971364/job/108627427635",
+  "observed_log_lines": [
+    "2026-09-27T15:20:30.7579863Z Runner name: 'cwlab-s1-05'",
+    "2026-09-27T15:20:30.7583227Z Runner group name: 'cwl central control'",
+    "2026-09-27T15:20:34.5204703Z printf 'Validated exact targeted scheduler dispatch for %s#%s at %s (PR base %s; scheduler default branch %s).\\n' \"$TARGET_REPOSITORY_INPUT\" \"$TARGET_PR_NUMBER\" \"$live_head_sha\" \"$live_base_branch\" \"$target_default_branch\"",
+    "2026-09-27T15:20:36.6871469Z Validated exact targeted scheduler dispatch for ContextualWisdomLab/fast-mlsirm#2157 at 9e01372f9ff525205ef453c2bd930a1e634ae049 (PR base main; scheduler default branch main).",
+    "2026-09-27T15:20:36.8228363Z   TRUSTED_SOURCE_REF: eb59914a0b8bf37b2abfb4ac0c083d1043a263dc",
+    "2026-09-27T15:20:43.3724544Z PR #2157: block: current head has no OpenCode approval",
+    "2026-09-27T15:20:43.3743260Z {\"base_branch\": \"main\", \"counts\": {\"block\": 1}, \"decisions\": [{\"action\": \"block\", \"contract_decision\": \"WAIT\", \"pr\": 2157, \"reason\": \"current head has no OpenCode approval\"}], \"dry_run\": true, \"inspected\": 1, \"project_flow\": \"github-flow\", \"schema_version\": \"pr-review-merge-scheduler/v2\"}"
+  ],
+  "limitations": [
+    "Dry-run canary proves runner admission and scheduler execution, not PR approval, merge, release or license acceptance."
+  ]
+}

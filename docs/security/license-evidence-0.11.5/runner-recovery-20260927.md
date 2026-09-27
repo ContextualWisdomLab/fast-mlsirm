@@ -445,3 +445,18 @@ Live runner audit:6online, CodeQLpool s1-03idle,other5busy. Fivegroup definition
 control includes bounded historicalpins added byotherowners. Canary36321971364
 stillqueued withselfhostedLinuxX64 labels; shipped source selectsgroupCWLcentral
 control. No off-pool reassignment/duplicate dispatch. Allgrant/artifactHOLDsremain.
+
+## Verified control canary terminal success
+
+Connector job evidence confirms run36321971364/job108627427635 TERMINALSUCCESS.
+Decoded setup log15:20:30UTC names cwlab-s1-05 and cwlcentralcontrol. Exact target
+fast2157head9e01372f was validated; trusted scheduler sourceeb59914a archived;
+dryrunself-test and queueinspection succeeded. Scheduler returnedWAIT because
+the targetcurrenthead hasnoOpenCodeapproval, not a routing/runnerfailure.
+Sanitized source log excerpts retained in
+`control-canary-36321971364-20260928.json`. This proves targeted runner admission
+and execution, not PR acceptance or license/release PASS. No duplicate dispatch.
+
+REST hitsharedrate ceiling at15:23UTC; connectorjoblogs supplied authoritative
+terminal evidence without inferring completion from an observation timeout.
+Correctedfullsuiteexec9812/PID55026 remainsLIVE; preserveexistingexecution.
