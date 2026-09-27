@@ -1,0 +1,72 @@
+# CI recovery and release evidence plan
+
+## Objective
+
+Complete the 0.11.5 published 12-wheel license evidence. Restore executable
+current-head CI, integrate validated notice/evidence changes, retain unproven
+license HOLDs, and issue a final verdict only for a verified zero-HOLD scope.
+
+## Live findings, 2026-09-27 UTC
+
+Five organization runners were online. The control group contains
+`cwlab-s1-01` and `cwlab-s1-05`; CodeQL and OpenCode have separate groups.
+Group restrictions admit selected central workflow identities and preserve
+the boundary between trusted control work and arbitrary PR builds.
+
+Central main `fd2a03e35c454b85108628f1d975ff714417e6d8` already includes
+runner-routing changes, including scheduler routing from #2417. No duplicate
+selector patch was needed. The original allocation record uses a constrained
+linear relaxation and integer allocation; changing host capacity or adding an
+optimizer without new service measurements is not justified by this audit.
+
+Both license PRs were drafts, causing repository CI to skip. After rechecking
+their exact heads and finding no review threads, they were marked ready:
+
+| PR | Exact head | Local focused checks | New repository CI run |
+| --- | --- | --- | --- |
+| #2174 | `14887ecd1042664dc75676389663780c173a3e8e` | 10 passed | `36319558931` |
+| #2175 | `3d6ffe191289dbc8b376911216e9bdd45c7436ac` | 253 passed, expected duplicate-ZIP warning | `36319571082` |
+
+Their earlier Actions CodeQL jobs succeeded. The new Python/Rust/package jobs
+were queued at inspection; skipped old jobs are not evidence of passing CI.
+
+A targeted dry-run scheduler dispatch for #2174 created run `36319361497`,
+job `108620080034`, on the central main above. It disables PR mutations,
+review dispatch, branch updates and merges. Its requested labels are
+`self-hosted`, `linux`, `x64`; it was still queued and had no assigned runner.
+
+Control VM `cwlab-s1-05` journal independently confirmed successful cleanup
+and changed-scope jobs between 12:35 and 12:36 UTC. At 12:37:51 it started
+`scan-pr-queue`. Its worker context binds that execution to earlier run
+`36315580579` and the central scheduler at `refs/heads/main`, not to this
+canary. Thus control admission works for at least that earlier main run, and
+the backlog is draining; this does not prove the new canary has executed.
+
+A preceding failed bootstrap on the same runner was independently bound to
+`ContextualWisdomLab/orca`, run `36316726464`, job `108612723362`. Its failed
+step is `Enforce Cloudflare Pingora edge policy`, after successful source
+materialization. That failure is distinct from runner admission and must not
+be treated as a queue flake or bypassed as part of this recovery.
+
+## Next actions and completion evidence
+
+1. Follow the existing canary job until terminal; record its actual runner,
+   group, steps and conclusion. Do not restart it after an observation timeout.
+2. Audit the new #2174/#2175 runs at their exact current heads. Fix actual
+   failures from logs; retain queued checks as pending. Before integration,
+   recheck bases, review threads and required gates. The maintainer authorized
+   bypass for CI capacity stalls after local validation; that does not justify
+   treating a real policy or security failure as passing.
+3. Integrate the notice selector and reviewed evidence without importing
+   unrelated stacked model changes. Revalidate any changed integration source
+   and retain its immutable source archive and lockfile hashes.
+4. Continue the [primary license review](nonlinux-upstream-20260926/REVIEW.md):
+   eleven binding-union Cargo HOLDs and three Python HOLDs remain. Missing
+   grants or native provenance require new bound evidence, not weaker matching.
+5. Verify Windows/macOS wheel notices and source bytes, then obtain the actual
+   published 12-wheel matrix. Match published hashes to exact source and
+   target-specific inventories. Local Linux candidates and source graphs
+   remain narrower evidence and cannot substitute for this matrix.
+
+The Goal remains active. This document is an RCA and execution plan, not a
+release-wide license verdict or proof of completed hosted gates.
