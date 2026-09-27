@@ -294,3 +294,30 @@ A bounded live job audit showed the three old Noema runs were on GitHub hosted
 runners, not self-hosted control occupants. s1-05 journal shows control jobs
 complete and advance; historical compatibility jobs still consume five minutes.
 Current-main CodeQL controls are retained by this integration. Canary unchanged.
+
+## PR2449 verified merge and remaining root review findings
+
+Exact-head full suite at7bc87db7 is terminal GREEN: 4,944 passed,4 skipped,
+40 subtests in438.72s. PR2449 merged into2347 at
+`d11c302d91739990eb77d3af3a958720fd7eb950`,2026-09-27T14:27:39Z.
+Exact head/base, empty review threads and successful CodeRabbit/Devin were
+revalidated; hosted scans remained queued. Authorized bypass used. Remote
+ancestry and helper/workflow byte equality verified. Project item is Done.
+This is central release-branch integration, not main or release acceptance.
+
+Root PR2347 still has six unresolved threads. Current code confirms direct
+tomllib import despite Python3.10 support, four install-hook alias bypasses
+(all returned [] for inert Python subprocess/urllib/os aliases and Rust
+std::process alias), stale lock-directive documentation, and potentially
+colliding artifact namespaces. The install-order test already passes capture
+root; inspect the Noema content-review finding before changing that owner.
+Next: fix valid shared collector/security/compatibility findings in isolated
+stacked work; retain security gates and license refusals.
+
+The existing fast2135 CodeQL proof run36235138881 is terminal failure at
+1efddbc9. Connector job evidence shows language detection and central scan
+dispatch succeeded; compatibility enforcement jobs108401985319/331 failed.
+No actual vulnerability inference follows from this status. Its unresolved
+review requires producer evidence; do not resolve from dispatch success.
+Latest main de71b9ee includes canonical Strix capacity continuation2348; its
+merge-tree with candidate is clean. Do not duplicate that owner repair.
