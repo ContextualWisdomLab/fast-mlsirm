@@ -2982,8 +2982,8 @@
     "Source notices are separate from original archive licence members.",
     "13-distribution release evidence remains required; local package version is 0.11.4.",
     "Current main may advance after integration. BEHIND is not conflict-free acceptance or hosted success.",
-    "Default OpenCode actionlint remains unresolved; disabled external checker is not full lint acceptance.",
-    "No PR merge, tag, release dispatch or PyPI publication occurred."
+    "No PR merge, tag, release dispatch or PyPI publication occurred.",
+    "OpenCode ShellCheck findings are unresolved and not waived. Review-control baseline needs owner-scoped remediation; release workflow itself passed full default actionlint."
   ],
   "main_integration": {
     "central_main_sha": "f411712bf9b8f6c27070b32bbfe35d89eefa2fe0",
@@ -3008,7 +3008,644 @@
       "publish_pypi": "PASS default checks",
       "central_release_gate": "PASS default checks",
       "central_codeql_dispatch": "PASS default checks",
-      "central_opencode_dispatch": "Internal checks passed with shellcheck disabled; default ShellCheck integration stalled. No full PASS."
-    }
+      "central_opencode_dispatch": "FAIL external ShellCheck: 32 bash/sh scripts checked independently with actionlint-equivalent setup/sanitization/flags; 30 diagnostics in 4 steps. Internal actionlint checks passed. Default process pre-start stdin pipe stalled; interrupted owned diagnostics with SIGQUIT."
+    },
+    "opencode_shellcheck_evidence": {
+      "workflow_sha256": "fdb669a2deafd440e03fc9a38d94be247b2d7b71ec0fc312970eb06b15f8f29d",
+      "central_head": "37a178bf05d0fcfc8557b46699f27d35eab6cae5",
+      "shellcheck_version": "0.11.0",
+      "mode": "Same actionlint v1.7.12 script sanitization/setup/flags; stdin supplied as regular file to avoid pre-start pipe deadlock. No shell script execution.",
+      "actionlint_default": "Interrupted own stalled diagnostics with SIGQUIT; not default PASS",
+      "steps": [
+        {
+          "job": "validate-pr-metadata",
+          "step_index": 0,
+          "step_name": "Exchange OpenCode app token for target repository metadata reads",
+          "script_sha256": "ee0f38ed77627904cc82830d958b5a35b75c86468e42c30a06126cece6e99735",
+          "script_bytes": 1528,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "validate-pr-metadata",
+          "step_index": 1,
+          "step_name": "Bind workflow inputs to live organization pull request metadata",
+          "script_sha256": "4b7fd196cf97814e1ea92d8ae0de048584b3e1256a2cc90b754d185666443fe7",
+          "script_bytes": 5136,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "validate-pr-metadata",
+          "step_index": 2,
+          "step_name": "Exchange OpenCode app token for target repository coverage reads",
+          "script_sha256": "3e02006c72490a3a1e8abba3f070970fc330b2ff32d685c54f4810d5c997a6ef",
+          "script_bytes": 1526,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "validate-pr-metadata",
+          "step_index": 3,
+          "step_name": "Materialize pull request merge tree for coverage measurement",
+          "script_sha256": "ddaa2c9651caded392ff0a8002c27c2bc38dc3ae61cea93ffa15b97989f32b20",
+          "script_bytes": 2309,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "coverage-evidence",
+          "step_index": 0,
+          "step_name": "Resolve trusted OpenCode source ref",
+          "script_sha256": "8b38bf45ea658bc571eec6ad802494946772824ffab38f6c03da0ce0275f9e60",
+          "script_bytes": 1111,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "coverage-evidence",
+          "step_index": 1,
+          "step_name": "Materialize trusted OpenCode coverage contract without a repository token",
+          "script_sha256": "50aa5a05450ada201a423107a70b96bb4abc166077149ee6876330cdbb3ab60f",
+          "script_bytes": 993,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "coverage-evidence",
+          "step_index": 3,
+          "step_name": "Prepare pull request merge tree for coverage measurement",
+          "script_sha256": "498bbd5d414aafd5849287cc5bf4df058588c094c4db961e5d98df02f99d23b8",
+          "script_bytes": 1891,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "coverage-evidence",
+          "step_index": 4,
+          "step_name": "Enforce post-merge stale agent replay guard",
+          "script_sha256": "da879af89f1e728bc486e6bd18cc7c2d9824f775e7c6095a27f5bb00d50a3222",
+          "script_bytes": 725,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "coverage-evidence",
+          "step_index": 5,
+          "step_name": "Enforce changed-file syntax gate",
+          "script_sha256": "fcff4982772992db7f15018b7324a255b9e0940d1022513ba15353d446424eaa",
+          "script_bytes": 1165,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "coverage-evidence",
+          "step_index": 6,
+          "step_name": "Measure test and docstring evidence",
+          "script_sha256": "021bf5ff014b1e6600bc7ca4de67876ed5e548413471f95c90ebfe603022f7be",
+          "script_bytes": 69166,
+          "returncode": 1,
+          "diagnostics": [
+            {
+              "file": "-",
+              "line": 83,
+              "endLine": 83,
+              "column": 7,
+              "endColumn": 11,
+              "level": "warning",
+              "code": 2221,
+              "message": "This pattern always overrides a later one on line 84.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 84,
+              "endLine": 84,
+              "column": 7,
+              "endColumn": 15,
+              "level": "warning",
+              "code": 2222,
+              "message": "This pattern never matches because of a previous pattern on line 83.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 379,
+              "endLine": 379,
+              "column": 3,
+              "endColumn": 32,
+              "level": "style",
+              "code": 2129,
+              "message": "Consider using { cmd1; cmd2; } >> file instead of individual redirects.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 658,
+              "endLine": 663,
+              "column": 13,
+              "endColumn": 26,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 682,
+              "endLine": 682,
+              "column": 15,
+              "endColumn": 167,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 689,
+              "endLine": 689,
+              "column": 17,
+              "endColumn": 152,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 840,
+              "endLine": 840,
+              "column": 17,
+              "endColumn": 127,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 1208,
+              "endLine": 1208,
+              "column": 77,
+              "endColumn": 112,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 1215,
+              "endLine": 1215,
+              "column": 77,
+              "endColumn": 113,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 1222,
+              "endLine": 1222,
+              "column": 77,
+              "endColumn": 100,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 1339,
+              "endLine": 1339,
+              "column": 16,
+              "endColumn": 56,
+              "level": "info",
+              "code": 2012,
+              "message": "Use find instead of ls to better handle non-alphanumeric filenames.",
+              "fix": null
+            }
+          ]
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 0,
+          "step_name": "Resolve trusted OpenCode source ref",
+          "script_sha256": "8b38bf45ea658bc571eec6ad802494946772824ffab38f6c03da0ce0275f9e60",
+          "script_bytes": 1111,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 2,
+          "step_name": "Validate pull request head repository trust",
+          "script_sha256": "e08d90cc08a878935fcf55edd2cee184de46e0e6898ac9d3354aea583853bf55",
+          "script_bytes": 2403,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 3,
+          "step_name": "Provision contextual-orchestrator review sidecar",
+          "script_sha256": "edfc99697b42694fba8476522177c2612a1304d2f97645bfcf1aa6a52caee61b",
+          "script_bytes": 114,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 4,
+          "step_name": "Exchange OpenCode app token for target repository review reads",
+          "script_sha256": "3e02006c72490a3a1e8abba3f070970fc330b2ff32d685c54f4810d5c997a6ef",
+          "script_bytes": 1526,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 5,
+          "step_name": "Materialize pull request head for OpenCode review data",
+          "script_sha256": "f86415eb5ddbd3bfa5fddd336f07f115b3e3037500d4872fd4d0102eb78861dc",
+          "script_bytes": 1334,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 6,
+          "step_name": "Configure git identity for OpenCode action",
+          "script_sha256": "7409e969647cfb39cace9270077700d41535cd09c08143eafb96588fbaa4dad0",
+          "script_bytes": 175,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 7,
+          "step_name": "Install OpenCode CLI",
+          "script_sha256": "63fc6dba2352e3b24cb3b97504644cc486f0a5641853ab90f7a4f344cd388eff",
+          "script_bytes": 529,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 8,
+          "step_name": "Detect central review-process scope",
+          "script_sha256": "a38542455c1bd0765a2ef89e59c654b64bc2d85bc00dd0378307fc883d253232",
+          "script_bytes": 5295,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 9,
+          "step_name": "Initialize CodeGraph index for OpenCode",
+          "script_sha256": "a23af5f3a27c1a60b3965e1afc65ec6804e323e4a366cff3277c146cd820cf57",
+          "script_bytes": 4348,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 10,
+          "step_name": "Prepare bounded OpenCode review evidence",
+          "script_sha256": "41ee4b7e020843660d10b6ff71ca2a1b7a79bd5b352e4c862c02c03d43f67630",
+          "script_bytes": 27884,
+          "returncode": 1,
+          "diagnostics": [
+            {
+              "file": "-",
+              "line": 241,
+              "endLine": 241,
+              "column": 13,
+              "endColumn": 50,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 243,
+              "endLine": 243,
+              "column": 13,
+              "endColumn": 33,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 245,
+              "endLine": 245,
+              "column": 15,
+              "endColumn": 42,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 247,
+              "endLine": 247,
+              "column": 15,
+              "endColumn": 47,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 526,
+              "endLine": 526,
+              "column": 12,
+              "endColumn": 136,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 536,
+              "endLine": 536,
+              "column": 12,
+              "endColumn": 116,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 542,
+              "endLine": 542,
+              "column": 10,
+              "endColumn": 294,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            }
+          ]
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 11,
+          "step_name": "Seal current-run OpenCode artifact provenance",
+          "script_sha256": "2e3dc9b60813a5e2d0ff4b80bbb9dceaa53db5e3603ac50ae1ac9630a416abae",
+          "script_bytes": 1568,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 12,
+          "step_name": "Prepare isolated OpenCode review workspace",
+          "script_sha256": "514772aff3b8e2e25b5a3f4612a756f6138f5bae9af0c5c63d1a0d02e57017fa",
+          "script_bytes": 37255,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 13,
+          "step_name": "Run OpenCode PR Review model pool",
+          "script_sha256": "c1783b38547a57a4fd6bda4878333b5180e6fe4253f072f34282ea6f620c10ce",
+          "script_bytes": 231,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 14,
+          "step_name": "Exchange OpenCode app token for review writes",
+          "script_sha256": "d60eada3cdcdea366816b39bc14e640e7467a5cbc2664c600f8219b1c1669c8e",
+          "script_bytes": 1820,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 15,
+          "step_name": "Publish bounded OpenCode review comment",
+          "script_sha256": "8419c052d5f15f1bf71e089dc6e057cbaa37ec64b897910610ac678cef5d38ae",
+          "script_bytes": 5615,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 16,
+          "step_name": "Publish central OpenCode fast approval",
+          "script_sha256": "785e8b34ff96392c028455eadf914413476faccbed5b9ca8a10a59ab56b9c062",
+          "script_bytes": 12161,
+          "returncode": 1,
+          "diagnostics": [
+            {
+              "file": "-",
+              "line": 61,
+              "endLine": 81,
+              "column": 19,
+              "endColumn": 2,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            }
+          ]
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 17,
+          "step_name": "Publish OpenCode review outcome",
+          "script_sha256": "a4d90d5a6bd504c50aacc3bd235d5091f640d3ba6cadbee756e20737fa421986",
+          "script_bytes": 130828,
+          "returncode": 1,
+          "diagnostics": [
+            {
+              "file": "-",
+              "line": 391,
+              "endLine": 391,
+              "column": 17,
+              "endColumn": 37,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 745,
+              "endLine": 745,
+              "column": 12,
+              "endColumn": 34,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 1560,
+              "endLine": 1573,
+              "column": 17,
+              "endColumn": 8,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 1576,
+              "endLine": 1586,
+              "column": 17,
+              "endColumn": 8,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 1644,
+              "endLine": 1672,
+              "column": 14,
+              "endColumn": 6,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 1797,
+              "endLine": 1797,
+              "column": 14,
+              "endColumn": 134,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 2241,
+              "endLine": 2255,
+              "column": 12,
+              "endColumn": 8,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 2303,
+              "endLine": 2303,
+              "column": 17,
+              "endColumn": 72,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 2359,
+              "endLine": 2359,
+              "column": 19,
+              "endColumn": 65,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 2360,
+              "endLine": 2360,
+              "column": 19,
+              "endColumn": 39,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            },
+            {
+              "file": "-",
+              "line": 2363,
+              "endLine": 2363,
+              "column": 19,
+              "endColumn": 49,
+              "level": "info",
+              "code": 2016,
+              "message": "Expressions don't expand in single quotes, use double quotes for that.",
+              "fix": null
+            }
+          ]
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 18,
+          "step_name": "Enforce current-head formal OpenCode review receipt",
+          "script_sha256": "73299ec532361193acfcb9724a5c17890619dbfcdf593aae3e59222933ab21bc",
+          "script_bytes": 329,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 19,
+          "step_name": "Wake exact-head required OpenCode workflow",
+          "script_sha256": "40653603e3bfa820d88929f9d9cb4d1bc81bd6a59feaff32d20d80ebeef98abb",
+          "script_bytes": 1900,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 20,
+          "step_name": "Publish repository_dispatch OpenCode status",
+          "script_sha256": "a187652921e1c00eb0b8390ff91207bdcbf65a1a2d0252891486b978bf771607",
+          "script_bytes": 2168,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 21,
+          "step_name": "Dispatch Noema after current-head OpenCode approval",
+          "script_sha256": "a032653e83b56361e4ef6b15b893dfb0d69e898acc9c93179dd6696e1fd57fc5",
+          "script_bytes": 360,
+          "returncode": 0,
+          "diagnostics": []
+        },
+        {
+          "job": "opencode-review-target",
+          "step_index": 22,
+          "step_name": "Run merge scheduler after approval",
+          "script_sha256": "f3cb926a85cd787758735475dd45939db914bf25e4c93dad6368ed667976b35f",
+          "script_bytes": 3831,
+          "returncode": 0,
+          "diagnostics": []
+        }
+      ]
+    },
+    "opencode_scope": "OpenCode workflow bytes equal accepted main blob e691911e6f7c374247a0a86b57b74aafc88a3c60. Diagnostics retained as imported baseline; no changes to other review-owner workflow or exclusions."
+  },
+  "diagnostic_basis": {
+    "actionlint_process_source": "https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/process.go",
+    "shellcheck_rule_source": "https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/rule_shellcheck.go",
+    "finding": "Writes entire stdin to pipe before cmd.Output starts child; goroutine stacks confirm pipe Write blocks for 69166 and 130828 byte scripts."
   }
 }
