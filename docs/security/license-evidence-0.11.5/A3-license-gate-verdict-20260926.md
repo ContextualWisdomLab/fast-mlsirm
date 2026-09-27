@@ -1,6 +1,6 @@
 # A3 license gate verdict — Linux x86_64 cp312, fast-mlsirm 0.11.5
 
-Status: **provisional for the examined Linux cp312 candidate** (coordinator verdict, user-delegated, 2026-09-26; not legal review). Independent technical review found the cp312 code verdict non-blocking; hosted checks, GitHub non-author approval, and release remain pending.
+Status: **provisional for the examined Linux cp312 candidate** (coordinator verdict, user-delegated, 2026-09-26; not legal review). The actual-wheel inventory correction below needs independent re-review. Hosted checks, approval, and release remain pending. This is not a release-wide or PyPI publication verdict; on 2026-09-26, [PyPI project metadata](https://pypi.org/pypi/fast-mlsirm/json) listed no 0.11.5 files.
 Decision records: coordinator messages msg_60a758c73aad, msg_58e4fad25e39, msg_ee85fb3cb33f, msg_13c9108bac7d, msg_b5aa37b1b0c7, msg_411f3daec1fa.
 
 ## Scope
@@ -8,6 +8,7 @@ Decision records: coordinator messages msg_60a758c73aad, msg_58e4fad25e39, msg_e
 - Candidate artifact checked: `fast_mlsirm-0.11.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`
   SHA256 `d8ec1d497763abd943dfc5ba0defa93a67f141b8bab9adf04a02c8d09a9d43bb` (built on s1 from the **#2157 first parent**, source archive SHA256 `f8a15e7513f63b765773d5de5fa7c15bc205b3f8e6f24a1cb30097cc923094bb`). This first-parent artifact was used in the `f49924c8` replay below. The later exact integrated-head wheel is recorded separately below. `auditwheel` reports `manylinux_2_17_x86_64`; the installed #2157 wheel passed 10 regression tests.
 - Cargo binding graph for `x86_64-unknown-linux-gnu`: 103 rows, **HOLD 0 after the actual-wheel correction below**. Non-Linux targets and 12-wheel expansion are outside this verdict. The #2170 second parent alone has 0.11.4 manifests and cannot establish the 0.11.5 result.
+- A separate [fresh integrated build at `1c08f1bc`](integrated-linux-cp312-20260926/README.md) reproduced the same wheel; its source archive SHA256 is `7d8b1e1c917d6be5eeeed822742b8ec31add587b96ad62bfb68c49ceaaca1b01`. The [non-Linux follow-up](nonlinux-upstream-20260926/REVIEW.md) records its own target-specific evidence and remaining gaps.
 
 ## Actual-wheel correction and binding
 
@@ -63,6 +64,19 @@ The selected-path Git archive SHA256 `537e2ad2e9470e2effca8d685d6962e4c5d660875b
 
 The s1 replay `runs/fmls-a3-integrated-7e1f6c14-20260926/run.sh` SHA256 `6fe18fec0f56dfe7a93ace1c56f563a8770caa6f09592e1ab5e052221a259a1e` names that wheel and the `7e1f6c14` source root. It exited 0 with empty stderr and produced inventory SHA256 `7c86f05eaa4e335360f666523a75b8e2c414325fbf5fe360747b0cbf653b364d`: 101 third-party plus two own Linux target rows, 103 PERMISSIVE / HOLD 0, no completeness gaps. NumPy 2.5.2 remains a separate Python HOLD. Independent read-only review (Orca `msg_7d9d823fb8b9`) found no new technical blocker in this cp312 scope; it is not formal GitHub approval. This receipt applies only to `7e1f6c14`. Later heads, including this documentation follow-up, need their own exact-head artifact check before release acceptance; hosted checks and approval remain separate.
 
+On 2026-09-26, the cited wheel and source archive were retrieved again from
+`s1.cluster.seonghobae.me` and hashed locally: wheel SHA256
+`d8ec1d497763abd943dfc5ba0defa93a67f141b8bab9adf04a02c8d09a9d43bb`;
+source archive SHA256
+`f8a15e7513f63b765773d5de5fa7c15bc205b3f8e6f24a1cb30097cc923094bb`.
+The current #2175 test was run as
+`python tests/test_license_inventory_generator.py WHEEL EXTRACTED_SOURCE_ROOT`
+with those exact files and exited 0, printing
+`actual A3 wheel license roles and six source hashes verified`. A separate
+ZIP/source byte check found all six members in the table above and matched
+each to the extracted source file. This rerun closes the local candidate's
+explicit artifact check; it does not cover a final integrated or published wheel.
+
 ## Acceptance bases (Linux graph, 103 rows)
 canonical verifier text 21; byte-identical condition clauses (reviewed hash) 68; SPDX matching template 4;
 upstream-vcs text at the published commit 2; own crates via published-wheel LICENSE 2; reviewed pointer notices 4;
@@ -74,5 +88,5 @@ matrixmultiply, ndarray) are all accepted by explicit verdicts above, not by the
 `dist-info/licenses/`: LICENSE, LICENSE-THIRD-PARTY (101 crates, sha256 `d46f307a…`), NOTICE, libm LICENSE and complete source notices (sha256 `9e949a13f66c0f9b60b73b54e8ab2940ccff92d704c46c53103b1028e2cc75ba`), cfg_aliases NOTICES.md. The libm notice bytes match the exact-head source.
 
 ## Outside this gate
-- NumPy 2.5.2 is an unbundled external runtime dependency. Its separate Python HOLD is recorded above; research consumption used a Fortran-free NumPy build.
-- Python non-shipping tooling (atheris, colorama, hypothesis x2, numpy text files, packaging, pygments, sortedcontainers): tracked as a separate license-hygiene item; none is GPL/LGPL/AGPL (strongest: MPL-2.0).
+- NumPy is an unbundled external runtime dependency (official wheel `3cdec01f…` vendors libgfortran/libquadmath; not a fast-mlsirm bundling violation). Research consumption uses a Fortran-free NumPy build.
+- Python tooling and external-runtime license candidates are tracked separately in the [non-Linux follow-up](nonlinux-upstream-20260926/REVIEW.md). NumPy's pinned wheel includes GPL/LGPL component notices; no blanket permissive verdict follows from excluding it from this wheel's bundled bits.
