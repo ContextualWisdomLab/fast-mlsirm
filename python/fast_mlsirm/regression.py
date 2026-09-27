@@ -86,6 +86,20 @@ def _as_float64_vector(y: object, name: str, *, expected_length: int | None = No
 def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     """Fit OLS and return HC sandwich covariance.
 
+    Source and scope
+    ----------------
+    statsmodels Developers, ``OLSResults.HC3_se`` reference manual, Notes:
+    https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLSResults.HC3_se.html
+    The HC3 covariance is ``B @ X.T @ diag(e**2 / (1-h)**2) @ X @ B``,
+    where ``B = inv(X.T @ X)`` and ``h`` is the hat diagonal. This is the
+    squared delete-one residual weighting documented there as MacKinnon and
+    White (1985) HC3. It does not add the full jackknife covariance's separate
+    scale or rank-one correction (see Rust module ``regression``).
+    The wrapper delegates estimation to Rust; the caller supplies an
+    intercept when required. HC3 conditions on the supplied design and
+    response and does not propagate an earlier measurement fit's uncertainty.
+    A joint refit/score bootstrap is a separate caller pipeline.
+
     Parameters
     ----------
     x :
