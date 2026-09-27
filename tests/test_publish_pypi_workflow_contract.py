@@ -536,7 +536,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@abdef9d49ae7c9eb5db3fcf4bbb57d82f7816b79" in central
+    assert "release-dependency-license-strix-gate.yml@878a0568b6b43191575f43b01d88425359041780" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
@@ -1028,6 +1028,23 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                       ("key", "package_key", "source_sha256", "license", "fixture_sha256", "legs")}
                       for tool in tool_rows.values()]}
         report_bytes = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()
+        native = {"schema": "cwl.release-native-links/1", "source_sha": _RELEASE_COMMIT,
+                  "wheels": []}
+        for distribution in distributions:
+            leg = distribution["leg"]
+            if leg == "sdist":
+                continue
+            target = leg.rsplit("-py", 1)[0]
+            arches = ["aarch64", "x86_64"] if target == "universal2-apple-darwin" else [
+                "aarch64" if target == "aarch64-unknown-linux-gnu" else "x86_64"]
+            native["wheels"].append({"leg": leg, "file": distribution["file"],
+                                     "sha256": distribution["sha256"],
+                                     "member": "fast_mlsirm/_core.fixture.so",
+                                     "member_sha256": hashlib.sha256(b"synthetic extension member").hexdigest(),
+                                     "links": [{"arch": arch, "format": "fixture", "needed": []}
+                                               for arch in arches]})
+        native["wheels"].sort(key=lambda row: row["leg"])
+        native_bytes = (json.dumps(native, sort_keys=True) + "\n").encode()
         verdict = {"schema": "cwl.release-full-set-verdict/1", "result": "PASS", **identity,
                    "record_artifact_id": record_artifact["id"],
                    "record_artifact_digest": record_artifact["digest"],
@@ -1037,12 +1054,14 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                    "build_package_binding_artifacts": [build_binding],
                    "build_tool_binding_artifacts": tool_bindings,
                    "runtime_archive_license_sha256": hashlib.sha256(archive_report_bytes).hexdigest(),
+                   "native_links_sha256": hashlib.sha256(native_bytes).hexdigest(),
                    "gate_report_sha256": hashlib.sha256(report_bytes).hexdigest()}
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             archive.writestr("full-set-verdict.json", json.dumps(verdict))
             archive.writestr("gate-report.json", report_bytes)
             archive.writestr("runtime-archive-license-report.json", archive_report_bytes)
+            archive.writestr("release-native-links.json", native_bytes)
         archives[verdict_artifact["id"]] = buffer.getvalue()
         verdict_artifact["digest"] = "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()
         module = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))

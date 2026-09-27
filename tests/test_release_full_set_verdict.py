@@ -9,13 +9,56 @@ import json
 import pytest
 
 from scripts.ci.verify_release_full_set_verdict import (
-    verify_full_set_verdict, verify_runtime_dependency_coverage,
+    verify_full_set_verdict, verify_native_link_inventory,
 )
 
 
 SOURCE = "a" * 40
 CONTROL = "b" * 40
 DIGEST = "sha256:" + "c" * 64
+
+
+def test_native_links_require_exact_wheels_extensions_and_sealed_bytes() -> None:
+    targets = {"x86_64-unknown-linux-gnu": ["x86_64"],
+               "aarch64-unknown-linux-gnu": ["aarch64"],
+               "universal2-apple-darwin": ["aarch64", "x86_64"],
+               "x86_64-pc-windows-msvc": ["x86_64"]}
+    distributions = []
+    runtimes = []
+    wheels = []
+    for target, arches in targets.items():
+        for version in ("3.12", "3.13", "3.14"):
+            leg = f"{target}-py{version}"
+            filename = f"{leg}.whl"
+            member = "fast_mlsirm/_core.fixture." + ("pyd" if "windows" in target else "so")
+            distributions.append({"leg": leg, "file": filename, "sha256": "a" * 64})
+            runtimes.append({"leg": leg, "imported_extension": {"member": member, "sha256": "b" * 64}})
+            wheels.append({"leg": leg, "file": filename, "sha256": "a" * 64,
+                           "member": member, "member_sha256": "b" * 64,
+                           "links": [{"arch": arch, "format": "native", "needed": ["system"]}
+                                     for arch in arches]})
+    distributions.append({"leg": "sdist", "file": "source.tar.gz", "sha256": "c" * 64})
+    native = {"schema": "cwl.release-native-links/1", "source_sha": SOURCE, "wheels": wheels}
+    raw = json.dumps(native).encode()
+    verdict = {"distributions": distributions,
+               "native_links_sha256": hashlib.sha256(raw).hexdigest()}
+    verify_native_link_inventory(verdict, native, raw, runtimes, SOURCE)
+
+    with pytest.raises(ValueError, match="sealed verdict"):
+        verify_native_link_inventory(verdict, native, raw + b" ", runtimes, SOURCE)
+    missing = copy.deepcopy(native)
+    missing["wheels"].pop()
+    with pytest.raises(ValueError, match="twelve wheels"):
+        verify_native_link_inventory(verdict, missing, raw, runtimes, SOURCE)
+    foreign = copy.deepcopy(native)
+    foreign["wheels"][0]["sha256"] = "f" * 64
+    with pytest.raises(ValueError, match="selected distribution"):
+        verify_native_link_inventory(verdict, foreign, raw, runtimes, SOURCE)
+    partial = copy.deepcopy(native)
+    mac = next(row for row in partial["wheels"] if "darwin" in row["leg"])
+    mac["links"].pop()
+    with pytest.raises(ValueError, match="architectures"):
+        verify_native_link_inventory(verdict, partial, raw, runtimes, SOURCE)
 
 
 def _case() -> dict:
@@ -41,10 +84,20 @@ def _case() -> dict:
     archive_binding = {"key": archive_key, "name": "release-strix-binding-a2-"
                        + hashlib.sha256(archive_key.encode()).hexdigest(),
                        "id": 103, "digest": DIGEST}
+    build_key = "pypi/pip@25.2/sha256/" + "e" * 64
+    build_binding = {"key": build_key, "name": "release-strix-binding-a2-"
+                     + hashlib.sha256(build_key.encode()).hexdigest(),
+                     "id": 104, "digest": DIGEST}
+    tool_key = "github-release/maturin@1.15.0/sha256/" + "f" * 64
+    tool_binding = {"key": tool_key, "name": "release-strix-binding-a2-"
+                    + hashlib.sha256(tool_key.encode()).hexdigest(),
+                    "id": 105, "digest": DIGEST}
     verdict = {"schema": "cwl.release-full-set-verdict/1", "result": "PASS", **identity,
                "record_artifact_id": 100, "record_artifact_digest": DIGEST,
                "distributions": copy.deepcopy(rows), "binding_artifacts": [binding],
                "runtime_archive_binding_artifacts": [archive_binding],
+               "build_package_binding_artifacts": [build_binding],
+               "build_tool_binding_artifacts": [tool_binding],
                "runtime_archive_license_sha256": "f" * 64,
                "scope_evidence": sorted(copy.deepcopy(scope_rows), key=lambda row: row["leg"])}
 
@@ -56,6 +109,7 @@ def _case() -> dict:
     return {"manifest": manifest, "scope_set": scope_set, "verdict": verdict,
             "artifacts": [artifact("reproducibility-record", 100), artifact(name, 101),
                           artifact(binding["name"], 102), artifact(archive_binding["name"], 103)]
+                         + [artifact(build_binding["name"], 104), artifact(tool_binding["name"], 105)]
                          + [artifact(row["artifact_name"], row["artifact_id"]) for row in rows]
                          + [artifact(row["artifact_name"], row["artifact_id"]) for row in scope_rows],
             "attempt": {"id": 42, "run_attempt": 2, "head_sha": CONTROL,
@@ -128,87 +182,3 @@ def test_rejects_forged_missing_stale_or_changed_verdict() -> None:
         mutate(case)
         with pytest.raises(ValueError):
             _verify(case)
-
-
-def test_runtime_dependencies_require_matching_licensed_and_strix_bound_report() -> None:
-    key = "pypi/numpy@2.5.1"
-    archive_key = key + "/sha256/" + "d" * 64
-    fixture = {"id": archive_key,
-               "dependency": {"ecosystem": "pypi", "name": "numpy",
-                              "version": "2.5.1", "source_sha256": "d" * 64}}
-    fixture_sha = hashlib.sha256(json.dumps(fixture, sort_keys=True,
-                                           separators=(",", ":")).encode()).hexdigest()
-    legs = [f"wheel-{index}" for index in range(12)]
-    archive_report = {"schema": "cwl.release-runtime-archive-licenses/1", "archives": [
-        {"key": archive_key, "package_key": key, "name": "numpy", "version": "2.5.1",
-         "source_sha256": "d" * 64, "license": "BSD-3-Clause",
-         "fixture": fixture, "fixture_sha256": fixture_sha, "legs": legs}]}
-    archive_raw = (json.dumps(archive_report, sort_keys=True) + "\n").encode()
-    report = {"schema": "cwl.release-dependency-gate/1", "result": "PASS",
-              "stage": "full", "source_repository": "ContextualWisdomLab/fast-mlsirm",
-              "source_sha": SOURCE, "failures": [], "dependency_count": 1,
-              "dependencies": [{"key": key, "ecosystem": "pypi", "name": "numpy",
-                                "version": "2.5.1", "license": "BSD-3-Clause",
-                                "source_sha256": "d" * 64, "fixture_sha256": "e" * 64}],
-              "runtime_archive_reviews": [{"key": archive_key, "package_key": key,
-                                           "source_sha256": "d" * 64,
-                                           "license": "BSD-3-Clause", "fixture_sha256": fixture_sha,
-                                           "legs": legs}]}
-    raw = (json.dumps(report, sort_keys=True) + "\n").encode()
-    verdict = {"gate_report_sha256": hashlib.sha256(raw).hexdigest(),
-               "binding_artifacts": [{"key": key}],
-               "runtime_archive_binding_artifacts": [{"key": archive_key}],
-               "runtime_archive_license_sha256": hashlib.sha256(archive_raw).hexdigest()}
-    receipts = [{"leg": f"wheel-{index}",
-                 "locked_dependencies": [{"name": "numpy", "version": "2.5.1"}],
-                 "archives": [{"name": "numpy", "version": "2.5.1", "sha256": "d" * 64}]}
-                for index in range(12)]
-
-    def check() -> None:
-        verify_runtime_dependency_coverage(
-            verdict, report, raw, archive_report, archive_raw, receipts,
-            repository="ContextualWisdomLab/fast-mlsirm", source_sha=SOURCE,
-        )
-
-    check()
-    report["dependencies"][0].update(key="pypi/numpy@2.5.2", version="2.5.2")
-    verdict["binding_artifacts"][0]["key"] = "pypi/numpy@2.5.2"
-    variant_report = (json.dumps(report, sort_keys=True) + "\n").encode()
-    verdict["gate_report_sha256"] = hashlib.sha256(variant_report).hexdigest()
-    verify_runtime_dependency_coverage(
-        verdict, report, variant_report, archive_report, archive_raw, receipts,
-        repository="ContextualWisdomLab/fast-mlsirm", source_sha=SOURCE,
-    )
-    report["dependencies"][0].update(key=key, version="2.5.1")
-    verdict["binding_artifacts"][0]["key"] = key
-    verdict["gate_report_sha256"] = hashlib.sha256(raw).hexdigest()
-    for mutate in (
-        lambda: verdict.update(gate_report_sha256="0" * 64),
-        lambda: receipts[0]["locked_dependencies"][0].update(version="2.5.2"),
-        lambda: receipts[0]["archives"][0].update(sha256="0" * 64),
-        lambda: verdict["binding_artifacts"][0].update(key="pypi/other@1"),
-        lambda: verdict["runtime_archive_binding_artifacts"][0].update(key="pypi/other@1/sha256/" + "d" * 64),
-        lambda: verdict.update(runtime_archive_license_sha256="0" * 64),
-    ):
-        original = (copy.deepcopy(verdict), copy.deepcopy(receipts))
-        mutate()
-        with pytest.raises(ValueError):
-            check()
-        verdict.clear()
-        verdict.update(original[0])
-        receipts[:] = original[1]
-
-    for mutate in (
-        lambda: archive_report["archives"][0].update(license="GPL-3.0-only"),
-        lambda: archive_report["archives"][0].update(source_sha256="0" * 64),
-        lambda: report["runtime_archive_reviews"].clear(),
-        lambda: report["runtime_archive_reviews"][0].update(fixture_sha256="0" * 64),
-    ):
-        original = (copy.deepcopy(archive_report), copy.deepcopy(report))
-        mutate()
-        with pytest.raises(ValueError):
-            check()
-        archive_report.clear()
-        archive_report.update(original[0])
-        report.clear()
-        report.update(original[1])

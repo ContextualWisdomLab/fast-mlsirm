@@ -178,6 +178,55 @@ def verify_full_set_verdict(
         raise ValueError("same-attempt Strix artifact set differs from the verdict")
 
 
+def verify_native_link_inventory(verdict: Any, native: Any, native_bytes: bytes,
+                                 runtime_records: list[dict], source_sha: str) -> None:
+    """Bind every wheel's scanned extension and dynamic links to the sealed verdict."""
+    if (not isinstance(verdict, Mapping) or not isinstance(native, Mapping)
+            or verdict.get("native_links_sha256") != hashlib.sha256(native_bytes).hexdigest()
+            or native.get("schema") != "cwl.release-native-links/1"
+            or native.get("source_sha") != source_sha):
+        raise ValueError("native link inventory differs from sealed verdict")
+    distributions = verdict.get("distributions")
+    wheels = native.get("wheels")
+    if (not isinstance(distributions, list) or not isinstance(wheels, list)
+            or len(wheels) != 12 or len(runtime_records) != 12):
+        raise ValueError("native link inventory does not cover twelve wheels")
+    expected = {row["leg"]: row for row in distributions if row["leg"] != "sdist"}
+    runtimes = {row["leg"]: row for row in runtime_records}
+    if len(expected) != 12 or len(runtimes) != 12:
+        raise ValueError("native link inventory has duplicate release legs")
+    seen = set()
+    targets = {"x86_64-unknown-linux-gnu": {"x86_64"},
+               "aarch64-unknown-linux-gnu": {"aarch64"},
+               "universal2-apple-darwin": {"x86_64", "aarch64"},
+               "x86_64-pc-windows-msvc": {"x86_64"}}
+    for wheel in wheels:
+        if not isinstance(wheel, Mapping) or set(wheel) != {
+                "leg", "file", "sha256", "member", "member_sha256", "links"}:
+            raise ValueError("native link wheel row is malformed")
+        leg = wheel["leg"]
+        if (not isinstance(leg, str) or leg not in expected or leg in seen
+                or wheel["file"] != expected[leg]["file"]
+                or wheel["sha256"] != expected[leg]["sha256"]
+                or wheel["member"] != runtimes[leg]["imported_extension"]["member"]
+                or wheel["member_sha256"] != runtimes[leg]["imported_extension"]["sha256"]):
+            raise ValueError("native link wheel differs from selected distribution")
+        target = leg.rsplit("-py", 1)[0]
+        links = wheel["links"]
+        if (target not in targets or not isinstance(links, list)
+                or len(links) != len(targets[target])
+                or {row.get("arch") for row in links if isinstance(row, Mapping)} != targets[target]
+                or any(not isinstance(row, Mapping) or set(row) != {"arch", "format", "needed"}
+                       or not isinstance(row["format"], str) or not row["format"]
+                       or not isinstance(row["needed"], list)
+                       or any(not isinstance(name, str) or not name for name in row["needed"])
+                       for row in links)):
+            raise ValueError("native link architectures or dependencies are incomplete")
+        seen.add(leg)
+    if seen != set(expected):
+        raise ValueError("native link inventory is missing a release wheel")
+
+
 def verify_runtime_dependency_coverage(verdict: Any, report: Any, report_bytes: bytes,
                                        archive_report: Any, archive_report_bytes: bytes,
                                        runtime_records: list[dict], build_records: list[dict], *,
