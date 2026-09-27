@@ -190,7 +190,7 @@
     "authentication": "none",
     "http_status": 404,
     "body_format": "non-JSON",
-    "observed_utc": "2026-09-27 11:38:58 UTC",
+    "observation_clock_bound_utc": "2026-09-27 11:38:58 UTC",
     "scope": "Observation time bounds this turn; endpoint result was obtained shortly before the clock receipt. No claim that producer artifact was deleted or unavailable through every route."
   },
   "findings": [
