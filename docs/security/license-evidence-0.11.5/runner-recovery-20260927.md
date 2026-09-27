@@ -121,5 +121,24 @@ completing its Actions compatibility shard successfully in about ten seconds
 evidence, not a measurement of central #2433's new source. Keep that
 distinction when assessing the fresh lookup fix.
 
+## Verified admission and hourly follow-through
+
+Canary run 36319361497/job 108620080034 reached cwlab-s1-01 in
+CWL central control and completed at 2026-09-27T13:08:11Z. Its failure
+log states that targeted PR2174 was closed, matching its completed merge.
+This proves runner admission but not a successful scheduler verdict.
+
+The maintainer explicitly requested hourly follow-through until merge.
+Enabled Orca automation `7c92d308-5b01-4788-8dca-9172a1a66e2d` runs at
+each hour in Asia/Seoul, starting 2026-09-27 23:00 KST, in the original
+license workspace with session reuse. It carries the PR stack, exact-head
+validation, authorized bypass, RCA and license/artifact preservation rules.
+The Goal was resumed by the user and is active.
+
+After the original canary became terminal, a new dry-run scheduler dispatch
+was accepted for the still-open PR2157 on main. It disables review triggers,
+auto-merge, branch updates and merge actions. Follow its new run handle;
+this is a current-source acceptance check, not a retry of the closed target.
+
 The Goal remains active. This document is an RCA and execution plan, not a
 release-wide license verdict or proof of completed hosted gates.
