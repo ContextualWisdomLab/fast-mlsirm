@@ -39,6 +39,37 @@ fn ols_recovers_exact_plane() {
 }
 
 #[test]
+fn ols_rejects_scaled_dependent_column() {
+    let n = 20;
+    let x: Vec<f64> = (0..n)
+        .flat_map(|i| {
+            let value = i as f64 * 1e8;
+            [1.0, value, value + 1.0]
+        })
+        .collect();
+    let y: Vec<f64> = (0..n).map(|i| i as f64).collect();
+    assert!(fit_ols(&x, &y, n, 3).is_err());
+}
+
+#[test]
+fn ols_keeps_independent_columns_at_large_scale() {
+    let n = 20;
+    let y: Vec<f64> = (0..n)
+        .map(|i| 1.0 + 2.0 * i as f64 + 3.0 * (i * i) as f64)
+        .collect();
+    for scale in [1e-8, 1e8] {
+        let x: Vec<f64> = (0..n)
+            .flat_map(|i| {
+                let value = i as f64;
+                [1.0, value * scale, value * value * scale]
+            })
+            .collect();
+        let fit = fit_ols(&x, &y, n, 3).expect("independent scaled design");
+        assert!(fit.residuals.iter().all(|e| e.abs() < 1e-6));
+    }
+}
+
+#[test]
 fn nested_column_drop_reports_classical_fit_statistics() {
     let x = vec![1.0, 0.0, 1.0, 1.0, 1.0, 2.0, 1.0, 3.0, 1.0, 4.0];
     let y = vec![1.0, 2.0, 2.0, 4.0, 5.0];
@@ -124,7 +155,11 @@ fn linear_contrast_and_tails() {
     let c = vec![0.0, 1.0];
     let out = linear_contrast(&fit.beta, &vcov, &c, (n - k) as f64).unwrap();
     assert_close(out.estimate, fit.beta[1], 1e-12);
-    assert_close(out.wald_chi2, out.estimate.powi(2) / out.se.powi(2), 1e-12);
+    assert_close(
+        out.wald_chi2 / (out.estimate.powi(2) / out.se.powi(2)),
+        1.0,
+        1e-12,
+    );
     assert_close(chi2_sf_df1(3.841458820694124), 0.05, 1e-6);
     assert_close(f_sf(3.841458820694124, 1.0, 1.0e8), 0.05, 5e-4);
     assert_close(t_sf(1.6448536269514722, 1.0e8), 0.05, 5e-4);
