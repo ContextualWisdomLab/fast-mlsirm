@@ -1,0 +1,25 @@
+{
+  "status": "build completed; artifact acceptance pending",
+  "remote_workspace": "/data/orca/workspaces/fmls-numpy-pinned-backend-build-20260928",
+  "completed_utc": "2026-09-27T18:30:32Z",
+  "repaired_wheel_sha256": "e3c109b6c8ad1cb2701968229c5c04c829cf34817a615cb3c4cd8a9309d93a02",
+  "raw_wheel_sha256": "76418862b0f0d5aeb6c380d6f9675c37ec145db546de08ac2f4b96afb1947077",
+  "openblas_library_sha256": "940c6557fc88fb9f30124e3b37d79f8c1abec07c1b8b93ead0407f336ba8f476",
+  "build_log_sha256": "7210e04b091a933a703d4671bc16ab36b1e62928086825da8c5ff685f82dbe9e",
+  "backend_freeze": [
+    "Cython==3.3.0",
+    "meson==1.12.1",
+    "meson-python==0.21.1",
+    "ninja==1.13.2",
+    "packaging==26.3",
+    "pip==25.0.1",
+    "pyproject-metadata==0.12.1"
+  ],
+  "repeat_D": "running; session65954",
+  "limitations": [
+    "No independent D comparison yet",
+    "No full NumPy numerical/ABI acceptance",
+    "No whole-archive license verdict",
+    "Not published12-wheel acceptance"
+  ]
+}
