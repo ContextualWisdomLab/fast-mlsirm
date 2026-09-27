@@ -177,5 +177,23 @@ Next integrate primary evidence PR2139 into main after auditing its current
 base/head and complete diff. These stacked merges do not by themselves prove
 main adoption, successful hosted gates or release acceptance.
 
+## Primary evidence integrated into main
+
+The PR2139 merge audit found stale NumPy 2.5.3 locks while inspected main
+`270865294873c7b0ebcc8ff0659db2d6d8c93a48` and the 0.11.5 artifact evidence
+use 2.5.2. Semantic inspection found only NumPy changed in uv.lock and only
+the NumPy block changed in each hashed requirements file. Commit
+`d810939c5fb5667efb1b43e654e9824afda2398e` restored those three files from
+the exact inspected main, without updating unrelated packages. The offline
+lock check and all 253 license tests passed in an isolated checkout.
+
+PR2139 was marked ready and merged at 2026-09-27T13:28:11Z into main as
+`c8eae1f4e31b357329a1ef6d4c68dcb81cc0d343`. Exact head/base and resolved
+review threads were checked immediately before the authorized bypass;
+CodeRabbit and Devin contexts succeeded, hosted scan jobs remained queued.
+Remote main ancestry and verifier/template/fixture byte equality were
+verified after merge. The reviewed license stack is now adopted in main.
+This does not clear the remaining HOLDs or prove release artifact acceptance.
+
 The Goal remains active. This document is an RCA and execution plan, not a
 release-wide license verdict or proof of completed hosted gates.
