@@ -82,6 +82,9 @@ jobs:
       - name: Build isolated Python environment and native core
         run: |
           python -m venv .venv-focal-gpu
+          # Python 3.12 venv manual: activation prepends the environment bin to PATH.
+          # https://docs.python.org/3.12/library/venv.html#how-venvs-work
+          export PATH="$PWD/.venv-focal-gpu/bin:$PATH"
           .venv-focal-gpu/bin/python -m pip install --require-hashes -r requirements/ci.txt
           .venv-focal-gpu/bin/python -m pip install --no-deps --no-build-isolation -e .
       - name: Execute both actual hardware contracts
