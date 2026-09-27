@@ -86,6 +86,8 @@ pub(crate) struct ReducedEstepInputs<'a> {
 #[cfg_attr(any(not(feature = "gpu"), coverage), allow(dead_code))]
 pub(crate) struct ReducedEstepOutputs {
     pub loglik: f64,
+    /// Optional normalized posterior arrays; see Cai (2010), pp.608-609.
+    pub person_posteriors: Option<ReducedPersonPosteriors>,
     pub counts: Vec<f64>,
     pub counts_stride_nodes: usize,
     pub w_acc: Vec<f64>,
@@ -93,6 +95,20 @@ pub(crate) struct ReducedEstepOutputs {
     pub s2_g: Vec<f64>,
     pub s2_spec: Vec<f64>,
     pub w_spec: Vec<f64>,
+}
+
+/// Normalized GPU posterior weights for arbitrary shared product-grid nodes.
+/// Cai (2010), pp.608-609, Appendices A/B, DOI 10.1007/s11336-010-9178-0.
+/// `primary[(person * qg) + node]`; `joint[((person * ns + block) * qg
+/// + node) * qs + specific_node]`. Contract these with every primary
+/// coordinate; the shared-node index does not imply a single primary factor.
+/// Weights are computed in WGSL f32 and widened, not recomputed in f64:
+/// https://www.w3.org/TR/WGSL/#floating-point-types. Numerical parity and
+/// integration sensitivity must be checked independently before reporting.
+#[cfg_attr(any(not(feature = "gpu"), coverage), allow(dead_code))]
+pub(crate) struct ReducedPersonPosteriors {
+    pub primary: Vec<f64>,
+    pub joint: Vec<f64>,
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
@@ -391,6 +407,28 @@ const MIN_STORAGE_BUFFERS: u32 = 20;
 /// caller falls back to the `f64` CPU sweep over the same tables.
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
+    e_step_reduced_gpu_inner(inputs, false)
+}
+
+/// Return individual primary/joint posteriors using the existing GPU kernels.
+/// Cai (2010), pp.608-609, Appendices A/B; WGSL f32 precision limits are
+/// documented on `ReducedPersonPosteriors`. This route omits item-count and
+/// group-moment reductions; those quantities are not valid P>1 moments.
+/// Uses adapter buffer/workgroup budgets from wgpu 30.0.0 Limits:
+/// https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html.
+/// `None` means GPU execution/readback failed, never a CPU result.
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) fn e_step_reduced_gpu_posteriors(
+    inputs: &ReducedEstepInputs,
+) -> Option<ReducedEstepOutputs> {
+    e_step_reduced_gpu_inner(inputs, true)
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn e_step_reduced_gpu_inner(
+    inputs: &ReducedEstepInputs,
+    collect_posteriors: bool,
+) -> Option<ReducedEstepOutputs> {
     use crate::gpu::{
         dispatch_count, dispatch_workgroups_nd, output_buffer, staging_buffer, storage_buffer_fits,
         storage_entry, submit_and_readback,
@@ -398,6 +436,9 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
 
     let ctx = GpuContext::get()?;
     if ctx.adapter_storage_buffers() < MIN_STORAGE_BUFFERS {
+        return None;
+    }
+    if collect_posteriors && ctx.adapter_info.device_type == wgpu::DeviceType::Cpu {
         return None;
     }
     let device = &ctx.device;
@@ -416,14 +457,14 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     // Fail closed on storage binding budget before allocating (Metal/WebGPU
     // report these at runtime; never hardcode a byte cap).
     let buffer_lens = [
-        np * ni,                 // yobs as i32 — sized separately below
-        np * qg,                 // genlog / postg
-        np * ns * qg,            // logi
-        np * ns * qg * qs,       // blockacc / joint
-        np,                      // ll
-        np * ns,                 // anyobs
-        ng * ni * stride * nc,   // counts
-        ng * (3 + 2 * ns),       // moments
+        np * ni,               // yobs as i32 — sized separately below
+        np * qg,               // genlog / postg
+        np * ns * qg,          // logi
+        np * ns * qg * qs,     // blockacc / joint
+        np,                    // ll
+        np * ns,               // anyobs
+        ng * ni * stride * nc, // counts
+        ng * (3 + 2 * ns),     // moments
     ];
     for &len in &buffer_lens[1..] {
         if !storage_buffer_fits(&limits, len) {
@@ -555,11 +596,10 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     for binding in 12..=20u32 {
         entries.push(storage_entry(binding, false));
     }
-    let bind_group_layout =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("reduced_estep_bgl"),
-            entries: &entries,
-        });
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("reduced_estep_bgl"),
+        entries: &entries,
+    });
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("reduced_estep_bg"),
         layout: &bind_group_layout,
@@ -680,7 +720,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     // scale q×item×category grids (e.g. AC late-life q=241) do not panic.
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    for (pipeline, groups) in [
+    for (index, (pipeline, groups)) in [
         (&pl_acc, dispatch_count(np * qg)),
         (&pl_norm, dispatch_count(np)),
         (&pl_joint, dispatch_count(np * ns * qg)),
@@ -688,7 +728,13 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         (&pl_cblk, dispatch_count(ng * ni * qg * qs * nc)),
         (&pl_mg, dispatch_count(ng)),
         (&pl_ms, dispatch_count(ng * ns)),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if collect_posteriors && index >= 3 {
+            continue;
+        }
         let (dx, dy, dz) = dispatch_workgroups_nd(groups.max(1), max_wg)?;
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: None,
@@ -702,19 +748,32 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let ll_staging = staging_buffer(device, "ll_read", np);
     let counts_staging = staging_buffer(device, "counts_read", ng * ni * stride * nc);
     let moments_staging = staging_buffer(device, "moments_read", ng * (3 + 2 * ns));
-    let read = submit_and_readback(
-        ctx,
-        encoder,
-        &[
-            (&ll_buf, &ll_staging, np),
-            (&counts_buf, &counts_staging, ng * ni * stride * nc),
-            (&moments_buf, &moments_staging, ng * (3 + 2 * ns)),
-        ],
-    )?;
+    let primary_staging =
+        collect_posteriors.then(|| staging_buffer(device, "primary_read", np * qg));
+    let joint_staging =
+        collect_posteriors.then(|| staging_buffer(device, "joint_read", np * ns * qg * qs));
+    let mut copies = vec![(&ll_buf, &ll_staging, np)];
+    if collect_posteriors {
+        copies.push((&postg_buf, primary_staging.as_ref()?, np * qg));
+        copies.push((&joint_buf, joint_staging.as_ref()?, np * ns * qg * qs));
+    } else {
+        copies.push((&counts_buf, &counts_staging, ng * ni * stride * nc));
+        copies.push((&moments_buf, &moments_staging, ng * (3 + 2 * ns)));
+    }
+    let read = submit_and_readback(ctx, encoder, &copies)?;
     let mut iter = read.into_iter();
     let ll_vec = iter.next()?;
-    let counts_vec = iter.next()?;
-    let moments_vec = iter.next()?;
+    let (counts_vec, moments_vec, person_posteriors) = if collect_posteriors {
+        let primary = iter.next()?.into_iter().map(f64::from).collect();
+        let joint = iter.next()?.into_iter().map(f64::from).collect();
+        (
+            Vec::new(),
+            vec![0.0; ng * (3 + 2 * ns)],
+            Some(ReducedPersonPosteriors { primary, joint }),
+        )
+    } else {
+        (iter.next()?, iter.next()?, None)
+    };
 
     let mut loglik = 0.0;
     for &v in &ll_vec {
@@ -738,6 +797,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
 
     Some(ReducedEstepOutputs {
         loglik,
+        person_posteriors,
         counts: counts_vec.into_iter().map(f64::from).collect(),
         counts_stride_nodes: stride,
         w_acc,
@@ -752,7 +812,15 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
 /// coverage: always returns `None` so the caller runs the CPU E-step.
 #[cfg(any(not(feature = "gpu"), coverage))]
 #[allow(dead_code)]
-pub(crate) fn e_step_reduced_gpu(
+pub(crate) fn e_step_reduced_gpu(_inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
+    None
+}
+
+/// Unavailable GPU route in builds without GPU support. See GPU counterpart's
+/// Cai (2010), Appendices A/B and wgpu Limits contract; no CPU substitution.
+#[cfg(any(not(feature = "gpu"), coverage))]
+#[allow(dead_code)]
+pub(crate) fn e_step_reduced_gpu_posteriors(
     _inputs: &ReducedEstepInputs,
 ) -> Option<ReducedEstepOutputs> {
     None

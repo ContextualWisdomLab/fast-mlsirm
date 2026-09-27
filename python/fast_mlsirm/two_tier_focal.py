@@ -30,6 +30,7 @@ class TwoTierGrmPersonScores:
     second: np.ndarray
     sd: np.ndarray
     loglik: float
+    backend: str = "cpu"
 
 
 @dataclass
@@ -172,6 +173,7 @@ def _person_scores(result, shape):
             for key in ("person_mean", "person_second", "person_sd")
         ),
         float(result["loglik"]),
+        str(result.get("backend", "cpu")),
     )
 
 
@@ -190,13 +192,21 @@ def score_two_tier_grm_orthogonal(
     n_specific,
     q_primary,
     q_specific,
+    device="cpu",
 ):
     """Score fixed items under declared independent Gaussian latent factors.
 
     Cai (2010), p. 587 eqs. 4-6; p. 609 Appendix B. Caller supplies all means,
     SDs and node counts. Arrays order primaries then specifics. Missing persons
     retain the quadrature prior. Accuracy requires node sensitivity evidence.
+    Explicit device="gpu" uses existing WGSL f32 posterior kernels and Rust
+    f64 moment contraction (Cai, 2010, pp.608-609 Appendices A/B;
+    https://www.w3.org/TR/WGSL/#floating-point-types). GPU failure raises;
+    CPU software adapters and automatic CPU fallback are rejected. Numerical
+    parity, convergence and integration sensitivity remain required.
     """
+    if not isinstance(device, str) or device not in ("cpu", "gpu"):
+        raise ValueError("device must be cpu or gpu")
     args, shape = _native_inputs(
         responses,
         primary_map,
@@ -217,7 +227,12 @@ def score_two_tier_grm_orthogonal(
         raise RuntimeError(
             "score_two_tier_grm_orthogonal requires the updated compiled Rust core"
         )
-    return _person_scores(core.score_two_tier_grm_orthogonal(*args), shape)
+    result = (
+        core.score_two_tier_grm_orthogonal(*args)
+        if device == "cpu"
+        else core.score_two_tier_grm_orthogonal(*args, device=device)
+    )
+    return _person_scores(result, shape)
 
 
 def fit_two_tier_grm_focal_orthogonal(
@@ -237,6 +252,7 @@ def fit_two_tier_grm_focal_orthogonal(
     q_specific,
     max_iter,
     tol,
+    device="cpu",
 ):
     """Fit all latent means/SDs with every item fixed and factors independent.
 
@@ -252,9 +268,16 @@ def fit_two_tier_grm_focal_orthogonal(
     not a source-prescribed scientific cutoff or DGELSY effective rank.
     Passing does not prove variance/joint identification, population recovery
     or quadrature accuracy; these remain separate acceptance conditions.
+    Explicit device="gpu" uses existing WGSL f32 posterior kernels and Rust
+    f64 moment contraction (Cai, 2010, pp.608-609 Appendices A/B;
+    https://www.w3.org/TR/WGSL/#floating-point-types). GPU failure raises;
+    CPU software adapters and automatic CPU fallback are rejected. Numerical
+    parity, convergence and integration sensitivity remain required.
     """
     cap = _bounded_integer(max_iter, "max_iter", 1, int(np.iinfo(np.uintp).max))
     tolerance = _positive_real(tol, "tol")
+    if not isinstance(device, str) or device not in ("cpu", "gpu"):
+        raise ValueError("device must be cpu or gpu")
     args, shape = _native_inputs(
         responses,
         primary_map,
@@ -275,7 +298,13 @@ def fit_two_tier_grm_focal_orthogonal(
         raise RuntimeError(
             "fit_two_tier_grm_focal_orthogonal requires the updated compiled Rust core"
         )
-    result = core.fit_two_tier_grm_focal_orthogonal(*args, cap, tolerance)
+    result = (
+        core.fit_two_tier_grm_focal_orthogonal(*args, cap, tolerance)
+        if device == "cpu"
+        else core.fit_two_tier_grm_focal_orthogonal(
+            *args, cap, tolerance, device=device
+        )
+    )
     return TwoTierGrmFocalFit(
         np.asarray(result["latent_mean"], dtype=np.float64),
         np.asarray(result["latent_sd"], dtype=np.float64),

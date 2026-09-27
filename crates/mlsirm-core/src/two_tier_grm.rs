@@ -1061,6 +1061,163 @@ pub(crate) fn e_step_with_moments(
     (loglik, counts, s_bar_sum)
 }
 
+/// GPU reduced posterior contraction for every shared and specific dimension.
+/// Cai (2010), pp.608-609, Appendices A/B, DOI 10.1007/s11336-010-9178-0:
+/// flatten the shared product grid without marginalizing its dimensions,
+/// then contract primary and shared-specific joint posterior weights.
+/// Existing WGSL f32 kernels supply weights; Rust contracts in f64. This is
+/// mixed precision, not an f64 GPU calculation (WGSL floating-point types,
+/// https://www.w3.org/TR/WGSL/#floating-point-types). Positive finite masses
+/// are renormalized before contraction; nonfinite/negative weights fail.
+/// Person batches derive from wgpu 30.0.0 buffer limits, not quadrature caps:
+/// https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html. GPU unavailability or
+/// failure is an error; the caller must evaluate numerical parity separately.
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[allow(clippy::too_many_arguments)]
+fn e_step_gpu_person_moments(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws: &[f64],
+    coords: &[f64],
+    ts: &[f64],
+    moments: &mut LatentPosteriorMoments,
+) -> Result<f64, String> {
+    use crate::gpu_bifactor::{e_step_reduced_gpu_posteriors, ReducedEstepInputs};
+    let ctx = crate::gpu::GpuContext::get().ok_or("GPU adapter unavailable")?;
+    if ctx.adapter_info.device_type == wgpu::DeviceType::Cpu {
+        return Err("GPU requested but adapter is a CPU software renderer".into());
+    }
+    let grid = log_w.len();
+    let qs = ts.len();
+    let joint_per_person = v
+        .n_specific
+        .checked_mul(grid)
+        .and_then(|n| n.checked_mul(qs))
+        .ok_or("GPU posterior dimensions overflow")?;
+    let limits = ctx.device.limits();
+    let bytes_per_person = joint_per_person
+        .max(v.n_items)
+        .max(grid)
+        .checked_mul(std::mem::size_of::<f32>())
+        .ok_or("GPU posterior size overflows")?;
+    let budget = limits
+        .max_storage_buffer_binding_size
+        .min(limits.max_buffer_size);
+    let batch = usize::try_from(budget / bytes_per_person as u64)
+        .map_err(|_| "GPU batch size overflows usize")?
+        .min(v.n_persons)
+        .min(u32::MAX as usize / joint_per_person.max(1));
+    if batch == 0 {
+        return Err("GPU cannot bind one person's posterior at declared grid".into());
+    }
+    // Log-probability tables depend on items/nodes, never on the person.
+    // Reuse the exact CPU GRM probability implementation on the host.
+    let tables: Vec<Vec<f64>> = (0..v.n_items)
+        .map(|i| {
+            let h_count = if v.item_block[i].is_some() { qs } else { 1 };
+            let mut table = Vec::with_capacity(grid * h_count * v.n_cat);
+            for g in 0..grid {
+                for h in 0..h_count {
+                    for cat in 0..v.n_cat {
+                        table.push(item_cat_logprob(v, params, coords, ts, i, g, h, cat));
+                    }
+                }
+            }
+            table
+        })
+        .collect();
+    let tables_groups = vec![tables];
+    // Existing group-reduction kernels are omitted on this posterior route.
+    // The first primary coordinate is supplied only for the retained buffer
+    // layout; all primary coordinates are contracted below.
+    let tg_groups = vec![(0..grid).map(|g| coords[g * v.n_primary]).collect()];
+    let ts_groups = vec![vec![ts.to_vec(); v.n_specific]];
+    moments.mean.fill(0.0);
+    moments.second.fill(0.0);
+    let nl = v.n_primary + v.n_specific;
+    let mut loglik = 0.0;
+    for start in (0..v.n_persons).step_by(batch) {
+        let stop = (start + batch).min(v.n_persons);
+        let inputs = ReducedEstepInputs {
+            y: &y[start * v.n_items..stop * v.n_items],
+            observed: observed.map(|m| &m[start * v.n_items..stop * v.n_items]),
+            group_id: None,
+            n_persons: stop - start,
+            n_items: v.n_items,
+            n_specific: v.n_specific,
+            n_cat: v.n_cat,
+            qg: grid,
+            qs,
+            n_groups: 1,
+            tables_groups: &tables_groups,
+            item_block: &v.item_block,
+            blocks: &v.blocks,
+            tg_groups: &tg_groups,
+            ts_groups: &ts_groups,
+            log_wg: log_w,
+            log_ws,
+        };
+        let result = e_step_reduced_gpu_posteriors(&inputs)
+            .ok_or("GPU posterior dispatch/readback failed at declared grid")?;
+        if !result.loglik.is_finite() {
+            return Err("nonfinite GPU loglikelihood".into());
+        }
+        loglik += result.loglik;
+        let post = result
+            .person_posteriors
+            .ok_or("missing GPU person posteriors")?;
+        for pp in 0..stop - start {
+            for d in 0..nl {
+                let weights = if d < v.n_primary {
+                    &post.primary[pp * grid..(pp + 1) * grid]
+                } else {
+                    let offset = (pp * v.n_specific + d - v.n_primary) * grid * qs;
+                    &post.joint[offset..offset + grid * qs]
+                };
+                if weights.iter().any(|w| !w.is_finite() || *w < 0.0) {
+                    return Err("invalid GPU posterior weight".into());
+                }
+                let mass: f64 = weights.iter().sum();
+                if !mass.is_finite() || mass <= 0.0 {
+                    return Err("invalid GPU posterior mass".into());
+                }
+                let slot = (start + pp) * nl + d;
+                for (node, &w) in weights.iter().enumerate() {
+                    let x = if d < v.n_primary {
+                        coords[node * v.n_primary + d]
+                    } else {
+                        ts[node % qs]
+                    };
+                    moments.mean[slot] += w / mass * x;
+                    moments.second[slot] += w / mass * x * x;
+                }
+            }
+        }
+    }
+    Ok(loglik)
+}
+
+/// Explicit GPU rejection in CPU-only builds; same Cai Appendices A/B
+/// contract as the GPU implementation. No alternative computation is run.
+#[cfg(any(not(feature = "gpu"), coverage))]
+#[allow(clippy::too_many_arguments)]
+fn e_step_gpu_person_moments(
+    _v: &Validated,
+    _y: &[usize],
+    _observed: Option<&[bool]>,
+    _params: &[ItemParams],
+    _log_w: &[f64],
+    _log_ws: &[f64],
+    _coords: &[f64],
+    _ts: &[f64],
+    _moments: &mut LatentPosteriorMoments,
+) -> Result<f64, String> {
+    Err("focal GPU scoring requires a GPU-enabled build".into())
+}
+
 /// Negative expected complete-data log-lik and gradient for ONE item — the
 /// Bock-Aitkin M-step item ascent (Cai et al., 2011, "Maximum Marginal
 /// Likelihood Estimation" section) with the crate's shared
@@ -2123,6 +2280,9 @@ pub(crate) fn pack_params(
 /// posterior SD, not uncertainty including estimation of the fixed item bank.
 #[derive(Debug)]
 pub struct TwoTierGrmPersonScores {
+    /// Actual explicit backend. GPU failure never produces a CPU record.
+    pub backend: String,
+
     pub mean: Vec<f64>,
     pub second: Vec<f64>,
     pub sd: Vec<f64>,
@@ -2167,6 +2327,52 @@ pub fn score_two_tier_grm_orthogonal(
     n_cat: usize,
     q_primary: usize,
     q_specific: usize,
+) -> Result<TwoTierGrmPersonScores, String> {
+    score_two_tier_grm_orthogonal_with_device(
+        a_primary,
+        a_specific,
+        thresholds,
+        latent_mean,
+        latent_sd,
+        y,
+        observed,
+        primary_map,
+        specific_map,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_cat,
+        q_primary,
+        q_specific,
+        crate::Device::Cpu,
+    )
+}
+
+/// Explicit device route for the same Cai (2010), pp.608-609 posterior/EM
+/// contract. GPU uses existing WGSL f32 joint posteriors, with f64 moment
+/// contraction; see https://www.w3.org/TR/WGSL/#floating-point-types.
+/// GPU failure is an error and no CPU fallback is accepted. `Auto` is rejected
+/// so the caller declares the route; parity and convergence remain required.
+#[allow(clippy::too_many_arguments)]
+pub fn score_two_tier_grm_orthogonal_with_device(
+    a_primary: &[f64],
+    a_specific: &[f64],
+    thresholds: &[f64],
+    latent_mean: &[f64],
+    latent_sd: &[f64],
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+    device: crate::Device,
 ) -> Result<TwoTierGrmPersonScores, String> {
     // Fit-only controls are irrelevant to fixed-bank scoring, as in the
     // existing marginal-loglik evaluator; data/shape checks remain shared.
@@ -2254,20 +2460,37 @@ pub fn score_two_tier_grm_orthogonal(
         second: vec![0.0; n_scores],
     };
     // No free items: do not allocate category-count tables for fixed-bank scoring.
-    let (loglik, _, _) = e_step_with_moments(
-        &v,
-        y,
-        observed,
-        &params,
-        &log_w,
-        &log_ws,
-        &coords,
-        ts,
-        v.grid_size,
-        q_specific,
-        Some(&mut moments),
-        false,
-    );
+    let loglik = match device {
+        crate::Device::Cpu => {
+            let (ll, _, _) = e_step_with_moments(
+                &v,
+                y,
+                observed,
+                &params,
+                &log_w,
+                &log_ws,
+                &coords,
+                ts,
+                v.grid_size,
+                q_specific,
+                Some(&mut moments),
+                false,
+            );
+            ll
+        }
+        crate::Device::Gpu => e_step_gpu_person_moments(
+            &v,
+            y,
+            observed,
+            &params,
+            &log_w,
+            &log_ws,
+            &coords,
+            ts,
+            &mut moments,
+        )?,
+        crate::Device::Auto => return Err("focal device must be explicit cpu or gpu".into()),
+    };
     if !loglik.is_finite() {
         return Err("non-finite focal score loglikelihood".into());
     }
@@ -2292,6 +2515,11 @@ pub fn score_two_tier_grm_orthogonal(
         }
     }
     Ok(TwoTierGrmPersonScores {
+        backend: match device {
+            crate::Device::Gpu => "gpu",
+            _ => "cpu",
+        }
+        .into(),
         mean: moments.mean,
         second: moments.second,
         sd,
@@ -2377,11 +2605,61 @@ pub fn fit_two_tier_grm_focal_orthogonal(
     max_iter: usize,
     tol: f64,
 ) -> Result<TwoTierGrmFocalFit, String> {
+    fit_two_tier_grm_focal_orthogonal_with_device(
+        a_primary,
+        a_specific,
+        thresholds,
+        initial_mean,
+        initial_sd,
+        y,
+        observed,
+        primary_map,
+        specific_map,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_cat,
+        q_primary,
+        q_specific,
+        max_iter,
+        tol,
+        crate::Device::Cpu,
+    )
+}
+
+/// Explicit device route for the same Cai (2010), pp.608-609 posterior/EM
+/// contract. GPU uses existing WGSL f32 joint posteriors, with f64 moment
+/// contraction; see https://www.w3.org/TR/WGSL/#floating-point-types.
+/// GPU failure is an error and no CPU fallback is accepted. `Auto` is rejected
+/// so the caller declares the route; parity and convergence remain required.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_two_tier_grm_focal_orthogonal_with_device(
+    a_primary: &[f64],
+    a_specific: &[f64],
+    thresholds: &[f64],
+    initial_mean: &[f64],
+    initial_sd: &[f64],
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+    device: crate::Device,
+) -> Result<TwoTierGrmFocalFit, String> {
     if max_iter == 0 || !tol.is_finite() || tol <= 0.0 {
         return Err("max_iter must be positive and tol finite and positive".into());
     }
     let score = |mu: &[f64], sd: &[f64]| {
-        score_two_tier_grm_orthogonal(
+        score_two_tier_grm_orthogonal_with_device(
             a_primary,
             a_specific,
             thresholds,
@@ -2398,6 +2676,7 @@ pub fn fit_two_tier_grm_focal_orthogonal(
             n_cat,
             q_primary,
             q_specific,
+            device,
         )
     };
     // Establish all input/parameter shape contracts before indexing below.

@@ -242,6 +242,9 @@ fn grad_zeta_kernel(@builtin(global_invocation_id) gid: vec3<u32>) {
 /// Initialization (adapter + device request, shader compilation) is expensive
 /// and is done once; the optimizer calls the objective thousands of times.
 pub(crate) struct GpuContext {
+    /// Adapter provenance: wgpu 30.0.0 AdapterInfo/device_type.
+    /// https://docs.rs/wgpu/30.0.0/wgpu/struct.AdapterInfo.html
+    pub(crate) adapter_info: wgpu::AdapterInfo,
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
     storage_buffers_per_stage: u32,
@@ -274,6 +277,7 @@ impl GpuContext {
         let adapter =
             pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
                 .ok()?;
+        let adapter_info = adapter.get_info();
         let adapter_limits = adapter.limits();
         // The layout binds 16 storage buffers (bindings 1..=16) plus a uniform at
         // binding 0; fall back to the f64 CPU reference on an adapter that cannot
@@ -284,8 +288,7 @@ impl GpuContext {
         {
             return None;
         }
-        let storage_buffers_per_stage =
-            adapter_limits.max_storage_buffers_per_shader_stage;
+        let storage_buffers_per_stage = adapter_limits.max_storage_buffers_per_shader_stage;
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("mlsirm-gpgpu"),
             // Request the adapter's real limits so the 17-binding layout fits on
@@ -336,6 +339,7 @@ impl GpuContext {
         };
 
         Some(GpuContext {
+            adapter_info,
             compute_e: make("compute_e"),
             grad_b_alpha: make("grad_b_alpha"),
             grad_theta: make("grad_theta_kernel"),
@@ -408,13 +412,7 @@ pub(crate) fn submit_and_readback(
 ) -> Option<Vec<Vec<f32>>> {
     let mut cmd = encoder;
     for (src, dst, len) in copies {
-        cmd.copy_buffer_to_buffer(
-            src,
-            0,
-            dst,
-            0,
-            (*len * std::mem::size_of::<f32>()) as u64,
-        );
+        cmd.copy_buffer_to_buffer(src, 0, dst, 0, (*len * std::mem::size_of::<f32>()) as u64);
     }
     ctx.queue.submit(Some(cmd.finish()));
     let staging: Vec<&wgpu::Buffer> = copies.iter().map(|(_, dst, _)| *dst).collect();

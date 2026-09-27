@@ -187,8 +187,8 @@ use mlsirm_core::test_form::assemble_test_form_greedy as core_assemble_test_form
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::two_tier_grm::{
     fit_two_tier_grm as core_fit_two_tier_grm,
-    fit_two_tier_grm_focal_orthogonal as core_fit_two_tier_grm_focal,
-    score_two_tier_grm_orthogonal as core_score_two_tier_grm_focal, TwoTierGrmConfig,
+    fit_two_tier_grm_focal_orthogonal_with_device as core_fit_two_tier_grm_focal,
+    score_two_tier_grm_orthogonal_with_device as core_score_two_tier_grm_focal, TwoTierGrmConfig,
     TwoTierGrmPersonScores,
 };
 use mlsirm_core::two_tier_oakes::{
@@ -1986,6 +1986,7 @@ fn two_tier_focal_person_dict(
     res: TwoTierGrmPersonScores,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let out = pyo3::types::PyDict::new(py);
+    out.set_item("backend", &res.backend)?;
     out.set_item("person_mean", res.mean)?;
     out.set_item("person_second", res.second)?;
     out.set_item("person_sd", res.sd)?;
@@ -2001,9 +2002,13 @@ fn two_tier_focal_person_dict(
 /// https://docs.rs/pyo3/0.29.0/pyo3/marker/struct.Python.html#method.detach):
 /// only owned Rust vectors/scalars cross the detached closure, so concurrent
 /// Python writes cannot mutate the running calculation's inputs.
+/// Explicit GPU route uses Cai (2010), pp.608-609 Appendices A/B,
+/// existing WGSL f32 posteriors and f64 host contractions. WGSL types:
+/// https://www.w3.org/TR/WGSL/#floating-point-types. GPU failure raises;
+/// backend records actual dispatch, never an automatic CPU fallback.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, primary_map, specific_map, a_primary, a_specific, threshold, latent_mean, latent_sd, n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific))]
+#[pyo3(signature = (y, observed, primary_map, specific_map, a_primary, a_specific, threshold, latent_mean, latent_sd, n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific, device="cpu"))]
 fn score_two_tier_grm_orthogonal(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -2022,7 +2027,9 @@ fn score_two_tier_grm_orthogonal(
     n_cat: usize,
     q_primary: usize,
     q_specific: usize,
+    device: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    let device = parse_device(device)?;
     let obs = observed.as_slice()?.to_vec();
     let yy = poly_responses(y.as_slice()?, Some(&obs), n_cat)?;
     let pm = primary_map.as_slice()?.to_vec();
@@ -2058,6 +2065,7 @@ fn score_two_tier_grm_orthogonal(
                 n_cat,
                 q_primary,
                 q_specific,
+                device,
             )
         })
         .map_err(PyValueError::new_err)?;
@@ -2077,9 +2085,13 @@ fn score_two_tier_grm_orthogonal(
 /// https://docs.rs/pyo3/0.29.0/pyo3/marker/struct.Python.html#method.detach):
 /// only owned Rust vectors/scalars cross the detached closure, so concurrent
 /// Python writes cannot mutate the running calculation's inputs.
+/// Explicit GPU route uses Cai (2010), pp.608-609 Appendices A/B,
+/// existing WGSL f32 posteriors and f64 host contractions. WGSL types:
+/// https://www.w3.org/TR/WGSL/#floating-point-types. GPU failure raises;
+/// backend records actual dispatch, never an automatic CPU fallback.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, primary_map, specific_map, a_primary, a_specific, threshold, latent_mean, latent_sd, n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific, max_iter, tol))]
+#[pyo3(signature = (y, observed, primary_map, specific_map, a_primary, a_specific, threshold, latent_mean, latent_sd, n_persons, n_items, n_primary, n_specific, n_cat, q_primary, q_specific, max_iter, tol, device="cpu"))]
 fn fit_two_tier_grm_focal_orthogonal(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -2100,7 +2112,9 @@ fn fit_two_tier_grm_focal_orthogonal(
     q_specific: usize,
     max_iter: usize,
     tol: f64,
+    device: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    let device = parse_device(device)?;
     let obs = observed.as_slice()?.to_vec();
     let yy = poly_responses(y.as_slice()?, Some(&obs), n_cat)?;
     let pm = primary_map.as_slice()?.to_vec();
@@ -2138,6 +2152,7 @@ fn fit_two_tier_grm_focal_orthogonal(
                 q_specific,
                 max_iter,
                 tol,
+                device,
             )
         })
         .map_err(PyValueError::new_err)?;
