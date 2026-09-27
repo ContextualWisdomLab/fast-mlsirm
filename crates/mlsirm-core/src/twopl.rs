@@ -75,7 +75,7 @@ use crate::marginal::XiRuleKind;
 use crate::mmle::{log_sigmoid, sigmoid_stable};
 use crate::nodes::{build_xi_nodes, XiRule};
 use crate::poly::solve_small;
-use crate::quadrature::{gh_rule, SUPPORTED_Q};
+use crate::quadrature::gh_rule;
 
 /// Maximum integration node count (bounds the per-iteration `nodes x J` tables) for BOTH the
 /// `Q^D` Gauss-Hermite grid and the `xi_points` QMC/MC point set.
@@ -115,7 +115,8 @@ pub struct TwoPlConfig {
     pub max_iter: usize,
     /// Convergence tolerance on `|delta loglik|`.
     pub tol: f64,
-    /// Gauss-Hermite nodes per dimension (must be in `{7, 11, 15, 21, 31, 41}`).
+    /// Gauss-Hermite nodes per dimension (any `n >= 1`; `q^n_dims` is checked-mul
+    /// bounded by `MIRT_MAX_NODES`).
     pub q: usize,
     /// Ridge on the loading Hessian block (Gaussian prior, mirrors `MmleConfig`).
     pub ridge_a: f64,
@@ -220,11 +221,10 @@ fn validate(
                      xi_rule Halton/MonteCarlo for D up to {MIRT_MAX_DIMS_QMC}"
                 ));
             }
-            if !SUPPORTED_Q.contains(&cfg.q) {
-                return Err(format!(
-                    "q must be one of {SUPPORTED_Q:?} (Gauss-Hermite rules); got {}",
-                    cfg.q
-                ));
+            // #1929: no node-count cap; q^n_dims overflow/oversize is caught by
+            // checked_grid_nodes below (checked_mul against MIRT_MAX_NODES).
+            if cfg.q < 1 {
+                return Err(format!("q must be >= 1 (Gauss-Hermite rules); got {}", cfg.q));
             }
             // Q^D via an accumulating checked multiply in a fixed order (never wraps).
             let mut n_nodes = 1usize;
@@ -315,7 +315,7 @@ fn validate(
 /// Build the `D`-fold Cartesian product Gauss-Hermite grid over orthogonal `N(0,1)` axes.
 /// Returns row-major `nodes[g*D + d]` and `logw[g] = sum_d ln(w_axis[digit_d])`.
 fn build_grid(n_dims: usize, q: usize) -> (Vec<f64>, Vec<f64>) {
-    let (axis_nodes, axis_weights) = gh_rule(q).expect("q validated in supported set");
+    let (axis_nodes, axis_weights) = gh_rule(q).expect("q >= 1 validated above; gh_rule succeeds for any n >= 1");
     let log_aw: Vec<f64> = axis_weights.iter().map(|w| w.ln()).collect();
     let n_nodes = q.pow(n_dims as u32);
     let mut nodes = vec![0.0f64; n_nodes * n_dims];
@@ -964,11 +964,9 @@ pub fn fit_2pl(
                 }
                 // A rejected backtracking step keeps the previous parameters and stops. Encoding
                 // that decision separately makes the rare near-maximum path directly testable.
-                let moved = accepted
-                    .then(|| {
+                let moved = if accepted { {
                         (0..ni).map(|k| (a_new[k] - a[k]).abs()).sum::<f64>() + (b_new - b).abs()
-                    })
-                    .unwrap_or(f64::INFINITY);
+                    } } else { f64::INFINITY };
                 if accepted {
                     a = a_new;
                     b = b_new;

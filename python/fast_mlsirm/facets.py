@@ -255,9 +255,11 @@ def fit_facets(
     n_cat = _integer_control(n_cat, "n_cat", allow_none=True)
     if n_cat is not None and not (2 <= n_cat <= MAX_POLYTOMOUS_CATEGORIES):
         raise ValueError(f"n_cat must be an integer in 2..{MAX_POLYTOMOUS_CATEGORIES}")
+    # #1929: no node-count cap; the Rust core generates any n >= 1 rule on
+    # demand (Golub & Welsch, 1969) and guards allocation overflow.
     q_theta = _integer_control(q_theta, "q_theta")
-    if q_theta not in (7, 11, 15, 21, 31, 41):
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+    if q_theta < 1:
+        raise ValueError("q_theta must be >= 1")
     max_iter = _integer_control(max_iter, "max_iter")
     if not (1 <= max_iter <= MAX_MAX_ITER):
         raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}")

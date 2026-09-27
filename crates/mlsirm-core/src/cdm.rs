@@ -140,7 +140,7 @@ fn validate(
     if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
         return Err("tol must be finite and positive".into());
     }
-    if !cfg.eps.is_finite() || !(0.0 < cfg.eps && cfg.eps < 0.5) {
+    if !(cfg.eps.is_finite() && 0.0 < cfg.eps && cfg.eps < 0.5) {
         return Err("eps must be finite and in (0, 0.5)".into());
     }
     if !cfg.mono_backoff.is_finite() || cfg.mono_backoff <= 2.0 * cfg.eps || cfg.mono_backoff >= 1.0
@@ -2460,7 +2460,7 @@ fn validate_seq_gdina(
     if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
         return Err("tol must be finite and positive".into());
     }
-    if !cfg.eps.is_finite() || !(0.0 < cfg.eps && cfg.eps < 0.5) {
+    if !(cfg.eps.is_finite() && 0.0 < cfg.eps && cfg.eps < 0.5) {
         return Err("eps must be finite and in (0, 0.5)".into());
     }
     if !cfg.init_slip.is_finite() || !(cfg.eps..=1.0 - cfg.eps).contains(&cfg.init_slip) {
@@ -2943,7 +2943,7 @@ fn validate_seq_gdina_qr(
     if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
         return Err("tol must be finite and positive".into());
     }
-    if !cfg.eps.is_finite() || !(0.0 < cfg.eps && cfg.eps < 0.5) {
+    if !(cfg.eps.is_finite() && 0.0 < cfg.eps && cfg.eps < 0.5) {
         return Err("eps must be finite and in (0, 0.5)".into());
     }
     if !cfg.init_slip.is_finite() || !(cfg.eps..=1.0 - cfg.eps).contains(&cfg.init_slip) {

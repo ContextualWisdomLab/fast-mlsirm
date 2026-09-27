@@ -152,7 +152,7 @@ def test_mmle_rejects_oversized_virtual_problem_before_owned_allocations() -> No
             responses,
             observed,
             n_nodes=41,
-            max_iter=1,
+            max_iter=1, tol=1e-6, seed=1
         )
 
 
@@ -180,7 +180,7 @@ def test_workspace_cap_precedes_dtype_conversion(monkeypatch: pytest.MonkeyPatch
             responses,
             observed,
             n_nodes=9,
-            max_iter=1,
+            max_iter=1, tol=1e-6, seed=1
         )
 
 
@@ -200,7 +200,7 @@ def test_workspace_cap_precedes_response_grid_allocation(monkeypatch: pytest.Mon
             responses,
             observed,
             n_nodes=9,
-            max_iter=1,
+            max_iter=1, tol=1e-6, seed=1
         )
 
 

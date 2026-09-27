@@ -23,5 +23,5 @@ def test_invalid_max_iter_is_rejected_before_response_coercion(bad_max_iter) -> 
         fit_mmle_2pl(
             _ResponseCoercionBomb(),
             _ResponseCoercionBomb(),
-            max_iter=bad_max_iter,
+            max_iter=bad_max_iter, n_nodes=41, tol=1e-6, seed=1
         )

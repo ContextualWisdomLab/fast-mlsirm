@@ -35,7 +35,6 @@ _TRUSTED_RESPONSE_SCALAR_TYPES = (
     *_NUMPY_INTEGER_SCALAR_TYPES,
     *_NUMPY_FLOAT_SCALAR_TYPES,
 )
-_ALLOWED_Q_THETA = frozenset({7, 11, 15, 21, 31, 41})
 _MAX_RSM_RESPONSE_CELLS = 20_000_000
 _MAX_RSM_RESPONSE_STRUCTURAL_NODES = 2 * _MAX_RSM_RESPONSE_CELLS
 _RSM_RESOURCE_ERROR = (
@@ -93,9 +92,11 @@ def _trusted_quadrature_points(value: int) -> int:
     elif any(value_type is scalar_type for scalar_type in _NUMPY_INTEGER_SCALAR_TYPES):
         normalized = int(value)
     else:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
-    if normalized not in _ALLOWED_Q_THETA:
-        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+        raise ValueError("q_theta must be an integer >= 1")
+    # #1929: no node-count cap; the Rust core generates any n >= 1 rule
+    # on demand (Golub & Welsch, 1969) and guards allocation overflow.
+    if normalized < 1:
+        raise ValueError("q_theta must be >= 1")
     return normalized
 
 
@@ -218,9 +219,10 @@ def _real_numeric_response_matrix(value: object) -> np.ndarray:
 def fit_rsm(
     responses: np.ndarray,
     n_cat: int | None = None,
-    q_theta: int = 41,
-    max_iter: int = 500,
-    tol: float = 1e-6,
+    *,
+    q_theta: int,
+    max_iter: int,
+    tol: float,
 ) -> RsmFit:
     """Fit the rating scale model (compute in Rust; Andrich, 1978).
 

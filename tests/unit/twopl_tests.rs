@@ -280,6 +280,8 @@ fn mirt_recovers_compensatory_d2() {
 /// negative) is canonicalized by the reflection so that anchor ends POSITIVE and the dimension's
 /// co-loaders flip sign — deleting the reflection block leaves the raw negative anchor and fails.
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn mirt_reflection_flips_negative_anchor() {
     // (b) flip_corr_dim on D=4: pairs are m0=(0,1) m1=(0,2) m2=(0,3) m3=(1,2) m4=(1,3) m5=(2,3).
     // Flipping dim 1 must negate exactly m0,(0,1) m3,(1,2) m4,(1,3) and leave m1,m2,m5 alone.
@@ -875,8 +877,9 @@ fn mirt_validates_and_handles_missing() {
     }
     assert!(fit_2pl(&y, &obs, &nopure, n, n_items, n_dims, &cfg).is_err());
     assert!(fit_2pl(&y, &obs, &vec![1u8; n_items * 4], n, n_items, 4, &cfg).is_err());
+    // #1929: no node-count cap; q=10 is now accepted, only q=0 is not.
     let badq = TwoPlConfig {
-        q: 10,
+        q: 0,
         ..TwoPlConfig::default()
     };
     assert!(fit_2pl(&y, &obs, &pattern, n, n_items, n_dims, &badq).is_err());
@@ -957,7 +960,8 @@ fn mirt_validation_covers_every_scalar_shape_and_item_boundary() {
     }
 
     assert!(validate(&y, &observed, &pattern, 2, 1, 0, &base).is_err());
-    let bad_q = TwoPlConfig { q: 9, ..base };
+    // #1929: no node-count cap; q=9 is now accepted, only q=0 is not.
+    let bad_q = TwoPlConfig { q: 0, ..base };
     assert!(validate(&y, &observed, &pattern, 2, 1, 1, &bad_q).is_err());
     let qmc = TwoPlConfig {
         xi_rule: XiRuleKind::MonteCarlo,

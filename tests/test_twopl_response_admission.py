@@ -61,7 +61,7 @@ def test_fit_2pl_rejects_callback_bearing_response_evidence_before_native(
     core_calls = _install_no_core(monkeypatch)
 
     with pytest.raises(ValueError, match="responses"):
-        fit_2pl(responses)  # type: ignore[arg-type]
+        fit_2pl(responses, model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)  # type: ignore[arg-type]
 
     if isinstance(responses, _ArrayProvider):
         assert responses.calls == []
@@ -79,7 +79,7 @@ def test_fit_2pl_rejects_complex_response_before_real_projection(
     responses = np.array([[0.0 + 1.0j, 1.0], [1.0, 0.0]], dtype=np.complex128)
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
-        fit_2pl(responses)
+        fit_2pl(responses, model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
     assert core_calls == []
 
@@ -98,7 +98,7 @@ def test_fit_2pl_rejects_extended_precision_value_that_would_round_to_binary_res
     responses = np.array([[0, widened], [1, 0]], dtype=np.longdouble)
 
     with pytest.raises(ValueError, match="integer category"):
-        fit_2pl(responses)
+        fit_2pl(responses, model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
     assert core_calls == []
 
@@ -115,7 +115,7 @@ def test_fit_2pl_rejects_oversized_logical_matrix_before_dense_work(
     )
 
     with pytest.raises(ValueError, match="at most 20,000,000 cells"):
-        fit_2pl(responses)
+        fit_2pl(responses, model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
     assert core_calls == []
 
@@ -141,7 +141,7 @@ def test_fit_2pl_rejects_one_item_ndarray_before_dense_conversion(
     )
 
     with pytest.raises(ValueError, match="at least two item columns"):
-        fit_2pl(responses)
+        fit_2pl(responses, model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
     assert dense_calls == []
     assert core_calls == []
@@ -164,7 +164,7 @@ def test_fit_2pl_rejects_builtin_single_item_rows_before_numpy_materialization(
     monkeypatch.setattr(twopl.np, "asarray", _unexpected_array)
 
     with pytest.raises(ValueError, match="at least two item columns"):
-        fit_2pl([[0.0]] * 10_000)
+        fit_2pl([[0.0]] * 10_000, model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
     assert array_calls == []
     assert core_calls == []
@@ -217,7 +217,7 @@ def test_fit_2pl_preserves_trusted_builtin_and_numpy_response_scalars(
         [
             [np.bool_(False), np.int8(1)],
             [np.float32(1.0), float("nan")],
-        ]
+        ], model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15
     )
 
     assert captured["yy"].dtype == np.float64

@@ -25,7 +25,14 @@ def _poly(n_cat=3, seed=1, n_persons=60, n_items=6):
 
 
 def _short(**kw):
-    base = {"max_cycles": 40, "burn_in": 10, "mh_steps": 2}
+    base = {
+        "max_cycles": 40,
+        "burn_in": 10,
+        "mh_steps": 2,
+        "target_accept": 0.3,
+        "tol": 1e-3,
+        "seed": 0x9E37_79B9_7F4A_7C15,
+    }
     base.update(kw)
     return base
 
@@ -106,54 +113,54 @@ def test_fit_mhrm_requires_rust_core():
     with patch("fast_mlsirm.fitstats._core_module", return_value=None), pytest.raises(
         RuntimeError
     ):
-        fit_mhrm(_binary(), 1)
+        fit_mhrm(_binary(), 1, max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
 
 
 def test_fit_mhrm_rejects_non_2d():
     with pytest.raises(ValueError):
-        fit_mhrm(np.zeros(6), 1)
+        fit_mhrm(np.zeros(6), 1, max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
 
 
 def test_fit_mhrm_rejects_dims_over_cap():
     with pytest.raises(ValueError):
-        fit_mhrm(np.zeros((5, 65)), confirmatory(np.eye(65, dtype=np.int64)))
+        fit_mhrm(np.zeros((5, 65)), confirmatory(np.eye(65, dtype=np.int64)), max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
 
 
 def test_fit_mhrm_rejects_non_integer_cycle_counts():
     with pytest.raises(ValueError):
-        fit_mhrm(_binary(), 1, max_cycles=1.5)
+        fit_mhrm(_binary(), 1, max_cycles=1.5, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError):
-        fit_mhrm(_binary(), 1, burn_in=np.array([10]))
+        fit_mhrm(_binary(), 1, burn_in=np.array([10]), max_cycles=2000, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
 
 
 def test_fit_mhrm_rejects_bad_seed():
     with pytest.raises(TypeError):
-        fit_mhrm(_binary(), 1, seed=True)
+        fit_mhrm(_binary(), 1, seed=True, max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3)
     with pytest.raises(TypeError):
-        fit_mhrm(_binary(), 1, seed=1.5)
+        fit_mhrm(_binary(), 1, seed=1.5, max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3)
     with pytest.raises(ValueError):
-        fit_mhrm(_binary(), 1, seed=-1)
+        fit_mhrm(_binary(), 1, seed=-1, max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3)
     with pytest.raises(ValueError):
-        fit_mhrm(_binary(), 1, seed=2**64)
+        fit_mhrm(_binary(), 1, seed=2**64, max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3)
 
 
 def test_fit_mhrm_rejects_non_finite_control():
     with pytest.raises(ValueError):
-        fit_mhrm(_binary(), 1, tol=np.inf)
+        fit_mhrm(_binary(), 1, tol=np.inf, max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, seed=0x9E3779B97F4A7C15)
 
 
 def test_fit_mhrm_rejects_bad_family():
     with pytest.raises(ValueError):
-        fit_mhrm(_binary(), 1, family="foo")
+        fit_mhrm(_binary(), 1, family="foo", max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
 
 
 def test_fit_mhrm_rejects_bad_n_cat_for_gpcm():
     with pytest.raises(ValueError):
-        fit_mhrm(_poly(), 1, family="gpcm", n_cat=2.5)
+        fit_mhrm(_poly(), 1, family="gpcm", n_cat=2.5, max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError):
-        fit_mhrm(_poly(), 1, family="gpcm", n_cat=1)
+        fit_mhrm(_poly(), 1, family="gpcm", n_cat=1, max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
     with pytest.raises(ValueError, match="between 2 and 64"):
-        fit_mhrm(_poly(), 1, family="gpcm", n_cat=65)
+        fit_mhrm(_poly(), 1, family="gpcm", n_cat=65, max_cycles=2000, burn_in=200, mh_steps=5, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
 
 
 def test_fit_mhrm_rejects_bad_2pl_values():

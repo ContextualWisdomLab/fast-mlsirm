@@ -52,7 +52,7 @@ def test_object_group_storage_fails_before_element_conversion_or_core(monkeypatc
     group = np.array([0, hostile], dtype=object)
 
     with pytest.raises(ValueError, match="group must be a numeric array"):
-        delta_plot(_responses(), group)
+        delta_plot(_responses(), group, alpha=0.05, max_iter=10)
 
     assert hostile.calls == 0
 
@@ -63,7 +63,7 @@ def test_text_group_storage_is_not_reinterpreted_as_population_identity(monkeypa
     group = np.array(["0", "1"], dtype=np.str_)
 
     with pytest.raises(ValueError, match="group must be a numeric array"):
-        delta_plot(_responses(), group)
+        delta_plot(_responses(), group, alpha=0.05, max_iter=10)
 
 
 @pytest.mark.parametrize(
@@ -79,4 +79,4 @@ def test_trusted_zero_one_group_storage_reaches_rust_boundary(monkeypatch, group
     monkeypatch.setattr(fitstats, "_core_module", _expected_core_discovery)
 
     with pytest.raises(_ReachedCore, match="trusted group evidence"):
-        delta_plot(_responses(), group)
+        delta_plot(_responses(), group, alpha=0.05, max_iter=10)

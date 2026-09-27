@@ -1876,7 +1876,7 @@ pub fn cat_select_item_device(
     let mut best_idx: Option<usize> = None;
     let mut best_info = f64::NEG_INFINITY;
     for (item, &value) in info.iter().enumerate() {
-        if selected.iter().any(|&adm| adm == item) {
+        if selected.contains(&item) {
             continue;
         }
         if !value.is_finite() {
@@ -2260,14 +2260,14 @@ pub(crate) fn poly_wle_terms(
 ///   * GRM: with `s_j = sigmoid(a theta + beta_{j-1})`, `s_0 = 1`, `s_K = 0`, `v_j = s_j (1 - s_j)`,
 ///     `E[l' l''] = -a^3 sum_k (v_k - v_{k+1})(v_k + v_{k+1}) = -a^3 (v_0^2 - v_K^2) = 0` by
 ///     telescoping.
-/// Checked numerically at 80-digit precision against fully numeric derivatives of `P` (K = 4 and
-/// K = 5, asymmetric non-centred parameters, off-centre theta): relative `|J - I'| <= 1.1e-30`. The
-/// WLE therefore coincides with the Jeffreys modal estimate here. The identity is used ONLY as a test
-/// oracle, never as an implementation shortcut: it is a property of a single slope per item with the
-/// logistic link and no lower asymptote, and it FAILS — verified at the same precision — for a graded
-/// model with per-boundary slopes (relative `|J - I'|` of 0.92 and 1.17 at the two thetas the test
-/// uses) and for the 3PL (0.47 at `c = 0.25`, the case [`score_wle`] already handles). Both figures are
-/// the values the shipped fixtures actually assert.
+///     Checked numerically at 80-digit precision against fully numeric derivatives of `P` (K = 4 and
+///     K = 5, asymmetric non-centred parameters, off-centre theta): relative `|J - I'| <= 1.1e-30`. The
+///     WLE therefore coincides with the Jeffreys modal estimate here. The identity is used ONLY as a test
+///     oracle, never as an implementation shortcut: it is a property of a single slope per item with the
+///     logistic link and no lower asymptote, and it FAILS — verified at the same precision — for a graded
+///     model with per-boundary slopes (relative `|J - I'|` of 0.92 and 1.17 at the two thetas the test
+///     uses) and for the 3PL (0.47 at `c = 0.25`, the case [`score_wle`] already handles). Both figures are
+///     the values the shipped fixtures actually assert.
 ///
 /// A CONSEQUENCE WORTH STATING: since the identity is exact here, an implementation that replaced `J`
 /// with a numerical derivative of `I` would be behaviour-preserving for GRM and GPCM, and no
@@ -2359,7 +2359,7 @@ pub fn score_wle_poly(
         return Err("slope and cat_params must be finite".into());
     }
     for (idx, &cat) in y.iter().enumerate() {
-        if observed.map_or(true, |o| o[idx]) && cat >= n_cat {
+        if observed.is_none_or(|o| o[idx]) && cat >= n_cat {
             return Err("observed responses must be in 0..n_cat".into());
         }
     }
@@ -2370,7 +2370,7 @@ pub fn score_wle_poly(
         return Err("tol must be finite and positive".into());
     }
 
-    let seen = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let seen = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     // (g, I) at theta for person p, where g = score + J/(2 I) is the Warm estimating function.
     let eval = |p: usize, theta: f64| -> (f64, f64) {
         let (mut score, mut info, mut jterm) = (0.0_f64, 0.0_f64, 0.0_f64);

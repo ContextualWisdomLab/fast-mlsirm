@@ -1065,6 +1065,8 @@ fn pl_ilsr_fixed_points() {
 /// lsr_rankings must bit-match lsr_pairwise on the induced win matrix
 /// (spec-review probe maxdiff 0.0).
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn pl_length2_equivalence() {
     let rk: Vec<usize> = vec![0, 1, 1, 2, 2, 0, 0, 2];
     let st: Vec<usize> = vec![0, 2, 4, 6, 8];
@@ -1362,6 +1364,8 @@ fn t1_ilsr_fixed_points() {
 /// lsr_top1 must bit-match lsr_pairwise on the induced win matrix
 /// (oracle probe maxdiff 0.0).
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn t1_pairwise_equivalence() {
     // 0>1, 1>2, 2>0, 0>2 as top-1 observations with one loser each.
     let wn: Vec<usize> = vec![0, 1, 2, 0];

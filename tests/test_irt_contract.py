@@ -356,10 +356,10 @@ def test_mlsirm_readiness_uses_missing_mask_before_fit() -> None:
     "fit_call",
     [
         lambda y: fit_binary(y, np.array([0]), FitConfig(max_iter=1)),
-        lambda y: fit_2pl(y, q=7, max_iter=1),
-        lambda y: fit_grm(y, n_cat=2, q=7, max_iter=1),
-        lambda y: fit_polytomous(y, n_cat=2, q_theta=7, max_iter=1),
-        lambda y: fit_rsm(y, n_cat=2, q_theta=7, max_iter=1),
+        lambda y: fit_2pl(y, q=7, max_iter=1, model=1, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15),
+        lambda y: fit_grm(y, n_cat=2, q=7, max_iter=1, model=1, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15),
+        lambda y: fit_polytomous(y, n_cat=2, model="grm", q_theta=7, max_iter=1, tol=1e-6),
+        lambda y: fit_rsm(y, n_cat=2, q_theta=7, max_iter=1, tol=1e-6),
     ],
 )
 def test_public_irt_fitters_reject_one_item_results(fit_call) -> None:

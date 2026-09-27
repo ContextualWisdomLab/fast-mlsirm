@@ -13,7 +13,7 @@ from .backend import (
 from .config import FitConfig, PenaltyConfig
 from .irt_contract import validate_irt_response_matrix
 from .math import logit, normalize_latent_positions, standardize
-from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
+from .objective import (get_model_flags, neg_loglik_and_grad, prepare_response,
                         validate_factor_id)
 from .types import FitResult, MLSIRMParams
 
@@ -731,7 +731,7 @@ def _pack(params: MLSIRMParams, model: str) -> np.ndarray:
     Only blocks the model variant estimates are included (discriminations and
     latent-space terms are omitted for the Rasch/MIRT variants respectively).
     """
-    free_alpha, uses_space = model_flags(model)
+    free_alpha, uses_space = get_model_flags(model)
     parts = [params.theta.ravel()]
     if free_alpha:
         parts.append(params.alpha.ravel())
@@ -754,7 +754,7 @@ def _unpack(x: np.ndarray, template: MLSIRMParams, model: str) -> MLSIRMParams:
     ``template``, filling fixed discriminations/latent-space terms with their
     inactive defaults for the variants that do not estimate them.
     """
-    free_alpha, uses_space = model_flags(model)
+    free_alpha, uses_space = get_model_flags(model)
     cursor = 0
 
     theta_size = template.theta.size

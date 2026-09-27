@@ -551,7 +551,7 @@ def test_fit_marginal_numpy_rejects_oversized_population():
             model="ULS2PLM", n_dims=1, latent_dim=1,
             pop={"kind": "multigroup", "group_id": np.array([0], dtype=np.int64),
                  "n_groups": 1_000_000_000},
-            q_theta=7, q_xi=7, q_u=7, max_iter=1,
+            q_theta=7, q_xi=7, q_u=7, max_iter=1, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -619,7 +619,7 @@ def test_fit_marginal_numpy_rejects_qmc_working_set():
         fit_marginal_numpy(
             np.zeros((16, 4)), np.ones((16, 4), bool), np.array([0, 0, 0, 0], dtype=np.int64),
             model="MLS2PLM", n_dims=1, latent_dim=2,
-            q_theta=7, q_xi=7, q_u=7, xi_rule="qmc", xi_points=1_000_000, m_steps=1, max_iter=1,
+            q_theta=7, q_xi=7, q_u=7, xi_rule="qmc", xi_points=1_000_000, m_steps=1, max_iter=1, tol=1e-5, eps_distance=1e-8, xi_seed=0
         )
 
 
@@ -870,7 +870,8 @@ def test_fit_testlet_rejects_empty_bank_before_native(monkeypatch):
         ({"tol": -1.0}, "tol"),
         ({"q_gamma": True}, "q_gamma"),
         ({"q_gamma": 7.5}, "q_gamma"),
-        ({"q_gamma": 8}, "q_gamma"),
+        # #1929: no node-count cap; q_gamma=8 is now accepted, only < 1 is not.
+        ({"q_gamma": 0}, "q_gamma"),
         ({"init_sigma2": np.inf}, "init_sigma2"),
         ({"init_sigma2": -1.0}, "init_sigma2"),
     ],
@@ -908,15 +909,23 @@ def test_fit_testlet_rejects_oversized_response_matrix_before_native(monkeypatch
         testlet.fit_testlet(np.zeros((2, 2)), np.array([0, 0]))
 
 
-@pytest.mark.parametrize("q", [0, 8, 1_000_000_000])
-def test_2pl_rejects_unsupported_quadrature_before_native(monkeypatch, q):
+@pytest.mark.parametrize(
+    ("q", "match"),
+    [
+        (0, "q must be >= 1"),
+        # #1929: no node-count cap on q itself; the resulting q**n_dims grid
+        # is still bounded fail-closed before native (_MAX_MIRT_GH_NODES).
+        (1_000_000_000, "node cap"),
+    ],
+)
+def test_2pl_rejects_unsupported_quadrature_before_native(monkeypatch, q, match):
     from fast_mlsirm import models
     from fast_mlsirm.twopl import fit_2pl
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
-    with pytest.raises(ValueError, match="q must be one of"):
+    with pytest.raises(ValueError, match=match):
         fit_2pl(
-            np.array([[1.0, 0.0]]), model=models.confirmatory(np.eye(2, dtype=np.int64)), q=q
+            np.array([[1.0, 0.0]]), model=models.confirmatory(np.eye(2, dtype=np.int64)), q=q, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15
         )
 
 
@@ -927,7 +936,7 @@ def test_2pl_rejects_more_than_three_dimensions_before_native(monkeypatch):
     monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
     with pytest.raises(ValueError, match="between 1 and 3"):
         fit_2pl(
-            np.array([[1.0, 0.0, 1.0, 0.0]]), model=models.confirmatory(np.eye(4, dtype=np.int64))
+            np.array([[1.0, 0.0, 1.0, 0.0]]), model=models.confirmatory(np.eye(4, dtype=np.int64)), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15
         )
 
 
@@ -995,7 +1004,7 @@ def test_polytomous_dif_rejects_unsafe_group_labels_before_native(
 
     monkeypatch.setattr(polytomous, "_core_module", lambda: _RejectPolyDifCore())
     with pytest.raises(ValueError, match="group_id"):
-        polytomous.dif_polytomous(np.array([[0.0], [1.0]]), group_id, 2)
+        polytomous.dif_polytomous(np.array([[0.0], [1.0]]), group_id, 2, model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
 
 
 @pytest.mark.parametrize(
@@ -1019,6 +1028,7 @@ def test_polytomous_dif_rejects_unsafe_studied_items_before_native(
             np.array([[0.0], [1.0]]),
             np.array([0, 1]),
             2,
+            model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05,
             studied_items=studied_items,
         )
 
@@ -1028,7 +1038,8 @@ def test_polytomous_dif_rejects_unsafe_studied_items_before_native(
     [
         ({"n_cat": 2.5}, "n_cat"),
         ({"model": "bad"}, "model"),
-        ({"q_theta": 8}, "q_theta"),
+        # #1929: no node-count cap; q_theta=8 is now accepted, only out-of-range is not.
+        ({"q_theta": 0}, "q_theta"),
         ({"max_iter": 1.5}, "max_iter"),
         ({"tol": np.nan}, "tol"),
         ({"fdr_q": 1.5}, "fdr_q"),
@@ -1041,9 +1052,11 @@ def test_polytomous_dif_rejects_unsafe_controls_before_native(
 
     monkeypatch.setattr(polytomous, "_core_module", lambda: _RejectPolyDifCore())
     n_cat = kwargs.pop("n_cat", 2)
+    base = dict(model="gpcm", q_theta=21, max_iter=200, tol=1e-5, fdr_q=0.05)
+    base.update(kwargs)
     with pytest.raises(ValueError, match=match):
         polytomous.dif_polytomous(
-            np.array([[0.0], [1.0]]), np.array([0, 1]), n_cat, **kwargs
+            np.array([[0.0], [1.0]]), np.array([0, 1]), n_cat, **base
         )
 
 def test_nominal_rejects_fractional_categories_before_native(monkeypatch):
@@ -1059,7 +1072,7 @@ def test_nominal_rejects_fractional_categories_before_native(monkeypatch):
         fit_nominal(
             np.array([[0.9], [1.9]]),
             n_cat=2,
-            model=models.confirmatory(np.ones((1, 1), dtype=np.int64)),
+            model=models.confirmatory(np.ones((1, 1), dtype=np.int64)), max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15
         )
 
 @pytest.mark.parametrize("factor_id", [np.array([0.5]), np.array([np.nan])])
@@ -1107,7 +1120,7 @@ def test_fit_gpcm_rejects_unbounded_category_count_before_quadrature():
         side_effect=AssertionError("oversized category count reached quadrature"),
     ):
         with pytest.raises(ValueError, match="at most"):
-            fit_gpcm_numpy(np.array([[0.0]]), n_cat=100_000)
+            fit_gpcm_numpy(np.array([[0.0]]), n_cat=100_000, q_theta=21, max_iter=80, tol=1e-6)
 
 
 class _RejectPolytomousCore:
@@ -1139,8 +1152,12 @@ def test_multidimensional_polytomous_rejects_unsafe_int64_cast_before_native(
             function(
                 np.array([[1e19]]),
                 n_cat=np.uint64(2**64 - 1),
+                model=1,
                 q=7,
                 max_iter=1,
+                tol=1e-6,
+                xi_points=4000,
+                xi_seed=0x9E3779B97F4A7C15,
             )
 
 
@@ -1154,7 +1171,7 @@ def test_unidimensional_polytomous_rejects_unsafe_int64_cast_before_native(
         warnings.simplefilter("error", RuntimeWarning)
         with pytest.raises(ValueError, match="n_cat"):
             polytomous.fit_polytomous(
-                np.array([[1e30]]), n_cat=10**40, q_theta=7, max_iter=1
+                np.array([[1e30]]), n_cat=10**40, model="grm", q_theta=7, max_iter=1, tol=1e-6
             )
 
 
@@ -1175,7 +1192,10 @@ def test_multidimensional_polytomous_rejects_unsafe_budgets_before_native(
     function = getattr(module, f"fit_{family}")
     with patch("fast_mlsirm.fitstats._core_module", return_value=_RejectPolytomousCore()):
         with pytest.raises(ValueError, match="max_iter|xi_points"):
-            function(np.array([[0.0]]), n_cat=2, q=7, **kwargs)
+            function(
+                np.array([[0.0]]), n_cat=2, model=1, q=7,
+                **{"max_iter": 500, "tol": 1e-6, "xi_points": 4000, "xi_seed": 0x9E3779B97F4A7C15, **kwargs},
+            )
 
 
 @pytest.mark.parametrize("function_name", ["fit_polytomous", "fit_lsirm_polytomous"])
@@ -1194,8 +1214,11 @@ def test_polytomous_fitters_reject_unsafe_budgets_before_native(
 
     monkeypatch.setattr(polytomous, "_core_module", lambda: _RejectPolytomousCore())
     function = getattr(polytomous, function_name)
+    extra = {"model": "grm", "tol": 1e-6}
+    if function_name == "fit_lsirm_polytomous":
+        extra["q_xi"] = 7
     with pytest.raises(ValueError, match="n_cat|max_iter"):
-        function(np.array([[0.0]]), q_theta=7, **kwargs)
+        function(np.array([[0.0]]), q_theta=7, **extra, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -1219,7 +1242,7 @@ def test_score_eap_rejects_unbounded_factor_id_before_quadrature(factor_id):
                 np.zeros(1),
                 np.zeros((1, 1)),
                 0.0,
-                model="MIRT",
+                model="MIRT", q_theta=21, q_xi=11, eps_distance=1e-8
             )
 
 
@@ -1238,7 +1261,7 @@ def test_score_eap_rejects_unbounded_explicit_dimensions_before_quadrature():
                 np.zeros((1, 1)),
                 0.0,
                 model="MIRT",
-                n_dims=100_000_000,
+                n_dims=100_000_000, q_theta=21, q_xi=11, eps_distance=1e-8
             )
 
 
@@ -1269,7 +1292,7 @@ def test_rsm_rejects_unbounded_controls_before_native(monkeypatch, kwargs):
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _CurrentHeadBombCore())
     with pytest.raises(ValueError, match="n_cat|max_iter"):
-        fit_rsm(np.array([[0.0], [1.0]]), **kwargs)
+        fit_rsm(np.array([[0.0], [1.0]]), **{"q_theta": 41, "max_iter": 500, "tol": 1e-6, **kwargs})
 
 
 @pytest.mark.parametrize(
@@ -1286,7 +1309,7 @@ def test_mixture_rejects_unbounded_controls_before_native(monkeypatch, kwargs):
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _CurrentHeadBombCore())
     with pytest.raises(ValueError, match="n_classes|n_starts|max_iter|mixture budget"):
-        fit_mixture(np.array([[0.0], [1.0]]), **kwargs)
+        fit_mixture(np.array([[0.0], [1.0]]), **{"model": "rasch", "n_starts": 1, "max_iter": 500, "tol": 1e-6, "seed": 0x2545F491, **kwargs})
 
 
 def test_mixture_rejects_aggregate_buffer_before_native(monkeypatch):
@@ -1295,7 +1318,7 @@ def test_mixture_rejects_aggregate_buffer_before_native(monkeypatch):
     monkeypatch.setattr(fitstats, "_core_module", lambda: _CurrentHeadBombCore())
     monkeypatch.setattr(mixture, "MAX_MIXTURE_BUFFER_CELLS", 1)
     with pytest.raises(ValueError, match="buffer"):
-        mixture.fit_mixture(np.array([[0.0], [1.0]]), n_classes=2)
+        mixture.fit_mixture(np.array([[0.0], [1.0]]), n_classes=2, model='rasch', n_starts=1, max_iter=500, tol=1e-6, seed=0x2545F491)
 
 
 @pytest.mark.parametrize(
@@ -1310,7 +1333,7 @@ def test_nominal_rejects_unbounded_controls_before_native(monkeypatch, kwargs):
     from fast_mlsirm.nominal import fit_nominal
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _CurrentHeadBombCore())
-    controls = {"n_cat": 2, **kwargs}
+    controls = {"n_cat": 2, "model": 1, "max_iter": 500, "tol": 1e-6, "xi_points": 4000, "xi_seed": 0x9E3779B97F4A7C15, **kwargs}
     with pytest.raises(ValueError, match="n_cat|max_iter|xi_points"):
         fit_nominal(np.array([[0.0], [1.0]]), **controls)
 
@@ -1327,7 +1350,7 @@ def test_2pl_rejects_unbounded_controls_before_native(monkeypatch, kwargs):
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _CurrentHeadBombCore())
     with pytest.raises(ValueError, match="max_iter|xi_points"):
-        fit_2pl(np.array([[0.0], [1.0]]), **kwargs)
+        fit_2pl(np.array([[0.0], [1.0]]), **{"model": 1, "max_iter": 500, "tol": 1e-6, "xi_points": 4000, "xi_seed": 0x9E3779B97F4A7C15, **kwargs})
 
 
 @pytest.mark.parametrize("method", ["eap", "map", "eapsum"])

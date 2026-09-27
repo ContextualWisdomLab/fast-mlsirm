@@ -51,8 +51,9 @@ def test_fit_facets_rejects_n_cat_range():
 
 
 def test_fit_facets_rejects_bad_q_theta():
+    # #1929: no node-count cap; q_theta=8 is now accepted, only q_theta < 1 is not.
     with pytest.raises(ValueError):
-        fit_facets(_poly3(), n_cat=3, q_theta=8)
+        fit_facets(_poly3(), n_cat=3, q_theta=0)
 
 
 def test_fit_facets_rejects_bad_max_iter():

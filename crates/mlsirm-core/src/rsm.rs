@@ -100,16 +100,16 @@ pub fn fit_rsm(
         }
     }
     for (idx, &c) in y.iter().enumerate() {
-        if observed.map_or(true, |o| o[idx]) && c >= n_cat {
+        if observed.is_none_or(|o| o[idx]) && c >= n_cat {
             return Err("response category out of range 0..n_cat-1".into());
         }
     }
     for i in 0..n_items {
-        if !(0..n_persons).any(|p| observed.map_or(true, |o| o[p * n_items + i])) {
+        if !(0..n_persons).any(|p| observed.is_none_or(|o| o[p * n_items + i])) {
             return Err(format!("item {i} has no observed responses"));
         }
     }
-    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     let (nodes, weights) = crate::quadrature::gh_rule(q_theta)
         .ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
     let count_cells = nodes
@@ -232,12 +232,12 @@ pub fn fit_rsm(
                 // With at least two categories and positive expected count, the
                 // score variance is positive and the Hessian is strictly negative.
                 let step = g / h;
-                let cur = item_ell(delta[i], &tau, &r[i], &nodes, n_cat);
+                let cur = item_ell(delta[i], &tau, &r[i], nodes, n_cat);
                 let mut al = 1.0f64;
                 let mut accepted = false;
                 for _ in 0..24 {
                     let cand = delta[i] - al * step;
-                    if item_ell(cand, &tau, &r[i], &nodes, n_cat) >= cur - 1e-12 {
+                    if item_ell(cand, &tau, &r[i], nodes, n_cat) >= cur - 1e-12 {
                         delta[i] = cand;
                         accepted = true;
                         break;
@@ -253,13 +253,13 @@ pub fn fit_rsm(
         // CM-2: joint Newton on the common tau (delta fixed), aggregated over items.
         //   g_m = -sum_i sum_nd sum_{k>=m} (r - n*P);  Hessian by finite differences of g.
         for _ in 0..25 {
-            let g = tau_gradient(&tau, &delta, &r, &nodes, n_items, n_cat);
+            let g = tau_gradient(&tau, &delta, &r, nodes, n_items, n_cat);
             let mut hess = vec![vec![0.0f64; kb]; kb];
             let eps = 1e-5;
             for j in 0..kb {
                 let mut tp = tau.clone();
                 tp[j] += eps;
-                let gj = tau_gradient(&tp, &delta, &r, &nodes, n_items, n_cat);
+                let gj = tau_gradient(&tp, &delta, &r, nodes, n_items, n_cat);
                 for a in 0..kb {
                     hess[a][j] = (gj[a] - g[a]) / eps;
                 }
@@ -272,13 +272,13 @@ pub fn fit_rsm(
             }
             let step = solve_small(hess, g.clone());
             // Backtracking on the aggregate objective so the shared-tau step is monotone.
-            let cur = total_ell(&delta, &tau, &r, &nodes, n_items, n_cat);
+            let cur = total_ell(&delta, &tau, &r, nodes, n_items, n_cat);
             let mut al = 1.0f64;
             let mut accepted = false;
             let mut max_step = 0.0f64;
             for _ in 0..24 {
                 let cand: Vec<f64> = (0..kb).map(|j| tau[j] - al * step[j]).collect();
-                if total_ell(&delta, &cand, &r, &nodes, n_items, n_cat) >= cur - 1e-12 {
+                if total_ell(&delta, &cand, &r, nodes, n_items, n_cat) >= cur - 1e-12 {
                     max_step = (0..kb).map(|j| (al * step[j]).abs()).fold(0.0, f64::max);
                     tau = cand;
                     accepted = true;

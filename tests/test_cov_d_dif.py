@@ -121,7 +121,7 @@ def test_sibtest_core_absent(monkeypatch):
     _disable_core(monkeypatch)
     responses, group = _binary_matrix()
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
-        dif.sibtest(responses, group)
+        dif.sibtest(responses, group, fdr_q=0.05, j_min=5)
 
 
 def test_raju_area_core_absent(monkeypatch):
@@ -129,7 +129,7 @@ def test_raju_area_core_absent(monkeypatch):
     z = np.zeros(2)
     with pytest.raises(RuntimeError, match="requires the compiled Rust core"):
         dif.raju_area(
-            np.ones(2), z, z, z, z, np.ones(2), z, z, z, z,
+            np.ones(2), z, z, z, z, np.ones(2), z, z, z, z, alpha=0.05,
         )
 
 

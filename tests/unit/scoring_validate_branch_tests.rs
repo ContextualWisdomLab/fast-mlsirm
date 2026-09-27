@@ -89,5 +89,6 @@ fn validate_bank_rejects_malformed_banks() {
         eps_distance: 1e-8,
     };
     assert!(score_eap(&overflow_bank, &[], &[], 0, &prior, 7, rule).is_err());
-    assert!(score_eap(&ok_bank(&a, &b, &z, &f), &y, &obs, 1, &prior, 3, rule).is_err());
+    // #1929: no node-count cap; q_theta=3 is now accepted, only q_theta=0 is not.
+    assert!(score_eap(&ok_bank(&a, &b, &z, &f), &y, &obs, 1, &prior, 0, rule).is_err());
 }

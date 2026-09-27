@@ -680,8 +680,8 @@ pub fn livingston_lewis(
     let tc = ((c - lower) / (upper - lower)).clamp(0.0, 1.0);
     let p_tp = beta_weighted_integral(a, b, tc, 1.0, |t| 1.0 - fail_prob(t));
     let p_fp = beta_weighted_integral(a, b, 0.0, tc, |t| 1.0 - fail_prob(t));
-    let p_ff = beta_weighted_integral(a, b, tc, 1.0, &fail_prob);
-    let p_tf = beta_weighted_integral(a, b, 0.0, tc, &fail_prob);
+    let p_ff = beta_weighted_integral(a, b, tc, 1.0, fail_prob);
+    let p_tf = beta_weighted_integral(a, b, 0.0, tc, fail_prob);
     let p_ii_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| fail_prob(t).powi(2));
     let p_ij_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| fail_prob(t) * (1.0 - fail_prob(t)));
     let p_jj_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| (1.0 - fail_prob(t)).powi(2));
@@ -853,8 +853,8 @@ fn hb_indexes(
     let tc = ((cut as f64 / n_items as f64 - lower) / (upper - lower)).clamp(0.0, 1.0);
     let p_tp = beta_weighted_integral(a, b, tc, 1.0, |t| 1.0 - fail(t));
     let p_fp = beta_weighted_integral(a, b, 0.0, tc, |t| 1.0 - fail(t));
-    let p_ff = beta_weighted_integral(a, b, tc, 1.0, &fail);
-    let p_tf = beta_weighted_integral(a, b, 0.0, tc, &fail);
+    let p_ff = beta_weighted_integral(a, b, tc, 1.0, fail);
+    let p_tf = beta_weighted_integral(a, b, 0.0, tc, fail);
     let p_ii_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| fail(t).powi(2));
     let p_ij_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| fail(t) * (1.0 - fail(t)));
     let p_jj_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| (1.0 - fail(t)).powi(2));

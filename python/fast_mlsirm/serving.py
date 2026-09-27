@@ -296,21 +296,33 @@ def _validate_bundle(bundle: Any) -> None:
     if type(quad) is not dict:
         raise ValueError("bundle quadrature must be an object")
     _require_exact_string_keys(quad, label="bundle quadrature")
+    # #1929: no node-count cap; the Rust core generates any n >= 1 rule on
+    # demand (Golub & Welsch, 1969). The grid-size bounds below (an
+    # overflow-safe repeated multiply-with-division-check, same technique as
+    # estimators.marginal._bounded_tensor_node_count) still apply so a
+    # hostile bundle cannot request an astronomical allocation.
     for qk in ("q_theta", "q_xi"):
         q_value = quad.get(qk)
-        if type(q_value) is not int or q_value not in {7, 11, 15, 21, 31, 41}:
-            raise ValueError(
-                f"bundle quadrature {qk} must be one of 7,11,15,21,31,41"
-            )
+        if type(q_value) is not int or q_value < 1:
+            raise ValueError(f"bundle quadrature {qk} must be an integer >= 1")
+
+    def _bounded_pow(base: int, exponent: int, *, limit: int) -> int:
+        total = 1
+        for _ in range(exponent):
+            if total > limit // max(base, 1):
+                return limit + 1
+            total *= base
+        return total
 
     # Latent-space models score on a tensor Gauss-Hermite grid of
     # q_xi ** latent_dim points; reject combinations that would allocate an
     # astronomically large grid (e.g. 41**8 ~ 8e12).
-    if model != "MIRT" and quad["q_xi"] ** latent_dim > 1_000_000:
+    q_xi_pow = _bounded_pow(quad["q_xi"], latent_dim, limit=1_000_000)
+    if model != "MIRT" and q_xi_pow > 1_000_000:
         raise ValueError("bundle q_xi ** latent_dim exceeds the serving grid limit")
     # The scoring core builds item-response tables of size
     # max(n_items, n_dims) * q_theta * n_xi; bound the product (55+ GB otherwise).
-    n_xi = 1 if model == "MIRT" else quad["q_xi"] ** latent_dim
+    n_xi = 1 if model == "MIRT" else q_xi_pow
     if max(n_items, n_dims) * quad["q_theta"] * n_xi > 50_000_000:
         raise ValueError(
             "bundle scoring-table size (items x q_theta x n_xi) exceeds the serving limit"

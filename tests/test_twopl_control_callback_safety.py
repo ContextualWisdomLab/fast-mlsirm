@@ -10,6 +10,14 @@ import pytest
 from fast_mlsirm.config import MAX_MAX_ITER, MAX_XI_POINTS
 from fast_mlsirm.twopl import fit_2pl
 
+_REQUIRED_DEFAULTS: dict[str, object] = {
+    "model": 1,
+    "max_iter": 500,
+    "tol": 1e-6,
+    "xi_points": 4000,
+    "xi_seed": 0x9E37_79B9_7F4A_7C15,
+}
+
 
 class _ExplosiveResponses:
     """Response sentinel that records forbidden materialization."""
@@ -106,7 +114,7 @@ def test_fit_2pl_rejects_controls_before_callbacks_or_data(
     )
 
     with pytest.raises(ValueError, match=message):
-        fit_2pl(responses, **{name: value})
+        fit_2pl(responses, **{**_REQUIRED_DEFAULTS, name: value})
 
     assert value.calls == []
     assert responses.calls == []
@@ -116,7 +124,8 @@ def test_fit_2pl_rejects_controls_before_callbacks_or_data(
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
-        ({"q": 13}, "q must be one of"),
+        # #1929: no node-count cap; q=13 is now accepted, only < 1 is not.
+        ({"q": 0}, "q must be >= 1"),
         ({"max_iter": 0}, "max_iter must be in"),
         ({"max_iter": MAX_MAX_ITER + 1}, "max_iter must be in"),
         ({"tol": 0.0}, "tol must be finite and > 0"),
@@ -151,7 +160,7 @@ def test_fit_2pl_rejects_control_boundaries_before_data(
     )
 
     with pytest.raises(ValueError, match=message):
-        fit_2pl(responses, **kwargs)
+        fit_2pl(responses, **{**_REQUIRED_DEFAULTS, **kwargs})
 
     assert responses.calls == []
     assert core_calls == []
@@ -180,7 +189,7 @@ def test_fit_2pl_rejects_lossy_tolerance_before_response_work(
     )
 
     with pytest.raises(ValueError, match="tol must be finite and > 0"):
-        fit_2pl(responses, tol=tol)  # type: ignore[arg-type]
+        fit_2pl(responses, tol=tol, model=1, max_iter=500, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)  # type: ignore[arg-type]
 
     assert responses.calls == []
     assert core_calls == []
@@ -207,7 +216,7 @@ def test_fit_2pl_rejects_lossy_longdouble_tolerance_before_response_work(
     tol = np.nextafter(one, np.longdouble(2), dtype=np.longdouble)
 
     with pytest.raises(ValueError, match="tol must be finite and > 0"):
-        fit_2pl(responses, tol=tol)
+        fit_2pl(responses, tol=tol, model=1, max_iter=500, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
     assert responses.calls == []
     assert core_calls == []
@@ -270,7 +279,7 @@ def test_fit_2pl_normalizes_supported_numpy_controls(
         max_iter=np.int64(2),
         tol=np.longdouble(0.5),
         xi_points=np.int64(100),
-        xi_seed=np.uint64(7),
+        xi_seed=np.uint64(7), model=1
     )
 
     assert type(captured["q"]) is int

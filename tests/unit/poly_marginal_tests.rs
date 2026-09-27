@@ -35,7 +35,8 @@ fn lsirm_rejects_unbounded_categories_and_iterations() {
 
 #[test]
 fn poly_marginal_boundaries_and_grm_paths_are_explicit() {
-    assert!(xi_tensor_grid(99, 1).is_err());
+    // #1929: no node-count cap; q_xi=99 is now accepted, only q_xi=0 is not.
+    assert!(xi_tensor_grid(0, 1).is_err());
     assert_eq!(xi_tensor_grid(41, 100).unwrap_err(), "xi grid too large");
     assert_eq!(
         xi_tensor_grid(41, 4).unwrap_err(),

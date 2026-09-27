@@ -198,7 +198,7 @@ def test_mmle_rust_matches_numpy_reference() -> None:
     r_a, r_b, r_theta, r_trace, r_converged = rust_mmle(
         y_filled.ravel(), observed.ravel(), n_persons, n_items, max_iter, tol
     )
-    ref = numpy_mmle(y_filled, observed, max_iter=max_iter, tol=tol)
+    ref = numpy_mmle(y_filled, observed, n_nodes=41, max_iter=max_iter, tol=tol, seed=1)
 
     assert r_converged
     assert ref["status"] == "converged"

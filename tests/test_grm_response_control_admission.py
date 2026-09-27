@@ -65,7 +65,8 @@ def _unexpected_core_discovery():
     ("override", "message"),
     [
         ({"n_cat": 1}, "n_cat must be between"),
-        ({"q": 13}, "q must be one of"),
+        # #1929: no node-count cap; q=13 is now accepted, only < 1 is not.
+        ({"q": 0}, "q must be >= 1"),
         ({"max_iter": 0}, "max_iter must be between"),
         ({"tol": 0.0}, "tol must be finite and > 0"),
         ({"xi_points": 0}, "xi_points must be between"),
@@ -79,7 +80,7 @@ def test_invalid_semantic_controls_fail_before_response_materialization(
 
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
     _ArraySentinel.reset()
-    kwargs = {"n_cat": 3}
+    kwargs = {"n_cat": 3, "model": 1, "max_iter": 500, "tol": 1e-6, "xi_points": 4000, "xi_seed": 0x9E3779B97F4A7C15}
     kwargs.update(override)
 
     with pytest.raises(ValueError, match=message):
@@ -94,7 +95,7 @@ def test_hostile_integer_subclasses_fail_without_callbacks(monkeypatch, name):
 
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
     _HostileInt.reset()
-    kwargs = {"n_cat": 3}
+    kwargs = {"n_cat": 3, "model": 1, "max_iter": 500, "tol": 1e-6, "xi_points": 4000, "xi_seed": 0x9E3779B97F4A7C15}
     value = 21 if name == "q" else 3
     if name == "max_iter":
         value = 5
@@ -117,7 +118,7 @@ def test_hostile_tolerance_fails_without_numeric_callback(monkeypatch):
     _HostileFloat.reset()
 
     with pytest.raises(ValueError, match="tol must be a real number"):
-        fit_grm(_ArraySentinel(), n_cat=3, tol=_HostileFloat())
+        fit_grm(_ArraySentinel(), n_cat=3, tol=_HostileFloat(), model=1, max_iter=500, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
     assert _HostileFloat.calls == 0
 
@@ -129,7 +130,7 @@ def test_complex_responses_fail_before_lossy_coercion_or_native_discovery(monkey
     responses = np.array([[0.0 + 1.0j, 1.0], [1.0, 2.0]], dtype=np.complex128)
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
-        fit_grm(responses, n_cat=3)
+        fit_grm(responses, n_cat=3, model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
 
 def test_object_responses_fail_before_element_numeric_coercion(monkeypatch):
@@ -140,7 +141,7 @@ def test_object_responses_fail_before_element_numeric_coercion(monkeypatch):
     responses = np.array([[_HostileFloat(), 1], [1, 2]], dtype=object)
 
     with pytest.raises(ValueError, match="responses must be a numeric array"):
-        fit_grm(responses, n_cat=3)
+        fit_grm(responses, n_cat=3, model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
     assert _HostileFloat.calls == 0
 
@@ -153,7 +154,7 @@ def test_infinite_responses_are_not_silently_reclassified_as_missing(monkeypatch
     responses = np.array([[0.0, bad], [1.0, 2.0]], dtype=np.float64)
 
     with pytest.raises(ValueError, match="responses must not contain infinity"):
-        fit_grm(responses, n_cat=3)
+        fit_grm(responses, n_cat=3, model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
 
 def test_exact_numpy_controls_and_real_responses_reach_dispatch_boundary(monkeypatch):
@@ -180,7 +181,7 @@ def test_exact_numpy_controls_and_real_responses_reach_dispatch_boundary(monkeyp
             max_iter=np.int64(5),
             tol=np.float64(1e-6),
             xi_points=np.int64(100),
-            xi_seed=np.uint64(7),
+            xi_seed=np.uint64(7), model=1
         )
 
     assert calls == 1

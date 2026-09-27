@@ -107,7 +107,8 @@ def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
     assert "permissions:\n      contents: write\n      actions: write" in release_job
     assert "gh workflow run publish-pypi.yml" in release_job
     assert 'DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}' in release_job
-    assert 'CONTROL_PLANE_COMMIT: ${{ github.sha }}' in release_job
+    assert 'git rev-parse "origin/$DEFAULT_BRANCH"' in release_job
+    assert "release commit must be an ancestor of the current default branch" in release_job
     assert '--ref "$DEFAULT_BRANCH"' in release_job
     assert '--ref "v$RELEASE_VERSION"' not in release_job
     assert '-f release_tag="v$RELEASE_VERSION"' in release_job
@@ -130,6 +131,8 @@ def test_release_asset_write_is_isolated_from_pypi_credentials() -> None:
     assert 'gh release upload "$RELEASE_TAG"' in assets
     assert "--clobber" not in assets
     assert "secrets.PIPY_TOKEN" not in assets
+    assert "release $RELEASE_TAG is immutable; skipping GitHub asset upload" in assets
+    assert ".immutable // false" in assets
 
     assert "environment: pypi" in publish
     assert "permissions:\n      contents: read" in publish
@@ -140,6 +143,7 @@ def test_release_asset_write_is_isolated_from_pypi_credentials() -> None:
 def test_pypi_publish_uses_a_pinned_package_owned_uploader() -> None:
     text = _workflow_text()
     publish = _job_block(text, "publish-pypi")
+    sdist = _job_block(text, "sdist")
 
     assert "python -m pip install" not in text
     assert "python -m twine upload" not in text
@@ -147,7 +151,9 @@ def test_pypi_publish_uses_a_pinned_package_owned_uploader() -> None:
     assert f"uses: pypa/gh-action-pypi-publish@{PYPI_PUBLISH_SHA}" in publish
     assert "password: ${{ secrets.PIPY_TOKEN }}" in publish
     assert "attestations: false" in publish
-    assert "skip-existing" not in publish
+    assert "skip-existing: true" in publish
+    assert "Ensure LICENSE is present in the sdist" in sdist
+    assert 'license_member = f"{root}/LICENSE"' in sdist
 
 
 def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> None:
@@ -156,9 +162,11 @@ def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> N
     publish = _job_block(text, "publish-pypi")
 
     # Release assets and PyPI are two independent publication sinks fed by the
-    # same verified build artifacts. A rerun after GitHub assets already exist
-    # must still be able to retry a previously failed PyPI publication rather
-    # than being skipped because immutable asset upload correctly fails closed.
+    # same verified build artifacts. Immutable releases skip asset upload
+    # without failing the job so a previously failed PyPI publication can be
+    # retried to a green overall run.
     assert "needs: [sdist, wheels]" in assets
     assert "needs: [sdist, wheels]" in publish
     assert "release-assets" not in publish.split("needs:", 1)[1].split("\n", 1)[0]
+    assert "skipping GitHub asset upload" in assets
+    assert "skip-existing: true" in publish

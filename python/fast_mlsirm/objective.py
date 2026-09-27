@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 
 from .backend import (
@@ -61,7 +63,7 @@ def validate_factor_id(factor_id: np.ndarray, n_items: int, n_dims: int) -> np.n
     return raw.astype(np.int64, copy=False)
 
 
-def model_flags(model: str) -> tuple[bool, bool]:
+def get_model_flags(model: str) -> tuple[bool, bool]:
     """Return ``(free_alpha, uses_space)`` capability flags for a model variant.
 
     ``free_alpha`` is false for the Rasch-type variants (``MLSRM``/``ULSRM``)
@@ -76,11 +78,25 @@ def model_flags(model: str) -> tuple[bool, bool]:
     return free_alpha, uses_space
 
 
-def linear_predictor(
+def model_flags(model: str) -> tuple[bool, bool]:
+    """Deprecated alias for :func:`get_model_flags`.
+
+    .. deprecated:: (ADR-0028) use :func:`get_model_flags` instead.
+    """
+    warnings.warn(
+        "model_flags is deprecated, use get_model_flags instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return get_model_flags(model)
+
+
+def compute_linear_predictor(
     params: MLSIRMParams,
     factor_id: np.ndarray,
-    model: str = "MLS2PLM",
-    eps_distance: float = 1e-8,
+    *,
+    model: str,
+    eps_distance: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return the model linear predictor and any distance matrix.
 
@@ -94,7 +110,7 @@ def linear_predictor(
             https://doi.org/10.1007/BF02295430
     """
     name = model.upper()
-    free_alpha, uses_space = model_flags(name)
+    free_alpha, uses_space = get_model_flags(name)
     a = params.a if free_alpha else np.ones_like(params.alpha)
     theta_factor = params.theta[:, factor_id]
 
@@ -118,6 +134,24 @@ def linear_predictor(
 
     eta = a[None, :] * theta_factor + params.b[None, :] + interaction
     return eta, distance
+
+
+def linear_predictor(
+    params: MLSIRMParams,
+    factor_id: np.ndarray,
+    model: str = "MLS2PLM",
+    eps_distance: float = 1e-8,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Deprecated alias for :func:`compute_linear_predictor`.
+
+    .. deprecated:: (ADR-0028) use :func:`compute_linear_predictor` instead.
+    """
+    warnings.warn(
+        "linear_predictor is deprecated, use compute_linear_predictor instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_linear_predictor(params, factor_id, model=model, eps_distance=eps_distance)
 
 
 def neg_loglik_and_grad(
@@ -164,9 +198,9 @@ def neg_loglik_and_grad(
     if model in {"ULS2PLM", "ULSRM"} and params.theta.shape[1] != 1:
         raise ValueError(f"{model} requires one trait dimension")
 
-    free_alpha, uses_space = model_flags(model)
+    free_alpha, uses_space = get_model_flags(model)
     a = params.a if free_alpha else np.ones_like(params.alpha)
-    eta, distance = linear_predictor(
+    eta, distance = compute_linear_predictor(
         params, factors, model=model, eps_distance=config.eps_distance
     )
     pi = sigmoid(eta)

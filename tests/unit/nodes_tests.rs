@@ -69,7 +69,8 @@ fn rqmc_shift_changes_points_but_not_moments() {
 
 #[test]
 fn invalid_rules_rejected() {
-    assert!(build_xi_nodes(XiRule::GaussHermite { q_xi: 12 }, 2).is_err());
+    // #1929: no node-count cap; q_xi=12 is now accepted, q_xi=0 is not.
+    assert!(build_xi_nodes(XiRule::GaussHermite { q_xi: 0 }, 2).is_err());
     assert!(build_xi_nodes(XiRule::GaussHermite { q_xi: 7 }, 4).is_err());
     assert!(build_xi_nodes(
         XiRule::Halton {

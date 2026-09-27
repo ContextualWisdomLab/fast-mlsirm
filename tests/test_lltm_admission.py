@@ -70,7 +70,7 @@ def test_complex_responses_fail_before_lossy_cast_or_native_discovery(monkeypatc
     q_design = np.array([[0.0], [1.0]], dtype=np.float64)
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
-        lltm.fit_lltm(responses, q_design)
+        lltm.fit_lltm(responses, q_design, max_iter=500, tol=1e-6)
 
 
 def test_complex_design_fails_before_lossy_cast_or_native_discovery(monkeypatch):
@@ -81,7 +81,7 @@ def test_complex_design_fails_before_lossy_cast_or_native_discovery(monkeypatch)
     q_design = np.array([[0.0 + 0.0j], [1.0 + 1.0j]], dtype=np.complex128)
 
     with pytest.raises(ValueError, match="q_design must be real-valued"):
-        lltm.fit_lltm(responses, q_design)
+        lltm.fit_lltm(responses, q_design, max_iter=500, tol=1e-6)
 
 
 def test_untrusted_controls_fail_before_callbacks_data_or_native_discovery(monkeypatch):
@@ -96,7 +96,7 @@ def test_untrusted_controls_fail_before_callbacks_data_or_native_discovery(monke
     )
     for kwargs, message in cases:
         with pytest.raises(ValueError, match=message):
-            lltm.fit_lltm(_ArrayProbe(), _ArrayProbe(), **kwargs)
+            lltm.fit_lltm(_ArrayProbe(), _ArrayProbe(), **{"max_iter": 500, "tol": 1e-6, **kwargs})
 
 
 def test_invalid_control_domains_fail_before_data_or_native_discovery(monkeypatch):
@@ -111,7 +111,7 @@ def test_invalid_control_domains_fail_before_data_or_native_discovery(monkeypatc
     )
     for kwargs, message in cases:
         with pytest.raises(ValueError, match=message):
-            lltm.fit_lltm(_ArrayProbe(), _ArrayProbe(), **kwargs)
+            lltm.fit_lltm(_ArrayProbe(), _ArrayProbe(), **{"max_iter": 500, "tol": 1e-6, **kwargs})
 
 
 def test_trusted_numpy_controls_preserve_native_marshalling(monkeypatch):

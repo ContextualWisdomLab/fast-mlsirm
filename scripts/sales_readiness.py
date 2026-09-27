@@ -62,9 +62,16 @@ REQUIRED_20B_PRODUCT_FILES = [
 ]
 
 REQUIRED_DOC_TOKENS = {
-    "README.md": [
+    # README.md is the PyPI long_description. Commercial, procurement, and
+    # release-governance vocabulary is internal boundary material and is gated
+    # in docs/, never in the public package description.
+    "docs/commercial_readiness.md": [
         "Commercial Readiness",
-        "Enterprise Sales Readiness",
+        "Seller Acceptance Checklist",
+        "Enterprise Sales Gate",
+        "Security",
+        "Support",
+        "Release Gate",
         "scripts/release_acceptance.py",
         "scripts/sales_readiness.py",
         "scripts/build_release_evidence_index.py",
@@ -73,14 +80,8 @@ REQUIRED_DOC_TOKENS = {
         "scripts/build_pr_queue_governance.py",
         "scripts/build_figma_evidence_sync.py",
     ],
-    "docs/commercial_readiness.md": [
-        "Seller Acceptance Checklist",
-        "Enterprise Sales Gate",
-        "Security",
-        "Support",
-        "Release Gate",
-    ],
     "docs/enterprise_sales_readiness.md": [
+        "Enterprise Sales Readiness",
         "Procurement Evidence",
         "Customer Acceptance Evidence",
         "Go/No-Go",
@@ -337,6 +338,49 @@ def _validate_doc_tokens(repo_root: Path) -> list[dict[str, object]]:
                 not missing,
                 "required enterprise sales-readiness language is present",
                 missing=missing,
+            )
+        )
+    return checks
+
+
+FORBIDDEN_PUBLIC_DESCRIPTION_TOKENS = {
+    "README.md": [
+        "Commercial Readiness",
+        "Enterprise Sales Readiness",
+        "KRW 2,000,000,000",
+        "20B product",
+        "buyer packet",
+        "Buyer demo",
+        "procurement",
+        "Procurement",
+        "due diligence",
+        "due-diligence",
+        "sales-readiness",
+        "sales readiness",
+        "PR queue governance",
+        "ROI evidence",
+    ]
+}
+
+
+def _validate_public_description_boundary(repo_root: Path) -> list[dict[str, object]]:
+    """Fail when internal commercial vocabulary reaches the published README."""
+    checks: list[dict[str, object]] = []
+    for relative, tokens in FORBIDDEN_PUBLIC_DESCRIPTION_TOKENS.items():
+        path = repo_root / relative
+        if not path.exists():
+            checks.append(
+                _check(f"public_boundary:{relative}", False, "document missing")
+            )
+            continue
+        text = _read_text(path)
+        leaked = [token for token in tokens if token in text]
+        checks.append(
+            _check(
+                f"public_boundary:{relative}",
+                not leaked,
+                "published package description is free of internal commercial vocabulary",
+                leaked=leaked,
             )
         )
     return checks
@@ -1550,6 +1594,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     checks: list[dict[str, object]] = []
     checks.extend(_validate_required_files(repo_root))
     checks.extend(_validate_doc_tokens(repo_root))
+    checks.extend(_validate_public_description_boundary(repo_root))
     if args.require_20b_product:
         checks.extend(
             _validate_20b_product_evidence(

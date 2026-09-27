@@ -29,7 +29,6 @@ _NUMPY_INTEGER_SCALAR_TYPES = (
 _NUMPY_FLOAT_SCALAR_TYPES = tuple(
     np.dtype(name).type for name in ("float16", "float32", "float64", "longdouble")
 )
-_SUPPORTED_RT_QUADRATURE_POINTS = (7, 11, 15, 21, 31, 41)
 _REAL_NUMERIC_DTYPE_KINDS = frozenset({"b", "i", "u", "f"})
 # RT calibration/person-fit materialize several dense arrays at once. Keep the
 # same 100k-axis / 20M-cell envelope used by the package's dense simulation
@@ -121,9 +120,11 @@ def _validated_quadrature(value: object) -> int:
     elif _is_exact_type(value_type, _NUMPY_INTEGER_SCALAR_TYPES):
         validated = int(value)
     else:
-        raise ValueError(f"q must be one of {_SUPPORTED_RT_QUADRATURE_POINTS}")
-    if validated not in _SUPPORTED_RT_QUADRATURE_POINTS:
-        raise ValueError(f"q must be one of {_SUPPORTED_RT_QUADRATURE_POINTS}")
+        raise ValueError("q must be an integer >= 1")
+    # #1929: no node-count cap; the Rust core generates any n >= 1 rule
+    # on demand (Golub & Welsch, 1969) and guards allocation overflow.
+    if validated < 1:
+        raise ValueError("q must be >= 1")
     return validated
 
 
@@ -394,7 +395,7 @@ def fit_speed_accuracy(
     ``alpha``/``beta`` are the lognormal time discrimination/intensity (e.g. from
     :func:`fit_response_times`). At least one paired observation and one observed
     item with non-zero accuracy discrimination are required to identify ``rho``.
-    ``q`` must be an exact Python/NumPy integer in ``{7, 11, 15, 21, 31, 41}``, and
+    ``q`` must be an exact Python/NumPy integer >= 1, and
     ``max_iter`` obeys the same exact integer ``1..MAX_MAX_ITER`` resource bound as
     standalone RT calibration. Returns a dict with ``rho``, ``sigma_tau``,
     ``s_theta2`` (a theta-metric diagnostic ~1), joint ``theta_eap``/``tau_eap``,

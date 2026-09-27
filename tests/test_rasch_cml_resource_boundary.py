@@ -30,7 +30,7 @@ def test_rasch_cml_rejects_oversized_exact_array_before_float64_materialization(
     monkeypatch.setattr(rasch_cml.np, "asarray", _forbid_numpy_materialization)
 
     with pytest.raises(ValueError, match="responses exceed 20,000,000 logical cells"):
-        rasch_cml.fit_rasch_cml(oversized)
+        rasch_cml.fit_rasch_cml(oversized, max_iter=100, tol=1e-8)
 
 
 def test_rasch_cml_rejects_oversized_numpy_row_before_sequence_stacking(
@@ -46,4 +46,4 @@ def test_rasch_cml_rejects_oversized_numpy_row_before_sequence_stacking(
     monkeypatch.setattr(rasch_cml.np, "asarray", _forbid_numpy_materialization)
 
     with pytest.raises(ValueError, match="responses exceed 20,000,000 logical cells"):
-        rasch_cml.fit_rasch_cml(responses)
+        rasch_cml.fit_rasch_cml(responses, max_iter=100, tol=1e-8)

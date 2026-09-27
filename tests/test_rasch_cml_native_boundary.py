@@ -78,7 +78,7 @@ def test_fit_rasch_cml_rejects_bad_shape_before_core_discovery(monkeypatch):
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
 
     with pytest.raises(ValueError, match="2-D persons x items"):
-        fit_rasch_cml(np.zeros(3))
+        fit_rasch_cml(np.zeros(3), max_iter=100, tol=1e-8)
 
 
 def test_fit_rasch_cml_rejects_hostile_controls_without_callbacks(monkeypatch):
@@ -89,9 +89,9 @@ def test_fit_rasch_cml_rejects_hostile_controls_without_callbacks(monkeypatch):
     _HostileFloat.calls = 0
 
     with pytest.raises(ValueError, match="max_iter"):
-        fit_rasch_cml(_binary(), max_iter=_HostileInt(10))
+        fit_rasch_cml(_binary(), max_iter=_HostileInt(10), tol=1e-8)
     with pytest.raises(ValueError, match="tol"):
-        fit_rasch_cml(_binary(), tol=_HostileFloat(1e-8))
+        fit_rasch_cml(_binary(), tol=_HostileFloat(1e-8), max_iter=100)
 
     assert _HostileInt.calls == 0
     assert _HostileFloat.calls == 0
@@ -104,9 +104,9 @@ def test_rasch_cml_rejects_lossy_extended_precision_tolerance_before_core(monkey
     tol = _lossy_longdouble()
 
     with pytest.raises(ValueError, match="tol"):
-        fit_rasch_cml(_binary(), tol=tol)
+        fit_rasch_cml(_binary(), tol=tol, max_iter=100)
     with pytest.raises(ValueError, match="tol"):
-        andersen_lr_test(_binary(), np.array([0, 0, 1, 1]), tol=tol)
+        andersen_lr_test(_binary(), np.array([0, 0, 1, 1]), tol=tol, max_iter=100)
 
 
 def test_andersen_preserves_distinct_longdouble_group_identity(monkeypatch):
@@ -138,7 +138,7 @@ def test_andersen_preserves_distinct_longdouble_group_identity(monkeypatch):
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
 
-    result = andersen_lr_test(_binary(), [lower, upper, lower, upper])
+    result = andersen_lr_test(_binary(), [lower, upper, lower, upper], max_iter=100, tol=1e-8)
 
     assert result["converged"] is True
     assert captured["n_groups"] == 2
@@ -176,7 +176,7 @@ def test_andersen_numpy_longdouble_group_array_preserves_identity(monkeypatch):
 
     result = andersen_lr_test(
         _binary(),
-        np.array([lower, upper, lower, upper], dtype=np.longdouble),
+        np.array([lower, upper, lower, upper], dtype=np.longdouble), max_iter=100, tol=1e-8
     )
 
     assert result["converged"] is True
@@ -221,7 +221,7 @@ def test_andersen_numpy_group_array_bulk_converts_scalars(monkeypatch):
 
     result = andersen_lr_test(
         _binary(),
-        np.array([0, 1, 0, 1], dtype=np.int64),
+        np.array([0, 1, 0, 1], dtype=np.int64), max_iter=100, tol=1e-8
     )
 
     assert result["converged"] is True
@@ -236,7 +236,7 @@ def test_andersen_rejects_bad_group_before_core_discovery(monkeypatch):
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core_discovery)
 
     with pytest.raises(ValueError, match="length-n_persons"):
-        andersen_lr_test(_binary(), np.array([0, 1]))
+        andersen_lr_test(_binary(), np.array([0, 1]), max_iter=100, tol=1e-8)
 
 
 def test_numpy_controls_reach_core_discovery_after_validation(monkeypatch):
@@ -270,6 +270,6 @@ def test_exact_longdouble_tolerance_preserves_compatibility(monkeypatch):
     monkeypatch.setattr(fitstats, "_core_module", missing_core)
 
     with pytest.raises(RuntimeError, match="fit_rasch_cml requires the compiled Rust core"):
-        fit_rasch_cml(_binary(), tol=np.longdouble(0.5))
+        fit_rasch_cml(_binary(), tol=np.longdouble(0.5), max_iter=100)
 
     assert calls == 1

@@ -535,7 +535,7 @@ fn minimum_cost_assignment(costs: &[f64], size: usize) -> Result<Vec<usize>, Str
     for column in 1..=size {
         assignment[p[column] - 1] = column - 1;
     }
-    if assignment.iter().any(|x| *x == usize::MAX) {
+    if assignment.contains(&usize::MAX) {
         return Err("assignment algorithm did not produce a perfect matching".into());
     }
     Ok(assignment)

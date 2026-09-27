@@ -60,7 +60,7 @@ def test_fit_rasch_cml_rejects_controls_before_response_materialization(
     _HostileResponses.calls = 0
 
     with pytest.raises(ValueError, match=message):
-        fit_rasch_cml(_HostileResponses(), **kwargs)
+        fit_rasch_cml(_HostileResponses(), **{"max_iter": 100, "tol": 1e-8, **kwargs})
 
     assert _HostileResponses.calls == 0
 
@@ -81,7 +81,7 @@ def test_andersen_rejects_controls_before_response_materialization(
     _HostileResponses.calls = 0
 
     with pytest.raises(ValueError, match=message):
-        andersen_lr_test(_HostileResponses(), np.array([0, 1]), **kwargs)
+        andersen_lr_test(_HostileResponses(), np.array([0, 1]), **{"max_iter": 100, "tol": 1e-8, **kwargs})
 
     assert _HostileResponses.calls == 0
 
@@ -102,6 +102,6 @@ def test_andersen_rejects_controls_before_group_materialization(
     _HostileGroup.calls = 0
 
     with pytest.raises(ValueError, match=message):
-        andersen_lr_test(_binary(), _HostileGroup(), **kwargs)
+        andersen_lr_test(_binary(), _HostileGroup(), **{"max_iter": 100, "tol": 1e-8, **kwargs})
 
     assert _HostileGroup.calls == 0

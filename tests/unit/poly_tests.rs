@@ -2859,6 +2859,8 @@ fn u3_binary_vdf(y: &[usize], n_persons: usize, n_items: usize) -> Vec<f64> {
 }
 
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn poly_u3_reduces_to_binary_vdf() {
     // At n_cat=2 the polytomous U3 must be identical to van der Flier's U3
     // (the "reduce to a trusted binary" correctness anchor).

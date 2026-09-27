@@ -125,19 +125,19 @@ def test_oakes_handles_multilevel_population(monkeypatch):
 
 def test_fit_mmle_2pl_rejects_mismatched_shapes():
     with pytest.raises(ValueError, match="identically shaped"):
-        fit_mmle_2pl(np.zeros((2, 3)), np.ones((2, 2), dtype=bool))
+        fit_mmle_2pl(np.zeros((2, 3)), np.ones((2, 2), dtype=bool), n_nodes=41, max_iter=500, tol=1e-6, seed=1)
 
 
 def test_fit_mmle_2pl_rejects_no_observations():
     with pytest.raises(ValueError, match="no observed responses"):
-        fit_mmle_2pl(np.zeros((2, 3)), np.zeros((2, 3), dtype=bool))
+        fit_mmle_2pl(np.zeros((2, 3)), np.zeros((2, 3), dtype=bool), n_nodes=41, max_iter=500, tol=1e-6, seed=1)
 
 
 def test_fit_mmle_2pl_reaches_max_iter_without_converging():
     rng = np.random.default_rng(3)
     y = (rng.random((40, 4)) < 0.5).astype(float)
     observed = np.ones_like(y, dtype=bool)
-    out = fit_mmle_2pl(y, observed, n_nodes=11, max_iter=1)
+    out = fit_mmle_2pl(y, observed, n_nodes=11, max_iter=1, tol=1e-6, seed=1)
     assert out["status"] == "max_iter_reached"
     assert out["n_iter"] == 1
 
@@ -147,7 +147,7 @@ def test_fit_mmle_2pl_handles_singular_item_hessian():
     y = (rng.random((30, 3)) < 0.5).astype(float)
     observed = np.ones_like(y, dtype=bool)
     observed[:, 2] = False  # item 2 has no observations -> zero expected counts
-    out = fit_mmle_2pl(y, observed, n_nodes=11, max_iter=3, ridge_a=0.0, ridge_b=0.0)
+    out = fit_mmle_2pl(y, observed, n_nodes=11, max_iter=3, ridge_a=0.0, ridge_b=0.0, tol=1e-6, seed=1)
     assert np.all(np.isfinite(out["a"][:2]))
 
 
@@ -159,7 +159,7 @@ def test_fit_mmle_2pl_newton_exhausts_inner_iterations():
     theta_rank = np.linspace(-4.0, 4.0, 80)
     y = (theta_rank[:, None] > np.array([-1.0, 0.0, 1.0])[None, :]).astype(float)
     observed = np.ones_like(y, dtype=bool)
-    out = fit_mmle_2pl(y, observed, n_nodes=11, max_iter=30)
+    out = fit_mmle_2pl(y, observed, n_nodes=11, max_iter=30, tol=1e-6, seed=1)
     assert np.isclose(out["a"].max(), 10.0)
 
 

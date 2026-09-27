@@ -469,9 +469,9 @@ fn rejects_invalid_inputs() {
         Device::Cpu
     )
     .is_err());
-    // unsupported quadrature
+    // zero quadrature (#1929: any n >= 1 is otherwise accepted, no fixed-table cap)
     let bad_q = MarginalConfig {
-        q_theta: 12,
+        q_theta: 0,
         ..MarginalConfig::default()
     };
     assert!(fit_marginal(

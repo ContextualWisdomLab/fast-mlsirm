@@ -54,7 +54,7 @@ pub fn assemble_test_form_greedy(
             }
         }
     }
-    for (_label, &maximum) in max_per_content {
+    for &maximum in max_per_content.values() {
         if maximum < 0 {
             return Err("content constraint counts must be non-negative".into());
         }

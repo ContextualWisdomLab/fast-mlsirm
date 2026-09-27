@@ -62,6 +62,47 @@ def test_read_json_object_rejects_rewrite_when_metadata_cannot_observe_it(
         bounded_json.read_json_object(path)
 
 
+def test_read_json_object_rejects_unrewindable_descriptor(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A descriptor that cannot be rewound cannot provide stable evidence."""
+    path = tmp_path / "artifact.json"
+    path.write_text('{"value":1}', encoding="utf-8")
+    monkeypatch.setattr(
+        bounded_json.os,
+        "lseek",
+        lambda *_args: (_ for _ in ()).throw(OSError("not seekable")),
+    )
+
+    with pytest.raises(ValueError, match="path changed during the bounded read"):
+        bounded_json.read_json_object(path)
+
+
+def test_read_json_object_normalizes_second_read_bound_failure(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed confirmation read reports unstable evidence, not its raw error."""
+    path = tmp_path / "artifact.json"
+    path.write_text('{"value":1}', encoding="utf-8")
+    original_read = bounded_json._read_bounded_descriptor
+    read_count = 0
+
+    def fail_confirmation_read(file_descriptor: int, *, byte_limit: int) -> bytes:
+        """Return the first read and fail the confirming read."""
+        nonlocal read_count
+        read_count += 1
+        if read_count == 2:
+            raise ValueError("confirmation exceeded bound")
+        return original_read(file_descriptor, byte_limit=byte_limit)
+
+    monkeypatch.setattr(
+        bounded_json, "_read_bounded_descriptor", fail_confirmation_read
+    )
+
+    with pytest.raises(ValueError, match="path changed during the bounded read"):
+        bounded_json.read_json_object(path)
+
+
 def test_parse_json_bounded_rejects_unencodable_utf8_string() -> None:
     """Literal surrogate code points fail with the package UTF-8 diagnostic."""
     content = '{"value":"' + chr(0xD800) + '"}'
@@ -110,3 +151,23 @@ def test_read_json_object_rejects_exponent_overflow_number(tmp_path) -> None:
 def test_parse_json_bounded_preserves_finite_scientific_notation() -> None:
     """Ordinary finite exponent notation remains interoperable JSON evidence."""
     assert bounded_json.parse_json_bounded('{"value":1.25e3}') == {"value": 1250.0}
+
+
+def test_parse_json_bounded_enforces_encoded_byte_ceiling() -> None:
+    """Multibyte text that passes the character bound still obeys byte limits."""
+    with pytest.raises(ValueError, match="maximum allowed size 4 bytes"):
+        bounded_json.parse_json_bounded('"한"', max_bytes=4)
+
+
+def test_parse_json_bounded_normalizes_decoder_recursion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct parsing exposes the package recursion diagnostic."""
+    monkeypatch.setattr(
+        bounded_json.json,
+        "loads",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RecursionError()),
+    )
+
+    with pytest.raises(ValueError, match="decoder recursion capacity"):
+        bounded_json.parse_json_bounded("{}")
