@@ -29,3 +29,7 @@ First WebGL LICENSE introduced ca07c9628d207b5cc560ee6eac32ceeb1c39a2ed on March
 ### E native validation completed, 2026-09-27 20:54 UTC
 
 Existing check_installed.py and check_native.py passed on notice-repaired E in a new exclusive offline uv CP312 environment. Installed notice hash, solve/inverse smoke and all 20 ELF dependency checks pass; no gfortran/quadmath loaded or DT_NEEDED. Receipts are in numpy-stable-source-path-repeat-20260928. Full numerical/ABI/provider acceptance and the published matrix remain incomplete. F remains on live combined handle 87273, compiling NumPy since 20:47:04 UTC.
+
+### E/F exact repeat completed, 2026-09-28 08:55 KST
+
+Original handle 87273 exited zero. OpenBLAS E/F identical, raw NumPy E/F wheel identical including 923 members, auditwheel-repaired E/F identical including 1042 members. See E-F-exact-comparison.json; no binary normalization. Notice-repaired E install/native checks passed. This is one Linux CP312 candidate pair and not published-matrix or zero-HOLD acceptance. Current GitHub REST core budget exhausted; actual reset response was 2026-09-27T23:57:49Z. Re-query current canary jobs after that instant, without dispatching replacements.
