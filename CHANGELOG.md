@@ -4,6 +4,11 @@
 
 ### Added
 
+- Cross-engine conformance HTML now exposes a visible skip-to-report link and
+  a programmatically focusable main target while preserving the report's
+  fail-closed `style-src 'none'` Content Security Policy. No inline style,
+  script, hidden focus treatment, or motion dependency is introduced (#2196).
+
 - Saved multiple-group bifactor and two-tier GRM fits can now produce
   per-person conditional `l_z`, posterior trait estimates, observed-item
   counts, and caller-threshold flags. Optional seeded model resampling gives

@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from html import escape
 import json
+from html import escape
 
 from .cross_engine_conformance import ConformanceInventory
-
 
 _CSP = (
     "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; "
     "img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; "
-    "style-src 'unsafe-inline'"
+    "style-src 'none'"
 )
 _DISCLAIMER = (
     "Numerical conformance evidence is not construct validity, fairness, or "
@@ -364,7 +363,6 @@ def render_conformance_report(manifest_json: str) -> tuple[str, str]:
         f'<meta http-equiv="Content-Security-Policy" content="{escape(_CSP, quote=True)}">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<title>Cross-engine conformance evidence</title>",
-        "<style>\n.skip-link { position: absolute; left: 8px; top: -80px; padding: 10px; background: Canvas; color: CanvasText; z-index: 10; transition: top 0.2s ease-in-out; text-decoration: none; font-weight: bold; }\n.skip-link:focus { top: 8px; }\n.skip-link:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }\nmain:focus:not(:focus-visible) { outline: none; }\n@media print { .skip-link { display: none !important; } }\n@media (prefers-reduced-motion: reduce) {\n  *, *::before, *::after {\n    animation-duration: 0.01ms !important;\n    animation-iteration-count: 1 !important;\n    transition-duration: 0.01ms !important;\n    scroll-behavior: auto !important;\n  }\n}\n</style>",
         "</head>",
         "<body>",
         '<a class="skip-link" href="#main-content">Skip to report content</a>',

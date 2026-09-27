@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from fast_mlsirm.cross_engine_conformance import (
     ComparisonEngine,
     ConformanceCapability,
@@ -22,7 +21,6 @@ from fast_mlsirm.cross_engine_report import (
     render_conformance_long_form_json,
     render_conformance_report,
 )
-
 
 _SHA_A = "a" * 64
 _SHA_B = "b" * 64
@@ -263,7 +261,7 @@ def test_long_form_json_rejects_tampered_manifest_before_projection() -> None:
 
 
 def test_report_exposes_skip_link_for_keyboard_accessibility() -> None:
-    """A conformance report must include a functional, accessible skip link."""
+    """A visible skip link must preserve the report's no-inline-style boundary."""
     html_text, _ = render_conformance_report(_canonical_json(_executed_inventory()))
 
     assert (
@@ -271,5 +269,6 @@ def test_report_exposes_skip_link_for_keyboard_accessibility() -> None:
         in html_text
     )
     assert '<main id="main-content" tabindex="-1">' in html_text
-    assert ".skip-link { position: absolute" in html_text
-    assert ".skip-link:focus { top: 8px; }" in html_text
+    assert "style-src &#x27;none&#x27;" in html_text
+    assert "<style>" not in html_text
+    assert "outline: none" not in html_text
