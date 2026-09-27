@@ -169,6 +169,26 @@ def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     }
 
 
+def residual_summary(y, residuals, *, rank, has_intercept):
+    """Native unweighted SSE, declared total SS, R² and adjusted R².
+
+    Source: statsmodels Developers (n.d.), RegressionResults source,
+    ssr/centered_tss/uncentered_tss/rsquared/rsquared_adj, lines2125–2237.
+    https://www.statsmodels.org/stable/_modules/statsmodels/regression/linear_model.html
+    Caller supplies matching fit residuals, design rank and intercept presence.
+    This validates array shape/finiteness, not fit provenance or inferential
+    assumptions. Zero total SS/overflow fail; negative R² is retained.
+    """
+    from .polytomous import _bounded_integer
+    values = _as_float64_vector(y, "y")
+    errors = _as_float64_vector(residuals, "residuals", expected_length=values.size)
+    rank = _bounded_integer(rank, "rank", 1, values.size - 1)
+    if type(has_intercept) is not bool:
+        raise ValueError("has_intercept must be a bool")
+    raw = regression_core().residual_summary(values, errors, rank, has_intercept)
+    return {key: float(raw[key]) for key in ("sse", "total_ss", "r_squared", "adjusted_r_squared")}
+
+
 def normal_wald_interval(estimate, se, *, alpha):
     """Return normal-Wald lower/upper endpoints and the critical value (Rust).
 

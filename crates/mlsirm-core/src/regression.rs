@@ -214,6 +214,39 @@ pub struct OlsFit {
     pub sigma2: f64,
 }
 
+/// Unweighted residual SSE, declared total SS, R² and adjusted R².
+/// Source actually read: statsmodels Developers (n.d.), RegressionResults,
+/// ssr/centered_tss/uncentered_tss/rsquared/rsquared_adj, lines2125–2237:
+/// <https://www.statsmodels.org/stable/_modules/statsmodels/regression/linear_model.html>.
+/// Caller declares design rank and intercept presence; this primitive does
+/// not establish that residuals came from that fit, nesting or valid inference.
+/// Zero total SS and nonfinite arithmetic are rejected; negative R² is retained.
+pub fn residual_summary(y: &[f64], residuals: &[f64], rank: usize, has_intercept: bool)
+    -> Result<(f64, f64, f64, f64), String>
+{
+    let n = y.len();
+    if n != residuals.len() || rank == 0 || n <= rank {
+        return Err("summary needs matching arrays and 0 < rank < n".to_owned());
+    }
+    if y.iter().chain(residuals).any(|v| !v.is_finite()) {
+        return Err("summary arrays must be finite".to_owned());
+    }
+    if has_intercept && y.iter().all(|v| *v == y[0]) {
+        return Err("summary has zero total SS for constant response".to_owned());
+    }
+    // Dividing before summing avoids overflow of an otherwise finite mean.
+    let center = if has_intercept { y.iter().map(|v| v / n as f64).sum::<f64>() } else { 0.0 };
+    let sse = residuals.iter().map(|v| v * v).sum::<f64>();
+    let total = y.iter().map(|v| (v - center).powi(2)).sum::<f64>();
+    let r2 = 1.0 - sse / total;
+    let adjusted = 1.0 - (n - usize::from(has_intercept)) as f64 / (n - rank) as f64 * (1.0 - r2);
+    if !center.is_finite() || !sse.is_finite() || !total.is_finite() || total <= 0.0
+        || !r2.is_finite() || !adjusted.is_finite() {
+        return Err("summary has zero total SS or nonfinite arithmetic".to_owned());
+    }
+    Ok((sse, total, r2, adjusted))
+}
+
 /// Linear contrast `c'β` under a supplied covariance matrix.
 #[derive(Clone, Debug)]
 pub struct ContrastResult {

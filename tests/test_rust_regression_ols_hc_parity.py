@@ -170,6 +170,40 @@ def test_regression_core_exports_without_scipy_rscript():
     assert "rscript" not in src.lower()
 
 
+def test_native_residual_summary_intercept_and_degenerate_contract():
+    """Validate source-defined summaries on actual OLS residuals and boundaries.
+
+    statsmodels RegressionResults actual source lines2125–2237 supplies the
+    centered/uncentered definitions. NumPy is an independent test oracle only.
+    """
+    from fast_mlsirm.regression import residual_summary, fit_ols_hc
+    import pytest
+    rng = np.random.default_rng(20260928)
+    y = rng.normal(size=40).astype(np.float64) + 2
+    for intercept in (True, False):
+        x = rng.normal(size=(40, 2)).astype(np.float64)
+        if intercept:
+            x = np.column_stack([np.ones(40), x])
+        fit = fit_ols_hc(x, y)
+        got = residual_summary(y, fit["residuals"], rank=x.shape[1], has_intercept=intercept)
+        oracle = y - x @ np.linalg.lstsq(x, y, rcond=None)[0]
+        sse = oracle @ oracle
+        centered = y - y.mean() if intercept else y
+        total = centered @ centered
+        r2 = 1 - sse / total
+        np.testing.assert_allclose(list(got.values()), [sse, total, r2, 1-(40-int(intercept))/(40-x.shape[1])*(1-r2)], rtol=1e-12, atol=1e-12)
+    assert residual_summary(y, y*10, rank=2, has_intercept=True)["r_squared"] < 0
+    for a, b, rank, intercept in [(np.ones(4), np.ones(4), 1, True),
+                                  (np.full(3, .1), np.ones(3), 1, True),
+                                  (np.zeros(4), np.ones(4), 1, False),
+                                  (y, y[:-1], 2, True), (y, y, 40, True),
+                                  (y, y, True, True), (y, y, 2, 1),
+                                  (y*np.inf, y, 2, True),
+                                  (np.full(4, 1e308), np.ones(4), 1, False)]:
+        with pytest.raises(ValueError):
+            residual_summary(a, b, rank=rank, has_intercept=intercept)
+
+
 def test_native_normal_wald_interval_matches_normal_reference_and_rejects_invalid_inputs():
     """Check native intervals against Python's independent normal quantile.
 
