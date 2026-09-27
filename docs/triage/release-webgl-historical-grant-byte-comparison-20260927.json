@@ -1158,7 +1158,8 @@
     "48 input raw SHA-256 values equal those in the licence-introduction snapshot: 47 XML plus one IDL. Seven inputs changed and two are absent at their original paths.",
     "Both original IDLs contain complete publisher permission notices. The remaining unmatched original XML list has eight entries.",
     "Original stylesheet imports standards.xsl and rev_utils.xsl match exact tree Git objects; bounded legal-word searches find no extra grant. This is not universal proof of absence.",
-    "All three root licence versions were read in full and are retained with exact raw byte SHA-256; no SPDX identifier or gate recognition is newly assigned by this receipt."
+    "All three root licence versions were read in full and are retained with exact raw byte SHA-256; no SPDX identifier or gate recognition is newly assigned by this receipt.",
+    "Historical maintainer evidence specifically confirms the original IDL grant. It distinguishes SDK software licensing from specification licensing and provides no blanket old extension XML grant."
   ],
   "gate_state": {
     "helper_sha": "f22ec999f0a5ceb3e953f305cfbef2ef8288622b",
@@ -1175,8 +1176,82 @@
     "No runtime code, licence selections, source notices, distributions or gate tests changed this turn. Hosted required checks remain separate."
   ],
   "next_actions": [
-    "Investigate immutable history/relocations and explicit historical scope for the eight unmatched XMLs; preserve their original bytes and contributors.",
+    "Obtain the exact 2018 Khronos specification terms and trace their explicit applicability to each of the eight unmatched original XMLs; preserve all original bytes and contributors.",
     "Complete independent OpenGL, EGL and ANGLE grant obligations before producing a source-bound aggregate notice for khronos_api.",
     "After full closure, require both authentic exact-source notice proof and consumer verification across every release distribution."
+  ],
+  "historical_scope_discussions": [
+    {
+      "number": 435,
+      "url": "https://github.com/KhronosGroup/WebGL/issues/435",
+      "title": "Add or update per-file licenses",
+      "created_at": "2013-12-04T23:07:33Z",
+      "merged_at": null,
+      "body_sha256": "bd8b8d87289ef65648bebccbe913050b1c854b55214d9b440e754553ee2319e5",
+      "comments_complete": true,
+      "comments": [
+        {
+          "author": "grorg",
+          "body_sha256": "f10555a545e9d8e6401fa0baeea942b76233c4aba8addc1448487a6904c6c0a4"
+        },
+        {
+          "author": "kenrussell",
+          "body_sha256": "94ddcf5ecee17228890325f3f4d751be61969eaa2e0ec6750edf340b15e10d38"
+        },
+        {
+          "author": "kdashg",
+          "body_sha256": "6f913c37b088f1ace3f86641417ac3c907275b608db7ca94c0926f650ca526cf"
+        },
+        {
+          "author": "kenrussell",
+          "body_sha256": "2f1ddf342b97b6b924f58e0407c6b7db8e281dddacd212314d63345d5147f112"
+        }
+      ],
+      "finding": "A maintainer rejected blanket licence assignment across unknown files and noted uncertainty for extensions source. The eventual issue closure reports Chromium whitelisting rather than complete per-file licence resolution."
+    },
+    {
+      "number": 2668,
+      "url": "https://github.com/KhronosGroup/WebGL/issues/2668",
+      "title": "Add a license on the spec document",
+      "created_at": "2018-07-14T02:36:52Z",
+      "merged_at": null,
+      "body_sha256": "e75fc45a7b463c1c13722ea7d22b486986577c860882341df305daf3efd956da",
+      "comments_complete": true,
+      "comments": [
+        {
+          "author": "pata-eth",
+          "body_sha256": "41d00f6cabcb07edf3bd04e01ce4a3c2bf08c45b56a11b526dec462c27db4309"
+        },
+        {
+          "author": "kenrussell",
+          "body_sha256": "6431f785e22bc5bbae48d02bc14e710709af157ca216f101fe228ff10464c8e4"
+        }
+      ],
+      "finding": "The historical request was specifically for WebGL 1.0/2.0 IDLs. A maintainer stated the same MIT licence used for software had been applied to those generated IDLs. This does not explicitly grant the old extension XML files."
+    },
+    {
+      "number": 2674,
+      "url": "https://github.com/KhronosGroup/WebGL/pull/2674",
+      "title": "Add license to webgl.idl and webgl2.idl.",
+      "created_at": "2018-07-19T21:30:18Z",
+      "merged_at": "2018-07-21T00:51:36Z",
+      "body_sha256": "8485de354ed3c0d29889c33642b60d521f4c29571ab1e8c6005860865d9c727b",
+      "comments_complete": true,
+      "comments": [
+        {
+          "author": "kenrussell",
+          "body_sha256": "f6038eb7e225bb1ee0dd7389528110631067ee698975c3a8d840b549549d06d2"
+        },
+        {
+          "author": "kdashg",
+          "body_sha256": "2bbebbcce5b0414be3a4e51b8db30b763ac3bb95a656dcbd82d56d63e0f52a94"
+        },
+        {
+          "author": "kenrussell",
+          "body_sha256": "16298cc191c308f9923a77f57ea658b166bd0dabc42b64aa032b0b0fc570f719"
+        }
+      ],
+      "finding": "The 2018-07-21 merged change deliberately applied the SDK MIT-style licence to the generated IDLs instead of the Khronos specification licence; maintainer comments report confirmation before merging."
+    }
   ]
 }
