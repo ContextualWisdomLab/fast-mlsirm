@@ -387,7 +387,7 @@ class TwoTierOakesSe:
     https://doi.org/10.1111/1467-9868.00188 (eq. 6, p. 480); Cai, L., Yang,
     J. S., & Hansen, M. (2011). Generalized full-information item bifactor
     analysis. *Psychological Methods, 16*(3), 221-248.
-    https://doi.org/10.1037/a0023350 (eq. 6, p. 227).
+    https://doi.org/10.1037/a0023350 (eq. 6, p. 225).
     """
 
     labels: list
@@ -421,7 +421,7 @@ def two_tier_oakes_se(
     ADR-0028 / #1929). Non-PD information returns ``se=None``.
 
     Implementation basis: Oakes (1999, eq. 6, p. 480); Cai et al. (2011,
-    eq. 6, p. 227); Gibbons et al. (2007, eq. 15).
+    eq. 6, p. 225); Gibbons et al. (2007, eq. 15).
     ``primary_correlation='identity'`` excludes fixed Phi from the information
     matrix (Cai, 2010, pp. 583-584; Oakes, 1999, eq. 6, p. 480).
 
