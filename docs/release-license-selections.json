@@ -4907,5 +4907,28 @@
       "path": "python/fast_mlsirm/_licenses/profiling-1.0.18-MIT.txt",
       "sha256": "b2334c2698e538a45b779ef6da699a5a2a3a3f15578449ca8c3b3e87597bcd7b"
     }
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "jni-sys-macros",
+    "version": "0.4.1",
+    "chosen": "MIT",
+    "rationale": "The checksum-bound original manifest, README and complete Rust source match immutable upstream 64d77b7a5f119d7b55b4e2c169a4668067ff59e6. Its manifest and repository README explicitly offer MIT or Apache-2.0. Preserve both complete unchanged root grants as a separate committed source notice. Central helper 03dc51d4d11c9e9539961f6a409b680d5876a829 authenticates exact archive, upstream and notice hashes; the consumer requires matching source proof and notice bytes in every distribution. This is not Strix or release approval.",
+    "archive_sha256": "38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264",
+    "license_members": [],
+    "upstream_licenses": [
+      {
+        "url": "https://raw.githubusercontent.com/jni-rs/jni-sys/64d77b7a5f119d7b55b4e2c169a4668067ff59e6/LICENSE-MIT",
+        "sha256": "1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/jni-rs/jni-sys/64d77b7a5f119d7b55b4e2c169a4668067ff59e6/LICENSE-APACHE",
+        "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08"
+      }
+    ],
+    "bundled_notice": {
+      "path": "python/fast_mlsirm/_licenses/jni-sys-macros-0.4.1-MIT.txt",
+      "sha256": "d94eb8f006bda6a622d61a8b26fa0b763c7fc3479b40a24e32ef928e596e280c"
+    }
   }
 ]
