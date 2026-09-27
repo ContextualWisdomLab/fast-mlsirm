@@ -361,6 +361,7 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     binding = (REPO_ROOT / "crates" / "fast-mlsirm-py" / "Cargo.toml").read_text(encoding="utf-8")
     assert re.search(r"(?m)^\[profile\.release\]\n(?:(?!\[).*\n)*?codegen-units = 1$", binding)
     assert "cargo_manifest_path: crates/fast-mlsirm-py/Cargo.toml" in text
+    assert "cargo_dev_manifest_path: crates/mlsirm-core/Cargo.toml" in text
 
 
 def _sdist_without_license(path: Path) -> None:
@@ -536,7 +537,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     admission = _job_block(workflow, "release-admission")
     assert "selected_wheel_filename: ${{ steps.bind-distributions.outputs.selected_wheel_filename }}" in record
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
-    assert "release-dependency-license-strix-gate.yml@4c23ba266b056711150f492aca756e11aaf97554" in central
+    assert "release-dependency-license-strix-gate.yml@e433a084c39eadafba1d0514cf20c01727e2144a" in central
     assert "needs: [verify-release, reproducibility-record]" in central
     assert "secrets: inherit" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission

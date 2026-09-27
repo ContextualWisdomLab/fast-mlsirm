@@ -959,13 +959,14 @@ jobs:
   dependency-gate:
     name: complete dependency licence and Strix gate
     needs: [verify-release, reproducibility-record]
-    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@4c23ba266b056711150f492aca756e11aaf97554
+    uses: ContextualWisdomLab/.github/.github/workflows/release-dependency-license-strix-gate.yml@e433a084c39eadafba1d0514cf20c01727e2144a
     with:
       source_repository: ${{ github.repository }}
       source_sha: ${{ needs.verify-release.outputs.release_commit }}
       ecosystems: python,cargo
       python_lock_path: requirements/package.txt
       cargo_manifest_path: crates/fast-mlsirm-py/Cargo.toml
+      cargo_dev_manifest_path: crates/mlsirm-core/Cargo.toml
       distribution_set_artifact_id: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_id }}
       distribution_set_artifact_digest: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_digest }}
       wheel_filename: ${{ needs.reproducibility-record.outputs.selected_wheel_filename }}
