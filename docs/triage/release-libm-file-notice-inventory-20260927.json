@@ -1280,5 +1280,23 @@
     "status": "NOT_ADMITTED"
   },
   "package_license_upstream_bytes": "MATCH",
-  "package_license_upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/LICENSE.txt"
+  "package_license_upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/LICENSE.txt",
+  "local_packaging": {
+    "source_sha": "64fcbb868fd84f491111125c7db76ec218a83ebb",
+    "artifacts": [
+      {
+        "file": "fast_mlsirm-0.11.4-cp314-cp314-macosx_11_0_arm64.whl",
+        "sha256": "4093f76a5218ed98ae7f1a42f10f96e2203b8c2e943442f0c8f3602c38927790",
+        "208_existing_selected_notices": "EXACT_MATCH",
+        "libm_notice_candidate": "EXACT_MATCH"
+      },
+      {
+        "file": "fast_mlsirm-0.11.4.tar.gz",
+        "sha256": "0c5afe97ac61a746d2a152175a736bbc940c63efd2606930157b417607dc68c3",
+        "208_existing_selected_notices": "EXACT_MATCH",
+        "libm_notice_candidate": "EXACT_MATCH"
+      }
+    ],
+    "limitations": "Local 0.11.4 CPython 3.14 macOS ARM only; preservation proves notice bytes, not licence gate acceptance or 0.11.5 release."
+  }
 }
