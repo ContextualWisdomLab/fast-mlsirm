@@ -463,6 +463,7 @@ def verify_build_scope(first: dict, second: dict, row: dict, source: Path,
 
 def verify_cargo_graph_closure(receipts: list[dict], source: Path, source_sha: str) -> None:
     """Recompute each target graph from the selected source and reject omitted nodes."""
+    source = source.resolve(strict=True)
     if (not re.fullmatch(r"[0-9a-f]{40}", source_sha) or subprocess.check_output(
             ["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip() != source_sha):
         raise ValueError("Cargo closure source checkout mismatch")

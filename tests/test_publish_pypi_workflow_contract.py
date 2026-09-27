@@ -1092,7 +1092,8 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
                 archive.writestr(path.name, path.read_bytes())
             archive.writestr("release-gate-distribution-set.json", json.dumps(manifest))
             archive.writestr("release-scope-evidence-set.json", json.dumps(scope_set))
-            archive.writestr("release-scope-identities.json", "[]")
+            if not (root / "record/release-scope-identities.json").exists():
+                archive.writestr("release-scope-identities.json", "[]")
         archives[record_artifact["id"]] = buffer.getvalue()
         record_artifact["digest"] = "sha256:" + hashlib.sha256(buffer.getvalue()).hexdigest()
         binding = {"key": "pypi/numpy@2.5.1", "name": "release-strix-binding-a2-"
@@ -1163,7 +1164,7 @@ def _run_admission(root: Path, step: str, listing: list[dict] | None = None) -> 
         verdict_artifact = by_name["release-dependency-sealed-evidence--full-set-verdict"]
         report = {"schema": "cwl.release-dependency-gate/1", "result": "PASS",
                   "stage": "full", "source_repository": "owner/repo", "source_sha": _RELEASE_COMMIT,
-                  "failures": [], "dependency_count": 1,
+                  "failures": [], "dependency_count": 1, "license_selections_sha256": "",
                   "dependencies": [{"key": binding["key"], "ecosystem": "pypi", "name": "numpy",
                                     "version": "2.5.1", "license": "BSD-3-Clause",
                                     "source_sha256": dependency_sha,
@@ -1720,3 +1721,170 @@ def test_build_capture_observes_actual_interpreter_before_snapshot(
         native.machine = lambda: "x86_64" if machine == "arm64" else "arm64"
         with pytest.raises(ValueError, match="actual build interpreter"):
             capture(tmp_path, environment)
+
+
+def _complete_admission_fixture(root: Path, monkeypatch) -> dict:
+    """Bind inert distributions to real Git blobs and locally resolved Cargo graphs."""
+    import json
+    import runpy
+    import tomllib
+    import zipfile
+
+    fixture = _admission_fixture(root)
+    source = root / "release-source"
+    project = ('[project]\nname="fast-mlsirm"\nversion="1.2.3"\n'
+               'requires-python=">=3.12"\ndependencies=["numpy==2.5.1"]\n').encode()
+    (source / "pyproject.toml").write_bytes(project)
+    (source / "Cargo.toml").write_text(
+        '[workspace]\nmembers=["crates/mlsirm-core", "crates/pyo3"]\n'
+        'exclude=["crates/fast-mlsirm-py"]\nresolver="2"\n')
+    for name in ("fast-mlsirm-py", "mlsirm-core", "pyo3"):
+        crate = source / "crates" / name
+        (crate / "src").mkdir(parents=True, exist_ok=True)
+        (crate / "src/lib.rs").write_text("// Inert Cargo metadata fixture; never compiled.\n")
+        manifest = f'[package]\nname="{name}"\nversion="0.11.4"\nedition="2021"\n'
+        if name == "fast-mlsirm-py":
+            manifest += ('[workspace]\n[dependencies]\n'
+                         'mlsirm-core={path="../mlsirm-core"}\npyo3={path="../pyo3"}\n')
+        elif name == "pyo3":
+            manifest += '[features]\nextension-module=[]\n'
+        (crate / "Cargo.toml").write_text(manifest)
+    wheel_manifest = source / "crates/fast-mlsirm-py/Cargo.toml"
+    for manifest in (source / "Cargo.toml", wheel_manifest):
+        subprocess.run(["cargo", "generate-lockfile", "--offline", "--manifest-path", str(manifest)],
+                       cwd=source, check=True, capture_output=True)
+    env = {**os.environ, "GIT_AUTHOR_NAME": "fixture", "GIT_COMMITTER_NAME": "fixture",
+           "GIT_AUTHOR_EMAIL": "fixture@example.invalid", "GIT_COMMITTER_EMAIL": "fixture@example.invalid"}
+    for args in (("init", "-q"), ("add", "."), ("commit", "-qm", "complete inert release source")):
+        subprocess.run(["git", "-C", str(source), *args], env=env, check=True, capture_output=True)
+    commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    previous_commit = _RELEASE_COMMIT
+    monkeypatch.setitem(globals(), "_RELEASE_COMMIT", commit)
+    transport = runpy.run_path(str(REPO_ROOT / "scripts/ci/release_artifact_transport.py"))
+    metadata = (b"Name: fast-mlsirm\nVersion: 1.2.3\nRequires-Python: >=3.12\n"
+                b"Requires-Dist: numpy==2.5.1\n")
+    for leg, filename in list(fixture["files"].items()):
+        old = root / "dist" / filename
+        name = filename.replace("pkg-1.2.3", "fast_mlsirm-1.2.3")
+        path = old.with_name(name)
+        if leg == "sdist":
+            with tarfile.open(path, "w:gz") as archive:
+                for member_name, body in (("PKG-INFO", metadata), ("pyproject.toml", project)):
+                    member = tarfile.TarInfo("fast_mlsirm-1.2.3/" + member_name)
+                    member.size = len(body)
+                    archive.addfile(member, io.BytesIO(body))
+        else:
+            with zipfile.ZipFile(old) as archive:
+                members = {item.filename: archive.read(item) for item in archive.infolist()}
+            with zipfile.ZipFile(path, "w") as archive:
+                for member_name, body in members.items():
+                    archive.writestr(member_name.replace("pkg-1.2.3", "fast_mlsirm-1.2.3"),
+                                     metadata if member_name.endswith("/METADATA") else body)
+        old.unlink()
+        fixture["files"][leg] = name
+    record_path = root / "record/reproducibility-record.tsv"
+    record = record_path.read_text().replace(previous_commit, commit)
+    lines = record.splitlines()
+    rows = {}
+    for line in lines[2:]:
+        values = line.split("\t")
+        leg = values[0]
+        values[3] = values[4] = transport["hash_file"](root / "dist" / fixture["files"][leg])
+        values[5] = fixture["files"][leg]
+        rows[leg] = dict(zip(lines[1].split("\t"), values))
+    record_path.write_text("\n".join(lines[:2]) + "\n" + "".join(
+        "\t".join(row.values()) + "\n" for row in rows.values()))
+    lock_path = source / "crates/fast-mlsirm-py/Cargo.lock"
+    locked = {(p["name"], p["version"], p.get("source")): p.get("checksum")
+              for p in tomllib.loads(lock_path.read_text())["package"]}
+    graphs = {}
+    scopes = []
+    for leg, row in rows.items():
+        path = root / "dist" / row["file"]
+        inventory = transport["bundle_inventory"](path, leg, commit, row["build_env"])
+        scopes.append(transport["scope_identity"](path, leg, source, commit, row["build_env"]))
+        folders = [root / "scope-evidence" / f"repro-digest-{leg}"]
+        if leg.startswith("universal2-"):
+            folders.append(root / "scope-evidence" / f"repro-macos-x86-{leg}")
+        for folder in folders:
+            (folder / f"{leg}.tsv").write_text("\t".join(row.values()) + "\n")
+            for receipt_path in folder.glob("*.json"):
+                receipt = json.loads(receipt_path.read_text().replace(previous_commit, commit))
+                if receipt_path.name.endswith(".bundle.json"):
+                    receipt = inventory
+                elif ".build-" in receipt_path.name:
+                    receipt["pyproject_sha256"] = transport["hash_file"](source / "pyproject.toml")
+                    receipt["cargo_lock_sha256"] = transport["hash_file"](lock_path)
+                    for triple in receipt["cargo_targets"]:
+                        if triple not in graphs:
+                            cargo = json.loads(subprocess.check_output([
+                                "cargo", "metadata", "--locked", "--offline", "--format-version", "1",
+                                "--filter-platform", triple, "--manifest-path", str(wheel_manifest),
+                                "--features", "pyo3/extension-module"], text=True, cwd=source))
+                            packages = {p["id"]: p for p in cargo["packages"]}
+                            graphs[triple] = sorted(({
+                                "name": packages[n["id"]]["name"], "version": packages[n["id"]]["version"],
+                                "source": packages[n["id"]]["source"],
+                                "checksum": locked[(packages[n["id"]]["name"], packages[n["id"]]["version"],
+                                                    packages[n["id"]]["source"])],
+                                "features": sorted(n["features"]),
+                            } for n in cargo["resolve"]["nodes"]),
+                                key=lambda p: (p["name"], p["version"], p["source"] or ""))
+                        receipt["cargo_targets"][triple] = graphs[triple]
+                elif receipt_path.name.endswith(".runtime.json"):
+                    receipt.update(file=row["file"], sha256=row["sha256"])
+                elif receipt_path.name.endswith(".consumer.json"):
+                    receipt.update(file=row["file"], published_sha256=row["sha256"],
+                                   consumer_sha256=row["sha256"], sdist_file=rows["sdist"]["file"],
+                                   sdist_sha256=rows["sdist"]["sha256"])
+                    receipt["metadata_members"] = {m["path"]: m["sha256"] for m in inventory["members"]
+                                                  if m["path"].endswith((".dist-info/METADATA", ".dist-info/WHEEL"))}
+                    (folder / f"{leg}.consumer.whl").write_bytes(path.read_bytes())
+                receipt_path.write_text(json.dumps(receipt, sort_keys=True) + "\n")
+    (root / "record/release-scope-identities.json").write_text(json.dumps(scopes) + "\n")
+    return fixture
+
+
+def test_complete_admission_consumer_reaches_final_hold_with_real_source_and_cargo(
+        tmp_path, monkeypatch):
+    _complete_admission_fixture(tmp_path, monkeypatch)
+    result = _run_admission(tmp_path, _BYTES_STEP)
+    assert result.returncode != 0, result.stdout
+    assert "release admission HOLD: platform-complete scope inventory is not verified" in result.stderr, result.stderr
+    assert not (tmp_path / "admitted-manifest.tsv").exists()
+
+
+@pytest.mark.parametrize("corruption,expected", [
+    ("source-lock", "source declaration differs from selected commit"),
+    ("omitted-cargo-node", "Cargo graph differs from selected source closure"),
+    ("asserted-complete-scope", "scope identity or unresolved evidence changed"),
+])
+def test_complete_admission_refuses_self_consistent_transport_with_unverified_scope(
+        tmp_path, monkeypatch, corruption, expected):
+    import json
+
+    fixture = _complete_admission_fixture(tmp_path, monkeypatch)
+    if corruption == "source-lock":
+        lock = tmp_path / "release-source/Cargo.lock"
+        lock.write_text(lock.read_text() + "\n# Changed after the source commit.\n")
+    elif corruption == "omitted-cargo-node":
+        leg = sorted(fixture["legs"])[0]
+        folder = tmp_path / "scope-evidence" / f"repro-digest-{leg}"
+        for build_pass in ("first", "second"):
+            path = folder / f"{leg}.build-{build_pass}.json"
+            record = json.loads(path.read_text())
+            record["cargo_targets"] = {triple: [node for node in graph if node["name"] != "pyo3"]
+                                       for triple, graph in record["cargo_targets"].items()}
+            path.write_text(json.dumps(record) + "\n")
+    else:
+        path = tmp_path / "record/release-scope-identities.json"
+        records = json.loads(path.read_text())
+        for record in records:
+            record["scopes"] = {scope: {"status": "PASS", "evidence": []} for scope in record["scopes"]}
+        path.write_text(json.dumps(records) + "\n")
+    # Rebuild the ZIPs and their authenticated digests; reject the source/closure
+    # mismatch rather than relying on an earlier archive transport failure.
+    result = _run_admission(tmp_path, _BYTES_STEP)
+    assert result.returncode != 0 and expected in result.stderr, result.stderr
+    assert "release admission HOLD:" not in result.stderr
+    assert not (tmp_path / "admitted-manifest.tsv").exists()
