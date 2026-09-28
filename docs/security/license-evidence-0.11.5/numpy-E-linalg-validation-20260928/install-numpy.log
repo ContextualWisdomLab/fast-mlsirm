@@ -1,0 +1,8 @@
+Using Python 3.12.11 environment at: /data/orca/workspaces/fmls-numpy-E-linalg-validation-20260928/.venv
+Resolved 1 package in 119ms
+Prepared 1 package in 315ms
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 1 package in 294ms
+ + numpy==2.5.2 (from file:///data/orca/workspaces/fmls-numpy-E-linalg-validation-20260928/input/numpy-2.5.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl)
