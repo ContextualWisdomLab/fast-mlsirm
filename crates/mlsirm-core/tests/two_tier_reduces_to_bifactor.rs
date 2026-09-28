@@ -145,6 +145,7 @@ fn two_tier_with_single_primary_matches_bifactor_fit() {
         2,
         N_CAT,
         &TwoTierGrmConfig {
+            estimate_primary_correlation: false,
             q_primary: 15,
             q_specific: 11,
             max_iter: 1000,
@@ -161,6 +162,7 @@ fn two_tier_with_single_primary_matches_bifactor_fit() {
         "two-tier P=1 fit must converge ({}); the P=1 model IS the bifactor model",
         two_tier.termination_reason
     );
+    assert_eq!(two_tier.primary_identification, "orthogonal");
 
     let mut worst_slope = 0.0f64;
     for i in 0..N_ITEMS {

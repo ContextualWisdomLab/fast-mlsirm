@@ -1,0 +1,258 @@
+# Release scope identity: declarations, not closure acceptance
+
+The release scope record extends the existing reproducibility artifact. The twelve wheel matrix
+legs and separate sdist produce the same distributions and TSV rows. The record
+job checks out the approved control commit for the helper and the exact release
+source for immutable declaration blobs, then writes `release-scope-identities.json`
+alongside the TSV. Its Ubuntu host is not evidence about target dependencies.
+
+Each identity binds the release SHA, distribution filename/hash, recorded build
+environment, target/Python/ABI/platform/WHEEL tags, actual METADATA or PKG-INFO
+member hash, and tracked lock/pyproject/Cargo manifest/requirements blob hashes.
+Wheel metadata must be unique and its WHEEL tags agree with its filename and leg.
+The macOS universal2 leg accepts maturin's per-architecture x86_64 and arm64
+tags alongside a required universal2 tag; the locally built CPython 3.14 wheel
+carried all three. A filename tag alone still does not prove that both binary
+slices and their native imports were inspected.
+The sdist has a separate source identity, unique PKG-INFO/pyproject members under
+one root, pyproject bytes equal to the release source, and PKG-INFO name,
+version and Python requirement equal to that source declaration. Every other
+regular sdist member must match a tracked file in the exact release commit;
+extra, changed and unsafe members refuse admission. These checks never
+execute package code. Existing transport hashing remains chunked.
+
+`release-admission` first requires the pinned central gate job to succeed, then
+verifies the selected immutable artifact IDs, ZIP and member digests. The
+central full-set verdict must match the same run and attempt, exact release
+source, all thirteen distribution rows, the thirteen scope artifact IDs and
+digests, and the complete Strix binding set. Its
+selected artifact also carries the central dependency report. Admission checks
+the report hash named by the verdict and requires each installed dependency's
+exact wheel archive hash to appear in the licensed, Strix-bound runtime archive set.
+Admission then consumes the JSON from the same selected reproducibility artifact and recomputes
+every identity using exact release blobs and transported distribution bytes. Missing,
+duplicate, changed, cross-platform or promoted records refuse admission before
+the remaining platform-scope HOLD. No name-only fallback is added.
+
+Runtime, build, dev, optional, native and bundled scope entries are explicitly
+`UNKNOWN` with null evidence. Complete declarations, an empty dependency array
+or an asserted boolean cannot certify any scope. In particular, hashing every
+Cargo lock does not establish the features/targets used in compiled wheels;
+METADATA hashes do not establish resolved marker or optional dependency closure.
+The central licence and Strix verdict has its own authenticated path. Admission
+now verifies transported runtime archives, installed build-tool snapshots,
+the pinned maturin executable, and direct native links against that verdict.
+Those receipts have not yet been promoted to complete scope identities.
+The current `requirements/package.txt` pins NumPy 2.5.2 while `uv.lock`
+installs NumPy 2.5.1. These are distinct build and runtime environments; each
+needs its own exact archive evidence. Matching their version strings would not
+establish either scope's coverage.
+
+## Evidence needed to remove the scope HOLD
+
+### Licence selection transport and remaining review
+
+The [2026-09-27 local Cargo audit](triage/release-cargo-license-audit-20260927.json)
+records the exact source/helper commits, lock and selection digests, all 156
+external archive hashes, captured licence member hashes and evaluator failures.
+At that snapshot 75 passed the licence-only evaluator and 81 failed. Failure
+codes include 55 missing selections, six missing bundled texts, sixteen
+unverified texts and six unparseable declarations; codes can overlap within a
+package. No Strix, Python dependency, native or whole-release approval is claimed.
+
+The six missing-text packages carry upstream commit identities in the receipt:
+block2, gl_generator, khronos_api, objc2, objc2-encode and spirv. The [exact-commit retrieval receipt](triage/release-upstream-license-evidence-20260927.json)
+now records root licence URLs, Git blob OIDs and SHA-256s for all six, with
+upstream manifests byte-identical to each archive's `Cargo.toml.orig`. This
+proves retrieval and manifest identity, not full crate-source coverage or
+licence applicability. The Apache root texts for gl-rs and rspirv match an
+already reviewed complete-text digest. The objc2 root document links MIT and
+explicitly raises unresolved Apple SDK-derived redistribution implications;
+it is not a complete MIT grant that may be substituted into capture. The [packaged source comparison](triage/release-upstream-source-comparison-20260927.json)
+now checks every compared source member against the exact upstream Git blob.
+`gl_generator` has fifteen direct matches. `khronos_api` has four direct matches
+and sixty-six matches to four pinned submodule commits: OpenGL-Registry,
+EGL-Registry, WebGL and ANGLE. Their licences need separate applicability
+checks; gl-rs root Apache text is not automatically inherited by these files.
+Package metadata is recorded separately without claiming regeneration, and
+four other packages' included Cargo.lock files remain unmatched. All six
+missing-text failures remain until valid source-bound evidence is accepted. The collector also
+matches objc2-foundation's `copying.rs` source modules as licence-like files;
+classifying them must not silently certify the package's missing licence basis.
+These failures cannot be resolved merely by adding MIT selections. Preserve the
+strict denial until the archive/source licence evidence is established.
+
+At source/control head `1366799b193ea0a8dbad630e0a05dbd3b49c84dd`,
+`cargo metadata --locked --format-version 1 --manifest-path
+crates/fast-mlsirm-py/Cargo.toml` reports 125 external packages whose declared
+licence contains `OR`. This is the unfiltered release graph, not one target's
+compiled dependency count.
+
+The pinned central control `03d023cea44042d268e99d14e38ed1735e050b80`
+uses helper `870fb1b948458276e0dc1cd5b723428532056906`. Both capture paths
+read `docs/release-license-selections.json` from the exact source commit,
+never from mutable checkout bytes. The fixed path must be a regular Git blob;
+duplicate dependency selections refuse capture. The dependency report binds
+the file SHA-256, and its hash is already sealed in the full-set verdict.
+Admission compares that digest with the immutable source blob and checks each
+selected licence, rationale and exact crate archive checksum against the
+authenticated dependency report. Missing or changed choices refuse admission.
+Absent files still leave `OR` dependencies refused before Strix credentials.
+
+Seventy selections now choose MIT only where every collected licence-like
+member exactly matches a previously reviewed full-text digest. Every archive
+was rehashed against the wheel-root Cargo lock. Each selection records its
+archive checksum, raw member hashes and the selected notice's packaged path
+and hash. Admission checks that each notice matches the committed source and
+is present unchanged in the hashed finished distribution inventory. The sdist
+consumer verifier also requires exact equality of packaged notice paths and
+hashes with the direct wheel; recalculating a forged consumer archive hash
+cannot authorize a missing or changed notice.
+
+The notices use the existing mixed Python package layout, without a new
+packaging hook. Local maturin 1.15.0 builds retained all seventy exact notice
+files in the arm64 CPython 3.14 wheel and sdist; this is not evidence for the
+other hosted wheel targets. Other selections and full-text reviews remain
+missing. Notice retention does not attest to Strix or whole-release approval.
+Each entry needs ecosystem, name,
+version, chosen expression and a rationale supported by inspected archive
+licence text. Transport tests do not establish those package-specific reviews.
+Automatic name-based permissive choices are not review evidence. Existing
+denied-licence and bundled-text checks remain required.
+
+The build jobs now hash every regular member of each finished distribution and
+place a bundle inventory beside the TSV in their existing `repro-digest-*`
+artifacts. The record job binds the exact thirteen digest-artifact IDs and
+archive digests to the source SHA, control SHA, run ID and attempt.
+Admission selects those IDs, verifies their archive and member digests, and
+compares each TSV row and bundle inventory with the downloaded distribution.
+A missing, duplicate, stale, foreign-run or changed digest artifact refuses
+release. These evidence
+artifacts remain separate from the thirteen distribution artifacts passed to
+the central licence and Strix gate.
+
+Each wheel build job now exports its locked runtime and `fuzz` requirements
+with pinned uv, downloads their hash-verified binary distributions, and installs
+them without network access or a reused cache into an isolated environment for
+the runner's Python. It then installs the exact finished wheel and checks the
+environment and native extension import. The selected `repro-digest-*` artifact
+contains the downloaded dependency wheels, their hashes, package lists,
+interpreter identity, requirements hash, `uv.lock` hash and imported extension
+hash. Admission rehashes each dependency wheel, checks its metadata against the
+installed package list, and binds the extension hash to the published wheel.
+A changed, missing or cross-target receipt refuses admission before the scope
+HOLD. Admission also recomputes the `uv export --all-extras` dependency body
+from the exact release source and refuses a requirements file that omits a
+declared optional dependency. The macOS universal2 receipt exercises the
+runner architecture only; it
+does not prove installation on its other binary slice. The central gate
+prescreens each transported runtime wheel SHA before Strix, scans a distinct
+fixture for each approved SHA, and seals the licence report and Strix artifact
+identities into its full-set verdict. Admission checks that set against the
+twelve primary installed-wheel receipts and three Intel macOS receipts.
+A missing or mismatched platform wheel
+remains HOLD.
+
+Each wheel build now records the target-filtered Cargo graph, features, selected
+wheel-crate lock hash, and Rust/Python/maturin tool versions in its actual
+container or native runner. It also hashes the actual RECORD-listed files of
+each Python distribution visible to the interpreter used by that build,
+separately from the runtime dependency install. Both build passes must agree,
+and admission checks the receipts against the release source. Before any future
+positive admission, it also recomputes all five target Cargo graphs from that
+source and requires exact node and feature equality with the twelve wheel
+receipts. The sdist runner records the same
+tool identities for both packaging passes and explicitly records no compiled
+Cargo graph. The action now requests maturin 1.15.0,
+matching the version in `requirements/package.txt`; each build receipt also checks
+the executable hash against the corresponding official release asset. The
+standalone executable's licence and Strix review is distinct from the
+PyPI package review and is now sealed in the central verdict. The sdist and
+wheel builds still need hosted confirmation of their collected build snapshots
+and complete target-specific native dependency evidence.
+Each wheel target now also rebuilds from the same-run sdist after checking its
+digest and every packaged source member against the release commit. The separate
+consumer wheel and receipt stay in that target's immutable scope artifact;
+admission checks their hashes and the wheel metadata against the published wheel.
+The two native extension hashes need not match because build paths can differ.
+The target runner also installs the consumer wheel in a separate environment
+using the already captured hash-locked dependency archives. Its receipt records
+the installed package set and imported extension hash; admission compares both
+with the target runtime and consumer wheel evidence. Hosted target results and
+the remaining build/development dependency closure still need verification.
+File hashes establish the bundled bytes. The central gate now checks direct
+native links in finished wheels, runtime dependency archives, build-tool
+snapshots, and pinned maturin assets; this does not prove that every supported
+runtime architecture can install and import the wheel.
+Admission now refuses a published or consumer wheel with an additional
+recognized native binary, including ELF, PE, Mach-O and other checked headers
+under a non-library filename.
+An Intel macOS job now captures a separate installed-dependency and import
+receipt for each universal2 wheel. The reproducibility record waits for those
+three jobs. Their artifacts are now in the immutable selected set; the central
+licence and Strix verdict binds their x86_64-specific dependency archive bytes
+and rejects a native wheel with the wrong architecture before deduplication.
+The same target-specific acceptance check must cover all twelve hosted wheel legs.
+Admission must validate those claims against the corresponding distribution
+SHA and build environment before the scope HOLD can be removed.
+
+The six scopes have distinct sources of truth:
+
+- **Runtime and optional Python:** record the target Python interpreter and
+  installed or otherwise fully resolved distribution files, versions, markers,
+  extras and hashes. Compare them with the wheel's `Requires-Dist` and the
+  applicable `uv.lock` resolution. The lock is universal; its mere presence is
+  not a target installation. The `fuzz` extra now limits Atheris to its locked
+  CPython/Linux x86_64 wheel targets; other targets retain Hypothesis only.
+  The target installation receipt exercises this marker on the runner. It is
+  not yet promoted to an accepted scope identity. The admission verifier now
+  compares wheel and sdist dependency metadata with the committed source for
+  every release target and extra using the hash-locked packaging parser. This
+  runs before the final scope HOLD; it does not yet certify the full runtime
+  closure. The pinned maturin release legitimately rewrites marker names and
+  order, so a raw string comparison would reject valid distributions.
+- **Build and dev:** record the build environment's installed Python tools and
+  target-filtered Cargo resolution with the features used by the wheel build.
+  `requirements/package.txt` and `Cargo.lock` constrain these scopes but do not
+  prove which packages the build loaded. For Linux wheels, collect inside the
+  digest-pinned manylinux container used by `maturin-action`; the surrounding
+  runner's Python and Cargo inventories describe a different environment.
+  The sdist tool receipts, observed installed-file hashes, and wheel Cargo
+  graphs cover part of this requirement. The wheel-root lock and unfiltered
+  release graph each contain 158 package identities at this source revision;
+  the five release-target graphs cover 133, while 25 are gated to other targets.
+  The root workspace declares `proptest` for tests, outside the wheel-root
+  release graph; the development-scope decision must explicitly classify that
+  exclusion. File hashes do not attest to files
+  omitted from an installed distribution's RECORD, licence review, Strix
+  results, or the full dev environment.
+- **Native and bundled:** inspect every binary and packaged library in the
+  *finished* wheel on its target runner. Record imported shared-library names,
+  resolved paths or explicit system-provided identities, and hashes of bundled
+  files. A source manifest or Linux-only inspection cannot establish the macOS
+  and Windows wheels' native closure. The macOS `universal2` wheel contains two
+  architecture slices; evidence for one runner architecture does not establish
+  the other slice.
+
+The validator must require a complete, nonempty evidence record for each
+applicable scope and compare it with the exact distribution and target. Until
+target-side producers, immutable transfer and negative tests exist, every
+`UNKNOWN` entry continues to refuse admission. The current `uv.lock` and
+`requirements/package.txt` pin different NumPy versions; they describe
+different environments and must not be silently substituted for each other.
+An sdist describes future target builds rather than one installed runtime;
+its inventory must distinguish the inspected source/build environment from
+platform-dependent consumer resolutions instead of claiming one universal
+runtime closure.
+
+The tool semantics behind this split are documented by the
+[uv universal-resolution guide](https://docs.astral.sh/uv/concepts/resolution/),
+[Cargo metadata reference](https://doc.rust-lang.org/cargo/commands/cargo-metadata.html)
+and [auditwheel's binary inspection description](https://github.com/pypa/auditwheel).
+
+Backward compatibility: prior reproducibility artifacts lacking the JSON cannot
+be admitted. The trusted control commit must carry the updated helper and
+workflow together. The scope HOLD and tag/publish ordering remain. Focused
+synthetic tests exercise the actual workflow producer, ID-bound transport,
+central-verdict comparison and scope-consumer blocks; they do not certify real
+target dependencies. No hosted acceptance is claimed.
