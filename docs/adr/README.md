@@ -26,7 +26,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0007](0007-multilevel-multiple-membership-temporal.md) | Proposed | Multilevel, cross-classified, multiple-membership and temporal structure are first-class; Rust estimators require recovery evidence before production release. |
 | [0008](0008-true-parameter-recovery-ci.md) | Accepted | True-parameter recovery/coverage, not correlation alone, is the core scientific CI evidence for numerical estimators. |
 | [0009](0009-adaptive-rotation-selection.md) | Accepted | Protected main uses a Rust criterion registry, deterministic multi-start and criterion-neutral empirical selection; no universal best criterion or global-optimum claim. GPU/additional-criterion expansion remains separately gated. |
-| [0010](0010-llm-orchestration-and-credentials.md) | Accepted | Model-backed automation uses provider-neutral boundaries, NVIDIA NIM credentials where needed, and never uses Copilot credentials for development scheduling. |
+| [0010](0010-llm-orchestration-and-credentials.md) | Superseded | Historical provider-neutral judge boundary and former direct-provider credential policy; provider credentials/GitHub routing are superseded by ADR-0101. |
 | [0011](0011-canonical-pyo3-public-export-registry.md) | Proposed | Future Rust-backed features converge on one reviewed PyO3/public-export registry instead of competing extension initializers/import rewrites. |
 | [0012](0012-purpose-limited-sensitive-data.md) | Accepted | Preserve valid measurement linkage through purpose-limited sensitive-data handling rather than blanket masking or raw-data proliferation. |
 | [0013](0013-continuous-execution-and-documentation-governance.md) | Proposed | Keep autonomous work work-conserving and enforce one canonical cross-cutting documentation writer with explicit maturity states. |
@@ -46,6 +46,7 @@ A conversation, issue, PR body, design note, or paper summary is not an Accepted
 | [0028](0028-public-api-naming-and-defaults-policy.md) | Proposed | One verb-first naming convention and one unsourced-defaults policy (precision controls, decision thresholds, seeds, model choice) for every public `fast_mlsirm` callable and PyO3 entry point. |
 | [0029](0029-central-release-publish-gap-guard.md) | Proposed | Keep local release-tag/publish-pypi bodies as default; document central dual-path contract; add idempotent PyPI gap-guard; cut over only after one successful central release. |
 | [0100](0100-adaptive-contextual-orchestrator-default.md) | Accepted | contextual-orchestrator adaptive mode is the injected LLM-judge default while transport ownership stays upstream. |
+| [0101](0101-contextual-orchestrator-gateway-credential-boundary.md) | Proposed | Provider credentials and routing stay in contextual-orchestrator; model-backed Actions consume the central `orchestrator/free` gateway and mutable upstream source is not a production dependency. |
 
 ## ADR completeness rule
 
