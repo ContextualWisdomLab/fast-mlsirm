@@ -7,8 +7,9 @@ submodule) plus the PyO3 entry points compiled from
 ``crates/fast-mlsirm-py``. Repository module discovery is static: the tool
 imports only the fixed ``fast_mlsirm`` package surface after installing a
 stub ``fast_mlsirm._core`` and parses any otherwise-unloaded submodule from
-source instead of importing a discovered module name. It does not require a
-built Rust extension and does not invoke cargo/maturin.
+source instead of importing a discovered module name. A source path is parsed
+only when its resolved location stays inside ``python/fast_mlsirm``.
+It does not require a built Rust extension and does not invoke cargo/maturin.
 
 Usage:
     python tools/inventory_public_api.py [--date YYYYMMDD]
@@ -84,6 +85,21 @@ def _is_public_module(module_name: str) -> bool:
     """Whether a discovered source module is public by package naming convention."""
     parts = module_name.split(".")[1:]
     return bool(parts) and all(not part.startswith("_") for part in parts)
+
+
+def _is_contained_source(path: Path, root: Path) -> bool:
+    """Whether ``path`` resolves to a regular file that stays inside ``root``.
+
+    Discovery walks the package tree, so a symlink planted inside that tree can
+    point at a file outside the repository. Inventory parses only paths whose
+    resolved location remains under the package root.
+    """
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+    return resolved.is_file()
 
 
 def _ast_default(node: ast.expr | None) -> str:
@@ -355,6 +371,8 @@ def collect_python_rows() -> list[dict]:
     # object. Otherwise parse its top-level declarations instead of
     # executing a discovered module name.
     for py_file in sorted(PACKAGE_ROOT.rglob("*.py")):
+        if not _is_contained_source(py_file, PACKAGE_ROOT):
+            continue
         module_name = _module_name(py_file)
         if not _is_public_module(module_name):
             continue

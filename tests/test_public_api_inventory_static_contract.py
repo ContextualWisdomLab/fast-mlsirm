@@ -67,6 +67,35 @@ def test_discovered_submodule_is_parsed_without_import_side_effects(
     } in rows
 
 
+def test_symlink_outside_package_root_is_not_inventoried(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A package-tree symlink whose target leaves the package root is ignored."""
+    inventory = _inventory_tool()
+    package_root = tmp_path / "fast_mlsirm"
+    package_root.mkdir()
+    (package_root / "__init__.py").write_text("", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "leaked.py").write_text(
+        "def leaked_contract():\n    return 1\n",
+        encoding="utf-8",
+    )
+    (package_root / "leaked.py").symlink_to(outside / "leaked.py")
+
+    inventory._install_core_stub()
+    import fast_mlsirm
+
+    monkeypatch.setattr(fast_mlsirm, "__path__", [str(package_root)])
+    monkeypatch.setattr(inventory, "PY_ROOT", tmp_path)
+    monkeypatch.setattr(inventory, "PACKAGE_ROOT", package_root)
+    sys.modules.pop("fast_mlsirm.leaked", None)
+
+    rows = inventory.collect_python_rows()
+
+    assert all(row["current_name"] != "leaked_contract" for row in rows)
+
+
 
 def test_static_enum_projection_preserves_inherited_constructor_contract() -> None:
     """An unloaded public Enum keeps the runtime-derived variadic signature."""

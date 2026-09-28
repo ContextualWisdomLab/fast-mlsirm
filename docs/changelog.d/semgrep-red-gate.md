@@ -15,9 +15,11 @@
   import instead of at runtime, and the finding disappears with cleaner code.
 - `tools/inventory_public_api.py` now enumerates repository-owned Python files
   and parses otherwise-unloaded public modules with `ast` instead of importing
-  discovered module names. A regression fixture proves an import-time side
-  effect in a discovered module is not executed, while constructor projections
-  retain dataclass, enum, protocol, exception, and inherited signatures.
+  discovered module names. A path is kept only when its resolved location stays
+  inside `python/fast_mlsirm`, so a symlink that leaves the package root is not
+  parsed. A regression fixture proves an import-time side effect in a discovered
+  module is not executed, while constructor projections retain dataclass, enum,
+  protocol, exception, and inherited signatures.
 
 Neither change weakens the gate: both dynamic execution primitives are removed,
 with no suppression or rule downgrade.
