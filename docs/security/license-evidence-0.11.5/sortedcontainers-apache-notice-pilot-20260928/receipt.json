@@ -1,0 +1,13 @@
+{
+  "status": "local notice pilot only; original Python HOLD remains",
+  "source_sha256": "a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0",
+  "apache_terms_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+  "output_sha256": "7fc4ec6d6c59f25bff4c90950c3b2c08da3d6977a21176c3d0e6ff93f1b55a00",
+  "added_member": "sortedcontainers-2.4.0.dist-info/LICENSE-APACHE-2.0.txt",
+  "changed_existing_members": [
+    "sortedcontainers-2.4.0.dist-info/RECORD"
+  ],
+  "all_original_package_and_metadata_members_identical": true,
+  "record_verified": true,
+  "repeat_repack_identical": true
+}
