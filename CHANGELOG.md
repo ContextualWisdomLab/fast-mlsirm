@@ -4,6 +4,9 @@
 
 ### Added
 
+- Opt-in `progress` callback on `fit_two_tier_grm` / `fit_bifactor_grm` exporting
+  per-E-step marginal loglik / Δloglik (Bock & Aitkin, 1981, pp. 445, 447–448;
+  #2021). Default remains silent.
 - Saved multiple-group bifactor and two-tier GRM fits can now produce
   per-person conditional `l_z`, posterior trait estimates, observed-item
   counts, and caller-threshold flags. Optional seeded model resampling gives
@@ -22,7 +25,43 @@
   the `r0` correction. `PolyFipcFit` uses its fitted focal prior for both.
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Added
+
+#### Opt-in EM progress for long two-tier / bifactor GRM fits (#2021)
+
+- Add optional `progress` callable on `fit_two_tier_grm` and `fit_bifactor_grm`
+  (default `None`, silent — 0.11.4-compatible). Each E-step reports
+  `EmIterationProgress(iteration, loglik, delta_loglik, start)` using the
+  already-computed observed-data marginal log-likelihood (Bock & Aitkin,
+  1981, *Psychometrika, 46*(4), pp. 445, 447–448). No extra quadrature.
+- Rust companions `fit_*_with_progress` keep existing silent entry points
+  unchanged; PyO3 detaches only when `progress is None`.
+
+#### Release license evidence and NumPy lock reconciliation
+
+- `docs/security/license-evidence-0.11.5.md` records which artifacts are
+  published: the PyPI sdist and 12 wheels. The Rust crates are not published.
+  It also records the per-dependency license inventory for both ecosystems and
+  three verdicts:
+  - atheris 3.1.0 is Apache-2.0. PyPI metadata declares no license, so this
+    is determined from its LICENSE file, which is hash-matched to upstream.
+  - r-efi 5.3.0 and 6.0.0 are used under an explicit MIT election with a
+    recorded rationale. They are reached only through a dev-dependency path.
+  - The official NumPy wheels bundle libgfortran and libquadmath. libquadmath
+    is LGPL-2.1-or-later and has no runtime exception, so this is marked as
+    an owner decision, not approved.
+- `tools/license_inventory.py` is an offline generator for
+  `docs/security/license-evidence-0.11.5/inventory.json`.
+
 ### Changed
+
+#### Release license evidence and NumPy lock reconciliation
+
+- `uv.lock`, `requirements/ci.txt` and `requirements/package.txt` all pin
+  numpy 2.5.3. Before this change they pinned 2.5.1 and 2.5.2, and the audit
+  environment ran 2.5.3. Only the numpy entries changed. The requirements
+  files carry the complete 2.5.3 PyPI hash set. The user-facing
+  `numpy>=1.24` constraint is unchanged.
 
 #### Release cut 0.11.4
 
@@ -39,6 +78,69 @@
   in git history.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
+
+### Fixed
+
+#### Red `python` gate from capability lanes another job owns
+
+- The fail-closed outcome gate (`tests/conftest.py`, Issue #1732) escalated
+  capability-gated skips in the ordinary `python` matrix. The first repair
+  over-broadly allowed the whole high-q module and incorrectly described the
+  Atheris harnesses as evidence for a separate Hypothesis module.
+- The allowlist now names six exact high-q pytest nodes instead of a module
+  glob. `gpu-smoke` installs a software Vulkan adapter, sets
+  `STAGE5_HIGH_Q=1`, executes those six nodes plus the existing marginal GPU
+  parity node, and fails when its JUnit evidence contains any skip.
+- `tests/test_fuzz_properties.py` is no longer allowlisted. The `fuzz` job
+  installs the `.[fuzz]` dependencies, executes that Hypothesis module
+  directly, and rejects collection-time or runtime skips before running the
+  separately owned Atheris harnesses. `hypothesis` (already in the `dev`
+  extra) is also added to the hash-locked `requirements/ci.txt`, so the
+  `python` matrix executes the module instead of collection-skipping it;
+  without that the gate still failed on `collection-skip:
+  tests/test_fuzz_properties.py` (#2075 run 106114739240).
+- `test_allowlisted_capability_nodes_have_exact_ci_owners` prevents a future
+  module glob, owner-name substitution, or allowlisted node without an
+  executable CI command.
+
+#### Release-source checkout authority
+
+- The publication workflow no longer passes caller-controlled
+  `workflow_dispatch` SHAs directly to `actions/checkout`. It first checks out
+  the protected invocation commit (`github.sha`) with full history, requires the
+  supplied control-plane identity to equal that commit, canonicalizes the
+  requested release object, and proves that object is an ancestor of the trusted
+  control plane.
+- The verified release commit is emitted once from `verify-release`; all build,
+  provenance, admission, tagging, and publication consumers use that job output.
+  Invalid, unavailable, sibling, noncanonical, or mismatched identities fail
+  closed before an untrusted tree becomes executable.
+- Contract coverage executes the exact guard against real Git histories. The
+  repair removes all 6 raw release checkout refs and both raw control-plane
+  checkout refs that were present in the RED state.
+
+#### Red Semgrep gate on every PR
+
+- The central `Semgrep (multi-language SAST)` gate reported three blocking
+  WARNING findings on `main`, so it failed on every pull request regardless of
+  its contents. The org ruleset gates on that workflow passing, so this blocked
+  merges repository-wide. Reproduced locally with the same ruleset
+  (`semgrep --config=p/default --severity=WARNING --severity=ERROR`), which
+  returns the same three.
+- `python/fast_mlsirm/dif.py` built its deprecated-alias docstrings by indexing
+  `globals()` with loop variables drawn from a literal table three lines above.
+  The rule cannot see that the keys are literals, and the indirection bought
+  nothing: the loop now names the function objects directly, so a typo fails at
+  import instead of at runtime, and the finding disappears with cleaner code.
+- `tools/inventory_public_api.py` now enumerates repository-owned Python files
+  and parses otherwise-unloaded public modules with `ast` instead of importing
+  discovered module names. A path is kept only when its resolved location stays
+  inside `python/fast_mlsirm`, so a symlink that leaves the package root is not
+  parsed. A regression fixture proves an import-time side effect in a discovered
+  module is not executed, while constructor projections retain dataclass, enum,
+  protocol, exception, and inherited signatures.
+Neither change weakens the gate: both dynamic execution primitives are removed,
+with no suppression or rule downgrade.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 
 

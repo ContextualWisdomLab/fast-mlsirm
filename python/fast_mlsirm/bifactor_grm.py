@@ -81,6 +81,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .em_progress import EmIterationProgress
 
 
 def _finite_integer_control(value: object, name: str) -> int:
@@ -174,6 +175,7 @@ def fit_bifactor_grm(
     n_starts: int,
     seed: int,
     device: str = "cpu",
+    progress: object | None = None,
 ) -> BifactorGrmFit:
     """Fit the single-group polytomous bifactor GRM (compute in Rust).
 
@@ -196,6 +198,10 @@ def fit_bifactor_grm(
     sweep; ``'gpu'`` runs the WGSL ``f32`` person-parallel sweep and falls
     back to CPU (with a warning) when no GPU adapter is available; ``'auto'``
     prefers GPU without warning. Anything else raises ``ValueError``.
+    ``progress`` is an optional callable invoked once per EM E-step with an
+    :class:`~fast_mlsirm.em_progress.EmIterationProgress` report (Bock &
+    Aitkin, 1981, p. 445 eqs. 5–6; p. 447 E-step; p. 448); default ``None``
+    is silent (0.11.4-compatible).
     Out-of-range caller arguments raise ``ValueError`` (never clamped, and —
     per the no-magic-caps rule — upper-bounded only where a real constraint
     exists); unobserved categories raise; ``max_iter`` exhaustion returns
@@ -233,6 +239,8 @@ def fit_bifactor_grm(
     ):
         raise ValueError(f"device must be one of 'cpu', 'gpu', 'auto'; got {device!r}")
     device_str = device.strip().lower()
+    if progress is not None and not callable(progress):
+        raise TypeError("progress must be a callable or None")
 
     y = np.asarray(responses)
     if np.iscomplexobj(y):
@@ -279,6 +287,26 @@ def fit_bifactor_grm(
         raise RuntimeError("fit_bifactor_grm requires the compiled Rust core")
 
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
+    rust_progress = None
+    if progress is not None:
+
+        def rust_progress(
+            iteration: int,
+            loglik: float,
+            delta_loglik: float | None,
+            start: int,
+        ) -> None:
+            progress(
+                EmIterationProgress(
+                    iteration=int(iteration),
+                    loglik=float(loglik),
+                    delta_loglik=None
+                    if delta_loglik is None
+                    else float(delta_loglik),
+                    start=int(start),
+                )
+            )
+
     res = core.fit_bifactor_grm(
         yy,
         observed.reshape(-1),
@@ -294,6 +322,7 @@ def fit_bifactor_grm(
         int(n_starts_int),
         int(seed_int),
         device_str,
+        rust_progress,
     )
     return BifactorGrmFit(
         a_general=np.asarray(res["a_general"], dtype=np.float64),

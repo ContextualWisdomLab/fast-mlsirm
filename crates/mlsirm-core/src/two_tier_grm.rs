@@ -1319,6 +1319,17 @@ struct SingleStartOutcome {
     final_loglik_change: f64,
 }
 
+enum SingleStartError {
+    Numerical(String),
+    ProgressCancelled,
+}
+
+impl From<String> for SingleStartError {
+    fn from(error: String) -> Self {
+        Self::Numerical(error)
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_single_start(
     v: &Validated,
@@ -1332,7 +1343,8 @@ fn run_single_start(
     n_grid: usize,
     qs: usize,
     start: usize,
-) -> Result<SingleStartOutcome, String> {
+    progress: &mut Option<&mut crate::em_progress::EmProgressCallback<'_>>,
+) -> Result<SingleStartOutcome, SingleStartError> {
     let p = v.n_primary;
     let (mut params, mut z_phi) = initial_params(
         v,
@@ -1364,6 +1376,21 @@ fn run_single_start(
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
+        // Export the already-computed marginal loglik (Bock & Aitkin, 1981,
+        // p. 445 eqs. 5–6; p. 447 E-step recomputes P_l each cycle). No extra
+        // quadrature — this is the same value used for the tolerance check.
+        if let Some(cb) = progress.as_deref_mut() {
+            if cb(crate::em_progress::EmIterationProgress {
+                iteration: n_iter,
+                loglik: ll,
+                delta_loglik: change,
+                start,
+            })
+            .is_break()
+            {
+                return Err(SingleStartError::ProgressCancelled);
+            }
+        }
         if let Some(change) = change {
             let prev = previous.expect("change requires a previous log-likelihood");
             final_loglik_change = change;
@@ -1448,6 +1475,10 @@ fn run_single_start(
 /// non-convergence is reported through the winning run's flags, never
 /// substituted.
 ///
+/// Silent default: no progress sink. Prefer
+/// [`fit_two_tier_grm_with_progress`] when the caller needs per-E-step
+/// marginal loglik reports (Bock & Aitkin, 1981, pp. 445, 447–448).
+///
 /// # References (APA 7th ed.)
 ///
 /// Cai, L. (2010). A two-tier full-information item factor analysis model
@@ -1480,6 +1511,48 @@ pub fn fit_two_tier_grm(
     n_cat: usize,
     cfg: &TwoTierGrmConfig,
 ) -> Result<TwoTierGrmResult, String> {
+    fit_two_tier_grm_with_progress(
+        y,
+        observed,
+        primary_map,
+        specific_map,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_cat,
+        cfg,
+        None,
+    )
+}
+
+/// [`fit_two_tier_grm`] with an optional per-E-step progress sink.
+///
+/// When `progress` is `Some`, it is invoked once after each E-step with the
+/// already-computed observed-data marginal log-likelihood and its change
+/// versus the previous iteration (Bock & Aitkin, 1981, p. 445 eqs. 5–6;
+/// p. 447 E-step; p. 448). Returning `ControlFlow::Break` cancels the entire
+/// multi-start fit. `None` is bit-identical to [`fit_two_tier_grm`].
+///
+/// # References (APA 7th ed.)
+///
+/// Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation
+/// of item parameters: Application of an EM algorithm. *Psychometrika,
+/// 46*(4), 443–459. https://doi.org/10.1007/BF02293801 (full text read)
+#[allow(clippy::too_many_arguments)]
+pub fn fit_two_tier_grm_with_progress(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    cfg: &TwoTierGrmConfig,
+    mut progress: Option<&mut crate::em_progress::EmProgressCallback<'_>>,
+) -> Result<TwoTierGrmResult, String> {
     let v = validate(
         y,
         observed,
@@ -1510,7 +1583,18 @@ pub fn fit_two_tier_grm(
     let mut n_succeeded = 0usize;
     for start in 0..cfg.n_starts {
         match run_single_start(
-            &v, y, observed, cfg, &coords, &log_w0, ts, &log_ws, n_grid, qs, start,
+            &v,
+            y,
+            observed,
+            cfg,
+            &coords,
+            &log_w0,
+            ts,
+            &log_ws,
+            n_grid,
+            qs,
+            start,
+            &mut progress,
         ) {
             Ok(outcome) => {
                 n_succeeded += 1;
@@ -1524,7 +1608,10 @@ pub fn fit_two_tier_grm(
                     best_start = start;
                 }
             }
-            Err(e) => {
+            Err(SingleStartError::ProgressCancelled) => {
+                return Err("progress callback cancelled fit".to_string());
+            }
+            Err(SingleStartError::Numerical(e)) => {
                 if first_error.is_none() {
                     first_error = Some(format!("start {start}: {e}"));
                 }
