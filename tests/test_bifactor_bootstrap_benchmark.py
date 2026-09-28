@@ -26,6 +26,8 @@ import pytest
 
 from fast_mlsirm.bifactor_bootstrap import BifactorBootstrapResult, run_bifactor_bootstrap
 
+from bifactor_gpu_evidence import missing_hardware_bootstrap
+
 
 def _problem():
     n_persons = 120
@@ -80,7 +82,12 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_and_parity() -> None:
     cpu_time = time.perf_counter() - t0
 
     t1 = time.perf_counter()
-    res_gpu = run_bifactor_bootstrap(**common, device="gpu", n_jobs=workers)
+    try:
+        res_gpu = run_bifactor_bootstrap(**common, device="gpu", n_jobs=workers)
+    except RuntimeError as exc:
+        if missing_hardware_bootstrap(exc):
+            return
+        raise
     gpu_time = time.perf_counter() - t1
 
     for res in (res_cpu, res_gpu):
@@ -162,7 +169,12 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_q121() -> None:
     cpu_time = time.perf_counter() - t0
 
     t1 = time.perf_counter()
-    res_gpu = run_bifactor_bootstrap(**common, device="gpu", n_jobs=workers)
+    try:
+        res_gpu = run_bifactor_bootstrap(**common, device="gpu", n_jobs=workers)
+    except RuntimeError as exc:
+        if missing_hardware_bootstrap(exc):
+            return
+        raise
     gpu_time = time.perf_counter() - t1
 
     for res in (res_cpu, res_gpu):

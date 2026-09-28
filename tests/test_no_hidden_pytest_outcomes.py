@@ -339,7 +339,12 @@ def test_allowlisted_capability_nodes_have_exact_ci_owners() -> None:
         line for line in allowlist.splitlines()
         if not line.lstrip().startswith("#") and _OWNER_MARKER + "gpu-smoke" in line
     ]
-    assert len(owned) == 7, owned
+    hardware_owned = [
+        line for line in allowlist.splitlines()
+        if not line.lstrip().startswith("#") and _OWNER_MARKER + "focal-gpu-native" in line
+    ]
+    assert len(owned) == 2, owned
+    assert len(hardware_owned) == 7, hardware_owned
     assert "tests/test_fuzz_properties.py" not in "\n".join(
         line for line in allowlist.splitlines() if not line.lstrip().startswith("#")
     )

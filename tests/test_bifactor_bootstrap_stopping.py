@@ -11,6 +11,7 @@ The endpoint-movement early stop is a heuristic, not an Andrews–Buchinsky
 import numpy as np
 import pytest
 
+from bifactor_gpu_evidence import missing_hardware_bootstrap
 from fast_mlsirm.bifactor_bootstrap import (
     _endpoint_movement,
     run_bifactor_bootstrap,
@@ -214,7 +215,12 @@ def test_cpu_gpu_bootstrap_replicate_parity():
         n_starts=1,
     )
     res_cpu = run_bifactor_bootstrap(**kwargs, device="cpu")
-    res_gpu = run_bifactor_bootstrap(**kwargs, device="gpu")
+    try:
+        res_gpu = run_bifactor_bootstrap(**kwargs, device="gpu")
+    except RuntimeError as exc:
+        if missing_hardware_bootstrap(exc):
+            return
+        raise
     assert res_cpu.n_converged == res_gpu.n_converged
     assert res_cpu.n_replicates == res_gpu.n_replicates
     np.testing.assert_allclose(
