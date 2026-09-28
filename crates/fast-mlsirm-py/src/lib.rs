@@ -1458,6 +1458,28 @@ fn fit_bifactor_grm(
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("best_start", res.best_start)?;
     out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item(
+        "block_pattern_n_persons",
+        res.block_pattern_collapse.n_persons,
+    )?;
+    out.set_item(
+        "block_pattern_n_persons_per_block",
+        res.block_pattern_collapse.n_persons_per_block.clone(),
+    )?;
+    out.set_item(
+        "block_pattern_n_unique_per_block",
+        res.block_pattern_collapse
+            .n_unique_patterns_per_block
+            .clone(),
+    )?;
+    out.set_item(
+        "block_pattern_n_persons_general_only",
+        res.block_pattern_collapse.n_persons_general_only,
+    )?;
+    out.set_item(
+        "block_pattern_n_unique_general_only",
+        res.block_pattern_collapse.n_unique_general_only_patterns,
+    )?;
     Ok(out.into())
 }
 
