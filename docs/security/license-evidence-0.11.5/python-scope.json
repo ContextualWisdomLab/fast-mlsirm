@@ -1,0 +1,67 @@
+{
+ "atheris": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": false,
+  "scope": "optional extra 'fuzz' (Requires-Dist: atheris>=2.3; extra == 'fuzz'); fuzz CI job only; wheels exist for linux x86_64 only"
+ },
+ "build": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": false,
+  "scope": "package CI job only (requirements/package.txt)"
+ },
+ "colorama": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": false,
+  "scope": "transitive of pytest on Windows only (sys_platform == 'win32'); dev/CI"
+ },
+ "hypothesis": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": false,
+  "scope": "optional extras 'dev' and 'fuzz'; CI test lock (requirements/ci.txt)"
+ },
+ "iniconfig": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": false,
+  "scope": "transitive of pytest (dev/CI)"
+ },
+ "maturin": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": false,
+  "scope": "PEP 517 build backend (build-system.requires maturin>=1.10,<2.0); CI/package locks pin 1.15.0, publish-pypi.yml uses maturin-action binary v1.14.1; build tool, contributes no code to the wheel"
+ },
+ "numpy": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": true,
+  "scope": "runtime dependency (Requires-Dist: numpy>=1.24); installed separately by the user from PyPI, never bundled in the fast-mlsirm wheel or sdist"
+ },
+ "packaging": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": false,
+  "scope": "optional extra 'dev'; CI test lock; package-job build tooling"
+ },
+ "pluggy": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": false,
+  "scope": "transitive of pytest (dev/CI)"
+ },
+ "pygments": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": false,
+  "scope": "transitive of pytest (dev/CI)"
+ },
+ "pyproject-hooks": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": false,
+  "scope": "transitive of build (package CI job only)"
+ },
+ "pytest": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": false,
+  "scope": "optional extra 'dev'; CI test lock"
+ },
+ "sortedcontainers": {
+  "in_published_artifact_scope": false,
+  "runtime_dependency_of_published_artifact": false,
+  "scope": "transitive of hypothesis (dev/CI)"
+ }
+}
