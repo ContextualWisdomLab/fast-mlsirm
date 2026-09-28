@@ -514,11 +514,12 @@ def check_focal_expected_total_score_monotonicity(
     if not np.all(np.isfinite(threshold)):
         raise ValueError("fit.threshold must be finite")
 
-    nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
-    weights = weights / weights.sum()
+    from .two_tier_grm import _probabilists_gauss_hermite
 
-    nuisance_sd = np.sqrt(
-        np.square(slope).sum(axis=1) - np.square(slope[:, focal])
+    nodes, weights = _probabilists_gauss_hermite(nodes_requested)
+
+    nuisance_sd = np.hypot.reduce(
+        slope[:, np.arange(n_dims) != focal], axis=1, initial=0.0
     )
     unit_slope = np.ones(1, dtype=np.float64)
 
