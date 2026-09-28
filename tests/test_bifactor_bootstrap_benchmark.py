@@ -17,6 +17,9 @@ runs at the maintainer-standard 121-point grid.
 The 1e-6 absolute replicate bound is a regression check for this fixed
 synthetic fixture. It detects the 4.04e-6 drift recorded at PR #2246 head
 050351ed; it is not a uniform error bound for all response matrices.
+NumPy 2.5 ``assert_allclose`` treats matching NaNs as equal by default, so
+replicate parameter arrays must first be finite:
+https://numpy.org/doc/stable/reference/generated/numpy.testing.assert_allclose .
 
 The endpoint-movement early stop is a heuristic, not an Andrews–Buchinsky
 ``(pdb, τ)`` accuracy rule.
@@ -99,6 +102,10 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_and_parity() -> None:
         assert res.n_replicates == n_replicates
         assert res.n_converged >= 1
         assert np.all(np.isfinite(res.replicate_loglik))
+        for estimates in (
+            res.replicate_a_general, res.replicate_a_specific, res.replicate_threshold
+        ):
+            assert np.all(np.isfinite(estimates))
 
     # Replicate-by-replicate device parity (single-precision E-step level).
     assert res_cpu.n_converged == res_gpu.n_converged
@@ -189,6 +196,10 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_q121() -> None:
         assert res.n_replicates == n_replicates
         assert res.n_converged >= 1
         assert np.all(np.isfinite(res.replicate_loglik))
+        for estimates in (
+            res.replicate_a_general, res.replicate_a_specific, res.replicate_threshold
+        ):
+            assert np.all(np.isfinite(estimates))
 
     # Replicate-by-replicate device parity (single-precision E-step level).
     assert res_cpu.n_converged == res_gpu.n_converged
