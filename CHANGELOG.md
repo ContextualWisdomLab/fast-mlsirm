@@ -21,6 +21,14 @@
   EAP grid even with non-default `prior_mean`/`prior_sd`, which affect only
   the `r0` correction. `PolyFipcFit` uses its fitted focal prior for both.
 
+### Fixed
+
+- The canonical bounded-JSON owner rejects exponent-overflow numbers on both
+  direct-string and file-backed paths while preserving finite scientific
+  notation, CPython integer-conversion limits, duplicate-member rejection, and
+  stable-descriptor reads (#1599). The owner branch is reconciled with current
+  protected `main`; overlapping #2194 carries no unique semantic or test delta.
+
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Changed
 
