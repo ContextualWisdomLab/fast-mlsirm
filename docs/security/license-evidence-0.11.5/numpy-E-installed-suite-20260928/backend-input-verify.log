@@ -1,0 +1,9 @@
+src/OpenBLAS-0.3.34.tar.gz: 성공
+sdist/numpy-2.5.2.tar.gz: 성공
+input/build-deps/cython-3.3.0-py3-none-any.whl: 성공
+input/build-deps/meson-1.12.1-py3-none-any.whl: 성공
+input/build-deps/meson_python-0.21.1-py3-none-any.whl: 성공
+input/build-deps/ninja-1.13.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl: 성공
+input/build-deps/packaging-26.3-py3-none-any.whl: 성공
+input/build-deps/pyproject_metadata-0.12.1-py3-none-any.whl: 성공
+input/build-requirements.txt: 성공
