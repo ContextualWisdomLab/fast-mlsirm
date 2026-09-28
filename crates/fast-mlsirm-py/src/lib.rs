@@ -1343,11 +1343,13 @@ fn fit_grm(
     Ok(out.into())
 }
 
-/// Parse a CPU/GPU execution-device string for the bifactor E-step sweep.
+/// Parse a CPU/GPU execution-device string for native operations.
 ///
-/// Accepts `cpu` (f64 scalar sweep), `gpu` (WGSL f32 person-parallel sweep
-/// with a CPU fallback warning), and `auto` (GPU when available, silent
-/// fallback); anything else is a loud `ValueError`, never a silent default.
+/// This parser validates the name; each operation defines its dispatch rule.
+/// Bifactor fits require a hardware GPU for explicit `gpu` and return an error
+/// when unavailable; `auto` may use CPU. wgpu 30.0.0, `DeviceType`, identifies
+/// CPU adapters as software rendering:
+/// https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html
 fn parse_device(name: &str) -> PyResult<mlsirm_core::Device> {
     mlsirm_core::Device::parse(name).ok_or_else(|| {
         PyValueError::new_err(format!(

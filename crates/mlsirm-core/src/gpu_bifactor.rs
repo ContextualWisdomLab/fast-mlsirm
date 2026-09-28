@@ -25,8 +25,8 @@
 //! `max_compute_workgroups_per_dimension` (65535 on Apple Metal / WebGPU) so
 //! large node×item×category grids (e.g. AC late-life bifactor at q=241) do
 //! not panic with a validation error. Storage buffers are sized against
-//! `max_storage_buffer_binding_size` / `max_buffer_size` and fall back to CPU
-//! when they do not fit — no hardcoded workgroup or byte caps.
+//! `max_storage_buffer_binding_size` / `max_buffer_size`. When they do not fit,
+//! explicit `Gpu` fits fail; `Auto` may use CPU. No hardcoded byte caps.
 //!
 //! # References
 //!
@@ -402,10 +402,10 @@ const MIN_STORAGE_BUFFERS: u32 = 20;
 
 /// GPU reduced E-step sweep.
 ///
-/// Returns `None` when no compatible GPU adapter can be initialized (or when
-/// the `gpu` feature is disabled), signalling the caller to run the CPU
-/// implementation. A `None` here is never a silent wrong result: every
-/// caller falls back to the `f64` CPU sweep over the same tables.
+/// Returns `None` when GPU execution is unavailable. Bifactor callers reject
+/// `None` for explicit `Gpu` and may use the `f64` CPU sweep for `Auto`.
+/// wgpu 30.0.0, `DeviceType`, classifies CPU adapters as software rendering:
+/// https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
     e_step_reduced_gpu_inner(inputs, false)

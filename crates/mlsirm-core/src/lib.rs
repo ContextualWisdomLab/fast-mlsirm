@@ -146,14 +146,15 @@ pub fn interaction_kind(model_type: ModelType) -> InteractionKind {
 /// Execution device for the likelihood/gradient hot path.
 ///
 /// This is a sub-option of the Rust backend, not a separate compute backend
-/// axis: `Gpu`/`Auto` run the wgpu GPGPU kernels when a GPU adapter is present
-/// and otherwise fall back to the identical CPU implementation. The numerical
-/// contract is the same for every variant.
+/// axis. Each operation defines its dispatch rule: explicit `Gpu` bifactor
+/// fits require hardware and return an error if unavailable, while `Auto` may
+/// use CPU. wgpu 30.0.0, `DeviceType`, distinguishes software CPU adapters:
+/// https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Device {
     /// Always use the scalar CPU implementation.
     Cpu,
-    /// Prefer the wgpu GPGPU path; fall back to CPU (with a warning) if no GPU.
+    /// Request the wgpu GPGPU path; fallback behavior depends on the operation.
     Gpu,
     /// Use the GPGPU path when a GPU is available, otherwise CPU. No warning.
     Auto,
