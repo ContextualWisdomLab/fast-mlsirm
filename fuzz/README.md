@@ -54,12 +54,14 @@ cargo test --workspace          # includes proptest_neg_loglik
 ```
 
 Coverage-guided Atheris harnesses (bounded budget, matches the CI `fuzz` job):
+These harnesses are supported on CPython 3.12–3.14, Linux x86_64. On other
+platforms the `fuzz` extra installs Hypothesis, but omits Atheris.
 
 ```bash
-pip install -e .[fuzz]          # Atheris ships wheels for CPython 3.8-3.12
-python fuzz/atheris/fuzz_load_factor_csv.py -max_total_time=60 fuzz/corpus/load_factor_csv
-python fuzz/atheris/fuzz_render_report.py   -max_total_time=60 fuzz/corpus/render_report
-python fuzz/atheris/fuzz_config.py          -max_total_time=60 fuzz/corpus/config
+uv sync --locked --extra fuzz
+uv run --no-sync python fuzz/atheris/fuzz_load_factor_csv.py -max_total_time=60 fuzz/corpus/load_factor_csv
+uv run --no-sync python fuzz/atheris/fuzz_render_report.py   -max_total_time=60 fuzz/corpus/render_report
+uv run --no-sync python fuzz/atheris/fuzz_config.py          -max_total_time=60 fuzz/corpus/config
 ```
 
 Longer local campaign: raise `-max_total_time` (seconds) or add `-runs=N`. New

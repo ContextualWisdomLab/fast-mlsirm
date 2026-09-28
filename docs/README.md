@@ -22,6 +22,7 @@ This index distinguishes governing product/architecture documents from implement
 | [`bradley_terry_mm.md`](bradley_terry_mm.md) | Bradley–Terry / Hunter MM pairwise ranking and additive-ties BRATT |
 | [`documentation_coverage.md`](documentation_coverage.md) | Documentation completeness states, remaining P0/P1/P2 gaps and maintenance gate |
 | [`security/threat-model.md`](security/threat-model.md) | Reusable-core trust/threat model; hosted product threats remain downstream |
+| [`security/license-evidence-0.11.5.md`](security/license-evidence-0.11.5.md) | Release license inventory (Cargo + PyPI), published-artifact scope, copyleft verdicts and disjunctive-license elections |
 | [`doctoring/`](doctoring/) | Method/security/interoperability evidence and conservative implementation boundaries |
 | [`../AGENTS.md`](../AGENTS.md), [`../CLAUDE.md`](../CLAUDE.md) | Agent/developer operating rules aligned to this architecture |
 | [`../CHANGELOG.md`](../CHANGELOG.md) | User-visible released/unreleased change history |

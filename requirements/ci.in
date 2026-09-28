@@ -1,3 +1,6 @@
 numpy>=1.24
 pytest>=8
 maturin>=1.10,<2.0
+# Executes tests/test_fuzz_properties.py in the python matrix instead of
+# collection-skipping it (fail-closed outcome gate, #1732).
+hypothesis>=6
