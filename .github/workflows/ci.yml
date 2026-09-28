@@ -71,8 +71,13 @@ jobs:
       # Ordinary Rust tests include the deterministic equation and bounded
       # recovery-contract sentinels. Exhaustive ignored studies run in the
       # scheduled Statistical Studies workflow rather than on every PR.
-      - run: cargo test --workspace
-      - run: cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
+      # --locked fails the job when a Cargo.lock would have to change to build.
+      # crates/fast-mlsirm-py is excluded from the root workspace and carries its
+      # own lock, so without this a dependency added there resolves fresh at build
+      # time and the committed lock the security gate scans silently falls behind
+      # the graph that actually ships.
+      - run: cargo test --locked --workspace
+      - run: cargo test --locked --manifest-path crates/fast-mlsirm-py/Cargo.toml
 
   gpu-smoke:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
