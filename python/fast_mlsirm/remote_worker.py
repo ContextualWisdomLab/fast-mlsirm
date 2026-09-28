@@ -39,9 +39,6 @@ _MAX_REQUEST_CHARS = 64 * 1024 * 1024
 
 
 def _library_version() -> str:
-    override = os.environ.get("FAST_MLSIRM_LIBRARY_VERSION")
-    if override:
-        return override
     try:
         return version("fast-mlsirm")
     except PackageNotFoundError:

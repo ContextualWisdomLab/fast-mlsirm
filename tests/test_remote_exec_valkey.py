@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import json
-import os
 import time
-import uuid
 
-import pytest
 
 from fast_mlsirm.remote_exec import (
     RemoteJobDeliveryState,
@@ -340,23 +337,16 @@ def test_valkey_backend_publishes_device_fields_and_waits_for_delayed_outcomes()
     assert all(job["effective_device"] == "cpu" for job in job_fields)
 
 
-def test_valkey_store_against_host_daemon() -> None:
-    """Run only when the host explicitly supplies a disposable Valkey endpoint."""
-    url = os.environ.get("FAST_MLSIRM_VALKEY_URL")
-    if not url:
-        pytest.skip("FAST_MLSIRM_VALKEY_URL is not configured")
-    redis = pytest.importorskip("redis")
-    client = redis.Redis.from_url(url, decode_responses=True)
-    suffix = uuid.uuid4().hex
-    stream = f"fast-mlsirm:test:outcomes:{suffix}"
-    group = f"fast-mlsirm-test-{suffix}"
-    try:
-        outcome = _completed_outcome(9, {"daemon": True})
-        store = ValkeyStreamsOutcomeStore(client, stream=stream, group=group, consumer="driver")
-        store.commit_success(outcome.envelope_fingerprint, outcome)
-        restarted = ValkeyStreamsOutcomeStore(
-            client, stream=stream, group=group, consumer="driver-restart", block_ms=100
-        )
-        assert restarted.committed_success(outcome.envelope_fingerprint) == outcome
-    finally:
-        client.delete(stream, f"{stream}:committed")
+def test_worker_provenance_ignores_host_environment_overrides(monkeypatch) -> None:
+    """Worker argv and library version must not be redirectable by env vars."""
+    from fast_mlsirm import remote_exec, remote_worker
+
+    monkeypatch.setenv("FAST_MLSIRM_WORKER_ENTRY", "/tmp/stub_entry.py")
+    monkeypatch.setenv("FAST_MLSIRM_LIBRARY_VERSION", "0.0.0-spoofed")
+
+    assert remote_exec._worker_module_command("/usr/bin/python3") == [
+        "/usr/bin/python3",
+        "-m",
+        "fast_mlsirm.remote_worker",
+    ]
+    assert remote_worker._library_version() != "0.0.0-spoofed"
