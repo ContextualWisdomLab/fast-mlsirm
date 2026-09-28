@@ -185,9 +185,11 @@ def test_explicit_bifactor_gpu_rejects_software_adapter():
     reports that class, so the hosted smoke job sets
     ``EXPECT_SOFTWARE_GPU_REJECTION=1`` and this test must observe the error.
     The hardware runner sets ``FOCAL_GPU_NATIVE=1`` and must complete the fit.
+    Each declared category occurs in every item, as the estimator requires.
     https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html
     """
     responses, smap, n_cat = _fixture(n_persons=4, n_items=4)
+    responses[:n_cat, :] = np.arange(n_cat)[:, None]
     kw = dict(
         n_cat=n_cat,
         n_specific=2,
