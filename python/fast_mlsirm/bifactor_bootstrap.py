@@ -159,6 +159,8 @@ def _fit_single_replicate(
     rep_seed: int,
     estimate_specific_vars: bool,
     device: str,
+    e_step_n_chunks: int,
+    e_step_n_threads: int,
 ) -> tuple:
     """Execute one bootstrap resample and fit.
 
@@ -204,8 +206,8 @@ def _fit_single_replicate(
                 n_starts=n_starts,
                 seed=rep_seed,
                 device=device,
-                e_step_n_chunks=1,
-                e_step_n_threads=1,
+                e_step_n_chunks=e_step_n_chunks,
+                e_step_n_threads=e_step_n_threads,
             )
             a_g = np.asarray(fit.a_general, dtype=np.float64)
             a_s = np.asarray(fit.a_specific, dtype=np.float64)
@@ -234,8 +236,8 @@ def _fit_single_replicate(
             seed=rep_seed,
             estimate_specific_vars=estimate_specific_vars,
             device=device,
-            e_step_n_chunks=1,
-            e_step_n_threads=1,
+            e_step_n_chunks=e_step_n_chunks,
+            e_step_n_threads=e_step_n_threads,
         )
         # Multigroup arrays are (n_groups, ...): the bootstrap resamples
         # persons, so per-replicate summaries keep the group axis.
@@ -304,6 +306,8 @@ def run_bifactor_bootstrap(
     max_iter: int,
     n_starts: int,
     tol: float,
+    e_step_n_chunks: int,
+    e_step_n_threads: int,
     group_ids: np.ndarray | None = None,
     n_groups: int = 1,
     anchor_mask: np.ndarray | None = None,
@@ -339,6 +343,11 @@ def run_bifactor_bootstrap(
         n_groups: Number of groups.
         anchor_mask: Optional multigroup anchor mask (``None`` = all common).
         n_jobs: Number of parallel workers (-1 for all logical cores).
+        e_step_n_chunks/e_step_n_threads: Required per-replicate CPU E-step
+            parallelism contract (ADR-0028 / issue #2002); forwarded to each
+            ``fit_bifactor_grm`` / ``fit_bifactor_grm_multigroup`` call so
+            outer ``n_jobs`` replicate concurrency and inner rayon E-step
+            pools compose without silently forcing single-threaded fits.
         base_seed: Master seed for deterministic replication. Required,
             keyword-only caller argument (ADR-0028, #1963): a stochastic
             routine must not ship a default seed.
@@ -376,6 +385,8 @@ def run_bifactor_bootstrap(
     batch_size = _require_int(batch_size, "batch_size", 1)
     n_starts = _require_int(n_starts, "n_starts", 1)
     max_iter = _require_int(max_iter, "max_iter", 1)
+    e_step_n_chunks = _require_int(e_step_n_chunks, "e_step_n_chunks", 1)
+    e_step_n_threads = _require_int(e_step_n_threads, "e_step_n_threads", 1)
     if (
         isinstance(mc_stopping_ratio, bool)
         or not isinstance(mc_stopping_ratio, (float, int))
@@ -437,7 +448,7 @@ def run_bifactor_bootstrap(
         tasks.append((
             b, y_arr, smap_arr, n_cat, n_specific, g_arr, n_groups, anchor_arr,
             q_general, q_specific, max_iter, float(tol), n_starts, rep_seed,
-            estimate_specific_vars, device,
+            estimate_specific_vars, device, e_step_n_chunks, e_step_n_threads,
         ))
 
     results: list = [None] * n_replicates

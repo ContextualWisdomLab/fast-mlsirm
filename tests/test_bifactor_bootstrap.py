@@ -3,8 +3,11 @@
 
 """Joint person bootstrap replicate structure, SEs, and reproducibility."""
 
+from unittest import mock
+
 import numpy as np
 
+import fast_mlsirm.bifactor_bootstrap as bifactor_bootstrap
 from fast_mlsirm.bifactor_bootstrap import BifactorBootstrapResult, run_bifactor_bootstrap
 
 
@@ -42,6 +45,8 @@ def test_bifactor_bootstrap_shapes_and_se() -> None:
         max_iter=25,
         tol=1e-3,
         n_starts=1,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
 
     assert isinstance(boot_res, BifactorBootstrapResult)
@@ -102,6 +107,8 @@ def test_bifactor_bootstrap_reproducibility() -> None:
         max_iter=8,
         tol=1e-3,
         n_starts=1,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
 
     res_run1 = run_bifactor_bootstrap(**kwargs, n_jobs=1)
@@ -143,11 +150,74 @@ def test_base_seed_ci_level_max_iter_n_starts_tol_are_required() -> None:
         max_iter=8,
         tol=1e-3,
         n_starts=1,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
-    for missing in ("base_seed", "ci_level", "max_iter", "n_starts", "tol"):
+    for missing in (
+        "base_seed",
+        "ci_level",
+        "max_iter",
+        "n_starts",
+        "tol",
+        "e_step_n_chunks",
+        "e_step_n_threads",
+    ):
         kwargs = {k: v for k, v in base.items() if k != missing}
         try:
             run_bifactor_bootstrap(**kwargs)
         except TypeError:
             continue
         raise AssertionError(f"expected TypeError when {missing!r} is omitted")
+
+
+def test_bootstrap_forwards_e_step_parallel_knobs_with_n_jobs() -> None:
+    """n_jobs>1 must not silently force e_step_n_threads=1 on each replicate fit.
+
+    Issue #2003 / #2018: outer bootstrap ThreadPool concurrency and inner
+    rayon E-step pools compose only when bootstrap forwards the caller's
+    ``e_step_n_chunks`` / ``e_step_n_threads`` into every replicate fit.
+    """
+    n_persons, n_items, n_cat, n_specific = 40, 4, 3, 1
+    smap = np.zeros(n_items, dtype=np.int64)
+    rng = np.random.default_rng(4242)
+    responses = rng.integers(0, n_cat, size=(n_persons, n_items)).astype(float)
+
+    recorded: list[dict[str, int]] = []
+    real_fit = bifactor_bootstrap.fit_bifactor_grm
+
+    def _spy_fit(*args, **kwargs):
+        recorded.append(
+            {
+                "e_step_n_chunks": int(kwargs["e_step_n_chunks"]),
+                "e_step_n_threads": int(kwargs["e_step_n_threads"]),
+            }
+        )
+        return real_fit(*args, **kwargs)
+
+    kwargs = dict(
+        responses=responses,
+        specific_map=smap,
+        n_cat=n_cat,
+        n_specific=n_specific,
+        n_replicates=2,
+        batch_size=2,
+        mc_stopping_ratio=0.0,
+        compute_budget_seconds=1200.0,
+        q_general=11,
+        q_specific=11,
+        base_seed=7,
+        ci_level=0.95,
+        max_iter=6,
+        tol=1e-3,
+        n_starts=1,
+        e_step_n_chunks=4,
+        e_step_n_threads=3,
+    )
+    with mock.patch.object(bifactor_bootstrap, "fit_bifactor_grm", side_effect=_spy_fit):
+        run_bifactor_bootstrap(**kwargs, n_jobs=2)
+
+    assert len(recorded) == 2
+    assert recorded == [
+        {"e_step_n_chunks": 4, "e_step_n_threads": 3},
+        {"e_step_n_chunks": 4, "e_step_n_threads": 3},
+    ]
