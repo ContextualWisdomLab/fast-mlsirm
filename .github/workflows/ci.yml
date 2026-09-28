@@ -52,10 +52,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Require every CPython matrix leg and actual GPU evidence
+        env:
+          # focal-gpu-native never runs fork code on the self-hosted runner, so
+          # only fork PRs may pass with it skipped; the post-merge push run
+          # still requires hardware success.
+          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          GPU_RESULT: ${{ needs.focal-gpu-native.result }}
         run: |
-          echo "python-matrix result=${{ needs.python-matrix.result }}"
+          echo "python-matrix result=${{ needs.python-matrix.result }} focal-gpu-native result=$GPU_RESULT fork_pr=$FORK_PR"
           test "${{ needs.python-matrix.result }}" = "success"
-          test "${{ needs.focal-gpu-native.result }}" = "success"
+          if [ "$FORK_PR" = "true" ] && [ "$GPU_RESULT" = "skipped" ]; then
+            echo "::notice::Fork PR: hardware GPU evidence is deferred to the post-merge push run."
+          else
+            test "$GPU_RESULT" = "success"
+          fi
 
 
   focal-gpu-native:
