@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from fast_mlsirm.estimators.mmle import equal_probability_normal_nodes
 from fast_mlsirm.graded_item import (
