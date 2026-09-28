@@ -42,7 +42,7 @@
 //!   of item parameters: Application of an EM algorithm. *Psychometrika,
 //!   46*(4), 443–459. https://doi.org/10.1007/BF02293801
 //! - Higham, N. J. (1993). The accuracy of floating point summation.
-//!   *SIAM Journal on Scientific Computing, 14*(4), 783–799, p. 791, §3.
+//!   *SIAM Journal on Scientific Computing, 14*(4), 783–799, p. 785, eq. (2.6).
 //!   https://doi.org/10.1137/0914050
 //! - W3C GPU for the Web Working Group. WebGPU Shading Language, §6.2.
 //!   https://www.w3.org/TR/WGSL/#floating-point-types
@@ -814,9 +814,9 @@ fn e_step_reduced_gpu_inner(
     let mut s2_spec = vec![0.0; ng * ns];
     let mut w_spec = vec![0.0; ng * ns];
     // Reduce GPU posterior weights against the original f64 nodes. Bock and
-    // Aitkin (1981, p. 448, eq. 13) give the conditional posterior;
-    // widening before the sum avoids the f32 accumulation error described by
-    // Higham (1993, p. 791, §3), without changing those posterior weights.
+    // Aitkin (1981, p. 448, eqs. (13)–(14)) derive a posterior-weighted node mean;
+    // summing in f64 lowers the unit-roundoff term in Higham's recursive-sum
+    // bound (1993, p. 785, eq. (2.6)); posterior weights remain f32.
     if !collect_posteriors {
         for (p, &group) in gid.iter().enumerate() {
             let g = group as usize;
