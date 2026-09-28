@@ -37,6 +37,7 @@ pub mod nominal;
 pub mod oakes;
 pub mod parallel;
 pub mod personfit_np;
+pub mod personfit_multidim;
 pub mod poly;
 pub mod poly_marginal;
 pub(crate) mod quadrature;
