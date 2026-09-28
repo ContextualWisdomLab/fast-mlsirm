@@ -643,6 +643,7 @@ fn latent_moments_match_full_grid_with_missing_blocks() {
         2,
         Some(&mut moments),
         true,
+        None,
     );
     let old = e_step(
         &v,
@@ -675,6 +676,7 @@ fn latent_moments_match_full_grid_with_missing_blocks() {
         2,
         Some(&mut moments),
         false,
+        None,
     );
     assert!(no_counts.1.is_empty());
     assert_eq!(no_counts.0, result.0);

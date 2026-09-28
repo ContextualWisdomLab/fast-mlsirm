@@ -897,9 +897,9 @@ fn estep_gpu_matches_cpu_counts_and_loglik() {
     // (≈ 12 × 1.2e-7 here), so the envelope below is orders of magnitude
     // above the expected f32 noise. The tiny fixture carries a negative
     // general slope (reverse-keyed item 1), so sign handling is covered.
-    // Without a GPU adapter the GPU entry falls back to CPU and the
-    // comparison is trivially exact; the fit-level Python test pins the
-    // real-device numbers.
+    // An explicit GPU request without a hardware adapter must fail closed
+    // instead of silently running the CPU path; the fit-level Python test
+    // pins the real-device numbers.
     use super::{
         e_step, fill_logprob_tables, gh_rule, initial_params, validate,
     };
@@ -927,11 +927,18 @@ fn estep_gpu_matches_cpu_counts_and_loglik() {
     let (ll_cpu, counts_cpu) = e_step(
         &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
         crate::Device::Cpu,
-    );
-    let (ll_gpu, counts_gpu) = e_step(
+    )
+    .expect("CPU E-step must succeed");
+    let (ll_gpu, counts_gpu) = match e_step(
         &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
         crate::Device::Gpu,
-    );
+    ) {
+        Ok(out) => out,
+        Err(msg) => {
+            assert!(msg.contains("hardware GPU"), "unexpected GPU error: {msg}");
+            return;
+        }
+    };
 
     assert!(
         (ll_cpu - ll_gpu).abs() <= 1e-3,
@@ -999,7 +1006,8 @@ fn zero_prior_weight_nodes_do_not_nan_estep_counts() {
         tg,
         ts,
         crate::Device::Cpu,
-    );
+    )
+    .expect("CPU E-step must succeed");
     assert!(ll.is_finite(), "observed-data loglik must stay finite; got {ll}");
     for (i, item_counts) in counts.iter().enumerate() {
         for (node, cat) in item_counts.iter().enumerate() {
