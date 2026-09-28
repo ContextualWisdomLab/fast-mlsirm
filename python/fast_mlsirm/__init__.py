@@ -63,6 +63,7 @@ from .bifactor_bootstrap import (
     BifactorBootstrapResult as BifactorBootstrapResult,
     run_bifactor_bootstrap as run_bifactor_bootstrap,
 )
+from .personfit_multidim import compute_person_fit_multidim as compute_person_fit_multidim
 
 # Harden historical public adapters before copying legacy exports. These
 # wrappers validate and normalize semantic controls/evidence only; result
