@@ -58,7 +58,8 @@ def main() -> None:
     last_error: Exception | None = None
     for attempt in range(24):
         try:
-            with urlopen(url, timeout=10) as response:
+            # Fixed HTTPS origin; the CLI version is restricted to numeric vX.Y.Z.
+            with urlopen(url, timeout=10) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
                 verify_published(json.load(response), expected, version)
             print(f"PyPI {version}: all twelve wheels and the sdist match admitted SHA256 bytes")
             return
