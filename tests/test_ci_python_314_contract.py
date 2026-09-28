@@ -54,4 +54,6 @@ def test_required_python_check_context_aggregates_matrix() -> None:
     gate = _python_gate_job_source()
     assert "needs: python-matrix" in gate
     assert "name: python" in gate
+    assert "if: ${{ !cancelled() && (" in gate
+    assert "always()" not in gate
     assert 'test "${{ needs.python-matrix.result }}" = "success"' in gate
