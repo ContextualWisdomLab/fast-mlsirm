@@ -66,3 +66,10 @@ SortedList, SortedSet and SortedDict ordering smoke and installed the exact
 11,358-byte notice. This source-backed local candidate still has no reviewed
 release lock election, complete package test result, rights acceptance, or
 published twelve-wheel proof. The original Python HOLD remains.
+
+The upstream `v2.4.0` test source matches all four official sdist package
+modules byte for byte. Against the installed source-built B candidate, its
+coverage, stress, documentation and module doctest groups passed 364 tests
+in total. Source commit, import-path proof, commands and original logs are in
+`source-build/upstream-tests/`. This adds local functional evidence only; the
+release lock and HOLD remain unchanged.

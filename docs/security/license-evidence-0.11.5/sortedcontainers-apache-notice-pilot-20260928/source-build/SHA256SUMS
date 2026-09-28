@@ -7,3 +7,9 @@ ac5f29e0aacc8ba05ce726d4a6fc338517d699ec81af6d57423fcd1002aac714  source-build/b
 5ed427f4b9542cce09e258fa66b0d8fd6f1e4abab08f2e8e9621cfc38d6fac0c  source-build/B/sortedcontainers-2.4.0-py3-none-any.whl
 1772536c431f9d33c890dfa4f94c27c39e40b10ffb8327fa14ac0037e0af19ed  source-build/C/build-C.log
 5ed427f4b9542cce09e258fa66b0d8fd6f1e4abab08f2e8e9621cfc38d6fac0c  source-build/C/sortedcontainers-2.4.0-py3-none-any.whl
+41dadf773ce0f0dd5cf603d8bbcba496a192077b07cab1b4f03886ac3318c5df  source-build/upstream-tests/README.md
+8b7e8a3a67a78eee5eb6da3d462bb4a5702fe98ff83932d2f5fc0d639d83fe73  source-build/upstream-tests/coverage.log
+b4eb7be9000651a3e89c6a77e8b346d05d1d706d620aa6f8193e574a39b3ced1  source-build/upstream-tests/docs.log
+6410d882a05131132a87053e670024fa0df1553b17789bd6beecdb91863af993  source-build/upstream-tests/module-doctest.log
+3c0af3e2e33158631cc37dce488fbf52be92d9c4278a624fb4aa69cd8f6b3d60  source-build/upstream-tests/receipt.json
+044ab3fd79e8b7314e9090537f59ef9f672195723b8baeb8a82c24f8c7b3d4d6  source-build/upstream-tests/stress.log

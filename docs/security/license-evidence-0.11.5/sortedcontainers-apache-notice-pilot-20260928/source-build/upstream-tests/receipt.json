@@ -1,0 +1,43 @@
+{
+  "candidate_wheel_sha256": "5ed427f4b9542cce09e258fa66b0d8fd6f1e4abab08f2e8e9621cfc38d6fac0c",
+  "installed_candidate_origin": "source-build/B/sortedcontainers-2.4.0-py3-none-any.whl",
+  "logs": {
+    "coverage.log": {
+      "result": "291 passed",
+      "sha256": "8b7e8a3a67a78eee5eb6da3d462bb4a5702fe98ff83932d2f5fc0d639d83fe73"
+    },
+    "docs.log": {
+      "result": "1 passed",
+      "sha256": "b4eb7be9000651a3e89c6a77e8b346d05d1d706d620aa6f8193e574a39b3ced1"
+    },
+    "module-doctest.log": {
+      "result": "66 passed",
+      "sha256": "6410d882a05131132a87053e670024fa0df1553b17789bd6beecdb91863af993"
+    },
+    "stress.log": {
+      "result": "6 passed",
+      "sha256": "044ab3fd79e8b7314e9090537f59ef9f672195723b8baeb8a82c24f8c7b3d4d6"
+    }
+  },
+  "module_sha256_equal_to_sdist": {
+    "__init__.py": "5ff5f92ee463bdeefb2b0b8942b0d44aed13f39e7d61ca28c106c09e3b8ced31",
+    "sorteddict.py": "cdae4b9c43593063c89ff25912bd12d2d0d77c4b3126c7c49da9e1ea52e54d93",
+    "sortedlist.py": "af003574cf1c7b4f5e6f60cc8cb39f1e88a4842c7f45f9399ee13f352b1faf72",
+    "sortedset.py": "e51236094246326d62837f9d85b3abcc397c68fa8378f92824f428ab444e4bb3"
+  },
+  "official_sdist_sha256": "25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88",
+  "peeled_git_commit": "a1f52d6713dd2c2713a881d4f4d86ed68ff71cab",
+  "pytest": "9.1.1",
+  "python": "CPython 3.12.14",
+  "source_archive_sha256": "db312aac77ad185dc48f1e79817556588c675e5060785b7461e79c5d9c0deac2",
+  "source_archive_url": "https://codeload.github.com/grantjenks/python-sortedcontainers/tar.gz/a1f52d6713dd2c2713a881d4f4d86ed68ff71cab",
+  "test_dependencies": {
+    "iniconfig": "2.3.0",
+    "packaging": "26.3",
+    "pluggy": "1.6.0",
+    "pygments": "2.21.0"
+  },
+  "test_scope": "upstream tests copied to tests-only root without upstream package; coverage, stress, docs rst and installed-module doctests",
+  "total_passed": 364,
+  "upstream_tag": "v2.4.0"
+}
