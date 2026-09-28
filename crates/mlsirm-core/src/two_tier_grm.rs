@@ -244,6 +244,10 @@ pub struct TwoTierGrmConfig {
     pub newton_iter: usize,
     /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
     pub ridge: f64,
+    /// Person-axis chunk count for the CPU E-step (#2002); see bifactor.
+    pub e_step_n_chunks: usize,
+    /// Local rayon pool size for the CPU E-step (#2002).
+    pub e_step_n_threads: usize,
 }
 
 // No `Default` impl: `q_primary`/`q_specific` are quadrature node counts
@@ -285,6 +289,10 @@ pub struct TwoTierGrmResult {
     pub n_parameters: usize,
     /// `"correlated"` when Phi was estimated, `"orthogonal"` when fixed to I.
     pub primary_identification: &'static str,
+    /// Provenance: CPU E-step person-chunk count (#2002).
+    pub e_step_n_chunks: usize,
+    /// Provenance: local rayon pool size for the CPU E-step (#2002).
+    pub e_step_n_threads: usize,
 }
 
 /// Validated problem structure shared by the fitter and the public
@@ -349,6 +357,12 @@ pub(crate) fn validate(
     }
     if !cfg.ridge.is_finite() || cfg.ridge <= 0.0 {
         return Err("ridge must be finite and positive".into());
+    }
+    if cfg.e_step_n_chunks < 1 {
+        return Err("e_step_n_chunks must be >= 1".into());
+    }
+    if cfg.e_step_n_threads < 1 {
+        return Err("e_step_n_threads must be >= 1".into());
     }
     let n_cells = n_persons
         .checked_mul(n_items)
@@ -843,9 +857,183 @@ pub(crate) fn e_step(
     ts: &[f64],
     n_grid: usize,
     qs: usize,
-) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
+    e_step_n_chunks: usize,
+    e_step_n_threads: usize,
+) -> Result<(f64, Vec<Vec<Vec<f64>>>, Vec<f64>), String> {
+    let pool = crate::estep_parallel::PersonChunkPool::new(e_step_n_threads)?;
+    e_step_with_pool(
+        v,
+        y,
+        observed,
+        params,
+        log_w,
+        log_ws,
+        coords,
+        ts,
+        n_grid,
+        qs,
+        e_step_n_chunks,
+        &pool,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn e_step_with_pool(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws: &[f64],
+    coords: &[f64],
+    ts: &[f64],
+    n_grid: usize,
+    qs: usize,
+    e_step_n_chunks: usize,
+    pool: &crate::estep_parallel::PersonChunkPool,
+) -> Result<(f64, Vec<Vec<Vec<f64>>>, Vec<f64>), String> {
     let p = v.n_primary;
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
+    let map_chunk = |p_start: usize, p_end: usize| {
+        let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
+        for i in 0..v.n_items {
+            let n_nodes = if v.item_block[i].is_some() {
+                n_grid * qs
+            } else {
+                n_grid
+            };
+            counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+        }
+        let mut log_i = vec![0.0f64; v.n_specific * n_grid];
+        let mut gen_log = vec![0.0f64; n_grid];
+        let mut log_like_g = vec![0.0f64; n_grid];
+        let mut post_g = vec![0.0f64; n_grid];
+        let mut tmp_h = vec![0.0f64; qs];
+        let mut block_acc_g = vec![0.0f64; v.n_specific * qs];
+        let mut s_bar_sum = vec![0.0f64; p * p];
+        let mut loglik = 0.0f64;
+        for pp in p_start..p_end {
+            // Pass 1: person marginal per primary node (specific-free + block
+            // integrals), without storing per-(g,h) tables.
+            gen_log.copy_from_slice(log_w);
+            for &i in &v.specific_free {
+                if !is_obs(pp, i) {
+                    continue;
+                }
+                let yc = y[pp * v.n_items + i];
+                for g in 0..n_grid {
+                    gen_log[g] += item_cat_logprob(v, params, coords, ts, i, g, 0, yc);
+                }
+            }
+            for (s, members) in v.blocks.iter().enumerate() {
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws[h];
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * v.n_items + i];
+                            acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        }
+                        tmp_h[h] = acc;
+                    }
+                    log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                }
+            }
+            for g in 0..n_grid {
+                let mut acc = gen_log[g];
+                for s in 0..v.n_specific {
+                    acc += log_i[s * n_grid + g];
+                }
+                log_like_g[g] = acc;
+            }
+            let log_lp = log_sum_exp(&log_like_g);
+            loglik += log_lp;
+            for g in 0..n_grid {
+                post_g[g] = (log_like_g[g] - log_lp).exp();
+            }
+            for g in 0..n_grid {
+                let post = post_g[g];
+                for (jj, slot) in s_bar_sum.iter_mut().enumerate().take(p * p) {
+                    let j = jj / p;
+                    let k = jj % p;
+                    *slot += post * coords[g * p + j] * coords[g * p + k];
+                }
+            }
+            for &i in &v.specific_free {
+                if !is_obs(pp, i) {
+                    continue;
+                }
+                let yc = y[pp * v.n_items + i];
+                for g in 0..n_grid {
+                    counts[i][g][yc] += post_g[g];
+                }
+            }
+            // Pass 2: joint (g, h) posteriors for block items — recompute the
+            // active primary node's specific-tier block on the fly.
+            for (s, members) in v.blocks.iter().enumerate() {
+                let any_obs = members.iter().any(|&i| is_obs(pp, i));
+                if !any_obs {
+                    continue;
+                }
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws[h];
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * v.n_items + i];
+                            acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        }
+                        block_acc_g[s * qs + h] = acc;
+                    }
+                    let mut others = gen_log[g] - log_w[g];
+                    for s2 in 0..v.n_specific {
+                        if s2 != s {
+                            others += log_i[s2 * n_grid + g];
+                        }
+                    }
+                    for h in 0..qs {
+                        let log_post = log_w[g] + block_acc_g[s * qs + h] + others - log_lp;
+                        let post = log_post.exp();
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * v.n_items + i];
+                            counts[i][g * qs + h][yc] += post;
+                        }
+                    }
+                }
+            }
+        }
+        (loglik, counts, s_bar_sum)
+    };
+    let mapped = crate::estep_parallel::fold_person_chunks_from_first(
+        pool,
+        v.n_persons,
+        e_step_n_chunks,
+        map_chunk,
+        |mut acc, (ll, part_counts, part_s)| {
+            acc.0 += ll;
+            for (dst, src) in acc.1.iter_mut().zip(part_counts.iter()) {
+                for (dn, sn) in dst.iter_mut().zip(src.iter()) {
+                    for (d, s) in dn.iter_mut().zip(sn.iter()) {
+                        *d += *s;
+                    }
+                }
+            }
+            for (d, s) in acc.2.iter_mut().zip(part_s.iter()) {
+                *d += *s;
+            }
+            acc
+        },
+    )?;
+    if let Some(acc) = mapped {
+        return Ok(acc);
+    }
     let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
     for i in 0..v.n_items {
         let n_nodes = if v.item_block[i].is_some() {
@@ -855,115 +1043,7 @@ pub(crate) fn e_step(
         };
         counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
     }
-    // Per-person scratch: O(n_grid) for primary marginals + O(S * qs) for
-    // the active primary node's specific-tier block (not O(S * n_grid * qs)).
-    let mut log_i = vec![0.0f64; v.n_specific * n_grid];
-    let mut gen_log = vec![0.0f64; n_grid];
-    let mut log_like_g = vec![0.0f64; n_grid];
-    let mut post_g = vec![0.0f64; n_grid];
-    let mut tmp_h = vec![0.0f64; qs];
-    let mut block_acc_g = vec![0.0f64; v.n_specific * qs];
-    let mut s_bar_sum = vec![0.0f64; p * p];
-
-    let mut loglik = 0.0f64;
-    for pp in 0..v.n_persons {
-        // Pass 1: person marginal per primary node (specific-free + block
-        // integrals), without storing per-(g,h) tables.
-        gen_log.copy_from_slice(log_w);
-        for &i in &v.specific_free {
-            if !is_obs(pp, i) {
-                continue;
-            }
-            let yc = y[pp * v.n_items + i];
-            for g in 0..n_grid {
-                gen_log[g] += item_cat_logprob(v, params, coords, ts, i, g, 0, yc);
-            }
-        }
-        for (s, members) in v.blocks.iter().enumerate() {
-            for g in 0..n_grid {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(pp, i) {
-                            continue;
-                        }
-                        let yc = y[pp * v.n_items + i];
-                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
-                    }
-                    tmp_h[h] = acc;
-                }
-                log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
-            }
-        }
-        for g in 0..n_grid {
-            let mut acc = gen_log[g];
-            for s in 0..v.n_specific {
-                acc += log_i[s * n_grid + g];
-            }
-            log_like_g[g] = acc;
-        }
-        let log_lp = log_sum_exp(&log_like_g);
-        loglik += log_lp;
-        for g in 0..n_grid {
-            post_g[g] = (log_like_g[g] - log_lp).exp();
-        }
-        for g in 0..n_grid {
-            let post = post_g[g];
-            for (jj, slot) in s_bar_sum.iter_mut().enumerate().take(p * p) {
-                let j = jj / p;
-                let k = jj % p;
-                *slot += post * coords[g * p + j] * coords[g * p + k];
-            }
-        }
-        for &i in &v.specific_free {
-            if !is_obs(pp, i) {
-                continue;
-            }
-            let yc = y[pp * v.n_items + i];
-            for g in 0..n_grid {
-                counts[i][g][yc] += post_g[g];
-            }
-        }
-        // Pass 2: joint (g, h) posteriors for block items — recompute the
-        // active primary node's specific-tier block on the fly.
-        for (s, members) in v.blocks.iter().enumerate() {
-            let any_obs = members.iter().any(|&i| is_obs(pp, i));
-            if !any_obs {
-                continue;
-            }
-            for g in 0..n_grid {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(pp, i) {
-                            continue;
-                        }
-                        let yc = y[pp * v.n_items + i];
-                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
-                    }
-                    block_acc_g[s * qs + h] = acc;
-                }
-                let mut others = gen_log[g] - log_w[g];
-                for s2 in 0..v.n_specific {
-                    if s2 != s {
-                        others += log_i[s2 * n_grid + g];
-                    }
-                }
-                for h in 0..qs {
-                    let log_post = log_w[g] + block_acc_g[s * qs + h] + others - log_lp;
-                    let post = log_post.exp();
-                    for &i in members {
-                        if !is_obs(pp, i) {
-                            continue;
-                        }
-                        let yc = y[pp * v.n_items + i];
-                        counts[i][g * qs + h][yc] += post;
-                    }
-                }
-            }
-        }
-    }
-    (loglik, counts, s_bar_sum)
+    Ok((0.0, counts, vec![0.0f64; p * p]))
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item — the
@@ -1351,6 +1431,7 @@ fn run_single_start(
     let mut n_iter = 0usize;
     let mut termination_reason = "max_iter_reached".to_string();
     let mut final_loglik_change = f64::NAN;
+    let pool = crate::estep_parallel::PersonChunkPool::new(cfg.e_step_n_threads)?;
 
     loop {
         let phi = phi_from_z(&z_phi, p);
@@ -1358,9 +1439,20 @@ fn run_single_start(
             .ok_or_else(|| format!("primary correlation became non-PD at iteration {n_iter}"))?;
         let phi_inv = chol_inverse(&l, p);
         let log_w = reweighted_log_weights(log_w0, coords, &phi_inv, logdet, p);
-        let (ll, counts, s_bar_sum) = e_step(
-            v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs,
-        );
+        let (ll, counts, s_bar_sum) = e_step_with_pool(
+            v,
+            y,
+            observed,
+            &params,
+            &log_w,
+            log_ws,
+            coords,
+            ts,
+            n_grid,
+            qs,
+            cfg.e_step_n_chunks,
+            &pool,
+        )?;
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
@@ -1704,6 +1796,8 @@ pub fn fit_two_tier_grm(
         } else {
             "orthogonal"
         },
+        e_step_n_chunks: cfg.e_step_n_chunks,
+        e_step_n_threads: cfg.e_step_n_threads,
     })
 }
 
@@ -1759,6 +1853,8 @@ pub fn two_tier_grm_marginal_loglik(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     };
     let v = validate(
         y,
@@ -1800,8 +1896,8 @@ fn reduced_loglik(
     let params = pack_params(v, a_primary, a_specific, thresholds);
     let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
     Ok(e_step(
-        v, y, observed, &params, &log_w, &log_ws, &coords, ts, n_grid, qs,
-    )
+        v, y, observed, &params, &log_w, &log_ws, &coords, ts, n_grid, qs, 1, 1,
+    )?
     .0)
 }
 
@@ -1852,6 +1948,8 @@ pub fn two_tier_grm_marginal_loglik_brute(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     };
     let v = validate(
         y,

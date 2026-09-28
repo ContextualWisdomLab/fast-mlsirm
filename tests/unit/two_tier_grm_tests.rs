@@ -251,7 +251,35 @@ fn valid_config() -> TwoTierGrmConfig {
         seed: 42,
         newton_iter: 3,
         ridge: 1e-8,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     }
+}
+
+#[test]
+fn fit_records_e_step_chunk_provenance() {
+    let (y, n_persons) = tiny_data();
+    let cfg = TwoTierGrmConfig {
+        max_iter: 1,
+        e_step_n_chunks: 3,
+        e_step_n_threads: 2,
+        ..valid_config()
+    };
+    let fit = fit_two_tier_grm(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("fit");
+    assert_eq!(fit.e_step_n_chunks, 3);
+    assert_eq!(fit.e_step_n_threads, 2);
 }
 
 #[test]

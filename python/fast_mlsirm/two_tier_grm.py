@@ -159,6 +159,8 @@ class TwoTierGrmFit:
     start in ``0..n_starts``. ``primary_identification`` is
     ``"orthogonal"`` when Phi was fixed to I or ``"correlated"`` when
     its off-diagonal entries were estimated (Cai, 2010, pp. 583-584).
+    ``e_step_n_chunks`` and ``e_step_n_threads`` record the caller-owned
+    CPU E-step controls that produced the fit.
     """
 
     a_primary: np.ndarray
@@ -179,6 +181,8 @@ class TwoTierGrmFit:
     best_start: int
     n_parameters: int
     primary_identification: str
+    e_step_n_chunks: int
+    e_step_n_threads: int
 
 
 def fit_two_tier_grm(
@@ -195,6 +199,9 @@ def fit_two_tier_grm(
     n_starts: int,
     seed: int,
     primary_correlation: str = "estimate",
+    *,
+    e_step_n_chunks: int,
+    e_step_n_threads: int,
 ) -> TwoTierGrmFit:
     """Fit the single-group polytomous two-tier GRM (compute in Rust).
 
@@ -220,6 +227,9 @@ def fit_two_tier_grm(
 
     See the module docstring for the model, the paper basis of every
     non-obvious decision, and the APA 7th references.
+    ``e_step_n_chunks`` and ``e_step_n_threads`` are required (ADR-0028 /
+    #2002): the person sweep is folded in chunk-index order on one local
+    pool of that size, and both values are recorded on the fit.
     ``primary_correlation='estimate'`` preserves the existing correlated-primary
     fit; ``'identity'`` fixes Phi exactly to I (Cai, 2010, pp. 583-584).
     In identity mode, distinct free-loading item sets for each primary pair
@@ -257,6 +267,12 @@ def fit_two_tier_grm(
     n_starts_int = _finite_integer_control(n_starts, "n_starts")
     if n_starts_int < 1:
         raise ValueError("n_starts must be >= 1")
+    e_step_n_chunks_int = _finite_integer_control(e_step_n_chunks, "e_step_n_chunks")
+    if e_step_n_chunks_int < 1:
+        raise ValueError("e_step_n_chunks must be >= 1")
+    e_step_n_threads_int = _finite_integer_control(e_step_n_threads, "e_step_n_threads")
+    if e_step_n_threads_int < 1:
+        raise ValueError("e_step_n_threads must be >= 1")
     tol_float = _positive_real_control(tol, "tol")
     seed_int = _u64_seed(seed)
 
@@ -338,6 +354,8 @@ def fit_two_tier_grm(
         int(n_starts_int),
         int(seed_int),
         primary_correlation,
+        e_step_n_chunks=int(e_step_n_chunks_int),
+        e_step_n_threads=int(e_step_n_threads_int),
     )
     return TwoTierGrmFit(
         a_primary=np.asarray(res["a_primary"], dtype=np.float64).reshape(
@@ -370,6 +388,8 @@ def fit_two_tier_grm(
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
         primary_identification=str(res["primary_identification"]),
+        e_step_n_chunks=int(res["e_step_n_chunks"]),
+        e_step_n_threads=int(res["e_step_n_threads"]),
     )
 
 

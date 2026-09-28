@@ -393,6 +393,8 @@ fn six_item_mle_is_positive_definite_with_matching_vcov_and_se() {
             newton_iter: 10,
             ridge: 1e-8,
             device: crate::Device::Cpu,
+            e_step_n_chunks: 1,
+            e_step_n_threads: 1,
         };
         let fit = fit_bifactor_grm(
             &y,

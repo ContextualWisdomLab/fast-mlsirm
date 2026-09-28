@@ -71,9 +71,13 @@ def test_bifactor_gpu_equivalence_single_group(capfd):
     )
 
     t0 = time.perf_counter()
-    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu")
+    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t1 = time.perf_counter()
-    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
+    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t2 = time.perf_counter()
 
     cpu_time, gpu_time = t1 - t0, t2 - t1
@@ -126,9 +130,13 @@ def test_bifactor_gpu_equivalence_multigroup(capfd):
     )
 
     t0 = time.perf_counter()
-    fit_cpu = fit_bifactor_grm_multigroup(responses, group, smap, **kw, device="cpu")
+    fit_cpu = fit_bifactor_grm_multigroup(responses, group, smap, **kw, device="cpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t1 = time.perf_counter()
-    fit_gpu = fit_bifactor_grm_multigroup(responses, group, smap, **kw, device="gpu")
+    fit_gpu = fit_bifactor_grm_multigroup(responses, group, smap, **kw, device="gpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t2 = time.perf_counter()
 
     cpu_time, gpu_time = t1 - t0, t2 - t1

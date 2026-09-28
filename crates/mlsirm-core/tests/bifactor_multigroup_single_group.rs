@@ -100,6 +100,8 @@ fn single_group_multigroup_matches_stage1_exactly() {
         newton_iter: 10,
         ridge: 1e-8,
         device: mlsirm_core::Device::Cpu,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     };
     let single = fit_bifactor_grm(
         &y,
@@ -123,6 +125,8 @@ fn single_group_multigroup_matches_stage1_exactly() {
         newton_iter: 10,
         ridge: 1e-8,
         device: mlsirm_core::Device::Cpu,
+            e_step_n_chunks: 1,
+            e_step_n_threads: 1,
         estimate_specific_vars: false,
     };
     let group_id = vec![0usize; N_PERSONS];
@@ -228,6 +232,8 @@ fn uncapped_start_budget_is_accepted() {
         newton_iter: 10,
         ridge: 1e-8,
         device: mlsirm_core::Device::Cpu,
+            e_step_n_chunks: 1,
+            e_step_n_threads: 1,
         estimate_specific_vars: false,
     };
     let group_id = vec![0usize; 60];

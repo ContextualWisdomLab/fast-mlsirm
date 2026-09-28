@@ -162,6 +162,8 @@ fn fit_config() -> BifactorGrmConfig {
         newton_iter: 10,
         ridge: 1e-8,
         device: mlsirm_core::Device::Cpu,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     }
 }
 

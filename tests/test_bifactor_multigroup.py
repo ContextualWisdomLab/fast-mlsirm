@@ -84,7 +84,9 @@ def _fit(y: np.ndarray, group: np.ndarray, **overrides):
     kwargs.update(overrides)
     return fit_bifactor_grm_multigroup(
         y, group, SPECIFIC_MAP, N_CAT, N_SPECIFIC, **kwargs
-    )
+    ,
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
 
 
 def test_fit_returns_identified_shaped_result() -> None:
@@ -155,6 +157,8 @@ def test_single_group_matches_stage1_exactly() -> None:
         tol=1e-5,
         n_starts=1,
         seed=SEED,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
     multi = fit_bifactor_grm_multigroup(
         y,
@@ -168,6 +172,8 @@ def test_single_group_matches_stage1_exactly() -> None:
         tol=1e-5,
         n_starts=1,
         seed=SEED,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
     np.testing.assert_array_equal(multi.a_general[0], single.a_general)
     np.testing.assert_array_equal(multi.threshold[0], single.threshold)
@@ -228,7 +234,9 @@ def test_q_general_and_q_specific_are_required() -> None:
     """RED test for #1929: no unsourced defaults exist for the node counts."""
     y, group = _simulate(SEED)
     with pytest.raises(TypeError):
-        fit_bifactor_grm_multigroup(y, group, SPECIFIC_MAP, N_CAT, N_SPECIFIC)
+        fit_bifactor_grm_multigroup(y, group, SPECIFIC_MAP, N_CAT, N_SPECIFIC,
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
 
 
 def test_max_iter_n_starts_seed_and_tol_are_required() -> None:
@@ -240,4 +248,6 @@ def test_max_iter_n_starts_seed_and_tol_are_required() -> None:
         with pytest.raises(TypeError):
             fit_bifactor_grm_multigroup(
                 y, group, SPECIFIC_MAP, N_CAT, N_SPECIFIC, **kwargs
-            )
+            ,
+        e_step_n_chunks=1,
+        e_step_n_threads=1)

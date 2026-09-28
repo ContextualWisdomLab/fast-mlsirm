@@ -97,6 +97,7 @@ def test_identity_rejects_identical_primary_support() -> None:
             y, shared, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC,
             q_primary=7, q_specific=7, max_iter=500, tol=1e-5,
             n_starts=1, seed=SEED, primary_correlation="identity",
+            e_step_n_chunks=1, e_step_n_threads=1,
         )
 
 
@@ -150,7 +151,10 @@ def test_estimate_path_matches_origin_main_golden() -> None:
     y = np.array([[(p + i) % 3 for i in range(4)] for p in range(12)], dtype=np.int64)
     pmap = np.array([[1, 0], [1, 0], [0, 1], [0, 1]], dtype=bool)
     smap = np.zeros(4, dtype=np.int64)
-    kwargs = dict(q_primary=7, q_specific=7, max_iter=500, tol=1e-2, n_starts=1, seed=20260922)
+    kwargs = dict(
+        q_primary=7, q_specific=7, max_iter=500, tol=1e-2, n_starts=1, seed=20260922,
+        e_step_n_chunks=1, e_step_n_threads=1,
+    )
     golden_phi = np.array([[1.0, -0.10480732118999127], [-0.10480732118999127, 1.0]])
     golden_trace = np.array([
         -57.878882056754186, -51.76952034453358, -47.89637529712579,
@@ -226,6 +230,8 @@ def _fit(y: np.ndarray, **overrides):
         "tol": 1e-5,
         "n_starts": 1,
         "seed": SEED,
+        "e_step_n_chunks": 1,
+        "e_step_n_threads": 1,
     }
     kwargs.update(overrides)
     return fit_two_tier_grm(y, PRIMARY_MAP, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC, **kwargs)
@@ -267,6 +273,8 @@ def test_fit_returns_identified_shaped_result() -> None:
     assert bool((np.diff(trace) >= -1e-9).all())
     # sum_i (k_i + has_specific + m1) + P(P-1)/2 = 6*1 + 6*1 + 6*3 + 1.
     assert fit.n_parameters == 6 + 6 + 18 + 1
+    assert fit.e_step_n_chunks == 1
+    assert fit.e_step_n_threads == 1
 
 
 def test_same_seed_bit_reproduces() -> None:
@@ -293,6 +301,10 @@ def test_rejects_out_of_range_caller_arguments() -> None:
         _fit(y, tol=0.0)
     with pytest.raises(ValueError):
         _fit(y, n_starts=0)
+    with pytest.raises(ValueError, match="e_step_n_chunks"):
+        _fit(y, e_step_n_chunks=0)
+    with pytest.raises(ValueError, match="e_step_n_threads"):
+        _fit(y, e_step_n_threads=0)
     with pytest.raises(ValueError, match="primary_map"):
         fit_two_tier_grm(
             y,
@@ -302,7 +314,8 @@ def test_rejects_out_of_range_caller_arguments() -> None:
             N_PRIMARY,
             N_SPECIFIC,
             7,
-            7, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15
+            7, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15,
+            e_step_n_chunks=1, e_step_n_threads=1,
         )
     with pytest.raises(ValueError, match="specific_map"):
         fit_two_tier_grm(
@@ -313,7 +326,8 @@ def test_rejects_out_of_range_caller_arguments() -> None:
             N_PRIMARY,
             N_SPECIFIC,
             7,
-            7, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15
+            7, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15,
+            e_step_n_chunks=1, e_step_n_threads=1,
         )
 
 
@@ -322,6 +336,16 @@ def test_q_primary_and_q_specific_are_required() -> None:
     y = _simulate(SEED)
     with pytest.raises(TypeError):
         fit_two_tier_grm(y, PRIMARY_MAP, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15)
+
+
+def test_e_step_controls_are_required() -> None:
+    """Chunk count and pool size stay caller-owned (#2002, ADR-0028)."""
+    y = _simulate(SEED)
+    with pytest.raises(TypeError):
+        fit_two_tier_grm(
+            y, PRIMARY_MAP, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC,
+            q_primary=7, q_specific=7, max_iter=1, tol=1e-6, n_starts=1, seed=SEED,
+        )
 
 
 def test_unobserved_category_fails_loudly() -> None:

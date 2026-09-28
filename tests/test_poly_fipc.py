@@ -150,6 +150,8 @@ def test_bifactor_fipc_recovers_shift() -> None:
         tol=1e-5,
         n_starts=1,
         seed=0x9E37_79B9_7F4A_7C15,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
     assert ref.converged
     anchor = np.zeros(N_ITEMS, dtype=bool)

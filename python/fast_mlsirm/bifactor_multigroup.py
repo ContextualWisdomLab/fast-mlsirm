@@ -176,6 +176,8 @@ class BifactorMultigroupFit:
     final_loglik_change: float
     best_start: int
     n_parameters: int
+    e_step_n_chunks: int
+    e_step_n_threads: int
 
 
 def fit_bifactor_grm_multigroup(
@@ -192,6 +194,8 @@ def fit_bifactor_grm_multigroup(
     tol: float,
     n_starts: int,
     seed: int,
+    e_step_n_chunks: int,
+    e_step_n_threads: int,
     estimate_specific_vars: bool = False,
     device: str = "cpu",
 ) -> BifactorMultigroupFit:
@@ -251,6 +255,12 @@ def fit_bifactor_grm_multigroup(
         raise ValueError("n_starts must be >= 1")
     tol_float = _positive_real_control(tol, "tol")
     seed_int = _u64_seed(seed)
+    e_step_n_chunks_int = _finite_integer_control(e_step_n_chunks, "e_step_n_chunks")
+    if e_step_n_chunks_int < 1:
+        raise ValueError("e_step_n_chunks must be >= 1")
+    e_step_n_threads_int = _finite_integer_control(e_step_n_threads, "e_step_n_threads")
+    if e_step_n_threads_int < 1:
+        raise ValueError("e_step_n_threads must be >= 1")
     if not isinstance(estimate_specific_vars, bool):
         raise ValueError("estimate_specific_vars must be a bool")
 
@@ -369,6 +379,8 @@ def fit_bifactor_grm_multigroup(
         int(seed_int),
         bool(estimate_specific_vars),
         device_str,
+        e_step_n_chunks=int(e_step_n_chunks_int),
+        e_step_n_threads=int(e_step_n_threads_int),
     )
     return BifactorMultigroupFit(
         a_general=np.asarray(res["a_general"], dtype=np.float64).reshape(
@@ -402,4 +414,6 @@ def fit_bifactor_grm_multigroup(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+        e_step_n_chunks=int(res["e_step_n_chunks"]),
+        e_step_n_threads=int(res["e_step_n_threads"]),
     )

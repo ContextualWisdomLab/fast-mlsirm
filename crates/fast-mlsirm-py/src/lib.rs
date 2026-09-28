@@ -1373,7 +1373,7 @@ fn parse_device(name: &str) -> PyResult<mlsirm_core::Device> {
 /// `converged = False` instead of substituting values.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu"))]
+#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu", *, e_step_n_chunks, e_step_n_threads))]
 fn fit_bifactor_grm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1390,6 +1390,8 @@ fn fit_bifactor_grm(
     n_starts: usize,
     seed: u64,
     device: &str,
+    e_step_n_chunks: usize,
+    e_step_n_threads: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
@@ -1429,6 +1431,8 @@ fn fit_bifactor_grm(
         newton_iter: 10,
         ridge: 1e-8,
         device: parse_device(device)?,
+        e_step_n_chunks,
+        e_step_n_threads,
     };
     let res = py
         .detach(|| {
@@ -1458,6 +1462,8 @@ fn fit_bifactor_grm(
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("best_start", res.best_start)?;
     out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("e_step_n_chunks", res.e_step_n_chunks)?;
+    out.set_item("e_step_n_threads", res.e_step_n_threads)?;
     Ok(out.into())
 }
 
@@ -1485,7 +1491,7 @@ fn fit_bifactor_grm(
 /// `n_groups == 1` this bit-reproduces `fit_bifactor_grm`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, group_id, n_groups, specific_map, n_persons, n_items, n_specific, n_cat, anchor = None, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, estimate_specific_vars = false, device = "cpu"))]
+#[pyo3(signature = (y, observed, group_id, n_groups, specific_map, n_persons, n_items, n_specific, n_cat, anchor = None, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, estimate_specific_vars = false, device = "cpu", *, e_step_n_chunks, e_step_n_threads))]
 fn fit_bifactor_grm_multigroup(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1506,6 +1512,8 @@ fn fit_bifactor_grm_multigroup(
     seed: u64,
     estimate_specific_vars: bool,
     device: &str,
+    e_step_n_chunks: usize,
+    e_step_n_threads: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
@@ -1552,6 +1560,8 @@ fn fit_bifactor_grm_multigroup(
         seed,
         estimate_specific_vars,
         device: parse_device(device)?,
+        e_step_n_chunks,
+        e_step_n_threads,
         ..BifactorMultigroupConfig::default()
     };
     let res = py
@@ -1588,6 +1598,8 @@ fn fit_bifactor_grm_multigroup(
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("best_start", res.best_start)?;
     out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("e_step_n_chunks", res.e_step_n_chunks)?;
+    out.set_item("e_step_n_threads", res.e_step_n_threads)?;
     Ok(out.into())
 }
 
@@ -1853,7 +1865,8 @@ fn fit_bifactor_grm_fipc(
 /// `theta_p_sd` (primary-factor EAPs + marginal posterior SDs, row-major
 /// `n_persons * n_primary`), `category_counts` (`n_items * n_cat`),
 /// `loglik_trace`, `n_iter`, `converged`, `termination_reason`,
-/// `final_loglik_change`, `best_start`, `n_parameters`.
+/// `final_loglik_change`, `best_start`, `n_parameters`,
+/// `e_step_n_chunks`, `e_step_n_threads`.
 /// Unobserved categories raise `ValueError`; `max_iter` exhaustion reports
 /// `converged = False` instead of substituting values.
 ///
@@ -1868,7 +1881,7 @@ fn fit_bifactor_grm_fipc(
 /// https://doi.org/10.1037/a0023350 (full text read)
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, q_primary = 15, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, primary_correlation = "estimate"))]
+#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, q_primary = 15, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, primary_correlation = "estimate", *, e_step_n_chunks, e_step_n_threads))]
 fn fit_two_tier_grm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1887,6 +1900,8 @@ fn fit_two_tier_grm(
     n_starts: usize,
     seed: u64,
     primary_correlation: &str,
+    e_step_n_chunks: usize,
+    e_step_n_threads: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let estimate_primary_correlation = match primary_correlation {
         "estimate" => true,
@@ -1936,6 +1951,8 @@ fn fit_two_tier_grm(
         // Python and out of #1929's quadrature-node scope.
         newton_iter: 10,
         ridge: 1e-8,
+        e_step_n_chunks,
+        e_step_n_threads,
     };
     let res = py
         .detach(|| {
@@ -1969,6 +1986,8 @@ fn fit_two_tier_grm(
     out.set_item("best_start", res.best_start)?;
     out.set_item("n_parameters", res.n_parameters)?;
     out.set_item("primary_identification", res.primary_identification)?;
+    out.set_item("e_step_n_chunks", res.e_step_n_chunks)?;
+    out.set_item("e_step_n_threads", res.e_step_n_threads)?;
     Ok(out.into())
 }
 
