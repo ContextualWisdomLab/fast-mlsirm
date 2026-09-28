@@ -1,0 +1,9 @@
+Looking in links: /pytest-deps
+Processing ./pytest-deps/pytest-9.1.1-py3-none-any.whl
+Processing ./pytest-deps/iniconfig-2.3.0-py3-none-any.whl (from pytest==9.1.1)
+Processing ./pytest-deps/packaging-26.3-py3-none-any.whl (from pytest==9.1.1)
+Processing ./pytest-deps/pluggy-1.6.0-py3-none-any.whl (from pytest==9.1.1)
+Processing ./pytest-deps/pygments-2.21.0-py3-none-any.whl (from pytest==9.1.1)
+Installing collected packages: pygments, pluggy, packaging, iniconfig, pytest
+
+Successfully installed iniconfig-2.3.0 packaging-26.3 pluggy-1.6.0 pygments-2.21.0 pytest-9.1.1

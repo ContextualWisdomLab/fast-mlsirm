@@ -30,7 +30,18 @@ The build, license, auditwheel and tool-install logs are retained here and
 hashed in `SHA256SUMS`. The owner's separate CPython 3.12 wheel and ten
 installed regression tests are recorded in `CONTINUATION-20260928.md`.
 
-These are local Linux candidates. Installed CPython 3.13/3.14 numerical tests,
-Windows/macOS candidates, published twelve-wheel hashes, target-specific
-license closure and release acceptance remain unverified. The original Cargo
-and Python HOLDs are unchanged.
+The retained installed-test script downloaded exact official NumPy 2.5.2
+manylinux x86_64 wheels after matching both their SHA256 and size to the
+candidate `uv.lock` and the live PyPI JSON: `29b86ff8a6cc556b47ec6b64b194815cc80e6bf5eedcc6cddfd65318cb0b4eee`
+(cp313) and `318b9a4c845dbea06708a29c84ee429cc3065048db34cdb799047643492050ee`
+(cp314). They were installed only into separate project-local test virtual
+environments in the pinned `manylinux_2_28` image; no test dependency was
+added to either fast-mlsirm wheel. Each exact installed wheel passed the ten
+existing regression tests in `test_rust_regression_ols_hc_parity.py` (10/10 for
+each ABI). The NumPy install and regression logs are retained here.
+
+These are local Linux candidates. Official NumPy test wheels are not the
+Fortran-free research runtime candidate and do not resolve its license HOLD.
+Windows/macOS candidates, published twelve-wheel hashes, broader numerical
+and ABI acceptance, target-specific license closure and release acceptance
+remain unverified. The original Cargo and Python HOLDs are unchanged.
