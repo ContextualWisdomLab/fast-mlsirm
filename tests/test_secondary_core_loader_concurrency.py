@@ -14,6 +14,7 @@ import fast_mlsirm._ata_core_loader as ata_loader
 import fast_mlsirm._bifactor_core_loader as bifactor_loader
 import fast_mlsirm._multilevel_core_loader as multilevel_loader
 import fast_mlsirm._rating_range_core_loader as rating_range_loader
+import fast_mlsirm._regression_core_loader as regression_loader
 import fast_mlsirm._rotation_core_loader as rotation_loader
 
 
@@ -24,6 +25,7 @@ import fast_mlsirm._rotation_core_loader as rotation_loader
         (bifactor_loader, "bifactor_core"),
         (multilevel_loader, "multilevel_core"),
         (rating_range_loader, "rating_range_core"),
+        (regression_loader, "regression_core"),
         (rotation_loader, "rotation_core"),
     ],
 )

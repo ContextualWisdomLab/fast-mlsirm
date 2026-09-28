@@ -133,3 +133,87 @@ fn newton_tolerates_singular_hessian_without_ridge() {
         "unobserved item intercept must stay at its initial value"
     );
 }
+
+/// Simulate 2PL responses from given slopes, intercepts at zero.
+fn simulate_2pl(slopes: &[f64], n_persons: usize, seed: u64) -> (Vec<f64>, Vec<bool>) {
+    let mut rng = Lcg(seed);
+    let n_items = slopes.len();
+    let mut y = vec![0.0_f64; n_persons * n_items];
+    for person in 0..n_persons {
+        let theta = rng.normal();
+        for (item, &slope) in slopes.iter().enumerate() {
+            let p = 1.0 / (1.0 + (-(slope * theta)).exp());
+            y[person * n_items + item] = f64::from(u8::from(rng.next_f64() < p));
+        }
+    }
+    (y, vec![true; n_persons * n_items])
+}
+
+/// The reflection `(a, theta) -> (-a, -theta)` holds the likelihood fixed, so
+/// the solution's overall sign is not identified by the data. It must be pinned
+/// by a rule rather than left to initialization, because the two backends do
+/// not share one. The anchor convention: the largest-magnitude slope is
+/// positive.
+#[test]
+fn the_largest_magnitude_slope_is_returned_positive() {
+    // Every item keyed AGAINST the trait. The likelihood is identical to the
+    // all-positive mirror, so only the convention decides what comes back.
+    let truth = [-1.40, -1.10, -0.90, -1.25];
+    let (y, observed) = simulate_2pl(&truth, 900, 4242);
+    let res = fit_mmle_2pl(&y, &observed, 900, truth.len(), &MmleConfig::default());
+
+    let anchor = res
+        .a
+        .iter()
+        .enumerate()
+        .max_by(|(_, x), (_, y)| x.abs().total_cmp(&y.abs()))
+        .map(|(i, _)| i)
+        .expect("one slope per item");
+    assert!(
+        res.a[anchor] > 0.0,
+        "the largest-magnitude slope must be returned positive: {:?}",
+        res.a
+    );
+    // The data are all-reverse-keyed, so the canonical solution is the mirror:
+    // every slope positive, and theta negatively related to the raw score.
+    assert!(
+        res.a.iter().all(|value| *value > 0.0),
+        "the whole slope vector must be on one orientation: {:?}",
+        res.a
+    );
+}
+
+/// The rule must be a no-op on ordinary data, or it would silently rewrite
+/// every fit that was already correct.
+#[test]
+fn ordinary_data_is_returned_unflipped() {
+    let truth = [1.40, 1.10, -0.90, 1.25];
+    let (y, observed) = simulate_2pl(&truth, 900, 4242);
+    let res = fit_mmle_2pl(&y, &observed, 900, truth.len(), &MmleConfig::default());
+
+    for (item, (&estimated, &expected)) in res.a.iter().zip(truth.iter()).enumerate() {
+        assert_eq!(
+            estimated < 0.0,
+            expected < 0.0,
+            "item {item} came back on the wrong side of zero ({estimated:.4} for {expected:.2}); \
+             the anchor is positive here so no flip should have happened: {:?}",
+            res.a
+        );
+    }
+}
+
+/// The point of removing the positivity floor: a reverse-keyed item comes back
+/// with a negative slope of roughly the right size, instead of at the floor.
+#[test]
+fn a_reverse_keyed_item_recovers_its_negative_slope() {
+    let truth = [1.40, 1.10, -0.90, 1.25];
+    let (y, observed) = simulate_2pl(&truth, 1500, 4242);
+    let res = fit_mmle_2pl(&y, &observed, 1500, truth.len(), &MmleConfig::default());
+    for (item, (&estimated, &expected)) in res.a.iter().zip(truth.iter()).enumerate() {
+        assert!(
+            (estimated - expected).abs() < 0.35,
+            "item {item} recovered {estimated:.4} for true {expected:.2}: {:?}",
+            res.a
+        );
+    }
+}

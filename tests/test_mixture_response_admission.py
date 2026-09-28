@@ -41,7 +41,7 @@ def test_fit_mixture_rejects_complex_responses_before_native_discovery(
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
-        fit_mixture(responses)
+        fit_mixture(responses, model='rasch', n_starts=1, max_iter=500, tol=1e-6, seed=0x2545F491)
 
 
 def test_fit_mixture_rejects_object_complex_with_package_error(
@@ -53,7 +53,7 @@ def test_fit_mixture_rejects_object_complex_with_package_error(
     responses = np.array([[0.0 + 1.0j, 1.0], [1.0, 0.0]], dtype=object)
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
-        fit_mixture(responses)
+        fit_mixture(responses, model='rasch', n_starts=1, max_iter=500, tol=1e-6, seed=0x2545F491)
 
 
 def test_fit_mixture_rejects_object_storage_without_element_conversion(
@@ -66,7 +66,7 @@ def test_fit_mixture_rejects_object_storage_without_element_conversion(
     responses = np.array([[_HostileReal(), 1.0], [1.0, 0.0]], dtype=object)
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
-        fit_mixture(responses)
+        fit_mixture(responses, model='rasch', n_starts=1, max_iter=500, tol=1e-6, seed=0x2545F491)
 
     assert _HostileReal.callbacks == 0
 
@@ -82,7 +82,7 @@ def test_fit_mixture_rejects_infinite_responses_before_native_discovery(
     responses = np.array([[0.0, 1.0], [bad_value, 0.0]], dtype=np.float64)
 
     with pytest.raises(ValueError, match="responses must be finite where not missing"):
-        fit_mixture(responses)
+        fit_mixture(responses, model='rasch', n_starts=1, max_iter=500, tol=1e-6, seed=0x2545F491)
 
 
 def test_fit_mixture_preserves_nan_missingness_and_real_marshalling(
@@ -112,7 +112,7 @@ def test_fit_mixture_preserves_nan_missingness_and_real_marshalling(
             }
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _Core())
-    fit_mixture(np.array([[0.0, np.nan], [1.0, 0.0]], dtype=np.float32))
+    fit_mixture(np.array([[0.0, np.nan], [1.0, 0.0]], dtype=np.float32), model='rasch', n_starts=1, max_iter=500, tol=1e-6, seed=0x2545F491)
 
     args = captured["args"]
     np.testing.assert_array_equal(np.asarray(args[0]), np.array([0.0, 0.0, 1.0, 0.0]))

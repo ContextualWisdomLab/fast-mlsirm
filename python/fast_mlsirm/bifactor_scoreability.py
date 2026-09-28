@@ -8,6 +8,7 @@ omega hierarchical, and construct replicability ``H`` are computed in
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -282,12 +283,12 @@ def _result_from_mapping(raw: dict[str, Any]) -> BifactorScoreabilityResult:
         ) from exc
 
 
-def bifactor_scoreability(
+def assess_bifactor_scoreability(
     loadings: Any,
     uniquenesses: Any,
     *,
     general_factor: int = 0,
-    zero_tolerance: float = 0.0,
+    zero_tolerance: float,
 ) -> BifactorScoreabilityResult:
     """Compute scoreability indices from standardized orthogonal loadings.
 
@@ -303,7 +304,9 @@ def bifactor_scoreability(
         Zero-based general-factor column.
     zero_tolerance:
         Non-negative threshold used only to classify structural zeroes.
-        Numerical sums retain the supplied loading values.
+        Numerical sums retain the supplied loading values. Required caller
+        argument (ADR-0028, #1963): ``0.0`` is a decision-threshold flag cutoff
+        with no cited source in this repository.
 
     Returns
     -------
@@ -339,11 +342,11 @@ def bifactor_scoreability(
     return _result_from_mapping(raw)
 
 
-def bifactor_scoreability_from_logit_slopes(
+def assess_bifactor_scoreability_from_logit_slopes(
     logit_slopes: Any,
     *,
     general_factor: int = 0,
-    zero_tolerance: float = 0.0,
+    zero_tolerance: float,
 ) -> BifactorScoreabilityResult:
     """Compute latent-response indices from orthogonal logistic IRT slopes.
 
@@ -360,7 +363,8 @@ def bifactor_scoreability_from_logit_slopes(
     resulting omega coefficients describe the continuous latent-response
     representation, not observed binary or ordinal sum-score reliability.
     The same bounded CPU work and advertised-shape inspection contract as
-    :func:`bifactor_scoreability` applies.
+    :func:`assess_bifactor_scoreability` applies. ``zero_tolerance`` is a
+    required caller argument for the same reason as there (ADR-0028, #1963).
     """
     general_factor = _general_factor_control(general_factor)
     zero_tolerance = _zero_tolerance_control(zero_tolerance)
@@ -371,3 +375,51 @@ def bifactor_scoreability_from_logit_slopes(
         zero_tolerance,
     )
     return _result_from_mapping(raw)
+
+
+def bifactor_scoreability(
+    loadings: Any,
+    uniquenesses: Any,
+    *,
+    general_factor: int = 0,
+    zero_tolerance: float,
+) -> BifactorScoreabilityResult:
+    """Deprecated alias for :func:`assess_bifactor_scoreability` (ADR-0028, #1963).
+
+    Kept for one minor release; emits :class:`DeprecationWarning`.
+    """
+    warnings.warn(
+        "bifactor_scoreability is deprecated; use assess_bifactor_scoreability instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return assess_bifactor_scoreability(
+        loadings,
+        uniquenesses,
+        general_factor=general_factor,
+        zero_tolerance=zero_tolerance,
+    )
+
+
+def bifactor_scoreability_from_logit_slopes(
+    logit_slopes: Any,
+    *,
+    general_factor: int = 0,
+    zero_tolerance: float,
+) -> BifactorScoreabilityResult:
+    """Deprecated alias for :func:`assess_bifactor_scoreability_from_logit_slopes`
+    (ADR-0028, #1963).
+
+    Kept for one minor release; emits :class:`DeprecationWarning`.
+    """
+    warnings.warn(
+        "bifactor_scoreability_from_logit_slopes is deprecated; "
+        "use assess_bifactor_scoreability_from_logit_slopes instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return assess_bifactor_scoreability_from_logit_slopes(
+        logit_slopes,
+        general_factor=general_factor,
+        zero_tolerance=zero_tolerance,
+    )

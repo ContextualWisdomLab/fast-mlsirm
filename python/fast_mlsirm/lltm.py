@@ -94,8 +94,9 @@ def fit_lltm(
     q_design: np.ndarray,
     fit_intercept: bool = True,
     compute_lr: bool = True,
-    max_iter: int = 500,
-    tol: float = 1e-6,
+    *,
+    max_iter: int,
+    tol: float,
 ) -> LltmFit:
     """Fit the Linear Logistic Test Model (compute in Rust; Fischer, 1973).
 

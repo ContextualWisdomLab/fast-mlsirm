@@ -24,7 +24,7 @@ def test_invalid_quadrature_count_fails_before_response_array_coercion() -> None
             sentinel,  # type: ignore[arg-type]
             sentinel,  # type: ignore[arg-type]
             n_nodes=0,
-            max_iter=1,
+            max_iter=1, tol=1e-6, seed=1
         )
 
 
@@ -39,4 +39,5 @@ def test_invalid_max_iter_fails_before_response_array_coercion(max_iter: object)
             sentinel,  # type: ignore[arg-type]
             n_nodes=5,
             max_iter=max_iter,  # type: ignore[arg-type]
+            tol=1e-6, seed=1,
         )

@@ -8,20 +8,41 @@ def test_public_lsirm_termination_receipt_grm_and_gpcm():
     response_matrix = np.array([[0, 1], [2, 1], [1, 0], [2, 2]], dtype=np.int64)
     for model_name in ("grm", "gpcm"):
         budget_fit = fit_lsirm_polytomous(
-            response_matrix, 3, latent_dim=1, model=model_name, max_iter=1, tol=1e-12
+            response_matrix,
+            3,
+            latent_dim=1,
+            model=model_name,
+            q_theta=11,
+            q_xi=11,
+            max_iter=1,
+            tol=1e-12,
         )
         assert not budget_fit.converged and budget_fit.termination_reason == "max_iter"
         assert budget_fit.n_iter == 1
         assert budget_fit.loglik_trace.size == budget_fit.n_iter + 1
 
         early_fit = fit_lsirm_polytomous(
-            response_matrix, 3, latent_dim=1, model=model_name, max_iter=3, tol=1e6
+            response_matrix,
+            3,
+            latent_dim=1,
+            model=model_name,
+            q_theta=11,
+            q_xi=11,
+            max_iter=3,
+            tol=1e6,
         )
         assert early_fit.converged and early_fit.termination_reason == "tolerance"
         assert early_fit.n_iter < 3
 
         final_fit = fit_lsirm_polytomous(
-            response_matrix, 3, latent_dim=1, model=model_name, max_iter=1, tol=1e6
+            response_matrix,
+            3,
+            latent_dim=1,
+            model=model_name,
+            q_theta=11,
+            q_xi=11,
+            max_iter=1,
+            tol=1e6,
         )
         assert final_fit.converged and final_fit.n_iter == 1
         for fitted_result in (budget_fit, early_fit, final_fit):
@@ -39,7 +60,14 @@ def test_public_lsirm_accepts_missing_cells_and_direct_binding_rejects_invalid_t
     )
     for model_name in ("grm", "gpcm"):
         fitted_result = fit_lsirm_polytomous(
-            missing_response_matrix, 2, latent_dim=1, model=model_name, max_iter=1
+            missing_response_matrix,
+            2,
+            latent_dim=1,
+            model=model_name,
+            q_theta=11,
+            q_xi=11,
+            max_iter=1,
+            tol=1e-5,
         )
         assert fitted_result.loglik == fitted_result.loglik_trace[-1]
         assert np.all(np.isfinite(fitted_result.loglik_trace))

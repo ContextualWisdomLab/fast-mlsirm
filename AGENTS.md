@@ -194,3 +194,29 @@ protection, `require_code_owner_review` in rulesets) are disabled across the Con
 org: there is a single maintainer (solo developer), so a code-owner approval gate can never be
 satisfied. This is ON HOLD until the org has multiple maintainers — do NOT re-enable these
 settings or add CODEOWNERS-based merge gates before then.
+
+## Maintainer steering 2026-09-16/17
+
+1. Quadrature node count controls the numerical precision of marginal-likelihood
+   integration. Never hard-code, cap, or default node counts; expose them as
+   caller arguments. Tests/benchmarks representing study settings use at least
+   121 nodes per dimension and larger counts (241, 481, ...) until estimates
+   stabilize (see #1929).
+2. Every docstring/doc comment implementing a method states its basis as APA
+   7th citations (in-text with verified page/equation locators, plus an APA
+   7th reference list), citing only full texts actually read.
+3. Paywalled papers are obtained, not skipped: Zotero local API
+   `http://localhost:23119`; or the system Microsoft Edge via the Orca CLI
+   (`open -a 'Microsoft Edge' <url>`; `orca computer get-app-state` /
+   `click --element-index` / `set-value`) using the Kwangwoon University
+   library (`https://kupis.kw.ac.kr/login`, credentials already saved in Edge
+   by the maintainer, account type 대학원생), then the library search box, or
+   proxy URLs of the form
+   `https://<publisher-host-with-dashes>.libproxy.kw.ac.kr/<path>` (e.g.
+   `https://journals-sagepub-com.libproxy.kw.ac.kr/doi/pdf/<DOI>?download=true`,
+   `https://doi-org.libproxy.kw.ac.kr/<DOI>`). Save PDFs to `~/papers` and
+   register in Zotero. Check Edge's window title first; another agent may be
+   using it.
+4. Fast development: maintainers may bypass-merge after local verification
+   when hosted CI is stuck at the org Actions concurrency ceiling
+   (ContextualWisdomLab/.github ADR 0030).

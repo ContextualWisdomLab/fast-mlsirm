@@ -82,10 +82,10 @@ def test_grm_recovers_true_theta_within_expected_rmse() -> None:
     responses = validate_irt_response_matrix(
         responses, item_type="polytomous", n_categories=N_CAT
     )
-    fit = fit_polytomous(responses, n_cat=N_CAT, model="grm", max_iter=80)
+    fit = fit_polytomous(responses, n_cat=N_CAT, model="grm", q_theta=21, max_iter=80, tol=1e-6)
     assert fit.converged
 
-    scored = score_polytomous(responses, fit)
+    scored = score_polytomous(responses, fit, q_theta=21)
     theta_eap = scored["theta_eap"]
     theta_sd = scored["theta_sd"]
 

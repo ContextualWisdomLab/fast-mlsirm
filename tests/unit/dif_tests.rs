@@ -507,13 +507,9 @@ fn logistic_dif_detects_crossing_dif_that_mantel_haenszel_misses() {
         c.delta_r2,
         c.delta_r2_uniform
     );
-    assert_ne!(
-        c.jg_class,
-        EtsClass::A,
-        "crossing item classified from the wrong delta_r2 (total {} vs uniform-only {})",
-        c.delta_r2,
-        c.delta_r2_uniform
-    );
+    // #1880: jg_class is "not applicable" everywhere now, including for a crossing item with a
+    // substantial total effect -- the bands are withheld, not misapplied to the wrong delta_r2.
+    assert_eq!(c.jg_class, EtsClass::Undefined);
     assert!(
         c.delta_r2_uniform < JG_MODERATE,
         "uniform-only component should stay negligible: {}",
@@ -545,37 +541,32 @@ fn logistic_dif_detects_crossing_dif_that_mantel_haenszel_misses() {
             (r.chi2_uniform + r.chi2_nonuniform - r.chi2_total).abs() < 1e-6,
             "item {i} decomposition"
         );
-        if i != cross_item && i != unif_item {
-            assert_eq!(
-                r.jg_class,
-                EtsClass::A,
-                "clean item {i} class {:?}",
-                r.jg_class
-            );
-        }
+        // #1880: no item gets a letter, clean or not.
+        assert_eq!(r.jg_class, EtsClass::Undefined, "item {i} class {:?}", r.jg_class);
     }
 }
 
-/// Jodoin & Gierl (2001) classification pinned directly at its boundaries. Without this, three
-/// distinct mutations survive the simulation tests (whose clean items have `delta_r2 ~ 0` either
-/// way): dropping the "not significant => A" rule, swapping the LARGE/MODERATE comparisons, and
-/// classifying `delta_r2_uniform` instead of `delta_r2`.
+/// #1880: Jodoin & Gierl (2001) letter `A`/`B`/`C` classification is retired -- `jg_classify` must
+/// return `Undefined` ("not applicable") for every input, because the bands are calibrated (p. 335)
+/// on a Zumbo-Thomas weighted-least-squares partition (p. 333) this package does not compute and
+/// that the source itself leaves underdetermined, not on the Nagelkerke `delta_r2` this module
+/// computes. Letters computed on the wrong quantity, or on an underdetermined replacement, are
+/// worse than none: they carry no external referent and every downstream caller inherits them
+/// silently.
 #[test]
 fn jg_classify_boundaries() {
-    // undefined statistic -> Undefined, never a letter
+    // No input combination -- undefined statistic, significant, not significant, or squarely inside
+    // the old A/B/C bands -- produces a letter any more.
     assert_eq!(jg_classify(f64::NAN, true), EtsClass::Undefined);
     assert_eq!(jg_classify(f64::NAN, false), EtsClass::Undefined);
-    // NOT significant -> A regardless of magnitude (conditional classification)
-    assert_eq!(jg_classify(0.50, false), EtsClass::A);
-    assert_eq!(jg_classify(JG_LARGE + 0.1, false), EtsClass::A);
-    // significant: the two boundaries, inclusive at the cut-points
-    assert_eq!(jg_classify(JG_MODERATE - 1e-9, true), EtsClass::A);
-    assert_eq!(jg_classify(JG_MODERATE, true), EtsClass::B);
-    assert_eq!(jg_classify(JG_LARGE - 1e-9, true), EtsClass::B);
-    assert_eq!(jg_classify(JG_LARGE, true), EtsClass::C);
-    assert_eq!(jg_classify(0.5, true), EtsClass::C);
-    // the ordering itself (a swapped comparison would break this)
-    assert_ne!(jg_classify(0.04, true), jg_classify(0.20, true));
+    assert_eq!(jg_classify(0.50, false), EtsClass::Undefined);
+    assert_eq!(jg_classify(JG_LARGE + 0.1, false), EtsClass::Undefined);
+    assert_eq!(jg_classify(JG_MODERATE - 1e-9, true), EtsClass::Undefined);
+    assert_eq!(jg_classify(JG_MODERATE, true), EtsClass::Undefined);
+    assert_eq!(jg_classify(JG_LARGE - 1e-9, true), EtsClass::Undefined);
+    assert_eq!(jg_classify(JG_LARGE, true), EtsClass::Undefined);
+    assert_eq!(jg_classify(0.5, true), EtsClass::Undefined);
+    assert_eq!(jg_classify(0.04, true), jg_classify(0.20, true));
 }
 
 /// Degenerate items are reported as UNDEFINED, never as a clean non-DIF result: an item everyone
@@ -872,23 +863,66 @@ fn purification_stops_on_a_too_short_anchor() {
     assert_eq!(pur.rounds, 0);
     assert!(!pur.converged && pur.n_anchor == n_items);
     assert_eq!(pur.termination_reason, "insufficient_anchor_items");
-    // the logistic purified entry point runs and removes the planted items from its anchor
+    // the logistic purified entry point applies the SAME strict floor: it also stops on round 0 with
+    // the untouched full test as anchor, even though (post-#1941) its criterion is `flagged_bh` and
+    // can otherwise shrink the anchor -- see `logistic_purification_removes_planted_dif_from_anchor`.
     let lp = logistic_dif_purified(
         &y,
         &group,
         n,
         n_items,
         &LogisticDifConfig::default(),
-        &PurifyConfig::default(),
+        &strict,
     )
     .unwrap();
-    assert!(lp.n_anchor <= n_items);
+    assert_eq!(lp.n_anchor, n_items);
+    assert!(lp.anchor.iter().all(|&a| a));
+    assert_eq!(lp.rounds, 0);
+    assert_eq!(lp.termination_reason, "insufficient_anchor_items");
+}
+
+/// FIX FOR #1941: `logistic_dif_purified`'s anchor must actually shrink around planted DIF items.
+/// Before the fix, the criterion was `purify_flagged(jg_class)`, and #1880 retired `jg_class` to
+/// `Undefined` for every item, so the anchor never changed regardless of the DIF present (see the
+/// git-blame'd assertions this test replaces in `purification_stops_on_a_too_short_anchor`). The fix
+/// switches the criterion to `flagged_bh`, so this seeded bank with unidirectional DIF must converge
+/// to an anchor that excludes the planted items and retains the clean ones.
+#[test]
+fn logistic_purification_removes_planted_dif_from_anchor() {
+    let (n, n_items) = (3000usize, 12usize);
+    let dif_items = [2usize, 5, 8];
+    let (y, group) = purification_bank(n, n_items, &dif_items, 0.6, 0x9F1E2);
+    let cfg = LogisticDifConfig::default();
+    let plain = logistic_dif(&y, &group, n, n_items, &cfg).unwrap();
+    // PRECONDITION: the fixture must actually flag the planted items in the unpurified sweep.
+    assert!(
+        dif_items.iter().all(|&d| plain[d].flagged_bh),
+        "fixture precondition failed: planted items not flagged unpurified: {:?}",
+        plain.iter().map(|r| r.flagged_bh).collect::<Vec<_>>()
+    );
+    let pur = logistic_dif_purified(&y, &group, n, n_items, &cfg, &PurifyConfig::default())
+        .unwrap();
+    assert!(
+        pur.rounds >= 1,
+        "purification never ran a round: anchor stayed at the full test (regression to #1880's \
+         jg_class bug); n_anchor={} rounds={}",
+        pur.n_anchor,
+        pur.rounds
+    );
     for &d in &dif_items {
+        assert!(!pur.anchor[d], "planted DIF item {d} left in the anchor");
         assert!(
-            !lp.anchor[d],
-            "logistic purification left planted item {d} in the anchor"
+            pur.rows[d].flagged_bh,
+            "planted item {d} lost its flag after purification"
         );
     }
+    let clean: Vec<usize> = (0..n_items).filter(|i| !dif_items.contains(i)).collect();
+    assert!(
+        clean.iter().all(|&j| pur.anchor[j]),
+        "a clean item was dropped from the anchor: {:?}",
+        pur.anchor
+    );
+    assert_eq!(pur.n_anchor, n_items - dif_items.len());
 }
 
 /// STRUCTURAL ANCHOR for the returned rows: `rows` must be the sweep against the REPORTED `anchor`,

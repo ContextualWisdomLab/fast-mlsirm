@@ -136,6 +136,19 @@ impl MixedItemKind {
         matches!(self, Self::Lsirm | Self::LsirmGrm | Self::LsirmGpcm)
     }
 
+    /// Whether this family's latent-orientation reflection `(a, theta) ->
+    /// (-a, -theta)` is absorbed by the SLOPE, which is what makes a slope
+    /// anchor able to pin the sign. True for the slope-intercept families and
+    /// for the latent-space ones, where `base = a*theta - distance(xi, zeta)`
+    /// takes theta linearly and the distance lives in a space theta is not part
+    /// of. FALSE for `Ideal` and `Ggum`, which absorb it through the person and
+    /// item LOCATIONS with the slope untouched, and false for the fixed-slope
+    /// families, which cannot absorb it at all and so pin the orientation
+    /// themselves. Pinned against the cells in the module's tests.
+    fn absorbs_reflection_in_slope(self) -> bool {
+        self.has_free_slope() && !matches!(self, Self::Ideal | Self::Ggum)
+    }
+
     fn has_free_slope(self) -> bool {
         matches!(
             self,
@@ -175,6 +188,44 @@ pub struct MixedItemSpec {
     pub n_categories: usize,
 }
 
+/// Optimizer bound on every free parameter of an item, on the parameter's own
+/// working scale. These are numerical guards on the M-step, not model claims:
+/// an estimate resting on one is the bound, not an interior optimum, which is
+/// why [`MixedItemEstimate::at_bound`] reports it to the caller.
+const PARAM_BOUND: (f64, f64) = (-12.0, 12.0);
+/// Optimizer bound on the slope of a family that absorbs the reflection in its
+/// slope. Symmetric on the natural scale, so it bounds MAGNITUDE without
+/// constraining sign: a reverse-keyed item is estimated with a negative slope
+/// rather than floored.
+const SLOPE_BOUND: (f64, f64) = (-SLOPE_MAGNITUDE, SLOPE_MAGNITUDE);
+/// Largest slope magnitude the M-step accepts, on the natural scale. The same
+/// value `crate::twopl`, `crate::mhrm`, `crate::mmle`, `crate::testlet` and
+/// `crate::mixture` already use, so one item does not have a different
+/// reachable range depending on which entry point fitted it. It is a numerical
+/// guard chosen for consistency across the crate, not a value any source
+/// states; a slope resting on it is reported through
+/// [`MixedItemEstimate::at_bound`] rather than passed off as an estimate.
+///
+/// This tightens the previous ceiling, which was `exp(4)` only because the old
+/// `log a` parametrization bounded the log scale at 4. A discrimination above
+/// 10 is a degenerate fit rather than a measurement, and it is now visible
+/// instead of silent.
+const SLOPE_MAGNITUDE: f64 = 10.0;
+/// Optimizer bound on the `log a` slope of `Ideal` and `Ggum`. Those families
+/// absorb the reflection through their locations, so their slope sign carries
+/// no orientation information and is held positive for identification; this
+/// bounds `a` to roughly `0.0067 ..= 54.6`.
+const UNFOLDING_LOG_SLOPE_BOUND: (f64, f64) = (-5.0, 4.0);
+/// Optimizer bound on each latent-space coordinate of a spatial family.
+const SPATIAL_BOUND: (f64, f64) = (-6.0, 6.0);
+
+/// `at_bound` role for the slope of a free-slope family.
+pub const AT_BOUND_SLOPE: &str = "slope";
+/// `at_bound` role for a latent-space coordinate of a spatial family.
+pub const AT_BOUND_LATENT_POSITION: &str = "latent_position";
+/// `at_bound` role for any other free parameter of the item.
+pub const AT_BOUND_PARAMETER: &str = "parameter";
+
 #[derive(Clone, Debug)]
 pub struct MixedItemEstimate {
     pub kind: MixedItemKind,
@@ -187,6 +238,15 @@ pub struct MixedItemEstimate {
     pub lower_asymptote: Option<f64>,
     pub upper_asymptote: Option<f64>,
     pub zeta: Vec<f64>,
+    /// Parameter roles whose estimate rests on an optimizer bound at the
+    /// returned solution: [`AT_BOUND_SLOPE`], [`AT_BOUND_LATENT_POSITION`],
+    /// [`AT_BOUND_PARAMETER`]. Empty is the normal case. A non-empty entry
+    /// means the reported value IS the bound and the optimizer was still
+    /// pushing against it, so that value is not an estimate of the parameter
+    /// and must not be read as one — in particular a bounded slope is
+    /// indistinguishable, in the reported number alone, from a genuinely
+    /// small discrimination.
+    pub at_bound: Vec<&'static str>,
 }
 
 #[derive(Clone, Debug)]
@@ -377,11 +437,11 @@ fn item_logprobs(
             binary_logprobs(probability)
         }
         MixedItemKind::TwoPl => {
-            let a = params[0].clamp(-5.0, 4.0).exp();
+            let a = params[0];
             gpcm_logprobs(a * theta, &[0.0, 1.0], &[0.0, params[1]])
         }
         MixedItemKind::ThreePl | MixedItemKind::ThreePlUpper | MixedItemKind::FourPl => {
-            let a = params[0].clamp(-5.0, 4.0).exp();
+            let a = params[0];
             let core = logistic(a * theta + params[1]);
             let (lower, upper) = asymptotes(spec.kind, params);
             binary_logprobs(lower + (upper - lower) * core)
@@ -391,7 +451,7 @@ fn item_logprobs(
             binary_logprobs(-(-exp_eta).exp_m1())
         }
         MixedItemKind::Grm => {
-            let a = params[0].clamp(-5.0, 4.0).exp();
+            let a = params[0];
             grm_logprobs(a * theta, &ordered_values(&params[1..]))
         }
         MixedItemKind::Pcm => {
@@ -401,7 +461,7 @@ fn item_logprobs(
             gpcm_logprobs(theta, &scores, &intercepts)
         }
         MixedItemKind::Gpcm => {
-            let a = params[0].clamp(-5.0, 4.0).exp();
+            let a = params[0];
             let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
             let mut intercepts = vec![0.0; k];
             intercepts[1..].copy_from_slice(&params[1..k]);
@@ -416,18 +476,26 @@ fn item_logprobs(
             gpcm_logprobs(theta, &scores, &intercepts)
         }
         MixedItemKind::Sequential => {
-            let a = params[0].clamp(-5.0, 4.0).exp();
+            let a = params[0];
             sequential_logprobs(a * theta, &params[1..])
         }
         MixedItemKind::Tutz => sequential_logprobs(theta, params),
         MixedItemKind::Ideal => {
-            let a = params[0].clamp(-5.0, 4.0).exp();
+            // Kept on the log scale, and kept positive, deliberately: this family
+            // absorbs the reflection through its LOCATION, not its slope (see
+            // `absorbs_reflection_in_slope`), so a free sign here would be
+            // unidentified rather than informative.
+            let a = params[0].clamp(UNFOLDING_LOG_SLOPE_BOUND.0, UNFOLDING_LOG_SLOPE_BOUND.1).exp();
             let z = a * (theta - params[1]);
             let p1 = (-0.5 * z * z).exp().clamp(1e-15, 1.0 - 1e-15);
             vec![(-p1).ln_1p(), p1.ln()]
         }
         MixedItemKind::Ggum => {
-            let a = params[0].clamp(-5.0, 4.0).exp();
+            // Kept on the log scale, and kept positive, deliberately: this family
+            // absorbs the reflection through its LOCATION, not its slope (see
+            // `absorbs_reflection_in_slope`), so a free sign here would be
+            // unidentified rather than informative.
+            let a = params[0].clamp(UNFOLDING_LOG_SLOPE_BOUND.0, UNFOLDING_LOG_SLOPE_BOUND.1).exp();
             let delta = params[1];
             let thresholds = ordered_values(&params[2..]);
             let c = k - 1;
@@ -447,20 +515,20 @@ fn item_logprobs(
             softmax_log(&paired)
         }
         MixedItemKind::Lsirm => {
-            let a = params[0].clamp(-5.0, 4.0).exp();
+            let a = params[0];
             let cat_n = k - 1;
             let zeta = &params[1 + cat_n..1 + cat_n + latent_dim];
             let base = a * theta - distance(xi, zeta);
             gpcm_logprobs(base, &[0.0, 1.0], &[0.0, params[1]])
         }
         MixedItemKind::LsirmGrm => {
-            let a = params[0].clamp(-5.0, 4.0).exp();
+            let a = params[0];
             let zeta = &params[k..k + latent_dim];
             let base = a * theta - distance(xi, zeta);
             grm_logprobs(base, &ordered_values(&params[1..k]))
         }
         MixedItemKind::LsirmGpcm => {
-            let a = params[0].clamp(-5.0, 4.0).exp();
+            let a = params[0];
             let zeta = &params[k..k + latent_dim];
             let base = a * theta - distance(xi, zeta);
             let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
@@ -497,6 +565,11 @@ fn initial_params(
 ) -> Vec<f64> {
     let k = spec.n_categories;
     let mut p = vec![0.0; parameter_count(spec, latent_dim)];
+    if spec.kind.absorbs_reflection_in_slope() {
+        // a = 1 on the natural scale. `Ideal` and `Ggum` keep the log scale, so
+        // their zero already means a = 1 and is left alone.
+        p[0] = 1.0;
+    }
     match spec.kind {
         MixedItemKind::Rasch => {
             p[0] = (freq[0] / freq[1]).ln();
@@ -751,18 +824,51 @@ fn numeric_gradient(spec: &MixedItemSpec, params: &[f64], grid: &Grid, counts: &
 }
 
 fn clamp_params(spec: &MixedItemSpec, values: &mut [f64], latent_dim: usize) {
-    for value in values.iter_mut() {
-        *value = value.clamp(-12.0, 12.0);
+    // The slope is excluded from the general bound and governed by its own.
+    // On the natural scale `PARAM_BOUND` would otherwise bind first and make
+    // the slope bound dead, silently tightening the reachable range below what
+    // the previous `log a` parametrization allowed.
+    let first_general = usize::from(spec.kind.has_free_slope());
+    for value in values.iter_mut().skip(first_general) {
+        *value = value.clamp(PARAM_BOUND.0, PARAM_BOUND.1);
     }
-    if spec.kind.has_free_slope() {
-        values[0] = values[0].clamp(-5.0, 4.0);
+    if spec.kind.absorbs_reflection_in_slope() {
+        values[0] = values[0].clamp(SLOPE_BOUND.0, SLOPE_BOUND.1);
+    } else if spec.kind.has_free_slope() {
+        values[0] = values[0].clamp(UNFOLDING_LOG_SLOPE_BOUND.0, UNFOLDING_LOG_SLOPE_BOUND.1);
     }
     if spec.kind.is_spatial() {
         let start = values.len() - latent_dim;
         for value in &mut values[start..] {
-            *value = value.clamp(-6.0, 6.0);
+            *value = value.clamp(SPATIAL_BOUND.0, SPATIAL_BOUND.1);
         }
     }
+}
+
+/// Which bounds [`clamp_params`] is holding at `params`. Reads the same
+/// constants the clamp applies, so the report cannot drift from the bound.
+fn bounds_in_force(spec: &MixedItemSpec, params: &[f64], latent_dim: usize) -> Vec<&'static str> {
+    let on = |value: f64, bound: (f64, f64)| value <= bound.0 || value >= bound.1;
+    let mut roles = Vec::new();
+    let slope_bound = if spec.kind.absorbs_reflection_in_slope() {
+        SLOPE_BOUND
+    } else {
+        UNFOLDING_LOG_SLOPE_BOUND
+    };
+    if spec.kind.has_free_slope() && on(params[0], slope_bound) {
+        roles.push(AT_BOUND_SLOPE);
+    }
+    let spatial_start = params.len().saturating_sub(latent_dim);
+    if spec.kind.is_spatial() && params[spatial_start..].iter().any(|v| on(*v, SPATIAL_BOUND)) {
+        roles.push(AT_BOUND_LATENT_POSITION);
+    }
+    let free_slope_offset = usize::from(spec.kind.has_free_slope());
+    let others = params[free_slope_offset..spatial_start.max(free_slope_offset)].iter();
+    // (the slope itself is checked above against its own bound)
+    if others.copied().any(|v| on(v, PARAM_BOUND)) {
+        roles.push(AT_BOUND_PARAMETER);
+    }
+    roles
 }
 
 fn symmetrize_and_ridge(hessian: &mut [Vec<f64>], ridge: f64) {
@@ -893,6 +999,7 @@ fn public_estimate(spec: &MixedItemSpec, params: &[f64], latent_dim: usize) -> M
         lower_asymptote: None,
         upper_asymptote: None,
         zeta: Vec::new(),
+        at_bound: bounds_in_force(spec, params, latent_dim),
     };
     match spec.kind {
         MixedItemKind::Rasch => {
@@ -900,11 +1007,11 @@ fn public_estimate(spec: &MixedItemSpec, params: &[f64], latent_dim: usize) -> M
             out.location = Some(params[0]);
         }
         MixedItemKind::TwoPl => {
-            out.slope = Some(params[0].exp());
+            out.slope = Some(params[0]);
             out.intercepts = vec![params[1]];
         }
         MixedItemKind::ThreePl | MixedItemKind::ThreePlUpper | MixedItemKind::FourPl => {
-            out.slope = Some(params[0].exp());
+            out.slope = Some(params[0]);
             out.intercepts = vec![params[1]];
             let (lower, upper) = asymptotes(spec.kind, params);
             out.lower_asymptote = Some(lower);
@@ -915,7 +1022,7 @@ fn public_estimate(spec: &MixedItemSpec, params: &[f64], latent_dim: usize) -> M
             out.location = Some(params[0]);
         }
         MixedItemKind::Grm => {
-            out.slope = Some(params[0].exp());
+            out.slope = Some(params[0]);
             out.thresholds = ordered_values(&params[1..]);
         }
         MixedItemKind::Pcm => {
@@ -923,7 +1030,7 @@ fn public_estimate(spec: &MixedItemSpec, params: &[f64], latent_dim: usize) -> M
             out.intercepts = params.to_vec();
         }
         MixedItemKind::Gpcm => {
-            out.slope = Some(params[0].exp());
+            out.slope = Some(params[0]);
             out.intercepts = params[1..k].to_vec();
         }
         MixedItemKind::Nominal => {
@@ -932,7 +1039,7 @@ fn public_estimate(spec: &MixedItemSpec, params: &[f64], latent_dim: usize) -> M
             out.intercepts = params[c..2 * c].to_vec();
         }
         MixedItemKind::Sequential => {
-            out.slope = Some(params[0].exp());
+            out.slope = Some(params[0]);
             out.intercepts = params[1..].to_vec();
         }
         MixedItemKind::Tutz => {
@@ -949,17 +1056,17 @@ fn public_estimate(spec: &MixedItemSpec, params: &[f64], latent_dim: usize) -> M
             out.thresholds = ordered_values(&params[2..]);
         }
         MixedItemKind::Lsirm => {
-            out.slope = Some(params[0].exp());
+            out.slope = Some(params[0]);
             out.intercepts = vec![params[1]];
             out.zeta = params[params.len() - latent_dim..].to_vec();
         }
         MixedItemKind::LsirmGrm => {
-            out.slope = Some(params[0].exp());
+            out.slope = Some(params[0]);
             out.thresholds = ordered_values(&params[1..k]);
             out.zeta = params[params.len() - latent_dim..].to_vec();
         }
         MixedItemKind::LsirmGpcm => {
-            out.slope = Some(params[0].exp());
+            out.slope = Some(params[0]);
             out.intercepts = params[1..k].to_vec();
             out.zeta = params[params.len() - latent_dim..].to_vec();
         }
@@ -1172,11 +1279,13 @@ pub fn fit_mixed_items(
 
     let (theta_eap, theta_sd, xi_eap) =
         final_scores(y, observed, n_persons, n_items, specs, &tables, &grid);
-    let items = specs
+    let mut items: Vec<MixedItemEstimate> = specs
         .iter()
         .zip(&params)
         .map(|(spec, p)| public_estimate(spec, p, grid.latent_dim))
         .collect();
+    let mut theta_eap = theta_eap;
+    canonicalize_bank_reflection(&mut items, &mut theta_eap);
     Ok(MixedFit {
         items,
         theta_eap,
@@ -1190,6 +1299,64 @@ pub fn fit_mixed_items(
         termination_reason,
         n_threads,
     })
+}
+
+/// Pin the bank's latent orientation, when the bank has one to pin.
+///
+/// `(a, theta) -> (-a, -theta)` holds the likelihood fixed only if EVERY item's
+/// contribution is invariant, so whether the orientation needs a rule — and
+/// whether a slope anchor can supply one — depends on which families the bank
+/// contains. The three cases are pinned against the cells in this module's
+/// tests:
+///
+///   * A family that absorbs the reflection in its slope
+///     ([`MixedItemKind::absorbs_reflection_in_slope`]) can be canonicalized by
+///     a slope anchor.
+///   * A fixed-slope family (`Rasch`, `Cll`, `Tutz`, `Pcm`, `Nominal`) carries
+///     an implicit slope of `+1` that cannot be negated, so the reflection is
+///     not a symmetry of the likelihood at all and the DATA identify the
+///     orientation. Imposing an anchor on top would move the answer away from
+///     the maximum-likelihood solution, so this returns without touching
+///     anything.
+///   * `Ideal` and `Ggum` absorb the reflection through their locations with
+///     the slope untouched, so they neither pin the orientation nor can be
+///     canonicalized by a slope rule. A bank of only these is left unpinned
+///     rather than pinned incorrectly; that gap is recorded against the module
+///     rather than papered over with a rule that constrains nothing.
+///
+/// `location` is on theta's scale and flips with it; intercepts, thresholds,
+/// scores, asymptotes and latent coordinates are invariant.
+fn canonicalize_bank_reflection(items: &mut [MixedItemEstimate], theta: &mut [f64]) {
+    if items.iter().any(|item| !item.kind.has_free_slope()) {
+        // A fixed-slope item is present: the data pin the orientation.
+        return;
+    }
+    let anchor = items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| item.kind.absorbs_reflection_in_slope())
+        .filter_map(|(index, item)| item.slope.map(|slope| (index, slope)))
+        .max_by(|(_, left), (_, right)| left.abs().total_cmp(&right.abs()));
+    let Some((_, anchor_slope)) = anchor else {
+        // Every item is `Ideal` or `Ggum`: no slope carries the orientation.
+        return;
+    };
+    if anchor_slope >= 0.0 {
+        return;
+    }
+    for item in items.iter_mut() {
+        if item.kind.absorbs_reflection_in_slope() {
+            if let Some(slope) = item.slope.as_mut() {
+                *slope = -*slope;
+            }
+        }
+        if let Some(location) = item.location.as_mut() {
+            *location = -*location;
+        }
+    }
+    for value in theta.iter_mut() {
+        *value = -*value;
+    }
 }
 
 #[cfg(test)]

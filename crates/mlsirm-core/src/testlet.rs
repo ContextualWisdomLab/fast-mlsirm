@@ -47,7 +47,7 @@
 //!   parameters. *Psychometrika, 46*(4), 443-459. <https://doi.org/10.1007/BF02293801>
 
 use crate::mmle::{log_sigmoid, sigmoid_stable, GH_NODES, GH_WEIGHTS};
-use crate::quadrature::{gh_rule, SUPPORTED_Q};
+use crate::quadrature::gh_rule;
 
 /// Upper bound on caller-controlled EM iterations, shared with the Python API.
 const TESTLET_MAX_ITER: usize = 100_000;
@@ -66,7 +66,7 @@ pub struct TestletConfig {
     /// Convergence tolerance on `|delta loglik|`; `0.0` is permitted (runs the full
     /// `max_iter`) — needed for the exact `sigma -> 0` reduction anchor.
     pub tol: f64,
-    /// Inner `gamma` Gauss-Hermite nodes; must be one of `SUPPORTED_Q` (7/11/15/21/31/41).
+    /// Inner `gamma` Gauss-Hermite nodes; any `n >= 1`.
     pub q_gamma: usize,
     pub ridge_a: f64,
     pub ridge_b: f64,
@@ -154,12 +154,12 @@ fn validate(
     if !cfg.init_sigma2.is_finite() || cfg.init_sigma2 < 0.0 {
         return Err("init_sigma2 must be finite and non-negative".into());
     }
-    if !SUPPORTED_Q.contains(&cfg.q_gamma) {
-        return Err(format!(
-            "q_gamma must be one of {SUPPORTED_Q:?}; got {}",
-            cfg.q_gamma
-        ));
+    // #1929: no node-count cap; require_gh_rule below also guards the
+    // eigensolve allocation against usize overflow for an absurd q_gamma.
+    if cfg.q_gamma < 1 {
+        return Err(format!("q_gamma must be >= 1; got {}", cfg.q_gamma));
     }
+    crate::quadrature::require_gh_rule(cfg.q_gamma, "q_gamma")?;
     let n_cells = n_persons
         .checked_mul(n_items)
         .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
@@ -450,7 +450,12 @@ fn m_step(
                 // matrix nonsingular for every valid item.
                 let da = (h_bb * g_a - h_ab * g_b) / det;
                 let db = (h_aa * g_b - h_ab * g_a) / det;
-                ai = (ai - da).clamp(1e-3, 10.0);
+                // Magnitude guard only; symmetric, so it does not also impose
+                // `a > 0` and floor a reverse-keyed item (see `crate::mmle`).
+                ai = (ai - da).clamp(
+                    -crate::mmle::A_MAGNITUDE_BOUND,
+                    crate::mmle::A_MAGNITUDE_BOUND,
+                );
                 bi -= db;
                 if da.abs() + db.abs() < 1e-8 {
                     break;
@@ -505,7 +510,7 @@ pub fn fit_testlet(
     validate(y, observed, testlet_id, n_persons, n_items, n_testlets, cfg)?;
     let (n, j, d_n) = (n_persons, n_items, n_testlets);
     let qt = GH_NODES.len();
-    let (u_nodes, u_weights) = gh_rule(cfg.q_gamma).expect("q_gamma validated in SUPPORTED_Q");
+    let (u_nodes, u_weights) = gh_rule(cfg.q_gamma).expect("q_gamma validated (>= 1) in validate()");
     let qg = u_nodes.len();
     let log_wt: Vec<f64> = GH_WEIGHTS.iter().map(|w| w.ln()).collect();
     let log_vu: Vec<f64> = u_weights.iter().map(|w| w.ln()).collect();
@@ -562,7 +567,10 @@ pub fn fit_testlet(
         };
         let project = |p: &mut [f64]| {
             for ai in p.iter_mut().take(j) {
-                *ai = ai.clamp(1e-3, 10.0);
+                *ai = ai.clamp(
+                    -crate::mmle::A_MAGNITUDE_BOUND,
+                    crate::mmle::A_MAGNITUDE_BOUND,
+                );
             }
             for d in 0..d_n {
                 let idx = 2 * j + d;
@@ -668,7 +676,7 @@ pub fn fit_testlet(
     }
 
     // Final pass at the returned params: theta EAP + final loglik.
-    let (final_ll, _, _, _, theta) = full_estep(&ctx, &a, &beta, &sigma2);
+    let (final_ll, _, _, _, mut theta) = full_estep(&ctx, &a, &beta, &sigma2);
     if !converged
         && loglik_trace
             .last()
@@ -686,6 +694,12 @@ pub fn fit_testlet(
         "max_iter_reached"
     };
 
+    // Pin the reflection `(a, theta) -> (-a, -theta)`. `beta` is the intercept
+    // and is invariant; `sigma2` is a variance of a symmetric testlet effect and
+    // is invariant; `b = -beta/a` is on theta's scale, so it flips with the
+    // slope and is derived AFTER the flip. A no-op under `Rasch`, where every
+    // slope is pinned at 1.0.
+    crate::mmle::canonicalize_reflection(&mut a, &mut theta);
     let b: Vec<f64> = (0..j).map(|i| -beta[i] / a[i]).collect();
     let k = if fix_slope { 1 } else { 2 };
     // Only FREELY-estimated testlet variances count: singletons are pinned to 0

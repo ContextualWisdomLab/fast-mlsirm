@@ -228,6 +228,8 @@ fn align_reflection(
 /// (which catches a mutation collapsing the free per-category slopes to a shared scalar
 /// discrimination). Assessed up to per-dimension reflection (aligned to truth).
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn nominal_recovers_d2_with_signed_categories() {
     let (n_dims, n_cat) = (2usize, 3usize);
     // items 0,1 pure dim0; items 2,3 pure dim1; item 4 cross-loader {0,1}.
@@ -332,6 +334,8 @@ fn nominal_recovers_d2_with_signed_categories() {
 
 /// Softmax-sum, structural zeros, parameter count, and validation guards.
 #[test]
+// Flat row-major index: the leading `0 * stride` keeps rows aligned, not an erased op (#1905).
+#[allow(clippy::erasing_op)]
 fn nominal_validates_and_structural_invariants() {
     let (n_dims, n_cat) = (2usize, 3usize);
     let pattern: Vec<u8> = vec![1, 0, 0, 1, 1, 1];
@@ -639,7 +643,8 @@ fn nominal_validation_sampling_rules_and_missing_paths() {
         2,
         1,
         2,
-        &NominalConfig { q: 3, ..base }
+        // #1929: no node-count cap; q=3 is now accepted, only q=0 is rejected.
+        &NominalConfig { q: 0, ..base }
     )
     .is_err());
     let halton = NominalConfig {

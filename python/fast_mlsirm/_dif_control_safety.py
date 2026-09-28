@@ -103,9 +103,9 @@ def _original(function: Callable[..., Any]) -> Callable[..., Any]:
 def install(dif_module: ModuleType) -> None:
     """Install callback-free wrappers on the observed-score DIF module."""
     current = (
-        dif_module.logistic_dif,
-        dif_module.mantel_haenszel_dif_purified,
-        dif_module.logistic_dif_purified,
+        dif_module.detect_dif_logistic,
+        dif_module.detect_dif_mantel_haenszel_purified,
+        dif_module.detect_dif_logistic_purified,
     )
     if all(getattr(function, _DIF_HARDENED_ATTR, False) for function in current):
         return
@@ -115,12 +115,13 @@ def install(dif_module: ModuleType) -> None:
     original_logistic_purified = _original(current[2])
 
     @wraps(original_logistic)
-    def safe_logistic_dif(
+    def safe_detect_dif_logistic(
         responses: Any,
         group: Any,
+        *,
         exclude_studied_item: bool = False,
-        fdr_q: float = 0.05,
-        max_iter: int = 50,
+        fdr_q: float,
+        max_iter: int,
     ) -> Any:
         """Validate logistic DIF controls before data or native discovery."""
         exclude, q = _common_controls(exclude_studied_item, fdr_q)
@@ -134,13 +135,14 @@ def install(dif_module: ModuleType) -> None:
         )
 
     @wraps(original_mh_purified)
-    def safe_mantel_haenszel_dif_purified(
+    def safe_detect_dif_mantel_haenszel_purified(
         responses: Any,
         group: Any,
+        *,
         exclude_studied_item: bool = False,
-        fdr_q: float = 0.05,
-        max_rounds: int = 3,
-        min_anchor_items: int = 4,
+        fdr_q: float,
+        max_rounds: int,
+        min_anchor_items: int,
     ) -> Any:
         """Validate purified MH controls before data or native discovery."""
         exclude, q = _common_controls(exclude_studied_item, fdr_q)
@@ -156,14 +158,15 @@ def install(dif_module: ModuleType) -> None:
         )
 
     @wraps(original_logistic_purified)
-    def safe_logistic_dif_purified(
+    def safe_detect_dif_logistic_purified(
         responses: Any,
         group: Any,
+        *,
         exclude_studied_item: bool = False,
-        fdr_q: float = 0.05,
-        max_iter: int = 50,
-        max_rounds: int = 3,
-        min_anchor_items: int = 4,
+        fdr_q: float,
+        max_iter: int,
+        max_rounds: int,
+        min_anchor_items: int,
     ) -> Any:
         """Validate purified logistic controls before data or native discovery."""
         exclude, q = _common_controls(exclude_studied_item, fdr_q)
@@ -181,10 +184,14 @@ def install(dif_module: ModuleType) -> None:
         )
 
     wrappers = (
-        safe_logistic_dif,
-        safe_mantel_haenszel_dif_purified,
-        safe_logistic_dif_purified,
+        safe_detect_dif_logistic,
+        safe_detect_dif_mantel_haenszel_purified,
+        safe_detect_dif_logistic_purified,
     )
     for function in wrappers:
         setattr(function, _DIF_HARDENED_ATTR, True)
-    dif_module.logistic_dif, dif_module.mantel_haenszel_dif_purified, dif_module.logistic_dif_purified = wrappers
+    (
+        dif_module.detect_dif_logistic,
+        dif_module.detect_dif_mantel_haenszel_purified,
+        dif_module.detect_dif_logistic_purified,
+    ) = wrappers

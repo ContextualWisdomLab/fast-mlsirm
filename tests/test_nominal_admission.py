@@ -10,6 +10,14 @@ import pytest
 from fast_mlsirm.config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
 from fast_mlsirm.nominal import fit_nominal
 
+_REQUIRED_DEFAULTS: dict[str, object] = {
+    "model": 1,
+    "max_iter": 500,
+    "tol": 1e-6,
+    "xi_points": 4000,
+    "xi_seed": 0x9E37_79B9_7F4A_7C15,
+}
+
 
 class _ExplosiveResponses:
     """Response sentinel that records forbidden materialization."""
@@ -83,7 +91,7 @@ def test_fit_nominal_rejects_controls_before_callbacks_or_data(
     """Rejected scalar controls execute no caller callback or response work."""
 
     responses = _ExplosiveResponses()
-    call_kwargs: dict[str, object] = {"n_cat": 3, name: value}
+    call_kwargs: dict[str, object] = {**_REQUIRED_DEFAULTS, "n_cat": 3, name: value}
 
     with pytest.raises(ValueError, match=message):
         fit_nominal(responses, **call_kwargs)
@@ -97,7 +105,8 @@ def test_fit_nominal_rejects_controls_before_callbacks_or_data(
     [
         ({"n_cat": 1}, "n_cat must be in"),
         ({"n_cat": MAX_POLYTOMOUS_CATEGORIES + 1}, "n_cat must be in"),
-        ({"q": 13}, "q must be one of"),
+        # #1929: no node-count cap; q=13 is now accepted, only < 1 is not.
+        ({"q": 0}, "q must be >= 1"),
         ({"max_iter": 0}, "max_iter must be in"),
         ({"max_iter": MAX_MAX_ITER + 1}, "max_iter must be in"),
         ({"tol": 0.0}, "tol must be finite and > 0"),
@@ -116,7 +125,7 @@ def test_fit_nominal_rejects_control_domains_before_data(
     """Semantic-domain failures remain pre-data and pre-native."""
 
     responses = _ExplosiveResponses()
-    call_kwargs: dict[str, object] = {"n_cat": 3, **kwargs}
+    call_kwargs: dict[str, object] = {**_REQUIRED_DEFAULTS, "n_cat": 3, **kwargs}
 
     with pytest.raises(ValueError, match=message):
         fit_nominal(responses, **call_kwargs)
@@ -140,7 +149,7 @@ def test_fit_nominal_rejects_complex_responses_before_native_discovery(
     responses = np.array([[0.0 + 1.0j, 1.0], [1.0, 0.0]], dtype=np.complex128)
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
-        fit_nominal(responses, n_cat=2)
+        fit_nominal(responses, n_cat=2, model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
     assert core_calls == []
 
@@ -163,7 +172,7 @@ def test_fit_nominal_rejects_infinite_responses_before_native_discovery(
     responses = np.array([[0.0, 0.0], [1.0, 1.0], [bad_value, 0.0]])
 
     with pytest.raises(ValueError, match="responses must be finite where not missing"):
-        fit_nominal(responses, n_cat=2)
+        fit_nominal(responses, n_cat=2, model=1, max_iter=500, tol=1e-6, xi_points=4000, xi_seed=0x9E3779B97F4A7C15)
 
     assert core_calls == []
 
@@ -205,7 +214,7 @@ def test_fit_nominal_normalizes_supported_numpy_controls(
         tol=np.float32(1e-4),
         node_rule="qmc",
         xi_points=np.int64(16),
-        xi_seed=np.uint64(7),
+        xi_seed=np.uint64(7), model=1
     )
 
     assert result.n_cat == 2

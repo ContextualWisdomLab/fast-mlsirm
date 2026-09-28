@@ -168,7 +168,7 @@ def test_public_estimator_rejects_pairwise_budget_before_node_allocation(monkeyp
             latent_dim=1,
             q_theta=7,
             q_xi=7,
-            max_iter=1,
+            max_iter=1, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )
 
 
@@ -197,7 +197,7 @@ def test_public_estimator_rejects_gradient_budget_before_node_allocation(monkeyp
             q_theta=7,
             xi_rule="qmc",
             xi_points=10,
-            max_iter=1,
+            max_iter=1, q_xi=11, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_seed=0
         )
 
 

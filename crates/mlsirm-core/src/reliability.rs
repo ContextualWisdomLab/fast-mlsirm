@@ -808,7 +808,7 @@ pub fn icc(
     if !r0.is_finite() || !(0.0..1.0).contains(&r0) {
         return Err("r0 must be finite and in [0, 1)".into());
     }
-    if !conf_level.is_finite() || !(conf_level > 0.0 && conf_level < 1.0) {
+    if !(conf_level.is_finite() && conf_level > 0.0 && conf_level < 1.0) {
         return Err("conf_level must be in (0, 1)".into());
     }
     if nr < 2 {
@@ -1397,7 +1397,7 @@ pub fn maxwell_re(ratings: &[f64], ns: usize, nr: usize) -> Result<MaxwellResult
     let mut levels: Vec<f64> = Vec::with_capacity(3);
     for &(a, b) in &kept {
         for v in [a, b] {
-            if !levels.iter().any(|&l| l == v) {
+            if !levels.contains(&v) {
                 levels.push(v);
                 if levels.len() > 2 {
                     return Err("maxwell: ratings are not binary".into());

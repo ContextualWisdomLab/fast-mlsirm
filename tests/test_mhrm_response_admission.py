@@ -47,7 +47,7 @@ def test_complex_responses_fail_before_lossy_cast_or_native_discovery(monkeypatc
     )
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
-        mhrm.fit_mhrm(responses, 1, max_cycles=2, burn_in=1, mh_steps=1)
+        mhrm.fit_mhrm(responses, 1, max_cycles=2, burn_in=1, mh_steps=1, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
 
 
 def test_array_provider_rejected_without_protocol_or_native_execution(monkeypatch):
@@ -65,7 +65,7 @@ def test_array_provider_rejected_without_protocol_or_native_execution(monkeypatc
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
 
     with pytest.raises(ValueError, match="trusted NumPy array or built-in response matrix"):
-        mhrm.fit_mhrm(HostileArrayProvider(), 1, max_cycles=2, burn_in=1, mh_steps=1)
+        mhrm.fit_mhrm(HostileArrayProvider(), 1, max_cycles=2, burn_in=1, mh_steps=1, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
 
     assert callbacks == 0
 
@@ -89,7 +89,7 @@ def test_numeric_subclass_rejected_without_conversion_or_native_execution(monkey
             1,
             max_cycles=2,
             burn_in=1,
-            mh_steps=1,
+            mh_steps=1, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15
         )
 
     assert callbacks == 0
@@ -114,7 +114,7 @@ def test_object_and_text_storage_fail_before_conversion_or_native_discovery(monk
             1,
             max_cycles=2,
             burn_in=1,
-            mh_steps=1,
+            mh_steps=1, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15
         )
     assert callbacks == 0
 
@@ -124,7 +124,7 @@ def test_object_and_text_storage_fail_before_conversion_or_native_discovery(monk
             1,
             max_cycles=2,
             burn_in=1,
-            mh_steps=1,
+            mh_steps=1, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15
         )
 
 
@@ -147,7 +147,7 @@ def test_builtin_response_matrix_preserves_trusted_numpy_scalar_marshalling(monk
         max_cycles=2,
         burn_in=1,
         mh_steps=1,
-        estimate_se=False,
+        estimate_se=False, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15
     )
 
     args = captured["args"]
@@ -180,7 +180,7 @@ def test_builtin_matrix_preserves_exact_numpy_row_compatibility(monkeypatch):
         max_cycles=2,
         burn_in=1,
         mh_steps=1,
-        estimate_se=False,
+        estimate_se=False, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15
     )
 
     args = captured["args"]
@@ -211,7 +211,7 @@ def test_real_responses_preserve_existing_native_marshalling(monkeypatch):
         max_cycles=2,
         burn_in=1,
         mh_steps=1,
-        estimate_se=False,
+        estimate_se=False, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15
     )
 
     args = captured["args"]
@@ -238,7 +238,7 @@ def test_oversized_exact_response_view_fails_before_model_or_native_work(monkeyp
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
 
     with pytest.raises(ValueError, match="200,000,000"):
-        mhrm.fit_mhrm(responses, 1, max_cycles=2, burn_in=1, mh_steps=1)
+        mhrm.fit_mhrm(responses, 1, max_cycles=2, burn_in=1, mh_steps=1, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
 
 
 def test_oversized_exact_numpy_row_fails_before_sequence_materialization(monkeypatch):
@@ -254,7 +254,7 @@ def test_oversized_exact_numpy_row_fails_before_sequence_materialization(monkeyp
     monkeypatch.setattr(fitstats, "_core_module", _unexpected_core)
 
     with pytest.raises(ValueError, match="200,000,000"):
-        mhrm.fit_mhrm([row], 1, max_cycles=2, burn_in=1, mh_steps=1)
+        mhrm.fit_mhrm([row], 1, max_cycles=2, burn_in=1, mh_steps=1, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)
 
 
 def test_empty_container_fanout_fails_before_sequence_materialization(monkeypatch):
@@ -271,4 +271,4 @@ def test_empty_container_fanout_fails_before_sequence_materialization(monkeypatc
     responses = [[[]] for _ in range(7)]
 
     with pytest.raises(ValueError, match="structural traversal budget"):
-        mhrm.fit_mhrm(responses, 1, max_cycles=2, burn_in=1, mh_steps=1)
+        mhrm.fit_mhrm(responses, 1, max_cycles=2, burn_in=1, mh_steps=1, target_accept=0.3, tol=1e-3, seed=0x9E3779B97F4A7C15)

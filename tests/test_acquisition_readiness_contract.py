@@ -73,6 +73,7 @@ def test_generic_profile_activates_all_acquisition_validators_without_20b(
     for name in (
         "_validate_required_files",
         "_validate_doc_tokens",
+        "_validate_public_description_boundary",
         "_validate_acceptance_summary",
         "_validate_dist",
         "_validate_buyer_packet",

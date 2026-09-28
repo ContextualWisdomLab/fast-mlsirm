@@ -227,7 +227,9 @@ fn sx2_rejects_malformed_bank_controls_and_weights() {
     .expect("expected invalid fdr error");
     assert!(err.contains("fdr_q"), "got: {err}");
 
-    let err = s_x2(
+    // #1929: no node-count cap; 61 used to be rejected by `require_gh_rule`
+    // (only the separate `_unidim` path allowed it) and must now succeed.
+    s_x2(
         &valid_bank,
         &y,
         &observed,
@@ -239,9 +241,23 @@ fn sx2_rejects_malformed_bank_controls_and_weights() {
         },
         None,
     )
+    .expect("q_theta=61 must be accepted; no fixed-table cap");
+
+    let err = s_x2(
+        &valid_bank,
+        &y,
+        &observed,
+        2000,
+        &PriorSpec::standard(1),
+        &SX2Config {
+            q_theta: 0,
+            ..Default::default()
+        },
+        None,
+    )
     .err()
-    .expect("binary S-X2 must preserve the bounded quadrature contract");
-    assert_eq!(err, "unsupported quadrature size 61");
+    .expect("q_theta=0 must fail loudly, never clamp");
+    assert!(err.contains("quadrature size"), "got: {err}");
 }
 
 #[test]

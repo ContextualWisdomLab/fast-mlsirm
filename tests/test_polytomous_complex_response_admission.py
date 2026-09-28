@@ -30,7 +30,7 @@ def test_fit_polytomous_rejects_complex_responses_before_native_discovery(monkey
     responses = np.array([[0.0 + 1.0j], [1.0 + 0.0j]])
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
-        polytomous.fit_polytomous(responses, n_cat=2)
+        polytomous.fit_polytomous(responses, n_cat=2, model="grm", q_theta=21, max_iter=80, tol=1e-6)
 
 
 def test_score_polytomous_rejects_complex_responses_before_native_discovery(monkeypatch):
@@ -39,7 +39,7 @@ def test_score_polytomous_rejects_complex_responses_before_native_discovery(monk
     responses = np.array([[0.0 + 1.0j], [1.0 + 0.0j]])
 
     with pytest.raises(ValueError, match="responses must be real-valued"):
-        polytomous.score_polytomous(responses, _valid_fit())
+        polytomous.score_polytomous(responses, _valid_fit(), q_theta=21)
 
 
 def test_polytomous_response_admission_preserves_real_missingness_contract():

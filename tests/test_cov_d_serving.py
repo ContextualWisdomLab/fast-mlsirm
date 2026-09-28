@@ -170,9 +170,10 @@ def test_validate_rejects_non_dict_quadrature():
 
 
 def test_validate_rejects_bad_quadrature_node_count():
+    # #1929: no node-count cap; q_theta=99 is now accepted, only < 1 is not.
     bundle = _base_bundle()
-    bundle["quadrature"] = {"q_theta": 99, "q_xi": 7}
-    with pytest.raises(ValueError, match="quadrature q_theta must be one of"):
+    bundle["quadrature"] = {"q_theta": 0, "q_xi": 7}
+    with pytest.raises(ValueError, match="quadrature q_theta must be an integer >= 1"):
         _validate_bundle(bundle)
 
 

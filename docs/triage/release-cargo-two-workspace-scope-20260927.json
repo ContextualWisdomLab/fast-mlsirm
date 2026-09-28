@@ -1,0 +1,27 @@
+{
+  "source_sha": "b4434a3a424b4ee34a5c85f34ee2a66365d0a71b",
+  "helper_sha": "878b74e83b25007efbe86a66dffdb42f47eb3295",
+  "scope": "Local Cargo union and licence-only evaluation; no Strix, six-scope, hosted, or release acceptance",
+  "graphs": {
+    "cargo": {
+      "manifest": "crates/fast-mlsirm-py/Cargo.toml",
+      "metadata_sha256": "77e7f2dadf8e383c908e2a3d6d263bf615f8eadeacefe499b1f2e3ea45105b45",
+      "lock_sha256": "f778041936d0b4490976e86746ed2749b529fe79e825be6349bd85e1e7c3dbaf",
+      "dependency_count": 156
+    },
+    "cargo-dev": {
+      "manifest": "crates/mlsirm-core/Cargo.toml",
+      "metadata_sha256": "5cf3d38a775f8e011f300802d062d889c1b1d76161e9ed66100971178de902be",
+      "lock_sha256": "88bb9a25b3f95e560da7ffd3ade079e0860bf4b9dfd3c595e674a17b7d7fb9ea",
+      "dependency_count": 166
+    }
+  },
+  "unique_dependency_count": 227,
+  "gate_missing_evidence_refusals": 227,
+  "missing_development_graph": "REFUSED",
+  "license_only_results": {
+    "PASS": 203,
+    "FAIL": 24
+  },
+  "limitation": "166-node development and 156-node wheel graphs share95 dependencies. Authentication of hosted results and full admission remain incomplete."
+}

@@ -339,9 +339,10 @@ fn oakes_rejects_unsupported_modes_and_builds_every_xi_rule() {
         1e-5
     )
     .is_err());
+    // #1929: no node-count cap; q_theta=9 is now accepted, only q_theta=0 is not.
     assert!(call(
         &MarginalConfig {
-            q_theta: 9,
+            q_theta: 0,
             ..Default::default()
         },
         1e-5

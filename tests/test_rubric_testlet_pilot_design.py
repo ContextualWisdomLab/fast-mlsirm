@@ -174,7 +174,9 @@ def test_testlet_fit_kwargs_reject_invalid_execution_settings():
     for invalid_max_iter in (True, 0, 100_001, 1.5):
         with pytest.raises(ValueError, match="max_iter"):
             design.to_fit_testlet_kwargs(max_iter=invalid_max_iter)  # type: ignore[arg-type]
-    for invalid_q_gamma in (True, 8, 42, 7.5):
+    # #1929: no node-count cap; q_gamma=8/42 are now accepted, only
+    # non-integer/non-positive values are not.
+    for invalid_q_gamma in (True, 0, 7.5):
         with pytest.raises(ValueError, match="q_gamma"):
             design.to_fit_testlet_kwargs(q_gamma=invalid_q_gamma)  # type: ignore[arg-type]
     for name, value in (

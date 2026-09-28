@@ -18,6 +18,7 @@ def test_shared_library_registers_all_secondary_extension_modules():
     assert "mod ata_bindings;" in source
     assert "mod bifactor_bindings;" in source
     assert "mod rating_range_bindings;" in source
+    assert "mod regression_bindings;" in source
     assert "mod rotation_bindings;" in source
 
 

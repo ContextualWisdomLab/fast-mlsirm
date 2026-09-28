@@ -18,7 +18,6 @@ import numpy as np
 
 _MAX_SERVING_DIMS = 64
 _HARDENED_ATTR = "__fast_mlsirm_serving_export_safety_hardened__"
-_QUADRATURE_ORDERS = frozenset((7, 11, 15, 21, 31, 41))
 _NUMPY_INTEGER_TYPES = (
     np.int8,
     np.int16,
@@ -173,8 +172,10 @@ def _quadrature_integer(value: Any, *, label: str) -> int:
         normalized = int(value)
     else:
         raise ValueError(f"{label} must be an integer")
-    if normalized not in _QUADRATURE_ORDERS:
-        raise ValueError(f"{label} must be one of 7,11,15,21,31,41")
+    # #1929: no node-count cap; the Rust core generates any n >= 1 rule on
+    # demand (Golub & Welsch, 1969) and guards allocation overflow.
+    if normalized < 1:
+        raise ValueError(f"{label} must be >= 1")
     return normalized
 
 
@@ -190,8 +191,18 @@ def _validate_quadrature_resources(
     """Replay serving-grid allocation ceilings before compiled-core discovery."""
     if builtins.type(model) is not str:
         raise ValueError("result.model must be a built-in string")
-    n_xi = 1 if model == "MIRT" else q_xi**latent_dim
-    if model != "MIRT" and n_xi > 1_000_000:
+    # #1929: no node-count cap; bound q_xi ** latent_dim with an overflow-safe
+    # repeated multiply-with-division-check instead of computing the raw
+    # power (a hostile q_xi could otherwise force an astronomical bigint).
+    limit = 1_000_000
+    n_xi = 1
+    if model != "MIRT":
+        for _ in range(latent_dim):
+            if n_xi > limit // max(q_xi, 1):
+                n_xi = limit + 1
+                break
+            n_xi *= q_xi
+    if model != "MIRT" and n_xi > limit:
         raise ValueError("bundle q_xi ** latent_dim exceeds the serving grid limit")
     if max(n_items, n_dims) * q_theta * n_xi > 50_000_000:
         raise ValueError(

@@ -81,7 +81,7 @@ responses = np.array(
 )
 group = np.array([0, 0, 1, 1], dtype=np.uint8)
 
-result = delta_plot(responses, group, threshold="norm", alpha=0.05)
+result = delta_plot(responses, group, threshold="norm", alpha=0.05, max_iter=10)
 print(result.dif_items)
 print(result.deltas)
 ```

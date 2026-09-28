@@ -109,7 +109,7 @@ except `mu_alpha`, `mu_tau`).
 
 ## Model variants
 
-`model_flags(model)` toggles two switches:
+`get_model_flags(model)` toggles two switches:
 
 - `free_alpha` is false for `MLSRM` / `ULSRM` (Rasch-type: `a_i = 1`, so
   `alpha` has no gradient contribution).
@@ -118,7 +118,7 @@ except `mu_alpha`, `mu_tau`).
 
 ## Where this is enforced in code
 
-- `python/fast_mlsirm/objective.py` — `linear_predictor`, `neg_loglik_and_grad`
+- `python/fast_mlsirm/objective.py` — `compute_linear_predictor`, `neg_loglik_and_grad`
   (NumPy reference path) and `_add_penalty`.
 - `crates/mlsirm-core/src/lib.rs` — `neg_loglik_and_grad` (Rust path); kept at
   parity with the NumPy path by `tests/test_objective.py`.

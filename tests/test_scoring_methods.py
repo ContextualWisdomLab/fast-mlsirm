@@ -269,5 +269,5 @@ def test_numpy_marginal_rejects_nonboolean_anchor_mask_directly():
             latent_dim=2,
             pop={"kind": "singlefree"},
             max_iter=1,
-            anchors=anchors,
+            anchors=anchors, q_theta=21, q_xi=11, q_u=15, tol=1e-5, m_steps=4, eps_distance=1e-8, xi_points=256, xi_seed=0
         )

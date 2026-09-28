@@ -1,5 +1,8 @@
 pub mod agreement;
+pub mod bifactor_grm;
 pub mod bifactor_indices;
+pub mod bifactor_oakes;
+pub mod bifactor_recursion;
 pub mod cdm;
 pub mod classification;
 pub mod crm;
@@ -33,11 +36,13 @@ pub mod nominal;
 pub mod oakes;
 pub mod parallel;
 pub mod personfit_np;
+pub mod personfit_multidim;
 pub mod poly;
 pub mod poly_marginal;
 pub(crate) mod quadrature;
 pub mod rasch_cml;
 pub mod rating_range;
+pub mod regression;
 pub mod reliability;
 pub mod rsm;
 pub mod rt;
@@ -50,6 +55,8 @@ pub mod subscores;
 pub mod test_form;
 pub mod testlet;
 pub mod twopl;
+pub mod two_tier_grm;
+pub mod two_tier_oakes;
 pub mod utility;
 
 /// Checked size arithmetic shared by public-input validators.
@@ -88,6 +95,7 @@ pub(crate) mod gpu_marginal;
 pub(crate) mod gpu_plausible;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_scoring;
+pub(crate) mod gpu_bifactor;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_multilevel;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

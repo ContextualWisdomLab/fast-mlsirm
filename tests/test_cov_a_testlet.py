@@ -121,7 +121,8 @@ def test_fit_testlet_rejects_bad_tol():
 
 
 def test_fit_testlet_rejects_bad_q_gamma():
-    for bad in (True, 7.5, 8):
+    # #1929: no node-count cap; q_gamma=8 is now accepted, only < 1 is not.
+    for bad in (True, 7.5, 0):
         with pytest.raises(ValueError):
             fit_testlet(_binary(), _tid(), q_gamma=bad)
 

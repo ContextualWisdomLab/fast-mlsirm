@@ -14,6 +14,7 @@ from contextlib import redirect_stdout
 import io
 import json
 import os
+import pprint
 from pathlib import Path
 import platform
 import resource
@@ -56,11 +57,17 @@ def _rss_bytes() -> int:
 
 
 def _numpy_configuration() -> str:
-    """Return NumPy build and linked-library configuration as bounded text."""
-    buffer = io.StringIO()
-    with redirect_stdout(buffer):
+    """Return the complete NumPy build and linked-library configuration."""
+    try:
+        build_configuration = np.show_config(mode="dicts")
+    except TypeError:
+        pass
+    else:
+        return pprint.pformat(build_configuration, sort_dicts=True)
+    configuration_output = io.StringIO()
+    with redirect_stdout(configuration_output):
         np.show_config()
-    return buffer.getvalue().strip()[:32_768]
+    return configuration_output.getvalue().strip()
 
 
 def _legacy_broadcast(
