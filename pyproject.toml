@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "ContextualWisdomLab" }]
-dependencies = ["numpy>=1.24", "scipy>=1.11"]
+dependencies = ["numpy>=1.24"]
 keywords = ["irt", "psychometrics", "latent-space", "mlsirm", "pyo3"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -28,11 +28,11 @@ Issues = "https://github.com/ContextualWisdomLab/fast-mlsirm/issues"
 Changelog = "https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "hypothesis>=6", "packaging>=23"]
-# Coverage-guided fuzzing harnesses (fuzz/atheris/*). Atheris is Apache-2.0 and
-# Hypothesis is MPL-2.0 and used only as a dev/test dependency. Atheris ships
-# wheels for CPython 3.8-3.12 on Linux/macOS.
-fuzz = ["atheris>=2.3", "hypothesis>=6"]
+dev = ["pytest>=8", "hypothesis>=6", "packaging>=23", "sortedcontainers==2.4.0"]
+# Coverage-guided fuzzing runs only on Atheris wheel-supported CPython/Linux
+# x86_64 targets. Hypothesis remains available elsewhere. License and bundled
+# source evidence are tracked in docs/security/license-evidence-0.11.5.md.
+fuzz = ["atheris>=2.3; implementation_name == 'cpython' and sys_platform == 'linux' and platform_machine == 'x86_64' and python_version < '3.15'", "hypothesis>=6"]
 
 [project.scripts]
 fast-mlsirm = "fast_mlsirm.cli:main"
@@ -67,3 +67,6 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 fail_under = 100
+
+[tool.uv.sources]
+sortedcontainers = { path = "third_party/wheels/sortedcontainers-2.4.0-py3-none-any.whl" }
