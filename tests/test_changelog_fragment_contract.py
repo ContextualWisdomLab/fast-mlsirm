@@ -198,6 +198,31 @@ def test_render_contract_accepts_empty_inventory_and_rejects_malformed_fragments
     assert "- Manual note." in updated
     assert "## [1.0.0]" in updated
 
+    stale = tmp_path / "CHANGELOG-stale.md"
+    stale.write_text(
+        "# Changelog\n\n"
+        "## Unreleased\n\n"
+        "### Changed\n\n"
+        "- Manual note.\n\n"
+        f"{module.BEGIN_MARKER}\n"
+        "### Changed\n\n"
+        "#### Already released\n\n"
+        "- Stale.\n\n"
+        f"{module.END_MARKER}\n\n"
+        "## [1.0.0] - 2026-08-01\n\n"
+        "### Added\n\n"
+        "- Historical note.\n",
+        encoding="utf-8",
+    )
+    module.update_changelog(stale, ())
+    module.check_changelog(stale, ())
+    stripped = stale.read_text(encoding="utf-8")
+    assert module.BEGIN_MARKER not in stripped
+    assert module.END_MARKER not in stripped
+    assert "- Stale." not in stripped
+    assert "- Manual note." in stripped
+    assert "## [1.0.0]" in stripped
+
     malformed = tmp_path / "bad.md"
     malformed.write_text("not a title\n", encoding="utf-8")
     with pytest.raises(ValueError, match="level-one title"):

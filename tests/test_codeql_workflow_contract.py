@@ -30,7 +30,7 @@ def test_actions_codeql_runs_on_pull_requests_while_python_stays_manual() -> Non
 
     assert "name: Analyze (actions)" in actions_job
     assert "languages: actions" in actions_job
-    assert "github.event_name == 'workflow_dispatch'" not in actions_job
+    assert "\n    if:" not in actions_job
 
     assert "name: Analyze (python)" in python_job
     assert "languages: python" in python_job
@@ -55,3 +55,17 @@ def test_codeql_workflow_keeps_pinned_actions_and_least_permissions() -> None:
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in workflow
     assert "github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd" in workflow
     assert "github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd" in workflow
+
+
+def test_self_hosted_diagnostics_require_the_protected_main_workflow() -> None:
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    for job in (_job_block(workflow, "analyze-actions", "analyze-python"),
+                _job_block(workflow, "analyze-python")):
+        selector = next(line for line in job.splitlines() if line.startswith("    runs-on:"))
+        assert "github.event_name == 'workflow_dispatch' &&" in selector
+        assert "github.ref == 'refs/heads/main' &&" in selector
+        assert "github.workflow_ref == 'ContextualWisdomLab/fast-mlsirm/.github/workflows/codeql.yml@refs/heads/main' &&" in selector
+        assert '\"group\":\"CWL central CodeQL\"' in selector
+        assert "|| '\"ubuntu-latest\"'" in selector
+        assert "if-no-files-found: error" in job
+        assert "upload: never" in job

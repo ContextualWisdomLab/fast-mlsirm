@@ -2,46 +2,67 @@
 
 ## Unreleased
 
-## [0.11.5] - 2026-09-23
+## [0.11.5] - 2026-09-28
+
+### Added
+
+- Saved multiple-group bifactor and two-tier GRM fits can now produce
+  per-person conditional `l_z`, posterior trait estimates, observed-item
+  counts, and caller-threshold flags. Optional seeded model resampling gives
+  an empirical lower-tail probability; no cross-loading `l_z*` or normal-null
+  calibration is claimed (#2116).
+
+#### Release license evidence and NumPy lock reconciliation
+
+- `docs/security/license-evidence-0.11.5.md` records which artifacts are
+  published: the PyPI sdist and 12 wheels. The Rust crates are not published.
+  It also records the per-dependency license inventory for both ecosystems and
+  three verdicts:
+  - atheris 3.1.0 is Apache-2.0. PyPI metadata declares no license, so this
+    is determined from its LICENSE file, which is hash-matched to upstream.
+  - r-efi 5.3.0 and 6.0.0 are used under an explicit MIT election with a
+    recorded rationale. They are reached only through a dev-dependency path.
+  - The official NumPy wheels bundle libgfortran and libquadmath. libquadmath
+    is LGPL-2.1-or-later and has no runtime exception, so this is marked as
+    an owner decision, not approved.
+- `tools/license_inventory.py` is an offline generator for
+  `docs/security/license-evidence-0.11.5/inventory.json`.
 
 ### Changed
+
+- Polytomous person fit now requires convergence by default, including for
+  duck-typed fits with unknown convergence. `allow_unconverged=True` permits
+  diagnostic use only for legacy or duck-typed fits and marks the result
+  `valid_person_fit=False`, `diagnostic_only=True`; unconverged `PolyFipcFit`
+  always raises. Provenance retains convergence and termination fields (or
+  `"unknown"`). `PolytomousFit` retains its established standard-normal
+  EAP grid even with non-default `prior_mean`/`prior_sd`, which affect only
+  the `r0` correction. `PolyFipcFit` uses its fitted focal prior for both.
 
 #### Release cut 0.11.5
 
 - Project version is bumped to 0.11.5 in `pyproject.toml`, `crates/mlsirm-core`,
-  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
-  `[0.11.5] - 2026-09-23` release section, which folds the two repairs that made
-  every pull request red regardless of its contents: the fail-closed `python`
-  outcome gate escalating capability lanes another job owns, and the three
-  blocking Semgrep findings on `main`.
-- `publish-pypi.yml` publishes to PyPI through OIDC trusted publishing instead
-  of a long-lived API token. The `publish-pypi` job now carries
-  `permissions: contents: read` plus `id-token: write`, the
-  `password: ${{ secrets.PIPY_TOKEN }}` input is removed, and PEP 740
-  attestations are enabled so each uploaded distribution ships a verifiable
-  provenance statement. `environment: pypi` and `skip-existing: true` are
-  unchanged, so a partial publish stays retryable.
-- This cut removes the standing predecessor note `release-0.11.4-cut.md`, whose
-  substance is permanently recorded in the `[0.11.5] - 2026-09-23` section and
-  in git history.
-- Released authoritative fragments are removed from `docs/changelog.d`; the
-  directory again holds only genuinely unreleased notes.
+  and `crates/fast-mlsirm-py`. The notes that were still unreleased on `main`
+  now form this `[0.11.5] - 2026-09-28` section: polytomous person fit, the
+  fail-closed Python outcome gate, the Semgrep findings that blocked every
+  pull request, release-source checkout authority, and the 0.11.5 license
+  evidence record.
+- Publication to PyPI uses OIDC trusted publishing. The `publish-pypi` job
+  keeps `contents: read`, adds `id-token: write`, drops the long-lived
+  `PIPY_TOKEN` password, and turns PEP 740 attestations on. `environment: pypi`
+  and `skip-existing: true` stay, so a partial upload can be retried.
+- This cut removes `release-0.11.4-cut.md`. That note's substance already
+  lives in `[0.11.4] - 2026-09-18` and in git history.
+- The fragments consumed by this cut are removed from `docs/changelog.d`.
+  The directory again holds only notes that are not in a released section.
 
-#### Release cut 0.11.4
+#### Release license evidence and NumPy lock reconciliation
 
-- Project version is bumped to 0.11.4 in `pyproject.toml`, `crates/mlsirm-core`,
-  and `crates/fast-mlsirm-py`. The accumulated `Unreleased` notes now form the
-  `[0.11.4] - 2026-09-18` release section, headlined by the PyPI package-description
-  boundary repair (#1993): `README.md` no longer carries internal commercial-boundary
-  vocabulary or repo-relative links that 404 on the registry page, so the corrected
-  immutable description can ship after the 0.11.3 page. The section also folds the
-  two-tier / multi-primary Oakes SE and streaming E-step memory work (#1992) and the
-  support-policy / bifactor quadrature test repairs that cleared red `main`.
-- This cut removes the standing predecessor note `release-0.11.3-cut.md`, whose
-  substance is permanently recorded in the `[0.11.3] - 2026-09-18` section and
-  in git history.
-- Released authoritative fragments are removed from `docs/changelog.d`; the
-  directory again holds only genuinely unreleased notes.
+- `uv.lock`, `requirements/ci.txt` and `requirements/package.txt` all pin
+  numpy 2.5.3. Before this change they pinned 2.5.1 and 2.5.2, and the audit
+  environment ran 2.5.3. Only the numpy entries changed. The requirements
+  files carry the complete 2.5.3 PyPI hash set. The user-facing
+  `numpy>=1.24` constraint is unchanged.
 
 ### Fixed
 
@@ -86,8 +107,25 @@
   caller-supplied input, and the file is a repository tool that never ships in
   the wheel, so it carries a scoped `# nosemgrep` with that justification rather
   than a refactor.
+
 Neither change weakens the gate: the suppression is per-rule, per-line, and
 recorded separately from the blocking count by the central workflow.
+
+#### Release-source checkout authority
+
+- The publication workflow no longer passes caller-controlled
+  `workflow_dispatch` SHAs directly to `actions/checkout`. It first checks out
+  the protected invocation commit (`github.sha`) with full history, requires the
+  supplied control-plane identity to equal that commit, canonicalizes the
+  requested release object, and proves that object is an ancestor of the trusted
+  control plane.
+- The verified release commit is emitted once from `verify-release`; all build,
+  provenance, admission, tagging, and publication consumers use that job output.
+  Invalid, unavailable, sibling, noncanonical, or mismatched identities fail
+  closed before an untrusted tree becomes executable.
+- Contract coverage executes the exact guard against real Git histories. The
+  repair removes all 6 raw release checkout refs and both raw control-plane
+  checkout refs that were present in the RED state.
 
 ## [0.11.4] - 2026-09-18
 
