@@ -1,0 +1,22 @@
+{
+  "generated_at_utc": "2026-09-20T15:41:29Z",
+  "valkey_url": "redis://192.168.68.3:16381/0",
+  "suffix": "7f5e9f2ae4",
+  "n_jobs": 24,
+  "hosts_committed": [
+    "air"
+  ],
+  "air_attempts": 24,
+  "s1_attempts": 0,
+  "s1_stderr_tail": "ed)>1 else []\\n    if not entries:\\n        time.sleep(0.05); continue\\n    for msg_id, fields in entries:\\n        fp=fields[\"fp\"]; payload=json.loads(fields[\"payload\"])\\n        value=float(payload[\"value\"])+0.0\\n        rec={\"host\":\"s1\",\"unit\":payload[\"unit\"],\"value\":value,\"fp\":fp,\"consumer\":consumer}\\n        first=bool(r.hsetnx(committed, fp, json.dumps(rec)))\\n        r.xack(stream, group, msg_id)\\n        print(json.dumps({\"first\":first,\"stored\":rec,\"attempt_host\":\"s1\"}), flush=True)\\n''\n",
+  "committed_count": 24,
+  "checks": {
+    "distribute_air_present": true,
+    "distribute_s1_present": false,
+    "dedup_exact_n": true,
+    "numeric_equality": true,
+    "retry_claim_path_exercised": true
+  },
+  "PASS": true,
+  "m1_status": "ABSENT_this_run (ssh host key; ask spawn on MacBookPro-M1)"
+}
