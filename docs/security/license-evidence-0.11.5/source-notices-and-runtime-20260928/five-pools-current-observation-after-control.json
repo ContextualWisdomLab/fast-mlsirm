@@ -1,0 +1,128 @@
+{
+  "observed_at_utc": "2026-09-28T00:07:39.841073+00:00",
+  "groups": [
+    {
+      "group_id": 1,
+      "group_name": "Default",
+      "visibility": "all",
+      "restricted_to_workflows": false,
+      "selected_workflows": [],
+      "runners": []
+    },
+    {
+      "group_id": 3,
+      "group_name": "CWL MCP remediation",
+      "visibility": "selected",
+      "restricted_to_workflows": true,
+      "selected_workflows": [
+        "ContextualWisdomLab/.github/.github/workflows/agent-mention-noema-dispatch.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/agent-mention-opencode-dispatch.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/codeql-pr.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/codeql-scan-dispatch.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/noema-review.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/opencode-review.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/opencode-review-coalesce-tick.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/pr-review-merge-scheduler.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/sast-semgrep.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/scheduled-security-scan.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/security-scan.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/strix.yml@refs/heads/main",
+        "ContextualWisdomLab/contextual-orchestrator/.github/workflows/security.yml@refs/heads/main"
+      ],
+      "runners": [
+        {
+          "id": 1061766,
+          "name": "cwlab-s1-02",
+          "status": "online",
+          "busy": true
+        }
+      ]
+    },
+    {
+      "group_id": 4,
+      "group_name": "CWL central CodeQL",
+      "visibility": "selected",
+      "restricted_to_workflows": true,
+      "selected_workflows": [
+        "ContextualWisdomLab/.github/.github/workflows/codeql-scan-dispatch.yml@refs/heads/main",
+        "ContextualWisdomLab/contextual-orchestrator/.github/workflows/security.yml@refs/heads/main",
+        "ContextualWisdomLab/fast-mlsirm/.github/workflows/codeql.yml@refs/heads/main"
+      ],
+      "runners": [
+        {
+          "id": 1063157,
+          "name": "cwlab-s1-03",
+          "status": "online",
+          "busy": true
+        }
+      ]
+    },
+    {
+      "group_id": 5,
+      "group_name": "CWL central OpenCode",
+      "visibility": "selected",
+      "restricted_to_workflows": true,
+      "selected_workflows": [
+        "ContextualWisdomLab/.github/.github/workflows/opencode-review-dispatch.yml@refs/heads/main",
+        "ContextualWisdomLab/contextual-orchestrator/.github/workflows/security.yml@refs/heads/main"
+      ],
+      "runners": [
+        {
+          "id": 1063158,
+          "name": "cwlab-s1-04",
+          "status": "online",
+          "busy": true
+        }
+      ]
+    },
+    {
+      "group_id": 6,
+      "group_name": "CWL central control",
+      "visibility": "all",
+      "restricted_to_workflows": true,
+      "selected_workflows": [
+        "ContextualWisdomLab/.github/.github/workflows/agent-mention-router.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/codeql-pr.yml@e6334e229581a918e2f22de18733b76fa65d7e71",
+        "ContextualWisdomLab/.github/.github/workflows/codeql-pr.yml@f411712bf9b8f6c27070b32bbfe35d89eefa2fe0",
+        "ContextualWisdomLab/.github/.github/workflows/codeql-pr.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/hourly-review-repair.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/noema-review.yml@24bdfe0b4fcd093cac4047433211d2cd59d53b43",
+        "ContextualWisdomLab/.github/.github/workflows/noema-review.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/opencode-review.yml@f411712bf9b8f6c27070b32bbfe35d89eefa2fe0",
+        "ContextualWisdomLab/.github/.github/workflows/opencode-review.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/pr-review-merge-scheduler.yml@refs/heads/main",
+        "ContextualWisdomLab/.github/.github/workflows/strix.yml@refs/heads/main"
+      ],
+      "runners": [
+        {
+          "id": 1061765,
+          "name": "cwlab-s1-01",
+          "status": "online",
+          "busy": true
+        },
+        {
+          "id": 1063159,
+          "name": "cwlab-s1-05",
+          "status": "online",
+          "busy": true
+        },
+        {
+          "id": 1065083,
+          "name": "cwlab-s2-01",
+          "status": "online",
+          "busy": true
+        }
+      ]
+    }
+  ],
+  "codeql_queue_run": 36346059984,
+  "codeql_jobs": [
+    108695318060,
+    108695318220
+  ],
+  "codeql_job_runner_ids": [
+    0,
+    0
+  ],
+  "optimization_preflight": "s1-05 was observed idle, but exact pre-move recheck found it busy; no runner group mutation performed"
+}

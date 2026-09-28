@@ -1,0 +1,122 @@
+{
+  "observed_at_utc": "2026-09-28T00:00:55.911795+00:00",
+  "control_job": {
+    "completed_at": "2026-09-27T21:01:00Z",
+    "conclusion": "success",
+    "created_at": "2026-09-27T19:54:35Z",
+    "head_sha": "b6cebb36dc11afe409a7fee8a3262827255c029c",
+    "id": 108695316163,
+    "labels": [
+      "self-hosted",
+      "linux",
+      "x64"
+    ],
+    "run_id": 36346060446,
+    "runner_group_id": 6,
+    "runner_group_name": "cwl central control",
+    "runner_id": 1061765,
+    "runner_name": "cwlab-s1-01",
+    "started_at": "2026-09-27T21:00:44Z",
+    "status": "completed",
+    "steps": [
+      {
+        "conclusion": "success",
+        "name": "Set up job",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Exchange OpenCode app token for scheduler mutations",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Validate targeted repository dispatch",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Resolve trusted scheduler source ref",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Materialize trusted scheduler",
+        "status": "completed"
+      },
+      {
+        "conclusion": "skipped",
+        "name": "Retire redundant queued exact-head runs",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Self-test scheduler",
+        "status": "completed"
+      },
+      {
+        "conclusion": "skipped",
+        "name": "Wait for approved OpenCode publication run to finish",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Inspect PR review and merge queue",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Complete job",
+        "status": "completed"
+      }
+    ]
+  },
+  "control_log_sha256": "66aa332743058d495b64c0ad5c32f357ec42b65a4cd0c9f2a1effafb85db8cb9",
+  "control_log_size": 45739,
+  "selected_nonsecret_log_lines": [
+    "2026-09-27T21:00:46.3656867Z Runner name: 'cwlab-s1-01'",
+    "2026-09-27T21:00:51.0308952Z Validated exact targeted scheduler dispatch for ContextualWisdomLab/fast-mlsirm#2157 at 9e01372f9ff525205ef453c2bd930a1e634ae049 (PR base main; scheduler default branch main).",
+    "2026-09-27T21:00:55.8636881Z PR #2157: block: merge conflict: DIRTY; base=main, head=codex/regression-hc3-producer-gap-20260925; changed files to inspect first: .github/workflows/publish-pypi.yml | Cargo.lock | LICENSE-THIRD-PARTY | NOTICE | NOTICE-cfg_aliases-0.2.2-NOTICES.md | NOTICE-libm-0.2.16-LICENSE.txt | NOTICE-libm-0.2.16-source-notices.txt | crates/fast-mlsirm-py/Cargo.lock | crates/fast-mlsirm-py/Cargo.toml | crates/fast-mlsirm-py/src/regression_bindings.rs | +10 more; run `gh pr checkout 2157`, `git fetch origin main`, then `git merge --no-ff origin/main` or `git rebase origin/main`; use `git status --short` to find conflicted files, resolve conflict markers in the PR branch, rerun focused checks, and push the same codex/regression-hc3-producer-gap-20260925 branch (use `git push --force-with-lease` only if rebased); do not retry update-branch until the conflict is repaired"
+  ],
+  "dispatch_inputs": {
+    "dry_run": true,
+    "max_prs": 1,
+    "trigger_reviews": false,
+    "enable_auto_merge": false,
+    "merge_mode": "disabled",
+    "update_branches": false,
+    "target_pr": 2157,
+    "target_head": "9e01372f9ff525205ef453c2bd930a1e634ae049"
+  },
+  "main_at_control_execution": "b6cebb36dc11afe409a7fee8a3262827255c029c",
+  "main_after_control_execution": "d1785f7c553d877f1a88c6dbdbfab9be8988c5e9",
+  "later_main_change_scope": "#2473 contextual_orchestrator_review_sidecar.sh and its contract test; scheduler workflow and release helper unchanged",
+  "codeql_current_job_snapshot": {
+    "jobs": [
+      {
+        "completed_at": null,
+        "conclusion": null,
+        "head_sha": "f54143b968c0f332fa8d49ed3c116fc7d51891b0",
+        "id": 108695318060,
+        "name": "Analyze (actions)",
+        "runner_group_id": 0,
+        "runner_id": 0,
+        "runner_name": "",
+        "started_at": "2026-09-27T19:54:35Z",
+        "status": "queued"
+      },
+      {
+        "completed_at": null,
+        "conclusion": null,
+        "head_sha": "f54143b968c0f332fa8d49ed3c116fc7d51891b0",
+        "id": 108695318220,
+        "name": "Analyze (python)",
+        "runner_group_id": 0,
+        "runner_id": 0,
+        "runner_name": "",
+        "started_at": "2026-09-27T19:54:35Z",
+        "status": "queued"
+      }
+    ]
+  }
+}
