@@ -1600,7 +1600,8 @@ fn fit_bifactor_grm_multigroup(
 /// (Gibbons et al., 2007, eq. 9). `a_specific` must be exactly `0.0` for
 /// general-only items; `threshold` is row-major `n_items * (n_cat - 1)`
 /// strictly decreasing per item. `q_general`/`q_specific`/`fd_step` are
-/// REQUIRED caller arguments (no defaults below the 121-node study floor;
+/// REQUIRED caller arguments (`fd_step` is validated but unused since the
+/// cross term became analytic, #2113; no defaults below the 121-node study floor;
 /// any `q >= 1` is accepted per #1929's quadrature-cap removal, with
 /// `require_gh_rule` guarding the allocation for absurd node counts —
 /// never a silent substitution). Returns a dict with

@@ -21,10 +21,14 @@
 //! sensitivity of the imputed sufficient statistics to the posterior
 //! (Oakes, 1999, section 3: "the second term ... reflects the sensitivity of
 //! the imputed complete-data sufficient statistic to changes in the
-//! hypothesized parameter value") and needs one E-step per perturbed
-//! coordinate — `k + 1` E-steps total for `k` free item parameters, versus
-//! `2k` marginal-score evaluations for a central difference of the observed
-//! score (the same costing argument documented in `crate::oakes`).
+//! hypothesized parameter value"). At `xi' = xi` it equals the posterior
+//! expectation of the product of conditional-density scores (Oakes, 1999,
+//! p. 480, the display before eq. 6), i.e. the per-person posterior
+//! covariance of the complete-data score, which is the missing information
+//! of Louis (1982). It is computed analytically in one pass over persons
+//! ([`Stage1Provider::missing_information`]); before #2113 it took one
+//! perturbed E-step per free parameter, and that forward difference remains
+//! only as the unit-test oracle.
 //!
 //! # Complete-data model (what `Q` is)
 //!
@@ -71,10 +75,15 @@
 //! Full-information item bifactor analysis of graded response data. *Applied
 //! Psychological Measurement, 31*(1), 4-19.
 //! https://doi.org/10.1177/0146621606289485
+//!
+//! Louis, T. A. (1982). Finding the observed information matrix when using
+//! the EM algorithm. *Journal of the Royal Statistical Society Series B:
+//! Statistical Methodology, 44*(2), 226-233.
+//! https://doi.org/10.1111/j.2517-6161.1982.tb01203.x
 
 use crate::bifactor_grm::{
     check_param_shapes, e_step, fill_logprob_tables, gh_rule, pack_params, validate, ItemParams,
-    Validated,
+    PersonLogTerms, Validated,
 };
 use crate::poly::{grm_node_gradient, grm_node_hessian};
 
@@ -87,9 +96,11 @@ pub struct BifactorOakesConfig {
     pub q_general: usize,
     /// Gauss-Hermite nodes per specific factor (#1929: any `q >= 1`).
     pub q_specific: usize,
-    /// Relative finite-difference step for the Oakes cross term
-    /// (`h_j = fd_step * (1 + |xi_j|)`); the complete-data gradient and
-    /// Hessian are analytic, so this touches only the posterior sensitivity.
+    /// Relative finite-difference step of the former forward-difference
+    /// cross term (`h_j = fd_step * (1 + |xi_j|)`). Still validated (finite,
+    /// positive) so existing callers keep working, but the single-group
+    /// assembly no longer reads it: the cross term is analytic since #2113.
+    /// Removing the argument is an ADR-0028 deprecation, not this change.
     pub fd_step: f64,
 }
 
@@ -200,9 +211,8 @@ impl Stage1Provider {
             seed: 0,
             newton_iter: 1,
             ridge: 1e-8,
-            // The Oakes assembly's E-step reruns are exact f64 scalar work
-            // (the cross term needs analytic precision), never the f32 GPU
-            // kernels.
+            // The Oakes posterior and missing information are exact f64
+            // scalar work, never the f32 GPU kernels.
             device: crate::Device::Cpu,
         };
         let v = validate(
@@ -305,6 +315,161 @@ impl Stage1Provider {
     }
 }
 
+impl Stage1Provider {
+    /// Missing information at `packed`, row-major `k x k`: the Oakes cross
+    /// term `d^2 Q(xi' | xi) / d xi' d xi` at `xi' = xi`, which Oakes (1999,
+    /// p. 480, the display before eq. 6) writes as the posterior expectation
+    /// of the product of conditional-density scores, i.e. the summed
+    /// per-person posterior covariance of the complete-data score (Louis,
+    /// 1982). Computed analytically, with no E-step perturbation.
+    ///
+    /// Given the general node `g`, the specific blocks are conditionally
+    /// independent (Gibbons et al., 2007, eq. 15), so per person
+    ///
+    /// ```text
+    /// Cov(S) = sum_g w_g [ sum_b Cov(U_b | g) + (M_g - m)(M_g - m)' ],
+    /// ```
+    ///
+    /// with `w_g` the general-node posterior, `U_b` block `b`'s score,
+    /// `M_g = E(S | g)` and `m = E(S)`. Both terms are centred sums of
+    /// products, so no two large sums are subtracted.
+    pub(crate) fn missing_information(&self, packed: &[f64]) -> Vec<f64> {
+        let v = &self.v;
+        let (qg, qs, nc) = (self.qg, self.qs, v.n_cat);
+        let k = self.free_len();
+        let params = self.unpack(packed);
+        let tables = fill_logprob_tables(v, &params, &self.tg, &self.ts, qg, qs);
+        // score[i][(node * nc + c) * len + l]: item i's complete-data score
+        // for one response in category c at count node `node`, over its
+        // local slots `[a_G, (a_S), d..]`.
+        // ponytail: whole table in memory, about I * qg * qs * nc * len f64
+        // (roughly 350 MB at 100 items, q = 121); slice it per general node
+        // if that ceiling is hit.
+        let mut onehot = vec![0.0f64; nc];
+        let score: Vec<Vec<f64>> = params
+            .iter()
+            .zip(&self.specs)
+            .map(|(par, spec)| {
+                let len = spec.slots.len();
+                let nodes = if spec.has_specific { qg * qs } else { qg };
+                let mut sc = vec![0.0f64; nodes * nc * len];
+                for node in 0..nodes {
+                    let (tgn, tsn) = if spec.has_specific {
+                        (self.tg[node / qs], self.ts[node % qs])
+                    } else {
+                        (self.tg[node], 0.0)
+                    };
+                    let base = par.a_g * tgn + par.a_s.unwrap_or(0.0) * tsn;
+                    for c in 0..nc {
+                        onehot[c] = 1.0;
+                        let (g_base, g_thr) = grm_node_gradient(base, &par.d, &onehot);
+                        onehot[c] = 0.0;
+                        let out = &mut sc[(node * nc + c) * len..(node * nc + c + 1) * len];
+                        out[0] = g_base * tgn;
+                        let off = if spec.has_specific {
+                            out[1] = g_base * tsn;
+                            2
+                        } else {
+                            1
+                        };
+                        out[off..].copy_from_slice(&g_thr);
+                    }
+                }
+                sc
+            })
+            .collect();
+
+        let observed = self.observed.as_deref();
+        let mut info = vec![0.0f64; k * k];
+        let mut terms = PersonLogTerms::new(v, qg, qs);
+        let mut cond_mean = vec![0.0f64; qg * k];
+        let mut w = vec![0.0f64; qg];
+        let mut mean = vec![0.0f64; k];
+        let (mut slots, mut u, mut mb, mut pis) = (Vec::new(), Vec::new(), Vec::new(), vec![0.0; qs]);
+        for p in 0..v.n_persons {
+            let is_obs = |i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
+            let log_lp = terms.fill(v, &self.y, observed, &tables, &self.log_wg, &self.log_ws, p);
+            for g in 0..qg {
+                let wg = (terms.log_like_g[g] - log_lp).exp();
+                w[g] = if wg.is_finite() { wg } else { 0.0 };
+            }
+            cond_mean.fill(0.0);
+            for g in (0..qg).filter(|&g| w[g] > 0.0) {
+                let row = &mut cond_mean[g * k..(g + 1) * k];
+                for &i in v.general_only.iter().filter(|&&i| is_obs(i)) {
+                    let spec = &self.specs[i];
+                    let (len, yc) = (spec.slots.len(), self.y[p * v.n_items + i]);
+                    let s = &score[i][(g * nc + yc) * len..(g * nc + yc + 1) * len];
+                    for (&slot, &sl) in spec.slots.iter().zip(s) {
+                        row[slot] += sl;
+                    }
+                }
+                for (b, members) in v.blocks.iter().enumerate() {
+                    slots.clear();
+                    for &i in members.iter().filter(|&&i| is_obs(i)) {
+                        slots.extend_from_slice(&self.specs[i].slots);
+                    }
+                    let lb = slots.len();
+                    if lb == 0 {
+                        continue;
+                    }
+                    u.clear();
+                    u.resize(qs * lb, 0.0);
+                    mb.clear();
+                    mb.resize(lb, 0.0);
+                    for h in 0..qs {
+                        let pi = (terms.block_acc[(b * qg + g) * qs + h] - terms.log_i[b * qg + g]).exp();
+                        pis[h] = if pi.is_finite() { pi } else { 0.0 };
+                        let mut off = 0;
+                        for &i in members.iter().filter(|&&i| is_obs(i)) {
+                            let (len, yc) = (self.specs[i].slots.len(), self.y[p * v.n_items + i]);
+                            let at = ((g * qs + h) * nc + yc) * len;
+                            u[h * lb + off..h * lb + off + len].copy_from_slice(&score[i][at..at + len]);
+                            off += len;
+                        }
+                        for l in 0..lb {
+                            mb[l] += pis[h] * u[h * lb + l];
+                        }
+                    }
+                    // w_g Cov(U_b | g), centred at the conditional mean.
+                    for h in (0..qs).filter(|&h| pis[h] > 0.0) {
+                        let c = w[g] * pis[h];
+                        for a in 0..lb {
+                            let da = c * (u[h * lb + a] - mb[a]);
+                            for bb in 0..lb {
+                                info[slots[a] * k + slots[bb]] += da * (u[h * lb + bb] - mb[bb]);
+                            }
+                        }
+                    }
+                    for (&slot, &ml) in slots.iter().zip(&mb) {
+                        row[slot] += ml;
+                    }
+                }
+            }
+            // Between-node term: sum_g w_g (M_g - m)(M_g - m)'.
+            mean.fill(0.0);
+            for g in (0..qg).filter(|&g| w[g] > 0.0) {
+                for (m, &c) in mean.iter_mut().zip(&cond_mean[g * k..(g + 1) * k]) {
+                    *m += w[g] * c;
+                }
+            }
+            for g in (0..qg).filter(|&g| w[g] > 0.0) {
+                let row = &cond_mean[g * k..(g + 1) * k];
+                for a in 0..k {
+                    let da = w[g] * (row[a] - mean[a]);
+                    if da == 0.0 {
+                        continue;
+                    }
+                    for c in 0..k {
+                        info[a * k + c] += da * (row[c] - mean[c]);
+                    }
+                }
+            }
+        }
+        info
+    }
+}
+
 impl PosteriorProvider for Stage1Provider {
     fn posterior_at(&self, packed: &[f64]) -> Result<OakesPosterior, String> {
         let params = self.unpack(packed);
@@ -366,6 +531,9 @@ impl PosteriorProvider for Stage1Provider {
 /// node, the GRM cell gradient ([`grm_node_gradient`]) is chained through
 /// `eta(node) = a_G * tG + a_S * tS + d` exactly as the M-step gradient in
 /// `bifactor_grm.rs` (`item_neg_ll_grad`, up to the overall sign).
+/// Test-only: it builds the forward-difference oracle for
+/// [`Stage1Provider::missing_information`].
+#[cfg(test)]
 pub(crate) fn q_gradient_analytic(
     packed: &[f64],
     posterior: &OakesPosterior,
@@ -578,28 +746,14 @@ pub fn bifactor_oakes_se(
     let posterior0 = provider.posterior_at(&packed)?;
     let term_a = q_hessian_analytic(&packed, &posterior0, &provider);
 
-    // Term B: cross derivative — forward FD over the posterior argument
-    // (one E-step per coordinate), gradient evaluated at the base xi. A
-    // perturbation can invert a tight threshold gap (making the perturbed
-    // posterior non-finite); that surfaces as non-finite information and is
-    // reported through the non-PD flag, never as Err.
-    let g0 = q_gradient_analytic(&packed, &posterior0, &provider);
-    let mut cross = vec![0.0f64; k * k];
-    for j in 0..k {
-        let hj = cfg.fd_step * (1.0 + packed[j].abs());
-        let mut perturbed = packed.clone();
-        perturbed[j] += hj;
-        let posterior_p = provider.posterior_at(&perturbed)?;
-        let gp = q_gradient_analytic(&packed, &posterior_p, &provider);
-        for c in 0..k {
-            cross[j * k + c] = (gp[c] - g0[c]) / hj;
-        }
-    }
+    // Term B: the missing information, analytic (Oakes, 1999, p. 480;
+    // Louis, 1982). A degenerate posterior surfaces as non-finite
+    // information through the non-PD flag, never as Err.
+    let cross = provider.missing_information(&packed);
 
     // Observed information = -(A + B) by Oakes (1999, eq. 6, p. 480),
-    // symmetrized to remove forward-FD asymmetry (the exact sum is
-    // symmetric). Note `cross[j * k + c]` holds d g_c / d xi_j, i.e. the
-    // transpose of the mixed partials, so the average recovers (B+B')/2.
+    // symmetrized so accumulation rounding cannot leave it asymmetric (the
+    // exact sum is symmetric).
     let mut information = vec![0.0f64; k * k];
     for r in 0..k {
         for c in 0..k {

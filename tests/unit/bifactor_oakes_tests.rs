@@ -707,3 +707,89 @@ fn rejects_non_positive_fd_steps() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Analytic missing information (Oakes, 1999, p. 480, the display before
+// eq. 6): at xi' = xi the cross term is the posterior covariance of the
+// complete-data score (Louis, 1982). It must equal a central difference of
+// the FD cross term's own construction, `d/d xi_j grad_Q(xi | posterior(xi))`.
+// ---------------------------------------------------------------------------
+
+fn assert_missing_information_matches_fd(
+    specific_map: &[i32],
+    n_specific: usize,
+    a_g: &[f64],
+    a_s: &[f64],
+    thresholds: &[f64],
+    observed: Option<&[bool]>,
+) {
+    let (y, n_persons) = tiny_data();
+    let cfg = tiny_oakes_config();
+    let provider = Stage1Provider::new(
+        &y,
+        observed,
+        specific_map,
+        n_persons,
+        TINY_N_ITEMS,
+        n_specific,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("provider must build");
+    let packed = provider.pack(a_g, a_s, thresholds);
+    let k = provider.free_len();
+    let analytic = provider.missing_information(&packed);
+    assert_eq!(analytic.len(), k * k);
+    let mut fd = vec![0.0f64; k * k];
+    for j in 0..k {
+        let hj = 1e-5 * (1.0 + packed[j].abs());
+        let (mut xp, mut xm) = (packed.clone(), packed.clone());
+        xp[j] += hj;
+        xm[j] -= hj;
+        let gp = q_gradient_analytic(&packed, &provider.posterior_at(&xp).unwrap(), &provider);
+        let gm = q_gradient_analytic(&packed, &provider.posterior_at(&xm).unwrap(), &provider);
+        for c in 0..k {
+            fd[c * k + j] = (gp[c] - gm[c]) / (2.0 * hj);
+        }
+    }
+    let norm = fd.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let err = analytic
+        .iter()
+        .zip(&fd)
+        .map(|(a, b)| (a - b) * (a - b))
+        .sum::<f64>()
+        .sqrt();
+    assert!(norm > 0.0, "the fixture must carry missing information");
+    assert!(
+        err / norm <= 1e-6,
+        "analytic missing information must match the FD cross term; \
+         relative Frobenius error = {:.3e}",
+        err / norm
+    );
+}
+
+#[test]
+fn missing_information_matches_fd_cross_term() {
+    let (a_g, a_s, thresholds) = tiny_params();
+    assert_missing_information_matches_fd(
+        &TINY_SPECIFIC_MAP,
+        TINY_N_SPECIFIC,
+        &a_g,
+        &a_s,
+        &thresholds,
+        None,
+    );
+    let (a_g, a_s, thresholds) = mixed_params();
+    assert_missing_information_matches_fd(&MIXED_SPECIFIC_MAP, 1, &a_g, &a_s, &thresholds, None);
+    // Missing responses: every third cell unobserved.
+    let (_, n_persons) = tiny_data();
+    let observed: Vec<bool> = (0..n_persons * TINY_N_ITEMS).map(|c| c % 3 != 1).collect();
+    assert_missing_information_matches_fd(
+        &MIXED_SPECIFIC_MAP,
+        1,
+        &a_g,
+        &a_s,
+        &thresholds,
+        Some(&observed),
+    );
+}
