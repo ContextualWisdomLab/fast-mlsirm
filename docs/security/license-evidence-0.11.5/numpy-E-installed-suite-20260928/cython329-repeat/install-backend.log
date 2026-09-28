@@ -1,0 +1,10 @@
+Using Python 3.12.11 environment at: /data/orca/workspaces/fmls-numpy-E-cython329-suite-20260928/.venv
+Resolved 3 packages in 4ms
+Prepared 1 package in 130ms
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 3 packages in 1.54s
+ + cython==3.2.9 (from file:///data/orca/workspaces/fmls-numpy-E-cython329-suite-20260928/cython-3.2.9-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl)
+ + meson==1.12.1 (from file:///data/orca/workspaces/fmls-numpy-pinned-backend-build-20260928/input/build-deps/meson-1.12.1-py3-none-any.whl)
+ + ninja==1.13.2 (from file:///data/orca/workspaces/fmls-numpy-pinned-backend-build-20260928/input/build-deps/ninja-1.13.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl)
