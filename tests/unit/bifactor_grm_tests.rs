@@ -501,10 +501,12 @@ fn estep_gpu_matches_cpu_counts_and_loglik() {
     let (ll_cpu, counts_cpu) = e_step(
         &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
         crate::Device::Cpu,
+        true,
     );
     let (ll_gpu, counts_gpu) = e_step(
         &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
         crate::Device::Gpu,
+        true,
     );
 
     assert!(
@@ -590,6 +592,7 @@ fn estep_duplicate_persons_scale_loglik_and_counts() {
         tg,
         ts,
         crate::Device::Cpu,
+        true,
     );
     let (ll_twice, counts_twice) = e_step(
         &v_twice,
@@ -603,6 +606,7 @@ fn estep_duplicate_persons_scale_loglik_and_counts() {
         tg,
         ts,
         crate::Device::Cpu,
+        true,
     );
 
     assert!(
@@ -752,7 +756,7 @@ fn estep_shared_block_subvector_yields_identical_log_i() {
                 let mask = [!mask_first, true, false, false];
                 let (ll, counts) = e_step(
                     &v, row, Some(&mask), &tables, &log_wg, &log_ws,
-                    qg, qs, tg, ts, crate::Device::Cpu,
+                    qg, qs, tg, ts, crate::Device::Cpu, true,
                 );
                 let expected = if mask_first {
                     let terms: Vec<f64> = (0..qs)
@@ -821,6 +825,7 @@ fn zero_prior_weight_nodes_do_not_nan_estep_counts() {
         tg,
         ts,
         crate::Device::Cpu,
+        true,
     );
     assert!(ll.is_finite(), "observed-data loglik must stay finite; got {ll}");
     for (i, item_counts) in counts.iter().enumerate() {
