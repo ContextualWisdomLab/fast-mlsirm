@@ -35,6 +35,18 @@ pub struct PolyLsirmFit {
     pub xi_eap: Vec<f64>,
     pub loglik: f64,
     pub n_iter: usize,
+    /// Whether the observed-data likelihood criterion stopped the EM updates.
+    pub converged: bool,
+    /// `tolerance` or `max_iter`; non-finite likelihoods return an error.
+    pub termination_reason: String,
+    /// Stable identity for the observed-data stopping rule.
+    pub stopping_criterion: String,
+    /// Observed-data likelihood at every evaluated parameter state, including init.
+    pub loglik_trace: Vec<f64>,
+    /// Signed final observed-data likelihood change.
+    pub final_delta: f64,
+    /// Relative tolerance applied to the final change.
+    pub stopping_tolerance: f64,
 }
 
 /// Tensor Gauss-Hermite grid for a `latent_dim`-dimensional standard normal:
@@ -199,6 +211,105 @@ fn m_step_item(mut params: Vec<f64>, c: &ItemCtx, n_newton: usize) -> Vec<f64> {
     params
 }
 
+/// Conservative logical workspace charge for already-validated dimensions.
+#[allow(clippy::too_many_arguments)]
+fn lsirm_workspace_bytes(
+    person_count: usize,
+    item_count: usize,
+    category_count: usize,
+    latent_dimension: usize,
+    model_family: PolyModel,
+    theta_count: usize,
+    xi_count: usize,
+    iteration_limit: usize,
+) -> Result<usize, String> {
+    let checked_sum = |size_terms: &[usize]| -> Result<usize, String> {
+        size_terms.iter().try_fold(0usize, |running_total, &size_term| {
+            crate::checked_add_usize(running_total, size_term, "core workspace size overflows usize")
+        })
+    };
+    let checked_product = |size_factors: &[usize]| -> Result<usize, String> {
+        size_factors.iter().try_fold(1usize, |running_product, &size_factor| {
+            crate::checked_mul_usize(running_product, size_factor, "core workspace size overflows usize")
+        })
+    };
+    let scalar_bytes = std::mem::size_of::<f64>();
+    let row_header_bytes = std::mem::size_of::<Vec<f64>>();
+    let grid_count = xi_count
+        .checked_pow(latent_dimension as u32)
+        .ok_or("core workspace size overflows usize")?;
+    let node_count = checked_product(&[theta_count, grid_count])?;
+    let parameter_count = checked_sum(&[category_count, latent_dimension])?;
+    let item_headers = checked_product(&[item_count, row_header_bytes])?;
+    let table_bytes = checked_sum(&[
+        checked_product(&[item_count, node_count, category_count, scalar_bytes])?,
+        item_headers,
+    ])?;
+    let persistent_elements = checked_sum(&[
+        theta_count,
+        checked_product(&[grid_count, checked_sum(&[latent_dimension, 1])?])?,
+        checked_product(&[item_count, parameter_count])?,
+        checked_sum(&[iteration_limit, 1])?,
+    ])?;
+    // Both termination strings can coexist during assignment; outer Vec headers
+    // are on the stack, whereas nested row headers live in their outer buffer.
+    let persistent_bytes = checked_sum(&[
+        checked_product(&[persistent_elements, scalar_bytes])?,
+        item_headers,
+        "max_iter".len(),
+        "tolerance".len(),
+        "observed_loglik_abs_delta".len(),
+    ])?;
+    let (cell_scratch, gradient_scratch) = match model_family {
+        PolyModel::Grm => (category_count, checked_product(&[3, category_count])? - 1),
+        PolyModel::Gpcm => (
+            checked_product(&[4, category_count])?,
+            checked_product(&[7, category_count])? - 2,
+        ),
+    };
+    // Six parameter-sized buffers bound params, original gradient, step or
+    // perturbed parameters, candidate, objective gradient, and its return value.
+    // Charge the Hessian even in backtracking, after solve_small has freed it.
+    // Gradient scratch includes the caller's live category log-probabilities.
+    let m_step_bytes = checked_sum(&[
+        checked_product(&[
+            checked_sum(&[
+                checked_product(&[6, parameter_count])?,
+                gradient_scratch,
+                checked_product(&[parameter_count, parameter_count])?,
+            ])?,
+            scalar_bytes,
+        ])?,
+        checked_product(&[parameter_count, row_header_bytes])?,
+    ])?;
+    let em_bytes = checked_sum(&[
+        persistent_bytes,
+        checked_product(&[2, table_bytes])?,
+        checked_product(&[node_count, scalar_bytes])?,
+        m_step_bytes,
+        checked_product(&[cell_scratch, scalar_bytes])?,
+    ])?;
+    let output_elements = checked_sum(&[
+        item_count,
+        checked_product(&[item_count, category_count - 1])?,
+        checked_product(&[item_count, latent_dimension])?,
+        checked_product(&[person_count, checked_sum(&[latent_dimension, 2])?])?,
+        node_count,
+        cell_scratch,
+    ])?;
+    let scoring_bytes = checked_sum(&[
+        persistent_bytes,
+        table_bytes,
+        item_headers,
+        checked_product(&[output_elements, scalar_bytes])?,
+    ])?;
+    let initialization_bytes = checked_sum(&[
+        persistent_bytes,
+        checked_product(&[category_count, scalar_bytes])?,
+    ])?;
+    Ok(em_bytes.max(scoring_bytes).max(initialization_bytes))
+}
+
 /// Fit a unidimensional-trait polytomous LSIRM by marginal EM (fixed gamma = 1,
 /// distance interaction). `y` is `n_persons * n_items` row-major categories
 /// `0..n_cat-1`; `observed` marks non-missing cells (None = all observed).
@@ -216,6 +327,33 @@ pub fn fit_poly_lsirm(
     max_iter: usize,
     tol: f64,
 ) -> Result<PolyLsirmFit, String> {
+    fit_poly_lsirm_with_budget(
+        y, observed, n_persons, n_items, n_cat, latent_dim, model, q_theta, q_xi, max_iter, tol,
+        None,
+    )
+}
+
+/// Fit with an optional caller-supplied limit on estimated core workspace bytes.
+///
+/// Admission precedes grid/table allocation. The estimate conservatively counts
+/// logical vector payloads, heap-resident row headers, and owned receipt strings.
+/// It does not bound allocator overhead/retention, process RSS, caller inputs,
+/// or Python conversion buffers. `None` preserves the legacy unlimited policy.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_poly_lsirm_with_budget(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    latent_dim: usize,
+    model: PolyModel,
+    q_theta: usize,
+    q_xi: usize,
+    max_iter: usize,
+    tol: f64,
+    workspace_budget_bytes: Option<usize>,
+) -> Result<PolyLsirmFit, String> {
     if n_persons == 0 || n_items == 0 {
         return Err("n_persons and n_items must be positive".into());
     }
@@ -227,6 +365,9 @@ pub fn fit_poly_lsirm(
     }
     if !(1..=3).contains(&latent_dim) {
         return Err("latent_dim must be 1..3 for the tensor grid".into());
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
     }
     let n_cells = crate::checked_mul_usize(
         n_persons,
@@ -250,6 +391,24 @@ pub fn fit_poly_lsirm(
         }
     }
     let (theta, t_w) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
+    let (xi_nodes, _) = crate::quadrature::require_gh_rule(q_xi, "q_xi")?;
+    let estimated_workspace_bytes = lsirm_workspace_bytes(
+        n_persons,
+        n_items,
+        n_cat,
+        latent_dim,
+        model,
+        theta.len(),
+        xi_nodes.len(),
+        max_iter,
+    )?;
+    if let Some(budget_bytes) = workspace_budget_bytes {
+        if budget_bytes == 0 || estimated_workspace_bytes > budget_bytes {
+            return Err(format!(
+                "estimated core workspace {estimated_workspace_bytes} bytes exceeds workspace_budget_bytes={budget_bytes}; provide a positive budget sufficient for the requested fit"
+            ));
+        }
+    }
     let t_logw: Vec<f64> = t_w.iter().map(|w| w.ln()).collect();
     let (xi_grid, x_logw) = xi_tensor_grid(q_xi, latent_dim)?;
     let n_xi = x_logw.len();
@@ -299,10 +458,14 @@ pub fn fit_poly_lsirm(
         }
     }
 
-    let mut prev_ll = f64::NEG_INFINITY;
-    let mut ll = f64::NEG_INFINITY;
     let mut it = 0;
-    while it < max_iter {
+    let mut converged = false;
+    let mut termination_reason = "max_iter".to_owned();
+    let stopping_criterion = "observed_loglik_abs_delta".to_owned();
+    let mut final_delta = f64::INFINITY;
+    let mut stopping_tolerance = f64::INFINITY;
+    let mut loglik_trace = Vec::with_capacity(max_iter + 1);
+    loop {
         // per-item cell log-probs at each (theta, xi) node
         let mut item_lp = vec![vec![0.0_f64; cell * n_cat]; n_items];
         for i in 0..n_items {
@@ -326,7 +489,7 @@ pub fn fit_poly_lsirm(
         }
         // E-step: person posteriors -> expected category counts rbar[i][node][k]
         let mut rbar = vec![vec![0.0_f64; cell * n_cat]; n_items];
-        ll = 0.0;
+        let mut iteration_log_likelihood = 0.0;
         let mut log_node = vec![0.0_f64; cell];
         for p in 0..n_persons {
             for t in 0..q_t {
@@ -348,7 +511,7 @@ pub fn fit_poly_lsirm(
             for node in 0..cell {
                 denom += (log_node[node] - mx).exp();
             }
-            ll += mx + denom.ln();
+            iteration_log_likelihood += mx + denom.ln();
             for i in 0..n_items {
                 if !is_obs(p, i) {
                     continue;
@@ -358,6 +521,23 @@ pub fn fit_poly_lsirm(
                     rbar[i][node * n_cat + yc] += (log_node[node] - mx).exp() / denom;
                 }
             }
+        }
+        loglik_trace.push(iteration_log_likelihood);
+        if !iteration_log_likelihood.is_finite() {
+            return Err("polytomous LSIRM observed log likelihood became non-finite".into());
+        }
+        if loglik_trace.len() >= 2 {
+            let previous_ll = loglik_trace[loglik_trace.len() - 2];
+            final_delta = iteration_log_likelihood - previous_ll;
+            stopping_tolerance = tol * (1.0 + previous_ll.abs());
+            if final_delta.abs() < stopping_tolerance {
+                converged = true;
+                termination_reason = "tolerance".to_owned();
+                break;
+            }
+        }
+        if it == max_iter {
+            break;
         }
         // M-step: per-item Newton over [log_a, cat, zeta]
         for i in 0..n_items {
@@ -377,10 +557,6 @@ pub fn fit_poly_lsirm(
             params[i] = m_step_item(params[i].clone(), &ctx, 6);
         }
         it += 1;
-        if (ll - prev_ll).abs() < tol * (1.0 + prev_ll.abs()) {
-            break;
-        }
-        prev_ll = ll;
     }
 
     let slope: Vec<f64> = (0..n_items).map(|i| params[i][0].exp()).collect();
@@ -415,6 +591,7 @@ pub fn fit_poly_lsirm(
     let mut theta_sd = vec![0.0_f64; n_persons];
     let mut xi_eap = vec![0.0_f64; n_persons * latent_dim];
     let mut log_node = vec![0.0_f64; cell];
+    let mut final_log_likelihood = 0.0_f64;
     for p in 0..n_persons {
         for t in 0..q_t {
             for x in 0..n_xi {
@@ -435,6 +612,7 @@ pub fn fit_poly_lsirm(
         for node in 0..cell {
             denom += (log_node[node] - mx).exp();
         }
+        final_log_likelihood += mx + denom.ln();
         let (mut m1, mut m2) = (0.0_f64, 0.0_f64);
         for t in 0..q_t {
             for x in 0..n_xi {
@@ -457,8 +635,14 @@ pub fn fit_poly_lsirm(
         theta_eap,
         theta_sd,
         xi_eap,
-        loglik: ll,
+        loglik: final_log_likelihood,
         n_iter: it,
+        converged,
+        termination_reason,
+        stopping_criterion,
+        loglik_trace,
+        final_delta,
+        stopping_tolerance,
     })
 }
 

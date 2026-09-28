@@ -147,7 +147,7 @@ use mlsirm_core::poly::{
     score_poly_eap as core_score_poly_eap, u3_poly_bootstrap_cutoff as core_u3_poly_cutoff,
     u3_poly_person_fit as core_u3_poly_person_fit, PolyModel,
 };
-use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
+use mlsirm_core::poly_marginal::fit_poly_lsirm_with_budget as core_fit_poly_lsirm;
 use mlsirm_core::rasch_cml::{
     andersen_lr_test as core_andersen_lr, fit_rasch_cml as core_fit_rasch_cml,
 };
@@ -7626,10 +7626,10 @@ fn poly_item_fit_sx2(
 
 /// Latent-space polytomous LSIRM fit (Rust compute path). Returns a dict of
 /// item parameters (`slope`, `cat_params`, `zeta`) and person scores
-/// (`theta_eap`, `theta_sd`, `xi_eap`), plus `loglik`/`n_iter`.
+/// (`theta_eap`, `theta_sd`, `xi_eap`), plus convergence evidence.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, n_persons, n_items, n_cat, latent_dim, observed = None, model = "grm", q_theta = 11, q_xi = 11, max_iter = 60, tol = 1e-5))]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, latent_dim, observed = None, model = "grm", q_theta = 11, q_xi = 11, max_iter = 60, tol = 1e-5, workspace_budget_bytes = None))]
 fn fit_poly_lsirm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -7643,12 +7643,44 @@ fn fit_poly_lsirm(
     q_xi: usize,
     max_iter: usize,
     tol: f64,
+    workspace_budget_bytes: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    let validated_workspace_budget = workspace_budget_bytes
+        .map(|budget_value| {
+            if !budget_value.is_exact_instance_of::<pyo3::types::PyInt>() {
+                return Err(PyValueError::new_err(
+                    "workspace_budget_bytes must be a positive integer",
+                ));
+            }
+            let budget_bytes = budget_value.extract::<usize>().map_err(|_| {
+                PyValueError::new_err(
+                    "workspace_budget_bytes must be a positive integer fitting usize",
+                )
+            })?;
+            if budget_bytes == 0 {
+                return Err(PyValueError::new_err(
+                    "workspace_budget_bytes must be a positive integer",
+                ));
+            }
+            Ok(budget_bytes)
+        })
+        .transpose()?;
     let m = parse_poly_model(model)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
     let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
     let fit = core_fit_poly_lsirm(
-        &yv, obs, n_persons, n_items, n_cat, latent_dim, m, q_theta, q_xi, max_iter, tol,
+        &yv,
+        obs,
+        n_persons,
+        n_items,
+        n_cat,
+        latent_dim,
+        m,
+        q_theta,
+        q_xi,
+        max_iter,
+        tol,
+        validated_workspace_budget,
     )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
@@ -7660,6 +7692,12 @@ fn fit_poly_lsirm(
     out.set_item("xi_eap", fit.xi_eap)?;
     out.set_item("loglik", fit.loglik)?;
     out.set_item("n_iter", fit.n_iter)?;
+    out.set_item("converged", fit.converged)?;
+    out.set_item("termination_reason", fit.termination_reason)?;
+    out.set_item("stopping_criterion", fit.stopping_criterion)?;
+    out.set_item("loglik_trace", fit.loglik_trace)?;
+    out.set_item("final_delta", fit.final_delta)?;
+    out.set_item("stopping_tolerance", fit.stopping_tolerance)?;
     Ok(out.into())
 }
 
