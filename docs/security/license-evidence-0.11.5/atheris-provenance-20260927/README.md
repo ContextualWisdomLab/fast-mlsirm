@@ -75,3 +75,7 @@ The [PyPI Integrity API](https://docs.pypi.org/api/integrity/) defines `GET /int
 | `atheris-3.1.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl` | `315a0b5c819852b1ffe1ca72efc389c7724881f2c33e4aacb8c6bcec49bd5011` | 404 |
 
 These files have no PyPI-hosted attestation at this check. This does not rule out a separate authenticated publisher build record or establish native-component rights. Keep Atheris HOLD and seek that record or reproducible matching bytes with complete component provenance.
+
+## Public build-window census, 2026-09-28 UTC
+
+The public [Actions runs API](https://api.github.com/repos/google/atheris/actions/runs?created=2026-06-16..2026-06-17&per_page=100) returned seven runs created June 16–17, spanning the first three 3.1.0 wheel uploads. Its two `Builds` runs were [27645691616](https://github.com/google/atheris/actions/runs/27645691616) at candidate source `352d5f29` (failed before build) and [27707869082](https://github.com/google/atheris/actions/runs/27707869082) at later source `e36da74c` (failed after the uploads). The remaining five were three `dynamic` automation runs and two pull-request-target scans. Each of the seven run-specific public artifacts endpoints returned `total_count: 0`. This bounded public window has no successful Builds run or retained wheel artifact binding the published hashes to source and toolchain inputs. It does not exclude a private or local publisher build record; Atheris remains HOLD.
