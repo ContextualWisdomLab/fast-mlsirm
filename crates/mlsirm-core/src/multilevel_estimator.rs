@@ -70,6 +70,14 @@ pub const MAX_CROSSED_EFFECTS: usize = 128;
 /// Upper bound on Newton iterations accepted from a caller.
 pub const MAX_CROSSED_ITER: usize = 10_000;
 
+/// Upper bound on deterministic CPU worker control accepted from a caller.
+pub const MAX_CROSSED_WORKERS: usize = 10_000;
+
+/// Maximum declared response cells accepted by the crossed estimator.
+pub const MAX_CROSSED_RESPONSE_CELLS: usize = 20_000_000;
+
+const MEMBERSHIP_WEIGHT_TOLERANCE: f64 = 1e-12;
+
 type EstimatorResult<T> = Result<T, String>;
 
 /// Configuration for the crossed / multiple-membership MAP estimator.
@@ -81,7 +89,7 @@ pub struct CrossedPersonEffectConfig {
     pub max_iter: usize,
     /// Absolute effect-step convergence tolerance.
     pub tol: f64,
-    /// Deterministic CPU worker count (`>= 1`); does not change the result.
+    /// Deterministic CPU worker count (`1..=10000`); does not change the result.
     pub worker_count: usize,
     /// CPU / GPU / auto device policy for the person-score reduction.
     pub device: Device,
@@ -271,7 +279,15 @@ fn validate_estimator_inputs(
             "n_effects exceeds the dense Newton cap of {MAX_CROSSED_EFFECTS}"
         ));
     }
+    if classification_offsets.len() > n_effects + 1 {
+        return Err("classification_offsets exceeds n_effects + 1".to_string());
+    }
     let expected = crate::checked_mul_usize(n_persons, n_items, "response matrix is too large")?;
+    if expected > MAX_CROSSED_RESPONSE_CELLS {
+        return Err(format!(
+            "crossed response matrix exceeds the logical-cell cap of {MAX_CROSSED_RESPONSE_CELLS}"
+        ));
+    }
     if y.len() != expected {
         return Err("y must have length n_persons * n_items".to_string());
     }
@@ -329,8 +345,10 @@ fn validate_estimator_inputs(
     if !config.tol.is_finite() || config.tol <= 0.0 {
         return Err("tol must be finite and strictly positive".to_string());
     }
-    if config.worker_count == 0 {
-        return Err("worker_count must be at least one".to_string());
+    if !(1..=MAX_CROSSED_WORKERS).contains(&config.worker_count) {
+        return Err(format!(
+            "worker_count must be in 1..={MAX_CROSSED_WORKERS}"
+        ));
     }
     if row_offsets.len() != n_persons + 1 {
         return Err("row_offsets must have length n_persons + 1".to_string());
@@ -346,6 +364,100 @@ fn validate_estimator_inputs(
         &dummy,
         config.worker_count,
     )?;
+    validate_membership_weight_totals(
+        row_offsets,
+        context_indices,
+        weights,
+        classification_offsets,
+        n_effects,
+    )?;
+    Ok(())
+}
+
+fn add_fsum_partial(partials: &mut Vec<f64>, mut value: f64) {
+    let mut kept = 0usize;
+    for index in 0..partials.len() {
+        let mut partial = partials[index];
+        if value.abs() < partial.abs() {
+            std::mem::swap(&mut value, &mut partial);
+        }
+        let high = value + partial;
+        let rounded_partial = high - value;
+        let low = partial - rounded_partial;
+        if low != 0.0 {
+            partials[kept] = low;
+            kept += 1;
+        }
+        value = high;
+    }
+    partials.truncate(kept);
+    partials.push(value);
+}
+
+fn finish_fsum(partials: &[f64]) -> f64 {
+    let Some((&last, rest)) = partials.split_last() else {
+        return 0.0;
+    };
+    let mut high = last;
+    let mut low = 0.0_f64;
+    let mut remaining = rest.len();
+    while remaining > 0 {
+        let value = high;
+        remaining -= 1;
+        let partial = rest[remaining];
+        high = value + partial;
+        let rounded_partial = high - value;
+        low = partial - rounded_partial;
+        if low != 0.0 {
+            break;
+        }
+    }
+    if remaining > 0
+        && ((low < 0.0 && rest[remaining - 1] < 0.0)
+            || (low > 0.0 && rest[remaining - 1] > 0.0))
+    {
+        let doubled_low = low * 2.0;
+        let corrected = high + doubled_low;
+        if corrected - high == doubled_low {
+            high = corrected;
+        }
+    }
+    high
+}
+
+fn validate_membership_weight_totals(
+    row_offsets: &[usize],
+    context_indices: &[usize],
+    weights: &[f64],
+    classification_offsets: &[usize],
+    n_effects: usize,
+) -> EstimatorResult<()> {
+    let n_classifications = classification_offsets.len() - 1;
+    let mut effect_classification = vec![0usize; n_effects];
+    for (classification, window) in classification_offsets.windows(2).enumerate() {
+        for slot in &mut effect_classification[window[0]..window[1]] {
+            *slot = classification;
+        }
+    }
+
+    let mut partials = vec![Vec::<f64>::new(); n_classifications];
+    for window in row_offsets.windows(2) {
+        for classification_partials in &mut partials {
+            classification_partials.clear();
+        }
+        for edge in window[0]..window[1] {
+            let classification = effect_classification[context_indices[edge]];
+            add_fsum_partial(&mut partials[classification], weights[edge]);
+        }
+        if partials.iter().any(|classification_partials| {
+            let total = finish_fsum(classification_partials);
+            !total.is_finite() || (total - 1.0).abs() > MEMBERSHIP_WEIGHT_TOLERANCE
+        }) {
+            return Err(
+                "membership weights must sum to one within every classification".to_string(),
+            );
+        }
+    }
     Ok(())
 }
 
