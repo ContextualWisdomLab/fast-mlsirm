@@ -1,15 +1,30 @@
 # Copyright (c) 2026 ContextualWisdomLab. All rights reserved.
 # SPDX-License-Identifier: MIT
 
-"""Optional two-host integration probe for L4 subprocess/SSH remote execution."""
+"""Two-host evidence for L4 subprocess/SSH remote execution.
+
+Runs one legal ``mc_replicate`` unit on a second host and checks that the
+outcome carries cross-host provenance. It needs a real second machine, so it
+is operator evidence rather than a CI test (a skipped pytest node would trip
+the fail-closed outcome gate, and loopback SSH cannot satisfy the
+``hostname != driver_host`` check).
+
+Usage::
+
+    FAST_MLSIRM_REMOTE_SSH_HOST=user@host \
+    FAST_MLSIRM_REMOTE_INTERPRETER=/path/to/.venv/bin/python \
+    python scripts/run_two_host_ssh_evidence.py
+
+Exit status: 0 on PASS, 1 on a failed check, 2 when the host is not
+configured or not reachable.
+"""
 
 from __future__ import annotations
 
 import os
 import socket
 import subprocess
-
-import pytest
+import sys
 from importlib.metadata import PackageNotFoundError, version
 
 try:
@@ -87,20 +102,21 @@ def _ssh_reachable(remote_host: str) -> tuple[bool, str]:
     return True, probe.stdout.strip()
 
 
-@pytest.mark.integration
-def test_two_host_mc_replicate_over_ssh_when_reachable() -> None:
-    """Run one legal mc_replicate unit on a second host when SSH credentials exist."""
+def main() -> int:
+    """Run one legal mc_replicate unit on a second host and check provenance."""
     remote_host = os.environ.get("FAST_MLSIRM_REMOTE_SSH_HOST")
     remote_interpreter = os.environ.get("FAST_MLSIRM_REMOTE_INTERPRETER")
     if not remote_host or not remote_interpreter:
-        pytest.skip(
-            "set FAST_MLSIRM_REMOTE_SSH_HOST and FAST_MLSIRM_REMOTE_INTERPRETER "
-            "to run the two-host SSH integration probe"
+        print(
+            "SKIP: set FAST_MLSIRM_REMOTE_SSH_HOST and FAST_MLSIRM_REMOTE_INTERPRETER",
+            file=sys.stderr,
         )
+        return 2
 
     reachable, detail = _ssh_reachable(remote_host)
     if not reachable:
-        pytest.skip(f"SSH host not reachable for two-host probe ({remote_host}): {detail}")
+        print(f"SKIP: SSH host not reachable ({remote_host}): {detail}", file=sys.stderr)
+        return 2
 
     try:
         import_check = subprocess.run(
@@ -122,15 +138,19 @@ def test_two_host_mc_replicate_over_ssh_when_reachable() -> None:
             timeout=_SSH_PROBE_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
-        pytest.skip(
-            f"SSH import probe timed out after {_SSH_PROBE_TIMEOUT_SECONDS:.0f}s "
-            f"on {remote_host}"
+        print(
+            f"SKIP: SSH import probe timed out after {_SSH_PROBE_TIMEOUT_SECONDS:.0f}s "
+            f"on {remote_host}",
+            file=sys.stderr,
         )
+        return 2
     if import_check.returncode != 0:
-        pytest.fail(
-            "SSH host reachable but fast_mlsirm import failed: "
-            f"{(import_check.stderr or import_check.stdout).strip()}"
+        print(
+            "FAIL: SSH host reachable but fast_mlsirm import failed: "
+            f"{(import_check.stderr or import_check.stdout).strip()}",
+            file=sys.stderr,
         )
+        return 1
 
     driver_host = socket.gethostname()
     driver_pid = os.getpid()
@@ -144,12 +164,23 @@ def test_two_host_mc_replicate_over_ssh_when_reachable() -> None:
     )
     outcome = executor.run_batch((envelope,), worker_manifest=manifest)[0]
 
-    assert outcome.delivery_state is RemoteJobDeliveryState.COMPLETED
-    assert outcome.driver_host == driver_host
-    assert outcome.driver_pid == driver_pid
-    assert outcome.provenance.worker_host == remote_host
-    assert type(outcome.provenance.worker_pid) is int and outcome.provenance.worker_pid > 0
-    assert outcome.provenance.cross_host_execution is True
-    assert outcome.provenance.hostname != driver_host
-    assert outcome.result["library_function"] == "fast_mlsirm.simulate"
-    assert envelope_fingerprint(envelope) == outcome.envelope_fingerprint
+    checks = {
+        "completed": outcome.delivery_state is RemoteJobDeliveryState.COMPLETED,
+        "driver_host": outcome.driver_host == driver_host,
+        "driver_pid": outcome.driver_pid == driver_pid,
+        "worker_host": outcome.provenance.worker_host == remote_host,
+        "worker_pid": type(outcome.provenance.worker_pid) is int
+        and outcome.provenance.worker_pid > 0,
+        "cross_host_execution": outcome.provenance.cross_host_execution is True,
+        "distinct_hostname": outcome.provenance.hostname != driver_host,
+        "library_function": outcome.result.get("library_function")
+        == "fast_mlsirm.simulate",
+        "fingerprint": envelope_fingerprint(envelope) == outcome.envelope_fingerprint,
+    }
+    for name, ok in checks.items():
+        print(f"{'PASS' if ok else 'FAIL'}: {name}")
+    return 0 if all(checks.values()) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
