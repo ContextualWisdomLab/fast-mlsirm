@@ -126,6 +126,44 @@ def test_distribution_tails_no_scipy():
     assert abs(t_sf(1.6448536269514722, 1.0e8) - 0.05) < 5e-4
 
 
+def test_nested_ols_f_one_two_matches_independent_synthetic():
+    rng = np.random.default_rng(20260925)
+    raw = rng.normal(size=(12, 4))
+    x, w, z, e = (raw[:, j] - raw[:, j].mean() for j in range(4))
+    full_x = np.column_stack(
+        (np.ones(12), x, w, z, e, x * w, x * z, w * z, x * e, x * w * z)
+    )
+    reduced_x = full_x[:, :-1]
+    y = 1.0 + 0.3 * x - 0.2 * w + 0.4 * z + 0.25 * full_x[:, -1]
+    y += rng.normal(0.0, 0.5, size=12)
+    assert np.linalg.matrix_rank(full_x) == 10
+    assert np.linalg.matrix_rank(reduced_x) == 9
+
+    full = fit_ols_hc(np.ascontiguousarray(full_x), y, hc="HC3")
+    reduced = fit_ols_hc(np.ascontiguousarray(reduced_x), y, hc="HC3")
+    sse_full = float(np.dot(full["residuals"], full["residuals"]))
+    sse_reduced = float(np.dot(reduced["residuals"], reduced["residuals"]))
+    ref_full = np.linalg.lstsq(full_x, y, rcond=None)[0]
+    ref_reduced = np.linalg.lstsq(reduced_x, y, rcond=None)[0]
+    ref_sse_full = float(np.sum((y - full_x @ ref_full) ** 2))
+    ref_sse_reduced = float(np.sum((y - reduced_x @ ref_reduced) ** 2))
+    np.testing.assert_allclose(
+        [sse_full, sse_reduced], [ref_sse_full, ref_sse_reduced], rtol=1e-8
+    )
+    assert sse_reduced >= sse_full > 0.0
+
+    f_stat = (sse_reduced - sse_full) / (sse_full / (len(y) - full_x.shape[1]))
+    ref_f = (ref_sse_reduced - ref_sse_full) / (ref_sse_full / 2.0)
+    assert math.isclose(f_stat, ref_f, rel_tol=1e-8)
+    sst = float(np.sum((y - y.mean()) ** 2))
+    delta_r2 = (sse_reduced - sse_full) / sst
+    assert math.isclose(f_stat, 2.0 * delta_r2 / (sse_full / sst), rel_tol=1e-12)
+    # The F(1, 2) survival function has an independent closed form.
+    assert math.isclose(
+        f_sf(f_stat, 1.0, 2.0), 1.0 - math.sqrt(f_stat / (f_stat + 2.0)), rel_tol=1e-11
+    )
+
+
 def test_regression_core_exports_without_scipy_rscript():
     import fast_mlsirm.regression as reg
 
