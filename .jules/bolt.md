@@ -52,3 +52,7 @@
 ## 2024-05-19 - Fast reduction of 3D arrays with 2D matrices
 **Learning:** Using `np.einsum("stx,xk->k", resid, deta_z, optimize=True)` on a 3D array (`resid`) and a 2D array (`deta_z`) incurs significant overhead from NumPy's generalized Einstein summation engine.
 **Action:** When calculating tensor contractions that sum over multiple independent axes before multiplying by a 2D array, replace the `np.einsum` call with a manual axis reduction followed by matrix multiplication (e.g., `resid.sum(axis=(0, 1)) @ deta_z`). This is significantly faster and leverages BLAS directly.
+
+## 2024-05-19 - Formula Scope Rule and Numeric Stability
+**Learning:** Changing the binary64 accumulation order of mathematically equivalent gradient operations (like `np.einsum` vs `.sum() @ ...`) changes the iterate path of the NumPy reference estimator. This violates the parity target for the Rust core and is considered a "formula-renovation attempt that only modifies local algebra or performance plumbing".
+**Action:** Do not submit piecemeal local gradient/algebra optimizations or performance plumbing changes without an explicit model-design PR that includes Rust parity evidence and measured benchmarks, per the repository's "Formula Scope" rule.
