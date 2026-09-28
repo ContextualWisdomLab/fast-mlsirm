@@ -6,18 +6,18 @@
 //! and a marginal log-likelihood term, which are then reduced over persons
 //! into expected counts and group moments. This module implements that
 //! person sweep in WGSL `f32` (the widest float WebGPU exposes) across six
-//! kernels — accumulate, normalize, joint, two count reductions, and group
+//! kernels — accumulate, normalize, joint, two count reductions, and specific
 //! moments — while the `f64` CPU path in [`crate::bifactor_grm`] remains the
 //! numerical reference. When no GPU adapter satisfies the binding budget the
 //! entry point returns `None` and the caller falls back to CPU.
 //!
 //! # Precision
 //!
-//! Kernels accumulate in `f32` (machine epsilon ≈ 1.19e-7). Expected counts
-//! are reductions over persons of posterior weights in [0, 1] and the
-//! log-likelihood sums per-person terms, so absolute agreement with the CPU
-//! path scales with `n_persons`; parity tests assert fit-level agreement
-//! derived from that bound (see `tests/test_bifactor_gpu.py`).
+//! Kernels compute posterior weights and expected counts in WGSL `f32`;
+//! general-factor group moments sum those weights against the original nodes
+//! in host `f64`. Expected-count and posterior rounding still limit agreement
+//! with the `f64` CPU path; fit-level parity needs direct tests (see
+//! `tests/test_bifactor_gpu.py`).
 //!
 //! # Adapter limits
 //!
@@ -41,6 +41,11 @@
 //! - Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation
 //!   of item parameters: Application of an EM algorithm. *Psychometrika,
 //!   46*(4), 443–459. https://doi.org/10.1007/BF02293801
+//! - Higham, N. J. (1993). The accuracy of floating point summation.
+//!   *SIAM Journal on Scientific Computing, 14*(4), 783–799, p. 791, §3.
+//!   https://doi.org/10.1137/0914050
+//! - W3C GPU for the Web Working Group. WebGPU Shading Language, §6.2.
+//!   https://www.w3.org/TR/WGSL/#floating-point-types
 
 #[cfg(all(feature = "gpu", not(coverage)))]
 use crate::gpu::GpuContext;
@@ -333,34 +338,6 @@ fn reduce_counts_blk(
         sum = sum + joint[((p * dims.ns + su) * dims.qg + t) * dims.qs + h];
     }
     counts[out] = sum;
-}
-
-// Per-group general moments (w, s1, s2) packed as 3 + 2*ns floats.
-@compute @workgroup_size(64)
-fn reduce_moments_g(
-    @builtin(workgroup_id) wid: vec3<u32>,
-    @builtin(local_invocation_index) lid: u32,
-    @builtin(num_workgroups) nwg: vec3<u32>,
-) {
-    let g = flat_idx(wid, lid, nwg);
-    if (g >= dims.ng) { return; }
-    let row = g * (3u + 2u * dims.ns);
-    var w = 0.0;
-    var s1 = 0.0;
-    var s2 = 0.0;
-    for (var p = 0u; p < dims.np; p = p + 1u) {
-        if (gid[p] != g) { continue; }
-        for (var t = 0u; t < dims.qg; t = t + 1u) {
-            let post = postg[p * dims.qg + t];
-            let node = tg[g * dims.qg + t];
-            w = w + post;
-            s1 = s1 + post * node;
-            s2 = s2 + post * node * node;
-        }
-    }
-    moments[row] = w;
-    moments[row + 1u] = s1;
-    moments[row + 2u] = s2;
 }
 
 // Per-(group, block) specific moments (w_spec, s2_spec).
@@ -754,7 +731,6 @@ fn e_step_reduced_gpu_inner(
     let pl_joint = make("joint_post");
     let pl_cgen = make("reduce_counts_gen");
     let pl_cblk = make("reduce_counts_blk");
-    let pl_mg = make("reduce_moments_g");
     let pl_ms = make("reduce_moments_s");
 
     // One compute pass per kernel so storage writes are visible downstream.
@@ -769,7 +745,6 @@ fn e_step_reduced_gpu_inner(
         (&pl_joint, dispatch_count(np * ns * qg)),
         (&pl_cgen, dispatch_count(ng * ni * qg * nc)),
         (&pl_cblk, dispatch_count(ng * ni * qg * qs * nc)),
-        (&pl_mg, dispatch_count(ng)),
         (&pl_ms, dispatch_count(ng * ns)),
     ]
     .into_iter()
@@ -793,13 +768,14 @@ fn e_step_reduced_gpu_inner(
         (!collect_posteriors).then(|| staging_buffer(device, "counts_read", counts_len));
     let moments_staging =
         (!collect_posteriors).then(|| staging_buffer(device, "moments_read", moments_len));
-    let primary_staging =
-        collect_posteriors.then(|| staging_buffer(device, "primary_read", np * qg));
-    let joint_staging =
-        (collect_posteriors && ns > 0).then(|| staging_buffer(device, "joint_read", np * ns * qg * qs));
-    let mut copies = vec![(&ll_buf, &ll_staging, np)];
+    let primary_staging = staging_buffer(device, "primary_read", np * qg);
+    let joint_staging = (collect_posteriors && ns > 0)
+        .then(|| staging_buffer(device, "joint_read", np * ns * qg * qs));
+    let mut copies = vec![
+        (&ll_buf, &ll_staging, np),
+        (&postg_buf, &primary_staging, np * qg),
+    ];
     if collect_posteriors {
-        copies.push((&postg_buf, primary_staging.as_ref()?, np * qg));
         if ns > 0 {
             copies.push((&joint_buf, joint_staging.as_ref()?, np * ns * qg * qs));
         }
@@ -810,9 +786,12 @@ fn e_step_reduced_gpu_inner(
     let read = submit_and_readback(ctx, encoder, &copies)?;
     let mut iter = read.into_iter();
     let ll_vec = iter.next()?;
+    let primary_vec = iter.next()?;
     let (counts_vec, moments_vec, person_posteriors) = if collect_posteriors {
-        let primary = iter.next()?.into_iter().map(f64::from).collect();
-        let joint = if ns == 0 { Vec::new() } else {
+        let primary = primary_vec.iter().copied().map(f64::from).collect();
+        let joint = if ns == 0 {
+            Vec::new()
+        } else {
             iter.next()?.into_iter().map(f64::from).collect()
         };
         (
@@ -834,10 +813,23 @@ fn e_step_reduced_gpu_inner(
     let mut s2_g = vec![0.0; ng];
     let mut s2_spec = vec![0.0; ng * ns];
     let mut w_spec = vec![0.0; ng * ns];
+    // Reduce GPU posterior weights against the original f64 nodes. Bock and
+    // Aitkin (1981, p. 448, eq. 13) give the conditional posterior;
+    // widening before the sum avoids the f32 accumulation error described by
+    // Higham (1993, p. 791, §3), without changing those posterior weights.
+    if !collect_posteriors {
+        for (p, &group) in gid.iter().enumerate() {
+            let g = group as usize;
+            for t in 0..qg {
+                let post = f64::from(primary_vec[p * qg + t]);
+                let node = inputs.tg_groups[g][t];
+                w_acc[g] += post;
+                s1_g[g] += post * node;
+                s2_g[g] += post * node * node;
+            }
+        }
+    }
     for g in 0..ng {
-        w_acc[g] = f64::from(moments_vec[g * row]);
-        s1_g[g] = f64::from(moments_vec[g * row + 1]);
-        s2_g[g] = f64::from(moments_vec[g * row + 2]);
         for s in 0..ns {
             w_spec[g * ns + s] = f64::from(moments_vec[g * row + 3 + s]);
             s2_spec[g * ns + s] = f64::from(moments_vec[g * row + 3 + ns + s]);
