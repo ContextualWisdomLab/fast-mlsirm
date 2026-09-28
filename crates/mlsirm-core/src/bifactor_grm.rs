@@ -534,6 +534,92 @@ fn refuse_tolerance_on_frozen_start(
     }
 }
 
+/// Per-person reduced log terms of the Gibbons-Hedeker E-step (Gibbons et
+/// al., 2007, eq. 15), shared by [`e_step`] and the Oakes missing
+/// information in `bifactor_oakes`: `gen_log[g]` (log prior plus
+/// general-only items), `block_acc[(s * qg + g) * qs + h]` (log specific
+/// prior plus block items), `log_i[s * qg + g]` (block log-integral over the
+/// specific factor) and `log_like_g[g]` (joint log-likelihood at the general
+/// node).
+pub(crate) struct PersonLogTerms {
+    pub(crate) gen_log: Vec<f64>,
+    pub(crate) block_acc: Vec<f64>,
+    pub(crate) log_i: Vec<f64>,
+    pub(crate) log_like_g: Vec<f64>,
+    tmp_h: Vec<f64>,
+}
+
+impl PersonLogTerms {
+    pub(crate) fn new(v: &Validated, qg: usize, qs: usize) -> Self {
+        Self {
+            gen_log: vec![0.0f64; qg],
+            block_acc: vec![0.0f64; v.n_specific * qg * qs],
+            log_i: vec![0.0f64; v.n_specific * qg],
+            log_like_g: vec![0.0f64; qg],
+            tmp_h: vec![0.0f64; qs],
+        }
+    }
+
+    /// Fill the terms for person `p`; returns the person's marginal
+    /// log-likelihood `log sum_g exp(log_like_g[g])`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn fill(
+        &mut self,
+        v: &Validated,
+        y: &[usize],
+        observed: Option<&[bool]>,
+        tables: &[Vec<f64>],
+        log_wg: &[f64],
+        log_ws: &[f64],
+        p: usize,
+    ) -> f64 {
+        let is_obs = |i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
+        let (qg, qs) = (self.gen_log.len(), self.tmp_h.len());
+        // General-only log-likelihood per general node.
+        self.gen_log.copy_from_slice(log_wg);
+        for &i in &v.general_only {
+            if !is_obs(i) {
+                continue;
+            }
+            let yc = y[p * v.n_items + i];
+            let lp = &tables[i];
+            for g in 0..qg {
+                self.gen_log[g] += lp[g * v.n_cat + yc];
+            }
+        }
+        // Block accumulations: sum of item log-probs per (s, g, h).
+        for (s, members) in v.blocks.iter().enumerate() {
+            for g in 0..qg {
+                for h in 0..qs {
+                    let mut acc = log_ws[h];
+                    for &i in members {
+                        if !is_obs(i) {
+                            continue;
+                        }
+                        let yc = y[p * v.n_items + i];
+                        acc += tables[i][(g * qs + h) * v.n_cat + yc];
+                    }
+                    self.block_acc[(s * qg + g) * qs + h] = acc;
+                }
+            }
+            for g in 0..qg {
+                for h in 0..qs {
+                    self.tmp_h[h] = self.block_acc[(s * qg + g) * qs + h];
+                }
+                self.log_i[s * qg + g] = log_sum_exp(&self.tmp_h);
+            }
+        }
+        for g in 0..qg {
+            let mut acc = self.gen_log[g];
+            for s in 0..v.n_specific {
+                acc += self.log_i[s * qg + g];
+            }
+            self.log_like_g[g] = acc;
+        }
+        log_sum_exp(&self.log_like_g)
+    }
+}
+
 /// One reduced E-step sweep: observed-data loglik plus expected category
 /// counts per item (`counts[i][node][k]`, `node = g * qs + h` for block
 /// items, `node = g` for general-only items).
@@ -634,58 +720,14 @@ pub(crate) fn e_step(
         };
         counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
     }
-    // Per-person scratch.
-    let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
-    let mut log_i = vec![0.0f64; v.n_specific * qg];
-    let mut gen_log = vec![0.0f64; qg];
-    let mut log_like_g = vec![0.0f64; qg];
+    let mut terms = PersonLogTerms::new(v, qg, qs);
     let mut post_g = vec![0.0f64; qg];
-    let mut tmp_h = vec![0.0f64; qs];
 
     let mut loglik = 0.0f64;
     for p in 0..v.n_persons {
-        // General-only log-likelihood per general node.
-        gen_log.copy_from_slice(log_wg);
-        for &i in &v.general_only {
-            if !is_obs(p, i) {
-                continue;
-            }
-            let yc = y[p * v.n_items + i];
-            let lp = &tables[i];
-            for g in 0..qg {
-                gen_log[g] += lp[g * v.n_cat + yc];
-            }
-        }
-        // Block accumulations: sum of item log-probs per (s, g, h).
-        for (s, members) in v.blocks.iter().enumerate() {
-            for g in 0..qg {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * v.n_items + i];
-                        acc += tables[i][(g * qs + h) * v.n_cat + yc];
-                    }
-                    block_acc[(s * qg + g) * qs + h] = acc;
-                }
-            }
-            for g in 0..qg {
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * qg + g) * qs + h];
-                }
-                log_i[s * qg + g] = log_sum_exp(&tmp_h);
-            }
-        }
-        for g in 0..qg {
-            let mut acc = gen_log[g];
-            for s in 0..v.n_specific {
-                acc += log_i[s * qg + g];
-            }
-            log_like_g[g] = acc;
-        }
-        let log_lp = log_sum_exp(&log_like_g);
+        let log_lp = terms.fill(v, y, observed, tables, log_wg, log_ws, p);
+        let (gen_log, block_acc, log_i, log_like_g) =
+            (&terms.gen_log, &terms.block_acc, &terms.log_i, &terms.log_like_g);
         loglik += log_lp;
         for g in 0..qg {
             post_g[g] = (log_like_g[g] - log_lp).exp();

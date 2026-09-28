@@ -370,9 +370,11 @@ def bifactor_oakes_se(
     negative = missing, dropped MAR); ``specific_map`` is length-``n_items``
     with ``-1`` for general-only items. ``q_general``/``q_specific`` are
     Gauss-Hermite node counts (any ``n >= 1``; #1929 removed the fixed-table
-    cap) and ``fd_step`` the cross-term finite-difference step — REQUIRED
-    caller arguments with no defaults (node counts govern precision; no
-    value is clamped). Out-of-range arguments raise ``ValueError``; a non-positive-
+    cap) — REQUIRED caller arguments with no defaults (node counts govern
+    precision; no value is clamped). ``fd_step`` is still required and
+    validated (finite, positive) for compatibility, but the cross term is
+    now the analytic missing information (Louis, 1982; #2113), so the
+    value no longer changes the result. Out-of-range arguments raise ``ValueError``; a non-positive-
     definite information returns ``positive_definite=False`` with
     ``non_pd_reason`` and ``None`` SEs (never substituted).
 
