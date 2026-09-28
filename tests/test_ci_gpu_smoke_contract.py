@@ -100,3 +100,23 @@ def test_gpu_smoke_apt_lock_wait_is_bounded() -> None:
     """Both package-manager operations keep the exact 30-second lock bound."""
     for command in _apt_commands():
         assert "DPkg::Lock::Timeout=30" in command
+
+
+def test_s1_pinned_no_prior_bits_run_only_on_the_isolated_runner() -> None:
+    """The main-99c228a8 bit pin was generated on s1; hosted glibc rounds differently.
+
+    Hosted ``cargo test`` must skip it (``#[ignore]``) and the s1 hardware job
+    must execute exactly that one test with ``--ignored``.
+    """
+    root = Path(__file__).parents[1]
+    rust_test = (
+        root / "crates" / "mlsirm-core" / "tests" / "bifactor_no_prior_main_reference.rs"
+    ).read_text(encoding="utf-8")
+    assert '#[ignore = "bits pinned on s1' in rust_test
+    workflow = _CI_WORKFLOW.read_text(encoding="utf-8")
+    gpu_job = workflow.split("\n  focal-gpu-native:\n", 1)[1].split("\n  rust:\n", 1)[0]
+    assert (
+        "cargo test -p mlsirm-core --test bifactor_no_prior_main_reference"
+        " -- --ignored --exact none_path_matches_main_bits_single_and_multigroup"
+    ) in gpu_job
+    assert 'grep -q "test result: ok. 1 passed"' in gpu_job

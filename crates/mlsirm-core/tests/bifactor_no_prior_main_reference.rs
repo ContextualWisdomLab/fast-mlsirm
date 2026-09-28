@@ -89,6 +89,7 @@ fn data() -> (Vec<usize>, Vec<usize>) {
 }
 
 #[test]
+#[ignore = "bits pinned on s1; hosted glibc rounds transcendentals differently. CI runs it on focal-gpu-native with --ignored"]
 fn none_path_matches_main_bits_single_and_multigroup() {
     let (y, groups) = data();
     let map = [0, 0, 0, 1, 1, 1];

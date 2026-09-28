@@ -124,6 +124,11 @@ jobs:
           for case in cases:
               assert not any(case.find(tag) is not None for tag in ("skipped", "failure", "error")), "Hardware contracts must pass without skips"
           PY
+      - name: Check no-prior bifactor fits against s1-pinned main bits
+        run: |
+          # The pinned bits came from this runner; hosted glibc differs.
+          cargo test -p mlsirm-core --test bifactor_no_prior_main_reference -- --ignored --exact none_path_matches_main_bits_single_and_multigroup | tee no-prior-bits.log
+          grep -q "test result: ok. 1 passed" no-prior-bits.log
       - name: Execute bifactor GPU parity on hardware
         env:
           STAGE5_HIGH_Q: "1"
