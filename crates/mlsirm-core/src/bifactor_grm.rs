@@ -581,11 +581,50 @@ pub(crate) fn e_step(
     e_step_n_chunks: usize,
     e_step_n_threads: usize,
 ) -> Result<(f64, Vec<Vec<Vec<f64>>>), String> {
+    let pool = crate::estep_parallel::PersonChunkPool::new(e_step_n_threads)?;
+    e_step_with_pool(
+        v,
+        y,
+        observed,
+        tables,
+        log_wg,
+        log_ws,
+        qg,
+        qs,
+        tg,
+        ts,
+        device,
+        e_step_n_chunks,
+        &pool,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[cfg_attr(any(not(feature = "gpu"), coverage), allow(unused_variables))]
+fn e_step_with_pool(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    tables: &[Vec<f64>],
+    log_wg: &[f64],
+    log_ws: &[f64],
+    qg: usize,
+    qs: usize,
+    tg: &[f64],
+    ts: &[f64],
+    device: crate::Device,
+    e_step_n_chunks: usize,
+    pool: &crate::estep_parallel::PersonChunkPool,
+) -> Result<(f64, Vec<Vec<Vec<f64>>>), String> {
     #[cfg(all(feature = "gpu", not(coverage)))]
     {
         if device == crate::Device::Gpu || device == crate::Device::Auto {
-            // Small host-side staging wrappers (no table data is duplicated
-            // beyond this Vec-of-Vec shell): the GPU path flattens them.
+            // Host-side staging for the GPU path: `tables.to_vec()`,
+            // `tg.to_vec()`, and `ts.to_vec()` (replicated per specific)
+            // are real deep copies on every E-step call. Only `tables`
+            // changes across EM iterations; `tg`/`ts`/`log_w*`/`y`/`blocks`
+            // are fit-invariant (#2006 type C/D). The GPU kernel then
+            // flattens these Vec-of-Vec shells into device buffers.
             let tables_wrapped = vec![tables.to_vec()];
             let tg_wrapped = vec![tg.to_vec()];
             let ts_wrapped = vec![vec![ts.to_vec(); v.n_specific]];
@@ -610,8 +649,7 @@ pub(crate) fn e_step(
             };
             if let Some(res) = crate::gpu_bifactor::e_step_reduced_gpu(&inputs) {
                 let stride = res.counts_stride_nodes;
-                let mut counts: Vec<Vec<Vec<f64>>> =
-                    Vec::with_capacity(v.n_items);
+                let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
                 for i in 0..v.n_items {
                     let base = i * stride * v.n_cat;
                     if v.item_block[i].is_some() {
@@ -650,7 +688,7 @@ pub(crate) fn e_step(
         qg,
         qs,
         e_step_n_chunks,
-        e_step_n_threads,
+        pool,
     )
 }
 
@@ -797,27 +835,26 @@ fn e_step_cpu_chunked(
     qg: usize,
     qs: usize,
     e_step_n_chunks: usize,
-    e_step_n_threads: usize,
+    pool: &crate::estep_parallel::PersonChunkPool,
 ) -> Result<(f64, Vec<Vec<Vec<f64>>>), String> {
-    let partials = crate::estep_parallel::map_person_chunks(
+    // The first partial is the accumulator, so a one-chunk sweep keeps one
+    // counts tensor. Empty chunks are not mapped.
+    let mapped = crate::estep_parallel::fold_person_chunks_from_first(
+        pool,
         v.n_persons,
         e_step_n_chunks,
-        e_step_n_threads,
         |p_start, p_end| {
             e_step_person_range(
                 v, y, observed, tables, log_wg, log_ws, qg, qs, p_start, p_end,
             )
         },
+        |mut acc, (ll, part)| {
+            acc.0 += ll;
+            accumulate_item_counts(&mut acc.1, &part);
+            acc
+        },
     )?;
-    // Ordered left fold over chunk index (Higham, 2002, §§4.1–4.2): the
-    // association tree is fixed by `e_step_n_chunks`, independent of threads.
-    let mut loglik = 0.0f64;
-    let mut counts = empty_item_counts(v, qg, qs);
-    for (ll, part) in partials {
-        loglik += ll;
-        accumulate_item_counts(&mut counts, &part);
-    }
-    Ok((loglik, counts))
+    Ok(mapped.unwrap_or_else(|| (0.0, empty_item_counts(v, qg, qs))))
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item.
@@ -1008,10 +1045,13 @@ fn run_single_start(
     let mut n_iter = 0usize;
     let mut termination_reason = "max_iter_reached".to_string();
     let mut final_loglik_change = f64::NAN;
+    // One local pool for every E-step of this start (#2002). Dropping it
+    // at the end of the start joins the workers.
+    let pool = crate::estep_parallel::PersonChunkPool::new(cfg.e_step_n_threads)?;
 
     loop {
         let tables = fill_logprob_tables(v, &params, tg, ts, qg, qs);
-        let (ll, counts) = e_step(
+        let (ll, counts) = e_step_with_pool(
             v,
             y,
             observed,
@@ -1024,7 +1064,7 @@ fn run_single_start(
             ts,
             cfg.device,
             cfg.e_step_n_chunks,
-            cfg.e_step_n_threads,
+            &pool,
         )?;
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
@@ -1919,16 +1959,19 @@ fn e_step_multigroup(
     qs: usize,
     device: crate::Device,
     e_step_n_chunks: usize,
-    e_step_n_threads: usize,
-) -> Result<(
-    f64,
-    Vec<Vec<Vec<Vec<f64>>>>,
-    Vec<f64>,
-    Vec<f64>,
-    Vec<f64>,
-    Vec<Vec<f64>>,
-    Vec<Vec<f64>>,
-), String> {
+    pool: &crate::estep_parallel::PersonChunkPool,
+) -> Result<
+    (
+        f64,
+        Vec<Vec<Vec<Vec<f64>>>>,
+        Vec<f64>,
+        Vec<f64>,
+        Vec<f64>,
+        Vec<Vec<f64>>,
+        Vec<Vec<f64>>,
+    ),
+    String,
+> {
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
     // Per-group logprob tables at the CURRENT group nodes.
     let mut tables_groups: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_groups);
@@ -1941,8 +1984,7 @@ fn e_step_multigroup(
                     let mut lp = vec![0.0f64; qg * qs * v.n_cat];
                     for t in 0..qg {
                         for h in 0..qs {
-                            let base =
-                                par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
+                            let base = par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
                             let probs = grm_logprobs(base, &par.d);
                             lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
                                 .copy_from_slice(&probs);
@@ -1988,8 +2030,7 @@ fn e_step_multigroup(
             };
             if let Some(res) = crate::gpu_bifactor::e_step_reduced_gpu(&inputs) {
                 let stride = res.counts_stride_nodes;
-                let mut counts: Vec<Vec<Vec<Vec<f64>>>> =
-                    Vec::with_capacity(n_groups);
+                let mut counts: Vec<Vec<Vec<Vec<f64>>>> = Vec::with_capacity(n_groups);
                 for g in 0..n_groups {
                     let mut cg = Vec::with_capacity(v.n_items);
                     for i in 0..v.n_items {
@@ -2170,34 +2211,33 @@ fn e_step_multigroup(
         }
         (loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec)
     };
-    let partials = crate::estep_parallel::map_person_chunks(
+    let mapped = crate::estep_parallel::fold_person_chunks_from_first(
+        pool,
         v.n_persons,
         e_step_n_chunks,
-        e_step_n_threads,
         map_range,
-    )?;
-    let (mut loglik, mut counts, mut w_acc, mut s1_g, mut s2_g, mut s2_spec, mut w_spec) =
-        empty_partial();
-    for (ll, c, wa, s1, s2, ss, ws) in partials {
-        loglik += ll;
-        for g in 0..n_groups {
-            w_acc[g] += wa[g];
-            s1_g[g] += s1[g];
-            s2_g[g] += s2[g];
-            for s in 0..v.n_specific {
-                s2_spec[g][s] += ss[g][s];
-                w_spec[g][s] += ws[g][s];
-            }
-            for i in 0..v.n_items {
-                for n in 0..c[g][i].len() {
-                    for k in 0..v.n_cat {
-                        counts[g][i][n][k] += c[g][i][n][k];
+        |mut acc, (ll, c, wa, s1, s2, ss, ws)| {
+            acc.0 += ll;
+            for g in 0..n_groups {
+                acc.2[g] += wa[g];
+                acc.3[g] += s1[g];
+                acc.4[g] += s2[g];
+                for s in 0..v.n_specific {
+                    acc.5[g][s] += ss[g][s];
+                    acc.6[g][s] += ws[g][s];
+                }
+                for i in 0..v.n_items {
+                    for n in 0..c[g][i].len() {
+                        for k in 0..v.n_cat {
+                            acc.1[g][i][n][k] += c[g][i][n][k];
+                        }
                     }
                 }
             }
-        }
-    }
-    Ok((loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec))
+            acc
+        },
+    )?;
+    Ok(mapped.unwrap_or_else(empty_partial))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2240,6 +2280,7 @@ fn run_single_start_multigroup(
     let mut n_iter = 0usize;
     let mut termination_reason = "max_iter_reached".to_string();
     let mut final_loglik_change = f64::NAN;
+    let pool = crate::estep_parallel::PersonChunkPool::new(cfg.e_step_n_threads)?;
 
     loop {
         // Common-scale group nodes for this sweep.
@@ -2270,7 +2311,7 @@ fn run_single_start_multigroup(
             qs,
             cfg.device,
             cfg.e_step_n_chunks,
-            cfg.e_step_n_threads,
+            &pool,
         )?;
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
@@ -2410,9 +2451,7 @@ fn run_single_start_multigroup(
                     // Denominator counts only persons observed in this block
                     // (block-wise MAR must not dilute the variance update).
                     if w_spec[g][s] <= 0.0 || !w_spec[g][s].is_finite() {
-                        return Err(format!(
-                            "group {g} specific-{s} has no posterior mass"
-                        ));
+                        return Err(format!("group {g} specific-{s} has no posterior mass"));
                     }
                     let vrow = s2_spec[g][s] / w_spec[g][s];
                     if !vrow.is_finite() {
@@ -2623,7 +2662,9 @@ pub fn fit_bifactor_grm_multigroup(
                     }
                 }
                 if !any {
-                    return Err(format!("free item {i} has no observed responses in group {g}"));
+                    return Err(format!(
+                        "free item {i} has no observed responses in group {g}"
+                    ));
                 }
                 if let Some(k) = (0..n_cat).find(|&k| !seen[k]) {
                     return Err(format!(
@@ -2715,8 +2756,7 @@ pub fn fit_bifactor_grm_multigroup(
                     let mut lp = vec![0.0f64; qg * qs * v.n_cat];
                     for t in 0..qg {
                         for h in 0..qs {
-                            let base =
-                                par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
+                            let base = par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
                             let probs = grm_logprobs(base, &par.d);
                             lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
                                 .copy_from_slice(&probs);
@@ -2823,11 +2863,7 @@ pub fn fit_bifactor_grm_multigroup(
     let anchor_g = anchored_items
         .iter()
         .flat_map(|&i| (0..n_groups).map(move |g| (g, i)))
-        .max_by(|&(g1, i1), &(g2, i2)| {
-            a_general[g1][i1]
-                .abs()
-                .total_cmp(&a_general[g2][i2].abs())
-        })
+        .max_by(|&(g1, i1), &(g2, i2)| a_general[g1][i1].abs().total_cmp(&a_general[g2][i2].abs()))
         .expect("at least one anchored item");
     if a_general[anchor_g.0][anchor_g.1] < 0.0 {
         for row in a_general.iter_mut() {
@@ -3167,7 +3203,9 @@ pub fn fit_bifactor_grm_fipc(
         return Err("anchor must have length n_items".into());
     }
     if !anchor.iter().any(|&a| a) {
-        return Err("at least one anchored (fixed) item is required to identify the focal scale".into());
+        return Err(
+            "at least one anchored (fixed) item is required to identify the focal scale".into(),
+        );
     }
     if fixed_a_general.len() != n_items || fixed_a_specific.len() != n_items {
         return Err("fixed_a_general/fixed_a_specific must have length n_items".into());
@@ -3258,6 +3296,9 @@ pub fn fit_bifactor_grm_fipc(
     let mut n_iter = 0usize;
     let mut termination_reason = "max_iter_reached".to_string();
     let mut final_loglik_change = f64::NAN;
+    // Serial association (n_chunks = 1). The pool is still start-scoped so a
+    // later FIPC chunk count does not rebuild workers every EM iteration.
+    let pool = crate::estep_parallel::PersonChunkPool::new(1)?;
 
     loop {
         let tg: Vec<f64> = tg_std.iter().map(|&x| mu + sigma * x).collect();
@@ -3284,7 +3325,7 @@ pub fn fit_bifactor_grm_fipc(
             // serial association tree (n_chunks = 1) until #2002 extends FIPC.
             crate::Device::Cpu,
             1,
-            1,
+            &pool,
         )?;
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;

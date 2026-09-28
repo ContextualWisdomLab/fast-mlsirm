@@ -215,6 +215,7 @@ fn two_tier_grm_agrees_with_mirt_bfactor_two_tier_graded() {
     assert!(n_persons > 100, "fixture dataset must be non-trivial");
 
     let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: true,
         q_primary: QUADPTS,
         q_specific: QUADPTS,
         max_iter: 2000,

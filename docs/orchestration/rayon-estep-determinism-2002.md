@@ -5,9 +5,14 @@
 CPU E-step person sweeps in `bifactor_grm` and `two_tier_grm` partition
 respondents into a caller-chosen number of chunks
 (`e_step_n_chunks`) whose boundaries depend only on `n_persons` and that
-count, schedule chunk work on a **local** rayon pool of size
-`e_step_n_threads` (never `build_global`), and fold chunk partials in
-**chunk-index order**.
+count. Each fit start owns one **local** rayon pool of size
+`e_step_n_threads` (never `build_global`) and reuses it for every E-step
+of that start. Non-empty chunk partials are folded in **chunk-index
+order**. The first partial is the accumulator, so a one-chunk sweep
+keeps a single counts tensor; later windows hold that accumulator plus
+at most `e_step_n_threads` new partials. Trailing
+empty chunks are not evaluated, so they do not allocate a counts tensor.
+`e_step_n_chunks` is not clamped.
 
 ## Why
 
@@ -30,3 +35,5 @@ arguments with no unsourced defaults; they are recorded on fit results.
 - `bifactor_grm::tests::estep_chunked_is_bit_identical_across_thread_counts`
 - `bifactor_grm::tests::fit_same_chunks_bit_identical_across_thread_counts`
 - `bifactor_grm::tests::fit_records_e_step_chunk_provenance`
+- `two_tier_grm::tests::fit_records_e_step_chunk_provenance`
+- `estep_parallel::tests::fold_from_first_matches_zero_seed_and_skips_empty_input`

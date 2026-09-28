@@ -242,6 +242,7 @@ fn single_primary_oracle_matches_stage1_bifactor_oracle() {
 
 fn valid_config() -> TwoTierGrmConfig {
     TwoTierGrmConfig {
+        estimate_primary_correlation: true,
         q_primary: 7,
         q_specific: 7,
         max_iter: 5,
@@ -253,6 +254,32 @@ fn valid_config() -> TwoTierGrmConfig {
         e_step_n_chunks: 1,
         e_step_n_threads: 1,
     }
+}
+
+#[test]
+fn fit_records_e_step_chunk_provenance() {
+    let (y, n_persons) = tiny_data();
+    let cfg = TwoTierGrmConfig {
+        max_iter: 1,
+        e_step_n_chunks: 3,
+        e_step_n_threads: 2,
+        ..valid_config()
+    };
+    let fit = fit_two_tier_grm(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("fit");
+    assert_eq!(fit.e_step_n_chunks, 3);
+    assert_eq!(fit.e_step_n_threads, 2);
 }
 
 #[test]
@@ -426,6 +453,49 @@ fn rejects_zero_quadrature_counts() {
             "quadrature error must name the offending argument; got: {err}"
         );
     }
+}
+
+#[test]
+fn identity_rejects_identical_primary_support_but_accepts_nested_support() {
+    let (y, n_persons) = tiny_data();
+    let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: false,
+        max_iter: 500,
+        ..valid_config()
+    };
+    let shared = [true; TINY_N_ITEMS * TINY_N_PRIMARY];
+    let err = fit_two_tier_grm(
+        &y,
+        None,
+        &shared,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect_err("identical supports admit a continuous rotation");
+    assert!(err.contains("identical free-loading item sets"), "{err}");
+
+    let nested: Vec<bool> = (0..TINY_N_ITEMS).flat_map(|i| [true, i < 5]).collect();
+    let fit = fit_two_tier_grm(
+        &y,
+        None,
+        &nested,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("distinct nested supports must fit");
+    assert!(fit.converged, "nested-support fit did not converge");
+    assert_ne!(fit.termination_reason, "max_iter_reached");
+    assert_eq!(fit.phi, vec![1.0, 0.0, 0.0, 1.0]);
 }
 
 #[test]

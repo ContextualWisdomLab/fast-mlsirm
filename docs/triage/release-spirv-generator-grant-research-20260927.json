@@ -1,0 +1,72 @@
+{
+  "package": "cargo/spirv@0.4.0+sdk-1.4.341.0",
+  "state": "NOT_ADMITTED",
+  "upstream_commit": "8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4",
+  "source_members": [
+    {
+      "member": "spirv-0.4.0+sdk-1.4.341.0/Cargo.toml.orig",
+      "upstream_url": "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/spirv/Cargo.toml",
+      "sha256": "4d19e7aaeba0b0dd52eaa00bb592dfc6015813385fc47badcee396c353cc1d61",
+      "upstream_bytes": "MATCH"
+    },
+    {
+      "member": "spirv-0.4.0+sdk-1.4.341.0/README.md",
+      "upstream_url": "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/spirv/README.md",
+      "sha256": "af6ace1b0c00e63c3dd0af5754fb33512005f3709b7a621cc7ed184656ee4c14",
+      "upstream_bytes": "MATCH"
+    },
+    {
+      "member": "spirv-0.4.0+sdk-1.4.341.0/autogen_spirv.rs",
+      "upstream_url": "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/spirv/autogen_spirv.rs",
+      "sha256": "2260b34bd7b8a757be33f835ecc7431f7b791c39e9fa30a0acf47c03ae60b436",
+      "upstream_bytes": "MATCH"
+    },
+    {
+      "member": "spirv-0.4.0+sdk-1.4.341.0/lib.rs",
+      "upstream_url": "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/spirv/lib.rs",
+      "sha256": "54127a130c4ef2cdbf7882a1cd6ebde88ae09b755bd8a1c086e21101da9684e9",
+      "upstream_bytes": "MATCH"
+    },
+    {
+      "member": "spirv-0.4.0+sdk-1.4.341.0/release.toml",
+      "upstream_url": "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/spirv/release.toml",
+      "sha256": "a9c4eb6eaa1b3b8eb7ff742ec4963be32ec1ec7664c8a52218cc74898bad3ec4",
+      "upstream_bytes": "MATCH"
+    }
+  ],
+  "generation_submodule": {
+    "path": "autogen/external/SPIRV-Headers",
+    "commit": "04f10f650d514df88b76d25e83db360142c7b174",
+    "evidence": "GitHub GraphQL exact upstream tree entry"
+  },
+  "grammar": {
+    "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/04f10f650d514df88b76d25e83db360142c7b174/include/spirv/unified1/spirv.core.grammar.json",
+    "sha256": "508e6677e27b0b58eac8395aa49a90ac1766a8d392c247a0aba7b03f4fdd85b9",
+    "copyright": [
+      "Copyright: 2014-2024 The Khronos Group Inc.",
+      "License: MIT",
+      "",
+      "MODIFICATIONS TO THIS FILE MAY MEAN IT NO LONGER ACCURATELY REFLECTS",
+      "KHRONOS STANDARDS. THE UNMODIFIED, NORMATIVE VERSIONS OF KHRONOS",
+      "SPECIFICATIONS AND HEADER INFORMATION ARE LOCATED AT",
+      "https://www.khronos.org/registry/"
+    ]
+  },
+  "upstream_license": {
+    "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/04f10f650d514df88b76d25e83db360142c7b174/LICENSE",
+    "sha256": "ea43b1de38a6f90c488800d66dec1ed671e68cda530266bc96951fb5b6307613",
+    "applicable_section": "Files: All files except for those called out below.\nCopyright (c) 2015-2024 The Khronos Group Inc.\n\nPermission is hereby granted, free of charge, to any person obtaining a\ncopy of this software and/or associated documentation files (the\n\"Materials\"), to deal in the Materials without restriction, including\nwithout limitation the rights to use, copy, modify, merge, publish,\ndistribute, sublicense, and/or sell copies of the Materials, and to\npermit persons to whom the Materials are furnished to do so, subject to\nthe following conditions:\n\nThe above copyright notice and this permission notice shall be included\nin all copies or substantial portions of the Materials.\n\nMODIFICATIONS TO THIS FILE MAY MEAN IT NO LONGER ACCURATELY REFLECTS\nKHRONOS STANDARDS. THE UNMODIFIED, NORMATIVE VERSIONS OF KHRONOS\nSPECIFICATIONS AND HEADER INFORMATION ARE LOCATED AT\n   https://www.khronos.org/registry/\n\nTHE MATERIALS ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND,\nEXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF\nMERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\nIN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\nCLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\nTORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE\nMATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.\n"
+  },
+  "spdx_comparison": {
+    "identifier": "MIT-Khronos-old",
+    "source_url": "https://raw.githubusercontent.com/spdx/license-list-data/main/json/details/MIT-Khronos-old.json",
+    "source_sha256": "976df48b885a1c7939313b8556beafa133fdb9c9c3e606d8349487ded1ed3039",
+    "normalized_permission_body_match": false
+  },
+  "next_actions": [
+    "Trace exact generator grammar inputs before deciding complete obligation scope.",
+    "Authenticate Apache and every independent input grant in source notice proof across upstream repositories.",
+    "Require complete unchanged input grant and copyright notices; do not label the standards variant as plain MIT.",
+    "Run real archive whole-gate positive and omission/tampering negatives before admission."
+  ]
+}
