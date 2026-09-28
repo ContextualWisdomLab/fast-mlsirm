@@ -199,10 +199,13 @@ def fit_bifactor_grm(
     ``e_step_n_chunks`` and ``e_step_n_threads`` are required (ADR-0028 /
     issue #2002): the CPU E-step partitions persons into a fixed number of
     chunks whose boundaries depend only on ``n_persons`` and
-    ``e_step_n_chunks``, then folds chunk partials in chunk-index order on a
-    local rayon pool of size ``e_step_n_threads`` (never a global pool). The
-    same chunk count yields bit-identical results across thread counts;
-    both values are recorded on the fit for provenance.
+    ``e_step_n_chunks``, then folds non-empty chunk partials in chunk-index
+    order. Each fit start builds one local rayon pool of size
+    ``e_step_n_threads`` (never a global pool) and reuses it across EM
+    iterations. At most that many partial count tensors are in flight, and
+    trailing empty chunks allocate nothing. The same chunk count yields
+    bit-identical results across thread counts; both values are recorded
+    on the fit for provenance.
     ``device`` selects the E-step sweep: ``'cpu'`` runs the ``f64`` scalar
     sweep; ``'gpu'`` runs the WGSL ``f32`` person-parallel sweep and falls
     back to CPU (with a warning) when no GPU adapter is available; ``'auto'``

@@ -5,9 +5,12 @@
 CPU E-step person sweeps in `bifactor_grm` and `two_tier_grm` partition
 respondents into a caller-chosen number of chunks
 (`e_step_n_chunks`) whose boundaries depend only on `n_persons` and that
-count, schedule chunk work on a **local** rayon pool of size
-`e_step_n_threads` (never `build_global`), and fold chunk partials in
-**chunk-index order**.
+count. Each fit start owns one **local** rayon pool of size
+`e_step_n_threads` (never `build_global`) and reuses it for every E-step
+of that start. Non-empty chunk partials are folded in **chunk-index
+order**, with at most `e_step_n_threads` partials in flight. Trailing
+empty chunks are not evaluated, so they do not allocate a counts tensor.
+`e_step_n_chunks` is not clamped.
 
 ## Why
 

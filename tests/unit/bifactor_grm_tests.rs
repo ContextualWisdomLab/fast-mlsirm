@@ -476,9 +476,7 @@ fn estep_gpu_matches_cpu_counts_and_loglik() {
     // Without a GPU adapter the GPU entry falls back to CPU and the
     // comparison is trivially exact; the fit-level Python test pins the
     // real-device numbers.
-    use super::{
-        e_step, fill_logprob_tables, gh_rule, initial_params, validate,
-    };
+    use super::{e_step, fill_logprob_tables, gh_rule, initial_params, validate};
 
     let (y, n_persons) = tiny_data();
     let cfg = valid_config();
@@ -501,17 +499,37 @@ fn estep_gpu_matches_cpu_counts_and_loglik() {
     let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
 
     let (ll_cpu, counts_cpu) = e_step(
-        &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
+        &v,
+        &y,
+        None,
+        &tables,
+        &log_wg,
+        &log_ws,
+        7,
+        7,
+        tg,
+        ts,
         crate::Device::Cpu,
         1,
         1,
-    ).expect("e_step");
+    )
+    .expect("e_step");
     let (ll_gpu, counts_gpu) = e_step(
-        &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
+        &v,
+        &y,
+        None,
+        &tables,
+        &log_wg,
+        &log_ws,
+        7,
+        7,
+        tg,
+        ts,
         crate::Device::Gpu,
         1,
         1,
-    ).expect("e_step");
+    )
+    .expect("e_step");
 
     assert!(
         (ll_cpu - ll_gpu).abs() <= 1e-3,
@@ -581,8 +599,12 @@ fn zero_prior_weight_nodes_do_not_nan_estep_counts() {
         crate::Device::Cpu,
         1,
         1,
-    ).expect("e_step");
-    assert!(ll.is_finite(), "observed-data loglik must stay finite; got {ll}");
+    )
+    .expect("e_step");
+    assert!(
+        ll.is_finite(),
+        "observed-data loglik must stay finite; got {ll}"
+    );
     for (i, item_counts) in counts.iter().enumerate() {
         for (node, cat) in item_counts.iter().enumerate() {
             for (k, &c) in cat.iter().enumerate() {
@@ -777,13 +799,35 @@ fn estep_single_chunk_matches_repeat_run_bit_identically() {
     let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
     let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
     let (ll1, c1) = e_step(
-        &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
-        crate::Device::Cpu, 1, 1,
+        &v,
+        &y,
+        None,
+        &tables,
+        &log_wg,
+        &log_ws,
+        7,
+        7,
+        tg,
+        ts,
+        crate::Device::Cpu,
+        1,
+        1,
     )
     .expect("e_step");
     let (ll2, c2) = e_step(
-        &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
-        crate::Device::Cpu, 1, 4,
+        &v,
+        &y,
+        None,
+        &tables,
+        &log_wg,
+        &log_ws,
+        7,
+        7,
+        tg,
+        ts,
+        crate::Device::Cpu,
+        1,
+        4,
     )
     .expect("e_step");
     assert_eq!(ll1.to_bits(), ll2.to_bits());
@@ -817,6 +861,42 @@ fn fit_records_e_step_chunk_provenance() {
     .expect("fit");
     assert_eq!(fit.e_step_n_chunks, 3);
     assert_eq!(fit.e_step_n_threads, 2);
+}
+
+#[test]
+fn fit_reuses_one_local_pool_across_em_iterations() {
+    use crate::estep_parallel::{pool_builds_this_thread, reset_pool_builds_this_thread};
+
+    let (y, n_persons) = tiny_data();
+    let cfg = BifactorGrmConfig {
+        max_iter: 4,
+        n_starts: 1,
+        e_step_n_chunks: 4,
+        e_step_n_threads: 2,
+        ..valid_config()
+    };
+    reset_pool_builds_this_thread();
+    let fit = fit_bifactor_grm(
+        &y,
+        None,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect("fit");
+    assert!(
+        fit.loglik_trace.len() >= 2,
+        "the start must run more than one E-step, got {}",
+        fit.loglik_trace.len()
+    );
+    assert_eq!(
+        pool_builds_this_thread(),
+        1,
+        "one fit start must build the local pool once, not once per E-step"
+    );
 }
 
 #[test]
@@ -858,7 +938,11 @@ fn fit_same_chunks_bit_identical_across_thread_counts() {
     .expect("fit threads=4");
     assert_eq!(fit1.loglik_trace.len(), fit2.loglik_trace.len());
     for (a, b) in fit1.loglik_trace.iter().zip(fit2.loglik_trace.iter()) {
-        assert_eq!(a.to_bits(), b.to_bits(), "EM loglik trace must match bit-for-bit");
+        assert_eq!(
+            a.to_bits(),
+            b.to_bits(),
+            "EM loglik trace must match bit-for-bit"
+        );
     }
     for (a, b) in fit1.a_general.iter().zip(fit2.a_general.iter()) {
         assert_eq!(a.to_bits(), b.to_bits());
