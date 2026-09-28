@@ -367,7 +367,7 @@ impl PosteriorProvider for Stage1Provider {
             &self.tg,
             &self.ts,
             crate::Device::Cpu,
-        );
+        )?;
         let mut node_g = Vec::with_capacity(self.v.n_items);
         let mut node_s = Vec::with_capacity(self.v.n_items);
         for i in 0..self.v.n_items {

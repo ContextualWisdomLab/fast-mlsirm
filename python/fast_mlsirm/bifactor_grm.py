@@ -227,9 +227,11 @@ def fit_bifactor_grm(
     stochastic seed must not ship an unsourced default.
     ``n_starts`` deterministic EM starts from ``seed`` keep the best loglik.
     ``device`` selects the E-step sweep: ``'cpu'`` runs the ``f64`` scalar
-    sweep; ``'gpu'`` runs the WGSL ``f32`` person-parallel sweep and falls
-    back to CPU (with a warning) when no GPU adapter is available; ``'auto'``
-    prefers GPU without warning. Anything else raises ``ValueError``.
+    sweep; ``'gpu'`` requires the WGSL ``f32`` person-parallel sweep on a
+    hardware GPU and raises if it is unavailable; ``'auto'`` prefers GPU and
+    falls back to CPU. Anything else raises ``ValueError``. Adapter classes:
+    wgpu 30.0.0, ``DeviceType``,
+    https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html.
     Out-of-range caller arguments raise ``ValueError`` (never clamped, and —
     per the no-magic-caps rule — upper-bounded only where a real constraint
     exists); unobserved categories raise; ``max_iter`` exhaustion returns

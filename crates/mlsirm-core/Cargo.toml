@@ -25,9 +25,9 @@ uuid = "1"
 [features]
 # GPGPU acceleration of the neg-loglik + gradient hot path via wgpu.
 # Enabled by default so the published wheel gains GPU execution; the code
-# always falls back to the CPU implementation at runtime when no GPU adapter
-# is available (e.g. CI). Build with --no-default-features for a CPU-only
-# core with no wgpu dependency graph.
+# may fall back to CPU under Device::Auto when no hardware GPU is available;
+# explicit bifactor Device::Gpu requests return an error. Build with
+# --no-default-features for a CPU-only core with no wgpu dependency graph.
 default = ["gpu"]
 gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 

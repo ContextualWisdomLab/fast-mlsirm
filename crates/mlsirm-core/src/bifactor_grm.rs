@@ -272,8 +272,10 @@ pub struct BifactorGrmConfig {
     pub slope_prior: SlopePrior,
     /// Compute device for the E-step sweep: `Cpu` runs the `f64` scalar
     /// sweep; `Gpu`/`Auto` run the WGSL `f32` person-parallel sweep when a
-    /// compatible adapter exists and fall back to CPU otherwise (`Gpu`
-    /// warns on fallback, `Auto` does not).
+    /// compatible hardware adapter exists. `Gpu` returns an error if an
+    /// E-step cannot use it; `Auto` falls back to the CPU sweep.
+    /// The adapter classification follows wgpu 30.0.0, `DeviceType`:
+    /// https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html
     pub device: crate::Device,
 }
 
@@ -655,9 +657,11 @@ fn refuse_tolerance_on_frozen_start(
 ///
 /// When `device` is `Gpu`/`Auto` and a compatible adapter exists, the
 /// person sweep runs in the WGSL `f32` kernels
-/// ([`crate::gpu_bifactor::e_step_reduced_gpu`]); otherwise — including the
-/// marginal-loglik oracle path, which always passes `Cpu` — the `f64`
-/// scalar sweep below runs.
+/// ([`crate::gpu_bifactor::e_step_reduced_gpu`]). An explicit `Gpu` request
+/// returns `Err` when the hardware path is unavailable; `Auto` may use the
+/// `f64` CPU sweep. The marginal-loglik oracle always passes `Cpu`.
+/// wgpu 30.0.0, `DeviceType`, defines CPU as software rendering:
+/// https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html
 #[allow(clippy::too_many_arguments)]
 // `tg`/`ts` feed only the cfg-gated GPU branch (group moments); the CPU
 // sweep below needs tables and log-weights alone.
@@ -674,7 +678,7 @@ pub(crate) fn e_step(
     tg: &[f64],
     ts: &[f64],
     device: crate::Device,
-) -> (f64, Vec<Vec<Vec<f64>>>) {
+) -> Result<(f64, Vec<Vec<Vec<f64>>>), String> {
     #[cfg(all(feature = "gpu", not(coverage)))]
     {
         if device == crate::Device::Gpu || device == crate::Device::Auto {
@@ -724,15 +728,12 @@ pub(crate) fn e_step(
                         );
                     }
                 }
-                return (res.loglik, counts);
+                return Ok((res.loglik, counts));
             }
         }
     }
     if device == crate::Device::Gpu {
-        eprintln!(
-            "fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found; \
-             falling back to CPU implementation."
-        );
+        return Err("GPU bifactor E-step requested but no usable hardware GPU path was available".into());
     }
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
     let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
@@ -846,7 +847,7 @@ pub(crate) fn e_step(
             }
         }
     }
-    (loglik, counts)
+    Ok((loglik, counts))
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item.
@@ -1115,7 +1116,7 @@ fn run_single_start(
         let tables = fill_logprob_tables(v, &params, tg, ts, qg, qs);
         let (ll, counts) = e_step(
             v, y, observed, &tables, log_wg, log_ws, qg, qs, tg, ts, cfg.device,
-        );
+        )?;
         // MAP: GEM ascends log-likelihood + log prior, not the likelihood.
         let objective = ll - slope_prior_neg_log(cfg.slope_prior, &params);
         let change = checked_em_loglik_change(objective, previous, n_iter, objective_name)?;
@@ -1449,7 +1450,7 @@ pub fn bifactor_grm_marginal_loglik(
         ts,
         // Exactness oracle: always the f64 CPU sweep.
         crate::Device::Cpu,
-    )
+    )?
     .0)
 }
 
@@ -1984,6 +1985,10 @@ struct MultiStartOutcome {
 /// and the posterior moments that drive the group-distribution M-step
 /// (`s1_g/s2_g` for the general factor, `s2_spec[g][s]` for the specifics at
 /// zero mean).
+/// Explicit `Gpu` returns `Err` if the WGSL sweep cannot use a hardware GPU;
+/// `Auto` may use the CPU sweep. wgpu 30.0.0, `DeviceType`, classifies CPU
+/// adapters as software rendering:
+/// https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
 #[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
@@ -2001,7 +2006,7 @@ fn e_step_multigroup(
     qg: usize,
     qs: usize,
     device: crate::Device,
-) -> (
+) -> Result<(
     f64,
     Vec<Vec<Vec<Vec<f64>>>>,
     Vec<f64>,
@@ -2009,7 +2014,7 @@ fn e_step_multigroup(
     Vec<f64>,
     Vec<Vec<f64>>,
     Vec<Vec<f64>>,
-) {
+), String> {
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
     // Per-group logprob tables at the CURRENT group nodes.
     let mut tables_groups: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_groups);
@@ -2097,17 +2102,14 @@ fn e_step_multigroup(
                         w_spec[g][s] = res.w_spec[g * v.n_specific + s];
                     }
                 }
-                return (
+                return Ok((
                     res.loglik, counts, res.w_acc, res.s1_g, res.s2_g, s2_spec, w_spec,
-                );
+                ));
             }
         }
     }
     if device == crate::Device::Gpu {
-        eprintln!(
-            "fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found; \
-             falling back to CPU implementation."
-        );
+        return Err("GPU bifactor E-step requested but no usable hardware GPU path was available".into());
     }
 
     let mut counts: Vec<Vec<Vec<Vec<f64>>>> = Vec::with_capacity(n_groups);
@@ -2240,7 +2242,7 @@ fn e_step_multigroup(
             }
         }
     }
-    (loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec)
+    Ok((loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2315,7 +2317,7 @@ fn run_single_start_multigroup(
             qg,
             qs,
             cfg.device,
-        );
+        )?;
         // MAP: GEM ascends log-likelihood + log prior. Common (anchored)
         // items count once (group 0 row), free items once per group.
         let prior_nll = slope_prior_neg_log(
@@ -3344,7 +3346,7 @@ pub fn fit_bifactor_grm_fipc(
             qs,
             // FIPC predates the GPU E-step (#1931); always run the CPU sweep.
             crate::Device::Cpu,
-        );
+        )?;
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter, "observed-data log-likelihood")?;
         loglik_trace.push(ll);

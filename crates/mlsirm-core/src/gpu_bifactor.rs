@@ -450,7 +450,16 @@ fn e_step_reduced_gpu_inner(
     if ctx.adapter_storage_buffers() < MIN_STORAGE_BUFFERS {
         return None;
     }
-    if collect_posteriors && ctx.adapter_info.device_type == wgpu::DeviceType::Cpu {
+    // wgpu 30.0.0 DeviceType manual calls Cpu software rendering and
+    // distinguishes integrated, discrete, and virtual GPUs. A software or
+    // unknown adapter cannot establish that this E-step used GPU hardware.
+    // https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html
+    if !matches!(
+        ctx.adapter_info.device_type,
+        wgpu::DeviceType::IntegratedGpu
+            | wgpu::DeviceType::DiscreteGpu
+            | wgpu::DeviceType::VirtualGpu
+    ) {
         return None;
     }
     let device = &ctx.device;

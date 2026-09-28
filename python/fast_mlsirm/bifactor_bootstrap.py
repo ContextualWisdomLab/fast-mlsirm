@@ -445,7 +445,11 @@ def run_bifactor_bootstrap(
         base_seed: Master seed for deterministic replication. Required,
             keyword-only caller argument (ADR-0028, #1963): a stochastic
             routine must not ship a default seed.
-        device: 'cpu', 'gpu', or 'auto' execution device.
+        device: 'cpu', 'gpu', or 'auto' execution device. 'gpu' requires a
+            hardware GPU for every bifactor E-step and records a failed
+            replicate if it is unavailable; 'auto' may use CPU. Adapter
+            classes: wgpu 30.0.0, ``DeviceType``,
+            https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html.
         ci_level: Nominal level of the reported percentile intervals and of
             the endpoints monitored by the stopping rule (0 < level < 1).
             Required, keyword-only (ADR-0028, #1963): a decision-threshold
