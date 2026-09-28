@@ -1,0 +1,128 @@
+# PR #2114 validation gap: evidence ledger
+
+This ledger records observed evidence, not a certification of completed checks.
+
+## Original delivery
+
+[PR #2114](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/2114)
+was merged as `2d80e8d85d40c665a8000020b78723f701f878c8` using administrative
+bypass with five failed checks. That merge does not prove those gates passed.
+
+## CodeQL dispatch reproduction
+
+[Central run 36315242280](https://github.com/ContextualWisdomLab/.github/actions/runs/36315242280)
+targets fast-mlsirm PR #2112 head
+`6e45fbf42b8458345a1a87d38566abe48899ae1c`, base
+`00f5cb91b417e40102036eb31ab8a4b843c76076`, required run `36239997770`.
+
+| Evidence | Observed result |
+| --- | --- |
+| Dispatch validation, job 108608601318 | Success |
+| Actions analysis, job 108609052914 | Success |
+| Python analysis, job 108609052931 | Failure |
+| Exact required-run settlement, job 108610599004 | Failure |
+
+The Python job successfully checked out the target head and completed analysis.
+Its SARIF gate reported two `py/incomplete-url-substring-sanitization` findings
+(security severity 7.8), in `tests/test_architecture_baseline_contract.py:34`
+and `tests/test_governance_index_contract.py:32`. Both citation checks accepted
+an arbitrary occurrence of `https://doi.org/` instead of verifying a URL host.
+
+[PR #2218](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/2218)
+replaced those substring checks with standard-library URL parsing, HTTPS,
+exact hostname, and DOI-path checks. Both affected test files passed locally
+(four tests). It was administratively merged as
+`76826aad7cd9e6a0e33a6a84e38ddc89ef8204c0` while hosted checks were queued;
+there was no independent approval. Hosted CodeQL clearance remains unproven.
+
+The same Python job also failed status publication: the target application
+token and central workflow token each received HTTP 403. This is a separate
+authority failure, not evidence that the analysis did not run. The successful
+Actions job retained authenticated scan/SARIF fallback evidence; its success
+does not establish that a target commit status was published.
+
+## Remaining proof
+
+The original failed jobs are independently identifiable:
+
+| Gate | Original failed job | Required recovery evidence |
+| --- | --- | --- |
+| CodeQL Actions | [106839633565](https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/35735298245/job/106839633565) | Current-head analysis and required-wrapper settlement |
+| CodeQL Python | [106839633554](https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/35735298245/job/106839633554) | Current-head analysis and required-wrapper settlement |
+| Noema | [106842255571](https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/35735295741/job/106842255571) | Published exact-head model verdict and valid continuation authority |
+| Strix | [106845076759](https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/35735295779/job/106845076759) | Authoritative scan, trusted binder, and working provider path |
+| OpenCode | [106839384622](https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/35735295744/job/106839384622) | Authenticated independent verdict, coverage evidence, and wrapper settlement |
+
+The original CodeQL wrapper reported dispatch pending its terminal verdict.
+OpenCode reported that neither APPROVED nor CHANGES_REQUESTED from its
+authenticated reviewer identity was present on the head. Noema failed both
+preparation and re-dispatch; the latter recorded HTTP 403. Strix recorded
+provider unavailability and a missing binder, which need separate repairs.
+
+Central [PR #2429](https://github.com/ContextualWisdomLab/.github/pull/2429)
+landed as `24bdfe0b4fcd093cac4047433211d2cd59d53b43`. Its final Noema routing
+admits only the central repository, contextual-orchestrator, and fast-mlsirm,
+and requires the exact central main workflow identity. The model runner group
+received fast-mlsirm access while retaining repository and workflow restrictions.
+Ninety affected local tests passed, but the integration used administrative
+bypass with hosted checks queued and no independent approval. It is not live
+consumer verdict proof.
+
+Central [PR #2430](https://github.com/ContextualWisdomLab/.github/pull/2430)
+landed as `ec38bffa3ca144c562dabd4ed239d5cacd083078`. The frozen full shell
+harness on `0d83b453731cc491403d80da3312be718fd61a72` terminated with exit
+zero and `test_strix_quick_gate: PASS`. The predecessor's four failed
+assertions were confined to one source-preservation case and were repaired.
+Final candidate `5095d01a446f580de3018d413988cff6ec978972` integrated fresh
+central main without changing the tested harness or production gate bytes;
+44 boundary/runtime/binder tests passed again. The merge used authorized
+administrative bypass; hosted checks were queued or cancelled and there was
+no independent approval. This partial carryover does not retire every unique
+delta in central PR #2291 or prove an actual provider scan.
+
+The five original failed-check gaps remain open until genuine current-head
+consumer runs prove the repaired gates. A queued job, an earlier head's green
+check, local test results, preserved SARIF, and an administrative merge each
+prove different things; none substitutes for all required terminal results.
+Release license and wheel machinery changes in contextual-orchestrator also
+do not establish an approved published artifact or deployed runtime version.
+
+## 2026-09-27 control routing and continuation delivery
+
+Central [PR #2432](https://github.com/ContextualWisdomLab/.github/pull/2432)
+landed as `7bc3e689493fd737fc619991b7349d6759a77f40`. Noema continuation
+now dispatches to the central handler with the existing central credential,
+while checking live head/base, repository and non-fork identity. Independent
+verification passed its 13 continuation contract tests; runtime dispatch and
+the actual model verdict remain unproven.
+
+Central [PR #2436](https://github.com/ContextualWisdomLab/.github/pull/2436)
+landed as `3b36b89ef7c820f715e2d28c08d25fe697fc1f23`. The prior consumer
+Strix admission job `108617323217` selected hosted `ubuntu-24.04`, so added
+self-hosted runners could not accept it. Four metadata-only jobs now use the
+existing control group when the workflow is exactly central main and the
+caller is central or fast-mlsirm. The scan image and evidence rules remain.
+Group 6 permits this central main workflow and preserves its restrictions.
+The baseline routing test failed; 21 affected tests, actionlint and whitespace
+checks passed after fresh-main integration. The merge used authorized admin
+bypass with hosted checks queued and no independent approval.
+
+The existing jobs on `4eaeb799a6647ea29f3f4902d9ca79a1377e795c` were queued
+without assigned runner fields at the last direct observation. Their source
+revision predates these repairs. This audit update produces a genuine new
+consumer head for verification against the delivered central policy. Neither
+old queue state nor new runner selection proves a terminal gate outcome.
+
+## Consumer source-selection receipt
+
+On consumer head `9043db95bd994f81e7a69079d0c866a846d6fd22`, new Strix
+admission job `108620946861` and Noema admission job `108620947289` both
+selected `self-hosted`, `linux`, `x64`, `cwlab-control`. Direct job responses
+were still queued with no assigned runner; this proves policy selection only.
+Control group membership confirmed both runners have all required labels,
+and both were busy in that subsequent observation. Nonatomic snapshots do
+not establish a scheduling defect or a complete capacity forecast.
+
+The present update records #2430 delivery and produces a new genuine consumer
+head using that delivered central source. The five required terminal proofs
+remain outstanding.
