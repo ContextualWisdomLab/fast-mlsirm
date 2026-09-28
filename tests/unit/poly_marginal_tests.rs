@@ -1,6 +1,91 @@
 use super::*;
 
 #[test]
+fn workspace_estimate_checks_large_dimensions_without_allocating_them() {
+    let large_estimate = lsirm_workspace_bytes(1, 1, 64, 3, PolyModel::Gpcm, 81, 41, 1);
+    let two_table_payloads = 2u64 * 81 * 41u64.pow(3) * 64 * 8;
+    if usize::BITS >= 64 {
+        assert!(large_estimate.unwrap() as u64 > two_table_payloads);
+    } else {
+        assert!(large_estimate.is_err());
+    }
+    assert!(lsirm_workspace_bytes(usize::MAX, 1, 2, 1, PolyModel::Grm, 7, 7, 1).is_err());
+    assert!(lsirm_workspace_bytes(1, usize::MAX, 2, 1, PolyModel::Grm, 7, 7, 1).is_err());
+}
+
+#[test]
+fn explicit_workspace_budget_rejects_small_request() {
+    for model_family in [PolyModel::Grm, PolyModel::Gpcm] {
+        let rejected_fit = fit_poly_lsirm_with_budget(
+            &[0],
+            None,
+            1,
+            1,
+            2,
+            1,
+            model_family,
+            7,
+            7,
+            1,
+            1e-6,
+            Some(1),
+        );
+        assert!(rejected_fit
+            .err()
+            .unwrap()
+            .contains("workspace_budget_bytes"));
+    }
+}
+
+#[test]
+fn explicit_workspace_budget_preserves_small_fit_results() {
+    for model_family in [PolyModel::Grm, PolyModel::Gpcm] {
+        let response_values = [0, 1, 1, 0];
+        let required_bytes = lsirm_workspace_bytes(2, 2, 2, 1, model_family, 7, 7, 1).unwrap();
+        for rejected_budget in [0, required_bytes - 1] {
+            assert!(fit_poly_lsirm_with_budget(
+                &response_values, None, 2, 2, 2, 1, model_family, 7, 7, 1, 1e-6,
+                Some(rejected_budget),
+            ).is_err());
+        }
+        let legacy_fit = fit_poly_lsirm(
+            &response_values,
+            None,
+            2,
+            2,
+            2,
+            1,
+            model_family,
+            7,
+            7,
+            1,
+            1e-6,
+        )
+        .unwrap();
+        let budgeted_fit = fit_poly_lsirm_with_budget(
+            &response_values,
+            None,
+            2,
+            2,
+            2,
+            1,
+            model_family,
+            7,
+            7,
+            1,
+            1e-6,
+            Some(required_bytes),
+        )
+        .unwrap();
+        assert_eq!(legacy_fit.loglik, budgeted_fit.loglik);
+        assert_eq!(legacy_fit.slope, budgeted_fit.slope);
+        assert_eq!(legacy_fit.cat_params, budgeted_fit.cat_params);
+        assert_eq!(legacy_fit.xi_eap, budgeted_fit.xi_eap);
+        assert_eq!(legacy_fit.loglik_trace, budgeted_fit.loglik_trace);
+    }
+}
+
+#[test]
 fn lsirm_rejects_unbounded_categories_and_iterations() {
     let y = [0usize];
     assert!(fit_poly_lsirm(

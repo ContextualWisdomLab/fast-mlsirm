@@ -211,6 +211,105 @@ fn m_step_item(mut params: Vec<f64>, c: &ItemCtx, n_newton: usize) -> Vec<f64> {
     params
 }
 
+/// Conservative logical workspace charge for already-validated dimensions.
+#[allow(clippy::too_many_arguments)]
+fn lsirm_workspace_bytes(
+    person_count: usize,
+    item_count: usize,
+    category_count: usize,
+    latent_dimension: usize,
+    model_family: PolyModel,
+    theta_count: usize,
+    xi_count: usize,
+    iteration_limit: usize,
+) -> Result<usize, String> {
+    let checked_sum = |size_terms: &[usize]| -> Result<usize, String> {
+        size_terms.iter().try_fold(0usize, |running_total, &size_term| {
+            crate::checked_add_usize(running_total, size_term, "core workspace size overflows usize")
+        })
+    };
+    let checked_product = |size_factors: &[usize]| -> Result<usize, String> {
+        size_factors.iter().try_fold(1usize, |running_product, &size_factor| {
+            crate::checked_mul_usize(running_product, size_factor, "core workspace size overflows usize")
+        })
+    };
+    let scalar_bytes = std::mem::size_of::<f64>();
+    let row_header_bytes = std::mem::size_of::<Vec<f64>>();
+    let grid_count = xi_count
+        .checked_pow(latent_dimension as u32)
+        .ok_or("core workspace size overflows usize")?;
+    let node_count = checked_product(&[theta_count, grid_count])?;
+    let parameter_count = checked_sum(&[category_count, latent_dimension])?;
+    let item_headers = checked_product(&[item_count, row_header_bytes])?;
+    let table_bytes = checked_sum(&[
+        checked_product(&[item_count, node_count, category_count, scalar_bytes])?,
+        item_headers,
+    ])?;
+    let persistent_elements = checked_sum(&[
+        theta_count,
+        checked_product(&[grid_count, checked_sum(&[latent_dimension, 1])?])?,
+        checked_product(&[item_count, parameter_count])?,
+        checked_sum(&[iteration_limit, 1])?,
+    ])?;
+    // Both termination strings can coexist during assignment; outer Vec headers
+    // are on the stack, whereas nested row headers live in their outer buffer.
+    let persistent_bytes = checked_sum(&[
+        checked_product(&[persistent_elements, scalar_bytes])?,
+        item_headers,
+        "max_iter".len(),
+        "tolerance".len(),
+        "observed_loglik_abs_delta".len(),
+    ])?;
+    let (cell_scratch, gradient_scratch) = match model_family {
+        PolyModel::Grm => (category_count, checked_product(&[3, category_count])? - 1),
+        PolyModel::Gpcm => (
+            checked_product(&[4, category_count])?,
+            checked_product(&[7, category_count])? - 2,
+        ),
+    };
+    // Six parameter-sized buffers bound params, original gradient, step or
+    // perturbed parameters, candidate, objective gradient, and its return value.
+    // Charge the Hessian even in backtracking, after solve_small has freed it.
+    // Gradient scratch includes the caller's live category log-probabilities.
+    let m_step_bytes = checked_sum(&[
+        checked_product(&[
+            checked_sum(&[
+                checked_product(&[6, parameter_count])?,
+                gradient_scratch,
+                checked_product(&[parameter_count, parameter_count])?,
+            ])?,
+            scalar_bytes,
+        ])?,
+        checked_product(&[parameter_count, row_header_bytes])?,
+    ])?;
+    let em_bytes = checked_sum(&[
+        persistent_bytes,
+        checked_product(&[2, table_bytes])?,
+        checked_product(&[node_count, scalar_bytes])?,
+        m_step_bytes,
+        checked_product(&[cell_scratch, scalar_bytes])?,
+    ])?;
+    let output_elements = checked_sum(&[
+        item_count,
+        checked_product(&[item_count, category_count - 1])?,
+        checked_product(&[item_count, latent_dimension])?,
+        checked_product(&[person_count, checked_sum(&[latent_dimension, 2])?])?,
+        node_count,
+        cell_scratch,
+    ])?;
+    let scoring_bytes = checked_sum(&[
+        persistent_bytes,
+        table_bytes,
+        item_headers,
+        checked_product(&[output_elements, scalar_bytes])?,
+    ])?;
+    let initialization_bytes = checked_sum(&[
+        persistent_bytes,
+        checked_product(&[category_count, scalar_bytes])?,
+    ])?;
+    Ok(em_bytes.max(scoring_bytes).max(initialization_bytes))
+}
+
 /// Fit a unidimensional-trait polytomous LSIRM by marginal EM (fixed gamma = 1,
 /// distance interaction). `y` is `n_persons * n_items` row-major categories
 /// `0..n_cat-1`; `observed` marks non-missing cells (None = all observed).
@@ -227,6 +326,33 @@ pub fn fit_poly_lsirm(
     q_xi: usize,
     max_iter: usize,
     tol: f64,
+) -> Result<PolyLsirmFit, String> {
+    fit_poly_lsirm_with_budget(
+        y, observed, n_persons, n_items, n_cat, latent_dim, model, q_theta, q_xi, max_iter, tol,
+        None,
+    )
+}
+
+/// Fit with an optional caller-supplied limit on estimated core workspace bytes.
+///
+/// Admission precedes grid/table allocation. The estimate conservatively counts
+/// logical vector payloads, heap-resident row headers, and owned receipt strings.
+/// It does not bound allocator overhead/retention, process RSS, caller inputs,
+/// or Python conversion buffers. `None` preserves the legacy unlimited policy.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_poly_lsirm_with_budget(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    latent_dim: usize,
+    model: PolyModel,
+    q_theta: usize,
+    q_xi: usize,
+    max_iter: usize,
+    tol: f64,
+    workspace_budget_bytes: Option<usize>,
 ) -> Result<PolyLsirmFit, String> {
     if n_persons == 0 || n_items == 0 {
         return Err("n_persons and n_items must be positive".into());
@@ -265,6 +391,24 @@ pub fn fit_poly_lsirm(
         }
     }
     let (theta, t_w) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
+    let (xi_nodes, _) = crate::quadrature::require_gh_rule(q_xi, "q_xi")?;
+    let estimated_workspace_bytes = lsirm_workspace_bytes(
+        n_persons,
+        n_items,
+        n_cat,
+        latent_dim,
+        model,
+        theta.len(),
+        xi_nodes.len(),
+        max_iter,
+    )?;
+    if let Some(budget_bytes) = workspace_budget_bytes {
+        if budget_bytes == 0 || estimated_workspace_bytes > budget_bytes {
+            return Err(format!(
+                "estimated core workspace {estimated_workspace_bytes} bytes exceeds workspace_budget_bytes={budget_bytes}; provide a positive budget sufficient for the requested fit"
+            ));
+        }
+    }
     let t_logw: Vec<f64> = t_w.iter().map(|w| w.ln()).collect();
     let (xi_grid, x_logw) = xi_tensor_grid(q_xi, latent_dim)?;
     let n_xi = x_logw.len();

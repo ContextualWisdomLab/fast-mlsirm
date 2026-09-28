@@ -546,6 +546,7 @@ def fit_lsirm_polytomous(
     q_xi: int = 11,
     max_iter: int = 60,
     tol: float = 1e-5,
+    workspace_budget_bytes: int | None = None,
 ) -> PolyLsirmFit:
     """Fit a latent-space polytomous LSIRM (GRM/GPCM cell in an interaction map)
     by marginal EM — all compute in the Rust core (``poly_marginal``). The
@@ -555,6 +556,11 @@ def fit_lsirm_polytomous(
     ``n_cat`` is limited to 2..64 and ``max_iter`` to 1..100,000. Convergence
     is reported from the observed-data likelihood evaluated at each returned
     parameter state; the MAP penalties are excluded from this criterion.
+    An explicit positive ``workspace_budget_bytes`` rejects fits whose estimated
+    core workspace exceeds that budget before allocating the quadrature grid.
+    This covers logical Rust workspace payloads, not process RSS, allocator
+    overhead, caller arrays, or Python conversion buffers. ``None`` sets no
+    workspace limit and does not provide protection from memory exhaustion.
     """
     m = _fit_model(model)
     validated_n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
@@ -574,6 +580,12 @@ def fit_lsirm_polytomous(
     validated_max_iter = _bounded_integer(max_iter, "max_iter", 1, MAX_MAX_ITER)
     validated_tol = _positive_real(tol, "tol")
 
+    validated_workspace_budget = (
+        None if workspace_budget_bytes is None else _bounded_integer(
+            workspace_budget_bytes, "workspace_budget_bytes", 1, int(np.iinfo(np.uintp).max)
+        )
+    )
+
     y_int, observed = _poly_int_and_mask(responses, validated_n_cat)
     validation_y = np.where(observed, y_int, np.nan)
     validate_irt_response_matrix(
@@ -590,6 +602,7 @@ def fit_lsirm_polytomous(
     res = core.fit_poly_lsirm(
         y_int.reshape(-1), int(n_persons), int(n_items), validated_n_cat, validated_latent_dim,
         obs_arg, m, validated_q_theta, validated_q_xi, validated_max_iter, validated_tol,
+        validated_workspace_budget,
     )
     return PolyLsirmFit(
         model=m,
