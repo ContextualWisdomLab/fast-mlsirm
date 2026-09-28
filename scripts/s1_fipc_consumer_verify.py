@@ -64,22 +64,6 @@ def _git_sha() -> str | None:
     return value if value else None
 
 
-def _provenance() -> dict[str, object]:
-    extension = Path(_core.__file__).resolve()
-    # Do not infer build_source_sha from the consumer checkout: a stale shared
-    # wheel can be loaded by a fresh checkout.  The build pipeline must pass it
-    # explicitly, and the distinction remains visible in the JSON receipt.
-    build_source_sha = os.environ.get("FIPC_BUILD_SOURCE_SHA") or None
-    consumer_sha = os.environ.get("FIPC_CONSUMER_SHA") or _git_sha()
-    return {
-        "sha": consumer_sha,
-        "build_source_sha": build_source_sha,
-        "build_source_sha_present": build_source_sha is not None,
-        "loaded_extension": str(extension),
-        "loaded_extension_sha256": _sha256(extension),
-    }
-
-
 def simulate(seed: int, mean: np.ndarray, scale: np.ndarray) -> np.ndarray:
     rng = np.random.default_rng(seed)
     z0, z1 = rng.normal(size=(2, N_PERSONS))
@@ -143,56 +127,79 @@ def _arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
-    args = _arguments()
-    results: dict[str, object] = {
-        "sha": args.consumer_sha,
-        "build_source_sha": args.build_source_sha,
-        "build_source_sha_present": args.build_source_sha is not None,
-    }
-    extension = Path(_core.__file__).resolve()
-    results["loaded_extension"] = str(extension)
-    results["loaded_extension_sha256"] = _sha256(extension)
+GATES = (
+    "responses_fit_eap_expected_raw", "non_unit_focal_prior", "row_order",
+    "anchor_rows_fixed", "convergence_failure", "orthogonal_specific_prior_fixed",
+    "wrong_model_reject",
+)
+
+
+def _fipc_gates(results: dict[str, object]) -> None:
     reference_y = simulate(SEED, np.zeros(N_PRIMARY), np.ones(N_PRIMARY))
+    reference = _core.fit_two_tier_grm(
+        reference_y.reshape(-1), np.ones(reference_y.size, dtype=bool),
+        PRIMARY_MAP.reshape(-1), SPECIFIC_MAP, N_PERSONS, N_ITEMS, N_PRIMARY,
+        N_SPECIFIC, N_CAT, 7, 7, 100, 1e-5, 1, SEED,
+    )
+    fixed = {k: np.asarray(reference[k], dtype=np.float64) for k in ("a_primary", "a_specific", "threshold")}
+    focal_y = simulate(SEED + 1, np.array([0.65, -0.35]), np.array([1.25, 0.8]))
+    fit = call_fipc(focal_y, fixed)
+    results["responses_fit_eap_expected_raw"] = bool(fit["converged"] and np.isfinite(fit["theta_p_eap"]).all() and np.isfinite(expected_raw(np.asarray(fit["theta_p_eap"]), fit)).all())
+    results["non_unit_focal_prior"] = bool(np.max(np.abs(np.asarray(fit["primary_mean"])) > 0.1) and np.max(np.asarray(fit["primary_sd"])) > 1.01)
+    perm = np.random.default_rng(17).permutation(N_PERSONS)
+    perm_fit = call_fipc(focal_y[perm], fixed)
+    row_error = np.asarray(fit["theta_p_eap"])[perm] - np.asarray(perm_fit["theta_p_eap"])
+    results["row_order_max_abs"] = float(np.max(np.abs(row_error)))
+    results["row_order_rmse"] = float(np.sqrt(np.mean(np.square(row_error))))
+    results["row_order"] = bool(np.allclose(row_error, 0.0, atol=ROW_ORDER_ATOL, rtol=ROW_ORDER_RTOL))
+    results["row_order_diagnosis"] = "pass" if results["row_order"] else "refit_order_dependence"
+    results["anchor_rows_fixed"] = bool(np.array_equal(np.asarray(fit["a_primary"])[ANCHOR], fixed["a_primary"].reshape(N_ITEMS, N_PRIMARY)[ANCHOR]) and np.array_equal(np.asarray(fit["threshold"])[ANCHOR], fixed["threshold"].reshape(N_ITEMS, N_CAT - 1)[ANCHOR]))
+    fail = call_fipc(focal_y, fixed, max_iter=1)
+    results["convergence_failure"] = bool(not fail["converged"] and fail["termination_reason"] == "max_iter_reached")
+    results["orthogonal_specific_prior_fixed"] = bool(np.array_equal(np.asarray(fit["specific_sd"]), np.ones(N_SPECIFIC)))
+    bad_map = PRIMARY_MAP.copy()
+    bad_map[:, 1] = False
     try:
-        reference = _core.fit_two_tier_grm(
-            reference_y.reshape(-1), np.ones(reference_y.size, dtype=bool),
-            PRIMARY_MAP.reshape(-1), SPECIFIC_MAP, N_PERSONS, N_ITEMS, N_PRIMARY,
-            N_SPECIFIC, N_CAT, 7, 7, 100, 1e-5, 1, SEED,
-            e_step_n_chunks=1, e_step_n_threads=1,
-        )
-        fixed = {k: np.asarray(reference[k], dtype=np.float64) for k in ("a_primary", "a_specific", "threshold")}
-        focal_y = simulate(SEED + 1, np.array([0.65, -0.35]), np.array([1.25, 0.8]))
-        fit = call_fipc(focal_y, fixed)
-        results["responses_fit_eap_expected_raw"] = bool(fit["converged"] and np.isfinite(fit["theta_p_eap"]).all() and np.isfinite(expected_raw(np.asarray(fit["theta_p_eap"]), fit)).all())
-        results["non_unit_focal_prior"] = bool(np.max(np.abs(np.asarray(fit["primary_mean"])) > 0.1) and np.max(np.asarray(fit["primary_sd"])) > 1.01)
-        perm = np.random.default_rng(17).permutation(N_PERSONS)
-        perm_fit = call_fipc(focal_y[perm], fixed)
-        row_error = np.asarray(fit["theta_p_eap"])[perm] - np.asarray(perm_fit["theta_p_eap"])
-        results["row_order_max_abs"] = float(np.max(np.abs(row_error)))
-        results["row_order_rmse"] = float(np.sqrt(np.mean(np.square(row_error))))
-        results["row_order"] = bool(np.allclose(row_error, 0.0, atol=ROW_ORDER_ATOL, rtol=ROW_ORDER_RTOL))
-        results["row_order_diagnosis"] = "pass" if results["row_order"] else "refit_order_dependence"
-        results["anchor_rows_fixed"] = bool(np.array_equal(np.asarray(fit["a_primary"])[ANCHOR], fixed["a_primary"].reshape(N_ITEMS, N_PRIMARY)[ANCHOR]) and np.array_equal(np.asarray(fit["threshold"])[ANCHOR], fixed["threshold"].reshape(N_ITEMS, N_CAT - 1)[ANCHOR]))
-        fail = call_fipc(focal_y, fixed, max_iter=1)
-        results["convergence_failure"] = bool(not fail["converged"] and fail["termination_reason"] == "max_iter_reached")
-        results["orthogonal_specific_prior_fixed"] = bool(np.array_equal(np.asarray(fit["specific_sd"]), np.ones(N_SPECIFIC)))
-    except Exception as exc:
-        results["fipc_fit_error"] = f"{type(exc).__name__}: {exc}"
-        for key in ("responses_fit_eap_expected_raw", "non_unit_focal_prior", "row_order", "anchor_rows_fixed", "convergence_failure", "orthogonal_specific_prior_fixed"):
-            results[key] = False
-        results["row_order_max_abs"] = None
-        results["row_order_rmse"] = None
-        results["row_order_diagnosis"] = "fit_error"
-    try:
-        bad_map = PRIMARY_MAP.copy(); bad_map[:, 1] = False
         _core.fit_two_tier_grm_fipc(focal_y.reshape(-1), np.ones(focal_y.size, dtype=bool), bad_map.reshape(-1), SPECIFIC_MAP, N_PERSONS, N_ITEMS, N_PRIMARY, N_SPECIFIC, N_CAT, ANCHOR, fixed["a_primary"], fixed["a_specific"], fixed["threshold"], 7, 7, 10, 1e-5, 5, 1e-8, False)
         results["wrong_model_reject"] = False
     except Exception as exc:
         results["wrong_model_reject"] = "primary" in str(exc) or "map" in str(exc)
-    results["expected_raw_range"] = None
-    results["all_pass"] = all(v is True for k, v in results.items() if k not in {"sha", "build_source_sha", "build_source_sha_present", "loaded_extension", "loaded_extension_sha256", "expected_raw_range", "row_order_max_abs", "row_order_rmse", "row_order_diagnosis"})
-    print(json.dumps(results, sort_keys=True))
+
+
+def build_receipt(consumer_sha: str | None, build_source_sha: str | None) -> dict[str, object]:
+    extension = Path(_core.__file__).resolve()
+    results: dict[str, object] = {
+        "sha": consumer_sha,
+        "build_source_sha": build_source_sha,
+        "build_source_sha_present": build_source_sha is not None,
+        "loaded_extension": str(extension),
+        "loaded_extension_sha256": _sha256(extension),
+        "expected_raw_range": None,
+        "row_order_max_abs": None,
+        "row_order_rmse": None,
+    }
+    results.update(dict.fromkeys(GATES, False))
+    # The FIPC binding ships separately from this receipt; say so rather than
+    # reporting a TypeError as a failed fit.
+    if not hasattr(_core, "fit_two_tier_grm_fipc"):
+        results["row_order_diagnosis"] = "binding_unavailable"
+    else:
+        try:
+            _fipc_gates(results)
+        except Exception as exc:
+            results.update(dict.fromkeys(GATES, False))
+            results["row_order_max_abs"] = None
+            results["row_order_rmse"] = None
+            results["row_order_diagnosis"] = "fit_error"
+            results["fipc_fit_error"] = f"{type(exc).__name__}: {exc}"
+    results["all_pass"] = all(results[key] is True for key in GATES)
+    return results
+
+
+def main() -> None:
+    args = _arguments()
+    receipt = build_receipt(args.consumer_sha, args.build_source_sha)
+    print(json.dumps(receipt, sort_keys=True))
 
 
 if __name__ == "__main__":

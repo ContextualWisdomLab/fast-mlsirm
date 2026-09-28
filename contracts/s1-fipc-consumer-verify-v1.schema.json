@@ -20,7 +20,7 @@
     "row_order": {"type": "boolean"},
     "row_order_max_abs": {"type": ["number", "null"], "minimum": 0},
     "row_order_rmse": {"type": ["number", "null"], "minimum": 0},
-    "row_order_diagnosis": {"enum": ["pass", "refit_order_dependence", "fit_error"]},
+    "row_order_diagnosis": {"enum": ["pass", "refit_order_dependence", "fit_error", "binding_unavailable"]},
     "anchor_rows_fixed": {"type": "boolean"},
     "convergence_failure": {"type": "boolean"},
     "orthogonal_specific_prior_fixed": {"type": "boolean"},
