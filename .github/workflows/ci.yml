@@ -48,7 +48,8 @@ jobs:
   python:
     name: python
     needs: python-matrix
-    if: ${{ always() && (github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed')) }}
+    # https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#always
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed')) }}
     runs-on: ubuntu-latest
     steps:
       - name: Require every CPython matrix leg
