@@ -27,3 +27,17 @@ python3 verify_sdist.py
 This is a 0.11.4 package-scope test of a development dependency change. It
 does not prove a 0.11.5 release, original Python three-HOLD closure, Cargo
 rights, native twelve-leg validation or published twelve-wheel acceptance.
+
+## Integration result
+
+PR #2252 merged at 2026-09-28 06:12:13 UTC as
+`0a5eae2b3ec691530fe32e8d362c2417c1d8920c` from the exact validated
+head. The merge and PR-head trees are identical at
+`8c7c8880581a410e41ce28eb0ebf6e4a7ba65dbc`; see `merge-proof.json`.
+Queued hosted checks were not treated as passed. Mac CPython 3.14 locked sync
+and all 247 inventory tests passed before merge. On s1 Linux CPython 3.12,
+locked dev sync and all 247 inventory tests also passed; the installed full
+Apache notice matched SHA256 `cfc7749b...`. Its original logs are retained
+here. The sdist `PKG-INFO` names `sortedcontainers==2.4.0` for the dev extra
+without a local wheel path. No 0.11.5 tag or PyPI version existed at the
+post-merge check.

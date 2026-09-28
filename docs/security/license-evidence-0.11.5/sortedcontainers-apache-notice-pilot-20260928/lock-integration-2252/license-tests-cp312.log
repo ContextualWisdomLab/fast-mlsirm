@@ -1,0 +1,11 @@
+........................................................................ [ 29%]
+........................................................................ [ 58%]
+........................................................................ [ 87%]
+...............................                                          [100%]
+=============================== warnings summary ===============================
+tests/test_license_inventory_generator.py::test_duplicate_wheel_member_holds_before_last_entry_can_mask_first
+  /home/seongho/.local/share/uv/python/cpython-3.12.11-linux-x86_64-gnu/lib/python3.12/zipfile/__init__.py:1611: UserWarning: Duplicate name: 'pkg-1.0.dist-info/licenses/NOTICE'
+    return self._open_to_write(zinfo, force_zip64=force_zip64)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+247 passed, 1 warning in 8.45s

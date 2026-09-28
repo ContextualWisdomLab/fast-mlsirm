@@ -1,0 +1,20 @@
+Using CPython 3.12.11 interpreter at: /home/seongho/.local/share/uv/python/cpython-3.12.11-linux-x86_64-gnu/bin/python3.12
+Creating virtual environment at: .venv-cp312
+Resolved 11 packages in 292ms
+Downloading numpy (15.9MiB)
+Downloading hypothesis (1.1MiB)
+ Downloading hypothesis
+ Downloading numpy
+Prepared 2 packages in 1.61s
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 8 packages in 1.98s
+ + hypothesis==6.156.6
+ + iniconfig==2.3.0
+ + numpy==2.5.1
+ + packaging==26.2
+ + pluggy==1.6.0
+ + pygments==2.20.0
+ + pytest==9.1.1
+ + sortedcontainers==2.4.0 (from file:///data/orca/workspaces/fmls-sortedcontainers-lock-2252-20260928/third_party/wheels/sortedcontainers-2.4.0-py3-none-any.whl)

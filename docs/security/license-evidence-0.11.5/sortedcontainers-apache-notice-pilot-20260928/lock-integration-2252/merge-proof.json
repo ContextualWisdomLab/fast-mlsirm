@@ -1,0 +1,31 @@
+{
+  "base_head_before_merge": "3a05e8a0dfec52977a2d2aa3dce70d2de12b0275",
+  "completed_hosted_security": [
+    "Semgrep (multi-language SAST)",
+    "osv-scan",
+    "dependency-review",
+    "trivy-fs"
+  ],
+  "exact_pr_head": "3d3d7ce35d7107df62d359b33b5bc90392ee8edf",
+  "local_checks": {
+    "license_inventory_cpython312": 247,
+    "license_inventory_cpython314": 247,
+    "release_contracts_cpython312": 88,
+    "s1_linux_license_inventory": 247,
+    "trivy_fixable_high_critical": 0,
+    "upstream_sortedcontainers_tests_cpython312": 364
+  },
+  "merge_commit": "0a5eae2b3ec691530fe32e8d362c2417c1d8920c",
+  "merge_method": "admin bypass with --match-head-commit, user-authorized due hosted queue",
+  "merge_tree_equals_pr_head_tree": "8c7c8880581a410e41ce28eb0ebf6e4a7ba65dbc",
+  "merged_at": "2026-09-28T06:12:13Z",
+  "pr": 2252,
+  "pypi_0_11_5_after_merge_http": 404,
+  "queued_hosted_checks_at_merge": "not treated as success",
+  "scope": "dev/fuzz sortedcontainers local notice wheel only; original Python/Cargo HOLDs and published 12-wheel acceptance remain",
+  "sdist_contains_third_party": false,
+  "sdist_member_count": 529,
+  "sdist_sha256": "25dd09d899ff0dc1103b3917c7d98ff71132afedcce88fcc523e4b6fc0108a4f",
+  "url": "https://github.com/ContextualWisdomLab/fast-mlsirm/pull/2252",
+  "v0_11_5_tag_after_merge": false
+}
