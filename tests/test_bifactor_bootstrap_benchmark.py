@@ -106,6 +106,9 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_and_parity() -> None:
         res_cpu.replicate_a_general, res_gpu.replicate_a_general, atol=1e-6, rtol=0
     )
     np.testing.assert_allclose(
+        res_cpu.replicate_a_specific, res_gpu.replicate_a_specific, atol=1e-6, rtol=0
+    )
+    np.testing.assert_allclose(
         res_cpu.replicate_threshold, res_gpu.replicate_threshold, atol=1e-6, rtol=0
     )
 
@@ -191,6 +194,9 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_q121() -> None:
     assert res_cpu.n_converged == res_gpu.n_converged
     np.testing.assert_allclose(
         res_cpu.replicate_a_general, res_gpu.replicate_a_general, atol=1e-6, rtol=0
+    )
+    np.testing.assert_allclose(
+        res_cpu.replicate_a_specific, res_gpu.replicate_a_specific, atol=1e-6, rtol=0
     )
     np.testing.assert_allclose(
         res_cpu.replicate_threshold, res_gpu.replicate_threshold, atol=1e-6, rtol=0
