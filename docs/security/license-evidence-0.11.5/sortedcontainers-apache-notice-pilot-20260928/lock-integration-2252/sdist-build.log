@@ -1,0 +1,6 @@
+📦 Including license file `LICENSE`
+🍹 Building a mixed python/rust project
+🔗 Found pyo3 bindings
+📡 Using build options features, bindings from pyproject.toml
+📦 Including files matching "LICENSE"
+📦 Built source distribution to /data/orca/workspaces/fmls-sortedcontainers-lock-2252-20260928/dist/fast_mlsirm-0.11.4.tar.gz
