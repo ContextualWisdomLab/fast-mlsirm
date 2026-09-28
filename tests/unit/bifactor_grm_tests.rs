@@ -614,7 +614,10 @@ fn estep_duplicate_persons_scale_loglik_and_counts() {
         tg,
         ts,
         crate::Device::Cpu,
-    );
+        1,
+        1,
+    )
+    .expect("single-copy e-step");
     let (ll_twice, counts_twice) = e_step(
         &v_twice,
         &y_twice,
@@ -627,7 +630,10 @@ fn estep_duplicate_persons_scale_loglik_and_counts() {
         tg,
         ts,
         crate::Device::Cpu,
-    );
+        1,
+        1,
+    )
+    .expect("duplicated e-step");
 
     assert!(
         (ll_twice - 2.0 * ll_once).abs() <= 1e-12,
@@ -776,8 +782,9 @@ fn estep_shared_block_subvector_yields_identical_log_i() {
                 let mask = [!mask_first, true, false, false];
                 let (ll, counts) = e_step(
                     &v, row, Some(&mask), &tables, &log_wg, &log_ws,
-                    qg, qs, tg, ts, crate::Device::Cpu,
-                );
+                    qg, qs, tg, ts, crate::Device::Cpu, 1, 1,
+                )
+                .expect("masked block e-step");
                 let expected = if mask_first {
                     let terms: Vec<f64> = (0..qs)
                         .map(|h| log_ws[h]
