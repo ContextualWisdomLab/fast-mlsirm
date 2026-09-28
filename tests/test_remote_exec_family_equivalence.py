@@ -187,7 +187,18 @@ FAMILY_PAYLOADS: tuple[
     tuple[RemoteJobFamily, Callable[[], dict[str, object] | None]],
     ...,
 ] = (
-    (RemoteJobFamily.MC_REPLICATE, lambda: None),
+    (
+        RemoteJobFamily.MC_REPLICATE,
+        lambda: {
+            "config": {
+                "n_persons": 24,
+                "n_dims": 1,
+                "items_per_dim": 4,
+                "latent_dim": 1,
+                "gamma": 1.0,
+            }
+        },
+    ),
     (RemoteJobFamily.FIT_RESTART, lambda: _fit_payload(max_iter=1)),
     (RemoteJobFamily.SCORING_PERSON, _scoring_person_payload),
     (RemoteJobFamily.EM_M_STEP, lambda: _fit_payload(max_iter=1)),

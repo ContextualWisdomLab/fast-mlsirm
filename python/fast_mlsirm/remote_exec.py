@@ -31,10 +31,14 @@ import hashlib
 import json
 import os
 import platform
+import math
 import re
+import shlex
 import socket
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 import unicodedata
 from pathlib import Path
@@ -636,34 +640,69 @@ def _invoke_worker_process(
     *,
     worker_host: str,
     remote_interpreter: str,
+    stdout_limit: int,
+    timeout_seconds: float,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``fast_mlsirm.remote_worker`` locally or over SSH for ``worker_host``."""
+    """Run ``fast_mlsirm.remote_worker`` locally or over SSH for ``worker_host``.
+
+    The worker is killed after ``timeout_seconds``; at most ``stdout_limit + 1``
+    stdout bytes are read so an oversized reply is detected without buffering it.
+    stderr is spooled to a temporary file and only its tail is returned.
+    """
     worker_command = _worker_module_command(remote_interpreter)
     if _is_ssh_worker_host(worker_host):
-        # ``--`` keeps destinations that begin with ``-`` from being parsed as SSH options.
-        return subprocess.run(
-            [
-                "ssh",
-                "-o",
-                "StrictHostKeyChecking=accept-new",
-                "-o",
-                "BatchMode=yes",
-                "--",
-                worker_host,
-                *worker_command,
-            ],
-            input=payload,
-            capture_output=True,
-            text=True,
-            check=False,
+        # ``--`` keeps destinations that begin with ``-`` from being parsed as SSH
+        # options; the remote shell receives one quoted command string.
+        argv = [
+            "ssh",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            "-o",
+            "BatchMode=yes",
+            "--",
+            worker_host,
+            shlex.join(worker_command),
+        ]
+        env = None
+    else:
+        argv = worker_command
+        env = _worker_subprocess_env()
+    with tempfile.TemporaryFile() as stderr_file:
+        process = subprocess.Popen(
+            argv,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=stderr_file,
+            env=env,
         )
-    return subprocess.run(
-        worker_command,
-        input=payload,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_worker_subprocess_env(),
+        timed_out = threading.Event()
+
+        def _kill_on_timeout() -> None:
+            timed_out.set()
+            process.kill()
+
+        timer = threading.Timer(timeout_seconds, _kill_on_timeout)
+        timer.start()
+        try:
+            try:
+                process.stdin.write(payload.encode("utf-8"))
+                process.stdin.close()
+            except BrokenPipeError:
+                pass
+            stdout = process.stdout.read(stdout_limit + 1)
+            if len(stdout) > stdout_limit:
+                process.kill()
+            returncode = process.wait()
+        finally:
+            timer.cancel()
+        stderr_file.seek(0, os.SEEK_END)
+        stderr_file.seek(max(0, stderr_file.tell() - 4096))
+        stderr = stderr_file.read().decode("utf-8", errors="replace")
+    if timed_out.is_set():
+        returncode = returncode or -9
+        stderr = f"remote worker timed out after {timeout_seconds:g}s"
+    return subprocess.CompletedProcess(
+        argv, returncode, stdout.decode("utf-8", errors="replace"), stderr
     )
 
 
@@ -847,7 +886,9 @@ class LoopbackExecutor:
                     driver_pid=os.getpid(),
                 )
             )
-        return tuple(sorted(outcomes, key=lambda outcome: outcome.unit_index))
+        return tuple(
+            sorted(outcomes, key=lambda outcome: (outcome.unit_index, outcome.run_id))
+        )
 
 
 class SubprocessExecutor:
@@ -862,8 +903,16 @@ class SubprocessExecutor:
         remote_interpreter: str | None = None,
         ledger: OutcomeCommitLedger | None = None,
         driver_host: str | None = None,
+        timeout_seconds: float = 3600.0,
     ) -> None:
         self.worker_host = _text(worker_host, "worker_host", maximum=128)
+        if (
+            type(timeout_seconds) not in (int, float)
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be a finite positive number")
+        self.timeout_seconds = float(timeout_seconds)
         if remote_interpreter is None:
             if _is_ssh_worker_host(self.worker_host):
                 raise ValueError(
@@ -899,16 +948,13 @@ class SubprocessExecutor:
                     "worker manifest is incompatible with envelope cohort "
                     f"(run_id={envelope.run_id!r}, unit_index={envelope.unit_index})"
                 )
-            if envelope.family is not RemoteJobFamily.MC_REPLICATE:
-                if payload is None:
-                    raise ValueError(
-                        f"payload is required for {envelope.family.value}"
-                    )
-                if payload_sha256 != envelope.manifest.payload_sha256:
-                    raise CohortMismatchError(
-                        "payload identity is incompatible with envelope cohort "
-                        f"(run_id={envelope.run_id!r}, unit_index={envelope.unit_index})"
-                    )
+            if payload is None:
+                raise ValueError(f"payload is required for {envelope.family.value}")
+            if payload_sha256 != envelope.manifest.payload_sha256:
+                raise CohortMismatchError(
+                    "payload identity is incompatible with envelope cohort "
+                    f"(run_id={envelope.run_id!r}, unit_index={envelope.unit_index})"
+                )
 
         outcomes: list[RemoteJobOutcome] = []
         for envelope in envelope_batch:
@@ -928,7 +974,9 @@ class SubprocessExecutor:
             if outcome.delivery_state is RemoteJobDeliveryState.COMPLETED:
                 outcome = self._ledger.commit_success(fingerprint, outcome)
             outcomes.append(outcome)
-        return tuple(sorted(outcomes, key=lambda outcome: outcome.unit_index))
+        return tuple(
+            sorted(outcomes, key=lambda outcome: (outcome.unit_index, outcome.run_id))
+        )
 
     def _execute_one(
         self,
@@ -959,6 +1007,8 @@ class SubprocessExecutor:
                 payload,
                 worker_host=self.worker_host,
                 remote_interpreter=self.remote_interpreter,
+                stdout_limit=self._MAX_WORKER_STDOUT_BYTES,
+                timeout_seconds=self.timeout_seconds,
             )
         except OSError as exc:
             elapsed = time.perf_counter() - started
@@ -987,9 +1037,8 @@ class SubprocessExecutor:
             )
 
         elapsed = time.perf_counter() - started
-        if completed.returncode != 0:
-            stderr = (completed.stderr or "").strip()
-            message = stderr or f"remote worker exited with code {completed.returncode}"
+        stdout = completed.stdout or ""
+        if len(stdout.encode("utf-8")) > self._MAX_WORKER_STDOUT_BYTES:
             return RemoteJobOutcome(
                 run_id=envelope.run_id,
                 unit_index=envelope.unit_index,
@@ -997,7 +1046,7 @@ class SubprocessExecutor:
                 family=envelope.family,
                 delivery_state=RemoteJobDeliveryState.FAILED,
                 result=None,
-                error_message=message,
+                error_message="remote worker stdout exceeded bound",
                 provenance=local_worker_provenance(
                     worker_manifest,
                     requested_device=requested_device,
@@ -1014,8 +1063,9 @@ class SubprocessExecutor:
                 driver_pid=self._driver_pid,
             )
 
-        stdout = completed.stdout or ""
-        if len(stdout.encode("utf-8")) > self._MAX_WORKER_STDOUT_BYTES:
+        if completed.returncode != 0:
+            stderr = (completed.stderr or "").strip()
+            message = stderr or f"remote worker exited with code {completed.returncode}"
             return RemoteJobOutcome(
                 run_id=envelope.run_id,
                 unit_index=envelope.unit_index,
@@ -1023,7 +1073,7 @@ class SubprocessExecutor:
                 family=envelope.family,
                 delivery_state=RemoteJobDeliveryState.FAILED,
                 result=None,
-                error_message="remote worker stdout exceeded bound",
+                error_message=message,
                 provenance=local_worker_provenance(
                     worker_manifest,
                     requested_device=requested_device,
@@ -1231,9 +1281,23 @@ class SubprocessExecutor:
             )
 
         result = worker_payload.get("result")
-        output_identity = worker_payload.get("output_identity_sha256")
-        if type(output_identity) is not str:
-            output_identity = result_identity_sha256(result)
+        output_identity = result_identity_sha256(result)
+        if worker_payload.get("output_identity_sha256") != output_identity:
+            return RemoteJobOutcome(
+                run_id=envelope.run_id,
+                unit_index=envelope.unit_index,
+                unit_seed=unit_seed,
+                family=envelope.family,
+                delivery_state=RemoteJobDeliveryState.FAILED,
+                result=None,
+                error_message="remote worker output_identity_sha256 does not hash its result",
+                provenance=provenance_or_error,
+                input_identity_sha256=fingerprint,
+                output_identity_sha256=None,
+                envelope_fingerprint=fingerprint,
+                driver_host=self._driver_host,
+                driver_pid=self._driver_pid,
+            )
         return RemoteJobOutcome(
             run_id=envelope.run_id,
             unit_index=envelope.unit_index,

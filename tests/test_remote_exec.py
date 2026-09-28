@@ -82,6 +82,11 @@ def _payload_manifest(payload: dict[str, object]) -> RemoteRunManifest:
     return _manifest(payload_sha256=hashlib.sha256(encoded).hexdigest())
 
 
+_MC_PAYLOAD = {
+    "config": {"n_persons": 24, "n_dims": 1, "items_per_dim": 4, "latent_dim": 1, "gamma": 1.0}
+}
+
+
 def test_derive_index_seed_matches_bifactor_bootstrap_golden_step() -> None:
     """Replicate seeds must match the in-tree bootstrap driver formula."""
     base_seed = 20260917
@@ -398,7 +403,7 @@ def test_remote_job_outcome_validates_failed_state() -> None:
 
 def test_subprocess_executor_runs_real_simulate_in_child_process() -> None:
     """Criterion 1+2: real library call in a different OS process with explicit host."""
-    manifest = _manifest()
+    manifest = _payload_manifest(_MC_PAYLOAD)
     envelope = _envelope(
         family=RemoteJobFamily.MC_REPLICATE,
         unit_index=0,
@@ -411,7 +416,7 @@ def test_subprocess_executor_runs_real_simulate_in_child_process() -> None:
     ledger = OutcomeCommitLedger()
     executor = SubprocessExecutor(worker_host, ledger=ledger, driver_host=driver_host)
 
-    outcomes = executor.run_batch((envelope,), worker_manifest=manifest)
+    outcomes = executor.run_batch((envelope,), worker_manifest=manifest, payload=_MC_PAYLOAD)
     assert len(outcomes) == 1
     outcome = outcomes[0]
     assert outcome.delivery_state is RemoteJobDeliveryState.COMPLETED
@@ -428,7 +433,7 @@ def test_subprocess_executor_runs_real_simulate_in_child_process() -> None:
 
 def test_subprocess_executor_retry_does_not_record_second_success() -> None:
     """Criterion 3: replay of the same envelope fingerprint commits at most once."""
-    manifest = _manifest()
+    manifest = _payload_manifest(_MC_PAYLOAD)
     envelope = _envelope(
         family=RemoteJobFamily.MC_REPLICATE,
         unit_index=1,
@@ -439,8 +444,8 @@ def test_subprocess_executor_retry_does_not_record_second_success() -> None:
     ledger = OutcomeCommitLedger()
     executor = SubprocessExecutor(socket.gethostname(), ledger=ledger)
 
-    first = executor.run_batch((envelope,), worker_manifest=manifest)[0]
-    second = executor.run_batch((envelope,), worker_manifest=manifest)[0]
+    first = executor.run_batch((envelope,), worker_manifest=manifest, payload=_MC_PAYLOAD)[0]
+    second = executor.run_batch((envelope,), worker_manifest=manifest, payload=_MC_PAYLOAD)[0]
 
     assert first.delivery_state is RemoteJobDeliveryState.COMPLETED
     assert second.delivery_state is RemoteJobDeliveryState.COMPLETED
@@ -450,11 +455,12 @@ def test_subprocess_executor_retry_does_not_record_second_success() -> None:
 
 def test_subprocess_executor_records_input_output_and_version_identity() -> None:
     """Criterion 4: outcome carries input identity, output identity, and package version."""
-    manifest = _manifest()
+    manifest = _payload_manifest(_MC_PAYLOAD)
     envelope = _envelope(family=RemoteJobFamily.MC_REPLICATE, unit_index=2, manifest=manifest)
     outcome = SubprocessExecutor(socket.gethostname()).run_batch(
         (envelope,),
         worker_manifest=manifest,
+        payload=_MC_PAYLOAD,
     )[0]
 
     assert outcome.envelope_fingerprint == envelope_fingerprint(envelope)
@@ -543,7 +549,7 @@ def test_subprocess_executor_fails_closed_on_worker_library_version_mismatch(
     """Reported worker library_version must match the cohort manifest."""
     import fast_mlsirm.remote_exec as remote_exec
 
-    manifest = _manifest()
+    manifest = _payload_manifest(_MC_PAYLOAD)
     envelope = _envelope(family=RemoteJobFamily.MC_REPLICATE, unit_index=0, manifest=manifest)
     worker_payload = {
         "delivery_state": RemoteJobDeliveryState.COMPLETED.value,
@@ -564,6 +570,7 @@ def test_subprocess_executor_fails_closed_on_worker_library_version_mismatch(
     outcome = SubprocessExecutor(socket.gethostname()).run_batch(
         (envelope,),
         worker_manifest=manifest,
+        payload=_MC_PAYLOAD,
     )[0]
 
     assert outcome.delivery_state is RemoteJobDeliveryState.FAILED
@@ -577,7 +584,7 @@ def test_subprocess_executor_fails_closed_on_unknown_delivery_state(
     """Missing/unknown delivery_state must not become a committed success."""
     import fast_mlsirm.remote_exec as remote_exec
 
-    manifest = _manifest()
+    manifest = _payload_manifest(_MC_PAYLOAD)
     envelope = _envelope(family=RemoteJobFamily.MC_REPLICATE, unit_index=1, manifest=manifest)
     worker_payload = {
         "worker_pid": 4242,
@@ -596,6 +603,7 @@ def test_subprocess_executor_fails_closed_on_unknown_delivery_state(
     outcome = SubprocessExecutor(socket.gethostname(), ledger=OutcomeCommitLedger()).run_batch(
         (envelope,),
         worker_manifest=manifest,
+        payload=_MC_PAYLOAD,
     )[0]
 
     assert outcome.delivery_state is RemoteJobDeliveryState.FAILED
@@ -609,7 +617,7 @@ def test_subprocess_executor_fails_closed_on_non_finite_wall_clock(
     """Non-finite wall_clock_seconds must return FAILED without aborting the batch."""
     import fast_mlsirm.remote_exec as remote_exec
 
-    manifest = _manifest()
+    manifest = _payload_manifest(_MC_PAYLOAD)
     envelope = _envelope(family=RemoteJobFamily.MC_REPLICATE, unit_index=2, manifest=manifest)
     worker_payload = {
         "delivery_state": RemoteJobDeliveryState.COMPLETED.value,
@@ -630,6 +638,7 @@ def test_subprocess_executor_fails_closed_on_non_finite_wall_clock(
     outcome = SubprocessExecutor(socket.gethostname()).run_batch(
         (envelope,),
         worker_manifest=manifest,
+        payload=_MC_PAYLOAD,
     )[0]
 
     assert outcome.delivery_state is RemoteJobDeliveryState.FAILED

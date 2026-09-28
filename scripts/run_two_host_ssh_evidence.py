@@ -42,9 +42,12 @@ from fast_mlsirm.remote_exec import (
     SubprocessExecutor,
     ExecutionFloatPath,
     envelope_fingerprint,
+    payload_identity_sha256,
 )
 
-_SHA = "a" * 64
+_MC_PAYLOAD = {
+    "config": {"n_persons": 24, "n_dims": 1, "items_per_dim": 4, "latent_dim": 1, "gamma": 1.0}
+}
 _SHA_B = "b" * 64
 _SHA_C = "c" * 64
 _SSH_PROBE_TIMEOUT_SECONDS = 20.0
@@ -57,7 +60,7 @@ def _manifest() -> RemoteRunManifest:
         source_sha256=_SHA_B,
         seed_derivation_rule=SEED_DERIVATION_RULE,
         float_path=ExecutionFloatPath.F64,
-        payload_sha256=_SHA,
+        payload_sha256=payload_identity_sha256(_MC_PAYLOAD),
         integration_nodes_sha256=_SHA_C,
     )
 
@@ -162,7 +165,9 @@ def main() -> int:
         ledger=OutcomeCommitLedger(),
         driver_host=driver_host,
     )
-    outcome = executor.run_batch((envelope,), worker_manifest=manifest)[0]
+    outcome = executor.run_batch(
+        (envelope,), worker_manifest=manifest, payload=_MC_PAYLOAD
+    )[0]
 
     checks = {
         "completed": outcome.delivery_state is RemoteJobDeliveryState.COMPLETED,

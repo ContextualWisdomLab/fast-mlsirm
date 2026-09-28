@@ -33,6 +33,10 @@ from .simulation import simulate
 from .two_tier_grm import fit_two_tier_grm
 from .wle import score_wle
 
+# Upper bound on one JSON request read from stdin, checked before parsing so an
+# oversized payload is rejected without materializing its arrays.
+_MAX_REQUEST_CHARS = 64 * 1024 * 1024
+
 
 def _library_version() -> str:
     try:
@@ -41,17 +45,16 @@ def _library_version() -> str:
         return "0+unknown"
 
 
-def execute_mc_replicate(unit_seed: int) -> dict[str, object]:
-    """Run one Monte Carlo replicate via ``simulate`` with ``unit_seed``."""
-    config = MLS2PLMConfig(
-        n_persons=24,
-        n_dims=1,
-        items_per_dim=4,
-        latent_dim=1,
-        gamma=1.0,
-        seed=unit_seed,
-    )
-    data = simulate(config)
+def execute_mc_replicate(payload: dict[str, object], unit_seed: int) -> dict[str, object]:
+    """Run one Monte Carlo replicate of the manifested ``simulate`` configuration.
+
+    ``payload["config"]`` holds ``MLS2PLMConfig`` fields; the envelope's
+    index-derived ``unit_seed`` always replaces any caller seed.
+    """
+    config_values = payload.get("config")
+    if type(config_values) is not dict:
+        raise ValueError("mc_replicate payload must include a config mapping")
+    data = simulate(MLS2PLMConfig(**{**config_values, "seed": unit_seed}))
     response_sha256 = hashlib.sha256(data.Y.tobytes()).hexdigest()
     return {
         "family": RemoteJobFamily.MC_REPLICATE.value,
@@ -84,11 +87,17 @@ def _fit_record(result: object, *, family: RemoteJobFamily) -> dict[str, object]
 
 
 def execute_fit_restart(payload: dict[str, object], unit_seed: int) -> dict[str, object]:
-    """Run one production ``fit`` restart from a JSON payload."""
+    """Run one independently seeded production ``fit`` restart from a JSON payload.
+
+    Responses stay float64 so the public missing markers survive transport:
+    ``-1`` and JSON ``null`` (read as NaN). A unit is exactly one restart, so
+    ``n_restarts`` is forced to 1 and the caller schedules one envelope per seed.
+    """
     config_values = dict(payload.get("config", {}))
     config_values["seed"] = unit_seed
+    config_values["n_restarts"] = 1
     result = fit(
-        np.asarray(payload["responses"], dtype=np.uint8),
+        np.asarray(payload["responses"], dtype=np.float64),
         np.asarray(payload["factor_id"], dtype=np.int64),
         FitConfig(**config_values),
     )
@@ -100,8 +109,9 @@ def execute_em_m_step(payload: dict[str, object], unit_seed: int) -> dict[str, o
     config_values = dict(payload.get("config", {}))
     config_values["seed"] = unit_seed
     config_values["max_iter"] = 1
+    config_values["n_restarts"] = 1
     result = fit(
-        np.asarray(payload["responses"], dtype=np.uint8),
+        np.asarray(payload["responses"], dtype=np.float64),
         np.asarray(payload["factor_id"], dtype=np.int64),
         FitConfig(**config_values),
     )
@@ -237,12 +247,12 @@ def execute_envelope(
 ) -> dict[str, object]:
     """Dispatch one envelope to the production library function for its family."""
     unit_seed = envelope.unit_seed()
-    if envelope.family is RemoteJobFamily.MC_REPLICATE:
-        return execute_mc_replicate(unit_seed)
     if type(payload) is not dict:
         raise ValueError(f"payload is required for {envelope.family.value}")
     if payload_identity_sha256(payload) != envelope.manifest.payload_sha256:
         raise ValueError("payload identity does not match envelope manifest")
+    if envelope.family is RemoteJobFamily.MC_REPLICATE:
+        return execute_mc_replicate(payload, unit_seed)
     if envelope.family is RemoteJobFamily.FIT_RESTART:
         return execute_fit_restart(payload, unit_seed)
     if envelope.family is RemoteJobFamily.EM_M_STEP:
@@ -263,8 +273,19 @@ def execute_envelope(
 def main(argv: list[str] | None = None) -> int:
     del argv
     started = time.perf_counter()
+    raw_request = sys.stdin.read(_MAX_REQUEST_CHARS + 1)
+    if len(raw_request) > _MAX_REQUEST_CHARS:
+        print(
+            json.dumps(
+                {
+                    "delivery_state": RemoteJobDeliveryState.FAILED.value,
+                    "error_message": f"worker request exceeds {_MAX_REQUEST_CHARS} characters",
+                }
+            )
+        )
+        return 1
     try:
-        request = json.loads(sys.stdin.read())
+        request = json.loads(raw_request)
     except json.JSONDecodeError as exc:
         print(json.dumps({"delivery_state": RemoteJobDeliveryState.FAILED.value, "error_message": str(exc)}))
         return 1
