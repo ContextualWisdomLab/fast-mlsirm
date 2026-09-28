@@ -5,7 +5,7 @@
 
 use mlsirm_core::regression::{
     absolute_differences, centered_product_design, compare_ols_column_subset, chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc,
-    linear_contrast, normal_wald_interval, residual_summary, slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
+    linear_contrast, normal_wald_interval, prediction_difference, residual_summary, slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
 };
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -127,6 +127,13 @@ fn py_residual_summary(py: Python<'_>, y: PyReadonlyArray1<'_, f64>, residuals: 
     out.set_item("r_squared", r2)?;
     out.set_item("adjusted_r_squared", adjusted)?;
     Ok(out.into())
+}
+
+/// Marshal prediction contrast; core cites actual statsmodels t_test manual.
+#[pyfunction(name = "prediction_difference")]
+fn py_prediction_difference(py: Python<'_>, beta: PyReadonlyArray1<'_, f64>, vcov: PyReadonlyArray1<'_, f64>, row_a: PyReadonlyArray1<'_, f64>, row_b: PyReadonlyArray1<'_, f64>, df: f64) -> PyResult<Py<PyDict>> {
+    let result = prediction_difference(beta.as_slice()?, vcov.as_slice()?, row_a.as_slice()?, row_b.as_slice()?, df).map_err(PyValueError::new_err)?;
+    contrast_dict(py, result)
 }
 
 /// Marshal aligned-vector differences; core absolute_differences cites the
@@ -251,6 +258,7 @@ fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_residual_summary, m)?)?;
     m.add_function(wrap_pyfunction!(py_compare_ols_column_subset, m)?)?;
     m.add_function(wrap_pyfunction!(py_absolute_differences, m)?)?;
+    m.add_function(wrap_pyfunction!(py_prediction_difference, m)?)?;
     m.add_function(wrap_pyfunction!(py_xwz_e_design_row, m)?)?;
     m.add_function(wrap_pyfunction!(py_design_row_dot, m)?)?;
     m.add_function(wrap_pyfunction!(py_conditional_slope, m)?)?;
