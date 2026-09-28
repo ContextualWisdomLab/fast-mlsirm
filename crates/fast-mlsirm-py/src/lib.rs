@@ -6692,7 +6692,7 @@ fn poly_item_fit_sx2(
 
 /// Latent-space polytomous LSIRM fit (Rust compute path). Returns a dict of
 /// item parameters (`slope`, `cat_params`, `zeta`) and person scores
-/// (`theta_eap`, `theta_sd`, `xi_eap`), plus `loglik`/`n_iter`.
+/// (`theta_eap`, `theta_sd`, `xi_eap`), plus convergence evidence.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, n_persons, n_items, n_cat, latent_dim, observed = None, model = "grm", q_theta = 11, q_xi = 11, max_iter = 60, tol = 1e-5))]
@@ -6726,6 +6726,12 @@ fn fit_poly_lsirm(
     out.set_item("xi_eap", fit.xi_eap)?;
     out.set_item("loglik", fit.loglik)?;
     out.set_item("n_iter", fit.n_iter)?;
+    out.set_item("converged", fit.converged)?;
+    out.set_item("termination_reason", fit.termination_reason)?;
+    out.set_item("stopping_criterion", fit.stopping_criterion)?;
+    out.set_item("loglik_trace", fit.loglik_trace)?;
+    out.set_item("final_delta", fit.final_delta)?;
+    out.set_item("stopping_tolerance", fit.stopping_tolerance)?;
     Ok(out.into())
 }
 

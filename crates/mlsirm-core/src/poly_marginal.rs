@@ -35,6 +35,18 @@ pub struct PolyLsirmFit {
     pub xi_eap: Vec<f64>,
     pub loglik: f64,
     pub n_iter: usize,
+    /// Whether the observed-data likelihood criterion stopped the EM updates.
+    pub converged: bool,
+    /// `tolerance` or `max_iter`; non-finite likelihoods return an error.
+    pub termination_reason: String,
+    /// Stable identity for the observed-data stopping rule.
+    pub stopping_criterion: String,
+    /// Observed-data likelihood at every evaluated parameter state, including init.
+    pub loglik_trace: Vec<f64>,
+    /// Signed final observed-data likelihood change.
+    pub final_delta: f64,
+    /// Relative tolerance applied to the final change.
+    pub stopping_tolerance: f64,
 }
 
 /// Tensor Gauss-Hermite grid for a `latent_dim`-dimensional standard normal:
@@ -228,6 +240,9 @@ pub fn fit_poly_lsirm(
     if latent_dim < 1 || latent_dim > 3 {
         return Err("latent_dim must be 1..3 for the tensor grid".into());
     }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
     let n_cells = crate::checked_mul_usize(
         n_persons,
         n_items,
@@ -299,9 +314,14 @@ pub fn fit_poly_lsirm(
         }
     }
 
-    let mut prev_ll = f64::NEG_INFINITY;
     let mut it = 0;
-    while it < max_iter {
+    let mut converged = false;
+    let mut termination_reason = "max_iter".to_owned();
+    let stopping_criterion = "observed_loglik_abs_delta".to_owned();
+    let mut final_delta = f64::INFINITY;
+    let mut stopping_tolerance = f64::INFINITY;
+    let mut loglik_trace = Vec::with_capacity(max_iter + 1);
+    loop {
         // per-item cell log-probs at each (theta, xi) node
         let mut item_lp = vec![vec![0.0_f64; cell * n_cat]; n_items];
         for i in 0..n_items {
@@ -358,6 +378,23 @@ pub fn fit_poly_lsirm(
                 }
             }
         }
+        loglik_trace.push(iteration_log_likelihood);
+        if !iteration_log_likelihood.is_finite() {
+            return Err("polytomous LSIRM observed log likelihood became non-finite".into());
+        }
+        if loglik_trace.len() >= 2 {
+            let previous_ll = loglik_trace[loglik_trace.len() - 2];
+            final_delta = iteration_log_likelihood - previous_ll;
+            stopping_tolerance = tol * (1.0 + previous_ll.abs());
+            if final_delta.abs() < stopping_tolerance {
+                converged = true;
+                termination_reason = "tolerance".to_owned();
+                break;
+            }
+        }
+        if it == max_iter {
+            break;
+        }
         // M-step: per-item Newton over [log_a, cat, zeta]
         for i in 0..n_items {
             let ctx = ItemCtx {
@@ -376,10 +413,6 @@ pub fn fit_poly_lsirm(
             params[i] = m_step_item(params[i].clone(), &ctx, 6);
         }
         it += 1;
-        if (iteration_log_likelihood - prev_ll).abs() < tol * (1.0 + prev_ll.abs()) {
-            break;
-        }
-        prev_ll = iteration_log_likelihood;
     }
 
     let slope: Vec<f64> = (0..n_items).map(|i| params[i][0].exp()).collect();
@@ -460,6 +493,12 @@ pub fn fit_poly_lsirm(
         xi_eap,
         loglik: final_log_likelihood,
         n_iter: it,
+        converged,
+        termination_reason,
+        stopping_criterion,
+        loglik_trace,
+        final_delta,
+        stopping_tolerance,
     })
 }
 

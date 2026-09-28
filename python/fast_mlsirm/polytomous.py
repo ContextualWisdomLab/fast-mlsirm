@@ -527,6 +527,14 @@ class PolyLsirmFit:
     xi_eap: np.ndarray
     loglik: float
     n_iter: int
+    converged: bool = False
+    termination_reason: str = "not_fitted"
+    stopping_criterion: str = "observed_loglik_abs_delta"
+    loglik_trace: np.ndarray = field(
+        default_factory=lambda: np.empty(0, dtype=np.float64)
+    )
+    final_delta: float = np.nan
+    stopping_tolerance: float = np.nan
 
 
 def fit_lsirm_polytomous(
@@ -544,7 +552,9 @@ def fit_lsirm_polytomous(
     distance weight is fixed to 1 as this crate's scale-identification choice;
     positions are identified up to rotation/reflection/translation. ``NaN`` or ``-1`` marks
     missing.
-    ``n_cat`` is limited to 2..64 and ``max_iter`` to 1..100,000.
+    ``n_cat`` is limited to 2..64 and ``max_iter`` to 1..100,000. Convergence
+    is reported from the observed-data likelihood evaluated at each returned
+    parameter state; the MAP penalties are excluded from this criterion.
     """
     m = _fit_model(model)
     validated_n_cat = _bounded_integer(n_cat, "n_cat", 2, MAX_POLYTOMOUS_CATEGORIES)
@@ -591,6 +601,12 @@ def fit_lsirm_polytomous(
         xi_eap=np.asarray(res["xi_eap"], dtype=np.float64).reshape(n_persons, validated_latent_dim),
         loglik=float(res["loglik"]),
         n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+        termination_reason=str(res["termination_reason"]),
+        stopping_criterion=str(res["stopping_criterion"]),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
+        final_delta=float(res["final_delta"]),
+        stopping_tolerance=float(res["stopping_tolerance"]),
     )
 
 
