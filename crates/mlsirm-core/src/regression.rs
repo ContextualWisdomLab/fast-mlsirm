@@ -75,6 +75,14 @@
 //! Press, W. H., Teukolsky, S. A., Vetterling, W. T., & Flannery, B. P.
 //!     (2007). *Numerical recipes: The art of scientific computing* (3rd ed.).
 //!     Cambridge University Press.
+//!
+//! Pennsylvania State University, Department of Statistics. (n.d.).
+//!     *Lesson 5: Multiple linear regression*. STAT 501: Regression methods.
+//!     <https://online.stat.psu.edu/stat501/Lesson05>
+//!
+//! Pennsylvania State University, Department of Statistics. (n.d.).
+//!     *Lesson 8: Categorical predictors*. STAT 501: Regression methods.
+//!     <https://online.stat.psu.edu/stat501/Lesson08>
 
 use crate::fitstats::{chi2_sf, ln_gamma};
 
@@ -123,6 +131,26 @@ pub struct OlsFit {
     pub sigma2: f64,
 }
 
+/// Classical comparison of an OLS design with the design after dropping columns.
+#[derive(Clone, Debug)]
+pub struct NestedOlsComparison {
+    pub n: usize,
+    pub k_full: usize,
+    pub k_reduced: usize,
+    pub sst: f64,
+    pub sse_full: f64,
+    pub sse_reduced: f64,
+    pub r2_full: f64,
+    pub adjusted_r2_full: f64,
+    pub r2_reduced: f64,
+    pub adjusted_r2_reduced: f64,
+    pub delta_r2: f64,
+    pub f_stat: f64,
+    pub p_f: f64,
+    pub df1: usize,
+    pub df2: usize,
+}
+
 /// Linear contrast `c'β` under a supplied covariance matrix.
 #[derive(Clone, Debug)]
 pub struct ContrastResult {
@@ -169,8 +197,28 @@ pub fn fit_ols(x: &[f64], y: &[f64], n: usize, k: usize) -> Result<OlsFit, Strin
         }
     }
 
-    let xtx_inv = invert_square(&xtx, k)
+    // Equilibrate the Gram matrix before the rank check: an absolute pivot
+    // threshold on raw X'X can accept dependent columns with different units.
+    // ponytail: normal equations still square conditioning; use QR/SVD if
+    // full-rank fits show unstable estimates under a scale sensitivity check.
+    let scales: Vec<f64> = (0..k).map(|j| xtx[j * k + j].sqrt()).collect();
+    if scales.iter().any(|s| !s.is_finite() || *s == 0.0) {
+        return Err("X'X has a non-finite or zero column norm".to_owned());
+    }
+    let scaled_xtx: Vec<f64> = (0..k * k)
+        .map(|i| (xtx[i] / scales[i / k]) / scales[i % k])
+        .collect();
+    if scaled_xtx.iter().any(|v| !v.is_finite()) {
+        return Err("X'X has a non-finite scaled entry".to_owned());
+    }
+    let scaled_inv = invert_square(&scaled_xtx, k)
         .ok_or_else(|| "X'X is singular; design is rank deficient".to_owned())?;
+    let xtx_inv: Vec<f64> = (0..k * k)
+        .map(|i| (scaled_inv[i] / scales[i / k]) / scales[i % k])
+        .collect();
+    if xtx_inv.iter().any(|v| !v.is_finite()) {
+        return Err("X'X inverse is non-finite".to_owned());
+    }
 
     let mut beta = vec![0.0_f64; k];
     for a in 0..k {
@@ -315,6 +363,109 @@ pub fn fit_ols_hc(
     let fit = fit_ols(x, y, n, k)?;
     let vcov = sandwich_vcov(&fit, x, hc)?;
     Ok((fit, vcov))
+}
+
+/// Compare an intercept-bearing OLS design with a model formed by dropping columns.
+///
+/// Centered `R²` and adjusted `R²` follow Pennsylvania State University (n.d.,
+/// STAT 501 Lesson 5, “Coefficient of Determination”); the classical partial
+/// `F` follows Lesson 8, “Categorical Predictors.” Both fits share `y` and
+/// row order by construction. This is a classical OLS test, not an HC Wald test.
+pub fn nested_ols_column_drop(
+    x: &[f64],
+    y: &[f64],
+    n: usize,
+    k: usize,
+    drop_columns: &[usize],
+) -> Result<NestedOlsComparison, String> {
+    if drop_columns.is_empty() || drop_columns.len() >= k {
+        return Err("drop_columns must remove 1..k-1 columns".to_owned());
+    }
+    if drop_columns.iter().any(|&j| j >= k)
+        || drop_columns.windows(2).any(|pair| pair[0] >= pair[1])
+    {
+        return Err("drop_columns must be sorted, unique, and within the design".to_owned());
+    }
+    let full = fit_ols(x, y, n, k)?;
+    let k_reduced = k - drop_columns.len();
+    let mut reduced_x = Vec::with_capacity(n * k_reduced);
+    for row in x.chunks_exact(k) {
+        for (j, &value) in row.iter().enumerate() {
+            if drop_columns.binary_search(&j).is_err() {
+                reduced_x.push(value);
+            }
+        }
+    }
+    if !has_intercept_column(x, n, k) || !has_intercept_column(&reduced_x, n, k_reduced) {
+        return Err("both OLS designs must contain a nonzero constant intercept column".to_owned());
+    }
+    let reduced = fit_ols(&reduced_x, y, n, k_reduced)?;
+
+    let mut mean = 0.0;
+    let mut sst = 0.0;
+    for (i, &value) in y.iter().enumerate() {
+        let delta = value - mean;
+        mean += delta / (i + 1) as f64;
+        sst += delta * (value - mean);
+    }
+    if !sst.is_finite() || sst <= 0.0 {
+        return Err("centered total sum of squares must be finite positive".to_owned());
+    }
+    let sse_full: f64 = full.residuals.iter().map(|e| e * e).sum();
+    let raw_sse_reduced: f64 = reduced.residuals.iter().map(|e| e * e).sum();
+    if !sse_full.is_finite() || !raw_sse_reduced.is_finite() || sse_full <= 0.0 {
+        return Err(
+            "OLS residual sums of squares must be finite, with positive full SSE".to_owned(),
+        );
+    }
+    let reduction = raw_sse_reduced - sse_full;
+    if reduction < -1e-9 * sse_full.max(1.0) {
+        return Err("reduced SSE is below full SSE".to_owned());
+    }
+    let sse_reduced = raw_sse_reduced.max(sse_full);
+    let df1 = k - k_reduced;
+    let df2 = n - k;
+    let nonnegative_reduction = sse_reduced - sse_full;
+    let f_stat = (nonnegative_reduction / df1 as f64) / (sse_full / df2 as f64);
+    let p_f = f_sf(f_stat, df1 as f64, df2 as f64);
+    let r2_full = 1.0 - sse_full / sst;
+    let r2_reduced = 1.0 - sse_reduced / sst;
+    let adjusted_r2_full = 1.0 - (sse_full / sst) * (n - 1) as f64 / df2 as f64;
+    let adjusted_r2_reduced = 1.0 - (sse_reduced / sst) * (n - 1) as f64 / (n - k_reduced) as f64;
+    if ![
+        f_stat,
+        p_f,
+        r2_full,
+        r2_reduced,
+        adjusted_r2_full,
+        adjusted_r2_reduced,
+    ]
+    .iter()
+    .all(|value| value.is_finite())
+    {
+        return Err("non-finite OLS comparison statistic".to_owned());
+    }
+    Ok(NestedOlsComparison {
+        n,
+        k_full: k,
+        k_reduced,
+        sst,
+        sse_full,
+        sse_reduced,
+        r2_full,
+        adjusted_r2_full,
+        r2_reduced,
+        adjusted_r2_reduced,
+        delta_r2: nonnegative_reduction / sst,
+        f_stat,
+        p_f,
+        df1,
+        df2,
+    })
+}
+
+fn has_intercept_column(x: &[f64], n: usize, k: usize) -> bool {
+    (0..k).any(|j| x[j] != 0.0 && (1..n).all(|i| x[i * k + j] == x[j]))
 }
 
 /// Linear contrast under `vcov` with Wald χ²(1) and t/F tails at `df = n - k`.
