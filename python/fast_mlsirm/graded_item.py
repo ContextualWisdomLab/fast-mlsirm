@@ -9,30 +9,49 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from itertools import product as iterproduct
 
 import numpy as np
 
-from .estimators.marginal import compute_grm_category_logprobs
 from .estimators.mmle import equal_probability_normal_nodes
+from .polytomous import (
+    PolytomousFit,
+    _bounded_integer,
+    predict_expected_response_polytomous,
+)
 
 __all__ = ["compute_expected_graded_item_score", "expected_graded_scale_score"]
 
 _INTEGRATION_WEIGHT_TOLERANCE = 1e-12
 
 
-def _expected_category_score_from_linear_predictor(
-    linear_predictor: float,
-    thresholds: np.ndarray,
-) -> float:
-    """Return ``E[Y | eta]`` for one Samejima GRM item at a scalar predictor."""
-    log_probs = compute_grm_category_logprobs(
-        np.array([linear_predictor], dtype=np.float64),
-        thresholds,
-    )[0]
-    probs = np.exp(log_probs)
-    scores = np.arange(probs.size, dtype=np.float64)
-    return float((probs * scores).sum())
+def _grm_expected_scores(thresholds: np.ndarray, linear_predictors: np.ndarray) -> np.ndarray:
+    """Return ``E[Y | eta]`` for one Samejima GRM item at each predictor.
+
+    Delegates to the compiled Rust prediction kernel through a unit-slope
+    item, so ``eta`` enters as the kernel's ``theta`` and the Rust core owns
+    threshold validation (strictly decreasing, finite).
+    """
+    cell = PolytomousFit(
+        model="grm",
+        slope=np.ones(1, dtype=np.float64),
+        cat_params=thresholds[None, :],
+        loglik=float("nan"),
+        n_iter=0,
+        converged=True,
+        termination_reason="marginalized",
+    )
+    return predict_expected_response_polytomous(cell, linear_predictors)[:, 0]
+
+
+def _validated_columns(integrate_columns: Sequence[int], n_dims: int) -> list[int]:
+    """Exact integer column indices in ``[0, n_dims)`` with no duplicates."""
+    columns = [
+        _bounded_integer(column, "integrate_columns entries", 0, n_dims - 1)
+        for column in integrate_columns
+    ]
+    if len(columns) != len(set(columns)):
+        raise ValueError("integrate_columns must not contain duplicates")
+    return columns
 
 
 def _validate_integration_axis_weights(weights: np.ndarray, axis_index: int) -> None:
@@ -72,8 +91,11 @@ def compute_expected_graded_item_score(
     absolute tolerance; invalid axes fail closed with no silent renormalization.
     Nodes are used as given — the caller is responsible for any prior scaling.
 
-    Category probabilities use :func:`~fast_mlsirm.estimators.marginal.compute_grm_category_logprobs`
-    on the item linear predictor.
+    Category probabilities follow Samejima's (1969) graded response model:
+    each category is the difference of adjacent cumulative boundary curves
+    (eq. 4-4), here in logistic form ``P(Y >= k | eta) = sigmoid(eta + beta_k)``,
+    evaluated by the compiled Rust core. The integration itself is the
+    caller-defined discrete quadrature described above.
 
     Parameters
     ----------
@@ -102,6 +124,12 @@ def compute_expected_graded_item_score(
     float
         The weighted expected category score ``sum_k k * P(Y = k)`` after
         integrating over the requested columns.
+
+    References
+    ----------
+    Samejima, F. (1969). Estimation of latent ability using a response pattern
+    of graded scores. *Psychometrika, 34*(S1), 1-97.
+    https://doi.org/10.1007/BF03372160
     """
     slope_arr = np.asarray(slope, dtype=np.float64)
     if slope_arr.ndim != 1 or slope_arr.size == 0:
@@ -121,12 +149,7 @@ def compute_expected_graded_item_score(
     if not np.all(np.isfinite(thresholds_arr)):
         raise ValueError("thresholds must be finite")
 
-    columns = [int(column) for column in integrate_columns]
-    if len(columns) != len(set(columns)):
-        raise ValueError("integrate_columns must not contain duplicates")
-    for column in columns:
-        if not 0 <= column < slope_arr.size:
-            raise ValueError("integrate_columns entries must index slope/theta")
+    columns = _validated_columns(integrate_columns, slope_arr.size)
 
     if len(columns) != len(integration_nodes) or len(columns) != len(integration_weights):
         raise ValueError(
@@ -152,25 +175,17 @@ def compute_expected_graded_item_score(
         node_arrays.append(nodes)
         weight_arrays.append(weights)
 
-    if not columns:
-        base = float(slope_arr @ theta_arr)
-        return _expected_category_score_from_linear_predictor(base, thresholds_arr)
-
-    expected = 0.0
-    index_ranges = [range(nodes.size) for nodes in node_arrays]
-    for combo in iterproduct(*index_ranges):
-        effective_theta = theta_arr.copy()
-        weight = 1.0
-        for dim_index, node_index in enumerate(combo):
-            column = columns[dim_index]
-            effective_theta[column] = node_arrays[dim_index][node_index]
-            weight *= weight_arrays[dim_index][node_index]
-        base = float(slope_arr @ effective_theta)
-        expected += weight * _expected_category_score_from_linear_predictor(
-            base,
-            thresholds_arr,
-        )
-    return expected
+    fixed_theta = theta_arr.copy()
+    fixed_theta[columns] = 0.0
+    linear_predictor = np.asarray(float(slope_arr @ fixed_theta))
+    joint_weight = np.ones((), dtype=np.float64)
+    for axis, column in enumerate(columns):
+        shape = [1] * len(columns)
+        shape[axis] = -1
+        linear_predictor = linear_predictor + slope_arr[column] * node_arrays[axis].reshape(shape)
+        joint_weight = joint_weight * weight_arrays[axis].reshape(shape)
+    expected = _grm_expected_scores(thresholds_arr, linear_predictor.reshape(-1))
+    return float(np.dot(np.broadcast_to(joint_weight, linear_predictor.shape).reshape(-1), expected))
 
 
 def expected_graded_scale_score(
@@ -250,13 +265,7 @@ def expected_graded_scale_score(
     if len(integrate_columns) != n_items:
         raise ValueError("integrate_columns must have one entry per item")
 
-    if isinstance(n_nodes, (bool, np.bool_)) or not isinstance(n_nodes, (int, np.integer)):
-        raise ValueError("n_nodes must be a positive integer")
-    validated_nodes = int(n_nodes)
-    if validated_nodes < 1:
-        raise ValueError("n_nodes must be >= 1")
-
-    base_nodes, base_weights = equal_probability_normal_nodes(validated_nodes)
+    base_nodes, base_weights = equal_probability_normal_nodes(n_nodes)
 
     scaled_by_column: dict[int, tuple[np.ndarray, np.ndarray]] = {}
     for column in range(n_dims):
@@ -265,7 +274,7 @@ def expected_graded_scale_score(
 
     total = 0.0
     for item_index in range(n_items):
-        columns = [int(column) for column in integrate_columns[item_index]]
+        columns = _validated_columns(integrate_columns[item_index], n_dims)
         item_nodes = tuple(scaled_by_column[column][0] for column in columns)
         item_weights = tuple(scaled_by_column[column][1] for column in columns)
         total += compute_expected_graded_item_score(

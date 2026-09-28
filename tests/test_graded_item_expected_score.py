@@ -52,7 +52,7 @@ def test_one_integrated_column_matches_hand_computation() -> None:
         integration_nodes=(NODES,),
         integration_weights=(WEIGHTS,),
     )
-    assert result == reference
+    assert result == pytest.approx(reference, rel=1e-12)
 
 
 def test_two_integrated_columns_use_product_weights() -> None:
@@ -65,7 +65,7 @@ def test_two_integrated_columns_use_product_weights() -> None:
         integration_nodes=(NODES, NODES),
         integration_weights=(WEIGHTS, WEIGHTS),
     )
-    assert result == reference
+    assert result == pytest.approx(reference, rel=1e-12)
 
 
 def test_non_integrated_column_stays_at_fixed_value() -> None:
@@ -91,7 +91,7 @@ def test_non_integrated_column_stays_at_fixed_value() -> None:
     )
 
     assert shifted != baseline
-    assert shifted == _hand_one_column(1, shifted_theta)
+    assert shifted == pytest.approx(_hand_one_column(1, shifted_theta), rel=1e-12)
 
 
 def _call_with_weights(weights: np.ndarray) -> float:
@@ -128,3 +128,42 @@ def test_integration_weights_fail_closed_on_invalid_probability_measure(
 ) -> None:
     with pytest.raises(ValueError, match=match):
         _call_with_weights(weights)
+
+
+def _call_with(**overrides) -> float:
+    kwargs = {
+        "slope": SLOPE,
+        "thresholds": THRESHOLDS,
+        "theta": THETA,
+        "integrate_columns": (1,),
+        "integration_nodes": (NODES,),
+        "integration_weights": (WEIGHTS,),
+    }
+    kwargs.update(overrides)
+    return compute_expected_graded_item_score(**kwargs)
+
+
+def test_no_integrated_columns_is_the_plug_in_expectation() -> None:
+    result = _call_with(integrate_columns=(), integration_nodes=(), integration_weights=())
+    assert result == pytest.approx(_hand_expected(THETA), rel=1e-12)
+
+
+@pytest.mark.parametrize("column", [True, 1.0, 1.5, "1", -1, 4])
+def test_integrate_columns_rejects_non_integer_or_out_of_range(column) -> None:
+    with pytest.raises(ValueError, match="integrate_columns entries"):
+        _call_with(integrate_columns=(column,))
+
+
+def test_integrate_columns_accepts_numpy_integer() -> None:
+    assert _call_with(integrate_columns=(np.int64(1),)) == pytest.approx(
+        _hand_one_column(1), rel=1e-12
+    )
+
+
+@pytest.mark.parametrize(
+    "thresholds",
+    [np.array([-0.70, 0.10, 1.05]), np.array([1.05, 1.05, -0.70])],
+)
+def test_thresholds_must_be_strictly_decreasing(thresholds: np.ndarray) -> None:
+    with pytest.raises(ValueError, match="strictly decreasing"):
+        _call_with(thresholds=thresholds)
