@@ -1,0 +1,25 @@
+{
+  "source_sha": "6f1308fca053b74ad13a14b49ea9c27eedba8afe",
+  "helper_sha": "98f948f21a46bc3b5c9dcb6e64748e9e13784639",
+  "scope": "Local source-bound wheel Cargo enumeration only; no dev graph, licence, Strix, six-scope, hosted or release acceptance",
+  "command": [
+    "cargo",
+    "metadata",
+    "--locked",
+    "--offline",
+    "--format-version",
+    "1",
+    "--manifest-path",
+    "crates/fast-mlsirm-py/Cargo.toml"
+  ],
+  "metadata_sha256": "77e7f2dadf8e383c908e2a3d6d263bf615f8eadeacefe499b1f2e3ea45105b45",
+  "cargo_lock_sha256": "f778041936d0b4490976e86746ed2749b529fe79e825be6349bd85e1e7c3dbaf",
+  "first_party_manifest_sha256": {
+    "crates/fast-mlsirm-py/Cargo.toml": "b2d05304d184450f4fe74f177b3e847355123b1e3a4e4699449d503a75919aed",
+    "crates/mlsirm-core/Cargo.toml": "65254d7a4278e1db1540121654525e7e33eb5aea139642466d95deed7ed455ff"
+  },
+  "external_dependency_count": 156,
+  "expected_dependency_count": 156,
+  "result": "PASS",
+  "prior_failure": "CAPTURE_INCOMPLETE: source-bound Cargo package manifest is outside the release workspace"
+}
