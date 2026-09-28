@@ -57,14 +57,14 @@ def test_person_fit_np_requires_core(monkeypatch):
 
 
 def test_validated_1d_accepts_boolean_array():
-    out = _validated_1d(np.array([True, False, True]), "mh")
+    out = _validated_1d(np.array([True, False, True]), "mh", expected_length=3)
     assert out.dtype == np.float64
     assert np.array_equal(out, np.array([1.0, 0.0, 1.0]))
 
 
 def test_validated_1d_rejects_non_numeric_array():
     with pytest.raises(ValueError, match="must be a numeric array"):
-        _validated_1d(np.array(["a", "b"]), "mh")
+        _validated_1d(np.array(["a", "b"]), "mh", expected_length=2)
 
 
 def test_eb_mh_dif_requires_core(monkeypatch):
