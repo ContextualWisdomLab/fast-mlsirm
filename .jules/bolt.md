@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-05-19 - Fast reduction of 3D arrays with 2D matrices
+**Learning:** Using `np.einsum("stx,xk->k", resid, deta_z, optimize=True)` on a 3D array (`resid`) and a 2D array (`deta_z`) incurs significant overhead from NumPy's generalized Einstein summation engine.
+**Action:** When calculating tensor contractions that sum over multiple independent axes before multiplying by a 2D array, replace the `np.einsum` call with a manual axis reduction followed by matrix multiplication (e.g., `resid.sum(axis=(0, 1)) @ deta_z`). This is significantly faster and leverages BLAS directly.
