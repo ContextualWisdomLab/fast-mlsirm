@@ -507,35 +507,38 @@ fn general_only_without_prior(gen_log: f64, log_w: f64) -> Option<f64> {
 
 /// Section timings for the CPU bifactor E-step nest audit (#2004).
 ///
-/// Enabled only while [`enable_estep_nest_profile`] is active; production
-/// callers leave profiling off so the person sweep pays one predictable
-/// branch on the cold flag.
+/// Present only in this crate's unit-test build. The released library has
+/// neither these symbols nor the thread-local that feeds them.
+#[cfg(test)]
 #[derive(Clone, Debug, Default)]
-pub struct EstepNestProfile {
+struct EstepNestProfile {
     /// Nanoseconds in general-only item accumulation across all persons.
-    pub gen_only_ns: u128,
+    gen_only_ns: u128,
     /// Nanoseconds in per-block `block_acc` + per-`g` `log_sum_exp`.
-    pub block_acc_ns: u128,
+    block_acc_ns: u128,
     /// Nanoseconds in posterior / expected-count accumulation.
-    pub posterior_ns: u128,
+    posterior_ns: u128,
     /// Persons processed in the timed sweep.
-    pub n_persons: usize,
+    n_persons: usize,
 }
 
+#[cfg(test)]
 std::thread_local! {
     static ESTEP_NEST_PROFILE: std::cell::RefCell<Option<EstepNestProfile>> =
         const { std::cell::RefCell::new(None) };
 }
 
 /// Start accumulating [`EstepNestProfile`] on this thread (resets prior values).
-pub fn enable_estep_nest_profile() {
+#[cfg(test)]
+fn enable_estep_nest_profile() {
     ESTEP_NEST_PROFILE.with(|slot| {
         *slot.borrow_mut() = Some(EstepNestProfile::default());
     });
 }
 
 /// Take the accumulated profile, disabling further timing on this thread.
-pub fn take_estep_nest_profile() -> Option<EstepNestProfile> {
+#[cfg(test)]
+fn take_estep_nest_profile() -> Option<EstepNestProfile> {
     ESTEP_NEST_PROFILE.with(|slot| slot.borrow_mut().take())
 }
 
@@ -731,16 +734,14 @@ pub(crate) fn e_step(
     let mut log_like_g = vec![0.0f64; qg];
     let mut post_g = vec![0.0f64; qg];
     let mut tmp_h = vec![0.0f64; qs];
+    #[cfg(test)]
     let profiling = ESTEP_NEST_PROFILE.with(|slot| slot.borrow().is_some());
 
     let mut loglik = 0.0f64;
     for p in 0..v.n_persons {
         // General-only log-likelihood per general node.
-        let t_gen0 = if profiling {
-            Some(std::time::Instant::now())
-        } else {
-            None
-        };
+        #[cfg(test)]
+        let t_gen0 = profiling.then(std::time::Instant::now);
         gen_log.copy_from_slice(log_wg);
         for &i in &v.general_only {
             if !is_obs(p, i) {
@@ -752,6 +753,7 @@ pub(crate) fn e_step(
                 gen_log[g] += lp[g * v.n_cat + yc];
             }
         }
+        #[cfg(test)]
         if let Some(t0) = t_gen0 {
             let dt = t0.elapsed().as_nanos();
             ESTEP_NEST_PROFILE.with(|slot| {
@@ -761,11 +763,8 @@ pub(crate) fn e_step(
             });
         }
         // Block accumulations: sum of item log-probs per (s, g, h).
-        let t_blk0 = if profiling {
-            Some(std::time::Instant::now())
-        } else {
-            None
-        };
+        #[cfg(test)]
+        let t_blk0 = profiling.then(std::time::Instant::now);
         for (s, members) in v.blocks.iter().enumerate() {
             let row = &mut block_acc[s * qg * qs..(s + 1) * qg * qs];
             let log_row = &mut log_i[s * qg..(s + 1) * qg];
@@ -785,6 +784,7 @@ pub(crate) fn e_step(
                 log_row,
             );
         }
+        #[cfg(test)]
         if let Some(t0) = t_blk0 {
             let dt = t0.elapsed().as_nanos();
             ESTEP_NEST_PROFILE.with(|slot| {
@@ -793,11 +793,8 @@ pub(crate) fn e_step(
                 }
             });
         }
-        let t_post0 = if profiling {
-            Some(std::time::Instant::now())
-        } else {
-            None
-        };
+        #[cfg(test)]
+        let t_post0 = profiling.then(std::time::Instant::now);
         for g in 0..qg {
             let mut acc = gen_log[g];
             for s in 0..v.n_specific {
@@ -857,6 +854,7 @@ pub(crate) fn e_step(
                 }
             }
         }
+        #[cfg(test)]
         if let Some(t0) = t_post0 {
             let dt = t0.elapsed().as_nanos();
             ESTEP_NEST_PROFILE.with(|slot| {
@@ -3493,3 +3491,7 @@ pub fn fit_bifactor_grm_fipc(
 #[cfg(test)]
 #[path = "../../../tests/unit/bifactor_grm_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "bifactor_estep_profile_2004.rs"]
+mod estep_nest_profile_2004;

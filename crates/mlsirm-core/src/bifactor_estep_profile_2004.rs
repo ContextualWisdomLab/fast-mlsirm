@@ -1,12 +1,15 @@
-//! #2004 nest-audit profile + loglik-only E-step evidence for bifactor GRM.
+//! Synthetic characterization of the loglik-only bifactor E-step (#2004).
 //!
-//! Runs a CP3-shaped CPU E-step with section timers. Quadrature node counts
-//! are explicit caller arguments (ADR-0028 / #1929), not crate defaults.
+//! Quadrature node counts are explicit caller arguments (ADR-0028 / #1929).
+//! Timings here are a regression guard on this fixture, not product-data
+//! acceptance evidence, and they do not close #2004.
 
-use mlsirm_core::bifactor_grm::{
-    bifactor_grm_marginal_loglik, enable_estep_nest_profile, take_estep_nest_profile,
-};
 use std::time::Instant;
+
+use super::{
+    bifactor_grm_marginal_loglik, e_step, enable_estep_nest_profile, fill_logprob_tables, gh_rule,
+    pack_params, take_estep_nest_profile, validate, BifactorGrmConfig,
+};
 
 const N_PERSONS: usize = 240;
 const N_ITEMS: usize = 13;
@@ -20,9 +23,7 @@ fn synthetic_y(seed: u64) -> Vec<usize> {
     let mut state = seed;
     let mut y = vec![0usize; N_PERSONS * N_ITEMS];
     for slot in &mut y {
-        state = state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1);
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
         *slot = ((state >> 33) as usize) % N_CAT;
     }
     y
@@ -46,15 +47,34 @@ fn synthetic_params() -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     (a_g, a_s, thr)
 }
 
-#[test]
-fn estep_nest_profile_2004_loglik_only_skips_count_fill() {
+struct Prepared {
+    v: super::Validated,
+    y: Vec<usize>,
+    tables: Vec<Vec<f64>>,
+    log_wg: Vec<f64>,
+    log_ws: Vec<f64>,
+    tg: &'static [f64],
+    ts: &'static [f64],
+    a_g: Vec<f64>,
+    a_s: Vec<f64>,
+    thr: Vec<f64>,
+}
+
+fn prepare() -> Prepared {
     let y = synthetic_y(2004);
     let (a_g, a_s, thr) = synthetic_params();
-    // Warmup (untimed).
-    let _ = bifactor_grm_marginal_loglik(
-        &a_g,
-        &a_s,
-        &thr,
+    let cfg = BifactorGrmConfig {
+        q_general: Q,
+        q_specific: Q,
+        max_iter: 1,
+        tol: 1.0,
+        n_starts: 1,
+        seed: 0,
+        newton_iter: 1,
+        ridge: 1.0,
+        device: crate::Device::Cpu,
+    };
+    let v = validate(
         &y,
         None,
         &SPECIFIC_MAP,
@@ -62,18 +82,67 @@ fn estep_nest_profile_2004_loglik_only_skips_count_fill() {
         N_ITEMS,
         N_SPECIFIC,
         N_CAT,
-        Q,
-        Q,
+        &cfg,
     )
-    .expect("warmup marginal loglik");
+    .expect("synthetic fixture must validate");
+    let params = pack_params(&v, &a_g, &a_s, &thr);
+    let (tg, wg) = gh_rule(Q).expect("q=41 rule must exist");
+    let (ts, ws) = gh_rule(Q).expect("q=41 rule must exist");
+    let tables = fill_logprob_tables(&v, &params, tg, ts, tg.len(), ts.len());
+    let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    Prepared {
+        v,
+        y,
+        tables,
+        log_wg,
+        log_ws,
+        tg,
+        ts,
+        a_g,
+        a_s,
+        thr,
+    }
+}
+
+fn run_estep(prep: &Prepared, accumulate_counts: bool) -> (f64, Vec<Vec<Vec<f64>>>) {
+    e_step(
+        &prep.v,
+        &prep.y,
+        None,
+        &prep.tables,
+        &prep.log_wg,
+        &prep.log_ws,
+        prep.tg.len(),
+        prep.ts.len(),
+        prep.tg,
+        prep.ts,
+        crate::Device::Cpu,
+        accumulate_counts,
+    )
+}
+
+#[test]
+fn estep_nest_profile_2004_loglik_only_skips_count_fill() {
+    let prep = prepare();
+    // Warmup (untimed).
+    let _ = run_estep(&prep, false);
+
+    let t_counts = Instant::now();
+    let (ll_counts, counts) = run_estep(&prep, true);
+    let counts_ns = t_counts.elapsed().as_nanos();
 
     enable_estep_nest_profile();
-    let t0 = Instant::now();
-    let ll = bifactor_grm_marginal_loglik(
-        &a_g,
-        &a_s,
-        &thr,
-        &y,
+    let t_skip = Instant::now();
+    let (ll_skip, skipped) = run_estep(&prep, false);
+    let skip_ns = t_skip.elapsed().as_nanos();
+    let prof = take_estep_nest_profile().expect("profile was enabled");
+
+    let ll_marginal = bifactor_grm_marginal_loglik(
+        &prep.a_g,
+        &prep.a_s,
+        &prep.thr,
+        &prep.y,
         None,
         &SPECIFIC_MAP,
         N_PERSONS,
@@ -83,35 +152,47 @@ fn estep_nest_profile_2004_loglik_only_skips_count_fill() {
         Q,
         Q,
     )
-    .expect("profiled marginal loglik");
-    let wall_ns = t0.elapsed().as_nanos();
-    let prof = take_estep_nest_profile().expect("profile was enabled");
-    let timed = prof.gen_only_ns + prof.block_acc_ns + prof.posterior_ns;
-    assert!(ll.is_finite(), "loglik must be finite");
+    .expect("marginal loglik");
+
+    assert!(ll_counts.is_finite() && ll_skip.is_finite());
+    assert_eq!(
+        ll_counts, ll_skip,
+        "loglik-only E-step must match the count-filling sweep"
+    );
+    assert_eq!(
+        ll_marginal, ll_skip,
+        "bifactor_grm_marginal_loglik must use the loglik-only sweep"
+    );
+    assert!(!counts.is_empty(), "count-filling sweep must return counts");
+    assert!(
+        counts
+            .iter()
+            .any(|item| item.iter().flatten().any(|c| *c != 0.0)),
+        "synthetic responses must produce a non-zero expected count"
+    );
+    assert!(
+        skipped.is_empty(),
+        "loglik-only sweep must return no counts"
+    );
     assert_eq!(prof.n_persons, N_PERSONS);
+    let timed = prof.gen_only_ns + prof.block_acc_ns + prof.posterior_ns;
     assert!(timed > 0, "section timers must record work");
     let block_share = prof.block_acc_ns as f64 / timed as f64;
     eprintln!(
-        "2004 AFTER loglik-only N={N_PERSONS} items={N_ITEMS} q={Q}: wall_ms={:.3} \
-         gen_only_ms={:.3} block_acc_ms={:.3} posterior_ms={:.3} \
-         block_share={:.1}% ll={ll:.6}",
-        wall_ns as f64 / 1e6,
-        prof.gen_only_ns as f64 / 1e6,
-        prof.block_acc_ns as f64 / 1e6,
-        prof.posterior_ns as f64 / 1e6,
+        "2004 synthetic loglik-only N={N_PERSONS} items={N_ITEMS} q={Q}: \
+         counts_ms={:.3} skip_ms={:.3} block_share={:.1}% ll={ll_skip:.6}",
+        counts_ns as f64 / 1e6,
+        skip_ns as f64 / 1e6,
         100.0 * block_share,
-    );
-    // Baseline (counts filled) on the same host/fixture was wall≈470ms with
-    // posterior_ms≈311 (67% of timed sections). After skip, wall must drop
-    // below that measured posterior term and block_acc must dominate.
-    assert!(
-        wall_ns as f64 / 1e6 < 350.0,
-        "expected wall below baseline-with-counts (~470ms), got {:.1}ms",
-        wall_ns as f64 / 1e6
     );
     assert!(
         block_share >= 0.70,
         "after skipping counts, block_acc should dominate; share={block_share:.3}"
+    );
+    assert!(
+        skip_ns.saturating_mul(3) < counts_ns,
+        "synthetic skip path should be at least 3x faster than count fill \
+         (counts_ns={counts_ns}, skip_ns={skip_ns})"
     );
 }
 
@@ -181,7 +262,10 @@ fn estep_nest_a_hoist_regression_documented_2004() {
     }
     let hoist_ns = t_hoist.elapsed().as_nanos();
 
-    assert_eq!(naive, hoist, "A-hoist must be bit-identical on this fixture");
+    assert_eq!(
+        naive, hoist,
+        "A-hoist must be bit-identical on this fixture"
+    );
     let speedup = naive_ns as f64 / hoist_ns as f64;
     eprintln!(
         "2004 A-hoist microbench (fully observed) q={Q} reps={reps}: \

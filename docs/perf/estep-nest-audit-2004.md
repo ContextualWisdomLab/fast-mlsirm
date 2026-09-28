@@ -52,7 +52,8 @@ stable in `q` because the dominant term is `O(N · S · q_g · q_s · m_block)`.
 
 ### Measured section share (baseline WITH expected counts)
 
-Host run 2026-09-18, `estep_nest_profile_2004` binary, workload above,
+Host run 2026-09-18, synthetic fixture later guarded by
+`estep_nest_profile_2004_loglik_only_skips_count_fill`, workload above,
 `accumulate_counts = true` (pre-fix path):
 
 | Section | ms | Share of timed sections | Notes |
@@ -61,6 +62,12 @@ Host run 2026-09-18, `estep_nest_profile_2004` binary, workload above,
 | general-only accumulation | 0.06 | ~0% | |
 | posterior / expected counts | 311.1 | 67.0% | **hottest** |
 | wall (one E-step via marginal API) | 469.9 | — | includes table setup outside timers |
+
+These timings are a **synthetic** CP3-shaped fixture on one host
+(2026-09-18). They characterize the nest ranking. They are not a
+right-cleared product-data acceptance lane, and they do not close #2004.
+The section timers used to record them are `#[cfg(test)]` inside
+`bifactor_grm` and are absent from the released crate API.
 
 ### Defect A hoist — measured, NOT applied
 
