@@ -48,8 +48,9 @@ def test_person_fit_fipc_prior_and_provenance():
     assert result["core_sha256"] == digest
     assert result["converged"] is True
     assert result["termination_reason"] == "converged"
-    assert result["valid_person_fit"] is True
-    assert result["diagnostic_only"] is False
+    assert result["valid_person_fit"] is False
+    assert result["diagnostic_only"] is True
+    assert result["statistic_validity"]["lz_star"] == "unverified_polytomous_eap_correction"
 
 
 def test_standard_prior_matches_existing_eap():
@@ -70,6 +71,25 @@ def test_standard_prior_matches_existing_eap():
     )
     for key in ("lz", "lz_star", "theta_eap", "flagged"):
         np.testing.assert_array_equal(focal_result[key], result[key])
+
+
+def test_direct_native_person_fit_marks_correction_unverified():
+    """Requires the new compiled core; not covered by the mock-only suite."""
+    core = fast_mlsirm._core
+    y = np.array([0, 1, 1, 2], dtype=np.int64)
+    for focal in (False, True):
+        result = core.poly_person_fit(
+            y, 2, 2, 3, np.ones(2), np.array([0.5, -0.5] * 2),
+            None, "grm", 121, 0.0, 1.0, -1.5, focal,
+        )
+        assert result["validity_schema_version"] == 1
+        assert result["valid_person_fit"] is False
+        assert result["diagnostic_only"] is True
+        assert result["statistic_validity"] == {
+            "lz": "not_assessed_uncorrected",
+            "lz_star": "unverified_polytomous_eap_correction",
+            "flagged": "unverified_polytomous_eap_correction",
+        }
 
 
 def test_person_fit_refuses_unconverged_fipc():

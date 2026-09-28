@@ -67,6 +67,12 @@ from .bifactor_grm import bifactor_oakes_se as bifactor_oakes_se, BifactorOakesS
 from .bifactor_multigroup import fit_bifactor_grm_multigroup as fit_bifactor_grm_multigroup, BifactorMultigroupFit as BifactorMultigroupFit
 from .two_tier_grm import fit_two_tier_grm as fit_two_tier_grm, TwoTierGrmFit as TwoTierGrmFit
 from .two_tier_grm import two_tier_oakes_se as two_tier_oakes_se, TwoTierOakesSe as TwoTierOakesSe
+from .two_tier_grm import two_tier_oakes_se_from_fit as two_tier_oakes_se_from_fit
+from .two_tier_grm import (
+    TwoTierExpectedTotalGivenPrimary as TwoTierExpectedTotalGivenPrimary,
+    expected_total_score_two_tier_given_primary as expected_total_score_two_tier_given_primary,
+    expected_total_score_two_tier_from_fit as expected_total_score_two_tier_from_fit,
+)
 from .gpcm import fit_gpcm as fit_gpcm, GpcmFit as GpcmFit
 from .facets import fit_facets as fit_facets, FacetsFit as FacetsFit
 from .ksirt import analyze_ksirt as analyze_ksirt, ksirt_analysis as ksirt_analysis, KsirtResult as KsirtResult
@@ -224,7 +230,7 @@ from .serving import (bank_information as bank_information,
                       load_serving_bundle as load_serving_bundle,
                       score_respondents as score_respondents)
 from .preprocessing import irtree_expand as irtree_expand
-from .polytomous import fit_polytomous as fit_polytomous, PolytomousFit as PolytomousFit, score_polytomous as score_polytomous, information_polytomous as information_polytomous, polytomous_category_probabilities as polytomous_category_probabilities, polytomous_expected_response as polytomous_expected_response, expected_total_score_monotonicity as expected_total_score_monotonicity, focal_expected_total_score_monotonicity as focal_expected_total_score_monotonicity, bifactor_expected_total_score_monotonicity as bifactor_expected_total_score_monotonicity, ExpectedScoreMonotonicity as ExpectedScoreMonotonicity, fit_lsirm_polytomous as fit_lsirm_polytomous, PolyLsirmFit as PolyLsirmFit, polytomous_information_criteria as polytomous_information_criteria, item_fit_polytomous as item_fit_polytomous, m2_polytomous as m2_polytomous, local_dependence_polytomous as local_dependence_polytomous, fit_nominal_polytomous as fit_nominal_polytomous, NominalFit as NominalFit, person_fit_polytomous as person_fit_polytomous, cat_simulate_polytomous as cat_simulate_polytomous, dif_polytomous as dif_polytomous, dif_polytomous_purified as dif_polytomous_purified, dif_polytomous_anchor_sets as dif_polytomous_anchor_sets, u3_person_fit_polytomous as u3_person_fit_polytomous, u3_cutoff_polytomous as u3_cutoff_polytomous, check_bifactor_expected_total_score_monotonicity as check_bifactor_expected_total_score_monotonicity, simulate_cat_polytomous as simulate_cat_polytomous, detect_dif_polytomous as detect_dif_polytomous, detect_dif_anchor_sets_polytomous as detect_dif_anchor_sets_polytomous, detect_dif_polytomous_purified as detect_dif_polytomous_purified, check_expected_total_score_monotonicity as check_expected_total_score_monotonicity, check_focal_expected_total_score_monotonicity as check_focal_expected_total_score_monotonicity, compute_information_polytomous as compute_information_polytomous, compute_item_fit_polytomous as compute_item_fit_polytomous, diagnose_local_dependence_polytomous as diagnose_local_dependence_polytomous, compute_person_fit_polytomous as compute_person_fit_polytomous, predict_category_probabilities_polytomous as predict_category_probabilities_polytomous, predict_expected_response_polytomous as predict_expected_response_polytomous, compute_information_criteria_polytomous as compute_information_criteria_polytomous, compute_u3_cutoff_polytomous as compute_u3_cutoff_polytomous, compute_u3_person_fit_polytomous as compute_u3_person_fit_polytomous
+from .polytomous import fit_polytomous as fit_polytomous, PolytomousFit as PolytomousFit, score_polytomous as score_polytomous, information_polytomous as information_polytomous, polytomous_category_probabilities as polytomous_category_probabilities, polytomous_expected_response as polytomous_expected_response, expected_total_score_monotonicity as expected_total_score_monotonicity, focal_expected_total_score_monotonicity as focal_expected_total_score_monotonicity, bifactor_expected_total_score_monotonicity as bifactor_expected_total_score_monotonicity, ExpectedScoreMonotonicity as ExpectedScoreMonotonicity, fit_lsirm_polytomous as fit_lsirm_polytomous, PolyLsirmFit as PolyLsirmFit, polytomous_information_criteria as polytomous_information_criteria, item_fit_polytomous as item_fit_polytomous, m2_polytomous as m2_polytomous, local_dependence_polytomous as local_dependence_polytomous, fit_nominal_polytomous as fit_nominal_polytomous, NominalFit as NominalFit, person_fit_polytomous as person_fit_polytomous, cat_simulate_polytomous as cat_simulate_polytomous, dif_polytomous as dif_polytomous, dif_polytomous_purified as dif_polytomous_purified, dif_polytomous_anchor_sets as dif_polytomous_anchor_sets, u3_person_fit_polytomous as u3_person_fit_polytomous, u3_cutoff_polytomous as u3_cutoff_polytomous, check_bifactor_expected_total_score_monotonicity as check_bifactor_expected_total_score_monotonicity, predict_bifactor_expected_total_score as predict_bifactor_expected_total_score, simulate_cat_polytomous as simulate_cat_polytomous, detect_dif_polytomous as detect_dif_polytomous, detect_dif_anchor_sets_polytomous as detect_dif_anchor_sets_polytomous, detect_dif_polytomous_purified as detect_dif_polytomous_purified, check_expected_total_score_monotonicity as check_expected_total_score_monotonicity, check_focal_expected_total_score_monotonicity as check_focal_expected_total_score_monotonicity, compute_information_polytomous as compute_information_polytomous, compute_item_fit_polytomous as compute_item_fit_polytomous, diagnose_local_dependence_polytomous as diagnose_local_dependence_polytomous, compute_person_fit_polytomous as compute_person_fit_polytomous, predict_category_probabilities_polytomous as predict_category_probabilities_polytomous, predict_expected_response_polytomous as predict_expected_response_polytomous, compute_information_criteria_polytomous as compute_information_criteria_polytomous, compute_u3_cutoff_polytomous as compute_u3_cutoff_polytomous, compute_u3_person_fit_polytomous as compute_u3_person_fit_polytomous
 from .dif import (mantel_haenszel_dif as mantel_haenszel_dif, logistic_dif as logistic_dif,
                   mantel_haenszel_dif_purified as mantel_haenszel_dif_purified,
                   logistic_dif_purified as logistic_dif_purified,
@@ -409,7 +415,11 @@ __all__ = [  # noqa: RUF022
     "fit_two_tier_grm",
     "TwoTierGrmFit",
     "two_tier_oakes_se",
+    "two_tier_oakes_se_from_fit",
     "TwoTierOakesSe",
+    "TwoTierExpectedTotalGivenPrimary",
+    "expected_total_score_two_tier_given_primary",
+    "expected_total_score_two_tier_from_fit",
     "fit_gpcm",
     "GpcmFit",
     "fit_rsm",
@@ -582,6 +592,7 @@ __all__ = [  # noqa: RUF022
     "u3_person_fit_polytomous",
     "u3_cutoff_polytomous",
     "check_bifactor_expected_total_score_monotonicity",
+    "predict_bifactor_expected_total_score",
     "simulate_cat_polytomous",
     "detect_dif_polytomous",
     "detect_dif_anchor_sets_polytomous",

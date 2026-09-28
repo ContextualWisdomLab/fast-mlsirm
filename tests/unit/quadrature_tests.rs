@@ -45,6 +45,12 @@ fn dense_unidimensional_rule_is_normalized_and_symmetric() {
     }
 }
 
+#[test]
+fn dedicated_121_rule_passes_the_shared_validator() {
+    let (nodes, weights) = resolve_gh_rule_unidim(121).unwrap();
+    validate_gh_rule(nodes, weights).unwrap();
+}
+
 /// #1929: node count must no longer be capped at 41. Any n >= 1 is
 /// generated on demand via Golub & Welsch (1969) (see module-level comment
 /// in quadrature.rs for full citations).
@@ -62,6 +68,17 @@ fn zero_nodes_is_rejected_with_a_named_error() {
     let err = require_gh_rule(0, "q_theta").unwrap_err();
     assert!(err.contains("q_theta"));
     assert!(err.contains(">= 1"));
+}
+
+#[test]
+fn invalid_rule_shapes_and_masses_fail_closed() {
+    assert!(validate_gh_rule(&[], &[]).is_err());
+    assert!(validate_gh_rule(&[0.0], &[]).is_err());
+    assert!(validate_gh_rule(&[f64::NAN], &[1.0]).is_err());
+    assert!(validate_gh_rule(&[0.0], &[f64::INFINITY]).is_err());
+    assert!(validate_gh_rule(&[0.0], &[-1.0]).is_err());
+    assert!(validate_gh_rule(&[0.0], &[0.0]).is_err());
+    assert!(validate_gh_rule(&[0.0], &[1.0]).is_ok());
 }
 
 #[test]

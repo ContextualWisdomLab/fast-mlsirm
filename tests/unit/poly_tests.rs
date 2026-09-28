@@ -3089,3 +3089,54 @@ fn poly_u3_monte_carlo_500() {
         "per-score-group miscalibration too large: {bindev_n}"
     );
 }
+
+#[test]
+fn bifactor_expected_total_uses_shared_finite_quadrature() {
+    let theta = [-1.0, 0.0, 1.0];
+    let totals = bifactor_expected_total_score(
+        &theta,
+        &[1.1, 0.9],
+        &[0.6, 0.0],
+        &[1.2, 0.0, -1.2, 1.2, 0.0, -1.2],
+        2,
+        4,
+        21,
+    )
+    .expect("finite item parameters and shared quadrature must score");
+    assert_eq!(totals.len(), theta.len());
+    assert!(totals.iter().all(|value| value.is_finite()));
+    assert!(totals.windows(2).all(|pair| pair[0] < pair[1]));
+}
+
+#[test]
+fn bifactor_expected_total_rejects_invalid_native_inputs() {
+    let thresholds = [1.2, 0.0, -1.2];
+    let zero_q = bifactor_expected_total_score(
+        &[0.0], &[1.0], &[0.5], &thresholds, 1, 4, 0,
+    )
+    .unwrap_err();
+    assert!(zero_q.contains("q_specific"));
+    assert!(bifactor_expected_total_score(
+        &[0.0],
+        &[1.0],
+        &[f64::NAN],
+        &thresholds,
+        1,
+        4,
+        21,
+    )
+    .is_err());
+    assert!(bifactor_expected_total_score(&[0.0], &[], &[], &[], 0, 4, 21).is_err());
+    assert!(bifactor_expected_total_score(&[0.0], &[1.0], &[0.5], &[], 1, 0, 21).is_err());
+    assert!(bifactor_expected_total_score(&[0.0], &[1.0], &[0.5], &[], 1, 1, 21).is_err());
+    assert!(bifactor_expected_total_score(
+        &[0.0],
+        &[1.0],
+        &[0.5],
+        &thresholds,
+        1,
+        POLY_MAX_CAT + 1,
+        21,
+    )
+    .is_err());
+}

@@ -200,7 +200,7 @@ def test_estimate_path_matches_origin_main_golden() -> None:
         se = two_tier_oakes_se(
             fit.a_primary, fit.a_specific, fit.threshold, fit.phi,
             y, pmap, smap, 3, 2, 1, q_primary=7, q_specific=7, fd_step=1e-5,
-            **({} if correlation is None else {"primary_correlation": correlation}),
+            primary_correlation="estimate",
         )
         assert se.labels == golden_labels
         assert se.information.shape == (17, 17)
