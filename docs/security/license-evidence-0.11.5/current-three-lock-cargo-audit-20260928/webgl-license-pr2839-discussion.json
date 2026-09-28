@@ -1,0 +1,48 @@
+{
+  "checked_at_utc": "2026-09-28T01:27:38Z",
+  "source_commit": "ca07c9628d207b5cc560ee6eac32ceeb1c39a2ed",
+  "items": [
+    {
+      "url": "https://api.github.com/repos/KhronosGroup/WebGL/pulls/2839",
+      "http_status": 200,
+      "response_sha256": "eb0d890695982d5ce82c8629981d6126299a499697b7bdc134936050a1b526f6",
+      "etag": "\"7d985b830697b932be7a75f3b5c61f9f072eff44124b19e5fec3092d0ab10027\"",
+      "number": 2839,
+      "html_url": "https://github.com/KhronosGroup/WebGL/pull/2839",
+      "title": "Add LICENSE.txt.",
+      "created_at": "2019-03-28T21:08:55Z",
+      "merged_at": "2019-03-30T20:37:33Z",
+      "body": "Copyright blocks can now be abbreviated to:\r\n```\r\nCopyright (c) [year] The Khronos Group Inc.\r\nUse of this source code is governed by an MIT-style license that can be\r\nfound in the LICENSE.txt file.\r\n```"
+    },
+    {
+      "url": "https://api.github.com/repos/KhronosGroup/WebGL/issues/2839/comments?per_page=100",
+      "http_status": 200,
+      "response_sha256": "0e34f0d41c7cd36939ae401d4da42e99fac08f3144c1784150a0bc48c9f4691c",
+      "etag": "W/\"5d9e996cee4a0c80a2a48ffd56e13080b33e4fbc64bdd5812f1f26014894e601\"",
+      "comments": [
+        {
+          "id": 477771968,
+          "html_url": "https://github.com/KhronosGroup/WebGL/pull/2839#issuecomment-477771968",
+          "author": "kdashg",
+          "created_at": "2019-03-28T21:09:25Z",
+          "body": "FYI @grorg @RafaelCintron @kainino0x "
+        },
+        {
+          "id": 478287413,
+          "html_url": "https://github.com/KhronosGroup/WebGL/pull/2839#issuecomment-478287413",
+          "author": "kenrussell",
+          "created_at": "2019-03-30T20:37:29Z",
+          "body": "Looks great!\r\n"
+        }
+      ]
+    },
+    {
+      "url": "https://api.github.com/repos/KhronosGroup/WebGL/pulls/2839/comments?per_page=100",
+      "http_status": 200,
+      "response_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "etag": "\"74d1db57f0fec3481bb6b4d9bcdc020d656635ec6c53ee589d27a8831cbbe280\"",
+      "comments": []
+    }
+  ],
+  "finding": "PR body and all returned comments contain no explicit grant for earlier versions of the eight unmatched WebGL XML files; HOLD retained."
+}
