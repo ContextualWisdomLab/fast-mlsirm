@@ -1,0 +1,151 @@
+{
+  "schema": "local.upstream-licence-retrieval/1",
+  "source_sha": "1e5decd5bdecf9e42262a8cfa5f03fc2ed8f41a5",
+  "cargo_audit_sha256": "0664afe018e4bbd698b87598990ad0bbdc0fb263dd4ea2a95fdb345a581353ef",
+  "acceptance": false,
+  "limitations": [
+    "Only root licence retrieval and Cargo.toml.orig equality are verified; complete crate-source equality and licence applicability are not established.",
+    "No supplement is installed into the central gate. Missing-text failures and release HOLD remain.",
+    "The objc2 upstream root documentation itself identifies unresolved SDK-derived redistribution implications. No legal determination is made."
+  ],
+  "dependencies": [
+    {
+      "key": "cargo/block2@0.6.2",
+      "crate_archive_sha256": "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5",
+      "upstream_repository": "madsmtm/objc2",
+      "upstream_commit": "b4167b582b2f75f9a1be75495c41b765344fd03c",
+      "path_in_vcs": "crates/block2",
+      "license_path": "LICENSE.md",
+      "license_url": "https://raw.githubusercontent.com/madsmtm/objc2/b4167b582b2f75f9a1be75495c41b765344fd03c/LICENSE.md",
+      "license_git_blob_oid": "540ae4c81adb5f64a9f61e222b688880da24300e",
+      "license_sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+      "status": "retrieved-root-text-only; package/source coverage and gate acceptance unproven",
+      "manifest_url": "https://raw.githubusercontent.com/madsmtm/objc2/b4167b582b2f75f9a1be75495c41b765344fd03c/crates/block2/Cargo.toml",
+      "upstream_manifest_sha256": "d18aec0c39956f1a29b6d157c13ec51ce53d7c2a2982c307528215f8870720ac",
+      "crate_original_manifest_sha256": "d18aec0c39956f1a29b6d157c13ec51ce53d7c2a2982c307528215f8870720ac",
+      "manifest_bytes_equal": true,
+      "upstream_manifest_package": {
+        "name": "block2",
+        "version": "0.6.2",
+        "license": "MIT",
+        "license-file": null
+      },
+      "finding": "Upstream root documents Apple SDK-derived code and unresolved redistribution implications; root file links MIT rather than supplying the full MIT grant."
+    },
+    {
+      "key": "cargo/gl_generator@0.14.0",
+      "crate_archive_sha256": "1a95dfc23a2b4a9a2f5ab41d194f8bfda3cabec42af4e39f08c339eb2a0c124d",
+      "upstream_repository": "brendanzab/gl-rs",
+      "upstream_commit": "ea503e8d5fb6d73c6030e6191ce738cd3bf3433e",
+      "path_in_vcs": null,
+      "license_path": "LICENSE",
+      "license_url": "https://raw.githubusercontent.com/brendanzab/gl-rs/ea503e8d5fb6d73c6030e6191ce738cd3bf3433e/LICENSE",
+      "license_git_blob_oid": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+      "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "status": "retrieved-root-text-only; package/source coverage and gate acceptance unproven",
+      "manifest_url": "https://raw.githubusercontent.com/brendanzab/gl-rs/ea503e8d5fb6d73c6030e6191ce738cd3bf3433e/gl_generator/Cargo.toml",
+      "upstream_manifest_sha256": "4daaaac088657de6c5b6223ca9f890b8b5621f073068c65c0d759b0625d36280",
+      "crate_original_manifest_sha256": "4daaaac088657de6c5b6223ca9f890b8b5621f073068c65c0d759b0625d36280",
+      "manifest_bytes_equal": true,
+      "upstream_manifest_package": {
+        "name": "gl_generator",
+        "version": "0.14.0",
+        "license": "Apache-2.0",
+        "license-file": null
+      },
+      "finding": "Exact upstream root supplies the complete Apache-2.0 text; missing from crate archive. Supplemental evidence path and full package/source binding are not established."
+    },
+    {
+      "key": "cargo/khronos_api@3.1.0",
+      "crate_archive_sha256": "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc",
+      "upstream_repository": "brendanzab/gl-rs",
+      "upstream_commit": "f150967b1c44ae888e6676f93f639ebc82771bdc",
+      "path_in_vcs": null,
+      "license_path": "LICENSE",
+      "license_url": "https://raw.githubusercontent.com/brendanzab/gl-rs/f150967b1c44ae888e6676f93f639ebc82771bdc/LICENSE",
+      "license_git_blob_oid": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+      "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "status": "retrieved-root-text-only; package/source coverage and gate acceptance unproven",
+      "manifest_url": "https://raw.githubusercontent.com/brendanzab/gl-rs/f150967b1c44ae888e6676f93f639ebc82771bdc/khronos_api/Cargo.toml",
+      "upstream_manifest_sha256": "4a1ac66b226935a2ce69cca4c1c56be36cea83a5da382514db5ea967568e3ca9",
+      "crate_original_manifest_sha256": "4a1ac66b226935a2ce69cca4c1c56be36cea83a5da382514db5ea967568e3ca9",
+      "manifest_bytes_equal": true,
+      "upstream_manifest_package": {
+        "name": "khronos_api",
+        "version": "3.1.0",
+        "license": "Apache-2.0",
+        "license-file": null
+      },
+      "finding": "Exact upstream root supplies the complete Apache-2.0 text; missing from crate archive. Supplemental evidence path and full package/source binding are not established."
+    },
+    {
+      "key": "cargo/objc2@0.6.4",
+      "crate_archive_sha256": "3a12a8ed07aefc768292f076dc3ac8c48f3781c8f2d5851dd3d98950e8c5a89f",
+      "upstream_repository": "madsmtm/objc2",
+      "upstream_commit": "8852b424193ca41602281b3d7540d7c8ed51e49a",
+      "path_in_vcs": "crates/objc2",
+      "license_path": "LICENSE.md",
+      "license_url": "https://raw.githubusercontent.com/madsmtm/objc2/8852b424193ca41602281b3d7540d7c8ed51e49a/LICENSE.md",
+      "license_git_blob_oid": "540ae4c81adb5f64a9f61e222b688880da24300e",
+      "license_sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+      "status": "retrieved-root-text-only; package/source coverage and gate acceptance unproven",
+      "manifest_url": "https://raw.githubusercontent.com/madsmtm/objc2/8852b424193ca41602281b3d7540d7c8ed51e49a/crates/objc2/Cargo.toml",
+      "upstream_manifest_sha256": "edff06609a6f76ba4aa4ead2f6219826f6c4fd82075fa178029085f37f931536",
+      "crate_original_manifest_sha256": "edff06609a6f76ba4aa4ead2f6219826f6c4fd82075fa178029085f37f931536",
+      "manifest_bytes_equal": true,
+      "upstream_manifest_package": {
+        "name": "objc2",
+        "version": "0.6.4",
+        "license": "MIT",
+        "license-file": null
+      },
+      "finding": "Upstream root documents Apple SDK-derived code and unresolved redistribution implications; root file links MIT rather than supplying the full MIT grant."
+    },
+    {
+      "key": "cargo/objc2-encode@4.1.0",
+      "crate_archive_sha256": "ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33",
+      "upstream_repository": "madsmtm/objc2",
+      "upstream_commit": "8d214f5477365ffcbcbb7de058c86ed9a518efb7",
+      "path_in_vcs": "crates/objc2-encode",
+      "license_path": "LICENSE.md",
+      "license_url": "https://raw.githubusercontent.com/madsmtm/objc2/8d214f5477365ffcbcbb7de058c86ed9a518efb7/LICENSE.md",
+      "license_git_blob_oid": "540ae4c81adb5f64a9f61e222b688880da24300e",
+      "license_sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+      "status": "retrieved-root-text-only; package/source coverage and gate acceptance unproven",
+      "manifest_url": "https://raw.githubusercontent.com/madsmtm/objc2/8d214f5477365ffcbcbb7de058c86ed9a518efb7/crates/objc2-encode/Cargo.toml",
+      "upstream_manifest_sha256": "12972b1faf213492f9e78226f23642c461284b739f7be5437d9401465a2869a6",
+      "crate_original_manifest_sha256": "12972b1faf213492f9e78226f23642c461284b739f7be5437d9401465a2869a6",
+      "manifest_bytes_equal": true,
+      "upstream_manifest_package": {
+        "name": "objc2-encode",
+        "version": "4.1.0",
+        "license": "MIT",
+        "license-file": null
+      },
+      "finding": "Upstream root documents Apple SDK-derived code and unresolved redistribution implications; root file links MIT rather than supplying the full MIT grant."
+    },
+    {
+      "key": "cargo/spirv@0.4.0+sdk-1.4.341.0",
+      "crate_archive_sha256": "d9571ea910ebd84c86af4b3ed27f9dbdc6ad06f17c5f96146b2b671e2976744f",
+      "upstream_repository": "gfx-rs/rspirv",
+      "upstream_commit": "8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4",
+      "path_in_vcs": "spirv",
+      "license_path": "LICENSE",
+      "license_url": "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/LICENSE",
+      "license_git_blob_oid": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+      "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "status": "retrieved-root-text-only; package/source coverage and gate acceptance unproven",
+      "manifest_url": "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/spirv/Cargo.toml",
+      "upstream_manifest_sha256": "4d19e7aaeba0b0dd52eaa00bb592dfc6015813385fc47badcee396c353cc1d61",
+      "crate_original_manifest_sha256": "4d19e7aaeba0b0dd52eaa00bb592dfc6015813385fc47badcee396c353cc1d61",
+      "manifest_bytes_equal": true,
+      "upstream_manifest_package": {
+        "name": "spirv",
+        "version": "0.4.0+sdk-1.4.341.0",
+        "license": "Apache-2.0",
+        "license-file": null
+      },
+      "finding": "Exact upstream root supplies the complete Apache-2.0 text; missing from crate archive. Supplemental evidence path and full package/source binding are not established."
+    }
+  ]
+}

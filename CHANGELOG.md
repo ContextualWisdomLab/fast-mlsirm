@@ -7,6 +7,11 @@
 - Opt-in `progress` callback on `fit_two_tier_grm` / `fit_bifactor_grm` exporting
   per-E-step marginal loglik / Δloglik (Bock & Aitkin, 1981, pp. 445, 447–448;
   #2021). Default remains silent.
+- Saved multiple-group bifactor and two-tier GRM fits can now produce
+  per-person conditional `l_z`, posterior trait estimates, observed-item
+  counts, and caller-threshold flags. Optional seeded model resampling gives
+  an empirical lower-tail probability; no cross-loading `l_z*` or normal-null
+  calibration is claimed (#2116).
 
 ### Changed
 
@@ -32,7 +37,31 @@
 - Rust companions `fit_*_with_progress` keep existing silent entry points
   unchanged; PyO3 detaches only when `progress is None`.
 
+#### Release license evidence and NumPy lock reconciliation
+
+- `docs/security/license-evidence-0.11.5.md` records which artifacts are
+  published: the PyPI sdist and 12 wheels. The Rust crates are not published.
+  It also records the per-dependency license inventory for both ecosystems and
+  three verdicts:
+  - atheris 3.1.0 is Apache-2.0. PyPI metadata declares no license, so this
+    is determined from its LICENSE file, which is hash-matched to upstream.
+  - r-efi 5.3.0 and 6.0.0 are used under an explicit MIT election with a
+    recorded rationale. They are reached only through a dev-dependency path.
+  - The official NumPy wheels bundle libgfortran and libquadmath. libquadmath
+    is LGPL-2.1-or-later and has no runtime exception, so this is marked as
+    an owner decision, not approved.
+- `tools/license_inventory.py` is an offline generator for
+  `docs/security/license-evidence-0.11.5/inventory.json`.
+
 ### Changed
+
+#### Release license evidence and NumPy lock reconciliation
+
+- `uv.lock`, `requirements/ci.txt` and `requirements/package.txt` all pin
+  numpy 2.5.3. Before this change they pinned 2.5.1 and 2.5.2, and the audit
+  environment ran 2.5.3. Only the numpy entries changed. The requirements
+  files carry the complete 2.5.3 PyPI hash set. The user-facing
+  `numpy>=1.24` constraint is unchanged.
 
 #### Release cut 0.11.4
 
@@ -73,6 +102,22 @@
 - `test_allowlisted_capability_nodes_have_exact_ci_owners` prevents a future
   module glob, owner-name substitution, or allowlisted node without an
   executable CI command.
+
+#### Release-source checkout authority
+
+- The publication workflow no longer passes caller-controlled
+  `workflow_dispatch` SHAs directly to `actions/checkout`. It first checks out
+  the protected invocation commit (`github.sha`) with full history, requires the
+  supplied control-plane identity to equal that commit, canonicalizes the
+  requested release object, and proves that object is an ancestor of the trusted
+  control plane.
+- The verified release commit is emitted once from `verify-release`; all build,
+  provenance, admission, tagging, and publication consumers use that job output.
+  Invalid, unavailable, sibling, noncanonical, or mismatched identities fail
+  closed before an untrusted tree becomes executable.
+- Contract coverage executes the exact guard against real Git histories. The
+  repair removes all 6 raw release checkout refs and both raw control-plane
+  checkout refs that were present in the RED state.
 
 #### Red Semgrep gate on every PR
 
