@@ -101,11 +101,16 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_and_parity() -> None:
         assert isinstance(res, BifactorBootstrapResult)
         assert res.n_replicates == n_replicates
         assert res.n_converged >= 1
+        assert len(res.replicate_ids) == len(res.replicate_errors) == n_replicates
         assert np.all(np.isfinite(res.replicate_loglik))
         for estimates in (
             res.replicate_a_general, res.replicate_a_specific, res.replicate_threshold
         ):
             assert np.all(np.isfinite(estimates))
+        print(
+            f"[bootstrap q=11] {res.device}: converged={res.n_converged}/{n_replicates}; "
+            f"ids={res.converged_replicate_ids}; errors={res.replicate_errors}"
+        )
 
     # Replicate-by-replicate device parity (single-precision E-step level).
     assert res_cpu.n_converged == res_gpu.n_converged
@@ -195,11 +200,16 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_q121() -> None:
         assert isinstance(res, BifactorBootstrapResult)
         assert res.n_replicates == n_replicates
         assert res.n_converged >= 1
+        assert len(res.replicate_ids) == len(res.replicate_errors) == n_replicates
         assert np.all(np.isfinite(res.replicate_loglik))
         for estimates in (
             res.replicate_a_general, res.replicate_a_specific, res.replicate_threshold
         ):
             assert np.all(np.isfinite(estimates))
+        print(
+            f"[bootstrap q=121] {res.device}: converged={res.n_converged}/{n_replicates}; "
+            f"ids={res.converged_replicate_ids}; errors={res.replicate_errors}"
+        )
 
     # Replicate-by-replicate device parity (single-precision E-step level).
     assert res_cpu.n_converged == res_gpu.n_converged
