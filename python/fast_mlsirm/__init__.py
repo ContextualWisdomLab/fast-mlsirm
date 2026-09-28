@@ -268,6 +268,12 @@ from .regression import (
     nested_ols_column_drop as nested_ols_column_drop,
 )
 from .regression import (
+    normal_wald_interval as normal_wald_interval,
+)
+from .regression import (
+    sample_mean_sd as sample_mean_sd,
+)
+from .regression import (
     slope_difference as slope_difference,
 )
 from .regression import (
@@ -360,6 +366,8 @@ __all__ = list(_legacy_init.__all__) + [
     "f_sf",
     "fit_ols_hc",
     "nested_ols_column_drop",
+    "normal_wald_interval",
+    "sample_mean_sd",
     "slope_difference",
     "t_sf",
     "xwz_e_design_row",

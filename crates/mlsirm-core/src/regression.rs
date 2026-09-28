@@ -72,6 +72,10 @@
 //!     <https://doi.org/10.1016/0304-4076(85)90158-7>
 //!     (Working-paper text used for equation locators: QED WP 537.)
 //!
+//! Pennsylvania State University, Department of Statistics. (n.d.).
+//!     *Lesson 13: Weighted least squares & logistic regressions*. STAT 501:
+//!     Regression methods. <https://online.stat.psu.edu/stat501/Lesson13>
+//!
 //! Press, W. H., Teukolsky, S. A., Vetterling, W. T., & Flannery, B. P.
 //!     (2007). *Numerical recipes: The art of scientific computing* (3rd ed.).
 //!     Cambridge University Press.
@@ -83,6 +87,9 @@
 //! Pennsylvania State University, Department of Statistics. (n.d.).
 //!     *Lesson 8: Categorical predictors*. STAT 501: Regression methods.
 //!     <https://online.stat.psu.edu/stat501/Lesson08>
+//!
+//! R Core Team. (n.d.). *Standard deviation*. R stats manual.
+//!     <https://stat.ethz.ch/R-manual/R-devel/library/stats/html/sd.html>
 
 use crate::fitstats::{chi2_sf, ln_gamma};
 
@@ -172,6 +179,52 @@ pub struct ContrastResult {
     pub p_f: f64,
     /// Residual degrees of freedom `n - k` used for t/F tails.
     pub df: f64,
+}
+
+/// Finite sample mean and sample SD (`n - 1` denominator).
+///
+/// R Core Team (n.d.), *R stats: Standard Deviation*, Details.
+pub fn sample_mean_sd(values: &[f64]) -> Result<(f64, f64), String> {
+    if values.len() < 2 || values.iter().any(|value| !value.is_finite()) {
+        return Err("sample moments need at least two finite values".to_owned());
+    }
+    let mut mean = 0.0;
+    let mut m2 = 0.0;
+    for (i, &value) in values.iter().enumerate() {
+        let delta = value - mean;
+        mean += delta / (i + 1) as f64;
+        m2 += delta * (value - mean);
+    }
+    let sd = (m2 / (values.len() - 1) as f64).sqrt();
+    if !mean.is_finite() || !sd.is_finite() {
+        return Err("sample moments are not finite".to_owned());
+    }
+    Ok((mean, sd))
+}
+
+/// Normal-Wald interval for an estimate and supplied standard error.
+///
+/// Pennsylvania State University (n.d.), *STAT 501*, Lesson 13,
+/// coefficient confidence interval equation. `confidence_level` is explicit;
+/// this asymptotic interval does not substitute for bootstrap uncertainty.
+pub fn normal_wald_interval(
+    estimate: f64,
+    se: f64,
+    confidence_level: f64,
+) -> Result<(f64, f64), String> {
+    if !estimate.is_finite() || !se.is_finite() || se < 0.0 {
+        return Err("estimate and nonnegative SE must be finite".to_owned());
+    }
+    if !confidence_level.is_finite() || confidence_level <= 0.0 || confidence_level >= 1.0 {
+        return Err("confidence_level must be finite and in (0, 1)".to_owned());
+    }
+    let critical = crate::mokken::normal_upper_quantile((1.0 - confidence_level) / 2.0);
+    let margin = critical * se;
+    let bounds = (estimate - margin, estimate + margin);
+    if !bounds.0.is_finite() || !bounds.1.is_finite() {
+        return Err("normal-Wald interval endpoints are not finite".to_owned());
+    }
+    Ok(bounds)
 }
 
 /// Fit OLS by normal equations and compute the hat diagonal.
