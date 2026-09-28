@@ -114,6 +114,7 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_and_parity() -> None:
 
     # Replicate-by-replicate device parity (single-precision E-step level).
     assert res_cpu.n_converged == res_gpu.n_converged
+    assert res_cpu.converged_replicate_ids == res_gpu.converged_replicate_ids
     np.testing.assert_allclose(
         res_cpu.replicate_a_general, res_gpu.replicate_a_general, atol=1e-6, rtol=0
     )
@@ -213,6 +214,7 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_q121() -> None:
 
     # Replicate-by-replicate device parity (single-precision E-step level).
     assert res_cpu.n_converged == res_gpu.n_converged
+    assert res_cpu.converged_replicate_ids == res_gpu.converged_replicate_ids
     np.testing.assert_allclose(
         res_cpu.replicate_a_general, res_gpu.replicate_a_general, atol=1e-6, rtol=0
     )
