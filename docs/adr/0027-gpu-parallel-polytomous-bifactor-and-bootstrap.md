@@ -61,6 +61,31 @@ We implement and verify the following components:
 - Does not mutate or replace the existing simple-structure MLSIRM / MLS2PLM item response models in place.
 - Does not implement non-compensatory or partially-ordered multidimensional response models.
 - Does not replace Hosted Psychometrics Commons assessment execution services or persistent participant schemas.
+- **Does not claim a library-wide distributed execution backend.** This ADR’s `device` axis is exclusive per E-step (`cpu` XOR `gpu`/`auto` with fallback). GPU detection, CPU fallback, sequential EM (GPU E-step then CPU M-step), and `ThreadPoolExecutor` replicate parallelism are **not** same-host concurrent CPU+GPU work-sharing, and **not** remote multi-host hetero execution.
+- **Does not claim remote Valkey/Redis Streams transport satisfies #2001.** Optional queue transport is follow-on work; shipping Valkey only for `run_bifactor_bootstrap` does **not** close the #2001 epic.
+- **Does not claim GIL release (`Python::detach`, #2000) satisfies distributed execution.** GIL detach enables same-host replicate threading; it is not proof of L3/L4 orchestration.
+
+## Follow-on requirements — library-wide distributed execution (#2001, recorded 2026-09-19)
+
+**Status: REQUIREMENT only — not implemented under this ADR.** Tracking: [#2001](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/2001). Corrects the narrow misread in [comment-5742140343](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/2001#issuecomment-5742140343), which scoped distributed work to optional Valkey for bootstrap only.
+
+User-facing need: a **common execution structure** for **all public numerical APIs** (fit/EM, scoring, SE/information, diagnostics, regression contrasts, MC/bootstrap/resampling), supporting:
+
+1. **Same-host concurrent CPU+GPU numeric split (L3):** one call partitions non-overlapping numeric shards across CPU and GPU with overlapping wall time, deterministic merge, per-shard provenance, and equivalence gates vs pure-CPU and pure-GPU references.
+2. **Remote heterogeneous multi-host execution (L4):** transport-agnostic task dispatch to mixed host/arch/device pools with fail-closed cohort/version gates and per-result provenance (host, arch, lib version/sha, effective device, wall time, thread budget).
+3. **Bootstrap as one consumer, not the scope:** `run_bifactor_bootstrap` is the first planned L4 consumer; other replicate-parallel families (person-fit resampling, equating bootstrap, parallel analysis, recovery MC) share the same contract.
+4. **Valkey/Redis Streams as optional transport:** `XREADGROUP`/`XACK`/`XAUTOCLAIM` may drive L4 when selected; transport choice is **not** the requirement boundary.
+
+Public API inventory, split units, and today’s L0–L2 baseline are recorded in the [#2001 inventory comment (worker `task_7d9370479d05`)](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/2001#issuecomment-5742475833). Same-host CPU+GPU code-symbol audit and A/B/C acceptance matrix: [#2001 same-host audit (worker `task_aa31e6692ad9`)](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/2001#issuecomment-5742433729). Use those tables as the acceptance checklist per numerical family; do not force-parallelize sequential EM iterations, MMLE quadrature chains, finite-difference Hessians, Vuong joint likelihoods, or adaptive CAT loops without documented partition rationale.
+
+### Epic completion gate (#2001 must **not** close when only…)
+
+- GIL/`allow_threads` detach is merged (#2000) without L3/L4 evidence.
+- ADR-0027 GPU E-step + local `ThreadPoolExecutor` bootstrap is shipped without per-family L3/L4 coverage.
+- Optional Valkey for `run_bifactor_bootstrap` works without same-host concurrent split and without remote hetero provenance gates on the shared contract.
+- Any single numerical family reaches L4 while others remain L0–L2 without an explicit phased rollout recorded on #2001.
+
+Implementation evidence must be linked separately from this requirement record. Until then, treat any “distributed execution done” claim as false.
 
 ## Consequences and trade-offs
 
