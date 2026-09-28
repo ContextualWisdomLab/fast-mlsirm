@@ -1,0 +1,17 @@
+{
+  "golub_welsch": {
+    "url": "https://csclub.uwaterloo.ca/~pbarfuss/GolubWelsch.pdf",
+    "sha256": "0d50d9579fa116bf74fde0f63da43aa83595d681b4eae78d6d5fac1f2271682d",
+    "bytes": 873110
+  },
+  "psu_normal_sum": {
+    "url": "https://online.stat.psu.edu/stat414/Lesson26",
+    "sha256": "2321ce992909584705597514d919d438b9589feac0b1f9be724940171114c926",
+    "bytes": 175038
+  },
+  "psu_mgf_product": {
+    "url": "https://online.stat.psu.edu/stat414/Lesson25",
+    "sha256": "0881674d47656d25df315fc6e050f124d825eb4011a62a6425799ae26ea47cca",
+    "bytes": 82497
+  }
+}
