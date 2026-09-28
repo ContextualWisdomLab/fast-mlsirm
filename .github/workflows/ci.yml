@@ -259,3 +259,12 @@ jobs:
               manifest = json.load(fh)
           assert manifest["status"] == "ok"
           PY
+      - name: Preserve package and acceptance evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: package-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: |
+            dist/*.whl
+            release-acceptance/acceptance_summary.json
+            release-acceptance/sales_readiness_manifest.json
+          if-no-files-found: error
