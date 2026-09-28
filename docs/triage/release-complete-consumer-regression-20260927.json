@@ -1,0 +1,37 @@
+{
+  "baseline_source_sha": "316d0d8a2fb68818cb5392f6b8a6dcd93f1f07eb",
+  "baseline_verifier_sha256": "e1e1eb3b733a5c37813aa4df9da61e19afcb0b512a66c2e99adc49bd71a6d276",
+  "updated_verifier_sha256": "7875db6b5fddb0560bf61532496d0e9c64b5f6731f6bd2e355f00ab5d372cb3d",
+  "fixture_source_sha": "ed2449ae093626bd2d17fe2e724a57c826e14125",
+  "fixture_receipts": 13,
+  "baseline_relative_source": {
+    "result": "REFUSED",
+    "exit_code": 101,
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--format-version",
+      "1",
+      "--filter-platform",
+      "aarch64-unknown-linux-gnu",
+      "--manifest-path",
+      "release-source/crates/fast-mlsirm-py/Cargo.toml",
+      "--features",
+      "pyo3/extension-module"
+    ]
+  },
+  "updated_relative_source": "PASS",
+  "complete_consumer_result": "release admission HOLD: platform-complete scope inventory is not verified",
+  "negative_cases": [
+    "Changed committed root Cargo.lock",
+    "Same omitted Cargo node in both build receipts",
+    "Forged PASS scopes with empty evidence"
+  ],
+  "limitations": [
+    "Real temporary Git source and Cargo metadata for inert local crates only; no compilation or third-party package execution.",
+    "Synthetic distributions, installation receipts, licence reports, Strix verdicts and API metadata; not real release or security acceptance.",
+    "All existing consumer checks reached; final explicit HOLD remains, no admission manifest was written.",
+    "No 0.11.5 thirteen-distribution build, universal2 execution, latest-head hosted CI, merge, tag or publication proof."
+  ]
+}

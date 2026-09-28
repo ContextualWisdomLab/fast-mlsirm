@@ -1,0 +1,116 @@
+{
+  "source_sha": "512037d95483bf405b7ea7363ae0f5d3bd916837",
+  "uv_lock_sha256": "9f17c0e0ef86b0fab2cdc5e1e762d7b1afb95369e358be4df66ba3daa925d297",
+  "requirements_sha256": "259db5c8d24929ec666b9564b975e448a588bec1f837dd4d0a7716f5daca0951",
+  "uv_version": "uv 0.12.5 (210d1f678 2026-08-14 aarch64-apple-darwin)",
+  "checks": [
+    {
+      "python": "3.12",
+      "platform": "linux",
+      "machine": "x86_64",
+      "expected_package_count": 9,
+      "result": "PASS"
+    },
+    {
+      "python": "3.12",
+      "platform": "linux",
+      "machine": "aarch64",
+      "expected_package_count": 8,
+      "result": "PASS"
+    },
+    {
+      "python": "3.12",
+      "platform": "darwin",
+      "machine": "arm64",
+      "expected_package_count": 8,
+      "result": "PASS"
+    },
+    {
+      "python": "3.12",
+      "platform": "darwin",
+      "machine": "x86_64",
+      "expected_package_count": 8,
+      "result": "PASS"
+    },
+    {
+      "python": "3.12",
+      "platform": "win32",
+      "machine": "AMD64",
+      "expected_package_count": 9,
+      "result": "PASS"
+    },
+    {
+      "python": "3.13",
+      "platform": "linux",
+      "machine": "x86_64",
+      "expected_package_count": 9,
+      "result": "PASS"
+    },
+    {
+      "python": "3.13",
+      "platform": "linux",
+      "machine": "aarch64",
+      "expected_package_count": 8,
+      "result": "PASS"
+    },
+    {
+      "python": "3.13",
+      "platform": "darwin",
+      "machine": "arm64",
+      "expected_package_count": 8,
+      "result": "PASS"
+    },
+    {
+      "python": "3.13",
+      "platform": "darwin",
+      "machine": "x86_64",
+      "expected_package_count": 8,
+      "result": "PASS"
+    },
+    {
+      "python": "3.13",
+      "platform": "win32",
+      "machine": "AMD64",
+      "expected_package_count": 9,
+      "result": "PASS"
+    },
+    {
+      "python": "3.14",
+      "platform": "linux",
+      "machine": "x86_64",
+      "expected_package_count": 9,
+      "result": "PASS"
+    },
+    {
+      "python": "3.14",
+      "platform": "linux",
+      "machine": "aarch64",
+      "expected_package_count": 8,
+      "result": "PASS"
+    },
+    {
+      "python": "3.14",
+      "platform": "darwin",
+      "machine": "arm64",
+      "expected_package_count": 8,
+      "result": "PASS"
+    },
+    {
+      "python": "3.14",
+      "platform": "darwin",
+      "machine": "x86_64",
+      "expected_package_count": 8,
+      "result": "PASS"
+    },
+    {
+      "python": "3.14",
+      "platform": "win32",
+      "machine": "AMD64",
+      "expected_package_count": 9,
+      "result": "PASS"
+    }
+  ],
+  "limitation": "Locally constructed package/hash probes against the actual locked all-extras source export. No package download/install, wheel tag compatibility, Strix, hosted or release acceptance is asserted.",
+  "verifier_path": "scripts/ci/release_artifact_transport.py",
+  "verifier_sha256": "ef2d90a975390b919e5d6716df147969ba33b001ad5680b5a43160c7012fd2b7"
+}
