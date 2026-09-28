@@ -648,7 +648,7 @@ jobs:
           RELEASE_COMMIT: ${{ needs.verify-release.outputs.release_commit }}
           LEG: ${{ matrix.target }}-py${{ matrix.python-version }}
         run: python trusted-control/scripts/ci/capture_release_bundle.py "repro-digest/$LEG.tsv" dist
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           version: "0.12.5"
           enable-cache: false
@@ -767,7 +767,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           architecture: x64
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           version: "0.12.5"
           enable-cache: false
@@ -1255,7 +1255,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -I trusted-control/scripts/ci/release_artifact_transport.py "$REPOSITORY"
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           version: "0.12.5"
           enable-cache: false
