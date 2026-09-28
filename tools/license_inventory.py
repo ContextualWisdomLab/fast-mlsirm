@@ -264,6 +264,10 @@ REVIEWED_PYTHON_COMPANIONS = {
      "numpy-2.5.2.dist-info/licenses/numpy/random/src/splitmix64/LICENSE.md",
      "268b0ca06759d31ea3ca68dd35f20e877916e927b1c2a835e4592a3c4354b1f9"):
         ("CC0-1.0",),  # complete CC0 text in the same wheel's highway/LICENSE
+    ("5ed427f4b9542cce09e258fa66b0d8fd6f1e4abab08f2e8e9621cfc38d6fac0c",
+     "sortedcontainers-2.4.0.dist-info/licenses/LICENSE",
+     "1db7cae7fce6452e2e608e401a0f953e0133e4c2d75db69fb8ae851d2086f5b6"):
+        ("Apache-2.0",),  # complete Apache text in the same wheel's LICENSE-APACHE-2.0.txt
 }
 
 
