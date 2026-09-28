@@ -63,3 +63,15 @@ skipped. Its artifacts endpoint returned total_count 0 at inspection on
 2026-09-27 UTC. The other two runs on this commit are dependency graph
 automation, not wheel publication. This public CI execution is therefore
 not the missing authenticated publisher record for the three PyPI wheels.
+
+## PyPI file provenance check, 2026-09-28 UTC
+
+The [PyPI Integrity API](https://docs.pypi.org/api/integrity/) defines `GET /integrity/<project>/<version>/<filename>/provenance` and documents HTTP 404 as “file has no provenance.” After resolving the exact 3.1.0 filenames and SHA256 digests from the live [PyPI release JSON](https://pypi.org/pypi/atheris/3.1.0/json), the endpoint returned HTTP 404 for each file with `Accept: application/vnd.pypi.integrity.v1+json`:
+
+| CPython wheel | PyPI SHA256 | Provenance HTTP status |
+| --- | --- | --- |
+| `atheris-3.1.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl` | `ec5e11f21a4c197fe91f7aea2b2de88e623c73a21fc07b105ac6329a1588457b` | 404 |
+| `atheris-3.1.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl` | `f8a9f51ce8369026e8eb7b7174835e8c4c85a1a6db5d9add36c15100779d2a39` | 404 |
+| `atheris-3.1.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl` | `315a0b5c819852b1ffe1ca72efc389c7724881f2c33e4aacb8c6bcec49bd5011` | 404 |
+
+These files have no PyPI-hosted attestation at this check. This does not rule out a separate authenticated publisher build record or establish native-component rights. Keep Atheris HOLD and seek that record or reproducible matching bytes with complete component provenance.
