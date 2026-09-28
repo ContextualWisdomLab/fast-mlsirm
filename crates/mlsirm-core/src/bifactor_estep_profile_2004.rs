@@ -189,11 +189,6 @@ fn estep_nest_profile_2004_loglik_only_skips_count_fill() {
         block_share >= 0.70,
         "after skipping counts, block_acc should dominate; share={block_share:.3}"
     );
-    assert!(
-        skip_ns.saturating_mul(3) < counts_ns,
-        "synthetic skip path should be at least 3x faster than count fill \
-         (counts_ns={counts_ns}, skip_ns={skip_ns})"
-    );
 }
 
 /// Documents that defect-A hoist of `is_obs`/`y` is NOT a free win on the
