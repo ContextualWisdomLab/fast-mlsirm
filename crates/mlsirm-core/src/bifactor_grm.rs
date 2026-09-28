@@ -837,10 +837,9 @@ fn e_step_cpu_chunked(
     e_step_n_chunks: usize,
     pool: &crate::estep_parallel::PersonChunkPool,
 ) -> Result<(f64, Vec<Vec<Vec<f64>>>), String> {
-    // One counts tensor plus at most `n_threads` in-flight partials.
-    // Empty chunks are not mapped (estep_parallel::fold_person_chunks).
-    let init = (0.0f64, empty_item_counts(v, qg, qs));
-    crate::estep_parallel::fold_person_chunks(
+    // The first partial is the accumulator, so a one-chunk sweep keeps one
+    // counts tensor. Empty chunks are not mapped.
+    let mapped = crate::estep_parallel::fold_person_chunks_from_first(
         pool,
         v.n_persons,
         e_step_n_chunks,
@@ -849,13 +848,13 @@ fn e_step_cpu_chunked(
                 v, y, observed, tables, log_wg, log_ws, qg, qs, p_start, p_end,
             )
         },
-        init,
         |mut acc, (ll, part)| {
             acc.0 += ll;
             accumulate_item_counts(&mut acc.1, &part);
             acc
         },
-    )
+    )?;
+    Ok(mapped.unwrap_or_else(|| (0.0, empty_item_counts(v, qg, qs))))
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item.
@@ -2212,12 +2211,11 @@ fn e_step_multigroup(
         }
         (loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec)
     };
-    crate::estep_parallel::fold_person_chunks(
+    let mapped = crate::estep_parallel::fold_person_chunks_from_first(
         pool,
         v.n_persons,
         e_step_n_chunks,
         map_range,
-        empty_partial(),
         |mut acc, (ll, c, wa, s1, s2, ss, ws)| {
             acc.0 += ll;
             for g in 0..n_groups {
@@ -2238,7 +2236,8 @@ fn e_step_multigroup(
             }
             acc
         },
-    )
+    )?;
+    Ok(mapped.unwrap_or_else(empty_partial))
 }
 
 #[allow(clippy::too_many_arguments)]

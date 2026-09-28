@@ -145,6 +145,38 @@ pub(crate) fn nonempty_person_chunk_count(n_persons: usize, n_chunks: usize) -> 
     (last + 1).min(n_chunks)
 }
 
+fn map_live_window<T, F>(
+    pool: &PersonChunkPool,
+    n_persons: usize,
+    n_chunks: usize,
+    offset: usize,
+    end: usize,
+    map_chunk: &F,
+) -> Result<Vec<T>, String>
+where
+    T: Send,
+    F: Fn(usize, usize) -> T + Sync,
+{
+    if end - offset == 1 || pool.n_threads == 1 {
+        let mut out = Vec::with_capacity(end - offset);
+        for chunk_idx in offset..end {
+            let (start, stop) = person_chunk_range(n_persons, n_chunks, chunk_idx);
+            out.push(map_chunk(start, stop));
+        }
+        return Ok(out);
+    }
+    let thread_pool = pool.ensure()?;
+    Ok(thread_pool.install(|| {
+        (offset..end)
+            .into_par_iter()
+            .map(|chunk_idx| {
+                let (start, stop) = person_chunk_range(n_persons, n_chunks, chunk_idx);
+                map_chunk(start, stop)
+            })
+            .collect::<Vec<_>>()
+    }))
+}
+
 /// Map each non-empty person chunk and fold in chunk-index order.
 ///
 /// At most `n_threads` partials exist at once. The fold itself stays a
@@ -174,25 +206,7 @@ where
     let mut offset = 0usize;
     while offset < n_live {
         let end = (offset + width).min(n_live);
-        let partials = if end - offset == 1 || pool.n_threads == 1 {
-            let mut out = Vec::with_capacity(end - offset);
-            for chunk_idx in offset..end {
-                let (start, stop) = person_chunk_range(n_persons, n_chunks, chunk_idx);
-                out.push(map_chunk(start, stop));
-            }
-            out
-        } else {
-            let thread_pool = pool.ensure()?;
-            thread_pool.install(|| {
-                (offset..end)
-                    .into_par_iter()
-                    .map(|chunk_idx| {
-                        let (start, stop) = person_chunk_range(n_persons, n_chunks, chunk_idx);
-                        map_chunk(start, stop)
-                    })
-                    .collect::<Vec<_>>()
-            })
-        };
+        let partials = map_live_window(pool, n_persons, n_chunks, offset, end, &map_chunk)?;
         for part in partials {
             acc = reduce(acc, part);
         }
@@ -201,11 +215,60 @@ where
     Ok(acc)
 }
 
+/// Fold non-empty chunks in index order, using the first partial as the
+/// accumulator.
+///
+/// A one-chunk sweep therefore keeps a single counts tensor. `Ok(None)`
+/// means there was no non-empty chunk (`n_persons == 0`). Adding a
+/// zero-filled tensor into the first partial is not bit-identical work:
+/// `0.0 + x == x` for finite `x`, so callers that used to seed with zeros
+/// keep the same association tree. Later windows still hold that
+/// accumulator plus at most `n_threads` new partials.
+pub(crate) fn fold_person_chunks_from_first<T, F, R>(
+    pool: &PersonChunkPool,
+    n_persons: usize,
+    n_chunks: usize,
+    map_chunk: F,
+    mut reduce: R,
+) -> Result<Option<T>, String>
+where
+    T: Send,
+    F: Fn(usize, usize) -> T + Sync,
+    R: FnMut(T, T) -> T,
+{
+    if n_chunks < 1 {
+        return Err("e_step_n_chunks must be >= 1".into());
+    }
+    let n_live = nonempty_person_chunk_count(n_persons, n_chunks);
+    if n_live == 0 {
+        return Ok(None);
+    }
+    let width = pool.n_threads.max(1);
+    let mut offset = 0usize;
+    let end = width.min(n_live);
+    let mut partials = map_live_window(pool, n_persons, n_chunks, offset, end, &map_chunk)?;
+    let mut acc = partials.remove(0);
+    for part in partials {
+        acc = reduce(acc, part);
+    }
+    offset = end;
+    while offset < n_live {
+        let end = (offset + width).min(n_live);
+        let partials = map_live_window(pool, n_persons, n_chunks, offset, end, &map_chunk)?;
+        for part in partials {
+            acc = reduce(acc, part);
+        }
+        offset = end;
+    }
+    Ok(Some(acc))
+}
+
 /// Collect non-empty chunk partials in chunk-index order.
 ///
-/// Prefer [`fold_person_chunks`] in production sweeps so the counts tensors
-/// are reduced as each window finishes. This collector exists for tests that
-/// compare partials directly.
+/// Prefer [`fold_person_chunks_from_first`] in production sweeps so the
+/// counts tensors are reduced as each window finishes. This collector
+/// exists for tests that compare partials directly.
+#[cfg(test)]
 pub(crate) fn map_person_chunks<T, F>(
     pool: &PersonChunkPool,
     n_persons: usize,
@@ -324,5 +387,28 @@ mod tests {
         let twice = fold_person_chunks(&pool, 9, 4, map, 0.0f64, |acc, part| acc + part).unwrap();
         assert_eq!(once.to_bits(), twice.to_bits());
         assert_eq!(pool_builds_this_thread(), 1);
+    }
+
+    #[test]
+    fn fold_from_first_matches_zero_seed_and_skips_empty_input() {
+        let pool = PersonChunkPool::new(3).unwrap();
+        let map = |start: usize, end: usize| {
+            (start..end).map(|p| (p as f64 + 0.5).sin()).sum::<f64>()
+        };
+        let seeded = fold_person_chunks_from_first(&pool, 9, 4, map, |acc, part| acc + part)
+            .unwrap()
+            .expect("nine persons produce a partial");
+        let zeroed = fold_person_chunks(&pool, 9, 4, map, 0.0f64, |acc, part| acc + part).unwrap();
+        assert_eq!(seeded.to_bits(), zeroed.to_bits());
+        let serial = PersonChunkPool::new(1).unwrap();
+        let one_chunk = fold_person_chunks_from_first(&serial, 9, 1, map, |acc, part| acc + part)
+            .unwrap()
+            .expect("one chunk");
+        let one_zero =
+            fold_person_chunks(&serial, 9, 1, map, 0.0f64, |acc, part| acc + part).unwrap();
+        assert_eq!(one_chunk.to_bits(), one_zero.to_bits());
+        assert!(fold_person_chunks_from_first(&pool, 0, 4, map, |acc, part| acc + part)
+            .unwrap()
+            .is_none());
     }
 }

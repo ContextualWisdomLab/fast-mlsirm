@@ -41,6 +41,7 @@ def _two_tier_fit() -> TwoTierGrmFit:
         loglik_trace=np.array([0.0]), n_iter=1, converged=True,
         termination_reason="tolerance_met", final_loglik_change=0.0,
         best_start=0, n_parameters=0, primary_identification="orthogonal",
+        e_step_n_chunks=1, e_step_n_threads=1,
     )
 
 

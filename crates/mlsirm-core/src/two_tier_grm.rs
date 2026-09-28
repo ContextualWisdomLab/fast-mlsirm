@@ -289,6 +289,10 @@ pub struct TwoTierGrmResult {
     pub n_parameters: usize,
     /// `"correlated"` when Phi was estimated, `"orthogonal"` when fixed to I.
     pub primary_identification: &'static str,
+    /// Provenance: CPU E-step person-chunk count (#2002).
+    pub e_step_n_chunks: usize,
+    /// Provenance: local rayon pool size for the CPU E-step (#2002).
+    pub e_step_n_threads: usize,
 }
 
 /// Validated problem structure shared by the fitter and the public
@@ -1007,22 +1011,11 @@ fn e_step_with_pool(
         }
         (loglik, counts, s_bar_sum)
     };
-    let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
-    for i in 0..v.n_items {
-        let n_nodes = if v.item_block[i].is_some() {
-            n_grid * qs
-        } else {
-            n_grid
-        };
-        counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
-    }
-    let init = (0.0f64, counts, vec![0.0f64; p * p]);
-    crate::estep_parallel::fold_person_chunks(
+    let mapped = crate::estep_parallel::fold_person_chunks_from_first(
         pool,
         v.n_persons,
         e_step_n_chunks,
         map_chunk,
-        init,
         |mut acc, (ll, part_counts, part_s)| {
             acc.0 += ll;
             for (dst, src) in acc.1.iter_mut().zip(part_counts.iter()) {
@@ -1037,7 +1030,20 @@ fn e_step_with_pool(
             }
             acc
         },
-    )
+    )?;
+    if let Some(acc) = mapped {
+        return Ok(acc);
+    }
+    let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
+    for i in 0..v.n_items {
+        let n_nodes = if v.item_block[i].is_some() {
+            n_grid * qs
+        } else {
+            n_grid
+        };
+        counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+    }
+    Ok((0.0, counts, vec![0.0f64; p * p]))
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item — the
@@ -1790,6 +1796,8 @@ pub fn fit_two_tier_grm(
         } else {
             "orthogonal"
         },
+        e_step_n_chunks: cfg.e_step_n_chunks,
+        e_step_n_threads: cfg.e_step_n_threads,
     })
 }
 
