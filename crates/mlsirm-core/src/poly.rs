@@ -819,20 +819,17 @@ pub struct PolyFipcFit {
 /// the old scale) for every EM cycle; the remaining items are freely
 /// estimated. The focal latent distribution starts at `N(0, 1)` and its
 /// mean/variance are re-estimated after EVERY M-step from the E-step
-/// posterior moments (closed form, the parametric-normal realization of the
-/// weight update) — the multiple-weights-updating / multiple-EM-cycles
-/// (MWU-MEM) method, the only variant of the five compared methods that
-/// recovered shifted focal distributions without under-estimation. The
-/// no-prior-update variant is deliberately NOT exposed: the sources
-/// recommend only the updating method for shifted populations.
+/// posterior moments. This is a Gaussian moment-update FIPC model. Kim's
+/// (2006, pp. 361–363) MWU-MEM updates weights at fixed ability points;
+/// its recovery findings do not establish recovery for this Gaussian model.
 ///
 /// Concretely, with standard nodes `x_t` and weights `w_t`, each sweep
 /// evaluates the E-step at the shifted nodes `theta_t = mu + sigma * x_t`
-/// (the Bock-Zimowski node-shift reparameterization, so the shared
-/// Gauss-Hermite weights are reused exactly) with anchor likelihoods from
-/// the FIXED parameters, then M-steps the free items and the distribution
-/// with the posterior moments. The latent points are NEVER rescaled after
-/// an EM cycle, and no reflection canonicalization is applied: the fixed
+/// (a Gaussian change of variables) with anchor likelihoods from the fixed
+/// parameters, then M-steps the free items and the distribution with the
+/// posterior moments. The trait-scale nodes move as `mu` and `sigma` change;
+/// this is not Kim's fixed-ability-point update. No reflection canonicalization
+/// is applied: the fixed
 /// anchors pin the scale orientation, including reverse-keyed
 /// (negative-slope) anchors and free items.
 ///
@@ -850,8 +847,8 @@ pub struct PolyFipcFit {
 /// 8-9, pp. 360-361; OWU-OEM eqs. 10-11, p. 361; OWU-MEM eqs. 12-13,
 /// p. 361; MWU-MEM eqs. 14-15, pp. 361-362; classification Table 1,
 /// p. 362); "the ability points should not be rescaled after each EM cycle"
-/// (p. 362); the `N(0, 1)` prior used when conducting FPC (p. 364); the
-/// shifted focal conditions `N(0.5, 1.2^2)` and `N(1, 1.4^2)` (pp. 364-365);
+/// (p. 363); the `N(0, 1)` prior used when conducting FPC (p. 365); the
+/// shifted focal conditions `N(0.5, 1.2^2)` and `N(1, 1.4^2)` (p. 365);
 /// the MWU-MEM recommendation and the under-estimation of the four other
 /// methods under shift (abstract; Summary and Discussion, pp. 377-378).
 ///
@@ -862,11 +859,6 @@ pub struct PolyFipcFit {
 /// prior biases ability-growth estimates under fixed-item linking, and the
 /// iterative prior-update calibration procedure recovers the growth
 /// (abstract; procedure as described in Kim, 2006, p. 378).
-///
-/// Bock, R. D., & Zimowski, M. F. (1997). Multiple group IRT. In W. J. van der
-/// Linden & R. K. Hambleton (Eds.), *Handbook of modern item response theory*
-/// (pp. 433-448). Springer. https://doi.org/10.1007/978-1-4757-2691-6_25 —
-/// the estimated-group `N(mu_g, sigma_g^2)` with the node-shift form.
 ///
 /// Samejima, F. (1969). Estimation of latent ability using a response pattern
 /// of graded scores. *Psychometrika, 34*(S1), 1-97.
@@ -952,7 +944,7 @@ pub fn fit_poly_fipc(
 
     // Working params [a, cat_1..cat_{K-1}] per item: anchors pinned at the
     // caller values, free items from focal base rates (same scheme as
-    // fit_poly_unidim). The focal prior starts at N(0, 1) (Kim, 2006, p. 364).
+    // fit_poly_unidim). The focal prior starts at N(0, 1) (Kim, 2006, p. 365).
     let mut params = vec![vec![0.0_f64; n_cat]; n_items];
     for i in 0..n_items {
         if anchor[i] {
@@ -1058,8 +1050,8 @@ pub fn fit_poly_fipc(
             }
             params[i] = m_step_item(params[i].clone(), &theta, &counts[i], PolyModel::Grm, 10);
         }
-        // M-step, focal latent distribution (MWU: updated after EVERY
-        // M-step). Unconstrained-positive with NO clamping: a non-finite or
+        // M-step, Gaussian focal moments updated after EVERY M-step.
+        // Unconstrained-positive with NO clamping: a non-finite or
         // non-positive update fails loudly instead of silently rescaling.
         if !(w_acc > 0.0 && w_acc.is_finite()) {
             return Err("FIPC focal distribution has no posterior mass".into());
@@ -1077,8 +1069,8 @@ pub fn fit_poly_fipc(
         it += 1;
     }
 
-    // No reflection canonicalization and no rescaling: the fixed anchors pin
-    // the scale orientation (Kim, 2006, p. 362).
+    // No reflection canonicalization: the fixed anchors pin orientation.
+    // Trait-scale quadrature nodes move as the Gaussian moments change.
     let ll = *loglik_trace.last().expect("EM trace is never empty");
     let slope: Vec<f64> = (0..n_items).map(|i| params[i][0]).collect();
     let cat_params: Vec<Vec<f64>> = params.iter().map(|p| p[1..].to_vec()).collect();
@@ -2688,7 +2680,7 @@ pub fn poly_information_curves(
 /// a microcomputer environment. *Applied Psychological Measurement, 6*(4),
 /// 431–444. https://doi.org/10.1177/014662168200600405
 #[allow(clippy::too_many_arguments)]
-fn score_poly_eap_with_prior(
+pub fn score_poly_eap_with_prior(
     y: &[usize],
     observed: Option<&[bool]>,
     n_persons: usize,

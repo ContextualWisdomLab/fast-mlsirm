@@ -845,12 +845,16 @@ def score_polytomous(
     fit: PolytomousFit,
     *,
     q_theta: int,
+    prior_mean: float = 0.0,
+    prior_sd: float = 1.0,
 ) -> dict[str, np.ndarray]:
     """EAP trait scores for polytomous responses given a fitted model (compute
     in Rust). ``responses`` is persons x items of integer categories; ``fit`` is
     a :class:`PolytomousFit` from :func:`fit_polytomous`. ``NaN`` or ``-1`` marks a
     missing response. The posterior mean and standard deviation are evaluated
-    on a standard-normal quadrature grid (Bock & Mislevy, 1982). Returns
+    on a Gaussian-prior quadrature grid (Bock & Mislevy, 1982, pp. 432–433).
+    ``prior_mean`` and ``prior_sd`` specify that prior; defaults preserve
+    standard-normal scoring. Returns
     ``{"theta_eap", "theta_sd"}``.
 
     References
@@ -860,6 +864,16 @@ def score_polytomous(
     431–444. https://doi.org/10.1177/014662168200600405
     """
     validated_q_theta = _fit_quadrature_points(q_theta)
+    if not (
+        type(prior_mean) in (int, float)
+        or _is_exact_type(type(prior_mean), _NUMPY_INTEGER_SCALAR_TYPES)
+        or _is_exact_type(type(prior_mean), _NUMPY_FLOAT_SCALAR_TYPES)
+    ):
+        raise ValueError("prior_mean must be finite")
+    validated_prior_mean = float(prior_mean)
+    if not np.isfinite(validated_prior_mean):
+        raise ValueError("prior_mean must be finite")
+    validated_prior_sd = _positive_real(prior_sd, "prior_sd")
 
     slope = np.asarray(fit.slope, dtype=np.float64)
     cat_params = np.asarray(fit.cat_params, dtype=np.float64)
@@ -900,6 +914,8 @@ def score_polytomous(
         obs_arg,
         model,
         validated_q_theta,
+        validated_prior_mean,
+        validated_prior_sd,
     )
     return {
         "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),
@@ -2417,10 +2433,11 @@ def fit_poly_fipc(
     is a length-``n_items`` boolean array pinning items at ``anchor_slope``
     / ``anchor_cat_params`` (``n_items x (n_cat-1)``, strictly decreasing
     per anchored row) from a reference calibration; the remaining items and
-    the focal ``N(mu, sigma^2)`` are estimated by MML-EM with the prior
-    updated after every M-step — the MWU-MEM method (Kim, 2006, eqs. 14-15,
-    pp. 361-362; Paek & Young, 2005). ``q_theta`` is a caller-owned
-    Gauss-Hermite count (one of 7, 11, 15, 21, 31, 41, 61, 81, 121).
+    the focal ``N(mu, sigma^2)`` are estimated by MML-EM with its Gaussian
+    moments updated after every M-step. Kim (2006, eqs. 14–15, pp. 361–362)
+    describes updates to weights at fixed ability points; that is a distinct
+    prior-update model. ``q_theta`` is a required caller-owned Gauss-Hermite
+    count in 1..4096; numerical adequacy needs a convergence check.
 
     References
     ----------

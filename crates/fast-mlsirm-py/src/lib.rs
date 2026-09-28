@@ -144,7 +144,7 @@ use mlsirm_core::poly::{
     poly_cat_simulate as core_poly_cat_simulate, poly_dif_sweep as core_poly_dif,
     poly_information_curves as core_poly_information_curves,
     poly_person_fit as core_poly_person_fit, poly_person_fit_focal as core_poly_person_fit_focal, poly_s_x2 as core_poly_s_x2,
-    score_poly_eap as core_score_poly_eap, u3_poly_bootstrap_cutoff as core_u3_poly_cutoff,
+    score_poly_eap_with_prior as core_score_poly_eap_with_prior, u3_poly_bootstrap_cutoff as core_u3_poly_cutoff,
     u3_poly_person_fit as core_u3_poly_person_fit, PolyModel,
 };
 use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
@@ -7516,7 +7516,7 @@ fn score_wle_poly(
 /// (Rust compute path). Returns a dict with `theta_eap` and `theta_sd`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, observed = None, model = "grm", q_theta = 21))]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, observed = None, model = "grm", q_theta = 21, prior_mean = 0.0, prior_sd = 1.0))]
 fn score_poly_eap(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -7528,11 +7528,13 @@ fn score_poly_eap(
     observed: Option<PyReadonlyArray1<'_, bool>>,
     model: &str,
     q_theta: usize,
+    prior_mean: f64,
+    prior_sd: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
     let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
-    let (eap, sd) = core_score_poly_eap(
+    let (eap, sd) = core_score_poly_eap_with_prior(
         &yv,
         obs,
         n_persons,
@@ -7542,6 +7544,8 @@ fn score_poly_eap(
         cat_params.as_slice()?,
         m,
         q_theta,
+        prior_mean,
+        prior_sd,
     )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
