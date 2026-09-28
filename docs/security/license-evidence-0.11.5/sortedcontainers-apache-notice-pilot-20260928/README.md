@@ -39,3 +39,30 @@ was 11,358 bytes. This does not prove the complete package test suite,
 trusted source compilation, reviewed redistribution decision, locked release
 input, or the published twelve-wheel matrix. The original Python HOLD of
 three remains until those separate release requirements are accepted.
+
+## Fresh source-build repeat
+
+The official PyPI sdist `sortedcontainers-2.4.0.tar.gz` is also retained here
+(SHA256 `25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88`).
+`source-build/build_source_repeat.sh` checks the source, original wheel and
+ASF notice hashes, extracts the source three times, and builds with local
+CPython 3.12.14, hash-pinned setuptools 80.9.0 and wheel 0.45.1, offline
+without build isolation. A uses unmodified source. B and C add only the
+complete ASF text as a source-root `LICENSE-APACHE-2.0.txt`; setuptools places
+it in wheel `dist-info/licenses/` automatically. `SOURCE_DATE_EPOCH=1621202600`
+is fixed. The script refuses an existing output directory:
+
+```bash
+shasum -a 256 -c source-build/SHA256SUMS
+bash source-build/build_source_repeat.sh /tmp/new-sortedcontainers-source-repeat
+```
+
+The tested replay produced source A wheel SHA256 `436e950b98f6809755f5943d10e83eab417d608f9d5dd067e64edcce063fb926`;
+B and C were byte-identical at SHA256 `5ed427f4b9542cce09e258fa66b0d8fd6f1e4abab08f2e8e9621cfc38d6fac0c`.
+The script checked each wheel's complete ZIP RECORD, every package Python
+module against the official wheel, the original LICENSE bytes, and the added
+full notice. An isolated offline CPython 3.12.14 install of B passed
+SortedList, SortedSet and SortedDict ordering smoke and installed the exact
+11,358-byte notice. This source-backed local candidate still has no reviewed
+release lock election, complete package test result, rights acceptance, or
+published twelve-wheel proof. The original Python HOLD remains.
