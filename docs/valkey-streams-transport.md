@@ -39,7 +39,33 @@ consumer group must have permission for `XGROUP`, `XADD`, `XREADGROUP`,
 authentication, TLS, topology, worker deployment, and retry policy remain host
 responsibilities.
 
-Protocol coverage lives in `tests/test_remote_exec_valkey.py`. Isolated
+## Worker
+
+`fast_mlsirm.remote_worker.ValkeyStreamsWorker` is the reference consumer of
+the job records above. Each `run_once()` pass reclaims idle pending jobs with
+`XAUTOCLAIM`, so a crashed member's job is picked up by another member, then
+reads new jobs with `XREADGROUP` and handles each one:
+
+- a job whose fingerprint is already in the first-success hash is
+  acknowledged without running again;
+- the envelope, payload, and device fields are decoded under the same 1 MiB /
+  depth-64 bounds, and the envelope must hash to the record's fingerprint;
+- the worker checks its own manifest and the installed library version
+  against the envelope cohort, then runs `execute_envelope`, which verifies
+  payload identity and dispatches the family;
+- it publishes a COMPLETED or FAILED outcome carrying the driver identity
+  from the job record (`driver_host`, `driver_pid`) and its own provenance,
+  then acknowledges the job.
+
+A record that cannot be decoded into an envelope is acknowledged and counted
+as poisoned so one bad record cannot stall the loop. The pass returns a
+`ValkeyWorkerPass` with completed/failed/skipped/poisoned counts. Running
+passes in a loop, process supervision, and retry policy stay with the host.
+
+Protocol coverage lives in `tests/test_remote_exec_valkey.py` and
+`tests/test_remote_exec_valkey_worker.py`;
+`tests/test_remote_exec_family_equivalence.py` round-trips every remote family
+through the backend and worker. Isolated
 localhost daemon evidence is exercised by
 `scripts/repro_valkey_defects.py` when `FAST_MLSIRM_VALKEY_URL` points at a
 disposable instance; that script creates only UUID-suffixed keys and deletes

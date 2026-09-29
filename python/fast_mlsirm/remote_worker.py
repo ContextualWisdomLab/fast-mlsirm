@@ -12,6 +12,8 @@ import platform
 import socket
 import sys
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -26,8 +28,18 @@ from .remote_exec import (
     RemoteJobDeliveryState,
     RemoteJobEnvelope,
     RemoteJobFamily,
+    RemoteJobOutcome,
+    RemoteRunManifest,
+    RemoteWorkerProvenance,
+    _fingerprint,
+    _non_negative_int,
+    _text,
+    _valkey_json,
+    _valkey_text,
+    envelope_fingerprint,
     payload_identity_sha256,
     result_identity_sha256,
+    valkey_committed_key,
 )
 from .simulation import simulate
 from .two_tier_grm import fit_two_tier_grm
@@ -268,6 +280,169 @@ def execute_envelope(
     if envelope.family is RemoteJobFamily.TWO_TIER:
         return execute_two_tier(payload, unit_seed)
     raise ValueError(f"unsupported remote family {envelope.family.value!r}")
+
+
+@dataclass(frozen=True, slots=True)
+class ValkeyWorkerPass:
+    """Counts from one :meth:`ValkeyStreamsWorker.run_once` pass."""
+
+    completed: int = 0
+    failed: int = 0
+    skipped: int = 0
+    poisoned: int = 0
+
+
+class ValkeyStreamsWorker:
+    """Reference consumer of the job records ``ValkeyStreamsBackend`` publishes.
+
+    Each pass reclaims idle pending jobs with ``XAUTOCLAIM`` (so a crashed
+    member's job is re-run elsewhere), then reads new jobs with
+    ``XREADGROUP``. A job whose fingerprint is already in the first-success
+    hash is acknowledged without re-running. Otherwise the worker checks the
+    cohort and the installed library version, runs ``executor`` (by default
+    the production family dispatch in :func:`execute_envelope`, which also
+    verifies payload identity), publishes a COMPLETED or FAILED outcome, and
+    acknowledges the job. Deployment, scheduling, and retry policy stay with
+    the host; this class only completes the stream protocol.
+    """
+
+    def __init__(
+        self,
+        client: object,
+        *,
+        jobs_stream: str,
+        outcomes_stream: str,
+        group: str,
+        consumer: str,
+        worker_manifest: RemoteRunManifest,
+        executor: Callable[[RemoteJobEnvelope, object], object] | None = None,
+        min_idle_ms: int = 60_000,
+        batch_size: int = 10,
+        block_ms: int = 1_000,
+    ) -> None:
+        if type(worker_manifest) is not RemoteRunManifest:
+            raise TypeError("worker_manifest must be a RemoteRunManifest")
+        self._client = client
+        self._jobs = _text(jobs_stream, "jobs_stream")
+        self._outcomes = _text(outcomes_stream, "outcomes_stream")
+        self._committed_key = valkey_committed_key(self._outcomes)
+        self._group = _text(group, "group")
+        self._consumer = _text(consumer, "consumer")
+        self._manifest = worker_manifest
+        self._executor = executor or execute_envelope
+        self._min_idle_ms = _non_negative_int(min_idle_ms, "min_idle_ms")
+        self._batch_size = _non_negative_int(batch_size, "batch_size")
+        self._block_ms = _non_negative_int(block_ms, "block_ms")
+        if self._batch_size == 0:
+            raise ValueError("batch_size must be > 0")
+        try:
+            client.xgroup_create(self._jobs, self._group, id="0", mkstream=True)
+        except Exception as exc:
+            if "BUSYGROUP" not in str(exc):
+                raise
+
+    def run_once(self) -> ValkeyWorkerPass:
+        """Reclaim then read one bounded batch of jobs and process each."""
+        claimed = self._client.xautoclaim(
+            self._jobs,
+            self._group,
+            self._consumer,
+            self._min_idle_ms,
+            "0-0",
+            count=self._batch_size,
+        )
+        records = list(claimed[1]) if claimed else []
+        streams = {self._jobs: ">"}
+        if self._block_ms == 0:  # BLOCK 0 is wait-forever on Redis/Valkey; omit it
+            fresh = self._client.xreadgroup(
+                self._group, self._consumer, streams, self._batch_size
+            )
+        else:
+            fresh = self._client.xreadgroup(
+                self._group, self._consumer, streams, self._batch_size, self._block_ms
+            )
+        for _stream, messages in fresh or []:
+            records.extend(messages)
+        counts = {"completed": 0, "failed": 0, "skipped": 0, "poisoned": 0}
+        for record_id, raw_fields in records:
+            counts[self._process(raw_fields)] += 1
+            self._client.xack(self._jobs, self._group, record_id)
+        return ValkeyWorkerPass(**counts)
+
+    def _process(self, raw_fields: dict[object, object]) -> str:
+        """Handle one job record and return which tally it belongs to."""
+        # ponytail: an undecodable job is acknowledged and only counted; add a
+        # dead-letter stream if operators need to inspect poison jobs.
+        try:
+            fields = {_valkey_text(k): _valkey_text(v) for k, v in raw_fields.items()}
+            fingerprint = _fingerprint(fields.get("fingerprint"), "fingerprint")
+            envelope = RemoteJobEnvelope.from_dict(_valkey_json(fields["envelope"], "envelope"))
+            if envelope_fingerprint(envelope) != fingerprint:
+                raise ValueError("job envelope does not match its fingerprint")
+            driver_host = _text(fields["driver_host"], "driver_host", maximum=128)
+            driver_pid = int(fields["driver_pid"])
+            requested = _text(fields["requested_device"], "requested_device", maximum=32)
+            effective = _text(fields["effective_device"], "effective_device", maximum=32)
+        except (KeyError, TypeError, ValueError, RecursionError):
+            return "poisoned"
+        if self._client.hget(self._committed_key, fingerprint) is not None:
+            return "skipped"
+
+        started = time.perf_counter()
+        result: object = None
+        error: str | None = None
+        try:
+            if not self._manifest.compatible_with(envelope.manifest):
+                raise ValueError("worker manifest is incompatible with envelope cohort")
+            if _library_version() != envelope.manifest.library_version:
+                raise ValueError(
+                    f"installed library_version {_library_version()!r} is "
+                    f"incompatible with cohort {envelope.manifest.library_version!r}"
+                )
+            payload = _valkey_json(fields.get("payload", "null"), "payload")
+            result = self._executor(envelope, payload)
+        except Exception as exc:  # worker failures become FAILED outcomes
+            error = str(exc) or type(exc).__name__
+        hostname = socket.gethostname()
+        outcome = RemoteJobOutcome(
+            run_id=envelope.run_id,
+            unit_index=envelope.unit_index,
+            unit_seed=envelope.unit_seed(),
+            family=envelope.family,
+            delivery_state=(
+                RemoteJobDeliveryState.FAILED if error else RemoteJobDeliveryState.COMPLETED
+            ),
+            result=None if error else result,
+            error_message=error,
+            provenance=RemoteWorkerProvenance(
+                hostname=hostname,
+                architecture=platform.machine(),
+                operating_system=platform.system(),
+                library_version=envelope.manifest.library_version,
+                source_sha256=envelope.manifest.source_sha256,
+                requested_device=requested,
+                effective_device=effective,
+                wall_clock_seconds=time.perf_counter() - started,
+                worker_host=hostname,
+                worker_pid=os.getpid(),
+                cross_host_execution=hostname != driver_host,
+            ),
+            input_identity_sha256=fingerprint,
+            output_identity_sha256=None if error else result_identity_sha256(result),
+            envelope_fingerprint=fingerprint,
+            driver_host=driver_host,
+            driver_pid=driver_pid,
+        )
+        self._client.xadd(
+            self._outcomes,
+            {
+                "fingerprint": fingerprint,
+                "outcome": json.dumps(
+                    outcome.to_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ),
+            },
+        )
+        return "failed" if error else "completed"
 
 
 def main(argv: list[str] | None = None) -> int:
