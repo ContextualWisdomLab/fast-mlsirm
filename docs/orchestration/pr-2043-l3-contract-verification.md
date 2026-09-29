@@ -25,9 +25,10 @@ rebase onto `origin/main` at `99c228a8`).
   `n_parameters` without reading either key (`:311-331`). Therefore the public
   Python API drops the provenance required by the L3 contract.
 - **Scope controls: verified.** The PR diff adds no `two_tier` file and no new
-  `atol`/`rtol` assertion. Generic exhaustive matches treat `Device::Split` as
-  CPU outside the single-group bifactor split executor; no model formula was
-  changed outside that path.
+  `atol`/`rtol` assertion. The split request lives on the bifactor-local
+  `bifactor_grm::BifactorDevice`, not the shared `crate::Device`, so scoring,
+  likelihood, and multilevel APIs cannot receive it (follow-up to the Devin
+  review on #2043); no model formula was changed outside that path.
 
 This closes only the #2001 §3 same-host L3 split pilot, subject to the public
 Python provenance gap above. It does not implement or close L4 remote or
