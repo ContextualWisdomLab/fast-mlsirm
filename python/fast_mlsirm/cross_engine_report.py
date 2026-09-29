@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from html import escape
 import json
+from html import escape
 
 from .cross_engine_conformance import ConformanceInventory
-
 
 _CSP = (
     "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; "
@@ -29,9 +28,13 @@ def _text(value: object | None) -> str:
 
 def _header_row(labels: tuple[str, ...]) -> str:
     """Render semantic column headers."""
-    return "<tr>" + "".join(
-        f'<th scope="col">{escape(label, quote=True)}</th>' for label in labels
-    ) + "</tr>"
+    return (
+        "<tr>"
+        + "".join(
+            f'<th scope="col">{escape(label, quote=True)}</th>' for label in labels
+        )
+        + "</tr>"
+    )
 
 
 def _data_row(values: tuple[object | None, ...]) -> str:
@@ -106,7 +109,9 @@ def _render_run_provenance(manifest: dict[str, object]) -> str:
 def _render_capabilities(manifest: dict[str, object]) -> str:
     """Render one exact row per advertised capability."""
     capabilities = manifest["capabilities"]
-    if type(capabilities) is not list:  # defensive; strict replay should make this unreachable
+    if (
+        type(capabilities) is not list
+    ):  # defensive; strict replay should make this unreachable
         raise ValueError("capabilities must be a canonical list")
     labels = (
         "Capability",
@@ -242,7 +247,9 @@ def _render_evidence(manifest: dict[str, object]) -> str:
 def _long_form_rows(manifest: dict[str, object]) -> list[dict[str, object | None]]:
     """Flatten canonical capability/evidence records without numerical reinterpretation."""
     capabilities = manifest["capabilities"]
-    if type(capabilities) is not list:  # defensive; strict replay should make this unreachable
+    if (
+        type(capabilities) is not list
+    ):  # defensive; strict replay should make this unreachable
         raise ValueError("capabilities must be a canonical list")
     provenance = {
         "inventory_fingerprint": manifest["inventory_fingerprint"],
@@ -339,12 +346,15 @@ def render_conformance_report(manifest_json: str) -> tuple[str, str]:
     """
     inventory = ConformanceInventory.from_json(manifest_json)
     manifest = inventory.to_manifest()
-    canonical_json = json.dumps(
-        manifest,
-        ensure_ascii=False,
-        sort_keys=True,
-        indent=2,
-    ) + "\n"
+    canonical_json = (
+        json.dumps(
+            manifest,
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+        )
+        + "\n"
+    )
     body = [
         "<!doctype html>",
         '<html lang="en">',
@@ -355,23 +365,24 @@ def render_conformance_report(manifest_json: str) -> tuple[str, str]:
         "<title>Cross-engine conformance evidence</title>",
         "</head>",
         "<body>",
-        "<main>",
+        '<a class="skip-link" href="#main-content">Skip to report content</a>',
+        '<main id="main-content" tabindex="-1">',
         "<h1>Cross-engine conformance evidence</h1>",
         f"<p>{escape(_DISCLAIMER, quote=True)}</p>",
         "<p>Exact values are shown in text; this report has no hover-only evidence.</p>",
-        "<section aria-labelledby=\"inventory-provenance\">",
+        '<section aria-labelledby="inventory-provenance">',
         '<h2 id="inventory-provenance">Inventory provenance</h2>',
         _render_inventory_provenance(manifest),
         "</section>",
-        "<section aria-labelledby=\"run-provenance\">",
+        '<section aria-labelledby="run-provenance">',
         '<h2 id="run-provenance">Run provenance</h2>',
         _render_run_provenance(manifest),
         "</section>",
-        "<section aria-labelledby=\"capability-coverage\">",
+        '<section aria-labelledby="capability-coverage">',
         '<h2 id="capability-coverage">Capability coverage</h2>',
         _render_capabilities(manifest),
         "</section>",
-        "<section aria-labelledby=\"engine-evidence\">",
+        '<section aria-labelledby="engine-evidence">',
         '<h2 id="engine-evidence">Capability × engine evidence</h2>',
         _render_evidence(manifest),
         "</section>",
