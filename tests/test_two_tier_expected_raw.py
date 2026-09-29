@@ -107,3 +107,21 @@ def test_expected_raw_two_tier_grm_is_lord_wingersky_eap_plugin_not_joint_poster
         fit_theta_shifted, SPECIFIC_MAP, q_specific=21
     )
     assert not np.allclose(scores, scores_theta)
+
+
+@pytest.mark.parametrize(
+    "bad_map",
+    [
+        SPECIFIC_MAP.astype(np.float64) + 0.9,
+        np.where(SPECIFIC_MAP == 0, np.nan, 1.0),
+        np.where(SPECIFIC_MAP == 0, 2, SPECIFIC_MAP),
+        np.where(SPECIFIC_MAP == 0, -2, SPECIFIC_MAP),
+        np.where(SPECIFIC_MAP == 0, 2**32, SPECIFIC_MAP),
+    ],
+)
+def test_expected_raw_rejects_non_integer_or_out_of_range_specific_map(
+    bad_map: np.ndarray,
+) -> None:
+    fit = _fit(_simulate(SEED + 3))
+    with pytest.raises(ValueError, match="specific_map"):
+        expected_raw_two_tier_grm(fit, bad_map, q_specific=21)

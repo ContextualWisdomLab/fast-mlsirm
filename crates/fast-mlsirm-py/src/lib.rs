@@ -2093,16 +2093,24 @@ fn two_tier_expected_raw<'py>(
     n_specific: usize,
     q_specific: usize,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    if n_primary < 1 {
+        return Err(PyValueError::new_err("n_primary must be >= 1"));
+    }
+    if n_cat < 2 {
+        return Err(PyValueError::new_err("n_cat must be at least 2"));
+    }
     let n_items = a_specific.len();
+    let specific_map = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| i32::try_from(v))
+        .collect::<Result<Vec<i32>, _>>()
+        .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))?;
     let params = TwoTierItemParams {
         a_primary: a_primary.as_slice()?.to_vec(),
         a_specific: a_specific.as_slice()?.to_vec(),
         thresholds: threshold.as_slice()?.to_vec(),
-        specific_map: specific_map
-            .as_slice()?
-            .iter()
-            .map(|&v| v as i32)
-            .collect(),
+        specific_map,
         n_primary,
         n_specific,
         n_cat,
@@ -2112,7 +2120,7 @@ fn two_tier_expected_raw<'py>(
             "a_primary length must be n_items * n_primary",
         ));
     }
-    let m1 = n_cat.saturating_sub(1);
+    let m1 = n_cat - 1;
     if params.thresholds.len() != n_items * m1 {
         return Err(PyValueError::new_err(
             "threshold length must be n_items * (n_cat - 1)",

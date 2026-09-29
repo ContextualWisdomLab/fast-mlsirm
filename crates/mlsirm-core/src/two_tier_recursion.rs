@@ -43,6 +43,20 @@ impl TwoTierItemParams {
         self.a_specific.len()
     }
 
+    /// Reject degenerate dimensions before any ``n_cat - 1`` / ``% n_primary`` arithmetic.
+    fn check_dims(&self) -> Result<(), String> {
+        if self.n_primary < 1 {
+            return Err("n_primary must be >= 1".into());
+        }
+        if self.n_cat < 2 {
+            return Err("n_cat must be at least 2".into());
+        }
+        if self.n_items() == 0 {
+            return Err("n_items must be >= 1".into());
+        }
+        Ok(())
+    }
+
     pub fn total_max_score(&self) -> usize {
         self.n_items() * (self.n_cat - 1)
     }
@@ -116,8 +130,8 @@ impl TwoTierItemParams {
                 self.n_specific
             } else if s as usize >= self.n_specific {
                 return Err(format!(
-                    "specific_map[{i}] = {s} out of range 0..{}",
-                    self.n_specific - 1
+                    "specific_map[{i}] = {s} out of range for n_specific = {}",
+                    self.n_specific
                 ));
             } else {
                 s as usize
@@ -138,19 +152,10 @@ pub fn two_tier_lord_wingersky(
     theta_specific: &[f64],
     weights_specific: &[f64],
 ) -> Result<Vec<f64>, String> {
-    let n_items = params.n_items();
+    params.check_dims()?;
     let n_cat = params.n_cat;
     let m1 = n_cat - 1;
     let p = params.n_primary;
-    if p < 1 {
-        return Err("n_primary must be >= 1".into());
-    }
-    if n_cat < 2 {
-        return Err("n_cat must be at least 2".into());
-    }
-    if n_items == 0 {
-        return Err("n_items must be >= 1".into());
-    }
     if theta_primary.len() % p != 0 {
         return Err("theta_primary length must be a multiple of n_primary".into());
     }
@@ -283,6 +288,7 @@ pub fn two_tier_expected_raw(
     theta_specific: &[f64],
     weights_specific: &[f64],
 ) -> Result<Vec<f64>, String> {
+    params.check_dims()?;
     let p = params.n_primary;
     if theta_primary.len() % p != 0 {
         return Err("theta_primary length must be a multiple of n_primary".into());
@@ -309,6 +315,7 @@ pub fn direct_enumeration_two_tier(
     theta_specific: &[f64],
     weights_specific: &[f64],
 ) -> Result<Vec<f64>, String> {
+    params.check_dims()?;
     let n_items = params.n_items();
     let n_cat = params.n_cat;
     let p = params.n_primary;

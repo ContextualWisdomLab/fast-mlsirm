@@ -111,6 +111,29 @@ def _finite_integer_control(value: object, name: str) -> int:
     return int(numeric)
 
 
+def _specific_map_control(specific_map: object, n_items: int, n_specific: int) -> np.ndarray:
+    """Validate a two-tier specific map: -1 (specific-free) or 0..n_specific-1."""
+
+    smap = np.asarray(specific_map)
+    if smap.ndim != 1 or smap.shape[0] != n_items:
+        raise ValueError("specific_map must be a 1-D array of length n_items")
+    if smap.dtype.kind == "f":
+        if not bool(np.isfinite(smap).all()):
+            raise ValueError("specific_map entries must be finite integers")
+        if bool((smap != np.floor(smap)).any()):
+            raise ValueError("specific_map entries must be integers")
+    try:
+        smap_int = smap.astype(np.int64, copy=False)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("specific_map entries must be integers") from None
+    if bool((smap_int < -1).any()) or bool((smap_int >= n_specific).any()):
+        raise ValueError(
+            "specific_map entries must be -1 (specific-free) or in "
+            f"0..{n_specific - 1}"
+        )
+    return smap_int
+
+
 def _positive_real_control(value: object, name: str) -> float:
     """Normalize a trusted finite positive real scalar without callbacks."""
 
@@ -260,23 +283,7 @@ def fit_two_tier_grm(
         raise ValueError("primary_map must be an n_items x n_primary boolean array")
     pmap_bool = np.asarray(pmap, dtype=bool)
 
-    smap = np.asarray(specific_map)
-    if smap.ndim != 1 or smap.shape[0] != n_items:
-        raise ValueError("specific_map must be a 1-D array of length n_items")
-    if smap.dtype.kind == "f":
-        if not bool(np.isfinite(smap).all()):
-            raise ValueError("specific_map entries must be finite integers")
-        if bool((smap != np.floor(smap)).any()):
-            raise ValueError("specific_map entries must be integers")
-    try:
-        smap_int = smap.astype(np.int64, copy=False)
-    except (TypeError, ValueError):
-        raise ValueError("specific_map entries must be integers") from None
-    if bool((smap_int < -1).any()) or bool((smap_int >= n_specific_int).any()):
-        raise ValueError(
-            "specific_map entries must be -1 (specific-free) or in "
-            f"0..{n_specific_int - 1}"
-        )
+    smap_int = _specific_map_control(specific_map, n_items, n_specific_int)
 
     observed = np.isfinite(y) & (y >= 0)
     if np.any(observed):
@@ -421,10 +428,7 @@ def two_tier_oakes_se(
         raise ValueError("primary_map must be an n_items x n_primary boolean array")
     pmap_bool = np.asarray(pmap, dtype=bool)
 
-    smap = np.asarray(specific_map)
-    if smap.ndim != 1 or smap.shape[0] != n_items:
-        raise ValueError("specific_map must be a 1-D array of length n_items")
-    smap_int = smap.astype(np.int64, copy=False)
+    smap_int = _specific_map_control(specific_map, n_items, n_specific_int)
 
     ag = np.asarray(a_primary, dtype=np.float64)
     if ag.shape != (n_items, n_primary_int):
@@ -525,10 +529,7 @@ def expected_raw_two_tier_grm(
     n_cat = int(fit.n_cat)
     n_items = int(fit.a_specific.shape[0])
 
-    smap = np.asarray(specific_map)
-    if smap.ndim != 1 or smap.shape[0] != n_items:
-        raise ValueError("specific_map must be a 1-D array of length n_items")
-    smap_int = smap.astype(np.int64, copy=False)
+    smap_int = _specific_map_control(specific_map, n_items, n_specific)
 
     theta = np.asarray(fit.theta_p_eap, dtype=np.float64)
     if theta.ndim != 2 or theta.shape[1] != n_primary:

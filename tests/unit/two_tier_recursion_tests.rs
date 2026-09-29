@@ -67,3 +67,32 @@ fn two_tier_lord_wingersky_matches_direct_enumeration_on_small_grid() {
         assert!((expected[person] - mean).abs() <= 1e-12);
     }
 }
+
+fn degenerate_params(n_primary: usize, n_specific: usize, n_cat: usize) -> TwoTierItemParams {
+    let m1 = n_cat.saturating_sub(1);
+    TwoTierItemParams {
+        a_primary: vec![1.0; n_primary],
+        a_specific: vec![0.5],
+        thresholds: vec![0.0; m1],
+        specific_map: vec![0],
+        n_primary,
+        n_specific,
+        n_cat,
+    }
+}
+
+#[test]
+fn degenerate_dimensions_return_err_instead_of_panicking() {
+    let (nodes, weights) = gh_rule(5).expect("gh_rule(5)");
+    let cases = [
+        (degenerate_params(1, 1, 0), vec![0.0]),
+        (degenerate_params(1, 1, 1), vec![0.0]),
+        (degenerate_params(0, 1, 3), vec![]),
+        (degenerate_params(1, 0, 3), vec![0.0]),
+    ];
+    for (params, theta) in cases.iter() {
+        assert!(two_tier_lord_wingersky(params, theta, nodes, weights).is_err());
+        assert!(two_tier_expected_raw(params, theta, nodes, weights).is_err());
+        assert!(direct_enumeration_two_tier(params, theta, nodes, weights).is_err());
+    }
+}
