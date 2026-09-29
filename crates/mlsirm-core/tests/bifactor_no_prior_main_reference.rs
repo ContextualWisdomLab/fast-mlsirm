@@ -6,15 +6,17 @@
 //! rather than as a bit hash because `f64::exp`/`ln` come from the platform
 //! libm, whose last-ulp rounding differs across libc versions and CPU
 //! feature dispatch; an earlier bit hash pinned on one x86_64 host never
-//! matched the CI runner. Discrete outcomes (counts, iteration count,
-//! termination) are still compared exactly.
+//! matched the CI runner. The finite-difference Newton M-step amplifies those
+//! ulp differences to about 1.3e-8 relative on the x86_64 Linux runner, so the
+//! tolerance is 1e-6. Discrete outcomes (counts, iteration count, termination)
+//! are still compared exactly.
 
 use mlsirm_core::bifactor_grm::{
     fit_bifactor_grm, fit_bifactor_grm_multigroup, BifactorGrmConfig, BifactorMultigroupConfig,
     SlopePrior,
 };
 
-const TOL: f64 = 1e-8;
+const TOL: f64 = 1e-6;
 
 fn close(label: &str, got: &[f64], want: &[f64]) {
     assert_eq!(got.len(), want.len(), "{label}: length");
