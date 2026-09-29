@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-05-18 - Avoid Categorical Reduction Loops in NumPy
+**Learning:** Categorical reductions using boolean indexing inside loops (e.g., `np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)`) allocate intermediate boolean arrays and are slow due to Python-level loops and array creations.
+**Action:** When performing reductions across categories, pre-allocate `k_range = np.arange(k_cat)` outside the item loop, and vectorize the operation over categories using 3D broadcasting and matrix multiplication: `((y[:, i, None] == k_range).astype(post.dtype).T @ post).T`. This significantly reduces memory allocations and Python loop overhead. Ensure `copy=False` is NOT used with `astype()` to maintain NumPy 2.0 compatibility.
