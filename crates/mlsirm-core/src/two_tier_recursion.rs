@@ -64,6 +64,23 @@ impl TwoTierItemParams {
         if self.n_items() == 0 {
             return Err("n_items must be >= 1".into());
         }
+        if self
+            .a_primary
+            .iter()
+            .chain(self.a_specific.iter())
+            .any(|a| !a.is_finite())
+        {
+            return Err("a_primary and a_specific must be finite".into());
+        }
+        // GRM needs strictly decreasing finite boundary intercepts; otherwise the
+        // clamped category differences are not a distribution and LW is meaningless.
+        for (i, row) in self.thresholds.chunks_exact(self.n_cat - 1).enumerate() {
+            if row.iter().any(|t| !t.is_finite()) || row.windows(2).any(|w| w[1] >= w[0]) {
+                return Err(format!(
+                    "thresholds of item {i} must be finite and strictly decreasing"
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -104,6 +121,8 @@ impl TwoTierItemParams {
             };
         }
 
+        // Thresholds are validated strictly decreasing in `check_dims`, so the
+        // `.max(0.0)` clamp below is only a guard against f64 cancellation.
         let mut probs = vec![0.0_f64; self.n_cat];
         for k in 0..m1 {
             probs[k] = (p_cum[k] - p_cum[k + 1]).max(0.0);

@@ -132,3 +132,38 @@ fn empty_quadrature_and_non_finite_primary_return_err() {
     assert!(two_tier_expected_raw(&params, &[f64::NAN], nodes, weights).is_err());
     assert!(two_tier_expected_raw(&params, &[f64::INFINITY], nodes, weights).is_err());
 }
+
+#[test]
+fn non_decreasing_or_non_finite_thresholds_return_err() {
+    let (nodes, weights) = gh_rule(5).expect("gh_rule(5)");
+    for bad in [
+        vec![0.0, 0.5],
+        vec![0.5, 0.5],
+        vec![f64::NAN, -1.0],
+        vec![1.0, f64::NAN],
+    ] {
+        let mut params = degenerate_params(1, 1, 3);
+        params.thresholds = bad.clone();
+        assert!(
+            two_tier_expected_raw(&params, &[0.0], nodes, weights).is_err(),
+            "thresholds {bad:?} must be rejected"
+        );
+    }
+    let mut binary = degenerate_params(1, 1, 2);
+    binary.thresholds = vec![f64::INFINITY];
+    assert!(two_tier_expected_raw(&binary, &[0.0], nodes, weights).is_err());
+    let mut ok = degenerate_params(1, 1, 3);
+    ok.thresholds = vec![0.5, -0.5];
+    assert!(two_tier_expected_raw(&ok, &[0.0], nodes, weights).is_ok());
+}
+
+#[test]
+fn non_finite_slopes_return_err() {
+    let (nodes, weights) = gh_rule(5).expect("gh_rule(5)");
+    let mut primary = degenerate_params(1, 1, 2);
+    primary.a_primary = vec![f64::NAN];
+    assert!(two_tier_expected_raw(&primary, &[0.0], nodes, weights).is_err());
+    let mut specific = degenerate_params(1, 1, 2);
+    specific.a_specific = vec![f64::INFINITY];
+    assert!(two_tier_expected_raw(&specific, &[0.0], nodes, weights).is_err());
+}
