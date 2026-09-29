@@ -175,20 +175,18 @@ impl TwoTierItemParams {
 ///
 /// ``theta_primary`` is row-major ``n_persons * n_primary``. Returns row-major
 /// ``n_persons * (total_max_score + 1)``.
-pub fn two_tier_lord_wingersky(
+/// Shared scoring-input validation; returns ``(n_persons, blocks)``.
+fn validate_scoring_inputs(
     params: &TwoTierItemParams,
     theta_primary: &[f64],
     theta_specific: &[f64],
     weights_specific: &[f64],
-) -> Result<Vec<f64>, String> {
+) -> Result<(usize, Vec<Vec<usize>>), String> {
     params.check_dims()?;
-    let n_cat = params.n_cat;
-    let m1 = n_cat - 1;
     let p = params.n_primary;
     if theta_primary.len() % p != 0 {
         return Err("theta_primary length must be a multiple of n_primary".into());
     }
-    let n_persons = theta_primary.len() / p;
     let n_s = theta_specific.len();
     if weights_specific.len() != n_s {
         return Err("weights_specific length must match theta_specific".into());
@@ -199,8 +197,20 @@ pub fn two_tier_lord_wingersky(
     if !theta_primary.iter().all(|v| v.is_finite()) {
         return Err("theta_primary must be finite".into());
     }
+    Ok((theta_primary.len() / p, params.block_items()?))
+}
 
-    let blocks = params.block_items()?;
+pub fn two_tier_lord_wingersky(
+    params: &TwoTierItemParams,
+    theta_primary: &[f64],
+    theta_specific: &[f64],
+    weights_specific: &[f64],
+) -> Result<Vec<f64>, String> {
+    let (n_persons, blocks) =
+        validate_scoring_inputs(params, theta_primary, theta_specific, weights_specific)?;
+    let n_cat = params.n_cat;
+    let m1 = n_cat - 1;
+    let p = params.n_primary;
     let total_max_score = params.total_max_score();
     let mut out = vec![0.0_f64; n_persons * (total_max_score + 1)];
 
@@ -315,19 +325,67 @@ pub fn two_tier_expected_raw_at_q(
     two_tier_expected_raw(params, theta_primary, nodes, weights)
 }
 
-/// Expected raw total score at plug-in primary coordinates (Lord-Wingersky mean).
+/// Expected raw total at plug-in primary coordinates (single owner of the mean).
+///
+/// By linearity of expectation the mean needs no score distribution:
+/// ``E[T | theta_p] = sum_i sum_q w_q sum_{k=1}^{n_cat-1} sigmoid(eta_i + beta_ik)``
+/// with ``eta_i = a_i . theta_p + a_iS theta_{s,q}`` (``theta_s = 0`` for
+/// specific-free items), using ``E[X] = sum_{k>=1} P(X >= k)``. Equals the
+/// Lord-Wingersky mean (Cai, 2015, Eqs. 14-17), which is kept as the oracle
+/// [`two_tier_expected_raw_lw`].
 pub fn two_tier_expected_raw(
     params: &TwoTierItemParams,
     theta_primary: &[f64],
     theta_specific: &[f64],
     weights_specific: &[f64],
 ) -> Result<Vec<f64>, String> {
-    params.check_dims()?;
+    let (n_persons, _) =
+        validate_scoring_inputs(params, theta_primary, theta_specific, weights_specific)?;
     let p = params.n_primary;
-    if theta_primary.len() % p != 0 {
-        return Err("theta_primary length must be a multiple of n_primary".into());
+    let m1 = params.n_cat - 1;
+    let mut out = vec![0.0_f64; n_persons];
+    for (person, value) in out.iter_mut().enumerate() {
+        let th_p = &theta_primary[person * p..(person + 1) * p];
+        let mut total = 0.0_f64;
+        for (i, &s) in params.specific_map.iter().enumerate() {
+            let base: f64 = (0..p).map(|d| params.a_primary[i * p + d] * th_p[d]).sum();
+            let beta = &params.thresholds[i * m1..(i + 1) * m1];
+            let item_mean = |eta: f64| -> f64 { beta.iter().map(|b| sigmoid(eta + b)).sum() };
+            total += if s == -1 {
+                item_mean(base)
+            } else {
+                theta_specific
+                    .iter()
+                    .zip(weights_specific)
+                    .map(|(ths, w)| w * item_mean(base + params.a_specific[i] * ths))
+                    .sum::<f64>()
+            };
+        }
+        *value = total;
     }
-    let n_persons = theta_primary.len() / p;
+    Ok(out)
+}
+
+#[inline]
+fn sigmoid(z: f64) -> f64 {
+    if z >= 0.0 {
+        1.0 / (1.0 + (-z).exp())
+    } else {
+        let ez = z.exp();
+        ez / (1.0 + ez)
+    }
+}
+
+/// Lord-Wingersky mean of the total-score distribution (verification oracle
+/// for [`two_tier_expected_raw`]).
+pub fn two_tier_expected_raw_lw(
+    params: &TwoTierItemParams,
+    theta_primary: &[f64],
+    theta_specific: &[f64],
+    weights_specific: &[f64],
+) -> Result<Vec<f64>, String> {
+    let (n_persons, _) =
+        validate_scoring_inputs(params, theta_primary, theta_specific, weights_specific)?;
     let dist = two_tier_lord_wingersky(params, theta_primary, theta_specific, weights_specific)?;
     let total_max_score = params.total_max_score();
     let mut out = vec![0.0_f64; n_persons];

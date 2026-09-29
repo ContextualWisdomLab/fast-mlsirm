@@ -167,3 +167,67 @@ fn non_finite_slopes_return_err() {
     specific.a_specific = vec![f64::INFINITY];
     assert!(two_tier_expected_raw(&specific, &[0.0], nodes, weights).is_err());
 }
+
+fn mixed_params(
+    n_items: usize,
+    n_cat: usize,
+    n_primary: usize,
+    n_specific: usize,
+    seed: u64,
+) -> TwoTierItemParams {
+    // Deterministic LCG so the fixture needs no rand dependency.
+    let mut state = seed;
+    let mut next = || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    let m1 = n_cat - 1;
+    let a_primary = (0..n_items * n_primary)
+        .map(|_| 0.3 + 1.5 * next())
+        .collect();
+    let a_specific = (0..n_items).map(|_| 0.2 + 1.2 * next()).collect();
+    let mut thresholds = Vec::with_capacity(n_items * m1);
+    for _ in 0..n_items {
+        let mut t = 1.5 + next();
+        for _ in 0..m1 {
+            thresholds.push(t);
+            t -= 0.4 + next();
+        }
+    }
+    // Last item of every third is specific-free to exercise the -1 block.
+    let specific_map = (0..n_items)
+        .map(|i| {
+            if i % 3 == 2 {
+                -1
+            } else {
+                (i % n_specific) as i32
+            }
+        })
+        .collect();
+    TwoTierItemParams {
+        a_primary,
+        a_specific,
+        thresholds,
+        specific_map,
+        n_primary,
+        n_specific,
+        n_cat,
+    }
+}
+
+#[test]
+fn closed_form_expected_raw_equals_lord_wingersky_mean() {
+    for (q, seed) in [(5usize, 1u64), (15, 7), (21, 42)] {
+        let (nodes, weights) = gh_rule(q).expect("gh_rule");
+        let params = mixed_params(9, 4, 2, 2, seed);
+        let theta = vec![0.0, 0.0, -1.3, 0.7, 2.1, -0.4, 0.25, -2.0];
+        let closed = two_tier_expected_raw(&params, &theta, nodes, weights).expect("closed");
+        let lw = two_tier_expected_raw_lw(&params, &theta, nodes, weights).expect("lw");
+        assert_eq!(closed.len(), 4);
+        for (c, l) in closed.iter().zip(lw.iter()) {
+            assert!((c - l).abs() <= 1e-12, "closed={c} lw={l}");
+        }
+    }
+}
