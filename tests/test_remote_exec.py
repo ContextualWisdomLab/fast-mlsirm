@@ -50,7 +50,7 @@ _SHA_C = "c" * 64
 
 
 def _run_sqlite_executor(database: str, result_queue) -> None:
-    manifest = _manifest()
+    manifest = _payload_manifest(_MC_PAYLOAD)
     envelope = _envelope(
         family=RemoteJobFamily.MC_REPLICATE,
         unit_index=1,
@@ -60,7 +60,7 @@ def _run_sqlite_executor(database: str, result_queue) -> None:
     outcome = SubprocessExecutor(
         socket.gethostname(),
         ledger=SQLiteOutcomeCommitLedger(database),
-    ).run_batch((envelope,), worker_manifest=manifest)[0]
+    ).run_batch((envelope,), worker_manifest=manifest, payload=_MC_PAYLOAD)[0]
     result_queue.put(outcome.to_dict())
 
 
@@ -620,10 +620,10 @@ def test_sqlite_ledger_closes_connections_after_repeated_calls(tmp_path, monkeyp
     for _ in range(3):
         assert ledger.successful_count(_SHA) == 0
         assert ledger.committed_success(_SHA) is None
-    manifest = _manifest()
+    manifest = _payload_manifest(_MC_PAYLOAD)
     envelope = _envelope(manifest=manifest)
     SubprocessExecutor(socket.gethostname(), ledger=ledger).run_batch(
-        (envelope,), worker_manifest=manifest
+        (envelope,), worker_manifest=manifest, payload=_MC_PAYLOAD
     )
 
     assert opened
