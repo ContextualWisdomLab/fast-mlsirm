@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2024-05-24 - HTML Report Canonical JSON Selection UX
+**Learning:** For sections in HTML reports intended specifically for "audit reconstruction" or exact payload extraction (like the Canonical JSON `<pre>` blocks), users typically need to copy the entire block exactly as formatted without missing trailing braces. Leaving it to manual click-and-drag selection can lead to errors.
+**Action:** When creating UI elements containing data payloads intended for bulk copying (such as `<pre>` blocks for JSON exports), scope `.export-block pre { user-select: all; }` to a specific parent class (like `.export-block`) rather than applying it globally. This enables single-click selection of the entire content, improving UX for exact copying without breaking standard partial-text selection elsewhere on the page.
