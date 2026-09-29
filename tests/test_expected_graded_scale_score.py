@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from fast_mlsirm.estimators.mmle import equal_probability_normal_nodes
 from fast_mlsirm.graded_item import (
@@ -138,3 +139,38 @@ def test_one_and_two_column_items_integrated() -> None:
         n_nodes=N_NODES,
     )
     assert combined == one_column + two_column_only
+
+
+def _scale_call(**overrides) -> float:
+    kwargs = {
+        "slopes": SLOPES,
+        "thresholds": THRESHOLDS,
+        "theta": THETA,
+        "integrate_columns": INTEGRATE_COLUMNS,
+        "factor_variances": FACTOR_VARIANCES,
+        "n_nodes": N_NODES,
+    }
+    kwargs.update(overrides)
+    return expected_graded_scale_score(**kwargs)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"slopes": np.zeros((0, 4))}, "slopes must be a non-empty 2-D array"),
+        ({"slopes": np.where(SLOPES == SLOPES[0, 0], np.nan, SLOPES)}, "slopes must be finite"),
+        ({"theta": THETA[:3]}, "theta must be a 1-D array with length n_dims"),
+        ({"theta": np.array([0.3, np.nan, 0.0, 1.1])}, "theta must be finite"),
+        ({"thresholds": THRESHOLDS[0]}, r"thresholds must be a 2-D array with shape"),
+        ({"thresholds": np.zeros((2, 0))}, "at least one boundary per item"),
+        ({"thresholds": np.where(THRESHOLDS == THRESHOLDS[0, 0], np.inf, THRESHOLDS)},
+         "thresholds must be finite"),
+        ({"factor_variances": FACTOR_VARIANCES[:3]}, "factor_variances must be a 1-D array"),
+        ({"factor_variances": np.array([1.0, np.nan, 4.0, 1.0])}, "factor_variances must be finite"),
+        ({"factor_variances": np.array([1.0, -2.25, 4.0, 1.0])}, "factor_variances must be non-negative"),
+        ({"integrate_columns": INTEGRATE_COLUMNS[:1]}, "one entry per item"),
+    ],
+)
+def test_scale_score_rejects_malformed_inputs(overrides, match) -> None:
+    with pytest.raises(ValueError, match=match):
+        _scale_call(**overrides)

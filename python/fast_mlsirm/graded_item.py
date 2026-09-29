@@ -59,9 +59,11 @@ def _validate_integration_axis_weights(weights: np.ndarray, axis_index: int) -> 
     label = f"integration_weights[{axis_index}]"
     if np.any(weights < 0.0):
         raise ValueError(f"{label} must be non-negative")
-    weight_sum = math.fsum(float(weight) for weight in weights)
-    if not math.isfinite(weight_sum):
-        raise ValueError(f"{label} must sum to one")
+    try:
+        weight_sum = math.fsum(float(weight) for weight in weights)
+    except OverflowError:
+        # fsum raises instead of returning inf when finite weights overflow.
+        raise ValueError(f"{label} must sum to one") from None
     if not math.isclose(
         weight_sum,
         1.0,

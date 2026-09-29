@@ -120,6 +120,7 @@ def test_valid_normalized_weights_return_score_in_category_range() -> None:
         (np.array([0.80, 0.80]), "must sum to one"),
         (np.array([0.35, np.nan]), "must be finite"),
         (np.array([0.35, np.inf]), "must be finite"),
+        (np.array([1e308, 1e308]), "must sum to one"),
     ],
 )
 def test_integration_weights_fail_closed_on_invalid_probability_measure(
@@ -167,3 +168,26 @@ def test_integrate_columns_accepts_numpy_integer() -> None:
 def test_thresholds_must_be_strictly_decreasing(thresholds: np.ndarray) -> None:
     with pytest.raises(ValueError, match="strictly decreasing"):
         _call_with(thresholds=thresholds)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"slope": np.array([])}, "slope must be a non-empty 1-D array"),
+        ({"slope": np.array([1.0, np.nan, 0.4, -0.25])}, "slope must be finite"),
+        ({"theta": THETA[:3]}, "theta must be a 1-D array with the same length"),
+        ({"theta": np.array([0.3, 0.0, np.inf, 1.1])}, "theta must be finite"),
+        ({"thresholds": np.array([])}, "thresholds must be a 1-D array"),
+        ({"thresholds": np.array([1.05, np.nan])}, "thresholds must be finite"),
+        ({"integrate_columns": (1, 1), "integration_nodes": (NODES, NODES),
+          "integration_weights": (WEIGHTS, WEIGHTS)}, "must not contain duplicates"),
+        ({"integration_nodes": ()}, "must align with integrate_columns"),
+        ({"integration_nodes": (np.array([]),), "integration_weights": (np.array([]),)},
+         r"integration_nodes\[0\] must be a non-empty 1-D array"),
+        ({"integration_weights": (WEIGHTS[:1],)}, r"integration_weights\[0\] must be a 1-D array matching"),
+        ({"integration_nodes": (np.array([-0.8, np.nan]),)}, "integration nodes must be finite"),
+    ],
+)
+def test_item_score_rejects_malformed_inputs(overrides, match) -> None:
+    with pytest.raises(ValueError, match=match):
+        _call_with(**overrides)
