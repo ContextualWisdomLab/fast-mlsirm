@@ -31,7 +31,12 @@ PRIMARY_MAP = np.array(
     [[1, 0], [1, 0], [1, 0], [0, 1], [0, 1], [0, 1]], dtype=bool
 )
 SPECIFIC_MAP = np.array([0, 0, 1, 0, 1, 1], dtype=np.int64)
-ANCHOR = np.array([1, 1, 1, 0, 0, 0], dtype=bool)
+# Two anchored items per primary so the anchored primary-loading submatrix is
+# full column rank; items 2 and 5 stay free.  Items 0 and 4 also anchor each
+# specific block (Cai, 2010, two-tier structure).
+ANCHOR = np.array([1, 1, 0, 1, 1, 0], dtype=bool)
+FOCAL_MEAN = np.array([0.65, -0.35])
+FOCAL_SD = np.array([1.25, 0.8])
 TRUE_A_P = np.array([[1.4, 0], [1.1, 0], [1.0, 0], [0, 1.2], [0, 0.9], [0, 1.1]])
 TRUE_A_S = np.array([1.0, 0.9, 1.1, 1.0, 0.8, 0.9])
 TRUE_D = np.array(
@@ -62,6 +67,38 @@ def _git_sha() -> str | None:
         return None
     value = result.stdout.strip()
     return value if value else None
+
+
+def anchor_identification(
+    primary_map: np.ndarray,
+    specific_map: np.ndarray,
+    anchor: np.ndarray,
+    estimate_specific_vars: bool,
+) -> dict[str, object]:
+    """Check that the fixed items pin every focal latent moment being estimated.
+
+    Under FIPC the focal-group metric comes only from the fixed items (Kim,
+    2006).  The focal primary mean enters the anchored items through
+    ``A_anchor @ mu``, so ``mu`` is identified only when the anchored
+    primary-loading pattern has full column rank.  When specific variances are
+    estimated, each specific block likewise needs an anchored item.
+    """
+    rank = int(np.linalg.matrix_rank(np.asarray(primary_map, dtype=float)[anchor]))
+    specific_ok = not estimate_specific_vars or set(np.unique(specific_map)) <= set(np.unique(specific_map[anchor]))
+    return {
+        "anchored_primary_rank": rank,
+        "anchor_identified": bool(rank == primary_map.shape[1] and specific_ok),
+    }
+
+
+def _shaped(fit: dict, n_persons: int) -> dict[str, np.ndarray]:
+    """Reshape the flat PyO3 outputs into item- and person-major arrays."""
+    return {
+        "theta": np.asarray(fit["theta_p_eap"], dtype=np.float64).reshape(n_persons, N_PRIMARY),
+        "a_primary": np.asarray(fit["a_primary"], dtype=np.float64).reshape(N_ITEMS, N_PRIMARY),
+        "a_specific": np.asarray(fit["a_specific"], dtype=np.float64).reshape(N_ITEMS),
+        "threshold": np.asarray(fit["threshold"], dtype=np.float64).reshape(N_ITEMS, N_CAT - 1),
+    }
 
 
 def simulate(seed: int, mean: np.ndarray, scale: np.ndarray) -> np.ndarray:
@@ -98,16 +135,16 @@ def expected_raw(theta: np.ndarray, fit: dict) -> np.ndarray:
     weights = weights / np.sqrt(np.pi)
     out = np.zeros(theta.shape[0])
     for i in range(N_ITEMS):
-        base = theta @ np.asarray(fit["a_primary"])[i].reshape(N_PRIMARY)
-        if np.asarray(fit["a_specific"])[i] != 0:
+        base = theta @ fit["a_primary"][i]
+        if fit["a_specific"][i] != 0:
             nuisance = np.zeros(theta.shape[0])
             for node, weight in zip(nodes, weights):
                 nuisance += weight * np.sum(
-                    1.0 / (1.0 + np.exp(-(base[:, None] + np.asarray(fit["a_specific"])[i] * node + np.asarray(fit["threshold"])[i]))), axis=1
+                    1.0 / (1.0 + np.exp(-(base[:, None] + fit["a_specific"][i] * node + fit["threshold"][i]))), axis=1
                 )
             out += nuisance
         else:
-            cum = 1.0 / (1.0 + np.exp(-(base[:, None] + np.asarray(fit["threshold"])[i])))
+            cum = 1.0 / (1.0 + np.exp(-(base[:, None] + fit["threshold"][i])))
             out += cum.sum(axis=1)
     return out
 
@@ -142,18 +179,28 @@ def _fipc_gates(results: dict[str, object]) -> None:
         N_SPECIFIC, N_CAT, 7, 7, 100, 1e-5, 1, SEED,
     )
     fixed = {k: np.asarray(reference[k], dtype=np.float64) for k in ("a_primary", "a_specific", "threshold")}
-    focal_y = simulate(SEED + 1, np.array([0.65, -0.35]), np.array([1.25, 0.8]))
+    focal_y = simulate(SEED + 1, FOCAL_MEAN, FOCAL_SD)
     fit = call_fipc(focal_y, fixed)
-    results["responses_fit_eap_expected_raw"] = bool(fit["converged"] and np.isfinite(fit["theta_p_eap"]).all() and np.isfinite(expected_raw(np.asarray(fit["theta_p_eap"]), fit)).all())
+    shaped = _shaped(fit, N_PERSONS)
+    results["responses_fit_eap_expected_raw"] = bool(fit["converged"] and np.isfinite(shaped["theta"]).all() and np.isfinite(expected_raw(shaped["theta"], shaped)).all())
+    # One seeded replicate: these are recovery errors, not Monte Carlo bias.
+    results["focal_primary_mean_error"] = (np.asarray(fit["primary_mean"], dtype=np.float64) - FOCAL_MEAN).tolist()
+    results["focal_primary_sd_error"] = (np.asarray(fit["primary_sd"], dtype=np.float64) - FOCAL_SD).tolist()
+    free = ~ANCHOR
+    free_error = np.concatenate((
+        (shaped["a_primary"] - TRUE_A_P)[free][PRIMARY_MAP[free]],
+        (shaped["threshold"] - TRUE_D)[free].reshape(-1),
+    ))
+    results["free_item_param_rmse"] = float(np.sqrt(np.mean(np.square(free_error))))
     results["non_unit_focal_prior"] = bool(np.max(np.abs(np.asarray(fit["primary_mean"])) > 0.1) and np.max(np.asarray(fit["primary_sd"])) > 1.01)
     perm = np.random.default_rng(17).permutation(N_PERSONS)
     perm_fit = call_fipc(focal_y[perm], fixed)
-    row_error = np.asarray(fit["theta_p_eap"])[perm] - np.asarray(perm_fit["theta_p_eap"])
+    row_error = shaped["theta"][perm] - _shaped(perm_fit, N_PERSONS)["theta"]
     results["row_order_max_abs"] = float(np.max(np.abs(row_error)))
     results["row_order_rmse"] = float(np.sqrt(np.mean(np.square(row_error))))
     results["row_order"] = bool(np.allclose(row_error, 0.0, atol=ROW_ORDER_ATOL, rtol=ROW_ORDER_RTOL))
     results["row_order_diagnosis"] = "pass" if results["row_order"] else "refit_order_dependence"
-    results["anchor_rows_fixed"] = bool(np.array_equal(np.asarray(fit["a_primary"])[ANCHOR], fixed["a_primary"].reshape(N_ITEMS, N_PRIMARY)[ANCHOR]) and np.array_equal(np.asarray(fit["threshold"])[ANCHOR], fixed["threshold"].reshape(N_ITEMS, N_CAT - 1)[ANCHOR]))
+    results["anchor_rows_fixed"] = bool(np.array_equal(shaped["a_primary"][ANCHOR], fixed["a_primary"].reshape(N_ITEMS, N_PRIMARY)[ANCHOR]) and np.array_equal(shaped["threshold"][ANCHOR], fixed["threshold"].reshape(N_ITEMS, N_CAT - 1)[ANCHOR]))
     fail = call_fipc(focal_y, fixed, max_iter=1)
     results["convergence_failure"] = bool(not fail["converged"] and fail["termination_reason"] == "max_iter_reached")
     results["orthogonal_specific_prior_fixed"] = bool(np.array_equal(np.asarray(fit["specific_sd"]), np.ones(N_SPECIFIC)))
@@ -172,16 +219,28 @@ def build_receipt(consumer_sha: str | None, build_source_sha: str | None) -> dic
         "sha": consumer_sha,
         "build_source_sha": build_source_sha,
         "build_source_sha_present": build_source_sha is not None,
+        # build_source_sha is a caller label, not bound to the binary digest.
+        # Only an immutable release/attestation manifest can bind the two.
+        "build_source_sha_authority": "caller_asserted",
+        "evidence_class": "synthetic_diagnostic",
         "loaded_extension": str(extension),
         "loaded_extension_sha256": _sha256(extension),
         "expected_raw_range": None,
         "row_order_max_abs": None,
         "row_order_rmse": None,
+        "focal_primary_mean_error": None,
+        "focal_primary_sd_error": None,
+        "free_item_param_rmse": None,
     }
     results.update(dict.fromkeys(GATES, False))
+    results.update(anchor_identification(PRIMARY_MAP, SPECIFIC_MAP, ANCHOR, estimate_specific_vars=False))
+    # Row-order drift is uninterpretable when the focal metric is not
+    # identified, so fail closed before fitting anything.
+    if not results["anchor_identified"]:
+        results["row_order_diagnosis"] = "not_identified"
     # The FIPC binding ships separately from this receipt; say so rather than
     # reporting a TypeError as a failed fit.
-    if not hasattr(_core, "fit_two_tier_grm_fipc"):
+    elif not hasattr(_core, "fit_two_tier_grm_fipc"):
         results["row_order_diagnosis"] = "binding_unavailable"
     else:
         try:
@@ -190,9 +249,12 @@ def build_receipt(consumer_sha: str | None, build_source_sha: str | None) -> dic
             results.update(dict.fromkeys(GATES, False))
             results["row_order_max_abs"] = None
             results["row_order_rmse"] = None
+            results["focal_primary_mean_error"] = None
+            results["focal_primary_sd_error"] = None
+            results["free_item_param_rmse"] = None
             results["row_order_diagnosis"] = "fit_error"
             results["fipc_fit_error"] = f"{type(exc).__name__}: {exc}"
-    results["all_pass"] = all(results[key] is True for key in GATES)
+    results["all_pass"] = bool(results["anchor_identified"]) and all(results[key] is True for key in GATES)
     return results
 
 
