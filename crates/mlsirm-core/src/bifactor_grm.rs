@@ -146,7 +146,7 @@
 //! Methodology, 61*(2), 479-482. https://doi.org/10.1111/1467-9868.00188
 
 use crate::poly::{grm_logprobs, grm_node_gradient, grm_node_hessian, solve_small};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::cell::Cell;
 use std::time::Instant;
 
 // NOTE (stage-1 review fix-up, updated #1929): this module imposes no magic
@@ -867,70 +867,79 @@ pub(crate) fn e_step(
 /// [`enable_mstep_sweep_counters`] is on, every `item_neg_ll_*` entry records
 /// its class; production Newton never increments `fd` after the analytic
 /// Hessian lands.
-static MSTEP_SWEEP_ENABLED: AtomicBool = AtomicBool::new(false);
-static MSTEP_SWEEP_BASE: AtomicU64 = AtomicU64::new(0);
-static MSTEP_SWEEP_FD: AtomicU64 = AtomicU64::new(0);
-static MSTEP_SWEEP_LINESEARCH: AtomicU64 = AtomicU64::new(0);
-static MSTEP_SWEEP_NEWTON: AtomicU64 = AtomicU64::new(0);
-static PHASE_NS_FILL: AtomicU64 = AtomicU64::new(0);
-static PHASE_NS_ESTEP: AtomicU64 = AtomicU64::new(0);
-static PHASE_NS_MSTEP: AtomicU64 = AtomicU64::new(0);
+// Thread-local so concurrent tests (or fits on other threads) never
+// contaminate each other's counts; the M-step and phase timers run on the
+// calling thread.
+thread_local! {
+    static MSTEP_SWEEP_ENABLED: Cell<bool> = const { Cell::new(false) };
+    static MSTEP_SWEEP_BASE: Cell<u64> = const { Cell::new(0) };
+    static MSTEP_SWEEP_FD: Cell<u64> = const { Cell::new(0) };
+    static MSTEP_SWEEP_LINESEARCH: Cell<u64> = const { Cell::new(0) };
+    static MSTEP_SWEEP_NEWTON: Cell<u64> = const { Cell::new(0) };
+    static PHASE_NS_FILL: Cell<u64> = const { Cell::new(0) };
+    static PHASE_NS_ESTEP: Cell<u64> = const { Cell::new(0) };
+    static PHASE_NS_MSTEP: Cell<u64> = const { Cell::new(0) };
+}
 
-/// Enable or disable bifactor item M-step sweep counters (tests / recount).
+fn bump(counter: &'static std::thread::LocalKey<Cell<u64>>, by: u64) {
+    counter.with(|c| c.set(c.get() + by));
+}
+
+/// Enable or disable bifactor item M-step sweep counters on the calling
+/// thread (tests / recount).
 pub fn enable_mstep_sweep_counters(on: bool) {
-    MSTEP_SWEEP_ENABLED.store(on, Ordering::Relaxed);
+    MSTEP_SWEEP_ENABLED.with(|c| c.set(on));
 }
 
-/// Reset bifactor item M-step sweep counters to zero.
+/// Reset the calling thread's bifactor item M-step sweep counters to zero.
 pub fn reset_mstep_sweep_counters() {
-    MSTEP_SWEEP_BASE.store(0, Ordering::Relaxed);
-    MSTEP_SWEEP_FD.store(0, Ordering::Relaxed);
-    MSTEP_SWEEP_LINESEARCH.store(0, Ordering::Relaxed);
-    MSTEP_SWEEP_NEWTON.store(0, Ordering::Relaxed);
-    PHASE_NS_FILL.store(0, Ordering::Relaxed);
-    PHASE_NS_ESTEP.store(0, Ordering::Relaxed);
-    PHASE_NS_MSTEP.store(0, Ordering::Relaxed);
+    for counter in [
+        &MSTEP_SWEEP_BASE,
+        &MSTEP_SWEEP_FD,
+        &MSTEP_SWEEP_LINESEARCH,
+        &MSTEP_SWEEP_NEWTON,
+        &PHASE_NS_FILL,
+        &PHASE_NS_ESTEP,
+        &PHASE_NS_MSTEP,
+    ] {
+        counter.with(|c| c.set(0));
+    }
 }
 
-/// `(base, fd, linesearch, newton_steps)` since the last reset.
+/// `(base, fd, linesearch, newton_steps)` on the calling thread since the
+/// last reset.
 pub fn mstep_sweep_counters() -> (u64, u64, u64, u64) {
     (
-        MSTEP_SWEEP_BASE.load(Ordering::Relaxed),
-        MSTEP_SWEEP_FD.load(Ordering::Relaxed),
-        MSTEP_SWEEP_LINESEARCH.load(Ordering::Relaxed),
-        MSTEP_SWEEP_NEWTON.load(Ordering::Relaxed),
+        MSTEP_SWEEP_BASE.with(Cell::get),
+        MSTEP_SWEEP_FD.with(Cell::get),
+        MSTEP_SWEEP_LINESEARCH.with(Cell::get),
+        MSTEP_SWEEP_NEWTON.with(Cell::get),
     )
 }
 
-/// `(fill_logprob_tables_ns, e_step_ns, m_step_ns)` accumulated while counters
-/// are enabled (#2030 phase recount; ratios only).
+/// `(fill_logprob_tables_ns, e_step_ns, m_step_ns)` accumulated on the
+/// calling thread while counters are enabled (#2030 phase recount; ratios
+/// only).
 pub fn mstep_phase_ns() -> (u64, u64, u64) {
     (
-        PHASE_NS_FILL.load(Ordering::Relaxed),
-        PHASE_NS_ESTEP.load(Ordering::Relaxed),
-        PHASE_NS_MSTEP.load(Ordering::Relaxed),
+        PHASE_NS_FILL.with(Cell::get),
+        PHASE_NS_ESTEP.with(Cell::get),
+        PHASE_NS_MSTEP.with(Cell::get),
     )
 }
 
 #[inline]
 fn bump_sweep(kind: SweepKind) {
-    if !MSTEP_SWEEP_ENABLED.load(Ordering::Relaxed) {
+    if !MSTEP_SWEEP_ENABLED.with(Cell::get) {
         return;
     }
-    match kind {
-        SweepKind::Base => {
-            MSTEP_SWEEP_BASE.fetch_add(1, Ordering::Relaxed);
-        }
-        SweepKind::Fd => {
-            MSTEP_SWEEP_FD.fetch_add(1, Ordering::Relaxed);
-        }
-        SweepKind::LineSearch => {
-            MSTEP_SWEEP_LINESEARCH.fetch_add(1, Ordering::Relaxed);
-        }
-        SweepKind::Newton => {
-            MSTEP_SWEEP_NEWTON.fetch_add(1, Ordering::Relaxed);
-        }
-    }
+    let counter = match kind {
+        SweepKind::Base => &MSTEP_SWEEP_BASE,
+        SweepKind::Fd => &MSTEP_SWEEP_FD,
+        SweepKind::LineSearch => &MSTEP_SWEEP_LINESEARCH,
+        SweepKind::Newton => &MSTEP_SWEEP_NEWTON,
+    };
+    bump(counter, 1);
 }
 
 #[derive(Clone, Copy)]
@@ -1345,18 +1354,18 @@ fn run_single_start(
     let objective_name = em_objective_name(cfg.slope_prior);
 
     loop {
-        let phase_on = MSTEP_SWEEP_ENABLED.load(Ordering::Relaxed);
+        let phase_on = MSTEP_SWEEP_ENABLED.with(Cell::get);
         let t_fill = phase_on.then(Instant::now);
         let tables = fill_logprob_tables(v, &params, tg, ts, qg, qs);
         if let Some(t0) = t_fill {
-            PHASE_NS_FILL.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+            bump(&PHASE_NS_FILL, t0.elapsed().as_nanos() as u64);
         }
         let t_estep = phase_on.then(Instant::now);
         let (ll, counts) = e_step(
             v, y, observed, &tables, log_wg, log_ws, qg, qs, tg, ts, cfg.device,
         );
         if let Some(t0) = t_estep {
-            PHASE_NS_ESTEP.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+            bump(&PHASE_NS_ESTEP, t0.elapsed().as_nanos() as u64);
         }
         // MAP: GEM ascends log-likelihood + log prior, not the likelihood.
         let objective = ll - slope_prior_neg_log(cfg.slope_prior, &params);
@@ -1405,7 +1414,7 @@ fn run_single_start(
             }
         }
         if let Some(t0) = t_mstep {
-            PHASE_NS_MSTEP.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+            bump(&PHASE_NS_MSTEP, t0.elapsed().as_nanos() as u64);
         }
         n_iter += 1;
     }
