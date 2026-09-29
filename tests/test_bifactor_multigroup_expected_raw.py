@@ -210,10 +210,43 @@ def _non_finite_threshold() -> _SingleGroupFit:
     return fit
 
 
+def _without_slopes() -> object:
+    fit = _SingleGroupFit(A_GENERAL, A_SPECIFIC)
+    del fit.a_general
+    return fit
+
+
+def _three_d_general() -> _SingleGroupFit:
+    fit = _SingleGroupFit(A_GENERAL, A_SPECIFIC)
+    fit.a_general = fit.a_general.reshape(1, 1, -1)
+    return fit
+
+
+def _mismatched_specific() -> _SingleGroupFit:
+    return _SingleGroupFit(A_GENERAL, A_SPECIFIC[:-1])
+
+
+def _non_finite_slope() -> _SingleGroupFit:
+    fit = _SingleGroupFit(A_GENERAL, A_SPECIFIC.copy())
+    fit.a_specific[1] = np.inf
+    return fit
+
+
+def _short_single_group_threshold() -> _SingleGroupFit:
+    fit = _SingleGroupFit(A_GENERAL, A_SPECIFIC)
+    fit.threshold = fit.threshold[:-1]
+    return fit
+
+
 @pytest.mark.parametrize(
     ("make_fit", "theta", "error", "match"),
     [
         (_without_threshold, np.zeros(3), TypeError, "threshold array"),
+        (_without_slopes, np.zeros(3), TypeError, "a_general and a_specific arrays"),
+        (_three_d_general, np.zeros(3), ValueError, "non-empty n_items 1-D array"),
+        (_mismatched_specific, np.zeros(3), ValueError, "same shape as fit.a_general"),
+        (_non_finite_slope, np.zeros(3), ValueError, "a_specific must be finite"),
+        (_short_single_group_threshold, np.zeros(3), ValueError, r"n_items x \(n_cat - 1\)"),
         (_two_d_multigroup_threshold, np.zeros(3), ValueError, "n_groups x n_items"),
         (_one_d_specific_sd, np.zeros(3), ValueError, "n_groups x n_specific"),
         (_non_finite_threshold, np.zeros(3), ValueError, "threshold must be finite"),
