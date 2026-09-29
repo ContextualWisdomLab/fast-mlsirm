@@ -55,7 +55,7 @@ fn cfg() -> BifactorMultigroupConfig {
         seed: 20_260_918,
         newton_iter: 10,
         ridge: 1e-8,
-        device: mlsirm_core::Device::Cpu,
+        device: mlsirm_core::bifactor_grm::BifactorDevice::Cpu,
         estimate_specific_vars: false,
     }
 }

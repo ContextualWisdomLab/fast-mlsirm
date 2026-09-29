@@ -167,20 +167,67 @@ pub struct BifactorGrmConfig {
     /// Compute device for the E-step sweep: `Cpu` runs the `f64` scalar
     /// sweep; `Gpu`/`Auto` run the WGSL `f32` person-parallel sweep when a
     /// compatible adapter exists and fall back to CPU otherwise (`Gpu`
-    /// warns on fallback, `Auto` does not).
-    pub device: crate::Device,
+    /// warns on fallback, `Auto` does not); `Split` runs the #2001 L3
+    /// same-host CPU+GPU person partition.
+    pub device: BifactorDevice,
 }
 
 // No `Default` impl: `q_general`/`q_specific` are quadrature node counts
 // with no sourced accuracy target for any particular value (Project rule,
 // issue #1929), so every field is a caller-owned, explicit choice.
 
+/// E-step device of the bifactor GRM fits: the shared [`crate::Device`]
+/// choices plus the #2001 L3 same-host CPU+GPU person split, which only this
+/// estimator implements. Keeping `Split` here (not on the shared enum) stops a
+/// split request from reaching scoring/likelihood APIs that read any non-CPU
+/// device as a GPU request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BifactorDevice {
+    Cpu,
+    Gpu,
+    Auto,
+    /// Persons `[0, gpu_person_start)` on CPU, `[gpu_person_start, n)` on GPU
+    /// when an adapter exists; otherwise the full sweep falls back to CPU.
+    Split { gpu_person_start: usize },
+}
+
+impl From<crate::Device> for BifactorDevice {
+    fn from(device: crate::Device) -> Self {
+        match device {
+            crate::Device::Cpu => Self::Cpu,
+            crate::Device::Gpu => Self::Gpu,
+            crate::Device::Auto => Self::Auto,
+        }
+    }
+}
+
+impl BifactorDevice {
+    /// Device for sweeps without a split implementation (the multigroup
+    /// E-step). Multigroup fits reject `Split` up front, so it maps to `Cpu`.
+    fn shared(self) -> crate::Device {
+        match self {
+            Self::Cpu | Self::Split { .. } => crate::Device::Cpu,
+            Self::Gpu => crate::Device::Gpu,
+            Self::Auto => crate::Device::Auto,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Cpu => "cpu",
+            Self::Gpu => "gpu",
+            Self::Auto => "auto",
+            Self::Split { .. } => "split",
+        }
+    }
+}
+
 /// Parse the bifactor E-step device string, including the L3 `split` mode.
 pub fn parse_bifactor_device(
     name: &str,
     n_persons: usize,
     split_at_person: Option<usize>,
-) -> Result<crate::Device, String> {
+) -> Result<BifactorDevice, String> {
     match name.trim().to_ascii_lowercase().as_str() {
         "split" => {
             if n_persons < 2 {
@@ -195,11 +242,12 @@ pub fn parse_bifactor_device(
                     "split_at_person must be in 1..{n_persons} for device=split; got {at}"
                 ));
             }
-            Ok(crate::Device::Split {
+            Ok(BifactorDevice::Split {
                 gpu_person_start: at,
             })
         }
         other => crate::Device::parse(other)
+            .map(BifactorDevice::from)
             .ok_or_else(|| format!("device must be one of 'cpu', 'gpu', 'auto', 'split'; got '{name}'")),
     }
 }
@@ -229,7 +277,9 @@ pub struct BifactorGrmResult {
     pub best_start: usize,
     /// `sum_i (1 + has_specific(i) + (n_cat - 1))` free item parameters.
     pub n_parameters: usize,
-    /// Effective E-step device(s) from the winning EM run (`cpu`, `gpu`, `cpu+gpu`, …).
+    /// Effective E-step device(s) of the FINAL E-step of the winning EM run
+    /// (`cpu`, `gpu`, `cpu+gpu`). Earlier sweeps and other starts are not
+    /// summarized: a mid-fit GPU fallback is reported on stderr, not here.
     pub effective_device: String,
     /// Per-shard provenance from the final E-step of the winning EM run.
     pub estep_shards: Vec<crate::bifactor_estep_split::EstepShardProvenance>,
@@ -591,13 +641,13 @@ pub(crate) fn e_step(
     qs: usize,
     tg: &[f64],
     ts: &[f64],
-    device: crate::Device,
+    device: BifactorDevice,
 ) -> (
     f64,
     Vec<Vec<Vec<f64>>>,
     Option<crate::bifactor_estep_split::EstepExecutionProvenance>,
 ) {
-    if let crate::Device::Split { gpu_person_start } = device {
+    if let BifactorDevice::Split { gpu_person_start } = device {
         return e_step_same_host_split(
             v,
             y,
@@ -615,7 +665,7 @@ pub(crate) fn e_step(
 
     #[cfg(all(feature = "gpu", not(coverage)))]
     {
-        if device == crate::Device::Gpu || device == crate::Device::Auto {
+        if device == BifactorDevice::Gpu || device == BifactorDevice::Auto {
             // Host-side staging for the GPU path: `tables.to_vec()`,
             // `tg.to_vec()`, and `ts.to_vec()` (replicated per specific)
             // are real deep copies on every E-step call. Only `tables`
@@ -647,7 +697,7 @@ pub(crate) fn e_step(
             if let Some(res) = crate::gpu_bifactor::e_step_reduced_gpu(&inputs) {
                 let counts = counts_from_gpu_flat(&res, v, qg, qs);
                 let prov = crate::bifactor_estep_split::EstepExecutionProvenance {
-                    requested_device: device_label(device).to_string(),
+                    requested_device: device.label().to_string(),
                     effective_device: "gpu".to_string(),
                     shards: vec![crate::bifactor_estep_split::EstepShardProvenance {
                         shard_index: 0,
@@ -660,7 +710,7 @@ pub(crate) fn e_step(
             }
         }
     }
-    if device == crate::Device::Gpu {
+    if device == BifactorDevice::Gpu {
         eprintln!(
             "fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found; \
              falling back to CPU implementation."
@@ -679,7 +729,7 @@ pub(crate) fn e_step(
         v.n_persons,
     );
     let prov = crate::bifactor_estep_split::EstepExecutionProvenance {
-        requested_device: device_label(device).to_string(),
+        requested_device: device.label().to_string(),
         effective_device: "cpu".to_string(),
         shards: vec![crate::bifactor_estep_split::EstepShardProvenance {
             shard_index: 0,
@@ -693,15 +743,6 @@ pub(crate) fn e_step(
         partial.counts,
         Some(prov),
     )
-}
-
-fn device_label(device: crate::Device) -> &'static str {
-    match device {
-        crate::Device::Cpu => "cpu",
-        crate::Device::Gpu => "gpu",
-        crate::Device::Auto => "auto",
-        crate::Device::Split { .. } => "split",
-    }
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
@@ -1454,7 +1495,7 @@ pub fn bifactor_grm_marginal_loglik(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
-        device: crate::Device::Cpu,
+        device: BifactorDevice::Cpu,
     };
     let v = validate(
         y,
@@ -1485,7 +1526,7 @@ pub fn bifactor_grm_marginal_loglik(
         tg,
         ts,
         // Exactness oracle: always the f64 CPU sweep.
-        crate::Device::Cpu,
+        BifactorDevice::Cpu,
     )
     .0)
 }
@@ -1522,7 +1563,7 @@ pub fn bifactor_grm_marginal_loglik_brute(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
-        device: crate::Device::Cpu,
+        device: BifactorDevice::Cpu,
     };
     let v = validate(
         y,
@@ -1774,7 +1815,7 @@ pub struct BifactorMultigroupConfig {
     /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
     pub estimate_specific_vars: bool,
     /// Compute device for the E-step sweep (see [`BifactorGrmConfig::device`]).
-    pub device: crate::Device,
+    pub device: BifactorDevice,
 }
 
 impl Default for BifactorMultigroupConfig {
@@ -1789,7 +1830,7 @@ impl Default for BifactorMultigroupConfig {
             newton_iter: 10,
             ridge: 1e-8,
             estimate_specific_vars: false,
-            device: crate::Device::Cpu,
+            device: BifactorDevice::Cpu,
         }
     }
 }
@@ -2335,7 +2376,7 @@ fn run_single_start_multigroup(
             log_ws,
             qg,
             qs,
-            cfg.device,
+            cfg.device.shared(),
         );
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
@@ -2550,7 +2591,7 @@ pub fn fit_bifactor_grm_multigroup(
     if n_groups < 1 {
         return Err("n_groups must be >= 1".into());
     }
-    if n_groups > 1 && matches!(cfg.device, crate::Device::Split { .. }) {
+    if n_groups > 1 && matches!(cfg.device, BifactorDevice::Split { .. }) {
         return Err(
             "device=split is supported for single-group fit_bifactor_grm only (#2001 L3 pilot)"
                 .into(),
@@ -3212,7 +3253,7 @@ pub fn fit_bifactor_grm_fipc(
         // has no device knob of its own; this reused single-group validator
         // only checks shapes/blocks, never runs the E-step, so the device
         // choice here is inert either way.
-        device: crate::Device::Cpu,
+        device: BifactorDevice::Cpu,
     };
     let v = validate(
         y,

@@ -42,7 +42,7 @@ fn tiny_estep_tables() -> (
         seed: 1,
         newton_iter: 10,
         ridge: 1e-8,
-        device: crate::Device::Cpu,
+        device: crate::bifactor_grm::BifactorDevice::Cpu,
     };
     let v = validate(
         &y,
@@ -81,7 +81,7 @@ fn cpu_sharded_estep_matches_serial_bit_exact() {
         qs,
         &tg,
         &ts,
-        crate::Device::Cpu,
+        crate::bifactor_grm::BifactorDevice::Cpu,
     );
 
     for n_shards in [2, 3, 4, 6] {
@@ -119,6 +119,22 @@ fn merge_estep_partials_is_order_invariant_for_disjoint_shards() {
 }
 
 #[test]
+fn split_is_a_bifactor_only_device() {
+    // Devin review on #2043: `split` must not reach shared device consumers
+    // (scoring/likelihood read any non-CPU device as a GPU request), so only
+    // the bifactor parser accepts it.
+    assert_eq!(crate::Device::parse("split"), None);
+    assert_eq!(
+        super::parse_bifactor_device("split", 10, Some(4)),
+        Ok(crate::bifactor_grm::BifactorDevice::Split { gpu_person_start: 4 })
+    );
+    assert_eq!(
+        super::parse_bifactor_device("gpu", 10, None),
+        Ok(crate::bifactor_grm::BifactorDevice::Gpu)
+    );
+}
+
+#[test]
 fn split_device_records_effective_device_provenance() {
     let (v, y, log_wg, log_ws, tg, ts, qg, qs) = tiny_estep_tables();
     let params = initial_params(&v, &y, None, 1, 0);
@@ -135,7 +151,7 @@ fn split_device_records_effective_device_provenance() {
         qs,
         &tg,
         &ts,
-        crate::Device::Split {
+        crate::bifactor_grm::BifactorDevice::Split {
             gpu_person_start: v.n_persons / 2,
         },
     );
@@ -177,7 +193,7 @@ fn measure_fixture(q: usize) -> (
         seed: 42,
         newton_iter: 10,
         ridge: 1e-8,
-        device: crate::Device::Cpu,
+        device: crate::bifactor_grm::BifactorDevice::Cpu,
     };
     let v = validate(
         &y,
@@ -244,7 +260,7 @@ fn measure_concurrent_split_estep_vs_cpu_reference() {
             qs,
             &tg,
             &ts,
-            crate::Device::Cpu,
+            crate::bifactor_grm::BifactorDevice::Cpu,
         );
 
         let tables_wrapped = vec![tables.clone()];

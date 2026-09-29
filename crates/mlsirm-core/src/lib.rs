@@ -158,12 +158,6 @@ pub enum Device {
     Gpu,
     /// Use the GPGPU path when a GPU is available, otherwise CPU. No warning.
     Auto,
-    /// Same-host concurrent CPU+GPU person split for the bifactor E-step (#2001
-    /// L3): persons `[0, gpu_person_start)` on CPU, `[gpu_person_start, n)` on
-    /// GPU when an adapter exists; otherwise the full sweep falls back to CPU.
-    Split {
-        gpu_person_start: usize,
-    },
 }
 
 impl Device {
@@ -173,7 +167,6 @@ impl Device {
             "cpu" => Some(Device::Cpu),
             "gpu" => Some(Device::Gpu),
             "auto" => Some(Device::Auto),
-            "split" => None,
             _ => None,
         }
     }
@@ -213,9 +206,7 @@ pub fn neg_loglik_and_grad_device(
     penalty: &PenaltyConfig,
 ) -> (f64, Gradients, f64) {
     match device {
-        Device::Cpu | Device::Split { .. } => {
-            neg_loglik_and_grad(y, mask, factor_id, params, config, penalty)
-        }
+        Device::Cpu => neg_loglik_and_grad(y, mask, factor_id, params, config, penalty),
         Device::Gpu | Device::Auto => {
             #[cfg(all(feature = "gpu", not(coverage)))]
             {

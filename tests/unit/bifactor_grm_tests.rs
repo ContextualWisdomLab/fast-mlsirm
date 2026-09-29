@@ -131,7 +131,7 @@ fn valid_config() -> BifactorGrmConfig {
         seed: 42,
         newton_iter: 3,
         ridge: 1e-8,
-        device: crate::Device::Cpu,
+        device: crate::bifactor_grm::BifactorDevice::Cpu,
     }
 }
 
@@ -500,11 +500,11 @@ fn estep_gpu_matches_cpu_counts_and_loglik() {
 
     let (ll_cpu, counts_cpu, _) = e_step(
         &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
-        crate::Device::Cpu,
+        crate::bifactor_grm::BifactorDevice::Cpu,
     );
     let (ll_gpu, counts_gpu, _) = e_step(
         &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
-        crate::Device::Gpu,
+        crate::bifactor_grm::BifactorDevice::Gpu,
     );
 
     assert!(
@@ -578,7 +578,7 @@ fn estep_duplicate_persons_scale_loglik_and_counts() {
     let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
     let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
 
-    let (ll_once, counts_once) = e_step(
+    let (ll_once, counts_once, _) = e_step(
         &v_once,
         &y_once,
         None,
@@ -589,9 +589,9 @@ fn estep_duplicate_persons_scale_loglik_and_counts() {
         7,
         tg,
         ts,
-        crate::Device::Cpu,
+        crate::bifactor_grm::BifactorDevice::Cpu,
     );
-    let (ll_twice, counts_twice) = e_step(
+    let (ll_twice, counts_twice, _) = e_step(
         &v_twice,
         &y_twice,
         None,
@@ -602,7 +602,7 @@ fn estep_duplicate_persons_scale_loglik_and_counts() {
         7,
         tg,
         ts,
-        crate::Device::Cpu,
+        crate::bifactor_grm::BifactorDevice::Cpu,
     );
 
     assert!(
@@ -750,9 +750,9 @@ fn estep_shared_block_subvector_yields_identical_log_i() {
             for mask_first in [false, true] {
                 let row = &y[person * TINY_N_ITEMS..(person + 1) * TINY_N_ITEMS];
                 let mask = [!mask_first, true, false, false];
-                let (ll, counts) = e_step(
+                let (ll, counts, _) = e_step(
                     &v, row, Some(&mask), &tables, &log_wg, &log_ws,
-                    qg, qs, tg, ts, crate::Device::Cpu,
+                    qg, qs, tg, ts, crate::bifactor_grm::BifactorDevice::Cpu,
                 );
                 let expected = if mask_first {
                     let terms: Vec<f64> = (0..qs)
@@ -820,7 +820,7 @@ fn zero_prior_weight_nodes_do_not_nan_estep_counts() {
         7,
         tg,
         ts,
-        crate::Device::Cpu,
+        crate::bifactor_grm::BifactorDevice::Cpu,
     );
     assert!(ll.is_finite(), "observed-data loglik must stay finite; got {ll}");
     for (i, item_counts) in counts.iter().enumerate() {
@@ -885,7 +885,7 @@ fn dense_quadrature_fit_never_claims_tolerance_at_start_slopes() {
         seed: 20260917,
         newton_iter: 5,
         ridge: 1e-4,
-        device: crate::Device::Cpu,
+        device: crate::bifactor_grm::BifactorDevice::Cpu,
     };
     let fit = fit_bifactor_grm(
         &y,

@@ -402,9 +402,32 @@ pub(crate) fn read_mapped(buffer: &wgpu::Buffer) -> Option<Vec<f32>> {
 /// device poll or any mapping fails, signalling the caller to fall back to
 /// the CPU implementation rather than yielding partial results.
 /// GPU readback in flight after [`submit_readback`]; completion is polled via
-/// [`try_complete_readback`] or [`wait_readback`].
+/// [`wait_readback`].
 pub(crate) struct PendingGpuReadback {
     staging: Vec<wgpu::Buffer>,
+    /// Per-buffer `map_async` outcome (`true` = mapped), set by the callback.
+    /// The callback is the only definitive failure signal, so it is kept
+    /// rather than discarded (a failed map otherwise looks pending forever).
+    mapped: Vec<std::sync::Arc<std::sync::OnceLock<bool>>>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ReadbackState {
+    Pending,
+    Ready,
+    Failed,
+}
+
+/// Any failed mapping fails the whole readback; otherwise it is ready only
+/// when every mapping has completed successfully.
+pub(crate) fn readback_state(mapped: &[Option<bool>]) -> ReadbackState {
+    if mapped.contains(&Some(false)) {
+        ReadbackState::Failed
+    } else if mapped.iter().all(|m| *m == Some(true)) {
+        ReadbackState::Ready
+    } else {
+        ReadbackState::Pending
+    }
 }
 
 /// Submit GPU work and begin MAP_READ on staging buffers without blocking the
@@ -426,63 +449,62 @@ pub(crate) fn submit_readback(
     }
     ctx.queue.submit(Some(cmd.finish()));
     let staging: Vec<wgpu::Buffer> = copies.iter().map(|(_, dst, _)| (*dst).clone()).collect();
-    for s in &staging {
-        s.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-    }
-    PendingGpuReadback { staging }
+    let mapped: Vec<_> = staging
+        .iter()
+        .map(|s| {
+            let flag = std::sync::Arc::new(std::sync::OnceLock::new());
+            let slot = std::sync::Arc::clone(&flag);
+            s.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+                let _ = slot.set(r.is_ok());
+            });
+            flag
+        })
+        .collect();
+    PendingGpuReadback { staging, mapped }
 }
 
-/// Non-blocking poll for mapped readback buffers.
+/// Read every staging buffer once all mappings have reported.
 ///
-/// Acquires mapped views for every staging buffer before unmapping any of
-/// them. A partial ready set returns `None` without calling `Buffer::unmap`,
-/// so a later poll can still complete the same [`PendingGpuReadback`].
-pub(crate) fn try_complete_readback(
-    ctx: &GpuContext,
-    pending: &PendingGpuReadback,
-) -> Option<Vec<Vec<f32>>> {
-    ctx.device.poll(wgpu::PollType::Poll).ok()?;
-    let mut views = Vec::with_capacity(pending.staging.len());
-    for s in &pending.staging {
-        match s.slice(..).get_mapped_range() {
-            Ok(view) => views.push(view),
-            Err(_) => {
-                // Drop acquired views without unmap so remaining maps stay valid.
-                drop(views);
-                return None;
+/// Returns `None` on any failed mapping (after unmapping the ones that did
+/// map) so callers fall back to CPU instead of polling a dead map forever.
+fn take_readback(pending: &PendingGpuReadback) -> Option<Vec<Vec<f32>>> {
+    let states: Vec<Option<bool>> = pending.mapped.iter().map(|m| m.get().copied()).collect();
+    match readback_state(&states) {
+        ReadbackState::Ready => {
+            let mut out = Vec::with_capacity(pending.staging.len());
+            for s in &pending.staging {
+                out.push(read_mapped(s)?);
             }
+            Some(out)
         }
+        ReadbackState::Failed => {
+            for (s, st) in pending.staging.iter().zip(&states) {
+                if *st == Some(true) {
+                    s.unmap();
+                }
+            }
+            None
+        }
+        ReadbackState::Pending => None,
     }
-    let mut out = Vec::with_capacity(views.len());
-    for (s, view) in pending.staging.iter().zip(views.into_iter()) {
-        let values: Vec<f32> = bytemuck::cast_slice::<u8, f32>(&view).to_vec();
-        drop(view);
-        s.unmap();
-        out.push(values);
-    }
-    Some(out)
 }
 
-/// Block until every staging buffer in `pending` is mapped and readable.
+fn readback_pending(pending: &PendingGpuReadback) -> bool {
+    let states: Vec<Option<bool>> = pending.mapped.iter().map(|m| m.get().copied()).collect();
+    readback_state(&states) == ReadbackState::Pending
+}
+
+/// Block until every staging buffer in `pending` is mapped and readable;
+/// `None` when the device poll or any mapping fails.
 pub(crate) fn wait_readback(
     ctx: &GpuContext,
     pending: &PendingGpuReadback,
 ) -> Option<Vec<Vec<f32>>> {
-    loop {
-        if let Some(values) = try_complete_readback(ctx, pending) {
-            return Some(values);
-        }
+    ctx.device.poll(wgpu::PollType::Poll).ok()?;
+    while readback_pending(pending) {
         ctx.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
     }
-}
-
-pub(crate) fn submit_and_readback(
-    ctx: &GpuContext,
-    encoder: wgpu::CommandEncoder,
-    copies: &[(&wgpu::Buffer, &wgpu::Buffer, usize)],
-) -> Option<Vec<Vec<f32>>> {
-    let pending = submit_readback(ctx, encoder, copies);
-    wait_readback(ctx, &pending)
+    take_readback(pending)
 }
 
 pub(crate) fn dispatch_count(total: usize) -> u32 {
@@ -526,6 +548,22 @@ pub(crate) fn storage_buffer_fits(limits: &wgpu::Limits, len: usize) -> bool {
     };
     bytes as u64 <= limits.max_buffer_size
         && bytes <= limits.max_storage_buffer_binding_size as usize
+}
+
+#[cfg(test)]
+mod readback_state_tests {
+    use super::{readback_state, ReadbackState};
+
+    #[test]
+    fn failed_mapping_fails_fast_even_while_others_pend() {
+        assert_eq!(readback_state(&[Some(true), Some(false), None]), ReadbackState::Failed);
+    }
+
+    #[test]
+    fn ready_only_when_every_mapping_succeeded() {
+        assert_eq!(readback_state(&[Some(true), Some(true)]), ReadbackState::Ready);
+        assert_eq!(readback_state(&[Some(true), None]), ReadbackState::Pending);
+    }
 }
 
 #[cfg(test)]

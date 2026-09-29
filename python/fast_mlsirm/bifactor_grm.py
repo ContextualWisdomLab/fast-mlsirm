@@ -143,7 +143,7 @@ class BifactorGrmFit:
     item parameter remained at its start — never reported as
     ``tolerance_met``; see #1976); ``best_start`` the winning start in
     ``0..n_starts``. ``effective_device`` / ``estep_shards`` carry #2001 L3
-    E-step provenance when the Rust core returns them (else ``None``).
+    provenance of the winning run's final E-step (else ``None``).
     """
 
     a_general: np.ndarray

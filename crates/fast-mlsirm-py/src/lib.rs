@@ -1356,7 +1356,7 @@ fn parse_bifactor_device(
     name: &str,
     n_persons: usize,
     split_at_person: Option<usize>,
-) -> PyResult<mlsirm_core::Device> {
+) -> PyResult<mlsirm_core::bifactor_grm::BifactorDevice> {
     mlsirm_core::bifactor_grm::parse_bifactor_device(name, n_persons, split_at_person).map_err(
         |e| PyValueError::new_err(e),
     )
@@ -1576,7 +1576,7 @@ fn fit_bifactor_grm_multigroup(
         n_starts,
         seed,
         estimate_specific_vars,
-        device: parse_device(device)?,
+        device: parse_device(device)?.into(),
         ..BifactorMultigroupConfig::default()
     };
     let res = py
