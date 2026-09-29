@@ -285,9 +285,8 @@ pub fn two_tier_expected_raw_at_q(
     theta_primary: &[f64],
     q_specific: usize,
 ) -> Result<Vec<f64>, String> {
-    let (nodes, weights) = crate::quadrature::gh_rule(q_specific).ok_or_else(|| {
-        format!("unsupported specific-factor quadrature count {q_specific}")
-    })?;
+    let (nodes, weights) = crate::quadrature::gh_rule(q_specific)
+        .ok_or_else(|| format!("unsupported specific-factor quadrature count {q_specific}"))?;
     two_tier_expected_raw(params, theta_primary, nodes, weights)
 }
 
