@@ -67,6 +67,7 @@ from .bifactor_grm import bifactor_oakes_se as bifactor_oakes_se, BifactorOakesS
 from .bifactor_multigroup import fit_bifactor_grm_multigroup as fit_bifactor_grm_multigroup, BifactorMultigroupFit as BifactorMultigroupFit
 from .two_tier_grm import fit_two_tier_grm as fit_two_tier_grm, TwoTierGrmFit as TwoTierGrmFit
 from .two_tier_grm import two_tier_oakes_se as two_tier_oakes_se, TwoTierOakesSe as TwoTierOakesSe
+from .two_tier_grm import expected_raw_two_tier_grm as expected_raw_two_tier_grm
 from .gpcm import fit_gpcm as fit_gpcm, GpcmFit as GpcmFit
 from .facets import fit_facets as fit_facets, FacetsFit as FacetsFit
 from .ksirt import analyze_ksirt as analyze_ksirt, ksirt_analysis as ksirt_analysis, KsirtResult as KsirtResult
@@ -410,6 +411,7 @@ __all__ = [  # noqa: RUF022
     "TwoTierGrmFit",
     "two_tier_oakes_se",
     "TwoTierOakesSe",
+    "expected_raw_two_tier_grm",
     "fit_gpcm",
     "GpcmFit",
     "fit_rsm",
