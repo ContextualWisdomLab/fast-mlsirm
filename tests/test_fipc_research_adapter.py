@@ -241,3 +241,31 @@ def test_preflight_rejects_a_non_finite_expected_value(paths: dict[str, Path], t
     derived.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match="non-finite"):
         preflight.validate(derived, _SOURCE, _CORE)
+
+
+def test_preflight_cli_refuses_to_write_its_receipt_over_the_artifact(
+    paths: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The no-mutation preflight never writes its receipt onto the artifact it checked."""
+    derived = _derived(paths, tmp_path)
+    before = derived.read_bytes()
+    monkeypatch.setattr(sys, "argv", ["preflight", str(derived), "--output", str(derived)])
+    with pytest.raises(ValueError, match="artifact"):
+        preflight.main()
+    assert derived.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [("row_order_max_abs_delta", False), ("focal_gpu", None), ("acceptance", []), ("permuted_gpu", "x")],
+)
+def test_preflight_fails_closed_on_mistyped_top_level_fields(
+    paths: dict[str, Path], tmp_path: Path, key: str, value: object
+) -> None:
+    """Wrong JSON types are reported as failures, never accepted or crashed on."""
+    derived = _derived(paths, tmp_path)
+    payload = json.loads(derived.read_text())
+    payload[key] = value
+    derived.write_text(json.dumps(payload))
+    receipt = preflight.validate(derived, _SOURCE, _CORE)
+    assert receipt["research_consumption_ready"] is False

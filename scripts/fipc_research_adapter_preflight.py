@@ -39,6 +39,14 @@ def _check_equal(result: dict[str, Any], path: str, expected: str | None, failur
         failures.append(f"{path}: expected {expected}, got {value}")
 
 
+def _object(payload: dict[str, Any], key: str, failures: list[str]) -> dict[str, Any]:
+    value = payload.get(key, {})
+    if isinstance(value, dict):
+        return value
+    failures.append(f"{key} must be a JSON object")
+    return {}
+
+
 def validate(artifact: Path, expected_source: str | None, expected_core: str | None) -> dict[str, Any]:
     content = artifact.read_bytes()
     payload = parse_json_bounded(content.decode("utf-8"))
@@ -50,13 +58,13 @@ def validate(artifact: Path, expected_source: str | None, expected_core: str | N
     _check_equal(payload, "source_sha", expected_source, failures)
     _check_equal(payload, "loaded_core_sha256", expected_core, failures)
 
-    acceptance = payload.get("acceptance", {})
+    acceptance = _object(payload, "acceptance", failures)
     for key in ("responses_fit_eap_expected_raw", "non_unit_focal_prior", "row_order", "gpu_required", "all_pass"):
         if acceptance.get(key) is not True:
             failures.append(f"acceptance.{key} is not true")
 
-    focal = payload.get("focal_gpu", {})
-    permuted = payload.get("permuted_gpu", {})
+    focal = _object(payload, "focal_gpu", failures)
+    permuted = _object(payload, "permuted_gpu", failures)
     for name, result in (("focal_gpu", focal), ("permuted_gpu", permuted)):
         for key in ("converged", "termination_reason", "gpu_execution_used", "gpu_backend", "gpu_device_name"):
             if key not in result:
@@ -68,10 +76,11 @@ def validate(artifact: Path, expected_source: str | None, expected_core: str | N
         if result.get("cpu_fallback_reason") is not None:
             failures.append(f"{name}: CPU fallback recorded: {result['cpu_fallback_reason']}")
 
-    if payload.get("row_order_max_abs_delta") != 0.0:
+    delta = payload.get("row_order_max_abs_delta")
+    if type(delta) not in (int, float) or delta != 0.0:
         failures.append("row_order_max_abs_delta is not exactly zero")
     row = payload.get("row_identity")
-    expected = focal.get("expected_raw") if isinstance(focal, dict) else None
+    expected = focal.get("expected_raw")
     if row is None:
         failures.append("row_identity missing; permutation_sha256 alone is insufficient")
     if expected is None:
@@ -113,6 +122,8 @@ def main() -> int:
     result = validate(args.artifact, args.expected_source, args.expected_core)
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.output:
+        if args.output.exists() and args.output.samefile(args.artifact):
+            raise ValueError(f"{args.output}: receipt output names the artifact; refusing to overwrite it")
         args.output.write_text(rendered)
     print(rendered, end="")
     return 0 if result["research_consumption_ready"] else 2
