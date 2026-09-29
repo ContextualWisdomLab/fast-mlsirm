@@ -117,3 +117,44 @@ def test_flattened_binding_outputs_are_reshaped_per_person(monkeypatch) -> None:
     assert receipt["anchor_rows_fixed"] is True
     assert receipt["responses_fit_eap_expected_raw"] is True
     assert receipt["focal_primary_mean_error"] == pytest.approx([0.6 - 0.65, -0.3 + 0.35])
+
+
+def test_non_unit_focal_prior_detects_shrinking_sd(monkeypatch) -> None:
+    """A focal SD below 1 moves the prior off the unit reference too."""
+    module = _load_script()
+    fake = _fake_core(module)
+    base_fipc = fake.fit_two_tier_grm_fipc
+
+    def fipc(*args):
+        fit = base_fipc(*args)
+        fit["primary_sd"] = np.array([1.0, 0.8])
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(consumer_sha=None, build_source_sha=None)
+    assert receipt["non_unit_focal_prior"] is True
+
+
+def test_gpu_request_fails_closed_on_cpu_fallback(monkeypatch) -> None:
+    """A GPU receipt only passes when the binding reports GPU execution."""
+    module = _load_script()
+    fake = _fake_core(module)
+    base_fipc = fake.fit_two_tier_grm_fipc
+    seen: list[str] = []
+
+    def fipc(*args, device="cpu"):
+        seen.append(device)
+        fit = base_fipc(*args)
+        fit.update(gpu_execution_used=False, gpu_backend=None, gpu_device_name=None)
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(consumer_sha=None, build_source_sha=None, device="gpu")
+
+    _assert_schema(receipt)
+    assert set(seen) == {"gpu"}
+    assert receipt["device_requested"] == "gpu"
+    assert receipt["gpu_execution_used"] is False
+    assert receipt["all_pass"] is False

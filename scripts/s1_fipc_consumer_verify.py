@@ -115,17 +115,20 @@ def simulate(seed: int, mean: np.ndarray, scale: np.ndarray) -> np.ndarray:
     return y
 
 
-def call_fipc(y: np.ndarray, fixed: dict[str, np.ndarray], **kwargs):
+def call_fipc(y: np.ndarray, fixed: dict[str, np.ndarray], device: str = "cpu", **kwargs):
     observed = np.ones(y.size, dtype=bool)
+    # Pass device only when asked, so bindings without the argument still work.
+    extra = {} if device == "cpu" else {"device": device}
     return _core.fit_two_tier_grm_fipc(
         np.asarray(y, dtype=np.int64).reshape(-1), observed,
-        PRIMARY_MAP.reshape(-1), SPECIFIC_MAP,
+        kwargs.get("primary_map", PRIMARY_MAP).reshape(-1), SPECIFIC_MAP,
         N_PERSONS, N_ITEMS, N_PRIMARY, N_SPECIFIC, N_CAT, ANCHOR,
         fixed["a_primary"], fixed["a_specific"], fixed["threshold"],
         kwargs.get("q_primary", 7), kwargs.get("q_specific", 7),
         kwargs.get("max_iter", 100), kwargs.get("tol", 1e-5),
         kwargs.get("newton_iter", 5), kwargs.get("ridge", 1e-8),
         kwargs.get("estimate_specific_vars", False),
+        **extra,
     )
 
 
@@ -157,6 +160,10 @@ def _arguments() -> argparse.Namespace:
         help="source revision used to build the loaded extension (or FIPC_BUILD_SOURCE_SHA)",
     )
     parser.add_argument(
+        "--device", choices=("cpu", "gpu", "auto"), default="cpu",
+        help="FIPC execution device; a gpu receipt fails if the binding falls back to CPU",
+    )
+    parser.add_argument(
         "--consumer-sha",
         default=os.environ.get("FIPC_CONSUMER_SHA") or _git_sha(),
         help="consumer checkout revision (or FIPC_CONSUMER_SHA; defaults to git HEAD)",
@@ -171,7 +178,7 @@ GATES = (
 )
 
 
-def _fipc_gates(results: dict[str, object]) -> None:
+def _fipc_gates(results: dict[str, object], device: str) -> None:
     reference_y = simulate(SEED, np.zeros(N_PRIMARY), np.ones(N_PRIMARY))
     reference = _core.fit_two_tier_grm(
         reference_y.reshape(-1), np.ones(reference_y.size, dtype=bool),
@@ -180,7 +187,9 @@ def _fipc_gates(results: dict[str, object]) -> None:
     )
     fixed = {k: np.asarray(reference[k], dtype=np.float64) for k in ("a_primary", "a_specific", "threshold")}
     focal_y = simulate(SEED + 1, FOCAL_MEAN, FOCAL_SD)
-    fit = call_fipc(focal_y, fixed)
+    fit = call_fipc(focal_y, fixed, device)
+    results["gpu_execution_used"] = fit.get("gpu_execution_used")
+    results["gpu_backend"] = fit.get("gpu_backend")
     shaped = _shaped(fit, N_PERSONS)
     results["responses_fit_eap_expected_raw"] = bool(fit["converged"] and np.isfinite(shaped["theta"]).all() and np.isfinite(expected_raw(shaped["theta"], shaped)).all())
     # One seeded replicate: these are recovery errors, not Monte Carlo bias.
@@ -192,28 +201,32 @@ def _fipc_gates(results: dict[str, object]) -> None:
         (shaped["threshold"] - TRUE_D)[free].reshape(-1),
     ))
     results["free_item_param_rmse"] = float(np.sqrt(np.mean(np.square(free_error))))
-    results["non_unit_focal_prior"] = bool(np.max(np.abs(np.asarray(fit["primary_mean"])) > 0.1) and np.max(np.asarray(fit["primary_sd"])) > 1.01)
+    # The focal prior must move off the unit reference in location and in
+    # scale; a scale change can go either way (the fixture's truth is 1.25, 0.8).
+    results["non_unit_focal_prior"] = bool(np.max(np.abs(np.asarray(fit["primary_mean"]))) > 0.1 and np.max(np.abs(np.asarray(fit["primary_sd"]) - 1.0)) > 0.01)
     perm = np.random.default_rng(17).permutation(N_PERSONS)
-    perm_fit = call_fipc(focal_y[perm], fixed)
+    perm_fit = call_fipc(focal_y[perm], fixed, device)
     row_error = shaped["theta"][perm] - _shaped(perm_fit, N_PERSONS)["theta"]
     results["row_order_max_abs"] = float(np.max(np.abs(row_error)))
     results["row_order_rmse"] = float(np.sqrt(np.mean(np.square(row_error))))
     results["row_order"] = bool(np.allclose(row_error, 0.0, atol=ROW_ORDER_ATOL, rtol=ROW_ORDER_RTOL))
     results["row_order_diagnosis"] = "pass" if results["row_order"] else "refit_order_dependence"
     results["anchor_rows_fixed"] = bool(np.array_equal(shaped["a_primary"][ANCHOR], fixed["a_primary"].reshape(N_ITEMS, N_PRIMARY)[ANCHOR]) and np.array_equal(shaped["threshold"][ANCHOR], fixed["threshold"].reshape(N_ITEMS, N_CAT - 1)[ANCHOR]))
-    fail = call_fipc(focal_y, fixed, max_iter=1)
+    fail = call_fipc(focal_y, fixed, device, max_iter=1)
     results["convergence_failure"] = bool(not fail["converged"] and fail["termination_reason"] == "max_iter_reached")
     results["orthogonal_specific_prior_fixed"] = bool(np.array_equal(np.asarray(fit["specific_sd"]), np.ones(N_SPECIFIC)))
     bad_map = PRIMARY_MAP.copy()
     bad_map[:, 1] = False
     try:
-        _core.fit_two_tier_grm_fipc(focal_y.reshape(-1), np.ones(focal_y.size, dtype=bool), bad_map.reshape(-1), SPECIFIC_MAP, N_PERSONS, N_ITEMS, N_PRIMARY, N_SPECIFIC, N_CAT, ANCHOR, fixed["a_primary"], fixed["a_specific"], fixed["threshold"], 7, 7, 10, 1e-5, 5, 1e-8, False)
+        call_fipc(focal_y, fixed, device, primary_map=bad_map, max_iter=10)
         results["wrong_model_reject"] = False
     except Exception as exc:
         results["wrong_model_reject"] = "primary" in str(exc) or "map" in str(exc)
 
 
-def build_receipt(consumer_sha: str | None, build_source_sha: str | None) -> dict[str, object]:
+def build_receipt(
+    consumer_sha: str | None, build_source_sha: str | None, device: str = "cpu"
+) -> dict[str, object]:
     extension = Path(_core.__file__).resolve()
     results: dict[str, object] = {
         "sha": consumer_sha,
@@ -223,6 +236,9 @@ def build_receipt(consumer_sha: str | None, build_source_sha: str | None) -> dic
         # Only an immutable release/attestation manifest can bind the two.
         "build_source_sha_authority": "caller_asserted",
         "evidence_class": "synthetic_diagnostic",
+        "device_requested": device,
+        "gpu_execution_used": None,
+        "gpu_backend": None,
         "loaded_extension": str(extension),
         "loaded_extension_sha256": _sha256(extension),
         "expected_raw_range": None,
@@ -244,7 +260,7 @@ def build_receipt(consumer_sha: str | None, build_source_sha: str | None) -> dic
         results["row_order_diagnosis"] = "binding_unavailable"
     else:
         try:
-            _fipc_gates(results)
+            _fipc_gates(results, device)
         except Exception as exc:
             results.update(dict.fromkeys(GATES, False))
             results["row_order_max_abs"] = None
@@ -254,13 +270,14 @@ def build_receipt(consumer_sha: str | None, build_source_sha: str | None) -> dic
             results["free_item_param_rmse"] = None
             results["row_order_diagnosis"] = "fit_error"
             results["fipc_fit_error"] = f"{type(exc).__name__}: {exc}"
-    results["all_pass"] = bool(results["anchor_identified"]) and all(results[key] is True for key in GATES)
+    gpu_ok = device != "gpu" or results["gpu_execution_used"] is True
+    results["all_pass"] = bool(results["anchor_identified"]) and gpu_ok and all(results[key] is True for key in GATES)
     return results
 
 
 def main() -> None:
     args = _arguments()
-    receipt = build_receipt(args.consumer_sha, args.build_source_sha)
+    receipt = build_receipt(args.consumer_sha, args.build_source_sha, args.device)
     print(json.dumps(receipt, sort_keys=True))
 
 
