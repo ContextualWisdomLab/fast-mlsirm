@@ -1642,6 +1642,37 @@ def _gpcm_m_step_item(params0, theta_nodes, r_counts, n_newton=10):
     return p
 
 
+def _gpcm_expected_category_counts(
+    responses: np.ndarray,
+    posterior: np.ndarray,
+    n_categories: int,
+) -> np.ndarray:
+    """Accumulate node-by-category artificial-data counts without an ``N x K`` mask.
+
+    This is the discrete-response form of the expected-frequency E-step in
+    Bock and Aitkin (1981, Equation 12, p. 447). ``np.bincount`` reduces one
+    quadrature-node weight vector at a time, bounding the additional workspace
+    independently of the number of response categories.
+
+    Reference
+    ---------
+    Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation
+    of item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
+    443–459. https://doi.org/10.1007/BF02293801
+    """
+    counts = np.empty(
+        (posterior.shape[1], n_categories),
+        dtype=posterior.dtype,
+    )
+    for node in range(posterior.shape[1]):
+        counts[node] = np.bincount(
+            responses,
+            weights=posterior[:, node],
+            minlength=n_categories,
+        )
+    return counts
+
+
 def fit_gpcm_numpy(y, n_cat, *, q_theta, max_iter, tol):
     """Unidimensional GPCM marginal MLE via Bock-Aitkin EM — the
     NumPy parity reference for the polytomous cell of the forthcoming Rust
@@ -1753,7 +1784,7 @@ def fit_gpcm_numpy(y, n_cat, *, q_theta, max_iter, tol):
     stopping_tolerance = float(tol * (1.0 + abs(ll)))
     for it in range(1, max_iter + 1):
         for i in range(n_items):
-            r = np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)
+            r = _gpcm_expected_category_counts(y[:, i], post, k_cat)
             params[i] = _gpcm_m_step_item(params[i], nodes, r)
         next_ll, post = estep(params)
         if not np.isfinite(next_ll):  # pragma: no cover - stable log-sum-exp keeps the likelihood finite
