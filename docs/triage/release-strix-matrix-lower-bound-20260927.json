@@ -1,0 +1,509 @@
+{
+  "source_sha": "8907343794d20217703b7cd73910e24ddc0a1ad1",
+  "uv_lock_sha256": "9f17c0e0ef86b0fab2cdc5e1e762d7b1afb95369e358be4df66ba3daa925d297",
+  "cargo_unique": 227,
+  "required_disjoint_runtime_archive_groups": [
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.12",
+      "platform": "manylinux",
+      "architecture": "x86_64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "59fda5e192b570217ec2580c96f00e9a7e12ef6866a900eb089b62c1a32545ca"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.12",
+      "platform": "manylinux",
+      "architecture": "aarch64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "61ac47e772e6b8ea489e1d2f441a34c5c3ac17327e7ce294cbdf535795ad4e75"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.12",
+      "platform": "macosx",
+      "architecture": "arm64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp312-cp312-macosx_11_0_arm64.whl",
+          "sha256": "ab451b59c5643c570974c43aef780703ef1d3b4965d2be07afd530615a9358d1"
+        },
+        {
+          "file": "numpy-2.5.1-cp312-cp312-macosx_14_0_arm64.whl",
+          "sha256": "78798bd5b9ad744056af8efa90e3b9ddaa53272a0848a483084a1cc0a13b2dc0"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.12",
+      "platform": "macosx",
+      "architecture": "x86_64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp312-cp312-macosx_10_13_x86_64.whl",
+          "sha256": "2c889b56fe48b1018f764b0eec8df59ab654e9148aa91faa12596043500de277"
+        },
+        {
+          "file": "numpy-2.5.1-cp312-cp312-macosx_14_0_x86_64.whl",
+          "sha256": "2ae0ca40bcb22d6ba59c1dfd5446f49940b0f2d821fde133f10dda11f816b84e"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.12",
+      "platform": "win",
+      "architecture": "amd64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp312-cp312-win_amd64.whl",
+          "sha256": "f7d60026c0bdb1380e83bfa7a0419c4577ee4b9a08880afcb6dadeb74c649fa2"
+        }
+      ]
+    },
+    {
+      "name": "atheris",
+      "version": "3.1.0",
+      "python": "3.12",
+      "platform": "manylinux",
+      "architecture": "x86_64",
+      "candidate_archives": [
+        {
+          "file": "atheris-3.1.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "ec5e11f21a4c197fe91f7aea2b2de88e623c73a21fc07b105ac6329a1588457b"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.13",
+      "platform": "manylinux",
+      "architecture": "x86_64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "9726558e8db4a5bf7929a70ae50f63abda4daf0efe810e3bfbab95976f75fc1a"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.13",
+      "platform": "manylinux",
+      "architecture": "aarch64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "1c6759f538fb912fc46de0a6b1758ccf7b57bc7c7ebebc23974fdac3de8db0cd"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.13",
+      "platform": "macosx",
+      "architecture": "arm64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp313-cp313-macosx_11_0_arm64.whl",
+          "sha256": "30b44a6b53a7ae63c54c089a8726e5563ed302716c5b7ccc85afade40b0e7ff6"
+        },
+        {
+          "file": "numpy-2.5.1-cp313-cp313-macosx_14_0_arm64.whl",
+          "sha256": "6165343f81b56ef8f514f396989e529b61d9dc709b99421b07e9f3e698e2287d"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.13",
+      "platform": "macosx",
+      "architecture": "x86_64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp313-cp313-macosx_10_13_x86_64.whl",
+          "sha256": "0bfebd8695f9863592fe744be833a258120b14a9f39da255e8aa8fade2c0ddd1"
+        },
+        {
+          "file": "numpy-2.5.1-cp313-cp313-macosx_14_0_x86_64.whl",
+          "sha256": "4939237038ada79308dda3204ac6462df056b5672b2e25db1149cf873668b3e1"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.13",
+      "platform": "win",
+      "architecture": "amd64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp313-cp313-win_amd64.whl",
+          "sha256": "6c3fe51bc6a16453d452997053454f309e8e0ed7b42d6b361ce4ac8c32913d74"
+        }
+      ]
+    },
+    {
+      "name": "atheris",
+      "version": "3.1.0",
+      "python": "3.13",
+      "platform": "manylinux",
+      "architecture": "x86_64",
+      "candidate_archives": [
+        {
+          "file": "atheris-3.1.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "f8a9f51ce8369026e8eb7b7174835e8c4c85a1a6db5d9add36c15100779d2a39"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.14",
+      "platform": "manylinux",
+      "architecture": "x86_64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "54ad769f17bc2d833b620851989f62054fb9ab93c969d9e1dc3c8e3d56beea21"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.14",
+      "platform": "manylinux",
+      "architecture": "aarch64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "caf3e317d33d60c37986b452613f4ab51246d0691350c03d0cb4a898627f4a95"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.14",
+      "platform": "macosx",
+      "architecture": "arm64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp314-cp314-macosx_11_0_arm64.whl",
+          "sha256": "32985c896d897419ef8da6917872d80b78ad0ea26d85b23245c7366ffde76d75"
+        },
+        {
+          "file": "numpy-2.5.1-cp314-cp314-macosx_14_0_arm64.whl",
+          "sha256": "efd736408cc97c79b9e6917338dfc8f06013b2274f992e96b1d9a81a71e2a2c2"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.14",
+      "platform": "macosx",
+      "architecture": "x86_64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp314-cp314-macosx_10_15_x86_64.whl",
+          "sha256": "7c786fe9a5bbe360022e584c5a34cf6b54265c71bd7ec8ac3d8fec38968071f8"
+        },
+        {
+          "file": "numpy-2.5.1-cp314-cp314-macosx_14_0_x86_64.whl",
+          "sha256": "ab84dc6b074fa881cae55bea94cc4f68e285181ba7f32497bf7dee6b1496165b"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "python": "3.14",
+      "platform": "win",
+      "architecture": "amd64",
+      "candidate_archives": [
+        {
+          "file": "numpy-2.5.1-cp314-cp314-win_amd64.whl",
+          "sha256": "24d0eb82c0541d3415a33425db64ae439dffccd7b4dbcb30e7c35120205c506a"
+        }
+      ]
+    },
+    {
+      "name": "atheris",
+      "version": "3.1.0",
+      "python": "3.14",
+      "platform": "manylinux",
+      "architecture": "x86_64",
+      "candidate_archives": [
+        {
+          "file": "atheris-3.1.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "315a0b5c819852b1ffe1ca72efc389c7724881f2c33e4aacb8c6bcec49bd5011"
+        }
+      ]
+    },
+    {
+      "name": "hypothesis",
+      "version": "6.156.6",
+      "python": "3.12-3.14 (abi3 reuse permitted)",
+      "platform": "manylinux",
+      "architecture": "x86_64",
+      "candidate_archives": [
+        {
+          "file": "hypothesis-6.156.6-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "8083806645f84243aade727f4978185caaa0b7190af4318673999ee15fdbf424"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "b4e66aaa7385538a5d617174d47c198ee807f06de99e282a67c6cb724c69340d"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "d4ea6559c13606e13b645927f2e0906e52b5ac5d99b40d3abaaeb2e8c7ceeb75"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "9367ae25dfa6dc1af37904785e43c4f8fe1c4118cafdc2f06514154fbdd90992"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp314-cp314t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "ffe012ad66dbe7b8e8ddef6f6992ab1b36719ea64430c2bf1ff7135521052a15"
+        }
+      ]
+    },
+    {
+      "name": "hypothesis",
+      "version": "6.156.6",
+      "python": "3.12-3.14 (abi3 reuse permitted)",
+      "platform": "manylinux",
+      "architecture": "aarch64",
+      "candidate_archives": [
+        {
+          "file": "hypothesis-6.156.6-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+          "sha256": "7baca17f4803ad4aa151732326f3990baf54c3127df44aa872ac5bdf8a98a9a6"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+          "sha256": "42760873d6db1069d6edbaa355a61b9078a9950259efcfc72fc695741d7db7cd"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+          "sha256": "01bb8270c46b3ef53b0c2d23ff613ea506d609d06f936d823ea57c58b66b05f7"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp314-cp314-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+          "sha256": "cbc2ec7b7d905e6b6ec1635f6340bfa52aaab718101c59f052bc012a6b486cd8"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp314-cp314t-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+          "sha256": "c3f2604b28d16d696aaaf4954d20f907b27e54034df98e64746a20c74c319f03"
+        }
+      ]
+    },
+    {
+      "name": "hypothesis",
+      "version": "6.156.6",
+      "python": "3.12-3.14 (abi3 reuse permitted)",
+      "platform": "macosx",
+      "architecture": "arm64",
+      "candidate_archives": [
+        {
+          "file": "hypothesis-6.156.6-cp310-abi3-macosx_11_0_arm64.whl",
+          "sha256": "07f2bc9df1aeba80e12029c1618e2ee54abc440068c305d7075ffd6b85251843"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp312-cp312-macosx_11_0_arm64.whl",
+          "sha256": "7489b9a8f9df8227edd6c7cd8b9ccfab2483bab24da6a474c175973ca2294f58"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp313-cp313-macosx_11_0_arm64.whl",
+          "sha256": "c574c3224563d730848bc5d1ef1683c4f83993400c0167899fe328f4bfcd4725"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp314-cp314-macosx_11_0_arm64.whl",
+          "sha256": "f1969646beead7d8cf6a2537d2765af89d73056e2cb218e7fae92b83802250a3"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp314-cp314t-macosx_11_0_arm64.whl",
+          "sha256": "556b905767e36147918634a64356aa05d8c956576f00aee01eb351678f193908"
+        }
+      ]
+    },
+    {
+      "name": "hypothesis",
+      "version": "6.156.6",
+      "python": "3.12-3.14 (abi3 reuse permitted)",
+      "platform": "macosx",
+      "architecture": "x86_64",
+      "candidate_archives": [
+        {
+          "file": "hypothesis-6.156.6-cp310-abi3-macosx_10_12_x86_64.whl",
+          "sha256": "caf6a93d011c10972da111c38ceb34ced20feaa8581e2b350c0655b022e27875"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp312-cp312-macosx_10_12_x86_64.whl",
+          "sha256": "a2a728b514fceb81e3f0464508911d5220fd74dadc3270f859427a686b60c4cf"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp313-cp313-macosx_10_12_x86_64.whl",
+          "sha256": "59a8def90d9a5a9b67e1ac529e903a2363ceb6cf873c209da6b4284c5daab671"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp314-cp314-macosx_10_12_x86_64.whl",
+          "sha256": "34a70a7b8226e34d658072d8fb81d03f97f0a75ceb536329a321b94ce2232fd6"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp314-cp314t-macosx_10_12_x86_64.whl",
+          "sha256": "1f81163d36d3763b09ffaef7c3a71e88174ca3e6816201fca9d1d159f448fdb5"
+        }
+      ]
+    },
+    {
+      "name": "hypothesis",
+      "version": "6.156.6",
+      "python": "3.12-3.14 (abi3 reuse permitted)",
+      "platform": "win",
+      "architecture": "amd64",
+      "candidate_archives": [
+        {
+          "file": "hypothesis-6.156.6-cp310-abi3-win_amd64.whl",
+          "sha256": "32710718c22fe8c5571464e898bb87d282837b02617d6ad68130abf7cb4843cb"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp312-cp312-win_amd64.whl",
+          "sha256": "c3363d3fb8015594636689572510bb6090602d8e8e838a5693c2d52d3b5b09d8"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp313-cp313-win_amd64.whl",
+          "sha256": "f0d73edab7b8a0051b3634f2d04d62b7e7282f8f274963b11188ee4957d672ef"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp314-cp314-win_amd64.whl",
+          "sha256": "f9631cd604ae6032c3edf99160dc1b9e33873f2e52762246b24f07fb758652ae"
+        },
+        {
+          "file": "hypothesis-6.156.6-cp314-cp314t-win_amd64.whl",
+          "sha256": "38cd0c4a7b9f809f1e23a4d15adfa9c5d99869b9afc327350a5e563350b78e48"
+        }
+      ]
+    },
+    {
+      "name": "colorama",
+      "version": "0.4.6",
+      "python": "at least one supported runtime",
+      "platform": null,
+      "architecture": null,
+      "candidate_archives": [
+        {
+          "file": "colorama-0.4.6-py2.py3-none-any.whl",
+          "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
+        }
+      ]
+    },
+    {
+      "name": "iniconfig",
+      "version": "2.3.0",
+      "python": "at least one supported runtime",
+      "platform": null,
+      "architecture": null,
+      "candidate_archives": [
+        {
+          "file": "iniconfig-2.3.0-py3-none-any.whl",
+          "sha256": "f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12"
+        }
+      ]
+    },
+    {
+      "name": "packaging",
+      "version": "26.2",
+      "python": "at least one supported runtime",
+      "platform": null,
+      "architecture": null,
+      "candidate_archives": [
+        {
+          "file": "packaging-26.2-py3-none-any.whl",
+          "sha256": "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e"
+        }
+      ]
+    },
+    {
+      "name": "pluggy",
+      "version": "1.6.0",
+      "python": "at least one supported runtime",
+      "platform": null,
+      "architecture": null,
+      "candidate_archives": [
+        {
+          "file": "pluggy-1.6.0-py3-none-any.whl",
+          "sha256": "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746"
+        }
+      ]
+    },
+    {
+      "name": "pygments",
+      "version": "2.20.0",
+      "python": "at least one supported runtime",
+      "platform": null,
+      "architecture": null,
+      "candidate_archives": [
+        {
+          "file": "pygments-2.20.0-py3-none-any.whl",
+          "sha256": "81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176"
+        }
+      ]
+    },
+    {
+      "name": "pytest",
+      "version": "9.1.1",
+      "python": "at least one supported runtime",
+      "platform": null,
+      "architecture": null,
+      "candidate_archives": [
+        {
+          "file": "pytest-9.1.1-py3-none-any.whl",
+          "sha256": "37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c"
+        }
+      ]
+    },
+    {
+      "name": "sortedcontainers",
+      "version": "2.4.0",
+      "python": "at least one supported runtime",
+      "platform": null,
+      "architecture": null,
+      "candidate_archives": [
+        {
+          "file": "sortedcontainers-2.4.0-py2.py3-none-any.whl",
+          "sha256": "a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0"
+        }
+      ]
+    }
+  ],
+  "minimum_strix_fixture_count": 257,
+  "github_matrix_job_limit": 256,
+  "limitations": [
+    "Static lower bound from immutable source locks; candidates are not downloaded/installed archive receipts.",
+    "Hypothesis abi3 wheels may be reused across Python versions: only five architecture groups are counted.",
+    "Other canonical Python, build and tool fixtures are excluded; the actual full plan determines both matrices.",
+    "No licence, Strix, hosted or release acceptance."
+  ]
+}
