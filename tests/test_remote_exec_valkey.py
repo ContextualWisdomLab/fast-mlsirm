@@ -499,7 +499,7 @@ def test_valkey_backend_rejects_non_finite_or_non_numeric_wait_timeout(timeout) 
 
 @pytest.mark.parametrize(
     "outcome_json",
-    ["[" * 100_000 + "]" * 100_000, json.dumps({"pad": "x" * 2_000_000})],
+    ["[" * 100 + "]" * 100, json.dumps({"pad": "x" * 2_000_000})],
     ids=["deeply-nested", "oversized"],
 )
 def test_valkey_store_rejects_unbounded_outcome_json(outcome_json) -> None:
@@ -526,3 +526,12 @@ def test_transport_executors_share_the_dispatch_protocol_signature() -> None:
         assert inspect.signature(backend.run_batch).parameters.keys() == (
             expected.parameters.keys()
         ), backend.__name__
+
+
+def test_valkey_outcome_depth_check_ignores_brackets_inside_strings() -> None:
+    from fast_mlsirm.remote_exec import _json_nesting_exceeds
+
+    assert not _json_nesting_exceeds(json.dumps({"s": "[" * 500}), 64)
+    assert not _json_nesting_exceeds(json.dumps({"s": '\\"[[' * 100}), 64)
+    assert _json_nesting_exceeds("[" * 65 + "]" * 65, 64)
+    assert not _json_nesting_exceeds("[" * 64 + "]" * 64, 64)

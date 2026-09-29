@@ -742,20 +742,50 @@ def _valkey_text(value: object) -> str:
 
 
 _MAX_VALKEY_OUTCOME_JSON_BYTES = 1_048_576
+_MAX_VALKEY_OUTCOME_JSON_DEPTH = 64
+
+
+def _json_nesting_exceeds(text: str, limit: int) -> bool:
+    """Return whether JSON ``text`` nests arrays/objects deeper than ``limit``.
+
+    Decoder recursion limits depend on the platform stack, so depth is checked
+    explicitly before ``json.loads``. Brackets inside strings are ignored.
+    """
+    if text.count("[") + text.count("{") <= limit:
+        return False
+    depth = 0
+    in_string = escaped = False
+    for char in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > limit:
+                return True
+        elif char in "]}":
+            depth -= 1
+    return False
 
 
 def _valkey_outcome(raw: object) -> RemoteJobOutcome:
-    """Decode one Valkey outcome under the worker stdout size bound."""
+    """Decode one Valkey outcome under the worker stdout size and depth bounds."""
     text = _valkey_text(raw)
     if len(text.encode("utf-8")) > _MAX_VALKEY_OUTCOME_JSON_BYTES:
         raise ValueError(
             f"Valkey outcome JSON exceeds {_MAX_VALKEY_OUTCOME_JSON_BYTES} bytes"
         )
-    try:
-        decoded = json.loads(text)
-    except RecursionError as exc:
-        raise ValueError("Valkey outcome JSON is too deeply nested") from exc
-    return _outcome_from_dict(decoded)
+    if _json_nesting_exceeds(text, _MAX_VALKEY_OUTCOME_JSON_DEPTH):
+        raise ValueError(
+            f"Valkey outcome JSON nests deeper than {_MAX_VALKEY_OUTCOME_JSON_DEPTH}"
+        )
+    return _outcome_from_dict(json.loads(text))
 
 
 class ValkeyStreamsOutcomeStore:

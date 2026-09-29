@@ -28,8 +28,8 @@ Failed outcomes are terminal. The first failure per fingerprint is stored in
 ``{stream}:failed`` and acknowledged, so ``run_batch`` returns it beside the
 successful units instead of timing out. A later success for the same
 fingerprint still wins, and ``committed_success`` reports successes only.
-Outcome records larger than 1 MiB (the worker stdout bound) or too deeply
-nested to decode are rejected before they are acknowledged, and
+Outcome records larger than 1 MiB (the worker stdout bound) or nested deeper
+than 64 arrays/objects are rejected before they are acknowledged, and
 ``wait_timeout_s`` must be a finite positive number.
 
 The adapter accepts a synchronous redis-py-compatible client supplied by the
