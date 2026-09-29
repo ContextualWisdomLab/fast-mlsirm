@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2026-09-29 - Cross-Engine Report Accessibility Improvements
+**Learning:** Found that the standalone cross-engine conformance HTML report was missing the skip-to-content accessibility standard and standard tabular data formatting requirements applied to other reports. Using `style-src 'none'` in CSP also prevents crucial injected skip-link styling from applying in self-contained single-file HTML reports.
+**Action:** When adding skip-links and embedded styling to single-file HTML reports, set the CSP `style-src` to `'unsafe-inline'`. Additionally, apply `<th scope="row">` to the first column (`_data_row` function) along with `font-variant-numeric: tabular-nums` and a `font-weight: normal` reset on `tbody th` to satisfy screen reader table traversal needs and visual numeric alignment.
