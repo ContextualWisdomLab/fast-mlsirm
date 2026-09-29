@@ -269,3 +269,12 @@ def test_multigroup_fit_without_specific_sd_scores() -> None:
         predict_bifactor_expected_total_score(_anchored(), grid, q_specific=41),
         atol=1e-12,
     )
+
+
+def test_high_q_rule_that_numpy_cannot_build_fails_closed() -> None:
+    """numpy's hermegauss weights underflow to zero at q >= 371 (and to NaN
+    beyond), so a documented-valid q would otherwise return a silent NaN curve.
+    """
+    fit = _SingleGroupFit(A_GENERAL, A_SPECIFIC)
+    with pytest.raises(ValueError, match="Gauss-Hermite rule is not finite"):
+        predict_bifactor_expected_total_score(fit, np.zeros(2), q_specific=371)

@@ -661,7 +661,9 @@ def predict_bifactor_expected_total_score(
     evaluation, not a curve-shape statistic. ``q_specific`` is a required,
     caller-chosen Gauss-Hermite node count in ``1..=4096`` -- no default is
     offered, because no accuracy target is on file to source one against
-    (Project rule, issue #1929).
+    (Project rule, issue #1929). numpy's ``hermegauss`` cannot build the rule
+    at ``q_specific >= 371`` (its weights underflow), so those counts raise
+    ``ValueError`` rather than return a NaN curve.
 
     The marginalization is the one
     :func:`check_bifactor_expected_total_score_monotonicity` documents and
@@ -693,7 +695,15 @@ def predict_bifactor_expected_total_score(
     _raise_if_oversized_prediction_grid(prediction_cells)
 
     nodes, weights = np.polynomial.hermite_e.hermegauss(nodes_requested)
-    weights = weights / weights.sum()
+    weight_sum = weights.sum()
+    # numpy's recurrence underflows the weights to zero at q >= 371 and to NaN
+    # beyond, which would turn into a silent NaN curve; fail closed instead.
+    if not (np.all(np.isfinite(nodes)) and np.isfinite(weight_sum) and weight_sum > 0.0):
+        raise ValueError(
+            f"q_specific={nodes_requested}: the Gauss-Hermite rule is not finite "
+            "in numpy's hermegauss at this node count; use q_specific <= 370"
+        )
+    weights = weights / weight_sum
     unit_slope = np.ones(1, dtype=np.float64)
 
     expected_total = np.zeros(values.size, dtype=np.float64)
