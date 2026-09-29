@@ -13,6 +13,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts.fipc_research_adapter_materialize import ADAPTER_KEY, canonical_sha256, sidecar_failures
+except ModuleNotFoundError:
+    from fipc_research_adapter_materialize import ADAPTER_KEY, canonical_sha256, sidecar_failures
 
 REQUIRED_TOP_LEVEL = (
     "source_sha",
@@ -65,10 +69,22 @@ def validate(artifact: Path, expected_source: str | None, expected_core: str | N
 
     if payload.get("row_order_max_abs_delta") != 0.0:
         failures.append("row_order_max_abs_delta is not exactly zero")
-    if "row_identity" not in payload:
+    row = payload.get("row_identity")
+    expected = focal.get("expected_raw") if isinstance(focal, dict) else None
+    if row is None:
         failures.append("row_identity missing; permutation_sha256 alone is insufficient")
-    if "expected_raw" not in focal:
+    if expected is None:
         failures.append("focal_gpu.expected_raw missing; no research expected-raw contract is present")
+    row_digest = canonical_sha256(row) if row is not None else None
+    expected_digest = canonical_sha256(expected) if expected is not None else None
+    if row is not None and expected is not None:
+        failures.extend(sidecar_failures(payload, row, expected))
+        adapter = payload.get(ADAPTER_KEY)
+        adapter = adapter if isinstance(adapter, dict) else {}
+        if adapter.get("row_identity_sha256") != row_digest:
+            failures.append("row_identity digest does not match the materialization receipt")
+        if adapter.get("expected_raw_sha256") != expected_digest:
+            failures.append("expected_raw digest does not match the materialization receipt")
 
     return {
         "artifact": str(artifact),
@@ -78,7 +94,9 @@ def validate(artifact: Path, expected_source: str | None, expected_core: str | N
         "gpu_backend": focal.get("gpu_backend"),
         "gpu_device_name": focal.get("gpu_device_name"),
         "row_order_max_abs_delta": payload.get("row_order_max_abs_delta"),
-        "expected_raw_present": "expected_raw" in focal,
+        "expected_raw_present": expected is not None,
+        "row_identity_sha256": row_digest,
+        "expected_raw_sha256": expected_digest,
         "research_consumption_ready": not failures,
         "failures": failures,
     }

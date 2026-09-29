@@ -32,7 +32,17 @@ python scripts/fipc_research_adapter_preflight.py derived.json \
 ```
 
 The materializer fails closed on any mismatch and writes a new derived JSON;
-it never edits the input artifact. The preflight must report
+it never edits the input artifact. An output path that names the input file
+(the same path, a `.`/`..` alias, a symlink, or a hard link) is refused, and
+the derived file is published by temp-file, `fsync`, and atomic rename. The
+derived JSON records a `research_adapter` block with the input artifact
+SHA-256 and the canonical SHA-256 of both sidecars.
+
+The preflight re-runs the same sidecar contract on the derived artifact and
+recomputes both sidecar digests, so editing any row ID, permutation, expected
+value, parameter hash, or source hash after materialization fails closed. Its
+receipt pins `artifact_sha256`, `row_identity_sha256`, and
+`expected_raw_sha256`. The preflight must report
 `research_consumption_ready=true` before any research result can be consumed.
 
 ## Research Consumer Owner Commands
