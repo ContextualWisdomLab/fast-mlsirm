@@ -1106,7 +1106,8 @@ fn mstep_sweep_recount_q41_q241_synthetic_cp3_shape() {
         let (fill_ns, estep_ns, mstep_ns) = mstep_phase_ns();
         enable_mstep_sweep_counters(false);
         let total = base + fd + linesearch;
-        let em_mstep_passes = 5u64; // max_iter=5 → 5 M-step passes
+        assert!(fit.n_iter > 0, "q={q}: expected at least one M-step pass");
+        let em_mstep_passes = fit.n_iter as u64;
         let per_pass = total as f64 / em_mstep_passes as f64;
         let phases = (fill_ns + estep_ns + mstep_ns) as f64;
         let m_share = if phases > 0.0 {

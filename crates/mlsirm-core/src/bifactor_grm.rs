@@ -823,6 +823,7 @@ fn bump_sweep(kind: SweepKind) {
 #[derive(Clone, Copy)]
 enum SweepKind {
     Base,
+    #[cfg_attr(not(test), allow(dead_code))] // only the FD test oracle records it
     Fd,
     LineSearch,
     Newton,
@@ -947,6 +948,8 @@ pub(crate) fn item_neg_ll_grad_hess(
 /// Forward finite-difference Hessian of [`item_neg_ll_grad`] — test oracle
 /// only (#2030). Each column re-enters the full node grid; production Newton
 /// must not call this.
+#[cfg(test)]
+#[allow(clippy::needless_range_loop)] // FD Hessian is inherently indexed
 pub(crate) fn item_neg_ll_fd_hessian(
     params: &[f64],
     has_specific: bool,
@@ -995,7 +998,6 @@ fn m_step_item(
     ridge: f64,
     n_newton: usize,
 ) -> Vec<f64> {
-    let np = params.len();
     for _ in 0..n_newton {
         bump_sweep(SweepKind::Newton);
         let (f0, g, mut hess) =
@@ -1004,8 +1006,8 @@ fn m_step_item(
         if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
             break;
         }
-        for r in 0..np {
-            hess[r][r] += ridge;
+        for (r, row) in hess.iter_mut().enumerate() {
+            row[r] += ridge;
         }
         let mut step = solve_small(hess, g.clone());
         let mut directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum::<f64>();

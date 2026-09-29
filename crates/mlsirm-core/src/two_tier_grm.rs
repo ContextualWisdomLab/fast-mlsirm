@@ -92,8 +92,8 @@
 //! node rather than `O(n_specific * n_grid * q_specific)`. Finite sums are
 //! associative, so the numerical value matches a materialised-table path up
 //! to ordinary floating-point roundoff.//!
-//! The M-step updates each item by the per-item finite-difference-Hessian
-//! Newton of stage 1 (ridge = Hessian conditioning only, NOT a prior;
+//! The M-step updates each item by the per-item analytic-Hessian Newton of
+//! stage 1 (#2030: one node sweep through `poly::grm_node_hessian`; ridge = Hessian conditioning only, NOT a prior;
 //! backtracking line search REJECTS non-finite objectives, which is exactly
 //! how the ordered-threshold constraint is maintained WITHOUT an explicit
 //! reparametrization — the crate's shared ascent convention from `grm.rs`),
@@ -204,7 +204,7 @@
 //! 50*(3), 325-335. https://doi.org/10.1111/1467-9876.00237 (full text read:
 //! high `Q` often required; do not invent a low default)
 
-use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
+use crate::poly::{grm_logprobs, grm_node_gradient, grm_node_hessian, solve_small};
 
 // NOTE (stage-4 design): this module imposes no magic size caps. Upper
 // bounds without a documented origin are rejected in favor of correctness
@@ -968,8 +968,8 @@ pub(crate) fn e_step(
 
 /// Negative expected complete-data log-lik and gradient for ONE item — the
 /// Bock-Aitkin M-step item ascent (Cai et al., 2011, "Maximum Marginal
-/// Likelihood Estimation" section) with the crate's shared
-/// finite-difference-Hessian Newton convention (`grm.rs`).
+/// Likelihood Estimation" section). Serves the Armijo line search (value)
+/// and the FD Hessian test oracle; Newton uses [`item_neg_ll_grad_hess`].
 /// `params = [free primary slopes..., (a_S?), d_1..d_{K-1}]` (primary slopes
 /// in ascending-dimension order). Node coordinates are derived on the fly
 /// from the primary product grid and specific GH nodes (`node = g * qs + h`
@@ -1023,13 +1023,149 @@ fn item_neg_ll_grad(
     (-ll, grad.iter().map(|g| -g).collect())
 }
 
-/// Newton M-step for one item — the Bock-Aitkin M-step item ascent (Cai et
-/// al., 2011, "Maximum Marginal Likelihood Estimation" section) with the
-/// crate's shared ascent convention (FD Hessian, ridge conditioning,
-/// backtracking; non-finite rejection keeps `d` strictly ordered, as in
-/// `grm.rs`).
+/// Negative expected complete-data log-lik, gradient, and analytic Hessian
+/// for ONE two-tier GRM item in a single node sweep (#2030).
+///
+/// At fixed E-step expected counts the complete-data criterion separates per
+/// item (Bock & Aitkin, 1981, pp. 445, 448). Per node the GRM cell Hessian
+/// ([`grm_node_hessian`]; Gibbons et al., 2007, eq. 9 and Appendix A4-A6) is
+/// chained through the linear predictor `eta = x' a + d` with design vector
+/// `x = [free primary coordinates..., t_S?]`; second derivatives of `eta`
+/// vanish, so the blocks are `grand * x x'`, `x * row_sums'`, and the
+/// threshold matrix. At `P = 1` this is operand-for-operand the stage-1
+/// [`crate::bifactor_grm`] item Hessian, which keeps the two-tier fit an
+/// exact reduction of the bifactor fit. Signed for minimisation of `-Q`.
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::needless_range_loop)] // finite-difference Hessian is inherently indexed (mirrors `grm.rs`)
+pub(crate) fn item_neg_ll_grad_hess(
+    params: &[f64],
+    free: &[usize],
+    has_specific: bool,
+    coords: &[f64],
+    ts: &[f64],
+    n_primary: usize,
+    n_grid: usize,
+    qs: usize,
+    counts: &[Vec<f64>],
+) -> (f64, Vec<f64>, Vec<Vec<f64>>) {
+    let np = params.len();
+    let k = free.len();
+    let off = k + usize::from(has_specific);
+    let beta = &params[off..];
+    let mut ll = 0.0f64;
+    let mut grad = vec![0.0f64; np];
+    let mut hess = vec![vec![0.0f64; np]; np];
+    let mut x = vec![0.0f64; off];
+    for (node, cnt) in counts.iter().enumerate() {
+        let (g, h) = if has_specific {
+            (node / qs, node % qs)
+        } else {
+            debug_assert!(node < n_grid);
+            (node, 0)
+        };
+        for (t, &dim) in free.iter().enumerate() {
+            x[t] = coords[g * n_primary + dim];
+        }
+        if has_specific {
+            x[k] = ts[h];
+        }
+        let mut base = 0.0f64;
+        for (xt, pt) in x.iter().zip(params) {
+            base += pt * xt;
+        }
+        let lp = grm_logprobs(base, beta);
+        ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+        let (g_base, g_thr) = grm_node_gradient(base, beta, cnt);
+        for (gt, xt) in grad.iter_mut().zip(&x) {
+            *gt += g_base * xt;
+        }
+        for (j, gj) in g_thr.iter().enumerate() {
+            grad[off + j] += gj;
+        }
+        let (grand, row_sums, mat) = grm_node_hessian(base, beta, cnt);
+        for t in 0..off {
+            for u in 0..off {
+                hess[t][u] += x[t] * x[u] * grand;
+            }
+        }
+        for (j, rj) in row_sums.iter().enumerate() {
+            let dj = off + j;
+            for t in 0..off {
+                let c = x[t] * rj;
+                hess[t][dj] += c;
+                hess[dj][t] += c;
+            }
+            for (l, hjl) in mat[j].iter().enumerate() {
+                hess[dj][off + l] += hjl;
+            }
+        }
+    }
+    for row in &mut hess {
+        for v in row.iter_mut() {
+            *v = -*v;
+        }
+    }
+    (-ll, grad.iter().map(|g| -g).collect(), hess)
+}
+
+/// Forward finite-difference Hessian of [`item_neg_ll_grad`] — test oracle
+/// only (#2030); production Newton uses [`item_neg_ll_grad_hess`].
+#[cfg(test)]
+#[allow(clippy::needless_range_loop)] // FD Hessian is inherently indexed
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn item_neg_ll_fd_hessian(
+    params: &[f64],
+    free: &[usize],
+    has_specific: bool,
+    coords: &[f64],
+    ts: &[f64],
+    n_primary: usize,
+    n_grid: usize,
+    qs: usize,
+    counts: &[Vec<f64>],
+    h: f64,
+) -> (Vec<f64>, Vec<Vec<f64>>) {
+    let np = params.len();
+    let eval = |p: &[f64]| {
+        item_neg_ll_grad(
+            p,
+            free,
+            has_specific,
+            coords,
+            ts,
+            n_primary,
+            n_grid,
+            qs,
+            counts,
+            0,
+        )
+        .1
+    };
+    let g = eval(params);
+    let mut hess = vec![vec![0.0f64; np]; np];
+    for j in 0..np {
+        let mut pj = params.to_vec();
+        pj[j] += h;
+        let gj = eval(&pj);
+        for r in 0..np {
+            hess[r][j] = (gj[r] - g[r]) / h;
+        }
+    }
+    for r in 0..np {
+        for c in 0..r {
+            let avg = 0.5 * (hess[r][c] + hess[c][r]);
+            hess[r][c] = avg;
+            hess[c][r] = avg;
+        }
+    }
+    (g, hess)
+}
+
+/// Newton M-step for one item — the Bock-Aitkin M-step item ascent (Cai et
+/// al., 2011, "Maximum Marginal Likelihood Estimation" section) using the
+/// analytic item Hessian ([`item_neg_ll_grad_hess`], one node sweep per
+/// Newton evaluation), ridge conditioning, and backtracking; non-finite
+/// rejection keeps `d` strictly ordered, as in `grm.rs` (#2030).
+#[allow(clippy::too_many_arguments)]
 fn m_step_item(
     mut params: Vec<f64>,
     free: &[usize],
@@ -1044,9 +1180,8 @@ fn m_step_item(
     ridge: f64,
     n_newton: usize,
 ) -> Vec<f64> {
-    let np = params.len();
     for _ in 0..n_newton {
-        let (f0, g) = item_neg_ll_grad(
+        let (f0, g, mut hess) = item_neg_ll_grad_hess(
             &params,
             free,
             has_specific,
@@ -1056,38 +1191,13 @@ fn m_step_item(
             n_grid,
             qs,
             counts,
-            n_cat,
         );
         let grad_norm = g.iter().map(|x| x * x).sum::<f64>().sqrt();
         if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
             break;
         }
-        let h = 1e-5;
-        let mut hess = vec![vec![0.0f64; np]; np];
-        for j in 0..np {
-            let mut pj = params.clone();
-            pj[j] += h;
-            let (_f2, gj) = item_neg_ll_grad(
-                &pj,
-                free,
-                has_specific,
-                coords,
-                ts,
-                n_primary,
-                n_grid,
-                qs,
-                counts,
-                n_cat,
-            );
-            for r in 0..np {
-                hess[r][j] = (gj[r] - g[r]) / h;
-            }
-        }
-        for r in 0..np {
-            for c in 0..np {
-                hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
-            }
-            hess[r][r] += ridge;
+        for (r, row) in hess.iter_mut().enumerate() {
+            row[r] += ridge;
         }
         let mut step = solve_small(hess, g.clone());
         let mut directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum::<f64>();
