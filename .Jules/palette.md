@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2024-07-25 - CSS Transition on Bar Row Hovers
+**Learning:** Adding a hover state (`background: var(--hover-bg);`) on a row element (`.bar-row`) without an accompanying CSS transition makes the visual change feel abrupt and less polished.
+**Action:** Always include an appropriate `transition` (e.g., `transition: background-color 0.15s ease-in-out;`) on elements that change background color upon hover to provide a smooth, delightful user experience.
