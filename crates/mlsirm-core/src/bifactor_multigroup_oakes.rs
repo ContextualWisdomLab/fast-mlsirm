@@ -22,10 +22,10 @@
 //! https://doi.org/10.1177/0146621606289485
 
 use crate::bifactor_grm::{
-    BifactorGrmConfig, ItemParams, Validated, check_param_shapes, e_step_multigroup, gh_rule,
-    validate,
+    check_param_shapes, e_step_multigroup, gh_rule, validate,
+    BifactorGrmConfig, ItemParams, SlopePrior, Validated,
 };
-use crate::bifactor_oakes::{BifactorOakesConfig, BifactorOakesResult, bifactor_oakes_se};
+use crate::bifactor_oakes::{bifactor_oakes_se, BifactorOakesConfig, BifactorOakesResult};
 use crate::poly::{grm_node_gradient, grm_node_hessian};
 
 struct Joint<'a> {
@@ -319,6 +319,7 @@ pub fn bifactor_multigroup_oakes_se(
         seed: 0,
         newton_iter: 1,
         ridge: 1e-8,
+        slope_prior: SlopePrior::None,
         device: crate::Device::Cpu,
     };
     let v = validate(
@@ -473,6 +474,7 @@ mod tests {
             q_general: 3,
             q_specific: 3,
             fd_step: 1e-5,
+            slope_prior: SlopePrior::None,
         };
         let single = bifactor_oakes_se(&ag, &as_, &th, &y, None, &smap, 4, 2, 1, 2, &cfg).unwrap();
         let multi = bifactor_multigroup_oakes_se(
@@ -500,29 +502,27 @@ mod tests {
         assert_eq!(single.information, multi.information);
         assert_eq!(single.vcov, multi.vcov);
         assert_eq!(single.se, multi.se);
-        assert!(
-            bifactor_multigroup_oakes_se(
-                &[vec![0.8, 1.0]],
-                &[vec![0.5, 0.7]],
-                &[vec![0.1, -0.2]],
-                &[0.0],
-                &[1.0],
-                &[vec![1.0]],
-                &y,
-                None,
-                &[1; 4],
-                1,
-                &smap,
-                4,
-                2,
-                1,
-                2,
-                &[true; 2],
-                false,
-                &cfg,
-            )
-            .is_err()
-        );
+        assert!(bifactor_multigroup_oakes_se(
+            &[vec![0.8, 1.0]],
+            &[vec![0.5, 0.7]],
+            &[vec![0.1, -0.2]],
+            &[0.0],
+            &[1.0],
+            &[vec![1.0]],
+            &y,
+            None,
+            &[1; 4],
+            1,
+            &smap,
+            4,
+            2,
+            1,
+            2,
+            &[true; 2],
+            false,
+            &cfg,
+        )
+        .is_err());
     }
 
     #[test]
@@ -537,6 +537,7 @@ mod tests {
             q_general: 5,
             q_specific: 5,
             fd_step: 1e-6,
+            slope_prior: SlopePrior::None,
         };
         let result = bifactor_multigroup_oakes_se(
             &ag,
@@ -561,30 +562,28 @@ mod tests {
         .unwrap();
         let mut bad_ag = ag.clone();
         bad_ag[1][0] = 0.9;
-        assert!(
-            bifactor_multigroup_oakes_se(
-                &bad_ag,
-                &as_,
-                &th,
-                &[0.0, 0.2],
-                &[1.0, 1.1],
-                &[vec![1.0], vec![1.2]],
-                &y,
-                None,
-                &group,
-                2,
-                &smap,
-                8,
-                2,
-                1,
-                2,
-                &[true, false],
-                true,
-                &cfg,
-            )
-            .unwrap_err()
-            .contains("anchored item")
-        );
+        assert!(bifactor_multigroup_oakes_se(
+            &bad_ag,
+            &as_,
+            &th,
+            &[0.0, 0.2],
+            &[1.0, 1.1],
+            &[vec![1.0], vec![1.2]],
+            &y,
+            None,
+            &group,
+            2,
+            &smap,
+            8,
+            2,
+            1,
+            2,
+            &[true, false],
+            true,
+            &cfg,
+        )
+        .unwrap_err()
+        .contains("anchored item"));
         assert_eq!(
             result.labels,
             [
@@ -622,6 +621,7 @@ mod tests {
                 seed: 0,
                 newton_iter: 1,
                 ridge: 1e-8,
+                slope_prior: SlopePrior::None,
                 device: crate::Device::Cpu,
             },
         )
