@@ -1033,14 +1033,11 @@ def fit_marginal_numpy(
                 g_b = float(resid.sum()) - pen["lambda_b"] * b[i]
                 i_b = float(info.sum())
                 if free_alpha:
-                    # Optimized: replace float((A * B).sum()) with np.einsum for faster reduction (~6x speedup)
-                    deta_a = a_c * theta_i
-                    g_alpha = float(
-                        np.einsum("stx,st->", resid, deta_a, optimize=True)
-                    ) - pen["lambda_alpha"] * (alpha[i] - pen["mu_alpha"])
-                    i_alpha = float(
-                        np.einsum("stx,st->", info, deta_a * deta_a, optimize=True)
+                    deta_a = a_c * theta_i[:, :, None]
+                    g_alpha = float((resid * deta_a).sum()) - pen["lambda_alpha"] * (
+                        alpha[i] - pen["mu_alpha"]
                     )
+                    i_alpha = float((info * deta_a * deta_a).sum())
                 else:
                     g_alpha, i_alpha = 0.0, 0.0
                 if uses_space:
@@ -1108,15 +1105,9 @@ def fit_marginal_numpy(
             )
             prob = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
             resid = rbar - n_all * prob
-            deta = -gamma * dist
-            # Optimized: replace float((A * B).sum()) with np.einsum for faster reduction (~2.2x speedup)
-            grad = float(
-                np.einsum("spdx,px->", resid, deta, optimize=True)
-            ) - pen["lambda_tau"] * (tau - pen["mu_tau"])
-            info_arr = n_all * prob * (1.0 - prob)
-            info = float(
-                np.einsum("spdx,px->", info_arr, deta * deta, optimize=True)
-            ) + pen["lambda_tau"]
+            deta = -gamma * dist[None, :, None, :]
+            grad = float((resid * deta).sum()) - pen["lambda_tau"] * (tau - pen["mu_tau"])
+            info = float((n_all * prob * (1.0 - prob) * deta * deta).sum()) + pen["lambda_tau"]
             if info > 0.0:
                 direction = grad / info
 
@@ -1181,12 +1172,9 @@ def fit_marginal_numpy(
             eta = eta_delta(delta)
             prob = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
             resid = rbar - n_all * prob
-            # Optimized: replace float((A * B).sum()) with np.einsum for faster reduction (~1.3x speedup)
-            grad_d = float(np.einsum("spdx,sp->", resid, w_cov, optimize=True))
-            info_arr = n_all * prob * (1.0 - prob)
-            info_d = float(
-                np.einsum("spdx,sp->", info_arr, w_cov * w_cov, optimize=True)
-            )
+            w_bcast = w_cov[:, :, None, None]
+            grad_d = float((resid * w_bcast).sum())
+            info_d = float((n_all * prob * (1.0 - prob) * w_bcast * w_bcast).sum())
             if info_d > 0.0:
                 direction = grad_d / info_d
 
