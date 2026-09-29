@@ -10298,6 +10298,41 @@ fn observed_information(
     .map_err(PyValueError::new_err)
 }
 
+/// Orthogonal GRM report transform; Muraki and Carlson (1995, eqs. 23–25, 38–39).
+#[pyfunction]
+fn orthogonal_grm_report(
+    py: Python<'_>,
+    slopes: PyReadonlyArray1<'_, f64>,
+    intercepts: PyReadonlyArray1<'_, f64>,
+    input_metric: &str,
+    scale: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    match input_metric {
+        "normal_ogive" if scale == 1.0 => (),
+        "logistic_approximation" => (),
+        _ => {
+            return Err(PyValueError::new_err(
+                "normal_ogive requires scale=1; otherwise use logistic_approximation",
+            ))
+        }
+    }
+    let result = mlsirm_core::grm_report::orthogonal_grm_report(
+        slopes.as_slice()?,
+        intercepts.as_slice()?,
+        scale,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("loadings", result.loadings)?;
+    out.set_item("thresholds", result.thresholds)?;
+    out.set_item("communality", result.communality)?;
+    out.set_item("uniqueness", result.uniqueness)?;
+    out.set_item("input_metric", input_metric)?;
+    out.set_item("scale", scale)?;
+    out.set_item("approximate", input_metric == "logistic_approximation")?;
+    Ok(out.into())
+}
+
 /// Positive-definiteness diagnostic for a square Hessian / information matrix.
 #[pyfunction]
 #[pyo3(signature = (hessian, tol = 1e-8))]
@@ -10692,6 +10727,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(benjamini_hochberg, m)?)?;
     m.add_function(wrap_pyfunction!(observed_information, m)?)?;
     m.add_function(wrap_pyfunction!(second_order_test, m)?)?;
+    m.add_function(wrap_pyfunction!(orthogonal_grm_report, m)?)?;
     m.add_function(wrap_pyfunction!(vcov_from_hessian, m)?)?;
     m.add_function(wrap_pyfunction!(standard_errors_from_vcov, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_mle, m)?)?;
