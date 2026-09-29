@@ -25,11 +25,15 @@ THRESHOLDS = np.array([1.2, 0.0, -1.2])
 
 
 def test_numpy_hermegauss_still_fails_at_high_q() -> None:
+    # Negative evidence, not a requirement: pyproject allows numpy>=1.24 with no
+    # upper bound, so a fixed hermegauss must not fail CI. It skips instead, which
+    # flags that the local rule could be retired.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         _, weights = np.polynomial.hermite_e.hermegauss(481)
         normalized = weights / weights.sum()
-    assert not np.all(np.isfinite(normalized))
+    if np.all(np.isfinite(normalized)):
+        pytest.skip("numpy hermegauss(481) is finite here; the local rule may be retired")
 
 
 @pytest.mark.parametrize("q", HIGH_Q)
