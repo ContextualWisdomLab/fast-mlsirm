@@ -761,6 +761,13 @@ h3 {
   align-items: center;
   padding: 4px 8px;
   border-radius: 4px;
+  transition: background-color 0.15s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar-row {
+    transition: none !important;
+  }
 }
 
 .bar-row:hover {
