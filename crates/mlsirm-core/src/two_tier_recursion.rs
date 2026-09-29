@@ -64,6 +64,15 @@ impl TwoTierItemParams {
         if self.n_items() == 0 {
             return Err("n_items must be >= 1".into());
         }
+        // GRM needs strictly decreasing finite boundary intercepts; otherwise the
+        // clamped category differences are not a distribution and LW is meaningless.
+        for (i, row) in self.thresholds.chunks_exact(self.n_cat - 1).enumerate() {
+            if row.iter().any(|t| !t.is_finite()) || row.windows(2).any(|w| w[1] >= w[0]) {
+                return Err(format!(
+                    "thresholds of item {i} must be finite and strictly decreasing"
+                ));
+            }
+        }
         Ok(())
     }
 

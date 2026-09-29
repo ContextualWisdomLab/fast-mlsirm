@@ -173,3 +173,14 @@ def test_expected_raw_rejects_bool_complex_maps_and_malformed_fit_arrays() -> No
             SPECIFIC_MAP,
             q_specific=21,
         )
+
+
+def test_expected_raw_rejects_unordered_thresholds() -> None:
+    fit = _fit(_simulate(SEED + 7))
+    assert np.all(np.diff(fit.threshold, axis=1) < 0), "fit must emit ordered thresholds"
+    with pytest.raises(ValueError, match="strictly decreasing"):
+        expected_raw_two_tier_grm(
+            replace(fit, threshold=fit.threshold[:, ::-1].copy()),
+            SPECIFIC_MAP,
+            q_specific=21,
+        )
