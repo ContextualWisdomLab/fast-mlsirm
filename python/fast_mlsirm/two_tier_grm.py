@@ -117,7 +117,10 @@ def _specific_map_control(specific_map: object, n_items: int, n_specific: int) -
     smap = np.asarray(specific_map)
     if smap.ndim != 1 or smap.shape[0] != n_items:
         raise ValueError("specific_map must be a 1-D array of length n_items")
-    if smap.dtype.kind == "b":
+    if smap.dtype.kind in "bc" or (
+        smap.dtype.kind == "O"
+        and any(isinstance(v, (bool, np.bool_, complex, np.complexfloating)) for v in smap)
+    ):
         raise ValueError("specific_map entries must be integers")
     # Validate on exact float values for every dtype (object, uint64, ...):
     # a direct astype(int64) would truncate 1.9 -> 1 or wrap 2**64-1 -> -1.
@@ -583,7 +586,10 @@ def expected_raw_two_tier_grm(
     n_primary = int(fit.n_primary)
     n_specific = int(fit.n_specific)
     n_cat = int(fit.n_cat)
-    n_items = int(fit.a_specific.shape[0])
+    a_specific = np.asarray(fit.a_specific, dtype=np.float64)
+    if a_specific.ndim != 1:
+        raise ValueError("fit.a_specific must be a 1-D array of length n_items")
+    n_items = int(a_specific.shape[0])
 
     smap_int = _specific_map_control(specific_map, n_items, n_specific)
 
@@ -597,6 +603,8 @@ def expected_raw_two_tier_grm(
     theta = np.asarray(fit.theta_p_eap, dtype=np.float64)
     if theta.ndim != 2 or theta.shape[1] != n_primary:
         raise ValueError("fit.theta_p_eap must have shape (n_persons, n_primary)")
+    if not bool(np.isfinite(theta).all()):
+        raise ValueError("fit.theta_p_eap must be finite")
 
     from .fitstats import _core_module
 
@@ -607,7 +615,7 @@ def expected_raw_two_tier_grm(
     return np.asarray(
         core.two_tier_expected_raw(
             a_primary.reshape(-1),
-            np.asarray(fit.a_specific, dtype=np.float64).reshape(-1),
+            a_specific,
             threshold.reshape(-1),
             theta.reshape(-1),
             smap_int.reshape(-1),

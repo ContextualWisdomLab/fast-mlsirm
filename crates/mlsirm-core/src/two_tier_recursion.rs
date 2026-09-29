@@ -82,7 +82,7 @@ impl TwoTierItemParams {
     }
 
     /// Category probabilities for item ``item_idx`` at fixed primary levels.
-    pub fn category_probabilities(
+    pub(crate) fn category_probabilities(
         &self,
         item_idx: usize,
         theta_primary: &[f64],
@@ -173,6 +173,12 @@ pub fn two_tier_lord_wingersky(
     let n_s = theta_specific.len();
     if weights_specific.len() != n_s {
         return Err("weights_specific length must match theta_specific".into());
+    }
+    if n_s == 0 {
+        return Err("specific-factor quadrature must have at least one node".into());
+    }
+    if !theta_primary.iter().all(|v| v.is_finite()) {
+        return Err("theta_primary must be finite".into());
     }
 
     let blocks = params.block_items()?;

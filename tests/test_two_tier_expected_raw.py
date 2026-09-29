@@ -152,3 +152,24 @@ def test_expected_raw_rejects_transposed_item_parameters() -> None:
         expected_raw_two_tier_grm(
             replace(fit, a_primary=fit.a_primary.T), SPECIFIC_MAP, q_specific=21
         )
+
+
+def test_expected_raw_rejects_bool_complex_maps_and_malformed_fit_arrays() -> None:
+    fit = _fit(_simulate(SEED + 6))
+    for bad_map in (
+        np.array([True, False, True, False, True, False], dtype=object),
+        SPECIFIC_MAP.astype(np.complex128) + 2j,
+        SPECIFIC_MAP.astype(bool),
+    ):
+        with pytest.raises(ValueError, match="specific_map"):
+            expected_raw_two_tier_grm(fit, bad_map, q_specific=21)
+    with pytest.raises(ValueError, match="a_specific"):
+        expected_raw_two_tier_grm(
+            replace(fit, a_specific=fit.a_specific[None, :]), SPECIFIC_MAP, q_specific=21
+        )
+    with pytest.raises(ValueError, match="theta_p_eap"):
+        expected_raw_two_tier_grm(
+            replace(fit, theta_p_eap=np.full_like(fit.theta_p_eap, np.nan)),
+            SPECIFIC_MAP,
+            q_specific=21,
+        )

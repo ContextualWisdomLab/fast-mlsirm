@@ -123,3 +123,12 @@ fn direct_enumeration_rejects_pattern_count_overflow() {
     };
     assert!(direct_enumeration_two_tier(&params, &[0.0], &[0.0], &[1.0]).is_err());
 }
+
+#[test]
+fn empty_quadrature_and_non_finite_primary_return_err() {
+    let (nodes, weights) = gh_rule(5).expect("gh_rule(5)");
+    let params = degenerate_params(1, 1, 2);
+    assert!(two_tier_expected_raw(&params, &[0.0], &[], &[]).is_err());
+    assert!(two_tier_expected_raw(&params, &[f64::NAN], nodes, weights).is_err());
+    assert!(two_tier_expected_raw(&params, &[f64::INFINITY], nodes, weights).is_err());
+}
