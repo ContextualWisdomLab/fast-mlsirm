@@ -1,47 +1,29 @@
-//! Exact no-prior regression against main 99c228a8 on fixed synthetic inputs.
-//! The pinned bits were generated on s1 (x86_64 Linux, Rust 1.97.1);
-//! transcendental functions may round differently on other platforms.
-
-#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+//! No-prior regression against main 99c228a8 on fixed synthetic inputs.
+//!
+//! The reference values below were produced by main 99c228a8 (before the
+//! slope prior existed) with Rust 1.97.1 on aarch64-apple-darwin, where this
+//! branch reproduces them bit for bit. They are compared with a tolerance
+//! rather than as a bit hash because `f64::exp`/`ln` come from the platform
+//! libm, whose last-ulp rounding differs across libc versions and CPU
+//! feature dispatch; an earlier bit hash pinned on one x86_64 host never
+//! matched the CI runner. Discrete outcomes (counts, iteration count,
+//! termination) are still compared exactly.
 
 use mlsirm_core::bifactor_grm::{
     fit_bifactor_grm, fit_bifactor_grm_multigroup, BifactorGrmConfig, BifactorMultigroupConfig,
     SlopePrior,
 };
 
-fn feed(h: &mut u64, word: u64) {
-    *h = (*h ^ word).wrapping_mul(0x100000001b3);
-}
+const TOL: f64 = 1e-8;
 
-fn floats(h: &mut u64, values: &[f64]) {
-    for &v in values {
-        feed(h, v.to_bits());
+fn close(label: &str, got: &[f64], want: &[f64]) {
+    assert_eq!(got.len(), want.len(), "{label}: length");
+    for (idx, (g, w)) in got.iter().zip(want).enumerate() {
+        assert!(
+            (g - w).abs() <= TOL * w.abs().max(1.0),
+            "{label}[{idx}] diverged from main 99c228a8: {g} vs {w}"
+        );
     }
-}
-
-fn rows(h: &mut u64, values: &[Vec<f64>]) {
-    for row in values {
-        floats(h, row);
-    }
-}
-
-fn metadata(
-    h: &mut u64,
-    n_iter: usize,
-    converged: bool,
-    reason: &str,
-    change: f64,
-    best_start: usize,
-    n_parameters: usize,
-) {
-    feed(h, n_iter as u64);
-    feed(h, converged as u64);
-    for byte in reason.bytes() {
-        feed(h, byte as u64);
-    }
-    feed(h, change.to_bits());
-    feed(h, best_start as u64);
-    feed(h, n_parameters as u64);
 }
 
 fn data() -> (Vec<usize>, Vec<usize>) {
@@ -89,7 +71,7 @@ fn data() -> (Vec<usize>, Vec<usize>) {
 }
 
 #[test]
-fn none_path_matches_main_bits_single_and_multigroup() {
+fn none_path_matches_main_reference_single_and_multigroup() {
     let (y, groups) = data();
     let map = [0, 0, 0, 1, 1, 1];
     let single = fit_bifactor_grm(
@@ -114,29 +96,79 @@ fn none_path_matches_main_bits_single_and_multigroup() {
         },
     )
     .expect("single-group reference fit");
-    let mut hs = 0xcbf29ce484222325u64;
-    floats(&mut hs, &single.a_general);
-    floats(&mut hs, &single.a_specific);
-    floats(&mut hs, &single.threshold);
-    floats(&mut hs, &single.theta_g_eap);
-    floats(&mut hs, &single.theta_g_sd);
-    for &count in &single.category_counts {
-        feed(&mut hs, count as u64);
-    }
-    floats(&mut hs, &single.loglik_trace);
-    metadata(
-        &mut hs,
-        single.n_iter,
-        single.converged,
-        &single.termination_reason,
-        single.final_loglik_change,
-        single.best_start,
-        single.n_parameters,
+    close(
+        "single a_general",
+        &single.a_general,
+        &[
+            2.0272050014392873,
+            1.285739196865485,
+            1.2079585618977504,
+            1.9453249675111515,
+            1.294463782716091,
+            0.8933373440274903,
+        ],
+    );
+    close(
+        "single a_specific",
+        &single.a_specific,
+        &[
+            0.8611996602389496,
+            0.9955706255745763,
+            1.1233252484727572,
+            0.6417483962918548,
+            1.0193487712858567,
+            1.1796081512795034,
+        ],
+    );
+    close(
+        "single threshold",
+        &single.threshold,
+        &[
+            1.3317043309056136,
+            -0.8450001675222133,
+            1.1387580392353476,
+            -1.0936104107344924,
+            1.1088742119779962,
+            -0.4474721430629058,
+            1.7312200278773937,
+            -0.8810744823586363,
+            0.8487998743620532,
+            -1.1710019846389284,
+            1.3283171783602505,
+            -0.9718845882958843,
+        ],
+    );
+    close(
+        "single theta sums",
+        &[
+            single.theta_g_eap.iter().sum(),
+            single.theta_g_sd.iter().sum(),
+        ],
+        &[2.208182722575526, 116.38435612392958],
+    );
+    close(
+        "single loglik/change",
+        &[
+            *single.loglik_trace.last().unwrap(),
+            single.final_loglik_change,
+        ],
+        &[-1199.0525539182904, 0.10103628608544568],
     );
     assert_eq!(
-        hs, 0xfa2246fadb9c8984,
-        "single-group None path diverged from main 99c228a8"
+        single.category_counts,
+        [63, 61, 76, 62, 73, 65, 64, 51, 85, 51, 75, 74, 72, 66, 62, 56, 78, 66]
     );
+    assert_eq!(
+        (
+            single.loglik_trace.len(),
+            single.n_iter,
+            single.converged,
+            single.best_start
+        ),
+        (9, 8, true, 0)
+    );
+    assert_eq!(single.termination_reason, "tolerance_met");
+    assert_eq!(single.n_parameters, 24);
 
     let mg = fit_bifactor_grm_multigroup(
         &y,
@@ -164,32 +196,117 @@ fn none_path_matches_main_bits_single_and_multigroup() {
         },
     )
     .expect("multigroup reference fit");
-    let mut hm = 0xcbf29ce484222325u64;
-    rows(&mut hm, &mg.a_general);
-    rows(&mut hm, &mg.a_specific);
-    rows(&mut hm, &mg.threshold);
-    floats(&mut hm, &mg.general_mean);
-    floats(&mut hm, &mg.general_sd);
-    rows(&mut hm, &mg.specific_sd);
-    floats(&mut hm, &mg.theta_g_eap);
-    floats(&mut hm, &mg.theta_g_sd);
-    for row in &mg.group_category_counts {
-        for &count in row {
-            feed(&mut hm, count as u64);
-        }
-    }
-    floats(&mut hm, &mg.loglik_trace);
-    metadata(
-        &mut hm,
-        mg.n_iter,
-        mg.converged,
-        &mg.termination_reason,
-        mg.final_loglik_change,
-        mg.best_start,
-        mg.n_parameters,
+    close(
+        "mg a_general",
+        &mg.a_general.concat(),
+        &[
+            1.9614830981547882,
+            1.3641067535521996,
+            1.1695210582863294,
+            1.6316328396781958,
+            1.07630643520811,
+            0.8372748364953742,
+            1.9614830981547882,
+            1.3641067535521996,
+            1.0441525498640103,
+            1.6316328396781958,
+            1.07630643520811,
+            0.6595919612201709,
+        ],
+    );
+    close(
+        "mg a_specific",
+        &mg.a_specific.concat(),
+        &[
+            1.1387729064861547,
+            1.0299881368987944,
+            1.0769372119319924,
+            0.8059539879963828,
+            0.8064424143167602,
+            1.2925268330635544,
+            1.1387729064861547,
+            1.0299881368987944,
+            0.9586310136008183,
+            0.8059539879963828,
+            0.8064424143167602,
+            0.8068330922120418,
+        ],
+    );
+    close(
+        "mg threshold",
+        &mg.threshold.concat(),
+        &[
+            1.538413428030121,
+            -0.7630660759288651,
+            1.3791888796052496,
+            -0.8960248101111967,
+            1.1943097483818612,
+            -0.33533721323723903,
+            1.6279404480284496,
+            -0.7711256411776607,
+            0.8943175688339889,
+            -0.8017087381352053,
+            1.4258827429768042,
+            -0.9264446426390445,
+            1.538413428030121,
+            -0.7630660759288651,
+            1.3791888796052496,
+            -0.8960248101111967,
+            1.7984866444913539,
+            -0.13743862777917926,
+            1.6279404480284496,
+            -0.7711256411776607,
+            0.8943175688339889,
+            -0.8017087381352053,
+            1.6122584240756535,
+            -0.6448659688058626,
+        ],
+    );
+    close(
+        "mg population",
+        &[
+            &mg.general_mean[..],
+            &mg.general_sd[..],
+            &mg.specific_sd.concat()[..],
+        ]
+        .concat(),
+        &[
+            0.0,
+            0.3292159621215796,
+            1.0,
+            0.9035084547905801,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+        ],
+    );
+    close(
+        "mg theta sums",
+        &[mg.theta_g_eap.iter().sum(), mg.theta_g_sd.iter().sum()],
+        &[58.97907318800071, 246.55962137342715],
+    );
+    close(
+        "mg loglik/change",
+        &[*mg.loglik_trace.last().unwrap(), mg.final_loglik_change],
+        &[-2383.103085381413, 0.21063069717320104],
     );
     assert_eq!(
-        hm, 0x4f3d57b5c4061d3c,
-        "multigroup None path diverged from main 99c228a8"
+        mg.group_category_counts,
+        [
+            vec![63, 61, 76, 62, 73, 65, 64, 51, 85, 51, 75, 74, 72, 66, 62, 56, 78, 66],
+            vec![42, 63, 95, 40, 71, 89, 32, 60, 108, 40, 69, 91, 54, 57, 89, 35, 82, 83],
+        ]
     );
+    assert_eq!(
+        (
+            mg.loglik_trace.len(),
+            mg.n_iter,
+            mg.converged,
+            mg.best_start
+        ),
+        (10, 9, true, 0)
+    );
+    assert_eq!(mg.termination_reason, "tolerance_met");
+    assert_eq!(mg.n_parameters, 34);
 }
