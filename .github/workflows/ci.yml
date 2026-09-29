@@ -97,7 +97,7 @@ jobs:
           export PATH="$PWD/.venv-focal-gpu/bin:$PATH"
           .venv-focal-gpu/bin/python -m pip install --require-hashes -r requirements/ci.txt
           .venv-focal-gpu/bin/python -m pip install --no-deps --no-build-isolation -e .
-      - name: Execute all seven actual hardware contracts
+      - name: Execute all six actual hardware contracts
         run: |
           .venv-focal-gpu/bin/python -m pytest -q -s --junitxml=focal-gpu-junit.xml \
             tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_score_and_focal_update \
@@ -105,8 +105,7 @@ jobs:
             tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_reference_focal_expected_score_pipeline \
             tests/test_two_tier_group_pipeline_native.py::test_group_pipeline_preserves_slots_priors_and_nonconvergence \
             tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior \
-            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_primary_only_group_pipeline \
-            tests/test_joint_two_tier_score_bootstrap.py::test_joint_five_scale_resample_uses_actual_gpu
+            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_primary_only_group_pipeline
       - name: Reject missing or nonexecuted hardware contracts
         run: |
           .venv-focal-gpu/bin/python - <<'PY'
@@ -120,9 +119,8 @@ jobs:
               "test_group_pipeline_preserves_slots_priors_and_nonconvergence",
               "test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior",
               "test_actual_gpu_primary_only_group_pipeline",
-              "test_joint_five_scale_resample_uses_actual_gpu",
           }
-          assert len(cases) == 7 and {case.get("name") for case in cases} == expected, "All seven hardware contracts must execute"
+          assert len(cases) == 6 and {case.get("name") for case in cases} == expected, "All six hardware contracts must execute"
           for case in cases:
               assert not any(case.find(tag) is not None for tag in ("skipped", "failure", "error")), "Hardware contracts must pass without skips"
           PY
@@ -371,4 +369,42 @@ jobs:
           with open("release-acceptance/sales_readiness_manifest.json", encoding="utf-8") as fh:
               manifest = json.load(fh)
           assert manifest["status"] == "ok"
+          PY
+
+  focal-gpu-joint-bootstrap:
+    # The five-scale joint bootstrap ran past focal-gpu-native's 240-minute
+    # limit on s1 (PR #2246, 2026-09-29), so it is post-merge evidence on
+    # main/develop pushes rather than a PR gate. Same isolated runner rules.
+    if: ${{ github.event_name == 'push' }}
+    runs-on: [self-hosted, linux, x64, focal-gpu-isolated]
+    timeout-minutes: 720
+    env:
+      FOCAL_GPU_NATIVE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.97.1
+      - name: Build isolated Python environment and native core
+        run: |
+          python -m venv .venv-focal-gpu
+          .venv-focal-gpu/bin/python -m pip install --require-hashes -r requirements/ci.txt
+          .venv-focal-gpu/bin/python -m pip install --no-deps --no-build-isolation -e .
+      - name: Execute the joint five-scale bootstrap on hardware
+        run: |
+          .venv-focal-gpu/bin/python -m pytest -q -s --junitxml=joint-bootstrap-junit.xml \
+            tests/test_joint_two_tier_score_bootstrap.py::test_joint_five_scale_resample_uses_actual_gpu
+      - name: Reject a skipped joint bootstrap
+        run: |
+          .venv-focal-gpu/bin/python - <<'PY'
+          from xml.etree import ElementTree
+
+          cases = ElementTree.parse("joint-bootstrap-junit.xml").getroot().findall(".//testcase")
+          assert [case.get("name") for case in cases] == ["test_joint_five_scale_resample_uses_actual_gpu"], "Joint bootstrap must execute"
+          assert not any(cases[0].find(tag) is not None for tag in ("skipped", "failure", "error")), "Joint bootstrap must pass without skips"
           PY

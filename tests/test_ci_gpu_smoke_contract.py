@@ -120,3 +120,19 @@ def test_s1_pinned_no_prior_bits_run_only_on_the_isolated_runner() -> None:
         " -- --ignored --exact none_path_matches_main_bits_single_and_multigroup"
     ) in gpu_job
     assert 'grep -q "test result: ok. 1 passed"' in gpu_job
+
+
+def test_joint_five_scale_bootstrap_is_post_merge_s1_evidence_not_a_pr_gate() -> None:
+    """It exceeded focal-gpu-native's 240 minutes on s1, so it must not gate PRs.
+
+    A push-only s1 job still executes it, keeping the allowlist owner honest.
+    """
+    workflow = _CI_WORKFLOW.read_text(encoding="utf-8")
+    node = "tests/test_joint_two_tier_score_bootstrap.py::test_joint_five_scale_resample_uses_actual_gpu"
+    gate = workflow.split("\n  focal-gpu-native:\n", 1)[1].split("\n  rust:\n", 1)[0]
+    assert node not in gate
+    job = workflow.split("\n  focal-gpu-joint-bootstrap:\n", 1)[1]
+    assert "if: ${{ github.event_name == 'push' }}" in job
+    assert "runs-on: [self-hosted, linux, x64, focal-gpu-isolated]" in job
+    assert node in job
+    assert "focal-gpu-joint-bootstrap" not in workflow.split("\n  python:\n", 1)[1].split("\n  focal-gpu-native:\n", 1)[0]

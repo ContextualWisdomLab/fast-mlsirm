@@ -66,4 +66,4 @@ tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_reference_focal_expecte
 tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior # actual hardware owned by focal-gpu-native required through python (reviewed 2026-09-29)
 tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_primary_only_group_pipeline # actual hardware owned by focal-gpu-native required through python (reviewed 2026-09-29)
 tests/test_two_tier_group_pipeline_native.py::test_group_pipeline_preserves_slots_priors_and_nonconvergence # actual hardware owned by focal-gpu-native required through python (reviewed 2026-09-29)
-tests/test_joint_two_tier_score_bootstrap.py::test_joint_five_scale_resample_uses_actual_gpu # actual hardware owned by focal-gpu-native required through python (reviewed 2026-09-29)
+tests/test_joint_two_tier_score_bootstrap.py::test_joint_five_scale_resample_uses_actual_gpu # actual hardware owned by focal-gpu-joint-bootstrap on main/develop pushes; exceeds the 240-minute PR GPU lane (reviewed 2026-09-29)
