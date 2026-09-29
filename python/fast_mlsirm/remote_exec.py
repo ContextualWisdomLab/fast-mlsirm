@@ -4,8 +4,8 @@
 """Transport-agnostic remote execution contracts for legal numerical split units.
 
 Issue #2001 L4 slice: job envelopes and an in-process loopback executor for
-independent split units that may later be dispatched across a heterogenous
-worker pool. Valkey/Redis transport is intentionally out of scope here.
+independent split units dispatched across a heterogeneous worker pool, via
+subprocess/SSH workers or a Valkey Streams consumer group.
 
 Legal remote split families (inventory comment-5742475833, table C):
 
@@ -543,6 +543,26 @@ class RemoteExecutionBackend(Protocol):
         """Execute ``envelopes`` and return one outcome per unit in index order."""
 
 
+class RemoteDispatchBackend(Protocol):
+    """Transport executor that ships envelopes and the verified payload to workers.
+
+    Unlike :class:`RemoteExecutionBackend`, the handler is not a caller
+    argument: the worker selects it from the envelope family, so the payload
+    whose identity matches ``manifest.payload_sha256`` travels instead.
+    """
+
+    def run_batch(
+        self,
+        envelopes: Sequence[RemoteJobEnvelope],
+        *,
+        worker_manifest: RemoteRunManifest,
+        requested_device: str = "cpu",
+        effective_device: str = "cpu",
+        payload: Mapping[str, object] | None = None,
+    ) -> tuple[RemoteJobOutcome, ...]:
+        """Dispatch ``envelopes`` and return one outcome per unit in index order."""
+
+
 class CohortMismatchError(ValueError):
     """Raised when a worker manifest fails the fail-closed cohort gate."""
 
@@ -721,6 +741,23 @@ def _valkey_text(value: object) -> str:
     raise ValueError("Valkey stream fields must be UTF-8 text")
 
 
+_MAX_VALKEY_OUTCOME_JSON_BYTES = 1_048_576
+
+
+def _valkey_outcome(raw: object) -> RemoteJobOutcome:
+    """Decode one Valkey outcome under the worker stdout size bound."""
+    text = _valkey_text(raw)
+    if len(text.encode("utf-8")) > _MAX_VALKEY_OUTCOME_JSON_BYTES:
+        raise ValueError(
+            f"Valkey outcome JSON exceeds {_MAX_VALKEY_OUTCOME_JSON_BYTES} bytes"
+        )
+    try:
+        decoded = json.loads(text)
+    except RecursionError as exc:
+        raise ValueError("Valkey outcome JSON is too deeply nested") from exc
+    return _outcome_from_dict(decoded)
+
+
 class ValkeyStreamsOutcomeStore:
     """Outcome store using a Valkey consumer group and pending-entry reclaim.
 
@@ -729,6 +766,9 @@ class ValkeyStreamsOutcomeStore:
     ``valkey`` clients at the deployment boundary. Stream delivery is separate
     from the durable ``{stream}:committed`` hash, which mirrors the SQLite
     first-success contract across process restarts and consumer-group members.
+    Failed outcomes are terminal too: the first one per fingerprint lands in
+    ``{stream}:failed`` so callers receive it instead of waiting for a timeout,
+    while a later success still wins.
     """
 
     def __init__(
@@ -745,6 +785,7 @@ class ValkeyStreamsOutcomeStore:
         self._client = client
         self._stream = _text(stream, "stream")
         self._committed_key = f"{self._stream}:committed"
+        self._failed_key = f"{self._stream}:failed"
         self._group = _text(group, "group")
         self._consumer = _text(consumer, "consumer")
         self._min_idle_ms = _non_negative_int(min_idle_ms, "min_idle_ms")
@@ -772,7 +813,15 @@ class ValkeyStreamsOutcomeStore:
         stored = self._client.hget(self._committed_key, key)
         if stored is None:
             return None
-        return _outcome_from_dict(json.loads(_valkey_text(stored)))
+        return _valkey_outcome(stored)
+
+    def _terminal_outcome(self, fingerprint: str) -> RemoteJobOutcome | None:
+        """Return the committed success, else the first recorded failure."""
+        committed = self._committed_outcome(fingerprint)
+        if committed is not None:
+            return committed
+        stored = self._client.hget(self._failed_key, _fingerprint(fingerprint, "fingerprint"))
+        return None if stored is None else _valkey_outcome(stored)
 
     def _persist_committed(
         self, fingerprint: str, outcome: RemoteJobOutcome
@@ -783,7 +832,7 @@ class ValkeyStreamsOutcomeStore:
         stored = self._client.hget(self._committed_key, key)
         if stored is None:  # pragma: no cover - hash write invariant
             raise RuntimeError("successful outcome commit was not persisted")
-        return _outcome_from_dict(json.loads(_valkey_text(stored)))
+        return _valkey_outcome(stored)
 
     def _block_ms_for_read(self, deadline: float | None) -> int | None:
         """Return BLOCK milliseconds, or ``None`` to omit BLOCK (non-blocking).
@@ -839,12 +888,15 @@ class ValkeyStreamsOutcomeStore:
                 for key, value in raw_fields.items()
             }
             fingerprint = _fingerprint(fields.get("fingerprint"), "fingerprint")
-            outcome = _outcome_from_dict(json.loads(fields["outcome"]))
-            if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
-                raise ValueError("Valkey outcome stream accepts completed outcomes only")
+            outcome = _valkey_outcome(fields["outcome"])
             if outcome.envelope_fingerprint != fingerprint:
                 raise ValueError("Valkey outcome fingerprint does not match its payload")
-            self._persist_committed(fingerprint, outcome)
+            if outcome.delivery_state is RemoteJobDeliveryState.COMPLETED:
+                self._persist_committed(fingerprint, outcome)
+            else:
+                self._client.hsetnx(
+                    self._failed_key, fingerprint, self._serialize_outcome(outcome)
+                )
             self._client.xack(self._stream, self._group, record_id)
 
     def _drain(self, *, deadline: float | None = None) -> None:
@@ -907,19 +959,20 @@ class ValkeyStreamsOutcomeStore:
         self._drain()
         raw = self._client.hgetall(self._committed_key)
         return {
-            _valkey_text(fingerprint): _outcome_from_dict(json.loads(_valkey_text(payload)))
+            _valkey_text(fingerprint): _valkey_outcome(payload)
             for fingerprint, payload in raw.items()
         }
 
-    def wait_for_committed(
+    def wait_for_terminal(
         self,
         fingerprints: Sequence[str],
         *,
         deadline: float,
     ) -> Mapping[str, RemoteJobOutcome]:
-        """Drain/claim until ``deadline`` or every fingerprint is durably committed.
+        """Drain/claim until ``deadline`` or every fingerprint has a terminal outcome.
 
-        After the wait loop exits, perform one final hash lookup so a drain that
+        A committed success is preferred over a recorded failure. After the
+        wait loop exits, perform one final hash lookup so a drain that
         persisted the last needed fingerprint at/after the deadline does not
         report a false timeout.
         """
@@ -927,14 +980,14 @@ class ValkeyStreamsOutcomeStore:
         found: dict[str, RemoteJobOutcome] = {}
         while needed - found.keys() and time.monotonic() < deadline:
             for fingerprint in list(needed - found.keys()):
-                outcome = self._committed_outcome(fingerprint)
+                outcome = self._terminal_outcome(fingerprint)
                 if outcome is not None:
                     found[fingerprint] = outcome
             if len(found) == len(needed):
                 break
             self._drain(deadline=deadline)
         for fingerprint in list(needed - found.keys()):
-            outcome = self._committed_outcome(fingerprint)
+            outcome = self._terminal_outcome(fingerprint)
             if outcome is not None:
                 found[fingerprint] = outcome
         return found
@@ -984,8 +1037,12 @@ class ValkeyStreamsBackend:
     ) -> None:
         self._client = client
         self._jobs_stream = _text(jobs_stream, "jobs_stream")
-        if wait_timeout_s <= 0:
-            raise ValueError("wait_timeout_s must be > 0")
+        if (
+            type(wait_timeout_s) not in (int, float)
+            or not math.isfinite(wait_timeout_s)
+            or wait_timeout_s <= 0
+        ):
+            raise ValueError("wait_timeout_s must be a finite positive number")
         self._wait_timeout_s = float(wait_timeout_s)
         self._outcomes = ValkeyStreamsOutcomeStore(
             client,
@@ -1034,7 +1091,7 @@ class ValkeyStreamsBackend:
             )
         deadline = time.monotonic() + self._wait_timeout_s
         fingerprints = tuple(envelope_fingerprint(envelope) for envelope in envelope_batch)
-        committed = self._outcomes.wait_for_committed(fingerprints, deadline=deadline)
+        committed = self._outcomes.wait_for_terminal(fingerprints, deadline=deadline)
         outcomes = []
         for envelope in envelope_batch:
             fingerprint = envelope_fingerprint(envelope)

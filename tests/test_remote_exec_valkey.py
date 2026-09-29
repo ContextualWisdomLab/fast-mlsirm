@@ -167,7 +167,7 @@ def test_valkey_store_drains_multi_batch_stream_without_block_zero() -> None:
     assert 0 not in client.xreadgroup_blocks
 
 
-def test_valkey_wait_for_committed_empty_stream_respects_deadline() -> None:
+def test_valkey_wait_for_terminal_empty_stream_respects_deadline() -> None:
     client = FakeValkey()
     store = ValkeyStreamsOutcomeStore(
         client, stream="outcomes", group="drivers", consumer="d1", block_ms=50
@@ -177,7 +177,7 @@ def test_valkey_wait_for_committed_empty_stream_respects_deadline() -> None:
     started = time.monotonic()
     deadline = started + wait_s
 
-    found = store.wait_for_committed((fingerprint,), deadline=deadline)
+    found = store.wait_for_terminal((fingerprint,), deadline=deadline)
     elapsed = time.monotonic() - started
 
     assert found == {}
@@ -187,7 +187,7 @@ def test_valkey_wait_for_committed_empty_stream_respects_deadline() -> None:
     assert all(block != 0 for block in client.xreadgroup_blocks)
 
 
-def test_valkey_wait_for_committed_final_lookup_after_drain_past_deadline() -> None:
+def test_valkey_wait_for_terminal_final_lookup_after_drain_past_deadline() -> None:
     """Last drain may persist after the deadline; return that fingerprint, not timeout."""
 
     class PersistThenStall(FakeValkey):
@@ -215,7 +215,7 @@ def test_valkey_wait_for_committed_final_lookup_after_drain_past_deadline() -> N
     )
     deadline = time.monotonic() + 0.05
 
-    found = store.wait_for_committed((outcome.envelope_fingerprint,), deadline=deadline)
+    found = store.wait_for_terminal((outcome.envelope_fingerprint,), deadline=deadline)
 
     assert found == {outcome.envelope_fingerprint: outcome}
     assert client.acked == ["1-0"]
@@ -418,3 +418,111 @@ def test_valkey_backend_orders_outcomes_by_unit_then_run_id() -> None:
         envelopes, worker_manifest=_manifest(), payload=_MC_PAYLOAD
     )
     assert [outcome.run_id for outcome in outcomes] == ["run_a", "run_b"]
+
+
+def _failed_outcome(unit_index: int) -> RemoteJobOutcome:
+    def fail(_envelope, _seed):
+        raise RuntimeError("did not converge")
+
+    return LoopbackExecutor().run_batch(
+        (_envelope(unit_index=unit_index),), fail, worker_manifest=_manifest()
+    )[0]
+
+
+def test_valkey_backend_returns_failed_outcome_instead_of_timing_out() -> None:
+    class FailingWorkerValkey(FakeValkey):
+        def xadd(self, name, fields):
+            record_id = super().xadd(name, fields)
+            if name == "jobs":
+                self.streams.setdefault("outcomes", []).append(
+                    ("7-0", _record(_failed_outcome(2)))
+                )
+            return record_id
+
+    client = FailingWorkerValkey()
+    started = time.monotonic()
+    (outcome,) = _backend(client).run_batch(
+        (_envelope(unit_index=2),), worker_manifest=_manifest(), payload=_MC_PAYLOAD
+    )
+
+    assert outcome.delivery_state is RemoteJobDeliveryState.FAILED
+    assert "did not converge" in outcome.error_message
+    assert time.monotonic() - started < 0.2
+    assert "7-0" in client.acked
+
+
+def test_valkey_store_prefers_later_success_over_recorded_failure() -> None:
+    client = FakeValkey()
+    failed = _failed_outcome(3)
+    completed = _completed_outcome(3, {"retry": "ok"})
+    client.streams["outcomes"] = [("1-0", _record(failed)), ("2-0", _record(completed))]
+    store = ValkeyStreamsOutcomeStore(
+        client, stream="outcomes", group="drivers", consumer="d1", block_ms=0
+    )
+
+    found = store.wait_for_terminal(
+        (completed.envelope_fingerprint,), deadline=time.monotonic() + 0.2
+    )
+
+    assert found[completed.envelope_fingerprint] == completed
+    assert store.committed_success(completed.envelope_fingerprint) == completed
+
+
+def test_valkey_store_failure_is_terminal_but_not_a_committed_success() -> None:
+    client = FakeValkey()
+    failed = _failed_outcome(4)
+    client.streams["outcomes"] = [("1-0", _record(failed))]
+    store = ValkeyStreamsOutcomeStore(
+        client, stream="outcomes", group="drivers", consumer="d1", block_ms=0
+    )
+
+    found = store.wait_for_terminal(
+        (failed.envelope_fingerprint,), deadline=time.monotonic() + 0.2
+    )
+
+    assert found[failed.envelope_fingerprint] == failed
+    assert store.committed_success(failed.envelope_fingerprint) is None
+
+
+@pytest.mark.parametrize("timeout", [float("nan"), float("inf"), True, "5"])
+def test_valkey_backend_rejects_non_finite_or_non_numeric_wait_timeout(timeout) -> None:
+    with pytest.raises(ValueError, match="wait_timeout_s"):
+        ValkeyStreamsBackend(
+            FakeValkey(),
+            jobs_stream="jobs",
+            outcomes_stream="outcomes",
+            group="drivers",
+            consumer="d1",
+            wait_timeout_s=timeout,
+        )
+
+
+@pytest.mark.parametrize(
+    "outcome_json",
+    ["[" * 100_000 + "]" * 100_000, json.dumps({"pad": "x" * 2_000_000})],
+    ids=["deeply-nested", "oversized"],
+)
+def test_valkey_store_rejects_unbounded_outcome_json(outcome_json) -> None:
+    client = FakeValkey()
+    client.streams["outcomes"] = [
+        ("1-0", {"fingerprint": "a" * 64, "outcome": outcome_json})
+    ]
+    store = ValkeyStreamsOutcomeStore(
+        client, stream="outcomes", group="drivers", consumer="d1", block_ms=0
+    )
+
+    with pytest.raises(ValueError, match="outcome JSON"):
+        store.consume_available()
+    assert client.acked == []
+
+
+def test_transport_executors_share_the_dispatch_protocol_signature() -> None:
+    import inspect
+
+    from fast_mlsirm.remote_exec import RemoteDispatchBackend, SubprocessExecutor
+
+    expected = inspect.signature(RemoteDispatchBackend.run_batch)
+    for backend in (SubprocessExecutor, ValkeyStreamsBackend):
+        assert inspect.signature(backend.run_batch).parameters.keys() == (
+            expected.parameters.keys()
+        ), backend.__name__

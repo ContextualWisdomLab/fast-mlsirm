@@ -10,7 +10,7 @@ each accepted record with `XACK`. Claim and fresh loops process bounded
 wait deadline so a stream that keeps receiving messages cannot hang past the
 deadline. Follow-up `XREADGROUP` calls omit `BLOCK` entirely — Redis/Valkey
 treat `BLOCK 0` as wait-forever — and any blocking read is capped to the
-remaining wait deadline. `wait_for_committed` performs a final hash lookup
+remaining wait deadline. `wait_for_terminal` performs a final hash lookup
 after the wait loop so a drain that persisted the last fingerprint at/after
 the deadline does not report a false timeout. Durable lookup uses a companion
 hash at ``{stream}:committed`` with ``HSETNX`` so the first successful outcome
@@ -23,6 +23,14 @@ identity equals every envelope's ``manifest.payload_sha256``; the job record
 carries it as a canonical-JSON ``payload`` field so workers never execute a
 unit without its configuration. Outcomes return ordered by
 ``(unit_index, run_id)``.
+
+Failed outcomes are terminal. The first failure per fingerprint is stored in
+``{stream}:failed`` and acknowledged, so ``run_batch`` returns it beside the
+successful units instead of timing out. A later success for the same
+fingerprint still wins, and ``committed_success`` reports successes only.
+Outcome records larger than 1 MiB (the worker stdout bound) or too deeply
+nested to decode are rejected before they are acknowledged, and
+``wait_timeout_s`` must be a finite positive number.
 
 The adapter accepts a synchronous redis-py-compatible client supplied by the
 host application; fast-mlsirm does not add a Valkey client dependency. The
