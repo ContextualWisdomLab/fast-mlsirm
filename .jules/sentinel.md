@@ -59,3 +59,8 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+
+## 2026-10-18 - [JSON Depth Validator Underflow Vulnerability]
+**Vulnerability:** JSON 깊이(depth) 검증에서 닫는 괄호(`]` 또는 `}`)를 만날 때 조건 없이 `depth -= 1`을 수행하면 잘못된 입력에서 깊이 계산이 부정확해질 수 있습니다. 그러나 앞에 짝이 맞지 않는 닫는 괄호가 있는 입력은 유효하지 않은 JSON이므로, 그 자체로 깊이 제한 우회나 재귀 기반 DoS를 일으킨다고 설명해서는 안 됩니다.
+**Learning:** `json.loads` 실행 중 `RecursionError`를 방지하기 위해 수동으로 JSON 중첩 깊이를 검증할 때, 여는 괄호와 닫는 괄호의 짝이 맞지 않는 잘못된 문자열이 입력되면 depth 카운터가 0 미만으로 떨어질 수 있습니다. 이러한 언더플로우는 공격자가 depth 카운터를 조작하여 방어 로직을 무력화하는 수단으로 사용될 수 있음을 배웠습니다.
+**Prevention:** JSON 깊이를 계산할 때 닫는 괄호를 만나면 항상 `if depth > 0:`인지 확인한 후 감소시켜 카운터가 음수로 언더플로우되는 것을 방지해야 합니다.
