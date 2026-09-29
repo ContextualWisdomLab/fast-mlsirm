@@ -1950,4 +1950,6 @@ jobs:
           # retryable without failing on already-uploaded filenames.
           skip-existing: true
       - name: Verify published PyPI matrix against admission
-        run: python3 scripts/ci/verify_published_pypi.py admission/admitted-manifest.tsv '${{ inputs.release_tag }}'
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: python3 scripts/ci/verify_published_pypi.py admission/admitted-manifest.tsv "$RELEASE_TAG"
