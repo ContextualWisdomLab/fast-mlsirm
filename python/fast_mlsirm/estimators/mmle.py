@@ -23,6 +23,8 @@ GRM are separate follow-up milestones.
 
 from __future__ import annotations
 
+from statistics import NormalDist
+
 import numpy as np
 from numpy.polynomial.hermite_e import hermegauss
 
@@ -113,6 +115,45 @@ def gauss_hermite_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
     validated_nodes = _validate_quadrature_node_count(n_nodes)
     nodes, raw_weights = hermegauss(validated_nodes)
     weights = raw_weights / raw_weights.sum()
+    return nodes, weights
+
+
+def equal_probability_normal_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
+    """Equal-probability mid-bin normal quantiles for a standard-normal prior.
+
+    For ``n_nodes = n``, nodes are ``Phi^{-1}((arange(1, n+1) - 0.5) / n)``
+    with uniform weights ``1/n``: the composite midpoint rule on the
+    probability scale after the substitution ``u = Phi(z)``, so
+    ``E[f(Z)] = integral_0^1 f(Phi^{-1}(u)) du``. It is not Gauss-Hermite
+    quadrature and carries no polynomial-exactness guarantee. There is no
+    upper bound on ``n``; callers choose the node count for their study.
+
+    ``Phi^{-1}`` is the standard library's :meth:`statistics.NormalDist.inv_cdf`,
+    which implements Wichura's (1988) algorithm AS 241 (PPND16, about 16
+    significant digits; p. 477), so no SciPy dependency is required.
+
+    References
+    ----------
+    Wichura, M. J. (1988). Algorithm AS 241: The percentage points of the
+    normal distribution. *Applied Statistics, 37*(3), 477-484.
+    https://doi.org/10.2307/2347330
+    """
+    if isinstance(n_nodes, (bool, np.bool_)) or not isinstance(
+        n_nodes, (int, np.integer)
+    ):
+        raise ValueError("n_nodes must be a positive integer")
+    n = int(n_nodes)
+    if n < 1:
+        raise ValueError("n_nodes must be >= 1")
+    # Evaluate the upper half and mirror it so the rule is exactly antisymmetric
+    # (p and 1 - p round differently in float64); the odd-n centre is Phi^{-1}(1/2) = 0.
+    inv_cdf = NormalDist().inv_cdf
+    upper = np.array(
+        [inv_cdf((k - 0.5) / n) for k in range(n - n // 2 + 1, n + 1)], dtype=np.float64
+    )
+    centre = np.zeros(n % 2, dtype=np.float64)
+    nodes = np.concatenate((-upper[::-1], centre, upper))
+    weights = np.full(n, 1.0 / n, dtype=np.float64)
     return nodes, weights
 
 
