@@ -32,9 +32,9 @@ python scripts/fipc_research_adapter_preflight.py derived.json \
 ```
 
 The materializer fails closed on any mismatch and writes a new derived JSON;
-it never edits the input artifact. An output path that names the input file
-(the same path, a `.`/`..` alias, a symlink, or a hard link) is refused, and
-the derived file is published by temp-file, `fsync`, and atomic rename. The
+it never edits its inputs. An output path that names the artifact or either
+sidecar, whether by the same path, a `.`/`..` alias, a symlink, or a hard
+link, is refused, and the derived file is published by temp-file, `fsync`, and atomic rename. The
 derived JSON records a `research_adapter` block with the input artifact
 SHA-256 and the canonical SHA-256 of both sidecars.
 

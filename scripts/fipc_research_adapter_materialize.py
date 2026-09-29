@@ -45,7 +45,12 @@ def _is_int(value: Any) -> bool:
 
 
 def _is_finite(value: Any) -> bool:
-    return type(value) in (int, float) and math.isfinite(value)
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except OverflowError:
+        return False
 
 
 def _row_failures(artifact: dict[str, Any], row: Any) -> list[str]:
@@ -105,13 +110,14 @@ def sidecar_failures(artifact: dict[str, Any], row: Any, expected: Any) -> list[
     return _row_failures(artifact, row) + _expected_failures(artifact, expected)
 
 
-def _refuse_input_alias(artifact_status: os.stat_result, output_path: Path) -> None:
+def _refuse_input_alias(inputs: list[os.stat_result], output_path: Path) -> None:
     try:
         output_status = output_path.stat()
     except FileNotFoundError:
         return
-    if (output_status.st_dev, output_status.st_ino) == (artifact_status.st_dev, artifact_status.st_ino):
-        raise ValueError(f"{output_path}: output names the input artifact; refusing to overwrite it")
+    identities = {(status.st_dev, status.st_ino) for status in inputs}
+    if (output_status.st_dev, output_status.st_ino) in identities:
+        raise ValueError(f"{output_path}: output names an input artifact or sidecar; refusing to overwrite it")
 
 
 def _atomic_write(path: Path, content: bytes) -> None:
@@ -145,9 +151,10 @@ def _load(path: Path) -> tuple[dict[str, Any], bytes, os.stat_result]:
 def materialize(artifact_path: Path, row_path: Path, expected_raw_path: Path, output_path: Path) -> dict[str, Any]:
     """Validate the sidecars and atomically write a new derived artifact."""
     artifact, artifact_bytes, artifact_status = _load(artifact_path)
-    row, _, _ = _load(row_path)
-    expected, _, _ = _load(expected_raw_path)
-    _refuse_input_alias(artifact_status, output_path)
+    row, _, row_status = _load(row_path)
+    expected, _, expected_status = _load(expected_raw_path)
+    inputs = [artifact_status, row_status, expected_status]
+    _refuse_input_alias(inputs, output_path)
     failures = sidecar_failures(artifact, row, expected)
     if ADAPTER_KEY in artifact or "row_identity" in artifact:
         failures.append("artifact already carries research sidecars; materialize from the original fit artifact")
@@ -164,7 +171,7 @@ def materialize(artifact_path: Path, row_path: Path, expected_raw_path: Path, ou
     derived["focal_gpu"] = {**artifact["focal_gpu"], "expected_raw": expected}
     derived[ADAPTER_KEY] = receipt
     content = (json.dumps(derived, sort_keys=True, separators=(",", ":")) + "\n").encode()
-    _refuse_input_alias(artifact_status, output_path)
+    _refuse_input_alias(inputs, output_path)
     _atomic_write(output_path, content)
     return {**receipt, "output_artifact_sha256": _sha256(content), "output": str(output_path)}
 

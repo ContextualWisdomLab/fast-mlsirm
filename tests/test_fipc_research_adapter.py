@@ -160,8 +160,6 @@ def _tamper(field: str, payload: dict) -> None:
         row["source_input_sha256"] = "e" * 64
     elif field == "expected_value":
         expected["values"][0] += 1.0
-    elif field == "expected_nonfinite":
-        expected["values"][0] = float("nan")
     elif field == "parameter_hash":
         expected["parameter_hashes"]["theta_p_eap"] = "d" * 64
     elif field == "expected_source":
@@ -176,7 +174,6 @@ _TAMPERS = (
     "permutation_incomplete",
     "row_source",
     "expected_value",
-    "expected_nonfinite",
     "parameter_hash",
     "expected_source",
     "formula_id",
@@ -207,3 +204,40 @@ def test_row_id_tamper_is_caught_by_a_row_identity_digest(
     derived.write_text(json.dumps(payload))
     failures = preflight.validate(derived, _SOURCE, _CORE)["failures"]
     assert any("row_identity" in failure for failure in failures)
+
+
+@pytest.mark.parametrize("sidecar", ["row", "expected"])
+def test_materialize_refuses_to_overwrite_a_sidecar(paths: dict[str, Path], sidecar: str) -> None:
+    """The consumer-owned sidecars are inputs too and are never overwritten."""
+    before = paths[sidecar].read_bytes()
+    with pytest.raises(ValueError, match="input"):
+        materializer.materialize(paths["artifact"], paths["row"], paths["expected"], paths[sidecar])
+    assert paths[sidecar].read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("values", [10**400]), ("permutation", [10**400])],
+)
+def test_out_of_range_numbers_are_contract_failures(
+    paths: dict[str, Path], tmp_path: Path, field: str, value: list[int]
+) -> None:
+    """Integers beyond float64/int64 range fail closed as ValueError, not OverflowError."""
+    target = "expected" if field == "values" else "row"
+    payload = json.loads(paths[target].read_text())
+    payload[field] = value
+    paths[target].write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match=field):
+        materializer.materialize(
+            paths["artifact"], paths["row"], paths["expected"], tmp_path / "derived.json"
+        )
+
+
+def test_preflight_rejects_a_non_finite_expected_value(paths: dict[str, Path], tmp_path: Path) -> None:
+    """A NaN written into a derived artifact is refused before any field is trusted."""
+    derived = _derived(paths, tmp_path)
+    payload = json.loads(derived.read_text())
+    payload["focal_gpu"]["expected_raw"]["values"][0] = float("nan")
+    derived.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="non-finite"):
+        preflight.validate(derived, _SOURCE, _CORE)

@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from scripts._bounded_json import parse_json_bounded
     from scripts.fipc_research_adapter_materialize import ADAPTER_KEY, canonical_sha256, sidecar_failures
 except ModuleNotFoundError:
+    from _bounded_json import parse_json_bounded
     from fipc_research_adapter_materialize import ADAPTER_KEY, canonical_sha256, sidecar_failures
 
 REQUIRED_TOP_LEVEL = (
@@ -31,10 +33,6 @@ REQUIRED_TOP_LEVEL = (
 )
 
 
-def _digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def _check_equal(result: dict[str, Any], path: str, expected: str | None, failures: list[str]) -> None:
     value = result.get(path)
     if expected is not None and value != expected:
@@ -42,7 +40,10 @@ def _check_equal(result: dict[str, Any], path: str, expected: str | None, failur
 
 
 def validate(artifact: Path, expected_source: str | None, expected_core: str | None) -> dict[str, Any]:
-    payload = json.loads(artifact.read_text())
+    content = artifact.read_bytes()
+    payload = parse_json_bounded(content.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"{artifact}: expected JSON object")
     failures: list[str] = []
     missing = [key for key in REQUIRED_TOP_LEVEL if key not in payload]
     failures.extend(f"missing top-level field: {key}" for key in missing)
@@ -88,7 +89,7 @@ def validate(artifact: Path, expected_source: str | None, expected_core: str | N
 
     return {
         "artifact": str(artifact),
-        "artifact_sha256": _digest(artifact),
+        "artifact_sha256": hashlib.sha256(content).hexdigest(),
         "source_sha": payload.get("source_sha"),
         "loaded_core_sha256": payload.get("loaded_core_sha256"),
         "gpu_backend": focal.get("gpu_backend"),
