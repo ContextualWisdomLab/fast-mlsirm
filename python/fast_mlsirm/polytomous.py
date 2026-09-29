@@ -113,7 +113,8 @@ def _probabilists_gauss_hermite(q: int) -> tuple[np.ndarray, np.ndarray]:
     Nodes are the eigenvalues of the symmetric tridiagonal Jacobi matrix of
     the ``He_n`` recurrence (``alpha_k = 0``, ``beta_k = k``); weights are the
     squared first eigenvector components, normalized to sum to one (Golub &
-    Welsch, 1969, eqs. 2.1-2.2, pp. 222-223). This is the algorithm of
+    Welsch, 1969: recurrence eq. 2.1, p. 222; symmetric Jacobi matrix eq. 2.2
+    and weights ``w_j = q_{0j}^2 mu_0`` eq. 2.6, p. 223). This is the algorithm of
     ``crates/mlsirm-core/src/quadrature.rs`` ``gauss_hermite_probabilists``
     (#1929). ``numpy.polynomial.hermite_e.hermegauss`` is not used: its
     closed-form ``1 / He_{n-1}^2`` weights underflow to all-zero from

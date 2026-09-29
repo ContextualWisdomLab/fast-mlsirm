@@ -13,7 +13,6 @@ import warnings
 
 import numpy as np
 import pytest
-
 from fast_mlsirm.polytomous import (
     _probabilists_gauss_hermite,
     check_bifactor_expected_total_score_monotonicity,
@@ -84,7 +83,7 @@ def test_public_checks_return_finite_curves_at_high_q(check) -> None:
 )
 def test_non_finite_curve_fails_closed(check, monkeypatch) -> None:
     """Any numerical fault that yields a NaN curve must raise, never report monotone."""
-    import fast_mlsirm.polytomous as polytomous
+    from fast_mlsirm import polytomous
 
     def nan_prediction(fit, theta):
         return np.full((np.asarray(theta).size, 1), np.nan)
