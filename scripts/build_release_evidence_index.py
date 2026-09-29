@@ -136,9 +136,12 @@ def _dist_entries(dist_dir: Path) -> list[dict[str, Any]]:
     return entries
 
 
-def _content_security_policy() -> str:
+def _content_security_policy(css_content: str) -> str:
     """Return the restrictive policy used by the self-contained HTML index."""
-    return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    import base64
+    import hashlib
+    digest = base64.b64encode(hashlib.sha256(css_content.encode("utf-8")).digest()).decode("utf-8")
+    return f"default-src 'none'; style-src 'sha256-{digest}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _format_value(value: Any) -> str:
@@ -234,11 +237,9 @@ def _render_report_html(index: dict[str, Any]) -> str:
             "<head>",
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(), quote=True)}">',
+            f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(_report_css()), quote=True)}">',
             "<title>fast-mlsirm Release Evidence Index</title>",
-            "<style>",
-            _report_css(),
-            "</style>",
+            f"<style>{_report_css()}</style>",
             "</head>",
             "<body>",
             "<main>",
