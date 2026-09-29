@@ -7195,8 +7195,13 @@ fn fit_poly_fipc(
     max_iter: usize,
     tol: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
-    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
+    // Copy every numpy view into Rust-owned data before detaching: another
+    // Python thread may mutate the source arrays while the GIL is released.
+    let obs: Option<Vec<bool>> = observed
+        .as_ref()
+        .map(|o| o.as_slice().map(<[bool]>::to_vec))
+        .transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs.as_deref(), n_cat)?;
     let anchor_vec = anchor.as_slice()?.to_vec();
     let slope_vec = anchor_slope.as_slice()?.to_vec();
     let cat_view = anchor_cat_params.as_array();
@@ -7210,20 +7215,23 @@ fn fit_poly_fipc(
         .into_iter()
         .map(|row| row.to_vec())
         .collect();
-    let fit = core_fit_poly_fipc(
-        &yv,
-        obs,
-        n_persons,
-        n_items,
-        n_cat,
-        &anchor_vec,
-        &slope_vec,
-        &cat_nested,
-        q_theta,
-        max_iter,
-        tol,
-    )
-    .map_err(PyValueError::new_err)?;
+    let fit = py
+        .detach(|| {
+            core_fit_poly_fipc(
+                &yv,
+                obs.as_deref(),
+                n_persons,
+                n_items,
+                n_cat,
+                &anchor_vec,
+                &slope_vec,
+                &cat_nested,
+                q_theta,
+                max_iter,
+                tol,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("slope", fit.slope)?;
     out.set_item("cat_params", fit.cat_params)?;
