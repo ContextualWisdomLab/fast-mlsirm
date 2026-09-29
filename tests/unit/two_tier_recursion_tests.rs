@@ -156,3 +156,14 @@ fn non_decreasing_or_non_finite_thresholds_return_err() {
     ok.thresholds = vec![0.5, -0.5];
     assert!(two_tier_expected_raw(&ok, &[0.0], nodes, weights).is_ok());
 }
+
+#[test]
+fn non_finite_slopes_return_err() {
+    let (nodes, weights) = gh_rule(5).expect("gh_rule(5)");
+    let mut primary = degenerate_params(1, 1, 2);
+    primary.a_primary = vec![f64::NAN];
+    assert!(two_tier_expected_raw(&primary, &[0.0], nodes, weights).is_err());
+    let mut specific = degenerate_params(1, 1, 2);
+    specific.a_specific = vec![f64::INFINITY];
+    assert!(two_tier_expected_raw(&specific, &[0.0], nodes, weights).is_err());
+}
