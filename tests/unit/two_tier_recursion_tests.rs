@@ -100,3 +100,26 @@ fn degenerate_dimensions_return_err_instead_of_panicking() {
         assert!(direct_enumeration_two_tier(params, theta, nodes, weights).is_err());
     }
 }
+
+#[test]
+fn specific_map_below_minus_one_is_rejected_not_treated_as_specific_free() {
+    let (nodes, weights) = gh_rule(5).expect("gh_rule(5)");
+    let mut params = degenerate_params(1, 1, 2);
+    params.specific_map = vec![-2];
+    assert!(two_tier_expected_raw(&params, &[0.0], nodes, weights).is_err());
+}
+
+#[test]
+fn direct_enumeration_rejects_pattern_count_overflow() {
+    let n_cat = 65_536usize;
+    let params = TwoTierItemParams {
+        a_primary: vec![1.0; 4],
+        a_specific: vec![0.5; 4],
+        thresholds: vec![0.0; 4 * (n_cat - 1)],
+        specific_map: vec![0; 4],
+        n_primary: 1,
+        n_specific: 1,
+        n_cat,
+    };
+    assert!(direct_enumeration_two_tier(&params, &[0.0], &[0.0], &[1.0]).is_err());
+}

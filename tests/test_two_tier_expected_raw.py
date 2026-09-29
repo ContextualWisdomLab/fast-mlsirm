@@ -125,3 +125,30 @@ def test_expected_raw_rejects_non_integer_or_out_of_range_specific_map(
     fit = _fit(_simulate(SEED + 3))
     with pytest.raises(ValueError, match="specific_map"):
         expected_raw_two_tier_grm(fit, bad_map, q_specific=21)
+
+
+@pytest.mark.parametrize(
+    "bad_map",
+    [
+        np.array([1.9, -1.7, 0, 0, 1, 1], dtype=object),
+        np.array([2**64 - 1, 0, 0, 1, 1, 1], dtype=np.uint64),
+    ],
+)
+def test_expected_raw_rejects_non_float_dtypes_that_astype_would_truncate(
+    bad_map: np.ndarray,
+) -> None:
+    fit = _fit(_simulate(SEED + 4))
+    with pytest.raises(ValueError, match="specific_map"):
+        expected_raw_two_tier_grm(fit, bad_map, q_specific=21)
+
+
+def test_expected_raw_rejects_transposed_item_parameters() -> None:
+    fit = _fit(_simulate(SEED + 5))
+    with pytest.raises(ValueError, match="threshold"):
+        expected_raw_two_tier_grm(
+            replace(fit, threshold=fit.threshold.T), SPECIFIC_MAP, q_specific=21
+        )
+    with pytest.raises(ValueError, match="a_primary"):
+        expected_raw_two_tier_grm(
+            replace(fit, a_primary=fit.a_primary.T), SPECIFIC_MAP, q_specific=21
+        )

@@ -117,21 +117,24 @@ def _specific_map_control(specific_map: object, n_items: int, n_specific: int) -
     smap = np.asarray(specific_map)
     if smap.ndim != 1 or smap.shape[0] != n_items:
         raise ValueError("specific_map must be a 1-D array of length n_items")
-    if smap.dtype.kind == "f":
-        if not bool(np.isfinite(smap).all()):
-            raise ValueError("specific_map entries must be finite integers")
-        if bool((smap != np.floor(smap)).any()):
-            raise ValueError("specific_map entries must be integers")
+    if smap.dtype.kind == "b":
+        raise ValueError("specific_map entries must be integers")
+    # Validate on exact float values for every dtype (object, uint64, ...):
+    # a direct astype(int64) would truncate 1.9 -> 1 or wrap 2**64-1 -> -1.
     try:
-        smap_int = smap.astype(np.int64, copy=False)
+        values = smap.astype(np.float64)
     except (TypeError, ValueError, OverflowError):
         raise ValueError("specific_map entries must be integers") from None
-    if bool((smap_int < -1).any()) or bool((smap_int >= n_specific).any()):
+    if not bool(np.isfinite(values).all()):
+        raise ValueError("specific_map entries must be finite integers")
+    if bool((values != np.floor(values)).any()):
+        raise ValueError("specific_map entries must be integers")
+    if bool((values < -1).any()) or bool((values >= n_specific).any()):
         raise ValueError(
             "specific_map entries must be -1 (specific-free) or in "
             f"0..{n_specific - 1}"
         )
-    return smap_int
+    return values.astype(np.int64)
 
 
 def _positive_real_control(value: object, name: str) -> float:
@@ -584,6 +587,13 @@ def expected_raw_two_tier_grm(
 
     smap_int = _specific_map_control(specific_map, n_items, n_specific)
 
+    a_primary = np.asarray(fit.a_primary, dtype=np.float64)
+    if a_primary.shape != (n_items, n_primary):
+        raise ValueError("fit.a_primary must have shape (n_items, n_primary)")
+    threshold = np.asarray(fit.threshold, dtype=np.float64)
+    if threshold.shape != (n_items, n_cat - 1):
+        raise ValueError("fit.threshold must have shape (n_items, n_cat - 1)")
+
     theta = np.asarray(fit.theta_p_eap, dtype=np.float64)
     if theta.ndim != 2 or theta.shape[1] != n_primary:
         raise ValueError("fit.theta_p_eap must have shape (n_persons, n_primary)")
@@ -596,9 +606,9 @@ def expected_raw_two_tier_grm(
 
     return np.asarray(
         core.two_tier_expected_raw(
-            np.asarray(fit.a_primary, dtype=np.float64).reshape(-1),
+            a_primary.reshape(-1),
             np.asarray(fit.a_specific, dtype=np.float64).reshape(-1),
-            np.asarray(fit.threshold, dtype=np.float64).reshape(-1),
+            threshold.reshape(-1),
             theta.reshape(-1),
             smap_int.reshape(-1),
             int(n_cat),

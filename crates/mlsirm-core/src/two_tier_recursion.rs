@@ -136,9 +136,9 @@ impl TwoTierItemParams {
         let n_blocks = self.n_specific + 1;
         let mut blocks: Vec<Vec<usize>> = vec![Vec::new(); n_blocks];
         for (i, &s) in self.specific_map.iter().enumerate() {
-            let block = if s < 0 {
+            let block = if s == -1 {
                 self.n_specific
-            } else if s as usize >= self.n_specific {
+            } else if s < -1 || s as usize >= self.n_specific {
                 return Err(format!(
                     "specific_map[{i}] = {s} out of range for n_specific = {}",
                     self.n_specific
@@ -346,10 +346,10 @@ pub fn direct_enumeration_two_tier(
     let total_max_score = params.total_max_score();
     let mut out = vec![0.0_f64; n_persons * (total_max_score + 1)];
 
-    let mut total_patterns = 1usize;
-    for _ in 0..n_items {
-        total_patterns *= n_cat;
-    }
+    let total_patterns = u32::try_from(n_items)
+        .ok()
+        .and_then(|k| n_cat.checked_pow(k))
+        .ok_or_else(|| format!("direct enumeration: {n_cat}^{n_items} patterns overflow usize"))?;
 
     for person in 0..n_persons {
         let th_p = &theta_primary[person * p..(person + 1) * p];
