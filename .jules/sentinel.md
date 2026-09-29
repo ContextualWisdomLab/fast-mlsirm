@@ -59,3 +59,11 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+## 2025-02-20 - [Fix JSON deserialization overflow vulnerability]
+**Vulnerability:** `json.loads` does not prevent standard numeric float overflow attacks (e.g., `1e999` becoming `Infinity`) despite using `parse_constant`. An attacker can send validly formatted large integers that exceed float maximums, triggering overflow memory issues or DoS vulnerabilities.
+**Learning:** `parse_constant` is insufficient for bounding normal numeric formats that overflow standard float sizes in Python. A dedicated `parse_float` hook is necessary.
+**Prevention:** Always provide a `parse_float` hook to `json.loads` when deserializing untrusted payloads, verifying the float is finite using `math.isfinite()`.
+## 2025-02-20 - [Fix `exact_integer` scoping in Multilevel module and restore `build_scoring_request`]
+**Vulnerability:** A previous test cleanup unintentionally caused a regression by replacing the local validation function `module._exact_integer` and breaking the `build_scoring_request` API export contract.
+**Learning:** Be very careful when stripping variables or moving functions around in heavily guarded public export modules (`__all__`), as the test suite rigorously asserts against exact matching identities and namespace exports.
+**Prevention:** If changes break tests related to `__all__`, ensure that any newly added/removed exports exactly match the namespace expectations of test assertions like `test_public_exports_and_docstrings_are_complete`.
