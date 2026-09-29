@@ -6,9 +6,19 @@
 //! scoring time the caller supplies fixed primary coordinates (typically
 //! ``TwoTierGrmResult.theta_p_eap``) and the specific tier is integrated out
 //! within each item block via Gauss-Hermite quadrature, then domains are
-//! convolved (Lord & Wingersky, 1984).
+//! convolved (Lord & Wingersky, 1984). This is the conditional-on-primary
+//! stage of Lord-Wingersky 2.0 (Cai, 2015, Eqs. 14-17, pp. 543-544): the
+//! within-cluster likelihood ``L_n(u_n | eta)`` integrates the specific
+//! dimension, and cluster distributions combine into ``L(s | eta)``. Here
+//! ``eta`` is the plug-in primary EAP, so the final integration over the
+//! primary density is intentionally not performed.
 //!
 //! References (APA 7th ed.):
+//!
+//! Cai, L. (2015). Lord-Wingersky algorithm version 2.0 for hierarchical item
+//! factor models with applications in test scoring, scale alignment, and model
+//! fit testing. *Psychometrika, 80*(2), 535-559.
+//! https://doi.org/10.1007/s11336-014-9411-3
 //!
 //! Lord, F. M., & Wingersky, M. S. (1984). Comparison of IRT true-score and
 //! equipercentile observed-score "equatings." *Applied Psychological

@@ -555,7 +555,15 @@ def expected_raw_two_tier_grm(
 
     ``q_specific`` is REQUIRED (no default; ADR-0028 / #1929).
 
-    Implementation basis: Lord, F. M., & Wingersky, M. S. (1984). Comparison
+    The recursion is the conditional-on-primary stage of Lord-Wingersky 2.0
+    (Cai, 2015, Eqs. 14-17, pp. 543-544), evaluated at the plug-in primary
+    EAP rather than integrated over the primary density.
+
+    Implementation basis: Cai, L. (2015). Lord-Wingersky algorithm version
+    2.0 for hierarchical item factor models with applications in test
+    scoring, scale alignment, and model fit testing. *Psychometrika, 80*(2),
+    535-559. https://doi.org/10.1007/s11336-014-9411-3; Lord, F. M., &
+    Wingersky, M. S. (1984). Comparison
     of IRT true-score and equipercentile observed-score "equatings."
     *Applied Psychological Measurement, 8*(4), 453-461.
     https://doi.org/10.1177/014662168400800409; Gibbons, R. D., & Hedeker,

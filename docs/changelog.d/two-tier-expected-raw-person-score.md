@@ -7,7 +7,7 @@
   two-tier GRM, such as the adopted G+4+W emotionality pattern. Primary
   coordinates are fixed at `fit.theta_p_eap`, and each block's specific factor
   is integrated with `q_specific` Gauss-Hermite nodes before the blocks are
-  convolved (Lord & Wingersky, 1984; Cai, Yang, & Hansen, 2011). The score is
+  convolved (Lord & Wingersky, 1984; Cai, 2015, Eqs. 14-17). The score is
   the conditional expected raw total at the primary EAP plug-in. It is not the
   mean of the joint primary posterior, so `fit.phi` does not enter it. The
   computation runs in the Rust core.
