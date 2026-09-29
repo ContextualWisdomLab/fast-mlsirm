@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import time
 
+import pytest
 
 from fast_mlsirm.remote_exec import (
+    CohortMismatchError,
+    LoopbackExecutor,
     RemoteJobDeliveryState,
     RemoteJobOutcome,
     ValkeyStreamsBackend,
@@ -14,7 +17,19 @@ from fast_mlsirm.remote_exec import (
     envelope_fingerprint,
 )
 
-from test_remote_exec import _envelope, _manifest
+from test_remote_exec import _MC_PAYLOAD, _payload_manifest
+from test_remote_exec import _envelope as _base_envelope
+
+_PAYLOAD_MANIFEST = _payload_manifest(_MC_PAYLOAD)
+
+
+def _manifest():
+    return _PAYLOAD_MANIFEST
+
+
+def _envelope(**kwargs):
+    kwargs.setdefault("manifest", _PAYLOAD_MANIFEST)
+    return _base_envelope(**kwargs)
 
 
 class FakeValkey:
@@ -269,12 +284,15 @@ def test_valkey_backend_publishes_envelope_and_consumes_completed_outcome() -> N
         consumer="d1",
     )
 
-    outcome = backend.run_batch((envelope,), worker_manifest=_manifest())[0]
+    outcome = backend.run_batch(
+        (envelope,), worker_manifest=_manifest(), payload=_MC_PAYLOAD
+    )[0]
 
     assert outcome.delivery_state is RemoteJobDeliveryState.COMPLETED
     assert outcome.result == {"worker": "valkey"}
     job = next(fields for _id, fields in client.streams["jobs"] if "envelope" in fields)
     assert job["fingerprint"] == envelope_fingerprint(envelope)
+    assert json.loads(job["payload"]) == _MC_PAYLOAD
 
 
 def test_valkey_store_restart_recovery_and_first_success_commit() -> None:
@@ -329,6 +347,7 @@ def test_valkey_backend_publishes_device_fields_and_waits_for_delayed_outcomes()
         worker_manifest=_manifest(),
         requested_device="gpu",
         effective_device="cpu",
+        payload=_MC_PAYLOAD,
     )
 
     assert len(outcomes) == 2
@@ -350,3 +369,52 @@ def test_worker_provenance_ignores_host_environment_overrides(monkeypatch) -> No
         "fast_mlsirm.remote_worker",
     ]
     assert remote_worker._library_version() != "0.0.0-spoofed"
+
+
+def _backend(client: FakeValkey) -> ValkeyStreamsBackend:
+    return ValkeyStreamsBackend(
+        client,
+        jobs_stream="jobs",
+        outcomes_stream="outcomes",
+        group="drivers",
+        consumer="d1",
+        block_ms=0,
+        wait_timeout_s=0.2,
+    )
+
+
+def test_valkey_backend_requires_payload_before_publishing() -> None:
+    client = FakeValkey()
+    with pytest.raises(ValueError, match="payload is required"):
+        _backend(client).run_batch((_envelope(),), worker_manifest=_manifest())
+    assert "jobs" not in client.streams
+
+
+def test_valkey_backend_rejects_payload_outside_manifest_identity() -> None:
+    client = FakeValkey()
+    with pytest.raises(CohortMismatchError, match="payload identity"):
+        _backend(client).run_batch(
+            (_envelope(),), worker_manifest=_manifest(), payload={"config": {"n_persons": 7}}
+        )
+    assert "jobs" not in client.streams
+
+
+def test_valkey_backend_orders_outcomes_by_unit_then_run_id() -> None:
+    class WorkerValkey(FakeValkey):
+        def xadd(self, name, fields):
+            record_id = super().xadd(name, fields)
+            if name == "jobs":
+                envelope = json.loads(fields["envelope"])
+                outcome = LoopbackExecutor().run_batch(
+                    (_envelope(unit_index=envelope["unit_index"], run_id=envelope["run_id"]),),
+                    lambda _e, _s: envelope["run_id"],
+                    worker_manifest=_manifest(),
+                )[0]
+                self.streams.setdefault("outcomes", []).append(("9-0", _record(outcome)))
+            return record_id
+
+    envelopes = (_envelope(unit_index=0, run_id="run_b"), _envelope(unit_index=0, run_id="run_a"))
+    outcomes = _backend(WorkerValkey()).run_batch(
+        envelopes, worker_manifest=_manifest(), payload=_MC_PAYLOAD
+    )
+    assert [outcome.run_id for outcome in outcomes] == ["run_a", "run_b"]

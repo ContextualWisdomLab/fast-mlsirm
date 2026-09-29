@@ -17,7 +17,12 @@ hash at ``{stream}:committed`` with ``HSETNX`` so the first successful outcome
 matches the SQLite ledger contract across process restarts and consumer-group
 members. ``run_batch`` drains until an explicit deadline instead of a single
 batch, and publishes ``requested_device`` / ``effective_device`` on each job
-envelope.
+envelope. Like ``SubprocessExecutor``, ``run_batch`` requires the numerical
+``payload`` and rejects it before any ``XADD`` unless its canonical JSON
+identity equals every envelope's ``manifest.payload_sha256``; the job record
+carries it as a canonical-JSON ``payload`` field so workers never execute a
+unit without its configuration. Outcomes return ordered by
+``(unit_index, run_id)``.
 
 The adapter accepts a synchronous redis-py-compatible client supplied by the
 host application; fast-mlsirm does not add a Valkey client dependency. The

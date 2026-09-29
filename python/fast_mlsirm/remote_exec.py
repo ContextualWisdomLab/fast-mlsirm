@@ -1003,17 +1003,18 @@ class ValkeyStreamsBackend:
         worker_manifest: RemoteRunManifest,
         requested_device: str = "cpu",
         effective_device: str = "cpu",
+        payload: Mapping[str, object] | None = None,
     ) -> tuple[RemoteJobOutcome, ...]:
         requested = _text(requested_device, "requested_device", maximum=32)
         effective = _text(effective_device, "effective_device", maximum=32)
-        envelope_batch = tuple(envelopes)
-        for envelope in envelope_batch:
-            if type(envelope) is not RemoteJobEnvelope:
-                raise TypeError("each envelope must be a RemoteJobEnvelope")
-            if not worker_manifest.compatible_with(envelope.manifest):
-                raise CohortMismatchError(
-                    "worker manifest is incompatible with envelope cohort"
-                )
+        envelope_batch = _admit_payload_batch(envelopes, worker_manifest, payload)
+        payload_json = json.dumps(
+            dict(payload),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
         for envelope in envelope_batch:
             fingerprint = envelope_fingerprint(envelope)
             self._client.xadd(
@@ -1028,6 +1029,7 @@ class ValkeyStreamsBackend:
                     ),
                     "requested_device": requested,
                     "effective_device": effective,
+                    "payload": payload_json,
                 },
             )
         deadline = time.monotonic() + self._wait_timeout_s
@@ -1040,7 +1042,9 @@ class ValkeyStreamsBackend:
             if outcome is None:
                 raise TimeoutError(f"no Valkey outcome available for {fingerprint}")
             outcomes.append(outcome)
-        return tuple(sorted(outcomes, key=lambda outcome: outcome.unit_index))
+        return tuple(
+            sorted(outcomes, key=lambda outcome: (outcome.unit_index, outcome.run_id))
+        )
 
 
 def _is_ssh_worker_host(worker_host: str) -> bool:
@@ -1235,6 +1239,34 @@ def _preflight_internal_shard_batch(envelopes: Sequence[RemoteJobEnvelope]) -> N
             admit_remote_job_internal_shard(envelope.family)
 
 
+def _admit_payload_batch(
+    envelopes: Sequence[RemoteJobEnvelope],
+    worker_manifest: RemoteRunManifest,
+    payload: Mapping[str, object] | None,
+) -> tuple[RemoteJobEnvelope, ...]:
+    """Fail closed on envelope type, shard, cohort, and payload identity before dispatch."""
+    envelope_batch = tuple(envelopes)
+    for envelope in envelope_batch:
+        if type(envelope) is not RemoteJobEnvelope:
+            raise TypeError("each envelope must be a RemoteJobEnvelope")
+    _preflight_internal_shard_batch(envelope_batch)
+    payload_sha256 = None if payload is None else payload_identity_sha256(payload)
+    for envelope in envelope_batch:
+        if not worker_manifest.compatible_with(envelope.manifest):
+            raise CohortMismatchError(
+                "worker manifest is incompatible with envelope cohort "
+                f"(run_id={envelope.run_id!r}, unit_index={envelope.unit_index})"
+            )
+        if payload is None:
+            raise ValueError(f"payload is required for {envelope.family.value}")
+        if payload_sha256 != envelope.manifest.payload_sha256:
+            raise CohortMismatchError(
+                "payload identity is incompatible with envelope cohort "
+                f"(run_id={envelope.run_id!r}, unit_index={envelope.unit_index})"
+            )
+    return envelope_batch
+
+
 class LoopbackExecutor:
     """In-process L4 stand-in that validates cohort identity and runs handlers."""
 
@@ -1369,26 +1401,7 @@ class SubprocessExecutor:
     ) -> tuple[RemoteJobOutcome, ...]:
         if not isinstance(envelopes, Sequence):
             raise TypeError("envelopes must be a sequence")
-        envelope_batch = tuple(envelopes)
-        for envelope in envelope_batch:
-            if type(envelope) is not RemoteJobEnvelope:
-                raise TypeError("each envelope must be a RemoteJobEnvelope")
-        _preflight_internal_shard_batch(envelope_batch)
-        if payload is not None:
-            payload_sha256 = payload_identity_sha256(payload)
-        for envelope in envelope_batch:
-            if not worker_manifest.compatible_with(envelope.manifest):
-                raise CohortMismatchError(
-                    "worker manifest is incompatible with envelope cohort "
-                    f"(run_id={envelope.run_id!r}, unit_index={envelope.unit_index})"
-                )
-            if payload is None:
-                raise ValueError(f"payload is required for {envelope.family.value}")
-            if payload_sha256 != envelope.manifest.payload_sha256:
-                raise CohortMismatchError(
-                    "payload identity is incompatible with envelope cohort "
-                    f"(run_id={envelope.run_id!r}, unit_index={envelope.unit_index})"
-                )
+        envelope_batch = _admit_payload_batch(envelopes, worker_manifest, payload)
 
         outcomes: list[RemoteJobOutcome] = []
         for envelope in envelope_batch:
