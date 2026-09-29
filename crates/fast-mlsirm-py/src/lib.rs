@@ -121,7 +121,11 @@ use mlsirm_core::fitstats::{
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
-use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
+use mlsirm_core::two_tier_grm::{
+    fit_two_tier_grm as core_fit_two_tier_grm,
+    two_tier_grm_reference_score_moments as core_two_tier_grm_reference_score_moments,
+    TwoTierGrmConfig,
+};
 use mlsirm_core::two_tier_recursion::{
     two_tier_expected_raw_at_q as core_two_tier_expected_raw_at_q, TwoTierItemParams,
 };
@@ -2165,6 +2169,59 @@ fn two_tier_expected_raw<'py>(
     let out = core_two_tier_expected_raw_at_q(&params, th, q_specific)
         .map_err(PyValueError::new_err)?;
     Ok(out.to_pyarray(py))
+}
+
+/// Mean, second moment and variance of the anchor-only expected raw total
+/// under an independent normal reference prior on the primaries (Phi = I),
+/// each specific factor N(0, 1)
+/// (`mlsirm_core::two_tier_grm::two_tier_grm_reference_score_moments`).
+/// `a_primary`/`a_specific`/`threshold`/`specific_map` describe the anchor
+/// items only. Returns a dict with `mean`, `second_moment`, `variance`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn two_tier_grm_reference_score_moments(
+    py: Python<'_>,
+    a_primary: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_cat: usize,
+    n_primary: usize,
+    n_specific: usize,
+    primary_mean: PyReadonlyArray1<'_, f64>,
+    primary_sd: PyReadonlyArray1<'_, f64>,
+    q_primary: usize,
+    q_specific: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let specific_map = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| i32::try_from(v))
+        .collect::<Result<Vec<i32>, _>>()
+        .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))?;
+    let params = TwoTierItemParams {
+        a_primary: a_primary.as_slice()?.to_vec(),
+        a_specific: a_specific.as_slice()?.to_vec(),
+        thresholds: threshold.as_slice()?.to_vec(),
+        specific_map,
+        n_primary,
+        n_specific,
+        n_cat,
+    };
+    let (p_mu, p_sd) = (
+        primary_mean.as_slice()?.to_vec(),
+        primary_sd.as_slice()?.to_vec(),
+    );
+    let res = py
+        .detach(|| {
+            core_two_tier_grm_reference_score_moments(&params, &p_mu, &p_sd, q_primary, q_specific)
+        })
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("mean", res.mean)?;
+    out.set_item("second_moment", res.second_moment)?;
+    out.set_item("variance", res.variance)?;
+    Ok(out.into())
 }
 
 /// Confirmatory MULTIDIMENSIONAL generalized partial credit model fit (Muraki, 1992;
@@ -10608,6 +10665,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_two_tier_grm, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_expected_raw, m)?)?;
+    m.add_function(wrap_pyfunction!(two_tier_grm_reference_score_moments, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;

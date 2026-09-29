@@ -30,8 +30,9 @@
 
 use crate::two_tier_grm::{
     fit_two_tier_grm, two_tier_grm_marginal_loglik, two_tier_grm_marginal_loglik_brute,
-    TwoTierGrmConfig,
+    two_tier_grm_reference_score_moments, TwoTierGrmConfig,
 };
+use crate::two_tier_recursion::{two_tier_expected_raw_at_q, TwoTierItemParams};
 
 // ---------------------------------------------------------------------------
 // Shared tiny two-tier problem: 10 items, P = 2 primaries in simple
@@ -580,4 +581,63 @@ fn non_convergence_is_reported_not_substituted() {
         fit.termination_reason, "max_iter_reached",
         "termination reason must say max_iter_reached"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-only reference expected-score moments. The integrand is the shared
+// `two_tier_expected_raw_at_q`; these tests pin the primary-grid integral.
+// ---------------------------------------------------------------------------
+
+/// Two anchor items on one primary: item 0 specific-free, item 1 in block 0.
+fn anchor_params(d: [f64; 4]) -> TwoTierItemParams {
+    TwoTierItemParams {
+        a_primary: vec![1.1, 0.9],
+        a_specific: vec![0.0, 0.5],
+        thresholds: d.to_vec(),
+        specific_map: vec![-1, 0],
+        n_primary: 1,
+        n_specific: 1,
+        n_cat: 3,
+    }
+}
+
+#[test]
+fn reference_moments_hit_symmetric_mean() {
+    // Symmetric thresholds and a symmetric prior give E[Y_i] = 1 exactly:
+    // sigmoid(x + c) + sigmoid(x - c) is odd-symmetric about 1 in x.
+    let m = two_tier_grm_reference_score_moments(
+        &anchor_params([0.8, -0.8, 1.5, -1.5]),
+        &[0.0],
+        &[1.0],
+        21,
+        11,
+    )
+    .unwrap();
+    assert!((m.mean - 2.0).abs() < 1e-12, "mean {}", m.mean);
+    assert!((m.variance - (m.second_moment - m.mean * m.mean)).abs() < 1e-12);
+    assert!(m.variance > 0.0);
+}
+
+#[test]
+fn one_node_primary_rule_collapses_to_the_plug_in_integrand() {
+    let params = anchor_params([1.0, -0.5, 0.4, -1.2]);
+    let m = two_tier_grm_reference_score_moments(&params, &[0.7], &[1.3], 1, 9).unwrap();
+    let plug_in = two_tier_expected_raw_at_q(&params, &[0.7], 9).unwrap()[0];
+    assert!((m.mean - plug_in).abs() < 1e-14, "{} vs {plug_in}", m.mean);
+    assert!(m.variance.abs() < 1e-12);
+}
+
+#[test]
+fn reference_moments_reject_malformed_prior_and_rules() {
+    let params = anchor_params([1.0, -1.0, 1.0, -1.0]);
+    let bad = [
+        two_tier_grm_reference_score_moments(&params, &[0.0], &[0.0], 5, 5),
+        two_tier_grm_reference_score_moments(&params, &[f64::NAN], &[1.0], 5, 5),
+        two_tier_grm_reference_score_moments(&params, &[0.0, 0.0], &[1.0, 1.0], 5, 5),
+        two_tier_grm_reference_score_moments(&params, &[0.0], &[1.0], 0, 5),
+        two_tier_grm_reference_score_moments(&params, &[0.0], &[1.0], 5, 0),
+    ];
+    for (k, r) in bad.iter().enumerate() {
+        assert!(r.is_err(), "case {k} must be rejected");
+    }
 }

@@ -2023,6 +2023,75 @@ pub(crate) fn pack_params(
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// Anchor-only reference expected-score moments (Kim, 2006, fixed-item
+// metric; Lord, 1980, ch. 4, true score as the test characteristic curve).
+// The conditional expected raw total at each primary grid point is the single
+// owner `two_tier_recursion::two_tier_expected_raw_at_q` (specific factors
+// N(0, 1), integrated per block; Cai, 2015). This function only integrates it
+// over the independent normal reference prior on the primaries (Phi = I) with
+// the `q_primary^n_primary` Gauss-Hermite product grid. A correlated Phi needs
+// a different primary integral and is out of scope.
+// ---------------------------------------------------------------------------
+
+/// Moments of the anchor-only expected raw total under the reference prior.
+#[derive(Clone, Copy, Debug)]
+pub struct TwoTierReferenceScoreMoments {
+    pub mean: f64,
+    pub second_moment: f64,
+    pub variance: f64,
+}
+
+/// `anchor` holds the anchor items only; `primary_mean`/`primary_sd` have
+/// length `anchor.n_primary`.
+pub fn two_tier_grm_reference_score_moments(
+    anchor: &crate::two_tier_recursion::TwoTierItemParams,
+    primary_mean: &[f64],
+    primary_sd: &[f64],
+    q_primary: usize,
+    q_specific: usize,
+) -> Result<TwoTierReferenceScoreMoments, String> {
+    let p = anchor.n_primary;
+    if p < 1 || primary_mean.len() != p || primary_sd.len() != p {
+        return Err("primary_mean/primary_sd must have length n_primary >= 1".into());
+    }
+    if !primary_mean.iter().all(|v| v.is_finite())
+        || !primary_sd.iter().all(|v| v.is_finite() && *v > 0.0)
+    {
+        return Err("primary_mean must be finite and primary_sd finite and > 0".into());
+    }
+    let (tz, wz) = crate::quadrature::require_gh_rule(q_primary, "q_primary")?;
+    let n_grid = u32::try_from(p)
+        .ok()
+        .and_then(|e| tz.len().checked_pow(e))
+        .filter(|g| g.checked_mul(p).is_some())
+        .ok_or("q_primary^n_primary grid size overflows")?;
+    let (mut coords, log_w0) = build_primary_grid(tz, wz, p, n_grid);
+    for (k, c) in coords.iter_mut().enumerate() {
+        *c = primary_mean[k % p] + primary_sd[k % p] * *c;
+    }
+    let totals =
+        crate::two_tier_recursion::two_tier_expected_raw_at_q(anchor, &coords, q_specific)?;
+    let (mut mean, mut second) = (0.0f64, 0.0f64);
+    for (t, lw) in totals.iter().zip(&log_w0) {
+        let w = lw.exp();
+        mean += w * t;
+        second += w * t * t;
+    }
+    let mut variance = second - mean * mean;
+    if variance < 0.0 && variance > -1e-10 {
+        variance = 0.0;
+    }
+    if !(variance >= 0.0 && mean.is_finite()) {
+        return Err("reference expected-score variance computed negative or non-finite".into());
+    }
+    Ok(TwoTierReferenceScoreMoments {
+        mean,
+        second_moment: second,
+        variance,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_grm_tests.rs"]
 mod tests;
