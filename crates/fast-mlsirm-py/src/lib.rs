@@ -10506,6 +10506,7 @@ fn residual_interaction_map(
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    bootstrap_mc_bindings::register(m)?;
     m.add("MARGINAL_CAPABILITY_VERSION", MARGINAL_CAPABILITY_VERSION)?;
     m.add(
         "SAMPLING_DESIGN_SCHEMA_VERSION",
