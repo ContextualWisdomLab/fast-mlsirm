@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2025-03-02 - List/Chart Rows Background Transition
+**Learning:** 비상호작용 데이터 행(.bar-row 등)에 마우스를 올릴 때(hover) 배경색이 즉시 변경되면 사용자에게 시각적으로 불편함을 줄 수 있으며 세련되지 않게 보입니다. 부드러운 전환 효과(transition)를 추가하면 UX가 크게 개선됩니다. 단, 전정기관 장애 등 모션에 민감한 사용자를 위해 반드시 `prefers-reduced-motion` 미디어 쿼리를 사용해 애니메이션을 끌 수 있도록 해야 합니다.
+**Action:** 시각적 호버 피드백(예: `background-color`)을 사용하는 요소에는 항상 부드러운 전환(예: `transition: background-color 0.15s ease-in-out;`)을 추가하되, `@media (prefers-reduced-motion: reduce)` 블록을 통해 해당 요소의 `transition: none !important;`를 명시적으로 보장하십시오.
