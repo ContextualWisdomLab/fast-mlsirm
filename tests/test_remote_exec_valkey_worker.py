@@ -5,10 +5,15 @@ from __future__ import annotations
 import json
 import os
 import socket
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event
+
+import pytest
 
 from fast_mlsirm.remote_exec import (
     RemoteJobDeliveryState,
     ValkeyStreamsBackend,
+    ValkeyStreamsOutcomeStore,
     envelope_fingerprint,
 )
 from fast_mlsirm.remote_worker import ValkeyStreamsWorker
@@ -26,15 +31,19 @@ _JOBS = "jobs"
 _OUTCOMES = "outcomes"
 
 
-def _worker(client, *, executor=lambda envelope, payload: {"unit": envelope.unit_index}, manifest=None):
+def _worker(
+    client, *, executor=lambda envelope, payload: {"unit": envelope.unit_index},
+    manifest=None, consumer="w1", batch_size=10,
+):
     return ValkeyStreamsWorker(
         client,
         jobs_stream=_JOBS,
         outcomes_stream=_OUTCOMES,
         group="workers",
-        consumer="w1",
+        consumer=consumer,
         worker_manifest=manifest or _manifest(),
         executor=executor,
+        batch_size=batch_size,
         block_ms=0,
     )
 
@@ -165,6 +174,48 @@ def test_worker_fails_closed_on_cohort_mismatch_without_executing() -> None:
     assert "cohort" in outcome.error_message
 
 
+@pytest.mark.parametrize("payload", [{"tampered": True}, None, []])
+def test_worker_validates_payload_before_calling_injected_executor(payload) -> None:
+    client = FakeValkey()
+    client.streams[_JOBS] = [("1-0", _job_record(_envelope(), payload))]
+    calls = []
+
+    tally = _worker(client, executor=lambda e, p: calls.append(p) or {}).run_once()
+
+    (outcome,) = _published_outcomes(client)
+    assert calls == []
+    assert tally.failed == 1
+    assert outcome.delivery_state is RemoteJobDeliveryState.FAILED
+    assert "payload" in outcome.error_message
+    assert client.acked == ["1-0"]
+
+
+@pytest.mark.parametrize("claimed_device", ["gpu", "cpu", None])
+@pytest.mark.parametrize("use_default_executor", [False, True])
+def test_worker_does_not_attest_producer_device_labels(claimed_device, use_default_executor) -> None:
+    client = FakeValkey()
+    record = _job_record(_envelope(), requested_device="gpu")
+    if claimed_device is None:
+        del record["effective_device"]
+    else:
+        record["effective_device"] = claimed_device
+    client.streams[_JOBS] = [("1-0", record)]
+    if use_default_executor:
+        worker = ValkeyStreamsWorker(
+            client, jobs_stream=_JOBS, outcomes_stream=_OUTCOMES, group="workers",
+            consumer="w1", worker_manifest=_manifest(), block_ms=0,
+        )
+    else:
+        worker = _worker(client)
+
+    tally = worker.run_once()
+
+    (outcome,) = _published_outcomes(client)
+    assert tally.completed == 1
+    assert outcome.provenance.requested_device == "gpu"
+    assert outcome.provenance.effective_device == "unknown"
+
+
 def test_worker_fails_closed_on_oversized_payload_field() -> None:
     client = FakeValkey()
     record = _job_record(_envelope(unit_index=6))
@@ -236,3 +287,137 @@ def test_default_executor_runs_the_production_mc_replicate_family() -> None:
     (outcome,) = _published_outcomes(client)
     assert tally.completed == 1, outcome.error_message
     assert outcome.result["library_function"] == "fast_mlsirm.simulate"
+
+
+@pytest.mark.parametrize("append_before_disconnect", [False, True])
+def test_worker_does_not_ack_when_outcome_publication_fails(append_before_disconnect) -> None:
+    class DisconnectingValkey(FakeValkey):
+        disconnect = True
+
+        def xadd(self, name, fields):
+            if name == _OUTCOMES and self.disconnect:
+                if append_before_disconnect:
+                    super().xadd(name, fields)
+                raise ConnectionError("outcome publication disconnected")
+            return super().xadd(name, fields)
+
+    client = DisconnectingValkey()
+    envelope = _envelope(unit_index=11)
+    job = ("1-0", _job_record(envelope))
+    client.streams[_JOBS] = [job]
+    calls = []
+
+    def execute(e, p):
+        calls.append(e.unit_index)
+        return {"unit": e.unit_index}
+
+    with pytest.raises(ConnectionError, match="publication disconnected"):
+        _worker(client, executor=execute).run_once()
+    assert client.acked == []
+    assert "XACK" not in client.commands
+
+    # FakeValkey has no PEL: explicitly model redelivery after a disconnect.
+    client.disconnect = False
+    client.pending.append(job)
+    assert _worker(client, executor=execute, consumer="w2").run_once().completed == 1
+    outcomes = _published_outcomes(client)
+    assert len(outcomes) == 1 + int(append_before_disconnect)
+    assert calls == [11, 11]
+    assert {o.envelope_fingerprint for o in outcomes} == {envelope_fingerprint(envelope)}
+    assert {o.input_identity_sha256 for o in outcomes} == {envelope_fingerprint(envelope)}
+    assert len({o.output_identity_sha256 for o in outcomes}) == 1
+    assert {o.unit_seed for o in outcomes} == {envelope.unit_seed()}
+    assert client.acked == ["1-0"]
+
+
+@pytest.mark.parametrize("commit_before_retry", [False, True])
+def test_worker_ack_failure_retries_or_skips_after_first_success(commit_before_retry) -> None:
+    class AckFailingValkey(FakeValkey):
+        fail_ack = True
+        events = None
+
+        def xadd(self, name, fields):
+            self.events.append(("publish", name))
+            return super().xadd(name, fields)
+
+        def xack(self, name, groupname, *ids):
+            self.events.append(("ack", name))
+            if name == _JOBS and self.fail_ack:
+                raise ConnectionError("job ACK disconnected")
+            return super().xack(name, groupname, *ids)
+
+    client = AckFailingValkey()
+    client.events = []
+    envelope = _envelope(unit_index=12)
+    job = ("1-0", _job_record(envelope))
+    client.streams[_JOBS] = [job]
+    calls = []
+
+    def execute(e, p):
+        calls.append(e.unit_index)
+        return {"unit": e.unit_index}
+
+    with pytest.raises(ConnectionError, match="ACK disconnected"):
+        _worker(client, executor=execute).run_once()
+    (first,) = _published_outcomes(client)
+    assert client.events == [("publish", _OUTCOMES), ("ack", _JOBS)]
+    assert client.acked == []
+    store = ValkeyStreamsOutcomeStore(
+        client, stream=_OUTCOMES, group="drivers", consumer="d1", block_ms=0,
+    )
+    if commit_before_retry:
+        assert store.committed_success(first.envelope_fingerprint) == first
+
+    client.fail_ack = False
+    # Redelivery is modeled explicitly, not evidence of actual server recovery.
+    client.pending.append(job)
+    tally = _worker(client, executor=execute, consumer="w2").run_once()
+    assert tally.skipped == int(commit_before_retry)
+    assert tally.completed == int(not commit_before_retry)
+    assert calls == [12] * (1 if commit_before_retry else 2)
+    if not commit_before_retry:
+        assert {o.output_identity_sha256 for o in _published_outcomes(client)} == {
+            first.output_identity_sha256
+        }
+    assert store.committed_success(first.envelope_fingerprint) == first
+    assert store.successful_count(first.envelope_fingerprint) == 1
+
+
+def test_reclaimed_live_job_can_execute_twice_but_commit_one_success() -> None:
+    client = FakeValkey()
+    envelope = _envelope(unit_index=13)
+    job = ("1-0", _job_record(envelope))
+    client.streams[_JOBS] = [job]
+    first_executing = Event()
+    both_executing = Barrier(2)
+    calls = []
+
+    def execute(e, p):
+        calls.append(e.unit_index)
+        first_executing.set()
+        both_executing.wait(timeout=5)
+        return {"unit": e.unit_index}
+
+    workers = [
+        _worker(client, executor=execute, consumer=name, batch_size=1)
+        for name in ("w1", "w2")
+    ]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first_future = pool.submit(workers[0].run_once)
+        assert first_executing.wait(timeout=5)
+        # Model an eligible reclaim while the original executor is still live.
+        client.pending.append(job)
+        second_future = pool.submit(workers[1].run_once)
+        tallies = [future.result(timeout=10) for future in (first_future, second_future)]
+
+    first, second = _published_outcomes(client)
+    assert sum(t.completed for t in tallies) == 2
+    assert calls == [13, 13]
+    assert client.acked == ["1-0", "1-0"]
+    assert first.envelope_fingerprint == second.envelope_fingerprint
+    assert first.output_identity_sha256 == second.output_identity_sha256
+    store = ValkeyStreamsOutcomeStore(
+        client, stream=_OUTCOMES, group="drivers", consumer="d1", block_ms=0,
+    )
+    assert store.committed_success(first.envelope_fingerprint) == first
+    assert store.successful_count(first.envelope_fingerprint) == 1

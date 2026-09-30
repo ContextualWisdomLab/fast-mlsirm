@@ -31,6 +31,7 @@ from .remote_exec import (
     RemoteJobOutcome,
     RemoteRunManifest,
     RemoteWorkerProvenance,
+    _admit_payload_batch,
     _fingerprint,
     _non_negative_int,
     _text,
@@ -299,11 +300,14 @@ class ValkeyStreamsWorker:
     member's job is re-run elsewhere), then reads new jobs with
     ``XREADGROUP``. A job whose fingerprint is already in the first-success
     hash is acknowledged without re-running. Otherwise the worker checks the
-    cohort and the installed library version, runs ``executor`` (by default
-    the production family dispatch in :func:`execute_envelope`, which also
-    verifies payload identity), publishes a COMPLETED or FAILED outcome, and
-    acknowledges the job. Deployment, scheduling, and retry policy stay with
-    the host; this class only completes the stream protocol.
+    cohort, payload identity and installed library version before invoking
+    any ``executor`` (the production family dispatch by default). It publishes
+    a COMPLETED or FAILED outcome before acknowledging the job. Publication or
+    ACK errors propagate so the host can retry pending jobs. Execution is
+    at-least-once: retries and concurrent consumers can execute a unit again
+    before its first success is committed. Effective device is ``unknown``
+    because this result-only executor interface supplies no device attestation.
+    Deployment, persistence, scheduling and retry policy stay with the host.
     """
 
     def __init__(
@@ -382,7 +386,6 @@ class ValkeyStreamsWorker:
             driver_host = _text(fields["driver_host"], "driver_host", maximum=128)
             driver_pid = int(fields["driver_pid"])
             requested = _text(fields["requested_device"], "requested_device", maximum=32)
-            effective = _text(fields["effective_device"], "effective_device", maximum=32)
         except (KeyError, TypeError, ValueError, RecursionError):
             return "poisoned"
         if self._client.hget(self._committed_key, fingerprint) is not None:
@@ -400,6 +403,9 @@ class ValkeyStreamsWorker:
                     f"incompatible with cohort {envelope.manifest.library_version!r}"
                 )
             payload = _valkey_json(fields.get("payload", "null"), "payload")
+            if type(payload) is not dict:
+                raise ValueError(f"payload is required for {envelope.family.value}")
+            _admit_payload_batch((envelope,), self._manifest, payload)
             result = self._executor(envelope, payload)
         except Exception as exc:  # worker failures become FAILED outcomes
             error = str(exc) or type(exc).__name__
@@ -421,7 +427,7 @@ class ValkeyStreamsWorker:
                 library_version=envelope.manifest.library_version,
                 source_sha256=envelope.manifest.source_sha256,
                 requested_device=requested,
-                effective_device=effective,
+                effective_device="unknown",
                 wall_clock_seconds=time.perf_counter() - started,
                 worker_host=hostname,
                 worker_pid=os.getpid(),

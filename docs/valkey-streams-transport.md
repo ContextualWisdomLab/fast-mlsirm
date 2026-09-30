@@ -48,14 +48,41 @@ reads new jobs with `XREADGROUP` and handles each one:
 
 - a job whose fingerprint is already in the first-success hash is
   acknowledged without running again;
-- the envelope, payload, and device fields are decoded under the same 1 MiB /
-  depth-64 bounds, and the envelope must hash to the record's fingerprint;
-- the worker checks its own manifest and the installed library version
-  against the envelope cohort, then runs `execute_envelope`, which verifies
-  payload identity and dispatches the family;
+- envelope and payload JSON use the same 1 MiB / depth-64 bounds, the
+  requested-device label is bounded, and the envelope must hash to the
+  record's fingerprint;
+- the worker checks its own manifest, payload identity, and the installed
+  library version against the envelope cohort before invoking any executor,
+  including an injected executor; the default dispatch runs the family;
 - it publishes a COMPLETED or FAILED outcome carrying the driver identity
   from the job record (`driver_host`, `driver_pid`) and its own provenance,
   then acknowledges the job.
+
+The worker preserves `requested_device` as request intent. Its result-only
+executor interface does not attest the device actually used, so
+`effective_device` is `unknown`, even if the job publisher supplied `cpu` or
+`gpu`. This is not CPU/GPU execution evidence, and a requested GPU does not
+prove that execution avoided a CPU fallback.
+
+Execution is **at-least-once**, not exactly-once. An outcome `XADD` error
+propagates without acknowledging the job, even when the append may have
+succeeded but its reply was lost. An `XACK` error also propagates. A host retry
+can therefore execute the same unit again before its success reaches the
+first-success hash. Concurrent consumers of duplicate jobs can both execute;
+`HSETNX` chooses one successful outcome, not one execution. Retry identity
+uses the same envelope fingerprint and unit seed; deterministic executors
+produce the same result digest. Injected executors must tolerate re-execution
+and must not rely on this worker to protect external side effects.
+
+Publication precedes job acknowledgement, but a successful `XADD` reply is
+not a disk-durability guarantee. The host must configure persistence and
+retention to meet its loss budget: RDB can lose writes since the last snapshot,
+and AOF `everysec` can lose recent acknowledged writes. See the official
+[acknowledgement contract](https://valkey.io/commands/xack/) and
+[persistence guidance](https://valkey.io/topics/persistence/). The in-memory
+fault tests below establish client ordering and result identity only; they do
+not establish crash durability, installed-wheel provenance, multi-host
+execution, or GPU attestation. Those remain separate acceptance evidence.
 
 A record that cannot be decoded into an envelope is acknowledged and counted
 as poisoned so one bad record cannot stall the loop. The pass returns a
