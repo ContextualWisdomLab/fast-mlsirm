@@ -12,6 +12,7 @@
 
 ### Changed
 
+
 - Standalone report JSON/CSV export regions now apply atomic text selection
   only for fine-pointer devices. Touch and coarse-pointer users retain native
   partial selection; keyboard focus, exact-value tables, JSON/CSV payloads,
