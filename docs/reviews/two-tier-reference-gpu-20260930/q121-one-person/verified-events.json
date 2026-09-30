@@ -1,0 +1,317 @@
+{
+  "scope": "isolated q121 fixed-bank one-person E-step only; not fit, throughput guarantee, RSS peak or release acceptance",
+  "run_id": 36765438361,
+  "job_id": 110058309425,
+  "execution_head": "8a54da3c95f807c96176bb4b2074d523019c6c67",
+  "events": [
+    {
+      "event": "source",
+      "execution_head": "8a54da3c95f807c96176bb4b2074d523019c6c67",
+      "kernel_source": "crates/mlsirm-core/src/gpu_bifactor.rs",
+      "kernel_source_sha256": "6caa9b0024ec2ded5e2c1b0c731f831998fd975d2a25a8fd886872eb6c4c1d1a",
+      "numerical_source": "crates/mlsirm-core/src/two_tier_grm.rs",
+      "numerical_source_sha256": "cbc74f27fa366e39062440846f3f0640359993b9e4bf29e0338a6ae5215a797c",
+      "test_source": "tests/unit/two_tier_grm_tests.rs",
+      "test_source_sha256": "11999af60959c402e53619444ebfb7fb4321564ea4d0578e64d9cb5ee87cb5d4"
+    },
+    {
+      "event": "resource",
+      "adapter_name": "NVIDIA GeForce GTX 1050",
+      "adapter_backend": "Vulkan",
+      "adapter_type": "DiscreteGpu",
+      "max_storage_buffer_binding_bytes": 2147483644,
+      "max_buffer_bytes": 4292870144,
+      "max_storage_buffers_per_stage": 524288,
+      "max_workgroups_per_dimension": 65535,
+      "host_estimate_bytes": 4480932284,
+      "host_budget_bytes": 8589934592,
+      "host_budget_semantics": "source-derived conservative allocation estimate; not RSS cap",
+      "gpu_policy_minimum_bytes": 1020771796,
+      "gpu_budget_bytes": 1073741824,
+      "gpu_budget_semantics": "source policy; adapter limits are per-buffer constraints, not available physical VRAM",
+      "execution_head": "8a54da3c95f807c96176bb4b2074d523019c6c67"
+    },
+    {
+      "event": "input",
+      "input_sha256": "5ae65a0d541523ac76e4e472eede55a33bc32298644f5f0cd9f4f0a26a403313",
+      "seed": null,
+      "input_json": {
+        "n_cat": 4,
+        "n_items": 16,
+        "n_persons": 1,
+        "n_primary": 2,
+        "n_specific": 4,
+        "phi": "identity",
+        "primary_loadings": [
+          [
+            0.9,
+            0.0
+          ],
+          [
+            1.3,
+            0.0
+          ],
+          [
+            0.7,
+            0.0
+          ],
+          [
+            1.1,
+            0.0
+          ],
+          [
+            0.9,
+            0.9
+          ],
+          [
+            1.3,
+            0.9
+          ],
+          [
+            0.7,
+            0.9
+          ],
+          [
+            1.1,
+            0.0
+          ],
+          [
+            0.9,
+            0.0
+          ],
+          [
+            1.3,
+            0.9
+          ],
+          [
+            0.7,
+            0.0
+          ],
+          [
+            1.1,
+            0.0
+          ],
+          [
+            0.9,
+            0.9
+          ],
+          [
+            1.3,
+            0.0
+          ],
+          [
+            0.7,
+            0.9
+          ],
+          [
+            1.1,
+            0.9
+          ]
+        ],
+        "primary_map": [
+          true,
+          false,
+          true,
+          false,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true
+        ],
+        "q_primary": 121,
+        "q_specific": 121,
+        "responses": [
+          0,
+          1,
+          2,
+          3,
+          1,
+          2,
+          3,
+          0,
+          2,
+          3,
+          0,
+          1,
+          3,
+          0,
+          1,
+          2
+        ],
+        "specific_loadings": [
+          1.1,
+          0.8,
+          1.4,
+          1.0,
+          1.1,
+          0.8,
+          1.4,
+          1.0,
+          1.1,
+          0.8,
+          1.4,
+          1.0,
+          1.1,
+          0.8,
+          1.4,
+          1.0
+        ],
+        "specific_map": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2,
+          2,
+          3,
+          3,
+          3,
+          3
+        ],
+        "thresholds": [
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ]
+        ]
+      }
+    },
+    {
+      "event": "timing",
+      "whole_cpu_estep_seconds": 1.4138171480000001,
+      "whole_gpu_estep_seconds": 60.730846804,
+      "cpu_table_generation_seconds": 43.106984244,
+      "whole_cpu_including_table_seconds": 44.520801392,
+      "stages": {
+        "table_generation_seconds": 43.824468356,
+        "gpu_state_preparation_seconds": 14.37743562,
+        "gpu_log_products_and_readback_seconds": 1.337327432,
+        "rust_lse_exp_normalization_seconds": 0.279993637,
+        "posterior_moment_contraction_seconds": 0.108341023,
+        "f64_likelihood_certification_seconds": 0.627493957
+      },
+      "note": "host clock; pipeline compile/upload and GPU compute/readback are grouped; no GPU timestamp claim"
+    },
+    {
+      "event": "comparison",
+      "loglik_abs_delta": 0,
+      "mean_max_abs_delta": 0,
+      "second_max_abs_delta": 0,
+      "marginal_sd_max_abs_delta": 0,
+      "tolerance": 0.001,
+      "collect_counts": false,
+      "parameter_updates": false
+    }
+  ],
+  "logs": {
+    "/private/tmp/claude-501/-private-tmp-fmls-gpu-fixture-20260928/099e0d06-755f-44bb-a889-b69c214332cd/scratchpad/q121-isolated-kernel-run.json": "26ac35677f7948c1de1672dd38bd869223138e0873d6d7c8c54632fed574f6f4",
+    "/private/tmp/claude-501/-private-tmp-fmls-gpu-fixture-20260928/099e0d06-755f-44bb-a889-b69c214332cd/scratchpad/q121-isolated-kernel-job.txt": "b2ff1edaaeb037423d8f1c9312bb7e025304b9bba6a78cd9d72aedcc52dd4727",
+    "/private/tmp/claude-501/-private-tmp-fmls-gpu-fixture-20260928/099e0d06-755f-44bb-a889-b69c214332cd/scratchpad/q121-isolated-kernel-artifact/reference-gpu-kernel-probe.log": "6fd0e5f3fd2f6ba87266c1e90e876c5d515f8c0f59d822acd14596a2d24966b1"
+  }
+}
