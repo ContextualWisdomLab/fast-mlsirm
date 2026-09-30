@@ -1,5 +1,25 @@
 # A3 license gate verdict — Linux x86_64 cp312, fast-mlsirm 0.11.5
 
+## Current-head correction — 2026-09-30
+
+Status for the current PR head: **HOLD pending rebuilt artifact evidence and independent review**.
+
+Review found that the committed libm 0.2.16 source notice truncated both
+FreeBSD BSD-2-Clause grants and that the sdist-consumer wheel reused the
+sdist's selected bundle instead of selecting the reviewed bundle for each
+target. The source notice is now complete at SHA256
+`20ffe6f4b9b21755f578220c30c8408f4ec1ce46d8a7ede9b34f33d727ea9daf`,
+and the publication workflow selects the target bundle inside the extracted
+sdist before building and then verifies the consumer wheel's license bytes.
+
+Every artifact receipt below that records
+`9e949a13f66c0f9b60b73b54e8ab2940ccff92d704c46c53103b1028e2cc75ba`
+is retained as historical pre-repair evidence only. It does not authorize the
+current head, merge, release, tag, or publication. A new exact-head wheel and
+source archive must reproduce the complete notice bytes, target-specific
+bundle, wheel `RECORD`, SBOM, inventory, and installed regression before this
+HOLD can be reconsidered.
+
 Status: **provisional for the examined Linux cp312 candidate** (coordinator verdict, user-delegated, 2026-09-26; not legal review). The actual-wheel inventory correction below needs independent re-review. Hosted checks, approval, and release remain pending. This is not a release-wide or PyPI publication verdict; on 2026-09-26, [PyPI project metadata](https://pypi.org/pypi/fast-mlsirm/json) listed no 0.11.5 files.
 Decision records: coordinator messages msg_60a758c73aad, msg_58e4fad25e39, msg_ee85fb3cb33f, msg_13c9108bac7d, msg_b5aa37b1b0c7, msg_411f3daec1fa.
 
