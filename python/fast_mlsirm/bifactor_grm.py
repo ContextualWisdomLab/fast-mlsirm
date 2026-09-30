@@ -111,6 +111,37 @@ def _positive_real_control(value: object, name: str) -> float:
     return numeric
 
 
+def _slope_prior_pair(
+    mu: object, sd: object
+) -> tuple[float | None, float | None]:
+    """Validate the paired lognormal ``|a|`` slope-prior kwargs.
+
+    Both ``None`` = no prior (MML); both set = finite ``mu`` and finite
+    positive ``sd``. Anything else raises ``ValueError`` (never clamped).
+    """
+
+    if (mu is None) != (sd is None):
+        raise ValueError("slope_prior_mu and slope_prior_sd must be provided together")
+    if mu is None:
+        return None, None
+    for value, name in ((mu, "slope_prior_mu"), (sd, "slope_prior_sd")):
+        # Reject before coercion: float() would silently turn np.bool_ into
+        # 1.0/0.0, drop the imaginary part of a complex (with only a warning),
+        # and unwrap 0-d arrays.
+        if isinstance(value, (bool, np.bool_, complex, np.complexfloating, np.ndarray)):
+            raise ValueError(f"{name} must be a real scalar")
+    try:
+        mu_f = float(mu)  # type: ignore[arg-type]
+        sd_f = float(sd)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("slope_prior_mu and slope_prior_sd must be real numbers") from None
+    if not np.isfinite(mu_f):
+        raise ValueError("slope_prior_mu must be finite")
+    if not np.isfinite(sd_f) or sd_f <= 0:
+        raise ValueError("slope_prior_sd must be finite and positive")
+    return mu_f, sd_f
+
+
 def _u64_seed(value: object) -> int:
     """Normalize the deterministic start seed without callbacks."""
 
@@ -137,12 +168,19 @@ class BifactorGrmFit:
     (``0`` for general-only items, canonicalized within each block);
     ``threshold`` the ``n_items x (n_cat-1)`` strictly decreasing boundary
     intercepts; ``theta_g_eap`` / ``theta_g_sd`` the general-factor EAP and
-    posterior SD; ``category_counts`` the observed ``n_items x n_cat`` counts.
+    posterior SD; ``category_counts`` the observed ``n_items x n_cat`` counts;
+    ``specific_map`` retains the validated item-to-factor assignments for
+    provenance-aware Oakes information.
     ``termination_reason`` is ``"tolerance_met"``, ``"max_iter_reached"``, or
     ``"numerical_em_stall"`` (relative loglik change met ``tol`` while every
     item parameter remained at its start — never reported as
     ``tolerance_met``; see #1976); ``best_start`` the winning start in
     ``0..n_starts``.
+
+    Under a slope prior (``slope_prior_mu``/``slope_prior_sd`` set),
+    convergence, ``final_loglik_change`` and start ranking refer to the
+    log-posterior EM objective recorded in ``em_objective_trace``;
+    ``loglik_trace`` stays the observed-data log-likelihood.
     """
 
     a_general: np.ndarray
@@ -160,6 +198,13 @@ class BifactorGrmFit:
     final_loglik_change: float
     best_start: int
     n_parameters: int
+    specific_map: np.ndarray | None = None
+    slope_prior_mu: float | None = None
+    slope_prior_sd: float | None = None
+    # EM objective (MAXIMIZED; unlike FitResult.objective_trace) per E-step: log-likelihood + log slope prior under a prior
+    # (monotone), identical to ``loglik_trace`` without one. ``loglik_trace``
+    # keeps its meaning and may decrease under a prior.
+    em_objective_trace: np.ndarray | None = None
 
 
 def fit_bifactor_grm(
@@ -174,6 +219,8 @@ def fit_bifactor_grm(
     n_starts: int,
     seed: int,
     device: str = "cpu",
+    slope_prior_mu: float | None = None,
+    slope_prior_sd: float | None = None,
 ) -> BifactorGrmFit:
     """Fit the single-group polytomous bifactor GRM (compute in Rust).
 
@@ -200,6 +247,11 @@ def fit_bifactor_grm(
     per the no-magic-caps rule — upper-bounded only where a real constraint
     exists); unobserved categories raise; ``max_iter`` exhaustion returns
     ``converged=False`` instead of substituting values.
+    ``slope_prior_mu`` / ``slope_prior_sd`` (both or neither) request MAP
+    estimation under a lognormal prior on ``|a|`` for every estimated slope
+    (``log|a| ~ N(mu, sd^2)``; see ``SlopePrior`` in the Rust core). Omitted
+    = plain MML. There are no defaults; the fitted prior is recorded on the
+    result and is passed automatically by ``bifactor_oakes_se_from_fit``.
 
     See the module docstring for the model, the paper basis of every
     non-obvious decision, and the APA 7th references.
@@ -233,6 +285,7 @@ def fit_bifactor_grm(
     ):
         raise ValueError(f"device must be one of 'cpu', 'gpu', 'auto'; got {device!r}")
     device_str = device.strip().lower()
+    slope_prior_mu, slope_prior_sd = _slope_prior_pair(slope_prior_mu, slope_prior_sd)
 
     y = np.asarray(responses)
     if np.iscomplexobj(y):
@@ -294,6 +347,8 @@ def fit_bifactor_grm(
         int(n_starts_int),
         int(seed_int),
         device_str,
+        slope_prior_mu,
+        slope_prior_sd,
     )
     return BifactorGrmFit(
         a_general=np.asarray(res["a_general"], dtype=np.float64),
@@ -315,7 +370,17 @@ def fit_bifactor_grm(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+        specific_map=smap_int.copy(),
+        slope_prior_mu=_optional_float(res["slope_prior_mu"]),
+        slope_prior_sd=_optional_float(res["slope_prior_sd"]),
+        em_objective_trace=np.asarray(res["em_objective_trace"], dtype=np.float64),
     )
+
+
+def _optional_float(value: object) -> float | None:
+    """Rust-reported optional prior hyperparameter (``None`` = no prior)."""
+
+    return None if value is None else float(value)  # type: ignore[arg-type]
 
 
 @dataclass
@@ -346,6 +411,8 @@ class BifactorOakesSe:
     se: np.ndarray | None
     positive_definite: bool
     non_pd_reason: str | None
+    slope_prior_mu: float | None = None
+    slope_prior_sd: float | None = None
 
 
 def bifactor_oakes_se(
@@ -359,9 +426,17 @@ def bifactor_oakes_se(
     q_general: int,
     q_specific: int,
     fd_step: float,
+    slope_prior_mu: float | None = None,
+    slope_prior_sd: float | None = None,
 ) -> BifactorOakesSe:
     """Observed-information SEs via the Oakes (1999, eq. 6, p. 480) identity
-    at given item parameters (valid at every point, not only the MLE).
+    at given SINGLE-GROUP item parameters (valid at every point, not only the MLE).
+
+    This raw-array API computes the single-group model's observed information
+    at the given parameters. Parameters selected from one row of a multigroup
+    fit produce a single-group calculation, NOT the multigroup SE: that needs
+    joint item and group information (#2113). Prefer
+    ``bifactor_oakes_se_from_fit`` when a fit object is available.
 
     ``a_general``/``a_specific`` are length-``n_items`` vectors
     (``a_specific`` exactly ``0`` for general-only items); ``threshold`` is
@@ -376,6 +451,17 @@ def bifactor_oakes_se(
     definite information returns ``positive_definite=False`` with
     ``non_pd_reason`` and ``None`` SEs (never substituted).
 
+    MAP estimates: pass the SAME ``slope_prior_mu`` / ``slope_prior_sd`` the
+    fit used (recorded on ``BifactorGrmFit``). ``information`` is then the
+    negative log-posterior curvature (Oakes observed information plus the
+    analytic lognormal ``|a|`` prior curvature on each slope) and
+    ``vcov``/``se`` its inverse: a posterior-curvature (Laplace) approximation
+    to the POSTERIOR covariance at the mode, not a frequentist sampling
+    covariance of the MAP estimator (Mislevy, 1985, p. 13, following
+    Equation 3.9). Omitting the prior is defined only
+    for MML estimates; a likelihood-only information at MAP estimates is not
+    a supported SE.
+
     Implementation basis: Oakes, D. (1999). Direct calculation of the
     information matrix via the EM algorithm. *Journal of the Royal
     Statistical Society Series B: Statistical Methodology, 61*(2), 479-482.
@@ -383,10 +469,25 @@ def bifactor_oakes_se(
     al. (2007). Full-information item bifactor analysis of graded response
     data. *Applied Psychological Measurement, 31*(1), 4-19.
     https://doi.org/10.1177/0146621606289485
+
+    Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+    (Research Report RR-85-33). Educational Testing Service.
+    https://doi.org/10.1002/j.2330-8516.1985.tb00118.x
     """
+
+    from .bifactor_multigroup import BifactorMultigroupFit
+
+    if isinstance(a_general, BifactorMultigroupFit):
+        raise ValueError(
+            "multigroup Oakes SE requires joint item and group mean/variance information"
+        )
 
     def _as_finite_vector(values: object, name: str, length: int) -> np.ndarray:
         arr = np.asarray(values, dtype=np.float64)
+        if arr.ndim == 2:
+            raise ValueError(
+                "multigroup Oakes SE requires joint item and group mean/variance information"
+            )
         if arr.shape != (length,):
             raise ValueError(f"{name} must have length {length}")
         if not bool(np.isfinite(arr).all()):
@@ -408,6 +509,7 @@ def bifactor_oakes_se(
     if q_specific_int < 1:
         raise ValueError("q_specific must be >= 1")
     fd_float = _positive_real_control(fd_step, "fd_step")
+    slope_prior_mu, slope_prior_sd = _slope_prior_pair(slope_prior_mu, slope_prior_sd)
 
     y = np.asarray(responses)
     if np.iscomplexobj(y):
@@ -442,6 +544,10 @@ def bifactor_oakes_se(
     ag = _as_finite_vector(a_general, "a_general", n_items)
     as_ = _as_finite_vector(a_specific, "a_specific", n_items)
     th = np.asarray(threshold, dtype=np.float64)
+    if th.ndim == 3:
+        raise ValueError(
+            "multigroup Oakes SE requires joint item and group mean/variance information"
+        )
     if th.shape != (n_items, n_cat_int - 1):
         raise ValueError(
             "threshold must have shape (n_items, n_cat - 1)"
@@ -478,6 +584,8 @@ def bifactor_oakes_se(
         int(q_general_int),
         int(q_specific_int),
         float(fd_float),
+        slope_prior_mu,
+        slope_prior_sd,
     )
     labels = [str(v) for v in res["labels"]]
     information = np.asarray(res["information"], dtype=np.float64)
@@ -499,6 +607,59 @@ def bifactor_oakes_se(
         se=se,
         positive_definite=bool(res["positive_definite"]),
         non_pd_reason=None if reason_raw is None else str(reason_raw),
+        slope_prior_mu=slope_prior_mu,
+        slope_prior_sd=slope_prior_sd,
+    )
+
+
+def bifactor_oakes_se_from_fit(
+    fit: BifactorGrmFit,
+    responses: np.ndarray,
+    *,
+    q_general: int,
+    q_specific: int,
+    fd_step: float,
+) -> BifactorOakesSe:
+    """Calculate single-group Oakes information from a fitted model.
+
+    Oakes (1999, Eq. 6, p. 480) gives observed information for the fitted
+    single-group model. A multigroup fit requires joint item and group
+    information (#2113). The fitted slope prior is included in MAP posterior
+    curvature (Mislevy, 1985, p. 13, following Eq. 3.9).
+
+    References (APA 7th ed.): Oakes, D. (1999). Direct calculation of the
+    information matrix via the EM algorithm. *Journal of the Royal Statistical
+    Society: Series B, 61*(2), 479–482. https://doi.org/10.1111/1467-9868.00188
+    Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+    (Research Report RR-85-33). Educational Testing Service.
+    https://doi.org/10.1002/j.2330-8516.1985.tb00118.x
+    """
+    if not isinstance(fit, BifactorGrmFit) or hasattr(fit, "n_groups"):
+        raise TypeError(
+            "single-group BifactorGrmFit required; multigroup Oakes SE "
+            "needs joint information (#2113)"
+        )
+    n_items = fit.a_general.shape[0]
+    y = np.asarray(responses)
+    if y.ndim != 2 or y.shape[1] != n_items:
+        raise ValueError(f"responses must have shape (n_persons, {n_items})")
+    if fit.specific_map is None:
+        raise ValueError(
+            "fit lacks specific_map provenance; refit before Oakes SE (#2113)"
+        )
+    return bifactor_oakes_se(
+        fit.a_general,
+        fit.a_specific,
+        fit.threshold,
+        y,
+        fit.specific_map,
+        fit.n_cat,
+        fit.n_specific,
+        q_general,
+        q_specific,
+        fd_step,
+        slope_prior_mu=fit.slope_prior_mu,
+        slope_prior_sd=fit.slope_prior_sd,
     )
 
 
