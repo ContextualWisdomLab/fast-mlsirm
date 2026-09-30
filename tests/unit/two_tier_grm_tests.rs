@@ -358,6 +358,11 @@ fn reference_fit_actual_gpu_matches_cpu() {
         (-f64::MIN_POSITIVE, -f64::from_bits(1)),
         (-f64::MAX / 2.0, -f64::MAX / 2.0),
     ];
+    pairs.extend([
+        (f64::NEG_INFINITY, -1.0),
+        (f64::NEG_INFINITY, f64::NEG_INFINITY),
+        (-0.0, f64::NEG_INFINITY),
+    ]);
     let mut state = 20260930u64;
     for _ in 0..1024 {
         state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
@@ -403,7 +408,7 @@ fn reference_fit_actual_gpu_matches_cpu() {
         );
     }
     println!("actual_gpu_binary64_addition_cases={} passed", pairs.len());
-    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e-300] {
+    for invalid in [f64::NAN, f64::INFINITY, 1e-300] {
         let mut rejected = tables.clone();
         rejected[0][0][0] = invalid;
         let input = ReducedEstepInputs {
@@ -412,7 +417,7 @@ fn reference_fit_actual_gpu_matches_cpu() {
         };
         assert!(
             e_step_reduced_gpu_log_products(&input).is_none(),
-            "nonfinite/positive log input must reject"
+            "NaN/positive-infinity/positive log input must reject"
         );
     }
     let mut overflow = tables.clone();
@@ -422,11 +427,9 @@ fn reference_fit_actual_gpu_matches_cpu() {
         tables_groups: &overflow,
         ..probe
     };
-    assert!(
-        e_step_reduced_gpu_log_products(&input).is_none(),
-        "binary64 product overflow must reject"
-    );
-    println!("actual_gpu_binary64_input_and_overflow_rejection_cases=5 passed");
+    let (overflow_result, _) = e_step_reduced_gpu_log_products(&input).unwrap();
+    assert_eq!(overflow_result[0], f64::NEG_INFINITY);
+    println!("actual_gpu_binary64_malformed_input_rejection_cases=3 passed; finite_overflow_zero_mass_node=1 preserved");
     // Cai (2010), pp.608-609 Appendices A/B; mixed-precision regression
     // bounds are implementation choices, not scientific acceptance thresholds.
     let (y, n) = tiny_data();
@@ -517,6 +520,106 @@ fn reference_fit_actual_gpu_matches_cpu() {
     println!("input_sha256={:x}", sha2::Sha256::digest(&input));
     println!("primary_correlation=identity, adapter={:?}, adapter_backend={:?}, cpu_iterations={}, gpu_iterations={}, cpu_seconds={cpu_seconds}, gpu_seconds={gpu_seconds}, loglik_delta={gap}, AIC_delta={}, BIC_delta={}",
             gpu.gpu_adapter_name, gpu.gpu_adapter_backend, cpu.n_iter, gpu.n_iter, -2.0*gap, -2.0*gap);
+
+    // 합법적인 finite GRM의 0 범주확률/-inf 노드를 삭제하거나 floor로 대체하지 않는다.
+    use crate::two_tier_grm::{validate_data, ItemParams, LatentPosteriorMoments};
+    assert_eq!(
+        crate::poly::grm_logprobs(1.0, &[1e-18, 0.0])[1],
+        f64::NEG_INFINITY
+    );
+    for specific_count in [0, 1] {
+        for nodes in [3, 2] {
+            let cfg = TwoTierGrmConfig {
+                estimate_primary_correlation: false,
+                q_primary: nodes,
+                q_specific: 1,
+                max_iter: 1,
+                tol: 1e-6,
+                n_starts: 1,
+                seed: 0,
+                newton_iter: 1,
+                ridge: 1e-8,
+            };
+            let sm = vec![if specific_count == 0 { -1 } else { 0 }; 2];
+            let v = validate_data(
+                &[1, 1],
+                None,
+                &[true, true],
+                &sm,
+                1,
+                2,
+                1,
+                specific_count,
+                3,
+                &cfg,
+                false,
+            )
+            .unwrap();
+            let (tz, wz) = gh_rule(nodes).unwrap();
+            let (ts, ws) = gh_rule(1).unwrap();
+            let (coords, lw) = build_primary_grid(tz, wz, 1, v.grid_size);
+            let lws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+            let parameters = vec![
+                ItemParams {
+                    a_p: vec![1.0],
+                    a_s: if specific_count == 0 { None } else { Some(1.0) },
+                    d: vec![1e-18, 0.0]
+                };
+                2
+            ];
+            let length = 1 + specific_count;
+            let mut cpu_m = LatentPosteriorMoments {
+                mean: vec![0.0; length],
+                second: vec![0.0; length],
+            };
+            let (cpu_ll, _, _) = e_step_with_moments(
+                &v,
+                &[1, 1],
+                None,
+                &parameters,
+                &lw,
+                &lws,
+                &coords,
+                ts,
+                v.grid_size,
+                1,
+                Some(&mut cpu_m),
+                false,
+                None,
+            );
+            let mut gpu_m = LatentPosteriorMoments {
+                mean: vec![0.0; length],
+                second: vec![0.0; length],
+            };
+            let result = e_step_gpu_person_moments(
+                &v,
+                &[1, 1],
+                None,
+                &parameters,
+                &lw,
+                &lws,
+                &coords,
+                ts,
+                Some(&mut gpu_m),
+                None,
+                true,
+                1 << 20,
+            );
+            if nodes == 3 {
+                assert!(cpu_ll.is_finite());
+                assert_eq!(result.unwrap().to_bits(), cpu_ll.to_bits());
+                assert_eq!(gpu_m.mean, cpu_m.mean);
+                assert_eq!(gpu_m.second, cpu_m.second);
+            } else {
+                assert!(!cpu_ll.is_finite());
+                assert!(
+                    result.is_err(),
+                    "all-node zero mass must reject without fallback"
+                );
+            }
+        }
+    }
+    println!("actual_finite_GRM_zero_probability_node_CPU_GPU_cases=4 passed");
 
     // 같은 seed·제약·prior·노드에서 수렴 후 문항 모수도 대조한다.
     // 작은 합성 표본의 극단 모수를 likelihood/EAP 근접만으로 수용하지 않는다.

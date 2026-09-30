@@ -913,6 +913,10 @@ fn shift_jam(v:vec2<u32>, n:u32) -> vec2<u32> {
     return vec2(select(0u,1u,(v.x|v.y)!=0u),0u);
 }
 fn add_negative(a:vec2<u32>, b:vec2<u32>) -> vec2<u32> {
+    // 모델의 log(0)은 흡수 원소다. f32 inf 연산에 맡기지 않고 bit로 보존한다.
+    if ((a.y==0xfff00000u && a.x==0u) || (b.y==0xfff00000u && b.x==0u)) {
+        return vec2(0u,0xfff00000u);
+    }
     let ae=(a.y>>20u)&2047u;
     let be=(b.y>>20u)&2047u;
     var ea=max(ae,1u); var eb=max(be,1u);
@@ -1018,7 +1022,7 @@ pub(crate) fn e_step_reduced_gpu_log_products(
         values
             .iter()
             .map(|&v| {
-                if !v.is_finite() || v > 0.0 {
+                if v.is_nan() || v == f64::INFINITY || v > 0.0 {
                     return None;
                 }
                 let bits = v.to_bits();
@@ -1039,7 +1043,11 @@ pub(crate) fn e_step_reduced_gpu_log_products(
                 1
             })?
             .checked_mul(nc)?;
-        if row.len() != expected || row.iter().any(|v| !v.is_finite() || *v > 0.0) {
+        if row.len() != expected
+            || row
+                .iter()
+                .any(|v| v.is_nan() || *v == f64::INFINITY || *v > 0.0)
+        {
             return None;
         }
         offsets.push(u32::try_from(table_len).ok()?);
@@ -1224,7 +1232,7 @@ pub(crate) fn e_step_reduced_gpu_log_products(
             .map(|v| {
                 let value =
                     f64::from_bits(u64::from(v[0].to_bits()) | (u64::from(v[1].to_bits()) << 32));
-                value.is_finite().then_some(value)
+                (value.is_finite() || value == f64::NEG_INFINITY).then_some(value)
             })
             .collect()
     };

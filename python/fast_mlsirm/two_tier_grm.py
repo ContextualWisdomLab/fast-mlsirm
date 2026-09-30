@@ -223,8 +223,10 @@ def fit_two_tier_grm(
     에뮬레이션한다. 실제 GPU product의 정규화/exp/log·기대 빈도·적률 합산,
     기존 Newton M-step과 f64 likelihood 검증은 Rust CPU에서 수행한다.
     GPU native f64나 전체 GPU 계산이라고 주장하지 않으며, GPU 실패 뒤
-    CPU posterior를 재계산해 결과를 대체하지 않는다. 유한·비양수 log input만
-    지원하고 subnormal/rounding/overflow 경계는 실제 adapter에서 검증한다.
+    CPU posterior를 재계산해 결과를 대체하지 않는다. 비양수 log input과
+    합법적인 0 확률의 ``-inf``를 보존한다. NaN/+inf/양의 log는 거부하며
+    전체 posterior mass 소실은 실패한다. subnormal/rounding/overflow 경계는
+    실제 adapter에서 검증한다.
     GPU reference fitting currently accepts only ``primary_correlation='identity'``;
     the estimated-correlation path remains CPU-only pending precision validation.
     Results record the actual E-step device and wgpu adapter name/backend.
