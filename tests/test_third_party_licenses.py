@@ -96,7 +96,14 @@ def test_libm_source_notices_keep_complete_conditions():
     freebsd = [block for block in blocks if "2. Redistributions in binary form" in block]
     assert sun and freebsd
     assert all("is preserved." in block for block in sun)
-    assert all("SUCH DAMAGE." in block for block in freebsd)
+    assert all("All rights reserved." in block for block in freebsd)
+    assert all(
+        "Redistribution and use in source and binary forms, with or without" in block
+        and "modification, are permitted provided that the following conditions" in block
+        and "notice, this list of conditions and the following disclaimer." in block
+        and "SUCH DAMAGE." in block
+        for block in freebsd
+    )
 
 
 @pytest.mark.parametrize(("target", "expected"), [
