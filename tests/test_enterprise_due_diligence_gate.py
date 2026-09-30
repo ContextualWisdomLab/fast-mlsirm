@@ -204,6 +204,61 @@ def test_write_gate_manifest_cleans_failed_portable_temporary_file(
     assert list((tmp_path / "portable").iterdir()) == []
 
 
+@pytest.mark.parametrize("portable_fallback", [False, True])
+def test_write_gate_manifest_rejects_missing_temporary_descriptor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    portable_fallback: bool,
+) -> None:
+    """An invalid descriptor result fails through the public write contract."""
+    descriptor_writes_supported = (
+        GATE.os.name == "posix"
+        and GATE.os.open in GATE.os.supports_dir_fd
+        and GATE.os.mkdir in GATE.os.supports_dir_fd
+        and GATE.os.rename in GATE.os.supports_dir_fd
+        and GATE.os.unlink in GATE.os.supports_dir_fd
+        and GATE.os.stat in GATE.os.supports_dir_fd
+        and hasattr(GATE.os, "fchmod")
+        and hasattr(GATE.os, "O_DIRECTORY")
+        and hasattr(GATE.os, "O_NOFOLLOW")
+    )
+    if not portable_fallback and not descriptor_writes_supported:
+        pytest.skip("descriptor-relative atomic replacement is unavailable")
+
+    monkeypatch.chdir(tmp_path)
+    original_open = GATE.os.open
+
+    def missing_temporary_descriptor(
+        path: object,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int | None:
+        if flags & GATE.os.O_EXCL:
+            return None
+        if dir_fd is None:
+            return original_open(path, flags, mode)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(GATE.os, "open", missing_temporary_descriptor)
+    if portable_fallback:
+        monkeypatch.delattr(GATE.os, "O_NOFOLLOW", raising=False)
+    else:
+        monkeypatch.setattr(
+            GATE.os,
+            "supports_dir_fd",
+            GATE.os.supports_dir_fd | {missing_temporary_descriptor},
+        )
+
+    manifest = GATE.build_gate_manifest(source_commit=SOURCE_COMMIT)
+    output_path = Path("atomic") / "gate.json"
+    with pytest.raises(ValueError, match="manifest output could not be written"):
+        GATE.write_gate_manifest(manifest, output_path)
+
+    assert list((tmp_path / "atomic").iterdir()) == []
+
+
 def test_write_gate_manifest_rejects_path_traversal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Output validation must prevent writes outside the invocation directory."""
     monkeypatch.chdir(tmp_path)
