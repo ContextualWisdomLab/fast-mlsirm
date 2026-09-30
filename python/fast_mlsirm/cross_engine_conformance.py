@@ -110,9 +110,7 @@ def _git_sha(value: object, name: str) -> str:
     """Validate one immutable full Git SHA-1 or SHA-256 identity."""
     normalized = _text(value, name, maximum=64)
     if _GIT_SHA_PATTERN.fullmatch(normalized) is None:
-        raise ValueError(
-            f"{name} must be a full lowercase 40- or 64-character Git SHA"
-        )
+        raise ValueError(f"{name} must be a full lowercase 40- or 64-character Git SHA")
     return normalized
 
 
@@ -185,9 +183,7 @@ class ConformanceRunProvenance:
     def __post_init__(self) -> None:
         """Normalize exact reproducibility identities without raw result content."""
         if type(self) is not ConformanceRunProvenance:
-            raise ValueError(
-                "ConformanceRunProvenance must be an exact package record"
-            )
+            raise ValueError("ConformanceRunProvenance must be an exact package record")
         object.__setattr__(
             self,
             "harness_commit",
@@ -548,20 +544,28 @@ class ConformanceCapability:
         object.__setattr__(self, "evidence", evidence)
         object.__setattr__(self, "schema_version", _schema_version(self.schema_version))
 
-        if self.coverage_status in {
-            ConformanceCoverageStatus.COVERED,
-            ConformanceCoverageStatus.PARTIALLY_COVERED,
-        } and not evidence:
+        if (
+            self.coverage_status
+            in {
+                ConformanceCoverageStatus.COVERED,
+                ConformanceCoverageStatus.PARTIALLY_COVERED,
+            }
+            and not evidence
+        ):
             raise ValueError("covered capability requires evidence")
         if self.coverage_status in {
             ConformanceCoverageStatus.COVERED,
             ConformanceCoverageStatus.PARTIALLY_COVERED,
         } and not any(row.execution_status in _EXECUTED_STATUSES for row in evidence):
             raise ValueError("covered capability requires executed evidence")
-        if self.coverage_status in {
-            ConformanceCoverageStatus.NO_INDEPENDENT_ENGINE,
-            ConformanceCoverageStatus.NOT_COMPARABLE,
-        } and evidence:
+        if (
+            self.coverage_status
+            in {
+                ConformanceCoverageStatus.NO_INDEPENDENT_ENGINE,
+                ConformanceCoverageStatus.NOT_COMPARABLE,
+            }
+            and evidence
+        ):
             raise ValueError(
                 f"{self.coverage_status.value} must not contain comparison evidence"
             )
@@ -787,7 +791,9 @@ def _evidence_from_manifest(value: object) -> ConformanceEvidence:
         artifact_sha256=_manifest_optional_string(
             manifest, "artifact_sha256", "evidence manifest"
         ),
-        limitation=_manifest_optional_string(manifest, "limitation", "evidence manifest"),
+        limitation=_manifest_optional_string(
+            manifest, "limitation", "evidence manifest"
+        ),
     )
 
 
@@ -796,9 +802,7 @@ def _capability_from_manifest(value: object) -> ConformanceCapability:
     manifest = _manifest_mapping(
         value, "capability manifest", _CAPABILITY_MANIFEST_KEYS
     )
-    evidence_values = _manifest_list(
-        dict.__getitem__(manifest, "evidence"), "evidence"
-    )
+    evidence_values = _manifest_list(dict.__getitem__(manifest, "evidence"), "evidence")
     return ConformanceCapability(
         capability_id=_manifest_string(
             manifest, "capability_id", "capability manifest"
@@ -924,7 +928,8 @@ def _validate_raw_manifest_depth(content: str) -> None:
             if depth > MAX_MANIFEST_NESTING:
                 raise ValueError("manifest JSON nesting is too deep")
         elif char in "]}":
-            depth -= 1
+            if depth > 0:
+                depth -= 1
 
 
 def _validate_manifest_nesting(value: object) -> None:
@@ -1016,7 +1021,9 @@ class ConformanceInventory:
     def from_manifest(cls, value: object) -> ConformanceInventory:
         """Strictly rehydrate one canonical persisted inventory manifest."""
         if cls is not ConformanceInventory:
-            raise ValueError("ConformanceInventory replay requires the exact package class")
+            raise ValueError(
+                "ConformanceInventory replay requires the exact package class"
+            )
         manifest = _manifest_mapping(value, "manifest", _INVENTORY_MANIFEST_KEYS)
         capabilities = _manifest_list(
             dict.__getitem__(manifest, "capabilities"), "capabilities"
@@ -1032,9 +1039,7 @@ class ConformanceInventory:
         replayed = cls(
             package_version=_manifest_string(manifest, "package_version", "manifest"),
             source_commit=_manifest_string(manifest, "source_commit", "manifest"),
-            capabilities=tuple(
-                _capability_from_manifest(row) for row in capabilities
-            ),
+            capabilities=tuple(_capability_from_manifest(row) for row in capabilities),
             schema_version=_manifest_string(manifest, "schema_version", "manifest"),
             run_provenance=run_provenance,
         )
