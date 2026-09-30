@@ -285,6 +285,10 @@ pub struct TwoTierGrmResult {
     pub n_parameters: usize,
     /// `"correlated"` when Phi was estimated, `"orthogonal"` when fixed to I.
     pub primary_identification: &'static str,
+    /// Actual E-step device; CPU M-steps and f64 likelihood certification remain explicit.
+    pub backend: &'static str,
+    pub gpu_adapter_name: Option<String>,
+    pub gpu_adapter_backend: Option<String>,
 }
 
 /// Validated problem structure shared by the fitter and the public
@@ -1119,6 +1123,12 @@ fn item_logprob_tables(
         .collect()
 }
 
+/// Cai (2010), p.608 Appendix A expected counts and p.609 primary cross moments.
+struct ReducedFitStatistics {
+    counts: Vec<Vec<Vec<f64>>>,
+    cross: Vec<f64>,
+}
+
 /// GPU reduced posterior contraction for every shared and specific dimension.
 /// Cai (2010), pp.608-609, Appendices A/B, DOI 10.1007/s11336-010-9178-0:
 /// flatten the shared product grid without marginalizing its dimensions,
@@ -1147,7 +1157,8 @@ fn e_step_gpu_person_moments(
     log_ws: &[f64],
     coords: &[f64],
     ts: &[f64],
-    moments: &mut LatentPosteriorMoments,
+    mut moments: Option<&mut LatentPosteriorMoments>,
+    mut statistics: Option<&mut ReducedFitStatistics>,
     memory_budget_bytes: u64,
 ) -> Result<f64, String> {
     use crate::gpu_bifactor::{e_step_reduced_gpu_posteriors, ReducedEstepInputs};
@@ -1182,10 +1193,17 @@ fn e_step_gpu_person_moments(
         grid,
         grid,
         grid,
-        v.n_specific.checked_mul(grid).ok_or("GPU size overflows")?.max(1),
+        v.n_specific
+            .checked_mul(grid)
+            .ok_or("GPU size overflows")?
+            .max(1),
         joint_per_person.max(1),
         joint_per_person.max(1),
-        if v.n_specific == 0 { 0 } else { joint_per_person },
+        if v.n_specific == 0 {
+            0
+        } else {
+            joint_per_person
+        },
         v.n_specific.max(1),
     ]
     .into_iter()
@@ -1210,7 +1228,10 @@ fn e_step_gpu_person_moments(
         grid,
         qs,
         grid,
-        v.n_specific.checked_mul(qs).ok_or("GPU size overflows")?.max(1),
+        v.n_specific
+            .checked_mul(qs)
+            .ok_or("GPU size overflows")?
+            .max(1),
         2,
     ]
     .into_iter()
@@ -1244,8 +1265,18 @@ fn e_step_gpu_person_moments(
     // layout; all primary coordinates are contracted below.
     let tg_groups = vec![(0..grid).map(|g| coords[g * v.n_primary]).collect()];
     let ts_groups = vec![vec![ts.to_vec(); v.n_specific]];
-    moments.mean.fill(0.0);
-    moments.second.fill(0.0);
+    if let Some(m) = moments.as_deref_mut() {
+        m.mean.fill(0.0);
+        m.second.fill(0.0);
+    }
+    if let Some(stats) = statistics.as_deref_mut() {
+        stats.counts = v
+            .item_block
+            .iter()
+            .map(|block| vec![vec![0.0; v.n_cat]; grid * if block.is_some() { qs } else { 1 }])
+            .collect();
+        stats.cross = vec![0.0; v.n_primary * v.n_primary];
+    }
     let nl = v.n_primary + v.n_specific;
     for start in (0..v.n_persons).step_by(batch) {
         let stop = (start + batch).min(v.n_persons);
@@ -1293,13 +1324,37 @@ fn e_step_gpu_person_moments(
                 }
                 let slot = (start + pp) * nl + d;
                 for (node, &w) in weights.iter().enumerate() {
+                    let weight = w / mass;
                     let x = if d < v.n_primary {
                         coords[node * v.n_primary + d]
                     } else {
                         ts[node % qs]
                     };
-                    moments.mean[slot] += w / mass * x;
-                    moments.second[slot] += w / mass * x * x;
+                    if let Some(m) = moments.as_deref_mut() {
+                        m.mean[slot] += weight * x;
+                        m.second[slot] += weight * x * x;
+                    }
+                    if let Some(stats) = statistics.as_deref_mut() {
+                        if d < v.n_primary {
+                            for k in 0..v.n_primary {
+                                stats.cross[d * v.n_primary + k] +=
+                                    weight * x * coords[node * v.n_primary + k];
+                            }
+                        }
+                        let items = if d == 0 {
+                            &v.specific_free
+                        } else if d >= v.n_primary {
+                            &v.blocks[d - v.n_primary]
+                        } else {
+                            continue;
+                        };
+                        for &i in items {
+                            let index = (start + pp) * v.n_items + i;
+                            if observed.is_none_or(|mask| mask[index]) {
+                                stats.counts[i][node][y[index]] += weight;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1340,7 +1395,8 @@ fn e_step_gpu_person_moments(
     _log_ws: &[f64],
     _coords: &[f64],
     _ts: &[f64],
-    _moments: &mut LatentPosteriorMoments,
+    _moments: Option<&mut LatentPosteriorMoments>,
+    _statistics: Option<&mut ReducedFitStatistics>,
     _memory_budget_bytes: u64,
 ) -> Result<f64, String> {
     Err("focal GPU scoring requires a GPU-enabled build".into())
@@ -1712,6 +1768,8 @@ fn run_single_start(
     n_grid: usize,
     qs: usize,
     start: usize,
+    device: crate::Device,
+    gpu_memory_budget_bytes: Option<u64>,
 ) -> Result<SingleStartOutcome, String> {
     let p = v.n_primary;
     let (mut params, mut z_phi) = initial_params(
@@ -1738,9 +1796,30 @@ fn run_single_start(
             .ok_or_else(|| format!("primary correlation became non-PD at iteration {n_iter}"))?;
         let phi_inv = chol_inverse(&l, p);
         let log_w = reweighted_log_weights(log_w0, coords, &phi_inv, logdet, p);
-        let (ll, counts, s_bar_sum) = e_step(
-            v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs,
-        );
+        let (ll, counts, s_bar_sum) = if device == crate::Device::Gpu {
+            let mut stats = ReducedFitStatistics {
+                counts: Vec::new(),
+                cross: Vec::new(),
+            };
+            let ll = e_step_gpu_person_moments(
+                v,
+                y,
+                observed,
+                &params,
+                &log_w,
+                log_ws,
+                coords,
+                ts,
+                None,
+                Some(&mut stats),
+                gpu_memory_budget_bytes.ok_or("GPU requires a positive gpu_memory_budget_bytes")?,
+            )?;
+            (ll, stats.counts, stats.cross)
+        } else {
+            e_step(
+                v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs,
+            )
+        };
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
@@ -1860,6 +1939,58 @@ pub fn fit_two_tier_grm(
     n_cat: usize,
     cfg: &TwoTierGrmConfig,
 ) -> Result<TwoTierGrmResult, String> {
+    fit_two_tier_grm_with_device(
+        y,
+        observed,
+        primary_map,
+        specific_map,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_cat,
+        cfg,
+        crate::Device::Cpu,
+        None,
+    )
+}
+
+/// [`fit_two_tier_grm`]의 장치 명시형 진입점.
+/// Cai (2010), pp.608–609 Appendices A/B에 따라 기존 product grid의 GPU
+/// posterior 가중치로 문항별 기대 빈도와 주요인 교차 적률을 합산한다.
+/// Newton M-step과 원래 f64 관측 likelihood 검증은 호스트에서 유지한다.
+/// GPU 적합은 고정 Φ=I만 허용한다. 상관 추정은 별도 정밀도 검증 전까지
+/// 원래 CPU 경로만 지원한다. WGSL 가중치는 f32이며 자동 CPU 대체는 없다.
+/// 양수인 호출자 buffer 예산이 필요하다. 실제 hardware dispatch 성공 뒤에만
+/// wgpu 30 AdapterInfo의 이름과 backend를 기록한다:
+/// https://docs.rs/wgpu/30.0.0/wgpu/struct.AdapterInfo.html.
+/// 참고: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// https://doi.org/10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_two_tier_grm_with_device(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    cfg: &TwoTierGrmConfig,
+    device: crate::Device,
+    gpu_memory_budget_bytes: Option<u64>,
+) -> Result<TwoTierGrmResult, String> {
+    if device == crate::Device::Auto {
+        return Err("reference device must be explicit cpu or gpu".into());
+    }
+    if device == crate::Device::Gpu && gpu_memory_budget_bytes.is_none_or(|n| n == 0) {
+        return Err("GPU requires a positive gpu_memory_budget_bytes".into());
+    }
+    if device == crate::Device::Gpu && cfg.estimate_primary_correlation {
+        return Err("GPU reference fitting currently requires identity primary correlation".into());
+    }
     let v = validate(
         y,
         observed,
@@ -1890,7 +2021,19 @@ pub fn fit_two_tier_grm(
     let mut n_succeeded = 0usize;
     for start in 0..cfg.n_starts {
         match run_single_start(
-            &v, y, observed, cfg, &coords, &log_w0, ts, &log_ws, n_grid, qs, start,
+            &v,
+            y,
+            observed,
+            cfg,
+            &coords,
+            &log_w0,
+            ts,
+            &log_ws,
+            n_grid,
+            qs,
+            start,
+            device,
+            gpu_memory_budget_bytes,
         ) {
             Ok(outcome) => {
                 n_succeeded += 1;
@@ -1936,51 +2079,79 @@ pub fn fit_two_tier_grm(
     let mut log_i = vec![0.0f64; v.n_specific * n_grid];
     let mut log_like_g = vec![0.0f64; n_grid];
     let mut tmp_h = vec![0.0f64; qs];
-    for pp in 0..n_persons {
-        let mut gen_log = log_w.clone();
-        for &i in &v.specific_free {
-            if !is_obs(pp, i) {
-                continue;
-            }
-            let yc = y[pp * n_items + i];
-            for g in 0..n_grid {
-                gen_log[g] += item_cat_logprob(&v, &params, &coords, ts, i, g, 0, yc);
+    if device == crate::Device::Gpu {
+        let nl = p + v.n_specific;
+        let mut moments = LatentPosteriorMoments {
+            mean: vec![0.0; n_persons * nl],
+            second: vec![0.0; n_persons * nl],
+        };
+        e_step_gpu_person_moments(
+            &v,
+            y,
+            observed,
+            &params,
+            &log_w,
+            &log_ws,
+            &coords,
+            ts,
+            Some(&mut moments),
+            None,
+            gpu_memory_budget_bytes.ok_or("GPU requires a positive gpu_memory_budget_bytes")?,
+        )?;
+        for pp in 0..n_persons {
+            for d in 0..p {
+                let m = moments.mean[pp * nl + d];
+                theta_p_eap[pp * p + d] = m;
+                theta_p_sd[pp * p + d] = (moments.second[pp * nl + d] - m * m).max(0.0).sqrt();
             }
         }
-        for (s, members) in v.blocks.iter().enumerate() {
-            for g in 0..n_grid {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(pp, i) {
-                            continue;
-                        }
-                        let yc = y[pp * n_items + i];
-                        acc += item_cat_logprob(&v, &params, &coords, ts, i, g, h, yc);
-                    }
-                    tmp_h[h] = acc;
+    } else {
+        for pp in 0..n_persons {
+            let mut gen_log = log_w.clone();
+            for &i in &v.specific_free {
+                if !is_obs(pp, i) {
+                    continue;
                 }
-                log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                let yc = y[pp * n_items + i];
+                for g in 0..n_grid {
+                    gen_log[g] += item_cat_logprob(&v, &params, &coords, ts, i, g, 0, yc);
+                }
             }
-        }
-        for g in 0..n_grid {
-            let mut acc = gen_log[g];
-            for s in 0..v.n_specific {
-                acc += log_i[s * n_grid + g];
+            for (s, members) in v.blocks.iter().enumerate() {
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws[h];
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * n_items + i];
+                            acc += item_cat_logprob(&v, &params, &coords, ts, i, g, h, yc);
+                        }
+                        tmp_h[h] = acc;
+                    }
+                    log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                }
             }
-            log_like_g[g] = acc;
-        }
-        let log_lp = log_sum_exp(&log_like_g);
-        for d in 0..p {
-            let (mut m1, mut m2) = (0.0f64, 0.0f64);
-            for (g, &ll) in log_like_g.iter().enumerate() {
-                let post = (ll - log_lp).exp();
-                let t = coords[g * p + d];
-                m1 += post * t;
-                m2 += post * t * t;
+            for g in 0..n_grid {
+                let mut acc = gen_log[g];
+                for s in 0..v.n_specific {
+                    acc += log_i[s * n_grid + g];
+                }
+                log_like_g[g] = acc;
             }
-            theta_p_eap[pp * p + d] = m1;
-            theta_p_sd[pp * p + d] = (m2 - m1 * m1).max(0.0).sqrt();
+            let log_lp = log_sum_exp(&log_like_g);
+            for d in 0..p {
+                let (mut m1, mut m2) = (0.0f64, 0.0f64);
+                for (g, &ll) in log_like_g.iter().enumerate() {
+                    let post = (ll - log_lp).exp();
+                    let t = coords[g * p + d];
+                    m1 += post * t;
+                    m2 += post * t * t;
+                }
+                theta_p_eap[pp * p + d] = m1;
+                theta_p_sd[pp * p + d] = (m2 - m1 * m1).max(0.0).sqrt();
+            }
         }
     }
 
@@ -2064,7 +2235,25 @@ pub fn fit_two_tier_grm(
         }
     }
 
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    let (gpu_adapter_name, gpu_adapter_backend) = if device == crate::Device::Gpu {
+        let info = &crate::gpu::GpuContext::get()
+            .ok_or("GPU adapter unavailable after dispatch")?
+            .adapter_info;
+        (Some(info.name.clone()), Some(format!("{:?}", info.backend)))
+    } else {
+        (None, None)
+    };
+    #[cfg(any(not(feature = "gpu"), coverage))]
+    let (gpu_adapter_name, gpu_adapter_backend) = (None, None);
     Ok(TwoTierGrmResult {
+        backend: if device == crate::Device::Gpu {
+            "gpu"
+        } else {
+            "cpu"
+        },
+        gpu_adapter_name,
+        gpu_adapter_backend,
         a_primary,
         a_specific,
         threshold,
@@ -2629,7 +2818,8 @@ pub fn score_two_tier_grm_orthogonal_with_device(
             &log_ws,
             &coords,
             ts,
-            &mut moments,
+            Some(&mut moments),
+            None,
             gpu_memory_budget_bytes
                 .filter(|&n| n > 0)
                 .ok_or("GPU requires a positive gpu_memory_budget_bytes")?,

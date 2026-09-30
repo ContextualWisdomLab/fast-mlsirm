@@ -45,6 +45,9 @@ def test_group_pipeline_preserves_slots_priors_and_nonconvergence():
     assert all(s.backend == "gpu" for s in out["group_scores"].values())
     np.testing.assert_array_equal(out["group_rows"][1], np.arange(1, 1024, 2))
     bank = out["reference_fit"]
+    assert bank.backend == "gpu"
+    assert bank.gpu_adapter_name
+    assert bank.gpu_adapter_backend
     f = out["group_fits"][0]
     independent = score_two_tier_grm_orthogonal(
         focal, ap != 0, sm, bank.a_primary, bank.a_specific, bank.threshold,

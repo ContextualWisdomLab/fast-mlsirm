@@ -84,6 +84,18 @@ def _simulate(seed: int, rho: float = RHO) -> np.ndarray:
         y[:, i] = (draws[:, None] > np.cumsum(probs, axis=1)).sum(axis=1)
     return y
 
+@pytest.mark.parametrize("controls", [
+    {"device": "auto"}, {"device": "cuda"}, {"device": True},
+    {"device": "gpu"}, {"device": "gpu", "gpu_memory_budget_bytes": 0},
+    {"device": "gpu", "gpu_memory_budget_bytes": True},
+    {"device": "gpu", "gpu_memory_budget_bytes": 2**64},
+    {"device": "gpu", "gpu_memory_budget_bytes": 1 << 28},
+])
+def test_reference_gpu_controls_fail_before_dispatch(controls) -> None:
+    with pytest.raises(ValueError, match="device|gpu_memory_budget_bytes|identity primary correlation"):
+        _fit(_simulate(SEED), **controls)
+
+
 def test_primary_correlation_validation() -> None:
     with pytest.raises(ValueError, match="primary_correlation"):
         _fit(_simulate(SEED), primary_correlation="unknown")
@@ -235,6 +247,9 @@ def test_fit_returns_identified_shaped_result() -> None:
     y = _simulate(SEED)
     fit = _fit(y)
     assert fit.converged, fit.termination_reason
+    assert fit.backend == "cpu"
+    assert fit.gpu_adapter_name is None
+    assert fit.gpu_adapter_backend is None
     assert fit.a_primary.shape == (N_ITEMS, N_PRIMARY)
     assert fit.a_specific.shape == (N_ITEMS,)
     assert fit.threshold.shape == (N_ITEMS, N_CAT - 1)

@@ -316,6 +316,9 @@ pub struct BifactorGrmResult {
     /// slope prior (constants omitted) under a prior, bit-identical to
     /// `loglik_trace` without one. Monotone non-decreasing by the EM guard.
     pub em_objective_trace: Vec<f64>,
+    pub e_step_device: String,
+    pub e_step_adapter_name: Option<String>,
+    pub e_step_backend: Option<String>,
 }
 
 /// Validated problem structure shared by the fitter and the public
@@ -679,6 +682,25 @@ pub(crate) fn e_step(
     ts: &[f64],
     device: crate::Device,
 ) -> Result<(f64, Vec<Vec<Vec<f64>>>), String> {
+    e_step_with_provenance(v, y, observed, tables, log_wg, log_ws, qg, qs, tg, ts, device)
+        .map(|(loglik, counts, _)| (loglik, counts))
+}
+
+#[allow(clippy::too_many_arguments)]
+#[cfg_attr(any(not(feature = "gpu"), coverage), allow(unused_variables))]
+fn e_step_with_provenance(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    tables: &[Vec<f64>],
+    log_wg: &[f64],
+    log_ws: &[f64],
+    qg: usize,
+    qs: usize,
+    tg: &[f64],
+    ts: &[f64],
+    device: crate::Device,
+) -> Result<(f64, Vec<Vec<Vec<f64>>>, EStepDeviceProvenance), String> {
     #[cfg(all(feature = "gpu", not(coverage)))]
     {
         if device == crate::Device::Gpu || device == crate::Device::Auto {
@@ -732,7 +754,20 @@ pub(crate) fn e_step(
                         );
                     }
                 }
-                return Ok((res.loglik, counts));
+                let info = crate::gpu::GpuContext::get()
+                    .expect("successful reduced E-step retains its GPU context")
+                    .adapter_info
+                    .clone();
+                return Ok((
+                    res.loglik,
+                    counts,
+                    EStepDeviceProvenance {
+                        cpu_used: false,
+                        gpu_used: true,
+                        adapter_name: Some(info.name),
+                        backend: Some(format!("{:?}", info.backend)),
+                    },
+                ));
             }
         }
     }
@@ -851,7 +886,14 @@ pub(crate) fn e_step(
             }
         }
     }
-    Ok((loglik, counts))
+    Ok((
+        loglik,
+        counts,
+        EStepDeviceProvenance {
+            cpu_used: true,
+            ..EStepDeviceProvenance::default()
+        },
+    ))
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item.
@@ -1057,6 +1099,7 @@ fn checked_em_loglik_change(
 
 struct SingleStartOutcome {
     params: Vec<ItemParams>,
+    e_step_provenance: EStepDeviceProvenance,
     loglik_trace: Vec<f64>,
     /// EM objective per E-step (== `loglik_trace` without a prior); its last
     /// value ranks starts.
@@ -1114,13 +1157,15 @@ fn run_single_start(
     let mut final_loglik_change = f64::NAN;
     let mut previous: Option<f64> = None;
     let mut em_objective_trace: Vec<f64> = Vec::new();
+    let mut e_step_provenance = EStepDeviceProvenance::default();
     let objective_name = em_objective_name(cfg.slope_prior);
 
     loop {
         let tables = fill_logprob_tables(v, &params, tg, ts, qg, qs);
-        let (ll, counts) = e_step(
+        let (ll, counts, sweep_provenance) = e_step_with_provenance(
             v, y, observed, &tables, log_wg, log_ws, qg, qs, tg, ts, cfg.device,
         )?;
+        e_step_provenance.merge(sweep_provenance);
         // MAP: GEM ascends log-likelihood + log prior, not the likelihood.
         let objective = ll - slope_prior_neg_log(cfg.slope_prior, &params);
         let change = checked_em_loglik_change(objective, previous, n_iter, objective_name)?;
@@ -1176,6 +1221,7 @@ fn run_single_start(
     );
     Ok(SingleStartOutcome {
         params,
+        e_step_provenance,
         loglik_trace,
         em_objective_trace,
         n_iter,
@@ -1386,6 +1432,9 @@ pub fn fit_bifactor_grm(
         n_parameters,
         slope_prior: cfg.slope_prior,
         em_objective_trace: outcome.em_objective_trace,
+        e_step_device: outcome.e_step_provenance.device().to_string(),
+        e_step_adapter_name: outcome.e_step_provenance.adapter_name,
+        e_step_backend: outcome.e_step_provenance.backend,
     })
 }
 
@@ -1809,6 +1858,11 @@ pub struct BifactorMultigroupResult {
     /// EM objective per E-step (see [`BifactorGrmResult::em_objective_trace`];
     /// common items contribute their prior once, free items once per group).
     pub em_objective_trace: Vec<f64>,
+    /// Device(s) that actually completed E-step sweeps: `cpu`, `gpu`, or `mixed`.
+    pub e_step_device: String,
+    /// Adapter metadata is present only when at least one E-step ran on wgpu.
+    pub e_step_adapter_name: Option<String>,
+    pub e_step_backend: Option<String>,
 }
 
 fn validate_multigroup_cfg(cfg: &BifactorMultigroupConfig) -> Result<(), String> {
@@ -1968,6 +2022,33 @@ fn initial_params_multigroup(
     (params_groups, mus, sigmas, taus)
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct EStepDeviceProvenance {
+    cpu_used: bool,
+    gpu_used: bool,
+    adapter_name: Option<String>,
+    backend: Option<String>,
+}
+
+impl EStepDeviceProvenance {
+    fn device(&self) -> &'static str {
+        match (self.cpu_used, self.gpu_used) {
+            (true, true) => "mixed",
+            (false, true) => "gpu",
+            _ => "cpu",
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.cpu_used |= other.cpu_used;
+        if other.gpu_used {
+            self.gpu_used = true;
+            self.adapter_name = other.adapter_name;
+            self.backend = other.backend;
+        }
+    }
+}
+
 struct MultiStartOutcome {
     params_groups: Vec<Vec<ItemParams>>,
     mus: Vec<f64>,
@@ -1981,6 +2062,7 @@ struct MultiStartOutcome {
     converged: bool,
     termination_reason: String,
     final_loglik_change: f64,
+    e_step_provenance: EStepDeviceProvenance,
 }
 
 /// One reduced E-step sweep over all groups: total observed-data loglik, plus
@@ -2018,6 +2100,7 @@ fn e_step_multigroup(
     Vec<f64>,
     Vec<Vec<f64>>,
     Vec<Vec<f64>>,
+    EStepDeviceProvenance,
 ), String> {
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
     // Per-group logprob tables at the CURRENT group nodes.
@@ -2106,8 +2189,19 @@ fn e_step_multigroup(
                         w_spec[g][s] = res.w_spec[g * v.n_specific + s];
                     }
                 }
+                let info = crate::gpu::GpuContext::get()
+                    .expect("successful reduced E-step retains its GPU context")
+                    .adapter_info
+                    .clone();
+                let provenance = EStepDeviceProvenance {
+                    cpu_used: false,
+                    gpu_used: true,
+                    adapter_name: Some(info.name),
+                    backend: Some(format!("{:?}", info.backend)),
+                };
                 return Ok((
                     res.loglik, counts, res.w_acc, res.s1_g, res.s2_g, s2_spec, w_spec,
+                    provenance,
                 ));
             }
         }
@@ -2246,7 +2340,19 @@ fn e_step_multigroup(
             }
         }
     }
-    Ok((loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec))
+    Ok((
+        loglik,
+        counts,
+        w_acc,
+        s1_g,
+        s2_g,
+        s2_spec,
+        w_spec,
+        EStepDeviceProvenance {
+            cpu_used: true,
+            ..EStepDeviceProvenance::default()
+        },
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2279,6 +2385,7 @@ fn run_single_start_multigroup(
         cfg.estimate_specific_vars,
     );
     let start_params_groups = params_groups.clone();
+    let mut e_step_provenance = EStepDeviceProvenance::default();
     // Latent coordinates per expected-count node (rebuilt when mus/sigmas/
     // taus move): node_g[node]/node_s[node] parallel `counts[g][i]`.
     // No pre-allocation from `max_iter`: it is caller-owned and unbounded
@@ -2307,7 +2414,7 @@ fn run_single_start_multigroup(
                 }
             }
         }
-        let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec) = e_step_multigroup(
+        let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec, sweep_provenance) = e_step_multigroup(
             v,
             y,
             observed,
@@ -2322,6 +2429,7 @@ fn run_single_start_multigroup(
             qs,
             cfg.device,
         )?;
+        e_step_provenance.merge(sweep_provenance);
         // MAP: GEM ascends log-likelihood + log prior. Common (anchored)
         // items count once (group 0 row), free items once per group.
         let prior_nll = slope_prior_neg_log(
@@ -2519,6 +2627,7 @@ fn run_single_start_multigroup(
         converged,
         termination_reason,
         final_loglik_change,
+        e_step_provenance,
     })
 }
 
@@ -2619,6 +2728,9 @@ pub fn fit_bifactor_grm_multigroup(
             n_parameters: single.n_parameters,
             slope_prior: single.slope_prior,
             em_objective_trace: single.em_objective_trace,
+            e_step_device: single.e_step_device,
+            e_step_adapter_name: single.e_step_adapter_name,
+            e_step_backend: single.e_step_backend,
         });
     }
     // Base structural validation (pooled categories, blocks, checked
@@ -2982,6 +3094,9 @@ pub fn fit_bifactor_grm_multigroup(
         n_parameters,
         slope_prior: cfg.slope_prior,
         em_objective_trace: outcome.em_objective_trace,
+        e_step_device: outcome.e_step_provenance.device().to_string(),
+        e_step_adapter_name: outcome.e_step_provenance.adapter_name,
+        e_step_backend: outcome.e_step_provenance.backend,
     })
 }
 
@@ -3335,7 +3450,7 @@ pub fn fit_bifactor_grm_fipc(
             .collect();
         let tg_groups = vec![tg.clone()];
         let ts_groups = vec![ts_focal.clone()];
-        let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec) = e_step_multigroup(
+        let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec, _) = e_step_multigroup(
             &v,
             y,
             observed,

@@ -29,9 +29,10 @@
 //! https://doi.org/10.1177/0146621606289485
 
 use crate::two_tier_grm::{
-    fit_two_tier_grm, two_tier_grm_marginal_loglik, two_tier_grm_marginal_loglik_brute,
-    TwoTierGrmConfig,
+    fit_two_tier_grm, fit_two_tier_grm_with_device, two_tier_grm_marginal_loglik,
+    two_tier_grm_marginal_loglik_brute, TwoTierGrmConfig,
 };
+use crate::Device;
 
 // ---------------------------------------------------------------------------
 // Shared tiny two-tier problem: 10 items, P = 2 primaries in simple
@@ -255,6 +256,157 @@ fn valid_config() -> TwoTierGrmConfig {
 }
 
 #[test]
+fn reference_fit_gpu_is_explicit_and_never_substituted() {
+    let (y, n) = tiny_data();
+    let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: false,
+        ..valid_config()
+    };
+    let correlated = fit_two_tier_grm_with_device(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &valid_config(),
+        Device::Gpu,
+        Some(1 << 28),
+    );
+    assert!(correlated
+        .unwrap_err()
+        .contains("identity primary correlation"));
+    let fit = |device, budget| {
+        fit_two_tier_grm_with_device(
+            &y,
+            None,
+            &TINY_PRIMARY_MAP,
+            &TINY_SPECIFIC_MAP,
+            n,
+            TINY_N_ITEMS,
+            TINY_N_PRIMARY,
+            TINY_N_SPECIFIC,
+            TINY_N_CAT,
+            &cfg,
+            device,
+            budget,
+        )
+    };
+    assert!(fit(Device::Auto, None).unwrap_err().contains("cpu or gpu"));
+    assert!(fit(Device::Gpu, None)
+        .unwrap_err()
+        .contains("gpu_memory_budget_bytes"));
+    assert!(fit(Device::Gpu, Some(0))
+        .unwrap_err()
+        .contains("gpu_memory_budget_bytes"));
+    // A one-byte budget cannot dispatch; no CPU fit may be returned instead.
+    assert!(fit(Device::Gpu, Some(1)).is_err());
+    let cpu = fit(Device::Cpu, None).unwrap();
+    assert_eq!(cpu.backend, "cpu");
+    assert!(cpu.gpu_adapter_name.is_none());
+    assert!(cpu.gpu_adapter_backend.is_none());
+}
+
+#[test]
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[ignore = "requires hardware GPU; CPU/GPU reference-fit parity"]
+fn reference_fit_actual_gpu_matches_cpu() {
+    // Cai (2010), pp.608-609 Appendices A/B; mixed-precision regression
+    // bounds are implementation choices, not scientific acceptance thresholds.
+    let (y, n) = tiny_data();
+    let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: false,
+        max_iter: 500,
+        tol: 1e-4,
+        ..valid_config()
+    };
+    let started = std::time::Instant::now();
+    let cpu = fit_two_tier_grm(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .unwrap();
+    let cpu_seconds = started.elapsed().as_secs_f64();
+    let started = std::time::Instant::now();
+    let gpu = fit_two_tier_grm_with_device(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+        Device::Gpu,
+        Some(1 << 28),
+    )
+    .unwrap();
+    let gpu_seconds = started.elapsed().as_secs_f64();
+    assert!(cpu.converged && gpu.converged);
+    assert_eq!(gpu.backend, "gpu");
+    assert!(gpu.gpu_adapter_name.as_ref().is_some_and(|s| !s.is_empty()));
+    assert!(gpu
+        .gpu_adapter_backend
+        .as_ref()
+        .is_some_and(|s| !s.is_empty()));
+    assert_eq!(cpu.category_counts, gpu.category_counts);
+    assert_eq!(cpu.n_parameters, gpu.n_parameters);
+    for (name, left, right) in [
+        ("a_primary", &cpu.a_primary, &gpu.a_primary),
+        ("a_specific", &cpu.a_specific, &gpu.a_specific),
+        ("threshold", &cpu.threshold, &gpu.threshold),
+        ("phi", &cpu.phi, &gpu.phi),
+        ("theta_p_eap", &cpu.theta_p_eap, &gpu.theta_p_eap),
+        ("theta_p_sd", &cpu.theta_p_sd, &gpu.theta_p_sd),
+    ] {
+        let gap = left
+            .iter()
+            .zip(right)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f64::max);
+        println!("{name}_max_delta={gap}");
+        assert!(gap < 1e-3, "{name} gap: {gap}");
+    }
+    let gap = gpu.loglik_trace.last().unwrap() - cpu.loglik_trace.last().unwrap();
+    assert!(gap.abs() < 1e-3, "likelihood/AIC/BIC gap: {gap}");
+    use sha2::Digest;
+    let input = serde_json::to_vec(&(
+        &y,
+        TINY_PRIMARY_MAP,
+        TINY_SPECIFIC_MAP,
+        n,
+        (
+            cfg.q_primary,
+            cfg.q_specific,
+            cfg.max_iter,
+            cfg.tol,
+            cfg.n_starts,
+            cfg.seed,
+            cfg.newton_iter,
+            cfg.ridge,
+            cfg.estimate_primary_correlation,
+        ),
+    ))
+    .unwrap();
+    println!("input_sha256={:x}", sha2::Sha256::digest(&input));
+    println!("primary_correlation=identity, adapter={:?}, adapter_backend={:?}, cpu_iterations={}, gpu_iterations={}, cpu_seconds={cpu_seconds}, gpu_seconds={gpu_seconds}, loglik_delta={gap}, AIC_delta={}, BIC_delta={}",
+            gpu.gpu_adapter_name, gpu.gpu_adapter_backend, cpu.n_iter, gpu.n_iter, -2.0*gap, -2.0*gap);
+}
+
+#[test]
 fn rejects_malformed_primary_map() {
     let (y, n_persons) = tiny_data();
     // Wrong length.
@@ -371,7 +523,10 @@ fn oracle_rejects_non_correlation_phi() {
 }
 
 #[test]
-#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
+#[cfg_attr(
+    coverage,
+    ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job"
+)]
 fn arbitrary_quadrature_counts_above_the_old_fixed_table_are_accepted() {
     // #1929: node count controls integration precision and must not be
     // capped at a fixed table; 5/22/100 used to be rejected, now must fit
@@ -992,7 +1147,10 @@ fn focal_em_preserves_one_step_moments_and_termination_receipts() {
 /// This bank, count, quadrature and error tolerance are test choices; the
 /// source does not prescribe them or establish study-model identification.
 #[test]
-#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
+#[cfg_attr(
+    coverage,
+    ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job"
+)]
 fn focal_gaussian_recovers_declared_distribution() {
     use crate::two_tier_grm::fit_two_tier_grm_focal_orthogonal;
     let ap = [1.2, 1.6, 0.5, 0.8];
