@@ -11,7 +11,7 @@ from .cross_engine_conformance import ConformanceInventory
 _CSP = (
     "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; "
     "img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; "
-    "style-src 'unsafe-inline'"
+    "style-src 'none'"
 )
 _DISCLAIMER = (
     "Numerical conformance evidence is not construct validity, fairness, or "
@@ -354,7 +354,11 @@ def render_conformance_report(manifest_json: str) -> tuple[str, str]:
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<title>Cross-engine conformance evidence</title>",
         "<style>",
-        ".skip-link { position: absolute; left: 8px; top: -80px; padding: 10px; background: Canvas; color: CanvasText; z-index: 10; transition: top 0.2s ease-in-out; text-decoration: none; font-weight: bold; }",
+        ".skip-link {",
+        "  position: absolute; left: 8px; top: -80px; padding: 10px;",
+        "  background: Canvas; color: CanvasText; z-index: 10;",
+        "  transition: top 0.2s ease-in-out; text-decoration: none; font-weight: bold;",
+        "}",
         ".skip-link:focus { top: 8px; }",
         ".skip-link:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }",
         "main:focus:not(:focus-visible) { outline: none; }",
