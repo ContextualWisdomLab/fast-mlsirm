@@ -193,7 +193,7 @@ def _write_manifest_descriptor(
                 raise ValueError("manifest output could not be written")
 
             if temporary_fd is None:
-                raise RuntimeError("temporary file descriptor was not successfully created")
+                raise ValueError("manifest output could not be written")
             try:
                 stream = os.fdopen(temporary_fd, "w", encoding="utf-8")
             except BaseException:
@@ -207,7 +207,7 @@ def _write_manifest_descriptor(
                 os.fsync(stream.fileno())
 
             if temporary_path is None:
-                raise RuntimeError("temporary file path was not successfully created")
+                raise ValueError("manifest output could not be written")
             if existing_mode is not None:
                 os.chmod(temporary_path, existing_mode)
             os.replace(temporary_path, validated_path)
@@ -271,7 +271,7 @@ def _write_manifest_descriptor(
                 raise ValueError("manifest output could not be written")
 
             if temporary_fd is None:
-                raise RuntimeError("temporary file descriptor was not successfully created")
+                raise ValueError("manifest output could not be written")
             if existing_mode is not None:
                 os.fchmod(temporary_fd, existing_mode)
             try:
@@ -287,7 +287,7 @@ def _write_manifest_descriptor(
                 os.fsync(stream.fileno())
 
             if temporary_name is None:
-                raise RuntimeError("temporary file name was not successfully created")
+                raise ValueError("manifest output could not be written")
             os.rename(
                 temporary_name,
                 components[-1],
