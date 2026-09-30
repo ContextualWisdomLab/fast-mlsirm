@@ -54,7 +54,7 @@ def test_multigroup_real_worker_retains_flags_errors_and_parameter_row_ids(monke
         rep = len(calls)
         calls.append(kw)
         if rep == 2:
-            raise ValueError("synthetic category missing")
+            raise ValueError("free item 0 category 1 is never observed in group 1 (unidentified per-group GRM boundary)")
         return SimpleNamespace(
             a_general=np.array([[10.], [20.]]), a_specific=np.zeros((2, 1)),
             threshold=np.zeros((2, 1, 1)), general_mean=np.array([0., 1.]),
@@ -74,7 +74,7 @@ def test_multigroup_real_worker_retains_flags_errors_and_parameter_row_ids(monke
     assert result.converged_replicate_ids == (0,)
     assert result.converged.tolist() == [True, False, False]
     assert result.replicate_errors == (
-        "", "fit not converged: max_iter_reached", "ValueError: synthetic category missing")
+        "", "fit not converged: max_iter_reached", "ValueError: free item 0 category 1 is never observed in group 1 (unidentified per-group GRM boundary)")
     assert result.replicate_a_general.tolist() == [[[10.], [20.]]]
     assert result.replicate_threshold.shape == (1, 2, 1, 1)
     assert len(calls) == 3

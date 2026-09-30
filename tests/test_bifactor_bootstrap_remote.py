@@ -5,8 +5,8 @@
 
 A remote run must reproduce the in-process run replicate by replicate: both
 paths call the same resample-and-fit body with the same index-derived seed.
-A replicate whose fit raises (for example a resample that misses a response
-category) is a result, not a failure. It is counted and never retried, since
+A documented unidentifiable resample (for example missing a response
+category) is a result, not a transport failure. Other exceptions propagate. It is counted and never retried, since
 redrawing until success would bias the bootstrap sample.
 """
 

@@ -52,6 +52,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 import math
 import os
+import re
 import time
 from typing import Protocol
 
@@ -66,10 +67,26 @@ from .remote_exec import (
     RemoteJobOutcome,
     RemoteRunManifest,
     payload_identity_sha256,
+    envelope_fingerprint,
+    result_identity_sha256,
 )
 
 # Replicate error strings travel in remote result JSON; keep them bounded.
 _MAX_REPLICATE_ERROR_CHARS = 512
+
+
+def _is_resample_rejection(message: str) -> bool:
+    """Recognize only the existing core's unidentifiable-resample errors.
+
+    These exact contracts originate in bifactor_grm.rs validate() and the
+    multigroup per-item category check; unrelated validation errors propagate.
+    """
+    return any(re.fullmatch(pattern, message) is not None for pattern in (
+        r"item [0-9]+ category [0-9]+ is never observed \(unidentified GRM boundary\); every declared category must be observed",
+        r"item [0-9]+ has no observed responses",
+        r"free item [0-9]+ category [0-9]+ is never observed in group [0-9]+ \(unidentified per-group GRM boundary\)",
+        r"free item [0-9]+ has no observed responses in group [0-9]+",
+    ))
 
 
 def _require_gh_nodes(value: object, name: str) -> int:
@@ -194,6 +211,10 @@ def _fit_single_replicate(
 ) -> tuple:
     """Execute one bootstrap resample and fit.
 
+    Only documented unobserved-category or empty-item resampling errors become
+    rejected receipts. Other exceptions propagate; they must not bias the
+    summaries by masquerading as excluded statistical observations.
+
     The replicate seed derives deterministically from the caller-supplied
     ``base_seed`` and the replicate index, so CPU and GPU runs with the same
     ``base_seed`` draw identical resamples and identical start jitter and
@@ -209,12 +230,13 @@ def _fit_single_replicate(
 
     def _nan_result(converged: bool, err: str, rejected: bool):
         m1 = n_cat - 1
+        item_shape = (n_items,) if g_boot is None or n_groups <= 1 else (n_groups, n_items)
         return (
             rep_idx,
             converged,
-            np.full(n_items, np.nan),
-            np.full(n_items, np.nan),
-            np.full((n_items, m1), np.nan),
+            np.full(item_shape, np.nan),
+            np.full(item_shape, np.nan),
+            np.full((*item_shape, m1), np.nan),
             np.full(n_groups, np.nan),
             np.full(n_groups, np.nan),
             np.full((n_groups, n_specific), np.nan),
@@ -282,10 +304,12 @@ def _fit_single_replicate(
                 "" if fit.converged else f"fit not converged: {getattr(fit, 'termination_reason', 'unreported')}",
             False,
         )
-    except Exception as exc:  # noqa: BLE001 — replicate failure is data, reported via flags
-        # A fit that raises (e.g. a resample missing a category) is a rejected
-        # replicate: a result that is counted, never redrawn (#2001).
-        return _nan_result(False, f"{type(exc).__name__}: {exc}", True)
+    except ValueError as exc:
+        if not _is_resample_rejection(str(exc)):
+            raise
+        # Only an unidentifiable resample is a statistical result (#2001).
+        # Infrastructure/programming errors propagate and stop the run.
+        return _nan_result(False, f"ValueError: {exc}", True)
 
 
 def _json_floats(values: object) -> list:
@@ -375,26 +399,71 @@ def run_bootstrap_replicate_payload(
         "general_sd": _json_floats(result[6]),
         "specific_sd": _json_floats(result[7]),
         "loglik": _json_floats(result[8]),
-        "error": result[9],
+        "error": result[9][:_MAX_REPLICATE_ERROR_CHARS],
         "rejected": result[10],
     }
 
 
-def _replicate_from_record(record: Mapping[str, object]) -> tuple:
-    """Decode a worker replicate record into the in-process result tuple."""
-    return (
-        int(record["replicate_id"]),
-        bool(record["converged"]),
-        np.asarray(record["a_general"], dtype=np.float64),
-        np.asarray(record["a_specific"], dtype=np.float64),
-        np.asarray(record["threshold"], dtype=np.float64),
-        np.asarray(record["general_mean"], dtype=np.float64),
-        np.asarray(record["general_sd"], dtype=np.float64),
-        np.asarray(record["specific_sd"], dtype=np.float64),
-        float(np.asarray(record["loglik"], dtype=np.float64)),
-        str(record["error"]),
-        bool(record["rejected"]),
+def _replicate_from_record(record: object, envelope: RemoteJobEnvelope, task: tuple) -> tuple:
+    """Validate the untrusted wire record before decoding its replicate tuple."""
+    def invalid(detail: str) -> None:
+        raise RuntimeError(f"remote bootstrap invalid replicate record: {detail}")
+
+    if type(record) is not dict:
+        invalid("expected a mapping")
+    required = {"family", "replicate_id", "converged", "rejected", "error",
+                "a_general", "a_specific", "threshold", "general_mean",
+                "general_sd", "specific_sd", "loglik"}
+    if not required.issubset(record):
+        invalid("missing fields")
+    if (type(record["replicate_id"]) is not int
+            or record["replicate_id"] != envelope.unit_index
+            or record["family"] != envelope.family.value):
+        invalid("identity does not match the envelope")
+    converged, rejected, error = record["converged"], record["rejected"], record["error"]
+    if type(converged) is not bool or type(rejected) is not bool:
+        invalid("flags must be booleans")
+    if type(error) is not str or len(error) > _MAX_REPLICATE_ERROR_CHARS:
+        invalid("error must be a bounded string")
+    if (converged and (rejected or error)) or (not converged and not error):
+        invalid("contradictory convergence or rejection flags")
+    if rejected and not (error.startswith("ValueError: ")
+                         and _is_resample_rejection(error[len("ValueError: "):])):
+        invalid("undocumented rejection")
+
+    n_items, n_cat, n_specific, n_groups = task[1].shape[1], task[3], task[4], task[6]
+    item_shape = (n_items,) if task[5] is None or n_groups <= 1 else (n_groups, n_items)
+
+    def array(field: str, shape: tuple[int, ...]) -> np.ndarray:
+        def check(value: object, dimensions: tuple[int, ...]) -> None:
+            if dimensions:
+                if type(value) is not list or len(value) != dimensions[0]:
+                    invalid(f"{field} shape")
+                for cell in value:
+                    check(cell, dimensions[1:])
+            elif rejected:
+                if value is not None:
+                    invalid(f"{field} rejected rows must contain null placeholders")
+            elif type(value) not in (int, float):
+                invalid(f"{field} must contain finite numbers")
+            else:
+                try:
+                    finite = math.isfinite(value)
+                except OverflowError:
+                    finite = False
+                if not finite:
+                    invalid(f"{field} must contain finite numbers")
+        check(record[field], shape)
+        return np.asarray(record[field], dtype=np.float64)
+
+    arrays = (
+        array("a_general", item_shape), array("a_specific", item_shape),
+        array("threshold", (*item_shape, n_cat - 1)),
+        array("general_mean", (n_groups,)), array("general_sd", (n_groups,)),
+        array("specific_sd", (n_groups, n_specific)),
     )
+    loglik = array("loglik", ())
+    return (record["replicate_id"], converged, *arrays, float(loglik), error, rejected)
 
 
 class RemoteBatchExecutor(Protocol):
@@ -450,15 +519,39 @@ def _run_remote_batch(
         for task in batch
     ]
     outcomes = backend.executor.run_batch(envelopes, worker_manifest=manifest, payload=payload)
-    failed = [o for o in outcomes if o.delivery_state is not RemoteJobDeliveryState.COMPLETED]
-    if failed:
-        raise RuntimeError(
-            f"remote bootstrap replicate(s) {[o.unit_index for o in failed]} failed in transport: "
-            f"{failed[0].error_message}"
-        )
+    if not isinstance(outcomes, (tuple, list)) or len(outcomes) != len(envelopes):
+        raise RuntimeError("remote bootstrap outcome count does not match the batch")
+    expected = {envelope.unit_index: (envelope, task) for envelope, task in zip(envelopes, batch)}
+    decoded: dict[int, tuple] = {}
     for outcome in outcomes:
-        record = _replicate_from_record(outcome.result)
-        results[record[0]] = record
+        if type(outcome) is not RemoteJobOutcome or outcome.unit_index not in expected:
+            raise RuntimeError("remote bootstrap unexpected outcome")
+        if outcome.unit_index in decoded:
+            raise RuntimeError("remote bootstrap duplicate outcome")
+        envelope, task = expected[outcome.unit_index]
+        fingerprint = envelope_fingerprint(envelope)
+        if (outcome.run_id != envelope.run_id or outcome.family is not envelope.family
+                or outcome.unit_seed != envelope.unit_seed()
+                or outcome.envelope_fingerprint != fingerprint
+                or outcome.input_identity_sha256 != fingerprint
+                or outcome.provenance.library_version != manifest.library_version
+                or outcome.provenance.source_sha256 != manifest.source_sha256):
+            raise RuntimeError("remote bootstrap outcome identity mismatch")
+        if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
+            raise RuntimeError(
+                f"remote bootstrap replicate {outcome.unit_index} failed in transport: "
+                f"{outcome.error_message}"
+            )
+        try:
+            output_identity = result_identity_sha256(outcome.result)
+        except (TypeError, ValueError, OverflowError, RecursionError) as exc:
+            raise RuntimeError("remote bootstrap invalid output identity") from exc
+        if outcome.output_identity_sha256 != output_identity:
+            raise RuntimeError("remote bootstrap output identity mismatch")
+        decoded[outcome.unit_index] = _replicate_from_record(outcome.result, envelope, task)
+    # Publish only after the entire reply has passed validation: no partial batch.
+    for index, record in decoded.items():
+        results[index] = record
 
 
 def _stack_monitor_vector(rows: list[np.ndarray]) -> np.ndarray:
@@ -583,8 +676,8 @@ def run_bifactor_bootstrap(
         Replicates that fail to converge (or raise) are reported in
         ``converged`` and excluded from all summary statistics; failed
         replicates are never substituted or imputed. A replicate whose fit
-        raises (for example a resample that misses a response category) is
-        listed in ``rejected_replicate_ids`` with its reason in
+        cannot identify an item boundary because its resample misses a category
+        or has no observed responses for an item is listed in ``rejected_replicate_ids`` with its reason in
         ``replicate_errors``. It is a result, not a failure: it is never
         redrawn, because redrawing until success biases the bootstrap sample,
         and callers must report ``n_rejected`` next to the summaries rather
