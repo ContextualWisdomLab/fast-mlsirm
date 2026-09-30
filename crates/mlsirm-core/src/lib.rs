@@ -91,6 +91,8 @@ mod gpu_init;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_eapsum;
 #[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) mod gpu_two_tier;
+#[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_marginal;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_plausible;

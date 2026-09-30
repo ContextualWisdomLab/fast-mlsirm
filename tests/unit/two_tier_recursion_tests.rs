@@ -231,3 +231,52 @@ fn closed_form_expected_raw_equals_lord_wingersky_mean() {
         }
     }
 }
+
+/// Derived f32 bound (design memo on #2271): per row, the closed form sums
+/// S = I*(n_cat-1)*Q terms in [0, 1]; with unit roundoff u = 2^-24, sigmoid
+/// error of a few u per term and compensated accumulation across items, the
+/// absolute error is bounded by (8 + S) * u * max_score.
+fn f32_bound(params: &TwoTierItemParams, q: usize) -> f64 {
+    let s = (params.n_items() * (params.n_cat - 1) * q) as f64;
+    (8.0 + s) * f64::from(f32::EPSILON / 2.0) * params.total_max_score() as f64
+}
+
+#[test]
+fn device_dispatch_cpu_is_exact_and_gpu_within_derived_bound() {
+    let q = 21usize;
+    let (nodes, weights) = gh_rule(q).expect("gh_rule");
+    let params = mixed_params(30, 4, 2, 4, 2271);
+    // 2_000 rows exercise more than one workgroup; values span the trait range.
+    let theta: Vec<f64> = (0..4_000)
+        .map(|k| ((k * 37) % 101) as f64 / 20.0 - 2.5)
+        .collect();
+    let reference = two_tier_expected_raw(&params, &theta, nodes, weights).expect("cpu");
+    let (cpu, used) = two_tier_expected_raw_on(&params, &theta, nodes, weights, crate::Device::Cpu)
+        .expect("cpu dispatch");
+    assert!(!used);
+    assert_eq!(cpu, reference);
+    let (auto, used_gpu) =
+        two_tier_expected_raw_on(&params, &theta, nodes, weights, crate::Device::Auto)
+            .expect("auto");
+    let bound = f32_bound(&params, q);
+    let max_err = auto
+        .iter()
+        .zip(&reference)
+        .map(|(a, r)| (a - r).abs())
+        .fold(0.0_f64, f64::max);
+    eprintln!("two-tier expected raw device=auto used_gpu={used_gpu} max_abs_err={max_err:e} bound={bound:e}");
+    assert!(max_err <= bound, "max_err={max_err} bound={bound}");
+    if !used_gpu {
+        assert_eq!(auto, reference, "CPU fallback must be the f64 owner");
+    }
+}
+
+#[test]
+fn device_dispatch_validates_before_any_device() {
+    let (nodes, weights) = gh_rule(5).expect("gh_rule");
+    let mut params = degenerate_params(1, 1, 3);
+    params.thresholds = vec![0.0, 0.5];
+    for device in [crate::Device::Cpu, crate::Device::Gpu, crate::Device::Auto] {
+        assert!(two_tier_expected_raw_on(&params, &[0.0], nodes, weights, device).is_err());
+    }
+}

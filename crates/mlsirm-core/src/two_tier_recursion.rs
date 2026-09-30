@@ -325,6 +325,18 @@ pub fn two_tier_expected_raw_at_q(
     two_tier_expected_raw(params, theta_primary, nodes, weights)
 }
 
+/// [`two_tier_expected_raw_at_q`] with device dispatch; returns ``(values, used_gpu)``.
+pub fn two_tier_expected_raw_at_q_on(
+    params: &TwoTierItemParams,
+    theta_primary: &[f64],
+    q_specific: usize,
+    device: crate::Device,
+) -> Result<(Vec<f64>, bool), String> {
+    let (nodes, weights) = crate::quadrature::gh_rule(q_specific)
+        .ok_or_else(|| format!("unsupported specific-factor quadrature count {q_specific}"))?;
+    two_tier_expected_raw_on(params, theta_primary, nodes, weights, device)
+}
+
 /// Expected raw total at plug-in primary coordinates (single owner of the mean).
 ///
 /// By linearity of expectation the mean needs no score distribution:
@@ -364,6 +376,42 @@ pub fn two_tier_expected_raw(
         *value = total;
     }
     Ok(out)
+}
+
+/// Device-dispatched [`two_tier_expected_raw`]. Returns ``(values, used_gpu)``.
+///
+/// ``Cpu`` always uses the f64 closed form. ``Gpu``/``Auto`` try the wgpu f32
+/// kernel (compensated summation) and fall back to the f64 CPU form when no
+/// adapter is usable; ``Gpu`` prints a warning on fallback. Validation runs on
+/// the CPU owner first, so every device rejects the same inputs.
+pub fn two_tier_expected_raw_on(
+    params: &TwoTierItemParams,
+    theta_primary: &[f64],
+    theta_specific: &[f64],
+    weights_specific: &[f64],
+    device: crate::Device,
+) -> Result<(Vec<f64>, bool), String> {
+    validate_scoring_inputs(params, theta_primary, theta_specific, weights_specific)?;
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    if device != crate::Device::Cpu {
+        if let Some(values) = crate::gpu_two_tier::expected_raw_gpu(
+            params,
+            theta_primary,
+            theta_specific,
+            weights_specific,
+        ) {
+            return Ok((values, true));
+        }
+        if device == crate::Device::Gpu {
+            eprintln!(
+                "fast-mlsirm: GPU two-tier expected raw requested but no usable GPU adapter was found or inputs exceed GPU bounds; falling back to the CPU implementation."
+            );
+        }
+    }
+    #[cfg(any(not(feature = "gpu"), coverage))]
+    let _ = device;
+    let values = two_tier_expected_raw(params, theta_primary, theta_specific, weights_specific)?;
+    Ok((values, false))
 }
 
 #[inline]

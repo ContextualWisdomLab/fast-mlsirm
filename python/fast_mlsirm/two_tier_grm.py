@@ -542,6 +542,8 @@ def expected_raw_two_tier_grm(
     fit: TwoTierGrmFit,
     specific_map: np.ndarray,
     q_specific: int,
+    *,
+    device: str = "cpu",
 ) -> np.ndarray:
     """Plug-in expected raw totals for a fitted two-tier GRM (compute in Rust).
 
@@ -560,6 +562,13 @@ def expected_raw_two_tier_grm(
     ``theta_g_eap``).
 
     ``q_specific`` is REQUIRED (no default; ADR-0028 / #1929).
+
+    ``device`` selects the Rust execution device: ``"cpu"`` (default) evaluates
+    the f64 closed form ``sum_i sum_q w_q sum_k sigmoid(eta_i + beta_ik)``
+    (linearity of expectation; identical to the Lord-Wingersky mean to
+    1e-12); ``"gpu"`` runs the wgpu f32 kernel with compensated summation and
+    warns before falling back to the CPU; ``"auto"`` uses the GPU when one is
+    available and falls back silently.
 
     The recursion is the conditional-on-primary stage of Lord-Wingersky 2.0
     (Cai, 2015, Eqs. 14-17, pp. 543-544), evaluated at the plug-in primary
@@ -582,6 +591,8 @@ def expected_raw_two_tier_grm(
     q_specific_int = _finite_integer_control(q_specific, "q_specific")
     if q_specific_int < 1:
         raise ValueError("q_specific must be >= 1")
+    if not isinstance(device, str) or device not in ("cpu", "gpu", "auto"):
+        raise ValueError("device must be one of 'cpu', 'gpu', 'auto'")
 
     n_primary = int(fit.n_primary)
     n_specific = int(fit.n_specific)
@@ -623,6 +634,7 @@ def expected_raw_two_tier_grm(
             int(n_primary),
             int(n_specific),
             int(q_specific_int),
+            device,
         ),
         dtype=np.float64,
     )
