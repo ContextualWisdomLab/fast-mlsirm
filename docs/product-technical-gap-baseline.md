@@ -5,6 +5,30 @@ Observed at: **2026-08-25T05:20:00Z**<br>
 Protected-main basis: **`9c12eab15fb8a187b135f9be1961f0693a431c23`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
+
+## 2026-09-30 proposed item-bank report accessibility repair
+
+Status: **Proposed in PR #2303; not protected-main authority**
+
+PR #1998 is non-mergeable and mixes its valid item-bank report delta with release, PyO3, README, sales-readiness, lockfile, and unrelated test changes across 23 files. PR #2303 is the canonical current-main successor for this bounded report-rendering responsibility. #1998 remains open until the successor is verified and integrated.
+
+- RED contract head: `a6f55a7922dac0d0e156561bd733ac1bce68b3dc`
+- Product repair head: `cb36f21015b6c143b8754182db26b1622dc39a58`
+- CHANGELOG evidence head: `295757d8d1307375bebe056685f5b1906d7eda48`
+
+| Capability | Exact evidence | Status | Remaining gate |
+|---|---|---|---|
+| Determinism | Existing renderer fixture asserts the emitted semantic and CSS strings | RED ADDED; NOT EXECUTED HERE | Run exact-head focused and full Python suites |
+| Table semantics | Timeline state cells emit `<th scope="row">`; column headers remain `scope="col"` | GREEN (source contract) | Verify a real accessibility tree and table navigation |
+| Numeric readability | Report cells use `font-variant-numeric:tabular-nums`; body row headers keep normal weight | GREEN (source contract) | Capture browser and print/export evidence |
+| Responsive/zoom | Standalone report has viewport metadata, but no current-head 320/768/desktop or 200% zoom evidence | FAIL | Capture reflow and no-loss screenshots |
+| Keyboard/touch/AT | Skip link and visible focus source remain, but pointer/touch/keyboard/screen-reader evidence is absent | FAIL | Execute real-browser and assistive-technology audit |
+| Locales | Static report language and wrapping are not evidenced for ko/en/ja/zh/vi/es/de/fr | FAIL | Bind locale resources and run all eight locale fixtures |
+| Large reports/performance | Current fixture is bounded and no production-size timing or memory evidence is attached | FAIL | Measure representative large lifecycle reports without shrinking samples |
+| Import/export/recovery | HTML generation is deterministic, but saved artifact reload, interrupted write, and recovery are not revalidated | FAIL | Exercise export, reload, failure, and retry paths |
+
+Keep Draft until current-head Checks and independent review are terminal GREEN and every applicable FAIL row is resolved. Queued, cancelled, skipped, source-only, mocked-only, or predecessor-head evidence is not acceptance.
+
 ## 2026-09-26 proposed release-source trust repair
 
 Status: **Proposed in PR #2135; not protected-main authority**
