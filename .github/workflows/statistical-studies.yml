@@ -211,6 +211,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m venv .venv
+          export PATH="$PWD/.venv/bin:$PATH"
           .venv/bin/python -m pip install --require-hashes -r requirements/ci.txt
           .venv/bin/python -m pip install --no-build-isolation --no-deps -e .
       # Probe는 adapter 연결 증거일 뿐 수치 적합 또는 과학적 수용이 아닙니다.

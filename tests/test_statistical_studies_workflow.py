@@ -80,6 +80,7 @@ def test_reference_gpu_checkout_is_reviewed_and_credentials_are_not_persisted():
     assert "toolchain: 1.97.1" in block
     assert "requirements/ci.txt" in block
     assert ".venv" in block
+    assert 'export PATH="$PWD/.venv/bin:$PATH"' in block
     assert "scripts/benchmark_two_tier_reference_gpu.py" in block
     assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in block
 
