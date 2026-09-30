@@ -51,6 +51,34 @@ approved bundle digest and per-target members. A bundle or file inventory sent
 by the producer is data to validate, never its own approval authority. Even
 verified artifact readiness does not establish the nodes or device used.
 
+### Numerical peer-review basis
+
+The numerical-core reviewer inspected L3 revision
+`895c4e5d7e77ba067148c202d448eb78ca44cbf1`, not a combined merged head with this
+transport branch. This proposal incorporates that completed read-only review
+and the consumer reconciliation; it does not claim fresh numerical execution
+or independent reinspection of those L3 files. Full local reports remain local
+and are not republished through another session.
+
+L3 source anchors from that review:
+
+- `crates/mlsirm-core/src/bifactor_grm.rs:1195–1200,1307–1321,1461–1462`:
+  winning final E-step scope; `:1217–1234,1340–1394`: CPU M-step/final EAP.
+- `crates/mlsirm-core/src/bifactor_grm.rs:2352–2379`: transformed group grids;
+  `crates/mlsirm-core/src/two_tier_grm.rs:713–765,1355–1363`: grid layout and
+  per-sweep current logweights.
+- `crates/mlsirm-core/src/gpu_bifactor.rs:512–546,812–834`: f32 staging,
+  readback promotion and host reduction.
+- `crates/mlsirm-core/src/bifactor_grm.rs:864–886`: discarded GPU readback
+  and CPU recomputation; `:2055–2077,2165–2167`: API observation limits.
+- `crates/mlsirm-core/src/bifactor_grm.rs:1282–1297`: validation before rule
+  generation; `:481–515`: start jitter remains based on seed/start identity.
+
+Remote seed references were read in the supported transport checkout:
+`python/fast_mlsirm/remote_exec.py:150–159,331–333`. Equal seeds do not prove
+cross-platform bit-identical estimates. Review-document digests are recorded
+in the checkpoint below; all added confirmation cases remain planned.
+
 ## Decision Drivers
 
 1. Separate producer requests from observations made by the trusted worker and
@@ -113,12 +141,39 @@ producer-supplied hashes do not establish this identity. A family that does not
 use quadrature needs an explicit applicability rule, not a fabricated hash.
 Adaptive/multi-stage integration needs a defined observation scope; do not
 silently call the last or planned grid the grid used by the whole execution.
+Record phase, start and iteration/sweep scope: a winning final E-step label
+cannot describe M-steps, final person scoring or other starts. A whole-fit
+receipt must cover the required stages rather than inherit that last label.
+Observe transformed coordinates and the current weights/logweights used at
+each applicable stage, including their weight versus logweight domain. A
+standard Gauss-Hermite rule/count hash cannot stand for population-transformed
+coordinates or weights recomputed from the current covariance. Hash observed
+bytes at the numerical owner; transport must not regenerate a supposedly
+equivalent rule. Preserve weight-domain and normalization semantics.
 
 Observe effective device, computation precision and actual fallback or mixed
 paths at the numerical decision point. Do not infer these from requested
 config, adapter availability or a cast of the final output array. A GPU request
 that ran on CPU is CPU execution; acceptance depends on an explicit policy.
 Scheduling/thread allocation and numerical chunking remain distinct.
+
+Distinguish canonical host-rule identity from the actual consumed device-buffer
+identity. Record input-buffer and kernel precision, readback conversion, host /
+device reduction precision, and output representation separately. f32 GPU
+values promoted to f64 storage are not f64 GPU arithmetic; a split CPU/GPU
+path is mixed execution under an explicit acceptance policy. Preserve the
+existing CPU bit-exact and separate CPU/GPU tolerance contracts without
+widening either.
+
+Separate attempted stages from accepted numerical contributions. A GPU attempt
+discarded after readback failure can be followed by accepted CPU recomputation.
+The accepted CPU label does not prove no GPU attempt occurred, and the attempted
+GPU label does not describe the returned CPU result. Observation capability is
+per numerical API, not a universal consequence of an L3 feature. An API lacking
+required observations must refuse strict readiness/completion explicitly;
+transport cannot supply guessed facts. Any whole-fit summary must define scope
+completeness and remain bounded; this proposal does not require an unbounded
+per-iteration trace.
 
 Bind observations to envelope fingerprint, run/unit/family, payload identity,
 derived seed and the recomputed output digest. Consumer admission checks every
@@ -138,6 +193,13 @@ policy and rejection output. Do not invent nodes, device or precision for a
 kernel that never ran; missing required evidence and approved non-applicability
 are distinct. Replaying such a rejection still requires the current strict
 policy and cannot inherit trust merely from its archived statistical flag.
+
+A late error or documented statistical rejection after grid generation or any
+numerical stage cannot erase that history or claim global not-executed status.
+Keep actual executed stages and the failure/rejection phase. A legitimate
+statistical rejection after work remains governed by its existing rejection
+contract; a contradictory not-executed claim is an evidence failure. Approved
+non-quadrature applicability does not exempt other executed-path observations.
 
 ### Compatibility and replay
 
@@ -200,14 +262,22 @@ These are planned checks, **not implemented or passing tests**.
 | Documented pre-execution statistical rejection after valid admission | Positive rejection with explicit not-executed/non-applicable observations; no fabricated kernel facts |
 | Pre-execution rejection replayed under a different strict policy | Revalidate current-policy binding; old statistical flag alone cannot qualify |
 | Same logical unit with a stricter evidence policy | Preserve seed/resample and archived numeric identities, refuse legacy evidence; only explicitly permitted re-execution |
+| Winning final GPU E-step used as whole-fit evidence despite other CPU stages/starts | Reject incomplete scope; retain phase/start/sweep observations |
+| Same standard rule/count but different transformed sweep coordinates or current covariance-dependent logweights | Detect the actual consumed stage-input mismatch |
+| GPU f32 buffers/kernel promoted to f64 readback/output and described as f64 GPU | Reject false precision; distinguish input/kernel/reduction/output |
+| GPU readback discarded and CPU result recomputed but labeled accepted GPU | Separate discarded attempt from accepted CPU contribution |
+| Failure/rejection after grid generation or numeric work labeled globally not-executed | Reject contradiction; retain execution history and correct failure/rejection phase |
 
 ## Open decisions and non-goals
 
 Jointly settle approved-policy provenance/distribution, the minimal
 package-safe verifier boundary and release-tooling/runtime separation,
 source-identity mapping, schema/capability version,
-canonical node/weight encoding and multi-stage applicability, numerical-owner
-receipt locations, strict fallback/mixed-path policies, and cache migration.
+canonical node/weight and consumed-buffer encoding, stage/start/sweep scope
+and bounded summary completeness, per-API observation capability, numerical-owner
+receipt locations, attempted versus accepted contribution semantics, precision
+at input/kernel/readback/reduction/output, strict fallback/mixed-path policies,
+non-execution applicability and cache migration.
 
 No new wire fields, numerical instrumentation, dependency, daemon, build or
 full-suite run is authorized by this proposal. No model formula, quadrature
@@ -227,3 +297,16 @@ explicitly owns release-evidence review; the Coordinator
 read-only findings checkpoint is 2026-09-30 14:00 KST. These assignments do not
 approve the proposal or implementation. Under the observed high host load,
 this phase is read-only tracing and documentation only.
+
+The completed numerical review and consumer reconciliation were read in full
+locally. Their verified SHA-256 identities are:
+
+- Numerical review: `c71f628dc9534eeb26c2333c76f9097ad701717b25f37548bee02875841e4742`
+  (Coordinator checkout, `.venv/numerical-execution-review.html`).
+- Consumer reconciliation: `ab88268e1fc44fa3bd82a30e241e154ddbed45de72f7d38877dbb945039bd8de`
+  (consumer checkout, `.venv/valkey-probe/consumer-design-review.md`).
+
+These are read-only design-review identities, not execution or passing-test
+evidence. The expanded matrix contains 24 planned cases. Required scope
+clarifications are incorporated; wire schema, instrumentation and migration
+remain proposed until joint review resolves their open choices.
