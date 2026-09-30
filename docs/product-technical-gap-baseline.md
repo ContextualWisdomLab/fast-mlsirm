@@ -7,11 +7,11 @@ Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
 ## 2026-09-30 proposed malformed-JSON depth-budget repair
 
-Status: **Proposed in PR #2254; not protected-main authority**
+Status: **Proposed in successor PR #2299; not protected-main authority**
 
 | Gap | Exact evidence | Owner/action | Remaining gate |
 |---|---|---|---|
-| `JSON-DEPTH-BUDGET-01` | Protected main contained the same unguarded closing-delimiter decrement in the rubric candidate and LLM-judge raw JSON scanners. PR parent `6b124e07377516da91cd770bd9016c7e6268b25d` repaired the rubric scanner but left the LLM-judge scanner unguarded. The existing bounded-file scanner already guarded zero and its proposed test passed without a production delta. | `fast-mlsirm` PR #2254 keeps the counter at zero for unmatched closers at both untrusted string parser boundaries, retains the rubric RED regression, adds the missing LLM-judge RED regression, and removes the unrelated private script-helper test. | Publish the repaired exact head, obtain fresh security/quality Checks and independent review, reconcile protected main without force, then ordinary merge. |
+| `JSON-DEPTH-BUDGET-01` | Protected main contained the same unguarded closing-delimiter decrement in the rubric candidate and LLM-judge raw JSON scanners. PR parent `6b124e07377516da91cd770bd9016c7e6268b25d` repaired the rubric scanner but left the LLM-judge scanner unguarded. The existing bounded-file scanner already guarded zero and its proposed test passed without a production delta. | Stable successor PR #2299 carries the complete valid delta from source-writer PR #2254: it keeps the counter at zero for unmatched closers at both untrusted string parser boundaries, retains the rubric RED regression, adds the missing LLM-judge RED regression, and removes the unrelated private script-helper test. | Obtain fresh exact-head security/quality Checks and independent review on PR #2299, reconcile protected main without force, then ordinary merge. Retire PR #2254 only after verified complete carryover reaches protected main. |
 
 Local evidence before publication: the new LLM-judge regression failed on the
 PR parent with `judge response JSON is invalid` instead of the depth-budget

@@ -2,7 +2,7 @@
 
 ## Fixed
 
-Status: **Proposed in PR #2254; not protected-main authority**
+Status: **Proposed in successor PR #2299; not protected-main authority**
 
 - The proposed repair prevents unmatched closing delimiters from lowering the
   raw JSON depth counter below zero in rubric-provider or LLM-judge response
