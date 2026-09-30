@@ -63,6 +63,33 @@ recovery. The second coordinate alone is not an adequate recovery claim.
 The S1 consumer's convergence-dependent gate must remain false when the
 stricter estimator does not converge; row-order agreement does not override it.
 
+## Full-step positive-path regression
+
+A separate inherited stopping defect required a history of partial-recovery
+progress before permitting convergence. That history was recorded only after
+rejecting a joint update; an EM run accepting every joint update could therefore
+never report convergence, even when both tolerance checks passed. The history
+flag had no role in rollback or stall handling. This follow-up removes only that
+prerequisite and its unused bookkeeping; the full-step, finite parameter-change,
+absolute likelihood-change, and no-rollback guards remain.
+
+The real-binding positive regression uses the existing correlated-primary
+simulation (seed 1000, 300 people), all six items anchored, q7, a 12-sweep budget,
+and an explicitly loose tolerance of 0.1. It reconstructs the final parameter
+change from the last two accepted prior states. Before the fix, every sweep was
+accepted in full and both tolerances passed, but convergence was false. The
+fixture tests stopping control flow only, not precision, stationarity of the
+inner optimizer, or recovery. The loose fixture tolerance does not change any
+estimator default or production tolerance. The permanent regression failed
+before the deletion at the convergence assertion, after its full-step and
+parameter/likelihood assertions passed. After the deletion it returned
+`tolerance_met` at sweep 1, with parameter displacement 0.05371597503918927 and
+likelihood change 1.6380025410030612; both satisfy this deliberately loose
+control-flow fixture. The full-step positive regression and the CPU/GPU
+damped-step negative regressions passed together (3 tests), Rust two-tier tests
+passed 24 with 2 ignored, and binding tests passed 9. These are local author-run
+checks, not hosted or independent approval.
+
 ## Open optimizer question
 
 The existing scale-recovery initial step `scale_alpha = 0.1` was introduced in

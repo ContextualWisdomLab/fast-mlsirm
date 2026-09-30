@@ -1707,7 +1707,6 @@ pub fn fit_two_tier_grm_fipc(
     let mut n_accepted_prior_steps = 0;
     let mut n_rollback_full = 0;
     let mut consecutive_rollback = 0;
-    let mut recovery_progress = false;
     let mut prior_update_decision_trace = Vec::new();
     // Full EM-map displacement of the previous cycle (mirt's TOL quantity).
     let mut em_map_displacement = f64::INFINITY;
@@ -1772,7 +1771,6 @@ pub fn fit_two_tier_grm_fipc(
             // A rejected combined update restores the prior iteration state;
             // its next LL is flat by construction, not evidence of convergence.
             if !rolled_back
-                && recovery_progress
                 && fipc_convergence_decision(
                     change,
                     previous.expect("previous loglik exists"),
@@ -2111,21 +2109,6 @@ pub fn fit_two_tier_grm_fipc(
             }
             prior_update_decision_trace.push(decision);
             if accepted {
-                // Compare against pre-update snapshots: previous_* may have been
-                // moved into mean/covariance/specific_sd on the restore path.
-                let mean_moved = mean
-                    .iter()
-                    .zip(&baseline_mean)
-                    .any(|(&new, &old)| (new - old).abs() > 1e-6);
-                let scale_moved = covariance
-                    .iter()
-                    .zip(&baseline_covariance)
-                    .any(|(&new, &old)| (new - old).abs() > 1e-6)
-                    || specific_sd
-                        .iter()
-                        .zip(&baseline_specific_sd)
-                        .any(|(&new, &old)| (new - old).abs() > 1e-6);
-                recovery_progress |= mean_moved && scale_moved;
                 n_accepted_prior_steps += 1;
                 consecutive_rollback = 0;
             } else {
