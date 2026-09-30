@@ -194,6 +194,18 @@ fn validate_scoring_inputs(
     if n_s == 0 {
         return Err("specific-factor quadrature must have at least one node".into());
     }
+    // Specific-free items enter unweighted while loaded items are weighted by
+    // the rule, so the rule must be a probability measure on finite nodes.
+    let weight_sum: f64 = weights_specific.iter().sum();
+    if !theta_specific.iter().all(|v| v.is_finite())
+        || !weights_specific.iter().all(|w| w.is_finite() && *w >= 0.0)
+        || (weight_sum - 1.0).abs() > 1e-10
+    {
+        return Err(
+            "specific-factor rule must have finite nodes and non-negative weights summing to 1"
+                .into(),
+        );
+    }
     if !theta_primary.iter().all(|v| v.is_finite()) {
         return Err("theta_primary must be finite".into());
     }

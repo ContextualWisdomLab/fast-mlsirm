@@ -280,3 +280,27 @@ fn device_dispatch_validates_before_any_device() {
         assert!(two_tier_expected_raw_on(&params, &[0.0], nodes, weights, device).is_err());
     }
 }
+
+#[test]
+fn specific_rule_must_be_finite_nonnegative_and_normalized() {
+    let mut params = degenerate_params(1, 1, 3);
+    params.thresholds = vec![0.5, -0.5];
+    let nodes = [-1.0, 0.0, 1.0];
+    for (n, w) in [
+        (nodes.to_vec(), vec![0.2, 0.2, 0.2]),                // sum 0.6
+        (nodes.to_vec(), vec![1.0, 1.0, 1.0]),                // sum 3
+        (nodes.to_vec(), vec![1.5, -0.25, -0.25]),            // negative weight
+        (nodes.to_vec(), vec![f64::NAN, 0.5, 0.5]),           // non-finite weight
+        (vec![-1.0, f64::INFINITY, 1.0], vec![1.0 / 3.0; 3]), // non-finite node
+    ] {
+        for device in [crate::Device::Cpu, crate::Device::Auto] {
+            assert!(
+                two_tier_expected_raw_on(&params, &[0.0], &n, &w, device).is_err(),
+                "rule nodes={n:?} weights={w:?} must be rejected"
+            );
+        }
+        assert!(two_tier_lord_wingersky(&params, &[0.0], &n, &w).is_err());
+    }
+    let equal = [1.0 / 3.0; 3];
+    assert!(two_tier_expected_raw(&params, &[0.0], &nodes, &equal).is_ok());
+}
