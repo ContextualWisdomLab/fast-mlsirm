@@ -91,6 +91,7 @@ def _reject_nonfinite(_value: str) -> None:
 
 
 def _reject_float_nonfinite(value: str) -> float:
+    """Reject finite-syntax numbers that overflow the runtime float range."""
     f_val = float(value)
     if not math.isfinite(f_val):
         raise _NonFiniteJsonNumber

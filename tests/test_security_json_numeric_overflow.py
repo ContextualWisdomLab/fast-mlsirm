@@ -1,6 +1,5 @@
 """Tests ensuring JSON numeric overflow (e.g., 1e999 to inf) is rejected at all boundaries."""
 
-import json
 from pathlib import Path
 
 import pytest
@@ -8,6 +7,12 @@ import pytest
 from fast_mlsirm.cross_engine_conformance import ConformanceInventory
 from fast_mlsirm.io import _load_json_bounded
 from fast_mlsirm.llm_judge import JudgeFormatError, _response_object
+from fast_mlsirm.rubric import (
+    CandidateValidationError,
+    parse_generated_item_candidate,
+)
+from tests.test_rubric_generation import _raw, _request
+
 
 def test_cross_engine_conformance_rejects_numeric_overflow() -> None:
     """Ensure exact-head cross-engine JSON bounds reject numeric overflow."""
@@ -22,7 +27,7 @@ def test_cross_engine_conformance_rejects_numeric_overflow() -> None:
     with pytest.raises(ValueError, match="manifest JSON contains non-finite numbers"):
         ConformanceInventory.from_json(payload)
 
-    # Valid large float should be accepted and fail later in schema validation (it has theta instead of something valid)
+    # A valid large float reaches schema validation instead of the overflow guard.
     payload_valid = (
         '{"schema_version": "1.0", "package_version": "1.0.0", "source_commit": '
         '"0000000000000000000000000000000000000000", "capabilities": [], '
@@ -62,27 +67,14 @@ def test_llm_judge_rejects_numeric_overflow() -> None:
 
 def test_candidates_rejects_numeric_overflow() -> None:
     """Ensure generated item candidate parses reject numeric overflow."""
-    # Because full valid GenerationRequest payloads are complex,
-    # test the hook directly exactly as it gets passed to json.loads.
+    request = _request()
+    overflowing = _raw(request).replace('"score": 2', '"score": 1e999', 1)
+    with pytest.raises(CandidateValidationError) as error:
+        parse_generated_item_candidate(overflowing, request)
+    assert error.value.code == "nonfinite_json_number"
+    assert "1e999" not in str(error.value)
 
-    from fast_mlsirm.rubric.candidates import (
-        _NonFiniteJsonNumber,
-        _reject_float_nonfinite,
-        _reject_nonfinite,
-        _unique_object,
-    )
-
-    with pytest.raises(_NonFiniteJsonNumber):
-        json.loads(
-            '{"a": 1e999}',
-            object_pairs_hook=_unique_object,
-            parse_constant=_reject_nonfinite,
-            parse_float=_reject_float_nonfinite,
-        )
-
-    assert json.loads(
-        '{"a": 1e300}',
-        object_pairs_hook=_unique_object,
-        parse_constant=_reject_nonfinite,
-        parse_float=_reject_float_nonfinite,
-    ) == {"a": 1e300}
+    finite = _raw(request).replace('"score": 2', '"score": 1e300', 1)
+    with pytest.raises(CandidateValidationError) as finite_error:
+        parse_generated_item_candidate(finite, request)
+    assert finite_error.value.code == "invalid_type"

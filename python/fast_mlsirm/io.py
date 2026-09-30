@@ -306,7 +306,8 @@ def _load_json_bounded(
         """Reject Python JSON decoder extensions outside interoperable JSON."""
         raise ValueError(f"{source} contains a non-finite JSON numeric value")
 
-    def reject_float_nonfinite(value: str):
+    def reject_float_nonfinite(value: str) -> float:
+        """Reject finite-syntax numbers that overflow the runtime float range."""
         f_val = float(value)
         if not math.isfinite(f_val):
             raise ValueError(f"{source} contains a non-finite JSON numeric value")
