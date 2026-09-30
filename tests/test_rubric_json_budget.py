@@ -50,3 +50,10 @@ def test_provider_json_node_count_is_bounded_before_field_validation():
     with pytest.raises(CandidateValidationError) as error:
         parse_generated_item_candidate(raw_json, _closed_book_request())
     assert error.value.code == "json_node_budget"
+
+def test_provider_json_depth_underflow_prevention():
+    """Ensure depth tracking does not underflow below zero, preventing bypass."""
+    payload = "]" * 100 + '{"a":'*100 + "1" + "}"*100
+    with pytest.raises(CandidateValidationError) as error:
+        parse_generated_item_candidate(payload, _closed_book_request())
+    assert error.value.code == "json_too_deep"
