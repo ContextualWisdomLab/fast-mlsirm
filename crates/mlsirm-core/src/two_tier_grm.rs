@@ -1166,8 +1166,7 @@ fn e_step_gpu_person_moments(
     memory_budget_bytes: u64,
 ) -> Result<f64, String> {
     use crate::gpu_bifactor::{
-        e_step_reduced_gpu_log_products, e_step_reduced_gpu_posteriors, ReducedEstepInputs,
-        ReducedPersonPosteriors,
+        e_step_reduced_gpu_posteriors, ReducedEstepInputs, ReducedPersonPosteriors,
     };
     let ctx = crate::gpu::GpuContext::get().ok_or("GPU adapter unavailable")?;
     if ctx.adapter_info.device_type == wgpu::DeviceType::Cpu {
@@ -1326,6 +1325,34 @@ fn e_step_gpu_person_moments(
         stats.cross = vec![0.0; v.n_primary * v.n_primary];
     }
     let nl = v.n_primary + v.n_specific;
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    let reference_state = if reference_precision {
+        use crate::gpu_bifactor::GpuLogProductState;
+        let persons = batch.min(v.n_persons);
+        let inputs = ReducedEstepInputs {
+            y: &y[..persons * v.n_items],
+            observed: observed.map(|m| &m[..persons * v.n_items]),
+            group_id: None,
+            n_persons: persons,
+            n_items: v.n_items,
+            n_specific: v.n_specific,
+            n_cat: v.n_cat,
+            qg: grid,
+            qs,
+            n_groups: 1,
+            tables_groups: &tables_groups,
+            item_block: &v.item_block,
+            blocks: &v.blocks,
+            tg_groups: &tg_groups,
+            ts_groups: &ts_groups,
+            log_wg: log_w,
+            log_ws,
+        };
+        Some(GpuLogProductState::new(&inputs)
+            .ok_or("GPU binary64 log-product preparation failed at declared grid")?)
+    } else {
+        None
+    };
     let mut reference_gpu_loglik = 0.0;
     for start in (0..v.n_persons).step_by(batch) {
         let stop = (start + batch).min(v.n_persons);
@@ -1349,7 +1376,10 @@ fn e_step_gpu_person_moments(
             log_ws,
         };
         let post = if reference_precision {
-            let (general, block) = e_step_reduced_gpu_log_products(&inputs)
+            let (general, block) = reference_state
+                .as_ref()
+                .ok_or("missing GPU binary64 log-product state")?
+                .sweep(inputs.y, inputs.observed, stop - start)
                 .ok_or("GPU binary64 log-product dispatch/readback failed at declared grid")?;
             let persons = stop - start;
             if general.len() != persons * grid || block.len() != persons * joint_per_person {

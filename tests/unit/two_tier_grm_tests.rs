@@ -408,6 +408,25 @@ fn reference_fit_actual_gpu_matches_cpu() {
         );
     }
     println!("actual_gpu_binary64_addition_cases={} passed", pairs.len());
+    // 한 번 준비한 table/pipeline을 full·short·missing batch 사이에 재사용한다.
+    use crate::gpu_bifactor::GpuLogProductState;
+    let batch_probe=ReducedEstepInputs {y:&[0,0,0,0,0,0],n_persons:3,..probe};
+    let prepared=GpuLogProductState::new(&batch_probe).unwrap();
+    let (full,_)=prepared.sweep(&[0,0,0,0,0,0],None,3).unwrap();
+    assert_eq!(full.len(),3*pairs.len());
+    let (short,_)=prepared.sweep(&[0,0],None,1).unwrap();
+    assert_eq!(short.len(),pairs.len());
+    assert_eq!(short,full[..pairs.len()]);
+    let (missing,_)=prepared.sweep(&[0,0],Some(&[false,false]),1).unwrap();
+    assert!(missing.iter().all(|v|*v==0.0));
+    assert!(prepared.sweep(&[0,0],Some(&[false]),1).is_none());
+    assert!(prepared.sweep(&[0,0,0,0,0,0,0,0],None,4).is_none());
+    let mut changed=tables.clone();changed[0][0][0]=-3.0;
+    let changed_probe=ReducedEstepInputs {tables_groups:&changed,..probe};
+    let next_iteration=GpuLogProductState::new(&changed_probe).unwrap();
+    assert_eq!(next_iteration.sweep(&[0,0],None,1).unwrap().0[0],-3.0);
+    assert_eq!(prepared.sweep(&[0,0],None,1).unwrap().0[0],0.0);
+    println!("actual_GPU_fixed_state_reuse_full_short_missing_invalid_new_iteration_cases=7 passed");
     for invalid in [f64::NAN, f64::INFINITY, 1e-300] {
         let mut rejected = tables.clone();
         rejected[0][0][0] = invalid;
@@ -810,6 +829,13 @@ fn reference_fit_actual_gpu_matches_cpu() {
         1 << 28,
     )
     .unwrap();
+    // 작은 예산에서 3인 batch/마지막 1인 batch를 강제해 고정 자원 재사용을 검증한다.
+    let stream_started=std::time::Instant::now();
+    let mut streamed_stats=ReducedFitStatistics {counts:Vec::new(),cross:Vec::new()};
+    e_step_gpu_person_moments(&v,&y,None,&params,&log_w,&log_ws,&coords,ts,
+        None,Some(&mut streamed_stats),true,256*1024).unwrap();
+    assert_eq!(streamed_stats.counts,exact_counts);
+    println!("fixed_cpu_state_cached_streamed_budget_bytes=262144, expected_person_batch=3_then_short_1, counts_max_delta=0, entire_E_step_seconds={}",stream_started.elapsed().as_secs_f64());
     let i = 13;
     let mut packed: Vec<f64> = v.free_primaries[i]
         .iter()
