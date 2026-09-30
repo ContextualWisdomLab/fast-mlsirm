@@ -246,6 +246,12 @@ pub struct TwoTierGrmConfig {
     pub newton_iter: usize,
     /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
     pub ridge: f64,
+    /// E-step execution device (#2282). `Gpu`/`Auto` run the person sweep
+    /// in the wgpu `f32` kernels via [`e_step_gpu`] when an adapter and
+    /// binding budget exist; the `f64` CPU [`e_step`] is the reference and
+    /// the fallback (`Gpu` warns on fallback, `Auto` does not). The M-step
+    /// always runs on the CPU.
+    pub device: crate::Device,
 }
 
 // No `Default` impl: `q_primary`/`q_specific` are quadrature node counts
@@ -852,6 +858,83 @@ fn item_cat_logprob(
 /// specific-tier scratch `block_acc` remains sized
 /// `n_specific * q_specific` (one primary node at a time) rather than
 /// `n_specific * n_grid * q_specific`.
+/// GPU person sweep for the reduced E-step: the two-tier reduction (Cai,
+/// 2010, pp. 583-584) is the Gibbons-Hedeker bifactor reduction with the
+/// general node generalized to the flattened primary product grid, so the
+/// bifactor kernels run unchanged with `qg = n_grid` (#2282). Tables come
+/// from [`fill_logprob_tables`]; the primary second-moment accumulator is
+/// `s_bar = sum_g node_post[g] * z_g z_g'`, formed in `f64` on the host from
+/// the per-node posterior mass. Returns `None` (caller runs [`e_step`]) when
+/// no adapter or binding budget is available.
+#[allow(clippy::too_many_arguments)]
+#[cfg_attr(any(not(feature = "gpu"), coverage), allow(unused_variables))]
+pub(crate) fn e_step_gpu(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws: &[f64],
+    coords: &[f64],
+    ts: &[f64],
+    n_grid: usize,
+    qs: usize,
+) -> Option<(f64, Vec<Vec<Vec<f64>>>, Vec<f64>)> {
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    {
+        let p = v.n_primary;
+        let tables = vec![fill_logprob_tables(v, params, coords, ts, n_grid, qs)];
+        // `tg` feeds only the 1-D bifactor group moments, unused here.
+        let tg = vec![vec![0.0f64; n_grid]];
+        let ts_groups = vec![vec![ts.to_vec(); v.n_specific]];
+        let inputs = crate::gpu_bifactor::ReducedEstepInputs {
+            y,
+            observed,
+            group_id: None,
+            n_persons: v.n_persons,
+            n_items: v.n_items,
+            n_specific: v.n_specific,
+            n_cat: v.n_cat,
+            qg: n_grid,
+            qs,
+            n_groups: 1,
+            tables_groups: &tables,
+            item_block: &v.item_block,
+            blocks: &v.blocks,
+            tg_groups: &tg,
+            ts_groups: &ts_groups,
+            log_wg: log_w,
+            log_ws,
+            want_node_post: true,
+        };
+        let res = crate::gpu_bifactor::e_step_reduced_gpu(&inputs)?;
+        let stride = res.counts_stride_nodes;
+        let counts = (0..v.n_items)
+            .map(|i| {
+                let base = i * stride * v.n_cat;
+                let n_nodes = if v.item_block[i].is_some() { n_grid * qs } else { n_grid };
+                res.counts[base..base + n_nodes * v.n_cat]
+                    .chunks_exact(v.n_cat)
+                    .map(<[f64]>::to_vec)
+                    .collect()
+            })
+            .collect();
+        let node_post = res.node_post?;
+        let mut s_bar_sum = vec![0.0f64; p * p];
+        for (g, &w) in node_post.iter().enumerate() {
+            let z = &coords[g * p..(g + 1) * p];
+            for j in 0..p {
+                for k in 0..p {
+                    s_bar_sum[j * p + k] += w * z[j] * z[k];
+                }
+            }
+        }
+        Some((res.loglik, counts, s_bar_sum))
+    }
+    #[cfg(any(not(feature = "gpu"), coverage))]
+    None
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn e_step(
     v: &Validated,
@@ -1389,9 +1472,20 @@ fn run_single_start(
             .ok_or_else(|| format!("primary correlation became non-PD at iteration {n_iter}"))?;
         let phi_inv = chol_inverse(&l, p);
         let log_w = reweighted_log_weights(log_w0, coords, &phi_inv, logdet, p);
-        let (ll, counts, s_bar_sum) = e_step(
-            v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs,
-        );
+        let gpu = if cfg.device == crate::Device::Cpu {
+            None
+        } else {
+            e_step_gpu(v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs)
+        };
+        if gpu.is_none() && cfg.device == crate::Device::Gpu && n_iter == 0 {
+            eprintln!(
+                "fast-mlsirm: GPU two-tier E-step requested but no usable GPU adapter was found; \
+                 falling back to CPU implementation."
+            );
+        }
+        let (ll, counts, s_bar_sum) = gpu.unwrap_or_else(|| {
+            e_step(v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs)
+        });
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
@@ -1797,6 +1891,7 @@ pub fn two_tier_grm_marginal_loglik(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        device: crate::Device::Cpu,
     };
     let v = validate(
         y,
@@ -1890,6 +1985,7 @@ pub fn two_tier_grm_marginal_loglik_brute(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        device: crate::Device::Cpu,
     };
     let v = validate(
         y,

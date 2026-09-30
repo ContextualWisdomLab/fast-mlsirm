@@ -1868,7 +1868,7 @@ fn fit_bifactor_grm_fipc(
 /// https://doi.org/10.1037/a0023350 (full text read)
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, q_primary = 15, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, primary_correlation = "estimate"))]
+#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, q_primary = 15, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, primary_correlation = "estimate", device = "cpu"))]
 fn fit_two_tier_grm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1887,7 +1887,9 @@ fn fit_two_tier_grm(
     n_starts: usize,
     seed: u64,
     primary_correlation: &str,
+    device: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    let device = parse_device(device)?;
     let estimate_primary_correlation = match primary_correlation {
         "estimate" => true,
         "identity" => false,
@@ -1936,6 +1938,7 @@ fn fit_two_tier_grm(
         // Python and out of #1929's quadrature-node scope.
         newton_iter: 10,
         ridge: 1e-8,
+        device,
     };
     let res = py
         .detach(|| {
