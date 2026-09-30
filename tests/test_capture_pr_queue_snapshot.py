@@ -228,7 +228,11 @@ def test_run_gh_json_retries_only_approved_gateway_statuses(monkeypatch):
             subprocess.CompletedProcess([], 0, '{"ok": true}', ""),
         ]
     )
-    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: next(responses))
+    try:
+        from scripts._bounded_subprocess import run_bounded_capture
+        monkeypatch.setattr(module, "run_bounded_capture", lambda *args, **kwargs: next(responses))
+    except (ImportError, AttributeError):
+        monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: next(responses))
     monkeypatch.setattr(module.time, "sleep", lambda value: sleeps.append(value))
     payload, error = module._run_gh_json(["gh", "api", "x"], retry_sleep_seconds=0.01)
     assert payload == {"ok": True}
@@ -241,18 +245,32 @@ def test_run_gh_json_retries_only_approved_gateway_statuses(monkeypatch):
         calls["count"] += 1
         return subprocess.CompletedProcess([], 1, "", "HTTP 401: bad credentials")
 
-    monkeypatch.setattr(module.subprocess, "run", auth_failure)
+    try:
+        from scripts._bounded_subprocess import run_bounded_capture
+        monkeypatch.setattr(module, "run_bounded_capture", auth_failure)
+    except (ImportError, AttributeError):
+        monkeypatch.setattr(module.subprocess, "run", auth_failure)
     payload, error = module._run_gh_json(["gh", "api", "x"])
     assert payload is None and error is not None
     assert calls["count"] == 1
 
-    monkeypatch.setattr(
-        module.subprocess,
-        "run",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            subprocess.TimeoutExpired(cmd="gh", timeout=30)
-        ),
-    )
+    try:
+        from scripts._bounded_subprocess import run_bounded_capture
+        monkeypatch.setattr(
+            module,
+            "run_bounded_capture",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                subprocess.TimeoutExpired(cmd="gh", timeout=30)
+            ),
+        )
+    except (ImportError, AttributeError):
+        monkeypatch.setattr(
+            module.subprocess,
+            "run",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                subprocess.TimeoutExpired(cmd="gh", timeout=30)
+            ),
+        )
     payload, error = module._run_gh_json(["gh", "api", "x"])
     assert payload is None and error["returncode"] == 124
 
@@ -260,19 +278,35 @@ def test_run_gh_json_retries_only_approved_gateway_statuses(monkeypatch):
 def test_run_gh_json_fails_closed_on_start_and_json_errors(monkeypatch):
     """Missing executables and malformed successful output produce audit errors."""
     module = _module()
-    monkeypatch.setattr(
-        module.subprocess,
-        "run",
-        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("missing gh")),
-    )
+    try:
+        from scripts._bounded_subprocess import run_bounded_capture
+        monkeypatch.setattr(
+            module,
+            "run_bounded_capture",
+            lambda *args, **kwargs: (_ for _ in ()).throw(OSError("missing gh")),
+        )
+    except (ImportError, AttributeError):
+        monkeypatch.setattr(
+            module.subprocess,
+            "run",
+            lambda *args, **kwargs: (_ for _ in ()).throw(OSError("missing gh")),
+        )
     payload, error = module._run_gh_json(["gh", "pr", "list"])
     assert payload is None and error["returncode"] == 127
 
-    monkeypatch.setattr(
-        module.subprocess,
-        "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess([], 0, "not-json", ""),
-    )
+    try:
+        from scripts._bounded_subprocess import run_bounded_capture
+        monkeypatch.setattr(
+            module,
+            "run_bounded_capture",
+            lambda *args, **kwargs: subprocess.CompletedProcess([], 0, "not-json", ""),
+        )
+    except (ImportError, AttributeError):
+        monkeypatch.setattr(
+            module.subprocess,
+            "run",
+            lambda *args, **kwargs: subprocess.CompletedProcess([], 0, "not-json", ""),
+        )
     payload, error = module._run_gh_json(["gh", "pr", "list"])
     assert payload is None and error["returncode"] == 65
 
@@ -323,7 +357,11 @@ def test_run_gh_json_exhausts_transient_retries_without_sleep(monkeypatch):
         calls["count"] += 1
         return subprocess.CompletedProcess([], 1, "", "HTTP 504: gateway timeout")
 
-    monkeypatch.setattr(module.subprocess, "run", always_transient)
+    try:
+        from scripts._bounded_subprocess import run_bounded_capture
+        monkeypatch.setattr(module, "run_bounded_capture", always_transient)
+    except (ImportError, AttributeError):
+        monkeypatch.setattr(module.subprocess, "run", always_transient)
     payload, error = module._run_gh_json(
         ["gh", "api", "x"],
         max_attempts=2,
