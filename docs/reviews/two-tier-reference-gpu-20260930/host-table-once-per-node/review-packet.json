@@ -1,0 +1,374 @@
+{
+  "execution_head": "4c09920d0e08f5fcbb8f68cab5ceb140d4c7af1b",
+  "parent": "a141ecbf97b2f6be56d5a09a09f2f230666bfc5e",
+  "scope": "local synthetic CPU/table/q5 and existing strict fixture; no new remote q121 or release acceptance",
+  "source_sha256": {
+    "crates/mlsirm-core/src/two_tier_grm.rs": "51c47ceba6cb5eee1ec33000722e417cd1336fc8dd4544faf768adc07ce2866b",
+    "crates/mlsirm-core/src/poly.rs": "6e5ace1d98a2d18486f7916d807e74a09e9e6a28fdf3aa63a200c4fc02e3aabc",
+    "tests/unit/two_tier_grm_tests.rs": "ec6af054379fba49bf92af16765b5ba8d702cc9a7f17f1fbaac36b55ca750325",
+    "crates/mlsirm-core/src/gpu_bifactor.rs": "6f4cbb7ed77c33951165eb0038b2cf3ed9cd3dc3c3c71d842a58d3e2f164c532"
+  },
+  "three_file_patch_sha256": "c4c85e2164121771a665b6b553cf92eec02bf9238cf883a17887627881ca9b6f",
+  "logs_sha256": {
+    "callcount-red.txt": "927aa8fa59e9664edb55ee1dd4593e6d6891759a05a161e2009514133982731a",
+    "callcount-green.txt": "45381315bc91ffde4848457587a3528d7b5467b030f8365997a8ba2832cbd4be",
+    "default-bit-green.txt": "38f2d2e7f9f7f7e82992a8723679693800c352a591b3a8c3b815a3fa96932105",
+    "q5-profile.txt": "7ffb01be0cfcf328c60d978bca627b2b90915df95ee70d3f57a749f111de2408",
+    "strict-hardware.txt": "01e23a2f49667466093a99890d46fcb2294114b246b6cbe1463b4fb71835544c",
+    "cpu-coverage-contract.txt": "b5c7f9ea6152d4e3296574d284b16cb0e26ca6c97495d2d4493bd0895790cc3c"
+  },
+  "binaries": {
+    "target/debug/deps/mlsirm_core-ee06bbaf18f3a719": {
+      "sha256": "5fd912a02eb0eb3d3bfce9da85f885e3c020262ef5d2ac26c592e7a2f91bec70",
+      "bytes": 10741776
+    },
+    "target/debug/deps/mlsirm_core-154b933da47210f2": {
+      "sha256": "1d5858cc4ccf44c13fe4141dd17daf525840b1fbfed665788082eb98b3ffe945",
+      "bytes": 18651424
+    }
+  },
+  "red_binary_hash": "not measured; GREEN binary hash must not be used retrospectively",
+  "q5_events": [
+    {
+      "event": "source",
+      "execution_head": "4c09920d0e08f5fcbb8f68cab5ceb140d4c7af1b",
+      "kernel_source": "crates/mlsirm-core/src/gpu_bifactor.rs",
+      "kernel_source_sha256": "6f4cbb7ed77c33951165eb0038b2cf3ed9cd3dc3c3c71d842a58d3e2f164c532",
+      "numerical_source": "crates/mlsirm-core/src/two_tier_grm.rs",
+      "numerical_source_sha256": "51c47ceba6cb5eee1ec33000722e417cd1336fc8dd4544faf768adc07ce2866b",
+      "test_source": "tests/unit/two_tier_grm_tests.rs",
+      "test_source_sha256": "ec6af054379fba49bf92af16765b5ba8d702cc9a7f17f1fbaac36b55ca750325"
+    },
+    {
+      "event": "resource",
+      "adapter_name": "Apple M1",
+      "adapter_backend": "Metal",
+      "adapter_type": "IntegratedGpu",
+      "max_storage_buffer_binding_bytes": 4294967292,
+      "max_buffer_bytes": 4294967295,
+      "max_storage_buffers_per_stage": 29,
+      "max_workgroups_per_dimension": 65535,
+      "host_estimate_bytes": 392380,
+      "host_budget_bytes": 67108864,
+      "host_budget_semantics": "source-derived conservative allocation estimate; not RSS cap",
+      "gpu_policy_minimum_bytes": 72948,
+      "gpu_budget_bytes": 1048576,
+      "gpu_budget_semantics": "source policy; adapter limits are per-buffer constraints, not available physical VRAM",
+      "execution_head": "4c09920d0e08f5fcbb8f68cab5ceb140d4c7af1b"
+    },
+    {
+      "event": "input",
+      "input_sha256": "5f211b3d5872eeda9e610fb721f633a03fcff7ed787ddf4c7bdd9526a6d9047e",
+      "seed": null,
+      "input_json": {
+        "n_cat": 4,
+        "n_items": 16,
+        "n_persons": 1,
+        "n_primary": 2,
+        "n_specific": 4,
+        "phi": "identity",
+        "primary_loadings": [
+          [
+            0.9,
+            0.0
+          ],
+          [
+            1.3,
+            0.0
+          ],
+          [
+            0.7,
+            0.0
+          ],
+          [
+            1.1,
+            0.0
+          ],
+          [
+            0.9,
+            0.9
+          ],
+          [
+            1.3,
+            0.9
+          ],
+          [
+            0.7,
+            0.9
+          ],
+          [
+            1.1,
+            0.0
+          ],
+          [
+            0.9,
+            0.0
+          ],
+          [
+            1.3,
+            0.9
+          ],
+          [
+            0.7,
+            0.0
+          ],
+          [
+            1.1,
+            0.0
+          ],
+          [
+            0.9,
+            0.9
+          ],
+          [
+            1.3,
+            0.0
+          ],
+          [
+            0.7,
+            0.9
+          ],
+          [
+            1.1,
+            0.9
+          ]
+        ],
+        "primary_map": [
+          true,
+          false,
+          true,
+          false,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true
+        ],
+        "q_primary": 5,
+        "q_specific": 5,
+        "responses": [
+          0,
+          1,
+          2,
+          3,
+          1,
+          2,
+          3,
+          0,
+          2,
+          3,
+          0,
+          1,
+          3,
+          0,
+          1,
+          2
+        ],
+        "specific_loadings": [
+          1.1,
+          0.8,
+          1.4,
+          1.0,
+          1.1,
+          0.8,
+          1.4,
+          1.0,
+          1.1,
+          0.8,
+          1.4,
+          1.0,
+          1.1,
+          0.8,
+          1.4,
+          1.0
+        ],
+        "specific_map": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2,
+          2,
+          3,
+          3,
+          3,
+          3
+        ],
+        "thresholds": [
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ]
+        ]
+      }
+    },
+    {
+      "event": "timing",
+      "whole_cpu_estep_seconds": 4.2667e-05,
+      "whole_gpu_estep_seconds": 0.004224584,
+      "cpu_table_generation_seconds": 0.00024175,
+      "whole_cpu_including_table_seconds": 0.000284417,
+      "stages": {
+        "table_generation_seconds": 0.000229916,
+        "prepare_validation_metadata_seconds": 2.575e-05,
+        "prepare_error_scope_setup_seconds": 1.1291e-05,
+        "prepare_uniform_buffer_seconds": 9.3667e-05,
+        "prepare_table_map_copy_seconds": 3.6958e-05,
+        "prepare_input_output_buffers_seconds": 8.9375e-05,
+        "prepare_layout_bindgroup_seconds": 5.6208e-05,
+        "prepare_shader_module_seconds": 0.000425625,
+        "prepare_compute_pipeline_seconds": 0.000625875,
+        "prepare_error_receipt_seconds": 2.3875e-05,
+        "gpu_state_preparation_seconds": 0.001401375,
+        "sweep_queue_write_encode_seconds": 9.1875e-05,
+        "sweep_readback_buffer_preparation_seconds": 1.2542e-05,
+        "sweep_submit_map_decode_seconds": 0.00232425,
+        "sweep_error_receipt_seconds": 2.208e-06,
+        "gpu_log_products_and_readback_seconds": 0.00243775,
+        "rust_lse_exp_normalization_seconds": 2.1792e-05,
+        "posterior_moment_contraction_seconds": 4.125e-06,
+        "f64_likelihood_certification_seconds": 1.8625e-05
+      },
+      "note": "host clock with clock/collector overhead; child stages subdivide parent intervals and must not be double-counted; driver lazy work may occur during submit; no GPU timestamp or isolated PCIe timing claim"
+    },
+    {
+      "event": "comparison",
+      "loglik_abs_delta": 0,
+      "mean_max_abs_delta": 0,
+      "second_max_abs_delta": 0,
+      "marginal_sd_max_abs_delta": 0,
+      "tolerance": 0.001,
+      "collect_counts": false,
+      "parameter_updates": false
+    }
+  ],
+  "toolchain": "rustc 1.98.1 (48a229cea 2026-09-01) (Homebrew)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "commands": {
+    "cpu": "CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p mlsirm-core --lib --no-default-features two_tier_grm::tests::item_tables_preserve_scalar_bits_with_one_grm_call_per_node -- --exact --nocapture",
+    "default_bit": "cargo test -p mlsirm-core --lib two_tier_grm::tests::item_tables_preserve_scalar_bits_with_one_grm_call_per_node -- --exact --nocapture",
+    "q5": "G1_EXECUTION_HEAD=4c09920d0e08f5fcbb8f68cab5ceb140d4c7af1b G1_KERNEL_Q_PRIMARY=5 G1_KERNEL_Q_SPECIFIC=5 G1_KERNEL_GPU_BUDGET_BYTES=1048576 G1_KERNEL_HOST_BUDGET_BYTES=67108864 cargo test -p mlsirm-core --lib two_tier_grm::tests::reference_gpu_fixed_bank_kernel_profile -- --ignored --exact --nocapture",
+    "strict": "cargo test -p mlsirm-core --lib two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu -- --ignored --exact --nocapture"
+  },
+  "shared_build_env": {
+    "CARGO_BUILD_JOBS": "1",
+    "CARGO_INCREMENTAL": "0"
+  },
+  "red": {
+    "actual_calls": 24,
+    "nodes": 12,
+    "n_cat": 2,
+    "exit_status": 101
+  },
+  "green": {
+    "cases": 12,
+    "legal_zero_mass_cells": 67,
+    "scalar_bits_identical": true,
+    "overflow_rejected_before_probability": true
+  },
+  "limits": "host clock/collector and disabled test counter overhead; overlapping timing parents/children; not peak RSS/VRAM, q121 speedup, full suite, independent rebuild or official approval"
+}
