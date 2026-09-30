@@ -51,3 +51,6 @@
 ## 2025-05-19 - Dot product scalar reductions over masked arrays in diagnostics
 **Learning:** `_reduce_fit_scope`와 같은 진단 모듈에서 `(variance * where).sum()`처럼 스칼라 결과를 얻기 위해 같은 크기의 배열을 곱셈한 후 합을 구하는 연산은 메모리상에 거대한 중간 배열을 생성하여 병목현상을 일으킵니다.
 **Action:** 동일한 차원의 배열을 곱셈한 후 전체 합계를 구할 때는 `(A * B).sum()` 대신 `np.vdot(A, B)`를 사용하여 중간 배열의 할당을 건너뛰고 메모리 효율성과 연산 속도를 크게 향상시켜야 합니다. 이 때 `where`와 같은 boolean mask도 그대로 `np.vdot`에 적용될 수 있습니다.
+## 2025-05-19 - Dot product scalar reductions over masked arrays in diagnostics rejected due to numerical-contract regression
+**Learning:** `diagnostics.py`와 같은 해석 지향적(interpretation-facing) 핏 통계를 다루는 모듈에서 `(A * B).sum()`을 `np.vdot(A, B)`로 변경하면 BLAS의 다른 누적 순서와 FMA(Fused Multiply-Add) 등으로 인해 binary64 결과값이 달라지는 수치적(numerical-contract) 회귀(regression)가 발생합니다. 보고되는 통계값(outfit/infit, 카이제곱, -2LL 등)이 변경되므로 이런 종류의 최적화는 안전하지 않습니다.
+**Action:** `diagnostics.py` 등 해석용 통계 모듈이나 f64 결정론적 패리티가 요구되는 곳에서는 성능 목적이라도 평가 순서가 변경되는 `np.vdot`이나 `np.einsum`으로 교체하지 말아야 합니다.
