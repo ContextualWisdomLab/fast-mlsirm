@@ -74,6 +74,7 @@ def test_scrollable_export_focus_indicator_respects_motion_preferences() -> None
     assert "@media (prefers-reduced-motion: reduce)" in stylesheet
     assert "transition-duration: 0.01ms !important;" in stylesheet
 
+
 def test_export_bulk_selection_is_limited_to_fine_pointers() -> None:
     """Bulk selection must preserve native partial selection on touch devices."""
     stylesheet = _css()
