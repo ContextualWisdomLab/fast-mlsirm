@@ -434,8 +434,9 @@ def bifactor_oakes_se(
 
     This raw-array API computes the single-group model's observed information
     at the given parameters. Parameters selected from one row of a multigroup
-    fit produce a single-group calculation, NOT the multigroup SE: that needs
-    joint item and group information (#2113). Prefer
+    fit produce a single-group calculation, NOT the multigroup SE: use
+    ``bifactor_multigroup_oakes_se`` for joint item and group information
+    (#2113). Prefer
     ``bifactor_oakes_se_from_fit`` when a fit object is available.
 
     ``a_general``/``a_specific`` are length-``n_items`` vectors
@@ -479,14 +480,16 @@ def bifactor_oakes_se(
 
     if isinstance(a_general, BifactorMultigroupFit):
         raise ValueError(
-            "multigroup Oakes SE requires joint item and group mean/variance information"
+            "multigroup Oakes SE requires joint item and group mean/variance information; "
+            "use bifactor_multigroup_oakes_se"
         )
 
     def _as_finite_vector(values: object, name: str, length: int) -> np.ndarray:
         arr = np.asarray(values, dtype=np.float64)
         if arr.ndim == 2:
             raise ValueError(
-                "multigroup Oakes SE requires joint item and group mean/variance information"
+                "multigroup Oakes SE requires joint item and group mean/variance information; "
+                "use bifactor_multigroup_oakes_se"
             )
         if arr.shape != (length,):
             raise ValueError(f"{name} must have length {length}")
@@ -546,7 +549,8 @@ def bifactor_oakes_se(
     th = np.asarray(threshold, dtype=np.float64)
     if th.ndim == 3:
         raise ValueError(
-            "multigroup Oakes SE requires joint item and group mean/variance information"
+            "multigroup Oakes SE requires joint item and group mean/variance information; "
+            "use bifactor_multigroup_oakes_se"
         )
     if th.shape != (n_items, n_cat_int - 1):
         raise ValueError(
@@ -624,7 +628,7 @@ def bifactor_oakes_se_from_fit(
 
     Oakes (1999, Eq. 6, p. 480) gives observed information for the fitted
     single-group model. A multigroup fit requires joint item and group
-    information (#2113). The fitted slope prior is included in MAP posterior
+    information; use ``bifactor_multigroup_oakes_se`` (#2113). The fitted slope prior is included in MAP posterior
     curvature (Mislevy, 1985, p. 13, following Eq. 3.9).
 
     References (APA 7th ed.): Oakes, D. (1999). Direct calculation of the
@@ -636,8 +640,8 @@ def bifactor_oakes_se_from_fit(
     """
     if not isinstance(fit, BifactorGrmFit) or hasattr(fit, "n_groups"):
         raise TypeError(
-            "single-group BifactorGrmFit required; multigroup Oakes SE "
-            "needs joint information (#2113)"
+            "single-group BifactorGrmFit required; use "
+            "bifactor_multigroup_oakes_se for multigroup Oakes SE (#2113)"
         )
     n_items = fit.a_general.shape[0]
     y = np.asarray(responses)

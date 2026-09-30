@@ -19,7 +19,7 @@
   sampling covariance (Mislevy, 1985, p. 13,
   https://doi.org/10.1002/j.2330-8516.1985.tb00118.x).
   Omitting the prior remains the MML observed-information SE.
-- Multigroup Oakes SE is explicitly unavailable: it requires the joint
-  information for item and focal-group mean/variance parameters. The
-  single-group entry point rejects multigroup fit objects and stacked rows;
-  extracting one group row cannot supply a valid multigroup SE.
+- The single-group `bifactor_oakes_se` entry point rejects multigroup fit
+  objects and stacked rows, because extracting one group row cannot supply a
+  valid multigroup SE; use `bifactor_multigroup_oakes_se`, which carries the
+  joint item and focal-group mean/variance information and the fitted prior.

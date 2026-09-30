@@ -22,7 +22,7 @@
 //! https://doi.org/10.1177/0146621606289485
 
 use crate::bifactor_grm::{
-    check_param_shapes, e_step_multigroup, gh_rule, validate,
+    check_param_shapes, e_step_multigroup, gh_rule, lnorm_abs_slope_prior_curvature, validate,
     BifactorGrmConfig, ItemParams, SlopePrior, Validated,
 };
 use crate::bifactor_oakes::{bifactor_oakes_se, BifactorOakesConfig, BifactorOakesResult};
@@ -252,6 +252,7 @@ pub fn bifactor_multigroup_oakes_se(
     if !cfg.fd_step.is_finite() || cfg.fd_step <= 0.0 {
         return Err("fd_step must be finite and positive".into());
     }
+    cfg.slope_prior.validate()?;
     if a_general.len() != n_groups
         || a_specific.len() != n_groups
         || threshold.len() != n_groups
@@ -456,6 +457,17 @@ pub fn bifactor_multigroup_oakes_se(
                 -0.5 * (a[r * k + c] + cross[r * k + c] + a[c * k + r] + cross[c * k + r]);
         }
     }
+    // MAP fits: the log posterior adds the lognormal |a| prior once per
+    // estimated slope (anchored items once, free items per group), so its
+    // diagonal curvature joins the item-slope entries; population
+    // parameters carry no prior (Mislevy, 1986).
+    if let SlopePrior::Lognormal { mu, sd } = cfg.slope_prior {
+        for j in 0..pop_start {
+            if labels[j].starts_with("a_") {
+                information[j * k + j] += lnorm_abs_slope_prior_curvature(packed[j], mu, sd);
+            }
+        }
+    }
     super::bifactor_oakes::finish_information(labels, information)
 }
 
@@ -523,6 +535,79 @@ mod tests {
             &cfg,
         )
         .is_err());
+    }
+
+    #[test]
+    fn map_information_adds_slope_prior_curvature_once_per_parameter() {
+        let y = [0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1];
+        let group = [0, 0, 0, 0, 1, 1, 1, 1];
+        let ag = [vec![0.8, 1.0], vec![0.8, 1.1]];
+        let as_ = [vec![0.5, 0.7], vec![0.5, 0.8]];
+        let th = [vec![0.1, -0.2], vec![0.1, -0.1]];
+        let run = |slope_prior| {
+            bifactor_multigroup_oakes_se(
+                &ag,
+                &as_,
+                &th,
+                &[0.0, 0.2],
+                &[1.0, 1.1],
+                &[vec![1.0], vec![1.2]],
+                &y,
+                None,
+                &group,
+                2,
+                &[0, 0],
+                8,
+                2,
+                1,
+                2,
+                &[true, false],
+                true,
+                &BifactorOakesConfig {
+                    q_general: 5,
+                    q_specific: 5,
+                    fd_step: 1e-6,
+                    slope_prior,
+                },
+            )
+        };
+        let (mu, sd) = (0.1, 0.5);
+        let ml = run(SlopePrior::None).unwrap();
+        let map = run(SlopePrior::Lognormal { mu, sd }).unwrap();
+        assert_eq!(ml.labels, map.labels);
+        // Anchored item 0 carries the prior once; free item 1 once per group;
+        // thresholds and population parameters carry none.
+        let slopes = [
+            ("a_general:0", 0.8),
+            ("a_specific:0", 0.5),
+            ("a_general:0:1", 1.0),
+            ("a_specific:0:1", 0.7),
+            ("a_general:1:1", 1.1),
+            ("a_specific:1:1", 0.8),
+        ];
+        let k = ml.labels.len();
+        for r in 0..k {
+            for c in 0..k {
+                let want = if r == c {
+                    slopes
+                        .iter()
+                        .find(|(label, _)| *label == ml.labels[r])
+                        .map_or(0.0, |&(_, a)| lnorm_abs_slope_prior_curvature(a, mu, sd))
+                } else {
+                    0.0
+                };
+                let got = map.information[r * k + c] - ml.information[r * k + c];
+                assert!(
+                    (got - want).abs() <= 1e-12 * (1.0 + want.abs()),
+                    "{} x {}: {got} vs {want}",
+                    ml.labels[r],
+                    ml.labels[c]
+                );
+            }
+        }
+        assert!(run(SlopePrior::Lognormal { mu, sd: 0.0 })
+            .unwrap_err()
+            .contains("slope_prior_sd"));
     }
 
     #[test]

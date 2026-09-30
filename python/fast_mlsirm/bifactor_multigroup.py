@@ -213,6 +213,12 @@ def bifactor_multigroup_oakes_se(
     Then focal groups in order have `general_mean:g, general_var:g` and,
     when estimated, `specific_var:g:s`. The reference distribution is fixed.
 
+    A MAP fit (``fit.slope_prior_mu``/``fit.slope_prior_sd`` set) adds the
+    lognormal ``|a|`` prior curvature on each estimated slope: common items
+    once, free items per group. ``information`` is then the negative
+    log-posterior curvature and ``vcov``/``se`` a Laplace approximation to
+    the posterior covariance (Mislevy, 1986), not a sampling covariance.
+
     Basis: Oakes (1999, eq. 6, p. 480); Cai, Yang, and Hansen (2011, p. 230);
     Gibbons et al. (2007, eqs. 9 and 15, pp. 7 and 9).
     References (APA 7th): Oakes, D. (1999). Direct calculation of the
@@ -227,6 +233,8 @@ def bifactor_multigroup_oakes_se(
     A. (2007). Full-information item bifactor analysis of graded response
     data. *Applied Psychological Measurement, 31*(1), 4–19.
     https://doi.org/10.1177/0146621606289485
+    Mislevy, R. J. (1986). Bayes modal estimation in item response models.
+    *Psychometrika, 51*(2), 177–195. https://doi.org/10.1007/BF02293979
     """
     from .bifactor_grm import BifactorOakesSe
     from .fitstats import _core_module
@@ -284,6 +292,7 @@ def bifactor_multigroup_oakes_se(
         np.where(observed, y, 0).astype(np.int64).ravel(), observed.ravel(),
         gid, smap, anchor, n_persons, n_items, n_groups, fit.n_specific,
         fit.n_cat, estimate_specific_vars, qg, qs, step,
+        fit.slope_prior_mu, fit.slope_prior_sd,
     )
     labels = list(result["labels"])
     k = len(labels)

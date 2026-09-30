@@ -24,6 +24,17 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
+#### Multigroup bifactor Oakes information under a slope prior (#2113 phase 2)
+
+- `bifactor_multigroup_oakes_se` now honors a MAP fit. When the fit records
+  `slope_prior_mu` / `slope_prior_sd`, the joint information adds the diagonal
+  lognormal `|a|` prior curvature on each estimated slope: common items once,
+  free items once per group, and none on thresholds or group distributions.
+  `information` is then the negative log-posterior curvature, and `vcov`/`se`
+  are a Laplace approximation to the posterior covariance (Mislevy, 1986,
+  https://doi.org/10.1007/BF02293979), not a sampling covariance. Fits without
+  a prior return the unchanged ML information.
+
 #### Joint multigroup bifactor Oakes ML information (#2113)
 
 - Add `bifactor_multigroup_oakes_se` in Rust, PyO3, and Python for joint ML
@@ -38,22 +49,6 @@
   about 25%. Reproduce with `python scripts/bifactor_multigroup_oakes_calibration.py
   --replicates 5 --persons-per-group 340 --q-general 121 --q-specific 121
   --fd-step 1e-6 --seed <seed>`.
-
-#### Release license evidence and NumPy lock reconciliation
-
-- `docs/security/license-evidence-0.11.5.md` records which artifacts are
-  published: the PyPI sdist and 12 wheels. The Rust crates are not published.
-  It also records the per-dependency license inventory for both ecosystems and
-  three verdicts:
-  - atheris 3.1.0 is Apache-2.0. PyPI metadata declares no license, so this
-    is determined from its LICENSE file, which is hash-matched to upstream.
-  - r-efi 5.3.0 and 6.0.0 are used under an explicit MIT election with a
-    recorded rationale. They are reached only through a dev-dependency path.
-  - The official NumPy wheels bundle libgfortran and libquadmath. libquadmath
-    is LGPL-2.1-or-later and has no runtime exception, so this is marked as
-    an owner decision, not approved.
-- `tools/license_inventory.py` is an offline generator for
-  `docs/security/license-evidence-0.11.5/inventory.json`.
 
 #### Bifactor GRM opt-in lognormal |a| slope prior
 
@@ -71,8 +66,29 @@
   negative log-posterior curvature (Oakes observed information plus the
   diagonal prior curvature on slopes) and `vcov`/`se` are a posterior-curvature
   (Laplace) approximation to the posterior covariance, not a frequentist
-  sampling covariance (Mislevy, 1986, https://doi.org/10.1007/BF02293979).
+  sampling covariance (Mislevy, 1985, p. 13,
+  https://doi.org/10.1002/j.2330-8516.1985.tb00118.x).
   Omitting the prior remains the MML observed-information SE.
+- The single-group `bifactor_oakes_se` entry point rejects multigroup fit
+  objects and stacked rows, because extracting one group row cannot supply a
+  valid multigroup SE; use `bifactor_multigroup_oakes_se`, which carries the
+  joint item and focal-group mean/variance information and the fitted prior.
+
+#### Release license evidence and NumPy lock reconciliation
+
+- `docs/security/license-evidence-0.11.5.md` records which artifacts are
+  published: the PyPI sdist and 12 wheels. The Rust crates are not published.
+  It also records the per-dependency license inventory for both ecosystems and
+  three verdicts:
+  - atheris 3.1.0 is Apache-2.0. PyPI metadata declares no license, so this
+    is determined from its LICENSE file, which is hash-matched to upstream.
+  - r-efi 5.3.0 and 6.0.0 are used under an explicit MIT election with a
+    recorded rationale. They are reached only through a dev-dependency path.
+  - The official NumPy wheels bundle libgfortran and libquadmath. libquadmath
+    is LGPL-2.1-or-later and has no runtime exception, so this is marked as
+    an owner decision, not approved.
+- `tools/license_inventory.py` is an offline generator for
+  `docs/security/license-evidence-0.11.5/inventory.json`.
 
 ### Changed
 

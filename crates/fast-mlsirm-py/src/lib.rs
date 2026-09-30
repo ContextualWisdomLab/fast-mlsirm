@@ -1759,7 +1759,10 @@ fn bifactor_multigroup_oakes_se(
     q_general: usize,
     q_specific: usize,
     fd_step: f64,
+    slope_prior_mu: Option<f64>,
+    slope_prior_sd: Option<f64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    let slope_prior = parse_slope_prior(slope_prior_mu, slope_prior_sd)?;
     if n_cat < 2 || n_items < 1 || n_groups < 1 || n_specific < 1 {
         return Err(PyValueError::new_err(
             "n_cat >= 2 and dimensions >= 1 required",
@@ -1814,7 +1817,7 @@ fn bifactor_multigroup_oakes_se(
         q_general,
         q_specific,
         fd_step,
-        slope_prior: SlopePrior::None,
+        slope_prior,
     };
     let res = py
         .detach(|| {
