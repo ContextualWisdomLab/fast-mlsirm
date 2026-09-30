@@ -1,0 +1,1 @@
+{"models":[{"estimators":["mmle"],"model":"BIFAC2PLM"},{"estimators":["jmle","mmle"],"model":"MIRT"},{"estimators":["jmle","mmle"],"model":"MLS2PLM"},{"estimators":["jmle","mmle"],"model":"MLSRM"},{"estimators":["jmle","mmle"],"model":"ULS2PLM"},{"estimators":["jmle","mmle"],"model":"ULSRM"}],"production_numeric_owner":"rust","schema_version":"1.0"}
