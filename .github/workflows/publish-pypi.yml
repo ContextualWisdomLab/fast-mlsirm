@@ -366,7 +366,7 @@ jobs:
                   raise SystemExit(f"{leg}: Linux wheel leg has no digest-pinned build container: {container!r}")
               inspected = subprocess.run(
                   ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", container],
-                  capture_output=True, text=True,
+                  capture_output=True, text=True, timeout=120,
               )
               if inspected.returncode != 0 or container not in json.loads(inspected.stdout or "[]"):
                   raise SystemExit(f"{leg}: pinned build container {container} is not present on this runner")
@@ -622,7 +622,7 @@ jobs:
                   raise SystemExit(f"{leg}: Linux wheel leg has no digest-pinned build container: {container!r}")
               inspected = subprocess.run(
                   ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", container],
-                  capture_output=True, text=True,
+                  capture_output=True, text=True, timeout=120,
               )
               if inspected.returncode != 0 or container not in json.loads(inspected.stdout or "[]"):
                   raise SystemExit(f"{leg}: pinned build container {container} is not present on this runner")
