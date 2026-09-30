@@ -12,7 +12,7 @@ Status: **Proposed in Draft PR #2304; not protected-main authority**
 
 | Gap | Exact evidence | Owner/action | Status / remaining gate |
 |---|---|---|---|
-| `REPORT-EXPORT-SELECTION-01` | Initial head `2fb99f8e05318021299ec944fc13dd5a90e595fc` placed `user-select: all` in the unconditional `.export-block pre` rule and described it as an accessibility improvement. RED head `f37e7415e31730eb520cecc250965ccf27bb17fc` proves that the base rule still prevents native partial selection on touch/coarse-pointer inputs. | `fast-mlsirm` PR #2304 owns the generated-report CSS and regression contract. Repair head `148b6f171fb8088540941ce7e3276c855549b5a3` moves atomic selection behind `(hover: hover) and (pointer: fine)` and removes the over-broad permanent generator rule. | **PARTIAL / Draft.** Focused local execution at `148b6f17…` passed all 4 tests in `test_report_scrollable_exports_accessibility.py`. Fresh exact-head hosted Checks and current-head real-browser pointer/touch/keyboard evidence remain required. |
+| `REPORT-EXPORT-SELECTION-01` | Initial head `2fb99f8e05318021299ec944fc13dd5a90e595fc` placed `user-select: all` in the unconditional `.export-block pre` rule and described it as an accessibility improvement. RED head `f37e7415e31730eb520cecc250965ccf27bb17fc` proves that the base rule still prevents native partial selection on touch/coarse-pointer inputs. | `fast-mlsirm` PR #2304 owns the generated-report CSS and regression contract. Product repair `015aec82e84c8138bd5e181742eab2fec7627493` moves atomic selection behind `(hover: hover) and (pointer: fine)`; metadata-restoration descendant `148b6f171fb8088540941ce7e3276c855549b5a3` removes the over-broad permanent generator rule. | **PARTIAL / Draft.** The current remote diff contains the scoped CSS and executable regression, but exact-head hosted CI is skipped and no current-head browser evidence exists. Fresh executable Checks, browser evidence, and independent approval remain required. |
 
 ### Exact-head design acceptance matrix
 
@@ -20,8 +20,8 @@ Status: **Proposed in Draft PR #2304; not protected-main authority**
 |---|---|---|
 | Determinism and domain semantics | PASS | Existing semantic exact-value table and full-precision JSON/CSV outputs remain authoritative; CSS does not write presentation state back into psychometric domain truth. |
 | Accessibility semantics | PASS | Export regions retain accessible names, `role="region"`, `tabindex="0"`, focus-visible outline, and reduced-motion policy. |
-| Fine-pointer bulk selection | PASS (focused) | Media-scoped `user-select: all` and regression test are present at `148b6f17…`. |
-| Touch/coarse-pointer partial selection | PASS (focused) | The unconditional export rule contains no `user-select`; native selection remains available. |
+| Fine-pointer bulk selection | IMPLEMENTED / unverified | Media-scoped `user-select: all` and the regression contract are present in the current remote diff; exact-head executable CI is absent. |
+| Touch/coarse-pointer partial selection | IMPLEMENTED / unverified | The unconditional export rule contains no `user-select`; real-browser touch/coarse-pointer evidence is absent. |
 | Keyboard / assistive-technology copy | PARTIAL | Focus and native browser selection remain, but this PR does not add a dedicated copy control, success/error feedback, or clipboard-permission recovery. It must not claim those capabilities. |
 | Responsive and real-browser evidence | FAIL | No current-head desktop, mobile, or intermediate screenshot set and no real-browser pointer/touch/keyboard interaction run are attached. |
 | WCAG 2.2 AA | PARTIAL | Static semantics and focus contracts pass; current-head browser audit is absent. |
