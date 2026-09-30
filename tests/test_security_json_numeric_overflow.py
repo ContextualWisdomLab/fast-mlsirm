@@ -5,33 +5,34 @@ from pathlib import Path
 
 import pytest
 
+from fast_mlsirm.cross_engine_conformance import ConformanceInventory
 from fast_mlsirm.io import _load_json_bounded
 from fast_mlsirm.llm_judge import JudgeFormatError, _response_object
 
 def test_cross_engine_conformance_rejects_numeric_overflow() -> None:
     """Ensure exact-head cross-engine JSON bounds reject numeric overflow."""
-
-    # Check the parsing hook directly because valid payloads require deep JSON schemas
-    from fast_mlsirm.cross_engine_conformance import (
-        _reject_duplicate_json_keys,
-        _reject_float_nonfinite,
-        _reject_json_constant,
+    payload = (
+        '{"schema_version": "1.0", "package_version": "1.0.0", "source_commit": '
+        '"0000000000000000000000000000000000000000", "capabilities": [], '
+        '"inventory_fingerprint": '
+        '"0000000000000000000000000000000000000000000000000000000000000000", '
+        '"run_provenance": null, '
+        '"theta": 1e999}'
     )
-
     with pytest.raises(ValueError, match="manifest JSON contains non-finite numbers"):
-        json.loads(
-            '{"a": 1e999}',
-            object_pairs_hook=_reject_duplicate_json_keys,
-            parse_constant=_reject_json_constant,
-            parse_float=_reject_float_nonfinite,
-        )
+        ConformanceInventory.from_json(payload)
 
-    assert json.loads(
-        '{"a": 1e300}',
-        object_pairs_hook=_reject_duplicate_json_keys,
-        parse_constant=_reject_json_constant,
-        parse_float=_reject_float_nonfinite,
-    ) == {"a": 1e300}
+    # Valid large float should be accepted and fail later in schema validation (it has theta instead of something valid)
+    payload_valid = (
+        '{"schema_version": "1.0", "package_version": "1.0.0", "source_commit": '
+        '"0000000000000000000000000000000000000000", "capabilities": [], '
+        '"inventory_fingerprint": '
+        '"0000000000000000000000000000000000000000000000000000000000000000", '
+        '"run_provenance": null, '
+        '"theta": 1e300}'
+    )
+    with pytest.raises(ValueError, match="manifest keys must be exactly"):
+        ConformanceInventory.from_json(payload_valid)
 
 
 def test_io_rejects_numeric_overflow(tmp_path: Path) -> None:
@@ -61,6 +62,8 @@ def test_llm_judge_rejects_numeric_overflow() -> None:
 
 def test_candidates_rejects_numeric_overflow() -> None:
     """Ensure generated item candidate parses reject numeric overflow."""
+    # Because full valid GenerationRequest payloads are complex,
+    # test the hook directly exactly as it gets passed to json.loads.
 
     from fast_mlsirm.rubric.candidates import (
         _NonFiniteJsonNumber,
