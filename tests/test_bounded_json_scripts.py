@@ -74,6 +74,20 @@ def test_exact_size_depth_strings_escapes_and_unicode(tmp_path: Path) -> None:
     ) == json.loads(content)
 
 
+def test_depth_budget_cannot_be_offset_by_unmatched_closers() -> None:
+    """Repository JSON preflight must never let structural depth fall below zero."""
+    depth_limit = _bounded_json.MAX_JSON_DEPTH
+    payload = (
+        b"]" * (depth_limit + 8)
+        + b"[" * (depth_limit + 1)
+        + b"0"
+        + b"]" * (depth_limit + 1)
+    )
+
+    with pytest.raises(ValueError, match="maximum allowed depth"):
+        _bounded_json._validate_json_depth(payload, max_depth=depth_limit)
+
+
 def test_limit_plus_one_is_rejected(tmp_path: Path) -> None:
     """One byte above the configured inclusive byte limit fails closed."""
     path = _write(tmp_path / "oversized.json", b'{"a":1} ')
