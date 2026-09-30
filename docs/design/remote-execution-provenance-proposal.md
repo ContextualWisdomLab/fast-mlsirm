@@ -38,8 +38,18 @@ Read-only anchors in the tested checkout:
 
 These existing build/runtime checks are reuse points, not proof that the
 running worker has already performed them. Receipt existence alone is not
-verification. Do not import CI scripts into the installed library as a hidden
-runtime dependency; agree the smallest shared verification boundary first.
+verification. Reuse their identity, target, imported-member and accounted-file
+verification semantics, not the complete release-job receipt or its operational
+assumptions. The `uv 0.12.5` pin and `build_env` fields in release validation are
+CI/release context, not universal live-worker requirements.
+
+Keep CI scripts as tooling. Define the smallest package-safe verification
+boundary for independently approved artifact policy and actual local files;
+this must not add a runtime dependency on CI scripts, build tools or a release
+job's complete environment. The independently trusted policy must bind the
+approved bundle digest and per-target members. A bundle or file inventory sent
+by the producer is data to validate, never its own approval authority. Even
+verified artifact readiness does not establish the nodes or device used.
 
 ## Decision Drivers
 
@@ -193,8 +203,9 @@ These are planned checks, **not implemented or passing tests**.
 
 ## Open decisions and non-goals
 
-Jointly settle approved-policy provenance/distribution, reusable release
-verification boundaries, source-identity mapping, schema/capability version,
+Jointly settle approved-policy provenance/distribution, the minimal
+package-safe verifier boundary and release-tooling/runtime separation,
+source-identity mapping, schema/capability version,
 canonical node/weight encoding and multi-stage applicability, numerical-owner
 receipt locations, strict fallback/mixed-path policies, and cache migration.
 
@@ -210,5 +221,9 @@ Valkey worker owner owns this producer/worker boundary proposal; #2286 owner
 owns consumer requirements. Lead and Coordinator review the proposed boundary
 and negative matrix before an implementation plan. Numerical-core and
 release-evidence owners must review instrumentation, approved-artifact mapping
-and trust boundaries before any wire implementation. Under the observed high
-host load, this phase is read-only tracing and documentation only.
+and trust boundaries before any wire implementation. The L4 lead (`fsw-46`)
+explicitly owns release-evidence review; the Coordinator
+(`fmls-2001-l3-cursor-a6`) explicitly accepted numerical-core review. Their
+read-only findings checkpoint is 2026-09-30 14:00 KST. These assignments do not
+approve the proposal or implementation. Under the observed high host load,
+this phase is read-only tracing and documentation only.
