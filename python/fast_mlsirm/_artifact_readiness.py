@@ -1,8 +1,11 @@
 """Internal artifact-file verification under a trusted immutable startup profile.
 
 Approval and startup observations are host configuration, not authenticated by
-this helper. Matching disk files do not prove bytes already loaded or numerical
-execution. No candidate code is imported. Deadlines are cooperative; the caller
+this helper. The host must keep the installation root and its ancestors
+immutable: no-follow opening protects the root's final component, not arbitrary
+ancestor replacement. Final inventory checks are non-atomic and cannot prevent
+mutation after an entry's last check. Matching disk files do not prove bytes
+already loaded or numerical execution. No candidate code is imported. Deadlines are cooperative; the caller
 must supervise a hard deadline around potentially blocking filesystem calls.
 """
 from __future__ import annotations
