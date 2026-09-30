@@ -29,10 +29,52 @@
 //! https://doi.org/10.1177/0146621606289485
 
 use crate::two_tier_grm::{
-    build_primary_grid, fipc_primary_coords, fit_two_tier_grm, fit_two_tier_grm_fipc, gh_rule,
-    two_tier_grm_marginal_loglik, two_tier_grm_marginal_loglik_brute, TwoTierFipcConfig,
-    TwoTierGrmConfig,
+    build_primary_grid, fipc_convergence_decision, fipc_max_param_change, fipc_primary_coords, fit_two_tier_grm,
+    fit_two_tier_grm_fipc, gh_rule, two_tier_grm_marginal_loglik,
+    two_tier_grm_marginal_loglik_brute, FipcStopDecision, TwoTierFipcConfig, TwoTierGrmConfig,
 };
+
+// Seed-1000 capture (#2090 S1 fixture, anchor rows fixed): a joint backtrack at
+// alpha=1.9e-6 produced dLL=0 while full EM steps were still gaining
+// ~0.023/iter, and the old rule `change <= tol*(1+|LL|)` reported
+// tolerance_met. The full EM step still moved the parameters, so the EM map
+// was not at a fixed point.
+#[test]
+fn fipc_flat_loglik_from_a_damped_step_is_not_convergence() {
+    assert_eq!(fipc_convergence_decision(0.0, -1396.4479918, 2e-2, 1e-5, false), FipcStopDecision::StepLimited);
+}
+
+#[test]
+fn fipc_damped_step_cannot_certify_even_a_small_em_map_change() {
+    assert_eq!(
+        fipc_convergence_decision(0.0, -1396.0, 1e-8, 1e-5, false),
+        FipcStopDecision::StepLimited,
+    );
+}
+
+#[test]
+fn fipc_convergence_needs_loglik_and_em_map_displacement_below_tol() {
+    let prev = -1396.0;
+    // LL flat but the full EM step still moves the parameters (mirt TOL fails).
+    assert_eq!(fipc_convergence_decision(1e-6, prev, 2e-3, 1e-4, true), FipcStopDecision::Continue);
+    // EM map nearly fixed but LL still rising by more than tol*(1+|LL|).
+    assert_eq!(fipc_convergence_decision(0.023, prev, 1e-6, 1e-5, true), FipcStopDecision::Continue);
+    assert_eq!(fipc_convergence_decision(1e-6, prev, 1e-6, 1e-4, true), FipcStopDecision::Converged);
+}
+
+#[test]
+fn fipc_convergence_rejects_non_finite_inputs() {
+    assert_eq!(fipc_convergence_decision(f64::NAN, -10.0, 0.0, 1e-4, true), FipcStopDecision::Continue);
+    assert_eq!(fipc_convergence_decision(0.0, -10.0, f64::NAN, 1e-4, true), FipcStopDecision::Continue);
+}
+
+#[test]
+fn fipc_parameter_change_does_not_hide_invalid_log_scales() {
+    let change = fipc_max_param_change(
+        &[], &[], &[], &[0.0], &[0.0], &[1.0], &[-1.0], &[], &[], 1, false,
+    );
+    assert_eq!(change, f64::INFINITY);
+}
 
 #[test]
 fn fipc_direct_quadrature_preserves_nonzero_mean_covariance_and_specific_sd() {

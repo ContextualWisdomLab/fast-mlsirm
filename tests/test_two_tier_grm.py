@@ -196,3 +196,70 @@ def test_unobserved_category_fails_loudly() -> None:
     y[:, 0] = np.clip(y[:, 0], 0, N_CAT - 2)  # drop the top category
     with pytest.raises(ValueError, match="never observed"):
         _fit(y)
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu"])
+def test_fipc_seed1000_damping_does_not_report_convergence(device):
+    """Low-resolution stopping-rule reproduction, not a recovery study.
+
+    Chalmers (2012, p. 6) motivates checking change between EM iterations;
+    docs/fipc-convergence.md records the full-step and parameter-change policy.
+    """
+    from fast_mlsirm import _core
+
+    n_persons = 180
+    rng = np.random.default_rng(1000)
+    z0, z1 = rng.normal(size=(2, n_persons))
+    theta = np.column_stack((0.65 + 1.25 * z0, -0.35 + 0.8 * z1))
+    theta_s = rng.normal(size=(n_persons, N_SPECIFIC))
+    y = np.empty((n_persons, N_ITEMS), dtype=np.int64)
+    for i in range(N_ITEMS):
+        base = TRUE_A_P[i] @ theta.T + TRUE_A_S[i] * theta_s[:, SPECIFIC_MAP[i]]
+        cum = 1.0 / (1.0 + np.exp(-(base[:, None] + TRUE_D[i])))
+        probs = np.concatenate((1.0 - cum[:, [0]], -np.diff(cum, axis=1), cum[:, [-1]]), axis=1)
+        y[:, i] = (rng.random(n_persons)[:, None] > np.cumsum(probs, axis=1)).sum(axis=1)
+    fit = _core.fit_two_tier_grm_fipc(
+        y.reshape(-1), np.ones(y.size, dtype=bool), PRIMARY_MAP.reshape(-1), SPECIFIC_MAP,
+        n_persons, N_ITEMS, N_PRIMARY, N_SPECIFIC, N_CAT,
+        np.array([True, True, False, True, True, False]),
+        TRUE_A_P.reshape(-1), TRUE_A_S, TRUE_D.reshape(-1),
+        7, 7, 100, 1e-5, 5, 1e-8, False, device=device,
+    )
+    assert any("branch=joint_backtrack_accept" in step for step in fit["prior_update_decision_trace"])
+    assert not fit["converged"]
+    assert fit["termination_reason"] in {"step_limited", "max_iter_reached", "prior_update_stalled"}
+    assert fit["final_param_change"] > 1e-5
+
+
+def test_fipc_full_steps_can_certify_parameter_and_loglik_tolerance():
+    """Control-flow probe only: loose tolerance and q7 are not recovery evidence."""
+    from fast_mlsirm import _core
+
+    y = _simulate(1000)
+    tol = 0.1
+    fit = _core.fit_two_tier_grm_fipc(
+        y.reshape(-1), np.ones(y.size, dtype=bool), PRIMARY_MAP.reshape(-1), SPECIFIC_MAP,
+        N_PERSONS, N_ITEMS, N_PRIMARY, N_SPECIFIC, N_CAT,
+        np.ones(N_ITEMS, dtype=bool), TRUE_A_P.reshape(-1), TRUE_A_S,
+        TRUE_D.reshape(-1), 7, 7, 12, tol, 5, 1e-8, False, device="cpu",
+    )
+    assert fit["prior_update_decision_trace"]
+    assert all("branch=joint_full_accept" in step for step in fit["prior_update_decision_trace"])
+    means = np.asarray(fit["prior_mean_trace"]).reshape(-1, N_PRIMARY)
+    covariances = np.asarray(fit["prior_covariance_trace"]).reshape(-1, N_PRIMARY, N_PRIMARY)
+    previous_mean = means[-2] if len(means) > 1 else np.zeros(N_PRIMARY)
+    previous_cov = covariances[-2] if len(covariances) > 1 else np.eye(N_PRIMARY)
+    covariance_change = np.abs(covariances[-1] - previous_cov)
+    diagonal = np.diag_indices(N_PRIMARY)
+    covariance_change[diagonal] = np.abs(
+        0.5 * np.log(np.diag(covariances[-1])) - 0.5 * np.log(np.diag(previous_cov))
+    )
+    expected_change = max(np.max(np.abs(means[-1] - previous_mean)), np.max(covariance_change))
+    assert fit["final_param_change"] == pytest.approx(expected_change)
+    assert fit["final_loglik_change"] == pytest.approx(
+        fit["fixed_loglik_trace"][-1] - fit["loglik_trace"][-1]
+    )
+    assert fit["final_param_change"] <= tol
+    assert abs(fit["final_loglik_change"]) <= tol * (1 + abs(fit["loglik_trace"][-1]))
+    assert fit["converged"] is True
+    assert fit["termination_reason"] == "tolerance_met"
