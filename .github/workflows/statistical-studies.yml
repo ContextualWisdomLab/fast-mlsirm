@@ -54,6 +54,7 @@ jobs:
           --skip mlsirm-core/test/literature_true_parameter_recovery::gpu_recovery_matches_cpu_on_paper_design
           --skip mlsirm-core/test/higher_order_mc_recovery::higher_order_dina_recovery_respects_monte_carlo_tolerance
           --skip mlsirm-core/lib/mlsirm_core::grm::tests::mc_grm_recovery_500
+          --skip mlsirm-core/lib/mlsirm_core::two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu
 
   rust-pyo3-ignored:
     name: Ignored PyO3 studies

@@ -404,6 +404,41 @@ fn reference_fit_actual_gpu_matches_cpu() {
     println!("input_sha256={:x}", sha2::Sha256::digest(&input));
     println!("primary_correlation=identity, adapter={:?}, adapter_backend={:?}, cpu_iterations={}, gpu_iterations={}, cpu_seconds={cpu_seconds}, gpu_seconds={gpu_seconds}, loglik_delta={gap}, AIC_delta={}, BIC_delta={}",
             gpu.gpu_adapter_name, gpu.gpu_adapter_backend, cpu.n_iter, gpu.n_iter, -2.0*gap, -2.0*gap);
+
+    // 같은 seed·제약·prior·노드에서 수렴 후 문항 모수도 대조한다.
+    // 작은 합성 표본의 극단 모수를 likelihood/EAP 근접만으로 수용하지 않는다.
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../fixtures/two_tier_reference_gpu/sparse_p2_s4.json"
+    )).unwrap();
+    let y: Vec<usize> = serde_json::from_value(fixture["y"].clone()).unwrap();
+    let primary: Vec<bool> = serde_json::from_value(fixture["primary_map"].clone()).unwrap();
+    let specific: Vec<i32> = serde_json::from_value(fixture["specific_map"].clone()).unwrap();
+    let size = |key: &str| fixture[key].as_u64().unwrap() as usize;
+    let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: false,
+        q_primary: size("q_primary"), q_specific: size("q_specific"),
+        max_iter: size("max_iter"), tol: fixture["tol"].as_f64().unwrap(),
+        n_starts: size("n_starts"), seed: fixture["seed"].as_u64().unwrap(),
+        newton_iter: 10, ridge: 1e-8,
+    };
+    let fit = |device| fit_two_tier_grm_with_device(
+        &y, None, &primary, &specific, size("n_persons"), size("n_items"),
+        size("n_primary"), size("n_specific"), size("n_cat"),
+        &cfg, device, Some(1 << 28),
+    ).unwrap();
+    let cpu = fit(Device::Cpu);
+    let gpu = fit(Device::Gpu);
+    assert!(cpu.converged && gpu.converged);
+    assert_eq!(cpu.n_iter, gpu.n_iter);
+    for (name, left, right) in [
+        ("a_primary", &cpu.a_primary, &gpu.a_primary),
+        ("a_specific", &cpu.a_specific, &gpu.a_specific),
+        ("threshold", &cpu.threshold, &gpu.threshold),
+    ] {
+        let gap = left.iter().zip(right).map(|(a,b)| (a-b).abs()).fold(0.0, f64::max);
+        println!("strict_synthetic_{name}_max_delta={gap}");
+        assert!(gap < 1e-3, "strict synthetic {name} parameter parity failed: {gap}");
+    }
 }
 
 #[test]
@@ -523,10 +558,7 @@ fn oracle_rejects_non_correlation_phi() {
 }
 
 #[test]
-#[cfg_attr(
-    coverage,
-    ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job"
-)]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn arbitrary_quadrature_counts_above_the_old_fixed_table_are_accepted() {
     // #1929: node count controls integration precision and must not be
     // capped at a fixed table; 5/22/100 used to be rejected, now must fit
@@ -1147,10 +1179,7 @@ fn focal_em_preserves_one_step_moments_and_termination_receipts() {
 /// This bank, count, quadrature and error tolerance are test choices; the
 /// source does not prescribe them or establish study-model identification.
 #[test]
-#[cfg_attr(
-    coverage,
-    ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job"
-)]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn focal_gaussian_recovers_declared_distribution() {
     use crate::two_tier_grm::fit_two_tier_grm_focal_orthogonal;
     let ap = [1.2, 1.6, 0.5, 0.8];

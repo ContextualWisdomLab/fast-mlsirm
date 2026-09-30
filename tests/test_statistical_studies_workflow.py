@@ -39,6 +39,17 @@ def test_exhaustive_studies_are_scheduled_manual_and_release_triggered():
     assert "gpu-recovery:" in text
 
 
+def test_reference_gpu_fit_has_one_hardware_execution_owner():
+    """GPU 기준 적합은 CPU shard 대신 격리 hardware 잡에서 실제 실행한다."""
+    name = "two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu"
+    assert f"--skip mlsirm-core/lib/mlsirm_core::{name}" in _STUDIES.read_text()
+    text = _PR_CI.read_text()
+    hardware = text.split("  focal-gpu-native:", 1)[1].split("\n  rust:", 1)[0]
+    assert f"cargo test -p mlsirm-core --lib {name}" in hardware
+    assert "--ignored --exact --nocapture | tee reference-gpu-fit.log" in hardware
+    assert 'grep -q "test result: ok. 1 passed" reference-gpu-fit.log' in hardware
+
+
 def test_ignored_rust_shards_allow_long_recovery_evidence_to_finish():
     """The shard deadline exceeds the historical 30-minute study timeout."""
     text = _STUDIES.read_text(encoding="utf-8")
