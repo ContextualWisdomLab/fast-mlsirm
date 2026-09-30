@@ -356,8 +356,12 @@ def test_every_release_build_is_reproducible_from_the_release_commit_clock() -> 
     assert "- name: Capture second sdist build tools" in sdist
     assert "needs: [verify-release, sdist]" in wheels
     assert "- name: Verify and unpack the same-run sdist" in wheels
+    assert "- name: Select reviewed license bundle for sdist consumer target" in wheels
+    assert 'run: bash tools/select_third_party_license.sh "${{ matrix.target }}"' in wheels
     assert "- name: Build this wheel target from the verified sdist" in wheels
     assert "working-directory: sdist-consumer/source" in wheels
+    assert "- name: Verify sdist consumer wheel license bytes" in wheels
+    assert "run: python tools/verify_wheel_license.py dist-consumer" in wheels
     assert "- name: Capture target sdist consumer wheel" in wheels
     assert "- name: Install target sdist consumer wheel" in wheels
     assert "args: --out dist-rebuild" in sdist
