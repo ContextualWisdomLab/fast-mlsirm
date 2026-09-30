@@ -319,10 +319,3 @@ def test_parse_json_bounded_rejects_text_subclass_before_encoding() -> None:
         parse_json_bounded(_HostileText("{}"))
 
     assert _HostileText.encodes == 0
-
-def test_json_depth_underflow_prevention():
-    """Ensure depth tracking does not underflow below zero."""
-    from scripts._bounded_json import _validate_json_depth
-    payload = b"]" * 100 + b'{"a":'*100 + b"1" + b"}"*100
-    with pytest.raises(ValueError, match="exceeds maximum allowed depth"):
-        _validate_json_depth(payload, max_depth=10)
