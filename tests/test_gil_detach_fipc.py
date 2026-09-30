@@ -5,7 +5,7 @@
 
 Wall-clock speedup ratios drift with host load, so this gate measures the GIL
 directly. While a worker thread runs one FIPC fit, the main thread records a
-timestamp on every loop pass. A binding that holds the GIL freezes the main
+scheduling gap between bounded loop samples. A binding that holds the GIL freezes the main
 thread for the whole fit, which leaves a gap about as long as the fit itself.
 A detached binding lets the main thread keep ticking, so the largest gap stays
 near the interpreter switch interval (``sys.getswitchinterval()``, 5 ms by
@@ -16,6 +16,12 @@ construction instead of by a tuned constant.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
 import threading
 import time
 
@@ -61,32 +67,83 @@ def _fit(data: dict[str, object]) -> None:
     )
 
 
-def test_fit_poly_fipc_lets_other_python_threads_run() -> None:
-    data = _fixture()
-    _fit(data)  # warm-up: exclude first-call costs
+def _observe_fit(fit, *, timeout_seconds: float = 60.) -> tuple[float, float]:
+    """Observe scheduling gaps with constant-size state and a bounded deadline.
 
+    The calling process must also have an external timeout: Python cannot
+    interrupt a native call that never releases the GIL. The numerical test
+    below runs in an owned child process for precisely that reason.
+    """
     done = threading.Event()
     bounds: list[float] = []
+    errors: list[BaseException] = []
 
     def worker() -> None:
         bounds.append(time.perf_counter())
-        _fit(data)
-        bounds.append(time.perf_counter())
-        done.set()
+        try:
+            fit()
+        except BaseException as error:
+            errors.append(error)
+        finally:
+            bounds.append(time.perf_counter())
+            done.set()
 
-    ticks: list[float] = []
-    thread = threading.Thread(target=worker)
+    deadline = time.perf_counter() + timeout_seconds
+    thread = threading.Thread(target=worker, daemon=True)
     thread.start()
+    previous = None
+    largest_gap = 0.
     while not done.is_set():
-        ticks.append(time.perf_counter())
-    thread.join()
-
+        now = time.perf_counter()
+        if now >= deadline:
+            raise TimeoutError("GIL observer deadline exceeded")
+        if bounds and now >= bounds[0] and (len(bounds) == 1 or now <= bounds[1]):
+            previous = bounds[0] if previous is None else previous
+            largest_gap = max(largest_gap, now - previous)
+            previous = now
+        done.wait(.001)  # bounded sampling; no busy-spin or timestamp list
+    thread.join(timeout=max(0., deadline - time.perf_counter()))
+    if thread.is_alive():
+        raise TimeoutError("GIL observer deadline exceeded while joining")
+    if errors:
+        raise errors[0]
     start, end = bounds
-    fit_seconds = end - start
+    if end > deadline:
+        raise TimeoutError("GIL observer deadline exceeded before completion")
+    previous = start if previous is None else previous
+    largest_gap = max(largest_gap, end - previous)
+    return end - start, largest_gap
+
+
+def _run_numeric_probe() -> None:
+    import fast_mlsirm._core as core
+    extension = Path(core.__file__).resolve()
+    with extension.open("rb") as handle:
+        digest = hashlib.file_digest(handle, "sha256").hexdigest()
+    print(json.dumps({"interpreter": sys.executable, "extension": str(extension),
+                      "extension_sha256": digest}), flush=True)
+    data = _fixture()
+    _fit(data)  # warm-up is also inside the owned process's external timeout
+    fit_seconds, largest_gap = _observe_fit(lambda: _fit(data))
     assert fit_seconds > 0.05, f"fixture too fast to separate GIL states ({fit_seconds:.3f}s)"
-    inside = [t for t in ticks if start <= t <= end]
-    gaps = np.diff([start, *inside, end])
-    assert gaps.max() < fit_seconds / 2, (
-        f"main thread froze for {gaps.max():.3f}s of a {fit_seconds:.3f}s fit; "
+    assert largest_gap < fit_seconds / 2, (
+        f"main thread froze for {largest_gap:.3f}s of a {fit_seconds:.3f}s fit; "
         "fit_poly_fipc is holding the GIL (missing py.detach)"
     )
+
+
+def test_fit_poly_fipc_lets_other_python_threads_run() -> None:
+    root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(root / "python"), env.get("PYTHONPATH"))))
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve()), "--numeric-probe"],
+        cwd=root, env=env, capture_output=True, text=True, timeout=90.,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] != ["--numeric-probe"]:
+        raise SystemExit("expected --numeric-probe")
+    _run_numeric_probe()
