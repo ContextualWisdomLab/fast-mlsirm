@@ -34,6 +34,36 @@ use crate::two_tier_grm::{
 };
 use crate::Device;
 
+// 테스트 전용 thread-local 궤적: production 빌드에는 포함하지 않는다.
+struct ReferenceTracePoint {
+    iteration: usize,
+    params: Vec<crate::two_tier_grm::ItemParams>,
+    item13_counts: Vec<Vec<f64>>,
+    loglik: f64,
+}
+thread_local! {
+    static REFERENCE_TRACE: std::cell::RefCell<Option<Vec<ReferenceTracePoint>>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+pub(super) fn record_reference_trace(
+    iteration: usize,
+    params: &[crate::two_tier_grm::ItemParams],
+    counts: &[Vec<Vec<f64>>],
+    loglik: f64,
+) {
+    REFERENCE_TRACE.with(|trace| {
+        if let Some(rows) = trace.borrow_mut().as_mut() {
+            rows.push(ReferenceTracePoint {
+                iteration,
+                params: params.to_vec(),
+                item13_counts: counts[13].clone(),
+                loglik,
+            });
+        }
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Shared tiny two-tier problem: 10 items, P = 2 primaries in simple
 // structure (items 0-4 on primary 0, items 5-9 on primary 1), S = 2
@@ -314,6 +344,89 @@ fn reference_fit_gpu_is_explicit_and_never_substituted() {
 #[cfg(all(feature = "gpu", not(coverage)))]
 #[ignore = "requires hardware GPU; CPU/GPU reference-fit parity"]
 fn reference_fit_actual_gpu_matches_cpu() {
+    // GPU의 integer binary64 덧셈을 실제 CPU f64 bit와 먼저 대조한다.
+    use crate::gpu_bifactor::{e_step_reduced_gpu_log_products, ReducedEstepInputs};
+    let mut pairs = vec![
+        (0.0, -0.0),
+        (-0.0, -0.0),
+        (-1e-320, -1e-308),
+        (-1.0, -f64::EPSILON / 2.0),
+        (-1.0, -f64::EPSILON * 1.5),
+        (-1e200, -1e-200),
+        (-f64::from_bits(1), -f64::from_bits(1)),
+        (-f64::from_bits(0x000fffffffffffff), -f64::from_bits(1)),
+        (-f64::MIN_POSITIVE, -f64::from_bits(1)),
+        (-f64::MAX / 2.0, -f64::MAX / 2.0),
+    ];
+    let mut state = 20260930u64;
+    for _ in 0..1024 {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let a = f64::from_bits((state & 0x7fdfffffffffffff) | 0x8000000000000000);
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let b = f64::from_bits((state & 0x7fdfffffffffffff) | 0x8000000000000000);
+        pairs.push((a, b));
+    }
+    let tables = vec![vec![
+        pairs.iter().map(|p| p.0).collect(),
+        pairs.iter().map(|p| p.1).collect(),
+    ]];
+    let prior = vec![0.0; pairs.len()];
+    let gnodes = vec![prior.clone()];
+    let snodes = vec![Vec::new()];
+    let probe = ReducedEstepInputs {
+        y: &[0, 0],
+        observed: None,
+        group_id: None,
+        n_persons: 1,
+        n_items: 2,
+        n_specific: 0,
+        n_cat: 1,
+        qg: pairs.len(),
+        qs: 1,
+        n_groups: 1,
+        tables_groups: &tables,
+        item_block: &[None, None],
+        blocks: &[],
+        tg_groups: &gnodes,
+        ts_groups: &snodes,
+        log_wg: &prior,
+        log_ws: &[0.0],
+    };
+    let (actual, block) =
+        e_step_reduced_gpu_log_products(&probe).expect("hardware word addition must run");
+    assert!(block.is_empty());
+    for ((a, b), actual) in pairs.iter().zip(actual) {
+        assert_eq!(
+            (0.0 + a + b).to_bits(),
+            actual.to_bits(),
+            "GPU addition differs: {a}+{b}"
+        );
+    }
+    println!("actual_gpu_binary64_addition_cases={} passed", pairs.len());
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e-300] {
+        let mut rejected = tables.clone();
+        rejected[0][0][0] = invalid;
+        let input = ReducedEstepInputs {
+            tables_groups: &rejected,
+            ..probe
+        };
+        assert!(
+            e_step_reduced_gpu_log_products(&input).is_none(),
+            "nonfinite/positive log input must reject"
+        );
+    }
+    let mut overflow = tables.clone();
+    overflow[0][0][0] = -f64::MAX;
+    overflow[0][1][0] = -f64::MAX;
+    let input = ReducedEstepInputs {
+        tables_groups: &overflow,
+        ..probe
+    };
+    assert!(
+        e_step_reduced_gpu_log_products(&input).is_none(),
+        "binary64 product overflow must reject"
+    );
+    println!("actual_gpu_binary64_input_and_overflow_rejection_cases=5 passed");
     // Cai (2010), pp.608-609 Appendices A/B; mixed-precision regression
     // bounds are implementation choices, not scientific acceptance thresholds.
     let (y, n) = tiny_data();
@@ -409,35 +522,321 @@ fn reference_fit_actual_gpu_matches_cpu() {
     // 작은 합성 표본의 극단 모수를 likelihood/EAP 근접만으로 수용하지 않는다.
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
         "../fixtures/two_tier_reference_gpu/sparse_p2_s4.json"
-    )).unwrap();
+    ))
+    .unwrap();
     let y: Vec<usize> = serde_json::from_value(fixture["y"].clone()).unwrap();
     let primary: Vec<bool> = serde_json::from_value(fixture["primary_map"].clone()).unwrap();
     let specific: Vec<i32> = serde_json::from_value(fixture["specific_map"].clone()).unwrap();
     let size = |key: &str| fixture[key].as_u64().unwrap() as usize;
     let cfg = TwoTierGrmConfig {
         estimate_primary_correlation: false,
-        q_primary: size("q_primary"), q_specific: size("q_specific"),
-        max_iter: size("max_iter"), tol: fixture["tol"].as_f64().unwrap(),
-        n_starts: size("n_starts"), seed: fixture["seed"].as_u64().unwrap(),
-        newton_iter: 10, ridge: 1e-8,
+        q_primary: size("q_primary"),
+        q_specific: size("q_specific"),
+        max_iter: size("max_iter"),
+        tol: fixture["tol"].as_f64().unwrap(),
+        n_starts: size("n_starts"),
+        seed: fixture["seed"].as_u64().unwrap(),
+        newton_iter: 10,
+        ridge: 1e-8,
     };
-    let fit = |device| fit_two_tier_grm_with_device(
-        &y, None, &primary, &specific, size("n_persons"), size("n_items"),
-        size("n_primary"), size("n_specific"), size("n_cat"),
-        &cfg, device, Some(1 << 28),
-    ).unwrap();
+    let fit = |device| {
+        fit_two_tier_grm_with_device(
+            &y,
+            None,
+            &primary,
+            &specific,
+            size("n_persons"),
+            size("n_items"),
+            size("n_primary"),
+            size("n_specific"),
+            size("n_cat"),
+            &cfg,
+            device,
+            Some(1 << 28),
+        )
+        .unwrap()
+    };
+    REFERENCE_TRACE.with(|trace| *trace.borrow_mut() = Some(Vec::new()));
     let cpu = fit(Device::Cpu);
+    let cpu_trace = REFERENCE_TRACE.with(|trace| trace.borrow_mut().take().unwrap());
+    REFERENCE_TRACE.with(|trace| *trace.borrow_mut() = Some(Vec::new()));
     let gpu = fit(Device::Gpu);
+    let gpu_trace = REFERENCE_TRACE.with(|trace| trace.borrow_mut().take().unwrap());
+    let parameter_gap = |a: &[crate::two_tier_grm::ItemParams],
+                         b: &[crate::two_tier_grm::ItemParams]| {
+        a.iter()
+            .zip(b)
+            .flat_map(|(a, b)| {
+                a.a_p
+                    .iter()
+                    .chain(a.a_s.iter())
+                    .chain(&a.d)
+                    .zip(b.a_p.iter().chain(b.a_s.iter()).chain(&b.d))
+            })
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f64::max)
+    };
+    assert_eq!(cpu_trace.len(), gpu_trace.len());
+    let full_parameter_gap = cpu_trace
+        .iter()
+        .zip(&gpu_trace)
+        .map(|(a, b)| parameter_gap(&a.params, &b.params))
+        .fold(0.0, f64::max);
+    let full_loglik_gap = cpu_trace
+        .iter()
+        .zip(&gpu_trace)
+        .map(|(a, b)| (a.loglik - b.loglik).abs())
+        .fold(0.0, f64::max);
+    println!("strict_synthetic_cpu_iterations={}, gpu_iterations={}, full_trajectory_parameter_max_delta={full_parameter_gap}, full_trajectory_loglik_max_delta={full_loglik_gap}",cpu.n_iter,gpu.n_iter);
+    let first = cpu_trace
+        .iter()
+        .zip(&gpu_trace)
+        .position(|(a, b)| parameter_gap(&a.params, &b.params) > 1e-3);
+    if let Some(first) = first {
+        for index in first.saturating_sub(1)..=first {
+            let (a, b) = (&cpu_trace[index], &gpu_trace[index]);
+            let count_gap = a
+                .item13_counts
+                .iter()
+                .flatten()
+                .zip(b.item13_counts.iter().flatten())
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0, f64::max);
+            println!("first_parity_crossing_iteration={}, parameter_max_delta={}, item13_count_max_delta={}, certified_loglik_delta={}",
+                a.iteration, parameter_gap(&a.params,&b.params), count_gap, b.loglik-a.loglik);
+        }
+    }
     assert!(cpu.converged && gpu.converged);
     assert_eq!(cpu.n_iter, gpu.n_iter);
+
+    // 동일한 CPU 모수 상태를 고정해 table 양자화와 GPU sweep 오차를 분리한다.
+    use crate::two_tier_grm::{
+        build_primary_grid, chol_inverse, cholesky_lower, e_step_gpu_person_moments,
+        e_step_with_moments, gh_rule, item_logprob_tables, item_neg_ll_grad, m_step_item,
+        reweighted_log_weights, validate, ReducedFitStatistics,
+    };
+    let v = validate(
+        &y,
+        None,
+        &primary,
+        &specific,
+        size("n_persons"),
+        size("n_items"),
+        size("n_primary"),
+        size("n_specific"),
+        size("n_cat"),
+        &cfg,
+    )
+    .unwrap();
+    let (tz, wz) = gh_rule(cfg.q_primary).unwrap();
+    let (ts, ws) = gh_rule(cfg.q_specific).unwrap();
+    let (coords, log_w0) = build_primary_grid(tz, wz, v.n_primary, v.grid_size);
+    let (chol, logdet) = cholesky_lower(&cpu.phi, v.n_primary).unwrap();
+    let log_w = reweighted_log_weights(
+        &log_w0,
+        &coords,
+        &chol_inverse(&chol, v.n_primary),
+        logdet,
+        v.n_primary,
+    );
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    let frozen_iteration = first
+        .map(|index| index.saturating_sub(1))
+        .unwrap_or(102.min(cpu.n_iter));
+    let params = cpu_trace[frozen_iteration].params.clone();
+    println!("fixed_cpu_state_iteration={frozen_iteration}");
+    let tables = item_logprob_tables(&v, &params, &coords, ts, v.grid_size).unwrap();
+    let quantized: Vec<Vec<f64>> = tables
+        .iter()
+        .map(|row| row.iter().map(|&x| f64::from(x as f32)).collect())
+        .collect();
+    let sweep = |tables: &[Vec<f64>]| {
+        e_step_with_moments(
+            &v,
+            &y,
+            None,
+            &params,
+            &log_w,
+            &log_ws,
+            &coords,
+            ts,
+            v.grid_size,
+            ts.len(),
+            None,
+            true,
+            Some(tables),
+        )
+    };
+    let (_, exact_counts, _) = sweep(&tables);
+    let (_, quantized_counts, _) = sweep(&quantized);
+    let mut stats = ReducedFitStatistics {
+        counts: Vec::new(),
+        cross: Vec::new(),
+    };
+    e_step_gpu_person_moments(
+        &v,
+        &y,
+        None,
+        &params,
+        &log_w,
+        &log_ws,
+        &coords,
+        ts,
+        None,
+        Some(&mut stats),
+        false,
+        1 << 28,
+    )
+    .unwrap();
+    let mut precise_stats = ReducedFitStatistics {
+        counts: Vec::new(),
+        cross: Vec::new(),
+    };
+    e_step_gpu_person_moments(
+        &v,
+        &y,
+        None,
+        &params,
+        &log_w,
+        &log_ws,
+        &coords,
+        ts,
+        None,
+        Some(&mut precise_stats),
+        true,
+        1 << 28,
+    )
+    .unwrap();
+    let i = 13;
+    let mut packed: Vec<f64> = v.free_primaries[i]
+        .iter()
+        .map(|&d| params[i].a_p[d])
+        .collect();
+    packed.push(params[i].a_s.unwrap());
+    packed.extend_from_slice(&params[i].d);
+    let grad = |counts: &[Vec<f64>]| {
+        item_neg_ll_grad(
+            &packed,
+            &v.free_primaries[i],
+            true,
+            &coords,
+            ts,
+            v.n_primary,
+            v.grid_size,
+            ts.len(),
+            counts,
+            v.n_cat,
+        )
+        .1
+    };
+    let update = |counts: &[Vec<f64>]| {
+        m_step_item(
+            packed.clone(),
+            &v.free_primaries[i],
+            true,
+            &coords,
+            ts,
+            v.n_primary,
+            v.grid_size,
+            ts.len(),
+            counts,
+            v.n_cat,
+            cfg.ridge,
+            cfg.newton_iter,
+        )
+    };
+    let hessian_diagnostic = |counts: &[Vec<f64>]| {
+        let gradient = grad(counts);
+        let n = packed.len();
+        let mut h = vec![0.0; n * n];
+        for col in 0..n {
+            let mut point = packed.clone();
+            point[col] += 1e-5;
+            let g = item_neg_ll_grad(
+                &point,
+                &v.free_primaries[i],
+                true,
+                &coords,
+                ts,
+                v.n_primary,
+                v.grid_size,
+                ts.len(),
+                counts,
+                v.n_cat,
+            )
+            .1;
+            for row in 0..n {
+                h[row * n + col] = (g[row] - gradient[row]) / 1e-5;
+            }
+        }
+        // 원래 solver의 행렬 생성 순서를 재현한 뒤 대칭 부분만 진단한다.
+        for row in 0..n {
+            for col in 0..n {
+                h[row * n + col] = 0.5 * (h[row * n + col] + h[col * n + row]);
+            }
+            h[row * n + row] += cfg.ridge;
+        }
+        let original = h.clone();
+        for row in 0..n {
+            for col in 0..n {
+                h[row * n + col] = 0.5 * (original[row * n + col] + original[col * n + row]);
+            }
+        }
+        crate::factor::symmetric_eigen_desc(&h, n).unwrap().0
+    };
+    let exact_eigenvalues = hessian_diagnostic(&exact_counts[i]);
+    println!("fixed_cpu_state_item13_f64_FD_hessian_symmetric_part_eigenvalues_with_original_ridge={exact_eigenvalues:?}");
+    let exact_gradient = grad(&exact_counts[i]);
+    let exact_update = update(&exact_counts[i]);
+    for (name, counts) in [
+        ("table_quantization", &quantized_counts),
+        ("gpu_sweep", &stats.counts),
+        ("gpu_word_products", &precise_stats.counts),
+    ] {
+        let count_gap = exact_counts
+            .iter()
+            .flatten()
+            .flatten()
+            .zip(counts.iter().flatten().flatten())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f64::max);
+        let gradient_gap = exact_gradient
+            .iter()
+            .zip(grad(&counts[i]))
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f64::max);
+        let update_gap = exact_update
+            .iter()
+            .zip(update(&counts[i]))
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f64::max);
+        let eigenvalues = hessian_diagnostic(&counts[i]);
+        println!("fixed_cpu_state_{name}: count_max_delta={count_gap}, item13_gradient_max_delta={gradient_gap}, item13_Newton_update_max_delta={update_gap}, FD_hessian_symmetric_part_eigenvalues={eigenvalues:?}");
+    }
+    let limits = crate::gpu::GpuContext::get().unwrap().device.limits();
+    println!(
+        "actual_gpu_storage_binding_bytes={}, actual_gpu_buffer_bytes={}",
+        limits.max_storage_buffer_binding_size, limits.max_buffer_size
+    );
+    assert!(
+        full_parameter_gap < 1e-3,
+        "full parameter trajectory parity failed: {full_parameter_gap}"
+    );
     for (name, left, right) in [
         ("a_primary", &cpu.a_primary, &gpu.a_primary),
         ("a_specific", &cpu.a_specific, &gpu.a_specific),
         ("threshold", &cpu.threshold, &gpu.threshold),
     ] {
-        let gap = left.iter().zip(right).map(|(a,b)| (a-b).abs()).fold(0.0, f64::max);
+        let gap = left
+            .iter()
+            .zip(right)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f64::max);
         println!("strict_synthetic_{name}_max_delta={gap}");
-        assert!(gap < 1e-3, "strict synthetic {name} parameter parity failed: {gap}");
+        assert!(
+            gap < 1e-3,
+            "strict synthetic {name} parameter parity failed: {gap}"
+        );
     }
 }
 

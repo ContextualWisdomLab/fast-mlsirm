@@ -217,11 +217,14 @@ def fit_two_tier_grm(
     non-obvious decision, and the APA 7th references.
     ``primary_correlation='estimate'`` preserves the existing correlated-primary
     fit; ``'identity'`` fixes Phi exactly to I (Cai, 2010, pp. 583-584).
-    ``device='gpu'`` requires hardware and a positive caller-owned
-    ``gpu_memory_budget_bytes``. Cai (2010), pp.608–609 Appendices A/B
-    posterior weights are computed in WGSL f32, with expected counts and
-    cross moments contracted in Rust f64. The unchanged Newton M-step and
-    f64 likelihood certification run on CPU; GPU failure never falls back.
+    ``device='gpu'``는 실제 hardware와 양수 ``gpu_memory_budget_bytes``가
+    필요하다. Cai (2010), pp.608–609 Appendices A/B의 원래 f64 item table을
+    두 u32 word로 전달하고 GPU에서 같은 부호 binary64 log-product 덧셈을
+    에뮬레이션한다. 실제 GPU product의 정규화/exp/log·기대 빈도·적률 합산,
+    기존 Newton M-step과 f64 likelihood 검증은 Rust CPU에서 수행한다.
+    GPU native f64나 전체 GPU 계산이라고 주장하지 않으며, GPU 실패 뒤
+    CPU posterior를 재계산해 결과를 대체하지 않는다. 유한·비양수 log input만
+    지원하고 subnormal/rounding/overflow 경계는 실제 adapter에서 검증한다.
     GPU reference fitting currently accepts only ``primary_correlation='identity'``;
     the estimated-correlation path remains CPU-only pending precision validation.
     Results record the actual E-step device and wgpu adapter name/backend.

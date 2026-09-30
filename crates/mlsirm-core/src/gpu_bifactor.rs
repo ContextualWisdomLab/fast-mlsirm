@@ -872,3 +872,373 @@ pub(crate) fn e_step_reduced_gpu_posteriors(
 ) -> Option<ReducedEstepOutputs> {
     None
 }
+
+/// G1의 비양수 log product 덧셈을 binary64 word로 보존한다.
+/// Cai (2010), pp.608–609 Appendices A/B의 곱과 적분은 그대로이며,
+/// WGSL u32 연산으로 같은 부호 binary64 덧셈의 guard/round/sticky와
+/// round-to-nearest-even을 구현한다. GPU native f64라고 주장하지 않는다.
+/// 정규화/exp/log/count contraction은 실제 GPU product를 받아 Rust f64로 수행한다.
+/// WGSL §15.7.2/15.7.5는 f32 rounding/reassociation/FTZ를 허용하므로
+/// f32 보상합만으로 정밀도를 보장하지 않는다: https://www.w3.org/TR/WGSL/.
+/// 덧셈 구현은 IEEE binary64 형식에서 도출했으며 GPU bit parity로 검증한다.
+/// 참고: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// https://doi.org/10.1007/s11336-010-9178-0.
+#[cfg(all(feature = "gpu", not(coverage)))]
+const LOG_PRODUCT_SHADER: &str = r#"
+struct Dims { np:u32, ni:u32, ns:u32, nc:u32, qg:u32, qs:u32, pad0:u32, pad1:u32 }
+@group(0) @binding(0) var<uniform> dims: Dims;
+@group(0) @binding(1) var<storage, read> yobs: array<i32>;
+@group(0) @binding(2) var<storage, read> tables: array<vec2<u32>>;
+@group(0) @binding(3) var<storage, read> offsets: array<u32>;
+@group(0) @binding(4) var<storage, read> block_of: array<i32>;
+@group(0) @binding(5) var<storage, read> block_offsets: array<u32>;
+@group(0) @binding(6) var<storage, read> members: array<u32>;
+@group(0) @binding(7) var<storage, read> prior_g: array<vec2<u32>>;
+@group(0) @binding(8) var<storage, read> prior_s: array<vec2<u32>>;
+@group(0) @binding(9) var<storage, read_write> general: array<vec2<u32>>;
+@group(0) @binding(10) var<storage, read_write> block: array<vec2<u32>>;
+fn shift_jam(v:vec2<u32>, n:u32) -> vec2<u32> {
+    if (n==0u) { return v; }
+    if (n<32u) {
+        let lost=(v.x & ((1u<<n)-1u))!=0u;
+        return vec2((v.x>>n)|(v.y<<(32u-n))|select(0u,1u,lost),v.y>>n);
+    }
+    if (n==32u) { return vec2(v.y|select(0u,1u,v.x!=0u),0u); }
+    if (n<64u) {
+        let k=n-32u;
+        let lost=v.x!=0u || (v.y & ((1u<<k)-1u))!=0u;
+        return vec2((v.y>>k)|select(0u,1u,lost),0u);
+    }
+    return vec2(select(0u,1u,(v.x|v.y)!=0u),0u);
+}
+fn add_negative(a:vec2<u32>, b:vec2<u32>) -> vec2<u32> {
+    let ae=(a.y>>20u)&2047u;
+    let be=(b.y>>20u)&2047u;
+    var ea=max(ae,1u); var eb=max(be,1u);
+    let ah=(a.y&0xfffffu)|select(0u,0x100000u,ae!=0u);
+    let bh=(b.y&0xfffffu)|select(0u,0x100000u,be!=0u);
+    var ma=vec2(a.x<<3u,(ah<<3u)|(a.x>>29u));
+    var mb=vec2(b.x<<3u,(bh<<3u)|(b.x>>29u));
+    if (eb>ea) {
+        let te=ea;ea=eb;eb=te;
+        let tm=ma;ma=mb;mb=tm;
+    }
+    mb=shift_jam(mb,ea-eb);
+    let lo=ma.x+mb.x;
+    var sum=vec2(lo,ma.y+mb.y+select(0u,1u,lo<ma.x));
+    if ((sum.y&0x1000000u)!=0u) { sum=shift_jam(sum,1u);ea+=1u; }
+    let rounding=sum.x&7u;
+    var sig=vec2((sum.x>>3u)|(sum.y<<29u),sum.y>>3u);
+    if (rounding>4u || (rounding==4u && (sig.x&1u)!=0u)) {
+        let sl=sig.x+1u;
+        sig=vec2(sl,sig.y+select(0u,1u,sl==0u));
+    }
+    if ((sig.y&0x200000u)!=0u) { sig=shift_jam(sig,1u);ea+=1u; }
+    if ((sig.x|sig.y)==0u) { return vec2(0u,a.y&b.y&0x80000000u); }
+    if (ea==1u && sig.y<0x100000u) { ea=0u; }
+    if (ea>=2047u) { return vec2(0u,0xfff00000u); }
+    return vec2(sig.x,0x80000000u|(ea<<20u)|(sig.y&0xfffffu));
+}
+@compute @workgroup_size(64)
+fn accumulate_words(@builtin(workgroup_id) wid:vec3<u32>,
+    @builtin(local_invocation_index) lid:u32,@builtin(num_workgroups) nwg:vec3<u32>) {
+    let idx=(wid.x+wid.y*nwg.x+wid.z*nwg.x*nwg.y)*64u+lid;
+    if (idx>=dims.np*dims.qg) { return; }
+    let p=idx/dims.qg;let g=idx%dims.qg;
+    var gen=prior_g[g];
+    for (var i=0u;i<dims.ni;i+=1u) {
+        let cat=yobs[p*dims.ni+i];
+        if (block_of[i]<0 && cat>=0) {
+            gen=add_negative(gen,tables[offsets[i]+g*dims.nc+u32(cat)]);
+        }
+    }
+    general[idx]=gen;
+    for (var s=0u;s<dims.ns;s+=1u) {
+        for (var h=0u;h<dims.qs;h+=1u) {
+            var acc=prior_s[h];
+            for (var m=block_offsets[s];m<block_offsets[s+1u];m+=1u) {
+                let i=members[m];let cat=yobs[p*dims.ni+i];
+                if (cat>=0) { acc=add_negative(acc,tables[offsets[i]+(g*dims.qs+h)*dims.nc+u32(cat)]); }
+            }
+            block[((p*dims.ns+s)*dims.qg+g)*dims.qs+h]=acc;
+        }
+    }
+}
+"#;
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) fn e_step_reduced_gpu_log_products(
+    inputs: &ReducedEstepInputs,
+) -> Option<(Vec<f64>, Vec<f64>)> {
+    use crate::gpu::{
+        dispatch_count, dispatch_workgroups_nd, output_buffer, staging_buffer, storage_buffer_fits,
+        storage_entry, submit_and_readback,
+    };
+    let ctx = GpuContext::get()?;
+    if !matches!(
+        ctx.adapter_info.device_type,
+        wgpu::DeviceType::IntegratedGpu
+            | wgpu::DeviceType::DiscreteGpu
+            | wgpu::DeviceType::VirtualGpu
+    ) {
+        return None;
+    }
+    let (np, ni, ns, nc, qg, qs) = (
+        inputs.n_persons,
+        inputs.n_items,
+        inputs.n_specific,
+        inputs.n_cat,
+        inputs.qg,
+        inputs.qs,
+    );
+    if inputs.n_groups != 1 || np == 0 || ni == 0 || nc == 0 || qg == 0 || qs == 0 {
+        return None;
+    }
+    let response_len = np.checked_mul(ni)?;
+    let general_len = np.checked_mul(qg)?;
+    let block_len = general_len.checked_mul(ns)?.checked_mul(qs)?;
+    if general_len > u32::MAX as usize / 2 || block_len > u32::MAX as usize / 2 {
+        return None;
+    }
+    if inputs.y.len() != response_len
+        || inputs.observed.is_some_and(|m| m.len() != response_len)
+        || inputs.item_block.len() != ni
+        || inputs.blocks.len() != ns
+        || inputs.log_wg.len() != qg
+        || inputs.log_ws.len() != qs
+    {
+        return None;
+    }
+    let group = inputs.tables_groups.first()?;
+    if group.len() != ni {
+        return None;
+    }
+    let words = |values: &[f64]| -> Option<Vec<[u32; 2]>> {
+        values
+            .iter()
+            .map(|&v| {
+                if !v.is_finite() || v > 0.0 {
+                    return None;
+                }
+                let bits = v.to_bits();
+                Some([bits as u32, (bits >> 32) as u32])
+            })
+            .collect()
+    };
+    if !cfg!(target_endian = "little") {
+        return None;
+    }
+    let mut offsets = Vec::with_capacity(ni);
+    let mut table_len = 0usize;
+    for (i, row) in group.iter().enumerate() {
+        let expected = qg
+            .checked_mul(if inputs.item_block[i].is_some() {
+                qs
+            } else {
+                1
+            })?
+            .checked_mul(nc)?;
+        if row.len() != expected || row.iter().any(|v| !v.is_finite() || *v > 0.0) {
+            return None;
+        }
+        offsets.push(u32::try_from(table_len).ok()?);
+        table_len = table_len.checked_add(row.len())?;
+    }
+    let prior_g = words(inputs.log_wg)?;
+    let prior_s = words(inputs.log_ws)?;
+    let yobs: Vec<i32> = inputs
+        .y
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| {
+            if inputs.observed.is_some_and(|m| !m[i]) {
+                Some(-1)
+            } else if v >= nc {
+                None
+            } else {
+                i32::try_from(v).ok()
+            }
+        })
+        .collect::<Option<_>>()?;
+    let block_of = inputs
+        .item_block
+        .iter()
+        .map(|b| match b {
+            None => Some(-1),
+            Some(s) if *s < ns => i32::try_from(*s).ok(),
+            _ => None,
+        })
+        .collect::<Option<Vec<i32>>>()?;
+    let mut block_offsets = Vec::with_capacity(ns + 1);
+    let mut members = Vec::new();
+    for block in inputs.blocks {
+        block_offsets.push(u32::try_from(members.len()).ok()?);
+        for &i in block {
+            if i >= ni {
+                return None;
+            }
+            members.push(u32::try_from(i).ok()?);
+        }
+    }
+    block_offsets.push(u32::try_from(members.len()).ok()?);
+    let limits = ctx.device.limits();
+    let lens = [
+        response_len,
+        table_len.checked_mul(2)?,
+        ni,
+        ni,
+        ns.checked_add(1)?,
+        members.len().max(1),
+        qg.checked_mul(2)?,
+        qs.checked_mul(2)?,
+        general_len.checked_mul(2)?,
+        block_len.max(1).checked_mul(2)?,
+    ];
+    if lens.iter().any(|&len| !storage_buffer_fits(&limits, len)) {
+        return None;
+    }
+    let device = &ctx.device;
+    let oom = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+    let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
+    let init = |label: &str, bytes: &[u8]| {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: if bytes.is_empty() { &[0u8; 8] } else { bytes },
+            usage: wgpu::BufferUsages::STORAGE,
+        })
+    };
+    let dims = [np, ni, ns, nc, qg, qs, 0, 0]
+        .map(|n| u32::try_from(n).ok())
+        .into_iter()
+        .collect::<Option<Vec<_>>>()?;
+    let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("reference_word_dims"),
+        contents: bytemuck::cast_slice(&dims),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let table_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("f64_table_words"),
+        size: table_len.checked_mul(8)? as u64,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: true,
+    });
+    // f64 표의 원래 little-endian bit를 직접 올려 host 전체 복제본을 만들지 않는다.
+    {
+        let mut view = table_buffer.slice(..).get_mapped_range_mut().ok()?;
+        for (offset, row) in offsets.iter().zip(group) {
+            let start = *offset as usize * 8;
+            view.slice(start..start + row.len() * 8)
+                .copy_from_slice(bytemuck::cast_slice(row));
+        }
+    }
+    table_buffer.unmap();
+    let buffers = [
+        init("responses", bytemuck::cast_slice(&yobs)),
+        table_buffer,
+        init("table_offsets", bytemuck::cast_slice(&offsets)),
+        init("item_block", bytemuck::cast_slice(&block_of)),
+        init("block_offsets", bytemuck::cast_slice(&block_offsets)),
+        init("members", bytemuck::cast_slice(&members)),
+        init("prior_g_words", bytemuck::cast_slice(&prior_g)),
+        init("prior_s_words", bytemuck::cast_slice(&prior_s)),
+        output_buffer(device, "general_words", general_len * 2),
+        output_buffer(device, "block_words", block_len.max(1) * 2),
+    ];
+    let mut layout_entries = vec![wgpu::BindGroupLayoutEntry {
+        binding: 0,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }];
+    layout_entries.extend((1..=10).map(|i| storage_entry(i, i <= 8)));
+    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: None,
+        entries: &layout_entries,
+    });
+    let mut entries = vec![wgpu::BindGroupEntry {
+        binding: 0,
+        resource: uniform.as_entire_binding(),
+    }];
+    entries.extend(
+        buffers
+            .iter()
+            .enumerate()
+            .map(|(i, b)| wgpu::BindGroupEntry {
+                binding: i as u32 + 1,
+                resource: b.as_entire_binding(),
+            }),
+    );
+    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &layout,
+        entries: &entries,
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("reference_f64_log_products"),
+        source: wgpu::ShaderSource::Wgsl(LOG_PRODUCT_SHADER.into()),
+    });
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: None,
+        layout: Some(&pipeline_layout),
+        module: &shader,
+        entry_point: Some("accumulate_words"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
+    let mut encoder =
+        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    let (x, y, z) = dispatch_workgroups_nd(
+        dispatch_count(general_len),
+        limits.max_compute_workgroups_per_dimension,
+    )?;
+    {
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: None,
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &group, &[]);
+        pass.dispatch_workgroups(x, y, z);
+    }
+    let general_read = staging_buffer(device, "general_word_read", general_len * 2);
+    let block_read = staging_buffer(device, "block_word_read", block_len.max(1) * 2);
+    let mut copies = vec![(&buffers[8], &general_read, general_len * 2)];
+    if ns > 0 {
+        copies.push((&buffers[9], &block_read, block_len * 2));
+    }
+    let read = submit_and_readback(ctx, encoder, &copies)?;
+    // f32 readback은 byte 전달용이다. to_bits 전까지 부동소수 연산을 하지 않는다.
+    let decode = |row: &[f32]| -> Option<Vec<f64>> {
+        row.chunks_exact(2)
+            .map(|v| {
+                let value =
+                    f64::from_bits(u64::from(v[0].to_bits()) | (u64::from(v[1].to_bits()) << 32));
+                value.is_finite().then_some(value)
+            })
+            .collect()
+    };
+    let general = decode(&read[0])?;
+    let block = if ns == 0 {
+        Vec::new()
+    } else {
+        decode(&read[1])?
+    };
+    if pollster::block_on(internal.pop()).is_some()
+        || pollster::block_on(validation.pop()).is_some()
+        || pollster::block_on(oom.pop()).is_some()
+    {
+        return None;
+    }
+    Some((general, block))
+}

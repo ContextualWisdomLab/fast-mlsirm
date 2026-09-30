@@ -1133,10 +1133,13 @@ struct ReducedFitStatistics {
 /// Cai (2010), pp.608-609, Appendices A/B, DOI 10.1007/s11336-010-9178-0:
 /// flatten the shared product grid without marginalizing its dimensions,
 /// then contract primary and shared-specific joint posterior weights.
-/// Existing WGSL f32 kernels supply weights; Rust contracts in f64. This is
-/// mixed precision, not an f64 GPU calculation (WGSL floating-point types,
-/// https://www.w3.org/TR/WGSL/#floating-point-types). Positive finite masses
-/// are renormalized before contraction; nonfinite/negative weights fail.
+/// reference_precision=false는 기존 WGSL f32 가중치를 f64로 합산한다.
+/// true는 원래 f64 table의 두 u32 word를 GPU에서 덧셈한 log product를
+/// Rust f64로 정규화/합산한다. native f64 GPU나 전체 GPU 계산이 아니다.
+/// 실제 GPU product를 사용하며, 실패 뒤 CPU posterior 재계산은 하지 않는다.
+/// f32 경로만 재정규화하며 기준 경로는 원래 f64 exp/LSE 순서를 유지한다.
+/// nonfinite/negative 가중치는 실패한다. WGSL §15.7의 rounding/reassociation
+/// 한계: https://www.w3.org/TR/WGSL/#floating-point-evaluation.
 /// Person batches obey a caller-owned total buffer byte budget and wgpu
 /// 30.0.0 per-buffer limits; count all fixed inputs, simultaneous intermediate
 /// and posterior buffers, and their readback copies. This resource policy
@@ -1159,9 +1162,13 @@ fn e_step_gpu_person_moments(
     ts: &[f64],
     mut moments: Option<&mut LatentPosteriorMoments>,
     mut statistics: Option<&mut ReducedFitStatistics>,
+    reference_precision: bool,
     memory_budget_bytes: u64,
 ) -> Result<f64, String> {
-    use crate::gpu_bifactor::{e_step_reduced_gpu_posteriors, ReducedEstepInputs};
+    use crate::gpu_bifactor::{
+        e_step_reduced_gpu_log_products, e_step_reduced_gpu_posteriors, ReducedEstepInputs,
+        ReducedPersonPosteriors,
+    };
     let ctx = crate::gpu::GpuContext::get().ok_or("GPU adapter unavailable")?;
     if ctx.adapter_info.device_type == wgpu::DeviceType::Cpu {
         return Err("GPU requested but adapter is a CPU software renderer".into());
@@ -1177,7 +1184,7 @@ fn e_step_gpu_person_moments(
     let binding_bytes_per_person = joint_per_person
         .max(v.n_items)
         .max(grid)
-        .checked_mul(4)
+        .checked_mul(if reference_precision { 8 } else { 4 })
         .ok_or("GPU posterior size overflows")?;
     // Count the live posterior-route buffers in gpu_bifactor. For S=0,
     // charge each unread minimum binding per person conservatively, so
@@ -1237,6 +1244,36 @@ fn e_step_gpu_person_moments(
     .into_iter()
     .try_fold(0usize, |a, b| a.checked_add(b))
     .ok_or("GPU fixed buffer size overflows")?;
+    // 기준 적합은 8-byte 원래 table과 GPU log-product/readback만 보유한다.
+    let (fixed_elements, per_person_elements) = if reference_precision {
+        let fixed = [
+            8,
+            table_elements.checked_mul(2).ok_or("GPU size overflows")?,
+            v.n_items,
+            v.n_items,
+            v.n_specific.checked_add(1).ok_or("GPU size overflows")?,
+            v.blocks.iter().map(Vec::len).sum::<usize>().max(2),
+            grid.checked_mul(2).ok_or("GPU size overflows")?,
+            qs.checked_mul(2).ok_or("GPU size overflows")?,
+        ]
+        .into_iter()
+        .try_fold(0usize, |a, b| a.checked_add(b))
+        .ok_or("GPU size overflows")?;
+        let person = [
+            v.n_items,
+            grid.checked_mul(4).ok_or("GPU size overflows")?,
+            joint_per_person
+                .max(1)
+                .checked_mul(4)
+                .ok_or("GPU size overflows")?,
+        ]
+        .into_iter()
+        .try_fold(0usize, |a, b| a.checked_add(b))
+        .ok_or("GPU size overflows")?;
+        (fixed, person)
+    } else {
+        (fixed_elements, per_person_elements)
+    };
     let fixed_bytes = fixed_elements.checked_mul(4).ok_or("GPU size overflows")? as u64;
     let person_bytes = per_person_elements
         .checked_mul(4)
@@ -1252,7 +1289,18 @@ fn e_step_gpu_person_moments(
     )
     .map_err(|_| "GPU batch size overflows usize")?
     .min(v.n_persons)
-    .min(u32::MAX as usize / joint_per_person.max(1));
+    .min(
+        u32::MAX as usize
+            / if reference_precision {
+                joint_per_person
+                    .max(grid)
+                    .max(1)
+                    .checked_mul(2)
+                    .ok_or("GPU index size overflows")?
+            } else {
+                joint_per_person.max(1)
+            },
+    );
     if batch == 0 {
         return Err("GPU cannot fit one person's simultaneous buffers within gpu_memory_budget_bytes and device limits".into());
     }
@@ -1278,6 +1326,7 @@ fn e_step_gpu_person_moments(
         stats.cross = vec![0.0; v.n_primary * v.n_primary];
     }
     let nl = v.n_primary + v.n_specific;
+    let mut reference_gpu_loglik = 0.0;
     for start in (0..v.n_persons).step_by(batch) {
         let stop = (start + batch).min(v.n_persons);
         let inputs = ReducedEstepInputs {
@@ -1299,14 +1348,68 @@ fn e_step_gpu_person_moments(
             log_wg: log_w,
             log_ws,
         };
-        let result = e_step_reduced_gpu_posteriors(&inputs)
-            .ok_or("GPU posterior dispatch/readback failed at declared grid")?;
-        if !result.loglik.is_finite() {
-            return Err("nonfinite GPU loglikelihood".into());
-        }
-        let post = result
-            .person_posteriors
-            .ok_or("missing GPU person posteriors")?;
+        let post = if reference_precision {
+            let (general, block) = e_step_reduced_gpu_log_products(&inputs)
+                .ok_or("GPU binary64 log-product dispatch/readback failed at declared grid")?;
+            let persons = stop - start;
+            if general.len() != persons * grid || block.len() != persons * joint_per_person {
+                return Err("GPU log-product output shape mismatch".into());
+            }
+            let mut post = ReducedPersonPosteriors {
+                primary: vec![0.0; persons * grid],
+                joint: vec![0.0; persons * joint_per_person],
+            };
+            let mut log_i = vec![0.0; v.n_specific * grid];
+            let mut like = vec![0.0; grid];
+            for pp in 0..persons {
+                let gen = &general[pp * grid..(pp + 1) * grid];
+                for s in 0..v.n_specific {
+                    for g in 0..grid {
+                        let offset = ((pp * v.n_specific + s) * grid + g) * qs;
+                        log_i[s * grid + g] = log_sum_exp(&block[offset..offset + qs]);
+                    }
+                }
+                for g in 0..grid {
+                    like[g] = gen[g];
+                    for s in 0..v.n_specific {
+                        like[g] += log_i[s * grid + g];
+                    }
+                }
+                let ll = log_sum_exp(&like);
+                if !ll.is_finite() {
+                    return Err("nonfinite GPU-derived f64 likelihood".into());
+                }
+                reference_gpu_loglik += ll;
+                for g in 0..grid {
+                    post.primary[pp * grid + g] = (like[g] - ll).exp();
+                }
+                for s in 0..v.n_specific {
+                    for g in 0..grid {
+                        let mut others = gen[g] - log_w[g];
+                        for s2 in 0..v.n_specific {
+                            if s2 != s {
+                                others += log_i[s2 * grid + g];
+                            }
+                        }
+                        let offset = ((pp * v.n_specific + s) * grid + g) * qs;
+                        for h in 0..qs {
+                            post.joint[offset + h] =
+                                (log_w[g] + block[offset + h] + others - ll).exp();
+                        }
+                    }
+                }
+            }
+            post
+        } else {
+            let result = e_step_reduced_gpu_posteriors(&inputs)
+                .ok_or("GPU posterior dispatch/readback failed at declared grid")?;
+            if !result.loglik.is_finite() {
+                return Err("nonfinite GPU loglikelihood".into());
+            }
+            result
+                .person_posteriors
+                .ok_or("missing GPU person posteriors")?
+        };
         for pp in 0..stop - start {
             for d in 0..nl {
                 let weights = if d < v.n_primary {
@@ -1324,7 +1427,7 @@ fn e_step_gpu_person_moments(
                 }
                 let slot = (start + pp) * nl + d;
                 for (node, &w) in weights.iter().enumerate() {
-                    let weight = w / mass;
+                    let weight = if reference_precision { w } else { w / mass };
                     let x = if d < v.n_primary {
                         coords[node * v.n_primary + d]
                     } else {
@@ -1379,6 +1482,9 @@ fn e_step_gpu_person_moments(
     if !loglik.is_finite() {
         return Err("nonfinite f64-certified GPU loglikelihood".into());
     }
+    if reference_precision && reference_gpu_loglik.to_bits() != loglik.to_bits() {
+        return Err("GPU binary64 log products disagree with f64 likelihood certification".into());
+    }
     Ok(loglik)
 }
 
@@ -1397,6 +1503,7 @@ fn e_step_gpu_person_moments(
     _ts: &[f64],
     _moments: Option<&mut LatentPosteriorMoments>,
     _statistics: Option<&mut ReducedFitStatistics>,
+    _reference_precision: bool,
     _memory_budget_bytes: u64,
 ) -> Result<f64, String> {
     Err("focal GPU scoring requires a GPU-enabled build".into())
@@ -1812,6 +1919,7 @@ fn run_single_start(
                 ts,
                 None,
                 Some(&mut stats),
+                true,
                 gpu_memory_budget_bytes.ok_or("GPU requires a positive gpu_memory_budget_bytes")?,
             )?;
             (ll, stats.counts, stats.cross)
@@ -1820,6 +1928,8 @@ fn run_single_start(
                 v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs,
             )
         };
+        #[cfg(test)]
+        tests::record_reference_trace(n_iter, &params, &counts, ll);
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
@@ -1960,7 +2070,9 @@ pub fn fit_two_tier_grm(
 /// posterior 가중치로 문항별 기대 빈도와 주요인 교차 적률을 합산한다.
 /// Newton M-step과 원래 f64 관측 likelihood 검증은 호스트에서 유지한다.
 /// GPU 적합은 고정 Φ=I만 허용한다. 상관 추정은 별도 정밀도 검증 전까지
-/// 원래 CPU 경로만 지원한다. WGSL 가중치는 f32이며 자동 CPU 대체는 없다.
+/// 원래 CPU 경로만 지원한다. 원래 f64 table word를 GPU 정수 덧셈으로
+/// 보존하며, 실제 GPU log product의 정규화/exp/log는 Rust f64로 수행한다.
+/// native f64 GPU나 전체 GPU 계산이 아니며 자동 CPU 대체는 없다.
 /// 양수인 호출자 buffer 예산이 필요하다. 실제 hardware dispatch 성공 뒤에만
 /// wgpu 30 AdapterInfo의 이름과 backend를 기록한다:
 /// https://docs.rs/wgpu/30.0.0/wgpu/struct.AdapterInfo.html.
@@ -2096,6 +2208,7 @@ pub fn fit_two_tier_grm_with_device(
             ts,
             Some(&mut moments),
             None,
+            true,
             gpu_memory_budget_bytes.ok_or("GPU requires a positive gpu_memory_budget_bytes")?,
         )?;
         for pp in 0..n_persons {
@@ -2820,6 +2933,7 @@ pub fn score_two_tier_grm_orthogonal_with_device(
             ts,
             Some(&mut moments),
             None,
+            false,
             gpu_memory_budget_bytes
                 .filter(|&n| n > 0)
                 .ok_or("GPU requires a positive gpu_memory_budget_bytes")?,

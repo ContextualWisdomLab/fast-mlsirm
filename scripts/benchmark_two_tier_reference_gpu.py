@@ -42,6 +42,15 @@ def main():
     args = parser.parse_args()
     if args.persons <= 0:
         parser.error("persons must be positive")
+    try:
+        output = args.out.open("x")
+    except FileExistsError:
+        parser.error("결과 파일이 이미 있습니다. 새 보고서 경로를 지정하세요.")
+    def write_report():
+        output.seek(0)
+        output.write(json.dumps(report, indent=2, allow_nan=False) + "\n")
+        output.truncate()
+        output.flush()
     y, ap, _, sm, _, response_hash = _continuous_six_latent_fixture(
         args.persons, np.zeros(6), np.ones(6), args.seed
     )
@@ -88,7 +97,7 @@ def main():
             report["runs"][device] = dict(seconds=time.perf_counter() - started,
                                          error_type=type(error).__name__, error=str(error))
             failed = True
-        args.out.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
+        write_report()
     if set(fits) == {"cpu", "gpu"}:
         report["max_absolute_delta"] = {
             name: absolute_differences(
@@ -99,7 +108,8 @@ def main():
         }
         report["loglik_delta"] = report["runs"]["gpu"]["loglik"] - report["runs"]["cpu"]["loglik"]
     report["exit_status"] = int(failed)
-    args.out.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
+    write_report()
+    output.close()
     return int(failed)
 
 

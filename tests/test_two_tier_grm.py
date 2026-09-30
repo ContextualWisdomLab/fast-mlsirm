@@ -96,6 +96,26 @@ def test_reference_gpu_controls_fail_before_dispatch(controls) -> None:
         _fit(_simulate(SEED), **controls)
 
 
+def test_reference_benchmark_preserves_existing_report(tmp_path, monkeypatch) -> None:
+    """측정 명령이 기존 검증 기록을 덮어쓰지 않는다."""
+    import runpy
+    import sys
+    from pathlib import Path
+
+    output = tmp_path / "evidence.json"
+    output.write_text('{"preserve": true}\n')
+    command = Path(__file__).parents[1] / "scripts/benchmark_two_tier_reference_gpu.py"
+    monkeypatch.setattr(sys, "argv", [str(command), "--persons", "64",
+        "--q-primary", "7", "--q-specific", "7", "--max-iter", "1",
+        "--tol", "1e-6", "--n-starts", "1", "--seed", "20260930",
+        "--gpu-memory-budget-bytes", "268435456", "--device", "cpu",
+        "--out", str(output)])
+    with pytest.raises(SystemExit) as error:
+        runpy.run_path(str(command), run_name="__main__")
+    assert error.value.code == 2
+    assert output.read_text() == '{"preserve": true}\n'
+
+
 def test_primary_correlation_validation() -> None:
     with pytest.raises(ValueError, match="primary_correlation"):
         _fit(_simulate(SEED), primary_correlation="unknown")
