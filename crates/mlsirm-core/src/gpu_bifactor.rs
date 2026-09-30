@@ -971,6 +971,18 @@ fn accumulate_words(@builtin(workgroup_id) wid:vec3<u32>,
 }
 "#;
 
+// test-only host clock: 호출·수집 오버헤드가 포함되며 GPU timestamp가 아니다.
+#[cfg(all(test, feature = "gpu", not(coverage)))]
+fn profile_start() -> Option<std::time::Instant> {
+    crate::two_tier_grm::tests::reference_gpu_timing_enabled().then(std::time::Instant::now)
+}
+#[cfg(all(test, feature = "gpu", not(coverage)))]
+fn profile_finish(name: &'static str, started: Option<std::time::Instant>) {
+    if let Some(started) = started {
+        crate::two_tier_grm::tests::record_reference_gpu_timing(name, started.elapsed().as_secs_f64());
+    }
+}
+
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) struct GpuLogProductState {
     ctx: &'static GpuContext,
@@ -991,6 +1003,8 @@ pub(crate) struct GpuLogProductState {
 impl GpuLogProductState {
     pub(crate) fn new(inputs: &ReducedEstepInputs) -> Option<Self> {
         use crate::gpu::{output_buffer, storage_buffer_fits, storage_entry};
+        #[cfg(test)]
+        let validation_clock = profile_start();
         let ctx = GpuContext::get()?;
         if !matches!(ctx.adapter_info.device_type,
             wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::DiscreteGpu | wgpu::DeviceType::VirtualGpu) {
@@ -1040,19 +1054,31 @@ impl GpuLogProductState {
             members.len().max(1), qg.checked_mul(2)?, qs.checked_mul(2)?,
             general_len.checked_mul(2)?, block_len.max(1).checked_mul(2)?];
         if lens.iter().any(|&len| !storage_buffer_fits(&limits, len)) { return None; }
+        #[cfg(test)]
+        profile_finish("prepare_validation_metadata_seconds", validation_clock);
         let device = &ctx.device;
+        #[cfg(test)]
+        let scope_clock = profile_start();
         let oom = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
+        #[cfg(test)]
+        profile_finish("prepare_error_scope_setup_seconds", scope_clock);
         let result = (|| {
         let init = |label: &str, bytes: &[u8]| device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(label), contents: if bytes.is_empty() { &[0u8; 8] } else { bytes }, usage: wgpu::BufferUsages::STORAGE,
         });
+        #[cfg(test)]
+        let uniform_clock = profile_start();
         let dims_values = [np, ni, ns, nc, qg, qs, 0, 0].map(|n| u32::try_from(n).ok()).into_iter().collect::<Option<Vec<_>>>()?;
         let dims = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("reference_word_dims"), contents: bytemuck::cast_slice(&dims_values),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        #[cfg(test)]
+        profile_finish("prepare_uniform_buffer_seconds", uniform_clock);
+        #[cfg(test)]
+        let map_clock = profile_start();
         let table_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("f64_table_words"), size: table_len.checked_mul(8)? as u64,
             usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: true,
@@ -1065,6 +1091,10 @@ impl GpuLogProductState {
             }
         }
         table_buffer.unmap();
+        #[cfg(test)]
+        profile_finish("prepare_table_map_copy_seconds", map_clock);
+        #[cfg(test)]
+        let buffers_clock = profile_start();
         let responses = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("responses"), size: response_buffer_bytes as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false,
@@ -1074,6 +1104,10 @@ impl GpuLogProductState {
             init("members", bytemuck::cast_slice(&members)), init("prior_g_words", bytemuck::cast_slice(&prior_g)),
             init("prior_s_words", bytemuck::cast_slice(&prior_s)), output_buffer(device, "general_words", general_len * 2),
             output_buffer(device, "block_words", block_len.max(1) * 2)];
+        #[cfg(test)]
+        profile_finish("prepare_input_output_buffers_seconds", buffers_clock);
+        #[cfg(test)]
+        let layout_clock = profile_start();
         let mut layout_entries = vec![wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::COMPUTE,
             ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None }];
         layout_entries.extend((1..=10).map(|i| storage_entry(i, i <= 8)));
@@ -1083,14 +1117,28 @@ impl GpuLogProductState {
         entries.extend(bindings.iter().enumerate().map(|(i,b)| wgpu::BindGroupEntry { binding: i as u32 + 1, resource: b.as_entire_binding() }));
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor { label: None, layout: &layout, entries: &entries });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[Some(&layout)], immediate_size: 0 });
+        #[cfg(test)]
+        profile_finish("prepare_layout_bindgroup_seconds", layout_clock);
+        #[cfg(test)]
+        let module_clock = profile_start();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("reference_f64_log_products"), source: wgpu::ShaderSource::Wgsl(LOG_PRODUCT_SHADER.into()) });
+        #[cfg(test)]
+        profile_finish("prepare_shader_module_seconds", module_clock);
+        #[cfg(test)]
+        let pipeline_clock = profile_start();
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: None, layout: Some(&pipeline_layout), module: &shader,
             entry_point: Some("accumulate_words"), compilation_options: wgpu::PipelineCompilationOptions::default(), cache: None });
+        #[cfg(test)]
+        profile_finish("prepare_compute_pipeline_seconds", pipeline_clock);
         Some(Self { ctx, dims, responses, buffers, bind_group, pipeline, ni, ns, nc, qg, qs, max_persons: np })
         })();
+        #[cfg(test)]
+        let receipt_clock = profile_start();
         let internal_error = pollster::block_on(internal.pop()).is_some();
         let validation_error = pollster::block_on(validation.pop()).is_some();
         let oom_error = pollster::block_on(oom.pop()).is_some();
+        #[cfg(test)]
+        profile_finish("prepare_error_receipt_seconds", receipt_clock);
         if internal_error || validation_error || oom_error { None } else { result }
     }
 
@@ -1112,6 +1160,8 @@ impl GpuLogProductState {
         let oom = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
+        #[cfg(test)]
+        let encode_clock = profile_start();
         self.ctx.queue.write_buffer(&self.dims, 0, bytemuck::cast_slice(&dims));
         self.ctx.queue.write_buffer(&self.responses, 0, bytemuck::cast_slice(&yobs));
         let result = (|| {
@@ -1122,10 +1172,18 @@ impl GpuLogProductState {
                 pass.set_bind_group(0, &self.bind_group, &[]);
                 pass.dispatch_workgroups(x, y_workgroups, z);
             }
+        #[cfg(test)]
+        profile_finish("sweep_queue_write_encode_seconds", encode_clock);
+        #[cfg(test)]
+        let readback_clock = profile_start();
             let general_read = staging_buffer(device, "general_word_read", general_len * 2);
             let block_read = staging_buffer(device, "block_word_read", block_len.max(1) * 2);
             let mut copies = vec![(&self.buffers[7], &general_read, general_len * 2)];
             if self.ns > 0 { copies.push((&self.buffers[8], &block_read, block_len * 2)); }
+        #[cfg(test)]
+        profile_finish("sweep_readback_buffer_preparation_seconds", readback_clock);
+        #[cfg(test)]
+        let submit_clock = profile_start();
             let read = submit_and_readback(self.ctx, encoder, &copies)?;
             let decode = |row: &[f32]| -> Option<Vec<f64>> {
                 row.chunks_exact(2).map(|v| {
@@ -1135,11 +1193,17 @@ impl GpuLogProductState {
             };
             let general = decode(&read[0])?;
             let block = if self.ns == 0 { Vec::new() } else { decode(&read[1])? };
+        #[cfg(test)]
+        profile_finish("sweep_submit_map_decode_seconds", submit_clock);
             Some((general, block))
         })();
+        #[cfg(test)]
+        let receipt_clock = profile_start();
         let internal_error = pollster::block_on(internal.pop()).is_some();
         let validation_error = pollster::block_on(validation.pop()).is_some();
         let oom_error = pollster::block_on(oom.pop()).is_some();
+        #[cfg(test)]
+        profile_finish("sweep_error_receipt_seconds", receipt_clock);
         if internal_error || validation_error || oom_error { None } else { result }
     }
 }

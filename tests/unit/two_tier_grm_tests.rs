@@ -54,12 +54,12 @@ thread_local! {
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
-pub(super) fn reference_gpu_timing_enabled() -> bool {
+pub(crate) fn reference_gpu_timing_enabled() -> bool {
     REFERENCE_GPU_TIMINGS.with(|timings| timings.borrow().is_some())
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
-pub(super) fn record_reference_gpu_timing(name: &'static str, seconds: f64) {
+pub(crate) fn record_reference_gpu_timing(name: &'static str, seconds: f64) {
     REFERENCE_GPU_TIMINGS.with(|timings| {
         if let Some(rows) = timings.borrow_mut().as_mut() {
             rows.push((name, seconds));
@@ -407,15 +407,43 @@ fn reference_gpu_fixed_bank_kernel_profile() {
         "table_generation_seconds", "gpu_state_preparation_seconds",
         "gpu_log_products_and_readback_seconds", "rust_lse_exp_normalization_seconds",
         "posterior_moment_contraction_seconds", "f64_likelihood_certification_seconds",
+        "prepare_validation_metadata_seconds", "prepare_error_scope_setup_seconds",
+        "prepare_uniform_buffer_seconds", "prepare_table_map_copy_seconds",
+        "prepare_input_output_buffers_seconds", "prepare_layout_bindgroup_seconds",
+        "prepare_shader_module_seconds", "prepare_compute_pipeline_seconds",
+        "prepare_error_receipt_seconds", "sweep_queue_write_encode_seconds",
+        "sweep_readback_buffer_preparation_seconds", "sweep_submit_map_decode_seconds",
+        "sweep_error_receipt_seconds",
     ];
-    assert_eq!(timings.len(), required_timing_keys.len(), "필수 단계 시간 기록이 누락됐습니다");
-    for key in required_timing_keys {
-        assert_eq!(timings.iter().filter(|(name, _)| *name == key).count(), 1,
-            "단계 시간 {key}는 정확히 한 번 기록해야 합니다");
+    let validate_timing_receipt = |timings: &[(&str, f64)]| {
+        if timings.len() != required_timing_keys.len() {
+            return Err("필수 단계 시간 기록이 누락됐습니다");
+        }
+        for key in required_timing_keys {
+            if timings.iter().filter(|(name, _)| *name == key).count() != 1 {
+                return Err("각 시간 키를 정확히 한 번 기록해야 합니다");
+            }
+        }
+        if timings.iter().any(|(_, seconds)| !seconds.is_finite() || *seconds < 0.0) {
+            return Err("단계 시간은 유한하고 비음수여야 합니다");
+        }
+        Ok(())
+    };
+    validate_timing_receipt(&timings).expect("완전하고 유효한 단계 시간 receipt가 필요합니다");
+    let valid: Vec<_> = required_timing_keys.iter().map(|key| (*key, 0.0)).collect();
+    assert!(validate_timing_receipt(&valid).is_ok());
+    let mut missing = valid.clone();
+    missing.pop();
+    assert!(validate_timing_receipt(&missing).is_err());
+    let mut duplicated = valid.clone();
+    duplicated[1].0 = duplicated[0].0;
+    assert!(validate_timing_receipt(&duplicated).is_err());
+    for invalid in [f64::NAN, f64::INFINITY, -1.0] {
+        let mut invalid_values = valid.clone();
+        invalid_values[0].1 = invalid;
+        assert!(validate_timing_receipt(&invalid_values).is_err());
     }
-    for &(_, seconds) in &timings {
-        assert!(seconds.is_finite() && seconds >= 0.0, "유효하지 않은 단계 시간입니다");
-    }
+    println!("timing_receipt_negative_cases=5: 누락·중복·NaN·무한대·음수 거부 확인");
     for seconds in [cpu_seconds, gpu_seconds, cpu_table_seconds] {
         assert!(seconds.is_finite() && seconds >= 0.0, "유효하지 않은 전체 시간입니다");
     }
@@ -440,7 +468,7 @@ fn reference_gpu_fixed_bank_kernel_profile() {
             variance.max(0.0).sqrt()
         }).collect::<Vec<_>>();
     let sd_delta = max_delta(&sd(&cpu_moments), &sd(&gpu_moments));
-    println!("{{\"event\":\"timing\",\"whole_cpu_estep_seconds\":{cpu_seconds},\"whole_gpu_estep_seconds\":{gpu_seconds},\"cpu_table_generation_seconds\":{cpu_table_seconds},\"whole_cpu_including_table_seconds\":{},\"stages\":{{{}}},\"note\":\"host clock; pipeline compile/upload and GPU compute/readback are grouped; no GPU timestamp claim\"}}",
+    println!("{{\"event\":\"timing\",\"whole_cpu_estep_seconds\":{cpu_seconds},\"whole_gpu_estep_seconds\":{gpu_seconds},\"cpu_table_generation_seconds\":{cpu_table_seconds},\"whole_cpu_including_table_seconds\":{},\"stages\":{{{}}},\"note\":\"host clock with clock/collector overhead; child stages subdivide parent intervals and must not be double-counted; driver lazy work may occur during submit; no GPU timestamp or isolated PCIe timing claim\"}}",
         cpu_seconds + cpu_table_seconds,
         timings.iter().map(|(name, seconds)| format!("{}:{}", serde_json::to_string(name).unwrap(), seconds))
             .collect::<Vec<_>>().join(","));

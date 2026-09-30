@@ -158,6 +158,10 @@ def test_fixed_bank_kernel_probe_is_explicit_and_has_no_fit_receipt():
     assert "seconds.is_finite()" in profile
     assert "seconds >= 0.0" in profile
     assert "timings.len()" in profile
+    assert "prepare_compute_pipeline_seconds" in profile
+    assert "prepare_table_map_copy_seconds" in profile
+    assert "sweep_readback_buffer_preparation_seconds" in profile
+    assert "timing_receipt_negative_cases=5" in profile
 
 
 def test_two_tier_success_requires_converged_cpu_gpu_and_gpu_adapter_evidence():

@@ -3341,4 +3341,4 @@ pub fn fit_two_tier_grm_focal_orthogonal_with_device(
 
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_grm_tests.rs"]
-mod tests;
+pub(crate) mod tests;
