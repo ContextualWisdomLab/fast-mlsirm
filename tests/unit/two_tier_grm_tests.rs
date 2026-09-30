@@ -267,7 +267,194 @@ fn tiny_data() -> (Vec<usize>, usize) {
     (y, n_persons)
 }
 
-/// 고정 문항은행과 같은 GH 노드·가중치에서 1인의 E-step만 대조한다.
+// 기존 Cai (2010, pp. 608–609) oracle를 재사용하는 고정 모수 검사다.
+// 기존 owned profile의 명시적 로컬 모드이며 fit·M-step은 실행하지 않는다.
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn reference_gpu_fixed_bank_counts_contract(qp: usize, qs: usize, gpu_budget: u64, host_budget: u64) {
+    use super::{build_primary_grid, e_step_gpu_person_moments, e_step_with_moments,
+        gh_rule, item_logprob_tables, validate_data, ItemParams, ReducedFitStatistics};
+    use serde_json::json;
+    use sha2::Digest;
+    // 가장 큰 case의 caller 예산을 GH/table/counts 할당보다 먼저 확인한다.
+    let g = qp.checked_mul(qp).expect("counts grid overflows");
+    let nodes = 16usize.checked_mul(g).and_then(|v| v.checked_mul(qs)).expect("counts nodes overflow");
+    let payload = nodes.checked_mul(4).and_then(|v| v.checked_mul(8)).expect("counts bytes overflow");
+    let headers = nodes.checked_add(17).and_then(|v| v.checked_mul(std::mem::size_of::<Vec<f64>>())).expect("counts headers overflow");
+    let output = 4usize.checked_mul(g).and_then(|v| v.checked_mul(qs)).and_then(|v| v.checked_add(g)).expect("counts output overflows");
+    let preflight = payload.checked_add(headers).and_then(|v| v.checked_mul(6))
+        .and_then(|v| payload.checked_mul(3).and_then(|t| v.checked_add(t)))
+        .and_then(|v| output.checked_mul(256).and_then(|t| v.checked_add(t)))
+        .and_then(|v| v.checked_add(65536)).expect("counts host estimate overflows");
+    assert!(preflight as u64 <= host_budget, "counts contract host budget is insufficient");
+    let ctx = crate::gpu::GpuContext::get().expect("hardware GPU required for counts contract");
+    assert!(matches!(ctx.adapter_info.device_type, wgpu::DeviceType::DiscreteGpu
+        | wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::VirtualGpu));
+    let cfg = TwoTierGrmConfig { q_primary: qp, q_specific: qs,
+        estimate_primary_correlation: false, ..valid_config() };
+    let (tz, wz) = gh_rule(qp).unwrap();
+    let (ts, ws) = gh_rule(qs).unwrap();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    let mut positive_cases = 0;
+    let mut rejected_cases = 0;
+    for case in 0..3 {
+        let (p, s, j, k, n) = (if case == 2 { 1 } else { 2 }, if case == 2 { 0 } else { 4 }, 16, 4, 4);
+        let row = [0, 1, 2, 3, 1, 2, 3, 0, 2, 3, 0, 1, 3, 0, 1, 2];
+        let mut y: Vec<usize> = (0..n).flat_map(|person| row.iter().map(move |&v| (v + person) % k)).collect();
+        let wording = [4, 5, 6, 9, 12, 14, 15];
+        let pm: Vec<bool> = (0..j).flat_map(|i| (0..p).map(move |d| d == 0 || wording.contains(&i))).collect();
+        let sm: Vec<i32> = (0..j).map(|i| if s == 0 || (case == 1 && (i == 0 || i == 15)) { -1 } else { (i / 4) as i32 }).collect();
+        let mut params: Vec<ItemParams> = (0..j).map(|i| ItemParams {
+            a_p: (0..p).map(|d| if d == 0 { [0.9, 1.3, 0.7, 1.1][i % 4] }
+                else if wording.contains(&i) { 0.9 } else { 0.0 }).collect(),
+            a_s: (sm[i] >= 0).then_some([1.1, 0.8, 1.4, 1.0][i % 4]),
+            d: vec![1.2, 0.0, -1.2],
+        }).collect();
+        let mut mask = vec![true; n * j];
+        if case > 0 {
+            mask[2 * j..3 * j].fill(false);
+            if case == 1 {
+                mask[j + 4..j + 8].fill(false);
+                mask[1] = false;
+                y[1] = usize::MAX; // masked sentinel는 category나 counts index가 되지 않는다.
+                params[1].a_p[0] = -params[1].a_p[0];
+            }
+        }
+        let observed = (case > 0).then_some(mask.as_slice());
+        let v = validate_data(&y, observed, &pm, &sm, n, j, p, s, k, &cfg, false).unwrap();
+        let (coords, log_w) = build_primary_grid(tz, wz, p, v.grid_size);
+        let mut gh_digest = sha2::Sha256::new();
+        for values in [&coords[..], &log_w[..], &log_ws[..]] {
+            gh_digest.update((values.len() as u64).to_le_bytes());
+            for value in values { gh_digest.update(value.to_le_bytes()); }
+        }
+        let gh_hash = format!("{:x}", gh_digest.finalize());
+        let nodes: usize = v.item_block.iter().map(|b| v.grid_size * if b.is_some() { qs } else { 1 }).sum();
+        let count_bytes = nodes.checked_mul(k).unwrap().checked_mul(8).unwrap();
+        let count_headers = (nodes + j + 1).checked_mul(std::mem::size_of::<Vec<f64>>()).unwrap();
+        let output = v.grid_size + s * v.grid_size * qs;
+        let estimate = 6 * (count_bytes + count_headers) + 3 * count_bytes + 8 * output * n * 8 + 65536;
+        assert!(estimate as u64 <= host_budget, "counts contract source estimate exceeds host budget");
+        let input = json!({"case":case,"responses":y,"observed":observed,"primary_map":pm,
+            "specific_map":sm,"n_persons":n,"n_items":j,"n_primary":p,"n_specific":s,"n_cat":k,
+            "q_primary":qp,"q_specific":qs,"phi":"identity",
+            "a_primary":params.iter().map(|x| x.a_p.as_slice()).collect::<Vec<_>>(),
+            "a_specific":params.iter().map(|x| x.a_s).collect::<Vec<_>>(),
+            "thresholds":params.iter().map(|x| x.d.as_slice()).collect::<Vec<_>>()});
+        let input_hash = format!("{:x}", sha2::Sha256::digest(serde_json::to_vec(&input).unwrap()));
+        let tables = item_logprob_tables(&v, &params, &coords, ts, v.grid_size).unwrap();
+        let streamed = e_step_with_moments(&v, &y, observed, &params, &log_w, &log_ws,
+            &coords, ts, v.grid_size, qs, None, true, None);
+        let cached = e_step_with_moments(&v, &y, observed, &params, &log_w, &log_ws,
+            &coords, ts, v.grid_size, qs, None, true, Some(&tables));
+        assert_eq!(streamed.0.to_bits(), cached.0.to_bits());
+        assert_eq!(streamed.1, cached.1);
+        assert_eq!(streamed.2, cached.2);
+        let mut stats = ReducedFitStatistics { counts: Vec::new(), cross: Vec::new() };
+        let ll = e_step_gpu_person_moments(&v, &y, observed, &params, &log_w, &log_ws,
+            &coords, ts, None, Some(&mut stats), true, gpu_budget).unwrap();
+        assert_eq!(ll.to_bits(), cached.0.to_bits());
+        assert_eq!(stats.counts.len(), j);
+        assert_eq!(stats.cross.len(), p * p);
+        let mut count_gap = 0.0_f64;
+        let mut mass_residual = 0.0_f64;
+        for i in 0..j {
+            let li = v.grid_size * if v.item_block[i].is_some() { qs } else { 1 };
+            assert_eq!(stats.counts[i].len(), li);
+            for node in 0..li {
+                assert_eq!(stats.counts[i][node].len(), k);
+                for cat in 0..k {
+                    let a = stats.counts[i][node][cat];
+                    let b = cached.1[i][node][cat];
+                    assert!(a.is_finite() && a >= 0.0);
+                    assert_eq!(a.to_bits(), b.to_bits());
+                    count_gap = count_gap.max((a - b).abs());
+                }
+            }
+            for cat in 0..k {
+                let actual: f64 = stats.counts[i].iter().map(|r| r[cat]).sum();
+                let expected = (0..n).filter(|&pp| observed.is_none_or(|m| m[pp * j + i]) && y[pp * j + i] == cat).count();
+                mass_residual = mass_residual.max((actual - expected as f64).abs());
+            }
+        }
+        for (a, b) in stats.cross.iter().zip(&cached.2) { assert_eq!(a.to_bits(), b.to_bits()); }
+        assert!(mass_residual.is_finite() && mass_residual <= 1e-3);
+        let members = v.blocks.iter().map(Vec::len).sum::<usize>();
+        let fixed = (8 + 2 * nodes * k + 2 * j + s + 1 + members.max(2) + 2 * v.grid_size + 2 * qs) as u64 * 4;
+        let per_person = (j + 4 * v.grid_size + 4 * (s * v.grid_size * qs).max(1)) as u64 * 4;
+        let short_budget = fixed + 3 * per_person;
+        assert!(short_budget <= gpu_budget);
+        let mut short = ReducedFitStatistics { counts: Vec::new(), cross: Vec::new() };
+        let short_ll = e_step_gpu_person_moments(&v, &y, observed, &params, &log_w, &log_ws,
+            &coords, ts, None, Some(&mut short), true, short_budget).unwrap();
+        assert_eq!(short_ll.to_bits(), ll.to_bits());
+        assert_eq!(short.counts, stats.counts);
+        assert_eq!(short.cross, stats.cross);
+        params[0].d[0] += 0.125; // M-step이 아니라 별도로 선언한 다음 고정 state다.
+        let fresh_input = json!({"initial_input_sha256":input_hash,
+            "thresholds":params.iter().map(|x| x.d.as_slice()).collect::<Vec<_>>()});
+        let fresh_hash = format!("{:x}", sha2::Sha256::digest(serde_json::to_vec(&fresh_input).unwrap()));
+        let fresh = e_step_with_moments(&v, &y, observed, &params, &log_w, &log_ws,
+            &coords, ts, v.grid_size, qs, None, true, None);
+        let mut next = ReducedFitStatistics { counts: Vec::new(), cross: Vec::new() };
+        let next_ll = e_step_gpu_person_moments(&v, &y, observed, &params, &log_w, &log_ws,
+            &coords, ts, None, Some(&mut next), true, gpu_budget).unwrap();
+        assert_eq!(next_ll.to_bits(), fresh.0.to_bits());
+        assert_eq!(next.counts, fresh.1);
+        assert_eq!(next.cross, fresh.2);
+        assert_ne!(next.counts, stats.counts);
+        println!("{}", json!({"event":"counts_case","input_sha256":input_hash,"input":input,
+            "adapter_name":ctx.adapter_info.name,"adapter_backend":format!("{:?}",ctx.adapter_info.backend),
+            "gpu_budget_bytes":gpu_budget,"short_batch_budget_bytes":short_budget,
+            "host_budget_bytes":host_budget,"host_source_estimate_bytes":estimate,
+            "host_budget_semantics":"source-shaped payload/header estimate; not RSS cap",
+            "gh_coords_prior_sha256":gh_hash,"fresh_input":fresh_input,"fresh_input_sha256":fresh_hash,
+            "counts_max_abs_delta":count_gap,"cross_bits_equal":true,"likelihood_bits_equal":true,
+            "mass_max_abs_residual":mass_residual,"batch_contract":"3_then_1","fresh_params_checked":true,
+            "fit_executed":false,"m_step_executed":false}));
+        positive_cases += 1;
+        if case == 0 {
+            let mut bad_y = y.clone(); bad_y[0] = k;
+            let mut bad_map = sm.clone(); bad_map[0] = s as i32;
+            let short_mask = vec![true; n * j - 1];
+            let rejects = [
+                validate_data(&bad_y, None, &pm, &sm, n,j,p,s,k,&cfg,false).is_err(),
+                validate_data(&y[..y.len()-1], None, &pm,&sm,n,j,p,s,k,&cfg,false).is_err(),
+                validate_data(&y, Some(&short_mask), &pm,&sm,n,j,p,s,k,&cfg,false).is_err(),
+                validate_data(&y, None, &pm[..pm.len()-1],&sm,n,j,p,s,k,&cfg,false).is_err(),
+                validate_data(&y, None, &pm,&bad_map,n,j,p,s,k,&cfg,false).is_err(),
+            ];
+            assert!(rejects.iter().all(|&x| x));
+            rejected_cases += rejects.len();
+            let mut rejected = ReducedFitStatistics { counts: Vec::new(), cross: Vec::new() };
+            assert!(e_step_gpu_person_moments(&v,&y,None,&params,&log_w,&log_ws,&coords,ts,
+                None,Some(&mut rejected),true,fixed + per_person - 1).is_err());
+            rejected_cases += 1;
+            let loss_y = vec![0; n * j];
+            let mut loss_params = params.clone();
+            for par in &mut loss_params { par.d = vec![1e308, 0.0, -1e308]; }
+            let cpu_loss = e_step_with_moments(&v,&loss_y,None,&loss_params,&log_w,&log_ws,
+                &coords,ts,v.grid_size,qs,None,true,None).0;
+            assert!(!cpu_loss.is_finite());
+            let error = e_step_gpu_person_moments(&v,&loss_y,None,&loss_params,&log_w,&log_ws,
+                &coords,ts,None,Some(&mut rejected),true,gpu_budget).unwrap_err();
+            assert!(error.contains("nonfinite GPU-derived f64 likelihood"));
+            rejected_cases += 1;
+            println!("{}",json!({"event":"counts_rejections","validation_cases":rejects.len(),
+                "validation_case_names":["observed_category","response_shape","mask_shape","primary_map_shape","specific_map_range"],
+                "validation_rejected":rejects,"insufficient_budget_bytes":fixed + per_person - 1,
+                "insufficient_budget_rejected":true,"finite_input_overflow_mass_loss_rejected":true,
+                "mass_loss_thresholds":[1e308,0.0,-1e308],"mass_loss_responses_all_zero":true,
+                "cpu_mass_loss_likelihood_finite":cpu_loss.is_finite(),"mass_loss_error":error,
+                "fit_executed":false,"m_step_executed":false}));
+        }
+    }
+    assert_eq!(positive_cases, 3);
+    assert_eq!(rejected_cases, 7);
+    println!("counts_contract_positive_cases={positive_cases}, rejected_cases={rejected_cases}, fit=false, m_step=false");
+}
+
+/// 기본 모드는 고정 문항은행의 같은 GH 노드·가중치에서 1인의 적률을 대조한다.
+/// 명시적 counts 모드는 같은 helper로 작은 4인 고정 state의 통계만 검사한다.
 /// host 예산은 소스 유래 보수 추정 정책이며 실제 RSS 강제 상한이 아니다.
 /// 부모 작업에서 확인한 Cai (2010, pp. 608–609, Appendices A/B)의 사후
 /// 1·2차 적률이 근거다. 자료 생성·모수 갱신·수렴·회복도 검증은 하지 않는다.
@@ -314,6 +501,17 @@ fn reference_gpu_fixed_bank_kernel_profile() {
         "test_source": "tests/unit/two_tier_grm_tests.rs",
         "test_source_sha256": format!("{:x}", sha2::Sha256::digest(include_bytes!("two_tier_grm_tests.rs"))),
     }));
+
+    let counts_contract = match std::env::var("G1_KERNEL_COUNTS_CONTRACT") {
+        Err(std::env::VarError::NotPresent) => false,
+        Ok(value) if value == "0" => false,
+        Ok(value) if value == "1" => true,
+        _ => panic!("G1_KERNEL_COUNTS_CONTRACT must be absent, 0 or 1"),
+    };
+    if counts_contract {
+        reference_gpu_fixed_bank_counts_contract(q_primary, q_specific, gpu_budget, host_budget);
+        return;
+    }
 
     // Fixed known parameters mirror the continuous P=2, S=4 fixture bank;
     // this is a pointwise E-step profile, not a fit or recovery acceptance.
