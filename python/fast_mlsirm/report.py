@@ -955,6 +955,12 @@ tbody tr:hover {
   white-space: pre;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .export-block pre {
+    user-select: all;
+  }
+}
+
 .export-block pre:focus:not(:focus-visible) {
   outline: none;
 }

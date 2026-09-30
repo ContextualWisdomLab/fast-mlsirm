@@ -73,3 +73,19 @@ def test_scrollable_export_focus_indicator_respects_motion_preferences() -> None
     assert "outline-offset: -2px;" in stylesheet
     assert "@media (prefers-reduced-motion: reduce)" in stylesheet
     assert "transition-duration: 0.01ms !important;" in stylesheet
+
+
+def test_export_bulk_selection_is_limited_to_fine_pointers() -> None:
+    """Bulk selection must preserve native partial selection on touch devices."""
+    stylesheet = _css()
+    export_rule = stylesheet.split(".export-block pre {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+
+    assert "user-select" not in export_rule
+    assert "@media (hover: hover) and (pointer: fine)" in stylesheet
+    fine_pointer_rule = stylesheet.split(
+        "@media (hover: hover) and (pointer: fine)", maxsplit=1
+    )[1]
+    assert ".export-block pre {" in fine_pointer_rule
+    assert "user-select: all;" in fine_pointer_rule
