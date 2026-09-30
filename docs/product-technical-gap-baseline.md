@@ -5,6 +5,35 @@ Observed at: **2026-08-25T05:20:00Z**<br>
 Protected-main basis: **`9c12eab15fb8a187b135f9be1961f0693a431c23`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
+## 2026-09-30 proposed report export-selection repair
+
+Status: **Proposed in Draft PR #2304; not protected-main authority**
+
+| Gap | Exact evidence | Owner/action | Status / remaining gate |
+|---|---|---|---|
+| `REPORT-EXPORT-SELECTION-01` | Initial head `2fb99f8e05318021299ec944fc13dd5a90e595fc` placed `user-select: all` in the unconditional `.export-block pre` rule and described it as an accessibility improvement. RED head `f37e7415e31730eb520cecc250965ccf27bb17fc` proves that the base rule still prevents native partial selection on touch/coarse-pointer inputs. | `fast-mlsirm` PR #2304 owns the generated-report CSS and regression contract. Repair head `148b6f171fb8088540941ce7e3276c855549b5a3` moves atomic selection behind `(hover: hover) and (pointer: fine)` and removes the over-broad permanent generator rule. | **PARTIAL / Draft.** Focused local execution at `148b6f17…` passed all 4 tests in `test_report_scrollable_exports_accessibility.py`. Fresh exact-head hosted Checks and current-head real-browser pointer/touch/keyboard evidence remain required. |
+
+### Exact-head design acceptance matrix
+
+| Dimension | Status | Evidence / required acceptance |
+|---|---|---|
+| Determinism and domain semantics | PASS | Existing semantic exact-value table and full-precision JSON/CSV outputs remain authoritative; CSS does not write presentation state back into psychometric domain truth. |
+| Accessibility semantics | PASS | Export regions retain accessible names, `role="region"`, `tabindex="0"`, focus-visible outline, and reduced-motion policy. |
+| Fine-pointer bulk selection | PASS (focused) | Media-scoped `user-select: all` and regression test are present at `148b6f17…`. |
+| Touch/coarse-pointer partial selection | PASS (focused) | The unconditional export rule contains no `user-select`; native selection remains available. |
+| Keyboard / assistive-technology copy | PARTIAL | Focus and native browser selection remain, but this PR does not add a dedicated copy control, success/error feedback, or clipboard-permission recovery. It must not claim those capabilities. |
+| Responsive and real-browser evidence | FAIL | No current-head desktop, mobile, or intermediate screenshot set and no real-browser pointer/touch/keyboard interaction run are attached. |
+| WCAG 2.2 AA | PARTIAL | Static semantics and focus contracts pass; current-head browser audit is absent. |
+| Eight locales | N/A for delta | This CSS-only repair adds no user-facing string. The English-only standalone-report language boundary remains a separate product Gap, not hidden by this PR. |
+| Large-data performance | UNCHANGED | No DOM, payload, algorithm, query, or persistence path changes; no new performance claim is made. |
+| Import/export and recovery | PASS / N/A | Exact table/JSON/CSV payloads and escaping remain unchanged; there is no persistent mutation or rollback state. |
+
+PRD/TRD/UML/ERD and Context Map disposition: this repair changes only the
+presentation policy inside the reusable `fast-mlsirm` standalone-report
+adapter. It adds no aggregate, API, database object, service dependency, or
+cross-context writer. Downstream hosted products continue to own product UI,
+identity, localization, persistence, clipboard telemetry, and recovery.
+
 ## 2026-09-26 proposed release-source trust repair
 
 Status: **Proposed in PR #2135; not protected-main authority**
