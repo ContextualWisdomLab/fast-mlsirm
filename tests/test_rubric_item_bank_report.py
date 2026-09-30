@@ -176,6 +176,9 @@ def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
     assert "<dt>Approved-use scope</dt><dd>none</dd>" in piloting_rendered
     assert "<caption>Lifecycle timeline</caption>" in rendered
     assert "<caption>Evidence inventory</caption>" in rendered
+    assert '<th scope="row">' in rendered
+    assert 'font-variant-numeric:tabular-nums' in rendered
+    assert 'tbody th{font-weight:normal;}' in rendered
     assert ":focus-visible" in rendered
     assert "outline: none" not in rendered
 
