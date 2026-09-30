@@ -60,7 +60,15 @@ errors for governance and procurement evidence.
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
 
-## 2025-02-24 - [JSON Depth Tracker Underflow Prevention]
-**Vulnerability:** [JSON depth validation에서 닫는 괄호 `]}`가 먼저 나올 경우 depth 카운터가 음수로 언더플로우 되어, 이후에 오는 깊은 중첩 검사를 우회할 수 있는 취약점 존재]
-**Learning:** [단순히 `]`나 `}`를 만났을 때 무조건 `depth -= 1`을 수행하면, 의도적으로 조작된 불균형 JSON 페이로드에서 `depth`가 음수가 되어 공격자가 최대 깊이 제한(`MAX_JSON_DEPTH`) 검사를 회피하고 메모리/재귀 제한을 초과시킬 수 있음]
-**Prevention:** [JSON 깊이 검증 로직 구현 시 `elif char in "]}" and depth:`와 같이 `depth > 0`인 조건일 때만 카운터를 감소시켜 언더플로우를 방지하도록 설계해야 함]
+## 2026-09-30 - JSON depth budget counter underflow
+**Finding:** Malformed JSON beginning with unmatched closing delimiters could
+drive the raw depth counter below zero in the rubric and LLM-judge parsers.
+The JSON decoder still rejected the payload, so this was not a valid-JSON
+admission bypass; it changed the earlier fail-closed error category and made
+the raw depth budget inconsistent across parser boundaries.
+
+**Learning:** A raw resource-budget scanner must keep its counter monotonic at
+the lower bound even when later syntax validation will reject the input.
+
+**Prevention:** Decrement a JSON nesting counter only when it is positive, and
+keep real-behavior regression tests at each untrusted string parser boundary.
