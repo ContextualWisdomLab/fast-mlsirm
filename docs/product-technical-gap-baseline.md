@@ -15,10 +15,14 @@ PR #1998 is non-mergeable and mixes its valid item-bank report delta with releas
 - RED contract head: `a6f55a7922dac0d0e156561bd733ac1bce68b3dc`
 - Product repair head: `cb36f21015b6c143b8754182db26b1622dc39a58`
 - CHANGELOG evidence head: `295757d8d1307375bebe056685f5b1906d7eda48`
+- Review repair head: `150027eee4ab20f54b4253ec71107cc927ad36da` scopes the
+  row-header assertion to the Lifecycle timeline table. The original unscoped
+  assertion was already satisfied by the Evidence inventory table and
+  therefore was not a valid RED contract for the timeline behavior.
 
 | Capability | Exact evidence | Status | Remaining gate |
 |---|---|---|---|
-| Determinism | Existing renderer fixture asserts the emitted semantic and CSS strings | RED ADDED; NOT EXECUTED HERE | Run exact-head focused and full Python suites |
+| Determinism | Renderer fixture scopes the semantic assertion to the Lifecycle timeline and still asserts the emitted CSS strings | LOCAL GREEN at `150027eee4ab20f54b4253ec71107cc927ad36da`: 7 focused tests; mutation back to `<td>` fails the focused test | Run fresh exact-head hosted focused and full Python suites |
 | Table semantics | Timeline state cells emit `<th scope="row">`; column headers remain `scope="col"` | GREEN (source contract) | Verify a real accessibility tree and table navigation |
 | Numeric readability | Report cells use `font-variant-numeric:tabular-nums`; body row headers keep normal weight | GREEN (source contract) | Capture browser and print/export evidence |
 | Responsive/zoom | Standalone report has viewport metadata, but no current-head 320/768/desktop or 200% zoom evidence | FAIL | Capture reflow and no-loss screenshots |
