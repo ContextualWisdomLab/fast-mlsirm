@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="2.127" timestamp="2026-09-28T05:07:32.127892+09:00" hostname="Seonghoui-MacBookPro-2.local"><testcase classname="tests.test_rust_regression_ols_hc_parity" name="test_native_normal_wald_interval_matches_normal_reference_and_rejects_invalid_inputs" time="0.000"><failure message="ModuleNotFoundError: No module named 'scipy'">def test_native_normal_wald_interval_matches_normal_reference_and_rejects_invalid_inputs():
+        """Check actual native normal intervals, tail stability and invalid inputs.
+    
+        Source: statsmodels Developers (n.d.), ContrastResults.conf_int, actual
+        source lines94-117. QuantLib Developers (n.d.), InverseCumulativeNormal
+        source documents the rational approximation's relative error; tests use
+        measured numerical bounds, not scientific acceptance thresholds.
+        """
+        from fast_mlsirm.regression import normal_wald_interval
+&gt;       from scipy.stats import norm
+E       ModuleNotFoundError: No module named 'scipy'
+
+tests/test_rust_regression_ols_hc_parity.py:182: ModuleNotFoundError</failure></testcase></testsuite></testsuites>

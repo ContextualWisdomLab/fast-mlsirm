@@ -173,6 +173,7 @@ fn load_dataset() -> Vec<usize> {
 }
 
 #[test]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn two_tier_grm_agrees_with_mirt_bfactor_two_tier_graded() {
     let fixture_path = fixture_dir().join("mirt_fixture.json");
     let fixture = std::fs::read_to_string(&fixture_path).unwrap_or_else(|e| {

@@ -161,21 +161,35 @@ fn build_design(
     (d, m)
 }
 
-/// Pivoted Gaussian elimination on the `M x M` Gram: true iff every pivot exceeds
-/// `thresh` (i.e. the design has full column rank).
+/// Partial-row-pivot column-rank guard (legacy name; also accepts rectangular A).
+/// LAPACK DGETF2, Purpose/INFO and pivot loop, actually opened:
+/// https://www.netlib.org/lapack/double/dgetf2.f. Eliminate A = P L U;
+/// full column rank requires at least as many rows as columns and nonzero pivots.
+/// `thresh` is the caller's numerical guard, not a LAPACK default or the
+/// QR/condition-number effective-rank definition of DGELSY. This boolean
+/// does not certify conditioning or statistical identification.
 pub(crate) fn gram_full_rank(g: &mut [Vec<f64>], m: usize, thresh: f64) -> bool {
+    let rows = g.len();
+    if rows < m
+        || !thresh.is_finite()
+        || thresh < 0.0
+        || g.iter()
+            .any(|row| row.len() != m || row.iter().any(|x| !x.is_finite()))
+    {
+        return false;
+    }
     for col in 0..m {
         let mut piv = col;
-        for r in col + 1..m {
+        for r in col + 1..rows {
             if g[r][col].abs() > g[piv][col].abs() {
                 piv = r;
             }
         }
-        if g[piv][col].abs() < thresh {
+        if !g[piv][col].is_finite() || g[piv][col] == 0.0 || g[piv][col].abs() < thresh {
             return false;
         }
         g.swap(col, piv);
-        for r in col + 1..m {
+        for r in col + 1..rows {
             let f = g[r][col] / g[col][col];
             for c in col..m {
                 g[r][c] -= f * g[col][c];

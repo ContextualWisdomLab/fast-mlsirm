@@ -44,8 +44,11 @@
 //!
 //! Cai, L. (2010). A two-tier full-information item factor analysis model
 //! with applications. *Psychometrika, 75*(4), 581-612.
-//! https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text not
-//! accessible — no equation locator is drawn from it)
+//! https://doi.org/10.1007/s11336-010-9178-0 (full text opened: p.587
+//! eqs.4-6 define the latent distributions; p.589 eqs.11-12 define graded
+//! cumulative/category probabilities; pp.589-590 eqs.15-16 define reduced
+//! integration). The bank, RNG, seed, node counts and error bands below are
+//! fixture choices, not values prescribed by this source.
 //!
 //! Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
 //! item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
@@ -203,6 +206,7 @@ fn correlation(a: &[f64], b: &[f64]) -> f64 {
 }
 
 #[test]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn two_tier_grm_recovers_true_parameters_including_primary_correlation() {
     let n_persons = 2_000usize;
     let (y, true_theta) = simulate(n_persons, 24_191_204);

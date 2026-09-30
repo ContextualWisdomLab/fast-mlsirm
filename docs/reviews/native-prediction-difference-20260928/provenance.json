@@ -1,0 +1,8 @@
+{
+  "source_head": "725497fbfebc3409dfec601ae3cb983ad834327b",
+  "core_path": "/private/tmp/fmls-native-normal-wald-20260928/python/fast_mlsirm/_core.cpython-312-darwin.so",
+  "core_sha256": "d2584a406fe78b4f96aaba4abd4fa48fd31a618717f47256a4f453509757d9a0",
+  "native_tests": 30,
+  "native_exit": 0,
+  "scope": "synthetic covariance-contrast validation, not immutable release or study acceptance"
+}

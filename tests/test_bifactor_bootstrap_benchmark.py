@@ -14,9 +14,15 @@ Gauss-Hermite rules generated on demand via Golub & Welsch, 1969, issue
 study-precision benchmark (``test_joint_bootstrap_cpu_vs_gpu_wall_time_q121``)
 runs at the maintainer-standard 121-point grid.
 
-Implementation basis: Andrews, D. W. K., & Buchinsky, M. (2000). A
-three-step method for choosing the number of bootstrap repetitions.
-*Econometrica, 68*(1), 23–51. https://www.jstor.org/stable/2999474
+The 1e-6 absolute replicate bound is a regression check for this fixed
+synthetic fixture. It detects the 4.04e-6 drift recorded at PR #2246 head
+050351ed; it is not a uniform error bound for all response matrices.
+NumPy 2.5 ``assert_allclose`` treats matching NaNs as equal by default, so
+replicate parameter arrays must first be finite:
+https://numpy.org/doc/stable/reference/generated/numpy.testing.assert_allclose .
+
+The endpoint-movement early stop is a heuristic, not an Andrews–Buchinsky
+``(pdb, τ)`` accuracy rule.
 """
 
 import os
@@ -26,6 +32,8 @@ import numpy as np
 import pytest
 
 from fast_mlsirm.bifactor_bootstrap import BifactorBootstrapResult, run_bifactor_bootstrap
+
+from bifactor_gpu_evidence import missing_hardware_bootstrap
 
 
 def _problem():
@@ -81,22 +89,40 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_and_parity() -> None:
     cpu_time = time.perf_counter() - t0
 
     t1 = time.perf_counter()
-    res_gpu = run_bifactor_bootstrap(**common, device="gpu", n_jobs=workers)
+    try:
+        res_gpu = run_bifactor_bootstrap(**common, device="gpu", n_jobs=workers)
+    except RuntimeError as exc:
+        if missing_hardware_bootstrap(exc):
+            return
+        raise
     gpu_time = time.perf_counter() - t1
 
     for res in (res_cpu, res_gpu):
         assert isinstance(res, BifactorBootstrapResult)
         assert res.n_replicates == n_replicates
         assert res.n_converged >= 1
+        assert len(res.replicate_ids) == len(res.replicate_errors) == n_replicates
         assert np.all(np.isfinite(res.replicate_loglik))
+        for estimates in (
+            res.replicate_a_general, res.replicate_a_specific, res.replicate_threshold
+        ):
+            assert np.all(np.isfinite(estimates))
+        print(
+            f"[bootstrap q=11] {res.device}: converged={res.n_converged}/{n_replicates}; "
+            f"ids={res.converged_replicate_ids}; errors={res.replicate_errors}"
+        )
 
     # Replicate-by-replicate device parity (single-precision E-step level).
     assert res_cpu.n_converged == res_gpu.n_converged
+    assert res_cpu.converged_replicate_ids == res_gpu.converged_replicate_ids
     np.testing.assert_allclose(
-        res_cpu.replicate_a_general, res_gpu.replicate_a_general, atol=1e-3
+        res_cpu.replicate_a_general, res_gpu.replicate_a_general, atol=1e-6, rtol=0
     )
     np.testing.assert_allclose(
-        res_cpu.replicate_threshold, res_gpu.replicate_threshold, atol=1e-3
+        res_cpu.replicate_a_specific, res_gpu.replicate_a_specific, atol=1e-6, rtol=0
+    )
+    np.testing.assert_allclose(
+        res_cpu.replicate_threshold, res_gpu.replicate_threshold, atol=1e-6, rtol=0
     )
 
     print(
@@ -163,22 +189,40 @@ def test_joint_bootstrap_cpu_vs_gpu_wall_time_q121() -> None:
     cpu_time = time.perf_counter() - t0
 
     t1 = time.perf_counter()
-    res_gpu = run_bifactor_bootstrap(**common, device="gpu", n_jobs=workers)
+    try:
+        res_gpu = run_bifactor_bootstrap(**common, device="gpu", n_jobs=workers)
+    except RuntimeError as exc:
+        if missing_hardware_bootstrap(exc):
+            return
+        raise
     gpu_time = time.perf_counter() - t1
 
     for res in (res_cpu, res_gpu):
         assert isinstance(res, BifactorBootstrapResult)
         assert res.n_replicates == n_replicates
         assert res.n_converged >= 1
+        assert len(res.replicate_ids) == len(res.replicate_errors) == n_replicates
         assert np.all(np.isfinite(res.replicate_loglik))
+        for estimates in (
+            res.replicate_a_general, res.replicate_a_specific, res.replicate_threshold
+        ):
+            assert np.all(np.isfinite(estimates))
+        print(
+            f"[bootstrap q=121] {res.device}: converged={res.n_converged}/{n_replicates}; "
+            f"ids={res.converged_replicate_ids}; errors={res.replicate_errors}"
+        )
 
     # Replicate-by-replicate device parity (single-precision E-step level).
     assert res_cpu.n_converged == res_gpu.n_converged
+    assert res_cpu.converged_replicate_ids == res_gpu.converged_replicate_ids
     np.testing.assert_allclose(
-        res_cpu.replicate_a_general, res_gpu.replicate_a_general, atol=1e-3
+        res_cpu.replicate_a_general, res_gpu.replicate_a_general, atol=1e-6, rtol=0
     )
     np.testing.assert_allclose(
-        res_cpu.replicate_threshold, res_gpu.replicate_threshold, atol=1e-3
+        res_cpu.replicate_a_specific, res_gpu.replicate_a_specific, atol=1e-6, rtol=0
+    )
+    np.testing.assert_allclose(
+        res_cpu.replicate_threshold, res_gpu.replicate_threshold, atol=1e-6, rtol=0
     )
 
     print(

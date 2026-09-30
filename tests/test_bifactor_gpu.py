@@ -31,12 +31,15 @@ an EM algorithm. *Psychometrika, 46*(4), 443–459.
 https://doi.org/10.1007/BF02293801
 """
 
+import os
 import time
 
 import numpy as np
 
 from fast_mlsirm.bifactor_grm import fit_bifactor_grm
 from fast_mlsirm.bifactor_multigroup import fit_bifactor_grm_multigroup
+
+from bifactor_gpu_evidence import explicit_gpu_result
 
 SLOPE_ATOL = 1e-4
 THRESHOLD_ATOL = 1e-4
@@ -56,8 +59,13 @@ def _fixture(n_persons=120, n_items=8, n_cat=3, seed=42):
     return responses, smap, n_cat
 
 
-def test_bifactor_gpu_equivalence_single_group(capfd):
-    """CPU and GPU E-steps agree within f32-derived tolerance (single group)."""
+def test_bifactor_gpu_equivalence_single_group():
+    """CPU and GPU E-steps agree within f32-derived tolerance (single group).
+
+    A host without a hardware GPU stops once the explicit request raises.
+    Numerical agreement is required on the hardware runner
+    (``FOCAL_GPU_NATIVE=1``).
+    """
     responses, smap, n_cat = _fixture()
     kw = dict(
         n_cat=n_cat,
@@ -73,8 +81,12 @@ def test_bifactor_gpu_equivalence_single_group(capfd):
     t0 = time.perf_counter()
     fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu")
     t1 = time.perf_counter()
-    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
+    fit_gpu = explicit_gpu_result(
+        lambda: fit_bifactor_grm(responses, smap, **kw, device="gpu")
+    )
     t2 = time.perf_counter()
+    if fit_gpu is None:
+        return
 
     cpu_time, gpu_time = t1 - t0, t2 - t1
     slope_diff = float(
@@ -86,11 +98,9 @@ def test_bifactor_gpu_equivalence_single_group(capfd):
     threshold_diff = float(np.max(np.abs(fit_cpu.threshold - fit_gpu.threshold)))
     loglik_diff = abs(float(fit_cpu.loglik_trace[-1]) - float(fit_gpu.loglik_trace[-1]))
 
-    err = capfd.readouterr().err
-    gpu_executed = "falling back" not in err
     print(
         f"\n[single q=21] CPU {cpu_time:.3f}s vs GPU {gpu_time:.3f}s "
-        f"(gpu_executed={gpu_executed}); max|Δslope|={slope_diff:.3e} "
+        f"(gpu_executed=True); max|Δslope|={slope_diff:.3e} "
         f"max|Δthreshold|={threshold_diff:.3e} |Δloglik|={loglik_diff:.3e}"
     )
 
@@ -108,8 +118,13 @@ def test_bifactor_gpu_equivalence_single_group(capfd):
     assert loglik_diff <= LOGLIK_ATOL
 
 
-def test_bifactor_gpu_equivalence_multigroup(capfd):
-    """CPU and GPU E-steps agree within f32-derived tolerance (two groups)."""
+def test_bifactor_gpu_equivalence_multigroup():
+    """CPU and GPU E-steps agree within f32-derived tolerance (two groups).
+
+    A host without a hardware GPU stops once the explicit request raises.
+    Numerical agreement is required on the hardware runner
+    (``FOCAL_GPU_NATIVE=1``).
+    """
     responses, smap, n_cat = _fixture()
     n_persons = responses.shape[0]
     group = np.zeros(n_persons, dtype=np.int64)
@@ -128,19 +143,23 @@ def test_bifactor_gpu_equivalence_multigroup(capfd):
     t0 = time.perf_counter()
     fit_cpu = fit_bifactor_grm_multigroup(responses, group, smap, **kw, device="cpu")
     t1 = time.perf_counter()
-    fit_gpu = fit_bifactor_grm_multigroup(responses, group, smap, **kw, device="gpu")
+    fit_gpu = explicit_gpu_result(
+        lambda: fit_bifactor_grm_multigroup(
+            responses, group, smap, **kw, device="gpu"
+        )
+    )
     t2 = time.perf_counter()
+    if fit_gpu is None:
+        return
 
     cpu_time, gpu_time = t1 - t0, t2 - t1
     slope_diff = float(np.max(np.abs(fit_cpu.a_general - fit_gpu.a_general)))
     threshold_diff = float(np.max(np.abs(fit_cpu.threshold - fit_gpu.threshold)))
     loglik_diff = abs(float(fit_cpu.loglik_trace[-1]) - float(fit_gpu.loglik_trace[-1]))
 
-    err = capfd.readouterr().err
-    gpu_executed = "falling back" not in err
     print(
         f"\n[multi q=11] CPU {cpu_time:.3f}s vs GPU {gpu_time:.3f}s "
-        f"(gpu_executed={gpu_executed}); max|Δslope|={slope_diff:.3e} "
+        f"(gpu_executed=True); max|Δslope|={slope_diff:.3e} "
         f"max|Δthreshold|={threshold_diff:.3e} |Δloglik|={loglik_diff:.3e}"
     )
 
@@ -157,3 +176,34 @@ def test_bifactor_gpu_equivalence_multigroup(capfd):
     np.testing.assert_allclose(
         fit_cpu.general_mean, fit_gpu.general_mean, atol=SLOPE_ATOL
     )
+
+
+def test_explicit_bifactor_gpu_rejects_software_adapter():
+    """Software Vulkan adapters cannot satisfy an explicit bifactor GPU fit.
+
+    wgpu 30.0.0 ``DeviceType::Cpu`` is software rendering. Mesa lavapipe
+    reports that class, so the hosted smoke job sets
+    ``EXPECT_SOFTWARE_GPU_REJECTION=1`` and this test must observe the error.
+    The hardware runner sets ``FOCAL_GPU_NATIVE=1`` and must complete the fit.
+    Each declared category occurs in every item, as the estimator requires.
+    https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html
+    """
+    responses, smap, n_cat = _fixture(n_persons=4, n_items=4)
+    responses[:n_cat, :] = np.arange(n_cat)[:, None]
+    kw = dict(
+        n_cat=n_cat,
+        n_specific=2,
+        q_general=3,
+        q_specific=3,
+        max_iter=1,
+        tol=1e-3,
+        n_starts=1,
+        seed=1,
+    )
+    outcome = explicit_gpu_result(
+        lambda: fit_bifactor_grm(responses, smap, **kw, device="gpu")
+    )
+    if os.environ.get("EXPECT_SOFTWARE_GPU_REJECTION") == "1":
+        assert outcome is None
+    elif os.environ.get("FOCAL_GPU_NATIVE") == "1":
+        assert outcome is not None

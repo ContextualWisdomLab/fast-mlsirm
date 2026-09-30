@@ -13,12 +13,18 @@
 //! * `rbar_pass` / `mbar_pass` — one thread per (context, item, t, x): reduces
 //!   over the item-major positive (resp. missing) person lists.
 //!
-//! Kernels run in f32 (WGSL has no f64); accumulation noise is ~1e-4 relative,
-//! which perturbs the EM trajectory but not the fixed point materially. The
-//! driver in `marginal.rs` therefore uses the GPU only for E-step iterations
-//! and always runs the final EAP pass (and the M-step) on the CPU in f64. When
-//! no adapter is present, `e_step_gpu` returns `None` and the caller falls
-//! back to the CPU E-step — behaviour identical, CI-safe.
+//! Sources and scope: Bock and Aitkin (1981), pp. 445–448, eqs. 5, 8, and
+//! 12–14, describe quadrature-weighted response likelihoods, expected item
+//! counts, and posterior ability means:
+//! <https://faculty.ucmerced.edu/jvevea/classes/290_21/readings/week%209/Bock%20and%20Aitkin%201981.pdf>.
+//! This module evaluates the repository's extended, factorized CPU contract
+//! from `marginal.rs` on a GPU; the paper does not specify these shaders.
+//! The W3C WGSL specification §6.2.4 defines f32 and f16, not f64:
+//! <https://www.w3.org/TR/WGSL/#floating-point-types>.
+//! Therefore GPU iteration values need measured parity against the f64 CPU
+//! path for each accepted model and setting. The driver uses GPU E-steps and
+//! a final CPU f64 EAP/M-step; an unavailable adapter returns `None` to the
+//! caller's CPU path.
 
 use std::sync::OnceLock;
 
@@ -399,6 +405,8 @@ fn storage(device: &wgpu::Device, data: &[u8], usage: wgpu::BufferUsages) -> wgp
 /// (f64, shape persons x n_ctx) and must return the outer weights (context-
 /// major, shape n_ctx x persons): cluster posteriors for multilevel, all-ones
 /// (own context) otherwise. Returns `None` when no GPU adapter is available.
+/// Source: Bock & Aitkin (1981), pp. 445–447, eqs. 5, 8, 12 and the E-step;
+/// see this module's Sources and scope for the extended-model limit.
 pub(crate) fn e_step_gpu(
     config: &ModelConfig,
     inputs: &GpuEStepInputs<'_>,
@@ -823,6 +831,9 @@ pub(crate) struct GpuScoreOutputs {
 
 /// EAP scoring on the GPU; `None` when no adapter is present or the model
 /// exceeds the fixed kernel bounds (n_dims, latent_dim <= 8; q_t <= 41).
+/// Source: Bock & Aitkin (1981), p. 448, eqs. 13–14, for the posterior
+/// ability mean as a quadrature-weighted mean; the multiple-factor shader
+/// is the repository's extension described in this module's Sources and scope.
 pub(crate) fn score_eap_gpu(inp: &GpuScoreInputs<'_>) -> Option<GpuScoreOutputs> {
     let ctx = context()?;
     if inp.n_dims > 8 || inp.latent_dim > 8 || inp.q_t > MAX_QT {

@@ -6,18 +6,18 @@
 //! and a marginal log-likelihood term, which are then reduced over persons
 //! into expected counts and group moments. This module implements that
 //! person sweep in WGSL `f32` (the widest float WebGPU exposes) across six
-//! kernels — accumulate, normalize, joint, two count reductions, and group
+//! kernels — accumulate, normalize, joint, two count reductions, and specific
 //! moments — while the `f64` CPU path in [`crate::bifactor_grm`] remains the
 //! numerical reference. When no GPU adapter satisfies the binding budget the
 //! entry point returns `None` and the caller falls back to CPU.
 //!
 //! # Precision
 //!
-//! Kernels accumulate in `f32` (machine epsilon ≈ 1.19e-7). Expected counts
-//! are reductions over persons of posterior weights in [0, 1] and the
-//! log-likelihood sums per-person terms, so absolute agreement with the CPU
-//! path scales with `n_persons`; parity tests assert fit-level agreement
-//! derived from that bound (see `tests/test_bifactor_gpu.py`).
+//! Kernels compute posterior weights and expected counts in WGSL `f32`;
+//! general-factor group moments sum those weights against the original nodes
+//! in host `f64`. Expected-count and posterior rounding still limit agreement
+//! with the `f64` CPU path; fit-level parity needs direct tests (see
+//! `tests/test_bifactor_gpu.py`).
 //!
 //! # Adapter limits
 //!
@@ -25,8 +25,8 @@
 //! `max_compute_workgroups_per_dimension` (65535 on Apple Metal / WebGPU) so
 //! large node×item×category grids (e.g. AC late-life bifactor at q=241) do
 //! not panic with a validation error. Storage buffers are sized against
-//! `max_storage_buffer_binding_size` / `max_buffer_size` and fall back to CPU
-//! when they do not fit — no hardcoded workgroup or byte caps.
+//! `max_storage_buffer_binding_size` / `max_buffer_size`. When they do not fit,
+//! explicit `Gpu` fits fail; `Auto` may use CPU. No hardcoded byte caps.
 //!
 //! # References
 //!
@@ -41,6 +41,11 @@
 //! - Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation
 //!   of item parameters: Application of an EM algorithm. *Psychometrika,
 //!   46*(4), 443–459. https://doi.org/10.1007/BF02293801
+//! - Higham, N. J. (1993). The accuracy of floating point summation.
+//!   *SIAM Journal on Scientific Computing, 14*(4), 783–799, p. 785, eq. (2.6).
+//!   https://doi.org/10.1137/0914050
+//! - W3C GPU for the Web Working Group. WebGPU Shading Language, §6.2.
+//!   https://www.w3.org/TR/WGSL/#floating-point-types
 
 #[cfg(all(feature = "gpu", not(coverage)))]
 use crate::gpu::GpuContext;
@@ -86,6 +91,8 @@ pub(crate) struct ReducedEstepInputs<'a> {
 #[cfg_attr(any(not(feature = "gpu"), coverage), allow(dead_code))]
 pub(crate) struct ReducedEstepOutputs {
     pub loglik: f64,
+    /// Optional normalized posterior arrays; see Cai (2010), pp.608-609.
+    pub person_posteriors: Option<ReducedPersonPosteriors>,
     pub counts: Vec<f64>,
     pub counts_stride_nodes: usize,
     pub w_acc: Vec<f64>,
@@ -93,6 +100,21 @@ pub(crate) struct ReducedEstepOutputs {
     pub s2_g: Vec<f64>,
     pub s2_spec: Vec<f64>,
     pub w_spec: Vec<f64>,
+}
+
+/// Normalized GPU posterior weights for arbitrary shared product-grid nodes.
+/// Cai (2010), pp.608-609, Appendices A/B, DOI 10.1007/s11336-010-9178-0.
+/// `primary[(person * qg) + node]`;
+/// `joint[((person * ns + block) * qg + node) * qs + specific_node]`.
+/// Contract these with every primary
+/// coordinate; the shared-node index does not imply a single primary factor.
+/// Weights are computed in WGSL f32 and widened, not recomputed in f64:
+/// https://www.w3.org/TR/WGSL/#floating-point-types. Numerical parity and
+/// integration sensitivity must be checked independently before reporting.
+#[cfg_attr(any(not(feature = "gpu"), coverage), allow(dead_code))]
+pub(crate) struct ReducedPersonPosteriors {
+    pub primary: Vec<f64>,
+    pub joint: Vec<f64>,
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
@@ -318,34 +340,6 @@ fn reduce_counts_blk(
     counts[out] = sum;
 }
 
-// Per-group general moments (w, s1, s2) packed as 3 + 2*ns floats.
-@compute @workgroup_size(64)
-fn reduce_moments_g(
-    @builtin(workgroup_id) wid: vec3<u32>,
-    @builtin(local_invocation_index) lid: u32,
-    @builtin(num_workgroups) nwg: vec3<u32>,
-) {
-    let g = flat_idx(wid, lid, nwg);
-    if (g >= dims.ng) { return; }
-    let row = g * (3u + 2u * dims.ns);
-    var w = 0.0;
-    var s1 = 0.0;
-    var s2 = 0.0;
-    for (var p = 0u; p < dims.np; p = p + 1u) {
-        if (gid[p] != g) { continue; }
-        for (var t = 0u; t < dims.qg; t = t + 1u) {
-            let post = postg[p * dims.qg + t];
-            let node = tg[g * dims.qg + t];
-            w = w + post;
-            s1 = s1 + post * node;
-            s2 = s2 + post * node * node;
-        }
-    }
-    moments[row] = w;
-    moments[row + 1u] = s1;
-    moments[row + 2u] = s2;
-}
-
 // Per-(group, block) specific moments (w_spec, s2_spec).
 @compute @workgroup_size(64)
 fn reduce_moments_s(
@@ -385,12 +379,45 @@ const MIN_STORAGE_BUFFERS: u32 = 20;
 
 /// GPU reduced E-step sweep.
 ///
-/// Returns `None` when no compatible GPU adapter can be initialized (or when
-/// the `gpu` feature is disabled), signalling the caller to run the CPU
-/// implementation. A `None` here is never a silent wrong result: every
-/// caller falls back to the `f64` CPU sweep over the same tables.
+/// Returns `None` when GPU execution is unavailable. Bifactor callers reject
+/// `None` for explicit `Gpu` and may use the `f64` CPU sweep for `Auto`.
+/// wgpu 30.0.0, `DeviceType`, classifies CPU adapters as software rendering:
+/// https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
+    e_step_reduced_gpu_inner(inputs, false)
+}
+
+/// Return individual primary/joint posteriors using the existing GPU kernels.
+/// Cai (2010), pp.608-609, Appendices A/B; WGSL f32 precision limits are
+/// documented on `ReducedPersonPosteriors`. This route omits item-count and
+/// group-moment reductions; those quantities are not valid P>1 moments.
+/// Uses adapter buffer/workgroup budgets from wgpu 30.0.0 Limits:
+/// https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html.
+/// `None` means GPU execution/readback failed, never a CPU result.
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) fn e_step_reduced_gpu_posteriors(
+    inputs: &ReducedEstepInputs,
+) -> Option<ReducedEstepOutputs> {
+    e_step_reduced_gpu_inner(inputs, true)
+}
+
+/// Dispatch the reduced probability products from Cai (2010), pp.608-609.
+/// For S=0 use the primary-only conditional probabilities (p.587 equation7,
+/// p.588 optional-specific passage, p.589 equations11-12). Empty specific
+/// arrays receive unread minimum bindings and no empty readback; shader ns
+/// remains zero, so this does not introduce an auxiliary latent dimension.
+///
+/// References: Cai, L. (2010). A two-tier full-information item factor
+/// analysis model with applications. Psychometrika, 75(4), 581-612.
+/// https://doi.org/10.1007/s11336-010-9178-0 . gfx-rs Developers. (n.d.).
+/// wgpu-core (Version 30.0.0), src/binding_model.rs, BindingZeroSize.
+/// https://crates.io/crates/wgpu-core/30.0.0 (installed primary source read).
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn e_step_reduced_gpu_inner(
+    inputs: &ReducedEstepInputs,
+    collect_posteriors: bool,
+) -> Option<ReducedEstepOutputs> {
     use crate::gpu::{
         dispatch_count, dispatch_workgroups_nd, output_buffer, staging_buffer, storage_buffer_fits,
         storage_entry, submit_and_readback,
@@ -400,9 +427,27 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     if ctx.adapter_storage_buffers() < MIN_STORAGE_BUFFERS {
         return None;
     }
+    // wgpu 30.0.0 DeviceType manual calls Cpu software rendering and
+    // distinguishes integrated, discrete, and virtual GPUs. A software or
+    // unknown adapter cannot establish that this E-step used GPU hardware.
+    // https://docs.rs/wgpu/30.0.0/wgpu/enum.DeviceType.html
+    if !matches!(
+        ctx.adapter_info.device_type,
+        wgpu::DeviceType::IntegratedGpu
+            | wgpu::DeviceType::DiscreteGpu
+            | wgpu::DeviceType::VirtualGpu
+    ) {
+        return None;
+    }
     let device = &ctx.device;
     let limits = device.limits();
     let max_wg = limits.max_compute_workgroups_per_dimension;
+    // wgpu 30 Device::push_error_scope captures allocation/dispatch errors;
+    // its thread-local RAII guards also pop safely on early Option returns.
+    // https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope
+    let oom = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+    let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
 
     let np = inputs.n_persons;
     let ni = inputs.n_items;
@@ -412,21 +457,34 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let qs = inputs.qs;
     let ng = inputs.n_groups;
     let stride = qg * qs;
+    // Retain one-element bindings untouched by the posterior kernels
+    // (Cai, Appendix B); wgpu 30 device buffers must be nonempty.
+    // https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.create_buffer_from_hal
+    let counts_len = if collect_posteriors {
+        1
+    } else {
+        ng * ni * stride * nc
+    };
+    let moments_len = if collect_posteriors {
+        1
+    } else {
+        ng * (3 + 2 * ns)
+    };
 
     // Fail closed on storage binding budget before allocating (Metal/WebGPU
     // report these at runtime; never hardcode a byte cap).
     let buffer_lens = [
-        np * ni,                 // yobs as i32 — sized separately below
-        np * qg,                 // genlog / postg
-        np * ns * qg,            // logi
-        np * ns * qg * qs,       // blockacc / joint
-        np,                      // ll
-        np * ns,                 // anyobs
-        ng * ni * stride * nc,   // counts
-        ng * (3 + 2 * ns),       // moments
+        np * ni,           // yobs as i32 — sized separately below
+        np * qg,           // genlog / postg
+        np * ns * qg,      // logi
+        np * ns * qg * qs, // blockacc / joint
+        np,                // ll
+        np * ns,           // anyobs
+        counts_len,        // counts (unused posterior binding: one element)
+        moments_len,       // moments (unused posterior binding: one element)
     ];
     for &len in &buffer_lens[1..] {
-        if !storage_buffer_fits(&limits, len) {
+        if !storage_buffer_fits(&limits, len.max(1)) {
             return None;
         }
     }
@@ -503,7 +561,10 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let mk_init = |label: &str, bytes: &[u8]| {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(label),
-            contents: bytes,
+            // Empty specific-factor arrays have no mathematical entries. Keep
+            // an unread 4-byte binding; WGSL loops still use dims.ns=0.
+            // wgpu-core 30 binding_model.rs rejects zero-size bindings.
+            contents: if bytes.is_empty() { &[0u8; 4] } else { bytes },
             usage: wgpu::BufferUsages::STORAGE,
         })
     };
@@ -525,14 +586,14 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let ts_buf = mk_init("ts", bytemuck::cast_slice(&ts));
 
     let genlog_buf = output_buffer(device, "genlog", np * qg);
-    let logi_buf = output_buffer(device, "logi", np * ns * qg);
-    let blockacc_buf = output_buffer(device, "blockacc", np * ns * qg * qs);
+    let logi_buf = output_buffer(device, "logi", (np * ns * qg).max(1));
+    let blockacc_buf = output_buffer(device, "blockacc", (np * ns * qg * qs).max(1));
     let ll_buf = output_buffer(device, "ll", np);
     let postg_buf = output_buffer(device, "postg", np * qg);
-    let joint_buf = output_buffer(device, "joint", np * ns * qg * qs);
-    let anyobs_buf = output_buffer(device, "anyobs", np * ns);
-    let counts_buf = output_buffer(device, "counts", ng * ni * stride * nc);
-    let moments_buf = output_buffer(device, "moments", ng * (3 + 2 * ns));
+    let joint_buf = output_buffer(device, "joint", (np * ns * qg * qs).max(1));
+    let anyobs_buf = output_buffer(device, "anyobs", (np * ns).max(1));
+    let counts_buf = output_buffer(device, "counts", counts_len);
+    let moments_buf = output_buffer(device, "moments", moments_len);
 
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("bifactor_reduced_estep"),
@@ -555,11 +616,10 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     for binding in 12..=20u32 {
         entries.push(storage_entry(binding, false));
     }
-    let bind_group_layout =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("reduced_estep_bgl"),
-            entries: &entries,
-        });
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("reduced_estep_bgl"),
+        entries: &entries,
+    });
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("reduced_estep_bg"),
         layout: &bind_group_layout,
@@ -671,7 +731,6 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let pl_joint = make("joint_post");
     let pl_cgen = make("reduce_counts_gen");
     let pl_cblk = make("reduce_counts_blk");
-    let pl_mg = make("reduce_moments_g");
     let pl_ms = make("reduce_moments_s");
 
     // One compute pass per kernel so storage writes are visible downstream.
@@ -680,15 +739,20 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     // scale q×item×category grids (e.g. AC late-life q=241) do not panic.
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    for (pipeline, groups) in [
+    for (index, (pipeline, groups)) in [
         (&pl_acc, dispatch_count(np * qg)),
         (&pl_norm, dispatch_count(np)),
         (&pl_joint, dispatch_count(np * ns * qg)),
         (&pl_cgen, dispatch_count(ng * ni * qg * nc)),
         (&pl_cblk, dispatch_count(ng * ni * qg * qs * nc)),
-        (&pl_mg, dispatch_count(ng)),
         (&pl_ms, dispatch_count(ng * ns)),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if collect_posteriors && index >= 3 {
+            continue;
+        }
         let (dx, dy, dz) = dispatch_workgroups_nd(groups.max(1), max_wg)?;
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: None,
@@ -700,21 +764,44 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     }
 
     let ll_staging = staging_buffer(device, "ll_read", np);
-    let counts_staging = staging_buffer(device, "counts_read", ng * ni * stride * nc);
-    let moments_staging = staging_buffer(device, "moments_read", ng * (3 + 2 * ns));
-    let read = submit_and_readback(
-        ctx,
-        encoder,
-        &[
-            (&ll_buf, &ll_staging, np),
-            (&counts_buf, &counts_staging, ng * ni * stride * nc),
-            (&moments_buf, &moments_staging, ng * (3 + 2 * ns)),
-        ],
-    )?;
+    let counts_staging =
+        (!collect_posteriors).then(|| staging_buffer(device, "counts_read", counts_len));
+    let moments_staging =
+        (!collect_posteriors).then(|| staging_buffer(device, "moments_read", moments_len));
+    let primary_staging = staging_buffer(device, "primary_read", np * qg);
+    let joint_staging = (collect_posteriors && ns > 0)
+        .then(|| staging_buffer(device, "joint_read", np * ns * qg * qs));
+    let mut copies = vec![
+        (&ll_buf, &ll_staging, np),
+        (&postg_buf, &primary_staging, np * qg),
+    ];
+    if collect_posteriors {
+        if ns > 0 {
+            copies.push((&joint_buf, joint_staging.as_ref()?, np * ns * qg * qs));
+        }
+    } else {
+        copies.push((&counts_buf, counts_staging.as_ref()?, counts_len));
+        copies.push((&moments_buf, moments_staging.as_ref()?, moments_len));
+    }
+    let read = submit_and_readback(ctx, encoder, &copies)?;
     let mut iter = read.into_iter();
     let ll_vec = iter.next()?;
-    let counts_vec = iter.next()?;
-    let moments_vec = iter.next()?;
+    let primary_vec = iter.next()?;
+    let (counts_vec, moments_vec, person_posteriors) = if collect_posteriors {
+        let primary = primary_vec.iter().copied().map(f64::from).collect();
+        let joint = if ns == 0 {
+            Vec::new()
+        } else {
+            iter.next()?.into_iter().map(f64::from).collect()
+        };
+        (
+            Vec::new(),
+            vec![0.0; ng * (3 + 2 * ns)],
+            Some(ReducedPersonPosteriors { primary, joint }),
+        )
+    } else {
+        (iter.next()?, iter.next()?, None)
+    };
 
     let mut loglik = 0.0;
     for &v in &ll_vec {
@@ -726,18 +813,38 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let mut s2_g = vec![0.0; ng];
     let mut s2_spec = vec![0.0; ng * ns];
     let mut w_spec = vec![0.0; ng * ns];
+    // Reduce GPU posterior weights against the original f64 nodes. Bock and
+    // Aitkin (1981, p. 448, eqs. (13)–(14)) derive a posterior-weighted node mean;
+    // summing in f64 lowers the unit-roundoff term in Higham's recursive-sum
+    // bound (1993, p. 785, eq. (2.6)); posterior weights remain f32.
+    if !collect_posteriors {
+        for (p, &group) in gid.iter().enumerate() {
+            let g = group as usize;
+            for t in 0..qg {
+                let post = f64::from(primary_vec[p * qg + t]);
+                let node = inputs.tg_groups[g][t];
+                w_acc[g] += post;
+                s1_g[g] += post * node;
+                s2_g[g] += post * node * node;
+            }
+        }
+    }
     for g in 0..ng {
-        w_acc[g] = f64::from(moments_vec[g * row]);
-        s1_g[g] = f64::from(moments_vec[g * row + 1]);
-        s2_g[g] = f64::from(moments_vec[g * row + 2]);
         for s in 0..ns {
             w_spec[g * ns + s] = f64::from(moments_vec[g * row + 3 + s]);
             s2_spec[g * ns + s] = f64::from(moments_vec[g * row + 3 + ns + s]);
         }
     }
 
+    let internal_error = pollster::block_on(internal.pop());
+    let validation_error = pollster::block_on(validation.pop());
+    let allocation_error = pollster::block_on(oom.pop());
+    if internal_error.is_some() || validation_error.is_some() || allocation_error.is_some() {
+        return None;
+    }
     Some(ReducedEstepOutputs {
         loglik,
+        person_posteriors,
         counts: counts_vec.into_iter().map(f64::from).collect(),
         counts_stride_nodes: stride,
         w_acc,
@@ -752,7 +859,15 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
 /// coverage: always returns `None` so the caller runs the CPU E-step.
 #[cfg(any(not(feature = "gpu"), coverage))]
 #[allow(dead_code)]
-pub(crate) fn e_step_reduced_gpu(
+pub(crate) fn e_step_reduced_gpu(_inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
+    None
+}
+
+/// Unavailable GPU route in builds without GPU support. See GPU counterpart's
+/// Cai (2010), Appendices A/B and wgpu Limits contract; no CPU substitution.
+#[cfg(any(not(feature = "gpu"), coverage))]
+#[allow(dead_code)]
+pub(crate) fn e_step_reduced_gpu_posteriors(
     _inputs: &ReducedEstepInputs,
 ) -> Option<ReducedEstepOutputs> {
     None

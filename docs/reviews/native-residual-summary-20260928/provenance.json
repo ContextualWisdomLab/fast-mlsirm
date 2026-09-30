@@ -1,0 +1,9 @@
+{
+  "source_head": "0f9f72b3c483b7c064b0ef322c202f607c502994",
+  "core_sha256": "7f25e388783ae9cf1ee2fe005846cb64f4fc20a4c7624b1002b7443edcca1111",
+  "core_path": "/private/tmp/fmls-native-normal-wald-20260928/python/fast_mlsirm/_core.cpython-312-darwin.so",
+  "native_tests": 27,
+  "exit_status": 0,
+  "scope": "synthetic native summaries, not immutable release or study acceptance",
+  "first_failure": "python pip command unavailable; corrected to project uv, no numerical test failure"
+}

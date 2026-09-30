@@ -1,0 +1,9 @@
+{
+  "core_sha256": "5cf6261984d0336af4fe31bc21da028a10622df6287a069c2ccc0dfd2208f460",
+  "test_sha256": "4047f26e0a3f155ab3d161e3d3f6620d078ef43a19dc68881bb048f3c0319fbc",
+  "exit": 1,
+  "seconds": 0.49,
+  "failures": 1,
+  "reason": "Repeated decimal constant incorrectly gets tiny positive SD from accumulation error",
+  "repair": "Exact equality admission before mean accumulation; no scientific tolerance or SD floor"
+}

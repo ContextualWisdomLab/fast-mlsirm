@@ -1,0 +1,66 @@
+{
+  "source_head": "52eed4ddc6af68bf22393c83c4292a56186ca44c",
+  "host": "Seonghoui-MacBookPro-2.local",
+  "native_core_sha256": "0dcbd77b28383122d5d12fcd03193777c28ecb45faa9f460137be3d28685f8b0",
+  "test_source_sha256": "83853451a0de5833305e2a32d9b0397c99fe64897d5aa6b68706e83fdb36df0b",
+  "scope": "Synthetic native CPU-cache validation only; not release, study fit, coverage, or manuscript-number acceptance",
+  "old_cpu_run": "s1 PID3826021 preserved; different implementation under test",
+  "observed_at_utc": "2026-09-27T15:46:23.139569+00:00",
+  "status": "completed: one full continuous recovery test, both grids and cross-grid bounds pass; zero skips/errors/failures",
+  "records": [
+    {
+      "python": "3.12.14 (main, Aug 14 2026, 15:24:41) [Clang 22.1.3 ]",
+      "seed": 20260927,
+      "input_sha256": "062e7a22c0fffda853787293eed3d44fd6cbdd00c9eab91208c6a3de33cf0831",
+      "nodes": 15,
+      "mean": [
+        0.3334117441212067,
+        -0.267166991884657,
+        0.191275800370964,
+        -0.3059351948442807,
+        0.32441056004153773,
+        -0.14329068237061382
+      ],
+      "sd": [
+        1.1904940255308458,
+        0.8578019349449285,
+        0.7617214793585008,
+        1.204561827262695,
+        1.0725542814943885,
+        0.8462313382654668
+      ],
+      "updates": 79,
+      "reason": "tolerance_met",
+      "final_loglik_change": 8.528731996193528e-07
+    },
+    {
+      "python": "3.12.14 (main, Aug 14 2026, 15:24:41) [Clang 22.1.3 ]",
+      "seed": 20260927,
+      "input_sha256": "062e7a22c0fffda853787293eed3d44fd6cbdd00c9eab91208c6a3de33cf0831",
+      "nodes": 21,
+      "mean": [
+        0.3334265012962138,
+        -0.26716564609422294,
+        0.1912625653342723,
+        -0.30595163932708286,
+        0.32439801354832837,
+        -0.14330181221988353
+      ],
+      "sd": [
+        1.1904083777842849,
+        0.8578244103812305,
+        0.7618023666814256,
+        1.204531838093757,
+        1.0726027898174815,
+        0.8461684393983493
+      ],
+      "updates": 79,
+      "reason": "tolerance_met",
+      "final_loglik_change": 9.021314326673746e-07
+    }
+  ],
+  "artifacts": {
+    "continuous-output.log": "7d26f91bc3d705711fdb70c43a452c5bfd6763d1f36910ece9dea16a60460324",
+    "continuous-junit.xml": "a37dd05301b174e8e29044ba0c42a00b8da0db26f6dc219e83d11a695aaeb0c3"
+  }
+}

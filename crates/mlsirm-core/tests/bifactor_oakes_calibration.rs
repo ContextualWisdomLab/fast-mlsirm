@@ -174,6 +174,7 @@ const CAL_QG: usize = 21;
 const CAL_QS: usize = 15;
 
 #[test]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn se_matches_empirical_sd_over_simulation_replicates() {
     let fit_cfg = BifactorGrmConfig {
         q_general: CAL_QG,
@@ -194,12 +195,14 @@ fn se_matches_empirical_sd_over_simulation_replicates() {
         seed: 0, // overridden per replicate below
         newton_iter: 10,
         ridge: 1e-8,
+        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         device: mlsirm_core::Device::Cpu,
     };
     let oakes_cfg = BifactorOakesConfig {
         q_general: CAL_QG,
         q_specific: CAL_QS,
         fd_step: 1e-5,
+        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
     };
     // Free-parameter order: per item [a_G, a_S, d_0, d_1, d_2].
     let k = N_ITEMS * (2 + M1);
@@ -331,6 +334,7 @@ fn se_matches_empirical_sd_over_simulation_replicates() {
 const CONV_N: usize = 800;
 
 #[test]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn estimates_stabilize_as_grid_grows_within_supported_cap() {
     let y = simulate(CONV_N, 0x000C_0E77);
     assert!(covers_all_categories(&y, CONV_N));
@@ -345,6 +349,7 @@ fn estimates_stabilize_as_grid_grows_within_supported_cap() {
             seed: 777,
             newton_iter: 10,
             ridge: 1e-8,
+            slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
             device: mlsirm_core::Device::Cpu,
         };
         let fit = fit_bifactor_grm(
@@ -368,6 +373,7 @@ fn estimates_stabilize_as_grid_grows_within_supported_cap() {
             q_general: q,
             q_specific: q,
             fd_step: 1e-5,
+            slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         };
         let res = bifactor_oakes_se(
             &fit.a_general,
@@ -443,6 +449,7 @@ fn study_settings_se_converges_at_121_vs_241_nodes() {
             seed: 777,
             newton_iter: 10,
             ridge: 1e-8,
+            slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
             device: mlsirm_core::Device::Cpu,
         };
         let fit = fit_bifactor_grm(
@@ -465,6 +472,7 @@ fn study_settings_se_converges_at_121_vs_241_nodes() {
             q_general: q,
             q_specific: q,
             fd_step: 1e-5,
+            slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         };
         let res = bifactor_oakes_se(
             &fit.a_general,

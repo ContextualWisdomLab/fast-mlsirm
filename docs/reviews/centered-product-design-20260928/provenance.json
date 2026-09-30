@@ -1,0 +1,54 @@
+{
+  "tested_head": "0bf2590da9152f2697845556866a59f93323923d",
+  "core_sha256": "5cf6261984d0336af4fe31bc21da028a10622df6287a069c2ccc0dfd2208f460",
+  "python": "3.12.14",
+  "exit": 0,
+  "passed": 25,
+  "seconds": 5.31,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "scope": "one actual native centered-design definition/admission test plus 24 existing regression/moderated-slope parity tests; synthetic, not study or release acceptance",
+  "manuals": [
+    {
+      "url": "https://numpy.org/doc/stable/reference/generated/numpy.mean.html",
+      "version": "2.5",
+      "section": "Notes",
+      "contract": "sum of elements divided by N"
+    },
+    {
+      "url": "https://numpy.org/doc/stable/reference/generated/numpy.std.html",
+      "version": "2.5",
+      "section": "Notes",
+      "contract": "sqrt(sum squared deviations/(N-ddof)); ddof=1 variance correction does not make SD unbiased"
+    }
+  ],
+  "binding_sources": [
+    {
+      "package": "numpy-0.29.0",
+      "file": "src/borrow/mod.rs",
+      "locator": "262-275",
+      "sha256": "28e3f7760e47280c8291e97e92df99399f879510edad8f8dafb419edd299e268",
+      "verification": "actual installed primary source opened; docs.rs web open inaccessible"
+    },
+    {
+      "package": "numpy-0.29.0",
+      "file": "src/array.rs",
+      "locator": "500-527",
+      "sha256": "526f4ba30803ff0893f863e65bf4670a07e5c9d834cfae007a0a70f373044a6d",
+      "verification": "actual installed primary source opened; docs.rs web open inaccessible"
+    },
+    {
+      "package": "pyo3-0.29.0",
+      "file": "src/types/dict.rs",
+      "locator": "155-161 and 324-338",
+      "sha256": "b2ad96b0930ab30a8f3227c35dc4d3c14b2597abb3c426896f09c2a25c599d89",
+      "verification": "actual installed primary source opened; docs.rs web open inaccessible"
+    }
+  ],
+  "remaining": [
+    "normal current-head CI and substantive review",
+    "immutable release",
+    "remaining study interval/fit-summary/sensitivity arithmetic migration"
+  ]
+}

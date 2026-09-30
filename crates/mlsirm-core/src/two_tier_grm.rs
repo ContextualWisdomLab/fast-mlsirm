@@ -150,7 +150,7 @@
 //! rule (`quadrature::require_gh_rule`, any `n >= 1`, no table cap per
 //! #1929), and working-set sizes that would overflow `usize` are rejected
 //! by checked arithmetic. Everything else is
-//! lower-bounded only (`n_primary >= 1`, `n_specific >= 1`, `n_cat >= 2`,
+//! lower-bounded only (`n_primary >= 1`, `n_specific >= 0`, `n_cat >= 2`,
 //! `max_iter >= 1`, `n_starts >= 1`, `newton_iter >= 1`, finite positive
 //! `tol`/`ridge`). `seed` drives ONLY the random-start jitter
 //! (Gauss-Hermite quadrature is deterministic), and start `t` derives
@@ -321,15 +321,43 @@ pub(crate) fn validate(
     n_cat: usize,
     cfg: &TwoTierGrmConfig,
 ) -> Result<Validated, String> {
+    validate_data(
+        y,
+        observed,
+        primary_map,
+        specific_map,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_cat,
+        cfg,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_data(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    cfg: &TwoTierGrmConfig,
+    require_category_coverage: bool,
+) -> Result<Validated, String> {
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
     }
     if n_primary < 1 {
         return Err("n_primary must be >= 1".into());
     }
-    if n_specific < 1 {
-        return Err("n_specific must be >= 1".into());
-    }
+    // Cai (2010), p.587 eq.7 and p.589 eqs.11-12: removing every
+    // specific loading leaves the primary-only model; no dummy dimension.
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
@@ -451,26 +479,28 @@ pub(crate) fn validate(
             }
         }
     }
-    // Unobserved categories leave the adjacent ordered boundary pair
-    // pinned only to each other (Cai et al., 2011, eq. 7): fail loudly
-    // naming the item and category.
-    for i in 0..n_items {
-        let mut seen = vec![false; n_cat];
-        let mut any = false;
-        for p in 0..n_persons {
-            if is_obs(p, i) {
-                any = true;
-                seen[y[p * n_items + i]] = true;
+    if require_category_coverage {
+        // Unobserved categories leave the adjacent ordered boundary pair
+        // pinned only to each other (Cai et al., 2011, eq. 7): fail loudly
+        // naming the item and category.
+        for i in 0..n_items {
+            let mut seen = vec![false; n_cat];
+            let mut any = false;
+            for p in 0..n_persons {
+                if is_obs(p, i) {
+                    any = true;
+                    seen[y[p * n_items + i]] = true;
+                }
             }
-        }
-        if !any {
-            return Err(format!("item {i} has no observed responses"));
-        }
-        if let Some(k) = (0..n_cat).find(|&k| !seen[k]) {
-            return Err(format!(
-                "item {i} category {k} is never observed (unidentified GRM boundary); every \
+            if !any {
+                return Err(format!("item {i} has no observed responses"));
+            }
+            if let Some(k) = (0..n_cat).find(|&k| !seen[k]) {
+                return Err(format!(
+                    "item {i} category {k} is never observed (unidentified GRM boundary); every \
                  declared category must be observed"
-            ));
+                ));
+            }
         }
     }
     Ok(Validated {
@@ -814,8 +844,8 @@ fn item_cat_logprob(
     grm_logprobs(base, &par.d)[cat]
 }
 
-/// One reduced E-step sweep (Gibbons et al., 2007, eq. 15: the person
-/// marginal factored per primary node): observed-data loglik, expected
+/// One reduced E-step sweep (Cai, 2010, pp. 608-609, Appendix A,
+/// DOI 10.1007/s11336-010-9178-0): observed-data loglik, expected
 /// category counts per item (`counts[i][node][k]`, `node = g * qs + h` for
 /// block items, `node = g` for specific-free items), and the summed
 /// posterior primary second moment (`s_bar_sum[j * p + k] += sum_p sum_g
@@ -844,16 +874,77 @@ pub(crate) fn e_step(
     n_grid: usize,
     qs: usize,
 ) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
+    e_step_with_moments(
+        v, y, observed, params, log_w, log_ws, coords, ts, n_grid, qs, None, true, None,
+    )
+}
+
+/// Per-person posterior moments, primary dimensions followed by specifics.
+/// The caller allocates zeroed `n_persons * (n_primary + n_specific)` arrays.
+/// Mean/second moment are conditional on the full response pattern; the second
+/// moment is not posterior variance or parameter-estimation uncertainty.
+/// Cai (2010), p. 609, Appendix B, DOI 10.1007/s11336-010-9178-0.
+pub(crate) struct LatentPosteriorMoments {
+    pub(crate) mean: Vec<f64>,
+    pub(crate) second: Vec<f64>,
+}
+
+/// Shared reduced E-step with optional person posterior moments.
+/// Cai (2010), pp. 608-609, Appendices A/B, DOI 10.1007/s11336-010-9178-0:
+/// primary marginals and each block's joint (primary, specific) posterior
+/// supply E[t|Y] and E[t^2|Y]. Specific moments integrate the shared primary
+/// posterior even when that block is missing; dropping that person would
+/// corrupt a later latent-distribution M-step. All-missing patterns retain
+/// the supplied quadrature prior. This reports moments at caller-supplied
+/// nodes/weights, not proof of continuous-integral accuracy or a focal fit.
+/// Opt-in accumulation preserves the existing no-moment fit/Oakes path.
+/// Optional f64 item/node tables cache the identical GRM log-probabilities;
+/// with neither moments nor counts requested, only Appendix A likelihood is
+/// evaluated. This certifies GPU convergence without f32 likelihood rounding.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn e_step_with_moments(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws: &[f64],
+    coords: &[f64],
+    ts: &[f64],
+    n_grid: usize,
+    qs: usize,
+    mut moments: Option<&mut LatentPosteriorMoments>,
+    collect_counts: bool,
+    cached_tables: Option<&[Vec<f64>]>,
+) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
     let p = v.n_primary;
+    let n_latent = p + v.n_specific;
+    if let Some(m) = moments.as_deref_mut() {
+        assert_eq!(m.mean.len(), v.n_persons * n_latent);
+        assert_eq!(m.second.len(), v.n_persons * n_latent);
+        m.mean.fill(0.0);
+        m.second.fill(0.0);
+    }
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
+    let log_prob = |i: usize, g: usize, h: usize, cat: usize| {
+        cached_tables.map_or_else(
+            || item_cat_logprob(v, params, coords, ts, i, g, h, cat),
+            |tables| {
+                let nh = if v.item_block[i].is_some() { qs } else { 1 };
+                tables[i][(g * nh + h) * v.n_cat + cat]
+            },
+        )
+    };
     let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
-    for i in 0..v.n_items {
-        let n_nodes = if v.item_block[i].is_some() {
-            n_grid * qs
-        } else {
-            n_grid
-        };
-        counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+    if collect_counts {
+        for i in 0..v.n_items {
+            let n_nodes = if v.item_block[i].is_some() {
+                n_grid * qs
+            } else {
+                n_grid
+            };
+            counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+        }
     }
     // Per-person scratch: O(n_grid) for primary marginals + O(S * qs) for
     // the active primary node's specific-tier block (not O(S * n_grid * qs)).
@@ -876,7 +967,7 @@ pub(crate) fn e_step(
             }
             let yc = y[pp * v.n_items + i];
             for g in 0..n_grid {
-                gen_log[g] += item_cat_logprob(v, params, coords, ts, i, g, 0, yc);
+                gen_log[g] += log_prob(i, g, 0, yc);
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
@@ -888,7 +979,7 @@ pub(crate) fn e_step(
                             continue;
                         }
                         let yc = y[pp * v.n_items + i];
-                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        acc += log_prob(i, g, h, yc);
                     }
                     tmp_h[h] = acc;
                 }
@@ -904,31 +995,43 @@ pub(crate) fn e_step(
         }
         let log_lp = log_sum_exp(&log_like_g);
         loglik += log_lp;
+        if moments.is_none() && !collect_counts {
+            continue;
+        }
         for g in 0..n_grid {
             post_g[g] = (log_like_g[g] - log_lp).exp();
         }
         for g in 0..n_grid {
             let post = post_g[g];
+            if let Some(m) = moments.as_deref_mut() {
+                for d in 0..p {
+                    let t = coords[g * p + d];
+                    m.mean[pp * n_latent + d] += post * t;
+                    m.second[pp * n_latent + d] += post * t * t;
+                }
+            }
             for (jj, slot) in s_bar_sum.iter_mut().enumerate().take(p * p) {
                 let j = jj / p;
                 let k = jj % p;
                 *slot += post * coords[g * p + j] * coords[g * p + k];
             }
         }
-        for &i in &v.specific_free {
-            if !is_obs(pp, i) {
-                continue;
-            }
-            let yc = y[pp * v.n_items + i];
-            for g in 0..n_grid {
-                counts[i][g][yc] += post_g[g];
+        if collect_counts {
+            for &i in &v.specific_free {
+                if !is_obs(pp, i) {
+                    continue;
+                }
+                let yc = y[pp * v.n_items + i];
+                for g in 0..n_grid {
+                    counts[i][g][yc] += post_g[g];
+                }
             }
         }
         // Pass 2: joint (g, h) posteriors for block items — recompute the
         // active primary node's specific-tier block on the fly.
         for (s, members) in v.blocks.iter().enumerate() {
             let any_obs = members.iter().any(|&i| is_obs(pp, i));
-            if !any_obs {
+            if !any_obs && moments.is_none() {
                 continue;
             }
             for g in 0..n_grid {
@@ -939,7 +1042,7 @@ pub(crate) fn e_step(
                             continue;
                         }
                         let yc = y[pp * v.n_items + i];
-                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        acc += log_prob(i, g, h, yc);
                     }
                     block_acc_g[s * qs + h] = acc;
                 }
@@ -952,18 +1055,295 @@ pub(crate) fn e_step(
                 for h in 0..qs {
                     let log_post = log_w[g] + block_acc_g[s * qs + h] + others - log_lp;
                     let post = log_post.exp();
-                    for &i in members {
-                        if !is_obs(pp, i) {
-                            continue;
+                    if let Some(m) = moments.as_deref_mut() {
+                        let slot = pp * n_latent + p + s;
+                        m.mean[slot] += post * ts[h];
+                        m.second[slot] += post * ts[h] * ts[h];
+                    }
+                    if collect_counts {
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * v.n_items + i];
+                            counts[i][g * qs + h][yc] += post;
                         }
-                        let yc = y[pp * v.n_items + i];
-                        counts[i][g * qs + h][yc] += post;
                     }
                 }
             }
         }
     }
     (loglik, counts, s_bar_sum)
+}
+
+/// Reuse fixed item/node GRM probabilities across persons in one score call.
+/// Cai (2010), p.588 eq.9 and pp.608-609 Appendices A/B: the item response
+/// probabilities condition on nodes and item parameters, not the person.
+/// This caches the existing f64 function without altering arithmetic or nodes;
+/// affine parameters and tables are rebuilt for every focal EM score call.
+/// Memory is O(sum_items(grid * specific_nodes * categories)); CPU streaming
+/// remains the default and callers explicitly opt into this memory tradeoff.
+/// Rust Vec::try_reserve_exact reports capacity/allocation errors:
+/// https://doc.rust-lang.org/std/vec/struct.Vec.html#method.try_reserve_exact
+fn item_logprob_tables(
+    v: &Validated,
+    params: &[ItemParams],
+    coords: &[f64],
+    ts: &[f64],
+    grid: usize,
+) -> Result<Vec<Vec<f64>>, String> {
+    (0..v.n_items)
+        .map(|i| {
+            let h_count = if v.item_block[i].is_some() {
+                ts.len()
+            } else {
+                1
+            };
+            let len = grid
+                .checked_mul(h_count)
+                .and_then(|n| n.checked_mul(v.n_cat))
+                .ok_or("item/node probability cache size overflows")?;
+            let mut table = Vec::new();
+            table
+                .try_reserve_exact(len)
+                .map_err(|e| format!("item/node probability cache allocation failed: {e}"))?;
+            for g in 0..grid {
+                for h in 0..h_count {
+                    for cat in 0..v.n_cat {
+                        table.push(item_cat_logprob(v, params, coords, ts, i, g, h, cat));
+                    }
+                }
+            }
+            Ok(table)
+        })
+        .collect()
+}
+
+/// GPU reduced posterior contraction for every shared and specific dimension.
+/// Cai (2010), pp.608-609, Appendices A/B, DOI 10.1007/s11336-010-9178-0:
+/// flatten the shared product grid without marginalizing its dimensions,
+/// then contract primary and shared-specific joint posterior weights.
+/// Existing WGSL f32 kernels supply weights; Rust contracts in f64. This is
+/// mixed precision, not an f64 GPU calculation (WGSL floating-point types,
+/// https://www.w3.org/TR/WGSL/#floating-point-types). Positive finite masses
+/// are renormalized before contraction; nonfinite/negative weights fail.
+/// Person batches obey a caller-owned total buffer byte budget and wgpu
+/// 30.0.0 per-buffer limits; count all fixed inputs, simultaneous intermediate
+/// and posterior buffers, and their readback copies. This resource policy
+/// does not change node counts and does not estimate physical VRAM:
+/// https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html. GPU unavailability or
+/// failure is an error. The shared Appendix A f64 host reduction evaluates
+/// likelihood from the original f64 item tables for convergence certification;
+/// f32 GPU likelihood is never used to decide monotonicity or convergence.
+/// The caller must evaluate moment parity and integration sensitivity separately.
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[allow(clippy::too_many_arguments)]
+fn e_step_gpu_person_moments(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws: &[f64],
+    coords: &[f64],
+    ts: &[f64],
+    moments: &mut LatentPosteriorMoments,
+    memory_budget_bytes: u64,
+) -> Result<f64, String> {
+    use crate::gpu_bifactor::{e_step_reduced_gpu_posteriors, ReducedEstepInputs};
+    let ctx = crate::gpu::GpuContext::get().ok_or("GPU adapter unavailable")?;
+    if ctx.adapter_info.device_type == wgpu::DeviceType::Cpu {
+        return Err("GPU requested but adapter is a CPU software renderer".into());
+    }
+    let grid = log_w.len();
+    let qs = ts.len();
+    let joint_per_person = v
+        .n_specific
+        .checked_mul(grid)
+        .and_then(|n| n.checked_mul(qs))
+        .ok_or("GPU posterior dimensions overflow")?;
+    let limits = ctx.device.limits();
+    let binding_bytes_per_person = joint_per_person
+        .max(v.n_items)
+        .max(grid)
+        .checked_mul(4)
+        .ok_or("GPU posterior size overflows")?;
+    // Count the live posterior-route buffers in gpu_bifactor. For S=0,
+    // charge each unread minimum binding per person conservatively, so
+    // batching stays within the caller budget (wgpu-core 30 BindingZeroSize).
+    // three joint grids (blockacc, joint, readback), three primary grids
+    // (genlog, postg, readback), logi, responses, group IDs, anyobs, ll/readback.
+    // wgpu 30 Limits are per-buffer constraints, not physical VRAM:
+    // https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html
+    // The caller's total byte budget is a resource policy, not an accuracy cutoff.
+    let per_person_elements = [
+        v.n_items,
+        3,
+        grid,
+        grid,
+        grid,
+        v.n_specific.checked_mul(grid).ok_or("GPU size overflows")?.max(1),
+        joint_per_person.max(1),
+        joint_per_person.max(1),
+        if v.n_specific == 0 { 0 } else { joint_per_person },
+        v.n_specific.max(1),
+    ]
+    .into_iter()
+    .try_fold(0usize, |a, b| a.checked_add(b))
+    .ok_or("GPU simultaneous buffer size overflows")?;
+    let table_elements = v
+        .item_block
+        .iter()
+        .try_fold(0usize, |sum, block| {
+            grid.checked_mul(if block.is_some() { qs } else { 1 })
+                .and_then(|n| n.checked_mul(v.n_cat))
+                .and_then(|n| sum.checked_add(n))
+        })
+        .ok_or("GPU table size overflows")?;
+    let fixed_elements = [
+        8,
+        table_elements,
+        v.n_items,
+        v.n_items,
+        v.n_specific.checked_add(1).ok_or("GPU size overflows")?,
+        v.blocks.iter().map(Vec::len).sum::<usize>().max(1),
+        grid,
+        qs,
+        grid,
+        v.n_specific.checked_mul(qs).ok_or("GPU size overflows")?.max(1),
+        2,
+    ]
+    .into_iter()
+    .try_fold(0usize, |a, b| a.checked_add(b))
+    .ok_or("GPU fixed buffer size overflows")?;
+    let fixed_bytes = fixed_elements.checked_mul(4).ok_or("GPU size overflows")? as u64;
+    let person_bytes = per_person_elements
+        .checked_mul(4)
+        .ok_or("GPU size overflows")? as u64;
+    let available = memory_budget_bytes
+        .checked_sub(fixed_bytes)
+        .ok_or("GPU fixed inputs exceed gpu_memory_budget_bytes")?;
+    let binding_budget = limits
+        .max_storage_buffer_binding_size
+        .min(limits.max_buffer_size);
+    let batch = usize::try_from(
+        (available / person_bytes).min(binding_budget / binding_bytes_per_person as u64),
+    )
+    .map_err(|_| "GPU batch size overflows usize")?
+    .min(v.n_persons)
+    .min(u32::MAX as usize / joint_per_person.max(1));
+    if batch == 0 {
+        return Err("GPU cannot fit one person's simultaneous buffers within gpu_memory_budget_bytes and device limits".into());
+    }
+    // Log-probability tables depend on items/nodes, never on the person.
+    // Reuse the exact CPU GRM probability implementation on the host.
+    let tables = item_logprob_tables(v, params, coords, ts, grid)?;
+    let tables_groups = vec![tables];
+    // Existing group-reduction kernels are omitted on this posterior route.
+    // The first primary coordinate is supplied only for the retained buffer
+    // layout; all primary coordinates are contracted below.
+    let tg_groups = vec![(0..grid).map(|g| coords[g * v.n_primary]).collect()];
+    let ts_groups = vec![vec![ts.to_vec(); v.n_specific]];
+    moments.mean.fill(0.0);
+    moments.second.fill(0.0);
+    let nl = v.n_primary + v.n_specific;
+    for start in (0..v.n_persons).step_by(batch) {
+        let stop = (start + batch).min(v.n_persons);
+        let inputs = ReducedEstepInputs {
+            y: &y[start * v.n_items..stop * v.n_items],
+            observed: observed.map(|m| &m[start * v.n_items..stop * v.n_items]),
+            group_id: None,
+            n_persons: stop - start,
+            n_items: v.n_items,
+            n_specific: v.n_specific,
+            n_cat: v.n_cat,
+            qg: grid,
+            qs,
+            n_groups: 1,
+            tables_groups: &tables_groups,
+            item_block: &v.item_block,
+            blocks: &v.blocks,
+            tg_groups: &tg_groups,
+            ts_groups: &ts_groups,
+            log_wg: log_w,
+            log_ws,
+        };
+        let result = e_step_reduced_gpu_posteriors(&inputs)
+            .ok_or("GPU posterior dispatch/readback failed at declared grid")?;
+        if !result.loglik.is_finite() {
+            return Err("nonfinite GPU loglikelihood".into());
+        }
+        let post = result
+            .person_posteriors
+            .ok_or("missing GPU person posteriors")?;
+        for pp in 0..stop - start {
+            for d in 0..nl {
+                let weights = if d < v.n_primary {
+                    &post.primary[pp * grid..(pp + 1) * grid]
+                } else {
+                    let offset = (pp * v.n_specific + d - v.n_primary) * grid * qs;
+                    &post.joint[offset..offset + grid * qs]
+                };
+                if weights.iter().any(|w| !w.is_finite() || *w < 0.0) {
+                    return Err("invalid GPU posterior weight".into());
+                }
+                let mass: f64 = weights.iter().sum();
+                if !mass.is_finite() || mass <= 0.0 {
+                    return Err("invalid GPU posterior mass".into());
+                }
+                let slot = (start + pp) * nl + d;
+                for (node, &w) in weights.iter().enumerate() {
+                    let x = if d < v.n_primary {
+                        coords[node * v.n_primary + d]
+                    } else {
+                        ts[node % qs]
+                    };
+                    moments.mean[slot] += w / mass * x;
+                    moments.second[slot] += w / mass * x * x;
+                }
+            }
+        }
+    }
+    // Reuse the shared f64 reduction and already-built item/node tables.
+    // GPU still supplies all posterior moments; this is explicit certification.
+    let (loglik, _, _) = e_step_with_moments(
+        v,
+        y,
+        observed,
+        params,
+        log_w,
+        log_ws,
+        coords,
+        ts,
+        grid,
+        qs,
+        None,
+        false,
+        Some(&tables_groups[0]),
+    );
+    if !loglik.is_finite() {
+        return Err("nonfinite f64-certified GPU loglikelihood".into());
+    }
+    Ok(loglik)
+}
+
+/// Explicit GPU rejection in CPU-only builds; same Cai Appendices A/B
+/// contract as the GPU implementation. No alternative computation is run.
+#[cfg(any(not(feature = "gpu"), coverage))]
+#[allow(clippy::too_many_arguments)]
+fn e_step_gpu_person_moments(
+    _v: &Validated,
+    _y: &[usize],
+    _observed: Option<&[bool]>,
+    _params: &[ItemParams],
+    _log_w: &[f64],
+    _log_ws: &[f64],
+    _coords: &[f64],
+    _ts: &[f64],
+    _moments: &mut LatentPosteriorMoments,
+    _memory_budget_bytes: u64,
+) -> Result<f64, String> {
+    Err("focal GPU scoring requires a GPU-enabled build".into())
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item — the
@@ -2021,6 +2401,558 @@ pub(crate) fn pack_params(
             d: thresholds[i * v.m1..(i + 1) * v.m1].to_vec(),
         })
         .collect()
+}
+
+/// Person posterior moments under a caller-declared orthogonal Gaussian prior.
+/// Arrays are person-major; primary dimensions precede specifics. `sd` is
+/// posterior SD, not uncertainty including estimation of the fixed item bank.
+#[derive(Debug)]
+pub struct TwoTierGrmPersonScores {
+    /// Actual explicit backend. GPU failure never produces a CPU record.
+    pub backend: String,
+
+    pub mean: Vec<f64>,
+    pub second: Vec<f64>,
+    pub sd: Vec<f64>,
+    pub loglik: f64,
+}
+
+/// Score fixed two-tier GRM items under independent focal Gaussian factors.
+///
+/// Cai (2010), *Psychometrika*, 75, 581-612,
+/// https://doi.org/10.1007/s11336-010-9178-0, p. 587 equations 4-6 defines
+/// primary/specific means and covariance; p. 609 Appendix B gives posterior
+/// first/second moments. Identity primary correlation is an explicit model
+/// restriction here. Item parameters remain on the anchored reference metric.
+/// Derived substitution `theta_d = mean_d + sd_d*z_d` makes working slopes
+/// `a_d*sd_d` and adds `sum(a_d*mean_d)` to intercepts. Only temporary working
+/// parameters change; inputs and their signs are preserved. Posterior moments
+/// then transform back to the reference metric. This affine substitution is
+/// a derivation from the Gaussian model, not a fitted latent-distribution rule.
+///
+/// `latent_mean`/`latent_sd` have length `n_primary+n_specific`, primaries
+/// first. All means must be finite, all SDs finite and positive. Quadrature
+/// counts are explicit caller choices; same-node finite-sum equality does not
+/// establish continuous-integral accuracy. Missing blocks and entirely missing
+/// persons retain the declared prior. Category coverage is not required when
+/// scoring an already fixed bank; observed categories still must be valid.
+/// No item fitting, reflection canonicalization, or distribution fitting occurs.
+#[allow(clippy::too_many_arguments)]
+pub fn score_two_tier_grm_orthogonal(
+    a_primary: &[f64],
+    a_specific: &[f64],
+    thresholds: &[f64],
+    latent_mean: &[f64],
+    latent_sd: &[f64],
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+) -> Result<TwoTierGrmPersonScores, String> {
+    score_two_tier_grm_orthogonal_with_device(
+        a_primary,
+        a_specific,
+        thresholds,
+        latent_mean,
+        latent_sd,
+        y,
+        observed,
+        primary_map,
+        specific_map,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_cat,
+        q_primary,
+        q_specific,
+        crate::Device::Cpu,
+        None,
+        false,
+    )
+}
+
+/// Explicit device route for the same Cai (2010), pp.608-609 posterior/EM
+/// contract. GPU uses existing WGSL f32 joint posteriors, with f64 moment
+/// contraction; see https://www.w3.org/TR/WGSL/#floating-point-types.
+/// GPU failure is an error and no CPU fallback is accepted. `Auto` is rejected
+/// so the caller declares the route; parity and convergence remain required.
+/// GPU requires a positive caller-owned total buffer byte budget. See wgpu 30
+/// Limits (per-buffer only) and Device::push_error_scope (allocation errors):
+/// https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope
+/// Driver overhead and other live allocations can still cause a reported error.
+/// CPU cache_item_tables explicitly enables the item_logprob_tables memory
+/// tradeoff; false retains the streaming path. GPU always needs its tables.
+#[allow(clippy::too_many_arguments)]
+pub fn score_two_tier_grm_orthogonal_with_device(
+    a_primary: &[f64],
+    a_specific: &[f64],
+    thresholds: &[f64],
+    latent_mean: &[f64],
+    latent_sd: &[f64],
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+    device: crate::Device,
+    gpu_memory_budget_bytes: Option<u64>,
+    cache_item_tables: bool,
+) -> Result<TwoTierGrmPersonScores, String> {
+    // Fit-only controls are irrelevant to fixed-bank scoring, as in the
+    // existing marginal-loglik evaluator; data/shape checks remain shared.
+    let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: true,
+        q_primary,
+        q_specific,
+        max_iter: 1,
+        tol: 1.0,
+        n_starts: 1,
+        seed: 0,
+        newton_iter: 1,
+        ridge: 1.0,
+    };
+    let v = validate_data(
+        y,
+        observed,
+        primary_map,
+        specific_map,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_cat,
+        &cfg,
+        false,
+    )?;
+    let n_latent = n_primary
+        .checked_add(n_specific)
+        .ok_or_else(|| "latent dimension count overflows usize".to_string())?;
+    let n_scores = n_persons
+        .checked_mul(n_latent)
+        .ok_or_else(|| "person score size overflows usize".to_string())?;
+    if latent_mean.len() != n_latent || latent_sd.len() != n_latent {
+        return Err("latent_mean and latent_sd must have length n_primary+n_specific".into());
+    }
+    if latent_mean.iter().any(|x| !x.is_finite())
+        || latent_sd.iter().any(|x| !x.is_finite() || *x <= 0.0)
+    {
+        return Err("latent means must be finite and SDs finite and positive".into());
+    }
+    let phi_size = n_primary
+        .checked_mul(n_primary)
+        .ok_or_else(|| "primary correlation size overflows usize".to_string())?;
+    let mut phi = vec![0.0; phi_size];
+    for d in 0..n_primary {
+        phi[d * n_primary + d] = 1.0;
+    }
+    check_param_shapes(&v, primary_map, a_primary, a_specific, thresholds, &phi)?;
+    let mut params = pack_params(&v, a_primary, a_specific, thresholds);
+    for (i, par) in params.iter_mut().enumerate() {
+        let mut shift = 0.0;
+        for d in 0..n_primary {
+            shift += par.a_p[d] * latent_mean[d];
+            par.a_p[d] *= latent_sd[d];
+        }
+        if let Some(a) = par.a_s.as_mut() {
+            let d = n_primary + v.item_block[i].expect("specific loading has a block");
+            shift += *a * latent_mean[d];
+            *a *= latent_sd[d];
+        }
+        for intercept in &mut par.d {
+            *intercept += shift;
+        }
+        if par.d.windows(2).any(|w| w[0] <= w[1]) {
+            return Err("transformed thresholds lose strict ordering".into());
+        }
+        if !shift.is_finite()
+            || par
+                .a_p
+                .iter()
+                .chain(par.a_s.iter())
+                .chain(par.d.iter())
+                .any(|x| !x.is_finite())
+        {
+            return Err("non-finite transformed item parameter".into());
+        }
+    }
+    let (tz, wz) = gh_rule(q_primary)?;
+    let (ts, ws) = gh_rule(q_specific)?;
+    let (coords, log_w) = build_primary_grid(tz, wz, n_primary, v.grid_size);
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    let mut moments = LatentPosteriorMoments {
+        mean: vec![0.0; n_scores],
+        second: vec![0.0; n_scores],
+    };
+    // No free items: do not allocate category-count tables for fixed-bank scoring.
+    let loglik = match device {
+        crate::Device::Cpu => {
+            let tables = cache_item_tables
+                .then(|| item_logprob_tables(&v, &params, &coords, ts, v.grid_size))
+                .transpose()?;
+            let (ll, _, _) = e_step_with_moments(
+                &v,
+                y,
+                observed,
+                &params,
+                &log_w,
+                &log_ws,
+                &coords,
+                ts,
+                v.grid_size,
+                q_specific,
+                Some(&mut moments),
+                false,
+                tables.as_deref(),
+            );
+            ll
+        }
+        crate::Device::Gpu => e_step_gpu_person_moments(
+            &v,
+            y,
+            observed,
+            &params,
+            &log_w,
+            &log_ws,
+            &coords,
+            ts,
+            &mut moments,
+            gpu_memory_budget_bytes
+                .filter(|&n| n > 0)
+                .ok_or("GPU requires a positive gpu_memory_budget_bytes")?,
+        )?,
+        crate::Device::Auto => return Err("focal device must be explicit cpu or gpu".into()),
+    };
+    if !loglik.is_finite() {
+        return Err("non-finite focal score loglikelihood".into());
+    }
+    let mut sd = vec![0.0; n_scores];
+    for i in 0..n_scores {
+        let d = i % n_latent;
+        let z_mean = moments.mean[i];
+        let z_second = moments.second[i];
+        // Evaluate variance before adding the focal mean, avoiding cancellation
+        // from a large mean. Negative/nonfinite variance fails, never clamps.
+        let z_var = z_second - z_mean * z_mean;
+        if !z_var.is_finite() || z_var < 0.0 {
+            return Err("invalid focal posterior variance".into());
+        }
+        sd[i] = latent_sd[d] * z_var.sqrt();
+        moments.mean[i] = latent_mean[d] + latent_sd[d] * z_mean;
+        moments.second[i] = latent_mean[d] * latent_mean[d]
+            + 2.0 * latent_mean[d] * latent_sd[d] * z_mean
+            + latent_sd[d] * latent_sd[d] * z_second;
+        if !moments.mean[i].is_finite() || !moments.second[i].is_finite() || !sd[i].is_finite() {
+            return Err("non-finite focal posterior moment".into());
+        }
+    }
+    Ok(TwoTierGrmPersonScores {
+        backend: match device {
+            crate::Device::Gpu => "gpu",
+            _ => "cpu",
+        }
+        .into(),
+        mean: moments.mean,
+        second: moments.second,
+        sd,
+        loglik,
+    })
+}
+
+/// Fixed-item focal Gaussian population fit with actual evaluated person scores.
+/// `n_iter` counts distribution updates; the likelihood trace includes the
+/// caller's initial distribution plus each updated distribution. A decreasing
+/// finite-grid likelihood stops with `converged=false` and retains that state.
+#[derive(Debug)]
+pub struct TwoTierGrmFocalFit {
+    pub latent_mean: Vec<f64>,
+    pub latent_sd: Vec<f64>,
+    pub scores: TwoTierGrmPersonScores,
+    pub loglik_trace: Vec<f64>,
+    pub n_iter: usize,
+    pub converged: bool,
+    pub termination_reason: &'static str,
+    pub final_loglik_change: f64,
+    pub initial_mean: Vec<f64>,
+    pub initial_sd: Vec<f64>,
+    pub q_primary: usize,
+    pub q_specific: usize,
+    pub max_iter: usize,
+    pub tol: f64,
+}
+
+/// Fit all primary/specific Gaussian means/SDs with all item parameters fixed.
+///
+/// Cai (2010), *Psychometrika*, 75, 581-612,
+/// https://doi.org/10.1007/s11336-010-9178-0, p. 587 equations 4-6 defines
+/// latent Gaussian means/variances; pp. 608-609 Appendix A gives their
+/// complete-data M-step density objectives and Appendix B posterior moments.
+/// Derived Gaussian EM update: `mu_new = mean(E[theta|Y])` and
+/// `var_new = mean(Var[theta|Y] + (E[theta|Y]-mu_new)^2)` with denominator N.
+/// The latter is the same second-moment update without subtracting squared
+/// population means. Independent Gaussian factors restrict all covariances
+/// to zero. Item inputs stay fixed, including signs and reference metric.
+/// This anchored focal application is a caller design; the single-sample
+/// paper does not establish its empirical FIPC recovery or interval coverage.
+/// This is not Kim (2006)'s fixed-node discrete-weight MWU-MEM.
+///
+/// Initialization, quadrature counts, positive finite tolerance and update cap
+/// are required caller choices. The scorer moves GH nodes with the Gaussian
+/// distribution (affine substitution), so finite quadrature need not inherit
+/// exact-integral EM monotonicity. Every negative likelihood change stops as
+/// `loglik_decreased`, without claiming convergence or replacing that result.
+/// Nonnegative change <= tol stops as `tolerance_met`; exhausting max_iter
+/// reports `max_iter_reached`. These are numerical rules, not a sourced study
+/// tolerance or accuracy guarantee. Positive variance is required; no ridge,
+/// floor, hidden restart, or variance clamp is introduced. All-missing data
+/// and latent dimensions without any observed nonzero loading are rejected.
+/// This necessary information check does not prove joint identification.
+/// Fixed items permit missing categories; any stricter resample rejection
+/// policy is explicitly owned by the caller, not implied fit validity.
+/// The observed loading matrix must pass a column-normalized partial-pivot
+/// guard for free means: A*v=0 implies mu and mu+v have identical likelihood
+/// (derived from Cai, 2010, p.589 eq.11). LAPACK DGETF2 Purpose/INFO:
+/// https://www.netlib.org/lapack/double/dgetf2.f. The dimension*EPSILON pivot
+/// guard is an implementation choice, not a source-prescribed cutoff.
+/// Passing is necessary, not proof of variance/joint identification or a
+/// substitute for information, recovery, convergence and sensitivity checks.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_two_tier_grm_focal_orthogonal(
+    a_primary: &[f64],
+    a_specific: &[f64],
+    thresholds: &[f64],
+    initial_mean: &[f64],
+    initial_sd: &[f64],
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+) -> Result<TwoTierGrmFocalFit, String> {
+    fit_two_tier_grm_focal_orthogonal_with_device(
+        a_primary,
+        a_specific,
+        thresholds,
+        initial_mean,
+        initial_sd,
+        y,
+        observed,
+        primary_map,
+        specific_map,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_cat,
+        q_primary,
+        q_specific,
+        max_iter,
+        tol,
+        crate::Device::Cpu,
+        None,
+        false,
+    )
+}
+
+/// Explicit device route for the same Cai (2010), pp.608-609 posterior/EM
+/// contract. GPU uses existing WGSL f32 joint posteriors, with f64 moment
+/// contraction; see https://www.w3.org/TR/WGSL/#floating-point-types.
+/// GPU failure is an error and no CPU fallback is accepted. `Auto` is rejected
+/// so the caller declares the route; parity and convergence remain required.
+/// GPU requires a positive caller-owned total buffer byte budget. See wgpu 30
+/// Limits (per-buffer only) and Device::push_error_scope (allocation errors):
+/// https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html#method.push_error_scope
+/// Driver overhead and other live allocations can still cause a reported error.
+/// CPU cache_item_tables explicitly enables the item_logprob_tables memory
+/// tradeoff; false retains the streaming path. GPU always needs its tables.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_two_tier_grm_focal_orthogonal_with_device(
+    a_primary: &[f64],
+    a_specific: &[f64],
+    thresholds: &[f64],
+    initial_mean: &[f64],
+    initial_sd: &[f64],
+    y: &[usize],
+    observed: Option<&[bool]>,
+    primary_map: &[bool],
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    q_primary: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+    device: crate::Device,
+    gpu_memory_budget_bytes: Option<u64>,
+    cache_item_tables: bool,
+) -> Result<TwoTierGrmFocalFit, String> {
+    if max_iter == 0 || !tol.is_finite() || tol <= 0.0 {
+        return Err("max_iter must be positive and tol finite and positive".into());
+    }
+    let score = |mu: &[f64], sd: &[f64]| {
+        score_two_tier_grm_orthogonal_with_device(
+            a_primary,
+            a_specific,
+            thresholds,
+            mu,
+            sd,
+            y,
+            observed,
+            primary_map,
+            specific_map,
+            n_persons,
+            n_items,
+            n_primary,
+            n_specific,
+            n_cat,
+            q_primary,
+            q_specific,
+            device,
+            gpu_memory_budget_bytes,
+            cache_item_tables,
+        )
+    };
+    // Establish all input/parameter shape contracts before indexing below.
+    let mut scores = score(initial_mean, initial_sd)?;
+    let is_observed = |i: usize| {
+        (0..n_persons).any(|person| observed.is_none_or(|mask| mask[person * n_items + i]))
+    };
+    let n_latent = initial_mean.len();
+    for d in 0..n_latent {
+        let informative = (0..n_items).any(|i| {
+            is_observed(i)
+                && if d < n_primary {
+                    a_primary[i * n_primary + d] != 0.0
+                } else {
+                    specific_map[i] == (d - n_primary) as i32 && a_specific[i] != 0.0
+                }
+        });
+        if !informative {
+            return Err(format!(
+                "latent dimension {d} has no observed nonzero loading"
+            ));
+        }
+    }
+    // Cai (2010), p.589 eq.11: fixed linear predictors depend on A * mu.
+    // A nullspace shift of mu leaves every response probability unchanged.
+    // Normalize columns and reuse partial-row-pivot elimination on A itself,
+    // avoiding the squared conditioning of A' A. DGETF2 source is cited in
+    // the shared helper. max(rows, cols)*EPSILON is an implementation guard,
+    // not a source-prescribed scientific threshold or DGELSY effective rank.
+    let mut loading_rows: Vec<Vec<f64>> = (0..n_items)
+        .filter(|&i| is_observed(i))
+        .map(|i| {
+            let mut row = vec![0.0; n_latent];
+            row[..n_primary].copy_from_slice(&a_primary[i * n_primary..(i + 1) * n_primary]);
+            if specific_map[i] >= 0 {
+                row[n_primary + specific_map[i] as usize] = a_specific[i];
+            }
+            row
+        })
+        .collect();
+    for d in 0..n_latent {
+        let scale = loading_rows
+            .iter()
+            .map(|row| row[d].abs())
+            .fold(0.0_f64, f64::max);
+        for row in &mut loading_rows {
+            row[d] /= scale;
+        }
+    }
+    let rank_guard = loading_rows.len().max(n_latent) as f64 * f64::EPSILON;
+    if !crate::lltm::gram_full_rank(&mut loading_rows, n_latent, rank_guard) {
+        return Err(
+            "observed fixed-item loadings lack numerical column rank for free latent means".into(),
+        );
+    }
+    let mut latent_mean = initial_mean.to_vec();
+    let mut latent_sd = initial_sd.to_vec();
+    let mut trace = vec![scores.loglik];
+    let mut converged = false;
+    let mut reason = "max_iter_reached";
+    let mut n_iter = 0;
+    let mut final_change = 0.0;
+    for iteration in 1..=max_iter {
+        let mut mu = vec![0.0; n_latent];
+        for person in 0..n_persons {
+            for (d, value) in mu.iter_mut().enumerate() {
+                *value += scores.mean[person * n_latent + d] / n_persons as f64;
+            }
+        }
+        let mut sd = vec![0.0; n_latent];
+        for person in 0..n_persons {
+            for (d, value) in sd.iter_mut().enumerate() {
+                let i = person * n_latent + d;
+                let delta = scores.mean[i] - mu[d];
+                *value += (scores.sd[i] * scores.sd[i] + delta * delta) / n_persons as f64;
+            }
+        }
+        for (d, variance) in sd.iter_mut().enumerate() {
+            if !mu[d].is_finite() || !variance.is_finite() || *variance <= 0.0 {
+                return Err(format!(
+                    "invalid Gaussian moment update at iteration {iteration}, dimension {d}"
+                ));
+            }
+            *variance = variance.sqrt();
+        }
+        let next = score(&mu, &sd)
+            .map_err(|error| format!("focal scoring failed after update {iteration}: {error}"))?;
+        final_change = next.loglik - scores.loglik;
+        trace.push(next.loglik);
+        latent_mean = mu;
+        latent_sd = sd;
+        scores = next;
+        n_iter = iteration;
+        if final_change < 0.0 {
+            reason = "loglik_decreased";
+            break;
+        }
+        if final_change <= tol {
+            converged = true;
+            reason = "tolerance_met";
+            break;
+        }
+    }
+    Ok(TwoTierGrmFocalFit {
+        latent_mean,
+        latent_sd,
+        scores,
+        loglik_trace: trace,
+        n_iter,
+        converged,
+        termination_reason: reason,
+        final_loglik_change: final_change,
+        initial_mean: initial_mean.to_vec(),
+        initial_sd: initial_sd.to_vec(),
+        q_primary,
+        q_specific,
+        max_iter,
+        tol,
+    })
 }
 
 #[cfg(test)]

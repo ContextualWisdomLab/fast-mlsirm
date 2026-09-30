@@ -47,15 +47,129 @@ jobs:
 
   python:
     name: python
-    needs: python-matrix
+    needs: [python-matrix, focal-gpu-native]
     if: ${{ always() && (github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed')) }}
     runs-on: ubuntu-latest
     steps:
-      - name: Require every CPython matrix leg
+      - name: Require every CPython matrix leg and actual GPU evidence
+        env:
+          # focal-gpu-native never runs fork code on the self-hosted runner, so
+          # only fork PRs may pass with it skipped; the post-merge push run
+          # still requires hardware success.
+          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          GPU_RESULT: ${{ needs.focal-gpu-native.result }}
         run: |
-          echo "python-matrix result=${{ needs.python-matrix.result }}"
+          echo "python-matrix result=${{ needs.python-matrix.result }} focal-gpu-native result=$GPU_RESULT fork_pr=$FORK_PR"
           test "${{ needs.python-matrix.result }}" = "success"
+          if [ "$FORK_PR" = "true" ] && [ "$GPU_RESULT" = "skipped" ]; then
+            echo "::notice::Fork PR: hardware GPU evidence is deferred to the post-merge push run."
+          else
+            test "$GPU_RESULT" = "success"
+          fi
 
+
+  focal-gpu-native:
+    # Hardware runner must be isolated from research data and credentials.
+    # GitHub Docs, "Adding self-hosted runners", security warning:
+    # https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners
+    # The required python aggregate rejects skipped/failed hardware evidence.
+    if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: [self-hosted, linux, x64, focal-gpu-isolated]
+    timeout-minutes: 240
+    env:
+      FOCAL_GPU_NATIVE: "1"
+      FOCAL_GPU_RECOVERY: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.97.1
+      - name: Build isolated Python environment and native core
+        run: |
+          python -m venv .venv-focal-gpu
+          # Python 3.12 venv manual: activation prepends the environment bin to PATH.
+          # https://docs.python.org/3.12/library/venv.html#how-venvs-work
+          export PATH="$PWD/.venv-focal-gpu/bin:$PATH"
+          .venv-focal-gpu/bin/python -m pip install --require-hashes -r requirements/ci.txt
+          .venv-focal-gpu/bin/python -m pip install --no-deps --no-build-isolation -e .
+      - name: Execute all six actual hardware contracts
+        run: |
+          .venv-focal-gpu/bin/python -m pytest -q -s --junitxml=focal-gpu-junit.xml \
+            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_score_and_focal_update \
+            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_six_latent_continuous_population_recovery \
+            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_reference_focal_expected_score_pipeline \
+            tests/test_two_tier_group_pipeline_native.py::test_group_pipeline_preserves_slots_priors_and_nonconvergence \
+            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior \
+            tests/test_two_tier_focal_gpu_native.py::test_actual_gpu_primary_only_group_pipeline
+      - name: Reject missing or nonexecuted hardware contracts
+        run: |
+          .venv-focal-gpu/bin/python - <<'PY'
+          from xml.etree import ElementTree
+
+          cases = ElementTree.parse("focal-gpu-junit.xml").getroot().findall(".//testcase")
+          expected = {
+              "test_actual_gpu_six_latent_score_and_focal_update",
+              "test_actual_gpu_six_latent_continuous_population_recovery",
+              "test_actual_gpu_reference_focal_expected_score_pipeline",
+              "test_group_pipeline_preserves_slots_priors_and_nonconvergence",
+              "test_actual_gpu_primary_only_matches_unidimensional_and_focal_prior",
+              "test_actual_gpu_primary_only_group_pipeline",
+          }
+          assert len(cases) == 6 and {case.get("name") for case in cases} == expected, "All six hardware contracts must execute"
+          for case in cases:
+              assert not any(case.find(tag) is not None for tag in ("skipped", "failure", "error")), "Hardware contracts must pass without skips"
+          PY
+      - name: Check no-prior bifactor fits against s1-pinned main bits
+        run: |
+          # The pinned bits came from this runner; hosted glibc differs.
+          cargo test -p mlsirm-core --test bifactor_no_prior_main_reference -- --ignored --exact none_path_matches_main_bits_single_and_multigroup | tee no-prior-bits.log
+          grep -q "test result: ok. 1 passed" no-prior-bits.log
+      - name: Execute bifactor GPU parity on hardware
+        env:
+          STAGE5_HIGH_Q: "1"
+          STAGE5_HIGH_Q_BOOTSTRAP_REPS: "2"
+          STAGE5_BOOTSTRAP_REPS: "2"
+        run: |
+          .venv-focal-gpu/bin/python -m pytest -q -s --junitxml=bifactor-gpu-parity-junit.xml \
+            tests/test_bifactor_gpu.py::test_bifactor_gpu_equivalence_single_group \
+            tests/test_bifactor_gpu.py::test_bifactor_gpu_equivalence_multigroup \
+            tests/test_bifactor_gpu.py::test_explicit_bifactor_gpu_rejects_software_adapter \
+            tests/test_bifactor_bootstrap_stopping.py::test_cpu_gpu_bootstrap_replicate_parity \
+            tests/test_bifactor_bootstrap_benchmark.py::test_joint_bootstrap_cpu_vs_gpu_wall_time_and_parity \
+            tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q121 \
+            tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241 \
+            tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q481 \
+            tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241_wide_items_metal_workgroups \
+            tests/test_bifactor_gpu_high_q.py::test_bifactor_cpu_q121_vs_q241_agree \
+            tests/test_bifactor_bootstrap_benchmark.py::test_joint_bootstrap_cpu_vs_gpu_wall_time_q121
+      - name: Reject skipped bifactor GPU parity
+        run: |
+          .venv-focal-gpu/bin/python - <<'PY'
+          from xml.etree import ElementTree
+
+          cases = ElementTree.parse("bifactor-gpu-parity-junit.xml").getroot().findall(".//testcase")
+          expected = {
+              "test_bifactor_gpu_equivalence_single_group",
+              "test_bifactor_gpu_equivalence_multigroup",
+              "test_explicit_bifactor_gpu_rejects_software_adapter",
+              "test_cpu_gpu_bootstrap_replicate_parity",
+              "test_joint_bootstrap_cpu_vs_gpu_wall_time_and_parity",
+              "test_bifactor_gpu_parity_q121",
+              "test_bifactor_gpu_parity_q241",
+              "test_bifactor_gpu_parity_q481",
+              "test_bifactor_gpu_parity_q241_wide_items_metal_workgroups",
+              "test_bifactor_cpu_q121_vs_q241_agree",
+              "test_joint_bootstrap_cpu_vs_gpu_wall_time_q121",
+          }
+          assert len(cases) == len(expected) and {case.get("name") for case in cases} == expected, "Bifactor GPU parity must execute"
+          for case in cases:
+              assert not any(case.find(tag) is not None for tag in ("skipped", "failure", "error")), "Bifactor GPU parity must pass without skips"
+          PY
 
   rust:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
@@ -76,9 +190,10 @@ jobs:
 
   gpu-smoke:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    # Exact GPU and study-precision nodes below own every corresponding
-    # non-execution allowlist entry. The full paper-design recovery study
-    # remains in the scheduled/manual workflow.
+    # Lavapipe proves the MLSIRM marginal kernel and proves that an explicit
+    # bifactor GPU fit rejects a software adapter. Bifactor numerical parity
+    # runs on focal-gpu-native. The CPU 121-vs-241 node check stays here.
+    # The full paper-design recovery study remains in the scheduled workflow.
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
@@ -138,19 +253,15 @@ jobs:
         run: vulkaninfo --summary
       - run: python -m pip install --require-hashes -r requirements/ci.txt
       - run: python -m pip install --no-deps --no-build-isolation -e .
-      - name: Run exact GPU and study-precision evidence without a skip
+      - name: Run lavapipe marginal parity and software-adapter rejection
         env:
           STAGE5_HIGH_Q: "1"
-          STAGE5_HIGH_Q_BOOTSTRAP_REPS: "2"
+          EXPECT_SOFTWARE_GPU_REJECTION: "1"
         run: |
           pytest -q --junitxml=gpu-junit.xml \
             tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely \
-            tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q121 \
-            tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241 \
-            tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q481 \
-            tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q241_wide_items_metal_workgroups \
-            tests/test_bifactor_gpu_high_q.py::test_bifactor_cpu_q121_vs_q241_agree \
-            tests/test_bifactor_bootstrap_benchmark.py::test_joint_bootstrap_cpu_vs_gpu_wall_time_q121
+            tests/test_bifactor_gpu.py::test_explicit_bifactor_gpu_rejects_software_adapter \
+            tests/test_bifactor_gpu_high_q.py::test_bifactor_cpu_q121_vs_q241_agree
       - name: Reject skipped GPU evidence
         run: |
           python - <<'PY'
@@ -258,4 +369,42 @@ jobs:
           with open("release-acceptance/sales_readiness_manifest.json", encoding="utf-8") as fh:
               manifest = json.load(fh)
           assert manifest["status"] == "ok"
+          PY
+
+  focal-gpu-joint-bootstrap:
+    # The five-scale joint bootstrap ran past focal-gpu-native's 240-minute
+    # limit on s1 (PR #2246, 2026-09-29), so it is post-merge evidence on
+    # main/develop pushes rather than a PR gate. Same isolated runner rules.
+    if: ${{ github.event_name == 'push' }}
+    runs-on: [self-hosted, linux, x64, focal-gpu-isolated]
+    timeout-minutes: 720
+    env:
+      FOCAL_GPU_NATIVE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.97.1
+      - name: Build isolated Python environment and native core
+        run: |
+          python -m venv .venv-focal-gpu
+          .venv-focal-gpu/bin/python -m pip install --require-hashes -r requirements/ci.txt
+          .venv-focal-gpu/bin/python -m pip install --no-deps --no-build-isolation -e .
+      - name: Execute the joint five-scale bootstrap on hardware
+        run: |
+          .venv-focal-gpu/bin/python -m pytest -q -s --junitxml=joint-bootstrap-junit.xml \
+            tests/test_joint_two_tier_score_bootstrap.py::test_joint_five_scale_resample_uses_actual_gpu
+      - name: Reject a skipped joint bootstrap
+        run: |
+          .venv-focal-gpu/bin/python - <<'PY'
+          from xml.etree import ElementTree
+
+          cases = ElementTree.parse("joint-bootstrap-junit.xml").getroot().findall(".//testcase")
+          assert [case.get("name") for case in cases] == ["test_joint_five_scale_resample_uses_actual_gpu"], "Joint bootstrap must execute"
+          assert not any(cases[0].find(tag) is not None for tag in ("skipped", "failure", "error")), "Joint bootstrap must pass without skips"
           PY

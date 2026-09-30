@@ -339,7 +339,12 @@ def test_allowlisted_capability_nodes_have_exact_ci_owners() -> None:
         line for line in allowlist.splitlines()
         if not line.lstrip().startswith("#") and _OWNER_MARKER + "gpu-smoke" in line
     ]
-    assert len(owned) == 7, owned
+    hardware_owned = [
+        line for line in allowlist.splitlines()
+        if not line.lstrip().startswith("#") and _OWNER_MARKER + "focal-gpu-native" in line
+    ]
+    assert len(owned) == 2, owned
+    assert len(hardware_owned) == 11, hardware_owned
     assert "tests/test_fuzz_properties.py" not in "\n".join(
         line for line in allowlist.splitlines() if not line.lstrip().startswith("#")
     )
@@ -347,6 +352,31 @@ def test_allowlisted_capability_nodes_have_exact_ci_owners() -> None:
     assert 'ElementTree.parse(Path("gpu-junit.xml"))' in gpu_smoke_job
     assert 'ElementTree.parse(Path("fuzz-properties-junit.xml"))' in fuzz_job
 
+
+def test_every_hardware_gated_test_has_an_allowlist_row() -> None:
+    """A test skipped unless FOCAL_GPU_NATIVE=1 needs a reviewed row.
+
+    The hosted matrix always skips it, so without a row the fail-closed gate
+    only fails after a full-suite run; the owner check above then requires the
+    row's job to execute it.
+    """
+    import ast
+
+    allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text(encoding="utf-8")
+    rows = {line.partition(" # ")[0].strip() for line in allowlist.splitlines()}
+    gated = []
+    for path in sorted(REPO_TESTS_DIR.glob("test_*.py")):
+        source = path.read_text(encoding="utf-8")
+        if "FOCAL_GPU_NATIVE" not in source:
+            continue
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.FunctionDef) and any(
+                "FOCAL_GPU_NATIVE" in (ast.get_source_segment(source, d) or "")
+                for d in node.decorator_list
+            ):
+                gated.append(f"tests/{path.name}::{node.name}")
+    assert gated
+    assert [n for n in gated if n not in rows] == []
 
 def test_capability_ownership_rejects_unowned_or_widened_entries() -> None:
     """A new capability node without an executing owner job must be reported."""

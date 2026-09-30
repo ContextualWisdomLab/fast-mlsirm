@@ -1,0 +1,33 @@
+{
+  "source_commit": "d277e443118b7ce1e5052cd46b35f3b8d2f3f3a4",
+  "merged_parent_heads": [
+    "cf956cc4db208141c303f006c84efb1c05abdd85",
+    "ab544cc8c5ae4cce68433df983cfb18f343024c9"
+  ],
+  "common_base": "0ee35a6e9c278b70461dc345190b2c8433b24207",
+  "install": "CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/private/tmp/fmls-report-transforms-20260927/target MATURIN_NO_INSTALL_RUST=1 uv pip install --python .venv/bin/python --no-deps --no-build-isolation -e .",
+  "test": ".venv/bin/python -m pytest -q tests/test_rust_regression_ols_hc_parity.py tests/test_joint_two_tier_score_bootstrap.py::test_all_scales_share_slots_and_joint_failures_keep_actual_records tests/test_two_tier_focal_native_api.py",
+  "logs": {
+    "build.log": {
+      "sha256": "e25be1fba30317601f1ac35745838637f4ae2084144848847f94bfbee90f90d1"
+    },
+    "cpu-first.log": {
+      "sha256": "6931c1732669d55f743ed2454fb9e7365d539fb6c526ec57dfaa7d9d4f401703"
+    },
+    "cpu-final.log": {
+      "sha256": "97e7338547efebb9217cfcdad13e48cf743a73c660aec2864a6682e0bae22c20"
+    }
+  },
+  "cpu_final_exit_code": 0,
+  "cpu_final_counts": {
+    "passed": 17,
+    "failed": 0,
+    "skipped": 0
+  },
+  "cpu_first_exit_code": 1,
+  "cpu_first_reason": "GPU-only test skipped on macOS; repository fail-closed pytest plugin rejected skip",
+  "installed_core_path": "/private/tmp/fmls-native-normal-wald-20260928/python/fast_mlsirm/_core.cpython-312-darwin.so",
+  "installed_core_sha256": "d330aa37c41bb420ff53c5d7b392d77d97b0fce70139156673f74c42dcdf57f6",
+  "actual_gpu_execution_on_integration_head": "not yet run",
+  "immutable_release_acceptance": false
+}

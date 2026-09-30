@@ -1,0 +1,6 @@
+{
+  "installed_core_sha256": "4cebb6f79605df999ee90ca2474f69e8241511b48e2d1cdd905661c835817452",
+  "first_regression_source_sha256": "3d147b550a81ec80463253950d69bdc981f46513ddbc3d5500a5652b6729b768",
+  "relation_to_af46e9c": "initial uncommitted prototype before the lower>=upper representability guard; final source must be rebuilt",
+  "scope": "first native check retained; not release acceptance"
+}

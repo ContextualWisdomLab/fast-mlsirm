@@ -170,9 +170,14 @@ fn normal_draw(state: &mut u64) -> f64 {
     (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
 }
 
-/// Acklam's rational approximation to the standard-normal inverse CDF
-/// (relative error < 1.15e-9; the same coefficients are used by the NumPy
-/// reference for parity).
+/// Acklam rational approximation to the standard-normal inverse CDF.
+/// QuantLib Developers (n.d.), InverseCumulativeNormal source manual,
+/// normaldistribution.hpp lines118-138 and .cpp lines53-103:
+/// https://github.com/lballabio/QuantLib/blob/master/ql/math/distributions/normaldistribution.hpp
+/// The actual primary source documents the 1.15e-9 relative-error bound and
+/// optional Halley refinement. This helper reuses the rational coefficients
+/// without that refinement. Endpoint inputs are not finite quantiles.
+/// Caller-owned domain checks are required before reporting intervals.
 pub fn inv_normal_cdf(p: f64) -> f64 {
     const A: [f64; 6] = [
         -3.969683028665376e+01,

@@ -83,8 +83,55 @@ def _as_float64_vector(y: object, name: str, *, expected_length: int | None = No
     return arr
 
 
+def centered_product_design(x: np.ndarray, terms, *, ddof: int) -> dict[str, Any]:
+    """Native column means/SDs and products of centered predictors.
+
+    NumPy Developers (n.d.-a, Notes; n.d.-b, Notes) define sum/N and N-ddof.
+    References: NumPy Developers. (n.d.-a). numpy.mean. In NumPy v2.5 manual.
+    https://numpy.org/doc/stable/reference/generated/numpy.mean.html
+    NumPy Developers. (n.d.-b). numpy.std. In NumPy v2.5 manual.
+    https://numpy.org/doc/stable/reference/generated/numpy.std.html
+    ddof=1 gives the square root of unbiased variance, not unbiased SD.
+    Every term is a sequence of input column indices; an empty term is 1,
+    repeated indices give powers, and order is retained. The caller declares
+    terms, intercept and ddof. No study model, probes or term selection is
+    inferred. All input columns need positive finite SDs. Native code rejects
+    nonfinite derived products; this function only validates/marshals arrays.
+    """
+    from .polytomous import _bounded_integer
+
+    values = _as_float64_matrix(x, "x")
+    ddof = _bounded_integer(ddof, "ddof", 0, values.shape[0] - 1)
+    if not isinstance(terms, (list, tuple)) or not 0 < len(terms) <= MAX_PARAMETERS:
+        raise ValueError("terms must be a nonempty list/tuple within the parameter limit")
+    admitted = []
+    for term in terms:
+        if not isinstance(term, (list, tuple)):
+            raise ValueError("each term must be a list/tuple of input column indices")
+        admitted.append([_bounded_integer(j, "term index", 0, values.shape[1] - 1)
+                         for j in term])
+    raw = regression_core().centered_product_design(values, admitted, ddof)
+    return {"centers": np.asarray(raw["centers"], dtype=np.float64),
+            "sds": np.asarray(raw["sds"], dtype=np.float64),
+            "design": np.asarray(raw["design"], dtype=np.float64).reshape(values.shape[0], len(terms))}
+
+
 def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     """Fit OLS and return HC sandwich covariance.
+
+    Source and scope
+    ----------------
+    statsmodels Developers, ``OLSResults.HC3_se`` reference manual, Notes:
+    https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLSResults.HC3_se.html
+    The HC3 covariance is ``B @ X.T @ diag(e**2 / (1-h)**2) @ X @ B``,
+    where ``B = inv(X.T @ X)`` and ``h`` is the hat diagonal. This is the
+    squared delete-one residual weighting documented there as MacKinnon and
+    White (1985) HC3. It does not add the full jackknife covariance's separate
+    scale or rank-one correction (see Rust module ``regression``).
+    The wrapper delegates estimation to Rust; the caller supplies an
+    intercept when required. HC3 conditions on the supplied design and
+    response and does not propagate an earlier measurement fit's uncertainty.
+    A joint refit/score bootstrap is a separate caller pipeline.
 
     Parameters
     ----------
@@ -122,6 +169,118 @@ def fit_ols_hc(x: np.ndarray, y: np.ndarray, hc: str = "HC3") -> dict[str, Any]:
     }
 
 
+def prediction_difference(beta, vcov, row_a, row_b, *, df):
+    """Native difference of two declared linear mean predictions.
+
+    Source: statsmodels Developers (n.d.), RegressionResults.t_test manual,
+    Parameters r_matrix/cov_p/use_t, linear hypothesis Rb=q.
+    https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html
+    Native R=row_a-row_b uses one covariance contrast, retaining covariance
+    between predictions. Caller declares rows and corresponding fit covariance.
+    This is a mean contrast, not a future-observation prediction interval.
+    Zero contrast variance, invalid inputs and overflow reject through the
+    existing contrast contract. Normal endpoints are a separate explicit call.
+    """
+    coefficients = _as_float64_vector(beta, "beta")
+    covariance = _vcov_flat(vcov, coefficients.size)
+    a = _as_float64_vector(row_a, "row_a", expected_length=coefficients.size)
+    b = _as_float64_vector(row_b, "row_b", expected_length=coefficients.size)
+    raw = regression_core().prediction_difference(coefficients, covariance, a, b, _require_df(df))
+    return _contrast_result(raw)
+
+
+def absolute_differences(a, b):
+    """Native per-entry absolute difference and maximum for aligned real vectors.
+
+    Sources: NumPy Developers (n.d.), NumPy v2.5 manual, Returns sections:
+    https://numpy.org/doc/stable/reference/generated/numpy.subtract.html
+    https://numpy.org/doc/stable/reference/generated/numpy.absolute.html
+    https://numpy.org/doc/stable/reference/generated/numpy.max.html
+    Caller owns identifier/order matching and acceptance thresholds. No
+    broadcasting, empty vectors, nonfinite inputs or overflow are admitted.
+    This calculates descriptive differences, not scientific validity.
+    """
+    left = _as_float64_vector(a, "a")
+    right = _as_float64_vector(b, "b", expected_length=left.size)
+    raw = regression_core().absolute_differences(left, right)
+    return {"differences": np.asarray(raw["differences"], dtype=np.float64),
+            "max_abs_diff": float(raw["max_abs_diff"])}
+
+
+def compare_ols_column_subset(x, y, keep, *, intercept_column):
+    """Native full/restricted OLS summaries on one actual design and response.
+
+    Source: statsmodels Developers (n.d.), RegressionResults compare_f_test,
+    actual source lines2813–2865, R² definitions lines2125–2237.
+    https://www.statsmodels.org/stable/_modules/statsmodels/regression/linear_model.html
+    Keep selects a nonempty proper unique column subset retaining the declared
+    nonzero constant column. Both fits therefore share responses/row order and
+    nesting. Classical F/p assume homoscedastic, uncorrelated errors and are
+    not robust inference. Rank/zero-total/negative-SSE-improvement failures
+    reject; no silently clamped or certified inferential assumptions.
+    """
+    from .polytomous import _bounded_integer
+    values = _as_float64_matrix(x, "x")
+    response = _as_float64_vector(y, "y", expected_length=values.shape[0])
+    if not isinstance(keep, (list, tuple)) or not 0 < len(keep) < values.shape[1]:
+        raise ValueError("keep must be a nonempty proper column subset")
+    columns = [_bounded_integer(v, "keep column", 0, values.shape[1]-1) for v in keep]
+    intercept = _bounded_integer(intercept_column, "intercept_column", 0, values.shape[1]-1)
+    raw = regression_core().compare_ols_column_subset(values, response, columns, intercept)
+    return {key: float(value) for key, value in raw.items()}
+
+
+def residual_summary(y, residuals, *, rank, has_intercept):
+    """Native unweighted SSE, declared total SS, R² and adjusted R².
+
+    Source: statsmodels Developers (n.d.), RegressionResults source,
+    ssr/centered_tss/uncentered_tss/rsquared/rsquared_adj, lines2125–2237.
+    https://www.statsmodels.org/stable/_modules/statsmodels/regression/linear_model.html
+    Caller supplies matching fit residuals, design rank and intercept presence.
+    This validates array shape/finiteness, not fit provenance or inferential
+    assumptions. Zero total SS/overflow fail; negative R² is retained.
+    """
+    from .polytomous import _bounded_integer
+    values = _as_float64_vector(y, "y")
+    errors = _as_float64_vector(residuals, "residuals", expected_length=values.size)
+    rank = _bounded_integer(rank, "rank", 1, values.size - 1)
+    if type(has_intercept) is not bool:
+        raise ValueError("has_intercept must be a bool")
+    raw = regression_core().residual_summary(values, errors, rank, has_intercept)
+    return {key: float(raw[key]) for key in ("sse", "total_ss", "r_squared", "adjusted_r_squared")}
+
+
+def normal_wald_interval(estimate, se, *, alpha):
+    """Return normal-Wald lower/upper endpoints and the critical value (Rust).
+
+    Alpha is required and caller owned, with 0 < alpha < 1. SE must be positive.
+    This uses normal inference, not a finite-sample t interval, and does not
+    validate covariance or include measurement-model uncertainty. Lower-tail
+    evaluation avoids cancellation for small alpha; underflow/overflow fail.
+
+    References
+    ----------
+    statsmodels Developers. (n.d.). ContrastResults.conf_int [Source manual,
+    lines94-117]. https://www.statsmodels.org/stable/_modules/statsmodels/stats/contrast.html
+    QuantLib Developers. (n.d.). InverseCumulativeNormal [Source manual,
+    normaldistribution.hpp lines118-138, .cpp lines53-103].
+    https://github.com/lballabio/QuantLib/blob/master/ql/math/distributions/normaldistribution.hpp
+    Native nodes.inv_normal_cdf reuses its Acklam rational approximation;
+    this is not the optional Halley refinement to machine precision.
+    """
+    values = []
+    for name, value in (("estimate", estimate), ("se", se), ("alpha", alpha)):
+        raw = np.asarray(value)
+        if raw.ndim != 0 or raw.dtype.kind not in "iuf":
+            raise ValueError(f"{name} must be a real scalar")
+        val = float(raw)
+        if not np.isfinite(val):
+            raise ValueError(f"{name} must be finite")
+        values.append(val)
+    raw = regression_core().normal_wald_interval(*values)
+    return {key: float(raw[key]) for key in ("lower", "upper", "critical", "alpha")}
+
+
 def contrast(
     beta: np.ndarray,
     vcov: np.ndarray,
@@ -131,9 +290,19 @@ def contrast(
 ) -> dict[str, Any]:
     """Estimate ``vec @ beta`` under ``vcov`` with Wald χ²(1) and t/F tails.
 
-    When ``df`` is omitted, the t/F residual degrees of freedom default to
-    ``NaN``-guarded failure in Rust unless supplied; callers should pass
-    ``n - k`` from the matching fit.
+    ``df`` is required: Python rejects omission before calling Rust. Pass
+    ``n - k`` from the matching fit for the t/F reference distributions.
+
+    Source and scope: statsmodels Developers, ``RegressionResults.t_test``
+    manual, Parameters ``r_matrix``, ``cov_p`` and ``use_t``:
+    https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html
+    The documented linear hypothesis is ``R beta = q`` with caller-selected
+    covariance and t/normal reference. This API fixes ``q=0`` for one row.
+    ``RegressionResults.cov_params``, Notes, documents pre/post-multiplication:
+    https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.cov_params.html
+    Applied to supplied ``V``, variance is ``vec @ V @ vec`` and the standard
+    error is its square root. This does not validate the supplied covariance
+    estimator or make HC3 finite-sample t inference exact.
     """
     beta_arr = _as_float64_vector(np.asarray(beta, dtype=np.float64), "beta")
     vec_arr = _as_float64_vector(
@@ -251,6 +420,10 @@ def conditional_slope(
     For the H1–H5 design ``Y ~ X*W*Z + X*E`` (length-10 ``beta``/``vcov``),
     ``focal`` is ``\"X\"`` or ``\"Z\"``. SE is ``sqrt(c' V c)`` from the Rust
     contrast path (Aiken & West, 1991, ch. 2; Hayes, 2018, ch. 7–8).
+    The coefficient vector is obtained by differentiating this explicitly
+    declared polynomial; that algebra does not select a study hypothesis or
+    moderator probe. See :func:`contrast` for the opened linear-hypothesis
+    and covariance-transformation manuals and reference-distribution scope.
     """
     if type(focal) is not str:
         raise ValueError('focal must be a string ("X" or "Z")')
@@ -286,6 +459,10 @@ def slope_difference(
     ``probes_a`` / ``probes_b`` are ``(x, w, z, e)`` on the centered scale.
     The contrast equals the difference of the two simple-slope weight
     vectors (Hayes, 2018, ch. 7–8 conditional-effect pairwise comparison).
+    With ``c = c_a - c_b``, :func:`contrast` applies ``c @ V @ c`` once,
+    retaining covariance between the two slopes. Its source manuals and
+    inference scope apply here; adding the slopes' separate variances would
+    omit their covariance. Probes remain caller-defined estimands.
     """
     if type(focal) is not str:
         raise ValueError('focal must be a string ("X" or "Z")')

@@ -1,0 +1,5 @@
+{"backend": "gpu", "gpu_memory_budget_bytes": 1073741824, "batched_memory_budget_bytes": 40960, "score_loglik_delta": 0.0, "fit_mean_max_delta": 9.504499054457938e-08, "fit_sd_max_delta": 8.518764271769896e-08}
+.{"backend": "gpu", "n_primary": 1, "n_specific": 0, "q_primary": 15, "q_specific": 1, "scope": "score reduction and one Gaussian update"}
+.{"backend": "gpu", "n_specific": 0, "reference_group": 1, "primary_nodes": 121, "reference_iterations": 14, "focal_iterations": 33}
+.
+3 passed, 2 deselected in 1.42s

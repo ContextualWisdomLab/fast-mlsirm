@@ -1,0 +1,4 @@
+...............s..                                                       [100%]============ FAIL-CLOSED: non-executed or expected-failure outcomes ============
+skip: tests/test_two_tier_group_pipeline_native.py::test_group_pipeline_preserves_slots_priors_and_nonconvergence
+
+17 passed, 1 skipped in 1.75s

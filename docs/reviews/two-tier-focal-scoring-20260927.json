@@ -1,0 +1,27 @@
+{
+  "base": "83f4445512b2d8b26ed8514792135c719a00caae",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01) (Homebrew)",
+  "test": "2 passed, 0 failed; extracted actual core functions and dependency code, not full Cargo build",
+  "sources": [
+    {
+      "path": "crates/mlsirm-core/src/two_tier_grm.rs",
+      "sha256": "e07af9975ffcea1797f5af32093dd7f23cfaafc73d73a72b46e855964ae8d7f9",
+      "bytes": 88104
+    },
+    {
+      "path": "tests/unit/two_tier_grm_tests.rs",
+      "sha256": "072fa7437415af7c754eb88db291c79b2ea8854ef042b22e62ca85628ad197e1",
+      "bytes": 27163
+    },
+    {
+      "path": "/private/tmp/two-tier-focal-scores-20260927.rs",
+      "sha256": "8af63e2b0e4a3a1f796ee540e4d7a955e3ab0309a0e13f7d8f7292d7890c89ec",
+      "bytes": 66380
+    },
+    {
+      "path": "/Users/seonghobae/papers/Cai_2010_two_tier.pdf",
+      "sha256": "82aef96ee7a7bf66aa00db4ae8752188310582b89d66bcc44342111228ae6731",
+      "bytes": 662398
+    }
+  ]
+}

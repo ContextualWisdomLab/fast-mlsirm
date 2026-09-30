@@ -1,0 +1,8 @@
+{
+  "source_head": "f5c403c70a23285e52ef0967aa258d9e96ce1f50",
+  "core_path": "/private/tmp/fmls-native-normal-wald-20260928/python/fast_mlsirm/_core.cpython-312-darwin.so",
+  "core_sha256": "e7ea3f8f07bff72c806835f247d6b96e2fb581319a4754b6b5fce60503902ed8",
+  "native_tests": 29,
+  "native_exit": 0,
+  "scope": "finite aligned-vector numerical validation only, not accepted immutable release"
+}

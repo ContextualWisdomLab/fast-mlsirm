@@ -2,10 +2,14 @@
 //!
 //! Numerical work lives in `mlsirm-core::regression`. This binding validates
 //! NumPy layout, delegates to the core, and marshals results into Python dicts.
+//! Binding source: rust-numpy 0.29.0 `PyReadonlyArray::as_array` and
+//! `PyArray::from_slice`; PyO3 0.29.0 `PyDictMethods::set_item` (crate sources
+//! at <https://crates.io/crates/numpy/0.29.0> and
+//! <https://crates.io/crates/pyo3/0.29.0>).
 
 use mlsirm_core::regression::{
-    chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc, linear_contrast,
-    slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
+    absolute_differences, centered_product_design, compare_ols_column_subset, chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc,
+    linear_contrast, normal_wald_interval, prediction_difference, residual_summary, slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
 };
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -13,10 +17,12 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 use pyo3::wrap_pyfunction;
 
+/// Forward an HC label to the core's MacKinnon–White estimator selector.
 fn parse_hc(hc: &str) -> PyResult<HcType> {
     HcType::parse(hc).map_err(PyValueError::new_err)
 }
 
+/// Pack the core OLS/HC result with the PyO3/rust-numpy APIs cited above.
 fn fit_dict(py: Python<'_>, fit: &OlsFit, vcov: &[f64], hc: &str) -> PyResult<Py<PyDict>> {
     let out = PyDict::new(py);
     out.set_item("n", fit.n)?;
@@ -33,6 +39,7 @@ fn fit_dict(py: Python<'_>, fit: &OlsFit, vcov: &[f64], hc: &str) -> PyResult<Py
     Ok(out.into())
 }
 
+/// Pack a core linear restriction result with the PyO3 API cited above.
 fn contrast_dict(
     py: Python<'_>,
     result: mlsirm_core::regression::ContrastResult,
@@ -51,6 +58,33 @@ fn contrast_dict(
     Ok(out.into())
 }
 
+/// Marshal the native NumPy-manual centering/std/product contract without arithmetic.
+/// Sources read from installed packages: rust-numpy contributors (n.d.),
+/// rust-numpy 0.29.0 source, PyReadonlyArray::as_array (src/borrow/mod.rs) and
+/// PyArray::from_slice (src/array.rs); <https://crates.io/crates/numpy/0.29.0>.
+/// PyO3 contributors (n.d.), PyO3 0.29.0 source, PyDictMethods::set_item
+/// (src/types/dict.rs); <https://crates.io/crates/pyo3/0.29.0>.
+#[pyfunction(name = "centered_product_design")]
+fn py_centered_product_design(
+    py: Python<'_>,
+    x: PyReadonlyArray2<'_, f64>,
+    terms: Vec<Vec<usize>>,
+    ddof: usize,
+) -> PyResult<Py<PyDict>> {
+    let shape = x.shape();
+    let values: Vec<f64> = x.as_array().iter().copied().collect();
+    let result = centered_product_design(&values, shape[0], shape[1], &terms, ddof)
+        .map_err(PyValueError::new_err)?;
+    let out = PyDict::new(py);
+    out.set_item("centers", PyArray1::from_slice(py, &result.centers))?;
+    out.set_item("sds", PyArray1::from_slice(py, &result.sds))?;
+    out.set_item("design", PyArray1::from_slice(py, &result.design))?;
+    Ok(out.into())
+}
+
+/// Delegate OLS/HC0–HC3 to core; see MacKinnon & White (1985), equations
+/// 1–12, in `mlsirm_core::regression`'s module documentation. Array access
+/// follows the rust-numpy 0.29.0 source cited above.
 #[pyfunction(name = "fit_ols_hc", signature = (x, y, hc="HC3"))]
 fn py_fit_ols_hc(
     py: Python<'_>,
@@ -78,6 +112,68 @@ fn py_fit_ols_hc(
     fit_dict(py, &fit, &vcov, &hc.to_ascii_uppercase())
 }
 
+/// Marshal normal-Wald results from the Rust source contract; no arithmetic.
+/// Sources: statsmodels Developers (n.d.), ContrastResults.conf_int;
+/// QuantLib Developers (n.d.), InverseCumulativeNormal. See core doc references.
+#[pyfunction(name = "normal_wald_interval")]
+fn py_normal_wald_interval(py: Python<'_>, estimate: f64, se: f64, alpha: f64) -> PyResult<Py<PyDict>> {
+    let (lower, upper, critical) = normal_wald_interval(estimate, se, alpha).map_err(PyValueError::new_err)?;
+    let out = PyDict::new(py);
+    out.set_item("lower", lower)?;
+    out.set_item("upper", upper)?;
+    out.set_item("critical", critical)?;
+    out.set_item("alpha", alpha)?;
+    Ok(out.into())
+}
+
+/// Marshal the native residual summary; source/scope: core residual_summary's
+/// actual statsmodels RegressionResults source reference, lines2125–2237.
+#[pyfunction(name = "residual_summary")]
+fn py_residual_summary(py: Python<'_>, y: PyReadonlyArray1<'_, f64>, residuals: PyReadonlyArray1<'_, f64>, rank: usize, has_intercept: bool) -> PyResult<Py<PyDict>> {
+    let (sse, total, r2, adjusted) = residual_summary(y.as_slice()?, residuals.as_slice()?, rank, has_intercept).map_err(PyValueError::new_err)?;
+    let out = PyDict::new(py);
+    out.set_item("sse", sse)?;
+    out.set_item("total_ss", total)?;
+    out.set_item("r_squared", r2)?;
+    out.set_item("adjusted_r_squared", adjusted)?;
+    Ok(out.into())
+}
+
+/// Marshal prediction contrast; core cites actual statsmodels t_test manual.
+#[pyfunction(name = "prediction_difference")]
+fn py_prediction_difference(py: Python<'_>, beta: PyReadonlyArray1<'_, f64>, vcov: PyReadonlyArray1<'_, f64>, row_a: PyReadonlyArray1<'_, f64>, row_b: PyReadonlyArray1<'_, f64>, df: f64) -> PyResult<Py<PyDict>> {
+    let result = prediction_difference(beta.as_slice()?, vcov.as_slice()?, row_a.as_slice()?, row_b.as_slice()?, df).map_err(PyValueError::new_err)?;
+    contrast_dict(py, result)
+}
+
+/// Marshal aligned-vector differences; core absolute_differences cites the
+/// actual NumPy subtract/absolute/max manual definitions and narrower scope.
+#[pyfunction(name = "absolute_differences")]
+fn py_absolute_differences(py: Python<'_>, a: PyReadonlyArray1<'_, f64>, b: PyReadonlyArray1<'_, f64>) -> PyResult<Py<PyDict>> {
+    let (differences, maximum) = absolute_differences(a.as_slice()?, b.as_slice()?).map_err(PyValueError::new_err)?;
+    let out = PyDict::new(py);
+    out.set_item("differences", PyArray1::from_slice(py, &differences))?;
+    out.set_item("max_abs_diff", maximum)?;
+    Ok(out.into())
+}
+
+/// Marshal native actual-design subset comparison; source and limitations:
+/// core compare_ols_column_subset, statsmodels compare_f_test lines2813–2865.
+#[pyfunction(name = "compare_ols_column_subset")]
+fn py_compare_ols_column_subset(py: Python<'_>, x: PyReadonlyArray2<'_, f64>, y: PyReadonlyArray1<'_, f64>, keep: Vec<usize>, intercept_column: usize) -> PyResult<Py<PyDict>> {
+    let shape = x.shape();
+    let values: Vec<f64> = x.as_array().iter().copied().collect();
+    let result = compare_ols_column_subset(&values, y.as_slice()?, shape[0], shape[1], &keep, intercept_column).map_err(PyValueError::new_err)?;
+    let out = PyDict::new(py);
+    for (key, value) in ["full_r_squared", "adjusted_r_squared", "reduced_r_squared", "delta_r_squared", "classical_f", "classical_p", "df1", "df2"].iter().zip(result) {
+        out.set_item(*key, value)?;
+    }
+    Ok(out.into())
+}
+
+/// Delegate the one-row restriction to core. Source: statsmodels Developers,
+/// `RegressionResults.t_test`, `r_matrix`, `cov_p`, and `use_t`:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 #[pyfunction(name = "linear_contrast")]
 fn py_linear_contrast(
     py: Python<'_>,
@@ -93,17 +189,28 @@ fn py_linear_contrast(
     contrast_dict(py, result)
 }
 
+/// Export the core's caller-selected interaction design; its docstring cites
+/// Aiken & West (1991, ch. 2) and Hayes (2018, ch. 7).
 #[pyfunction(name = "xwz_e_design_row")]
 fn py_xwz_e_design_row(py: Python<'_>, x: f64, w: f64, z: f64, e: f64) -> Py<PyArray1<f64>> {
     let row = xwz_e_design_row(x, w, z, e);
     PyArray1::from_slice(py, &row).into()
 }
 
+/// Delegate a mean prediction. Source: statsmodels Developers,
+/// `RegressionResults.predict`, Notes on positional column matching:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.predict.html>.
 #[pyfunction(name = "design_row_dot")]
-fn py_design_row_dot(row: PyReadonlyArray1<'_, f64>, beta: PyReadonlyArray1<'_, f64>) -> PyResult<f64> {
+fn py_design_row_dot(
+    row: PyReadonlyArray1<'_, f64>,
+    beta: PyReadonlyArray1<'_, f64>,
+) -> PyResult<f64> {
     design_row_dot(row.as_slice()?, beta.as_slice()?).map_err(PyValueError::new_err)
 }
 
+/// Delegate a derivative-weight linear restriction. Source: statsmodels
+/// Developers, `RegressionResults.t_test`, `r_matrix` and `cov_p`:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 #[pyfunction(
     name = "conditional_slope",
     signature = (beta, vcov, focal, x, w, z, e, df)
@@ -119,20 +226,14 @@ fn py_conditional_slope(
     e: f64,
     df: f64,
 ) -> PyResult<Py<PyDict>> {
-    let result = conditional_slope(
-        beta.as_slice()?,
-        vcov.as_slice()?,
-        focal,
-        x,
-        w,
-        z,
-        e,
-        df,
-    )
-    .map_err(PyValueError::new_err)?;
+    let result = conditional_slope(beta.as_slice()?, vcov.as_slice()?, focal, x, w, z, e, df)
+        .map_err(PyValueError::new_err)?;
     contrast_dict(py, result)
 }
 
+/// Delegate one restriction formed from two derivative-weight rows. Source:
+/// statsmodels Developers, `RegressionResults.t_test`, `r_matrix`:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 #[pyfunction(name = "slope_difference")]
 fn py_slope_difference(
     py: Python<'_>,
@@ -155,16 +256,22 @@ fn py_slope_difference(
     contrast_dict(py, result)
 }
 
+/// Delegate the χ²(1) survival function; source is `mlsirm_core::fitstats`
+/// and its documented distribution contract.
 #[pyfunction(name = "chi2_sf_df1")]
 fn py_chi2_sf_df1(q: f64) -> f64 {
     chi2_sf_df1(q)
 }
 
+/// Delegate the F survival function; core cites Press et al. (2007, §6.4)
+/// for regularized incomplete-beta evaluation.
 #[pyfunction(name = "f_sf")]
 fn py_f_sf(f: f64, df1: f64, df2: f64) -> f64 {
     f_sf(f, df1, df2)
 }
 
+/// Delegate the Student-t survival function; core cites Press et al.
+/// (2007, §6.4) for regularized incomplete-beta evaluation.
 #[pyfunction(name = "t_sf")]
 fn py_t_sf(t: f64, df: f64) -> f64 {
     t_sf(t, df)
@@ -174,8 +281,14 @@ fn py_t_sf(t: f64, df: f64) -> f64 {
 #[pyo3(name = "_regression_core")]
 fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("XWZ_E_K", XWZ_E_K)?;
+    m.add_function(wrap_pyfunction!(py_centered_product_design, m)?)?;
     m.add_function(wrap_pyfunction!(py_fit_ols_hc, m)?)?;
     m.add_function(wrap_pyfunction!(py_linear_contrast, m)?)?;
+    m.add_function(wrap_pyfunction!(py_normal_wald_interval, m)?)?;
+    m.add_function(wrap_pyfunction!(py_residual_summary, m)?)?;
+    m.add_function(wrap_pyfunction!(py_compare_ols_column_subset, m)?)?;
+    m.add_function(wrap_pyfunction!(py_absolute_differences, m)?)?;
+    m.add_function(wrap_pyfunction!(py_prediction_difference, m)?)?;
     m.add_function(wrap_pyfunction!(py_xwz_e_design_row, m)?)?;
     m.add_function(wrap_pyfunction!(py_design_row_dot, m)?)?;
     m.add_function(wrap_pyfunction!(py_conditional_slope, m)?)?;

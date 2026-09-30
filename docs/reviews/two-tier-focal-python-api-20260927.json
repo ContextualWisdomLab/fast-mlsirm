@@ -1,0 +1,28 @@
+{
+  "parent": "0ba3eb6dd8464f9e9e46f46468bc2974f1a36a7b",
+  "routing": "18 passed, 0.02s; explicit mock receipts",
+  "native": "2 failed against old installed extension; absent exports; new build unverified",
+  "overlay_dependencies_head": "b4661fe788c83ea94d1600f99744fe0af51300c0",
+  "files": [
+    {
+      "path": "python/fast_mlsirm/two_tier_focal.py",
+      "sha256": "0166df2fcf86c112c0a9d56c745b64be4b1862cd341f81b63538a90cbc38c819",
+      "bytes": 9533
+    },
+    {
+      "path": "python/fast_mlsirm/_legacy_init.py",
+      "sha256": "7eb103a0019b1d283a53dfc30ba74864083c2309213d4550be488ab1a52162e4",
+      "bytes": 25823
+    },
+    {
+      "path": "tests/test_two_tier_focal_python.py",
+      "sha256": "4d90bc617bf8f610106a43d39d1654287efcfcef48c7209a8b216e5d0c92b778",
+      "bytes": 4610
+    },
+    {
+      "path": "tests/test_two_tier_focal_native_api.py",
+      "sha256": "2ad50a0644f17c76317ad5a18a092e048750109312552d55cfe4b95b3640f04f",
+      "bytes": 3665
+    }
+  ]
+}

@@ -148,6 +148,7 @@ fn rust_label_to_mirt_name(label: &str, specific: &[i32]) -> Option<String> {
 }
 
 #[test]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn rust_two_tier_oakes_se_matches_mirt_fixture() {
     let y = load_dataset();
     let n_persons = y.len() / N_ITEMS;

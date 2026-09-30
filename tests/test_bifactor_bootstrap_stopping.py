@@ -4,14 +4,14 @@
 """Stopping rule, per-replicate reporting, validation, and CPU/GPU parity
 for the joint person bootstrap.
 
-Implementation basis: Andrews, D. W. K., & Buchinsky, M. (2000). A
-three-step method for choosing the number of bootstrap repetitions.
-*Econometrica, 68*(1), 23–51. https://www.jstor.org/stable/2999474
+The endpoint-movement early stop is a heuristic, not an Andrews–Buchinsky
+``(pdb, τ)`` accuracy rule.
 """
 
 import numpy as np
 import pytest
 
+from bifactor_gpu_evidence import missing_hardware_bootstrap
 from fast_mlsirm.bifactor_bootstrap import (
     _endpoint_movement,
     run_bifactor_bootstrap,
@@ -45,6 +45,17 @@ def _fit_kw(**over):
     )
     kw.update(over)
     return kw
+
+
+def test_public_bootstrap_doc_distinguishes_heuristic_from_accuracy_criterion():
+    """Public API documentation identifies the heuristic and cited contrast."""
+    public_doc = " ".join((run_bifactor_bootstrap.__doc__ or "").split())
+    assert "Andrews and Buchinsky (2000, pp. 23–24)" in public_doc
+    assert "repository heuristic" in public_doc
+    assert (
+        "A three-step method for choosing the number of bootstrap repetitions"
+        in public_doc
+    )
 
 
 def test_endpoint_movement_exact_values():
@@ -204,7 +215,12 @@ def test_cpu_gpu_bootstrap_replicate_parity():
         n_starts=1,
     )
     res_cpu = run_bifactor_bootstrap(**kwargs, device="cpu")
-    res_gpu = run_bifactor_bootstrap(**kwargs, device="gpu")
+    try:
+        res_gpu = run_bifactor_bootstrap(**kwargs, device="gpu")
+    except RuntimeError as exc:
+        if missing_hardware_bootstrap(exc):
+            return
+        raise
     assert res_cpu.n_converged == res_gpu.n_converged
     assert res_cpu.n_replicates == res_gpu.n_replicates
     np.testing.assert_allclose(

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="40.942" timestamp="2026-09-28T01:45:55.395330+09:00" hostname="Seonghoui-MacBookPro-2.local"><testcase classname="tests.test_two_tier_focal_gpu_native" name="test_actual_gpu_reference_focal_expected_score_pipeline" time="40.462"><failure message="TypeError: expected_total_score_two_tier_from_fit() takes 2 positional arguments but 3 positional arguments (and 7 keyword-only arguments) were given">@pytest.mark.skipif(
+        os.environ.get("FOCAL_GPU_NATIVE") != "1",
+        reason="requires actual GPU; run with FOCAL_GPU_NATIVE=1",
+    )
+    def test_actual_gpu_reference_focal_expected_score_pipeline():
+        """Reuse the reference→fixed-bank focal→reference-curve contract.
+    
+        Cai (2010), Appendices A/B; source and limits are in the reused test.
+        """
+        from test_two_tier_focal_gaussian_recovery_native import (
+            test_native_reference_focal_expected_score_pipeline,
+        )
+&gt;       test_native_reference_focal_expected_score_pipeline(device="gpu")
+
+tests/test_two_tier_focal_gpu_native.py:139: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+device = 'gpu'
+
+    def test_native_reference_focal_expected_score_pipeline(device="cpu"):
+        """Fit reference items, fix that bank, score under the final focal prior.
+    
+        Cai (2010), pp.587–590 eqs.4–12 and pp.608–609 Appendices A/B supply
+        the fitted model and posterior moments. Expected scores use the common
+        reference density (STAT414 lesson26.1, cited/read in that API).
+        Sample sizes, seeds, seven-node fit/score grid and 121/241 nuisance grids
+        are synthetic bridge choices, not study precision or population recovery.
+        All estimation and numerical scores are existing library calls.
+        """
+        reference_y, ap, _, sm, _, ref_hash = _continuous_six_latent_fixture(
+            512, np.zeros(6), np.ones(6), 20260928,
+        )
+        focal_y, _, _, _, _, focal_hash = _continuous_six_latent_fixture(
+            512, np.array([0.30, -0.25, 0.20, -0.30, 0.35, -0.15]),
+            np.array([1.15, 0.85, 0.80, 1.20, 1.10, 0.90]), 20260929,
+        )
+        print(json.dumps({"phase": "inputs", "reference_sha256": ref_hash,
+                          "focal_sha256": focal_hash, "device": device}), flush=True)
+        reference = fit_two_tier_grm(
+            reference_y, ap != 0, sm, n_cat=4, n_primary=2, n_specific=4,
+            q_primary=7, q_specific=7, max_iter=2000, tol=1e-6,
+            n_starts=2, seed=20260928, primary_correlation="identity",
+        )
+        print(json.dumps({"phase": "reference", "converged": reference.converged,
+                          "reason": reference.termination_reason,
+                          "updates": reference.n_iter}), flush=True)
+        assert reference.converged, reference.termination_reason
+        assert reference.primary_identification == "orthogonal"
+        snapshots = [a.copy() for a in
+                     (reference.a_primary, reference.a_specific, reference.threshold)]
+        controls = dict(
+            responses=focal_y, primary_map=ap != 0, specific_map=sm,
+            a_primary=reference.a_primary, a_specific=reference.a_specific,
+            threshold=reference.threshold, n_cat=4, n_primary=2, n_specific=4,
+            q_primary=7, q_specific=7, device=device, cache_item_tables=True,
+            gpu_memory_budget_bytes=(1 &lt;&lt; 30) if device == "gpu" else None,
+        )
+        focal = fit_two_tier_grm_focal_orthogonal(
+            **controls, latent_mean=np.zeros(6), latent_sd=np.ones(6),
+            max_iter=2000, tol=1e-6,
+        )
+        print(json.dumps({"phase": "focal", "converged": focal.converged,
+                          "reason": focal.termination_reason, "updates": focal.n_iter,
+                          "backend": focal.scores.backend}), flush=True)
+        assert focal.converged, focal.termination_reason
+        assert focal.scores.backend == device
+        scored = score_two_tier_grm_orthogonal(
+            **controls, latent_mean=focal.latent_mean, latent_sd=focal.latent_sd,
+        )
+        np.testing.assert_allclose(scored.mean, focal.scores.mean, atol=1e-10, rtol=0)
+        for actual, snapshot in zip(
+            (reference.a_primary, reference.a_specific, reference.threshold), snapshots,
+        ):
+            np.testing.assert_array_equal(actual, snapshot)
+&gt;       curves = [expected_total_score_two_tier_from_fit(
+            reference, sm, scored.mean[:, 0], focal_primary=0, q_nuisance=q,
+            orthogonal_primary_identification=True,
+            primary_ref_mean=np.zeros(2), primary_ref_sd=np.ones(2),
+            specific_ref_mean=np.zeros(4), specific_ref_sd=np.ones(4),
+        ) for q in (121, 241)]
+E       TypeError: expected_total_score_two_tier_from_fit() takes 2 positional arguments but 3 positional arguments (and 7 keyword-only arguments) were given
+
+tests/test_two_tier_focal_gaussian_recovery_native.py:194: TypeError</failure></testcase></testsuite></testsuites>

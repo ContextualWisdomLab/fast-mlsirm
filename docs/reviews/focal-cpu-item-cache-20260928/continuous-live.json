@@ -1,0 +1,57 @@
+{
+  "source_head": "52eed4ddc6af68bf22393c83c4292a56186ca44c",
+  "host": "Seonghoui-MacBookPro-2.local",
+  "native_core_sha256": "0dcbd77b28383122d5d12fcd03193777c28ecb45faa9f460137be3d28685f8b0",
+  "test_source_sha256": "83853451a0de5833305e2a32d9b0397c99fe64897d5aa6b68706e83fdb36df0b",
+  "scope": "actual compiled CPU cache candidate continuous synthetic recovery, same declared settings, not study estimates",
+  "old_cpu_run": "s1 PID3826021 preserved; different implementation under test",
+  "observed_at_utc": "2026-09-27T15:38:28.813494+00:00",
+  "pid": 8944,
+  "process_observation": "8944 02:43  96.7 .venv/bin/python",
+  "status": "15-node fit records tolerance_met; 21-node grid and full test exit remain live/pending",
+  "settings": {
+    "n_persons": 4096,
+    "seed": 20260927,
+    "q_primary": [
+      15,
+      21
+    ],
+    "q_specific": [
+      15,
+      21
+    ],
+    "max_iter": 500,
+    "tol": 1e-06,
+    "cache_item_tables": true
+  },
+  "live_log": "/private/tmp/focal-cpu-cache-continuous-20260928/output.log",
+  "session_id": 27010,
+  "acceptance": "pending both grids convergence, all six means/SD recovery, cross-grid bounds and exit status",
+  "completed_grid_records": [
+    {
+      "python": "3.12.14 (main, Aug 14 2026, 15:24:41) [Clang 22.1.3 ]",
+      "seed": 20260927,
+      "input_sha256": "062e7a22c0fffda853787293eed3d44fd6cbdd00c9eab91208c6a3de33cf0831",
+      "nodes": 15,
+      "mean": [
+        0.3334117441212067,
+        -0.267166991884657,
+        0.191275800370964,
+        -0.3059351948442807,
+        0.32441056004153773,
+        -0.14329068237061382
+      ],
+      "sd": [
+        1.1904940255308458,
+        0.8578019349449285,
+        0.7617214793585008,
+        1.204561827262695,
+        1.0725542814943885,
+        0.8462313382654668
+      ],
+      "updates": 79,
+      "reason": "tolerance_met",
+      "final_loglik_change": 8.528731996193528e-07
+    }
+  ]
+}

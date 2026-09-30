@@ -1,0 +1,250 @@
+{
+  "head": "9b00cf2dcb0cfd8ada2d68be29d721e696e8ef9f",
+  "function_checks": [
+    {
+      "name": "gh_rule_121",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "gh_rule_81",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "gh_rule_61",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "tql2_first_row",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "gauss_hermite_probabilists",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "gh_rule_computed",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "resolve_gh_rule",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "gh_rule",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "resolve_gh_rule_unidim",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "gh_rule_unidim",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "require_gh_rule",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "require_gh_rule_unidim",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "log_sigmoid",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/poly.rs"
+      ]
+    },
+    {
+      "name": "grm_logprobs",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/poly.rs"
+      ]
+    },
+    {
+      "name": "fit_two_tier_grm_focal_orthogonal",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    },
+    {
+      "name": "validate",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    },
+    {
+      "name": "log_sum_exp",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    },
+    {
+      "name": "item_primary_base",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    },
+    {
+      "name": "item_cat_logprob",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    },
+    {
+      "name": "e_step",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    },
+    {
+      "name": "e_step_with_moments",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    },
+    {
+      "name": "validate_data",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    },
+    {
+      "name": "cholesky_lower",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    },
+    {
+      "name": "check_param_shapes",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    },
+    {
+      "name": "pack_params",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    },
+    {
+      "name": "gh_rule",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/quadrature.rs"
+      ]
+    },
+    {
+      "name": "build_primary_grid",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    },
+    {
+      "name": "score_two_tier_grm_orthogonal",
+      "exact_body": true,
+      "paths": [
+        "crates/mlsirm-core/src/two_tier_grm.rs"
+      ]
+    }
+  ],
+  "source_sha256": {
+    "crates/mlsirm-core/src/two_tier_grm.rs": "5fb7e4063962722dd9ddb78bf839e7a8738b8a146570c29146cc3be1fd6ecd23",
+    "crates/mlsirm-core/src/poly.rs": "e757ee4bdc54027c740e8073b826c7782f8802448c135068274402624039ad9e",
+    "crates/mlsirm-core/src/quadrature.rs": "10ecef5e615fdb090495bba20360698dc4fc1e27070c92e018fb2c895e5bcae9"
+  },
+  "harness_sha256": "3d5708d3b9365e2b0e3bd8f436b83218b3456da07c655c91566863c104e6bf76",
+  "test_sha256": "64ae877cd68171ed3b53f4f4444b23a452964076860cc22784a7735590e96335",
+  "command": "rustc --edition=2021 --test -O <actual-source-harness> -o <binary>; <binary> --nocapture focal_gaussian_recovers_declared_distribution",
+  "result": "\nrunning 1 test\nrecovery n=4000 q=15 reason=tolerance_met updates=74 mean=[0.40018373678255853, -0.3011335167436134] sd=[1.2002323136378323, 0.7985263422382521] delta=0.0000008569513738621026\ntest focal_gaussian_recovers_declared_distribution has been running for over 60 seconds\nrecovery n=4000 q=21 reason=tolerance_met updates=73 mean=[0.4001455464560165, -0.3011377388515689] sd=[1.2002296777253836, 0.7985296059849143] delta=0.0000009923169272951782\ntest focal_gaussian_recovers_declared_distribution ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 68.06s\n\n",
+  "negative_control": {
+    "mutation": "force final latent mean zero before scoring",
+    "exit_code": 101,
+    "result": "\nrunning 1 test\nrecovery n=4000 q=15 reason=loglik_decreased updates=10 mean=[0.41664255983392584, 0.0] sd=[1.1809365865573742, 0.8307519671627349] delta=-0.07249538691030466\n\nthread 'focal_gaussian_recovers_declared_distribution' (539774264) panicked at /private/tmp/two-tier-focal-recovery-mutant-20260927.rs:2328:9:\nloglik_decreased\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\ntest focal_gaussian_recovers_declared_distribution ... FAILED\n\nfailures:\n\nfailures:\n    focal_gaussian_recovers_declared_distribution\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 3.43s\n\n"
+  },
+  "six_latent_test": {
+    "sha256": "9e784690be0e54a694ae58172766577b1585ff3cdcae56d7434b6f6e09fd4c82",
+    "kernel_source_unchanged": true,
+    "result": "\nrunning 1 test\ntest six_latent_crossed_primary_scores_match_full_product ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.02s\n\n",
+    "source_pages": {
+      "pdf": [
+        9,
+        10,
+        28,
+        29
+      ],
+      "printed": [
+        589,
+        590,
+        608,
+        609
+      ]
+    },
+    "scope": "same-node finite-sum posterior identity, not six-dimensional recovery",
+    "negative_control": {
+      "mutation": "second-primary slope ignores declared SD",
+      "exit_code": 101,
+      "result": "\nrunning 1 test\n\nthread 'six_latent_crossed_primary_scores_match_full_product' (539844405) panicked at /private/tmp/two-tier-six-latent-mutant-20260927.rs:2349:13:\nassertion failed: (scores.mean[person * 6 + dim] - mean).abs() < 1e-10\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\ntest six_latent_crossed_primary_scores_match_full_product ... FAILED\n\nfailures:\n\nfailures:\n    six_latent_crossed_primary_scores_match_full_product\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s\n\n"
+    }
+  },
+  "installed_six_latent": {
+    "installed_source_head": "9b00cf2dcb0cfd8ada2d68be29d721e696e8ef9f",
+    "wheel_sha256": "fbc6f290b9b578f0cb260fd7584c19153238853705116c9d9d5cc7dd5e9533ab",
+    "core_sha256": "bd9502556248cafe6b3628314542677577c7e05be121a210c3e18937f7ed9075",
+    "test_sha256": "972aaa6d5fa987534adea3867af7e5486f61e19f61707ae3b731964b0fc254cb",
+    "fixture_sha256": "0255cd82696b222e5e04369e706e054e2193652af6499b21a2bda07f25b004f4",
+    "result": "1 passed in 1.42s",
+    "exit_code": 0,
+    "scope": "real installed candidate native bridge, not full-suite/release/study acceptance"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "scope": "Actual current workflow Python guard rejects original two-test JUnit missing new reference/focal contract. Not positive current-head hardware acceptance.",
+  "result": "rejected",
+  "reason": "All three hardware contracts must execute",
+  "source_report": "/private/tmp/late-life-pr284-clean-20260927/docs/reviews/focal-cpu-cache-recovery-20260928/ci-junit-5d91565.xml"
+}

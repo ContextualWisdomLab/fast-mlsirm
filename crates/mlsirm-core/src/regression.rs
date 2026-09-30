@@ -78,6 +78,97 @@
 
 use crate::fitstats::{chi2_sf, ln_gamma};
 
+/// Native centering, declared-ddof SDs and caller-selected product columns.
+pub struct CenteredProductDesign {
+    /// Arithmetic means in input column order.
+    pub centers: Vec<f64>,
+    /// SDs with denominator n-ddof, not claimed unbiased SD estimates.
+    pub sds: Vec<f64>,
+    /// Row-major products in caller term order; an empty term is an intercept.
+    pub design: Vec<f64>,
+}
+
+/// Build products of mean-centered columns; no model terms are chosen here.
+///
+/// NumPy Developers (n.d.-a/b), NumPy 2.5 manual Notes, define sum/N and
+/// sqrt(sum((x-mean)^2)/(N-ddof)); ddof=1 corrects variance bias, not SD bias:
+/// References: NumPy Developers. (n.d.-a). numpy.mean. In NumPy v2.5 manual.
+/// <https://numpy.org/doc/stable/reference/generated/numpy.mean.html>
+/// NumPy Developers. (n.d.-b). numpy.std. In NumPy v2.5 manual.
+/// <https://numpy.org/doc/stable/reference/generated/numpy.std.html>.
+/// Terms contain input column indices; repeated indices yield powers and an
+/// empty term yields 1. Terms, intercept, centering and ddof are caller choices.
+/// No standardization, term dropping, missing-value omission or rank repair.
+/// Finite inputs, positive finite SDs and finite derived products are required.
+/// Exact constant columns are rejected before accumulation; floating-point
+/// mean error must not turn zero variation into an accepted positive SD.
+pub fn centered_product_design(
+    x: &[f64],
+    n: usize,
+    k: usize,
+    terms: &[Vec<usize>],
+    ddof: usize,
+) -> Result<CenteredProductDesign, String> {
+    if k == 0 || n <= ddof || n.checked_mul(k) != Some(x.len()) {
+        return Err("input shape must be positive with n > ddof".into());
+    }
+    if terms.is_empty() || terms.iter().flatten().any(|&j| j >= k) {
+        return Err("terms must be nonempty with valid input column indices".into());
+    }
+    if x.iter().any(|v| !v.is_finite()) {
+        return Err("input columns must be finite".into());
+    }
+    for j in 0..k {
+        if x.chunks_exact(k).all(|row| row[j] == x[j]) {
+            return Err(format!("column {j} is constant and has zero SD"));
+        }
+    }
+    let mut centers = vec![0.0; k];
+    for row in x.chunks_exact(k) {
+        for (j, &v) in row.iter().enumerate() {
+            centers[j] += v / n as f64;
+        }
+    }
+    let mut sds = vec![0.0; k];
+    for row in x.chunks_exact(k) {
+        for (j, &v) in row.iter().enumerate() {
+            let delta = v - centers[j];
+            sds[j] += delta * delta / (n - ddof) as f64;
+        }
+    }
+    for (j, sd) in sds.iter_mut().enumerate() {
+        *sd = sd.sqrt();
+        if !centers[j].is_finite() || !sd.is_finite() || *sd <= 0.0 {
+            return Err(format!(
+                "column {j} has nonfinite center or nonpositive/nonfinite SD"
+            ));
+        }
+    }
+    let size = n
+        .checked_mul(terms.len())
+        .ok_or("design shape overflows usize")?;
+    let mut design = Vec::new();
+    design
+        .try_reserve_exact(size)
+        .map_err(|e| format!("design allocation failed: {e}"))?;
+    for row in x.chunks_exact(k) {
+        for term in terms {
+            let value = term
+                .iter()
+                .fold(1.0, |product, &j| product * (row[j] - centers[j]));
+            if !value.is_finite() {
+                return Err("centered product is nonfinite".into());
+            }
+            design.push(value);
+        }
+    }
+    Ok(CenteredProductDesign {
+        centers,
+        sds,
+        design,
+    })
+}
+
 /// Heteroskedasticity-consistent sandwich estimator family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HcType {
@@ -123,7 +214,130 @@ pub struct OlsFit {
     pub sigma2: f64,
 }
 
+/// Unweighted residual SSE, declared total SS, R² and adjusted R².
+/// Source actually read: statsmodels Developers (n.d.), RegressionResults,
+/// ssr/centered_tss/uncentered_tss/rsquared/rsquared_adj, lines2125–2237:
+/// <https://www.statsmodels.org/stable/_modules/statsmodels/regression/linear_model.html>.
+/// Caller declares design rank and intercept presence; this primitive does
+/// not establish that residuals came from that fit, nesting or valid inference.
+/// Zero total SS and nonfinite arithmetic are rejected; negative R² is retained.
+pub fn residual_summary(y: &[f64], residuals: &[f64], rank: usize, has_intercept: bool)
+    -> Result<(f64, f64, f64, f64), String>
+{
+    let n = y.len();
+    if n != residuals.len() || rank == 0 || n <= rank {
+        return Err("summary needs matching arrays and 0 < rank < n".to_owned());
+    }
+    if y.iter().chain(residuals).any(|v| !v.is_finite()) {
+        return Err("summary arrays must be finite".to_owned());
+    }
+    if has_intercept && y.iter().all(|v| *v == y[0]) {
+        return Err("summary has zero total SS for constant response".to_owned());
+    }
+    // Dividing before summing avoids overflow of an otherwise finite mean.
+    let center = if has_intercept { y.iter().map(|v| v / n as f64).sum::<f64>() } else { 0.0 };
+    let sse = residuals.iter().map(|v| v * v).sum::<f64>();
+    let total = y.iter().map(|v| (v - center).powi(2)).sum::<f64>();
+    let r2 = 1.0 - sse / total;
+    let adjusted = 1.0 - (n - usize::from(has_intercept)) as f64 / (n - rank) as f64 * (1.0 - r2);
+    if !center.is_finite() || !sse.is_finite() || !total.is_finite() || total <= 0.0
+        || !r2.is_finite() || !adjusted.is_finite() {
+        return Err("summary has zero total SS or nonfinite arithmetic".to_owned());
+    }
+    Ok((sse, total, r2, adjusted))
+}
+
+/// Difference of two declared linear predictions as one covariance contrast.
+/// Source actually read: statsmodels Developers (n.d.), RegressionResults.t_test,
+/// Parameters r_matrix/cov_p/use_t, linear hypothesis Rb=q:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
+/// R = row_a-row_b. Reusing linear_contrast retains the predictions' covariance;
+/// this compares mean predictions, not future-observation prediction intervals.
+pub fn prediction_difference(beta: &[f64], vcov: &[f64], row_a: &[f64], row_b: &[f64], df: f64)
+    -> Result<ContrastResult, String>
+{
+    if row_a.len() != beta.len() || row_b.len() != beta.len()
+        || row_a.iter().chain(row_b).any(|v| !v.is_finite()) {
+        return Err("prediction rows must be finite and match beta length".to_owned());
+    }
+    let weights: Vec<f64> = row_a.iter().zip(row_b).map(|(a,b)| a-b).collect();
+    linear_contrast(beta, vcov, &weights, df)
+}
+
+/// Absolute differences of aligned real vectors and their maximum.
+/// Sources actually read: NumPy Developers (n.d.), NumPy v2.5 manual,
+/// subtract (Returns), absolute (Returns), max (Returns):
+/// <https://numpy.org/doc/stable/reference/generated/numpy.subtract.html>,
+/// <https://numpy.org/doc/stable/reference/generated/numpy.absolute.html>,
+/// <https://numpy.org/doc/stable/reference/generated/numpy.max.html>.
+/// This narrower contract rejects empty/mismatched/nonfinite vectors and
+/// overflow, performs no broadcasting and does not certify row alignment.
+pub fn absolute_differences(a: &[f64], b: &[f64]) -> Result<(Vec<f64>, f64), String> {
+    if a.is_empty() || a.len() != b.len() {
+        return Err("absolute differences need nonempty matching vectors".to_owned());
+    }
+    let mut differences = Vec::with_capacity(a.len());
+    let mut maximum = 0.0_f64;
+    for (&left, &right) in a.iter().zip(b) {
+        let difference = (left - right).abs();
+        if !left.is_finite() || !right.is_finite() || !difference.is_finite() {
+            return Err("absolute differences need finite inputs and arithmetic".to_owned());
+        }
+        maximum = maximum.max(difference);
+        differences.push(difference);
+    }
+    Ok((differences, maximum))
+}
+
+/// Compare a proper column-subset OLS model on the exact same response/rows.
+/// Source actually read: statsmodels Developers (n.d.), RegressionResults
+/// compare_f_test, lines2813–2865, and R² definitions lines2125–2237:
+/// <https://www.statsmodels.org/stable/_modules/statsmodels/regression/linear_model.html>.
+/// Both models retain a declared nonzero explicit constant column. Classical
+/// F/p assume homoscedastic, uncorrelated errors; this does not establish those
+/// assumptions or provide robust inference. Existing OLS and tail code are reused.
+pub fn compare_ols_column_subset(x: &[f64], y: &[f64], n: usize, k: usize,
+    keep: &[usize], intercept_column: usize) -> Result<[f64; 8], String>
+{
+    validate_design(x, y, n, k)?;
+    if keep.is_empty() || keep.len() >= k || intercept_column >= k
+        || !keep.contains(&intercept_column) {
+        return Err("comparison needs a proper nonempty subset retaining the intercept".to_owned());
+    }
+    let mut seen = vec![false; k];
+    for &col in keep {
+        if col >= k || seen[col] {
+            return Err("subset columns must be unique valid indices".to_owned());
+        }
+        seen[col] = true;
+    }
+    let constant = x[intercept_column];
+    if constant == 0.0 || (0..n).any(|i| x[i*k+intercept_column] != constant) {
+        return Err("declared intercept must be a nonzero constant column".to_owned());
+    }
+    let restricted: Vec<f64> = x.chunks_exact(k).flat_map(|row| keep.iter().map(move |&col| row[col])).collect();
+    let full = fit_ols(x, y, n, k)?;
+    let reduced = fit_ols(&restricted, y, n, keep.len())?;
+    let (sse, total, full_r2, adjusted) = residual_summary(y, &full.residuals, k, true)?;
+    let (reduced_sse, _, reduced_r2, _) = residual_summary(y, &reduced.residuals, keep.len(), true)?;
+    let improvement = reduced_sse - sse;
+    if sse <= 0.0 || improvement < 0.0 {
+        return Err("comparison needs positive full SSE and nonnegative SSE improvement".to_owned());
+    }
+    let df1 = (k - keep.len()) as f64;
+    let df2 = (n - k) as f64;
+    let f = improvement / df1 / sse * df2;
+    let p = f_sf(f, df1, df2);
+    let delta = improvement / total;
+    if !f.is_finite() || !p.is_finite() || !(0.0..=1.0).contains(&p) || !delta.is_finite() {
+        return Err("nonfinite comparison arithmetic".to_owned());
+    }
+    Ok([full_r2, adjusted, reduced_r2, delta, f, p, df1, df2])
+}
+
 /// Linear contrast `c'β` under a supplied covariance matrix.
+/// Source: statsmodels Developers, `RegressionResults.t_test`, `r_matrix`
+/// and `cov_p`: <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 #[derive(Clone, Debug)]
 pub struct ContrastResult {
     /// Point estimate `c'β`.
@@ -147,6 +361,8 @@ pub struct ContrastResult {
 }
 
 /// Fit OLS by normal equations and compute the hat diagonal.
+/// Source: MacKinnon & White (1985), eqs. 1–2 and 7–12, with the
+/// working-paper locator and full citation in this module's References.
 ///
 /// `x` is row-major `n × k`, `y` length `n`. Fails closed on rank deficiency,
 /// non-finite inputs, or hat values outside `[0, 1)`.
@@ -226,6 +442,8 @@ pub fn fit_ols(x: &[f64], y: &[f64], n: usize, k: usize) -> Result<OlsFit, Strin
 }
 
 /// Sandwich covariance `V` for the requested HC type (row-major `k × k`).
+/// Source: MacKinnon & White (1985), eqs. 5–12; the HC0–HC3 definitions
+/// and omitted optional HC3 scaling are stated in this module's Estimators.
 pub fn sandwich_vcov(fit: &OlsFit, x: &[f64], hc: HcType) -> Result<Vec<f64>, String> {
     let n = fit.n;
     let k = fit.k;
@@ -305,6 +523,8 @@ pub fn sandwich_vcov(fit: &OlsFit, x: &[f64], hc: HcType) -> Result<Vec<f64>, St
 }
 
 /// Fit OLS and return the requested HC sandwich covariance in one call.
+/// Source: MacKinnon & White (1985), eqs. 1–12; see this module's
+/// Estimators for the implemented HC variants and their limits.
 pub fn fit_ols_hc(
     x: &[f64],
     y: &[f64],
@@ -318,6 +538,9 @@ pub fn fit_ols_hc(
 }
 
 /// Linear contrast under `vcov` with Wald χ²(1) and t/F tails at `df = n - k`.
+/// Source: statsmodels Developers, `RegressionResults.t_test`, `r_matrix`,
+/// `cov_p`, and `use_t`:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 pub fn linear_contrast(
     beta: &[f64],
     vcov: &[f64],
@@ -383,6 +606,37 @@ pub fn linear_contrast(
     })
 }
 
+/// Normal-Wald endpoints for a supplied estimate and positive standard error.
+/// statsmodels Developers (n.d.), ContrastResults.conf_int, source lines94-117:
+/// https://www.statsmodels.org/stable/_modules/statsmodels/stats/contrast.html
+/// Reuse nodes::inv_normal_cdf and normal symmetry for q=-Phi^-1(alpha/2),
+/// avoiding cancellation in 1-alpha/2. Alpha is caller owned. This normal-only
+/// interval does not validate the covariance or include measurement uncertainty.
+/// QuantLib Developers (n.d.), InverseCumulativeNormal, rational approximation:
+/// https://github.com/lballabio/QuantLib/blob/master/ql/math/distributions/normaldistribution.hpp
+/// (lines118-138; coefficients/tails in normaldistribution.cpp lines53-103).
+/// This existing approximation is not Halley-refined machine precision.
+pub fn normal_wald_interval(estimate: f64, se: f64, alpha: f64) -> Result<(f64, f64, f64), String> {
+    if !estimate.is_finite() || !se.is_finite() || se <= 0.0 {
+        return Err("estimate must be finite and se finite positive".into());
+    }
+    if !alpha.is_finite() || alpha <= 0.0 || alpha >= 1.0 {
+        return Err("alpha must be finite and strictly between zero and one".into());
+    }
+    let tail = alpha / 2.0;
+    if tail == 0.0 {
+        return Err("alpha/2 underflows; lower-tail probability is unrepresentable".into());
+    }
+    let critical = -crate::nodes::inv_normal_cdf(tail);
+    let width = critical * se;
+    let lower = estimate - width;
+    let upper = estimate + width;
+    if !critical.is_finite() || critical <= 0.0 || !lower.is_finite() || !upper.is_finite() || lower >= upper {
+        return Err("normal Wald interval is not finite at supplied inputs".into());
+    }
+    Ok((lower, upper, critical))
+}
+
 /// Number of columns in the H1–H5 design `Y ~ X*W*Z + X*E`.
 pub const XWZ_E_K: usize = 10;
 
@@ -391,21 +645,13 @@ pub const XWZ_E_K: usize = 10;
 /// Column order: `(Intercept), X, W, Z, E, X:W, X:Z, W:Z, X:E, X:W:Z`
 /// (Aiken & West, 1991, ch. 2 product terms; Hayes, 2018, ch. 7).
 pub fn xwz_e_design_row(x: f64, w: f64, z: f64, e: f64) -> [f64; XWZ_E_K] {
-    [
-        1.0,
-        x,
-        w,
-        z,
-        e,
-        x * w,
-        x * z,
-        w * z,
-        x * e,
-        x * w * z,
-    ]
+    [1.0, x, w, z, e, x * w, x * z, w * z, x * e, x * w * z]
 }
 
 /// Dot product of a design row with `β` (predicted mean at probes).
+/// Source: statsmodels Developers, `RegressionResults.predict`, Notes:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.predict.html>.
+/// The caller supplies the fitted model's exact column order.
 pub fn design_row_dot(row: &[f64], beta: &[f64]) -> Result<f64, String> {
     if row.len() != beta.len() {
         return Err(format!(
@@ -469,6 +715,10 @@ pub fn conditional_slope_weights(
 }
 
 /// Simple slope estimate + Wald/t/F via [`linear_contrast`].
+/// Source: statsmodels Developers, `RegressionResults.t_test`, for the
+/// one-row linear restriction and supplied covariance; the weights are
+/// the derivatives displayed in this module's H1–H5 parameterization:
+/// <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 pub fn conditional_slope(
     beta: &[f64],
     vcov: &[f64],
@@ -490,6 +740,9 @@ pub fn conditional_slope(
 }
 
 /// Difference of two simple slopes (same focal, two probe tuples `(x,w,z,e)`).
+/// Source: statsmodels Developers, `RegressionResults.t_test`, linear
+/// restriction `Rβ=0`; here `R` is the difference of the two slope-weight
+/// rows. <https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.t_test.html>.
 pub fn slope_difference(
     beta: &[f64],
     vcov: &[f64],
