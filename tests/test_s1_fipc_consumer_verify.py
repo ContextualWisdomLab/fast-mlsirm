@@ -158,3 +158,85 @@ def test_gpu_request_fails_closed_on_cpu_fallback(monkeypatch) -> None:
     assert receipt["device_requested"] == "gpu"
     assert receipt["gpu_execution_used"] is False
     assert receipt["all_pass"] is False
+
+
+def test_consumer_revision_comes_from_script_checkout(monkeypatch, tmp_path) -> None:
+    module = _load_script()
+    expected = module.subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    module.subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    module.subprocess.run(
+        ["git", "-C", str(tmp_path), "-c", "user.name=Fixture",
+         "-c", "user.email=fixture@example.invalid", "commit", "-q",
+         "--allow-empty", "-m", "Unrelated checkout"], check=True,
+    )
+    monkeypatch.chdir(tmp_path)
+    assert module._git_sha() == expected
+
+
+def test_anchor_gate_detects_changed_specific_loading(monkeypatch) -> None:
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+
+    def fipc(*args):
+        fit = original(*args)
+        fit["a_specific"][0] += 0.1
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    assert receipt["anchor_rows_fixed"] is False
+    assert receipt["all_pass"] is False
+
+
+@pytest.mark.parametrize("field", ["consumer_sha", "build_source_sha"])
+@pytest.mark.parametrize("invalid", ["abc", "A" * 40, "g" * 40, 42])
+def test_invalid_revision_is_rejected_before_receipt_work(monkeypatch, field, invalid) -> None:
+    module = _load_script()
+    monkeypatch.setattr(module, "_sha256", lambda _: pytest.fail("invalid revision reached receipt work"))
+    revisions = {"consumer_sha": None, "build_source_sha": None, field: invalid}
+    with pytest.raises(ValueError, match="40 lowercase hexadecimal"):
+        module.build_receipt(**revisions)
+
+
+@pytest.mark.parametrize("field", ["theta_p_eap", "primary_mean", "primary_sd", "a_primary"])
+def test_nonfinite_fit_metrics_remain_failed_standard_json(monkeypatch, field) -> None:
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+
+    def fipc(*args):
+        fit = original(*args)
+        fit[field][4 if field == "a_primary" else 0] = np.nan
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    json.dumps(receipt, allow_nan=False)
+    _assert_schema(receipt)
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert receipt["all_pass"] is False
+
+
+def test_valid_revision_labels_and_null_handling_are_preserved(monkeypatch) -> None:
+    module = _load_script()
+    monkeypatch.setattr(module, "_core", _fake_core(module))
+    receipt = module.build_receipt("a" * 40, "0" * 40)
+    assert receipt["sha"] == "a" * 40
+    assert receipt["build_source_sha"] == "0" * 40
+    assert receipt["build_source_sha_present"] is True
+
+
+def test_cli_refuses_unsanitized_nonfinite_json(monkeypatch, capsys) -> None:
+    module = _load_script()
+    monkeypatch.setattr(module, "_arguments", lambda: SimpleNamespace(
+        consumer_sha=None, build_source_sha=None, device="cpu"))
+    monkeypatch.setattr(module, "build_receipt", lambda *args: {"row_order_max_abs": np.nan})
+    with pytest.raises(ValueError, match="JSON compliant"):
+        module.main()
+    assert capsys.readouterr().out == ""

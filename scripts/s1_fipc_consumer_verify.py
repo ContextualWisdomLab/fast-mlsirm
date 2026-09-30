@@ -58,6 +58,7 @@ def _git_sha() -> str | None:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).resolve().parents[1],
             check=True,
             capture_output=True,
             text=True,
@@ -211,7 +212,11 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
     results["row_order_rmse"] = float(np.sqrt(np.mean(np.square(row_error))))
     results["row_order"] = bool(np.allclose(row_error, 0.0, atol=ROW_ORDER_ATOL, rtol=ROW_ORDER_RTOL))
     results["row_order_diagnosis"] = "pass" if results["row_order"] else "refit_order_dependence"
-    results["anchor_rows_fixed"] = bool(np.array_equal(shaped["a_primary"][ANCHOR], fixed["a_primary"].reshape(N_ITEMS, N_PRIMARY)[ANCHOR]) and np.array_equal(shaped["threshold"][ANCHOR], fixed["threshold"].reshape(N_ITEMS, N_CAT - 1)[ANCHOR]))
+    results["anchor_rows_fixed"] = bool(
+        np.array_equal(shaped["a_primary"][ANCHOR], fixed["a_primary"].reshape(N_ITEMS, N_PRIMARY)[ANCHOR])
+        and np.array_equal(shaped["a_specific"][ANCHOR], fixed["a_specific"].reshape(N_ITEMS)[ANCHOR])
+        and np.array_equal(shaped["threshold"][ANCHOR], fixed["threshold"].reshape(N_ITEMS, N_CAT - 1)[ANCHOR])
+    )
     fail = call_fipc(focal_y, fixed, device, max_iter=1)
     results["convergence_failure"] = bool(not fail["converged"] and fail["termination_reason"] == "max_iter_reached")
     results["orthogonal_specific_prior_fixed"] = bool(np.array_equal(np.asarray(fit["specific_sd"]), np.ones(N_SPECIFIC)))
@@ -227,6 +232,12 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
 def build_receipt(
     consumer_sha: str | None, build_source_sha: str | None, device: str = "cpu"
 ) -> dict[str, object]:
+    for revision, label in ((consumer_sha, "Consumer revision"), (build_source_sha, "Build source revision")):
+        if revision is not None and (
+            not isinstance(revision, str) or len(revision) != 40
+            or any(char not in "0123456789abcdef" for char in revision)
+        ):
+            raise ValueError(f"{label} must contain 40 lowercase hexadecimal characters")
     extension = Path(_core.__file__).resolve()
     results: dict[str, object] = {
         "sha": consumer_sha,
@@ -270,6 +281,18 @@ def build_receipt(
             results["free_item_param_rmse"] = None
             results["row_order_diagnosis"] = "fit_error"
             results["fipc_fit_error"] = f"{type(exc).__name__}: {exc}"
+    invalid_metrics = False
+    for key in (
+        "row_order_max_abs", "row_order_rmse", "focal_primary_mean_error",
+        "focal_primary_sd_error", "free_item_param_rmse",
+    ):
+        if results[key] is not None and not np.isfinite(results[key]).all():
+            results[key] = None
+            invalid_metrics = True
+    if invalid_metrics:
+        results.update(dict.fromkeys(GATES, False))
+        results["row_order_diagnosis"] = "fit_error"
+        results["fipc_fit_error"] = "The fit did not produce valid numerical results."
     gpu_ok = device != "gpu" or results["gpu_execution_used"] is True
     results["all_pass"] = bool(results["anchor_identified"]) and gpu_ok and all(results[key] is True for key in GATES)
     return results
@@ -277,8 +300,11 @@ def build_receipt(
 
 def main() -> None:
     args = _arguments()
-    receipt = build_receipt(args.consumer_sha, args.build_source_sha, args.device)
-    print(json.dumps(receipt, sort_keys=True))
+    try:
+        receipt = build_receipt(args.consumer_sha, args.build_source_sha, args.device)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
+    print(json.dumps(receipt, sort_keys=True, allow_nan=False))
 
 
 if __name__ == "__main__":
