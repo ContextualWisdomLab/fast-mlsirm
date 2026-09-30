@@ -73,6 +73,7 @@ class RemoteJobFamily(str, Enum):
     EM_M_STEP = "em_m_step"
     FIPC = "fipc"
     TWO_TIER = "two_tier"
+    BIFACTOR_BOOTSTRAP_REPLICATE = "bifactor_bootstrap_replicate"
 
 
 # These families may run remotely as complete calls. Only partitioning their

@@ -48,14 +48,28 @@ References
 from __future__ import annotations
 
 import concurrent.futures
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 import math
 import os
 import time
+from typing import Protocol
+
 import numpy as np
 
 from .bifactor_grm import fit_bifactor_grm
 from .bifactor_multigroup import fit_bifactor_grm_multigroup
+from .remote_exec import (
+    RemoteJobDeliveryState,
+    RemoteJobEnvelope,
+    RemoteJobFamily,
+    RemoteJobOutcome,
+    RemoteRunManifest,
+    payload_identity_sha256,
+)
+
+# Replicate error strings travel in remote result JSON; keep them bounded.
+_MAX_REPLICATE_ERROR_CHARS = 512
 
 
 def _require_gh_nodes(value: object, name: str) -> int:
@@ -124,6 +138,12 @@ class BifactorBootstrapResult:
     converged_replicate_ids: tuple[int, ...] = ()
     replicate_errors: tuple[str, ...] = ()
     device: str = "cpu"
+    rejected_replicate_ids: tuple[int, ...] = ()
+
+    @property
+    def n_rejected(self) -> int:
+        """Replicates whose resample could not be fit; results, never redrawn."""
+        return len(self.rejected_replicate_ids)
 
 
 def _generate_bootstrap_indices(
@@ -187,7 +207,7 @@ def _fit_single_replicate(
     y_boot = responses[indices]
     g_boot = group_ids[indices] if group_ids is not None else None
 
-    def _nan_result(converged: bool, err: str):
+    def _nan_result(converged: bool, err: str, rejected: bool):
         m1 = n_cat - 1
         return (
             rep_idx,
@@ -199,7 +219,8 @@ def _fit_single_replicate(
             np.full(n_groups, np.nan),
             np.full((n_groups, n_specific), np.nan),
             float("nan"),
-            err,
+            err[:_MAX_REPLICATE_ERROR_CHARS],
+            rejected,
         )
 
     try:
@@ -229,6 +250,7 @@ def _fit_single_replicate(
             return (
                 rep_idx, bool(fit.converged), a_g, a_s, thr, means, sds, spec, ll,
                 "" if fit.converged else f"fit not converged: {getattr(fit, 'termination_reason', 'unreported')}",
+                False,
             )
         fit = fit_bifactor_grm_multigroup(
             responses=y_boot,
@@ -258,9 +280,185 @@ def _fit_single_replicate(
         return (
             rep_idx, bool(fit.converged), a_g, a_s, thr, means, sds, spec, ll,
                 "" if fit.converged else f"fit not converged: {getattr(fit, 'termination_reason', 'unreported')}",
+            False,
         )
     except Exception as exc:  # noqa: BLE001 — replicate failure is data, reported via flags
-        return _nan_result(False, f"{type(exc).__name__}: {exc}")
+        # A fit that raises (e.g. a resample missing a category) is a rejected
+        # replicate: a result that is counted, never redrawn (#2001).
+        return _nan_result(False, f"{type(exc).__name__}: {exc}", True)
+
+
+def _json_floats(values: object) -> list:
+    """Encode a float array as nested lists with NaN as ``None`` (JSON-safe)."""
+    array = np.asarray(values, dtype=np.float64)
+    encoded = array.astype(object)
+    encoded[np.isnan(array)] = None
+    return encoded.tolist()
+
+
+def bootstrap_replicate_payload(
+    responses: np.ndarray,
+    specific_map: np.ndarray,
+    n_cat: int,
+    n_specific: int,
+    group_ids: np.ndarray | None,
+    n_groups: int,
+    anchor_mask: np.ndarray | None,
+    q_general: int,
+    q_specific: int,
+    max_iter: int,
+    tol: float,
+    n_starts: int,
+    estimate_specific_vars: bool,
+    device: str,
+) -> dict[str, object]:
+    """Serialize the replicate-invariant inputs of one bootstrap run.
+
+    Every replicate of a run shares this payload; only the replicate index and
+    its derived seed differ, and those travel in the job envelope.
+    """
+    return {
+        "responses": _json_floats(responses),
+        "specific_map": np.asarray(specific_map, dtype=np.int64).tolist(),
+        "n_cat": int(n_cat),
+        "n_specific": int(n_specific),
+        "group_ids": None if group_ids is None else np.asarray(group_ids, dtype=np.int64).tolist(),
+        "n_groups": int(n_groups),
+        "anchor_mask": None if anchor_mask is None else np.asarray(anchor_mask, dtype=bool).tolist(),
+        "q_general": int(q_general),
+        "q_specific": int(q_specific),
+        "max_iter": int(max_iter),
+        "tol": float(tol),
+        "n_starts": int(n_starts),
+        "estimate_specific_vars": bool(estimate_specific_vars),
+        "device": str(device),
+    }
+
+
+def run_bootstrap_replicate_payload(
+    payload: Mapping[str, object], rep_idx: int, rep_seed: int
+) -> dict[str, object]:
+    """Fit one replicate from a serialized run payload and encode the result.
+
+    This is the worker-side entry point; it calls the same resample-and-fit
+    body as the in-process path, so both produce identical replicates.
+    """
+    group_ids = payload["group_ids"]
+    anchor_mask = payload["anchor_mask"]
+    result = _fit_single_replicate(
+        int(rep_idx),
+        np.asarray(payload["responses"], dtype=np.float64),
+        np.asarray(payload["specific_map"], dtype=np.int64),
+        int(payload["n_cat"]),
+        int(payload["n_specific"]),
+        None if group_ids is None else np.asarray(group_ids, dtype=np.int64),
+        int(payload["n_groups"]),
+        None if anchor_mask is None else np.asarray(anchor_mask, dtype=bool),
+        int(payload["q_general"]),
+        int(payload["q_specific"]),
+        int(payload["max_iter"]),
+        float(payload["tol"]),
+        int(payload["n_starts"]),
+        int(rep_seed),
+        bool(payload["estimate_specific_vars"]),
+        str(payload["device"]),
+    )
+    return {
+        "family": RemoteJobFamily.BIFACTOR_BOOTSTRAP_REPLICATE.value,
+        "library_function": "fast_mlsirm.bifactor_bootstrap.run_bootstrap_replicate_payload",
+        "replicate_id": result[0],
+        "converged": result[1],
+        "a_general": _json_floats(result[2]),
+        "a_specific": _json_floats(result[3]),
+        "threshold": _json_floats(result[4]),
+        "general_mean": _json_floats(result[5]),
+        "general_sd": _json_floats(result[6]),
+        "specific_sd": _json_floats(result[7]),
+        "loglik": _json_floats(result[8]),
+        "error": result[9],
+        "rejected": result[10],
+    }
+
+
+def _replicate_from_record(record: Mapping[str, object]) -> tuple:
+    """Decode a worker replicate record into the in-process result tuple."""
+    return (
+        int(record["replicate_id"]),
+        bool(record["converged"]),
+        np.asarray(record["a_general"], dtype=np.float64),
+        np.asarray(record["a_specific"], dtype=np.float64),
+        np.asarray(record["threshold"], dtype=np.float64),
+        np.asarray(record["general_mean"], dtype=np.float64),
+        np.asarray(record["general_sd"], dtype=np.float64),
+        np.asarray(record["specific_sd"], dtype=np.float64),
+        float(np.asarray(record["loglik"], dtype=np.float64)),
+        str(record["error"]),
+        bool(record["rejected"]),
+    )
+
+
+class RemoteBatchExecutor(Protocol):
+    """Anything that runs a batch of L4 envelopes, e.g. ``SubprocessExecutor``."""
+
+    def run_batch(
+        self,
+        envelopes: Sequence[RemoteJobEnvelope],
+        *,
+        worker_manifest: RemoteRunManifest,
+        payload: Mapping[str, object] | None = None,
+    ) -> tuple[RemoteJobOutcome, ...]: ...
+
+
+@dataclass(frozen=True)
+class RemoteBootstrapBackend:
+    """Run bootstrap replicates on an L4 executor instead of local threads.
+
+    ``manifest`` is the cohort template; its ``payload_sha256`` is replaced by
+    the identity of the run's serialized inputs. ``run_id`` names the run in
+    every envelope, so a durable ledger can replay completed replicates.
+    """
+
+    executor: RemoteBatchExecutor
+    manifest: RemoteRunManifest
+    run_id: str
+
+
+def _run_remote_batch(
+    batch: list[tuple],
+    backend: RemoteBootstrapBackend,
+    manifest: RemoteRunManifest,
+    payload: Mapping[str, object],
+    base_seed: int,
+    results: list,
+) -> None:
+    """Dispatch one batch of replicates and store their decoded results.
+
+    Rejected replicates arrive as completed outcomes. A transport failure is
+    not a statistical result, so the run stops instead of dropping the unit.
+    """
+    envelopes = []
+    for task in batch:
+        envelope = RemoteJobEnvelope(
+            run_id=backend.run_id,
+            family=RemoteJobFamily.BIFACTOR_BOOTSTRAP_REPLICATE,
+            unit_index=task[0],
+            base_seed=base_seed,
+            payload_ref=manifest.payload_sha256,
+            manifest=manifest,
+        )
+        if envelope.unit_seed() != task[13]:
+            raise RuntimeError("remote seed derivation diverged from the bootstrap replicate seed")
+        envelopes.append(envelope)
+    outcomes = backend.executor.run_batch(envelopes, worker_manifest=manifest, payload=payload)
+    failed = [o for o in outcomes if o.delivery_state is not RemoteJobDeliveryState.COMPLETED]
+    if failed:
+        raise RuntimeError(
+            f"remote bootstrap replicate(s) {[o.unit_index for o in failed]} failed in transport: "
+            f"{failed[0].error_message}"
+        )
+    for outcome in outcomes:
+        record = _replicate_from_record(outcome.result)
+        results[record[0]] = record
 
 
 def _stack_monitor_vector(rows: list[np.ndarray]) -> np.ndarray:
@@ -320,6 +518,7 @@ def run_bifactor_bootstrap(
     n_jobs: int = -1,
     device: str = "cpu",
     estimate_specific_vars: bool = False,
+    remote_backend: RemoteBootstrapBackend | None = None,
 ) -> BifactorBootstrapResult:
     """Run joint person bootstrap replications with parallel workers.
 
@@ -370,13 +569,26 @@ def run_bifactor_bootstrap(
             replicate/bootstrap/draw count with no Monte-Carlo-error
             justification on file.
         estimate_specific_vars: Multigroup focal specific-variance estimation.
+        remote_backend: Optional L4 executor for the replicates (#2001). When
+            set, each replicate becomes one ``bifactor_bootstrap_replicate``
+            job envelope and ``n_jobs`` is ignored (the executor owns
+            concurrency). Remote replicates use the same resample-and-fit body
+            and seed as local ones, so results match replicate by replicate.
+            A transport failure raises ``RuntimeError``; with a durable ledger
+            a rerun replays completed replicates instead of redrawing them.
 
     Returns:
         BifactorBootstrapResult with replicate matrices, empirical SEs,
         percentile intervals, per-replicate convergence flags, and timing.
         Replicates that fail to converge (or raise) are reported in
         ``converged`` and excluded from all summary statistics; failed
-        replicates are never substituted or imputed. When no replicate
+        replicates are never substituted or imputed. A replicate whose fit
+        raises (for example a resample that misses a response category) is
+        listed in ``rejected_replicate_ids`` with its reason in
+        ``replicate_errors``. It is a result, not a failure: it is never
+        redrawn, because redrawing until success biases the bootstrap sample,
+        and callers must report ``n_rejected`` next to the summaries rather
+        than average over it. When no replicate
         converges, a ``RuntimeError`` carrying the first replicate's error
         is raised instead of returning empty summaries. Its replicate_ids,
         converged_replicate_ids, replicate_errors and converged attributes
@@ -489,6 +701,16 @@ def run_bifactor_bootstrap(
         ))
 
     results: list = [None] * n_replicates
+    if remote_backend is not None:
+        remote_payload = bootstrap_replicate_payload(
+            y_arr, smap_arr, n_cat, n_specific, g_arr, n_groups, anchor_arr,
+            q_general, q_specific, max_iter, float(tol), n_starts,
+            estimate_specific_vars, device,
+        )
+        remote_manifest = replace(
+            remote_backend.manifest,
+            payload_sha256=payload_identity_sha256(remote_payload),
+        )
     batches = [tasks[i:i + batch_size] for i in range(0, len(tasks), batch_size)]
     completed_reps = 0
     stopped_early = False
@@ -499,7 +721,11 @@ def run_bifactor_bootstrap(
     for batch_pos, batch in enumerate(batches):
         if time.perf_counter() - start_time >= compute_budget_seconds:
             break
-        if n_jobs == 1 or len(batch) == 1:
+        if remote_backend is not None:
+            _run_remote_batch(
+                batch, remote_backend, remote_manifest, remote_payload, base_seed, results
+            )
+        elif n_jobs == 1 or len(batch) == 1:
             for t in batch:
                 res = _fit_single_replicate(*t)
                 results[res[0]] = res
@@ -549,6 +775,7 @@ def run_bifactor_bootstrap(
         error.replicate_ids = tuple(r[0] for r in done)
         error.converged_replicate_ids = ()
         error.replicate_errors = tuple(r[9] for r in done)
+        error.rejected_replicate_ids = tuple(r[0] for r in done if r[10])
         error.converged = flags
         raise error
 
@@ -675,4 +902,5 @@ def run_bifactor_bootstrap(
         converged_replicate_ids=tuple(r[0] for r in conv),
         replicate_errors=tuple(r[9] for r in done),
         device=device,
+        rejected_replicate_ids=tuple(r[0] for r in done if r[10]),
     )

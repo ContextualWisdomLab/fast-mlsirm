@@ -18,6 +18,7 @@ import numpy as np
 from importlib.metadata import PackageNotFoundError, version
 
 from ._fit_public import fit
+from .bifactor_bootstrap import run_bootstrap_replicate_payload
 from .bifactor_grm import bifactor_oakes_se
 from .config import FitConfig, MLS2PLMConfig
 from .polytomous import fit_poly_fipc
@@ -267,6 +268,8 @@ def execute_envelope(
         return execute_fipc(payload)
     if envelope.family is RemoteJobFamily.TWO_TIER:
         return execute_two_tier(payload, unit_seed)
+    if envelope.family is RemoteJobFamily.BIFACTOR_BOOTSTRAP_REPLICATE:
+        return run_bootstrap_replicate_payload(payload, envelope.unit_index, unit_seed)
     raise ValueError(f"unsupported remote family {envelope.family.value!r}")
 
 

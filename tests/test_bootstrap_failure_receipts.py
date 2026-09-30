@@ -21,7 +21,8 @@ def test_mixed_and_all_failed_receipts(monkeypatch):
     def worker(rep, *args):
         return (rep, rep not in failures, np.array([float(rep)]), np.array([0.]),
                 np.array([[0.]]), np.array([0.]), np.array([1.]),
-                np.ones((1, 1)), 0., failures.get(rep, ""))
+                np.ones((1, 1)), 0., failures.get(rep, ""),
+                failures.get(rep, "").startswith("ValueError"))
     monkeypatch.setattr(bb, "_fit_single_replicate", worker)
     kw = dict(responses=np.zeros((2, 1)), specific_map=np.array([0]),
               n_cat=2, n_specific=1, n_replicates=3, batch_size=3,
@@ -34,6 +35,8 @@ def test_mixed_and_all_failed_receipts(monkeypatch):
     assert result.replicate_errors == ("", failures[1], failures[2])
     assert result.converged.tolist() == [True, False, False]
     assert result.replicate_a_general.tolist() == [[0.]]
+    assert result.rejected_replicate_ids == (1,)
+    assert result.n_rejected == 1
     failures[0] = "RuntimeError: synthetic failure"
     with pytest.raises(RuntimeError, match="0/3") as raised:
         bb.run_bifactor_bootstrap(**kw)

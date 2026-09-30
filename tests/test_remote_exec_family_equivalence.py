@@ -181,6 +181,28 @@ def _scoring_person_payload() -> dict[str, object]:
     }
 
 
+def _bifactor_bootstrap_replicate_payload() -> dict[str, object]:
+    from fast_mlsirm.bifactor_bootstrap import bootstrap_replicate_payload
+
+    rng = np.random.default_rng(20260930)
+    return bootstrap_replicate_payload(
+        rng.integers(0, 3, size=(40, 6)).astype(np.float64),
+        np.array([0, 0, 0, 1, 1, 1]),
+        3,
+        2,
+        None,
+        1,
+        None,
+        7,
+        7,
+        10,
+        1e-3,
+        1,
+        False,
+        "cpu",
+    )
+
+
 # Lazy factories keep collection green when fast_mlsirm._core is unavailable
 # (FIPC payload construction calls fit_polytomous at import time otherwise).
 FAMILY_PAYLOADS: tuple[
@@ -206,6 +228,7 @@ FAMILY_PAYLOADS: tuple[
     (RemoteJobFamily.REGRESSION_CONTRASTS, _regression_contrasts_payload),
     (RemoteJobFamily.FIPC, _fipc_payload),
     (RemoteJobFamily.TWO_TIER, _two_tier_payload),
+    (RemoteJobFamily.BIFACTOR_BOOTSTRAP_REPLICATE, _bifactor_bootstrap_replicate_payload),
 )
 
 
