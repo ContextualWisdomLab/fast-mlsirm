@@ -192,7 +192,8 @@ def _write_manifest_descriptor(
             else:
                 raise ValueError("manifest output could not be written")
 
-            assert temporary_fd is not None
+            if temporary_fd is None:
+                raise ValueError("manifest output could not be written")
             try:
                 stream = os.fdopen(temporary_fd, "w", encoding="utf-8")
             except BaseException:
@@ -205,7 +206,8 @@ def _write_manifest_descriptor(
                 stream.flush()
                 os.fsync(stream.fileno())
 
-            assert temporary_path is not None
+            if temporary_path is None:
+                raise ValueError("manifest output could not be written")
             if existing_mode is not None:
                 os.chmod(temporary_path, existing_mode)
             os.replace(temporary_path, validated_path)
@@ -268,7 +270,8 @@ def _write_manifest_descriptor(
             else:
                 raise ValueError("manifest output could not be written")
 
-            assert temporary_fd is not None
+            if temporary_fd is None:
+                raise ValueError("manifest output could not be written")
             if existing_mode is not None:
                 os.fchmod(temporary_fd, existing_mode)
             try:
@@ -283,7 +286,8 @@ def _write_manifest_descriptor(
                 stream.flush()
                 os.fsync(stream.fileno())
 
-            assert temporary_name is not None
+            if temporary_name is None:
+                raise ValueError("manifest output could not be written")
             os.rename(
                 temporary_name,
                 components[-1],
