@@ -1,0 +1,26 @@
+{
+  "tested_implementation_sha": "3abb2596de1bdccf32ddf4be01e0659b2cfdc932",
+  "scope": "graceful SIGTERM daemon restart only, no installed-wheel/source/GPU/multi-host-numerics/host-loss/exactly-once claim",
+  "files": {
+    "docs/evidence/valkey-worker-restart-20260930/before.json": "eadd37c4921a8d25099739e3893e1f875b9e86ec9bdde26260995ede2004e55a",
+    "docs/evidence/valkey-worker-restart-20260930/after.json": "27cfa7601e2c4679532da8b45e330d9c0c6166d6177f029b9f091a2e43ac2af1",
+    "docs/evidence/valkey-worker-restart-20260930/identities.json": "b0fe4c18891340e422084d287e53f658fce0c634fb431346ce80bd0855ffb0aa",
+    "docs/evidence/valkey-worker-restart-20260930/infrastructure-setup-summary.json": "f004c0e9cfd530d48d4795f6a0db27881f409234d258c39456b5505fffb0856a",
+    "docs/evidence/valkey-worker-restart-20260930/infrastructure-cleanup.json": "ef9b6d5f71d3f00b40e93df095a6236ea95bcfa98beab647708ff0b9396176e6",
+    "docs/evidence/valkey-worker-restart-20260930/infrastructure-absence.json": "fcf3970140f4a776165dc83da2a7857b36f8afe818ab84aa7e6824aeb62c8cee",
+    "scripts/valkey_worker_restart_probe.py": "2f982517156d9bb9132a0c4b3451bd8b53d713b4ad176243c78ed424f6b640f6",
+    "scripts/repro_valkey_worker_restart.py": "534fa2021ad3271f5dd1d17c9239fe1e2440d7a0353cfea53d19803cf1e4728e"
+  },
+  "peer_source_receipts": {
+    "workspace": "fmls-2001-l4-durable-dedup",
+    "relative_directory": ".venv/valkey-probe",
+    "sha256": {
+      "state.json": "c44b066937d5dc5aa0335c910e74c198c65e7fa9b431eb396b0505807a39045c",
+      "cleanup.json": "ef9b6d5f71d3f00b40e93df095a6236ea95bcfa98beab647708ff0b9396176e6",
+      "absence.json": "fcf3970140f4a776165dc83da2a7857b36f8afe818ab84aa7e6824aeb62c8cee",
+      "image-inspection.json": "e88b9dc8c2060a62f67ee53299bfa8f8a6dd793dc7772f8bfb25e7e74acd0c31"
+    }
+  },
+  "original_launcher_sha256": "eb4f00a3db609020843308346aa453e94bb5a48b2f3a8ec8b54f02e60d5fa297",
+  "launcher_relocation": "only probe invocation changed from original temporary path to sibling script"
+}

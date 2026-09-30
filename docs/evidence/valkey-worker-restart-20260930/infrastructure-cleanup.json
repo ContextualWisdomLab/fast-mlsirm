@@ -1,0 +1,10 @@
+{
+  "ended": "2026-09-30T03:39:46.154288+00:00",
+  "container": "f5937949f460c12faa567be930501d01a721810b91cec0d2031df82191219350",
+  "network": "fmls-valkey-probe-095134b9a8ca4470-net",
+  "data": "/var/tmp/fmls-valkey-probe-095134b9a8ca4470",
+  "tunnel_pid": 79368,
+  "returncode": 0,
+  "stdout": "f5937949f460c12faa567be930501d01a721810b91cec0d2031df82191219350\nfmls-valkey-probe-095134b9a8ca4470-net\ncleanup-verified\n",
+  "stderr": ""
+}
