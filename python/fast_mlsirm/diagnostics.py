@@ -973,18 +973,19 @@ def _binary_scope_row(
     """Reduce binary fit arrays within one scope mask to a summary-row tuple."""
     where = observed & scope
     count = float(where.sum())
-    variance_sum = float((variance * where).sum())
-    raw = float((residual * where).sum())
-    chisq = float((pearson_sq * where).sum())
-    ll = float((loglik * where).sum())
+    # Optimized: replace np.sum(A * B) with np.vdot(A, B) to avoid intermediate array allocation
+    variance_sum = float(np.vdot(variance, where))
+    raw = float(np.vdot(residual, where))
+    chisq = float(np.vdot(pearson_sq, where))
+    ll = float(np.vdot(loglik, where))
     return (
         id_value,
         count,
-        float((y * where).sum()),
-        float((prob * where).sum()),
+        float(np.vdot(y, where)),
+        float(np.vdot(prob, where)),
         raw,
         raw / float(np.sqrt(max(variance_sum, 1e-12))),
-        float((residual * residual * where).sum()) / max(variance_sum, 1e-12),
+        float(np.vdot(residual * residual, where)) / max(variance_sum, 1e-12),
         chisq / max(count, 1.0),
         ll,
         -2.0 * ll,
@@ -1277,7 +1278,8 @@ def _accumulate_heldout(
     residual = yy - pp
     totals["loglik"] += float((yy * np.log(pp) + (1.0 - yy) * np.log1p(-pp)).sum())
     totals["abs_residual"] += float(np.abs(residual).sum())
-    totals["sq_residual"] += float((residual * residual).sum())
+    # Optimized: replace np.sum(A * A) with np.vdot(A, A) to avoid intermediate array allocation
+    totals["sq_residual"] += float(np.vdot(residual, residual))
     totals["n"] += float(mask.sum())
 
 

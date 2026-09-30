@@ -48,3 +48,6 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2025-05-19 - Dot product scalar reductions over masked arrays in diagnostics
+**Learning:** `_reduce_fit_scope`와 같은 진단 모듈에서 `(variance * where).sum()`처럼 스칼라 결과를 얻기 위해 같은 크기의 배열을 곱셈한 후 합을 구하는 연산은 메모리상에 거대한 중간 배열을 생성하여 병목현상을 일으킵니다.
+**Action:** 동일한 차원의 배열을 곱셈한 후 전체 합계를 구할 때는 `(A * B).sum()` 대신 `np.vdot(A, B)`를 사용하여 중간 배열의 할당을 건너뛰고 메모리 효율성과 연산 속도를 크게 향상시켜야 합니다. 이 때 `where`와 같은 boolean mask도 그대로 `np.vdot`에 적용될 수 있습니다.
