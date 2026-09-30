@@ -1,0 +1,596 @@
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	﻿2026-09-30T10:08:36.7368299Z Current runner version: '2.337.0'
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:36.7380448Z Runner name: 'cwlab-s1-gpu-01'
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:36.7382140Z Runner group name: 'cwl focal gpu'
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:36.7383967Z Machine name: '4a0a428a8432'
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:36.7389652Z ##[group]GITHUB_TOKEN Permissions
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:36.7393876Z Contents: read
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:36.7394993Z Metadata: read
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:36.7395997Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:36.7399961Z Secret source: Actions
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:36.7401670Z Cache mode: write
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:36.7403425Z Prepare workflow directory
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:37.1683090Z Prepare all required actions
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:37.1789120Z Getting action download info
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:37.9543703Z Download action repository 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:38.6989354Z Download action repository 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97' (SHA:5fda3b95a4ea91299a34e894583c3862153e4b97)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:39.3619104Z Download action repository 'dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30' (SHA:4be7066ada62dd38de10e7b70166bc74ed198c30)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:39.7090975Z Download action repository 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' (SHA:043fb46d1a93c77aae656e7c1c64a875d1fc6a0a)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.7165326Z Complete job name: Two-tier 기준 CPU/GPU 벤치마크
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8600961Z ##[group]Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8603409Z with:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8604431Z   persist-credentials: false
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8605702Z   repository: ContextualWisdomLab/fast-mlsirm
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8616106Z   token: ***
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8617111Z   ssh-strict: true
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8618089Z   ssh-user: git
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8619058Z   clean: true
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8620040Z   sparse-checkout-cone-mode: true
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8621318Z   fetch-depth: 1
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8622610Z   fetch-tags: false
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8623748Z   show-progress: true
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8624752Z   lfs: false
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8625750Z   submodules: false
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8626839Z   set-safe-directory: true
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8627971Z   allow-unsafe-pr-checkout: false
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8629707Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8630637Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:40.8631671Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.7856786Z Syncing repository: ContextualWisdomLab/fast-mlsirm
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.7860666Z ##[group]Getting Git version info
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.7862570Z Working directory is '/home/runner/_work/fast-mlsirm/fast-mlsirm'
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.7865211Z [command]/usr/bin/git version
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.8985614Z git version 2.55.0
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.9040087Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.9063887Z Temporarily overriding HOME='/home/runner/_work/_temp/1b01bcd9-c42f-4da3-9c31-0fd49be4c0f7' before making global git config changes
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.9073801Z Adding repository directory to the temporary git global config as a safe directory
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.9108146Z [command]/usr/bin/git config --global --add safe.directory /home/runner/_work/fast-mlsirm/fast-mlsirm
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.9554804Z [command]/usr/bin/git config --local --get remote.origin.url
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.9680786Z https://github.com/ContextualWisdomLab/fast-mlsirm
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.9713510Z ##[group]Removing previously created refs, to avoid conflicts
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.9730326Z [command]/usr/bin/git rev-parse --symbolic-full-name --verify --quiet HEAD
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:43.9945909Z HEAD
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:44.0708403Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:44.0723872Z [command]/usr/bin/git submodule status
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:44.4063378Z ##[group]Cleaning the repository
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:44.4076156Z [command]/usr/bin/git clean -ffdx
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.4795147Z Removing .pytest_cache/
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.4795892Z Removing .venv-focal-gpu/
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.4796501Z Removing crates/fast-mlsirm-py/target/
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.4797170Z Removing focal-gpu-junit.xml
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.4798702Z Removing no-prior-bits.log
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.4799325Z Removing python/fast_mlsirm/__pycache__/
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.4800377Z Removing python/fast_mlsirm/_core.cpython-312-x86_64-linux-gnu.so
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.4801345Z Removing python/fast_mlsirm/estimators/__pycache__/
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.4802215Z Removing reference-gpu-fit.log
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.4802838Z Removing target/
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.4803371Z Removing tests/__pycache__/
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.4817281Z [command]/usr/bin/git reset --hard HEAD
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.8760553Z HEAD is now at ea3d698 Merge c07f80bb83d9d4bdc3432634f3341c9f6d323e5d into 1c9a68cc1ae0230db29480faca2bfeb001051650
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.8770731Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.8776572Z ##[group]Disabling automatic garbage collection
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.8784753Z [command]/usr/bin/git config --local gc.auto 0
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.8832440Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.8833365Z ##[group]Setting up auth
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.8833992Z Removing SSH command configuration
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.8843700Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.8899219Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.9234304Z Removing HTTP extra header
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.9244086Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.9310150Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.9658227Z Removing includeIf entries pointing to credentials config files
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.9673002Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:47.9720087Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:48.0098384Z [command]/usr/bin/git config --file /home/runner/_work/_temp/git-credentials-d97d6579-6a39-4b79-9e0b-3657d2e10028.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:48.0196908Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/_work/fast-mlsirm/fast-mlsirm/.git.path /home/runner/_work/_temp/git-credentials-d97d6579-6a39-4b79-9e0b-3657d2e10028.config
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:48.0256092Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/_work/fast-mlsirm/fast-mlsirm/.git/worktrees/*.path /home/runner/_work/_temp/git-credentials-d97d6579-6a39-4b79-9e0b-3657d2e10028.config
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:48.0315135Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-d97d6579-6a39-4b79-9e0b-3657d2e10028.config
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:48.0378564Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-d97d6579-6a39-4b79-9e0b-3657d2e10028.config
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:48.0432643Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:48.0433548Z ##[group]Fetching the repository
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:48.0447508Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +c64cde1225464be724277878df2ea4791753778f:refs/remotes/origin/feat/two-tier-reference-gpu-20260930
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.7705291Z From https://github.com/ContextualWisdomLab/fast-mlsirm
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.7706658Z  * [new ref]         c64cde1225464be724277878df2ea4791753778f -> origin/feat/two-tier-reference-gpu-20260930
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.7721646Z [command]/usr/bin/git branch --list --remote origin/feat/two-tier-reference-gpu-20260930
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.7766728Z   origin/feat/two-tier-reference-gpu-20260930
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.7784734Z [command]/usr/bin/git rev-parse refs/remotes/origin/feat/two-tier-reference-gpu-20260930
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.7817544Z c64cde1225464be724277878df2ea4791753778f
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.7824130Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.7825083Z ##[group]Determining the checkout info
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.7826249Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.7833116Z [command]/usr/bin/git sparse-checkout disable
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.8149795Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.8197991Z ##[group]Checking out the ref
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.8204365Z [command]/usr/bin/git checkout --progress --force -B feat/two-tier-reference-gpu-20260930 refs/remotes/origin/feat/two-tier-reference-gpu-20260930
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.8933608Z Previous HEAD position was ea3d698 Merge c07f80bb83d9d4bdc3432634f3341c9f6d323e5d into 1c9a68cc1ae0230db29480faca2bfeb001051650
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.9094972Z Switched to a new branch 'feat/two-tier-reference-gpu-20260930'
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.9110257Z branch 'feat/two-tier-reference-gpu-20260930' set up to track 'origin/feat/two-tier-reference-gpu-20260930'.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.9119499Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.9293636Z [command]/usr/bin/git log -1 --format=%H
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.9331980Z c64cde1225464be724277878df2ea4791753778f
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.9347554Z ##[group]Removing auth
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.9348149Z Removing SSH command configuration
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.9352330Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.9401366Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.9798004Z Removing HTTP extra header
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.9805405Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:49.9859747Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0254027Z Removing includeIf entries pointing to credentials config files
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0262961Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0292766Z includeif.gitdir:/home/runner/_work/fast-mlsirm/fast-mlsirm/.git.path
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0294054Z includeif.gitdir:/home/runner/_work/fast-mlsirm/fast-mlsirm/.git/worktrees/*.path
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0295093Z includeif.gitdir:/github/workspace/.git.path
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0295932Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0310151Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/_work/fast-mlsirm/fast-mlsirm/.git.path
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0352615Z /home/runner/_work/_temp/git-credentials-d97d6579-6a39-4b79-9e0b-3657d2e10028.config
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0365519Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/_work/fast-mlsirm/fast-mlsirm/.git.path \/home\/runner\/_work\/_temp\/git\-credentials\-d97d6579\-6a39\-4b79\-9e0b\-3657d2e10028\.config
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0432403Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/_work/fast-mlsirm/fast-mlsirm/.git/worktrees/*.path
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0469107Z /home/runner/_work/_temp/git-credentials-d97d6579-6a39-4b79-9e0b-3657d2e10028.config
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0484712Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/_work/fast-mlsirm/fast-mlsirm/.git/worktrees/*.path \/home\/runner\/_work\/_temp\/git\-credentials\-d97d6579\-6a39\-4b79\-9e0b\-3657d2e10028\.config
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0528374Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0556433Z /github/runner_temp/git-credentials-d97d6579-6a39-4b79-9e0b-3657d2e10028.config
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0568847Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-d97d6579\-6a39\-4b79\-9e0b\-3657d2e10028\.config
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0617528Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0654803Z /github/runner_temp/git-credentials-d97d6579-6a39-4b79-9e0b-3657d2e10028.config
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0668091Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-d97d6579\-6a39\-4b79\-9e0b\-3657d2e10028\.config
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.0720280Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.1052023Z Removing credentials config '/home/runner/_work/_temp/git-credentials-d97d6579-6a39-4b79-9e0b-3657d2e10028.config'
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.1060057Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.2020893Z ##[group]Run actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.2021893Z with:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.2022266Z   python-version: 3.12
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.2022736Z   check-latest: false
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.2028432Z   token: ***
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.2028844Z   update-environment: true
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.2029333Z   allow-prereleases: false
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.2029791Z   freethreaded: false
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.2030198Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.2030527Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.2030904Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4312136Z ##[group]Installed versions
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4390461Z Successfully set up CPython (3.12.14)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4391391Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4899009Z ##[group]Run dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4899884Z with:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4900230Z   toolchain: 1.97.1
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4900607Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4900938Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4901496Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4902644Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4903604Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4904474Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4905325Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4906691Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.4907916Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5103283Z ##[start-action display=Run : parse toolchain version;id=__dtolnay_rust-toolchain.parse]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5178248Z ##[group]Run : parse toolchain version
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5178979Z ^[[36;1m: parse toolchain version^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5179540Z ^[[36;1mif [[ -z $toolchain ]]; then^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5180652Z ^[[36;1m  # GitHub does not enforce `required: true` inputs itself. https://github.com/actions/runner/issues/1070^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5181959Z ^[[36;1m  echo "'toolchain' is a required input" >&2^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5182601Z ^[[36;1m  exit 1^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5183280Z ^[[36;1melif [[ $toolchain =~ ^stable' '[0-9]+' '(year|month|week|day)s?' 'ago$ ]]; then^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5184157Z ^[[36;1m  if [[ Linux == macOS ]]; then^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5185314Z ^[[36;1m    echo "toolchain=1.$((($(date -v-$(sed 's/stable \([0-9]*\) \(.\).*/\1\2/' <<< $toolchain) +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5186500Z ^[[36;1m  else^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5187373Z ^[[36;1m    echo "toolchain=1.$((($(date --date "${toolchain#stable }" +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5188416Z ^[[36;1m  fi^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5189023Z ^[[36;1melif [[ $toolchain =~ ^stable' 'minus' '[0-9]+' 'releases?$ ]]; then^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5190198Z ^[[36;1m  echo "toolchain=1.$((($(date +%s)/60/60/24-16569)/7/6-${toolchain//[^0-9]/}))" >> $GITHUB_OUTPUT^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5191229Z ^[[36;1melif [[ $toolchain =~ ^1\.[0-9]+$ ]]; then^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5192496Z ^[[36;1m  echo "toolchain=1.$((i=${toolchain#1.}, c=($(date +%s)/60/60/24-16569)/7/6, i+9*i*(10*i<=c)+90*i*(100*i<=c)))" >> $GITHUB_OUTPUT^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5194146Z ^[[36;1melse^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5194845Z ^[[36;1m  echo "toolchain=$toolchain" >> $GITHUB_OUTPUT^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5195568Z ^[[36;1mfi^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5221791Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5222489Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5222848Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5223431Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5224373Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5225322Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5226176Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5227032Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5228424Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5229681Z   toolchain: 1.97.1
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.5230070Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6008914Z ##[end-action id=__dtolnay_rust-toolchain.parse;outcome=success;conclusion=success;duration_ms=90]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6023978Z ##[start-action display=Run : construct rustup command line;id=__dtolnay_rust-toolchain.flags]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6063194Z ##[group]Run : construct rustup command line
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6064371Z ^[[36;1m: construct rustup command line^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6065372Z ^[[36;1mecho "targets=$(for t in ${targets//,/ }; do echo -n ' --target' $t; done)" >> $GITHUB_OUTPUT^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6066808Z ^[[36;1mecho "components=$(for c in ${components//,/ }; do echo -n ' --component' $c; done)" >> $GITHUB_OUTPUT^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6067902Z ^[[36;1mecho "downgrade=" >> $GITHUB_OUTPUT^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6117284Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6118011Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6118357Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6118922Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6119870Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6120825Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6122122Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6123036Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6124410Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6125668Z   targets: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6126016Z   components: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6126378Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6210044Z ##[end-action id=__dtolnay_rust-toolchain.flags;outcome=success;conclusion=success;duration_ms=18]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6218836Z ##[start-action display=Run : set $CARGO_HOME;id=__dtolnay_rust-toolchain.__run]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6260712Z ##[group]Run : set $CARGO_HOME
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6261386Z ^[[36;1m: set $CARGO_HOME^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6262420Z ^[[36;1mecho CARGO_HOME=${CARGO_HOME:-"$HOME/.cargo"} >> $GITHUB_ENV^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6279746Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6280444Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6280817Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6281408Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6282489Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6283482Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6284355Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6285243Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6286663Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6288334Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6374309Z ##[end-action id=__dtolnay_rust-toolchain.__run;outcome=success;conclusion=success;duration_ms=15]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6379086Z ##[start-action display=Run : install rustup if needed;id=__dtolnay_rust-toolchain.__run_2]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6424547Z ##[group]Run : install rustup if needed
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6425146Z ^[[36;1m: install rustup if needed^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6425757Z ^[[36;1mif ! command -v rustup &>/dev/null; then^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6427410Z ^[[36;1m  curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused --location --silent --show-error --fail https://sh.rustup.rs | sh -s -- --default-toolchain none -y^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6429074Z ^[[36;1m  echo "$CARGO_HOME/bin" >> $GITHUB_PATH^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6429647Z ^[[36;1mfi^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6445258Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6445923Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6446282Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6446828Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6447747Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6448687Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6449524Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6450367Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6452284Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6453613Z   CARGO_HOME: /home/runner/.cargo
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.6454098Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:50.8982931Z info: downloading installer
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.5599025Z warn: it looks like you have an existing rustup settings file at:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.5603522Z warn: /home/runner/.rustup/settings.toml
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.5604768Z warn: rustup will install the default toolchain as specified in the settings file,
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.5605868Z warn: instead of the one inferred from the default host tuple.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6593558Z info: profile set to default
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6593991Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6594282Z info: default host tuple is x86_64-unknown-linux-gnu
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6594964Z info: skipping toolchain installation
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6595367Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6595586Z Rust is installed now. Great!
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6595958Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6596269Z To get started you may need to restart your current shell.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6597094Z This would reload your PATH environment variable to include
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6597818Z Cargo's bin directory ($HOME/.cargo/bin).
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6598205Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6598493Z To configure your current shell, you need to source the
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6599188Z corresponding env file under $HOME/.cargo.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6599606Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6600017Z Consider running the right command for your shell (note the leading DOT):
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6600963Z . "$HOME/.cargo/env" # For sh/ash/dash/pdksh/bash
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6601918Z cargo:rerun-if-env-changed=CC_x86_64-unknown-linux-gnu
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6602632Z CC_x86_64-unknown-linux-gnu = None
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6603267Z cargo:rerun-if-env-changed=CC_x86_64_unknown_linux_gnu
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6603921Z CC_x86_64_unknown_linux_gnu = None
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6604446Z cargo:rerun-if-env-changed=HOST_CC
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6604957Z HOST_CC = None
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6605363Z cargo:rerun-if-env-changed=CC
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6605821Z CC = None
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:52.6734710Z cargo:rerun-if-env-changed=CC_ENABLE_DEBUG_OUTPUT
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1159278Z cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1160459Z CRATE_CC_NO_DEFAULTS = None
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1161345Z cargo:rerun-if-env-changed=CFLAGS
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1162132Z CFLAGS = None
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1162564Z cargo:rerun-if-env-changed=HOST_CFLAGS
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1163780Z HOST_CFLAGS = None
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1164403Z cargo:rerun-if-env-changed=CFLAGS_x86_64_unknown_linux_gnu
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1165122Z CFLAGS_x86_64_unknown_linux_gnu = None
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1165797Z cargo:rerun-if-env-changed=CFLAGS_x86_64-unknown-linux-gnu
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1166505Z CFLAGS_x86_64-unknown-linux-gnu = None
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1368708Z ##[end-action id=__dtolnay_rust-toolchain.__run_2;outcome=success;conclusion=success;duration_ms=2498]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1379313Z ##[start-action display=Run : install rustup if needed on windows;id=__dtolnay_rust-toolchain.__run_3]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1395890Z ##[end-action id=__dtolnay_rust-toolchain.__run_3;outcome=skipped;conclusion=skipped;duration_ms=0]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1402692Z ##[start-action display=rustup toolchain install 1.97.1;id=__dtolnay_rust-toolchain.__run_4]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1448915Z ##[group]Run rustup toolchain install 1.97.1 --profile minimal --no-self-update
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1450130Z ^[[36;1mrustup toolchain install 1.97.1 --profile minimal --no-self-update^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1468911Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1469603Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1469970Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1470555Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1471513Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1473126Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1474050Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1474914Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1476315Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1477617Z   CARGO_HOME: /home/runner/.cargo
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1478148Z   RUSTUP_PERMIT_COPY_RENAME: 1
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:53.1478647Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.4742157Z info: syncing channel updates for 1.97.1-x86_64-unknown-linux-gnu
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.6767057Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.6903330Z   1.97.1-x86_64-unknown-linux-gnu unchanged - rustc 1.97.1 (8bab26f4f 2026-07-14)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.6904068Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7080857Z ##[end-action id=__dtolnay_rust-toolchain.__run_4;outcome=success;conclusion=success;duration_ms=1567]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7089827Z ##[start-action display=Run rustup default 1.97.1;id=__dtolnay_rust-toolchain.__run_5]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7132631Z ##[group]Run rustup default 1.97.1
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7133233Z ^[[36;1mrustup default 1.97.1^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7151359Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7152234Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7152597Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7153165Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7154115Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7155135Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7155995Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7156855Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7158228Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7159493Z   CARGO_HOME: /home/runner/.cargo
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7159999Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7291302Z info: using existing install for 1.97.1-x86_64-unknown-linux-gnu
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7589962Z info: default toolchain set to 1.97.1-x86_64-unknown-linux-gnu
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7590680Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7754520Z   1.97.1-x86_64-unknown-linux-gnu unchanged - rustc 1.97.1 (8bab26f4f 2026-07-14)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7755643Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7857624Z info: note that the toolchain '1.97.1-x86_64-unknown-linux-gnu' is currently in use (overridden by '/home/runner/_work/fast-mlsirm/fast-mlsirm/rust-toolchain.toml')
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7892715Z ##[end-action id=__dtolnay_rust-toolchain.__run_5;outcome=success;conclusion=success;duration_ms=80]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7900817Z ##[start-action display=Run : create cachekey;id=__dtolnay_rust-toolchain.rustc-version]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7941938Z ##[group]Run : create cachekey
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7942513Z ^[[36;1m: create cachekey^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7943633Z ^[[36;1mDATE=$(rustc +1.97.1 --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7945090Z ^[[36;1mHASH=$(rustc +1.97.1 --version --verbose | sed -ne 's/^commit-hash: //p')^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7946152Z ^[[36;1mecho "cachekey=$(echo $DATE$HASH | head -c12)" >> $GITHUB_OUTPUT^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7969609Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7970296Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7970639Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7971226Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7972264Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7973226Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7974069Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7974921Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7976769Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7978095Z   CARGO_HOME: /home/runner/.cargo
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.7978580Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9581296Z ##[end-action id=__dtolnay_rust-toolchain.rustc-version;outcome=success;conclusion=success;duration_ms=167]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9586663Z ##[start-action display=Run : disable incremental compilation;id=__dtolnay_rust-toolchain.__run_6]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9632598Z ##[group]Run : disable incremental compilation
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9633504Z ^[[36;1m: disable incremental compilation^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9634406Z ^[[36;1mif [ -z "${CARGO_INCREMENTAL+set}" ]; then^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9635363Z ^[[36;1m  echo CARGO_INCREMENTAL=0 >> $GITHUB_ENV^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9636169Z ^[[36;1mfi^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9660000Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9660916Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9661387Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9662233Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9663555Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9664889Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9666039Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9667220Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9669101Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9670852Z   CARGO_HOME: /home/runner/.cargo
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9671523Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9770011Z ##[end-action id=__dtolnay_rust-toolchain.__run_6;outcome=success;conclusion=success;duration_ms=16]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9775550Z ##[start-action display=Run : enable colors in Cargo output;id=__dtolnay_rust-toolchain.__run_7]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9809293Z ##[group]Run : enable colors in Cargo output
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9809947Z ^[[36;1m: enable colors in Cargo output^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9810570Z ^[[36;1mif [ -z "${CARGO_TERM_COLOR+set}" ]; then^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9811292Z ^[[36;1m  echo CARGO_TERM_COLOR=always >> $GITHUB_ENV^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9812178Z ^[[36;1mfi^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9829430Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9830089Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9830436Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9831011Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9832699Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9833656Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9834497Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9835339Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9836759Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9838022Z   CARGO_HOME: /home/runner/.cargo
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9838522Z   CARGO_INCREMENTAL: 0
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9838954Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9904692Z ##[end-action id=__dtolnay_rust-toolchain.__run_7;outcome=success;conclusion=success;duration_ms=12]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9912272Z ##[start-action display=Run : enable Cargo sparse registry;id=__dtolnay_rust-toolchain.__run_8]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9943942Z ##[group]Run : enable Cargo sparse registry
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9944604Z ^[[36;1m: enable Cargo sparse registry^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9945356Z ^[[36;1m# implemented in 1.66, stabilized in 1.68, made default in 1.70^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9946916Z ^[[36;1mif [ -z "${CARGO_REGISTRIES_CRATES_IO_PROTOCOL+set}" -o -f "/home/runner/_work/_temp"/.implicit_cargo_registries_crates_io_protocol ]; then^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9948921Z ^[[36;1m  if rustc +1.97.1 --version --verbose | grep -q '^release: 1\.6[89]\.'; then^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9950227Z ^[[36;1m    touch "/home/runner/_work/_temp"/.implicit_cargo_registries_crates_io_protocol || true^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9951423Z ^[[36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse >> $GITHUB_ENV^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9952983Z ^[[36;1m  elif rustc +1.97.1 --version --verbose | grep -q '^release: 1\.6[67]\.'; then^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9954266Z ^[[36;1m    touch "/home/runner/_work/_temp"/.implicit_cargo_registries_crates_io_protocol || true^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9955463Z ^[[36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=git >> $GITHUB_ENV^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9956223Z ^[[36;1m  fi^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9956586Z ^[[36;1mfi^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9973605Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9974267Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9974607Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9975161Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9976109Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9977072Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9977910Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9978763Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9980131Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9981409Z   CARGO_HOME: /home/runner/.cargo
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9982127Z   CARGO_INCREMENTAL: 0
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9982586Z   CARGO_TERM_COLOR: always
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:54.9983024Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0582415Z ##[end-action id=__dtolnay_rust-toolchain.__run_8;outcome=success;conclusion=success;duration_ms=66]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0589625Z ##[start-action display=Run : work around spurious network errors in curl 8.0;id=__dtolnay_rust-toolchain.__run_9]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0696470Z ##[group]Run : work around spurious network errors in curl 8.0
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0697423Z ^[[36;1m: work around spurious network errors in curl 8.0^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0698621Z ^[[36;1m# https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0699968Z ^[[36;1mif rustc +1.97.1 --version --verbose | grep -q '^release: 1\.7[01]\.'; then^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0700969Z ^[[36;1m  echo CARGO_HTTP_MULTIPLEXING=false >> $GITHUB_ENV^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0701664Z ^[[36;1mfi^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0719422Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0720115Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0720477Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0721057Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0722100Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0723078Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0723944Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0724809Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0726192Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0727477Z   CARGO_HOME: /home/runner/.cargo
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0727994Z   CARGO_INCREMENTAL: 0
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0728436Z   CARGO_TERM_COLOR: always
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.0728899Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1047818Z ##[end-action id=__dtolnay_rust-toolchain.__run_9;outcome=success;conclusion=success;duration_ms=45]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1055219Z ##[start-action display=Run rustc +1.97.1 --version --verbose;id=__dtolnay_rust-toolchain.__run_10]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1123639Z ##[group]Run rustc +1.97.1 --version --verbose
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1124317Z ^[[36;1mrustc +1.97.1 --version --verbose^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1141630Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1143033Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1143442Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1144015Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1144980Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1145961Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1146817Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1147688Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1149104Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1150384Z   CARGO_HOME: /home/runner/.cargo
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1150904Z   CARGO_INCREMENTAL: 0
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1151347Z   CARGO_TERM_COLOR: always
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1151894Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1427484Z rustc 1.97.1 (8bab26f4f 2026-07-14)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1428100Z binary: rustc
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1428654Z commit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1429327Z commit-date: 2026-07-14
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1429899Z host: x86_64-unknown-linux-gnu
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1430383Z release: 1.97.1
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1430795Z LLVM version: 22.1.6
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1473728Z ##[end-action id=__dtolnay_rust-toolchain.__run_10;outcome=success;conclusion=success;duration_ms=41]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1587095Z ##[group]Run set -euo pipefail
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1587730Z ^[[36;1mset -euo pipefail^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1588248Z ^[[36;1mpython -m venv .venv^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1589014Z ^[[36;1m.venv/bin/python -m pip install --require-hashes -r requirements/ci.txt^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1590122Z ^[[36;1m.venv/bin/python -m pip install --no-build-isolation --no-deps -e .^[[0m
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1612141Z shell: /usr/bin/bash -e {0}
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1612906Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1613486Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1614072Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1615003Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1615943Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1616777Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1617631Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1619046Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1620739Z   CARGO_HOME: /home/runner/.cargo
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1621234Z   CARGO_INCREMENTAL: 0
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1621657Z   CARGO_TERM_COLOR: always
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:08:55.1622181Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:04.0049644Z Collecting hypothesis==6.168.0 (from -r requirements/ci.txt (line 7))
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:04.1939170Z   Using cached hypothesis-6.168.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.2 MB)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:05.0301128Z Collecting iniconfig==2.3.0 (from -r requirements/ci.txt (line 90))
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:05.0414686Z   Using cached iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:05.3984133Z Collecting maturin==1.15.0 (from -r requirements/ci.txt (line 94))
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:05.4008632Z   Using cached maturin-1.15.0-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl (10.5 MB)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.0020379Z Collecting numpy==2.5.2 (from -r requirements/ci.txt (line 110))
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.0198152Z   Using cached numpy-2.5.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (16.7 MB)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.2868385Z Collecting packaging==26.2 (from -r requirements/ci.txt (line 178))
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.2993000Z   Using cached packaging-26.2-py3-none-any.whl (100 kB)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.3562819Z Collecting pluggy==1.6.0 (from -r requirements/ci.txt (line 182))
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.3582270Z   Using cached pluggy-1.6.0-py3-none-any.whl (20 kB)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.4178283Z Collecting pygments==2.20.0 (from -r requirements/ci.txt (line 186))
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.4408410Z   Using cached pygments-2.20.0-py3-none-any.whl (1.2 MB)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.5606063Z Collecting pytest==9.1.1 (from -r requirements/ci.txt (line 190))
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.5648453Z   Using cached pytest-9.1.1-py3-none-any.whl (386 kB)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.6954670Z Collecting sortedcontainers==2.4.0 (from -r requirements/ci.txt (line 194))
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.7008441Z   Using cached sortedcontainers-2.4.0-py2.py3-none-any.whl (29 kB)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:06.8405608Z Installing collected packages: sortedcontainers, pygments, pluggy, packaging, numpy, maturin, iniconfig, hypothesis, pytest
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:13.4969786Z Successfully installed hypothesis-6.168.0 iniconfig-2.3.0 maturin-1.15.0 numpy-2.5.2 packaging-26.2 pluggy-1.6.0 pygments-2.20.0 pytest-9.1.1 sortedcontainers-2.4.0
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:13.8291349Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:13.8295192Z [notice] A new release of pip is available: 25.0.1 -> 26.2.1
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:13.8296136Z [notice] To update, run: python -m pip install --upgrade pip
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:14.7054162Z Obtaining file:///home/runner/_work/fast-mlsirm/fast-mlsirm
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:14.7197868Z   Checking if build backend supports build_editable: started
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:14.7944833Z   Checking if build backend supports build_editable: finished with status 'done'
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:14.7966251Z   Preparing editable metadata (pyproject.toml): started
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4807564Z   Preparing editable metadata (pyproject.toml): finished with status 'error'
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4897152Z   error: subprocess-exited-with-error
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4897852Z   
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4899312Z   × Preparing editable metadata (pyproject.toml) did not run successfully.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4900335Z   │ exit code: 1
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4900909Z   ╰─> [25 lines of output]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4901502Z       Checking for Rust toolchain....
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4903416Z       Running `maturin pep517 write-dist-info --metadata-directory /tmp/pip-modern-metadata-ncr7pj5_ --interpreter /home/runner/_work/fast-mlsirm/fast-mlsirm/.venv/bin/python`
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4905214Z       Traceback (most recent call last):
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4919210Z         File "/home/runner/_work/fast-mlsirm/fast-mlsirm/.venv/lib/python3.12/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 389, in <module>
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4920927Z           main()
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4922719Z         File "/home/runner/_work/fast-mlsirm/fast-mlsirm/.venv/lib/python3.12/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 373, in main
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4929545Z           json_out["return_val"] = hook(**hook_input["kwargs"])
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4930317Z                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4932406Z         File "/home/runner/_work/fast-mlsirm/fast-mlsirm/.venv/lib/python3.12/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 209, in prepare_metadata_for_build_editable
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4934419Z           return hook(metadata_directory, config_settings)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4935198Z                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4936854Z         File "/home/runner/_work/fast-mlsirm/fast-mlsirm/.venv/lib/python3.12/site-packages/maturin/__init__.py", line 241, in prepare_metadata_for_build_wheel
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4938570Z           _output = subprocess.check_output(command, env=env)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4939364Z                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4940600Z         File "/home/runner/_work/_tool/Python/3.12.14/x64/lib/python3.12/subprocess.py", line 466, in check_output
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4942130Z           return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4943087Z                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4961181Z         File "/home/runner/_work/_tool/Python/3.12.14/x64/lib/python3.12/subprocess.py", line 548, in run
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4962464Z           with Popen(*popenargs, **kwargs) as process:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4963142Z                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4964257Z         File "/home/runner/_work/_tool/Python/3.12.14/x64/lib/python3.12/subprocess.py", line 1026, in __init__
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4965554Z           self._execute_child(args, executable, preexec_fn, close_fds,
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4966957Z         File "/home/runner/_work/_tool/Python/3.12.14/x64/lib/python3.12/subprocess.py", line 1955, in _execute_child
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4968389Z           raise child_exception_type(errno_num, err_msg, err_filename)
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4969399Z       FileNotFoundError: [Errno 2] No such file or directory: 'maturin'
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4970196Z       [end of output]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4970652Z   
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.4971372Z   note: This error originates from a subprocess, and is likely not a problem with pip.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.5492328Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.5493904Z [notice] A new release of pip is available: 25.0.1 -> 26.2.1
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.5494869Z [notice] To update, run: python -m pip install --upgrade pip
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.5528774Z error: metadata-generation-failed
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.5529344Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.5531120Z × Encountered error while generating package metadata.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.5532457Z ╰─> See above for output.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.5532827Z 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.5533810Z note: This is an issue with the package mentioned above, not pip.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.5534763Z hint: See above for details.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6306695Z ##[error]Process completed with exit code 1.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6467683Z ##[group]Run actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6468621Z with:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6469072Z   name: two-tier-reference-gpu-36700555893
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6470372Z   path: reference-gpu-resource-probe.log
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	reference-gpu-stdout.log
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	reference-gpu-stderr.log
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	reference-gpu-benchmark.json
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6471900Z   if-no-files-found: warn
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6473338Z   retention-days: 90
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6473923Z   compression-level: 6
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6474416Z   overwrite: false
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6474890Z   include-hidden-files: false
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6475431Z   archive: true
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6475853Z env:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6476240Z   REFERENCE_ARGS: 
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6476846Z   pythonLocation: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6477832Z   PKG_CONFIG_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib/pkgconfig
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6479352Z   Python_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6480284Z   Python2_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6481195Z   Python3_ROOT_DIR: /home/runner/_work/_tool/Python/3.12.14/x64
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6482847Z   LD_LIBRARY_PATH: /home/runner/_work/_tool/Python/3.12.14/x64/lib:/data/orca/workspaces/fmls-gpu-runtime-580178-20260929/extracted
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6484258Z   CARGO_HOME: /home/runner/.cargo
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6484819Z   CARGO_INCREMENTAL: 0
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6485299Z   CARGO_TERM_COLOR: always
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.6485797Z ##[endgroup]
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.9248787Z Multiple search paths detected. Calculating the least common ancestor of all paths
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.9252842Z The least common ancestor is /home/runner/_work/fast-mlsirm/fast-mlsirm. This will be the root directory of the artifact
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.9273888Z ##[warning]No files were found with the provided path: reference-gpu-resource-probe.log
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	reference-gpu-stdout.log
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	reference-gpu-stderr.log
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	reference-gpu-benchmark.json. No artifacts will be uploaded.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:15.9531252Z Post job cleanup.
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.1032026Z [command]/usr/bin/git version
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.1098981Z git version 2.55.0
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.1166810Z Temporarily overriding HOME='/home/runner/_work/_temp/8c4fd027-53e1-4381-9456-48b960a145af' before making global git config changes
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.1169487Z Adding repository directory to the temporary git global config as a safe directory
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.1204595Z [command]/usr/bin/git config --global --add safe.directory /home/runner/_work/fast-mlsirm/fast-mlsirm
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.1240533Z Removing SSH command configuration
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.1251529Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.1300498Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.1695995Z Removing HTTP extra header
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.1704055Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.1764410Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.2118766Z Removing includeIf entries pointing to credentials config files
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.2128712Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.2179506Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Two-tier 기준 CPU/GPU 벤치마크	UNKNOWN STEP	2026-09-30T10:09:16.2806431Z Cleaning up orphan processes

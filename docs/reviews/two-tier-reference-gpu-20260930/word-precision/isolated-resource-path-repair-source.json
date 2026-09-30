@@ -1,0 +1,17 @@
+{
+  "head": "b46ada286316e67c4be332c0c683f731312be514",
+  "parent": "c64cde1225464be724277878df2ea4791753778f",
+  "scope": "venv PATH installation-only repair",
+  "files": {
+    ".github/workflows/statistical-studies.yml": "2b29658df447df18d864fd3fd8798d17b2a88c5e4361a351e2d1424dadd29a59",
+    "tests/test_statistical_studies_workflow.py": "027b8cbea8bcd6c6d4f77bedbb7c64541c6fb342c432cc3144e8cd832385d605"
+  },
+  "g1-resource-probe-failed-job.txt": {
+    "path": "/private/tmp/claude-501/-private-tmp-fmls-gpu-fixture-20260928/099e0d06-755f-44bb-a889-b69c214332cd/scratchpad/g1-resource-probe-failed-job.txt",
+    "sha256": "6e03d5dc4703de4ec8c86a6bd2c74208c5b4f5fb24f432be8e4cfe7a890bdce1"
+  },
+  "g1-isolated-resource-run.json": {
+    "path": "/private/tmp/claude-501/-private-tmp-fmls-gpu-fixture-20260928/099e0d06-755f-44bb-a889-b69c214332cd/scratchpad/g1-isolated-resource-run.json",
+    "sha256": "1d1f25892e9ed6ece9e841b9a6fa173321f37f5254a9310cd74da9b2d7bd54bd"
+  }
+}
