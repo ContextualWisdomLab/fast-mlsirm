@@ -48,3 +48,6 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2025-05-19 - Replacing `.powi(3)` and `.powi(4)` with Manual Scalar Multiplication
+**Learning:** In tight numerical loops like those in matrix rotations (`oblimax`, `quartimax`, `bentler`), using built-in `.powi(3)` and `.powi(4)` incurs a performance penalty compared to manual scalar multiplications (`x * x * x` or `let x2 = x * x; x2 * x2`) because `powi` acts as a function call, missing inline optimization potential.
+**Action:** Always replace small constant powers like `x.powi(3)` or `x.powi(4)` with their manual scalar expansions in hot paths or single-pass folds to avoid overhead and improve vectorization.

@@ -544,14 +544,18 @@ fn tandem(l: &[f64], rows: usize, factors: usize, first: bool) -> CriterionEvalu
 }
 
 fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
-    let sum2: f64 = l.iter().map(|x| x * x).sum();
-    let sum4: f64 = l.iter().map(|x| x.powi(4)).sum();
+    // ⚡ Bolt: Single-pass fold for moments and manual scalar multiplication to avoid powi() overhead
+    let (sum2, sum4) = l.iter().fold((0.0, 0.0), |(s2, s4), &x| {
+        let x2 = x * x;
+        (s2 + x2, s4 + x2 * x2)
+    });
+
     if sum2 <= 0.0 || sum4 <= 0.0 {
         return Err("oblimax requires nonzero loadings".into());
     }
     let gradient = l
         .iter()
-        .map(|x| -(4.0 * x.powi(3) / sum4 - 4.0 * x / sum2))
+        .map(|&x| -(4.0 * (x * x * x) / sum4 - 4.0 * x / sum2))
         .collect();
     Ok(CriterionEvaluation {
         value: -(sum4.ln() - 2.0 * sum2.ln()),
@@ -582,9 +586,17 @@ fn bentler(l: &[f64], rows: usize, factors: usize) -> Result<CriterionEvaluation
 }
 
 fn quartimax(l: &[f64]) -> CriterionEvaluation {
+    // ⚡ Bolt: Single-pass loop and manual scalar multiplication to avoid powi() overhead
+    let mut sum4 = 0.0;
+    let mut gradient = Vec::with_capacity(l.len());
+    for &x in l {
+        let x2 = x * x;
+        sum4 += x2 * x2;
+        gradient.push(-(x2 * x));
+    }
     CriterionEvaluation {
-        value: -0.25 * l.iter().map(|x| x.powi(4)).sum::<f64>(),
-        gradient: l.iter().map(|x| -x.powi(3)).collect(),
+        value: -0.25 * sum4,
+        gradient,
     }
 }
 
