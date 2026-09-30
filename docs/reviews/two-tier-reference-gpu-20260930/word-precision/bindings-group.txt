@@ -1,0 +1,9 @@
+
+[multi q=11] CPU 0.947s vs GPU 1.061s (gpu_executed=True); max|Δslope|=5.297e-07 max|Δthreshold|=1.640e-07 |Δloglik|=2.945e-05
+.{"backend": "gpu", "gpu_memory_budget_bytes": 1073741824, "batched_memory_budget_bytes": 40960, "score_loglik_delta": 0.0, "fit_mean_max_delta": 9.504499054457938e-08, "fit_sd_max_delta": 8.518764271769896e-08}
+..
+3 passed in 46.36s
+..........                                                               [100%]
+10 passed, 7 deselected in 1.25s
+
+[exited with code 0]

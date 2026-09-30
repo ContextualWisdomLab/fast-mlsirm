@@ -1,0 +1,19 @@
+{
+  "head": "83084118a313978feee8ab72210389cf79bdd223",
+  "parent": "6ac2622b12ca009dd2cd27bc0bcb5e67429c4f2a",
+  "scope": "committed zero-mass compatibility source",
+  "changed_paths": [
+    "crates/mlsirm-core/src/gpu_bifactor.rs",
+    "python/fast_mlsirm/two_tier_grm.py",
+    "tests/unit/two_tier_grm_tests.rs"
+  ],
+  "source_sha256": {
+    "crates/mlsirm-core/src/gpu_bifactor.rs": "3511e87ce158cbe15358e6f29261fc389fe580dac9e85da5de9c307b326480ea",
+    "python/fast_mlsirm/two_tier_grm.py": "3aeaf1b5be760f2043170c60f32d8d00af04be43e5dcb5ffc7322b3805741645",
+    "tests/unit/two_tier_grm_tests.rs": "560a3decf734fc2e267a146379831a290d7f399f13d2d983675ce37ce318639c"
+  },
+  "logs": {
+    "/private/tmp/claude-501/-private-tmp-fmls-gpu-fixture-20260928/099e0d06-755f-44bb-a889-b69c214332cd/tasks/bxckt67ga.output": "ea687265ab37c31630bec8908bf7c693e27ca8d9797b96b2cc5605298be5311f",
+    "/private/tmp/claude-501/-private-tmp-fmls-gpu-fixture-20260928/099e0d06-755f-44bb-a889-b69c214332cd/tasks/b5w9ybnp2.output": "29fe9fe217f816c66cff17dec7b4920f7fb9734adbd64f1792728ac10840936a"
+  }
+}
