@@ -1,0 +1,2437 @@
+{
+ "binding_target": "aarch64-unknown-linux-gnu",
+ "rows": [
+  {
+   "basis": "canonical",
+   "crate_sha256": "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "20fe7b00e904ed690e3b9fd6073784d3fc428141dbd10b81c01fd143d0797f58",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "36516aefdc84c5d5a1e7485425913a22dbda69eb1930c5e84d6ae4972b5194b9",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "allocator-api2",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.2.21"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "4da95ec4ecb65b738d470b7d762894ad9c97da93e6cbfb18b570fc2c96f4b871",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "arrayvec",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.7.8"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "0bb44936d800fea8f016d7f2311c6a4f97aebd5dc86f09906139ec848cf3a46f",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "0e8a410375e1ee5c75c6198b08b534fec6e5edef766cf971bab4a404542636ab",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "c733ccf8ab25df175a63d9d844677b98e3a5ab8f8de1c1616087e6868a7f948e",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "ash",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.38.0+1.3.281"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "27995d58ad5c1145c1a8cd86244ce844886958a35eb2b78c6b772748669999ac",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "autocfg",
+   "spdx": "Apache-2.0 OR MIT",
+   "version": "1.5.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "09ec2f926cc3060f09db9ebc5b52823d85268d24bb917e472c0c4bea35780a7d",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "6b56ddc7cd80419e5e22e075f2252d720f6cbe17e3e2c17383095ee2712bcffa",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "bit-set",
+   "spdx": "Apache-2.0 OR MIT",
+   "version": "0.10.0"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "b71798fca2c1fe1086445a7258a4bc81e6e49dcd24c8d0dd9a1e57395b603f51",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "f51ac2c59a222f7476ce507ca879960e2b64ea64bb2786eefdbeb7b0b538d1b7",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "bit-vec",
+   "spdx": "Apache-2.0 OR MIT",
+   "version": "0.9.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "bitflags",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "2.13.2"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "d5c22aa3118d240e877ad41c5d9fa232f9c77d757d4aac0c2f943afc0a95e0ef",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "block-buffer",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.10.4"
+  },
+  {
+   "basis": "SPDX template",
+   "crate_sha256": "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "e3ba223bb1423f0aad8c3dfce0fe3148db48926d41e6fbc3afbbf5ff9e1c89cb",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "9df9ba60a11af705f2e451b53762686e615d86f76b169cf075c3237730dbd7e2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-ZLIB",
+     "sha256": "84b34dd7608f7fb9b17bd588a6bf392bf7de504e2716f024a77d89f1b145a151",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "bytemuck",
+   "spdx": "Zlib OR Apache-2.0 OR MIT",
+   "version": "1.25.2"
+  },
+  {
+   "basis": "SPDX template",
+   "crate_sha256": "6a1f896587b6f2c069c73d2f0913e2d590c3990285cd2f0b6aa02b786b4c679c",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "e3ba223bb1423f0aad8c3dfce0fe3148db48926d41e6fbc3afbbf5ff9e1c89cb",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "9df9ba60a11af705f2e451b53762686e615d86f76b169cf075c3237730dbd7e2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-ZLIB",
+     "sha256": "84b34dd7608f7fb9b17bd588a6bf392bf7de504e2716f024a77d89f1b145a151",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "bytemuck_derive",
+   "spdx": "Zlib OR Apache-2.0 OR MIT",
+   "version": "1.12.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "cfg-if",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.0.5"
+  },
+  {
+   "basis": "documented exception",
+   "crate_sha256": "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE",
+     "sha256": "31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "NOTICES.md",
+     "sha256": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "cfg_aliases",
+   "spdx": "MIT",
+   "version": "0.2.2"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681",
+   "elected": "Apache-2.0",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE",
+     "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "codespan-reporting",
+   "spdx": "Apache-2.0",
+   "version": "0.13.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "ae9baa7beea910273c2f384c2a6b721fb7bd02bda3436074a1072e4ee689f985",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "cpufeatures",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.2.17"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "3521672491a3479422d5fe1aca6645dd2984090f85da6e5205abfb18fb7a6897",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "crypto-common",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.1.7"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-Apache",
+     "sha256": "edd65bdd88957a205c47d53fa499eed8865a70320f0f03f6391668cb304ea376",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "231c837c45eb53f108fb48929e488965bc4fcc14e9ea21d35f50e6b99d98685b",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "deranged",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.5.8"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "9e0dfd2dd4173a530e238cb6adb37aa78c34c6bc7444e0e10c1ab5d8881f63ba",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "digest",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.10.7"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "ab8ecd87370524b461f8557c119c405552c396ed91fc0a8eec68679eab26f94a",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE.txt",
+     "sha256": "10e5daea68c3ab7da6468ea51860e9d4ac87ea6a9a2d34127beff17b7193b618",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "dlib",
+   "spdx": "MIT",
+   "version": "0.5.3"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "aa893340d14b9844625be6a50ac644169a01b52f0211cbf81b09e1874c8cd81d",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "document-features",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.2.12"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "7365cc8878a1d7ce155a58c4ca09c3d7a6be413efa5334a80ea842912b669349",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "equivalent",
+   "spdx": "Apache-2.0 OR MIT",
+   "version": "1.0.2"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb",
+   "elected": "Zlib",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE",
+     "sha256": "b1181a40b2a7b25cf66fd01481713bc1005df082c53ef73e851e55071b102744",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "foldhash",
+   "spdx": "Zlib",
+   "version": "0.2.0"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE",
+     "sha256": "c09aae9d3c77b531f56351a9947bc7446511d6b025b3255312d3e3442a9a7583",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "generic-array",
+   "spdx": "MIT",
+   "version": "0.14.7"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "29038e1c483364cc6bb3cf78feee1816002e127c331a1eec55a4d202b9e1adb5",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "b8601fc79bdf8d8088f0938bea861ffc63ed0eebbedf25f44ab2cf2e85bd7edc",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "cdbd06e25b8c9c5d6019949d2de8123f56d29cee4166396423d2ba8c81700845",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-ZLIB",
+     "sha256": "636f644f1e149eb62961657c0e34953681eff64435653912e7bd19992666faa5",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "glow",
+   "spdx": "MIT OR Apache-2.0 OR Zlib",
+   "version": "0.17.0"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "51255ea7cfaadb6c5f1528d43e92a82acb2b96c43365989a28b2d44ee38f8795",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "0178e21322b0e88aa3aeb3146f6a9611bc1f8df6d98bdfb34be28b9dd56a8107",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "ad41be6cc6538b29b9346648f41432b5e460bad6be073b5eeaa41320ea2921dc",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "gpu-allocator",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.28.0"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "half",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "2.7.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "ff8f68cb076caf8cefe7a6430d4ac086ce6af2ca8ce2c4e5a2004d4552ef52a2",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "hashbrown",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.16.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "ff8f68cb076caf8cefe7a6430d4ac086ce6af2ca8ce2c4e5a2004d4552ef52a2",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "hashbrown",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.17.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "heck",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.5.0"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "ecc269ef87fd38a1d98e30bfac9ba964a9dbd9315c3770fed98d4d7cb5882055",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "indexmap",
+   "spdx": "Apache-2.0 OR MIT",
+   "version": "2.14.2"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "itoa",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.0.18"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "6aae1df220ece3c0ada96b8153459b67eebe9ae9212258bb0134ae60416fdf76",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "khronos-egl",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "6.0.0"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "libc",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.2.189"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55",
+   "elected": "ISC",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE",
+     "sha256": "b29f8b01452350c20dd1af16ef83b598fea3053578ccc1c7a0ef40e57be2620f",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "libloading",
+   "spdx": "ISC",
+   "version": "0.8.9"
+  },
+  {
+   "basis": "documented exception",
+   "crate_sha256": "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE.txt",
+     "sha256": "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "libm",
+   "spdx": "MIT",
+   "version": "0.2.16"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "7dc1552e88f49132cb358b1b962fc5e79fa42d70bcbb88c526d33e45b8e98036",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "litrs",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.0.0"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "c9a75f18b9ab2927829a208fc6aa2cf4e63b8420887ba29cdb265d6619ae82d5",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "lock_api",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.4.14"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "log",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.4.34"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "3f607c237553f086e7043417a51df26b2eb899d3caff94e6a67592ff992fedc7",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "792d075c7bad6dac258a44e799eb64cbf465e24d9932d27669be08c5ec957e27",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "matrixmultiply",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.3.11"
+  },
+  {
+   "basis": "pointer rule",
+   "crate_sha256": "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "COPYING",
+     "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "UNLICENSE",
+     "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "memchr",
+   "spdx": "Unlicense OR MIT",
+   "version": "2.8.3"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "a616d2fb8c89516ac2723a581f69d6c18576046bed761bd6b305e5618e6ae130",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE.APACHE",
+     "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE.MIT",
+     "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "naga",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "30.0.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "590afbf58a6f4f62873cd5cff4468061844bafa1cdf399cc954537c22d768d49",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE.APACHE",
+     "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE.MIT",
+     "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "naga-types",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "30.0.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "520080814a7a6b4a6e9070823bb24b4531daac8c4627e08ba5de8c5ef2f2752d",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "1fd6747d2c8e80f9fa766f57c5888864774621deb85cc2838ccaed727db32d45",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "ndarray",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.17.2"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "num-complex",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.4.6"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-Apache",
+     "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "e2e245f2b566d0bfafb0f6a04c16b82d710c4e6e7d799e39bb4ef6e541b85b98",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "num-conv",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.2.2"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "7ce2d95d4b3734dc35aa2f45e1aa22cd416814592a4f9d9205e11affd5b8e10b",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "num-integer",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.1.47"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "num-traits",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.2.19"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "6a5b15d63a5ff39e378daed0e1340d3a5964703ea9712eb09a0dc66fade996f4",
+   "elected": "BSD-2-Clause",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE",
+     "sha256": "57088c28c5ea50e729a06c3b04de70c41e496a5b753d75a744e2abbf60a2448f",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "numpy",
+   "spdx": "BSD-2-Clause",
+   "version": "0.29.0"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "once_cell",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.21.4"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "8c7c9e0d9b23589f26070720bac724174bfec1083e82f7854cdd0267518343c0",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "f7715d38a3fa1b4ac97c5729740752505a39cb92ee83ab5b102aeb5eaa7cdea4",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "ordered-float",
+   "spdx": "MIT",
+   "version": "5.5.0"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "c9a75f18b9ab2927829a208fc6aa2cf4e63b8420887ba29cdb265d6619ae82d5",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "parking_lot",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.12.5"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "c9a75f18b9ab2927829a208fc6aa2cf4e63b8420887ba29cdb265d6619ae82d5",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "parking_lot_core",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.9.12"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "pkg-config",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.3.34"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "bc6355899e1c9462875b6757c79f3caa011a1fdae12bbb1a2e72dd1f234f8336",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "cc02a53316678ca2575cc69d12daa7b1833935d4b7742c31fbab7bd74a481077",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "pollster",
+   "spdx": "Apache-2.0 OR MIT",
+   "version": "1.0.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-Apache",
+     "sha256": "155420c6403d4e0fca34105e3c03fdd6939b64c393c7ec6f95f5b72c5474eab0",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "070dbc7dda03a29296f2d58bdb9b7331af90f2abc9f31df22875d1eabaf29852",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "powerfmt",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.2.0"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "090a294a492ab2f41388252312a65cf2f0e423330b721a68c6665ac64766753b",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "presser",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.3.1"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "proc-macro2",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.0.107"
+  },
+  {
+   "basis": "upstream-vcs",
+   "crate_sha256": "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "upstream-vcs",
+     "path": "LICENSE-APACHE",
+     "sha256": "10d30a673cd5e9349bdc02aeb48f14b3386d27d0da32df8f0a555d4aa16aa551",
+     "url": "https://raw.githubusercontent.com/aclysma/profiling/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-APACHE",
+     "vcs_sha1": "8271551172eb6fa4cba47369aedd93790c623df9"
+    },
+    {
+     "origin": "upstream-vcs",
+     "path": "LICENSE-MIT",
+     "sha256": "c8167fdeeed46d3f244d3f85c5bf998ce889343691c32be2c61a8bc4b5c08333",
+     "url": "https://raw.githubusercontent.com/aclysma/profiling/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-MIT",
+     "vcs_sha1": "8271551172eb6fa4cba47369aedd93790c623df9"
+    }
+   ],
+   "name": "profiling",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.0.18"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "4688ddedf473e32662b9b067670129a8afb8c18e351482c70d62ba4a88171e8b",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "32c76dbe0e73d79100d5ece77c158399f2e2541bc5c78548a4ba45c1cb53c5c9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "pyo3-runtime/LICENSE-APACHE",
+     "sha256": "32c76dbe0e73d79100d5ece77c158399f2e2541bc5c78548a4ba45c1cb53c5c9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "pyo3-runtime/LICENSE-MIT",
+     "sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "pyo3",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.29.2"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "f41027e41b4bd03f6e60f9f417fe24a6341a6bb744edd62b6f709f2a52ea30e9",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "32c76dbe0e73d79100d5ece77c158399f2e2541bc5c78548a4ba45c1cb53c5c9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "pyo3-build-config",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.29.2"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "e591a95526fead067432c3b3a33fc74770b87b1e04e73671090d9c2055a2b327",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "32c76dbe0e73d79100d5ece77c158399f2e2541bc5c78548a4ba45c1cb53c5c9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "pyo3-ffi",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.29.2"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "73225868fc1cd84eef2c3c230ddb91273bf1de46aeb8a4248da76d32a0924a1c",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "32c76dbe0e73d79100d5ece77c158399f2e2541bc5c78548a4ba45c1cb53c5c9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "pyo3-macros",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.29.2"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "571575aa3749fa6216757dd47d2a3e7ef360f329a40f0666a9fbd14889024952",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "32c76dbe0e73d79100d5ece77c158399f2e2541bc5c78548a4ba45c1cb53c5c9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "pyo3-macros-backend",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.29.2"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "quote",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.0.47"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE.md",
+     "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT.md",
+     "sha256": "9c5a80639a57c1c945570e7ebbca0706305849ce3c098021325cca9db2f7acc4",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-ZLIB.md",
+     "sha256": "ae895c8576e682f310fb70d93d9f99b1dd82872094c54a8f6cdfe2ca5c2d6ecb",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "raw-window-handle",
+   "spdx": "MIT OR Apache-2.0 OR Zlib",
+   "version": "0.6.2"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "60a357793950651c4ed0f3f52338f53b2f809f32d83a07f72909fa13e4c6c1e3",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "7576269ea71f767b99297934c0b2367532690f8c4badc695edf8e04ab6a1e545",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "rawpointer",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.2.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "24b2f2eff5a7622e87162823e260f00c6dfbce0e26d585d3d28c785f1edc80ed",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "renderdoc-sys",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.1.0"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "rustc-hash",
+   "spdx": "Apache-2.0 OR MIT",
+   "version": "1.1.0"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "95bd3988beee069fa2848f648dab43cc6e0b2add2ad6bcb17360caf749802bcc",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "rustc-hash",
+   "spdx": "Apache-2.0 OR MIT",
+   "version": "2.1.3"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "scopeguard",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.2.0"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "serde",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.0.229"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "serde_core",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.0.229"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "serde_derive",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.0.229"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "serde_json",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.0.151"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "b4eb00df6e2a4d22518fcaa6a2b4646f249b3a3c9814509b22bd2091f1392ff1",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "sha2",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.10.9"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "0b28172679e0009b655da42797c03fd163a3379d5cfa67ba1f1655e974a2a1a9",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "smallvec",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.16.1"
+  },
+  {
+   "basis": "upstream-vcs",
+   "crate_sha256": "d9571ea910ebd84c86af4b3ed27f9dbdc6ad06f17c5f96146b2b671e2976744f",
+   "elected": "Apache-2.0",
+   "files": [
+    {
+     "origin": "upstream-vcs",
+     "path": "LICENSE",
+     "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+     "url": "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/LICENSE",
+     "vcs_sha1": "8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4"
+    }
+   ],
+   "name": "spirv",
+   "spdx": "Apache-2.0",
+   "version": "0.4.0+sdk-1.4.341.0"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "ea084a2373ebc1f0902c09266e7bf25a05ab3814c1805bb017ffa7308f90c061",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "static_assertions",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.1.0"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "syn",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "2.0.119"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "8593e8e72159ed2257d083c7a454a85cbf854f37a0966d8d483aff8c8a3ebcee",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "syn",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "3.0.6"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca",
+   "elected": "Apache-2.0 WITH LLVM-exception",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE",
+     "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "target-lexicon",
+   "spdx": "Apache-2.0 WITH LLVM-exception",
+   "version": "0.13.5"
+  },
+  {
+   "basis": "pointer rule",
+   "crate_sha256": "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "COPYING",
+     "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "UNLICENSE",
+     "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "termcolor",
+   "spdx": "Unlicense OR MIT",
+   "version": "1.4.1"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "thiserror",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "2.0.20"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "thiserror-impl",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "2.0.20"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-Apache",
+     "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "2537228d9a1b44a5dc595241349cae7090b326c8de165aaf89bfddef4a00d0fc",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "time",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.3.55"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-Apache",
+     "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "2537228d9a1b44a5dc595241349cae7090b326c8de165aaf89bfddef4a00d0fc",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "time-core",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.1.9"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "7e689342a48d2ea927c87ea50cabf8594854bf940e9310208848d680d668ed85",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-Apache",
+     "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "2537228d9a1b44a5dc595241349cae7090b326c8de165aaf89bfddef4a00d0fc",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "time-macros",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.2.32"
+  },
+  {
+   "basis": "pointer rule",
+   "crate_sha256": "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE",
+     "sha256": "db11fec9946737df39ca3898d9cd8c10ec6f6c3a884a6802b0ad0b81b4e8f23a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "516b24e051bf5630880ebbd55c40a25ce9552ebaf8970a53e8976eb70e522406",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "a825bd853ab71619a4923d7b4311221427848070ff44d990da39b0b274c1683f",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "typenum",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "1.20.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954",
+   "elected": "MIT AND Unicode-3.0",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-UNICODE",
+     "sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "unicode-ident",
+   "spdx": "(MIT OR Apache-2.0) AND Unicode-3.0",
+   "version": "1.0.26"
+  },
+  {
+   "basis": "pointer rule",
+   "crate_sha256": "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "COPYRIGHT",
+     "sha256": "23860c2a7b5d96b21569afedf033469bab9fe14a1b24a35068b8641c578ce24d",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "unicode-width",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.2.2"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "uuid",
+   "spdx": "Apache-2.0 OR MIT",
+   "version": "1.26.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "b7e650f3fce5c53249d1cdc608b54df156a97edd636cf9d23498d0cfe7aec63e",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "version_check",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "0.9.5"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "d8eab23fefc9e41f8e841df4a9c707e8a8c4ed26e944ef69297184de2785e3be",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE.txt",
+     "sha256": "1cb6f4dee8c649f175736380495f0af0c753c87f22d50931692968bb24bf2161",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "wayland-sys",
+   "spdx": "MIT",
+   "version": "0.31.11"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "527ccdf43dd5b2e8676eed9984ce00e2bbb0a1b85b70c1969dcb6cd2eb55ab9e",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE.APACHE",
+     "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE.MIT",
+     "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "wgpu",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "30.0.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "14c018fce9b6270aa203c2fdd56f3cce996713534bd757e4ea58c8560b121f14",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE.APACHE",
+     "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE.MIT",
+     "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "wgpu-core",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "30.0.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "7586165fd5f6d881cb9ce4bb71f40d6caab2c0f1837e3fc1d9788a197fb6004f",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE.APACHE",
+     "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE.MIT",
+     "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "wgpu-core-deps-windows-linux-android",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "30.0.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "b6b7fb58561a792bc237628ba0792e332de418fefe145f13b5ed8201e6d52f58",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE.APACHE",
+     "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE.MIT",
+     "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "wgpu-hal",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "30.0.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "d2f62e73117bb7a62bfd9c5a5841438a823f6566c6442a808ee269d2d055c081",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE.APACHE",
+     "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE.MIT",
+     "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "wgpu-naga-bridge",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "30.0.1"
+  },
+  {
+   "basis": "byte-identical reviewed",
+   "crate_sha256": "99dad6f1fbdbbdb4c278a6508b059d44688f5cebddf78d005a46a31340269286",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE.APACHE",
+     "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE.MIT",
+     "sha256": "dc0d97139e8205818c703741c7be7cb3b96888bd5917b8d6fc6133731e403c21",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "wgpu-types",
+   "spdx": "MIT OR Apache-2.0",
+   "version": "30.0.1"
+  },
+  {
+   "basis": "SPDX template",
+   "crate_sha256": "d35102a9f36d089ccae9e4c6802bc118be4487b80aaffc0ab4e0cf5ce92d2873",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "9d185ac6703c4b0453974c0d85e9eee43e6941009296bb1f5eb0b54e2329e9f3",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-BSD",
+     "sha256": "83c1763356e822adde0a2cae748d938a73fdc263849ccff6b27776dff213bd32",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "1a2f5c12ddc934d58956aa5dbdd3255fe55fd957633ab7d0d39e4f0daa73f7df",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "zerocopy",
+   "spdx": "BSD-2-Clause OR Apache-2.0 OR MIT",
+   "version": "0.8.57"
+  },
+  {
+   "basis": "SPDX template",
+   "crate_sha256": "146c01f5ab44258da43cf276c74a2763db2ff3969c9c652c3f2de07041d0b2bc",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-APACHE",
+     "sha256": "9d185ac6703c4b0453974c0d85e9eee43e6941009296bb1f5eb0b54e2329e9f3",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-BSD",
+     "sha256": "83c1763356e822adde0a2cae748d938a73fdc263849ccff6b27776dff213bd32",
+     "url": null,
+     "vcs_sha1": null
+    },
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "1a2f5c12ddc934d58956aa5dbdd3255fe55fd957633ab7d0d39e4f0daa73f7df",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "zerocopy-derive",
+   "spdx": "BSD-2-Clause OR Apache-2.0 OR MIT",
+   "version": "0.8.57"
+  },
+  {
+   "basis": "canonical",
+   "crate_sha256": "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b",
+   "elected": "MIT",
+   "files": [
+    {
+     "origin": "crate",
+     "path": "LICENSE-MIT",
+     "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+     "url": null,
+     "vcs_sha1": null
+    }
+   ],
+   "name": "zmij",
+   "spdx": "MIT",
+   "version": "1.0.23"
+  }
+ ],
+ "source_inventory_sha256": "c161caf7dd8ea4ab45719e0cf42516fee258c111f1ec4169b0c68fb581146c91"
+}

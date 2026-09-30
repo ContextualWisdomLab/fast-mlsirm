@@ -259,6 +259,11 @@ Python results:
 
 ### 6.1 Lock reconciliation (fixed in this change)
 
+Integrated A3 candidate note: #2157 keeps NumPy 2.5.2 in `uv.lock`,
+`requirements/ci.txt`, and `requirements/package.txt` for the examined 0.11.5
+wheel. The 2.5.3 inventory and reconciliation below record the earlier #2170
+audit input; they are not a current lock or runtime verdict for this candidate.
+
 Before this change there were three versions:
 
 - `uv.lock` pinned 2.5.1;
@@ -266,7 +271,7 @@ Before this change there were three versions:
   pinned 2.5.2;
 - the audit environment had 2.5.3, the latest release (2026-09-06).
 
-All three locks now pin **numpy 2.5.3**.
+At the earlier audit point, all three locks pinned **numpy 2.5.3**.
 
 - `uv lock --upgrade-package numpy==2.5.3 --no-build` changed only the numpy
   entry.
