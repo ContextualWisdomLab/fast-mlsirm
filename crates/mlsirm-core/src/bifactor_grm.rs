@@ -1162,7 +1162,7 @@ fn add_slope_prior_newton_terms(
 /// rejection keeps `d` strictly ordered (#2030).
 #[allow(clippy::too_many_arguments)]
 fn m_step_item(
-    mut params: Vec<f64>,
+    params: Vec<f64>,
     has_specific: bool,
     node_g: &[f64],
     node_s: &[f64],
@@ -1172,18 +1172,39 @@ fn m_step_item(
     n_newton: usize,
     slope_prior: SlopePrior,
 ) -> Vec<f64> {
+    newton_descent(
+        params,
+        |p| {
+            bump_sweep(SweepKind::Newton);
+            let (mut f, mut g, mut hess) =
+                item_neg_ll_grad_hess(p, has_specific, node_g, node_s, counts, true);
+            add_slope_prior_newton_terms(slope_prior, p, has_specific, &mut f, &mut g, &mut hess);
+            (f, g, hess)
+        },
+        |p| {
+            bump_sweep(SweepKind::LineSearch);
+            item_neg_ll_grad(p, has_specific, node_g, node_s, counts, 0, slope_prior).0
+        },
+        ridge,
+        n_newton,
+    )
+}
+
+/// The damped Newton descent shared by the item and population M-steps:
+/// `eval` gives the objective, gradient and Hessian at the current point,
+/// then ridge conditioning, steepest-descent fallback, max-step 2, and
+/// Armijo backtracking on `value`. A step is taken only when it decreases
+/// the objective, so it never increases (the GEM requirement; Dempster,
+/// Laird, & Rubin, 1977).
+fn newton_descent(
+    mut params: Vec<f64>,
+    eval: impl Fn(&[f64]) -> (f64, Vec<f64>, Vec<Vec<f64>>),
+    value: impl Fn(&[f64]) -> f64,
+    ridge: f64,
+    n_newton: usize,
+) -> Vec<f64> {
     for _ in 0..n_newton {
-        bump_sweep(SweepKind::Newton);
-        let (mut f0, mut g, mut hess) =
-            item_neg_ll_grad_hess(&params, has_specific, node_g, node_s, counts, true);
-        add_slope_prior_newton_terms(
-            slope_prior,
-            &params,
-            has_specific,
-            &mut f0,
-            &mut g,
-            &mut hess,
-        );
+        let (f0, g, mut hess) = eval(&params);
         let grad_norm = g.iter().map(|x| x * x).sum::<f64>().sqrt();
         if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
             break;
@@ -1213,16 +1234,7 @@ fn m_step_item(
                 .zip(&step)
                 .map(|(value, direction)| value - alpha * direction)
                 .collect();
-            bump_sweep(SweepKind::LineSearch);
-            let (candidate_f, _) = item_neg_ll_grad(
-                &candidate,
-                has_specific,
-                node_g,
-                node_s,
-                counts,
-                0,
-                slope_prior,
-            );
+            let candidate_f = value(&candidate);
             if candidate_f.is_finite() && candidate_f <= f0 - 1e-4 * alpha * directional {
                 params = candidate;
                 accepted = true;
@@ -1966,6 +1978,15 @@ pub(crate) fn pack_params(
 // van der Linden & R. K. Hambleton (Eds.), *Handbook of modern item response
 // theory* (pp. 433-448). Springer. https://doi.org/10.1007/978-1-4757-2691-6_25
 //
+// Dempster, A. P., Laird, N. M., & Rubin, D. B. (1977). Maximum likelihood
+// from incomplete data via the EM algorithm. *Journal of the Royal
+// Statistical Society: Series B (Methodological), 39*(1), 1-38.
+// https://doi.org/10.1111/j.2517-6161.1977.tb01600.x
+//
+// Meng, X.-L., & Rubin, D. B. (1993). Maximum likelihood estimation via the
+// ECM algorithm: A general framework. *Biometrika, 80*(2), 267-278.
+// https://doi.org/10.1093/biomet/80.2.267
+//
 // Bafumi, J., Gelman, A., Park, D. K., & Kaplan, N. (2005). Practical issues in
 // implementing and understanding Bayesian ideal point estimation. *Political
 // Analysis, 13*(2), 171-187. https://doi.org/10.1093/pan/mpi010
@@ -2495,6 +2516,98 @@ fn e_step_multigroup(
     (loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec)
 }
 
+/// Negative expected complete-data log-likelihood of one group's items at
+/// population parameters `(mu, sigma, taus)`, holding the E-step expected
+/// counts fixed (the ECM population objective, #2093). Nodes are laid out
+/// exactly as in the item M-step (`node = t * qs + h` for block items).
+#[allow(clippy::too_many_arguments)]
+fn population_neg_q(
+    v: &Validated,
+    params: &[ItemParams],
+    counts: &[Vec<Vec<f64>>],
+    tg_std: &[f64],
+    ts_std: &[f64],
+    mu: f64,
+    sigma: f64,
+    taus: &[f64],
+) -> f64 {
+    let mut total = 0.0;
+    for (i, par) in params.iter().enumerate() {
+        let (node_g, node_s): (Vec<f64>, Vec<f64>) = match v.item_block[i] {
+            Some(s) => tg_std
+                .iter()
+                .flat_map(|&xg| {
+                    ts_std
+                        .iter()
+                        .map(move |&xs| (mu + sigma * xg, taus[s] * xs))
+                })
+                .unzip(),
+            None => (
+                tg_std.iter().map(|&xg| mu + sigma * xg).collect(),
+                vec![0.0; tg_std.len()],
+            ),
+        };
+        let mut packed = vec![par.a_g];
+        packed.extend(par.a_s);
+        packed.extend_from_slice(&par.d);
+        // The slope prior does not depend on the population parameters, so the
+        // ECM population objective is the likelihood part alone.
+        total += item_neg_ll_grad(
+            &packed,
+            par.a_s.is_some(),
+            &node_g,
+            &node_s,
+            &counts[i],
+            v.n_cat,
+            SlopePrior::None,
+        )
+        .0;
+    }
+    total
+}
+
+/// Value and central-difference gradient of a low-dimensional objective.
+// ponytail: FD gradient for the 2 + n_specific population parameters; an
+// analytic node gradient is the upgrade if the population step shows up in
+// profiles.
+fn fd_value_grad(f: &impl Fn(&[f64]) -> f64, x: &[f64]) -> (f64, Vec<f64>) {
+    let h = 1e-5;
+    let grad = (0..x.len())
+        .map(|j| {
+            let mut up = x.to_vec();
+            let mut dn = x.to_vec();
+            up[j] += h;
+            dn[j] -= h;
+            (f(&up) - f(&dn)) / (2.0 * h)
+        })
+        .collect();
+    (f(x), grad)
+}
+
+/// Forward-difference Hessian of a gradient function at `x` (step `1e-5`),
+/// symmetrized in place row by row as the pre-#2030 FD item step did; used
+/// only by the low-dimensional ECM population step.
+#[allow(clippy::needless_range_loop)] // FD Hessian is inherently indexed
+fn fd_hessian_of_grad(grad: impl Fn(&[f64]) -> Vec<f64>, x: &[f64], g0: &[f64]) -> Vec<Vec<f64>> {
+    let np = x.len();
+    let h = 1e-5;
+    let mut hess = vec![vec![0.0f64; np]; np];
+    for j in 0..np {
+        let mut xj = x.to_vec();
+        xj[j] += h;
+        let gj = grad(&xj);
+        for r in 0..np {
+            hess[r][j] = (gj[r] - g0[r]) / h;
+        }
+    }
+    for r in 0..np {
+        for c in 0..np {
+            hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
+        }
+    }
+    hess
+}
+
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
 fn run_single_start_multigroup(
@@ -2553,7 +2666,7 @@ fn run_single_start_multigroup(
                 }
             }
         }
-        let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec) = e_step_multigroup(
+        let (ll, counts, ..) = e_step_multigroup(
             v,
             y,
             observed,
@@ -2700,45 +2813,68 @@ fn run_single_start_multigroup(
             }
         }
         // M-step, focal group distributions (reference g = 0 pinned to
-        // N(0, I)). General: mu = mean EAP, var = mean posterior second
-        // moment minus mu^2 (Bock-Aitkin/Bock-Zimowski moment update).
-        // Specifics (when estimated): tau^2 = mean posterior second moment
-        // at zero mean. All unconstrained-positive with NO clamping: a
-        // non-finite or non-positive update fails the start loudly.
+        // N(0, I)): an ECM conditional-maximization step (Meng & Rubin,
+        // 1993, sec. 1, p. 269: each CM-step increases Q, so ECM is a GEM
+        // and increases the likelihood; Dempster, Laird, & Rubin, 1977,
+        // sec. 3, eq. 3.5 and Theorem 1, p. 7) on the SAME expected complete-data log-likelihood the item
+        // step just ascended — this iteration's expected counts, the updated
+        // item parameters, and nodes `mu + sigma x` / `tau x` as functions of
+        // the population parameters. The Bock-Aitkin/Bock-Zimowski posterior-
+        // moment update moved the nodes without ascending that function, so
+        // the guarded observed-data quadrature log-likelihood could decrease
+        // (#2093). `log sigma`/`log tau` keep positivity structural: NO
+        // clamping; a non-finite or non-positive result fails loudly.
         for g in 1..n_groups {
-            if w_acc[g] <= 0.0 || !w_acc[g].is_finite() {
-                return Err(format!("group {g} has no posterior mass"));
-            }
-            let mean = s1_g[g] / w_acc[g];
-            let var = s2_g[g] / w_acc[g] - mean * mean;
-            if !mean.is_finite() || !var.is_finite() {
-                return Err(format!("non-finite group-{g} general moment update"));
-            }
-            if var <= 0.0 {
+            let n_spec = if cfg.estimate_specific_vars {
+                v.n_specific
+            } else {
+                0
+            };
+            let mut x0 = vec![mus[g], sigmas[g].ln()];
+            x0.extend(taus[g][..n_spec].iter().map(|t| t.ln()));
+            let neg_q = |x: &[f64]| {
+                let mut taus_x = taus[g].clone();
+                for s in 0..n_spec {
+                    taus_x[s] = x[2 + s].exp();
+                }
+                population_neg_q(
+                    v,
+                    &params_groups[g],
+                    &counts[g],
+                    tg_std,
+                    ts_std,
+                    x[0],
+                    x[1].exp(),
+                    &taus_x,
+                )
+            };
+            let x = newton_descent(
+                x0,
+                |x| {
+                    let (f, g) = fd_value_grad(&neg_q, x);
+                    let hess = fd_hessian_of_grad(|y| fd_value_grad(&neg_q, y).1, x, &g);
+                    (f, g, hess)
+                },
+                &neg_q,
+                cfg.ridge,
+                cfg.newton_iter,
+            );
+            let (mean, sd) = (x[0], x[1].exp());
+            if !mean.is_finite() || !sd.is_finite() || sd <= 0.0 {
                 return Err(format!(
-                    "non-positive group-{g} general variance update ({var:.6e})"
+                    "invalid group-{g} general distribution update (mean={mean:.6e}, sd={sd:.6e})"
                 ));
             }
             mus[g] = mean;
-            sigmas[g] = var.sqrt();
-            if cfg.estimate_specific_vars {
-                for s in 0..v.n_specific {
-                    // Denominator counts only persons observed in this block
-                    // (block-wise MAR must not dilute the variance update).
-                    if w_spec[g][s] <= 0.0 || !w_spec[g][s].is_finite() {
-                        return Err(format!("group {g} specific-{s} has no posterior mass"));
-                    }
-                    let vrow = s2_spec[g][s] / w_spec[g][s];
-                    if !vrow.is_finite() {
-                        return Err(format!("non-finite group-{g} specific-{s} update"));
-                    }
-                    if vrow <= 0.0 {
-                        return Err(format!(
-                            "non-positive group-{g} specific-{s} variance update ({vrow:.6e})"
-                        ));
-                    }
-                    taus[g][s] = vrow.sqrt();
+            sigmas[g] = sd;
+            for s in 0..n_spec {
+                let tau = x[2 + s].exp();
+                if !tau.is_finite() || tau <= 0.0 {
+                    return Err(format!(
+                        "invalid group-{g} specific-{s} scale update ({tau:.6e})"
+                    ));
                 }
+                taus[g][s] = tau;
             }
         }
         n_iter += 1;
