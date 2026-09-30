@@ -81,6 +81,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._seed import _u64_seed
+
 
 
 def _finite_integer_control(value: object, name: str) -> int:
@@ -142,21 +144,6 @@ def _slope_prior_pair(
     return mu_f, sd_f
 
 
-def _u64_seed(value: object) -> int:
-    """Normalize the deterministic start seed without callbacks."""
-
-    if isinstance(value, bool):
-        raise ValueError("seed must be a non-negative integer")
-    try:
-        numeric = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError("seed must be a non-negative integer") from None
-    if not np.isfinite(numeric) or numeric != np.floor(numeric):
-        raise ValueError("seed must be a non-negative integer")
-    seed = int(numeric)
-    if not 0 <= seed < 2**64:
-        raise ValueError("seed must be in [0, 2**64)")
-    return seed
 
 
 @dataclass
