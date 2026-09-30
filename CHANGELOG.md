@@ -12,6 +12,8 @@
 
 ### Changed
 
+- Item-bank lifecycle HTML reports now expose timeline state cells as row headers and use tabular numerals without forcing body row headers bold; the existing report test fixes the semantic and visual contract (#2303).
+
 - Polytomous person fit now requires convergence by default, including for
   duck-typed fits with unknown convergence. `allow_unconverged=True` permits
   diagnostic use only for legacy or duck-typed fits and marks the result
