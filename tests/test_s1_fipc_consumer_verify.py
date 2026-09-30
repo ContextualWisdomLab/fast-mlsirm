@@ -240,3 +240,33 @@ def test_cli_refuses_unsanitized_nonfinite_json(monkeypatch, capsys) -> None:
     with pytest.raises(ValueError, match="JSON compliant"):
         module.main()
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize(
+    "reason, reported_convergence, expected",
+    [("max_iter_reached", False, True), ("step_limited", False, True),
+     ("unknown_stop", False, False), (None, False, False),
+     ("max_iter_reached", None, False), ("max_iter_reached", 0, False),
+     ("step_limited", True, False)],
+)
+def test_budget_failure_requires_documented_nonconvergence(monkeypatch, reason, reported_convergence, expected) -> None:
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+
+    def fipc(*args):
+        fit = original(*args)
+        if not fit["converged"]:
+            if reason is None:
+                fit.pop("termination_reason")
+            else:
+                fit["termination_reason"] = reason
+            fit["converged"] = reported_convergence
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    assert receipt["convergence_failure"] is expected
+    if not expected:
+        assert receipt["all_pass"] is False

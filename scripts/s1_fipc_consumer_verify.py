@@ -218,7 +218,10 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
         and np.array_equal(shaped["threshold"][ANCHOR], fixed["threshold"].reshape(N_ITEMS, N_CAT - 1)[ANCHOR])
     )
     fail = call_fipc(focal_y, fixed, device, max_iter=1)
-    results["convergence_failure"] = bool(not fail["converged"] and fail["termination_reason"] == "max_iter_reached")
+    results["convergence_failure"] = bool(
+        fail.get("converged") is False
+        and fail.get("termination_reason") in {"max_iter_reached", "step_limited"}
+    )
     results["orthogonal_specific_prior_fixed"] = bool(np.array_equal(np.asarray(fit["specific_sd"]), np.ones(N_SPECIFIC)))
     bad_map = PRIMARY_MAP.copy()
     bad_map[:, 1] = False
