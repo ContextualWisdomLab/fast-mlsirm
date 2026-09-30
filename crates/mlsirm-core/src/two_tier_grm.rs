@@ -1113,9 +1113,13 @@ fn item_logprob_tables(
                 .map_err(|e| format!("item/node probability cache allocation failed: {e}"))?;
             for g in 0..grid {
                 for h in 0..h_count {
-                    for cat in 0..v.n_cat {
-                        table.push(item_cat_logprob(v, params, coords, ts, i, g, h, cat));
-                    }
+                    let par = &params[i];
+                    let prim = item_primary_base(v, par, coords, g, i);
+                    let base = match par.a_s {
+                        Some(a_s) => prim + a_s * ts[h],
+                        None => prim,
+                    };
+                    table.extend_from_slice(&grm_logprobs(base, &par.d));
                 }
             }
             Ok(table)

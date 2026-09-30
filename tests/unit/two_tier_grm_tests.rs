@@ -67,6 +67,106 @@ pub(crate) fn record_reference_gpu_timing(name: &'static str, seconds: f64) {
     });
 }
 
+thread_local! {
+    static TABLE_GRM_CALLS: std::cell::Cell<Option<usize>> = const {
+        std::cell::Cell::new(None)
+    };
+}
+
+pub(crate) fn record_table_grm_call() {
+    TABLE_GRM_CALLS.with(|calls| {
+        if let Some(n) = calls.get() {
+            calls.set(Some(n + 1));
+        }
+    });
+}
+
+/// 기존 scalar 범주 평가를 oracle로 유지한다. Cai (2010, pp. 608–609,
+/// Appendices A/B)의 동일 node 확률을 범주 순서대로 보존하는 검사다.
+/// 참고문헌: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. *Psychometrika, 75*(4), 581–612.
+/// https://doi.org/10.1007/s11336-010-9178-0.
+#[test]
+fn item_tables_preserve_scalar_bits_with_one_grm_call_per_node() {
+    use super::{item_cat_logprob, item_logprob_tables, ItemParams, Validated};
+    let coords = [1.0, 0.0, -2.0, 0.7, 3.1, -1.3];
+    let ts = [-1.7, 0.0, 0.6];
+    let mut cases = 0;
+    let mut zero_mass_cells = 0;
+    for specifics in [false, true] {
+        for thresholds in [vec![0.3], vec![1.2, 0.0, -1.2], vec![1e-18, 0.0]] {
+            let v = Validated {
+                n_persons: 1,
+                n_items: 4,
+                n_primary: 2,
+                n_specific: usize::from(specifics),
+                n_cat: thresholds.len() + 1,
+                m1: thresholds.len(),
+                grid_size: 3,
+                free_primaries: vec![vec![0, 1], vec![1, 0], vec![0], vec![1]],
+                blocks: if specifics { vec![vec![0, 1]] } else { vec![] },
+                specific_free: if specifics { vec![2, 3] } else { vec![0, 1, 2, 3] },
+                item_block: if specifics {
+                    vec![Some(0), Some(0), None, None]
+                } else {
+                    vec![None; 4]
+                },
+            };
+            let mut params: Vec<ItemParams> = [
+                (vec![0.9, -0.3], -0.7),
+                (vec![-1.2, 0.7], 0.8),
+                (vec![0.5, 0.0], 0.0),
+                (vec![0.0, -0.8], 0.0),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a_p, a_s))| ItemParams {
+                a_p,
+                a_s: v.item_block[i].map(|_| a_s),
+                d: thresholds.clone(),
+            })
+            .collect();
+            for fresh in [false, true] {
+                if fresh {
+                    for par in &mut params {
+                        for a in &mut par.a_p { *a *= -1.13; }
+                    }
+                }
+                TABLE_GRM_CALLS.with(|calls| calls.set(Some(0)));
+                let result = item_logprob_tables(&v, &params, &coords, &ts, 3);
+                let actual_calls = TABLE_GRM_CALLS.with(|calls| calls.replace(None).unwrap());
+                let tables = result.unwrap();
+                let nodes: usize = v.item_block.iter()
+                    .map(|block| 3 * if block.is_some() { ts.len() } else { 1 })
+                    .sum();
+                println!("table_helper_calls={actual_calls}, nodes={nodes}, n_cat={}", v.n_cat);
+                assert_eq!(actual_calls, nodes, "전체 범주 확률의 node별 중복 계산");
+                for i in 0..v.n_items {
+                    let hs = if v.item_block[i].is_some() { ts.len() } else { 1 };
+                    assert_eq!(tables[i].len(), 3 * hs * v.n_cat);
+                    for g in 0..3 {
+                        for h in 0..hs {
+                            for cat in 0..v.n_cat {
+                                let expected = item_cat_logprob(&v, &params, &coords, &ts, i, g, h, cat);
+                                let actual = tables[i][(g * hs + h) * v.n_cat + cat];
+                                assert_eq!(actual.to_bits(), expected.to_bits());
+                                zero_mass_cells += usize::from(actual == f64::NEG_INFINITY);
+                            }
+                        }
+                    }
+                }
+                cases += 1;
+            }
+            TABLE_GRM_CALLS.with(|calls| calls.set(Some(0)));
+            assert!(item_logprob_tables(&v, &params, &coords, &ts, usize::MAX).is_err());
+            assert_eq!(TABLE_GRM_CALLS.with(|calls| calls.replace(None).unwrap()), 0);
+        }
+    }
+    assert_eq!(cases, 12);
+    assert!(zero_mass_cells > 0);
+    println!("table_scalar_bit_cases={cases}, legal_zero_mass_cells={zero_mass_cells}, overflow_rejected_before_probability=true");
+}
+
 pub(super) fn record_reference_trace(
     iteration: usize,
     params: &[crate::two_tier_grm::ItemParams],

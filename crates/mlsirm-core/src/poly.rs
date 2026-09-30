@@ -87,6 +87,8 @@ fn log_sigmoid(x: f64) -> f64 {
 /// of graded scores. *Psychometrika, 34*(S1), 1–97.
 /// https://doi.org/10.1007/BF03372160
 pub fn grm_logprobs(base: f64, thresholds: &[f64]) -> Vec<f64> {
+    #[cfg(test)]
+    crate::two_tier_grm::tests::record_table_grm_call();
     let kb = thresholds.len(); // number of boundaries = K-1
     let mut out = vec![0.0_f64; kb + 1];
     if kb == 0 {
