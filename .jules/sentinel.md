@@ -60,7 +60,7 @@ errors for governance and procurement evidence.
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
 
-## 2026-08-19 - [JSON Depth Deflation Vulnerability]
-**Vulnerability:** `_validate_raw_json_depth` 함수 등에서 닫는 괄호(`]`, `}`)를 만났을 때 `depth`가 0보다 큰지 확인하지 않고 무조건 감소시켜서 `depth` 값이 음수로 떨어지는 취약점이 있었습니다. 공격자가 닫는 괄호를 초기에 대량으로 넣어 `depth`를 인위적으로 낮춘 뒤, 깊게 중첩된 JSON 구조를 전달하면 설정된 최대 깊이 제한을 우회하여 `RecursionError`를 유발하고 DoS(Denial of Service) 공격을 성공시킬 수 있습니다.
-**Learning:** 수동으로 JSON 중첩 깊이를 추적할 때는, 올바르지 않은 구문의 입력(예: 닫는 괄호만 먼저 나오는 경우)으로 인해 카운터가 언더플로우(underflow)되는 것을 방지해야 제한 로직이 안전하게 작동합니다.
-**Prevention:** 닫는 괄호를 만나 `depth`를 감소시킬 때는 항상 `if depth > 0: depth -= 1` 와 같이 언더플로우 방지 조건을 추가하여 카운터가 0 미만으로 떨어지지 않게 보호해야 합니다.
+## 2026-08-19 - [JSON Depth Counter Underflow]
+**Vulnerability:** In `_validate_raw_json_depth`, the depth counter was decremented whenever a closing delimiter (`]`, `}`) was encountered without verifying that the current depth was greater than zero. This allowed the counter to underflow into negative values.
+**Learning:** When manually tracking nesting depth, failure to prevent underflow on malformed input (e.g., leading closing delimiters) can lead to incorrect state tracking.
+**Prevention:** Ensure the depth counter is protected against underflow by checking `if depth > 0` before decrementing, maintaining a stable invariant for the depth limit check.
