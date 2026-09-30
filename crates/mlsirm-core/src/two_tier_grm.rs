@@ -377,6 +377,9 @@ pub struct TwoTierFipcResult {
     pub converged: bool,
     pub termination_reason: String,
     pub final_loglik_change: f64,
+    /// Max absolute displacement of the last full EM update (see
+    /// [`fipc_convergence_decision`]).
+    pub final_param_change: f64,
     pub n_parameters: usize,
     pub n_accepted_prior_steps: usize,
     pub n_rollback_full: usize,
@@ -1496,6 +1499,97 @@ fn fixed_fipc_e_step(
     (loglik, sum_primary, sum_primary2, sum_specific2)
 }
 
+/// Outcome of one FIPC convergence check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FipcStopDecision {
+    Continue,
+    Converged,
+    StepLimited,
+}
+
+/// Decide whether an FIPC EM cycle has converged.
+///
+/// EM stops when "the change between iterations falls below some
+/// pre-specified tolerance" (Chalmers, 2012, *JSS* 48(6), p. 6). mirt measures
+/// that change as the maximum absolute displacement of the parameters under
+/// one EM cycle, pre- versus post-M-step (`hasConverged(p0, p1, TOL)` =
+/// `all(abs(p0 - p1) < TOL)`, mirt R/utils.R at revision
+/// 4ef09d3e4b6903442ec61bb11f593b7418aa5290, lines 2929–2941; called from
+/// R/EMstep.group.R at revision 7dd085d61a6a378a6bc37442bb449c9190c68632,
+/// line 338). Here that EM-map displacement is ANDed with the
+/// observed-data criterion `|dLL| <= tol * (1 + |LL|)`.
+///
+/// The displacement is that of the full EM update, not the step finally
+/// accepted: a backtracked step with alpha near zero reports dLL = 0 while
+/// the EM map still moves the parameters, so it is not a fixed point. Only
+/// an undamped joint update can certify convergence; partial recovery steps
+/// remain step-limited even when their likelihood change is small.
+///
+/// Reference: Chalmers, R. P. (2012). mirt: A multidimensional item response
+/// theory package for the R environment. *Journal of Statistical Software,
+/// 48*(6), 1–29. https://doi.org/10.18637/jss.v048.i06
+pub(crate) fn fipc_convergence_decision(
+    loglik_change: f64,
+    previous_loglik: f64,
+    em_map_displacement: f64,
+    tol: f64,
+    full_step_accepted: bool,
+) -> FipcStopDecision {
+    if !full_step_accepted {
+        return FipcStopDecision::StepLimited;
+    }
+    let loglik_ok = loglik_change.is_finite()
+        && previous_loglik.is_finite()
+        && loglik_change.abs() <= tol * (1.0 + previous_loglik.abs());
+    let params_ok = em_map_displacement.is_finite() && em_map_displacement <= tol;
+    if loglik_ok && params_ok {
+        FipcStopDecision::Converged
+    } else {
+        FipcStopDecision::Continue
+    }
+}
+
+/// Maximum absolute change over the FIPC parameters, on the scales EM moves:
+/// focal means and covariances, log focal SDs, free item parameters, and log
+/// specific SDs when those are estimated.
+#[allow(clippy::too_many_arguments)]
+fn fipc_max_param_change(
+    before: &[ItemParams],
+    after: &[ItemParams],
+    anchor: &[bool],
+    mean_before: &[f64],
+    mean_after: &[f64],
+    cov_before: &[f64],
+    cov_after: &[f64],
+    specific_before: &[f64],
+    specific_after: &[f64],
+    n_primary: usize,
+    estimate_specific_vars: bool,
+) -> f64 {
+    let mut change: f64 = 0.0;
+    let mut track = |a: f64, b: f64| {
+        let delta = (a - b).abs();
+        change = if delta.is_finite() { change.max(delta) } else { f64::INFINITY };
+    };
+    for (i, (old, new)) in before.iter().zip(after).enumerate() {
+        if anchor[i] { continue; }
+        old.a_p.iter().zip(&new.a_p).for_each(|(&a, &b)| track(a, b));
+        if let (Some(a), Some(b)) = (old.a_s, new.a_s) { track(a, b); }
+        old.d.iter().zip(&new.d).for_each(|(&a, &b)| track(a, b));
+    }
+    mean_before.iter().zip(mean_after).for_each(|(&a, &b)| track(a, b));
+    for j in 0..n_primary {
+        for k in 0..n_primary {
+            let (a, b) = (cov_before[j * n_primary + k], cov_after[j * n_primary + k]);
+            if j == k { track(0.5 * a.ln(), 0.5 * b.ln()); } else { track(a, b); }
+        }
+    }
+    if estimate_specific_vars {
+        specific_before.iter().zip(specific_after).for_each(|(&a, &b)| track(a.ln(), b.ln()));
+    }
+    change
+}
+
 /// Fit a focal group with fixed item anchors under the two-tier GRM.
 ///
 /// This is the two-tier analogue of the bifactor FIPC implementation: the
@@ -1615,6 +1709,9 @@ pub fn fit_two_tier_grm_fipc(
     let mut consecutive_rollback = 0;
     let mut recovery_progress = false;
     let mut prior_update_decision_trace = Vec::new();
+    // Full EM-map displacement of the previous cycle (mirt's TOL quantity).
+    let mut em_map_displacement = f64::INFINITY;
+    let mut full_step_accepted = false;
     const MAX_CONSECUTIVE_ROLLBACKS: usize = 3;
 
     loop {
@@ -1676,7 +1773,13 @@ pub fn fit_two_tier_grm_fipc(
             // its next LL is flat by construction, not evidence of convergence.
             if !rolled_back
                 && recovery_progress
-                && change <= cfg.tol * (1.0 + previous.expect("previous loglik exists").abs())
+                && fipc_convergence_decision(
+                    change,
+                    previous.expect("previous loglik exists"),
+                    em_map_displacement,
+                    cfg.tol,
+                    full_step_accepted,
+                ) == FipcStopDecision::Converged
             {
                 converged = true;
                 termination_reason = "tolerance_met".to_string();
@@ -1685,7 +1788,12 @@ pub fn fit_two_tier_grm_fipc(
         }
         rolled_back = false;
         loglik_trace.push(ll);
-        if n_iter == cfg.max_iter { break; }
+        if n_iter == cfg.max_iter {
+            if n_iter > 0 && !full_step_accepted {
+                termination_reason = "step_limited".to_string();
+            }
+            break;
+        }
         let previous_params = params.clone();
         let previous_mean = mean.clone();
         let previous_covariance = covariance.clone();
@@ -1728,6 +1836,19 @@ pub fn fit_two_tier_grm_fipc(
                 specific_sd[s] = variance.sqrt();
             }
         }
+        em_map_displacement = fipc_max_param_change(
+            &previous_params,
+            &params,
+            anchor,
+            &baseline_mean,
+            &mean,
+            &baseline_covariance,
+            &covariance,
+            &baseline_specific_sd,
+            &specific_sd,
+            n_primary,
+            cfg.estimate_specific_vars,
+        );
         // The direct-GH reparameterization keeps standard weights but moves
         // the support after each focal-prior update. Item sufficient
         // statistics were formed on the pre-update support, so accept the
@@ -1767,9 +1888,10 @@ pub fn fit_two_tier_grm_fipc(
         };
         let acceptance_tolerance = 32.0 * f64::EPSILON * (1.0 + ll.abs());
         let fixed_improve_eps = 32.0 * f64::EPSILON * (1.0 + fixed_ll.abs());
-        if !candidate_ll.is_some_and(|value| {
+        full_step_accepted = candidate_ll.is_some_and(|value| {
             value.is_finite() && value >= ll - acceptance_tolerance
-        }) {
+        });
+        if !full_step_accepted {
             let target_mean = mean.clone();
             let target_covariance = covariance.clone();
             let target_specific_sd = specific_sd.clone();
@@ -2054,7 +2176,7 @@ pub fn fit_two_tier_grm_fipc(
     if cfg.estimate_specific_vars { n_parameters += n_specific; }
     let primary_sd = (0..n_primary).map(|d| covariance[d * n_primary + d].max(0.0).sqrt()).collect();
     let gpu_receipt = crate::gpu_bifactor::gpu_dispatch_receipt();
-    Ok(TwoTierFipcResult { a_primary, a_specific, threshold, primary_mean: mean, primary_cov: covariance, primary_sd, specific_sd, theta_p_eap, theta_p_sd, category_counts, loglik_trace, fixed_loglik_trace, fixed_primary_first_moment_trace, fixed_primary_second_moment_trace, fixed_specific_second_moment_trace, prior_mean_trace, prior_covariance_trace, prior_specific_sd_trace, n_iter, converged, termination_reason, final_loglik_change, n_parameters, n_accepted_prior_steps, n_rollback_full, consecutive_rollback, prior_update_decision_trace, gpu_execution_used: gpu_receipt.used, gpu_backend: gpu_receipt.backend, gpu_device_name: gpu_receipt.device_name, cpu_fallback_reason: gpu_receipt.fallback_reason })
+    Ok(TwoTierFipcResult { a_primary, a_specific, threshold, primary_mean: mean, primary_cov: covariance, primary_sd, specific_sd, theta_p_eap, theta_p_sd, category_counts, loglik_trace, fixed_loglik_trace, fixed_primary_first_moment_trace, fixed_primary_second_moment_trace, fixed_specific_second_moment_trace, prior_mean_trace, prior_covariance_trace, prior_specific_sd_trace, n_iter, converged, termination_reason, final_loglik_change, final_param_change: em_map_displacement, n_parameters, n_accepted_prior_steps, n_rollback_full, consecutive_rollback, prior_update_decision_trace, gpu_execution_used: gpu_receipt.used, gpu_backend: gpu_receipt.backend, gpu_device_name: gpu_receipt.device_name, cpu_fallback_reason: gpu_receipt.fallback_reason })
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item — the

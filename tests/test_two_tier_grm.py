@@ -196,3 +196,36 @@ def test_unobserved_category_fails_loudly() -> None:
     y[:, 0] = np.clip(y[:, 0], 0, N_CAT - 2)  # drop the top category
     with pytest.raises(ValueError, match="never observed"):
         _fit(y)
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu"])
+def test_fipc_seed1000_damping_does_not_report_convergence(device):
+    """Low-resolution stopping-rule reproduction, not a recovery study.
+
+    Chalmers (2012, p. 6) motivates checking change between EM iterations;
+    docs/fipc-convergence.md records the full-step and parameter-change policy.
+    """
+    from fast_mlsirm import _core
+
+    n_persons = 180
+    rng = np.random.default_rng(1000)
+    z0, z1 = rng.normal(size=(2, n_persons))
+    theta = np.column_stack((0.65 + 1.25 * z0, -0.35 + 0.8 * z1))
+    theta_s = rng.normal(size=(n_persons, N_SPECIFIC))
+    y = np.empty((n_persons, N_ITEMS), dtype=np.int64)
+    for i in range(N_ITEMS):
+        base = TRUE_A_P[i] @ theta.T + TRUE_A_S[i] * theta_s[:, SPECIFIC_MAP[i]]
+        cum = 1.0 / (1.0 + np.exp(-(base[:, None] + TRUE_D[i])))
+        probs = np.concatenate((1.0 - cum[:, [0]], -np.diff(cum, axis=1), cum[:, [-1]]), axis=1)
+        y[:, i] = (rng.random(n_persons)[:, None] > np.cumsum(probs, axis=1)).sum(axis=1)
+    fit = _core.fit_two_tier_grm_fipc(
+        y.reshape(-1), np.ones(y.size, dtype=bool), PRIMARY_MAP.reshape(-1), SPECIFIC_MAP,
+        n_persons, N_ITEMS, N_PRIMARY, N_SPECIFIC, N_CAT,
+        np.array([True, True, False, True, True, False]),
+        TRUE_A_P.reshape(-1), TRUE_A_S, TRUE_D.reshape(-1),
+        7, 7, 100, 1e-5, 5, 1e-8, False, device=device,
+    )
+    assert any("branch=joint_backtrack_accept" in step for step in fit["prior_update_decision_trace"])
+    assert not fit["converged"]
+    assert fit["termination_reason"] in {"step_limited", "max_iter_reached", "prior_update_stalled"}
+    assert fit["final_param_change"] > 1e-5

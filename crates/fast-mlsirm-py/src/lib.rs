@@ -2040,6 +2040,7 @@ fn fit_two_tier_grm_fipc(
     out.set_item("converged", res.converged)?;
     out.set_item("termination_reason", res.termination_reason)?;
     out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("final_param_change", res.final_param_change)?;
     out.set_item("n_parameters", res.n_parameters)?;
     out.set_item("n_accepted_prior_steps", res.n_accepted_prior_steps)?;
     out.set_item("n_rollback_full", res.n_rollback_full)?;
