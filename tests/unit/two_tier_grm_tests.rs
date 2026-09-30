@@ -371,6 +371,7 @@ fn oracle_rejects_non_correlation_phi() {
 }
 
 #[test]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn arbitrary_quadrature_counts_above_the_old_fixed_table_are_accepted() {
     // #1929: node count controls integration precision and must not be
     // capped at a fixed table; 5/22/100 used to be rejected, now must fit
@@ -991,6 +992,7 @@ fn focal_em_preserves_one_step_moments_and_termination_receipts() {
 /// This bank, count, quadrature and error tolerance are test choices; the
 /// source does not prescribe them or establish study-model identification.
 #[test]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn focal_gaussian_recovers_declared_distribution() {
     use crate::two_tier_grm::fit_two_tier_grm_focal_orthogonal;
     let ap = [1.2, 1.6, 0.5, 0.8];

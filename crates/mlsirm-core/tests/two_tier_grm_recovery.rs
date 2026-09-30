@@ -206,6 +206,7 @@ fn correlation(a: &[f64], b: &[f64]) -> f64 {
 }
 
 #[test]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn two_tier_grm_recovers_true_parameters_including_primary_correlation() {
     let n_persons = 2_000usize;
     let (y, true_theta) = simulate(n_persons, 24_191_204);

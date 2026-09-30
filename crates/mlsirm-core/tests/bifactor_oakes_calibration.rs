@@ -174,6 +174,7 @@ const CAL_QG: usize = 21;
 const CAL_QS: usize = 15;
 
 #[test]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn se_matches_empirical_sd_over_simulation_replicates() {
     let fit_cfg = BifactorGrmConfig {
         q_general: CAL_QG,
@@ -333,6 +334,7 @@ fn se_matches_empirical_sd_over_simulation_replicates() {
 const CONV_N: usize = 800;
 
 #[test]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn estimates_stabilize_as_grid_grows_within_supported_cap() {
     let y = simulate(CONV_N, 0x000C_0E77);
     assert!(covers_all_categories(&y, CONV_N));

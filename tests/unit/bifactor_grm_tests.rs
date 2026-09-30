@@ -1298,6 +1298,7 @@ fn refuse_tolerance_reclassifies_bit_identical_start() {
 }
 
 #[test]
+#[cfg_attr(coverage, ignore = "heavy-numeric: slow CPU fit; runs in the non-coverage rust job")]
 fn dense_quadrature_fit_never_claims_tolerance_at_start_slopes() {
     // Compact #1976-shaped design (13 items / 3 specifics / 4 cats). q=421 is
     // where Golub–Welsch produces exactly-zero prior weights; the pre-fix

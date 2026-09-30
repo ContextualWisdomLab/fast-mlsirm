@@ -146,3 +146,38 @@ def test_stable_compiler_updates_arrive_as_reviewable_pull_requests() -> None:
     assert "    schedule:\n      interval: \"weekly\"" in block
     assert "    cooldown:\n      default-days: 7" in block
     assert "    open-pull-requests-limit: 1" in block
+
+
+# Rust tests measured above 60 s (up to 2,182 s) in a local non-coverage run
+# on 2026-09-30; under coverage instrumentation on s1 amd64,
+# bifactor_oakes_calibration exceeded 3 h 37 min.
+_HEAVY_NUMERIC_RUST_TESTS = (
+    ("tests/unit/bifactor_grm_tests.rs", "dense_quadrature_fit_never_claims_tolerance_at_start_slopes"),
+    ("tests/unit/two_tier_grm_tests.rs", "arbitrary_quadrature_counts_above_the_old_fixed_table_are_accepted"),
+    ("tests/unit/two_tier_grm_tests.rs", "focal_gaussian_recovers_declared_distribution"),
+    ("crates/mlsirm-core/tests/bifactor_oakes_calibration.rs", "estimates_stabilize_as_grid_grows_within_supported_cap"),
+    ("crates/mlsirm-core/tests/bifactor_oakes_calibration.rs", "se_matches_empirical_sd_over_simulation_replicates"),
+    ("crates/mlsirm-core/tests/two_tier_grm_mirt_agreement.rs", "two_tier_grm_agrees_with_mirt_bfactor_two_tier_graded"),
+    ("crates/mlsirm-core/tests/two_tier_grm_recovery.rs", "two_tier_grm_recovers_true_parameters_including_primary_correlation"),
+    ("crates/mlsirm-core/tests/two_tier_oakes_mirt.rs", "rust_two_tier_oakes_se_matches_mirt_fixture"),
+)
+_HEAVY_NUMERIC_MARKER = '#[cfg_attr(coverage, ignore = "heavy-numeric:'
+
+
+def test_heavy_numeric_rust_tests_skip_only_under_coverage() -> None:
+    """Coverage runs skip heavy numeric tests; the plain ``rust`` job still runs them.
+
+    cargo-llvm-cov enables ``cfg(coverage)`` (its README, ``--no-cfg-coverage``),
+    so the marker removes these tests from instrumented runs only. Review
+    sandboxes key on the ``heavy-numeric:`` reason text.
+    """
+
+    for relative, name in _HEAVY_NUMERIC_RUST_TESTS:
+        lines = (_ROOT / relative).read_text(encoding="utf-8").splitlines()
+        index = next(i for i, line in enumerate(lines) if line.startswith(f"fn {name}("))
+        attributes = lines[max(0, index - 3) : index]
+        assert any(line.startswith(_HEAVY_NUMERIC_MARKER) for line in attributes), (relative, name)
+        assert not any(line.strip() == "#[ignore]" for line in attributes), (relative, name)
+    rust_job = _CI.read_text(encoding="utf-8").split("\n  rust:\n", 1)[1].split("\n  gpu-smoke:\n", 1)[0]
+    assert "cargo test --workspace" in rust_job
+    assert "llvm-cov" not in rust_job
