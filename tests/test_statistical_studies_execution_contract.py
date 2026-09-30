@@ -92,6 +92,27 @@ def test_two_tier_reference_uses_shlex_and_shell_free_runner_invocation():
     assert "stderr.log" in job
     assert "reference-gpu-benchmark.json" in job
     assert "if: always()" in job
+    assert "reference-gpu-resource-probe.log" in job
+
+
+def test_two_tier_resource_probe_is_not_a_fit_acceptance_receipt():
+    """Adapter probe는 수치 적합 또는 수렴 수용으로 계산하지 않는다."""
+    workflow = _workflow_text()
+    _, job = workflow.split("  two-tier-reference-gpu:\n", maxsplit=1)
+    assert "reference_resource_probe:" not in job
+    assert 'if: ${{ inputs.reference_resource_probe == true }}' in job
+    assert 'if: ${{ inputs.reference_resource_probe != true }}' in job
+    assert 'G1_GPU_RESOURCE_PROBE: "1"' in job
+    assert "cargo test -p mlsirm-core --lib" in job
+    assert (
+        "two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu "
+        "\\\n            -- --ignored --exact --nocapture"
+    ) in job
+    assert "tee reference-gpu-resource-probe.log" in job
+    assert 'grep -q "test result: ok. 1 passed" reference-gpu-resource-probe.log' in job
+    assert "adapter 연결 증거일 뿐 수치 적합 또는 과학적 수용이 아닙니다." in job
+    assert '"--device", "both",' in job
+    assert "reference-gpu-resource-probe.log" in job
 
 
 def test_two_tier_reference_keeps_all_numerical_controls_caller_required():

@@ -46,6 +46,9 @@ def test_manual_two_tier_profile_preserves_default_study_ownership():
     assert "default: all" in text
     assert "two-tier-reference-gpu" in text
     assert "reference_args:" in text
+    assert "reference_resource_probe:" in text
+    assert "type: boolean" in text
+    assert "default: false" in text
     assert "default: \"\"" in text
     expected_guard = (
         "if: ${{ github.event_name != 'workflow_dispatch' "
@@ -90,6 +93,7 @@ def test_reference_gpu_fit_has_one_hardware_execution_owner():
     assert f"cargo test -p mlsirm-core --lib {name}" in hardware
     assert "--ignored --exact --nocapture | tee reference-gpu-fit.log" in hardware
     assert 'grep -q "test result: ok. 1 passed" reference-gpu-fit.log' in hardware
+    assert "G1_GPU_RESOURCE_PROBE" not in text
 
 
 def test_ignored_rust_shards_allow_long_recovery_evidence_to_finish():

@@ -344,6 +344,18 @@ fn reference_fit_gpu_is_explicit_and_never_substituted() {
 #[cfg(all(feature = "gpu", not(coverage)))]
 #[ignore = "requires hardware GPU; CPU/GPU reference-fit parity"]
 fn reference_fit_actual_gpu_matches_cpu() {
+    if std::env::var("G1_GPU_RESOURCE_PROBE").as_deref()==Ok("1") {
+        let context=crate::gpu::GpuContext::get().expect("hardware GPU context must initialize");
+        assert!(matches!(context.adapter_info.device_type,wgpu::DeviceType::DiscreteGpu
+            |wgpu::DeviceType::IntegratedGpu|wgpu::DeviceType::VirtualGpu));
+        let limits=context.device.limits();
+        println!("resource_probe_only=true, adapter_name={}, adapter_backend={:?}, adapter_type={:?}, max_storage_binding_bytes={}, max_buffer_bytes={}, max_storage_buffers_per_stage={}, max_workgroups_per_dimension={}",
+            context.adapter_info.name,context.adapter_info.backend,context.adapter_info.device_type,
+            limits.max_storage_buffer_binding_size,limits.max_buffer_size,
+            limits.max_storage_buffers_per_shader_stage,limits.max_compute_workgroups_per_dimension);
+        println!("resource_probe_only: no model fit, no quadrature reduction, no numerical acceptance");
+        return;
+    }
     // GPU의 integer binary64 덧셈을 실제 CPU f64 bit와 먼저 대조한다.
     use crate::gpu_bifactor::{e_step_reduced_gpu_log_products, ReducedEstepInputs};
     let mut pairs = vec![

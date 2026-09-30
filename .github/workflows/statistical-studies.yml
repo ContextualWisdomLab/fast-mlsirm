@@ -16,6 +16,11 @@ on:
         type: string
         required: false
         default: ""
+      reference_resource_probe:
+        description: 수치 적합 없이 격리 GPU adapter 접근만 확인합니다
+        type: boolean
+        required: false
+        default: false
   schedule:
     # Stagger from the top of the hour to reduce hosted-runner congestion.
     - cron: "17 2 * * *"
@@ -208,9 +213,21 @@ jobs:
           python -m venv .venv
           .venv/bin/python -m pip install --require-hashes -r requirements/ci.txt
           .venv/bin/python -m pip install --no-build-isolation --no-deps -e .
+      # Probe는 adapter 연결 증거일 뿐 수치 적합 또는 과학적 수용이 아닙니다.
+      - name: 격리 GPU adapter 접근 probe
+        if: ${{ inputs.reference_resource_probe == true }}
+        env:
+          G1_GPU_RESOURCE_PROBE: "1"
+        run: |
+          set -euo pipefail
+          cargo test -p mlsirm-core --lib \
+            two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu \
+            -- --ignored --exact --nocapture 2>&1 | tee reference-gpu-resource-probe.log
+          grep -q "test result: ok. 1 passed" reference-gpu-resource-probe.log
       # 호출자가 max_iter를 정하고 240분 job 제한이 전체 설치·측정 시간을 제한합니다.
       # 값이나 모형을 자르지 않으며, 제한 시간 초과는 성공으로 바꾸지 않습니다.
       - name: 호출자가 정한 조건으로 two-tier 기준 적합 측정
+        if: ${{ inputs.reference_resource_probe != true }}
         run: |
           set -euo pipefail
           .venv/bin/python - <<'PY'
@@ -266,6 +283,7 @@ jobs:
         with:
           name: two-tier-reference-gpu-${{ github.run_id }}
           path: |
+            reference-gpu-resource-probe.log
             reference-gpu-stdout.log
             reference-gpu-stderr.log
             reference-gpu-benchmark.json
