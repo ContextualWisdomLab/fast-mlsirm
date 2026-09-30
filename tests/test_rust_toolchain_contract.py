@@ -102,7 +102,8 @@ def test_every_product_and_statistical_rust_action_uses_1_97_1() -> None:
 
     # ci.yml: python-matrix, focal-gpu-native, rust, gpu-smoke, package,
     # focal-gpu-joint-bootstrap.
-    expected_counts = ((_CI, 6), (_STUDIES, 5))
+    # Statistical Studies의 기존 5개 lane과 별도 opt-in 기준 GPU 측정 lane.
+    expected_counts = ((_CI, 6), (_STUDIES, 6))
     for workflow_path, expected in expected_counts:
         workflow = workflow_path.read_text(encoding="utf-8")
         steps = _rust_toolchain_steps(workflow)

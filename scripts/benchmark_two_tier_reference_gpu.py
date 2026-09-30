@@ -77,6 +77,9 @@ def main():
     fits = {}
     failed = False
     for device in ("cpu", "gpu") if args.device == "both" else (args.device,):
+        report["status"] = "running"
+        report["active_device"] = device
+        write_report()
         started = time.perf_counter()
         try:
             fit = fit_two_tier_grm(y, ap != 0, sm, **controls, device=device,
@@ -108,6 +111,8 @@ def main():
         }
         report["loglik_delta"] = report["runs"]["gpu"]["loglik"] - report["runs"]["cpu"]["loglik"]
     report["exit_status"] = int(failed)
+    report["status"] = "failed" if failed else "complete"
+    report.pop("active_device", None)
     write_report()
     output.close()
     return int(failed)

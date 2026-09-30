@@ -70,3 +70,61 @@ def test_grm_recovery_study_log_is_still_published():
     workflow = _workflow_text()
     assert "grm-recovery-study.log" in workflow
     assert "upload-artifact" in workflow
+
+
+def test_two_tier_reference_uses_shlex_and_shell_free_runner_invocation():
+    """호출 인자는 셸 명령이 되지 않고 고정 출력 경로를 바꾸지 못한다."""
+    workflow = _workflow_text()
+    _, job = workflow.split("  two-tier-reference-gpu:\n", maxsplit=1)
+    assert "REFERENCE_ARGS: ${{ inputs.reference_args }}" in job
+    assert "shlex.split(os.environ[\"REFERENCE_ARGS\"])" in job
+    assert "subprocess.run(" in job
+    assert "shell=False" in job
+    assert '"--device", "both",' in job
+    assert '"--out", "reference-gpu-benchmark.json",' in job
+    assert "shell=True" not in job
+    assert "secrets." not in job
+    assert "GH_TOKEN" not in job
+    assert "timeout=" not in job
+    assert "timeout-minutes: 240" in job
+    assert "without JSON evidence" in job
+    assert "stdout.log" in job
+    assert "stderr.log" in job
+    assert "reference-gpu-benchmark.json" in job
+    assert "if: always()" in job
+
+
+def test_two_tier_reference_keeps_all_numerical_controls_caller_required():
+    """호출자가 모든 수치 제어값을 정하며 q121 수렴을 지름길로 인정하지 않는다."""
+    workflow = _workflow_text()
+    _, job = workflow.split("  two-tier-reference-gpu:\n", maxsplit=1)
+    for option in (
+        "--persons",
+        "--q-primary",
+        "--q-specific",
+        "--max-iter",
+        "--tol",
+        "--n-starts",
+        "--seed",
+        "--gpu-memory-budget-bytes",
+    ):
+        assert option not in job
+    assert "--device both" not in job
+    assert "--out reference-gpu-benchmark.json" not in job
+
+
+def test_two_tier_success_requires_converged_cpu_gpu_and_gpu_adapter_evidence():
+    """성공 상태에는 두 장치의 수렴과 실제 GPU adapter 기록이 필요하다."""
+    workflow = _workflow_text()
+    _, job = workflow.split("  two-tier-reference-gpu:\n", maxsplit=1)
+    for condition in (
+        'json.loads(report_path.read_text(encoding="utf-8"))',
+        'set(runs) != {"cpu", "gpu"}',
+        'report.get("exit_status")',
+        'runs[device].get("converged") is not True',
+        'gpu.get("backend") != "gpu"',
+        'gpu.get("gpu_adapter_name")',
+        'gpu.get("gpu_adapter_backend")',
+    ):
+        assert condition in job
+    assert "tolerance" not in job.lower()

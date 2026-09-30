@@ -116,6 +116,33 @@ def test_reference_benchmark_preserves_existing_report(tmp_path, monkeypatch) ->
     assert output.read_text() == '{"preserve": true}\n'
 
 
+def test_reference_benchmark_records_incomplete_attempt(tmp_path, monkeypatch) -> None:
+    """실행이 중단돼도 입력·빌드 식별과 미완료 상태를 먼저 남긴다."""
+    import importlib.util
+    import json
+    import sys
+    from pathlib import Path
+
+    script = Path(__file__).parents[1] / "scripts/benchmark_two_tier_reference_gpu.py"
+    spec = importlib.util.spec_from_file_location("reference_benchmark_attempt", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    output = tmp_path / "attempt.json"
+    monkeypatch.setattr(sys, "argv", [str(script), "--persons", "64", "--q-primary", "7",
+        "--q-specific", "7", "--max-iter", "1", "--tol", "1e-6", "--n-starts", "1",
+        "--seed", "20260930", "--gpu-memory-budget-bytes", "268435456",
+        "--device", "both", "--out", str(output)])
+    def stopped(*args, **kwargs):
+        raise KeyboardInterrupt()
+    monkeypatch.setattr(module, "fit_two_tier_grm", stopped)
+    with pytest.raises(KeyboardInterrupt):
+        module.main()
+    receipt = json.loads(output.read_text())
+    assert receipt["status"] == "running" and receipt["active_device"] == "cpu"
+    assert receipt["runs"] == {} and "exit_status" not in receipt
+    assert receipt["input_sha256"] and receipt["core_sha256"]
+
+
 def test_primary_correlation_validation() -> None:
     with pytest.raises(ValueError, match="primary_correlation"):
         _fit(_simulate(SEED), primary_correlation="unknown")

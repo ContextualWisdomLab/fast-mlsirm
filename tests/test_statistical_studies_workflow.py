@@ -39,6 +39,48 @@ def test_exhaustive_studies_are_scheduled_manual_and_release_triggered():
     assert "gpu-recovery:" in text
 
 
+def test_manual_two_tier_profile_preserves_default_study_ownership():
+    """수동으로 새 프로필을 고른 경우에만 기존 연구 job을 건너뛴다."""
+    text = _STUDIES.read_text(encoding="utf-8")
+    assert "study:" in text
+    assert "default: all" in text
+    assert "two-tier-reference-gpu" in text
+    assert "reference_args:" in text
+    assert "default: \"\"" in text
+    expected_guard = (
+        "if: ${{ github.event_name != 'workflow_dispatch' "
+        "|| inputs.study != 'two-tier-reference-gpu' }}"
+    )
+    for job in (
+        "rust-ignored:",
+        "rust-pyo3-ignored:",
+        "rust-recovery:",
+        "grm-recovery:",
+        "gpu-recovery:",
+    ):
+        assert f"  {job}\n    {expected_guard}" in text
+    assert "two-tier-reference-gpu:" in text
+    assert "runs-on: [self-hosted, linux, x64, focal-gpu-isolated]" in text
+    assert "timeout-minutes: 240" in text
+    assert "contents: write" not in text
+
+
+def test_reference_gpu_checkout_is_reviewed_and_credentials_are_not_persisted():
+    """격리 runner는 고정된 checkout을 쓰고 인증 정보를 남기지 않는다."""
+    text = _STUDIES.read_text(encoding="utf-8")
+    checkout = "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+    assert text.count(checkout) == 6
+    block = text.split("  two-tier-reference-gpu:\n", 1)[1]
+    checkout_block = block.split(checkout, 1)[1].split("\n      - ", 1)[0]
+    assert "persist-credentials: false" in checkout_block
+    assert "python-version: \"3.12\"" in block
+    assert "toolchain: 1.97.1" in block
+    assert "requirements/ci.txt" in block
+    assert ".venv" in block
+    assert "scripts/benchmark_two_tier_reference_gpu.py" in block
+    assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in block
+
+
 def test_reference_gpu_fit_has_one_hardware_execution_owner():
     """GPU 기준 적합은 CPU shard 대신 격리 hardware 잡에서 실제 실행한다."""
     name = "two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu"
@@ -86,11 +128,11 @@ def test_grm_recovery_checkout_does_not_persist_credentials():
 
 
 def test_statistical_studies_checkouts_do_not_persist_credentials():
-    """Every scheduled study checkout withholds the Actions token from cargo test."""
+    """Every study checkout withholds the Actions token from executed code."""
     text = _STUDIES.read_text(encoding="utf-8")
     checkout = "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
     checkout_tails = text.split(checkout)[1:]
-    assert len(checkout_tails) == 5
+    assert len(checkout_tails) == 6
     for checkout_tail in checkout_tails:
         checkout_block = checkout_tail.split("\n      - ", maxsplit=1)[0]
         assert "\n        with:\n" in checkout_block

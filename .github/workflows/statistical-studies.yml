@@ -2,6 +2,20 @@ name: Statistical Studies
 
 on:
   workflow_dispatch:
+    inputs:
+      study:
+        description: 실행할 연구 프로필
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - two-tier-reference-gpu
+      reference_args:
+        description: 벤치마크에 필요한 제어값이며 숫자 기본값은 제공하지 않습니다
+        type: string
+        required: false
+        default: ""
   schedule:
     # Stagger from the top of the hour to reduce hosted-runner congestion.
     - cron: "17 2 * * *"
@@ -23,6 +37,7 @@ concurrency:
 
 jobs:
   rust-ignored:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'two-tier-reference-gpu' }}
     name: Ignored Rust studies shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     # Large Monte Carlo recovery tests are real evidence, not a reason to
@@ -57,6 +72,7 @@ jobs:
           --skip mlsirm-core/lib/mlsirm_core::two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu
 
   rust-pyo3-ignored:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'two-tier-reference-gpu' }}
     name: Ignored PyO3 studies
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -70,6 +86,7 @@ jobs:
       - run: cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml -- --ignored --test-threads=1 --nocapture
 
   rust-recovery:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'two-tier-reference-gpu' }}
     name: Literature CPU recovery studies
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -102,6 +119,7 @@ jobs:
           grep -q "test result: ok. 1 passed" higher-order-dina-recovery.log
 
   grm-recovery:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'two-tier-reference-gpu' }}
     name: GRM 500-rep recovery study
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -132,6 +150,7 @@ jobs:
           retention-days: 90
 
   gpu-recovery:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'two-tier-reference-gpu' }}
     name: Literature GPU recovery parity
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -165,3 +184,90 @@ jobs:
             gpu_recovery_matches_cpu_on_paper_design \
             -- --ignored --exact --nocapture 2>&1 | tee gpu-recovery-parity.log
           grep -q "test result: ok. 1 passed" gpu-recovery-parity.log
+
+  two-tier-reference-gpu:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.study == 'two-tier-reference-gpu' }}
+    name: Two-tier 기준 CPU/GPU 벤치마크
+    runs-on: [self-hosted, linux, x64, focal-gpu-isolated]
+    timeout-minutes: 240
+    env:
+      REFERENCE_ARGS: ${{ inputs.reference_args }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.97.1
+      - name: 해시 잠금 의존성과 Rust 편집 가능 확장 설치
+        run: |
+          set -euo pipefail
+          python -m venv .venv
+          .venv/bin/python -m pip install --require-hashes -r requirements/ci.txt
+          .venv/bin/python -m pip install --no-build-isolation --no-deps -e .
+      # 호출자가 max_iter를 정하고 240분 job 제한이 전체 설치·측정 시간을 제한합니다.
+      # 값이나 모형을 자르지 않으며, 제한 시간 초과는 성공으로 바꾸지 않습니다.
+      - name: 호출자가 정한 조건으로 two-tier 기준 적합 측정
+        run: |
+          set -euo pipefail
+          .venv/bin/python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import shlex
+          import subprocess
+          import sys
+
+          command = [
+              ".venv/bin/python",
+              "scripts/benchmark_two_tier_reference_gpu.py",
+              *shlex.split(os.environ["REFERENCE_ARGS"]),
+              "--device", "both",
+              "--out", "reference-gpu-benchmark.json",
+          ]
+          stdout_path = Path("reference-gpu-stdout.log")
+          stderr_path = Path("reference-gpu-stderr.log")
+          with stdout_path.open("wb") as stdout_log, stderr_path.open("wb") as stderr_log:
+              result = subprocess.run(
+                  command, shell=False, stdout=stdout_log, stderr=stderr_log
+              )
+          sys.stdout.write(stdout_path.read_text(encoding="utf-8", errors="replace"))
+          sys.stderr.write(stderr_path.read_text(encoding="utf-8", errors="replace"))
+          if result.returncode != 0:
+              raise SystemExit(result.returncode)
+          report_path = Path("reference-gpu-benchmark.json")
+          if not report_path.is_file():
+              raise SystemExit("benchmark exited successfully without JSON evidence")
+          try:
+              report = json.loads(report_path.read_text(encoding="utf-8"))
+          except (OSError, json.JSONDecodeError) as error:
+              raise SystemExit("benchmark JSON evidence is unreadable") from error
+          runs = report.get("runs") if isinstance(report, dict) else None
+          if not isinstance(runs, dict) or set(runs) != {"cpu", "gpu"}:
+              raise SystemExit("benchmark evidence must contain CPU and GPU runs")
+          if type(report.get("exit_status")) is not int or report["exit_status"] != 0:
+              raise SystemExit("benchmark evidence reports a failed exit status")
+          if any(not isinstance(runs[device], dict) or runs[device].get("converged") is not True for device in ("cpu", "gpu")):
+              raise SystemExit("CPU and GPU runs must both report convergence")
+          gpu = runs["gpu"]
+          if gpu.get("backend") != "gpu":
+              raise SystemExit("GPU run did not report the GPU backend")
+          if not isinstance(gpu.get("gpu_adapter_name"), str) or not gpu["gpu_adapter_name"].strip():
+              raise SystemExit("GPU adapter name is missing from benchmark evidence")
+          if not isinstance(gpu.get("gpu_adapter_backend"), str) or not gpu["gpu_adapter_backend"].strip():
+              raise SystemExit("GPU adapter backend is missing from benchmark evidence")
+          PY
+      - name: Two-tier 기준 적합 측정 증거 보관
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: two-tier-reference-gpu-${{ github.run_id }}
+          path: |
+            reference-gpu-stdout.log
+            reference-gpu-stderr.log
+            reference-gpu-benchmark.json
+          if-no-files-found: warn
+          retention-days: 90
