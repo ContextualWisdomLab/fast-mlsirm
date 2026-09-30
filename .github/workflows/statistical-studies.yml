@@ -21,6 +21,11 @@ on:
         type: boolean
         required: false
         default: false
+      reference_kernel_probe:
+        description: 고정 합성은행의 1인 E-step만 CPU와 실제 GPU에서 대조합니다
+        type: boolean
+        required: false
+        default: false
   schedule:
     # Stagger from the top of the hour to reduce hosted-runner congestion.
     - cron: "17 2 * * *"
@@ -75,6 +80,7 @@ jobs:
           --skip mlsirm-core/test/higher_order_mc_recovery::higher_order_dina_recovery_respects_monte_carlo_tolerance
           --skip mlsirm-core/lib/mlsirm_core::grm::tests::mc_grm_recovery_500
           --skip mlsirm-core/lib/mlsirm_core::two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu
+          --skip mlsirm-core/lib/mlsirm_core::two_tier_grm::tests::reference_gpu_fixed_bank_kernel_profile
 
   rust-pyo3-ignored:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'two-tier-reference-gpu' }}
@@ -207,6 +213,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.97.1
+      - name: 서로 다른 probe 선택의 동시 실행 거부
+        env:
+          RESOURCE_PROBE: ${{ inputs.reference_resource_probe }}
+          KERNEL_PROBE: ${{ inputs.reference_kernel_probe }}
+        run: |
+          python - <<'PY'
+          import os
+          if os.environ["RESOURCE_PROBE"] == os.environ["KERNEL_PROBE"] == "true":
+              raise SystemExit("resource-only와 kernel probe는 한 번에 선택할 수 없습니다")
+          PY
       - name: 해시 잠금 의존성과 Rust 편집 가능 확장 설치
         run: |
           set -euo pipefail
@@ -225,10 +241,44 @@ jobs:
             two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu \
             -- --ignored --exact --nocapture 2>&1 | tee reference-gpu-resource-probe.log
           grep -q "test result: ok. 1 passed" reference-gpu-resource-probe.log
+      # 고정은행 1인 E-step 측정은 수렴 적합·모수 갱신·연구 수용이 아닙니다.
+      - name: 고정 합성은행 1인 kernel 및 reference 대조
+        if: ${{ inputs.reference_kernel_probe == true }}
+        env:
+          G1_EXECUTION_HEAD: ${{ github.sha }}
+        run: |
+          .venv/bin/python - <<'PY'
+          import argparse
+          import os
+          import shlex
+          import subprocess
+          from pathlib import Path
+          parser = argparse.ArgumentParser(allow_abbrev=False)
+          for name in ("q-primary", "q-specific", "gpu-memory-budget-bytes", "host-memory-budget-bytes"):
+              parser.add_argument("--" + name, required=True, type=int)
+          controls = parser.parse_args(shlex.split(os.environ["REFERENCE_ARGS"]))
+          env = os.environ.copy()
+          for name, value in vars(controls).items():
+              if value <= 0:
+                  raise SystemExit("모든 kernel 노드·메모리 예산은 양수로 지정해야 합니다")
+              key = {"q_primary": "G1_KERNEL_Q_PRIMARY", "q_specific": "G1_KERNEL_Q_SPECIFIC",
+                     "gpu_memory_budget_bytes": "G1_KERNEL_GPU_BUDGET_BYTES",
+                     "host_memory_budget_bytes": "G1_KERNEL_HOST_BUDGET_BYTES"}[name]
+              env[key] = str(value)
+          command = ["cargo", "test", "-p", "mlsirm-core", "--lib",
+                     "two_tier_grm::tests::reference_gpu_fixed_bank_kernel_profile",
+                     "--", "--ignored", "--exact", "--nocapture"]
+          with Path("reference-gpu-kernel-probe.log").open("wb") as log:
+              result = subprocess.run(command, env=env, shell=False, stdout=log, stderr=subprocess.STDOUT)
+          text = Path("reference-gpu-kernel-probe.log").read_text(errors="replace")
+          print(text)
+          if result.returncode or "test result: ok. 1 passed" not in text:
+              raise SystemExit(result.returncode or 1)
+          PY
       # 호출자가 max_iter를 정하고 240분 job 제한이 전체 설치·측정 시간을 제한합니다.
       # 값이나 모형을 자르지 않으며, 제한 시간 초과는 성공으로 바꾸지 않습니다.
       - name: 호출자가 정한 조건으로 two-tier 기준 적합 측정
-        if: ${{ inputs.reference_resource_probe != true }}
+        if: ${{ inputs.reference_resource_probe != true && inputs.reference_kernel_probe != true }}
         run: |
           set -euo pipefail
           .venv/bin/python - <<'PY'
@@ -285,6 +335,7 @@ jobs:
           name: two-tier-reference-gpu-${{ github.run_id }}
           path: |
             reference-gpu-resource-probe.log
+            reference-gpu-kernel-probe.log
             reference-gpu-stdout.log
             reference-gpu-stderr.log
             reference-gpu-benchmark.json

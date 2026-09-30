@@ -101,7 +101,7 @@ def test_two_tier_resource_probe_is_not_a_fit_acceptance_receipt():
     _, job = workflow.split("  two-tier-reference-gpu:\n", maxsplit=1)
     assert "reference_resource_probe:" not in job
     assert 'if: ${{ inputs.reference_resource_probe == true }}' in job
-    assert 'if: ${{ inputs.reference_resource_probe != true }}' in job
+    assert 'if: ${{ inputs.reference_resource_probe != true && inputs.reference_kernel_probe != true }}' in job
     assert 'G1_GPU_RESOURCE_PROBE: "1"' in job
     assert "cargo test -p mlsirm-core --lib" in job
     assert (
@@ -119,6 +119,7 @@ def test_two_tier_reference_keeps_all_numerical_controls_caller_required():
     """호출자가 모든 수치 제어값을 정하며 q121 수렴을 지름길로 인정하지 않는다."""
     workflow = _workflow_text()
     _, job = workflow.split("  two-tier-reference-gpu:\n", maxsplit=1)
+    benchmark = job.split("      - name: 호출자가 정한 조건으로 two-tier 기준 적합 측정", 1)[1]
     for option in (
         "--persons",
         "--q-primary",
@@ -129,9 +130,34 @@ def test_two_tier_reference_keeps_all_numerical_controls_caller_required():
         "--seed",
         "--gpu-memory-budget-bytes",
     ):
-        assert option not in job
-    assert "--device both" not in job
-    assert "--out reference-gpu-benchmark.json" not in job
+        assert option not in benchmark
+    assert "--device both" not in benchmark
+    assert "--out reference-gpu-benchmark.json" not in benchmark
+
+
+def test_fixed_bank_kernel_probe_is_explicit_and_has_no_fit_receipt():
+    """단일 E-step 검사와 adapter·전체 적합의 완료 판정을 혼합하지 않는다."""
+    text = _workflow_text()
+    job = text.split("  two-tier-reference-gpu:\n", 1)[1]
+    assert "reference_kernel_probe:" in text and "default: false" in text
+    assert "resource-only와 kernel probe는 한 번에 선택할 수 없습니다" in job
+    assert "inputs.reference_kernel_probe == true" in job
+    assert 'argparse.ArgumentParser(allow_abbrev=False)' in job
+    assert 'parser.add_argument("--" + name, required=True, type=int)' in job
+    assert 'parser.parse_args(shlex.split(os.environ["REFERENCE_ARGS"]))' in job
+    assert "G1_KERNEL_Q_PRIMARY" in job and "G1_KERNEL_Q_SPECIFIC" in job
+    assert "G1_KERNEL_GPU_BUDGET_BYTES" in job and "G1_KERNEL_HOST_BUDGET_BYTES" in job
+    assert "G1_EXECUTION_HEAD: ${{ github.sha }}" in job
+    assert "two_tier_grm::tests::reference_gpu_fixed_bank_kernel_profile" in job
+    assert "reference-gpu-kernel-probe.log" in job and "test result: ok. 1 passed" in job
+    assert "--skip mlsirm-core/lib/mlsirm_core::two_tier_grm::tests::reference_gpu_fixed_bank_kernel_profile" in text
+    assert "수렴 적합·모수 갱신·연구 수용이 아닙니다" in job
+    source = (_WORKFLOW.parents[2] / "tests/unit/two_tier_grm_tests.rs").read_text()
+    profile = source.split("fn reference_gpu_fixed_bank_kernel_profile()", 1)[1].split("\n#[test]", 1)[0]
+    assert "required_timing_keys" in profile
+    assert "seconds.is_finite()" in profile
+    assert "seconds >= 0.0" in profile
+    assert "timings.len()" in profile
 
 
 def test_two_tier_success_requires_converged_cpu_gpu_and_gpu_adapter_evidence():

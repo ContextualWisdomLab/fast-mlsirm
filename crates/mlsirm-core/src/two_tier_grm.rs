@@ -1305,7 +1305,15 @@ fn e_step_gpu_person_moments(
     }
     // Log-probability tables depend on items/nodes, never on the person.
     // Reuse the exact CPU GRM probability implementation on the host.
+    #[cfg(test)]
+    let timing_enabled = tests::reference_gpu_timing_enabled();
+    #[cfg(test)]
+    let table_started = timing_enabled.then(std::time::Instant::now);
     let tables = item_logprob_tables(v, params, coords, ts, grid)?;
+    #[cfg(test)]
+    if let Some(started) = table_started {
+        tests::record_reference_gpu_timing("table_generation_seconds", started.elapsed().as_secs_f64());
+    }
     let tables_groups = vec![tables];
     // Existing group-reduction kernels are omitted on this posterior route.
     // The first primary coordinate is supplied only for the retained buffer
@@ -1325,6 +1333,8 @@ fn e_step_gpu_person_moments(
         stats.cross = vec![0.0; v.n_primary * v.n_primary];
     }
     let nl = v.n_primary + v.n_specific;
+    #[cfg(test)]
+    let gpu_prepare_started = timing_enabled.then(std::time::Instant::now);
     #[cfg(all(feature = "gpu", not(coverage)))]
     let reference_state = if reference_precision {
         use crate::gpu_bifactor::GpuLogProductState;
@@ -1353,7 +1363,17 @@ fn e_step_gpu_person_moments(
     } else {
         None
     };
+    #[cfg(test)]
+    if let Some(started) = gpu_prepare_started {
+        tests::record_reference_gpu_timing("gpu_state_preparation_seconds", started.elapsed().as_secs_f64());
+    }
     let mut reference_gpu_loglik = 0.0;
+    #[cfg(test)]
+    let mut gpu_sweep_seconds = 0.0;
+    #[cfg(test)]
+    let mut rust_lse_normalization_seconds = 0.0;
+    #[cfg(test)]
+    let mut posterior_contraction_seconds = 0.0;
     for start in (0..v.n_persons).step_by(batch) {
         let stop = (start + batch).min(v.n_persons);
         let inputs = ReducedEstepInputs {
@@ -1376,15 +1396,23 @@ fn e_step_gpu_person_moments(
             log_ws,
         };
         let post = if reference_precision {
+            #[cfg(test)]
+            let raw_sweep_started = timing_enabled.then(std::time::Instant::now);
             let (general, block) = reference_state
                 .as_ref()
                 .ok_or("missing GPU binary64 log-product state")?
                 .sweep(inputs.y, inputs.observed, stop - start)
                 .ok_or("GPU binary64 log-product dispatch/readback failed at declared grid")?;
+            #[cfg(test)]
+            if let Some(started) = raw_sweep_started {
+                gpu_sweep_seconds += started.elapsed().as_secs_f64();
+            }
             let persons = stop - start;
             if general.len() != persons * grid || block.len() != persons * joint_per_person {
                 return Err("GPU log-product output shape mismatch".into());
             }
+            #[cfg(test)]
+            let rust_lse_started = timing_enabled.then(std::time::Instant::now);
             let mut post = ReducedPersonPosteriors {
                 primary: vec![0.0; persons * grid],
                 joint: vec![0.0; persons * joint_per_person],
@@ -1429,6 +1457,10 @@ fn e_step_gpu_person_moments(
                     }
                 }
             }
+            #[cfg(test)]
+            if let Some(started) = rust_lse_started {
+                rust_lse_normalization_seconds += started.elapsed().as_secs_f64();
+            }
             post
         } else {
             let result = e_step_reduced_gpu_posteriors(&inputs)
@@ -1440,6 +1472,8 @@ fn e_step_gpu_person_moments(
                 .person_posteriors
                 .ok_or("missing GPU person posteriors")?
         };
+        #[cfg(test)]
+        let contraction_started = timing_enabled.then(std::time::Instant::now);
         for pp in 0..stop - start {
             for d in 0..nl {
                 let weights = if d < v.n_primary {
@@ -1491,9 +1525,21 @@ fn e_step_gpu_person_moments(
                 }
             }
         }
+        #[cfg(test)]
+        if let Some(started) = contraction_started {
+            posterior_contraction_seconds += started.elapsed().as_secs_f64();
+        }
+    }
+    #[cfg(test)]
+    {
+        tests::record_reference_gpu_timing("gpu_log_products_and_readback_seconds", gpu_sweep_seconds);
+        tests::record_reference_gpu_timing("rust_lse_exp_normalization_seconds", rust_lse_normalization_seconds);
+        tests::record_reference_gpu_timing("posterior_moment_contraction_seconds", posterior_contraction_seconds);
     }
     // Reuse the shared f64 reduction and already-built item/node tables.
     // GPU still supplies all posterior moments; this is explicit certification.
+    #[cfg(test)]
+    let certification_started = timing_enabled.then(std::time::Instant::now);
     let (loglik, _, _) = e_step_with_moments(
         v,
         y,
@@ -1514,6 +1560,10 @@ fn e_step_gpu_person_moments(
     }
     if reference_precision && reference_gpu_loglik.to_bits() != loglik.to_bits() {
         return Err("GPU binary64 log products disagree with f64 likelihood certification".into());
+    }
+    #[cfg(test)]
+    if let Some(started) = certification_started {
+        tests::record_reference_gpu_timing("f64_likelihood_certification_seconds", started.elapsed().as_secs_f64());
     }
     Ok(loglik)
 }

@@ -46,6 +46,27 @@ thread_local! {
         std::cell::RefCell::new(None)
     };
 }
+#[cfg(all(feature = "gpu", not(coverage)))]
+thread_local! {
+    static REFERENCE_GPU_TIMINGS: std::cell::RefCell<Option<Vec<(&'static str, f64)>>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(super) fn reference_gpu_timing_enabled() -> bool {
+    REFERENCE_GPU_TIMINGS.with(|timings| timings.borrow().is_some())
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(super) fn record_reference_gpu_timing(name: &'static str, seconds: f64) {
+    REFERENCE_GPU_TIMINGS.with(|timings| {
+        if let Some(rows) = timings.borrow_mut().as_mut() {
+            rows.push((name, seconds));
+        }
+    });
+}
+
 pub(super) fn record_reference_trace(
     iteration: usize,
     params: &[crate::two_tier_grm::ItemParams],
@@ -144,6 +165,290 @@ fn tiny_data() -> (Vec<usize>, usize) {
         y.extend_from_slice(&row);
     }
     (y, n_persons)
+}
+
+/// 고정 문항은행과 같은 GH 노드·가중치에서 1인의 E-step만 대조한다.
+/// host 예산은 소스 유래 보수 추정 정책이며 실제 RSS 강제 상한이 아니다.
+/// 부모 작업에서 확인한 Cai (2010, pp. 608–609, Appendices A/B)의 사후
+/// 1·2차 적률이 근거다. 자료 생성·모수 갱신·수렴·회복도 검증은 하지 않는다.
+/// 참고문헌: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. *Psychometrika, 75*(4), 581–612.
+/// https://doi.org/10.1007/s11336-010-9178-0.
+#[test]
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[ignore = "requires hardware GPU; fixed-bank E-step kernel profile only"]
+fn reference_gpu_fixed_bank_kernel_profile() {
+    use crate::two_tier_grm::{
+        build_primary_grid, e_step_gpu_person_moments, e_step_with_moments, gh_rule,
+        item_logprob_tables, validate_data, ItemParams, LatentPosteriorMoments,
+    };
+    use serde_json::json;
+    use sha2::Digest;
+    use std::time::Instant;
+
+    let required_usize = |name: &str| -> usize {
+        std::env::var(name)
+            .unwrap_or_else(|_| panic!("required environment variable {name} is missing"))
+            .parse::<usize>()
+            .unwrap_or_else(|e| panic!("environment variable {name} must be an unsigned integer: {e}"))
+    };
+    let required_u64 = |name: &str| -> u64 {
+        std::env::var(name)
+            .unwrap_or_else(|_| panic!("required environment variable {name} is missing"))
+            .parse::<u64>()
+            .unwrap_or_else(|e| panic!("environment variable {name} must be an unsigned integer: {e}"))
+    };
+    let q_primary = required_usize("G1_KERNEL_Q_PRIMARY");
+    let q_specific = required_usize("G1_KERNEL_Q_SPECIFIC");
+    let gpu_budget = required_u64("G1_KERNEL_GPU_BUDGET_BYTES");
+    let host_budget = required_u64("G1_KERNEL_HOST_BUDGET_BYTES");
+    assert!(q_primary > 0 && q_specific > 0, "노드 수는 양수여야 합니다");
+    assert!(gpu_budget > 0 && host_budget > 0, "메모리 예산은 양수여야 합니다");
+    let execution_head = std::env::var("G1_EXECUTION_HEAD").unwrap_or_else(|_| "unknown".into());
+    println!("{}", json!({
+        "event": "source", "execution_head": execution_head,
+        "numerical_source": "crates/mlsirm-core/src/two_tier_grm.rs",
+        "numerical_source_sha256": format!("{:x}", sha2::Sha256::digest(include_bytes!("../../crates/mlsirm-core/src/two_tier_grm.rs"))),
+        "kernel_source": "crates/mlsirm-core/src/gpu_bifactor.rs",
+        "kernel_source_sha256": format!("{:x}", sha2::Sha256::digest(include_bytes!("../../crates/mlsirm-core/src/gpu_bifactor.rs"))),
+        "test_source": "tests/unit/two_tier_grm_tests.rs",
+        "test_source_sha256": format!("{:x}", sha2::Sha256::digest(include_bytes!("two_tier_grm_tests.rs"))),
+    }));
+
+    // Fixed known parameters mirror the continuous P=2, S=4 fixture bank;
+    // this is a pointwise E-step profile, not a fit or recovery acceptance.
+    // Cai (2010), pp. 608–609, Appendices A/B: the posterior moments are
+    // conditional on a fixed item bank and supplied quadrature nodes/weights.
+    let n_items = 16usize;
+    let n_primary = 2usize;
+    let n_specific = 4usize;
+    let n_cat = 4usize;
+    const RESPONSES: [usize; 16] = [0, 1, 2, 3, 1, 2, 3, 0, 2, 3, 0, 1, 3, 0, 1, 2];
+    const WORDING: [usize; 7] = [4, 5, 6, 9, 12, 14, 15];
+    const PRIMARY_LOADINGS: [f64; 4] = [0.9, 1.3, 0.7, 1.1];
+    const SPECIFIC_LOADINGS: [f64; 4] = [1.1, 0.8, 1.4, 1.0];
+    const THRESHOLDS: [f64; 3] = [1.2, 0.0, -1.2];
+    let y = RESPONSES.to_vec();
+    let primary_map: Vec<bool> = (0..n_items)
+        .flat_map(|i| [true, WORDING.contains(&i)])
+        .collect();
+    let specific_map: Vec<i32> = (0..n_items).map(|i| (i / 4) as i32).collect();
+    let params: Vec<ItemParams> = (0..n_items)
+        .map(|i| ItemParams {
+            a_p: vec![PRIMARY_LOADINGS[i % 4], if WORDING.contains(&i) { 0.9 } else { 0.0 }],
+            a_s: Some(SPECIFIC_LOADINGS[i % 4]),
+            d: THRESHOLDS.to_vec(),
+        })
+        .collect();
+    let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: false,
+        q_primary,
+        q_specific,
+        ..valid_config()
+    };
+    let validated = validate_data(
+        &y, None, &primary_map, &specific_map, 1, n_items, n_primary, n_specific,
+        n_cat, &cfg, false,
+    ).expect("fixed P=2/S=4 reference bank must validate");
+    let grid = q_primary.checked_mul(q_primary).expect("primary grid size overflows usize");
+    let table_elements = validated.item_block.iter().try_fold(0usize, |sum, block| {
+        grid.checked_mul(if block.is_some() { q_specific } else { 1 })
+            .and_then(|len| len.checked_mul(n_cat))
+            .and_then(|len| sum.checked_add(len))
+    }).expect("fixed item table dimensions overflow usize");
+    let joint_elements = n_specific.checked_mul(grid)
+        .and_then(|len| len.checked_mul(q_specific))
+        .expect("fixed raw joint posterior dimensions overflow usize");
+    // Upper-bound expected-count payload even though this profile never collects it.
+    let count_elements = table_elements;
+    let checked_bytes = |elements: usize, width: usize| -> u64 {
+        u64::try_from(elements.checked_mul(width).expect("host estimate overflows usize"))
+            .expect("host estimate overflows u64")
+    };
+    let add_bytes = |a: u64, b: u64| a.checked_add(b).expect("host estimate overflows u64");
+    let table_headers = checked_bytes(2 * (n_items + 1), std::mem::size_of::<Vec<f64>>());
+    let output_elements = grid.checked_add(joint_elements).expect("output estimate overflows usize");
+    let count_nodes = validated.item_block.iter().try_fold(0usize, |sum, block| {
+        grid.checked_mul(if block.is_some() { q_specific } else { 1 })
+            .and_then(|len| sum.checked_add(len))
+    }).expect("conservative count header estimate overflows usize");
+    let count_header_count = n_items.checked_add(count_nodes).and_then(|n| n.checked_add(1))
+        .expect("conservative count header estimate overflows usize");
+    let count_headers = checked_bytes(count_header_count, std::mem::size_of::<Vec<f64>>());
+    let latent_count = n_primary + n_specific;
+    let host_estimate = [
+        checked_bytes(table_elements, std::mem::size_of::<f64>()), // retained CPU cached reference GRM table
+        checked_bytes(table_elements, std::mem::size_of::<f64>()), // GPU E-step host GRM table
+        checked_bytes(table_elements, std::mem::size_of::<[u32; 2]>()), // conservative reference-table upload staging copy
+        checked_bytes(n_items, std::mem::size_of::<usize>()), // fixed response bank
+        checked_bytes(n_items, std::mem::size_of::<i32>()), // GPU response staging
+        checked_bytes(output_elements, std::mem::size_of::<f64>()), // decoded raw GPU products/readback
+        checked_bytes(output_elements.checked_mul(2).expect("readback staging estimate overflows usize"), std::mem::size_of::<f32>()), // two f32 words per f64 readback value
+        checked_bytes(output_elements, std::mem::size_of::<f64>()), // posterior arrays
+        checked_bytes(6 * latent_count, std::mem::size_of::<f64>()), // CPU/GPU moments and both marginal SD arrays
+        checked_bytes(grid.checked_mul(n_primary + 2)
+            .and_then(|len| len.checked_add(q_primary))
+            .and_then(|len| q_specific.checked_mul(n_specific + 1).and_then(|n| len.checked_add(n)))
+            .expect("coordinate/weight estimate overflows usize"), std::mem::size_of::<f64>()), // shared coords/log weights, GPU group-node copies, build scratch
+        checked_bytes(grid.checked_add(q_specific).expect("prior word estimate overflows usize"), std::mem::size_of::<[u32; 2]>()), // GPU state prior-word copies
+        checked_bytes(n_specific.checked_mul(grid).and_then(|len| len.checked_add(grid))
+            .expect("GPU normalization scratch estimate overflows usize"), std::mem::size_of::<f64>()),
+        checked_bytes(n_specific.checked_mul(grid)
+            .and_then(|len| grid.checked_mul(3).and_then(|scratch| len.checked_add(scratch)))
+            .and_then(|len| len.checked_add(q_specific))
+            .and_then(|len| n_specific.checked_mul(q_specific).and_then(|scratch| len.checked_add(scratch)))
+            .and_then(|len| n_primary.checked_mul(n_primary).and_then(|scratch| len.checked_add(scratch)))
+            .expect("source-shaped E-step scratch estimate overflows usize"), std::mem::size_of::<f64>()),
+        checked_bytes(count_elements, std::mem::size_of::<f64>()), // conservative counts, not collected
+        table_headers,
+        count_headers,
+        checked_bytes(40, std::mem::size_of::<Vec<f64>>()), // scratch, group nodes, raw/readback/posterior/moment and state Vec headers
+        checked_bytes(3, std::mem::size_of::<Vec<Vec<f64>>>()),
+        checked_bytes(8 + n_items * 4 + n_specific + 1, std::mem::size_of::<u32>()), // state dims/offsets/block IDs/members, including member capacity
+        checked_bytes(n_items, std::mem::size_of::<ItemParams>()),
+        checked_bytes(n_items * (n_primary + n_cat - 1), std::mem::size_of::<f64>()), // fixed bank slopes/thresholds
+        checked_bytes(n_items * n_primary, std::mem::size_of::<bool>()),
+        checked_bytes(n_items, std::mem::size_of::<i32>()), // fixed specific map
+        checked_bytes(n_items * (n_primary + n_specific + n_cat), std::mem::size_of::<usize>()), // conservative validated map/category payload and capacities
+        checked_bytes(n_items, std::mem::size_of::<Option<usize>>()),
+        checked_bytes(2 * n_items + n_specific, std::mem::size_of::<Vec<usize>>()), // validated map headers
+        checked_bytes(1, std::mem::size_of_val(&validated)),
+        checked_bytes(n_items * (n_primary + n_cat + 6) + 32, std::mem::size_of::<serde_json::Value>()), // input JSON tree envelope, emitted and dropped before E-steps
+        checked_bytes(n_items * (n_primary + n_cat + 6) + 32, 4 * 64), // fixed-bank JSON text/key envelope and serialization capacity; <=64 bytes per scalar/key
+
+    ].into_iter().fold(0u64, add_bytes);
+    assert!(host_estimate <= host_budget,
+        "declared fixed-node host estimate {host_estimate} bytes exceeds G1_KERNEL_HOST_BUDGET_BYTES={host_budget}; refusing to reduce nodes");
+
+    let context = crate::gpu::GpuContext::get().expect("hardware GPU context must initialize");
+    assert!(matches!(context.adapter_info.device_type,
+        wgpu::DeviceType::DiscreteGpu | wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::VirtualGpu),
+        "reference GPU kernel profile requires a hardware adapter, got {:?}", context.adapter_info.device_type);
+    let limits = context.device.limits();
+    let block_members = validated.blocks.iter().map(Vec::len).sum::<usize>();
+    let fixed_elements = [
+        8usize,
+        table_elements.checked_mul(2).expect("GPU policy table estimate overflows usize"),
+        n_items,
+        n_items,
+        n_specific.checked_add(1).expect("GPU policy dimensions overflow usize"),
+        block_members.max(2),
+        grid.checked_mul(2).expect("GPU policy grid estimate overflows usize"),
+        q_specific.checked_mul(2).expect("GPU policy specific estimate overflows usize"),
+    ].into_iter().try_fold(0usize, |sum, len| sum.checked_add(len))
+        .expect("GPU policy fixed estimate overflows usize");
+    let policy_joint = n_specific.checked_mul(grid).and_then(|len| len.checked_mul(q_specific))
+        .expect("GPU policy joint estimate overflows usize");
+    let person_elements = [n_items, grid.checked_mul(4).expect("GPU policy primary estimate overflows usize"),
+        policy_joint.max(1).checked_mul(4).expect("GPU policy joint estimate overflows usize")]
+        .into_iter().try_fold(0usize, |sum, len| sum.checked_add(len))
+        .expect("GPU policy person estimate overflows usize");
+    let gpu_policy_bytes = checked_bytes(
+        fixed_elements.checked_add(person_elements).expect("GPU policy budget estimate overflows usize"),
+        std::mem::size_of::<u32>(),
+    );
+    assert!(gpu_budget >= gpu_policy_bytes,
+        "G1_KERNEL_GPU_BUDGET_BYTES={gpu_budget} is below the existing reference_precision one-person source policy requirement {gpu_policy_bytes}; refusing to reduce declared nodes");
+    let binding_bytes_per_person = policy_joint.max(n_items).max(grid)
+        .checked_mul(std::mem::size_of::<f64>()).expect("GPU binding estimate overflows usize") as u64;
+    let binding_limit = u64::from(limits.max_storage_buffer_binding_size).min(limits.max_buffer_size);
+    assert!(binding_bytes_per_person as u64 <= binding_limit,
+        "one-person binding estimate {binding_bytes_per_person} exceeds current adapter limit {binding_limit}");
+    println!("{{\"event\":\"resource\",\"adapter_name\":{},\"adapter_backend\":{},\"adapter_type\":{},\"max_storage_buffer_binding_bytes\":{},\"max_buffer_bytes\":{},\"max_storage_buffers_per_stage\":{},\"max_workgroups_per_dimension\":{},\"host_estimate_bytes\":{},\"host_budget_bytes\":{},\"host_budget_semantics\":\"source-derived conservative allocation estimate; not RSS cap\",\"gpu_policy_minimum_bytes\":{},\"gpu_budget_bytes\":{},\"gpu_budget_semantics\":\"source policy; adapter limits are per-buffer constraints, not available physical VRAM\",\"execution_head\":{}}}",
+        serde_json::to_string(&context.adapter_info.name).unwrap(),
+        serde_json::to_string(&format!("{:?}", context.adapter_info.backend)).unwrap(),
+        serde_json::to_string(&format!("{:?}", context.adapter_info.device_type)).unwrap(), limits.max_storage_buffer_binding_size,
+        limits.max_buffer_size, limits.max_storage_buffers_per_shader_stage,
+        limits.max_compute_workgroups_per_dimension, host_estimate, host_budget, gpu_policy_bytes, gpu_budget,
+        serde_json::to_string(&execution_head).unwrap());
+
+    let (primary_nodes, primary_weights) = gh_rule(q_primary).expect("primary quadrature nodes must be available");
+    let (specific_nodes, specific_weights) = gh_rule(q_specific).expect("specific quadrature nodes must be available");
+    let (coords, log_w) = build_primary_grid(primary_nodes, primary_weights, n_primary, grid);
+    let log_ws: Vec<f64> = specific_weights.iter().map(|w| w.ln()).collect();
+    let input = json!({
+        "responses": y, "primary_map": primary_map, "specific_map": specific_map,
+        "primary_loadings": params.iter().map(|p| &p.a_p).collect::<Vec<_>>(),
+        "specific_loadings": params.iter().map(|p| p.a_s).collect::<Vec<_>>(),
+        "thresholds": params.iter().map(|p| &p.d).collect::<Vec<_>>(),
+        "n_persons": 1, "n_items": n_items, "n_primary": n_primary,
+        "n_specific": n_specific, "n_cat": n_cat, "q_primary": q_primary,
+        "q_specific": q_specific, "phi": "identity"
+    });
+    let input_bytes = serde_json::to_vec(&input).unwrap();
+    println!("{{\"event\":\"input\",\"input_sha256\":\"{:x}\",\"seed\":null,\"input_json\":{}}}",
+        sha2::Sha256::digest(&input_bytes), String::from_utf8(input_bytes).unwrap());
+    drop(input);
+
+    REFERENCE_GPU_TIMINGS.with(|timings| *timings.borrow_mut() = Some(Vec::new()));
+    let cpu_tables_started = Instant::now();
+    let tables = item_logprob_tables(&validated, &params, &coords, specific_nodes, grid).unwrap();
+    let cpu_table_seconds = cpu_tables_started.elapsed().as_secs_f64();
+    let mut cpu_moments = LatentPosteriorMoments {
+        mean: vec![0.0; latent_count], second: vec![0.0; latent_count],
+    };
+    let cpu_started = Instant::now();
+    let (cpu_ll, _, _) = e_step_with_moments(
+        &validated, &y, None, &params, &log_w, &log_ws, &coords, specific_nodes,
+        grid, q_specific, Some(&mut cpu_moments), false, Some(&tables),
+    );
+    let cpu_seconds = cpu_started.elapsed().as_secs_f64();
+    let mut gpu_moments = LatentPosteriorMoments {
+        mean: vec![0.0; latent_count], second: vec![0.0; latent_count],
+    };
+    let gpu_started = Instant::now();
+    let gpu_ll = e_step_gpu_person_moments(
+        &validated, &y, None, &params, &log_w, &log_ws, &coords, specific_nodes,
+        Some(&mut gpu_moments), None, true, gpu_budget,
+    ).expect("the declared-node reference GPU E-step must succeed without CPU fallback");
+    let gpu_seconds = gpu_started.elapsed().as_secs_f64();
+    let timings = REFERENCE_GPU_TIMINGS.with(|timings| timings.borrow_mut().take().unwrap_or_default());
+    let required_timing_keys = [
+        "table_generation_seconds", "gpu_state_preparation_seconds",
+        "gpu_log_products_and_readback_seconds", "rust_lse_exp_normalization_seconds",
+        "posterior_moment_contraction_seconds", "f64_likelihood_certification_seconds",
+    ];
+    assert_eq!(timings.len(), required_timing_keys.len(), "필수 단계 시간 기록이 누락됐습니다");
+    for key in required_timing_keys {
+        assert_eq!(timings.iter().filter(|(name, _)| *name == key).count(), 1,
+            "단계 시간 {key}는 정확히 한 번 기록해야 합니다");
+    }
+    for &(_, seconds) in &timings {
+        assert!(seconds.is_finite() && seconds >= 0.0, "유효하지 않은 단계 시간입니다");
+    }
+    for seconds in [cpu_seconds, gpu_seconds, cpu_table_seconds] {
+        assert!(seconds.is_finite() && seconds >= 0.0, "유효하지 않은 전체 시간입니다");
+    }
+    for moments in [&cpu_moments, &gpu_moments] {
+        assert_eq!(moments.mean.len(), latent_count);
+        assert_eq!(moments.second.len(), latent_count);
+    }
+    assert!(cpu_ll.is_finite() && gpu_ll.is_finite(), "CPU/GPU likelihoods must be finite");
+    let max_delta = |left: &[f64], right: &[f64]| {
+        assert_eq!(left.len(), right.len(), "CPU/GPU posterior output shapes must agree");
+        assert!(left.iter().chain(right).all(|v| v.is_finite()), "CPU/GPU posterior outputs must be finite");
+        left.iter().zip(right).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max)
+    };
+    let ll_delta = (cpu_ll - gpu_ll).abs();
+    let mean_delta = max_delta(&cpu_moments.mean, &gpu_moments.mean);
+    let second_delta = max_delta(&cpu_moments.second, &gpu_moments.second);
+    let sd = |moments: &LatentPosteriorMoments| moments.mean.iter().zip(&moments.second)
+        .map(|(mean, second)| {
+            let variance = second - mean * mean;
+            assert!(variance.is_finite() && variance >= -1e-12 * second.abs().max(1.0),
+                "posterior marginal variance must be finite and nonnegative apart from roundoff");
+            variance.max(0.0).sqrt()
+        }).collect::<Vec<_>>();
+    let sd_delta = max_delta(&sd(&cpu_moments), &sd(&gpu_moments));
+    println!("{{\"event\":\"timing\",\"whole_cpu_estep_seconds\":{cpu_seconds},\"whole_gpu_estep_seconds\":{gpu_seconds},\"cpu_table_generation_seconds\":{cpu_table_seconds},\"whole_cpu_including_table_seconds\":{},\"stages\":{{{}}},\"note\":\"host clock; pipeline compile/upload and GPU compute/readback are grouped; no GPU timestamp claim\"}}",
+        cpu_seconds + cpu_table_seconds,
+        timings.iter().map(|(name, seconds)| format!("{}:{}", serde_json::to_string(name).unwrap(), seconds))
+            .collect::<Vec<_>>().join(","));
+    println!("{{\"event\":\"comparison\",\"loglik_abs_delta\":{ll_delta},\"mean_max_abs_delta\":{mean_delta},\"second_max_abs_delta\":{second_delta},\"marginal_sd_max_abs_delta\":{sd_delta},\"tolerance\":0.001,\"collect_counts\":false,\"parameter_updates\":false}} ");
+    assert!(ll_delta < 1e-3, "CPU/GPU fixed-bank likelihood gap {ll_delta} exceeds unchanged 1e-3 regression bound");
+    assert!(mean_delta < 1e-3, "CPU/GPU posterior mean gap {mean_delta} exceeds unchanged 1e-3 regression bound");
+    assert!(second_delta < 1e-3, "CPU/GPU posterior second-moment gap {second_delta} exceeds unchanged 1e-3 regression bound");
+    assert!(sd_delta < 1e-3, "CPU/GPU posterior marginal SD gap {sd_delta} exceeds unchanged 1e-3 regression bound");
 }
 
 #[test]
