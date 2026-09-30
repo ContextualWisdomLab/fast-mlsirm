@@ -38,6 +38,7 @@ envelope and payload share the same `output_identity_sha256`.
 | `regression_contrasts` | `fast_mlsirm.regression.fit_ols_hc` + `contrast` | Whole call only |
 | `fipc` | `fast_mlsirm.polytomous.fit_poly_fipc` | Whole call only |
 | `two_tier` | `fast_mlsirm.two_tier_grm.fit_two_tier_grm` | Whole call only |
+| `bifactor_bootstrap_replicate` | `fast_mlsirm.bifactor_bootstrap._fit_single_replicate` (via `run_bootstrap_replicate_payload`) | Independent replicate units; seed from `derive_index_seed`, same as the local replicate seed. A fit that raises returns a completed `rejected` record (#2001) |
 
 Internally unshardable families may still run on a remote host as one complete
 call; only partitioning their sequential internals across `unit_index` shards is

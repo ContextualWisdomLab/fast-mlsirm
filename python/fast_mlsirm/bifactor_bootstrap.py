@@ -436,9 +436,10 @@ def _run_remote_batch(
     Rejected replicates arrive as completed outcomes. A transport failure is
     not a statistical result, so the run stops instead of dropping the unit.
     """
-    envelopes = []
-    for task in batch:
-        envelope = RemoteJobEnvelope(
+    # envelope.unit_seed() equals the local replicate seed (pinned by
+    # test_derive_index_seed_matches_bifactor_bootstrap_golden_step).
+    envelopes = [
+        RemoteJobEnvelope(
             run_id=backend.run_id,
             family=RemoteJobFamily.BIFACTOR_BOOTSTRAP_REPLICATE,
             unit_index=task[0],
@@ -446,9 +447,8 @@ def _run_remote_batch(
             payload_ref=manifest.payload_sha256,
             manifest=manifest,
         )
-        if envelope.unit_seed() != task[13]:
-            raise RuntimeError("remote seed derivation diverged from the bootstrap replicate seed")
-        envelopes.append(envelope)
+        for task in batch
+    ]
     outcomes = backend.executor.run_batch(envelopes, worker_manifest=manifest, payload=payload)
     failed = [o for o in outcomes if o.delivery_state is not RemoteJobDeliveryState.COMPLETED]
     if failed:

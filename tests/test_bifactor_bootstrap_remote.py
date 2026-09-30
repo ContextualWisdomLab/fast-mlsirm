@@ -53,7 +53,13 @@ def _responses(*, rare_category: bool) -> np.ndarray:
     return y
 
 
-def _run(y: np.ndarray, *, backend: RemoteBootstrapBackend | None, n_replicates: int = 6):
+def _run(
+    y: np.ndarray,
+    *,
+    backend: RemoteBootstrapBackend | None,
+    n_replicates: int = 6,
+    group_ids: np.ndarray | None = None,
+):
     return run_bifactor_bootstrap(
         y,
         _SMAP,
@@ -71,6 +77,8 @@ def _run(y: np.ndarray, *, backend: RemoteBootstrapBackend | None, n_replicates:
         n_starts=1,
         tol=1e-3,
         n_jobs=1,
+        group_ids=group_ids,
+        n_groups=1 if group_ids is None else 2,
         remote_backend=backend,
     )
 
@@ -113,6 +121,20 @@ def test_remote_backend_reproduces_local_replicates() -> None:
     remote = _run(y, backend=_backend(SubprocessExecutor(socket.gethostname())))
     _assert_same_replicates(local, remote)
     assert remote.rejected_replicate_ids == ()
+
+
+def test_remote_backend_reproduces_local_multigroup_replicates() -> None:
+    y = _responses(rare_category=False)
+    groups = np.repeat([0, 1], 30)
+    local = _run(y, backend=None, n_replicates=4, group_ids=groups)
+    remote = _run(
+        y,
+        backend=_backend(SubprocessExecutor(socket.gethostname())),
+        n_replicates=4,
+        group_ids=groups,
+    )
+    _assert_same_replicates(local, remote)
+    np.testing.assert_array_equal(remote.replicate_general_mean, local.replicate_general_mean)
 
 
 def test_rejected_replicates_are_counted_with_reasons_locally_and_remotely() -> None:
