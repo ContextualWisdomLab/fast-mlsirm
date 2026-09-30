@@ -5,6 +5,20 @@ Observed at: **2026-08-25T05:20:00Z**<br>
 Protected-main basis: **`9c12eab15fb8a187b135f9be1961f0693a431c23`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
+## 2026-09-30 proposed malformed-JSON depth-budget repair
+
+Status: **Proposed in successor PR #2299; not protected-main authority**
+
+| Gap | Exact evidence | Owner/action | Remaining gate |
+|---|---|---|---|
+| `JSON-DEPTH-BUDGET-01` | Protected main contained the same unguarded closing-delimiter decrement in the rubric candidate and LLM-judge raw JSON scanners. PR parent `6b124e07377516da91cd770bd9016c7e6268b25d` repaired the rubric scanner but left the LLM-judge scanner unguarded. The existing bounded-file scanner already guarded zero and its proposed test passed without a production delta. | Stable successor PR #2299 carries the complete valid delta from source-writer PR #2254: it keeps the counter at zero for unmatched closers at both untrusted string parser boundaries, retains the rubric RED regression, adds the missing LLM-judge RED regression, and removes the unrelated private script-helper test. | Obtain fresh exact-head security/quality Checks and independent review on PR #2299, reconcile protected main without force, then ordinary merge. Retire PR #2254 only after verified complete carryover reaches protected main. |
+
+Local evidence before publication: the new LLM-judge regression failed on the
+PR parent with `judge response JSON is invalid` instead of the depth-budget
+error, then passed with the one-condition repair. The focused rubric and judge
+depth suite passed 4/4. This is local evidence only and does not replace hosted
+Checks or protected-main authority.
+
 ## 2026-09-26 proposed release-source trust repair
 
 Status: **Proposed in PR #2135; not protected-main authority**
