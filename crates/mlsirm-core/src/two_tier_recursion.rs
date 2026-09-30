@@ -416,7 +416,7 @@ pub fn two_tier_expected_raw_on(
         }
         if device == crate::Device::Gpu {
             eprintln!(
-                "fast-mlsirm: GPU two-tier expected raw requested but no usable GPU adapter was found or inputs exceed GPU bounds; falling back to the CPU implementation."
+                "fast-mlsirm: GPU two-tier expected raw unavailable, inputs exceed GPU bounds, or predictor precision is unsafe; falling back to the CPU implementation."
             );
         }
     }

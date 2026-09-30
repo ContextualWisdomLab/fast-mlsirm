@@ -7,7 +7,9 @@
   grid row. It uses compensated summation and dispatches rows in chunks, so
   device memory does not grow with the row count. `"gpu"` warns before falling
   back to the CPU when no adapter is usable. `"auto"` falls back silently. The
-  default stays on the CPU.
+  default stays on the CPU. Before converting inputs, a conservative precision
+  check also falls back to f64 when rounding or cancellation could exceed the
+  predictor error budget. Finite inputs alone do not guarantee f32 accuracy.
 
 ## Changed
 

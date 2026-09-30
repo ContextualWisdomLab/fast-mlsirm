@@ -258,6 +258,9 @@ fn device_dispatch_cpu_is_exact_and_gpu_within_derived_bound() {
     let (auto, used_gpu) =
         two_tier_expected_raw_on(&params, &theta, nodes, weights, crate::Device::Auto)
             .expect("auto");
+    if std::env::var_os("FAST_MLSIRM_REQUIRE_SCORE_GPU").is_some() {
+        assert!(used_gpu, "this hardware validation run requires actual GPU execution");
+    }
     let bound = f32_bound(&params, q);
     let max_err = auto
         .iter()
@@ -304,3 +307,6 @@ fn specific_rule_must_be_finite_nonnegative_and_normalized() {
     let equal = [1.0 / 3.0; 3];
     assert!(two_tier_expected_raw(&params, &[0.0], &nodes, &equal).is_ok());
 }
+
+#[path = "two_tier_precision_admission_tests.rs"]
+mod precision_admission;

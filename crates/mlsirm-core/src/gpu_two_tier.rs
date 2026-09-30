@@ -205,6 +205,61 @@ fn fits(limits: &wgpu::Limits, len: usize) -> bool {
     })
 }
 
+/// Conservative predictor admission before f64-to-f32 conversion. Bound the
+/// input casts, products and dot-product additions by gamma_n times the sum
+/// of absolute terms, not the possibly cancelled predictor. Sigmoid is
+/// 1/4-Lipschitz. Reserve one quarter of the scoring test's per-boundary
+/// error budget for this propagation; reject non-finite bounds as well.
+/// This is deliberately conservative: rejection preserves the f64 owner.
+pub(crate) fn predictor_precision_is_safe(
+    params: &TwoTierItemParams,
+    theta_primary: &[f64],
+    theta_specific: &[f64],
+) -> bool {
+    let p = params.n_primary;
+    let u = f64::from(f32::EPSILON) / 2.0;
+    let operations = 4.0 * p as f64 + 8.0;
+    let nu = operations * u;
+    if nu >= 1.0 {
+        return false;
+    }
+    let gamma = nu / (1.0 - nu);
+    let terms = params.n_items() as f64 * (params.n_cat - 1) as f64 * theta_specific.len() as f64;
+    let budget = (8.0 + terms) * u / 4.0;
+    let mut theta_max = vec![0.0_f64; p];
+    for row in theta_primary.chunks_exact(p) {
+        for (maximum, value) in theta_max.iter_mut().zip(row) {
+            *maximum = maximum.max(value.abs());
+        }
+    }
+    let specific_max = theta_specific
+        .iter()
+        .map(|v| v.abs())
+        .fold(0.0_f64, f64::max);
+    for i in 0..params.n_items() {
+        let primary_magnitude: f64 = params.a_primary[i * p..(i + 1) * p]
+            .iter()
+            .zip(&theta_max)
+            .map(|(a, t)| a.abs() * t)
+            .sum();
+        let specific_magnitude = if params.specific_map[i] == -1 {
+            0.0
+        } else {
+            params.a_specific[i].abs() * specific_max
+        };
+        for threshold in &params.thresholds[i * (params.n_cat - 1)..(i + 1) * (params.n_cat - 1)] {
+            let magnitude = primary_magnitude + specific_magnitude + threshold.abs();
+            // Include an absolute allowance for gradual underflow or flushing
+            // tiny arithmetic results to zero on a device.
+            let error = 0.25 * (gamma * magnitude + operations * f64::from(f32::MIN_POSITIVE));
+            if !error.is_finite() || error > budget {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 /// GPU closed-form expected raw totals. Inputs must already be validated by
 /// the CPU owner (`two_tier_expected_raw_on`).
 pub(crate) fn expected_raw_gpu(
@@ -215,7 +270,7 @@ pub(crate) fn expected_raw_gpu(
 ) -> Option<Vec<f64>> {
     let p = params.n_primary;
     let n_rows = theta_primary.len() / p;
-    if n_rows == 0 {
+    if n_rows == 0 || !predictor_precision_is_safe(params, theta_primary, theta_specific) {
         return None;
     }
     let a_primary = checked_f32(&params.a_primary)?;
