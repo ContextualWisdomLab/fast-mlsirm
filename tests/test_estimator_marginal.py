@@ -152,9 +152,9 @@ def test_marginal_rejects_invalid_quadrature():
 
 
 def test_marginal_distance_einsum_parity():
-    import numpy as np
+    """Ensure the allocation-reduced distance preserves numerical parity."""
     eps_distance = 1e-8
     diff = np.random.RandomState(42).randn(100, 50)
     expected = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
-    actual = np.sqrt(eps_distance + np.einsum('ij,ij->i', diff, diff))
+    actual = np.sqrt(eps_distance + np.einsum("ij,ij->i", diff, diff))
     np.testing.assert_allclose(actual, expected, atol=1e-12)
