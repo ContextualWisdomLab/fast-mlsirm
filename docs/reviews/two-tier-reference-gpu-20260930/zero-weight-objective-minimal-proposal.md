@@ -21,9 +21,11 @@ finite packed 모수 `[1.0,1e-18,0.0]`, 자유 primary `[0]`, primary 좌표 `[1
 
 ## 가장 작은 수정 후보: 아직 구현하지 않음
 
-현재 item objective의 category 합에서 **count가 정확히 0인 항만 0을 기여하게 한다.** 그 외 항은 기존 `count*log_probability`와 기존 합산 순서를 유지한다. probability나 table 자체를 바꾸거나 전체 node를 버리지 않는다.
+독립 source/log 검토에서 초기 blanket zero-count 후보의 거부 경계를 좁혔다. 현재 item objective의 category 합에서 **count가 정확히 0이고 log probability가 정확히 negative infinity인 경우에만 0을 기여하게 한다.** 나머지는 기존 `count*log_probability`와 합산 순서를 유지한다. probability나 table 자체를 바꾸거나 전체 node를 버리지 않는다.
 
-양수 count와 logP=-inf는 계속 nonfinite objective여야 한다. negative/nonfinite count를 zero처럼 통과시키지 않는다. private helper의 malformed shape/count 입력을 새로운 public validation 계약으로 확장하지 않는다. 이 후보는 별도 source 검토·실제 failing test 배정 전까지 production에 적용하지 않는다.
+양수 count와 logP=-inf는 계속 nonfinite objective여야 한다. zero count여도 NaN/+inf log probability는 기존 multiplication의 nonfinite 결과를 유지한다. Newton/line-search 후보의 unordered threshold가 만든 NaN을 숨겨 finite objective로 통과시키지 않는다. negative/nonfinite count를 zero처럼 통과시키지 않는다. private helper의 malformed shape/count 입력을 새로운 public validation 계약으로 확장하지 않는다.
+
+이 안전 경계를 검증하려면 zero count와 unordered 후보의 NaN log probability가 여전히 nonfinite인 focused regression이 추가로 필요하다. 지금은 제안 문구만 수정했으며, 새 test·production 변경·실행은 별도 배정 전까지 하지 않는다. 기존 세 경계 관측을 이 NaN 후보 거부 검증으로 대체하지 않는다.
 
 ## 필요한 대조와 미확인
 
