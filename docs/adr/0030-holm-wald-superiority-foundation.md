@@ -1,8 +1,8 @@
 # ADR-0030: Holm–Wald candidate-superiority foundation
 
-Status: Proposed  
-Date: 2026-10-02  
-Supersedes: none  
+Status: Proposed
+Date: 2026-10-02
+Supersedes: none
 Superseded by: none
 
 ## Context
