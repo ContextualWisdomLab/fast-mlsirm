@@ -39,6 +39,7 @@ def _fake_core(module):
 
     def fit(*_args, **_kwargs):
         return {
+            "converged": True,
             "a_primary": m.TRUE_A_P.reshape(-1).copy(),
             "a_specific": m.TRUE_A_S.copy(),
             "threshold": m.TRUE_D.reshape(-1).copy(),
@@ -119,6 +120,29 @@ def test_flattened_binding_outputs_are_reshaped_per_person(monkeypatch) -> None:
     assert receipt["focal_primary_mean_error"] == pytest.approx([0.6 - 0.65, -0.3 + 0.35])
 
 
+@pytest.mark.parametrize("convergence", [False, None, 1, "true", "false", "missing"])
+def test_reference_requires_convergence_before_focal_fit(monkeypatch, convergence) -> None:
+    """An uncalibrated reference bank cannot start focal acceptance work."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm
+
+    def reference(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if convergence == "missing":
+            result.pop("converged")
+        else:
+            result["converged"] = convergence
+        return result
+
+    fake.fit_two_tier_grm = reference
+    fake.fit_two_tier_grm_fipc = lambda *args, **kwargs: pytest.fail("invalid reference reached focal fitting")
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert receipt["all_pass"] is False
+
+
 def test_nonconverged_permutation_cannot_certify_row_order(monkeypatch) -> None:
     """Equal EAP rows do not certify a refit that exhausted its step budget."""
     module = _load_script()
@@ -129,7 +153,7 @@ def test_nonconverged_permutation_cannot_certify_row_order(monkeypatch) -> None:
     def fipc(y, *args):
         nonlocal calls
         if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
-            raise ValueError("primary map must identify both dimensions")
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
         calls += 1
         fit = original(y, *args)
         if calls == 2:
@@ -157,7 +181,7 @@ def test_nonfinite_specific_loading_cannot_pass_receipt(monkeypatch, invalid, ca
     def fipc(y, *args):
         nonlocal calls
         if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
-            raise ValueError("primary map must identify both dimensions")
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
         calls += 1
         fit = original(y, *args)
         if calls == call_number:
@@ -205,7 +229,7 @@ def test_nonfinite_fit_output_cannot_pass_receipt(monkeypatch, field, call_numbe
     def fipc(y, *args):
         nonlocal calls
         if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
-            raise ValueError("primary map must identify both dimensions")
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
         calls += 1
         fit = original(y, *args)
         if calls == call_number:
@@ -231,7 +255,7 @@ def test_missing_permutation_convergence_fails_with_finite_diagnostics(monkeypat
     def fipc(y, *args):
         nonlocal calls
         if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
-            raise ValueError("primary map must identify both dimensions")
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
         calls += 1
         fit = original(y, *args)
         if calls == call_number:
@@ -245,6 +269,60 @@ def test_missing_permutation_convergence_fails_with_finite_diagnostics(monkeypat
     assert receipt["row_order"] is False
     assert receipt["row_order_max_abs"] == 0.0
     assert receipt["row_order_rmse"] == 0.0
+    assert receipt["all_pass"] is False
+
+
+@pytest.mark.parametrize("field", ["primary_mean", "primary_sd"])
+@pytest.mark.parametrize("invalid", [0.6, [0.6], [0.6, 0.7, 0.8], [[0.6, 0.7]], [np.nan, 0.7]])
+@pytest.mark.parametrize("call_number", [1, 2])
+def test_primary_moment_shape_and_finiteness_fail_closed(monkeypatch, field, invalid, call_number) -> None:
+    """Neither refit may broadcast malformed focal moments into recovery errors."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = 0
+
+    def fipc(y, *args):
+        nonlocal calls
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        calls += 1
+        fit = original(y, *args)
+        if calls == call_number:
+            fit[field] = invalid
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    json.dumps(receipt, allow_nan=False)
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert receipt["all_pass"] is False
+
+
+@pytest.mark.parametrize("invalid", [[0.0, 0.8], [-1.2, 0.8], [np.inf, 0.8]])
+@pytest.mark.parametrize("call_number", [1, 2])
+def test_nonpositive_or_nonfinite_primary_sd_fails_closed(monkeypatch, invalid, call_number) -> None:
+    """A focal SD must be positive and finite in both refits."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = 0
+
+    def fipc(y, *args):
+        nonlocal calls
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        calls += 1
+        fit = original(y, *args)
+        if calls == call_number:
+            fit["primary_sd"] = invalid
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    assert receipt["row_order_diagnosis"] == "fit_error"
     assert receipt["all_pass"] is False
 
 
@@ -301,7 +379,7 @@ def test_gpu_receipt_requires_dispatch_in_every_valid_fit(monkeypatch, call_numb
     def fipc(y, *args, device="cpu"):
         nonlocal calls
         if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
-            raise ValueError("primary map must identify both dimensions")
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
         calls += 1
         fit = original(y, *args)
         fit.update(gpu_execution_used=True, gpu_backend="Metal")
@@ -327,7 +405,7 @@ def test_gpu_receipt_accepts_dispatch_in_every_valid_fit(monkeypatch) -> None:
 
     def fipc(y, *args, device="cpu"):
         if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
-            raise ValueError("primary map must identify both dimensions")
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
         fit = original(y, *args)
         fit.update(gpu_execution_used=True, gpu_backend="Metal")
         return fit
@@ -354,6 +432,59 @@ def test_consumer_revision_comes_from_script_checkout(monkeypatch, tmp_path) -> 
     )
     monkeypatch.chdir(tmp_path)
     assert module._git_sha() == expected
+
+
+@pytest.mark.parametrize("field", ["a_primary", "a_specific", "threshold"])
+@pytest.mark.parametrize("call_number", [1, 2])
+def test_anchor_gate_checks_both_refits(monkeypatch, field, call_number) -> None:
+    """Changing an anchor in either refit violates the fixed-bank contract."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = 0
+
+    def fipc(y, *args):
+        nonlocal calls
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        calls += 1
+        fit = original(y, *args)
+        if calls == call_number:
+            fit[field][0] += 0.1
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    assert receipt["anchor_rows_fixed"] is False
+    assert receipt["all_pass"] is False
+    assert receipt["row_order_max_abs"] == 0.0
+
+
+@pytest.mark.parametrize("call_number", [1, 2])
+def test_specific_prior_gate_checks_both_refits(monkeypatch, call_number) -> None:
+    """A changed fixed specific prior in either refit cannot pass."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = 0
+
+    def fipc(y, *args):
+        nonlocal calls
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        calls += 1
+        fit = original(y, *args)
+        if calls == call_number:
+            fit["specific_sd"][0] = 2.0
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    assert receipt["orthogonal_specific_prior_fixed"] is False
+    assert receipt["all_pass"] is False
+    assert receipt["row_order_max_abs"] == 0.0
 
 
 def test_anchor_gate_detects_changed_specific_loading(monkeypatch) -> None:
@@ -401,6 +532,43 @@ def test_nonfinite_fit_metrics_remain_failed_standard_json(monkeypatch, field) -
     _assert_schema(receipt)
     assert receipt["row_order_diagnosis"] == "fit_error"
     assert receipt["all_pass"] is False
+
+
+@pytest.mark.parametrize("error_type", [RuntimeError, OSError, ValueError])
+def test_wrong_map_gate_does_not_certify_runtime_errors(monkeypatch, error_type) -> None:
+    """Internal failures mentioning a primary/map are not validation evidence."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+
+    def fipc(y, *args):
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise error_type("primary map kernel runtime failure")
+        return original(y, *args)
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    assert receipt["wrong_model_reject"] is False
+    assert receipt["all_pass"] is False
+
+
+def test_wrong_map_gate_certifies_documented_validation(monkeypatch) -> None:
+    """The observed PyO3 empty-dimension ValueError remains accepted."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+
+    def fipc(y, *args):
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        return original(y, *args)
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    assert receipt["wrong_model_reject"] is True
+    assert receipt["all_pass"] is True
 
 
 def test_valid_revision_labels_and_null_handling_are_preserved(monkeypatch) -> None:

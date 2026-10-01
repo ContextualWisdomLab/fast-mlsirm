@@ -99,7 +99,13 @@ def _shaped(fit: dict, n_persons: int) -> dict[str, np.ndarray]:
         "a_primary": np.asarray(fit["a_primary"], dtype=np.float64).reshape(N_ITEMS, N_PRIMARY),
         "a_specific": np.asarray(fit["a_specific"], dtype=np.float64).reshape(N_ITEMS),
         "threshold": np.asarray(fit["threshold"], dtype=np.float64).reshape(N_ITEMS, N_CAT - 1),
+        "primary_mean": np.asarray(fit["primary_mean"], dtype=np.float64),
+        "primary_sd": np.asarray(fit["primary_sd"], dtype=np.float64),
     }
+    if any(shaped[key].shape != (N_PRIMARY,) for key in ("primary_mean", "primary_sd")):
+        raise ValueError("Focal primary moments must have shape (n_primary,).")
+    if np.any(shaped["primary_sd"] <= 0):
+        raise ValueError("Focal primary SDs must be positive.")
     if any(not np.isfinite(value).all() for value in shaped.values()):
         raise ValueError("Fit item parameters and EAP outputs must be finite.")
     return shaped
@@ -189,6 +195,8 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
         PRIMARY_MAP.reshape(-1), SPECIFIC_MAP, N_PERSONS, N_ITEMS, N_PRIMARY,
         N_SPECIFIC, N_CAT, 7, 7, 100, 1e-5, 1, SEED,
     )
+    if reference.get("converged") is not True:
+        raise ValueError("Reference calibration must report convergence before focal fitting.")
     fixed = {k: np.asarray(reference[k], dtype=np.float64) for k in ("a_primary", "a_specific", "threshold")}
     focal_y = simulate(SEED + 1, FOCAL_MEAN, FOCAL_SD)
     fit = call_fipc(focal_y, fixed, device)
@@ -211,7 +219,8 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
     results["non_unit_focal_prior"] = bool(np.max(np.abs(np.asarray(fit["primary_mean"]))) > 0.1 and np.max(np.abs(np.asarray(fit["primary_sd"]) - 1.0)) > 0.01)
     perm = np.random.default_rng(17).permutation(N_PERSONS)
     perm_fit = call_fipc(focal_y[perm], fixed, device)
-    row_error = shaped["theta"][perm] - _shaped(perm_fit, N_PERSONS)["theta"]
+    perm_shaped = _shaped(perm_fit, N_PERSONS)
+    row_error = shaped["theta"][perm] - perm_shaped["theta"]
     results["row_order_max_abs"] = float(np.max(np.abs(row_error)))
     results["row_order_rmse"] = float(np.sqrt(np.mean(np.square(row_error))))
     refits_converged = fit.get("converged") is True and perm_fit.get("converged") is True
@@ -221,10 +230,10 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
         results["fipc_fit_error"] = "Both row-order fits must report convergence."
     else:
         results["row_order_diagnosis"] = "pass" if results["row_order"] else "refit_order_dependence"
-    results["anchor_rows_fixed"] = bool(
-        np.array_equal(shaped["a_primary"][ANCHOR], fixed["a_primary"].reshape(N_ITEMS, N_PRIMARY)[ANCHOR])
-        and np.array_equal(shaped["a_specific"][ANCHOR], fixed["a_specific"].reshape(N_ITEMS)[ANCHOR])
-        and np.array_equal(shaped["threshold"][ANCHOR], fixed["threshold"].reshape(N_ITEMS, N_CAT - 1)[ANCHOR])
+    results["anchor_rows_fixed"] = all(
+        np.array_equal(candidate[key][ANCHOR], fixed[key].reshape(candidate[key].shape)[ANCHOR])
+        for candidate in (shaped, perm_shaped)
+        for key in ("a_primary", "a_specific", "threshold")
     )
     fail = call_fipc(focal_y, fixed, device, max_iter=1)
     results["convergence_failure"] = bool(
@@ -240,14 +249,19 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
         )
         if not results["gpu_execution_used"]:
             results["gpu_backend"] = None
-    results["orthogonal_specific_prior_fixed"] = bool(np.array_equal(np.asarray(fit["specific_sd"]), np.ones(N_SPECIFIC)))
+    results["orthogonal_specific_prior_fixed"] = all(
+        np.array_equal(np.asarray(candidate["specific_sd"]), np.ones(N_SPECIFIC))
+        for candidate in (fit, perm_fit)
+    )
     bad_map = PRIMARY_MAP.copy()
     bad_map[:, 1] = False
     try:
         call_fipc(focal_y, fixed, device, primary_map=bad_map, max_iter=10)
         results["wrong_model_reject"] = False
-    except Exception as exc:
-        results["wrong_model_reject"] = "primary" in str(exc) or "map" in str(exc)
+    except ValueError as exc:
+        results["wrong_model_reject"] = str(exc).startswith(
+            "primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required"
+        )
 
 
 def build_receipt(
