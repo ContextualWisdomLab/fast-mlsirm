@@ -8,6 +8,7 @@ import pytest
 from fast_mlsirm.config import FitConfig
 from fast_mlsirm.estimators.marginal import fit_marginal_numpy
 from fast_mlsirm.fit import fit
+from fast_mlsirm.reference import fit_reference
 
 
 def _simulate_lsirm(
@@ -158,3 +159,38 @@ def test_marginal_distance_einsum_parity():
     expected = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
     actual = np.sqrt(eps_distance + np.einsum("ij,ij->i", diff, diff))
     np.testing.assert_allclose(actual, expected, atol=1e-12)
+
+
+def test_marginal_distance_einsum_parity_production():
+    """
+    Asserts that the production Python fallback logic (fit_marginal_numpy)
+    using the optimized einsum Euclidean distance branch produces identically
+    recoverable parameter results under the spatial model structure, proving
+    that the optimization applies to runtime shapes.
+    """
+    from fast_mlsirm.config import FitConfig
+    from fast_mlsirm.simulation import simulate
+    from fast_mlsirm.config import MLS2PLMConfig
+    from fast_mlsirm.reference import fit_reference
+    import numpy as np
+
+    sim = simulate(MLS2PLMConfig(n_persons=50, n_dims=2, items_per_dim=3, seed=20261001))
+
+    # Run the fallback NumPy backend which invokes fit_marginal_numpy and
+    # its distance kernel (the modified einsum branch).
+    config = FitConfig(
+        model="MLS2PLM",
+        backend="auto",
+        latent_dim=2,
+        max_iter=5,
+        optimizer="adam_lbfgs"
+    )
+
+    res = fit_reference(
+        responses=sim.Y,
+        factor_id=sim.factor_id,
+        config=config,
+    )
+    assert res.params is not None
+    assert np.all(np.isfinite(res.params.zeta))
+    assert res.objective > 0

@@ -1045,7 +1045,6 @@ def fit_marginal_numpy(
                         deta_z = x_grid  # (Nx, K)
                     else:
                         diff = x_grid - zeta_i[None, :]
-
                         # Avoid materializing ``diff * diff``; the parity contract is tested.
                         dist = np.sqrt(
                             eps_distance + np.einsum("ij,ij->i", diff, diff)
