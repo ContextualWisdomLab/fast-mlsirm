@@ -249,3 +249,24 @@ def test_content_feasible_np_count_nonzero_parity():
     assert int(np.sum(labels == "D")) >= 2
     assert int(np.sum(labels == "E")) >= 2
     assert not set(form.items.tolist()) & set(banned.tolist())
+
+def test_content_feasible_empty_eligibility_parity():
+    """Verify that _content_feasible behaves correctly with empty eligibility."""
+    from fast_mlsirm.ata import _content_feasible
+
+    n_items = 10
+    labels = np.array(["A", "A", "B", "B", "C", "C", "D", "D", "E", "E"])
+
+    # Completely empty eligibility mask
+    eligible_now = np.zeros(n_items, dtype=bool)
+
+    # Require elements we don't have
+    min_counts = {"A": 1, "B": 1}
+    counts = {"A": 0, "B": 0}
+
+    selected = [0, 1]
+    length = 5
+
+    assert _content_feasible(
+        labels, selected, counts, eligible_now, length, min_counts
+    ) is False
