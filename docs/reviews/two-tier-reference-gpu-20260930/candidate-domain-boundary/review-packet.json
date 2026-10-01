@@ -1,0 +1,417 @@
+{
+  "head": "27614479bff357c0aad8f2c27dc7011c8ddad6b0",
+  "base": "45578feb5c9d108df951f9691546a4a406fa7218",
+  "scope": "CPU native6 +synthetic3 only; domain guarded proposal not runtime connected",
+  "source_event": {
+    "event": "source",
+    "execution_head": "27614479bff357c0aad8f2c27dc7011c8ddad6b0",
+    "kernel_source": "crates/mlsirm-core/src/gpu_bifactor.rs",
+    "kernel_source_sha256": "6f4cbb7ed77c33951165eb0038b2cf3ed9cd3dc3c3c71d842a58d3e2f164c532",
+    "numerical_source": "crates/mlsirm-core/src/two_tier_grm.rs",
+    "numerical_source_sha256": "51c47ceba6cb5eee1ec33000722e417cd1336fc8dd4544faf768adc07ce2866b",
+    "test_source": "tests/unit/two_tier_grm_tests.rs",
+    "test_source_sha256": "16334458d34dbff4006cf61e942b3c5356b9b6be7292cf8e82a74ee8f8ed89a2"
+  },
+  "production_diff_empty": true,
+  "test_only_patch_sha256": "9e9b99bfc3ab98a4e840f66dee4323f53380b5c1d75f4ef5da8edf6b54fac5f7",
+  "logs": {
+    "candidate.txt": "c575a9f0fe8dfc8c9f65471c779909fbb4557536369be0f244bf95ed2c1aeb65",
+    "compile-contract.txt": "804d0d179da8131a5c7420615ad76072bccb6492a878faf166333fa3ba501514"
+  },
+  "events": [
+    {
+      "convergence": "not applicable",
+      "event": "candidate_rule_case",
+      "fit_executed": false,
+      "gpu_context_initialized": false,
+      "independent_objective": 0.0,
+      "input": {
+        "case": "legal_zero_weights",
+        "coords": [
+          1.0
+        ],
+        "counts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "free": [
+          0
+        ],
+        "invalid_state_role": "not applicable",
+        "n_cat": 3,
+        "packed": [
+          1.0,
+          1e-18,
+          0.0
+        ],
+        "valid_model_state": true
+      },
+      "input_sha256": "eaf2757b6b90161c3e225442f2c2e3e7400bde60094cd738a2f012ad3fab52d2",
+      "internal_branch": "not instrumented",
+      "log_probability_bits": [
+        13831965260873969737,
+        18442240474082181120,
+        13822686877649387813
+      ],
+      "native_gradient_bits": [
+        9223372036854775808,
+        9223372036854775808,
+        9223372036854775808
+      ],
+      "native_gradient_finite": true,
+      "native_objective_finite": false,
+      "native_objective_nan": true,
+      "native_objective_positive_inf": false,
+      "native_return_unchanged": true,
+      "proposed_objective": -0.0,
+      "proposed_objective_finite": true,
+      "proposed_objective_nan": false,
+      "proposed_objective_positive_inf": false,
+      "rule": "finite strictly decreasing parameter thresholds AND count==0 AND lp==-inf; other products and sum order unchanged",
+      "rule_runtime_connected": false,
+      "term_only_objective_finite": true,
+      "threshold_domain_finite_strict": true
+    },
+    {
+      "convergence": "not applicable",
+      "event": "candidate_rule_case",
+      "fit_executed": false,
+      "gpu_context_initialized": false,
+      "independent_objective": 1.3132616875182228,
+      "input": {
+        "case": "legal_mixed_supported",
+        "coords": [
+          1.0
+        ],
+        "counts": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "free": [
+          0
+        ],
+        "invalid_state_role": "not applicable",
+        "n_cat": 3,
+        "packed": [
+          1.0,
+          1e-18,
+          0.0
+        ],
+        "valid_model_state": true
+      },
+      "input_sha256": "b7d8e61d045ce81f2dcfec2009eef990359b6d4e505d4fb8fb4914ad34f19024",
+      "internal_branch": "not instrumented",
+      "log_probability_bits": [
+        13831965260873969737,
+        18442240474082181120,
+        13822686877649387813
+      ],
+      "native_gradient_bits": [
+        4604760009829884605,
+        4604760009829884605,
+        9223372036854775808
+      ],
+      "native_gradient_finite": true,
+      "native_objective_finite": false,
+      "native_objective_nan": true,
+      "native_objective_positive_inf": false,
+      "native_return_unchanged": true,
+      "proposed_objective": 1.3132616875182228,
+      "proposed_objective_finite": true,
+      "proposed_objective_nan": false,
+      "proposed_objective_positive_inf": false,
+      "rule": "finite strictly decreasing parameter thresholds AND count==0 AND lp==-inf; other products and sum order unchanged",
+      "rule_runtime_connected": false,
+      "term_only_objective_finite": true,
+      "threshold_domain_finite_strict": true
+    },
+    {
+      "convergence": "not applicable",
+      "event": "candidate_rule_case",
+      "fit_executed": false,
+      "gpu_context_initialized": false,
+      "independent_objective": null,
+      "input": {
+        "case": "positive_impossible",
+        "coords": [
+          1.0
+        ],
+        "counts": [
+          [
+            0.0,
+            1.0,
+            0.0
+          ]
+        ],
+        "free": [
+          0
+        ],
+        "invalid_state_role": "not applicable",
+        "n_cat": 3,
+        "packed": [
+          1.0,
+          1e-18,
+          0.0
+        ],
+        "valid_model_state": true
+      },
+      "input_sha256": "fa4144804f876ab621afe07f086e9f1e7c2412fbfb5a9c764352ec846b9b73e8",
+      "internal_branch": "not instrumented",
+      "log_probability_bits": [
+        13831965260873969737,
+        18442240474082181120,
+        13822686877649387813
+      ],
+      "native_gradient_bits": [
+        18444492273895866368,
+        18442240474082181120,
+        9218868437227405312
+      ],
+      "native_gradient_finite": false,
+      "native_objective_finite": false,
+      "native_objective_nan": false,
+      "native_objective_positive_inf": true,
+      "native_return_unchanged": true,
+      "proposed_objective": null,
+      "proposed_objective_finite": false,
+      "proposed_objective_nan": false,
+      "proposed_objective_positive_inf": true,
+      "rule": "finite strictly decreasing parameter thresholds AND count==0 AND lp==-inf; other products and sum order unchanged",
+      "rule_runtime_connected": false,
+      "term_only_objective_finite": false,
+      "threshold_domain_finite_strict": true
+    },
+    {
+      "convergence": "not applicable",
+      "event": "candidate_rule_case",
+      "fit_executed": false,
+      "gpu_context_initialized": false,
+      "independent_objective": null,
+      "input": {
+        "case": "unordered_nan_zero_weight",
+        "coords": [
+          1.0
+        ],
+        "counts": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "free": [
+          0
+        ],
+        "invalid_state_role": "invalid equal/unordered line-search candidate; not admitted model",
+        "n_cat": 3,
+        "packed": [
+          1.0,
+          -0.2,
+          0.2
+        ],
+        "valid_model_state": false
+      },
+      "input_sha256": "5cc5bdf0297541b22b63740ef640c41af57755a4705517073a733c2a9d649f3c",
+      "internal_branch": "not instrumented",
+      "log_probability_bits": [
+        13831325024550198472,
+        9221120237041090560,
+        13821786532059868697
+      ],
+      "native_gradient_bits": [
+        4604389957177479350,
+        4604389957177479350,
+        9223372036854775808
+      ],
+      "native_gradient_finite": true,
+      "native_objective_finite": false,
+      "native_objective_nan": true,
+      "native_objective_positive_inf": false,
+      "native_return_unchanged": true,
+      "proposed_objective": null,
+      "proposed_objective_finite": false,
+      "proposed_objective_nan": true,
+      "proposed_objective_positive_inf": false,
+      "rule": "finite strictly decreasing parameter thresholds AND count==0 AND lp==-inf; other products and sum order unchanged",
+      "rule_runtime_connected": false,
+      "term_only_objective_finite": false,
+      "threshold_domain_finite_strict": false
+    },
+    {
+      "convergence": "not applicable",
+      "event": "candidate_rule_case",
+      "fit_executed": false,
+      "gpu_context_initialized": false,
+      "independent_objective": null,
+      "input": {
+        "case": "equal_zero_weights",
+        "coords": [
+          1.0
+        ],
+        "counts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "free": [
+          0
+        ],
+        "invalid_state_role": "invalid equal/unordered line-search candidate; not admitted model",
+        "n_cat": 3,
+        "packed": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "valid_model_state": false
+      },
+      "input_sha256": "e9214992a907568910fa632aeeec05f5a4b15c8441b5483dec3419659e141640",
+      "internal_branch": "not instrumented",
+      "log_probability_bits": [
+        13831965260873969737,
+        18442240474082181120,
+        13822686877649387813
+      ],
+      "native_gradient_bits": [
+        9223372036854775808,
+        9223372036854775808,
+        9223372036854775808
+      ],
+      "native_gradient_finite": true,
+      "native_objective_finite": false,
+      "native_objective_nan": true,
+      "native_objective_positive_inf": false,
+      "native_return_unchanged": true,
+      "proposed_objective": null,
+      "proposed_objective_finite": false,
+      "proposed_objective_nan": true,
+      "proposed_objective_positive_inf": false,
+      "rule": "finite strictly decreasing parameter thresholds AND count==0 AND lp==-inf; other products and sum order unchanged",
+      "rule_runtime_connected": false,
+      "term_only_objective_finite": true,
+      "threshold_domain_finite_strict": false
+    },
+    {
+      "convergence": "not applicable",
+      "event": "candidate_rule_case",
+      "fit_executed": false,
+      "gpu_context_initialized": false,
+      "independent_objective": null,
+      "input": {
+        "case": "equal_mixed_supported",
+        "coords": [
+          1.0
+        ],
+        "counts": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "free": [
+          0
+        ],
+        "invalid_state_role": "invalid equal/unordered line-search candidate; not admitted model",
+        "n_cat": 3,
+        "packed": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "valid_model_state": false
+      },
+      "input_sha256": "d2926249d4ddf67ed407c1c23cc8e513192b24dfac92502a10f5b0ccd6b7fd4d",
+      "internal_branch": "not instrumented",
+      "log_probability_bits": [
+        13831965260873969737,
+        18442240474082181120,
+        13822686877649387813
+      ],
+      "native_gradient_bits": [
+        4604760009829884605,
+        4604760009829884605,
+        9223372036854775808
+      ],
+      "native_gradient_finite": true,
+      "native_objective_finite": false,
+      "native_objective_nan": true,
+      "native_objective_positive_inf": false,
+      "native_return_unchanged": true,
+      "proposed_objective": null,
+      "proposed_objective_finite": false,
+      "proposed_objective_nan": true,
+      "proposed_objective_positive_inf": false,
+      "rule": "finite strictly decreasing parameter thresholds AND count==0 AND lp==-inf; other products and sum order unchanged",
+      "rule_runtime_connected": false,
+      "term_only_objective_finite": true,
+      "threshold_domain_finite_strict": false
+    },
+    {
+      "case": "zero_positive_inf",
+      "count_bits": 0,
+      "domain": "synthetic scalar term; not valid GRM log probability",
+      "event": "synthetic_nonfinite_term_case",
+      "fit_executed": false,
+      "log_probability_bits": 9218868437227405312,
+      "native_item_gradient_evaluated": false,
+      "native_item_objective_evaluated": false,
+      "native_item_return_evaluated": false,
+      "native_product_bits": 9221120237041090560,
+      "nonfinite_preserved": true,
+      "production_modified": false,
+      "proposed_product_bits": 9221120237041090560
+    },
+    {
+      "case": "zero_nan",
+      "count_bits": 0,
+      "domain": "synthetic scalar term; not valid GRM log probability",
+      "event": "synthetic_nonfinite_term_case",
+      "fit_executed": false,
+      "log_probability_bits": 9221120237041090560,
+      "native_item_gradient_evaluated": false,
+      "native_item_objective_evaluated": false,
+      "native_item_return_evaluated": false,
+      "native_product_bits": 9221120237041090560,
+      "nonfinite_preserved": true,
+      "production_modified": false,
+      "proposed_product_bits": 9221120237041090560
+    },
+    {
+      "case": "positive_negative_inf",
+      "count_bits": 4607182418800017408,
+      "domain": "synthetic scalar term; not valid GRM log probability",
+      "event": "synthetic_nonfinite_term_case",
+      "fit_executed": false,
+      "log_probability_bits": 18442240474082181120,
+      "native_item_gradient_evaluated": false,
+      "native_item_objective_evaluated": false,
+      "native_item_return_evaluated": false,
+      "native_product_bits": 18442240474082181120,
+      "nonfinite_preserved": true,
+      "production_modified": false,
+      "proposed_product_bits": 18442240474082181120
+    }
+  ],
+  "binary": {
+    "path": "target/debug/deps/mlsirm_core-154b933da47210f2",
+    "sha256": "3b00533ad27f280b201fd14ca083bb0bc12c53942b49522a75c2bf8b3e9aa3cd",
+    "bytes": 18854672
+  },
+  "toolchain": "rustc 1.98.1 (48a229cea 2026-09-01) (Homebrew)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "gpu_initialized": false,
+  "gh_initialized": false,
+  "fit_executed": false,
+  "runtime_connected": false,
+  "internal_branches": "not instrumented; no observed accepted line-search candidate",
+  "dynamic_threshold_domain_cases": "finite strict/equal/unordered only; nonfinite threshold vectors not dynamically executed",
+  "rule": "finite strictly decreasing parameter thresholds ANDcount0 ANDlp-inf; otherwise original multiplication/sum order"
+}

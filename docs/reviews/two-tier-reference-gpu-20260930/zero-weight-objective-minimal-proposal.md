@@ -21,11 +21,13 @@ finite packed 모수 `[1.0,1e-18,0.0]`, 자유 primary `[0]`, primary 좌표 `[1
 
 ## 가장 작은 수정 후보: 아직 구현하지 않음
 
-독립 source/log 검토에서 초기 blanket zero-count 후보의 거부 경계를 좁혔다. 현재 item objective의 category 합에서 **count가 정확히 0이고 log probability가 정확히 negative infinity인 경우에만 0을 기여하게 한다.** 나머지는 기존 `count*log_probability`와 합산 순서를 유지한다. probability나 table 자체를 바꾸거나 전체 node를 버리지 않는다.
+독립 source/log 검토에서 초기 blanket zero-count 후보의 거부 경계를 두 번 좁혔다. 현재 최소 후보는 **item threshold 벡터가 유한하고 모수 공간에서 엄격히 감소하며, count가 정확히 0이고 log probability가 정확히 negative infinity인 경우에만 0을 기여하게 한다.** 나머지는 기존 `count*log_probability`와 합산 순서를 유지한다. probability나 table 자체를 바꾸거나 전체 node를 버리지 않는다.
+
+추가 검토가 발견한 소스 유도 위험은 equal adjacent threshold다. 같은 threshold는 유효 모형이 아니지만 middle category의 `ln(-0.0)`가 NaN이 아닌 `-inf`가 되므로 term 조건만으로는 잘못된 후보를 finite로 만들 수 있다. threshold domain guard는 모수 자체에 적용하며, 유효한 서로 다른 threshold의 base 덧셈 rounding으로 생긴 legal zero mass와 구분한다. 추가 test-only source `27614479b`에서 equal zero/mixed count를 실제 재현했다. 원래 objective와 domain-guard 후보는 NaN이었지만 term-only 후보는 finite였다. [원증거](candidate-domain-boundary/README.md)는 objective 경계의 관측이며 실제 line-search 채택이나 전체 fit 영향은 관측하지 않았다.
 
 양수 count와 logP=-inf는 계속 nonfinite objective여야 한다. zero count여도 NaN/+inf log probability는 기존 multiplication의 nonfinite 결과를 유지한다. Newton/line-search 후보의 unordered threshold가 만든 NaN을 숨겨 finite objective로 통과시키지 않는다. negative/nonfinite count를 zero처럼 통과시키지 않는다. private helper의 malformed shape/count 입력을 새로운 public validation 계약으로 확장하지 않는다.
 
-이 안전 경계를 검증하려면 zero count와 unordered 후보의 NaN log probability가 여전히 nonfinite인 focused regression이 추가로 필요하다. 지금은 제안 문구만 수정했으며, 새 test·production 변경·실행은 별도 배정 전까지 하지 않는다. 기존 세 경계 관측을 이 NaN 후보 거부 검증으로 대체하지 않는다.
+이 안전 경계의 unordered NaN 검사는 test-only source `d82c0e11`에서, equal threshold domain 검사는 후속 `27614479b`에서 실행했다. 원래 단계2의 세 경계 관측과 구분한다. 제안은 여전히 test-only 비교이며 production 변경·fit·GPU 실행은 하지 않았다. 유한하지 않은 threshold 전체와 모든 invalid candidate에 대한 완전한 보장을 이 작은 사례로 주장하지 않는다.
 
 ## 필요한 대조와 미확인
 
