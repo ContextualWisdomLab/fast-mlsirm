@@ -39,9 +39,9 @@ decision loss, provider choice, and credential policy remain downstream.
 Add versioned algorithm `holm-wald-one-sided-v1`:
 
 1. accept a finite candidate-estimate vector, its finite symmetric positive-definite covariance, and a caller-supplied family-wise error rate in `(0, 1)`;
-2. verify positive definiteness with a scale-normalized Cholesky factorization
-   whose pivots and reconstruction residuals are checked against the standard
-   IEEE-754 `γ_n` dot-product error bound;
+2. verify positive definiteness with scale-normalized, outward-rounded interval
+   `LDLᵀ`; every exact-real pivot for the submitted binary64 matrix must have a
+   strictly positive lower bound, while overflow or unresolved sign fails closed;
 3. form every ordered contrast `H0(i,j): μ_i ≤ μ_j` using the full covariance;
 4. calculate a conservative upper bound for the one-sided Wald normal-tail
    probability in Rust from the documented `erfc` approximation error bound;
@@ -61,7 +61,7 @@ provenance.
    return `indeterminate`.
 2. Candidate permutation cannot change the winner identity.
 3. Nonfinite estimates, nonsymmetric covariance, and non-positive-definite covariance fail closed.
-4. Rust owns scale-normalized positive-definiteness verification, contrast
+4. Rust owns interval-certified positive-definiteness verification, contrast
    variance, standard errors, conservative p-value bounds, Holm rejection, and
    winner selection.
 5. No family-wise error default is provided.
@@ -147,6 +147,9 @@ https://www.jstor.org/stable/4615733
 
 Higham, N. J. (2002). *Accuracy and stability of numerical algorithms* (2nd
 ed.). Society for Industrial and Applied Mathematics.
+
+Moore, R. E., Kearfott, R. B., & Cloud, M. J. (2009). *Introduction to interval
+analysis*. Society for Industrial and Applied Mathematics.
 
 ## Follow-ups
 

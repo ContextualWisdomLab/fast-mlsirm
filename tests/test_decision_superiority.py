@@ -99,6 +99,19 @@ def test_tied_small_p_bounds_follow_holm_without_order_tie_break() -> None:
     assert all(comparison.null_rejected for comparison in outgoing)
 
 
+def test_multiple_directional_rejections_are_indeterminate() -> None:
+    """A caller-supplied high alpha cannot turn non-uniqueness into an error."""
+    result = assess_wald_superiority(
+        ("candidate-a", "candidate-b"),
+        np.array([0.15, 0.0], dtype=np.float64),
+        np.diag(np.array([0.5, 0.5], dtype=np.float64)),
+        familywise_error_rate=0.9,
+    )
+    assert result.winner_id is None
+    assert result.decision == "indeterminate"
+    assert all(comparison.null_rejected for comparison in result.comparisons)
+
+
 def test_equal_candidates_do_not_receive_an_order_tie_break() -> None:
     """The null case remains indeterminate for either candidate ordering."""
     covariance = np.diag([0.01, 0.01])

@@ -39,12 +39,85 @@ pub struct HolmWaldSuperiority {
     pub comparisons: Vec<HolmWaldComparison>,
 }
 
-/// Verify positive definiteness with scale-normalized, residual-checked Cholesky.
+/// Closed interval with outward-rounded IEEE-754 arithmetic.
+#[derive(Clone, Copy)]
+struct Interval {
+    lower: f64,
+    upper: f64,
+}
+
+impl Interval {
+    fn point(value: f64) -> Self {
+        Self {
+            lower: value,
+            upper: value,
+        }
+    }
+
+    fn outward(lower: f64, upper: f64) -> Option<Self> {
+        if !lower.is_finite() || !upper.is_finite() {
+            return None;
+        }
+        Some(Self {
+            lower: lower.next_down(),
+            upper: upper.next_up(),
+        })
+    }
+
+    fn subtract(self, other: Self) -> Option<Self> {
+        Self::outward(self.lower - other.upper, self.upper - other.lower)
+    }
+
+    fn multiply(self, other: Self) -> Option<Self> {
+        let products = [
+            self.lower * other.lower,
+            self.lower * other.upper,
+            self.upper * other.lower,
+            self.upper * other.upper,
+        ];
+        if products.iter().any(|value| !value.is_finite()) {
+            return None;
+        }
+        let lower = products.iter().copied().fold(f64::INFINITY, f64::min);
+        let upper = products.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        Self::outward(lower, upper)
+    }
+
+    fn square(self) -> Option<Self> {
+        let upper = (self.lower * self.lower).max(self.upper * self.upper);
+        let lower = if self.lower <= 0.0 && self.upper >= 0.0 {
+            0.0
+        } else {
+            (self.lower * self.lower).min(self.upper * self.upper)
+        };
+        Self::outward(lower, upper)
+    }
+
+    fn divide(self, positive: Self) -> Option<Self> {
+        if positive.lower <= 0.0 {
+            return None;
+        }
+        let quotients = [
+            self.lower / positive.lower,
+            self.lower / positive.upper,
+            self.upper / positive.lower,
+            self.upper / positive.upper,
+        ];
+        if quotients.iter().any(|value| !value.is_finite()) {
+            return None;
+        }
+        let lower = quotients.iter().copied().fold(f64::INFINITY, f64::min);
+        let upper = quotients.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        Self::outward(lower, upper)
+    }
+}
+
+/// Certify positive definiteness with outward-rounded interval LDLᵀ.
 ///
-/// Each pivot must exceed its IEEE-754 dot-product rounding bound. This makes
-/// numerically unresolved pivots fail closed instead of converting an absolute
-/// eigensolver tolerance into a scale-dependent acceptance rule.
-fn positive_definite_cholesky(covariance: &[f64], n: usize) -> bool {
+/// Every interval contains the corresponding exact-real operation on the
+/// submitted binary64 values. A pivot is admitted only when its entire interval
+/// is positive; overflow or unresolved sign therefore fails closed.
+fn verified_positive_definite_ldlt(covariance: &[f64], n: usize) -> bool {
     let scale = covariance
         .iter()
         .map(|value| value.abs())
@@ -52,64 +125,58 @@ fn positive_definite_cholesky(covariance: &[f64], n: usize) -> bool {
     if !scale.is_finite() || scale == 0.0 {
         return false;
     }
-    let mut lower = vec![0.0_f64; covariance.len()];
-    for row in 0..n {
-        for column in 0..=row {
-            let normalized = covariance[row * n + column] / scale;
-            let mut value = normalized;
-            let mut magnitude_sum = normalized.abs();
-            for k in 0..column {
-                let product = lower[row * n + k] * lower[column * n + k];
-                value -= product;
-                magnitude_sum += product.abs();
-            }
-            if !value.is_finite() || !magnitude_sum.is_finite() {
-                return false;
-            }
-            if row == column {
-                let operations = 2 * column + 1;
-                let roundoff = operations as f64 * f64::EPSILON;
-                if roundoff >= 1.0 {
-                    return false;
-                }
-                let rounding_bound = roundoff / (1.0 - roundoff) * magnitude_sum;
-                if value <= rounding_bound {
-                    return false;
-                }
-                lower[row * n + column] = value.sqrt();
-            } else {
-                let factor = value / lower[column * n + column];
-                if !factor.is_finite() {
-                    return false;
-                }
-                lower[row * n + column] = factor;
-            }
-        }
+    let scale_interval = Interval::point(scale);
+    let mut normalized = Vec::new();
+    if normalized.try_reserve_exact(covariance.len()).is_err() {
+        return false;
+    }
+    for value in covariance {
+        let Some(interval) = Interval::point(*value).divide(scale_interval) else {
+            return false;
+        };
+        normalized.push(interval);
     }
 
-    for row in 0..n {
-        for column in 0..n {
-            let terms = row.min(column) + 1;
-            let mut reconstructed = 0.0;
-            let mut magnitude_sum = 0.0;
-            for k in 0..terms {
-                let product = lower[row * n + k] * lower[column * n + k];
-                reconstructed += product;
-                magnitude_sum += product.abs();
-            }
-            let normalized = covariance[row * n + column] / scale;
-            let operations = 2 * terms + 1;
-            let roundoff = operations as f64 * f64::EPSILON;
-            if roundoff >= 1.0 {
+    let zero = Interval::point(0.0);
+    let mut lower = vec![zero; covariance.len()];
+    let mut diagonal = vec![zero; n];
+    for pivot_index in 0..n {
+        let mut pivot = normalized[pivot_index * n + pivot_index];
+        for prior in 0..pivot_index {
+            let Some(term) = lower[pivot_index * n + prior]
+                .square()
+                .and_then(|square| square.multiply(diagonal[prior]))
+            else {
                 return false;
-            }
-            let rounding_bound = roundoff / (1.0 - roundoff) * (normalized.abs() + magnitude_sum);
-            if !reconstructed.is_finite()
-                || !rounding_bound.is_finite()
-                || (normalized - reconstructed).abs() > rounding_bound
-            {
+            };
+            let Some(updated) = pivot.subtract(term) else {
                 return false;
+            };
+            pivot = updated;
+        }
+        if pivot.lower <= 0.0 {
+            return false;
+        }
+        diagonal[pivot_index] = pivot;
+
+        for row in (pivot_index + 1)..n {
+            let mut numerator = normalized[row * n + pivot_index];
+            for prior in 0..pivot_index {
+                let Some(term) = lower[row * n + prior]
+                    .multiply(lower[pivot_index * n + prior])
+                    .and_then(|product| product.multiply(diagonal[prior]))
+                else {
+                    return false;
+                };
+                let Some(updated) = numerator.subtract(term) else {
+                    return false;
+                };
+                numerator = updated;
             }
+            let Some(factor) = numerator.divide(pivot) else {
+                return false;
+            };
+            lower[row * n + pivot_index] = factor;
         }
     }
     true
@@ -174,7 +241,7 @@ pub fn holm_wald_superiority(
             }
         }
     }
-    if !positive_definite_cholesky(covariance, n) {
+    if !verified_positive_definite_ldlt(covariance, n) {
         return Err("covariance must be positive definite".into());
     }
 
@@ -249,9 +316,8 @@ pub fn holm_wald_superiority(
         })
         .collect();
     let winner_index = match winners.as_slice() {
-        [] => None,
         [winner] => Some(*winner),
-        _ => return Err("multiple superiority winners violate the ordered contrast model".into()),
+        _ => None,
     };
     Ok(HolmWaldSuperiority {
         winner_index,
@@ -320,5 +386,53 @@ mod tests {
             .expect("ordered comparison");
         assert!(forward.p_value_upper_bound > 0.025);
         assert!(!forward.null_rejected);
+    }
+
+    #[test]
+    fn exact_indefinite_covariance_fails_under_every_permutation() {
+        let covariance = [
+            0.877_979_360_406_599_1,
+            -0.326_872_939_819_592_2,
+            0.016_902_198_682_877_17,
+            -0.326_872_939_819_592_2,
+            0.124_361_918_259_595_37,
+            0.045_278_170_900_405_58,
+            0.016_902_198_682_877_17,
+            0.045_278_170_900_405_58,
+            0.997_658_721_333_805_7,
+        ];
+        let estimates = [2.0, 1.0, 0.0];
+        let permutations = [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ];
+        for permutation in permutations {
+            let permuted_estimates = permutation.map(|index| estimates[index]);
+            let mut permuted_covariance = [0.0; 9];
+            for row in 0..3 {
+                for column in 0..3 {
+                    permuted_covariance[row * 3 + column] =
+                        covariance[permutation[row] * 3 + permutation[column]];
+                }
+            }
+            let error = holm_wald_superiority(&permuted_estimates, &permuted_covariance, 0.05)
+                .expect_err("exact non-PD covariance must fail for every ordering");
+            assert_eq!(error, "covariance must be positive definite");
+        }
+    }
+
+    #[test]
+    fn multiple_directional_rejections_are_indeterminate() {
+        let result = holm_wald_superiority(&[0.15, 0.0], &[0.5, 0.0, 0.0, 0.5], 0.9)
+            .expect("valid high-alpha evidence remains a typed result");
+        assert_eq!(result.winner_index, None);
+        assert!(result
+            .comparisons
+            .iter()
+            .all(|comparison| comparison.null_rejected));
     }
 }
