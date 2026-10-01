@@ -39,13 +39,20 @@ decision loss, provider choice, and credential policy remain downstream.
 Add versioned algorithm `holm-wald-one-sided-v1`:
 
 1. accept a finite candidate-estimate vector, its finite symmetric positive-definite covariance, and a caller-supplied family-wise error rate in `(0, 1)`;
-2. verify positive definiteness with scale-normalized, outward-rounded interval
-   `LDLᵀ`; every exact-real pivot for the submitted binary64 matrix must have a
-   strictly positive lower bound, while overflow or unresolved sign fails closed;
-3. form every ordered contrast `H0(i,j): μ_i ≤ μ_j` using the full covariance;
+2. convert every submitted binary64 covariance entry to a common-scale exact
+   dyadic integer, then verify positive definiteness from every leading
+   principal-minor sign using fraction-free Bareiss elimination and Sylvester's
+   criterion;
+3. form every ordered estimate difference and covariance contrast as exact
+   dyadic integers, enclose the exact variance, standard error, and Wald ratio
+   with directionally conservative binary64 bounds, and fail closed if finite
+   bounds cannot be produced;
 4. calculate a conservative upper bound for the one-sided Wald normal-tail
-   probability in Rust from the documented `erfc` approximation error bound;
-5. apply Holm's sequentially rejective procedure across the complete ordered family; and
+   probability in Rust from the Wald-ratio lower bound and the documented
+   `erfc` approximation error bound, rounding the final bound outward;
+5. apply Holm's sequentially rejective procedure across the complete ordered
+   family by exact dyadic cross multiplication rather than a rounded `alpha / m`
+   cutoff; and
 6. return a winner only when exactly one candidate rejects every outgoing null; otherwise return `indeterminate`.
 
 This foundation does not itself accept fit-status or calibration booleans. That
@@ -61,9 +68,9 @@ provenance.
    return `indeterminate`.
 2. Candidate permutation cannot change the winner identity.
 3. Nonfinite estimates, nonsymmetric covariance, and non-positive-definite covariance fail closed.
-4. Rust owns interval-certified positive-definiteness verification, contrast
-   variance, standard errors, conservative p-value bounds, Holm rejection, and
-   winner selection.
+4. Rust owns exact-dyadic positive-definiteness and contrast arithmetic,
+   directional binary64 bounds, outward-rounded conservative p-value bounds,
+   exact Holm critical comparisons, and winner selection.
 5. No family-wise error default is provided.
 
 ## Non-goals and claims not made
@@ -85,6 +92,9 @@ provenance.
 
 - Wald inference depends on a valid asymptotic joint covariance and regular identification.
 - Testing every ordered pair is conservative; lower power is accepted in this safety-first foundation.
+- Exact covariance certification adds the permissively licensed `num-bigint`
+  dependency and cubic integer arithmetic before Wald computation; this bounded
+  foundation prioritizes invariant admission over floating-point shortcuts.
 - The consumer remains deliberately blocked until the upstream covariance/calibration contract is complete and released.
 
 ## Alternatives considered
@@ -145,11 +155,9 @@ Holm, S. (1979). A simple sequentially rejective multiple test procedure.
 *Scandinavian Journal of Statistics, 6*(2), 65–70.
 https://www.jstor.org/stable/4615733
 
-Higham, N. J. (2002). *Accuracy and stability of numerical algorithms* (2nd
-ed.). Society for Industrial and Applied Mathematics.
-
-Moore, R. E., Kearfott, R. B., & Cloud, M. J. (2009). *Introduction to interval
-analysis*. Society for Industrial and Applied Mathematics.
+Bareiss, E. H. (1968). Sylvester's identity and multistep integer-preserving
+Gaussian elimination. *Mathematics of Computation, 22*(103), 565–578.
+https://doi.org/10.1090/S0025-5718-1968-0226829-0
 
 ## Follow-ups
 

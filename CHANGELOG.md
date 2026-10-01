@@ -6,11 +6,12 @@
 
 - Add the Proposed Rust/PyO3 `holm-wald-one-sided-v1` numerical foundation for
   permutation-invariant candidate superiority with Holm family-wise error
-  control and an explicit indeterminate result. Scale-normalized,
-  outward-rounded interval `LDLᵀ` certification fails closed on unresolved covariance;
-  a documented normal-tail approximation error bound prevents anti-conservative
-  boundary rejection; and the Python boundary admits exact native `float64`
-  evidence without lossy coercion. It has no default error level and is not
+  control and an explicit indeterminate result. Exact dyadic conversion plus
+  fraction-free Bareiss/Sylvester certification makes covariance admission
+  independent of binary64 rounding and candidate order;
+  outward-rounded normal-tail bounds and exact dyadic Holm comparisons prevent
+  anti-conservative boundary rejection; and the Python boundary admits exact
+  native `float64` evidence without lossy coercion. It has no default error level and is not
   decision-authorizing until #2315 supplies owner-produced joint prediction
   uncertainty, calibration/coverage, fit denominators, and provenance.
 

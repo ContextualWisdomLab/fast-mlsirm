@@ -11,6 +11,10 @@
 //! must not treat it as route-authorizing evidence until those upstream
 //! contracts are supplied and validated.
 
+use std::cmp::Ordering;
+
+use num_bigint::{BigInt, Sign};
+
 const ERFC_ABSOLUTE_ERROR_BOUND: f64 = 1.2e-7;
 
 /// One ordered Wald comparison after Holm family-wise correction.
@@ -20,9 +24,9 @@ pub struct HolmWaldComparison {
     pub candidate_index: usize,
     /// Comparator in `H0: candidate <= comparator`.
     pub comparator_index: usize,
-    /// Estimated candidate-minus-comparator contrast.
+    /// Binary64 summary of the candidate-minus-comparator contrast.
     pub estimate_difference: f64,
-    /// Standard error derived from the full covariance matrix.
+    /// Conservative upper standard-error bound from the exact dyadic variance.
     pub standard_error: f64,
     /// Conservative upper bound for the one-sided standard-normal p-value.
     pub p_value_upper_bound: f64,
@@ -39,154 +43,222 @@ pub struct HolmWaldSuperiority {
     pub comparisons: Vec<HolmWaldComparison>,
 }
 
-/// Closed interval with outward-rounded IEEE-754 arithmetic.
-#[derive(Clone, Copy)]
-struct Interval {
-    lower: f64,
-    upper: f64,
+/// Return the exact signed significand and binary exponent of a finite f64.
+fn exact_dyadic_parts(value: f64) -> Option<(bool, u64, i32)> {
+    let bits = value.to_bits();
+    let negative = bits >> 63 != 0;
+    let raw_exponent = ((bits >> 52) & 0x7ff) as i32;
+    let fraction = bits & ((1_u64 << 52) - 1);
+    if raw_exponent == 0x7ff {
+        return None;
+    }
+    if raw_exponent == 0 {
+        return Some((negative, fraction, -1074));
+    }
+    Some((negative, (1_u64 << 52) | fraction, raw_exponent - 1023 - 52))
 }
 
-impl Interval {
-    fn point(value: f64) -> Self {
-        Self {
-            lower: value,
-            upper: value,
-        }
-    }
-
-    fn outward(lower: f64, upper: f64) -> Option<Self> {
-        if !lower.is_finite() || !upper.is_finite() {
-            return None;
-        }
-        Some(Self {
-            lower: lower.next_down(),
-            upper: upper.next_up(),
-        })
-    }
-
-    fn subtract(self, other: Self) -> Option<Self> {
-        Self::outward(self.lower - other.upper, self.upper - other.lower)
-    }
-
-    fn multiply(self, other: Self) -> Option<Self> {
-        let products = [
-            self.lower * other.lower,
-            self.lower * other.upper,
-            self.upper * other.lower,
-            self.upper * other.upper,
-        ];
-        if products.iter().any(|value| !value.is_finite()) {
-            return None;
-        }
-        let lower = products.iter().copied().fold(f64::INFINITY, f64::min);
-        let upper = products.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        Self::outward(lower, upper)
-    }
-
-    fn square(self) -> Option<Self> {
-        let upper = (self.lower * self.lower).max(self.upper * self.upper);
-        let lower = if self.lower <= 0.0 && self.upper >= 0.0 {
-            0.0
-        } else {
-            (self.lower * self.lower).min(self.upper * self.upper)
-        };
-        Self::outward(lower, upper)
-    }
-
-    fn divide(self, positive: Self) -> Option<Self> {
-        if positive.lower <= 0.0 {
-            return None;
-        }
-        let quotients = [
-            self.lower / positive.lower,
-            self.lower / positive.upper,
-            self.upper / positive.lower,
-            self.upper / positive.upper,
-        ];
-        if quotients.iter().any(|value| !value.is_finite()) {
-            return None;
-        }
-        let lower = quotients.iter().copied().fold(f64::INFINITY, f64::min);
-        let upper = quotients.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        Self::outward(lower, upper)
-    }
+struct ExactDyadicVector {
+    integers: Vec<BigInt>,
+    exponent: i32,
 }
 
-/// Certify positive definiteness with outward-rounded interval LDLᵀ.
+fn exact_scaled_dyadics(values: &[f64]) -> Option<ExactDyadicVector> {
+    let mut parts = Vec::new();
+    parts.try_reserve_exact(values.len()).ok()?;
+    let mut minimum_exponent = i32::MAX;
+    for value in values {
+        let part = exact_dyadic_parts(*value)?;
+        if part.1 != 0 {
+            minimum_exponent = minimum_exponent.min(part.2);
+        }
+        parts.push(part);
+    }
+    if minimum_exponent == i32::MAX {
+        minimum_exponent = 0;
+    }
+
+    let mut integers = Vec::new();
+    integers.try_reserve_exact(values.len()).ok()?;
+    for (negative, significand, exponent) in parts {
+        if significand == 0 {
+            integers.push(BigInt::from(0_u8));
+            continue;
+        }
+        let shift = (exponent - minimum_exponent) as usize;
+        let magnitude = BigInt::from(significand) << shift;
+        integers.push(if negative { -magnitude } else { magnitude });
+    }
+    Some(ExactDyadicVector {
+        integers,
+        exponent: minimum_exponent,
+    })
+}
+
+fn compare_dyadics(
+    left_integer: &BigInt,
+    left_exponent: i32,
+    right_integer: &BigInt,
+    right_exponent: i32,
+) -> Ordering {
+    let common_exponent = left_exponent.min(right_exponent);
+    let left_scaled = left_integer << (left_exponent - common_exponent) as usize;
+    let right_scaled = right_integer << (right_exponent - common_exponent) as usize;
+    left_scaled.cmp(&right_scaled)
+}
+
+/// Compare a binary64 p-value bound against the exact Holm `alpha / m` level.
 ///
-/// Every interval contains the corresponding exact-real operation on the
-/// submitted binary64 values. A pivot is admitted only when its entire interval
-/// is positive; overflow or unresolved sign therefore fails closed.
-fn verified_positive_definite_ldlt(covariance: &[f64], n: usize) -> bool {
-    let scale = covariance
+/// Cross multiplication keeps both submitted binary64 values exact and avoids
+/// admitting a rejection because floating-point division rounded the critical
+/// level upward.
+fn holm_bound_allows_rejection(
+    p_value_upper_bound: f64,
+    familywise_error_rate: f64,
+    remaining: usize,
+) -> Option<bool> {
+    let (p_negative, p_significand, p_exponent) = exact_dyadic_parts(p_value_upper_bound)?;
+    let (alpha_negative, alpha_significand, alpha_exponent) =
+        exact_dyadic_parts(familywise_error_rate)?;
+    if p_negative || alpha_negative || remaining == 0 {
+        return None;
+    }
+    let scaled_p = BigInt::from(p_significand) * BigInt::from(remaining);
+    let alpha = BigInt::from(alpha_significand);
+    Some(compare_dyadics(&scaled_p, p_exponent, &alpha, alpha_exponent) != Ordering::Greater)
+}
+
+/// Enclose one exact dyadic value in adjacent finite binary64 values.
+fn exact_dyadic_interval(integer: &BigInt, exponent: i32) -> Option<(f64, f64)> {
+    if integer.sign() == Sign::NoSign {
+        return Some((0.0, 0.0));
+    }
+    let magnitude = integer.magnitude();
+    let bit_count = magnitude.bits();
+    let shift = bit_count.saturating_sub(53) as usize;
+    let leading = magnitude >> shift;
+    let leading_digits = leading.to_u64_digits();
+    let leading_u64 = *leading_digits.first()?;
+    let scale_exponent = exponent.checked_add(i32::try_from(shift).ok()?)?;
+    let mut candidate = leading_u64 as f64 * 2.0_f64.powi(scale_exponent);
+    if integer.sign() == Sign::Minus {
+        candidate = -candidate;
+    }
+    if !candidate.is_finite() || candidate == 0.0 {
+        return None;
+    }
+
+    let (candidate_negative, candidate_significand, candidate_exponent) =
+        exact_dyadic_parts(candidate)?;
+    let candidate_magnitude = BigInt::from(candidate_significand);
+    let candidate_integer = if candidate_negative {
+        -candidate_magnitude
+    } else {
+        candidate_magnitude
+    };
+    match compare_dyadics(&candidate_integer, candidate_exponent, integer, exponent) {
+        Ordering::Equal => Some((candidate, candidate)),
+        Ordering::Less => {
+            let upper = candidate.next_up();
+            upper.is_finite().then_some((candidate, upper))
+        }
+        Ordering::Greater => {
+            let lower = candidate.next_down();
+            lower.is_finite().then_some((lower, candidate))
+        }
+    }
+}
+
+fn conservative_wald_inputs(
+    exact_difference: &BigInt,
+    difference_exponent: i32,
+    exact_variance: &BigInt,
+    variance_exponent: i32,
+) -> Option<(f64, f64)> {
+    if exact_variance <= &BigInt::from(0_u8) {
+        return None;
+    }
+    let (difference_lower, difference_upper) =
+        exact_dyadic_interval(exact_difference, difference_exponent)?;
+    let (variance_lower, variance_upper) =
+        exact_dyadic_interval(exact_variance, variance_exponent)?;
+    if variance_lower <= 0.0 {
+        return None;
+    }
+    let standard_error_lower = variance_lower.sqrt().next_down();
+    let standard_error_upper = variance_upper.sqrt().next_up();
+    if standard_error_lower <= 0.0
+        || !standard_error_lower.is_finite()
+        || !standard_error_upper.is_finite()
+    {
+        return None;
+    }
+    let quotient_candidates = [
+        difference_lower / standard_error_lower,
+        difference_lower / standard_error_upper,
+        difference_upper / standard_error_lower,
+        difference_upper / standard_error_upper,
+    ];
+    if quotient_candidates
         .iter()
-        .map(|value| value.abs())
-        .fold(0.0_f64, f64::max);
-    if !scale.is_finite() || scale == 0.0 {
-        return false;
+        .any(|candidate| !candidate.is_finite())
+    {
+        return None;
     }
-    let scale_interval = Interval::point(scale);
-    let mut normalized = Vec::new();
-    if normalized.try_reserve_exact(covariance.len()).is_err() {
-        return false;
-    }
-    for value in covariance {
-        let Some(interval) = Interval::point(*value).divide(scale_interval) else {
-            return false;
-        };
-        normalized.push(interval);
-    }
+    let z_lower = quotient_candidates
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, f64::min)
+        .next_down();
+    Some((standard_error_upper, z_lower))
+}
 
-    let zero = Interval::point(0.0);
-    let mut lower = vec![zero; covariance.len()];
-    let mut diagonal = vec![zero; n];
+/// Certify positive definiteness exactly for the submitted binary64 matrix.
+///
+/// Every entry is converted to a common-scale dyadic integer. Fraction-free
+/// Bareiss elimination then computes the leading principal-minor signs without
+/// floating-point rounding. Sylvester's criterion admits the matrix exactly
+/// when every leading principal minor is positive.
+fn exact_positive_definite(covariance: &[f64], n: usize) -> Option<ExactDyadicVector> {
+    let exact_covariance = exact_scaled_dyadics(covariance)?;
+    let mut work = exact_covariance.integers.clone();
+    let zero = BigInt::from(0_u8);
+    let mut previous_pivot = BigInt::from(1_u8);
     for pivot_index in 0..n {
-        let mut pivot = normalized[pivot_index * n + pivot_index];
-        for prior in 0..pivot_index {
-            let Some(term) = lower[pivot_index * n + prior]
-                .square()
-                .and_then(|square| square.multiply(diagonal[prior]))
-            else {
-                return false;
-            };
-            let Some(updated) = pivot.subtract(term) else {
-                return false;
-            };
-            pivot = updated;
+        let pivot = work[pivot_index * n + pivot_index].clone();
+        if pivot <= zero {
+            return None;
         }
-        if pivot.lower <= 0.0 {
-            return false;
+        if pivot_index + 1 == n {
+            return Some(exact_covariance);
         }
-        diagonal[pivot_index] = pivot;
-
         for row in (pivot_index + 1)..n {
-            let mut numerator = normalized[row * n + pivot_index];
-            for prior in 0..pivot_index {
-                let Some(term) = lower[row * n + prior]
-                    .multiply(lower[pivot_index * n + prior])
-                    .and_then(|product| product.multiply(diagonal[prior]))
-                else {
-                    return false;
+            for column in (pivot_index + 1)..n {
+                let numerator = &work[row * n + column] * &pivot
+                    - &work[row * n + pivot_index] * &work[pivot_index * n + column];
+                let updated = if pivot_index == 0 {
+                    numerator
+                } else {
+                    let quotient = &numerator / &previous_pivot;
+                    if &quotient * &previous_pivot != numerator {
+                        return None;
+                    }
+                    quotient
                 };
-                let Some(updated) = numerator.subtract(term) else {
-                    return false;
-                };
-                numerator = updated;
+                work[row * n + column] = updated;
             }
-            let Some(factor) = numerator.divide(pivot) else {
-                return false;
-            };
-            lower[row * n + pivot_index] = factor;
         }
+        previous_pivot = pivot;
     }
-    true
+    None
 }
 
 /// Conservative one-sided standard-normal survival probability.
 ///
 /// `fitstats::erfc` documents absolute error below `1.2e-7`. Adding half that
-/// bound converts its reporting approximation into an upper probability bound,
-/// so numerical approximation cannot create a Holm rejection.
+/// bound and rounding the sum upward converts its reporting approximation into
+/// an upper probability bound, so numerical approximation cannot create a Holm
+/// rejection.
 fn normal_survival_upper_bound(z: f64) -> Result<f64, String> {
     if !z.is_finite() {
         return Err("pairwise contrast arithmetic must remain finite".into());
@@ -195,7 +267,12 @@ fn normal_survival_upper_bound(z: f64) -> Result<f64, String> {
     if !approximation.is_finite() {
         return Err("pairwise contrast arithmetic must remain finite".into());
     }
-    Ok((approximation + 0.5 * ERFC_ABSOLUTE_ERROR_BOUND).clamp(0.0, 1.0))
+    let upper_bound = approximation + 0.5 * ERFC_ABSOLUTE_ERROR_BOUND;
+    if upper_bound >= 1.0 {
+        Ok(1.0)
+    } else {
+        Ok(upper_bound.next_up())
+    }
 }
 
 /// Test whether one candidate is superior to every other candidate.
@@ -241,9 +318,11 @@ pub fn holm_wald_superiority(
             }
         }
     }
-    if !verified_positive_definite_ldlt(covariance, n) {
+    let Some(exact_covariance) = exact_positive_definite(covariance, n) else {
         return Err("covariance must be positive definite".into());
-    }
+    };
+    let exact_estimates = exact_scaled_dyadics(estimates)
+        .ok_or_else(|| "estimate exact arithmetic allocation failed".to_string())?;
 
     let comparison_count = n
         .checked_mul(n - 1)
@@ -261,15 +340,20 @@ pub fn holm_wald_superiority(
             if !estimate_difference.is_finite() {
                 return Err("pairwise contrast arithmetic must remain finite".into());
             }
-            let variance = covariance[candidate_index * n + candidate_index]
-                + covariance[comparator_index * n + comparator_index]
-                - 2.0 * covariance[candidate_index * n + comparator_index];
-            if !variance.is_finite() || variance <= 0.0 {
+            let exact_difference = &exact_estimates.integers[candidate_index]
+                - &exact_estimates.integers[comparator_index];
+            let exact_variance = &exact_covariance.integers[candidate_index * n + candidate_index]
+                + &exact_covariance.integers[comparator_index * n + comparator_index]
+                - (&exact_covariance.integers[candidate_index * n + comparator_index] << 1);
+            let Some((standard_error, z_lower)) = conservative_wald_inputs(
+                &exact_difference,
+                exact_estimates.exponent,
+                &exact_variance,
+                exact_covariance.exponent,
+            ) else {
                 return Err("each pairwise contrast variance must be finite and positive".into());
-            }
-            let standard_error = variance.sqrt();
-            let z = estimate_difference / standard_error;
-            let p_value_upper_bound = normal_survival_upper_bound(z)?;
+            };
+            let p_value_upper_bound = normal_survival_upper_bound(z_lower)?;
             comparisons.push(HolmWaldComparison {
                 candidate_index,
                 comparator_index,
@@ -299,8 +383,13 @@ pub fn holm_wald_superiority(
     });
     for (rank, comparison_index) in order.into_iter().enumerate() {
         let remaining = comparisons.len() - rank;
-        let critical_level = familywise_error_rate / remaining as f64;
-        if comparisons[comparison_index].p_value_upper_bound <= critical_level {
+        let reject = holm_bound_allows_rejection(
+            comparisons[comparison_index].p_value_upper_bound,
+            familywise_error_rate,
+            remaining,
+        )
+        .ok_or_else(|| "Holm exact comparison failed".to_string())?;
+        if reject {
             comparisons[comparison_index].null_rejected = true;
         } else {
             break;
@@ -327,7 +416,17 @@ pub fn holm_wald_superiority(
 
 #[cfg(test)]
 mod tests {
-    use super::holm_wald_superiority;
+    use super::{holm_bound_allows_rejection, holm_wald_superiority};
+
+    #[test]
+    fn holm_boundary_uses_exact_cross_multiplication() {
+        let rounded_up_division = 0.07_f64 / 5.0;
+        assert_eq!(rounded_up_division, 0.014_000_000_000_000_002);
+        assert_eq!(
+            holm_bound_allows_rejection(rounded_up_division, 0.07, 5),
+            Some(false)
+        );
+    }
 
     #[test]
     fn equal_estimates_are_indeterminate() {
@@ -434,5 +533,60 @@ mod tests {
             .comparisons
             .iter()
             .all(|comparison| comparison.null_rejected));
+    }
+
+    #[test]
+    fn exact_spd_covariance_is_admitted_under_every_permutation() {
+        let covariance = [
+            0.899_985_986_740_665_4,
+            0.101_832_708_512_720_37,
+            -0.224_161_503_975_947_33,
+            0.101_832_708_512_720_37,
+            0.033_586_996_097_637_64,
+            -0.108_147_625_221_174_1,
+            -0.224_161_503_975_947_33,
+            -0.108_147_625_221_174_1,
+            0.366_427_017_161_697_2,
+        ];
+        let permutations = [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ];
+        for permutation in permutations {
+            let mut permuted_covariance = [0.0; 9];
+            for row in 0..3 {
+                for column in 0..3 {
+                    permuted_covariance[row * 3 + column] =
+                        covariance[permutation[row] * 3 + permutation[column]];
+                }
+            }
+            let result = holm_wald_superiority(&[0.0; 3], &permuted_covariance, 0.05)
+                .expect("exact SPD covariance must be admitted for every ordering");
+            assert_eq!(result.winner_index, None);
+        }
+    }
+
+    #[test]
+    fn exact_contrast_variance_prevents_cancellation_rejection() {
+        let covariance = [
+            1.183_052_186_166_774_7e-271,
+            1.183_052_186_166_774_6e-271,
+            1.183_052_186_166_774_6e-271,
+            1.183_052_186_166_775e-271,
+        ];
+        let result = holm_wald_superiority(&[1.1e-143, 0.0], &covariance, 0.05)
+            .expect("exact SPD covariance");
+        assert_eq!(result.winner_index, None);
+        let forward = result
+            .comparisons
+            .iter()
+            .find(|comparison| comparison.candidate_index == 0)
+            .expect("forward ordered contrast");
+        assert!(!forward.null_rejected);
+        assert!(forward.p_value_upper_bound > 0.025);
     }
 }
