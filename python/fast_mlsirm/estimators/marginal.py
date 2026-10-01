@@ -955,7 +955,8 @@ def fit_marginal_numpy(
             lse = np.squeeze(mc, axis=1) + np.log(np.exp(log_cluster - mc).sum(axis=1))
             loglik = float(lse.sum())
             cluster_post = np.exp(log_cluster - lse[:, None])  # (C, V)
-            sum_e_v2 = float((cluster_post * ctx["u_nodes"][None, :] ** 2).sum())
+            # Reduce over clusters before weighting to avoid a second (C, V) array.
+            sum_e_v2 = float(np.vdot(cluster_post.sum(axis=0), ctx["u_nodes"] ** 2))
             if zero_inflation:
                 zero_resp = (cluster_post[cluster_id] * (1.0 - w_irt_v)).sum(axis=1)
             for v in range(n_ctx):
@@ -1045,11 +1046,7 @@ def fit_marginal_numpy(
                         deta_z = x_grid  # (Nx, K)
                     else:
                         diff = x_grid - zeta_i[None, :]
-
-                        # Avoid materializing ``diff * diff``; the parity contract is tested.
-                        dist = np.sqrt(
-                            eps_distance + np.einsum("ij,ij->i", diff, diff)
-                        )
+                        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
                         deta_z = gamma * diff / dist[:, None]  # (Nx, K)
                     g_zeta = (
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
@@ -1176,9 +1173,9 @@ def fit_marginal_numpy(
             eta = eta_delta(delta)
             prob = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
             resid = rbar - n_all * prob
-            w_bcast = w_cov[:, :, None, None]
-            grad_d = float((resid * w_bcast).sum())
-            info_d = float((n_all * prob * (1.0 - prob) * w_bcast * w_bcast).sum())
+            # Reduce node axes before weighting to avoid broadcast work arrays.
+            grad_d = float(np.vdot(resid.sum(axis=(2, 3)), w_cov))
+            info_d = float(np.vdot((n_all * prob * (1.0 - prob)).sum(axis=(2, 3)), w_cov * w_cov))
             if info_d > 0.0:
                 direction = grad_d / info_d
 
@@ -1205,10 +1202,12 @@ def fit_marginal_numpy(
                 for d in range(n_dims):
                     theta_g = mu[g, d] + sigma[g, d] * t_nodes  # (Qt,)
                     w = nbar[g, d]  # (Qt, Nx)
-                    w_sum = float(w.sum())
+                    w_sum_ax = w.sum(axis=1)
+                    w_sum = float(w_sum_ax.sum())
                     if w_sum > 1e-10:
-                        m1 = float((w * theta_g[:, None]).sum())
-                        m2 = float((w * (theta_g**2)[:, None]).sum())
+                        # Reduce respondents before weighting to avoid (Qt, Nx) work arrays.
+                        m1 = float(np.vdot(w_sum_ax, theta_g))
+                        m2 = float(np.vdot(w_sum_ax, theta_g**2))
                         mean = m1 / w_sum
                         var = max(m2 / w_sum - mean * mean, 0.01)
                         mu[g, d] = mean
