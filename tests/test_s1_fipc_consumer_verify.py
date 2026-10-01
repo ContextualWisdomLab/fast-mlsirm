@@ -289,6 +289,57 @@ def test_gpu_request_fails_closed_on_cpu_fallback(monkeypatch) -> None:
     assert receipt["all_pass"] is False
 
 
+@pytest.mark.parametrize("call_number", [1, 2, 3])
+@pytest.mark.parametrize("gpu_used", [False, None])
+def test_gpu_receipt_requires_dispatch_in_every_valid_fit(monkeypatch, call_number, gpu_used) -> None:
+    """A single CPU fallback or missing dispatch cannot certify the GPU receipt."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = 0
+
+    def fipc(y, *args, device="cpu"):
+        nonlocal calls
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary map must identify both dimensions")
+        calls += 1
+        fit = original(y, *args)
+        fit.update(gpu_execution_used=True, gpu_backend="Metal")
+        if calls == call_number:
+            fit["gpu_execution_used"] = gpu_used
+            fit["gpu_backend"] = None
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, device="gpu")
+    assert calls == 3
+    assert receipt["gpu_execution_used"] is False
+    assert receipt["gpu_backend"] is None
+    assert receipt["all_pass"] is False
+
+
+def test_gpu_receipt_accepts_dispatch_in_every_valid_fit(monkeypatch) -> None:
+    """The diagnostic still passes when all valid fits explicitly dispatch."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+
+    def fipc(y, *args, device="cpu"):
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary map must identify both dimensions")
+        fit = original(y, *args)
+        fit.update(gpu_execution_used=True, gpu_backend="Metal")
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, device="gpu")
+    assert receipt["gpu_execution_used"] is True
+    assert receipt["gpu_backend"] == "Metal"
+    assert receipt["all_pass"] is True
+
+
 def test_consumer_revision_comes_from_script_checkout(monkeypatch, tmp_path) -> None:
     module = _load_script()
     expected = module.subprocess.run(

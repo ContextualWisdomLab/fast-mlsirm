@@ -231,6 +231,15 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
         fail.get("converged") is False
         and fail.get("termination_reason") in {"max_iter_reached", "step_limited"}
     )
+    if device == "gpu":
+        # Every valid focal/refit/budget call must dispatch; the reference
+        # calibration has no device argument and the invalid-map probe rejects
+        # before numerical execution. One base-fit receipt cannot certify all.
+        results["gpu_execution_used"] = all(
+            result.get("gpu_execution_used") is True for result in (fit, perm_fit, fail)
+        )
+        if not results["gpu_execution_used"]:
+            results["gpu_backend"] = None
     results["orthogonal_specific_prior_fixed"] = bool(np.array_equal(np.asarray(fit["specific_sd"]), np.ones(N_SPECIFIC)))
     bad_map = PRIMARY_MAP.copy()
     bad_map[:, 1] = False
