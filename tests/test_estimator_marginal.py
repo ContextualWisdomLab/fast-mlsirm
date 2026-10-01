@@ -8,7 +8,6 @@ import pytest
 from fast_mlsirm.config import FitConfig
 from fast_mlsirm.estimators.marginal import fit_marginal_numpy
 from fast_mlsirm.fit import fit
-from fast_mlsirm.reference import fit_reference
 
 
 def _simulate_lsirm(
@@ -43,6 +42,7 @@ def _simulate_lsirm(
 
 
 def _cfg(**kwargs):
+    kwargs.setdefault('estimator', 'mmle')
     defaults = dict(
         model="MLS2PLM",
         estimator="mmle",
@@ -171,6 +171,7 @@ def test_marginal_distance_einsum_parity_production():
     from fast_mlsirm.config import FitConfig
     from fast_mlsirm.simulation import simulate
     from fast_mlsirm.config import MLS2PLMConfig
+    from fast_mlsirm.fit import fit
     from fast_mlsirm.reference import fit_reference
     import numpy as np
 
@@ -180,12 +181,14 @@ def test_marginal_distance_einsum_parity_production():
     # its distance kernel (the modified einsum branch).
     config = FitConfig(
         model="MLS2PLM",
-        backend="auto",
+        estimator="mmle",
+        backend="numpy",
         latent_dim=2,
         max_iter=5,
         optimizer="adam_lbfgs"
     )
 
+    from fast_mlsirm.reference import fit_reference
     res = fit_reference(
         responses=sim.Y,
         factor_id=sim.factor_id,
@@ -194,3 +197,4 @@ def test_marginal_distance_einsum_parity_production():
     assert res.params is not None
     assert np.all(np.isfinite(res.params.zeta))
     assert res.objective > 0
+    assert np.all(np.isfinite(res.params.theta))
