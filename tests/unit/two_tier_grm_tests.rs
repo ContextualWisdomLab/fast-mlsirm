@@ -404,8 +404,8 @@ fn fixed_item_candidate_contract() {
     use crate::poly::grm_logprobs;
     use serde_json::json;
     use sha2::Digest;
-    let proposed_term = |count: f64, lp: f64| {
-        if count == 0.0 && lp == f64::NEG_INFINITY { 0.0 } else { count * lp }
+    let proposed_term = |count: f64, lp: f64, threshold_domain: bool| {
+        if threshold_domain && count == 0.0 && lp == f64::NEG_INFINITY { 0.0 } else { count * lp }
     };
     let free = [0];
     for (name, packed, row, valid) in [
@@ -413,11 +413,17 @@ fn fixed_item_candidate_contract() {
         ("legal_mixed_supported", vec![1.0,1e-18,0.0], vec![1.0,0.0,0.0], true),
         ("positive_impossible", vec![1.0,1e-18,0.0], vec![0.0,1.0,0.0], true),
         ("unordered_nan_zero_weight", vec![1.0,-0.2,0.2], vec![1.0,0.0,0.0], false),
+        ("equal_zero_weights", vec![1.0,0.0,0.0], vec![0.0,0.0,0.0], false),
+        ("equal_mixed_supported", vec![1.0,0.0,0.0], vec![1.0,0.0,0.0], false),
     ] {
         let counts = vec![row];
         let lp = grm_logprobs(packed[0],&packed[1..]);
         let (native,gradient) = item_neg_ll_grad(&packed,&free,false,&[1.0],&[0.0],1,1,1,&counts,3);
-        let proposed = -counts[0].iter().zip(&lp).map(|(&r,&l)| proposed_term(r,l)).sum::<f64>();
+        let threshold_domain = packed[1..].iter().all(|x| x.is_finite())
+            && packed[1..].windows(2).all(|w| w[0] > w[1]);
+        assert_eq!(threshold_domain,valid);
+        let proposed = -counts[0].iter().zip(&lp).map(|(&r,&l)| proposed_term(r,l,threshold_domain)).sum::<f64>();
+        let term_only = -counts[0].iter().zip(&lp).map(|(&r,&l)| proposed_term(r,l,true)).sum::<f64>();
         let returned = m_step_item(packed.clone(),&free,false,&[1.0],&[0.0],1,1,1,&counts,3,1e-8,1);
         for (a,b) in returned.iter().zip(&packed) { assert_eq!(a.to_bits(),b.to_bits()); }
         let direct = if valid { Some(fixed_item_direct_objective(&packed,&free,false,
@@ -429,12 +435,16 @@ fn fixed_item_candidate_contract() {
             assert_eq!(native,f64::INFINITY);
             assert_eq!(proposed,f64::INFINITY);
         } else {
-            assert!(lp[1].is_nan() && counts[0][1]==0.0);
+            assert_eq!(counts[0][1],0.0);
+            if name.starts_with("equal_") {
+                assert_eq!(lp[1],f64::NEG_INFINITY);
+                assert!(term_only.is_finite());
+            } else { assert!(lp[1].is_nan()); }
             assert!(native.is_nan() && proposed.is_nan());
         }
         let input = json!({"case":name,"packed":packed,"counts":counts,"coords":[1.0],
             "free":[0],"n_cat":3,"valid_model_state":valid,
-            "invalid_state_role":if valid {"not applicable"}else{"unordered line-search candidate; not admitted model"}});
+            "invalid_state_role":if valid {"not applicable"}else{"invalid equal/unordered line-search candidate; not admitted model"}});
         println!("{}",json!({"event":"candidate_rule_case","input_sha256":format!("{:x}",
             sha2::Sha256::digest(serde_json::to_vec(&input).unwrap())),"input":input,
             "log_probability_bits":lp.iter().map(|x|x.to_bits()).collect::<Vec<_>>(),
@@ -446,7 +456,9 @@ fn fixed_item_candidate_contract() {
             "proposed_objective_positive_inf":proposed==f64::INFINITY,
             "proposed_objective":if proposed.is_finite(){Some(proposed)}else{None},
             "independent_objective":direct.filter(|x|x.is_finite()),
-            "rule":"count==0 AND lp==-inf only; other products and sum order unchanged",
+            "threshold_domain_finite_strict":threshold_domain,
+            "term_only_objective_finite":term_only.is_finite(),
+            "rule":"finite strictly decreasing parameter thresholds AND count==0 AND lp==-inf; other products and sum order unchanged",
             "rule_runtime_connected":false,"gpu_context_initialized":false,"fit_executed":false,
             "internal_branch":"not instrumented","convergence":"not applicable"}));
     }
@@ -454,7 +466,7 @@ fn fixed_item_candidate_contract() {
     for (name, count, lp) in [("zero_positive_inf",0.0,f64::INFINITY),
         ("zero_nan",0.0,f64::NAN),("positive_negative_inf",1.0,f64::NEG_INFINITY)] {
         let native_product = count * lp;
-        let proposed_product = proposed_term(count,lp);
+        let proposed_product = proposed_term(count,lp,true);
         assert!(!native_product.is_finite() && !proposed_product.is_finite());
         if count==0.0 { assert!(native_product.is_nan() && proposed_product.is_nan()); }
         println!("{}",json!({"event":"synthetic_nonfinite_term_case","case":name,
@@ -464,7 +476,7 @@ fn fixed_item_candidate_contract() {
             "native_item_return_evaluated":false,"domain":"synthetic scalar term; not valid GRM log probability",
             "nonfinite_preserved":true,"production_modified":false,"fit_executed":false}));
     }
-    println!("candidate_rule_native_cases=4, synthetic_nonfinite_terms=3, runtime_connected=false, gpu=false, fit=false");
+    println!("candidate_rule_native_cases=6, synthetic_nonfinite_terms=3, runtime_connected=false, gpu=false, fit=false");
 }
 
 // 기존 Cai (2010, pp. 608–609) oracle를 재사용하는 고정 모수 검사다.
