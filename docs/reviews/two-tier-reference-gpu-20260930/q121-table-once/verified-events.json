@@ -1,0 +1,362 @@
+{
+  "scope": "single isolated q121 fixed-bank 1-person no-fit remeasurement; not speed guarantee or release acceptance",
+  "run_id": 36786084195,
+  "job_id": 110127695987,
+  "events": [
+    {
+      "event": "source",
+      "execution_head": "4c09920d0e08f5fcbb8f68cab5ceb140d4c7af1b",
+      "kernel_source": "crates/mlsirm-core/src/gpu_bifactor.rs",
+      "kernel_source_sha256": "6f4cbb7ed77c33951165eb0038b2cf3ed9cd3dc3c3c71d842a58d3e2f164c532",
+      "numerical_source": "crates/mlsirm-core/src/two_tier_grm.rs",
+      "numerical_source_sha256": "51c47ceba6cb5eee1ec33000722e417cd1336fc8dd4544faf768adc07ce2866b",
+      "test_source": "tests/unit/two_tier_grm_tests.rs",
+      "test_source_sha256": "ec6af054379fba49bf92af16765b5ba8d702cc9a7f17f1fbaac36b55ca750325"
+    },
+    {
+      "event": "resource",
+      "adapter_name": "NVIDIA GeForce GTX 1050",
+      "adapter_backend": "Vulkan",
+      "adapter_type": "DiscreteGpu",
+      "max_storage_buffer_binding_bytes": 2147483644,
+      "max_buffer_bytes": 4292870144,
+      "max_storage_buffers_per_stage": 524288,
+      "max_workgroups_per_dimension": 65535,
+      "host_estimate_bytes": 4480932284,
+      "host_budget_bytes": 8589934592,
+      "host_budget_semantics": "source-derived conservative allocation estimate; not RSS cap",
+      "gpu_policy_minimum_bytes": 1020771796,
+      "gpu_budget_bytes": 1073741824,
+      "gpu_budget_semantics": "source policy; adapter limits are per-buffer constraints, not available physical VRAM",
+      "execution_head": "4c09920d0e08f5fcbb8f68cab5ceb140d4c7af1b"
+    },
+    {
+      "event": "input",
+      "input_sha256": "5ae65a0d541523ac76e4e472eede55a33bc32298644f5f0cd9f4f0a26a403313",
+      "seed": null,
+      "input_json": {
+        "n_cat": 4,
+        "n_items": 16,
+        "n_persons": 1,
+        "n_primary": 2,
+        "n_specific": 4,
+        "phi": "identity",
+        "primary_loadings": [
+          [
+            0.9,
+            0.0
+          ],
+          [
+            1.3,
+            0.0
+          ],
+          [
+            0.7,
+            0.0
+          ],
+          [
+            1.1,
+            0.0
+          ],
+          [
+            0.9,
+            0.9
+          ],
+          [
+            1.3,
+            0.9
+          ],
+          [
+            0.7,
+            0.9
+          ],
+          [
+            1.1,
+            0.0
+          ],
+          [
+            0.9,
+            0.0
+          ],
+          [
+            1.3,
+            0.9
+          ],
+          [
+            0.7,
+            0.0
+          ],
+          [
+            1.1,
+            0.0
+          ],
+          [
+            0.9,
+            0.9
+          ],
+          [
+            1.3,
+            0.0
+          ],
+          [
+            0.7,
+            0.9
+          ],
+          [
+            1.1,
+            0.9
+          ]
+        ],
+        "primary_map": [
+          true,
+          false,
+          true,
+          false,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true
+        ],
+        "q_primary": 121,
+        "q_specific": 121,
+        "responses": [
+          0,
+          1,
+          2,
+          3,
+          1,
+          2,
+          3,
+          0,
+          2,
+          3,
+          0,
+          1,
+          3,
+          0,
+          1,
+          2
+        ],
+        "specific_loadings": [
+          1.1,
+          0.8,
+          1.4,
+          1.0,
+          1.1,
+          0.8,
+          1.4,
+          1.0,
+          1.1,
+          0.8,
+          1.4,
+          1.0,
+          1.1,
+          0.8,
+          1.4,
+          1.0
+        ],
+        "specific_map": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2,
+          2,
+          3,
+          3,
+          3,
+          3
+        ],
+        "thresholds": [
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ]
+        ]
+      }
+    },
+    {
+      "event": "timing",
+      "whole_cpu_estep_seconds": 1.7248509539999999,
+      "whole_gpu_estep_seconds": 16.495533761,
+      "cpu_table_generation_seconds": 12.268019805,
+      "whole_cpu_including_table_seconds": 13.992870758999999,
+      "stages": {
+        "table_generation_seconds": 11.686531938,
+        "prepare_validation_metadata_seconds": 0.376266986,
+        "prepare_error_scope_setup_seconds": 1.2889e-05,
+        "prepare_uniform_buffer_seconds": 0.000137654,
+        "prepare_table_map_copy_seconds": 2.268082362,
+        "prepare_input_output_buffers_seconds": 0.000315572,
+        "prepare_layout_bindgroup_seconds": 0.124275572,
+        "prepare_shader_module_seconds": 0.001481786,
+        "prepare_compute_pipeline_seconds": 0.001365205,
+        "prepare_error_receipt_seconds": 5.629e-06,
+        "gpu_state_preparation_seconds": 2.77196458,
+        "sweep_queue_write_encode_seconds": 5.748e-05,
+        "sweep_readback_buffer_preparation_seconds": 0.019391801,
+        "sweep_submit_map_decode_seconds": 0.690231433,
+        "sweep_error_receipt_seconds": 8.182e-06,
+        "gpu_log_products_and_readback_seconds": 0.793093115,
+        "rust_lse_exp_normalization_seconds": 0.290989411,
+        "posterior_moment_contraction_seconds": 0.11561826,
+        "f64_likelihood_certification_seconds": 0.722226811
+      },
+      "note": "host clock with clock/collector overhead; child stages subdivide parent intervals and must not be double-counted; driver lazy work may occur during submit; no GPU timestamp or isolated PCIe timing claim"
+    },
+    {
+      "event": "comparison",
+      "loglik_abs_delta": 0,
+      "mean_max_abs_delta": 0,
+      "second_max_abs_delta": 0,
+      "marginal_sd_max_abs_delta": 0,
+      "tolerance": 0.001,
+      "collect_counts": false,
+      "parameter_updates": false
+    }
+  ],
+  "previous_source": "3dc48dc28a8529f0a4542f95fbd85e91fcb69fde",
+  "previous_run_id": 36773537763,
+  "same_input_adapter_budgets_and_stage_keys": true,
+  "previous_timing": {
+    "event": "timing",
+    "whole_cpu_estep_seconds": 1.472282539,
+    "whole_gpu_estep_seconds": 51.081596032,
+    "cpu_table_generation_seconds": 43.273341845,
+    "whole_cpu_including_table_seconds": 44.745624383999996,
+    "stages": {
+      "table_generation_seconds": 44.548111046,
+      "prepare_validation_metadata_seconds": 0.329279417,
+      "prepare_error_scope_setup_seconds": 1.2667e-05,
+      "prepare_uniform_buffer_seconds": 0.012515694,
+      "prepare_table_map_copy_seconds": 3.054670883,
+      "prepare_input_output_buffers_seconds": 0.00031934,
+      "prepare_layout_bindgroup_seconds": 0.439176765,
+      "prepare_shader_module_seconds": 0.001481095,
+      "prepare_compute_pipeline_seconds": 0.319008588,
+      "prepare_error_receipt_seconds": 7.525e-06,
+      "gpu_state_preparation_seconds": 4.156495695,
+      "sweep_queue_write_encode_seconds": 6.0839e-05,
+      "sweep_readback_buffer_preparation_seconds": 0.034256581,
+      "sweep_submit_map_decode_seconds": 0.764564007,
+      "sweep_error_receipt_seconds": 3.884e-06,
+      "gpu_log_products_and_readback_seconds": 0.832076767,
+      "rust_lse_exp_normalization_seconds": 0.299258353,
+      "posterior_moment_contraction_seconds": 0.120244594,
+      "f64_likelihood_certification_seconds": 0.917340135
+    },
+    "note": "host clock with clock/collector overhead; child stages subdivide parent intervals and must not be double-counted; driver lazy work may occur during submit; no GPU timestamp or isolated PCIe timing claim"
+  },
+  "raw_sha256": {
+    "host-table-q121-artifact/two-tier-reference-gpu-36786084195/reference-gpu-kernel-probe.log": "9c911dfc46c27269c15ba6a0b4f1dea50e84c42527d35798c6ccb3f7dcfa337f",
+    "host-table-q121-run.json": "a14107f4efa176c77073878a62a5cf43fb8f031411b16440acf4650ca2f2c7cf",
+    "host-table-q121-job.txt": "48c64a5149dfdd06e18d4ff017d5f795e03ac72e6cada3928f57e9aa6eea4f04"
+  },
+  "note": "different execution windows/driver state/compiler outputs; parent-child timings overlap; no peak RSS/VRAM or native f64 GPU; no new full fit"
+}

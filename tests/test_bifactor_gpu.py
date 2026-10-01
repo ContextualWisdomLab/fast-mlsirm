@@ -152,6 +152,12 @@ def test_bifactor_gpu_equivalence_multigroup():
     if fit_gpu is None:
         return
 
+    assert fit_cpu.e_step_device == "cpu"
+    assert fit_cpu.e_step_adapter_name is None
+    assert fit_cpu.e_step_backend is None
+    assert fit_gpu.e_step_device == "gpu"
+    assert fit_gpu.e_step_adapter_name
+    assert fit_gpu.e_step_backend
     cpu_time, gpu_time = t1 - t0, t2 - t1
     slope_diff = float(np.max(np.abs(fit_cpu.a_general - fit_gpu.a_general)))
     threshold_diff = float(np.max(np.abs(fit_cpu.threshold - fit_gpu.threshold)))

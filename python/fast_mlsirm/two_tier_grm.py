@@ -166,6 +166,9 @@ class TwoTierGrmFit:
     best_start: int
     n_parameters: int
     primary_identification: str
+    backend: str = "cpu"
+    gpu_adapter_name: str | None = None
+    gpu_adapter_backend: str | None = None
 
 
 def fit_two_tier_grm(
@@ -182,6 +185,9 @@ def fit_two_tier_grm(
     n_starts: int,
     seed: int,
     primary_correlation: str = "estimate",
+    *,
+    device: str = "cpu",
+    gpu_memory_budget_bytes: int | None = None,
 ) -> TwoTierGrmFit:
     """Fit the single-group polytomous two-tier GRM (compute in Rust).
 
@@ -211,6 +217,22 @@ def fit_two_tier_grm(
     non-obvious decision, and the APA 7th references.
     ``primary_correlation='estimate'`` preserves the existing correlated-primary
     fit; ``'identity'`` fixes Phi exactly to I (Cai, 2010, pp. 583-584).
+    ``device='gpu'``는 실제 hardware와 양수 ``gpu_memory_budget_bytes``가
+    필요하다. Cai (2010), pp.608–609 Appendices A/B의 원래 f64 item table을
+    두 u32 word로 전달하고 GPU에서 같은 부호 binary64 log-product 덧셈을
+    에뮬레이션한다. 실제 GPU product의 정규화/exp/log·기대 빈도·적률 합산,
+    기존 Newton M-step과 f64 likelihood 검증은 Rust CPU에서 수행한다.
+    GPU native f64나 전체 GPU 계산이라고 주장하지 않으며, GPU 실패 뒤
+    CPU posterior를 재계산해 결과를 대체하지 않는다. 비양수 log input과
+    합법적인 0 확률의 ``-inf``를 보존한다. NaN/+inf/양의 log는 거부하며
+    전체 posterior mass 소실은 실패한다. subnormal/rounding/overflow 경계는
+    실제 adapter에서 검증한다.
+    GPU reference fitting currently accepts only ``primary_correlation='identity'``;
+    the estimated-correlation path remains CPU-only pending precision validation.
+    Results record the actual E-step device and wgpu adapter name/backend.
+    WGSL floating types: https://www.w3.org/TR/WGSL/#floating-point-types;
+    wgpu 30 AdapterInfo: https://docs.rs/wgpu/30.0.0/wgpu/struct.AdapterInfo.html.
+    Same-input parameter, convergence and node-sensitivity checks remain required.
     In identity mode, distinct free-loading item sets for each primary pair
     are necessary to rule out continuous orthogonal rotations; per-column
     reflection canonicalization handles the remaining sign ambiguity.
@@ -221,12 +243,21 @@ def fit_two_tier_grm(
     Hansen, M. (2011). Generalized full-information item bifactor analysis.
     *Psychological Methods, 16*(3), 221-248. https://doi.org/10.1037/a0023350.
     """
+    if not isinstance(device, str) or device not in ("cpu", "gpu"):
+        raise ValueError("device must be cpu or gpu")
+    if device == "gpu":
+        from .polytomous import _bounded_integer
+        gpu_memory_budget_bytes = _bounded_integer(
+            gpu_memory_budget_bytes, "gpu_memory_budget_bytes", 1, 2**64 - 1
+        )
     # Cai (2010), pp.587-589 eqs.7/11/12: all specific-free items
     # with n_specific=0 retain only the declared primary dimensions.
     if not isinstance(primary_correlation, str) or primary_correlation not in (
         "estimate", "identity"
     ):
         raise ValueError("primary_correlation must be 'estimate' or 'identity'")
+    if device == "gpu" and primary_correlation != "identity":
+        raise ValueError("GPU reference fitting currently requires identity primary correlation")
     n_cat_int = _finite_integer_control(n_cat, "n_cat")
     if n_cat_int < 2:
         raise ValueError("n_cat must be >= 2")
@@ -329,6 +360,8 @@ def fit_two_tier_grm(
         int(n_starts_int),
         int(seed_int),
         primary_correlation,
+        device,
+        gpu_memory_budget_bytes,
     )
     return TwoTierGrmFit(
         a_primary=np.asarray(res["a_primary"], dtype=np.float64).reshape(
@@ -361,6 +394,9 @@ def fit_two_tier_grm(
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
         primary_identification=str(res["primary_identification"]),
+        backend=str(res["backend"]),
+        gpu_adapter_name=res["gpu_adapter_name"],
+        gpu_adapter_backend=res["gpu_adapter_backend"],
     )
 
 

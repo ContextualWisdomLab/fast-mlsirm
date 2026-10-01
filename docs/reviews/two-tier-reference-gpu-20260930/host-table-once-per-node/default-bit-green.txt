@@ -1,0 +1,22 @@
+   Compiling mlsirm-core v0.11.4 (/private/tmp/fmls-gpu-fixture-20260928/crates/mlsirm-core)
+    Finished `test` profile [optimized + debuginfo] target(s) in 3m 03s
+     Running unittests src/entrypoint.rs (target/debug/deps/mlsirm_core-154b933da47210f2)
+
+running 1 test
+table_helper_calls=12, nodes=12, n_cat=2
+table_helper_calls=12, nodes=12, n_cat=2
+table_helper_calls=12, nodes=12, n_cat=4
+table_helper_calls=12, nodes=12, n_cat=4
+table_helper_calls=12, nodes=12, n_cat=3
+table_helper_calls=12, nodes=12, n_cat=3
+table_helper_calls=24, nodes=24, n_cat=2
+table_helper_calls=24, nodes=24, n_cat=2
+table_helper_calls=24, nodes=24, n_cat=4
+table_helper_calls=24, nodes=24, n_cat=4
+table_helper_calls=24, nodes=24, n_cat=3
+table_helper_calls=24, nodes=24, n_cat=3
+table_scalar_bit_cases=12, legal_zero_mass_cells=67, overflow_rejected_before_probability=true
+test two_tier_grm::tests::item_tables_preserve_scalar_bits_with_one_grm_call_per_node ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1268 filtered out; finished in 0.00s
+

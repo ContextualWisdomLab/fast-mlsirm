@@ -49,6 +49,9 @@ class RecordingCore:
             "final_loglik_change": 0.0,
             "best_start": 0,
             "n_parameters": 1,
+            "e_step_device": "cpu",
+            "e_step_adapter_name": None,
+            "e_step_backend": None,
         }
 
     def _with_prior(self, res: dict, args: tuple) -> dict:

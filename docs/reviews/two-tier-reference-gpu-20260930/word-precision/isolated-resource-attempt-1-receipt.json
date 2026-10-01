@@ -1,0 +1,157 @@
+{
+  "conclusion": "failure",
+  "headSha": "c64cde1225464be724277878df2ea4791753778f",
+  "jobs": [
+    {
+      "completedAt": "2026-09-30T10:09:21Z",
+      "conclusion": "failure",
+      "databaseId": 109838736284,
+      "name": "Two-tier \uae30\uc900 CPU/GPU \ubca4\uce58\ub9c8\ud06c",
+      "startedAt": "2026-09-30T10:08:28Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-30T10:08:40Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-30T10:08:36Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-30T10:08:50Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 2,
+          "startedAt": "2026-09-30T10:08:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-30T10:08:50Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+          "number": 3,
+          "startedAt": "2026-09-30T10:08:50Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-30T10:08:55Z",
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30",
+          "number": 4,
+          "startedAt": "2026-09-30T10:08:50Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-30T10:09:15Z",
+          "conclusion": "failure",
+          "name": "\ud574\uc2dc \uc7a0\uae08 \uc758\uc874\uc131\uacfc Rust \ud3b8\uc9d1 \uac00\ub2a5 \ud655\uc7a5 \uc124\uce58",
+          "number": 5,
+          "startedAt": "2026-09-30T10:08:55Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-30T10:09:15Z",
+          "conclusion": "skipped",
+          "name": "\uaca9\ub9ac GPU adapter \uc811\uadfc probe",
+          "number": 6,
+          "startedAt": "2026-09-30T10:09:15Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-30T10:09:15Z",
+          "conclusion": "skipped",
+          "name": "\ud638\ucd9c\uc790\uac00 \uc815\ud55c \uc870\uac74\uc73c\ub85c two-tier \uae30\uc900 \uc801\ud569 \uce21\uc815",
+          "number": 7,
+          "startedAt": "2026-09-30T10:09:15Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-30T10:09:15Z",
+          "conclusion": "success",
+          "name": "Two-tier \uae30\uc900 \uc801\ud569 \uce21\uc815 \uc99d\uac70 \ubcf4\uad00",
+          "number": 8,
+          "startedAt": "2026-09-30T10:09:15Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-30T10:09:15Z",
+          "conclusion": "skipped",
+          "name": "Post Run actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+          "number": 15,
+          "startedAt": "2026-09-30T10:09:15Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-30T10:09:16Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 16,
+          "startedAt": "2026-09-30T10:09:15Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-30T10:09:16Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 17,
+          "startedAt": "2026-09-30T10:09:16Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/36700555893/job/109838736284"
+    },
+    {
+      "completedAt": "2026-09-30T10:08:22Z",
+      "conclusion": "skipped",
+      "databaseId": 109838737573,
+      "name": "Ignored PyO3 studies",
+      "startedAt": "2026-09-30T10:08:22Z",
+      "status": "completed",
+      "steps": [],
+      "url": "https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/36700555893/job/109838737573"
+    },
+    {
+      "completedAt": "2026-09-30T10:08:22Z",
+      "conclusion": "skipped",
+      "databaseId": 109838737742,
+      "name": "Literature CPU recovery studies",
+      "startedAt": "2026-09-30T10:08:22Z",
+      "status": "completed",
+      "steps": [],
+      "url": "https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/36700555893/job/109838737742"
+    },
+    {
+      "completedAt": "2026-09-30T10:08:22Z",
+      "conclusion": "skipped",
+      "databaseId": 109838738063,
+      "name": "Ignored Rust studies shard ${{ matrix.shard }}",
+      "startedAt": "2026-09-30T10:08:22Z",
+      "status": "completed",
+      "steps": [],
+      "url": "https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/36700555893/job/109838738063"
+    },
+    {
+      "completedAt": "2026-09-30T10:08:22Z",
+      "conclusion": "skipped",
+      "databaseId": 109838738829,
+      "name": "GRM 500-rep recovery study",
+      "startedAt": "2026-09-30T10:08:22Z",
+      "status": "completed",
+      "steps": [],
+      "url": "https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/36700555893/job/109838738829"
+    },
+    {
+      "completedAt": "2026-09-30T10:08:22Z",
+      "conclusion": "skipped",
+      "databaseId": 109838739097,
+      "name": "Literature GPU recovery parity",
+      "startedAt": "2026-09-30T10:08:22Z",
+      "status": "completed",
+      "steps": [],
+      "url": "https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/36700555893/job/109838739097"
+    }
+  ],
+  "status": "completed",
+  "url": "https://github.com/ContextualWisdomLab/fast-mlsirm/actions/runs/36700555893"
+}

@@ -1,0 +1,325 @@
+{
+  "scope": "local fixed counts representative item evaluation; production repair not applied; no fit/release acceptance",
+  "head": "71fc6d88561ccbc7ed6c5387b4d8180114cb6bcd",
+  "base": "0b561646a2d8ee0f4a3d54d5537b2b04082744fa",
+  "changed_paths": [
+    "tests/unit/two_tier_grm_tests.rs"
+  ],
+  "test_only_patch_sha256": "e56f9c2fb98e7cd3779de0bf2ea508de92c9bc50099a803089c50f5fe1d44247",
+  "source_sha256": {
+    "tests/unit/two_tier_grm_tests.rs": "64d3ee513aa9b07ba21d23e603766c036f80960d0e1487bc2e167ace6a3e7a7b",
+    "crates/mlsirm-core/src/two_tier_grm.rs": "51c47ceba6cb5eee1ec33000722e417cd1336fc8dd4544faf768adc07ce2866b",
+    "crates/mlsirm-core/src/poly.rs": "6e5ace1d98a2d18486f7916d807e74a09e9e6a28fdf3aa63a200c4fc02e3aabc",
+    "crates/mlsirm-core/src/gpu_bifactor.rs": "6f4cbb7ed77c33951165eb0038b2cf3ed9cd3dc3c3c71d842a58d3e2f164c532"
+  },
+  "production_diff_empty": true,
+  "binary": {
+    "path": "target/debug/deps/mlsirm_core-154b933da47210f2",
+    "sha256": "45c763a936f96dca44fa9d5bf158d72cde056b223b4c2c372e8478de67be674d",
+    "bytes": 18800912
+  },
+  "logs": {
+    "q5-item.txt": {
+      "sha256": "fdf759ee9618e20bfb67e7fefad19bdfcd017378c0b8ab007d9bd0e1ba74d545",
+      "bytes": 42366
+    },
+    "q7-item.txt": {
+      "sha256": "bd91e6bc816b0b03a1dec510fdd443c874443aa5dcf0a9867a76c69661a7ea82",
+      "bytes": 83626
+    },
+    "stage1-counts.txt": {
+      "sha256": "3b938e5d6c77a32bef61fc7f14c13a9cb983f50ca13d78945ce25e8d38433c13",
+      "bytes": 8556
+    },
+    "moments.txt": {
+      "sha256": "c20f10567cffda64d592d84f132dbf56faac22792479cc0bdd169002c1e8925b",
+      "bytes": 4113
+    },
+    "compile-contract.txt": {
+      "sha256": "94e6740c0a43da04c2ba310ba6ee448eb696a9a7c08c57f027099069dd790dca",
+      "bytes": 2385
+    }
+  },
+  "item_cases": [
+    {
+      "log": "q5-item.txt",
+      "item": 0,
+      "case": 0,
+      "input_sha256": "7d673228f90c14f8b3ac58b3d34acbee1d5d31646a9fab5ccc4c85172949e291",
+      "objective_abs_delta": 2.6645352591003757e-15,
+      "central_fd_max_abs_residual": 1.4060007637317629e-09,
+      "changed": true,
+      "cpu_word_return_bits_equal": true,
+      "runtime_branch": "not instrumented"
+    },
+    {
+      "log": "q5-item.txt",
+      "item": 4,
+      "case": 0,
+      "input_sha256": "325bc7470e9c969ece0d5452597eded8a524b50e4aef6cf24a071fe375b34acd",
+      "objective_abs_delta": 5.329070518200751e-15,
+      "central_fd_max_abs_residual": 2.2971059915333214e-09,
+      "changed": true,
+      "cpu_word_return_bits_equal": true,
+      "runtime_branch": "not instrumented"
+    },
+    {
+      "log": "q5-item.txt",
+      "item": 0,
+      "case": 1,
+      "input_sha256": "c55d186ec746550c531ed8a3f9c27ec59484c1aeeeb3187c8882cb0c6d9a4e8d",
+      "objective_abs_delta": 8.881784197001252e-16,
+      "central_fd_max_abs_residual": 1.18302539986459e-09,
+      "changed": true,
+      "cpu_word_return_bits_equal": true,
+      "runtime_branch": "not instrumented"
+    },
+    {
+      "log": "q5-item.txt",
+      "item": 0,
+      "case": 2,
+      "input_sha256": "d98c8311f04939060531c101f15076a964f3658cb549572a6d4e16b41ffc3c6c",
+      "objective_abs_delta": 8.881784197001252e-16,
+      "central_fd_max_abs_residual": 4.139624198984393e-10,
+      "changed": true,
+      "cpu_word_return_bits_equal": true,
+      "runtime_branch": "not instrumented"
+    },
+    {
+      "log": "q7-item.txt",
+      "item": 0,
+      "case": 0,
+      "input_sha256": "c4cfcee3672431b0778206e001cc31217827fca9710155a865f477ddd71cdca7",
+      "objective_abs_delta": 7.105427357601002e-15,
+      "central_fd_max_abs_residual": 3.479223020796951e-09,
+      "changed": true,
+      "cpu_word_return_bits_equal": true,
+      "runtime_branch": "not instrumented"
+    },
+    {
+      "log": "q7-item.txt",
+      "item": 4,
+      "case": 0,
+      "input_sha256": "f5aa43a50f1bd8acd4e6d99235abe8378d4dbf497b5a377ae41cfbd4c7bec17c",
+      "objective_abs_delta": 0.0,
+      "central_fd_max_abs_residual": 2.8104903959658145e-09,
+      "changed": true,
+      "cpu_word_return_bits_equal": true,
+      "runtime_branch": "not instrumented"
+    },
+    {
+      "log": "q7-item.txt",
+      "item": 0,
+      "case": 1,
+      "input_sha256": "7991d770e6230522fb39cb9a2e110ce86651d9f3ccb2d1030653c651694349f4",
+      "objective_abs_delta": 1.3322676295501878e-15,
+      "central_fd_max_abs_residual": 6.697774557196112e-10,
+      "changed": true,
+      "cpu_word_return_bits_equal": true,
+      "runtime_branch": "not instrumented"
+    },
+    {
+      "log": "q7-item.txt",
+      "item": 0,
+      "case": 2,
+      "input_sha256": "271d83fc6c026bf6e77b44e7ca20bfae522970c010767fb8afee0016ccbaa79f",
+      "objective_abs_delta": 1.7763568394002505e-15,
+      "central_fd_max_abs_residual": 4.139626419430442e-10,
+      "changed": true,
+      "cpu_word_return_bits_equal": true,
+      "runtime_branch": "not instrumented"
+    }
+  ],
+  "boundary_cases": [
+    {
+      "log": "q5-item.txt",
+      "case": "zero_weights",
+      "convergence": "not applicable",
+      "coords": [
+        1.0
+      ],
+      "counts": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "counts_domain": "finite nonnegative; malformed private counts not executed",
+      "event": "zero_weight_boundary_case",
+      "fit_executed": false,
+      "gradient_finite": true,
+      "independent_objective": 0.0,
+      "independent_objective_finite": true,
+      "native_objective_is_nan": true,
+      "native_objective_positive_inf": false,
+      "packed": [
+        1.0,
+        1e-18,
+        0.0
+      ],
+      "returned_unchanged": true
+    },
+    {
+      "log": "q5-item.txt",
+      "case": "mixed_supported_weight",
+      "convergence": "not applicable",
+      "coords": [
+        1.0
+      ],
+      "counts": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "counts_domain": "finite nonnegative; malformed private counts not executed",
+      "event": "zero_weight_boundary_case",
+      "fit_executed": false,
+      "gradient_finite": true,
+      "independent_objective": 1.3132616875182228,
+      "independent_objective_finite": true,
+      "native_objective_is_nan": true,
+      "native_objective_positive_inf": false,
+      "packed": [
+        1.0,
+        1e-18,
+        0.0
+      ],
+      "returned_unchanged": true
+    },
+    {
+      "log": "q5-item.txt",
+      "case": "positive_impossible_weight",
+      "convergence": "not applicable",
+      "coords": [
+        1.0
+      ],
+      "counts": [
+        [
+          0.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "counts_domain": "finite nonnegative; malformed private counts not executed",
+      "event": "zero_weight_boundary_case",
+      "fit_executed": false,
+      "gradient_finite": false,
+      "independent_objective": null,
+      "independent_objective_finite": false,
+      "native_objective_is_nan": false,
+      "native_objective_positive_inf": true,
+      "packed": [
+        1.0,
+        1e-18,
+        0.0
+      ],
+      "returned_unchanged": true
+    },
+    {
+      "log": "q7-item.txt",
+      "case": "zero_weights",
+      "convergence": "not applicable",
+      "coords": [
+        1.0
+      ],
+      "counts": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "counts_domain": "finite nonnegative; malformed private counts not executed",
+      "event": "zero_weight_boundary_case",
+      "fit_executed": false,
+      "gradient_finite": true,
+      "independent_objective": 0.0,
+      "independent_objective_finite": true,
+      "native_objective_is_nan": true,
+      "native_objective_positive_inf": false,
+      "packed": [
+        1.0,
+        1e-18,
+        0.0
+      ],
+      "returned_unchanged": true
+    },
+    {
+      "log": "q7-item.txt",
+      "case": "mixed_supported_weight",
+      "convergence": "not applicable",
+      "coords": [
+        1.0
+      ],
+      "counts": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "counts_domain": "finite nonnegative; malformed private counts not executed",
+      "event": "zero_weight_boundary_case",
+      "fit_executed": false,
+      "gradient_finite": true,
+      "independent_objective": 1.3132616875182228,
+      "independent_objective_finite": true,
+      "native_objective_is_nan": true,
+      "native_objective_positive_inf": false,
+      "packed": [
+        1.0,
+        1e-18,
+        0.0
+      ],
+      "returned_unchanged": true
+    },
+    {
+      "log": "q7-item.txt",
+      "case": "positive_impossible_weight",
+      "convergence": "not applicable",
+      "coords": [
+        1.0
+      ],
+      "counts": [
+        [
+          0.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "counts_domain": "finite nonnegative; malformed private counts not executed",
+      "event": "zero_weight_boundary_case",
+      "fit_executed": false,
+      "gradient_finite": false,
+      "independent_objective": null,
+      "independent_objective_finite": false,
+      "native_objective_is_nan": false,
+      "native_objective_positive_inf": true,
+      "packed": [
+        1.0,
+        1e-18,
+        0.0
+      ],
+      "returned_unchanged": true
+    }
+  ],
+  "toolchain": "rustc 1.98.1 (48a229cea 2026-09-01) (Homebrew)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "env": {
+    "CARGO_BUILD_JOBS": "1",
+    "CARGO_INCREMENTAL": "0",
+    "G1_KERNEL_COUNTS_CONTRACT": "0",
+    "G1_KERNEL_ITEMUPDATE_CONTRACT": "1",
+    "G1_KERNEL_GPU_BUDGET_BYTES": "1048576",
+    "G1_KERNEL_HOST_BUDGET_BYTES": "67108864"
+  },
+  "input_hash_semantics": "raw item input and Rust-generated serialized-input digest recorded in each source-bound raw event; inputs not duplicated here",
+  "actual_boundary_issue": "native0*(-inf) objectiveNaN forzero/mixed supported counts; positive impossible counts remain nonfinite; unchanged return does not imply success",
+  "internal_branches": "unknown; reconstructed initial FD/inplace matrix only diagnostic",
+  "malformed_private_counts": "outside finite nonnegative input contract; not executed",
+  "full_fit_convergence": "not evaluated",
+  "gpu_adapter": "Apple M1 / Metal",
+  "remote_execution": false
+}

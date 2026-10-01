@@ -1,0 +1,39 @@
+   Compiling mlsirm-core v0.11.4 (/private/tmp/fmls-gpu-fixture-20260928/crates/mlsirm-core)
+warning: fields `iteration`, `params`, `item13_counts`, and `loglik` are never read
+  --> crates/mlsirm-core/src/../../../tests/unit/two_tier_grm_tests.rs:39:5
+   |
+38 | struct ReferenceTracePoint {
+   |        ------------------- fields in this struct
+39 |     iteration: usize,
+   |     ^^^^^^^^^
+40 |     params: Vec<crate::two_tier_grm::ItemParams>,
+   |     ^^^^^^
+41 |     item13_counts: Vec<Vec<f64>>,
+   |     ^^^^^^^^^^^^^
+42 |     loglik: f64,
+   |     ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `mlsirm-core` (lib test) generated 1 warning
+    Finished `test` profile [optimized + debuginfo] target(s) in 2m 49s
+     Running unittests src/entrypoint.rs (target/debug/deps/mlsirm_core-ee06bbaf18f3a719)
+
+running 1 test
+table_helper_calls=24, nodes=12, n_cat=2
+
+thread 'two_tier_grm::tests::item_tables_preserve_scalar_bits_with_one_grm_call_per_node' (625656333) panicked at crates/mlsirm-core/src/../../../tests/unit/two_tier_grm_tests.rs:143:17:
+assertion `left == right` failed: 전체 범주 확률의 node별 중복 계산
+  left: 24
+ right: 12
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test two_tier_grm::tests::item_tables_preserve_scalar_bits_with_one_grm_call_per_node ... FAILED
+
+failures:
+
+failures:
+    two_tier_grm::tests::item_tables_preserve_scalar_bits_with_one_grm_call_per_node
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1256 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p mlsirm-core --lib`

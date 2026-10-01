@@ -395,8 +395,8 @@ def fit_score_two_tier_groups(
     contract; it is a curve evaluated at EAP, not posterior expected raw total.
     Fit, score and nuisance nodes are separate caller choices. Initial mean/SD
     arrays have shape (n_groups, n_primary+n_specific); the reference row must
-    be zero/one. device='gpu' keeps existing strict GPU/no-fallback behavior
-    for focal fitting and scoring; reference item fitting uses its CPU API.
+    be zero/one. device='gpu' requires hardware for reference fitting,
+    focal fitting and scoring; none silently substitutes CPU posterior weights.
 
     Reuses the bootstrap group-admission contract for labels0..n_groups-1.
     Outputs retain input row slots, actual fits and group score records.
@@ -435,7 +435,8 @@ def fit_score_two_tier_groups(
         n_cat=n_cat, n_primary=n_primary, n_specific=n_specific,
         q_primary=fit_q_primary, q_specific=fit_q_specific,
         max_iter=max_iter, tol=tol, n_starts=n_starts, seed=seed,
-        primary_correlation="identity",
+        primary_correlation="identity", device=device,
+        gpu_memory_budget_bytes=gpu_memory_budget_bytes,
     )
     fits = {reference_group: reference}
     scores = {}

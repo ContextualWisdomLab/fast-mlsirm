@@ -236,6 +236,66 @@ fn tiny_multigroup(n_groups: usize, slope_prior: SlopePrior) -> BifactorMultigro
         .expect("tiny multigroup fit must run")
 }
 
+#[test]
+fn bifactor_e_step_provenance_reports_actual_cpu_and_mixed_routes() {
+    use crate::bifactor_grm::EStepDeviceProvenance;
+
+    let mut cpu = EStepDeviceProvenance {
+        cpu_used: true,
+        ..EStepDeviceProvenance::default()
+    };
+    assert_eq!(cpu.device(), "cpu");
+    let gpu = EStepDeviceProvenance {
+        gpu_used: true,
+        adapter_name: Some("fixture GPU".into()),
+        backend: Some("Metal".into()),
+        ..EStepDeviceProvenance::default()
+    };
+    cpu.merge(gpu);
+    assert_eq!(cpu.device(), "mixed");
+    assert_eq!(cpu.adapter_name.as_deref(), Some("fixture GPU"));
+    assert_eq!(cpu.backend.as_deref(), Some("Metal"));
+}
+
+#[test]
+fn bifactor_multigroup_cpu_fit_reports_cpu_without_adapter_claims() {
+    // Metadata is available on a nonconverged one-update fit; this is not a
+    // convergence fixture (the synthetic groups can fail later monotonicity).
+    let (y, n_persons) = tiny_data();
+    let group_id: Vec<usize> = (0..n_persons).map(|p| p % 2).collect();
+    let base = prior_fit_config(SlopePrior::None);
+    let cfg = BifactorMultigroupConfig {
+        q_general: base.q_general,
+        q_specific: base.q_specific,
+        max_iter: 1,
+        tol: base.tol,
+        n_starts: base.n_starts,
+        seed: base.seed,
+        newton_iter: base.newton_iter,
+        ridge: base.ridge,
+        slope_prior: SlopePrior::None,
+        device: crate::Device::Cpu,
+        ..BifactorMultigroupConfig::default()
+    };
+    let fit = fit_bifactor_grm_multigroup(
+        &y,
+        None,
+        &group_id,
+        2,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        None,
+        &cfg,
+    )
+    .expect("tiny CPU multigroup fit must run");
+    assert_eq!(fit.e_step_device, "cpu");
+    assert_eq!(fit.e_step_adapter_name, None);
+    assert_eq!(fit.e_step_backend, None);
+}
+
 fn fit_mg(
     y: &[usize],
     group_id: &[usize],

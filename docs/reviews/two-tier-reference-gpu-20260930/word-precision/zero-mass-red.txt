@@ -1,0 +1,31 @@
+   Compiling mlsirm-core v0.11.4 (/private/tmp/fmls-gpu-fixture-20260928/crates/mlsirm-core)
+    Finished `test` profile [optimized + debuginfo] target(s) in 3m 33s
+     Running unittests src/entrypoint.rs (target/debug/deps/mlsirm_core-154b933da47210f2)
+
+running 1 test
+actual_gpu_binary64_addition_cases=1034 passed
+actual_gpu_binary64_input_and_overflow_rejection_cases=5 passed
+a_primary_max_delta=0
+a_specific_max_delta=0
+threshold_max_delta=0
+phi_max_delta=0
+theta_p_eap_max_delta=0
+theta_p_sd_max_delta=0
+input_sha256=aaee031fa58b48b130a536ce1e51b3b8fcdfb25e476407b0e98005f848bc28c2
+primary_correlation=identity, adapter=Some("Apple M1"), adapter_backend=Some("Metal"), cpu_iterations=21, gpu_iterations=21, cpu_seconds=0.473583125, gpu_seconds=0.480955583, loglik_delta=0, AIC_delta=-0, BIC_delta=-0
+
+thread 'two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu' (616856766) panicked at crates/mlsirm-core/src/../../../tests/unit/two_tier_grm_tests.rs:543:35:
+called `Result::unwrap()` on an `Err` value: "GPU binary64 log-product dispatch/readback failed at declared grid"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu ... FAILED
+
+failures:
+
+failures:
+    two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1266 filtered out; finished in 1.17s
+
+error: test failed, to rerun pass `-p mlsirm-core --lib`
+
+[exited with code 101]

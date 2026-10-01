@@ -186,7 +186,7 @@ use mlsirm_core::subscores::subscores as core_subscores;
 use mlsirm_core::test_form::assemble_test_form_greedy as core_assemble_test_form_greedy;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::two_tier_grm::{
-    fit_two_tier_grm as core_fit_two_tier_grm,
+    fit_two_tier_grm_with_device as core_fit_two_tier_grm,
     fit_two_tier_grm_focal_orthogonal_with_device as core_fit_two_tier_grm_focal,
     score_two_tier_grm_orthogonal_with_device as core_score_two_tier_grm_focal, TwoTierGrmConfig,
     TwoTierGrmPersonScores,
@@ -1599,6 +1599,9 @@ fn fit_bifactor_grm_multigroup(
     out.set_item("theta_g_eap", res.theta_g_eap)?;
     out.set_item("theta_g_sd", res.theta_g_sd)?;
     out.set_item("group_category_counts", res.group_category_counts)?;
+    out.set_item("e_step_device", res.e_step_device)?;
+    out.set_item("e_step_adapter_name", res.e_step_adapter_name)?;
+    out.set_item("e_step_backend", res.e_step_backend)?;
     out.set_item("loglik_trace", res.loglik_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
@@ -1920,7 +1923,7 @@ fn fit_bifactor_grm_fipc(
 /// https://doi.org/10.1037/a0023350 (full text read)
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, q_primary = 15, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, primary_correlation = "estimate"))]
+#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, q_primary = 15, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, primary_correlation = "estimate", device = "cpu", gpu_memory_budget_bytes = None))]
 fn fit_two_tier_grm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1939,7 +1942,10 @@ fn fit_two_tier_grm(
     n_starts: usize,
     seed: u64,
     primary_correlation: &str,
+    device: &str,
+    gpu_memory_budget_bytes: Option<u64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    let device = parse_device(device)?;
     let estimate_primary_correlation = match primary_correlation {
         "estimate" => true,
         "identity" => false,
@@ -2002,10 +2008,15 @@ fn fit_two_tier_grm(
                 n_specific,
                 n_cat,
                 &cfg,
+                device,
+                gpu_memory_budget_bytes,
             )
         })
         .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
+    out.set_item("backend", res.backend)?;
+    out.set_item("gpu_adapter_name", res.gpu_adapter_name)?;
+    out.set_item("gpu_adapter_backend", res.gpu_adapter_backend)?;
     out.set_item("a_primary", res.a_primary)?;
     out.set_item("a_specific", res.a_specific)?;
     out.set_item("threshold", res.threshold)?;

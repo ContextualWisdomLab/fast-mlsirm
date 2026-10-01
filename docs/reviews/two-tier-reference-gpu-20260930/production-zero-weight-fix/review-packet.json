@@ -1,0 +1,409 @@
+{
+  "head": "ea55bf1ffdf56e007df825207ec8fa4972eb7529",
+  "base": "5433f59b2eb15a81cd1d57143074a4b87517f3dc",
+  "scope": "narrow CPU production objective repair; no fit/GPU or full parity acceptance",
+  "patch_sha256": "4b27d146be64da40ed26867369d8e553c710f5d4cc6623e13c7be9db02c3001b",
+  "changed_paths": [
+    "crates/mlsirm-core/src/two_tier_grm.rs",
+    "tests/unit/two_tier_grm_tests.rs"
+  ],
+  "production_only_guard_and_term_exception": true,
+  "source_sha256": {
+    "crates/mlsirm-core/src/two_tier_grm.rs": "03ec39b9f7d411f44a5df9d97ce61c9d6d12d3bc1e74cef49037b429f9612923",
+    "tests/unit/two_tier_grm_tests.rs": "438a767b494f916b6d66ac1e1a2a8a661b464971871322e8bf505300d6bdfb20"
+  },
+  "logs": {
+    "red.txt": {
+      "sha256": "dc918e1f957c8daff1bfe519920f699d1bc75eeca09d5cc96be56f14a0f6182b",
+      "bytes": 3927
+    },
+    "green.txt": {
+      "sha256": "cd997524eae706a2de603598fa3d991bbb3974bd1e76a278beb316a904f112e0",
+      "bytes": 3859
+    },
+    "compile-contract.txt": {
+      "sha256": "4b0acf3709da0f4f884618ff46521be746f8d16232fc8e96f5b5c818d81846d0",
+      "bytes": 5641
+    }
+  },
+  "executions": {
+    "red": {
+      "source_event": {
+        "event": "source",
+        "execution_head": "5433f59b2eb15a81cd1d57143074a4b87517f3dc-dirty-production-objective-red",
+        "fit": false,
+        "gpu": false,
+        "numerical_source_sha256": "51c47ceba6cb5eee1ec33000722e417cd1336fc8dd4544faf768adc07ce2866b",
+        "test_source_sha256": "6a11426a8903890afa08117728143c254b4054d701fda6ab5e4af17bafa107ed"
+      },
+      "events": [
+        {
+          "candidate_role": "not an admitted model",
+          "case": "equal",
+          "counts": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_invalid_candidate",
+          "gradient_finite": true,
+          "internal_branch": "not instrumented",
+          "objective_finite": false,
+          "objective_nan": true,
+          "packed_bits": [
+            4607182418800017408,
+            0,
+            0
+          ],
+          "return_unchanged": true
+        },
+        {
+          "candidate_role": "not an admitted model",
+          "case": "unordered",
+          "counts": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_invalid_candidate",
+          "gradient_finite": true,
+          "internal_branch": "not instrumented",
+          "objective_finite": false,
+          "objective_nan": true,
+          "packed_bits": [
+            4607182418800017408,
+            13819745816549104026,
+            4596373779694328218
+          ],
+          "return_unchanged": true
+        },
+        {
+          "candidate_role": "not an admitted model",
+          "case": "nan_threshold",
+          "counts": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_invalid_candidate",
+          "gradient_finite": true,
+          "internal_branch": "not instrumented",
+          "objective_finite": false,
+          "objective_nan": true,
+          "packed_bits": [
+            4607182418800017408,
+            9221120237041090560,
+            0
+          ],
+          "return_unchanged": true
+        },
+        {
+          "candidate_role": "not an admitted model",
+          "case": "positive_inf_threshold",
+          "counts": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_invalid_candidate",
+          "gradient_finite": true,
+          "internal_branch": "not instrumented",
+          "objective_finite": false,
+          "objective_nan": true,
+          "packed_bits": [
+            4607182418800017408,
+            9218868437227405312,
+            0
+          ],
+          "return_unchanged": true
+        },
+        {
+          "candidate_role": "not an admitted model",
+          "case": "negative_inf_threshold",
+          "counts": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_invalid_candidate",
+          "gradient_finite": true,
+          "internal_branch": "not instrumented",
+          "objective_finite": false,
+          "objective_nan": true,
+          "packed_bits": [
+            4607182418800017408,
+            0,
+            18442240474082181120
+          ],
+          "return_unchanged": true
+        },
+        {
+          "counts": [
+            [
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
+          "event": "production_positive_impossible",
+          "gradient_finite": false,
+          "objective_positive_inf": true,
+          "packed": [
+            1.0,
+            1e-18,
+            0.0
+          ]
+        },
+        {
+          "actual_objective": null,
+          "actual_objective_finite": false,
+          "actual_objective_nan": true,
+          "case": "zero",
+          "coords": [
+            1.0
+          ],
+          "counts": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_legal_zero_weight",
+          "expected_objective": 0.0,
+          "gradient_bits": [
+            9223372036854775808,
+            9223372036854775808,
+            9223372036854775808
+          ],
+          "packed": [
+            1.0,
+            1e-18,
+            0.0
+          ]
+        }
+      ],
+      "exit_status": 101,
+      "mixed_legal_case_executed": false,
+      "binary_hash": "not measured; no retrospective GREEN hash"
+    },
+    "green": {
+      "source_event": {
+        "event": "source",
+        "execution_head": "ea55bf1ffdf56e007df825207ec8fa4972eb7529",
+        "fit": false,
+        "gpu": false,
+        "numerical_source_sha256": "03ec39b9f7d411f44a5df9d97ce61c9d6d12d3bc1e74cef49037b429f9612923",
+        "test_source_sha256": "438a767b494f916b6d66ac1e1a2a8a661b464971871322e8bf505300d6bdfb20"
+      },
+      "events": [
+        {
+          "candidate_role": "not an admitted model",
+          "case": "equal",
+          "counts": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_invalid_candidate",
+          "gradient_finite": true,
+          "internal_branch": "not instrumented",
+          "objective_finite": false,
+          "objective_nan": true,
+          "packed_bits": [
+            4607182418800017408,
+            0,
+            0
+          ],
+          "return_unchanged": true
+        },
+        {
+          "candidate_role": "not an admitted model",
+          "case": "unordered",
+          "counts": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_invalid_candidate",
+          "gradient_finite": true,
+          "internal_branch": "not instrumented",
+          "objective_finite": false,
+          "objective_nan": true,
+          "packed_bits": [
+            4607182418800017408,
+            13819745816549104026,
+            4596373779694328218
+          ],
+          "return_unchanged": true
+        },
+        {
+          "candidate_role": "not an admitted model",
+          "case": "nan_threshold",
+          "counts": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_invalid_candidate",
+          "gradient_finite": true,
+          "internal_branch": "not instrumented",
+          "objective_finite": false,
+          "objective_nan": true,
+          "packed_bits": [
+            4607182418800017408,
+            9221120237041090560,
+            0
+          ],
+          "return_unchanged": true
+        },
+        {
+          "candidate_role": "not an admitted model",
+          "case": "positive_inf_threshold",
+          "counts": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_invalid_candidate",
+          "gradient_finite": true,
+          "internal_branch": "not instrumented",
+          "objective_finite": false,
+          "objective_nan": true,
+          "packed_bits": [
+            4607182418800017408,
+            9218868437227405312,
+            0
+          ],
+          "return_unchanged": true
+        },
+        {
+          "candidate_role": "not an admitted model",
+          "case": "negative_inf_threshold",
+          "counts": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_invalid_candidate",
+          "gradient_finite": true,
+          "internal_branch": "not instrumented",
+          "objective_finite": false,
+          "objective_nan": true,
+          "packed_bits": [
+            4607182418800017408,
+            0,
+            18442240474082181120
+          ],
+          "return_unchanged": true
+        },
+        {
+          "counts": [
+            [
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
+          "event": "production_positive_impossible",
+          "gradient_finite": false,
+          "objective_positive_inf": true,
+          "packed": [
+            1.0,
+            1e-18,
+            0.0
+          ]
+        },
+        {
+          "actual_objective": -0.0,
+          "actual_objective_finite": true,
+          "actual_objective_nan": false,
+          "case": "zero",
+          "coords": [
+            1.0
+          ],
+          "counts": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_legal_zero_weight",
+          "expected_objective": 0.0,
+          "gradient_bits": [
+            9223372036854775808,
+            9223372036854775808,
+            9223372036854775808
+          ],
+          "packed": [
+            1.0,
+            1e-18,
+            0.0
+          ]
+        },
+        {
+          "actual_objective": 1.3132616875182228,
+          "actual_objective_finite": true,
+          "actual_objective_nan": false,
+          "case": "mixed_supported",
+          "coords": [
+            1.0
+          ],
+          "counts": [
+            [
+              1.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "event": "production_legal_zero_weight",
+          "expected_objective": 1.3132616875182228,
+          "gradient_bits": [
+            4604760009829884605,
+            4604760009829884605,
+            9223372036854775808
+          ],
+          "packed": [
+            1.0,
+            1e-18,
+            0.0
+          ]
+        }
+      ],
+      "exit_status": 0
+    }
+  },
+  "green_binary": {
+    "path": "target/debug/deps/mlsirm_core-ee06bbaf18f3a719",
+    "sha256": "22b94a2c0a9b4a23e5ca04dd9227e03c214e58b2d5b71be5c9e7477869296a7f",
+    "bytes": 11134528
+  },
+  "toolchain": "rustc 1.98.1 (48a229cea 2026-09-01) (Homebrew)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "command": "CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p mlsirm-core --lib --no-default-features two_tier_grm::tests::production_zero_weight_objective_preserves_candidate_domain -- --exact --nocapture",
+  "fit_executed": false,
+  "gpu_initialized": false,
+  "gradient_solver_prior_node_criteria": "unchanged bytes outside narrow guard/term replacement",
+  "internal_branches": "not instrumented",
+  "unverified": "GPU parity/full fit/convergence/q121counts/340persons/bootstrap/release; old feature profile assertions updated but not re-executed"
+}

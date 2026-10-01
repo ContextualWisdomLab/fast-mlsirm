@@ -1,0 +1,15 @@
+{
+  "head": "6ac2622b12ca009dd2cd27bc0bcb5e67429c4f2a",
+  "files": {
+    "crates/mlsirm-core/src/gpu_bifactor.rs": "92a7f7c6befaf0a53feacedd9b80f05b76523ae353ac175dd66e4f91c667d4d4",
+    "crates/mlsirm-core/src/two_tier_grm.rs": "2588652c347e2ce94c5d79585255443a1aec87645f5dd70dc9387b9943461b4b",
+    "crates/fast-mlsirm-py/src/lib.rs": "6a0aca59076aa55bf67c2fc5eff69c8309a84856d09d4e6cb932e9ae69e495f8",
+    "python/fast_mlsirm/two_tier_grm.py": "3362fd995114b10ecae5ba4d2c240ed0bb170b4554712a574d76619e2ee88e09",
+    "python/fast_mlsirm/two_tier_focal.py": "47d947c40fd1572a554d4a92378eb963b0ca4b8f9a1dc36466088975294c4d3f",
+    "tests/unit/two_tier_grm_tests.rs": "5eb769fef69d1a30f3207e055a0f6668ff208e353ea9e3d233ac2f1d6e759a5d",
+    "tests/fixtures/two_tier_reference_gpu/sparse_p2_s4.json": "c9344ec0319b5da8eea9fd02d5f28b0036971e5f8751d4af96e586e7569664e0",
+    "scripts/benchmark_two_tier_reference_gpu.py": "3249eb833d63f26e4fe0ea739e3ba1c539a42678761ba8fdaa9432f756954f12",
+    "Cargo.lock": "88bb9a25b3f95e560da7ffd3ade079e0860bf4b9dfd3c595e674a17b7d7fb9ea",
+    "crates/fast-mlsirm-py/Cargo.lock": "f778041936d0b4490976e86746ed2749b529fe79e825be6349bd85e1e7c3dbaf"
+  }
+}

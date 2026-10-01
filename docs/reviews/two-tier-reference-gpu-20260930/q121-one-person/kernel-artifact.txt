@@ -1,0 +1,119 @@
+[1m[92m   Compiling[0m cfg-if v1.0.4
+[1m[92m   Compiling[0m proc-macro2 v1.0.106
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m quote v1.0.46
+[1m[92m   Compiling[0m libc v0.2.186
+[1m[92m   Compiling[0m cfg_aliases v0.2.1
+[1m[92m   Compiling[0m bitflags v2.13.0
+[1m[92m   Compiling[0m libm v0.2.16
+[1m[92m   Compiling[0m zerocopy v0.8.54
+[1m[92m   Compiling[0m foldhash v0.2.0
+[1m[92m   Compiling[0m autocfg v1.5.1
+[1m[92m   Compiling[0m thiserror v2.0.18
+[1m[92m   Compiling[0m syn v2.0.118
+[1m[92m   Compiling[0m equivalent v1.0.2
+[1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m   Compiling[0m once_cell v1.21.4
+[1m[92m   Compiling[0m hashbrown v0.17.1
+[1m[92m   Compiling[0m libloading v0.8.9
+[1m[92m   Compiling[0m log v0.4.33
+[1m[92m   Compiling[0m indexmap v2.14.0
+[1m[92m   Compiling[0m rustc-hash v1.1.0
+[1m[92m   Compiling[0m naga v30.0.0
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m   Compiling[0m ash v0.38.0+1.3.281
+[1m[92m   Compiling[0m getrandom v0.3.4
+[1m[92m   Compiling[0m unicode-width v0.2.2
+[1m[92m   Compiling[0m pkg-config v0.3.33
+[1m[92m   Compiling[0m version_check v0.9.5
+[1m[92m   Compiling[0m bit-vec v0.9.1
+[1m[92m   Compiling[0m bit-set v0.10.0
+[1m[92m   Compiling[0m generic-array v0.14.7
+[1m[92m   Compiling[0m wayland-sys v0.31.11
+[1m[92m   Compiling[0m codespan-reporting v0.13.1
+[1m[92m   Compiling[0m spirv v0.4.0+sdk-1.4.341.0
+[1m[92m   Compiling[0m khronos-egl v6.0.0
+[1m[92m   Compiling[0m raw-window-handle v0.6.2
+[1m[92m   Compiling[0m zerocopy-derive v0.8.54
+[1m[92m   Compiling[0m thiserror-impl v2.0.18
+[1m[92m   Compiling[0m bytemuck_derive v1.10.2
+[1m[92m   Compiling[0m bytemuck v1.25.2
+[1m[92m   Compiling[0m naga-types v30.0.0
+[1m[92m   Compiling[0m static_assertions v1.1.0
+[1m[92m   Compiling[0m smallvec v1.15.2
+[1m[92m   Compiling[0m allocator-api2 v0.2.21
+[1m[92m   Compiling[0m scopeguard v1.2.0
+[1m[92m   Compiling[0m arrayvec v0.7.8
+[1m[92m   Compiling[0m lock_api v0.4.14
+[1m[92m   Compiling[0m hashbrown v0.16.1
+[1m[92m   Compiling[0m wgpu-types v30.0.0
+[1m[92m   Compiling[0m dlib v0.5.3
+[1m[92m   Compiling[0m wgpu-hal v30.0.0
+[1m[92m   Compiling[0m typenum v1.20.1
+[1m[92m   Compiling[0m rustix v1.1.4
+[1m[92m   Compiling[0m presser v0.3.1
+[1m[92m   Compiling[0m getrandom v0.4.3
+[1m[92m   Compiling[0m half v2.7.1
+[1m[92m   Compiling[0m rand_core v0.9.5
+[1m[92m   Compiling[0m parking_lot v0.12.5
+[1m[92m   Compiling[0m ordered-float v5.3.0
+[1m[92m   Compiling[0m serde_core v1.0.228
+[1m[92m   Compiling[0m glow v0.17.0
+[1m[92m   Compiling[0m renderdoc-sys v1.1.0
+[1m[92m   Compiling[0m linux-raw-sys v0.12.1
+[1m[92m   Compiling[0m profiling v1.0.18
+[1m[92m   Compiling[0m wgpu-core v30.0.0
+[1m[92m   Compiling[0m fastrand v2.4.1
+[1m[92m   Compiling[0m zmij v1.0.23
+[1m[92m   Compiling[0m gpu-allocator v0.28.0
+[1m[92m   Compiling[0m litrs v1.0.0
+[1m[92m   Compiling[0m document-features v0.2.12
+[1m[92m   Compiling[0m tempfile v3.27.0
+[1m[92m   Compiling[0m block-buffer v0.10.4
+[1m[92m   Compiling[0m crypto-common v0.1.7
+[1m[92m   Compiling[0m ppv-lite86 v0.2.21
+[1m[92m   Compiling[0m wait-timeout v0.2.1
+[1m[92m   Compiling[0m wgpu-naga-bridge v30.0.0
+[1m[92m   Compiling[0m wgpu v30.0.0
+[1m[92m   Compiling[0m fnv v1.0.7
+[1m[92m   Compiling[0m bit-vec v0.8.0
+[1m[92m   Compiling[0m serde v1.0.228
+[1m[92m   Compiling[0m quick-error v1.2.3
+[1m[92m   Compiling[0m serde_json v1.0.151
+[1m[92m   Compiling[0m rusty-fork v0.3.1
+[1m[92m   Compiling[0m bit-set v0.8.0
+[1m[92m   Compiling[0m rand_chacha v0.9.0
+[1m[92m   Compiling[0m digest v0.10.7
+[1m[92m   Compiling[0m rand_xorshift v0.4.0
+[1m[92m   Compiling[0m rand v0.9.4
+[1m[92m   Compiling[0m serde_derive v1.0.228
+[1m[92m   Compiling[0m deranged v0.5.8
+[1m[92m   Compiling[0m regex-syntax v0.8.11
+[1m[92m   Compiling[0m wgpu-core-deps-windows-linux-android v30.0.0
+[1m[92m   Compiling[0m time-core v0.1.9
+[1m[92m   Compiling[0m cpufeatures v0.2.17
+[1m[92m   Compiling[0m num-conv v0.2.2
+[1m[92m   Compiling[0m memchr v2.8.3
+[1m[92m   Compiling[0m unarray v0.1.4
+[1m[92m   Compiling[0m powerfmt v0.2.0
+[1m[92m   Compiling[0m itoa v1.0.18
+[1m[92m   Compiling[0m time v0.3.55
+[1m[92m   Compiling[0m proptest v1.11.0
+[1m[92m   Compiling[0m sha2 v0.10.9
+[1m[92m   Compiling[0m pollster v1.0.1
+[1m[92m   Compiling[0m uuid v1.25.0
+[1m[92m   Compiling[0m mlsirm-core v0.11.4 (/home/runner/_work/fast-mlsirm/fast-mlsirm/crates/mlsirm-core)
+[1m[92m    Finished[0m `test` profile [optimized + debuginfo] target(s) in 4m 19s
+[1m[92m     Running[0m unittests src/entrypoint.rs (target/debug/deps/mlsirm_core-902e2d1d7f572e18)
+
+running 1 test
+{"event":"source","execution_head":"8a54da3c95f807c96176bb4b2074d523019c6c67","kernel_source":"crates/mlsirm-core/src/gpu_bifactor.rs","kernel_source_sha256":"6caa9b0024ec2ded5e2c1b0c731f831998fd975d2a25a8fd886872eb6c4c1d1a","numerical_source":"crates/mlsirm-core/src/two_tier_grm.rs","numerical_source_sha256":"cbc74f27fa366e39062440846f3f0640359993b9e4bf29e0338a6ae5215a797c","test_source":"tests/unit/two_tier_grm_tests.rs","test_source_sha256":"11999af60959c402e53619444ebfb7fb4321564ea4d0578e64d9cb5ee87cb5d4"}
+{"event":"resource","adapter_name":"NVIDIA GeForce GTX 1050","adapter_backend":"Vulkan","adapter_type":"DiscreteGpu","max_storage_buffer_binding_bytes":2147483644,"max_buffer_bytes":4292870144,"max_storage_buffers_per_stage":524288,"max_workgroups_per_dimension":65535,"host_estimate_bytes":4480932284,"host_budget_bytes":8589934592,"host_budget_semantics":"source-derived conservative allocation estimate; not RSS cap","gpu_policy_minimum_bytes":1020771796,"gpu_budget_bytes":1073741824,"gpu_budget_semantics":"source policy; adapter limits are per-buffer constraints, not available physical VRAM","execution_head":"8a54da3c95f807c96176bb4b2074d523019c6c67"}
+{"event":"input","input_sha256":"5ae65a0d541523ac76e4e472eede55a33bc32298644f5f0cd9f4f0a26a403313","seed":null,"input_json":{"n_cat":4,"n_items":16,"n_persons":1,"n_primary":2,"n_specific":4,"phi":"identity","primary_loadings":[[0.9,0.0],[1.3,0.0],[0.7,0.0],[1.1,0.0],[0.9,0.9],[1.3,0.9],[0.7,0.9],[1.1,0.0],[0.9,0.0],[1.3,0.9],[0.7,0.0],[1.1,0.0],[0.9,0.9],[1.3,0.0],[0.7,0.9],[1.1,0.9]],"primary_map":[true,false,true,false,true,false,true,false,true,true,true,true,true,true,true,false,true,false,true,true,true,false,true,false,true,true,true,false,true,true,true,true],"q_primary":121,"q_specific":121,"responses":[0,1,2,3,1,2,3,0,2,3,0,1,3,0,1,2],"specific_loadings":[1.1,0.8,1.4,1.0,1.1,0.8,1.4,1.0,1.1,0.8,1.4,1.0,1.1,0.8,1.4,1.0],"specific_map":[0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3],"thresholds":[[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2],[1.2,0.0,-1.2]]}}
+test two_tier_grm::tests::reference_gpu_fixed_bank_kernel_profile has been running for over 60 seconds
+{"event":"timing","whole_cpu_estep_seconds":1.4138171480000001,"whole_gpu_estep_seconds":60.730846804,"cpu_table_generation_seconds":43.106984244,"whole_cpu_including_table_seconds":44.520801392,"stages":{"table_generation_seconds":43.824468356,"gpu_state_preparation_seconds":14.37743562,"gpu_log_products_and_readback_seconds":1.337327432,"rust_lse_exp_normalization_seconds":0.279993637,"posterior_moment_contraction_seconds":0.108341023,"f64_likelihood_certification_seconds":0.627493957},"note":"host clock; pipeline compile/upload and GPU compute/readback are grouped; no GPU timestamp claim"}
+{"event":"comparison","loglik_abs_delta":0,"mean_max_abs_delta":0,"second_max_abs_delta":0,"marginal_sd_max_abs_delta":0,"tolerance":0.001,"collect_counts":false,"parameter_updates":false} 
+test two_tier_grm::tests::reference_gpu_fixed_bank_kernel_profile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1267 filtered out; finished in 109.94s
+

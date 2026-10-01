@@ -129,6 +129,10 @@ jobs:
           # The pinned bits came from this runner; hosted glibc differs.
           cargo test -p mlsirm-core --test bifactor_no_prior_main_reference -- --ignored --exact none_path_matches_main_bits_single_and_multigroup | tee no-prior-bits.log
           grep -q "test result: ok. 1 passed" no-prior-bits.log
+      - name: Verify actual GPU reference-fit convergence and provenance
+        run: |
+          cargo test -p mlsirm-core --lib two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu -- --ignored --exact --nocapture | tee reference-gpu-fit.log
+          grep -q "test result: ok. 1 passed" reference-gpu-fit.log
       - name: Execute bifactor GPU parity on hardware
         env:
           STAGE5_HIGH_Q: "1"

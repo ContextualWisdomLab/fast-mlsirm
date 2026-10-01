@@ -1,0 +1,32 @@
+   Compiling mlsirm-core v0.11.4 (/private/tmp/fmls-gpu-fixture-20260928/crates/mlsirm-core)
+    Finished `test` profile [optimized + debuginfo] target(s) in 3m 02s
+     Running unittests src/entrypoint.rs (target/debug/deps/mlsirm_core-154b933da47210f2)
+
+running 1 test
+actual_gpu_binary64_addition_cases=1037 passed
+actual_gpu_binary64_malformed_input_rejection_cases=3 passed; finite_overflow_zero_mass_node=1 preserved
+a_primary_max_delta=0
+a_specific_max_delta=0
+threshold_max_delta=0
+phi_max_delta=0
+theta_p_eap_max_delta=0
+theta_p_sd_max_delta=0
+input_sha256=aaee031fa58b48b130a536ce1e51b3b8fcdfb25e476407b0e98005f848bc28c2
+primary_correlation=identity, adapter=Some("Apple M1"), adapter_backend=Some("Metal"), cpu_iterations=21, gpu_iterations=21, cpu_seconds=0.489299709, gpu_seconds=0.412584167, loglik_delta=0, AIC_delta=-0, BIC_delta=-0
+actual_finite_GRM_zero_probability_node_CPU_GPU_cases=4 passed
+strict_synthetic_cpu_iterations=261, gpu_iterations=261, full_trajectory_parameter_max_delta=0, full_trajectory_loglik_max_delta=0
+fixed_cpu_state_iteration=102
+fixed_cpu_state_item13_f64_FD_hessian_symmetric_part_eigenvalues_with_original_ridge=[6.261355639517693, 2.2949265962589434, 1.704068588533897, 1.3736316965214957e-8, -3.256868077401033e-7]
+fixed_cpu_state_table_quantization: count_max_delta=0.00000022548090639062934, item13_gradient_max_delta=0.00000010879814849734659, item13_Newton_update_max_delta=0.0002828535960048839, FD_hessian_symmetric_part_eigenvalues=[6.2613556959353245, 2.294926590488169, 1.704068601345211, 1.373627006019343e-8, -3.256902632965001e-7]
+fixed_cpu_state_gpu_sweep: count_max_delta=0.0000021704523813781407, item13_gradient_max_delta=0.0000005586387911010737, item13_Newton_update_max_delta=0.00024188234213795567, FD_hessian_symmetric_part_eigenvalues=[6.261355903628168, 2.294926560785019, 1.7040686496476147, 1.3736174843529525e-8, -3.256727539010418e-7]
+fixed_cpu_state_gpu_word_products: count_max_delta=0, item13_gradient_max_delta=0, item13_Newton_update_max_delta=0, FD_hessian_symmetric_part_eigenvalues=[6.261355639517693, 2.2949265962589434, 1.704068588533897, 1.3736316965214957e-8, -3.256868077401033e-7]
+actual_gpu_storage_binding_bytes=4294967292, actual_gpu_buffer_bytes=4294967295
+strict_synthetic_a_primary_max_delta=0
+strict_synthetic_a_specific_max_delta=0
+strict_synthetic_threshold_max_delta=0
+test two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1266 filtered out; finished in 52.36s
+
+
+[exited with code 0]

@@ -2,6 +2,30 @@ name: Statistical Studies
 
 on:
   workflow_dispatch:
+    inputs:
+      study:
+        description: 실행할 연구 프로필
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - two-tier-reference-gpu
+      reference_args:
+        description: 벤치마크에 필요한 제어값이며 숫자 기본값은 제공하지 않습니다
+        type: string
+        required: false
+        default: ""
+      reference_resource_probe:
+        description: 수치 적합 없이 격리 GPU adapter 접근만 확인합니다
+        type: boolean
+        required: false
+        default: false
+      reference_kernel_probe:
+        description: 고정 합성은행의 1인 E-step만 CPU와 실제 GPU에서 대조합니다
+        type: boolean
+        required: false
+        default: false
   schedule:
     # Stagger from the top of the hour to reduce hosted-runner congestion.
     - cron: "17 2 * * *"
@@ -23,6 +47,7 @@ concurrency:
 
 jobs:
   rust-ignored:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'two-tier-reference-gpu' }}
     name: Ignored Rust studies shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     # Large Monte Carlo recovery tests are real evidence, not a reason to
@@ -54,8 +79,11 @@ jobs:
           --skip mlsirm-core/test/literature_true_parameter_recovery::gpu_recovery_matches_cpu_on_paper_design
           --skip mlsirm-core/test/higher_order_mc_recovery::higher_order_dina_recovery_respects_monte_carlo_tolerance
           --skip mlsirm-core/lib/mlsirm_core::grm::tests::mc_grm_recovery_500
+          --skip mlsirm-core/lib/mlsirm_core::two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu
+          --skip mlsirm-core/lib/mlsirm_core::two_tier_grm::tests::reference_gpu_fixed_bank_kernel_profile
 
   rust-pyo3-ignored:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'two-tier-reference-gpu' }}
     name: Ignored PyO3 studies
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -69,6 +97,7 @@ jobs:
       - run: cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml -- --ignored --test-threads=1 --nocapture
 
   rust-recovery:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'two-tier-reference-gpu' }}
     name: Literature CPU recovery studies
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -101,6 +130,7 @@ jobs:
           grep -q "test result: ok. 1 passed" higher-order-dina-recovery.log
 
   grm-recovery:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'two-tier-reference-gpu' }}
     name: GRM 500-rep recovery study
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -131,6 +161,7 @@ jobs:
           retention-days: 90
 
   gpu-recovery:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.study != 'two-tier-reference-gpu' }}
     name: Literature GPU recovery parity
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -164,3 +195,268 @@ jobs:
             gpu_recovery_matches_cpu_on_paper_design \
             -- --ignored --exact --nocapture 2>&1 | tee gpu-recovery-parity.log
           grep -q "test result: ok. 1 passed" gpu-recovery-parity.log
+
+  two-tier-reference-gpu:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.study == 'two-tier-reference-gpu' }}
+    name: Two-tier 기준 CPU/GPU 벤치마크
+    runs-on: [self-hosted, linux, x64, focal-gpu-isolated]
+    timeout-minutes: 240
+    env:
+      REFERENCE_ARGS: ${{ inputs.reference_args }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.97.1
+      - name: 서로 다른 probe 선택의 동시 실행 거부
+        env:
+          RESOURCE_PROBE: ${{ inputs.reference_resource_probe }}
+          KERNEL_PROBE: ${{ inputs.reference_kernel_probe }}
+        run: |
+          python - <<'PY'
+          import os
+          if os.environ["RESOURCE_PROBE"] == os.environ["KERNEL_PROBE"] == "true":
+              raise SystemExit("resource-only와 kernel probe는 한 번에 선택할 수 없습니다")
+          PY
+      - name: 해시 잠금 의존성과 Rust 편집 가능 확장 설치
+        timeout-minutes: ${{ (inputs.reference_resource_probe || inputs.reference_kernel_probe) && 240 || 10 }}
+        run: |
+          set -euo pipefail
+          python -m venv .venv
+          export PATH="$PWD/.venv/bin:$PATH"
+          .venv/bin/python -m pip install --require-hashes -r requirements/ci.txt
+          if [ "${{ inputs.reference_resource_probe }}" = "true" ] || [ "${{ inputs.reference_kernel_probe }}" = "true" ]; then
+            .venv/bin/python -m pip install --no-build-isolation --no-deps -e .
+          fi
+      # Probe는 adapter 연결 증거일 뿐 수치 적합 또는 과학적 수용이 아닙니다.
+      - name: 격리 GPU adapter 접근 probe
+        if: ${{ inputs.reference_resource_probe == true }}
+        env:
+          G1_GPU_RESOURCE_PROBE: "1"
+        run: |
+          set -euo pipefail
+          cargo test -p mlsirm-core --lib \
+            two_tier_grm::tests::reference_fit_actual_gpu_matches_cpu \
+            -- --ignored --exact --nocapture 2>&1 | tee reference-gpu-resource-probe.log
+          grep -q "test result: ok. 1 passed" reference-gpu-resource-probe.log
+      # 고정은행 1인 E-step 측정은 수렴 적합·모수 갱신·연구 수용이 아닙니다.
+      - name: 고정 합성은행 1인 kernel 및 reference 대조
+        if: ${{ inputs.reference_kernel_probe == true }}
+        env:
+          G1_EXECUTION_HEAD: ${{ github.sha }}
+        run: |
+          .venv/bin/python - <<'PY'
+          import argparse
+          import os
+          import shlex
+          import subprocess
+          from pathlib import Path
+          parser = argparse.ArgumentParser(allow_abbrev=False)
+          for name in ("q-primary", "q-specific", "gpu-memory-budget-bytes", "host-memory-budget-bytes"):
+              parser.add_argument("--" + name, required=True, type=int)
+          controls = parser.parse_args(shlex.split(os.environ["REFERENCE_ARGS"]))
+          env = os.environ.copy()
+          for name, value in vars(controls).items():
+              if value <= 0:
+                  raise SystemExit("모든 kernel 노드·메모리 예산은 양수로 지정해야 합니다")
+              key = {"q_primary": "G1_KERNEL_Q_PRIMARY", "q_specific": "G1_KERNEL_Q_SPECIFIC",
+                     "gpu_memory_budget_bytes": "G1_KERNEL_GPU_BUDGET_BYTES",
+                     "host_memory_budget_bytes": "G1_KERNEL_HOST_BUDGET_BYTES"}[name]
+              env[key] = str(value)
+          command = ["cargo", "test", "-p", "mlsirm-core", "--lib",
+                     "two_tier_grm::tests::reference_gpu_fixed_bank_kernel_profile",
+                     "--", "--ignored", "--exact", "--nocapture"]
+          with Path("reference-gpu-kernel-probe.log").open("wb") as log:
+              result = subprocess.run(command, env=env, shell=False, stdout=log, stderr=subprocess.STDOUT)
+          text = Path("reference-gpu-kernel-probe.log").read_text(errors="replace")
+          print(text)
+          if result.returncode or "test result: ok. 1 passed" not in text:
+              raise SystemExit(result.returncode or 1)
+          PY
+      # 모형 제어값은 caller 입력을 유지하고 시간·자원 초과는 실패로 남깁니다.
+      - name: 호출자가 정한 조건으로 two-tier 기준 적합 측정
+        if: ${{ inputs.reference_resource_probe != true && inputs.reference_kernel_probe != true }}
+        timeout-minutes: 60
+        env:
+          CARGO_BUILD_JOBS: "1"
+          CARGO_INCREMENTAL: "0"
+          MATURIN_NO_INSTALL_RUST: "1"
+        run: |
+          set -euo pipefail
+          .venv/bin/python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shlex
+          import signal
+          import subprocess
+          import sys
+          import time
+          import zipfile
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "g1-public-proof"
+          root.mkdir()
+          cgroup_path = next(line.split(":", 2)[2] for line in Path("/proc/self/cgroup").read_text().splitlines() if line.startswith("0::"))
+          cgroup = Path("/sys/fs/cgroup") / cgroup_path.lstrip("/")
+
+          def resources():
+              memory = int((cgroup / "memory.current").read_text())
+              available = next(int(line.split()[1])*1024 for line in Path("/proc/meminfo").read_text().splitlines() if line.startswith("MemAvailable:"))
+              gpu = subprocess.check_output(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"], text=True, timeout=10).strip().splitlines()
+              if len(gpu) != 1:
+                  raise RuntimeError("expected one GPU memory observation")
+              return {"cgroup_current_bytes": memory, "host_available_bytes": available, "gpu_used_mib": int(gpu[0])}
+
+          def process_start(pid):
+              path = Path("/proc") / str(pid)
+              if path.stat().st_uid != os.getuid():
+                  raise RuntimeError("owned process UID mismatch")
+              return (path / "stat").read_text().rsplit(")", 1)[1].split()[19]
+
+          def run_owned(command, seconds, name):
+              started = time.monotonic()
+              observations = []
+              reason = "completed"
+              with (root / (name + "-stdout.log")).open("xb") as stdout_log, (root / (name + "-stderr.log")).open("xb") as stderr_log:
+                  child = subprocess.Popen(command, shell=False, start_new_session=True, stdout=stdout_log, stderr=stderr_log)
+                  token = None
+                  def stop_owned():
+                      if child.poll() is None:
+                          if process_start(child.pid) != token or os.getpgid(child.pid) != child.pid or child.pid == os.getpgrp():
+                              raise RuntimeError("owned process group identity is uncertain")
+                          os.killpg(child.pid, signal.SIGTERM)
+                          try:
+                              child.wait(timeout=10)
+                          except subprocess.TimeoutExpired:
+                              if child.poll() is None and process_start(child.pid) == token:
+                                  os.killpg(child.pid, signal.SIGKILL)
+                              child.wait(timeout=10)
+                  try:
+                      token = process_start(child.pid) if child.poll() is None else None
+                      while child.poll() is None:
+                          sample = resources()
+                          rss = subprocess.check_output(["ps", "-eo", "pgid=,rss="], text=True, timeout=10)
+                          sample["owned_rss_bytes"] = sum(int(line.split()[1])*1024 for line in rss.splitlines() if len(line.split()) == 2 and int(line.split()[0]) == child.pid)
+                          sample["elapsed_seconds"] = time.monotonic() - started
+                          observations.append(sample)
+                          if sample["elapsed_seconds"] >= seconds:
+                              reason = "timeout"
+                              stop_owned()
+                              break
+                          if sample["cgroup_current_bytes"] > 6*1024**3 or sample["owned_rss_bytes"] > 6*1024**3 or sample["gpu_used_mib"] > 1536:
+                              reason = "resource_limit"
+                              stop_owned()
+                              break
+                          try:
+                              child.wait(timeout=1)
+                          except subprocess.TimeoutExpired:
+                              pass
+                  except Exception:
+                      reason = "monitor_error"
+                      stop_owned()
+                      raise
+                  finally:
+                      receipt = {"command": command, "pid": child.pid, "pgid": child.pid, "uid": os.getuid(), "start_token": token,
+                                 "reason": reason, "returncode": child.poll(), "observations": observations,
+                                 "termination_scope": "verified live-leader process group; detached descendants not proven stopped"}
+                      with (root / (name + "-process.json")).open("x") as stream:
+                          json.dump(receipt, stream, indent=2, allow_nan=False)
+                  return child.returncode if reason == "completed" else 1
+
+          def wheel_identity(directory):
+              from fast_mlsirm import _core
+              wheels = sorted(directory.glob("*.whl"))
+              if len(wheels) != 1:
+                  raise RuntimeError("expected exactly one wheel")
+              core = Path(_core.__file__).resolve()
+              if not core.is_relative_to(Path(sys.prefix).resolve()):
+                  raise RuntimeError("installed extension is outside the job environment")
+              with zipfile.ZipFile(wheels[0]) as archive:
+                  members = [name for name in archive.namelist() if name.startswith("fast_mlsirm/_core") and name.endswith(".so")]
+                  if len(members) != 1 or archive.read(members[0]) != core.read_bytes():
+                      raise RuntimeError("wheel and installed extension bytes differ")
+              return {"wheel": str(wheels[0]), "wheel_sha256": hashlib.sha256(wheels[0].read_bytes()).hexdigest(),
+                      "core_import_path": str(core), "core_sha256": hashlib.sha256(core.read_bytes()).hexdigest()}
+
+          if os.environ["RUNNER_NAME"] != "cwlab-s1-gpu-01":
+              raise SystemExit("unexpected runner owner")
+          head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True, timeout=10).strip()
+          tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True, timeout=10).strip()
+          if head != os.environ["GITHUB_SHA"] or subprocess.check_output(["git", "status", "--porcelain"], text=True, timeout=10):
+              raise SystemExit("expected clean exact source")
+          preflight = resources()
+          cap = (cgroup / "memory.max").read_text().strip()
+          with (root / "resource-preflight.json").open("x") as stream:
+              json.dump({**preflight, "cgroup_max": cap, "source_head": head, "source_tree": tree,
+                         "runner": os.environ["RUNNER_NAME"], "run_id": os.environ["GITHUB_RUN_ID"]}, stream, indent=2)
+          if cap == "max" or int(cap) < 8*1024**3 or preflight["cgroup_current_bytes"] > 2*1024**3 or preflight["host_available_bytes"] < 16*1024**3 or preflight["gpu_used_mib"] > 512:
+              raise SystemExit("resource preflight budget is not available")
+          build = [".venv/bin/maturin", "build", "--release", "--locked", "--features", "mlsirm-core/gpu,pyo3/extension-module", "--interpreter", ".venv/bin/python", "--out", str(root / "wheels")]
+          if run_owned(build, 1800, "build") != 0:
+              raise SystemExit("native wheel build failed or exceeded its budget")
+          wheels = sorted((root / "wheels").glob("*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit("expected exactly one wheel before install")
+          installed = subprocess.run([".venv/bin/python", "-m", "pip", "install", "--no-deps", "--force-reinstall", str(wheels[0])], shell=False, timeout=120)
+          if installed.returncode:
+              raise SystemExit(installed.returncode)
+          identity = wheel_identity(root / "wheels")
+          receipt = {**identity, "source_head": head, "source_tree": tree, "gpu_feature": True, "build_command": shlex.join(build),
+                     "rustc_version": subprocess.check_output(["rustc", "--version"], text=True, timeout=10).strip(),
+                     "cargo_version": subprocess.check_output(["cargo", "--version"], text=True, timeout=10).strip()}
+          with (root / "build-receipt.json").open("x") as stream:
+              json.dump(receipt, stream, indent=2)
+          command = [
+              ".venv/bin/python",
+              "scripts/benchmark_two_tier_reference_gpu.py",
+              *shlex.split(os.environ["REFERENCE_ARGS"]),
+              "--build-receipt", str(root / "build-receipt.json"),
+              "--device", "both",
+              "--out", str(root / "reference-gpu-benchmark.json"),
+          ]
+          result = run_owned(command, 1200, "reference-gpu")
+          sys.stdout.write((root / "reference-gpu-stdout.log").read_text(encoding="utf-8", errors="replace"))
+          sys.stderr.write((root / "reference-gpu-stderr.log").read_text(encoding="utf-8", errors="replace"))
+          if result != 0:
+              raise SystemExit(result)
+          report_path = root / "reference-gpu-benchmark.json"
+          if not report_path.is_file():
+              raise SystemExit("benchmark exited successfully without JSON evidence")
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          runs = report.get("runs") if isinstance(report, dict) else None
+          if not isinstance(runs, dict) or set(runs) != {"cpu", "gpu"}:
+              raise SystemExit("benchmark evidence must contain CPU and GPU runs")
+          if type(report.get("exit_status")) is not int or report["exit_status"] != 0:
+              raise SystemExit("benchmark evidence reports a failed exit status")
+          if any(not isinstance(runs[device], dict) or runs[device].get("converged") is not True for device in ("cpu", "gpu")):
+              raise SystemExit("CPU and GPU runs must both report convergence")
+          gpu = runs["gpu"]
+          if gpu.get("backend") != "gpu":
+              raise SystemExit("GPU run did not report the GPU backend")
+          if not isinstance(gpu.get("gpu_adapter_name"), str) or not gpu["gpu_adapter_name"].strip():
+              raise SystemExit("GPU adapter name is missing from benchmark evidence")
+          if not isinstance(gpu.get("gpu_adapter_backend"), str) or not gpu["gpu_adapter_backend"].strip():
+              raise SystemExit("GPU adapter backend is missing from benchmark evidence")
+          if report.get("head") != head or report.get("core_sha256") != identity["core_sha256"] or report.get("backend_parity", {}).get("passed") is not True:
+              raise SystemExit("benchmark source/core/pair evidence does not match")
+          PY
+      - name: Two-tier 기준 적합 측정 증거 보관
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: two-tier-reference-gpu-${{ github.run_id }}
+          path: |
+            reference-gpu-resource-probe.log
+            reference-gpu-kernel-probe.log
+            reference-gpu-stdout.log
+            reference-gpu-stderr.log
+            reference-gpu-benchmark.json
+            ${{ runner.temp }}/g1-public-proof/
+          if-no-files-found: warn
+          retention-days: 90

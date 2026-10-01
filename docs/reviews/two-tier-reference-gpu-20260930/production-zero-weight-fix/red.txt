@@ -1,0 +1,44 @@
+   Compiling mlsirm-core v0.11.4 (/private/tmp/fmls-gpu-fixture-20260928/crates/mlsirm-core)
+warning: fields `iteration`, `params`, `item13_counts`, and `loglik` are never read
+  --> crates/mlsirm-core/src/../../../tests/unit/two_tier_grm_tests.rs:39:5
+   |
+38 | struct ReferenceTracePoint {
+   |        ------------------- fields in this struct
+39 |     iteration: usize,
+   |     ^^^^^^^^^
+40 |     params: Vec<crate::two_tier_grm::ItemParams>,
+   |     ^^^^^^
+41 |     item13_counts: Vec<Vec<f64>>,
+   |     ^^^^^^^^^^^^^
+42 |     loglik: f64,
+   |     ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `mlsirm-core` (lib test) generated 1 warning
+    Finished `test` profile [optimized + debuginfo] target(s) in 2m 50s
+     Running unittests src/entrypoint.rs (target/debug/deps/mlsirm_core-ee06bbaf18f3a719)
+
+running 1 test
+{"event":"source","execution_head":"5433f59b2eb15a81cd1d57143074a4b87517f3dc-dirty-production-objective-red","fit":false,"gpu":false,"numerical_source_sha256":"51c47ceba6cb5eee1ec33000722e417cd1336fc8dd4544faf768adc07ce2866b","test_source_sha256":"6a11426a8903890afa08117728143c254b4054d701fda6ab5e4af17bafa107ed"}
+{"candidate_role":"not an admitted model","case":"equal","counts":[[0.0,0.0,0.0]],"event":"production_invalid_candidate","gradient_finite":true,"internal_branch":"not instrumented","objective_finite":false,"objective_nan":true,"packed_bits":[4607182418800017408,0,0],"return_unchanged":true}
+{"candidate_role":"not an admitted model","case":"unordered","counts":[[0.0,0.0,0.0]],"event":"production_invalid_candidate","gradient_finite":true,"internal_branch":"not instrumented","objective_finite":false,"objective_nan":true,"packed_bits":[4607182418800017408,13819745816549104026,4596373779694328218],"return_unchanged":true}
+{"candidate_role":"not an admitted model","case":"nan_threshold","counts":[[0.0,0.0,0.0]],"event":"production_invalid_candidate","gradient_finite":true,"internal_branch":"not instrumented","objective_finite":false,"objective_nan":true,"packed_bits":[4607182418800017408,9221120237041090560,0],"return_unchanged":true}
+{"candidate_role":"not an admitted model","case":"positive_inf_threshold","counts":[[0.0,0.0,0.0]],"event":"production_invalid_candidate","gradient_finite":true,"internal_branch":"not instrumented","objective_finite":false,"objective_nan":true,"packed_bits":[4607182418800017408,9218868437227405312,0],"return_unchanged":true}
+{"candidate_role":"not an admitted model","case":"negative_inf_threshold","counts":[[0.0,0.0,0.0]],"event":"production_invalid_candidate","gradient_finite":true,"internal_branch":"not instrumented","objective_finite":false,"objective_nan":true,"packed_bits":[4607182418800017408,0,18442240474082181120],"return_unchanged":true}
+{"counts":[[0.0,1.0,0.0]],"event":"production_positive_impossible","gradient_finite":false,"objective_positive_inf":true,"packed":[1.0,1e-18,0.0]}
+{"actual_objective":null,"actual_objective_finite":false,"actual_objective_nan":true,"case":"zero","coords":[1.0],"counts":[[0.0,0.0,0.0]],"event":"production_legal_zero_weight","expected_objective":0.0,"gradient_bits":[9223372036854775808,9223372036854775808,9223372036854775808],"packed":[1.0,1e-18,0.0]}
+
+thread 'two_tier_grm::tests::production_zero_weight_objective_preserves_candidate_domain' (629044623) panicked at crates/mlsirm-core/src/../../../tests/unit/two_tier_grm_tests.rs:321:9:
+legal strict zero-weight objective must be finite: zero
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test two_tier_grm::tests::production_zero_weight_objective_preserves_candidate_domain ... FAILED
+
+failures:
+
+failures:
+    two_tier_grm::tests::production_zero_weight_objective_preserves_candidate_domain
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1257 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p mlsirm-core --lib`

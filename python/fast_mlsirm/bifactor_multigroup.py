@@ -144,6 +144,12 @@ class BifactorMultigroupFit:
     n_items x n_cat``. ``termination_reason`` is ``"tolerance_met"``,
     ``"max_iter_reached"``, or ``"numerical_em_stall"`` (see #1976);
     ``best_start`` the winning start in ``0..n_starts``.
+    ``e_step_device`` records the winning run's completed posterior sweeps:
+    ``cpu``, ``gpu``, or ``mixed`` when automatic selection used both.
+    ``e_step_adapter_name`` and ``e_step_backend`` record the actual wgpu
+    adapter only after successful GPU execution. Final EAP and Newton updates
+    remain on CPU. Manually constructed legacy records default to ``unknown``.
+    wgpu 30 AdapterInfo: https://docs.rs/wgpu/30.0.0/wgpu/struct.AdapterInfo.html.
 
     Under a slope prior (``slope_prior_mu``/``slope_prior_sd`` set),
     convergence, ``final_loglik_change`` and start ranking refer to the
@@ -179,6 +185,9 @@ class BifactorMultigroupFit:
     # (monotone), identical to ``loglik_trace`` without one. ``loglik_trace``
     # keeps its meaning and may decrease under a prior.
     em_objective_trace: np.ndarray | None = None
+    e_step_device: str = "unknown"
+    e_step_adapter_name: str | None = None
+    e_step_backend: str | None = None
 
 
 def fit_bifactor_grm_multigroup(
@@ -432,4 +441,11 @@ def fit_bifactor_grm_multigroup(
         slope_prior_mu=_optional_float(res["slope_prior_mu"]),
         slope_prior_sd=_optional_float(res["slope_prior_sd"]),
         em_objective_trace=np.asarray(res["em_objective_trace"], dtype=np.float64),
+        e_step_device=str(res["e_step_device"]),
+        e_step_adapter_name=(
+            None if res["e_step_adapter_name"] is None else str(res["e_step_adapter_name"])
+        ),
+        e_step_backend=(
+            None if res["e_step_backend"] is None else str(res["e_step_backend"])
+        ),
     )

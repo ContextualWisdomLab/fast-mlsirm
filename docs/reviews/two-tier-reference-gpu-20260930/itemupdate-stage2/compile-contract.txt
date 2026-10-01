@@ -1,0 +1,60 @@
+warning: function `gh_rule_unidim` is never used
+   --> crates/mlsirm-core/src/quadrature.rs:911:15
+    |
+911 | pub(crate) fn gh_rule_unidim(q: usize) -> Option<(&'static [f64], &'static [f64])> {
+    |               ^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `mlsirm-core` (lib) generated 1 warning
+    Checking mlsirm-core v0.11.4 (/private/tmp/fmls-gpu-fixture-20260928/crates/mlsirm-core)
+warning: fields `iteration`, `params`, `item13_counts`, and `loglik` are never read
+  --> crates/mlsirm-core/src/../../../tests/unit/two_tier_grm_tests.rs:39:5
+   |
+38 | struct ReferenceTracePoint {
+   |        ------------------- fields in this struct
+39 |     iteration: usize,
+   |     ^^^^^^^^^
+40 |     params: Vec<crate::two_tier_grm::ItemParams>,
+   |     ^^^^^^
+41 |     item13_counts: Vec<Vec<f64>>,
+   |     ^^^^^^^^^^^^^
+42 |     loglik: f64,
+   |     ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `mlsirm-core` (lib test) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.95s
+warning: function `gh_rule_unidim` is never used
+   --> crates/mlsirm-core/src/quadrature.rs:911:15
+    |
+911 | pub(crate) fn gh_rule_unidim(q: usize) -> Option<(&'static [f64], &'static [f64])> {
+    |               ^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `mlsirm-core` (lib) generated 1 warning
+    Checking mlsirm-core v0.11.4 (/private/tmp/fmls-gpu-fixture-20260928/crates/mlsirm-core)
+warning: fields `iteration`, `params`, `item13_counts`, and `loglik` are never read
+  --> crates/mlsirm-core/src/../../../tests/unit/two_tier_grm_tests.rs:39:5
+   |
+38 | struct ReferenceTracePoint {
+   |        ------------------- fields in this struct
+39 |     iteration: usize,
+   |     ^^^^^^^^^
+40 |     params: Vec<crate::two_tier_grm::ItemParams>,
+   |     ^^^^^^
+41 |     item13_counts: Vec<Vec<f64>>,
+   |     ^^^^^^^^^^^^^
+42 |     loglik: f64,
+   |     ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `mlsirm-core` (lib test) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.96s
+.....................................                                    [100%]
+37 passed in 1.55s
+
+[exited with code 0]
