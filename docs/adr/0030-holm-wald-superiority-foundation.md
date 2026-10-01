@@ -39,10 +39,14 @@ decision loss, provider choice, and credential policy remain downstream.
 Add versioned algorithm `holm-wald-one-sided-v1`:
 
 1. accept a finite candidate-estimate vector, its finite symmetric positive-definite covariance, and a caller-supplied family-wise error rate in `(0, 1)`;
-2. form every ordered contrast `H0(i,j): μ_i ≤ μ_j` using the full covariance;
-3. calculate the one-sided Wald normal-tail probability in Rust;
-4. apply Holm's sequentially rejective procedure across the complete ordered family; and
-5. return a winner only when exactly one candidate rejects every outgoing null; otherwise return `indeterminate`.
+2. verify positive definiteness with a scale-normalized Cholesky factorization
+   whose pivots and reconstruction residuals are checked against the standard
+   IEEE-754 `γ_n` dot-product error bound;
+3. form every ordered contrast `H0(i,j): μ_i ≤ μ_j` using the full covariance;
+4. calculate a conservative upper bound for the one-sided Wald normal-tail
+   probability in Rust from the documented `erfc` approximation error bound;
+5. apply Holm's sequentially rejective procedure across the complete ordered family; and
+6. return a winner only when exactly one candidate rejects every outgoing null; otherwise return `indeterminate`.
 
 This foundation does not itself accept fit-status or calibration booleans. That
 omission is deliberate: an unverified flag would let a caller relabel point
@@ -53,10 +57,13 @@ provenance.
 
 ## Invariants / acceptance evidence
 
-1. Equal and nearly equal candidates return `indeterminate`.
+1. Equal or statistically unresolved candidates under the supplied covariance
+   return `indeterminate`.
 2. Candidate permutation cannot change the winner identity.
 3. Nonfinite estimates, nonsymmetric covariance, and non-positive-definite covariance fail closed.
-4. Rust owns contrast variance, standard errors, p-values, Holm rejection, and winner selection.
+4. Rust owns scale-normalized positive-definiteness verification, contrast
+   variance, standard errors, conservative p-value bounds, Holm rejection, and
+   winner selection.
 5. No family-wise error default is provided.
 
 ## Non-goals and claims not made
@@ -137,6 +144,9 @@ educational and psychological testing*. American Educational Research Associatio
 Holm, S. (1979). A simple sequentially rejective multiple test procedure.
 *Scandinavian Journal of Statistics, 6*(2), 65–70.
 https://www.jstor.org/stable/4615733
+
+Higham, N. J. (2002). *Accuracy and stability of numerical algorithms* (2nd
+ed.). Society for Industrial and Applied Mathematics.
 
 ## Follow-ups
 

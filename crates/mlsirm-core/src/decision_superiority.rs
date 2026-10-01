@@ -11,7 +11,7 @@
 //! must not treat it as route-authorizing evidence until those upstream
 //! contracts are supplied and validated.
 
-use crate::inference::second_order_test;
+const ERFC_ABSOLUTE_ERROR_BOUND: f64 = 1.2e-7;
 
 /// One ordered Wald comparison after Holm family-wise correction.
 #[derive(Clone, Debug, PartialEq)]
@@ -24,8 +24,8 @@ pub struct HolmWaldComparison {
     pub estimate_difference: f64,
     /// Standard error derived from the full covariance matrix.
     pub standard_error: f64,
-    /// One-sided standard-normal Wald p-value.
-    pub p_value: f64,
+    /// Conservative upper bound for the one-sided standard-normal p-value.
+    pub p_value_upper_bound: f64,
     /// Whether Holm's step-down procedure rejected this ordered null.
     pub null_rejected: bool,
 }
@@ -37,6 +37,98 @@ pub struct HolmWaldSuperiority {
     pub winner_index: Option<usize>,
     /// All ordered comparisons in input-index order.
     pub comparisons: Vec<HolmWaldComparison>,
+}
+
+/// Verify positive definiteness with scale-normalized, residual-checked Cholesky.
+///
+/// Each pivot must exceed its IEEE-754 dot-product rounding bound. This makes
+/// numerically unresolved pivots fail closed instead of converting an absolute
+/// eigensolver tolerance into a scale-dependent acceptance rule.
+fn positive_definite_cholesky(covariance: &[f64], n: usize) -> bool {
+    let scale = covariance
+        .iter()
+        .map(|value| value.abs())
+        .fold(0.0_f64, f64::max);
+    if !scale.is_finite() || scale == 0.0 {
+        return false;
+    }
+    let mut lower = vec![0.0_f64; covariance.len()];
+    for row in 0..n {
+        for column in 0..=row {
+            let normalized = covariance[row * n + column] / scale;
+            let mut value = normalized;
+            let mut magnitude_sum = normalized.abs();
+            for k in 0..column {
+                let product = lower[row * n + k] * lower[column * n + k];
+                value -= product;
+                magnitude_sum += product.abs();
+            }
+            if !value.is_finite() || !magnitude_sum.is_finite() {
+                return false;
+            }
+            if row == column {
+                let operations = 2 * column + 1;
+                let roundoff = operations as f64 * f64::EPSILON;
+                if roundoff >= 1.0 {
+                    return false;
+                }
+                let rounding_bound = roundoff / (1.0 - roundoff) * magnitude_sum;
+                if value <= rounding_bound {
+                    return false;
+                }
+                lower[row * n + column] = value.sqrt();
+            } else {
+                let factor = value / lower[column * n + column];
+                if !factor.is_finite() {
+                    return false;
+                }
+                lower[row * n + column] = factor;
+            }
+        }
+    }
+
+    for row in 0..n {
+        for column in 0..n {
+            let terms = row.min(column) + 1;
+            let mut reconstructed = 0.0;
+            let mut magnitude_sum = 0.0;
+            for k in 0..terms {
+                let product = lower[row * n + k] * lower[column * n + k];
+                reconstructed += product;
+                magnitude_sum += product.abs();
+            }
+            let normalized = covariance[row * n + column] / scale;
+            let operations = 2 * terms + 1;
+            let roundoff = operations as f64 * f64::EPSILON;
+            if roundoff >= 1.0 {
+                return false;
+            }
+            let rounding_bound = roundoff / (1.0 - roundoff) * (normalized.abs() + magnitude_sum);
+            if !reconstructed.is_finite()
+                || !rounding_bound.is_finite()
+                || (normalized - reconstructed).abs() > rounding_bound
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Conservative one-sided standard-normal survival probability.
+///
+/// `fitstats::erfc` documents absolute error below `1.2e-7`. Adding half that
+/// bound converts its reporting approximation into an upper probability bound,
+/// so numerical approximation cannot create a Holm rejection.
+fn normal_survival_upper_bound(z: f64) -> Result<f64, String> {
+    if !z.is_finite() {
+        return Err("pairwise contrast arithmetic must remain finite".into());
+    }
+    let approximation = 0.5 * crate::fitstats::erfc(z / std::f64::consts::SQRT_2);
+    if !approximation.is_finite() {
+        return Err("pairwise contrast arithmetic must remain finite".into());
+    }
+    Ok((approximation + 0.5 * ERFC_ABSOLUTE_ERROR_BOUND).clamp(0.0, 1.0))
 }
 
 /// Test whether one candidate is superior to every other candidate.
@@ -82,8 +174,7 @@ pub fn holm_wald_superiority(
             }
         }
     }
-    let (positive_definite, _, _) = second_order_test(covariance, n, 0.0)?;
-    if !positive_definite {
+    if !positive_definite_cholesky(covariance, n) {
         return Err("covariance must be positive definite".into());
     }
 
@@ -100,6 +191,9 @@ pub fn holm_wald_superiority(
                 continue;
             }
             let estimate_difference = estimates[candidate_index] - estimates[comparator_index];
+            if !estimate_difference.is_finite() {
+                return Err("pairwise contrast arithmetic must remain finite".into());
+            }
             let variance = covariance[candidate_index * n + candidate_index]
                 + covariance[comparator_index * n + comparator_index]
                 - 2.0 * covariance[candidate_index * n + comparator_index];
@@ -108,14 +202,13 @@ pub fn holm_wald_superiority(
             }
             let standard_error = variance.sqrt();
             let z = estimate_difference / standard_error;
-            let p_value =
-                (0.5 * crate::fitstats::erfc(z / std::f64::consts::SQRT_2)).clamp(0.0, 1.0);
+            let p_value_upper_bound = normal_survival_upper_bound(z)?;
             comparisons.push(HolmWaldComparison {
                 candidate_index,
                 comparator_index,
                 estimate_difference,
                 standard_error,
-                p_value,
+                p_value_upper_bound,
                 null_rejected: false,
             });
         }
@@ -124,8 +217,8 @@ pub fn holm_wald_superiority(
     let mut order: Vec<usize> = (0..comparisons.len()).collect();
     order.sort_by(|left, right| {
         comparisons[*left]
-            .p_value
-            .total_cmp(&comparisons[*right].p_value)
+            .p_value_upper_bound
+            .total_cmp(&comparisons[*right].p_value_upper_bound)
             .then_with(|| {
                 comparisons[*left]
                     .candidate_index
@@ -140,7 +233,7 @@ pub fn holm_wald_superiority(
     for (rank, comparison_index) in order.into_iter().enumerate() {
         let remaining = comparisons.len() - rank;
         let critical_level = familywise_error_rate / remaining as f64;
-        if comparisons[comparison_index].p_value <= critical_level {
+        if comparisons[comparison_index].p_value_upper_bound <= critical_level {
             comparisons[comparison_index].null_rejected = true;
         } else {
             break;
@@ -191,5 +284,41 @@ mod tests {
             .iter()
             .filter(|comparison| comparison.candidate_index == 0)
             .all(|comparison| comparison.null_rejected));
+    }
+
+    #[test]
+    fn tiny_scale_indefinite_covariance_fails_closed() {
+        let error =
+            holm_wald_superiority(&[1.0, 0.0], &[1.0e-15, -2.0e-15, -2.0e-15, 1.0e-15], 0.05)
+                .expect_err("indefinite covariance must fail at every scale");
+        assert_eq!(error, "covariance must be positive definite");
+    }
+
+    #[test]
+    fn huge_scale_indefinite_covariance_fails_closed() {
+        let error = holm_wald_superiority(&[1.0, 0.0], &[1.0e300, 2.0e300, 2.0e300, 1.0e300], 0.05)
+            .expect_err("indefinite covariance must fail at every scale");
+        assert_eq!(error, "covariance must be positive definite");
+    }
+
+    #[test]
+    fn finite_inputs_with_overflowing_contrast_fail_closed() {
+        let error = holm_wald_superiority(&[f64::MAX, -f64::MAX], &[1.0, 0.0, 0.0, 1.0], 0.05)
+            .expect_err("non-finite derived arithmetic must fail closed");
+        assert_eq!(error, "pairwise contrast arithmetic must remain finite");
+    }
+
+    #[test]
+    fn reporting_approximation_cannot_reject_above_holm_boundary() {
+        let z = 1.959_963_984_54_f64;
+        let result = holm_wald_superiority(&[z, 0.0], &[0.5, 0.0, 0.0, 0.5], 0.05)
+            .expect("identity contrast variance");
+        let forward = result
+            .comparisons
+            .iter()
+            .find(|comparison| comparison.candidate_index == 0)
+            .expect("ordered comparison");
+        assert!(forward.p_value_upper_bound > 0.025);
+        assert!(!forward.null_rejected);
     }
 }

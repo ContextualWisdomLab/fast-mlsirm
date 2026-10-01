@@ -32,7 +32,7 @@ class WaldSuperiorityComparison:
     comparator_id: str
     estimate_difference: float
     standard_error: float
-    p_value: float
+    p_value_upper_bound: float
     null_rejected: bool
 
 
@@ -69,9 +69,9 @@ def _finite_vector(values: object, expected: int) -> np.ndarray:
         raise TypeError("estimates must be a NumPy array")
     if values.ndim != 1 or values.shape[0] != expected:
         raise ValueError("estimates must contain one value per candidate")
-    if values.dtype.kind not in {"f", "i", "u"}:
-        raise ValueError("estimates must be real numeric values")
-    result = np.ascontiguousarray(values, dtype=np.float64)
+    if values.dtype != np.dtype(np.float64) or not values.dtype.isnative:
+        raise ValueError("estimates must use the native float64 dtype")
+    result = np.ascontiguousarray(values)
     if not np.all(np.isfinite(result)):
         raise ValueError("estimates must be finite")
     return result
@@ -83,9 +83,9 @@ def _covariance_matrix(values: object, expected: int) -> np.ndarray:
         raise TypeError("covariance must be a NumPy array")
     if values.ndim != 2 or values.shape != (expected, expected):
         raise ValueError("covariance must be a square matrix matching estimates")
-    if values.dtype.kind not in {"f", "i", "u"}:
-        raise ValueError("covariance must be real numeric values")
-    result = np.ascontiguousarray(values, dtype=np.float64)
+    if values.dtype != np.dtype(np.float64) or not values.dtype.isnative:
+        raise ValueError("covariance must use the native float64 dtype")
+    result = np.ascontiguousarray(values)
     if not np.all(np.isfinite(result)):
         raise ValueError("covariance must be finite")
     return result
@@ -101,10 +101,10 @@ def assess_wald_superiority(
     """Assess unique candidate superiority with one-sided Holm--Wald tests.
 
     The supplied covariance must describe the joint estimator distribution.
-    Rust computes every contrast variance, standard error, normal-tail
-    probability, Holm rejection, and winner decision.  The caller must supply
-    ``familywise_error_rate`` from a documented decision policy; there is no
-    package default.  Candidate order is not a tie-break.
+    Rust computes every contrast variance, standard error, conservative
+    normal-tail probability bound, Holm rejection, and winner decision.  The
+    caller must supply ``familywise_error_rate`` from a documented decision
+    policy; there is no package default.  Candidate order is not a tie-break.
 
     This function alone does not prove convergence, identification, covariance
     calibration, interval coverage, or fitness for an operational decision.
@@ -131,7 +131,7 @@ def assess_wald_superiority(
             comparator_id=identifiers[int(row["comparator_index"])],
             estimate_difference=float(row["estimate_difference"]),
             standard_error=float(row["standard_error"]),
-            p_value=float(row["p_value"]),
+            p_value_upper_bound=float(row["p_value_upper_bound"]),
             null_rejected=bool(row["null_rejected"]),
         )
         for row in raw["comparisons"]

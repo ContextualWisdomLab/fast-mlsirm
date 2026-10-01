@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 import pytest
 
@@ -60,6 +62,43 @@ def test_candidate_permutation_cannot_change_winner_identity() -> None:
     assert original.winner_id == permuted.winner_id == "candidate-a"
 
 
+def test_every_permutation_preserves_nonexchangeable_evidence() -> None:
+    """Permutation invariance includes correlated, unequal candidate variances."""
+    identifiers = np.array(["candidate-a", "candidate-b", "candidate-c"])
+    estimates = np.array([1.0, 0.0, -0.5], dtype=np.float64)
+    covariance = np.array(
+        [[0.01, 0.002, -0.001], [0.002, 0.02, 0.003], [-0.001, 0.003, 0.03]],
+        dtype=np.float64,
+    )
+    for order_tuple in itertools.permutations(range(3)):
+        order = np.array(order_tuple)
+        result = assess_wald_superiority(
+            identifiers[order].tolist(),
+            estimates[order],
+            covariance[np.ix_(order, order)],
+            familywise_error_rate=0.05,
+        )
+        assert result.winner_id == "candidate-a"
+
+
+def test_tied_small_p_bounds_follow_holm_without_order_tie_break() -> None:
+    """Equal outgoing evidence is corrected as a family, not by candidate order."""
+    result = assess_wald_superiority(
+        ("candidate-a", "candidate-b", "candidate-c"),
+        np.array([3.0, 0.0, 0.0], dtype=np.float64),
+        np.diag(np.array([0.01, 0.01, 0.01], dtype=np.float64)),
+        familywise_error_rate=0.05,
+    )
+    outgoing = [
+        comparison
+        for comparison in result.comparisons
+        if comparison.candidate_id == "candidate-a"
+    ]
+    assert len(outgoing) == 2
+    assert outgoing[0].p_value_upper_bound == outgoing[1].p_value_upper_bound
+    assert all(comparison.null_rejected for comparison in outgoing)
+
+
 def test_equal_candidates_do_not_receive_an_order_tie_break() -> None:
     """The null case remains indeterminate for either candidate ordering."""
     covariance = np.diag([0.01, 0.01])
@@ -103,5 +142,28 @@ def test_invalid_uncertainty_fails_closed(
             ("candidate-a", "candidate-b"),
             estimates,
             covariance,
+            familywise_error_rate=0.05,
+        )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [np.int64, np.uint64, np.longdouble],
+)
+def test_lossy_numeric_dtypes_fail_before_rust_marshalling(dtype: np.dtype) -> None:
+    """Evidence is never silently rounded into a different float64 problem."""
+    with pytest.raises(ValueError, match="native float64"):
+        assess_wald_superiority(
+            ("candidate-a", "candidate-b"),
+            np.array([2**53 + 1, 2**53], dtype=dtype),
+            np.eye(2, dtype=np.float64),
+            familywise_error_rate=0.05,
+        )
+
+    with pytest.raises(ValueError, match="native float64"):
+        assess_wald_superiority(
+            ("candidate-a", "candidate-b"),
+            np.array([1.0, 0.0], dtype=np.float64),
+            np.eye(2, dtype=dtype),
             familywise_error_rate=0.05,
         )

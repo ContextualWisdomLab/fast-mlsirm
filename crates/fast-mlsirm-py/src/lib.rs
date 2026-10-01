@@ -10370,7 +10370,7 @@ fn holm_wald_superiority(
         row.set_item("comparator_index", comparison.comparator_index)?;
         row.set_item("estimate_difference", comparison.estimate_difference)?;
         row.set_item("standard_error", comparison.standard_error)?;
-        row.set_item("p_value", comparison.p_value)?;
+        row.set_item("p_value_upper_bound", comparison.p_value_upper_bound)?;
         row.set_item("null_rejected", comparison.null_rejected)?;
         comparisons.append(row)?;
     }
