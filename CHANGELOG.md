@@ -11,7 +11,8 @@
   independent of binary64 rounding and candidate order;
   outward-rounded normal-tail bounds and exact dyadic Holm comparisons prevent
   anti-conservative boundary rejection; and the Python boundary admits exact
-  native `float64` evidence without lossy coercion. It has no default error level and is not
+  native `float64` evidence without lossy coercion. The public comparison names
+  its conservative `standard_error_upper_bound` explicitly. It has no default error level and is not
   decision-authorizing until #2315 supplies owner-produced joint prediction
   uncertainty, calibration/coverage, fit denominators, and provenance.
 

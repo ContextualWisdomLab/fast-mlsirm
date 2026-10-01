@@ -70,7 +70,9 @@ provenance.
 3. Nonfinite estimates, nonsymmetric covariance, and non-positive-definite covariance fail closed.
 4. Rust owns exact-dyadic positive-definiteness and contrast arithmetic,
    directional binary64 bounds, outward-rounded conservative p-value bounds,
-   exact Holm critical comparisons, and winner selection.
+   exact Holm critical comparisons, and winner selection. Public comparison
+   output names the conservative `standard_error_upper_bound` rather than
+   implying a point-valued standard error.
 5. No family-wise error default is provided.
 
 ## Non-goals and claims not made

@@ -31,7 +31,7 @@ class WaldSuperiorityComparison:
     candidate_id: str
     comparator_id: str
     estimate_difference: float
-    standard_error: float
+    standard_error_upper_bound: float
     p_value_upper_bound: float
     null_rejected: bool
 
@@ -130,7 +130,7 @@ def assess_wald_superiority(
             candidate_id=identifiers[int(row["candidate_index"])],
             comparator_id=identifiers[int(row["comparator_index"])],
             estimate_difference=float(row["estimate_difference"]),
-            standard_error=float(row["standard_error"]),
+            standard_error_upper_bound=float(row["standard_error_upper_bound"]),
             p_value_upper_bound=float(row["p_value_upper_bound"]),
             null_rejected=bool(row["null_rejected"]),
         )

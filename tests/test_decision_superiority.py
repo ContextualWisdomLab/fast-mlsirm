@@ -35,6 +35,8 @@ def test_separated_estimate_requires_all_holm_wald_comparisons() -> None:
     assert result.winner_id == "candidate-a"
     assert result.decision == "superior"
     assert result.algorithm == "holm-wald-one-sided-v1"
+    assert result.comparisons[0].standard_error_upper_bound > 0.0
+    assert not hasattr(result.comparisons[0], "standard_error")
     assert all(
         comparison.null_rejected
         for comparison in result.comparisons

@@ -27,7 +27,7 @@ pub struct HolmWaldComparison {
     /// Binary64 summary of the candidate-minus-comparator contrast.
     pub estimate_difference: f64,
     /// Conservative upper standard-error bound from the exact dyadic variance.
-    pub standard_error: f64,
+    pub standard_error_upper_bound: f64,
     /// Conservative upper bound for the one-sided standard-normal p-value.
     pub p_value_upper_bound: f64,
     /// Whether Holm's step-down procedure rejected this ordered null.
@@ -345,7 +345,7 @@ pub fn holm_wald_superiority(
             let exact_variance = &exact_covariance.integers[candidate_index * n + candidate_index]
                 + &exact_covariance.integers[comparator_index * n + comparator_index]
                 - (&exact_covariance.integers[candidate_index * n + comparator_index] << 1);
-            let Some((standard_error, z_lower)) = conservative_wald_inputs(
+            let Some((standard_error_upper_bound, z_lower)) = conservative_wald_inputs(
                 &exact_difference,
                 exact_estimates.exponent,
                 &exact_variance,
@@ -358,7 +358,7 @@ pub fn holm_wald_superiority(
                 candidate_index,
                 comparator_index,
                 estimate_difference,
-                standard_error,
+                standard_error_upper_bound,
                 p_value_upper_bound,
                 null_rejected: false,
             });
