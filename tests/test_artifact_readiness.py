@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import copy
+from contextlib import contextmanager
 import hashlib
 import importlib.util
 import json
@@ -198,7 +199,16 @@ def test_a09_startup_invalidation(installation, field, value, reason):
     assert _verify(installation, startup=startup).reason_code == reason
 
 
-def test_a09_in_place_mutation_during_hash(installation, monkeypatch):
+@pytest.mark.parametrize("reverse", [False, True])
+def test_a09_in_place_mutation_during_hash(installation, monkeypatch, reverse):
+    original_scandir = MODULE.os.scandir
+    @contextmanager
+    def ordered_scandir(fd):
+        with original_scandir(fd) as entries:
+            yield iter(sorted(entries, key=lambda entry: entry.name, reverse=reverse))
+    monkeypatch.setattr(MODULE.os, "scandir", ordered_scandir)
+    monkeypatch.setattr(MODULE, "_safe_io_available", lambda: True)
+    paths = {p.stat().st_ino: p for p in (installation[0] / "fast_mlsirm").iterdir()}
     original = MODULE.os.read
     changed = False
     def mutate(fd, size):
@@ -206,7 +216,7 @@ def test_a09_in_place_mutation_during_hash(installation, monkeypatch):
         data = original(fd, size)
         if data and not changed:
             changed = True
-            path = installation[0] / "fast_mlsirm/__init__.py"
+            path = paths[os.fstat(fd).st_ino]
             with path.open("ab") as stream:
                 stream.write(b"changed")
         return data
