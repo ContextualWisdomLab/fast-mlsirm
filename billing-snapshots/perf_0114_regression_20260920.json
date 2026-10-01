@@ -48,8 +48,13 @@
   "reproduce_commands": [
     "git worktree add --detach /tmp/fmls-v113-perf v0.11.3",
     "git worktree add --detach /tmp/fmls-v114-perf v0.11.4",
-    "/usr/bin/time -lp env CARGO_BUILD_JOBS=2 cargo test --release -p mlsirm-core --test two_tier_reduces_to_bifactor -- --exact two_tier_with_single_primary_matches_bifactor_fit",
-    "for i in 1 2 3; do /usr/bin/time -lp env CARGO_BUILD_JOBS=2 cargo test --release -p mlsirm-core --test two_tier_reduces_to_bifactor -- --exact two_tier_with_single_primary_matches_bifactor_fit; done"
+    "git worktree add --detach /tmp/fmls-fix-perf 8bd3eed79852bd4cbaef52d01a0785e5a9e7ac69",
+    "(cd /tmp/fmls-v113-perf && /usr/bin/time -lp env CARGO_BUILD_JOBS=2 cargo test --release -p mlsirm-core --test two_tier_reduces_to_bifactor -- --exact two_tier_with_single_primary_matches_bifactor_fit)",
+    "(cd /tmp/fmls-v113-perf && for i in 1 2 3; do /usr/bin/time -lp env CARGO_BUILD_JOBS=2 cargo test --release -p mlsirm-core --test two_tier_reduces_to_bifactor -- --exact two_tier_with_single_primary_matches_bifactor_fit; done)",
+    "(cd /tmp/fmls-v114-perf && /usr/bin/time -lp env CARGO_BUILD_JOBS=2 cargo test --release -p mlsirm-core --test two_tier_reduces_to_bifactor -- --exact two_tier_with_single_primary_matches_bifactor_fit)",
+    "(cd /tmp/fmls-v114-perf && for i in 1 2 3; do /usr/bin/time -lp env CARGO_BUILD_JOBS=2 cargo test --release -p mlsirm-core --test two_tier_reduces_to_bifactor -- --exact two_tier_with_single_primary_matches_bifactor_fit; done)",
+    "(cd /tmp/fmls-fix-perf && /usr/bin/time -lp env CARGO_BUILD_JOBS=2 cargo test --release -p mlsirm-core --test two_tier_reduces_to_bifactor -- --exact two_tier_with_single_primary_matches_bifactor_fit)",
+    "(cd /tmp/fmls-fix-perf && for i in 1 2 3; do /usr/bin/time -lp env CARGO_BUILD_JOBS=2 cargo test --release -p mlsirm-core --test two_tier_reduces_to_bifactor -- --exact two_tier_with_single_primary_matches_bifactor_fit; done)"
   ],
   "provenance": {
     "v0.11.3": {
