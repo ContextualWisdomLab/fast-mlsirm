@@ -368,6 +368,27 @@ fn fixed_item_return_contract(case: usize, v: &super::Validated, params: &[super
         assert_eq!(direct_f,0.0);
         assert!(native_g.iter().all(|x| x.is_finite() && *x==0.0));
         assert_eq!(returned,packed);
+        for (name, row) in [("zero_weights",vec![0.0,0.0,0.0]),
+            ("mixed_supported_weight",vec![1.0,0.0,0.0]),
+            ("positive_impossible_weight",vec![0.0,1.0,0.0])] {
+            let counts = vec![row];
+            let (f,g) = item_neg_ll_grad(&packed,&free,false,&[1.0],&[0.0],1,1,1,&counts,3);
+            let independent = fixed_item_direct_objective(&packed,&free,false,&[1.0],&[0.0],1,1,&counts);
+            let ret = m_step_item(packed.to_vec(),&free,false,&[1.0],&[0.0],1,1,1,&counts,3,1e-8,1);
+            if name == "positive_impossible_weight" {
+                assert!(f.is_infinite() && f.is_sign_positive());
+                assert!(independent.is_infinite() && independent.is_sign_positive());
+            } else { assert!(f.is_nan() && independent.is_finite()); }
+            assert_eq!(ret,packed);
+            println!("{}",json!({"event":"zero_weight_boundary_case","case":name,
+                "packed":packed,"coords":[1.0],"counts":counts,
+                "native_objective_is_nan":f.is_nan(),"native_objective_positive_inf":f==f64::INFINITY,
+                "independent_objective_finite":independent.is_finite(),
+                "independent_objective":if independent.is_finite(){Some(independent)}else{None},
+                "gradient_finite":g.iter().all(|x|x.is_finite()),"returned_unchanged":true,
+                "counts_domain":"finite nonnegative; malformed private counts not executed",
+                "fit_executed":false,"convergence":"not applicable"}));
+        }
         println!("{}",json!({"event":"zero_count_legal_zero_probability_observation",
             "packed":packed,"coords":[1.0],"counts":zero,"native_objective_finite":native_f.is_finite(),
             "native_objective_is_nan":native_f.is_nan(),"direct_zero_count_objective":direct_f,
