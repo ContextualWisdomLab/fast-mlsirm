@@ -21,3 +21,12 @@
   covariate score is zero with positive Fisher information at its generating
   coefficient on the production `(group, item, theta-node, latent-node)` axes.
   Standard floating-point forward-error bounds replace empirical tolerances.
+- The existing 600-person, 20-item known-parameter response-simulation sentinel
+  now runs at 121 quadrature nodes and gates discrimination, item-intercept
+  easiness, and standardized-trait RMSE against their least-squares constant
+  null predictors.
+  Together with the direct reduction and Rust/NumPy parity fixtures above, it
+  asserts one attempted fit with zero convergence failures, gates item bias
+  against the structural zero-parameter null, and replaces seed-fitted
+  correlation and bias thresholds with model-based recovery skill plus exact
+  repeated-fit equality for selected public outputs.
