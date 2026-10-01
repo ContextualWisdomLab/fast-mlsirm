@@ -657,6 +657,51 @@ def _accumulate(
             mbar[s] += np.einsum("pi,piqx->iqx", miss, dsel, optimize=True)
 
 
+def _multilevel_second_moment(
+    cluster_post: np.ndarray,
+    u_nodes: np.ndarray,
+) -> float:
+    """Return the posterior-weighted multilevel-node second moment."""
+    return float(np.vdot(cluster_post.sum(axis=0), u_nodes**2))
+
+
+def _covariate_score_information(
+    residual: np.ndarray,
+    expected_count: np.ndarray,
+    probability: np.ndarray,
+    covariate: np.ndarray,
+) -> tuple[float, float]:
+    """Return the covariate score and Fisher information without broadcasts."""
+    score = float(np.vdot(residual.sum(axis=(2, 3)), covariate))
+    group_item_information = np.einsum(
+        "giqx,giqx,giqx->gi",
+        expected_count,
+        probability,
+        1.0 - probability,
+        optimize=False,
+    )
+    information = float(
+        np.vdot(
+            group_item_information,
+            covariate * covariate,
+        )
+    )
+    return score, information
+
+
+def _weighted_population_moments(
+    weights: np.ndarray,
+    nodes: np.ndarray,
+) -> tuple[float, float, float]:
+    """Return total weight and first two raw moments without node broadcasts."""
+    node_weights = weights.sum(axis=1)
+    return (
+        float(node_weights.sum()),
+        float(np.vdot(node_weights, nodes)),
+        float(np.vdot(node_weights, nodes**2)),
+    )
+
+
 def _item_q(
     n_i: np.ndarray,
     r_i: np.ndarray,
@@ -955,8 +1000,7 @@ def fit_marginal_numpy(
             lse = np.squeeze(mc, axis=1) + np.log(np.exp(log_cluster - mc).sum(axis=1))
             loglik = float(lse.sum())
             cluster_post = np.exp(log_cluster - lse[:, None])  # (C, V)
-            # Reduce over clusters before weighting to avoid a second (C, V) array.
-            sum_e_v2 = float(np.vdot(cluster_post.sum(axis=0), ctx["u_nodes"] ** 2))
+            sum_e_v2 = _multilevel_second_moment(cluster_post, ctx["u_nodes"])
             if zero_inflation:
                 zero_resp = (cluster_post[cluster_id] * (1.0 - w_irt_v)).sum(axis=1)
             for v in range(n_ctx):
@@ -1046,7 +1090,7 @@ def fit_marginal_numpy(
                         deta_z = x_grid  # (Nx, K)
                     else:
                         diff = x_grid - zeta_i[None, :]
-                        dist = np.sqrt(\n                            eps_distance + np.einsum("ij,ij->i", diff, diff)\n                        )
+                        dist = np.sqrt(eps_distance + np.einsum("ij,ij->i", diff, diff))
                         deta_z = gamma * diff / dist[:, None]  # (Nx, K)
                     g_zeta = (
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
@@ -1173,9 +1217,12 @@ def fit_marginal_numpy(
             eta = eta_delta(delta)
             prob = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
             resid = rbar - n_all * prob
-            # Reduce node axes before weighting to avoid broadcast work arrays.
-            grad_d = float(np.vdot(resid.sum(axis=(2, 3)), w_cov))
-            info_d = float(np.vdot((n_all * prob * (1.0 - prob)).sum(axis=(2, 3)), w_cov * w_cov))
+            grad_d, info_d = _covariate_score_information(
+                resid,
+                n_all,
+                prob,
+                w_cov,
+            )
             if info_d > 0.0:
                 direction = grad_d / info_d
 
@@ -1202,12 +1249,8 @@ def fit_marginal_numpy(
                 for d in range(n_dims):
                     theta_g = mu[g, d] + sigma[g, d] * t_nodes  # (Qt,)
                     w = nbar[g, d]  # (Qt, Nx)
-                    w_sum_ax = w.sum(axis=1)
-                    w_sum = float(w_sum_ax.sum())
+                    w_sum, m1, m2 = _weighted_population_moments(w, theta_g)
                     if w_sum > 1e-10:
-                        # Reduce respondents before weighting to avoid (Qt, Nx) work arrays.
-                        m1 = float(np.vdot(w_sum_ax, theta_g))
-                        m2 = float(np.vdot(w_sum_ax, theta_g**2))
                         mean = m1 / w_sum
                         var = max(m2 / w_sum - mean * mean, 0.01)
                         mu[g, d] = mean

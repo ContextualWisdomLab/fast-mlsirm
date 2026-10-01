@@ -15,6 +15,8 @@ def test_marginal_source_avoids_unmeasured_numeric_speedup_claims() -> None:
 
     assert re.search(r"~\d+(?:\.\d+)?x speedup", source, re.IGNORECASE) is None
 
+
+
 def test_marginal_distance_keeps_allocation_reduced_reduction() -> None:
     """Bind the production distance path to the allocation-reduced reduction."""
     source = MARGINAL_SOURCE.read_text(encoding="utf-8")
