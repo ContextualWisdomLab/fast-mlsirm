@@ -127,9 +127,12 @@ def test_reference_benchmark_records_incomplete_attempt(tmp_path, monkeypatch) -
     spec = importlib.util.spec_from_file_location("reference_benchmark_attempt", script)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "_execution_identity", lambda path: {
+        "head": "unit-test-only", "dirty": False, "core_sha256": "unit-test-only",
+    })
     output = tmp_path / "attempt.json"
     monkeypatch.setattr(sys, "argv", [str(script), "--persons", "64", "--q-primary", "7",
-        "--q-specific", "7", "--max-iter", "1", "--tol", "1e-6", "--n-starts", "1",
+        "--q-specific", "7", "--max-iter", "1000", "--tol", "1e-6", "--n-starts", "1",
         "--seed", "20260930", "--gpu-memory-budget-bytes", "268435456",
         "--device", "both", "--out", str(output)])
     def stopped(*args, **kwargs):
@@ -141,6 +144,172 @@ def test_reference_benchmark_records_incomplete_attempt(tmp_path, monkeypatch) -
     assert receipt["status"] == "running" and receipt["active_device"] == "cpu"
     assert receipt["runs"] == {} and "exit_status" not in receipt
     assert receipt["input_sha256"] and receipt["core_sha256"]
+
+
+@pytest.fixture
+def reference_report_case(tmp_path, monkeypatch):
+    """보고서 경계용 stub이며 실제 CPU/GPU 실행 증거가 아니다."""
+    import hashlib
+    import importlib.util
+    import json
+    import sys
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    script = Path(__file__).parents[1] / "scripts/benchmark_two_tier_reference_gpu.py"
+    spec = importlib.util.spec_from_file_location("reference_report_contract", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    output = tmp_path / "report.json"
+    monkeypatch.setattr(sys, "argv", [str(script), "--persons", "64", "--q-primary", "7",
+        "--q-specific", "7", "--max-iter", "1000", "--tol", "1e-6", "--n-starts", "1",
+        "--seed", "20260930", "--gpu-memory-budget-bytes", "268435456",
+        "--device", "both", "--out", str(output)])
+    monkeypatch.setattr(module, "_execution_identity", lambda path: {
+        "head": "unit-test-only", "dirty": False, "core_sha256": "unit-test-only",
+    }, raising=False)
+    y, ap, asp, sm, threshold, digest = module._continuous_six_latent_fixture(
+        64, np.zeros(6), np.ones(6), 20260930)
+    calls = []
+    def stub_fit(*args, device, **kwargs):
+        calls.append(device)
+        return SimpleNamespace(
+            a_primary=ap + (ap != 0) * 0.25, a_specific=asp + 0.5,
+            threshold=threshold + 0.125, phi=np.eye(2),
+            theta_p_eap=np.zeros((64, 2)), theta_p_sd=np.ones((64, 2)),
+            category_counts=np.stack([(y == k).sum(axis=0) for k in range(4)], axis=1),
+            n_parameters=87, loglik_trace=[-101.0, -100.0], converged=True,
+            n_iter=2, termination_reason="tolerance_met", final_loglik_change=1.0,
+            backend=device, gpu_adapter_name="UNIT TEST ONLY" if device == "gpu" else None,
+            gpu_adapter_backend="UNIT TEST ONLY" if device == "gpu" else None,
+        )
+    monkeypatch.setattr(module, "fit_two_tier_grm", stub_fit)
+    return module, output, stub_fit, calls
+
+
+def test_reference_report_separates_truth_from_backend_delta(reference_report_case):
+    import json
+    module, output, _, calls = reference_report_case
+    assert module.main() == 0
+    receipt = json.loads(output.read_text())
+    assert calls == ["cpu", "gpu"]
+    assert receipt["truth"]["a_specific"]["values"] == [1.1, 0.8, 1.4, 1.0] * 4
+    assert receipt["truth"]["threshold"]["values"] == [[1.2, 0.0, -1.2]] * 16
+    assert receipt["fixture_contract"]["matched"] is True
+    assert receipt["backend_parity"]["passed"] is True
+    assert receipt["max_absolute_delta"]["a_specific"] == 0.0
+    assert receipt["runs"]["gpu"]["truth_error"]["a_specific"]["max_abs_diff"] == 0.5
+    assert receipt["runs"]["gpu"]["truth_error"]["a_primary"]["signed_residual"] == pytest.approx([0.25] * 23)
+    assert receipt["truth_recovery_acceptance"] == "not_evaluated"
+
+
+@pytest.mark.parametrize("failure", ["exception", "cpu_fallback", "missing_adapter", "nonfinite", "nonconverged"])
+def test_reference_report_preserves_cpu_on_gpu_failure(reference_report_case, monkeypatch, failure):
+    import json
+    module, output, stub_fit, calls = reference_report_case
+    def failing_gpu(*args, device, **kwargs):
+        fit = stub_fit(*args, device=device, **kwargs)
+        if device == "gpu":
+            if failure == "exception":
+                raise RuntimeError("unit-test GPU dispatch failure")
+            if failure == "cpu_fallback":
+                fit.backend = "cpu"
+            if failure == "missing_adapter":
+                fit.gpu_adapter_name = None
+            if failure == "nonfinite":
+                fit.a_specific[0] = np.nan
+            if failure == "nonconverged":
+                fit.converged = False
+                fit.termination_reason = "max_iter_reached"
+        return fit
+    monkeypatch.setattr(module, "fit_two_tier_grm", failing_gpu)
+    assert module.main() == 1
+    receipt = json.loads(output.read_text())
+    assert calls == ["cpu", "gpu"]
+    assert receipt["runs"]["cpu"]["converged"] is True
+    assert receipt["status"] == "failed"
+    assert receipt["truth_recovery_acceptance"] == "not_evaluated"
+    assert receipt["runs"]["gpu"].get("error_type") or not receipt["runs"]["gpu"]["converged"]
+
+
+def test_reference_report_rejects_changed_fixture_before_fit(reference_report_case, monkeypatch):
+    import json
+    module, output, _, calls = reference_report_case
+    generator = module._continuous_six_latent_fixture
+    def changed(*args):
+        y, ap, asp, sm, threshold, digest = generator(*args)
+        return y, ap, asp, sm, threshold, "changed-response-digest"
+    monkeypatch.setattr(module, "_continuous_six_latent_fixture", changed)
+    assert module.main() == 1
+    receipt = json.loads(output.read_text())
+    assert calls == []
+    assert receipt["status"] == "failed" and receipt["runs"] == {}
+    assert receipt["preflight_error"]["error_type"] == "ValueError"
+
+
+@pytest.mark.parametrize("mismatch", [None, "source_head", "source_tree", "core_sha256", "gpu_feature", "dirty", "not_native", "matched"])
+def test_reference_report_build_identity_fails_closed(tmp_path, monkeypatch, mismatch):
+    import hashlib
+    import importlib.util
+    import json
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    script = Path(__file__).parents[1] / "scripts/benchmark_two_tier_reference_gpu.py"
+    spec = importlib.util.spec_from_file_location("reference_build_contract", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    core = tmp_path / ("core.py" if mismatch == "not_native" else "core.so")
+    core.write_bytes(b"unit-test-only-not-a-real-extension")
+    monkeypatch.setattr(module, "_core", SimpleNamespace(__file__=str(core), __name__="unit-test-only"))
+    def git(args, **kwargs):
+        if args[-1] == "HEAD":
+            return "a" * 40
+        if args[-1] == "HEAD^{tree}":
+            return "b" * 40
+        return " M changed" if mismatch == "dirty" else ""
+    monkeypatch.setattr(module.subprocess, "check_output", git)
+    receipt = dict(source_head="a"*40, source_tree="b"*40,
+        core_sha256=hashlib.sha256(core.read_bytes()).hexdigest(), gpu_feature=True,
+        build_command="unit-test build only", rustc_version="unit-test", cargo_version="unit-test")
+    if mismatch in receipt:
+        receipt[mismatch] = "wrong"
+    path = tmp_path / "build.json"
+    path.write_text(json.dumps(receipt))
+    if mismatch == "matched":
+        identity = module._execution_identity(path)
+        assert identity["core_sha256"] == receipt["core_sha256"]
+        assert identity["core_import_path"] == str(core.resolve())
+        assert identity["build_provenance"] == "supplied receipt matched; not independent attestation"
+    else:
+        with pytest.raises(ValueError):
+            module._execution_identity(None if mismatch is None else path)
+
+
+def test_reference_report_checks_clean_source_before_creating_output(reference_report_case, monkeypatch):
+    module, output, _, calls = reference_report_case
+    def identity(path):
+        if output.exists():
+            raise ValueError("보고서 생성으로 clean source가 dirty가 됐습니다.")
+        return dict(head="unit-test-only", dirty=False, core_sha256="unit-test-only")
+    monkeypatch.setattr(module, "_execution_identity", identity)
+    assert module.main() == 0
+    assert calls == ["cpu", "gpu"]
+
+
+def test_reference_report_pair_parity_is_not_truth_acceptance(reference_report_case, monkeypatch):
+    import json
+    module, output, stub_fit, _ = reference_report_case
+    def divergent(*args, device, **kwargs):
+        fit = stub_fit(*args, device=device, **kwargs)
+        if device == "gpu":
+            fit.a_specific = fit.a_specific + 0.01
+        return fit
+    monkeypatch.setattr(module, "fit_two_tier_grm", divergent)
+    assert module.main() == 1
+    receipt = json.loads(output.read_text())
+    assert receipt["backend_parity"]["passed"] is False
+    assert receipt["truth_recovery_acceptance"] == "not_evaluated"
 
 
 def test_primary_correlation_validation() -> None:
