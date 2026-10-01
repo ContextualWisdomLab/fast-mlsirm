@@ -267,6 +267,63 @@ fn tiny_data() -> (Vec<usize>, usize) {
     (y, n_persons)
 }
 
+/// Cai (2010, pp. 608–609, Appendices A/B)의 zero expected-count 기여와
+/// 기존 strictly decreasing threshold candidate 경계를 actual objective에서 검사한다.
+/// 참고문헌: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. *Psychometrika, 75*(4), 581–612.
+/// https://doi.org/10.1007/s11336-010-9178-0.
+#[test]
+fn production_zero_weight_objective_preserves_candidate_domain() {
+    use super::{item_neg_ll_grad, m_step_item};
+    use serde_json::json;
+    use sha2::Digest;
+    let evaluate = |packed: &[f64], counts: &[Vec<f64>]| {
+        item_neg_ll_grad(packed,&[0],false,&[1.0],&[0.0],1,1,1,counts,3)
+    };
+    println!("{}",json!({"event":"source",
+        "execution_head":std::env::var("G1_EXECUTION_HEAD").unwrap_or_else(|_|"unknown".into()),
+        "numerical_source_sha256":format!("{:x}",sha2::Sha256::digest(include_bytes!("../../crates/mlsirm-core/src/two_tier_grm.rs"))),
+        "test_source_sha256":format!("{:x}",sha2::Sha256::digest(include_bytes!("two_tier_grm_tests.rs"))),
+        "gpu":false,"fit":false}));
+    for (name, packed) in [
+        ("equal",vec![1.0,0.0,0.0]),("unordered",vec![1.0,-0.2,0.2]),
+        ("nan_threshold",vec![1.0,f64::NAN,0.0]),
+        ("positive_inf_threshold",vec![1.0,f64::INFINITY,0.0]),
+        ("negative_inf_threshold",vec![1.0,0.0,f64::NEG_INFINITY]),
+    ] {
+        let counts=vec![vec![0.0;3]];
+        let (objective,gradient)=evaluate(&packed,&counts);
+        let returned=m_step_item(packed.clone(),&[0],false,&[1.0],&[0.0],1,1,1,&counts,3,1e-8,1);
+        assert!(!objective.is_finite(),"invalid candidate became finite: {name}");
+        for (a,b) in returned.iter().zip(&packed){assert_eq!(a.to_bits(),b.to_bits());}
+        println!("{}",json!({"event":"production_invalid_candidate","case":name,
+            "packed_bits":packed.iter().map(|x|x.to_bits()).collect::<Vec<_>>(),"counts":counts,
+            "objective_finite":objective.is_finite(),"objective_nan":objective.is_nan(),
+            "gradient_finite":gradient.iter().all(|x|x.is_finite()),"return_unchanged":true,
+            "candidate_role":"not an admitted model","internal_branch":"not instrumented"}));
+    }
+    let packed=[1.0,1e-18,0.0];
+    let impossible=vec![vec![0.0,1.0,0.0]];
+    let (f,g)=evaluate(&packed,&impossible);
+    assert_eq!(f,f64::INFINITY);
+    println!("{}",json!({"event":"production_positive_impossible","packed":packed,
+        "counts":impossible,"objective_positive_inf":f==f64::INFINITY,
+        "gradient_finite":g.iter().all(|x|x.is_finite())}));
+    for (name, row, expected) in [("zero",vec![0.0,0.0,0.0],0.0),
+        ("mixed_supported",vec![1.0,0.0,0.0],1.0f64.exp().ln_1p())] {
+        let counts=vec![row];
+        let (f,g)=evaluate(&packed,&counts);
+        println!("{}",json!({"event":"production_legal_zero_weight","case":name,
+            "packed":packed,"coords":[1.0],"counts":counts,"expected_objective":expected,
+            "actual_objective_finite":f.is_finite(),"actual_objective_nan":f.is_nan(),
+            "actual_objective":if f.is_finite(){Some(f)}else{None},
+            "gradient_bits":g.iter().map(|x|x.to_bits()).collect::<Vec<_>>()}));
+        assert!(f.is_finite(),"legal strict zero-weight objective must be finite: {name}");
+        assert!((f-expected).abs()<1e-12);
+    }
+    println!("production_objective_invalid_cases=5, positive_impossible=1, legal_zero_weight_cases=2, gpu=false, fit=false");
+}
+
 // 중간 범위의 직접 cumulative-logistic oracle. production helper를 호출하지 않는다.
 #[cfg(all(feature = "gpu", not(coverage)))]
 fn fixed_item_direct_objective(params: &[f64], free: &[usize], specific: bool,
@@ -378,7 +435,10 @@ fn fixed_item_return_contract(case: usize, v: &super::Validated, params: &[super
             if name == "positive_impossible_weight" {
                 assert!(f.is_infinite() && f.is_sign_positive());
                 assert!(independent.is_infinite() && independent.is_sign_positive());
-            } else { assert!(f.is_nan() && independent.is_finite()); }
+            } else {
+                assert!(f.is_finite() && independent.is_finite());
+                assert!((f-independent).abs()<1e-12);
+            }
             assert_eq!(ret,packed);
             println!("{}",json!({"event":"zero_weight_boundary_case","case":name,
                 "packed":packed,"coords":[1.0],"counts":counts,
@@ -429,7 +489,8 @@ fn fixed_item_candidate_contract() {
         let direct = if valid { Some(fixed_item_direct_objective(&packed,&free,false,
             &[1.0],&[0.0],1,1,&counts)) } else { None };
         if name.starts_with("legal_") {
-            assert!(native.is_nan() && proposed.is_finite());
+            assert!(native.is_finite() && proposed.is_finite());
+            assert!((native-proposed).abs()<1e-12);
             assert!((proposed-direct.unwrap()).abs() < 1e-12);
         } else if name == "positive_impossible" {
             assert_eq!(native,f64::INFINITY);

@@ -1618,6 +1618,9 @@ fn item_neg_ll_grad(
     let k = free.len();
     let off = k + usize::from(has_specific);
     let beta = &params[off..];
+    // legal zero-mass의 zero count만 0 기여로 처리하고 invalid 후보는 그대로 거부한다.
+    let valid_thresholds = beta.iter().all(|x| x.is_finite())
+        && beta.windows(2).all(|w| w[0] > w[1]);
     let mut ll = 0.0f64;
     let mut grad = vec![0.0f64; params.len()];
     for (node, cnt) in counts.iter().enumerate() {
@@ -1635,7 +1638,13 @@ fn item_neg_ll_grad(
             base += params[k] * ts[h];
         }
         let lp = grm_logprobs(base, beta);
-        ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+        ll += cnt.iter().zip(&lp).map(|(r, l)| {
+            if valid_thresholds && *r == 0.0 && *l == f64::NEG_INFINITY {
+                0.0
+            } else {
+                r * l
+            }
+        }).sum::<f64>();
         let (g_base, g_thr) = grm_node_gradient(base, beta, cnt);
         for (t, &dim) in free.iter().enumerate() {
             grad[t] += g_base * coords[g * n_primary + dim];
