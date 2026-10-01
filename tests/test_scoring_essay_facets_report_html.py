@@ -279,3 +279,13 @@ def test_replay_identity_mismatch_and_private_empty_renderer(
     assert report_html._identifier_list((), empty_message="Nothing declared.") == (
         '<div class="empty-state" role="status" aria-atomic="true">Nothing declared.</div>'
     )
+
+def test_export_block_user_select_all_applied_to_canonical_json(tmp_path: Path) -> None:
+    """The canonical JSON export blocks support single-click select-all."""
+    report = build_report()
+    output = tmp_path / "export.html"
+    render_essay_facets_calibration_report_html(report, output)
+    html = output.read_text(encoding="utf-8")
+
+    assert '.export-block pre { user-select: all; }' in html
+    assert '<section aria-labelledby="json-heading" class="export-block">' in html
