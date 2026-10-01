@@ -5,6 +5,22 @@ Observed at: **2026-08-25T05:20:00Z**<br>
 Protected-main basis: **`9c12eab15fb8a187b135f9be1961f0693a431c23`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
 
+## 2026-10-01 proposed marginal-reduction evidence repair
+
+Status: **Proposed in PR #2310; not protected-main authority**
+
+| Gap | Exact evidence | Owner/action | Remaining gate |
+|---|---|---|---|
+| `MARGINAL-REDUCTION-ALLOCATION-EVIDENCE-01` | PR #2310 changes three NumPy reference reductions. Exact predecessor head `d6c1f4d4bbebd4612b35b2208ebaae36736cb7e7` established Rust/NumPy estimator parity but had no executable allocation report for those expressions. | `fast-mlsirm` now exposes the three production reductions through private helpers and adds `benchmarks/benchmark_marginal_reductions.py`. The report compares the helpers with the former broadcast equations on exactly representable float64 fixtures and records every elapsed observation and Python-traced peak without publishing a universal speedup. | Exact-head hosted CI/security Checks, independent review, ordinary merge, and immutable package release. Open-PR measurements remain engineering evidence rather than released product truth. |
+
+Local pre-push evidence on Python 3.14.7 / NumPy 2.5.1 showed exact parity for
+all three reductions. Across seven recorded repetitions, traced peaks were
+1,512–1,536 versus 1,091,344–1,091,368 bytes for the multilevel second moment,
+4,198,155 versus 12,583,296 bytes for covariate score/information, and 1,184
+versus 34,416 bytes for population moments. These observations characterize
+that environment only; the executable report, not these numbers, is the
+reproducibility authority.
+
 ## 2026-09-26 proposed release-source trust repair
 
 Status: **Proposed in PR #2135; not protected-main authority**

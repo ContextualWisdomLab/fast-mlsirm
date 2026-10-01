@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from fast_mlsirm.config import FitConfig
+from fast_mlsirm.estimators import marginal
 from fast_mlsirm.fit import fit
 from fast_mlsirm.reference import fit_reference
 from tests.test_marginal_parity import _assert_close, _simulate
@@ -12,6 +13,34 @@ pytestmark = pytest.mark.skipif(
     pytest.importorskip("fast_mlsirm._core", reason="compiled core required") is None,
     reason="compiled core required",
 )
+
+
+def test_reduction_helpers_preserve_hand_derived_values() -> None:
+    """Catch any changed axis or weight in the three optimized reductions."""
+    cluster_post = np.array([[0.25, 0.75], [0.5, 0.5]])
+    u_nodes = np.array([-1.0, 2.0])
+    assert marginal._multilevel_second_moment(cluster_post, u_nodes) == 5.75
+
+    residual = np.array([[[[1.0, 2.0], [3.0, 4.0]]]])
+    expected_count = np.ones_like(residual)
+    probability = np.full_like(residual, 0.5)
+    covariate = np.array([[2.0]])
+    score, information = marginal._covariate_score_information(
+        residual,
+        expected_count,
+        probability,
+        covariate,
+    )
+    assert score == 20.0
+    assert information == 4.0
+
+    weights = np.array([[1.0, 2.0], [3.0, 4.0]])
+    nodes = np.array([10.0, 20.0])
+    assert marginal._weighted_population_moments(weights, nodes) == (
+        10.0,
+        170.0,
+        3100.0,
+    )
 
 def test_marginal_reductions_parity_evidence_multilevel() -> None:
     """Ensure optimization of multilevel reduction maintains Rust parity."""
