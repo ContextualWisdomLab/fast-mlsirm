@@ -1,0 +1,643 @@
+{
+  "execution_head": "caed17c3e38faf59312f467f4fc18bdddc4815a2",
+  "reviewed_code_head": "ea55bf1ffdf56e007df825207ec8fa4972eb7529",
+  "code_test_bytes_identical": true,
+  "scope": "postfix local q5/q7 fixed counts and representative item-helper parity only",
+  "binary": {
+    "path": "target/debug/deps/mlsirm_core-154b933da47210f2",
+    "sha256": "d8c9308fb66dd508872e14fba6c30cab913a55834a912801c0a854bec874b303",
+    "bytes": 18873168
+  },
+  "logs": {
+    "q5-counts.txt": {
+      "sha256": "646c4fc86fd673e05883fbf82c855aed2bde330e58e2c02c2046f0b4f35ece66",
+      "bytes": 8395,
+      "source_event": {
+        "event": "source",
+        "execution_head": "caed17c3e38faf59312f467f4fc18bdddc4815a2",
+        "kernel_source": "crates/mlsirm-core/src/gpu_bifactor.rs",
+        "kernel_source_sha256": "6f4cbb7ed77c33951165eb0038b2cf3ed9cd3dc3c3c71d842a58d3e2f164c532",
+        "numerical_source": "crates/mlsirm-core/src/two_tier_grm.rs",
+        "numerical_source_sha256": "03ec39b9f7d411f44a5df9d97ce61c9d6d12d3bc1e74cef49037b429f9612923",
+        "test_source": "tests/unit/two_tier_grm_tests.rs",
+        "test_source_sha256": "438a767b494f916b6d66ac1e1a2a8a661b464971871322e8bf505300d6bdfb20"
+      },
+      "rejection_event": {
+        "cpu_mass_loss_likelihood_finite": false,
+        "event": "counts_rejections",
+        "finite_input_overflow_mass_loss_rejected": true,
+        "fit_executed": false,
+        "insufficient_budget_bytes": 72947,
+        "insufficient_budget_rejected": true,
+        "m_step_executed": false,
+        "mass_loss_error": "nonfinite GPU-derived f64 likelihood",
+        "mass_loss_responses_all_zero": true,
+        "mass_loss_thresholds": [
+          1e+308,
+          0.0,
+          -1e+308
+        ],
+        "validation_case_names": [
+          "observed_category",
+          "response_shape",
+          "mask_shape",
+          "primary_map_shape",
+          "specific_map_range"
+        ],
+        "validation_cases": 5,
+        "validation_rejected": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    "q7-counts.txt": {
+      "sha256": "d72306b339f3edf048c1e24bf5a86951e815723efb34db379ba51404a73a654d",
+      "bytes": 8400,
+      "source_event": {
+        "event": "source",
+        "execution_head": "caed17c3e38faf59312f467f4fc18bdddc4815a2",
+        "kernel_source": "crates/mlsirm-core/src/gpu_bifactor.rs",
+        "kernel_source_sha256": "6f4cbb7ed77c33951165eb0038b2cf3ed9cd3dc3c3c71d842a58d3e2f164c532",
+        "numerical_source": "crates/mlsirm-core/src/two_tier_grm.rs",
+        "numerical_source_sha256": "03ec39b9f7d411f44a5df9d97ce61c9d6d12d3bc1e74cef49037b429f9612923",
+        "test_source": "tests/unit/two_tier_grm_tests.rs",
+        "test_source_sha256": "438a767b494f916b6d66ac1e1a2a8a661b464971871322e8bf505300d6bdfb20"
+      },
+      "rejection_event": {
+        "cpu_mass_loss_likelihood_finite": false,
+        "event": "counts_rejections",
+        "finite_input_overflow_mass_loss_rejected": true,
+        "fit_executed": false,
+        "insufficient_budget_bytes": 199107,
+        "insufficient_budget_rejected": true,
+        "m_step_executed": false,
+        "mass_loss_error": "nonfinite GPU-derived f64 likelihood",
+        "mass_loss_responses_all_zero": true,
+        "mass_loss_thresholds": [
+          1e+308,
+          0.0,
+          -1e+308
+        ],
+        "validation_case_names": [
+          "observed_category",
+          "response_shape",
+          "mask_shape",
+          "primary_map_shape",
+          "specific_map_range"
+        ],
+        "validation_cases": 5,
+        "validation_rejected": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    "q5-item.txt": {
+      "sha256": "570363a02bf96c8f5139c85bf9d6b2e60274a77208fc43dad27823df7f97a8f3",
+      "bytes": 42113,
+      "source_event": {
+        "event": "source",
+        "execution_head": "caed17c3e38faf59312f467f4fc18bdddc4815a2",
+        "kernel_source": "crates/mlsirm-core/src/gpu_bifactor.rs",
+        "kernel_source_sha256": "6f4cbb7ed77c33951165eb0038b2cf3ed9cd3dc3c3c71d842a58d3e2f164c532",
+        "numerical_source": "crates/mlsirm-core/src/two_tier_grm.rs",
+        "numerical_source_sha256": "03ec39b9f7d411f44a5df9d97ce61c9d6d12d3bc1e74cef49037b429f9612923",
+        "test_source": "tests/unit/two_tier_grm_tests.rs",
+        "test_source_sha256": "438a767b494f916b6d66ac1e1a2a8a661b464971871322e8bf505300d6bdfb20"
+      },
+      "rejection_event": {
+        "cpu_mass_loss_likelihood_finite": false,
+        "event": "counts_rejections",
+        "finite_input_overflow_mass_loss_rejected": true,
+        "fit_executed": false,
+        "insufficient_budget_bytes": 72947,
+        "insufficient_budget_rejected": true,
+        "m_step_executed": false,
+        "mass_loss_error": "nonfinite GPU-derived f64 likelihood",
+        "mass_loss_responses_all_zero": true,
+        "mass_loss_thresholds": [
+          1e+308,
+          0.0,
+          -1e+308
+        ],
+        "validation_case_names": [
+          "observed_category",
+          "response_shape",
+          "mask_shape",
+          "primary_map_shape",
+          "specific_map_range"
+        ],
+        "validation_cases": 5,
+        "validation_rejected": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    "q7-item.txt": {
+      "sha256": "643d135056e5b5230f8c205eace89d6da590821bc5f85cf2576fc508b1e827d9",
+      "bytes": 83467,
+      "source_event": {
+        "event": "source",
+        "execution_head": "caed17c3e38faf59312f467f4fc18bdddc4815a2",
+        "kernel_source": "crates/mlsirm-core/src/gpu_bifactor.rs",
+        "kernel_source_sha256": "6f4cbb7ed77c33951165eb0038b2cf3ed9cd3dc3c3c71d842a58d3e2f164c532",
+        "numerical_source": "crates/mlsirm-core/src/two_tier_grm.rs",
+        "numerical_source_sha256": "03ec39b9f7d411f44a5df9d97ce61c9d6d12d3bc1e74cef49037b429f9612923",
+        "test_source": "tests/unit/two_tier_grm_tests.rs",
+        "test_source_sha256": "438a767b494f916b6d66ac1e1a2a8a661b464971871322e8bf505300d6bdfb20"
+      },
+      "rejection_event": {
+        "cpu_mass_loss_likelihood_finite": false,
+        "event": "counts_rejections",
+        "finite_input_overflow_mass_loss_rejected": true,
+        "fit_executed": false,
+        "insufficient_budget_bytes": 199107,
+        "insufficient_budget_rejected": true,
+        "m_step_executed": false,
+        "mass_loss_error": "nonfinite GPU-derived f64 likelihood",
+        "mass_loss_responses_all_zero": true,
+        "mass_loss_thresholds": [
+          1e+308,
+          0.0,
+          -1e+308
+        ],
+        "validation_case_names": [
+          "observed_category",
+          "response_shape",
+          "mask_shape",
+          "primary_map_shape",
+          "specific_map_range"
+        ],
+        "validation_cases": 5,
+        "validation_rejected": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    }
+  },
+  "count_summaries": [
+    {
+      "log": "q5-counts.txt",
+      "case": 0,
+      "input_sha256": "7a058e0df3ec6e95bde08c52bab725b47176658cb707d0e8c8691147cfafc875",
+      "fresh_input_sha256": "880c465ffb246c916e45d416f7b293ddb49ba2834b62f0e0dd5428555679203d",
+      "gh_coords_prior_sha256": "8a1b6f1aa9a9971c4faf273b70e4358e52cd261e61681ab4f3649026eb33e0af",
+      "counts_max_abs_delta": 0,
+      "cross_bits_equal": true,
+      "likelihood_bits_equal": true,
+      "mass_residual": 3.552713678800501e-15,
+      "short_batch_budget_bytes": 89876,
+      "host_source_estimate_bytes": 1066384,
+      "m_step_executed": false
+    },
+    {
+      "log": "q5-counts.txt",
+      "case": 1,
+      "input_sha256": "0bd1772a4c5d4b13a66c5e9ce0c8d55b15c9f0b788b27b1fd3242bd3a8d6763c",
+      "fresh_input_sha256": "d07e68a898eadd16ee8df79a17af2f2ae45f35e7a17f19cc10b2907a3098ce9e",
+      "gh_coords_prior_sha256": "8a1b6f1aa9a9971c4faf273b70e4358e52cd261e61681ab4f3649026eb33e0af",
+      "counts_max_abs_delta": 0,
+      "cross_bits_equal": true,
+      "likelihood_bits_equal": true,
+      "mass_residual": 2.220446049250313e-15,
+      "short_batch_budget_bytes": 83468,
+      "host_source_estimate_bytes": 979984,
+      "m_step_executed": false
+    },
+    {
+      "log": "q5-counts.txt",
+      "case": 2,
+      "input_sha256": "e7deaac3d8ba4510c10582815e7ab9666e882c63931e63af1e2604b551f93103",
+      "fresh_input_sha256": "a7065699e034aa61dc06e3f66ccaf75662141fc8fc9dc353bddcc222f2eb1973",
+      "gh_coords_prior_sha256": "9f66edccdb7b18cc24a8fbab5aba2ffe425b917123f21deddde8635b0242b502",
+      "counts_max_abs_delta": 0,
+      "cross_bits_equal": true,
+      "likelihood_bits_equal": true,
+      "mass_residual": 1.5543122344752192e-15,
+      "short_batch_budget_bytes": 3292,
+      "host_source_estimate_bytes": 103824,
+      "m_step_executed": false
+    },
+    {
+      "log": "q7-counts.txt",
+      "case": 0,
+      "input_sha256": "c235696801013dcbf540fcb6472e141acb220a11e910f4e9cdbb0e24303c2caa",
+      "fresh_input_sha256": "d89b7dd8d826cea85b32504f5a50d3f9a2e44f847fe81d0ea972f117cbf9283d",
+      "gh_coords_prior_sha256": "ef87d5c23956d1afcdd57d43f6929e94ac15edc1c8d44c54156ea0d292dd4a15",
+      "counts_max_abs_delta": 0,
+      "cross_bits_equal": true,
+      "likelihood_bits_equal": true,
+      "mass_residual": 4.6629367034256575e-15,
+      "short_batch_budget_bytes": 244708,
+      "host_source_estimate_bytes": 2802576,
+      "m_step_executed": false
+    },
+    {
+      "log": "q7-counts.txt",
+      "case": 1,
+      "input_sha256": "a1cf74b2d23d84214d1982d0b6b3f6c438ee8f6d0a4f020e2c1eff515a728f47",
+      "fresh_input_sha256": "72e9d9cbad5bf8b4d72f5d2ea2b2e0142701bb68c4ae18dffcb7f8ed03476c92",
+      "gh_coords_prior_sha256": "ef87d5c23956d1afcdd57d43f6929e94ac15edc1c8d44c54156ea0d292dd4a15",
+      "counts_max_abs_delta": 0,
+      "cross_bits_equal": true,
+      "likelihood_bits_equal": true,
+      "mass_residual": 3.219646771412954e-15,
+      "short_batch_budget_bytes": 225884,
+      "host_source_estimate_bytes": 2548560,
+      "m_step_executed": false
+    },
+    {
+      "log": "q7-counts.txt",
+      "case": 2,
+      "input_sha256": "e160db6b02c9f61b49a78da5510325c6c5d6a9311c605f1dd66f380f4f8bde62",
+      "fresh_input_sha256": "51c0e6540e9a9467f68c4a03de6b70555e60dab08bc3f031bc8139faa1b6bdbf",
+      "gh_coords_prior_sha256": "fc47ca22661ded94c65fcd47b042ae80304e6e0ccfbf9ee61a42eec27dc21743",
+      "counts_max_abs_delta": 0,
+      "cross_bits_equal": true,
+      "likelihood_bits_equal": true,
+      "mass_residual": 1.5543122344752192e-15,
+      "short_batch_budget_bytes": 4444,
+      "host_source_estimate_bytes": 118160,
+      "m_step_executed": false
+    },
+    {
+      "log": "q5-item.txt",
+      "case": 0,
+      "input_sha256": "7a058e0df3ec6e95bde08c52bab725b47176658cb707d0e8c8691147cfafc875",
+      "fresh_input_sha256": "880c465ffb246c916e45d416f7b293ddb49ba2834b62f0e0dd5428555679203d",
+      "gh_coords_prior_sha256": "8a1b6f1aa9a9971c4faf273b70e4358e52cd261e61681ab4f3649026eb33e0af",
+      "counts_max_abs_delta": 0,
+      "cross_bits_equal": true,
+      "likelihood_bits_equal": true,
+      "mass_residual": 3.552713678800501e-15,
+      "short_batch_budget_bytes": 89876,
+      "host_source_estimate_bytes": 1066384,
+      "m_step_executed": true
+    },
+    {
+      "log": "q5-item.txt",
+      "case": 1,
+      "input_sha256": "0bd1772a4c5d4b13a66c5e9ce0c8d55b15c9f0b788b27b1fd3242bd3a8d6763c",
+      "fresh_input_sha256": "d07e68a898eadd16ee8df79a17af2f2ae45f35e7a17f19cc10b2907a3098ce9e",
+      "gh_coords_prior_sha256": "8a1b6f1aa9a9971c4faf273b70e4358e52cd261e61681ab4f3649026eb33e0af",
+      "counts_max_abs_delta": 0,
+      "cross_bits_equal": true,
+      "likelihood_bits_equal": true,
+      "mass_residual": 2.220446049250313e-15,
+      "short_batch_budget_bytes": 83468,
+      "host_source_estimate_bytes": 979984,
+      "m_step_executed": true
+    },
+    {
+      "log": "q5-item.txt",
+      "case": 2,
+      "input_sha256": "e7deaac3d8ba4510c10582815e7ab9666e882c63931e63af1e2604b551f93103",
+      "fresh_input_sha256": "a7065699e034aa61dc06e3f66ccaf75662141fc8fc9dc353bddcc222f2eb1973",
+      "gh_coords_prior_sha256": "9f66edccdb7b18cc24a8fbab5aba2ffe425b917123f21deddde8635b0242b502",
+      "counts_max_abs_delta": 0,
+      "cross_bits_equal": true,
+      "likelihood_bits_equal": true,
+      "mass_residual": 1.5543122344752192e-15,
+      "short_batch_budget_bytes": 3292,
+      "host_source_estimate_bytes": 103824,
+      "m_step_executed": true
+    },
+    {
+      "log": "q7-item.txt",
+      "case": 0,
+      "input_sha256": "c235696801013dcbf540fcb6472e141acb220a11e910f4e9cdbb0e24303c2caa",
+      "fresh_input_sha256": "d89b7dd8d826cea85b32504f5a50d3f9a2e44f847fe81d0ea972f117cbf9283d",
+      "gh_coords_prior_sha256": "ef87d5c23956d1afcdd57d43f6929e94ac15edc1c8d44c54156ea0d292dd4a15",
+      "counts_max_abs_delta": 0,
+      "cross_bits_equal": true,
+      "likelihood_bits_equal": true,
+      "mass_residual": 4.6629367034256575e-15,
+      "short_batch_budget_bytes": 244708,
+      "host_source_estimate_bytes": 2802576,
+      "m_step_executed": true
+    },
+    {
+      "log": "q7-item.txt",
+      "case": 1,
+      "input_sha256": "a1cf74b2d23d84214d1982d0b6b3f6c438ee8f6d0a4f020e2c1eff515a728f47",
+      "fresh_input_sha256": "72e9d9cbad5bf8b4d72f5d2ea2b2e0142701bb68c4ae18dffcb7f8ed03476c92",
+      "gh_coords_prior_sha256": "ef87d5c23956d1afcdd57d43f6929e94ac15edc1c8d44c54156ea0d292dd4a15",
+      "counts_max_abs_delta": 0,
+      "cross_bits_equal": true,
+      "likelihood_bits_equal": true,
+      "mass_residual": 3.219646771412954e-15,
+      "short_batch_budget_bytes": 225884,
+      "host_source_estimate_bytes": 2548560,
+      "m_step_executed": true
+    },
+    {
+      "log": "q7-item.txt",
+      "case": 2,
+      "input_sha256": "e160db6b02c9f61b49a78da5510325c6c5d6a9311c605f1dd66f380f4f8bde62",
+      "fresh_input_sha256": "51c0e6540e9a9467f68c4a03de6b70555e60dab08bc3f031bc8139faa1b6bdbf",
+      "gh_coords_prior_sha256": "fc47ca22661ded94c65fcd47b042ae80304e6e0ccfbf9ee61a42eec27dc21743",
+      "counts_max_abs_delta": 0,
+      "cross_bits_equal": true,
+      "likelihood_bits_equal": true,
+      "mass_residual": 1.5543122344752192e-15,
+      "short_batch_budget_bytes": 4444,
+      "host_source_estimate_bytes": 118160,
+      "m_step_executed": true
+    }
+  ],
+  "item_summaries": [
+    {
+      "log": "q5-item.txt",
+      "case": 0,
+      "item": 0,
+      "input_sha256": "7d673228f90c14f8b3ac58b3d34acbee1d5d31646a9fab5ccc4c85172949e291",
+      "Q_abs_delta": 2.6645352591003757e-15,
+      "central_FD_residual": 1.4060007637317629e-09,
+      "return_bits_equal": true,
+      "changed": true,
+      "internal_branch": "not instrumented"
+    },
+    {
+      "log": "q5-item.txt",
+      "case": 0,
+      "item": 4,
+      "input_sha256": "325bc7470e9c969ece0d5452597eded8a524b50e4aef6cf24a071fe375b34acd",
+      "Q_abs_delta": 5.329070518200751e-15,
+      "central_FD_residual": 2.2971059915333214e-09,
+      "return_bits_equal": true,
+      "changed": true,
+      "internal_branch": "not instrumented"
+    },
+    {
+      "log": "q5-item.txt",
+      "case": 1,
+      "item": 0,
+      "input_sha256": "c55d186ec746550c531ed8a3f9c27ec59484c1aeeeb3187c8882cb0c6d9a4e8d",
+      "Q_abs_delta": 8.881784197001252e-16,
+      "central_FD_residual": 1.18302539986459e-09,
+      "return_bits_equal": true,
+      "changed": true,
+      "internal_branch": "not instrumented"
+    },
+    {
+      "log": "q5-item.txt",
+      "case": 2,
+      "item": 0,
+      "input_sha256": "d98c8311f04939060531c101f15076a964f3658cb549572a6d4e16b41ffc3c6c",
+      "Q_abs_delta": 8.881784197001252e-16,
+      "central_FD_residual": 4.139624198984393e-10,
+      "return_bits_equal": true,
+      "changed": true,
+      "internal_branch": "not instrumented"
+    },
+    {
+      "log": "q7-item.txt",
+      "case": 0,
+      "item": 0,
+      "input_sha256": "c4cfcee3672431b0778206e001cc31217827fca9710155a865f477ddd71cdca7",
+      "Q_abs_delta": 7.105427357601002e-15,
+      "central_FD_residual": 3.479223020796951e-09,
+      "return_bits_equal": true,
+      "changed": true,
+      "internal_branch": "not instrumented"
+    },
+    {
+      "log": "q7-item.txt",
+      "case": 0,
+      "item": 4,
+      "input_sha256": "f5aa43a50f1bd8acd4e6d99235abe8378d4dbf497b5a377ae41cfbd4c7bec17c",
+      "Q_abs_delta": 0.0,
+      "central_FD_residual": 2.8104903959658145e-09,
+      "return_bits_equal": true,
+      "changed": true,
+      "internal_branch": "not instrumented"
+    },
+    {
+      "log": "q7-item.txt",
+      "case": 1,
+      "item": 0,
+      "input_sha256": "7991d770e6230522fb39cb9a2e110ce86651d9f3ccb2d1030653c651694349f4",
+      "Q_abs_delta": 1.3322676295501878e-15,
+      "central_FD_residual": 6.697774557196112e-10,
+      "return_bits_equal": true,
+      "changed": true,
+      "internal_branch": "not instrumented"
+    },
+    {
+      "log": "q7-item.txt",
+      "case": 2,
+      "item": 0,
+      "input_sha256": "271d83fc6c026bf6e77b44e7ca20bfae522970c010767fb8afee0016ccbaa79f",
+      "Q_abs_delta": 1.7763568394002505e-15,
+      "central_FD_residual": 4.139626419430442e-10,
+      "return_bits_equal": true,
+      "changed": true,
+      "internal_branch": "not instrumented"
+    }
+  ],
+  "special_boundaries": [
+    {
+      "log": "q5-item.txt",
+      "case": "zero_weights",
+      "convergence": "not applicable",
+      "coords": [
+        1.0
+      ],
+      "counts": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "counts_domain": "finite nonnegative; malformed private counts not executed",
+      "event": "zero_weight_boundary_case",
+      "fit_executed": false,
+      "gradient_finite": true,
+      "independent_objective": 0.0,
+      "independent_objective_finite": true,
+      "native_objective_is_nan": false,
+      "native_objective_positive_inf": false,
+      "packed": [
+        1.0,
+        1e-18,
+        0.0
+      ],
+      "returned_unchanged": true
+    },
+    {
+      "log": "q5-item.txt",
+      "case": "mixed_supported_weight",
+      "convergence": "not applicable",
+      "coords": [
+        1.0
+      ],
+      "counts": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "counts_domain": "finite nonnegative; malformed private counts not executed",
+      "event": "zero_weight_boundary_case",
+      "fit_executed": false,
+      "gradient_finite": true,
+      "independent_objective": 1.3132616875182228,
+      "independent_objective_finite": true,
+      "native_objective_is_nan": false,
+      "native_objective_positive_inf": false,
+      "packed": [
+        1.0,
+        1e-18,
+        0.0
+      ],
+      "returned_unchanged": true
+    },
+    {
+      "log": "q5-item.txt",
+      "case": "positive_impossible_weight",
+      "convergence": "not applicable",
+      "coords": [
+        1.0
+      ],
+      "counts": [
+        [
+          0.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "counts_domain": "finite nonnegative; malformed private counts not executed",
+      "event": "zero_weight_boundary_case",
+      "fit_executed": false,
+      "gradient_finite": false,
+      "independent_objective": null,
+      "independent_objective_finite": false,
+      "native_objective_is_nan": false,
+      "native_objective_positive_inf": true,
+      "packed": [
+        1.0,
+        1e-18,
+        0.0
+      ],
+      "returned_unchanged": true
+    },
+    {
+      "log": "q7-item.txt",
+      "case": "zero_weights",
+      "convergence": "not applicable",
+      "coords": [
+        1.0
+      ],
+      "counts": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "counts_domain": "finite nonnegative; malformed private counts not executed",
+      "event": "zero_weight_boundary_case",
+      "fit_executed": false,
+      "gradient_finite": true,
+      "independent_objective": 0.0,
+      "independent_objective_finite": true,
+      "native_objective_is_nan": false,
+      "native_objective_positive_inf": false,
+      "packed": [
+        1.0,
+        1e-18,
+        0.0
+      ],
+      "returned_unchanged": true
+    },
+    {
+      "log": "q7-item.txt",
+      "case": "mixed_supported_weight",
+      "convergence": "not applicable",
+      "coords": [
+        1.0
+      ],
+      "counts": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "counts_domain": "finite nonnegative; malformed private counts not executed",
+      "event": "zero_weight_boundary_case",
+      "fit_executed": false,
+      "gradient_finite": true,
+      "independent_objective": 1.3132616875182228,
+      "independent_objective_finite": true,
+      "native_objective_is_nan": false,
+      "native_objective_positive_inf": false,
+      "packed": [
+        1.0,
+        1e-18,
+        0.0
+      ],
+      "returned_unchanged": true
+    },
+    {
+      "log": "q7-item.txt",
+      "case": "positive_impossible_weight",
+      "convergence": "not applicable",
+      "coords": [
+        1.0
+      ],
+      "counts": [
+        [
+          0.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "counts_domain": "finite nonnegative; malformed private counts not executed",
+      "event": "zero_weight_boundary_case",
+      "fit_executed": false,
+      "gradient_finite": false,
+      "independent_objective": null,
+      "independent_objective_finite": false,
+      "native_objective_is_nan": false,
+      "native_objective_positive_inf": true,
+      "packed": [
+        1.0,
+        1e-18,
+        0.0
+      ],
+      "returned_unchanged": true
+    }
+  ],
+  "passed_invocations": 4,
+  "validation_rejection_classes_per_invocation": 7,
+  "actual_rejections_across_invocations": 28,
+  "input_GH_prior_matches_stage1": true,
+  "gpu_adapter": "Apple M1 / Metal",
+  "gpu_budget_bytes": 1048576,
+  "host_budget_bytes": 67108864,
+  "host_estimate_semantics": "source-shaped; no peak RSS/VRAM guarantee",
+  "new_build_performed": false,
+  "remote_dispatch_performed": false,
+  "full_fit_executed": false,
+  "source_modified": false,
+  "unverified": "internal solver branch/acceptedstep; fullfit/convergence/recovery/q121/340/bootstrap/CI/release/science",
+  "raw_event_input_binding": "complete inputs/next params/GRM oracle counts available in raw logs; source/compiler hashes and existing binary verified"
+}
