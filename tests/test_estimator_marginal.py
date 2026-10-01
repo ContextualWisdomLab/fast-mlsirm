@@ -149,3 +149,19 @@ def test_marginal_rejects_invalid_quadrature():
     # #1929: no node-count cap; q_theta=12 is now accepted, only < 1 is not.
     with pytest.raises(ValueError, match="q_theta must be >= 1"):
         FitConfig(q_theta=0).validate()
+
+
+
+def test_marginal_distance_einsum_parity() -> None:
+    """Preserve Euclidean distance values under the allocation-reduced sum."""
+    eps_distance = 1e-8
+    difference_matrix = np.random.default_rng(42).standard_normal((100, 50))
+    expected_distance = np.sqrt(
+        eps_distance + np.sum(difference_matrix * difference_matrix, axis=1)
+    )
+    actual_distance = np.sqrt(
+        eps_distance
+        + np.einsum("ij,ij->i", difference_matrix, difference_matrix)
+    )
+
+    np.testing.assert_allclose(actual_distance, expected_distance, atol=1e-12)
