@@ -44,3 +44,11 @@ q5/q7의 구조·고정 통계 검증을 연구 q121 적분 설정이나 recover
 GPU parity는 이 작은 고정 통계·대표 item 범위로만 확인했다. 공개 API 전체 fit, 최종 모수·수렴·적합도, 261회 sparse 궤적 재검증, q121 counts·340인·bootstrap·전체 suite·불변 릴리스·연구 수용은 미검증이다. 공식 승인과 독립 offline receipt 대조는 별도다.
 
 API HOLD 동안 GH 조회·push·게시·remote dispatch는 하지 않았다. E·runner·권한 설정·모형·prior·node·criteria·참가자 자료·원고·IRB 값은 변경하지 않았다.
+
+## 별도 후속: 수리 후 기본 q5 moments·19키
+
+위 네 모드의 완료·독립 대조 뒤, 아직 실행하지 않았던 기본 q5/5 모드만 기존 binary로 한 번 확인했다. 실행 head `0856b6e5a3765e78b3f58ecfa199fd69814a63bd`, code/test는 ea55와 byte가 같다. 실제 Apple M1 / Metal에서 1 passed / 0 failed / 0 ignored, 본문 0.24초였다. 1인 고정은행·GPU1MiB/host64MiB·no-count/no-update/no-fit이며 input hash는 `5f211b3d5872eeda9e610fb721f633a03fcff7ed787ddf4c7bdd9526a6d9047e`다.
+
+likelihood·mean·second·marginal SD 차이는 모두 0, 19개 timing key는 unique·finite·nonnegative이고 malformed receipt 5건도 실제로 거부했다. CPU cached+table은 0.000297791초, GPU 전체는 0.003683084초로 이 작은 관측에서도 GPU가 느렸다. parent와 child는 중첩되므로 합산하지 않고, clock/driver/계측 오버헤드를 포함한 host 관측을 hardware GPU/PCIe 시간이나 q121 speedup으로 표시하지 않는다.
+
+[별도 moments 원로그](q5-moments.txt)와 [별도 manifest](moments-receipt.json)에 source·input·binary·원로그 해시를 결속했다. 위 원래 네 실행의 `review-packet.json`과 독립 보고서 해시는 변경하지 않았다. 이 한 번의 기본 경로 통과도 full fit·수렴·q121·CI·릴리스 수용을 뜻하지 않는다.

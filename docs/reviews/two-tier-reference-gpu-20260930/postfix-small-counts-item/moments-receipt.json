@@ -1,0 +1,337 @@
+{
+  "scope": "separate post-fix q5 default fixed-bank moments/19 timing keys; not full fit",
+  "execution_head": "0856b6e5a3765e78b3f58ecfa199fd69814a63bd",
+  "reviewed_code_head": "ea55bf1ffdf56e007df825207ec8fa4972eb7529",
+  "source_test_bytes_identical": true,
+  "raw_log_sha256": "0a373956056fea46d3625c1e847649fdf5651b3c6b69cab0e83b610ff99e2909",
+  "raw_log_bytes": 3946,
+  "events": [
+    {
+      "event": "source",
+      "execution_head": "0856b6e5a3765e78b3f58ecfa199fd69814a63bd",
+      "kernel_source": "crates/mlsirm-core/src/gpu_bifactor.rs",
+      "kernel_source_sha256": "6f4cbb7ed77c33951165eb0038b2cf3ed9cd3dc3c3c71d842a58d3e2f164c532",
+      "numerical_source": "crates/mlsirm-core/src/two_tier_grm.rs",
+      "numerical_source_sha256": "03ec39b9f7d411f44a5df9d97ce61c9d6d12d3bc1e74cef49037b429f9612923",
+      "test_source": "tests/unit/two_tier_grm_tests.rs",
+      "test_source_sha256": "438a767b494f916b6d66ac1e1a2a8a661b464971871322e8bf505300d6bdfb20"
+    },
+    {
+      "event": "resource",
+      "adapter_name": "Apple M1",
+      "adapter_backend": "Metal",
+      "adapter_type": "IntegratedGpu",
+      "max_storage_buffer_binding_bytes": 4294967292,
+      "max_buffer_bytes": 4294967295,
+      "max_storage_buffers_per_stage": 29,
+      "max_workgroups_per_dimension": 65535,
+      "host_estimate_bytes": 392380,
+      "host_budget_bytes": 67108864,
+      "host_budget_semantics": "source-derived conservative allocation estimate; not RSS cap",
+      "gpu_policy_minimum_bytes": 72948,
+      "gpu_budget_bytes": 1048576,
+      "gpu_budget_semantics": "source policy; adapter limits are per-buffer constraints, not available physical VRAM",
+      "execution_head": "0856b6e5a3765e78b3f58ecfa199fd69814a63bd"
+    },
+    {
+      "event": "input",
+      "input_sha256": "5f211b3d5872eeda9e610fb721f633a03fcff7ed787ddf4c7bdd9526a6d9047e",
+      "seed": null,
+      "input_json": {
+        "n_cat": 4,
+        "n_items": 16,
+        "n_persons": 1,
+        "n_primary": 2,
+        "n_specific": 4,
+        "phi": "identity",
+        "primary_loadings": [
+          [
+            0.9,
+            0.0
+          ],
+          [
+            1.3,
+            0.0
+          ],
+          [
+            0.7,
+            0.0
+          ],
+          [
+            1.1,
+            0.0
+          ],
+          [
+            0.9,
+            0.9
+          ],
+          [
+            1.3,
+            0.9
+          ],
+          [
+            0.7,
+            0.9
+          ],
+          [
+            1.1,
+            0.0
+          ],
+          [
+            0.9,
+            0.0
+          ],
+          [
+            1.3,
+            0.9
+          ],
+          [
+            0.7,
+            0.0
+          ],
+          [
+            1.1,
+            0.0
+          ],
+          [
+            0.9,
+            0.9
+          ],
+          [
+            1.3,
+            0.0
+          ],
+          [
+            0.7,
+            0.9
+          ],
+          [
+            1.1,
+            0.9
+          ]
+        ],
+        "primary_map": [
+          true,
+          false,
+          true,
+          false,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true
+        ],
+        "q_primary": 5,
+        "q_specific": 5,
+        "responses": [
+          0,
+          1,
+          2,
+          3,
+          1,
+          2,
+          3,
+          0,
+          2,
+          3,
+          0,
+          1,
+          3,
+          0,
+          1,
+          2
+        ],
+        "specific_loadings": [
+          1.1,
+          0.8,
+          1.4,
+          1.0,
+          1.1,
+          0.8,
+          1.4,
+          1.0,
+          1.1,
+          0.8,
+          1.4,
+          1.0,
+          1.1,
+          0.8,
+          1.4,
+          1.0
+        ],
+        "specific_map": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2,
+          2,
+          3,
+          3,
+          3,
+          3
+        ],
+        "thresholds": [
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ],
+          [
+            1.2,
+            0.0,
+            -1.2
+          ]
+        ]
+      }
+    },
+    {
+      "event": "timing",
+      "whole_cpu_estep_seconds": 4.1208e-05,
+      "whole_gpu_estep_seconds": 0.003683084,
+      "cpu_table_generation_seconds": 0.000256583,
+      "whole_cpu_including_table_seconds": 0.000297791,
+      "stages": {
+        "table_generation_seconds": 0.000221459,
+        "prepare_validation_metadata_seconds": 2.5958e-05,
+        "prepare_error_scope_setup_seconds": 1.1e-05,
+        "prepare_uniform_buffer_seconds": 7.2708e-05,
+        "prepare_table_map_copy_seconds": 4.2542e-05,
+        "prepare_input_output_buffers_seconds": 8.1709e-05,
+        "prepare_layout_bindgroup_seconds": 5.3709e-05,
+        "prepare_shader_module_seconds": 0.000407792,
+        "prepare_compute_pipeline_seconds": 0.000720292,
+        "prepare_error_receipt_seconds": 2.275e-05,
+        "gpu_state_preparation_seconds": 0.001450417,
+        "sweep_queue_write_encode_seconds": 7.125e-05,
+        "sweep_readback_buffer_preparation_seconds": 9.208e-06,
+        "sweep_submit_map_decode_seconds": 0.001782125,
+        "sweep_error_receipt_seconds": 6.66e-07,
+        "gpu_log_products_and_readback_seconds": 0.001868041,
+        "rust_lse_exp_normalization_seconds": 1.925e-05,
+        "posterior_moment_contraction_seconds": 3.75e-06,
+        "f64_likelihood_certification_seconds": 1.9e-05
+      },
+      "note": "host clock with clock/collector overhead; child stages subdivide parent intervals and must not be double-counted; driver lazy work may occur during submit; no GPU timestamp or isolated PCIe timing claim"
+    },
+    {
+      "event": "comparison",
+      "loglik_abs_delta": 0,
+      "mean_max_abs_delta": 0,
+      "second_max_abs_delta": 0,
+      "marginal_sd_max_abs_delta": 0,
+      "tolerance": 0.001,
+      "collect_counts": false,
+      "parameter_updates": false
+    }
+  ],
+  "binary_sha256": "d8c9308fb66dd508872e14fba6c30cab913a55834a912801c0a854bec874b303",
+  "binary_bytes": 18873168,
+  "new_build": false,
+  "actual_passed": 1,
+  "failed": 0,
+  "ignored": 0,
+  "malformed_timing_receipt_cases": 5,
+  "fit_executed": false,
+  "remote_dispatch": false,
+  "timing_limits": "overlapping parent/child; host clock+collector/driver overhead; no hardwaretimestamp/PCIe/peak/throughput claim"
+}
