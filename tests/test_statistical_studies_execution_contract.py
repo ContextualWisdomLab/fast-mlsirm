@@ -81,18 +81,146 @@ def test_two_tier_reference_uses_shlex_and_shell_free_runner_invocation():
     assert "subprocess.run(" in job
     assert "shell=False" in job
     assert '"--device", "both",' in job
-    assert '"--out", "reference-gpu-benchmark.json",' in job
+    assert '"--out", str(root / "reference-gpu-benchmark.json"),' in job
     assert "shell=True" not in job
     assert "secrets." not in job
     assert "GH_TOKEN" not in job
-    assert "timeout=" not in job
+    assert "run_owned(command, 1200" in job
+    assert "run_owned(build, 1800" in job
     assert "timeout-minutes: 240" in job
+    assert "timeout-minutes: 60" in job
     assert "without JSON evidence" in job
     assert "stdout.log" in job
     assert "stderr.log" in job
     assert "reference-gpu-benchmark.json" in job
     assert "if: always()" in job
     assert "reference-gpu-resource-probe.log" in job
+
+
+def test_public_reference_route_binds_one_wheel_and_external_receipt():
+    """격리 정상 경로의 로그·wheel·실제 import가 source 검사 전에 결속된다."""
+    job = _workflow_text().split("  two-tier-reference-gpu:\n", 1)[1]
+    benchmark = job.split("      - name: 호출자가 정한 조건으로 two-tier 기준 적합 측정", 1)[1]
+    assert 'Path(os.environ["RUNNER_TEMP"]) / "g1-public-proof"' in benchmark
+    assert '".venv/bin/maturin", "build", "--release", "--locked"' in benchmark
+    assert '"--interpreter", ".venv/bin/python"' in benchmark
+    assert '"--build-receipt", str(root / "build-receipt.json")' in benchmark
+    assert 'root / "reference-gpu-benchmark.json"' in benchmark
+    assert 'start_new_session=True' in benchmark
+    assert 'os.killpg(child.pid, signal.SIGTERM)' in benchmark
+    assert '            ${{ runner.temp }}/g1-public-proof/\n' in job
+
+
+def test_public_reference_wheel_identity_rejects_ambiguous_or_stale_import(tmp_path, monkeypatch):
+    """비실행 wheel/core stub 대조이며 native build나 GPU 증거가 아니다."""
+    import ast
+    import hashlib
+    import sys
+    import textwrap
+    import types
+    import zipfile
+    import pytest
+
+    block = _workflow_text().split("      - name: 호출자가 정한 조건으로 two-tier 기준 적합 측정", 1)[1]
+    source = textwrap.dedent(block.split("          .venv/bin/python - <<'PY'\n", 1)[1].split("          PY", 1)[0])
+    tree = ast.parse(source)
+    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "wheel_identity")
+    namespace = dict(Path=Path, hashlib=hashlib, zipfile=zipfile, sys=sys)
+    exec(compile(ast.Module(body=[function], type_ignores=[]), "workflow-wheel-contract", "exec"), namespace)
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+    prefix = tmp_path / "venv"
+    core = prefix / "fast_mlsirm" / "_core.stub.so"
+    core.parent.mkdir(parents=True)
+    core.write_bytes(b"unit-test native member stub")
+    monkeypatch.setattr(sys, "prefix", str(prefix))
+    module = types.ModuleType("fast_mlsirm")
+    module._core = types.SimpleNamespace(__file__=str(core))
+    monkeypatch.setitem(sys.modules, "fast_mlsirm", module)
+    def wheel(path, content):
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("fast_mlsirm/_core.stub.so", content)
+    first = wheels / "one.whl"
+    wheel(first, core.read_bytes())
+    identity = namespace["wheel_identity"](wheels)
+    assert identity["core_sha256"] == hashlib.sha256(core.read_bytes()).hexdigest()
+    assert identity["wheel_sha256"] == hashlib.sha256(first.read_bytes()).hexdigest()
+    second = wheels / "two.whl"
+    wheel(second, core.read_bytes())
+    with pytest.raises(RuntimeError, match="one wheel"):
+        namespace["wheel_identity"](wheels)
+    second.unlink()
+    core.write_bytes(b"old installed extension")
+    with pytest.raises(RuntimeError, match="wheel.*extension"):
+        namespace["wheel_identity"](wheels)
+
+
+def test_owned_process_resource_stop_signals_only_matching_group(tmp_path):
+    """소유 group과 start identity를 확인하며 외부 프로세스에는 signal을 보내지 않는다."""
+    import ast
+    import json
+    import signal
+    import subprocess
+    import textwrap
+    import time
+    import types
+    import pytest
+
+    block = _workflow_text().split("      - name: 호출자가 정한 조건으로 two-tier 기준 적합 측정", 1)[1]
+    source = textwrap.dedent(block.split("          .venv/bin/python - <<'PY'\n", 1)[1].split("          PY", 1)[0])
+    function = next(node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name == "run_owned")
+    for case in ("term", "kill", "identity_mismatch", "start_error"):
+        root = tmp_path / case
+        root.mkdir()
+        signals = []
+        starts = []
+        class Child:
+            pid = 42
+            returncode = None
+            def poll(self):
+                return self.returncode
+            def wait(self, timeout):
+                if case == "kill" and len(signals) == 1:
+                    raise subprocess.TimeoutExpired("unit-test-only", timeout)
+                self.returncode = -15 if case == "term" else -9
+                return self.returncode
+        child = Child()
+        def launch(*args, **kwargs):
+            assert kwargs["shell"] is False and kwargs["start_new_session"] is True
+            return child
+        def start(pid):
+            starts.append(pid)
+            if case == "start_error":
+                child.returncode = 1
+                raise FileNotFoundError("unit-test process already exited")
+            return "changed" if case == "identity_mismatch" and len(starts) > 1 else "unit-test-start"
+        namespace = dict(root=root, time=time, json=json, signal=signal, process_start=start,
+            resources=lambda: {"cgroup_current_bytes":7*1024**3,"host_available_bytes":32*1024**3,"gpu_used_mib":28},
+            os=types.SimpleNamespace(getuid=lambda:1000, getpgid=lambda pid:pid, getpgrp=lambda:99,
+                                     killpg=lambda pid, sig:signals.append((pid,sig))),
+            subprocess=types.SimpleNamespace(Popen=launch, check_output=lambda *a, **k:"42 100\n99 200\n", TimeoutExpired=subprocess.TimeoutExpired))
+        exec(compile(ast.Module(body=[function], type_ignores=[]), "workflow-owned-process-contract", "exec"), namespace)
+        if case in ("identity_mismatch", "start_error"):
+            exception = RuntimeError if case == "identity_mismatch" else FileNotFoundError
+            with pytest.raises(exception):
+                namespace["run_owned"](["unit-test-only"], 1200, "stub")
+            assert signals == []
+        else:
+            assert namespace["run_owned"](["unit-test-only"], 1200, "stub") == 1
+            assert signals[0] == (42, signal.SIGTERM)
+            assert signals == [(42,signal.SIGTERM)] + ([(42,signal.SIGKILL)] if case == "kill" else [])
+        receipt = json.loads((root / "stub-process.json").read_text())
+        assert receipt["pid"] == receipt["pgid"] == 42
+        assert receipt["reason"] in ("resource_limit", "monitor_error")
+
+
+def test_public_reference_step_has_cleanup_and_receipt_time_budget():
+    import re
+    step = _workflow_text().split("      - name: 호출자가 정한 조건으로 two-tier 기준 적합 측정", 1)[1]
+    step = step.split("      - name: Two-tier 기준 적합 측정 증거 보관", 1)[0]
+    outer = int(re.search(r"timeout-minutes: (\d+)", step).group(1))*60
+    owned = sum(int(value) for value in re.findall(r"run_owned\((?:build|command), (\d+)", step))
+    assert outer >= owned + 120 + 120
 
 
 def test_two_tier_resource_probe_is_not_a_fit_acceptance_receipt():
