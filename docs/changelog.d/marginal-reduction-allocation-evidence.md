@@ -14,3 +14,10 @@
   `unavailable` when no revision was supplied.
 - Hand-derived unit fixtures and Rust/NumPy estimator-path tests protect the
   reduction axes, weights, and fitted-result parity.
+- The three changed reductions now recover their generating sufficient
+  statistics under the estimator's 121-node standard-normal Gauss-Hermite
+  rule: the rule's analytic moment identities are checked independently;
+  multilevel and population reductions match `math.fsum` oracles; and the
+  covariate score is zero with positive Fisher information at its generating
+  coefficient on the production `(group, item, theta-node, latent-node)` axes.
+  Standard floating-point forward-error bounds replace empirical tolerances.

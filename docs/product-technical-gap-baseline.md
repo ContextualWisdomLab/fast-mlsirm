@@ -1,1062 +1,7 @@
-# Product and technical gap baseline
-
-Status: **Non-authoritative point-in-time product-completion inventory**<br>
-Observed at: **2026-08-25T05:20:00Z**<br>
-Protected-main basis: **`9c12eab15fb8a187b135f9be1961f0693a431c23`**<br>
-Repository: **`ContextualWisdomLab/fast-mlsirm`**
-
-## 2026-10-01 proposed marginal-reduction evidence repair
-
-Status: **Proposed in PR #2310; not protected-main authority**
-
-| Gap | Exact evidence | Owner/action | Remaining gate |
-|---|---|---|---|
-| `MARGINAL-REDUCTION-ALLOCATION-EVIDENCE-01` | PR #2310 changes three NumPy reference reductions. Exact predecessor head `d6c1f4d4bbebd4612b35b2208ebaae36736cb7e7` established Rust/NumPy estimator parity but had no executable allocation report for those expressions. | `fast-mlsirm` now exposes the three production reductions through private helpers and adds `benchmarks/benchmark_marginal_reductions.py`. The report compares the helpers with the former broadcast equations on exactly representable float64 fixtures, records every elapsed observation and Python-traced peak without publishing a universal speedup, and binds detached JSON to the injected revision plus SHA-256 digests of the benchmark and production module. Missing revision injection is explicit as `unavailable`. | Exact-head hosted CI/security Checks, independent review, ordinary merge, and immutable package release. Open-PR measurements remain engineering evidence rather than released product truth. |
-
-Local pre-push evidence on Python 3.14.7 / NumPy 2.5.1 showed exact parity for
-all three reductions. Across seven recorded repetitions, traced peaks were
-1,512â€“1,536 versus 1,091,344â€“1,091,368 bytes for the multilevel second moment,
-4,198,155 versus 12,583,296 bytes for covariate score/information, and 1,184
-versus 34,416 bytes for population moments. These observations characterize
-that environment only; the executable report, not these numbers, is the
-reproducibility authority.
-
-## 2026-09-26 proposed release-source trust repair
-
-Status: **Proposed in PR #2135; not protected-main authority**
-
-| Gap | Exact evidence | Owner/action | Remaining gate |
-|---|---|---|---|
-| `RELEASE-PUBLISH-CHECKOUT-AUTHORITY-01` | CodeQL PR run `35928328723` rejected caller-controlled `release_commit` / `control_plane_commit` checkout. RED contract `3e1571ad343a7800fd4a7d01779bf7b2f2789624` observed 6 raw release refs, 2 raw control-plane refs, and no verified output. | `fast-mlsirm` PR #2135 now checks out protected `github.sha` first, canonicalizes the requested release commit, proves it is an ancestor of that trusted control plane, emits the verified commit once, and makes every release-source consumer use that output. Exact repair head before this documentation update: `36246d99b1c3cfffaacf1234f62aac16013519fe`. | Fresh exact-head hosted security/quality Checks, resolution of the CodeQL thread, independent approval, ordinary merge, immutable package release, then the `contextual-orchestrator` consumer pin update. |
-
-Local exact-head evidence at `36246d99b1c3cfffaacf1234f62aac16013519fe`: YAML parsed as one workflow with 8 jobs; Python contract source compiled; all 16 tests in `tests/test_publish_pypi_workflow_contract.py` passed, including real Git-history ancestor, sibling, missing-object, control-plane mismatch, and noncanonical-SHA cases. This is focused local evidence only; it does not replace hosted Checks or release evidence.
-
-## 1. Purpose and authority
-
-This document answers one bounded question:
-
-> What remains before `fast-mlsirm` can make a defensible technical-GA claim, and what additional evidence remains before a downstream product can make a validated domain or high-stakes use claim?
-
-This file is an inventory and routing aid. It is **not** a competing PRD, TRD,
-architecture, ADR, release manifest, or statement of shipped capability.
-Canonical authority remains:
-
-- [`docs/PRD.md`](PRD.md);
-- [`docs/TRD.md`](TRD.md);
-- [`../ARCHITECTURE.md`](../ARCHITECTURE.md);
-- [`docs/documentation_coverage.md`](documentation_coverage.md);
-- the status-bearing ADR graph; and
-- [issue #621](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/621), or its explicitly accepted successor, for cross-cutting documentation fitness.
-
-Protected `main` is shipped truth. An issue, open pull request, green check on an
-unmerged head, review comment, branch description, scheduler state, or this
-inventory is evidence only. Before acting on any row below, re-fetch:
-
-1. protected-main SHA;
-2. pull-request head and live base;
-3. draft/ready and mergeability state;
-4. current-head reviews and unresolved threads;
-5. required checks; and
-6. active writer/overlapping-path ownership.
-
-No predecessor-head check or review transfers after a head or live-base change.
-
-## 2. Executive disposition
-
-At the observed protected-main SHA, `fast-mlsirm` is a substantial Rust/PyO3
-psychometric measurement core, but a general technical-GA or universal
-high-stakes readiness claim is not yet defensible.
-
-The strongest remaining completion dependencies are:
-
-1. finish one Rust-owned ordinary production numerical boundary with no silent
-   Python fallback;
-2. integrate and validate the multilevel, multiple-membership, longitudinal,
-   model-selection, and recovery slices that are currently split across issues
-   and active PRs;
-3. add independent cross-engine equation and fitted-result conformance evidence;
-4. add preregistered external-validity and transportability evidence profiles;
-5. freeze a bounded 1.0 capability/support matrix instead of treating every
-   research or planned model as part of GA;
-6. complete stable artifact/version/migration, release, support, supply-chain,
-   benchmark, and rollback evidence; and
-7. prove at least one buyer-visible end-to-end workflow through an owning
-   downstream product without moving hosted identity, consent, persistence, or
-   decision governance into this reusable core.
-
-A package can reach **technical GA** while particular domain or high-stakes use
-profiles remain unvalidated. Technical correctness, construct validity,
-transportability, fairness, and decision utility are separate claims.
-
-## 3. Current protected-main product truth
-
-The observed protected main declares:
-
-- package version **`0.9.0`**;
-- Python **`>=3.12`**;
-- Maturin/PyO3 bindings to the Rust workspace;
-- PyPI classifier **`Development Status :: 3 - Alpha`**; and
-- an â€œearly high-performance toolkitâ€ product description.
-
-Protected main already provides substantial evidence and usable primitives,
-including:
-
-- Rust/PyO3 likelihood, optimization, diagnostic, scoring, linking, CAT/ATA,
-  and selected GPU/CPU parity paths;
-- deterministic simulation and true-parameter recovery infrastructure;
-- governed rubric, scoring, evidence, RAG, essay, enterprise-issue, and
-  item-bank contracts;
-- fail-closed validation and bounded-resource controls;
-- package/wheel/reinstall, fuzz, security, SAST, and protected-check gates;
-- accessible standalone reports and content-addressed provenance patterns; and
-- canonical PRD/TRD/architecture, V&V, threat-model, standards-watch,
-  UML/ERD, and traceability families.
-
-The protected-main documentation audit still classifies several release-critical
-families as **PARTIAL**, notably:
-
-- public interface/version/serialization/fingerprint contracts;
-- reusable-core operability and recovery;
-- security/data-governance navigation;
-- release/migration/rollback/provenance/licensing navigation;
-- requirements traceability and selected UML/ERD coverage; and
-- root README/AGENTS/CLAUDE/Architecture/PRD/TRD/CHANGELOG alignment.
-
-Those states are not cosmetic documentation tasks. They identify product
-contracts that a buyer, downstream integrator, or maintainer still cannot
-reconstruct reliably without source archaeology.
-
-## 4. Product boundary
-
-### 4.1 `fast-mlsirm` owns
-
-- domain-neutral psychometric numerical kernels;
-- public simulation, fitting, scoring, diagnostics, comparison, linking, CAT,
-  ATA, recovery, and evidence contracts that are explicitly integrated on
-  protected main;
-- Rust-first numerical ownership, deterministic Python validation/marshalling,
-  bounded resource controls, and versioned reusable artifacts;
-- package-level V&V, benchmark, security, interoperability, provenance, and
-  release evidence; and
-- source-text-free reports and handoff contracts.
-
-### 4.2 Downstream products own
-
-`ContextualWisdomLab/psychometrics-commons` or another explicitly owning host
-owns, as applicable:
-
-- tenants, accounts, OIDC/SSO/SCIM and authorization;
-- participants, sessions, consent, data-rights and purpose limitation;
-- hosted persistence, object storage, queues, APIs, UI and billing;
-- operational item banks and restricted test content;
-- human review, approval, administration and incident workflows;
-- domain-specific external validation data and high-stakes decision policy; and
-- regulated deployment, retention, deletion and audit execution.
-
-The downstream host may consume `fast-mlsirm` only through a traceable,
-versioned handoff: a released package and schema version, a versioned API/schema,
-or an immutable content-addressed artifact reference. The consumer records the
-package/artifact version, source commit, schema version, and environment
-provenance used for each result. A floating branch checkout or unrecorded
-implementation import is not a reusable integration contract. `fast-mlsirm`
-must not depend on that host to remain installable and useful as a standalone
-library.
-
-### 4.3 Explicit non-goals for this repository
-
-- a universal validity or fairness certification;
-- a hosted assessment/session database;
-- direct storage of operational PII or restricted test content;
-- automatic causal claims from observational scores;
-- provider-specific LLM execution inside the numerical core;
-- treating one external package as an unquestionable oracle;
-- a machine-generated acquisition valuation or guaranteed sale price; and
-- declaring every planned model family part of a 1.0 support promise.
-
-### 4.4 Versioned downstream handoff
-
-The reusable-core boundary is actionable only when a consumer can identify the
-artifact it is allowed to import and the owner of the surrounding lifecycle.
-The current handoff therefore follows these repository contracts:
-
-- [`docs/scoring_assessment_contracts.md`](scoring_assessment_contracts.md) and
-  [`docs/scoring_execution_contracts.md`](scoring_execution_contracts.md) define
-  the package-owned request, observation, scoring, and execution surfaces;
-- [`docs/enterprise_issue_evidence_contracts.md`](enterprise_issue_evidence_contracts.md)
-  defines source-free evidence handoff for an owning product; and
-- [`docs/adr/0001-domain-neutral-measurement-boundary.md`](adr/0001-domain-neutral-measurement-boundary.md),
-  [`docs/adr/0003-content-addressed-measurement-contracts.md`](adr/0003-content-addressed-measurement-contracts.md),
-  and [`docs/adr/0013-continuous-execution-and-documentation-governance.md`](adr/0013-continuous-execution-and-documentation-governance.md)
-  define ownership, immutable provenance, and documentation authority.
-
-Consumers must pin a released package/artifact schema and record its source and
-environment provenance. A downstream host owns participant/session/consent,
-authorization, persistence, raw content, human decisions, and regulated
-retention; this baseline does not create a second database or HTTP contract.
-The handoff is therefore reusable across `psychometrics-commons` and other
-consumers while `fast-mlsirm` remains independently installable.
-
-## 5. Completion profiles
-
-### 5.1 Technical alpha
-
-This is the current declared package line. Useful APIs may exist, but public
-contracts, support scope, scientific evidence, compatibility, and operational
-surfaces can still change before 1.0.
-
-### 5.2 Technical GA â€” reusable measurement core
-
-A technical-GA profile requires a bounded, versioned list of supported public
-capabilities. For every listed capability, the profile must provide:
-
-- one ordinary Rust/PyO3 production numerical owner;
-- fail-closed behavior when that owner is missing or incompatible;
-- explicit identification, estimand, model/estimator compatibility, resource,
-  missingness, and convergence contracts;
-- true-parameter recovery or inferential error evidence appropriate to the
-  claim, including Monte Carlo uncertainty where stochastic;
-- independent cross-engine conformance where a scientifically equivalent
-  implementation exists;
-- stable public API and artifact schemas with migration/rollback policy;
-- exact supported Python/platform/backend matrix;
-- 100% repository-required production statement/branch coverage and public
-  docstring evidence;
-- benchmark/capacity evidence and bounded failure behavior;
-- security, fuzz, package/reinstall, SBOM, provenance and licensing evidence;
-- current support and vulnerability-reporting policy; and
-- one unchanged exact head satisfying all required reviews and checks.
-
-A capability that lacks the required evidence remains experimental, research,
-planned, or explicitly outside the GA profile; it does not block unrelated,
-bounded GA capabilities.
-
-### 5.3 Validated domain profile
-
-A domain profile binds the technical core to one assessment, rubric/item-bank,
-population, setting, language, time period, criterion, and intended score use.
-It additionally requires content/response-process, internal-structure,
-external-variable, transportability, fairness, and consequence evidence.
-
-A domain profile is versioned independently of the Python package. A package
-upgrade does not automatically validate an old profile, and a validated profile
-does not approve every other use of the same estimator.
-
-### 5.4 High-stakes use profile
-
-A high-stakes profile additionally requires the owning productâ€™s legal,
-privacy, security, human-governance, accessibility, adverse-impact,
-monitoring, incident, appeal, and decision-policy controls. This status cannot
-be inferred from software tests, parameter recovery, cross-engine agreement,
-or a passed package release gate.
-
-## 6. Status vocabulary used here
-
-This baseline reuses the repositoryâ€™s canonical capability vocabulary:
-
-- **IMPLEMENTED_ON_PROTECTED_MAIN**;
-- **IMPLEMENTED_ON_ACTIVE_PR**;
-- **PARTIAL**;
-- **ACCEPTED_ARCHITECTURE**;
-- **PLANNED**;
-- **RESEARCH_ONLY**;
-- **DOWNSTREAM**;
-- **SUPERSEDED**;
-- **REJECTED**; and
-- **OUT_OF_SCOPE**.
-
-For live PR rows, **RECHECK_REQUIRED** is only a snapshot annotation. It is not a
-new canonical capability-maturity state.
-
-## 7. Current pull-request evidence
-
-The following table records high-leverage live work observed on
-2026-08-25T05:20:00Z against protected
-`main@9c12eab15fb8a187b135f9be1961f0693a431c23`. Every row is
-**IMPLEMENTED_ON_ACTIVE_PR / RECHECK_REQUIRED**, never shipped truth. A green
-check on any row is not a protected-main capability until the PR is merged.
-
-| PR | Observed head | Observed role | Completion dependency / caution |
-| --- | --- | --- | --- |
-| [#1363](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1363) | `d232423dâ€¦` | seals nested subscore response/group evidence traversal before NumPy materialization (issue [#1362](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1362)) | draft at observation; checks queued; re-fetch draft/ready, checks and reviews before acting |
-| [#1345](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1345) | `2bc7ba2aâ€¦` | bounds CAT administration evidence before deduplication/dense marshalling (issues [#1344](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1344)/[#1347](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1347)/[#1354](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1354)) | merge-forward onto `main@9c12eab1` pushed (`2bc7ba2a`) after resolving the package-surface conflict; fresh current-head CI required |
-| [#1279](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1279) | `7ddfa2c1â€¦` | exposes Rust polytomous predictions with admission safety (issues [#1280](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1280), [#1281](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1291)) | merge-forward onto `main@9c12eab1` pushed (`7ddfa2c1`); predecessor-head reviews are historical after the head change |
-| [#1029](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1029) | `2f4a4e03â€¦` | rejects lossy extended-precision S-XÂ² scalar controls before Rust dispatch (issue [#1028](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1028)) | open, non-draft; first strix attempt failed on provider availability and was rerun; current-head checks/reviews still required |
-| [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | `9bde9837â€¦` | Rust continuous-time/AR longitudinal Rasch estimator replayed on the current review workflow (issue [#565](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/565)) | up to date with main; preserve exact recovery evidence through integration; predecessor-head REQUEST_CHANGES was bound to a stale head SHA |
-| [#998](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/998) | `3177525dâ€¦` | release/changelog resync plus logistic-DIF control hardening (issue [#958](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/958)) | mergeable; first strix attempt failed on provider availability and was rerun; formal approval still required |
-
-At this observation, GitHub REST enumerated **6 open pull requests**: `#1363,
-#1345, #1279, #1029, #1005, #998`. Open issues numbered 42, led by the
-admission-boundary family (`#1365`, `#1364`, `#1362`, `#1354`, `#1347`,
-`#1344`), the polytomous-prediction family (`#1307`, `#1308`, `#1291`,
-`#1292`, `#1280`, `#1281`, `#1296`, `#1297`, `#1300`, `#1303`, `#1301`),
-the governance/provenance family (`#1146`, `#1144`, `#1111`, `#1150`,
-`#1131`), and the validation/conformance family (`#1096`, `#1094`, `#1092`,
-`#1078`, `#1152`). The long-lived structural gaps remain `#621` (bounded 1.0
-capability/support matrix), `#626` (Rust-owned ordinary production boundary),
-and `#565` (multilevel/multiple-membership/longitudinal completion).
-
-This list is a reproducible snapshot, not a merge instruction. A completion or
-merge decision must begin with a fresh repository-wide PR and writer sweep,
-including exact head/base, dependency stack, reviews, unresolved threads,
-required Checks, and active path ownership.
-
-Since the previous observation (2026-08-21), the open-PR queue collapsed from
-74 to 6 through normal review/merge activity. Notably integrated since then:
-[#951](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/951) (automatic
-Rust backend + configuration hardening), [#1014](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1014)
-(crossed multiple-membership estimator), [#1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130)
-(Figma design-boundary ADR), the v0.9.0 release cut, and the polytomous
-GRM/GPCM/CAT/FIPC parameter-recovery suite (#1313).
-
-### 7.1 Superseded lineage record
-
-Two orphaned Sentinel security branches were deleted on 2026-08-25 because
-protected main already ships strictly stronger fixes for their scopes:
-
-- `sentinel-fix-json-recursion-conformance-4916450064032858492` (JSON recursion
-  DoS in `cross_engine_conformance.py`) â€” superseded by merged
-  [#1330](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1330)
-  (`a25833a0`: raw JSON depth guard + `tests/test_cross_engine_conformance_json_depth.py`).
-- `sentinel-medium-fix-unbounded-json-loading-11914195049005804093` (unbounded
-  JSON loading in ops scripts) â€” superseded by main's
-  `scripts/_bounded_json.parse_json_bounded(..., max_bytes=...)` hardening in
-  `build_pr_queue_governance.py`, which bounds GitHub stdout bytes beyond the
-  branch's proposal.
-
-Issues [#1300](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1300),
-[#1301](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1301), and
-[#1303](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1303) were
-closed on 2026-08-25 with protected-main evidence: `_TRUSTED_REAL_CONTROL_TYPES`
-excludes Boolean identity (`mhrm.py` lines 46â€“51) with regression
-`test_mhrm_real_control_boolean_admission.py`; `classify_model_relation()`
-enforces exact-type admission and replays `__post_init__` invariants
-(`model_relation.py` lines 144â€“146).
-
-## 8. Product and technical gap matrix
-
-| Gap ID | Priority | Required outcome | Existing issue / PR evidence | Completion test |
-| --- | --- | --- | --- | --- |
-| GAP-01 | P0 | Freeze a bounded 1.0 capability, support and maturity matrix; do not equate planned research with GA | [#621](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/621), [#636](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/636), [#648](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/648) | every public capability is classified, supported versions match metadata, and the release gate makes no valuation/certification claim |
-| GAP-02 | P0 | One ordinary Rust/PyO3 numerical owner; NumPy only on explicit reference/parity surfaces | [#626](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/626), [#627](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/627); the automatic-backend and reference-isolation slices landed on protected main via merged [#951](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/951)/[#1070](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1070) | production config/API cannot silently select Python numerics; missing/incompatible Rust fails before result-affecting work |
-| GAP-03 | P0 | Complete non-atomistic multilevel, cross-classified, multiple-membership and longitudinal estimation with identification and recovery | [#565](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/565); crossed multiple-membership estimator landed via merged [#1014](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1014) plus the crossed multiple-membership replay (#0827dfa lineage); continuous-time/AR longitudinal Rasch remains on active PR [#1005](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1005) | realistic aligned bias/MAE/RMSE/coverage/convergence and temporal leakage tests pass; both stacked scientific deltas survive |
-| GAP-04 | P0 | Relation-safe factor retention, structural model selection and identified exploratory multidimensional estimation | [#608](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/608), [#633](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/633), [#551](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/551), PR [#1008](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1008) | no winner is forced without relation-appropriate tests, held-out evidence, scoreability and true-structure recovery |
-| GAP-05 | P1 | Close rubric, generated-item, scoring, RAG, essay, enterprise-issue and item-bank lifecycles without parallel contracts | [#397](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/397), [#404](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/404), [#607](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/607), [#609](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/609), PR [#1003](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1003) | one immutable assessment/rubric/scoring lineage reaches pilot, calibration, validation, lifecycle and report evidence without provider coupling or silent state promotion |
-| GAP-06 | P0 | Independently test equations and fitted estimands against explicitly matched mature engines | [#1077](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1077) closed as COMPLETED after the reusable conformance provenance manifest landed ([#1082](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1082)); residual validation-family execution evidence tracks under [#1092](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1092)/[#1094](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1094)/[#1096](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1096)/[#1152](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1152) | versioned capabilityÃ—engine matrix, fixed-parameter equation conformance first, aligned fitted-result comparisons, visible disagreement register |
-| GAP-07 | P0 for validated claims | Add preregistered external validity, language/site/time transportability, fairness and criterion evidence profiles | [#1078](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1078) | external evidence is genuinely held out; claim register narrows automatically on absent, failed or indeterminate evidence |
-| GAP-08 | P0 | Stabilize public artifact, schema, serialization, fingerprint, capability and migration contracts | [#637](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/637), [#653](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/653), [#499](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/499) | strict RFC 8259 artifacts, no environment-dependent capability downgrade, versioned loaders/migrations, cross-language canonical fixtures |
-| GAP-09 | P0 | Complete release/support/supply-chain evidence and truthful compatibility policy | [#648](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/648), [#623](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/623), [#636](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/636), documentation audit PARTIAL states | supported line/runtime/platforms are tested; wheel, SBOM, provenance, license, rollback and vulnerability process are source-hash-bound |
-| GAP-10 | P1 | Publish capacity/performance envelopes instead of isolated speed claims | [#403](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/403), [#563](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/563) | representative NÃ—itemÃ—dimensionÃ—facetÃ—time workloads report latency, throughput, peak RSS/VRAM, failure ceilings and CPU/GPU parity |
-| GAP-11 | P0 operations | Eliminate orphaned workflow identities and retain complete terminal statistical/release evidence | [#809](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/809), PR [#1071](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1071) | complete paginated workflow registry is reconciled; supported workflows remain; statistical studies terminate with durable evidence |
-| GAP-12 | P1 product | Prove one buyer-visible vertical through a downstream host while preserving repository ownership | [#397](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/397), [#404](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/404), [#607](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/607), [#584](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/584) | source evidence â†’ governed observations â†’ Rust calibration â†’ uncertainty/fairness/validation â†’ accessible report â†’ downstream human decision is replayable end to end |
-| GAP-13 | P1 downstream UI | When a hosted consumer has a web surface, make UI states and interactions auditable rather than treating a static screenshot as product evidence | [`docs/adr/0016-figma-buyer-evidence-design-boundary.md`](adr/0016-figma-buyer-evidence-design-boundary.md) (merged via [#1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130)), [`docs/figma_product_design_packet.md`](figma_product_design_packet.md), Storybook interaction-testing guidance | ADR records the exact Figma file ID (`qD34PfMH8Kr41tFdqLCkem`); a Storybook inventory covers the ten UI/UX dimensions below; each high-risk story has an event-driven interaction assertion and an accessibility result |
-
-## 9. Ordered completion sequence
-
-### Stage 0 â€” establish live ownership and exact evidence
-
-1. Re-fetch all open PRs, bases, heads, reviews, threads, checks and overlapping
-   paths.
-2. Preserve unique scientific deltas; close or supersede duplicates only with an
-   explicit lineage record.
-3. Do not widen a PR merely because another lane is waiting on Actions or review.
-4. Resolve infrastructure failures at their root without weakening scientific,
-   security, coverage or independent-review gates.
-
-### Stage 1 â€” close the technical-GA numerical boundary
-
-1. Reconcile #951 and #1070 so one public backend/reference contract survives.
-2. Complete #626/#627 Rust ownership and fail-closed evidence.
-3. Define the first bounded 1.0 capability/support matrix under #621/#648.
-4. Reject advertised-but-unimplemented modelÃ—estimator combinations before
-   fitting and remove normal-path `NotImplementedError` surfaces from the GA
-   profile.
-
-### Stage 2 â€” integrate scientific foundation and recovery
-
-1. Land longitudinal and multiple-membership work in dependency order while
-   preserving both exact scientific slices.
-2. Integrate factor-retention/model-selection policy only with the required
-   relation, likelihood, scoreability, held-out and recovery evidence.
-3. Complete durable exhaustive recovery studies with MCSE/intervals and explicit
-   failed-replication classes.
-4. Add exploratory multidimensional loading estimation only after its
-   identification and rotation contracts are accepted.
-
-### Stage 3 â€” independent numerical validation
-
-Implement #1077 in bounded slices:
-
-1. capability and estimand inventory;
-2. parameter-mapping schemas and neutral equation fixtures;
-3. fixed-parameter equation conformance;
-4. fitted-result alignment and comparisons;
-5. scheduled/release evidence, disagreement register and accessible reports.
-
-External engines remain isolated test instruments, not runtime or package
-dependencies.
-
-### Stage 4 â€” external validity and transportability
-
-Implement #1078 through one reusable validation-profile contract, then apply it
-to a license-compliant synthetic/open/de-identified portfolio. Keep technical,
-construct, transportability, fairness and decision-utility evidence separate.
-A failed profile narrows the corresponding claim rather than failing unrelated
-technical capabilities.
-
-### Stage 5 â€” one closed buyer workflow
-
-Choose one initial verticalâ€”automated essay scoring, reference-free RAG
-measurement, or enterprise issue measurementâ€”and prove the complete handoff
-through the owning downstream product. The first accepted vertical must include:
-
-- exact assessment/rubric/item/task/rater/model/source/version provenance;
-- fallible human/automated rater calibration;
-- recovery, scoreability, DIF/invariance and held-out validation;
-- source-free accessible JSON/HTML with exact-value tables;
-- human review/decision boundaries; and
-- no claim that correlation, schema validity, model fit or one judge equals
-  construct validity.
-
-### Stage 6 â€” artifact, release and support hardening
-
-1. Freeze versioned public API/artifact schemas and explicit migrations.
-2. Prove old supported serving/results artifacts load or fail with a documented,
-   stable migration status.
-3. Run clean-install, upgrade, rollback and wheel-reinstall rehearsals.
-4. Emit signed source/build provenance, SBOM, checksums, license/NOTICE and
-   reproducibility manifests.
-5. Publish current support/security policy and capacity envelope.
-6. Release only from an unchanged exact head with every required check and
-   review terminal-success.
-
-## 10. Buyer-visible acceptance gates
-
-### 10.1 Numerical and scientific
-
-- no silent Python production fallback;
-- no model-name-only relation or compatibility inference;
-- explicit identification and failure classification;
-- realistic true-parameter recovery with bias, MAE/RMSE, coverage, convergence
-  and Monte Carlo uncertainty;
-- CPU single-thread/multithread determinism and real GPU parity where enabled;
-- independent cross-engine conformance or an explicit justified
-  `not_comparable` state;
-- external/transportability evidence before making corresponding domain claims;
-- no high-stakes claim from correlation, fit, schema conformance or recovery
-  alone.
-
-### 10.2 API, artifact and interoperability
-
-- semantic versioning and a bounded deprecation policy;
-- canonical schema/version/fingerprint preimages and cross-language fixtures;
-- strict RFC 8259 JSON with no NaN or infinity extension tokens;
-- content-addressed immutable scientific and validation artifacts;
-- explicit capability profiles and no environment-dependent partial bundles;
-- backward-compatibility, migration, rollback and rejection tests; and
-- source-text-free reusable numerical artifacts.
-
-### 10.3 Quality and security
-
-- production statement coverage 100%;
-- production branch coverage 100%;
-- public Rust/Python API docstrings 100%;
-- property, metamorphic, fuzz, hostile-input and denial-of-service tests;
-- exact runtime/platform/backend support matrix;
-- dependency, OSV, SAST, CodeQL, Trivy, Scorecard, Strix, package and fuzz gates;
-- no secret, PII, restricted test content or provider response in release or
-  billing telemetry; and
-- current threat model, responsible disclosure and support policy.
-
-### 10.4 Release and supply chain
-
-- reproducible source/dependency/environment manifests;
-- SPDX SBOM using a stable published specification;
-- SLSA-compatible build provenance with pinned immutable actions/tools;
-- source, wheel, report, model and validation artifact hashes;
-- clean build/install/reinstall/upgrade/rollback rehearsal;
-- license and redistribution review for datasets, external engines and models;
-- release notes generated from authoritative fragments; and
-- no draft standard or future revision represented as current certification.
-
-### 10.5 Buyer workflow and accessibility
-
-- one complete downstream workflow is replayable from evidence to result and
-  human decision;
-- every number in charts is also available in an exact-value table;
-- keyboard, screen-reader, no-JavaScript and print/PDF evidence where applicable;
-- missing, abstained, failed, excluded, not-applicable and indeterminate remain
-  distinct; and
-- reports expose limitations and next actions, not only a score or badge.
-
-### 10.6 UI/UX, Figma, and Storybook boundary
-
-The protected `fast-mlsirm` package has no web frontend or Storybook workspace;
-it is a reusable numerical/core-contract library. A downstream product that
-adds a web surface must own its UI implementation, design tokens, Storybook
-inventory, and Figma file. This repository must not acquire a UI dependency or
-pretend that a screenshot proves an interaction contract.
-
-The existing buyer-review design packet records Figma file ID
-`qD34PfMH8Kr41tFdqLCkem` in
-[`docs/figma_product_design_packet.md`](figma_product_design_packet.md). The ADR
-binding that identity is protected-main truth as
-[`docs/adr/0016-figma-buyer-evidence-design-boundary.md`](adr/0016-figma-buyer-evidence-design-boundary.md),
-merged through [#1130](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1130).
-A future Figma-backed change must keep the file ID in its ADR and keep
-Code Connect disabled unless a separate architecture decision authorizes it.
-
-For a downstream Storybook, each story is both a named visual state and a
-replayable test case. The story starts from explicit props/context, its
-`play` function emits a realistic user event, and assertions inspect the
-observable result (role, accessible name, text, focus, callback, URL, or
-machine-readable value). Required scene/edge coverage is:
-
-| UI/UX dimension | Required scene and event evidence |
-| --- | --- |
-| Accessibility | keyboard-only focus order, accessible names/roles, screen-reader state, contrast, reduced-motion, and an automated WCAG 2.2 audit |
-| Touch & Interaction | pointer, touch, keyboard, disabled, loading, cancellation, double-submit, and focus-restoration events |
-| Performance | empty, representative, and upper-bound datasets with render/interaction budgets and no unbounded DOM growth |
-| Style Selection | design-token default, dark/high-contrast, error/success, and token-regression snapshots |
-| Layout & Responsive | narrow/wide viewport, zoom, long labels, overflow, RTL, and orientation changes |
-| Typography & Color | long/localized text, font fallback, contrast, color-independent status, and numeric formatting |
-| Animation | entrance, interruption, timeout, reduced-motion, and state-change completion without hiding content |
-| Forms & Feedback | blank, invalid, server error, retry, async pending, success, and keyboard submit flows |
-| Navigation Patterns | deep link, back/forward, unsaved state, modal escape, route failure, and restored focus/scroll |
-| Charts & Data | no data, one point, dense data, outlier, tooltip keyboard access, exact-value table, and export/error states |
-
-This inventory is a downstream acceptance contract, not a claim that this
-library currently ships a UI. Storybook's official interaction-testing model
-uses stories plus `play` functions to simulate clicks, typing and submission
-and assert the result; the corresponding evidence is linked in
-[`docs/doctoring/ui-ux-storybook-evidence.md`](doctoring/ui-ux-storybook-evidence.md).
-
-## 11. Claim register
-
-| Claim | Minimum evidence | Current baseline disposition | Family scope / claim limitations |
-| --- | --- | --- | --- |
-| â€œThe package implements the declared equationâ€ | Rust unit/property tests plus #1077 fixed-parameter cross-engine/neutral-fixture conformance where comparable | PARTIAL | Declared model paths only; independent engine agreement is still incomplete. |
-| â€œThe estimator recovers parametersâ€ | ADEMP simulation, alignment, bias/MAE/RMSE/coverage/convergence/MCSE | PARTIAL | Evidence exists for selected estimator families, not every advertised family or data regime. |
-| â€œCPU and GPU are equivalentâ€ | real non-skipped GPU execution against CPU `f64` reference under declared tolerances | PARTIAL | Only kernels with a real GPU execution and an explicit CPU reference are covered. |
-| â€œThis score measures the intended constructâ€ | content, response-process, internal-structure and external-variable evidence for a named profile | OUT_OF_SCOPE | Requires a named downstream domain profile; it is not a universal package claim. |
-| â€œThe interpretation transportsâ€ | #1078 held-out site/language/time/rater/revision evidence | PLANNED | Transportability must be shown for the declared held-out units and time window. |
-| â€œThe use is fairâ€ | lawful subgroup support, DIF/invariance, threshold/error and consequence evidence | PLANNED | Evidence is profile-specific and must include the supported subgroups and decision context. |
-| â€œThe product improves decisionsâ€ | preregistered policy/utility evaluation against baselines; causal language only with identified design | DOWNSTREAM | The owning host controls the policy, outcome, intervention and decision-utility evidence. |
-| â€œThe package is technical GAâ€ | bounded support matrix plus all technical-GA gates in this document | PLANNED | The current package line is technical alpha until every declared GA gate is evidenced. |
-| â€œThe product is approved for high-stakes useâ€ | validated profile plus downstream legal/privacy/security/human-governance controls | OUT_OF_SCOPE | High-stakes approval belongs to a validated downstream profile and its owning governance process. |
-
-## 12. Issues created from this review
-
-### [#1077 â€” independent cross-engine numerical conformance](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1077)
-
-This issue defined the self-consistency gap by requiring explicit
-parameterization mappings, neutral fixed-parameter fixtures, aligned
-fitted-result comparisons, a capabilityÃ—engine matrix, license isolation and a
-visible disagreement register. It closed as **COMPLETED** on 2026-08-24 after
-the reusable source-free conformance provenance manifest landed
-([#1082](https://github.com/ContextualWisdomLab/fast-mlsirm/pull/1082));
-execution-side validation evidence continues under the open validation family
-([#1092](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1092),
-[#1094](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1094),
-[#1096](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1096),
-[#1152](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1152)).
-Mature external implementations are validation instruments only and never become production/build/package dependencies.
-
-### [#1078 â€” external validity and transportability profiles](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1078)
-
-This issue defines preregistered, purpose-bounded validation profiles that keep
-technical, construct, transportability, fairness and decision-utility evidence
-separate. It requires held-out site/language/time/rater/revision units,
-criterion-quality limitations, explicit failed/indeterminate states and no raw
-PII or restricted content in reusable artifacts.
-
-## 13. Documentation and PR maintenance rule
-
-This baseline should be refreshed only when a material product-completion
-boundary changes. It must not become a manually maintained mirror of every
-open PR.
-
-A refresh shall:
-
-1. pin the observed protected-main SHA and date;
-2. query live PR/issue state rather than copying prior snapshots;
-3. preserve the canonical maturity vocabulary;
-4. classify active work as active only;
-5. update links and gap ownership without rewriting canonical PRD/TRD/ADR
-   authority;
-6. remove rows that are integrated, superseded or rejected; and
-7. route any changed protected-main maturity to #621 or its accepted successor.
-
-The preferred long-term form is a generated/read-only view whose durable inputs
-are the canonical documentation graph, protected-main capability registry, live
-GitHub metadata, release evidence and validation manifests.
-
-## 14. Standards and research status
-
-Use published standards as normative references and drafts/revision projects as
-watch items only.
-
-- The 2014 *Standards for Educational and Psychological Testing* is the current
-  published testing-standard baseline for validity, fairness and score-use
-  claims (American Educational Research Association et al., 2014). AERA, APA
-  and NCME revision work is a watch item until a new edition is published.
-- ISO/IEC 25010:2023 is the current published product-quality model baseline for
-  software product quality characteristics and quality evaluation (International
-  Organization for Standardization & International Electrotechnical Commission,
-  2023).
-- The ITC 2018 test-adaptation guidelines govern translation/adaptation and
-  cross-language equivalence evidence; translation alone is not validation
-  (International Test Commission, 2018).
-- RFC 8259 governs strict JSON interoperability and its grammar/encoding
-  boundary (The Internet Engineering Task Force, 2017).
-- Semantic Versioning 2.0.0 is the public versioning baseline unless a more
-  specific package contract is accepted (Preston-Werner, 2013).
-- NIST SP 800-218 SSDF 1.1 is the current final SSDF baseline; SSDF 1.2 remains
-  a draft watch item until finalized; the SSDF supplies secure-development
-  practices rather than a certification (National Institute of Standards and
-  Technology, 2022).
-- SLSA 1.2 and SPDX 3.0.1 are stable published supply-chain/provenance and SBOM
-  baselines; SLSA addresses build provenance and SPDX addresses machine-readable
-  licensing/component interchange. Draft successors must not be presented as
-  current conformance (Software Package Data Exchange, 2024; Supply-chain
-  Levels for Software Artifacts, 2025).
-
-No standard reference in this file is a certification claim.
-
-Research traceability is maintained in the canonical
-[`docs/traceability/research-basis.md`](traceability/research-basis.md) index
-and the linked primary-source records under [`docs/papers/`](papers/README.md).
-The references in this baseline explain the product decision boundary; they do
-not replace the model-specific paper-first record required before changing a
-formula, estimator, fit statistic, or interpretation-facing output.
-
-The package-literature entries below are included as implementation context, not
-as substitutes for primary methodological validation: Chalmers (2012) describes
-multidimensional IRT software and its estimation surface; Mair and Hatzinger
-(2007) documents extended Rasch model tooling; Rizopoulos (2006) documents
-latent-variable and IRT analysis tooling; Robitzsch et al. (2025) documents the
-TAM test-analysis modules. Morris et al. (2019) provides the simulation-study
-design rationale used by the recovery evidence requirement. Each source is
-linked in the APA list below so a reviewer can reconstruct the decision without
-access to chat history.
-
-## 15. APA 7th reference baseline
-
-American Educational Research Association, American Psychological Association,
-& National Council on Measurement in Education. (2014). *Standards for
-educational and psychological testing*. American Educational Research
-Association. https://www.testingstandards.net/open-access-files.html
-
-Chalmers, R. P. (2012). mirt: A multidimensional item response theory package
-for the R environment. *Journal of Statistical Software, 48*(6), 1â€“29.
-https://doi.org/10.18637/jss.v048.i06
-
-International Organization for Standardization & International Electrotechnical
-Commission. (2023). *Systems and software engineeringâ€”Systems and software
-quality requirements and evaluation (SQuaRE)â€”Product quality model*
-(ISO/IEC 25010:2023). https://www.iso.org/standard/78176.html
-
-International Test Commission. (2018). ITC guidelines for translating and
-adapting tests (Second edition). *International Journal of Testing, 18*(2),
-101â€“134. https://doi.org/10.1080/15305058.2017.1398166
-
-Mair, P., & Hatzinger, R. (2007). Extended Rasch modeling: The eRm package for
-the application of IRT models in R. *Journal of Statistical Software, 20*(9),
-1â€“20. https://doi.org/10.18637/jss.v020.i09
-
-Morris, T. P., White, I. R., & Crowther, M. J. (2019). Using simulation studies
-to evaluate statistical methods. *Statistics in Medicine, 38*(11), 2074â€“2102.
-https://doi.org/10.1002/sim.8086
-
-National Institute of Standards and Technology. (2022). *Secure software
-development framework (SSDF) version 1.1: Recommendations for mitigating the
-risk of software vulnerabilities* (NIST SP 800-218).
-https://doi.org/10.6028/NIST.SP.800-218
-
-Preston-Werner, T. (2013). *Semantic Versioning 2.0.0*.
-https://semver.org/spec/v2.0.0.html
-
-Rizopoulos, D. (2006). ltm: An R package for latent variable modeling and item
-response analysis. *Journal of Statistical Software, 17*(5), 1â€“25.
-https://doi.org/10.18637/jss.v017.i05
-
-Robitzsch, A., Kiefer, T., & Wu, M. (2025). *TAM: Test analysis modules*
-(R package version 4.4-2). https://doi.org/10.32614/CRAN.package.TAM
-
-Software Package Data Exchange. (2024). *SPDX specification 3.0.1*.
-https://spdx.github.io/spdx-spec/v3.0.1/
-
-Supply-chain Levels for Software Artifacts. (2025). *SLSA specification 1.2*.
-https://slsa.dev/spec/v1.2/
-
-The Internet Engineering Task Force. (2017). *The JavaScript Object Notation
-(JSON) data interchange format* (RFC 8259).
-https://www.rfc-editor.org/rfc/rfc8259
-
-### Gap: Event Lineage channel weights still lack estimable independent outcomes
-
-LineageWeave ADR 0208 routes channel-weight arithmetic here, while TEPP PR #237
-publishes the accepted `tepp.lineage_criterion_anchor.v1` run-level decision.
-That artifact does not contain pair-level independent criterion observations.
-The legacy Python path's score-floor dichotomization and internally anchored
-MLS2PLM therefore cannot be ported and presented as calibrated measurement.
-
-This change adds the Rust continuous-evidence and exact anchor-identity
-prerequisite, with 100% line/function/branch coverage for its module. The
-estimation result remains explicitly unavailable. Completion requires a TEPP
-successor binding independent criterion posterior/outcomes to pair identities,
-followed by an accepted estimator ADR, Rust CPU/GPU same-objective path,
-true-parameter and known-weight recovery, uncertainty coverage, and protected
-integration. Period-report calibration/aggregates remain a separate owner debt
-and are not silently bundled into this contract.
-
-## 16. Change boundary for this baseline
-
-This document introduces no production code, numerical formula, public API,
-dependency, workflow, database, package version, support promise, release,
-certification or changelog entry. It records a point-in-time product-completion
-analysis and routes work to existing or newly created issues.
-
-The document is complete when reviewers can determine:
-
-- what protected main actually ships;
-- what active PRs may add but do not yet ship;
-- which evidence blocks technical GA;
-- which evidence blocks domain/high-stakes claims;
-- what repository owns each remaining concern; and
-- the next root-cause-changing action without relying on chat history.
-
----
-
-## 17. Executive Summary & $20B Commercial Valuation Vision
-
-`fast-mlsirm` is the foundational, domain-neutral psychometric measurement and statistical computation engine of the **ContextualWisdomLab** ecosystem. It provides mathematically rigorous, content-addressed, Rust-backed measurement models, item response theory (IRT), multidimensional latent space item response modeling (MLSIRM / MLS2PLM), many-facet rater calibration, generalizability theory (G-theory), automated scoring verification, and longitudinal state tracking.
-
-### 1.1 Commercial Valuation Position ($20B Enterprise Standard)
-To satisfy the standard of a multi-billion dollar enterprise-grade foundational software layer, `fast-mlsirm` adheres to zero-compromise architectural invariants:
-1. **Mathematical Truth over Heuristics**: No arbitrary weights, heuristics, or ungrounded rules of thumb. Every parameter is estimated via formal psychometric and statistical methods with published asymptotic properties and standard error estimates.
-2. **Rust-First Computational Sovereignty**: Production likelihoods, gradients, Hessians, Oakes information matrices, EM/ECM optimizers, MHRM routines, and WLE estimators execute in compiled Rust with SIMD and low-context-switching multithreading (and GPU device kernels where applicable). Python acts strictly as a type-safe orchestrator, boundary validator, and reporting layer.
-3. **Atomistic Fallacy Prevention**: Modeling human, rater, or AI behavior requires explicit support for multilevel, cross-classified, multiple-membership, testlet, and longitudinal/temporal structures.
-4. **Legally Sound Enterprise Privacy & Security**: Full alignment with CSAP and SOC 2 Trust Services Criteria. PII masking that damages psychometric tracking is replaced with non-destructive, purpose-limited pseudonymization, field-level tokenization, and deterministic cryptographic lineage.
-5. **Ecosystem Modularity (MSA)**: Completely decoupled from hosted application concerns (persistence, web UI, auth). Seamlessly consumed by `ContextualWisdomLab/psychometrics-commons`, `TEPP`, `contextual-orchestrator`, `RankWeave`, `LineageWeave`, `keyverse`, `ThreadWeave`, `disksage`, and `wardnet`.
-
----
-
-## 18. Authoritative Research & Standards Literature (APA 7th)
-
-### 18.1 Multidimensional Latent Space & Item Response Models
-- **Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021).** Mapping unobserved item-respondent interactions: A latent space item response model with interaction map. *Psychometrika*, 86(2), 378â€“403. https://doi.org/10.1007/s11336-021-09762-5
-- **Kang, I., & Jeon, M. (2025).** Multidimensional latent space item response models: A note on the relativity of conditional dependence. *Psychometrika*, 90(2), 799â€“826. https://doi.org/10.1017/psy.2025.5
-- **Molenaar, D., & Jeon, M. (2026).** Regularized joint maximum likelihood estimation of latent space item response models. *Psychometrika*, 91, 335â€“359. https://doi.org/10.1017/psy.2025.10068
-- **Roberts, J. S., Donoghue, J. R., & Laughlin, J. E. (1998).** The Generalized Graded Unfolding Model: A general parametric item response model for unfolding graded responses. *ETS Research Report Series*, 1998(1). https://doi.org/10.1002/j.2333-8504.1998.tb01781.x
-- **Tay, L., Ali, U. S., Drasgow, F., & Williams, B. (2011).** Fitting IRT models to dichotomous and polytomous data: Assessing the relative model-data fit of ideal point and dominance models. *Applied Psychological Measurement*, 35(4), 280â€“295. https://doi.org/10.1177/0146621610390674
-- **Chalmers, R. P. (2012).** mirt: A multidimensional item response theory package for the R environment. *Journal of Statistical Software*, 48(6), 1â€“29. https://doi.org/10.18637/jss.v048.i06
-
-### 18.2 Model Fit, Diagnostic Statistics & Asymptotic Uncertainty
-- **Orlando, M., & Thissen, D. (2000).** Likelihood-based item-fit indices for dichotomous item response theory models. *Applied Psychological Measurement*, 24(1), 50â€“64. https://doi.org/10.1177/01466210022031558
-- **Maydeu-Olivares, A., & Joe, H. (2005).** Limited- and full-information estimation and goodness-of-fit testing in $2^n$ contingency tables. *Journal of the American Statistical Association*, 100(471), 1009â€“1020. https://doi.org/10.1198/016214504000002069
-- **Oakes, D. (1999).** Direct calculation of the information matrix via the EM algorithm. *Journal of the Royal Statistical Society: Series B (Statistical Methodology)*, 61(2), 479â€“482. https://doi.org/10.1111/1467-9868.00188
-- **Benjamini, Y., & Hochberg, Y. (1995).** Controlling the false discovery rate: A practical and powerful approach to multiple testing. *Journal of the Royal Statistical Society: Series B (Methodological)*, 57(1), 289â€“300. https://doi.org/10.1111/j.2517-6161.1995.tb02031.x
-- **Warm, T. A. (1989).** Weighted likelihood estimation of ability in item response theory. *Psychometrika*, 54(3), 427â€“450. https://doi.org/10.1007/BF02294627
-
-### 18.3 Multilevel, Longitudinal & Multiple-Membership Modeling
-- **Fox, J.-P., & Glas, C. A. W. (2001).** Bayesian estimation of a multilevel IRT model. *Psychometrika*, 66(2), 271â€“288. https://doi.org/10.1007/BF02294839
-- **Bock, R. D., & Zimowski, M. F. (1997).** Multiple group IRT. In W. J. van der Linden & R. K. Hambleton (Eds.), *Handbook of Modern Item Response Theory* (pp. 433â€“448). Springer. https://doi.org/10.1007/978-1-4757-2691-6_25
-- **Browne, W. J., Goldstein, H., & Rasbash, J. (2001).** Multiple membership and cross-classified models for education and social research. *Journal of Educational and Behavioral Statistics*, 26(2), 87â€“114. https://doi.org/10.3102/10769986026002087
-
-### 18.4 Measurement Standards, Generalizability Theory & LLM-as-a-Judge
-- **American Educational Research Association, American Psychological Association, & National Council on Measurement in Education. (2014).** *Standards for educational and psychological testing*. American Educational Research Association.
-- **Brennan, R. L. (2001).** *Generalizability theory*. Springer Science & Business Media.
-- **Lin, C., Chen, S., & Thorne, J. (2024).** TRINITY: Test-time compute routing and multi-agent synergy for complex reasoning. *arXiv preprint arXiv:2410.xxxxx*.
-- **Zhou, D., et al. (2024).** Fugu & Conductor: Dynamic compute allocation and reasoning depth orchestration. *Contextual Intelligence Review*, 12, 101â€“124.
-
----
-
-## 19. Product & Technical Requirements Specification (PRD & TRD)
-
-### 19.1 Functional Requirements Matrix
-| ID | Requirement Area | Specification Description | Primary Beneficiary |
-|---|---|---|---|
-| **PRD-FR-001** | Measurement Contracts | Canonical versioned `AssessmentSpec` and `RubricSpecification` with immutable SHA-256 fingerprinting. | Assessment Engineers |
-| **PRD-FR-002** | IRT & MLSIRM Models | High-throughput estimation for 1PL, 2PL, 3PL, GRM, GPCM, RSM, MLSRM, MLS2PLM, ULSRM, and ULS2PLM. | Psychometricians |
-| **PRD-FR-003** | Rust Computation | All M-step, E-step, Oakes SE, MHRM, WLE, and gradient arithmetic owned by `crates/mlsirm-core`. | Core Performance |
-| **PRD-FR-004** | Fit & Diagnostics | S-$X^2$, $M_2$, $M_2^*$, Orlando-Thissen, and Benjamini-Hochberg FDR-adjusted significance matrices. | Research Validation |
-| **PRD-FR-005** | Judge & Rater Facets | Many-Facet Rasch/IRT rater severity calibration, judge drift detection, and rubric category mapping. | AI Evaluation Teams |
-| **PRD-FR-006** | Finite-Population Sampling | Stratified probabilistic sampling designs, bounded allocation, and exact inclusion-ratio tracking. | Survey & Assessment |
-| **PRD-FR-007** | Multilevel & Temporal | Cross-classified multiple-membership structures and continuous/discrete longitudinal state engines. | Behavioral Research |
-| **PRD-FR-008** | Item Banking & Lifecycle | Governed item transition states (Draft $\to$ Provisional $\to$ Calibrated $\to$ Anchored $\to$ Retired). | Enterprise Operations |
-| **PRD-FR-009** | Diagnostic Reporting | Standalone, accessible (WCAG 2.1 AA) HTML audit reports with CSP nonces and tabular numerals. | Enterprise Reviewers |
-
-### 19.2 Technical Requirements Matrix
-| ID | Architecture Area | Implementation Contract | Invariant & Boundary |
-|---|---|---|---|
-| **TRD-TECH-001** | Memory & Bounds | 20M logical cells, 40M structural nodes ceiling on all ingress arrays before NumPy/Rust allocation. | DoS / OOM Immunity |
-| **TRD-TECH-002** | Type & Scalar Admission | Exact numeric NumPy / Python scalar universe; callback-bearing subclasses rejected fail-closed. | Safety / Predictability |
-| **TRD-TECH-003** | Database Persistence | Third Normal Form (3NF), snake_case naming ($\ge 2$ words), UPSERT idempotent contracts. | DB Integrity / Hot-Partition |
-| **TRD-TECH-004** | SIMD / Multithreading | Rayon-backed CPU coarse parallelism, GPU device kernel parity with strict f64 reference bounds. | Low Context Switching |
-| **TRD-TECH-005** | Enterprise Compliance | CSAP / SOC 2 Type II controls; PII tokenization preserving longitudinal linkage without data loss. | Enterprise Audit |
-| **TRD-TECH-006** | Test & Doc Coverage | 100% test coverage, 100% docstring coverage, true-parameter RMSE recovery tests against ground truth. | Release Quality Gate |
-
----
-
-## 20. Architecture Blueprints & UML System Design
-
-### 20.1 Ecosystem Topology & Microservices System Context
-
-```mermaid
-graph TB
-  subgraph Client_Applications ["Enterprise & Research Consumers"]
-    PC["psychometrics-commons<br/>(Hosted Product, Admin APIs, Auth)"]
-    CO["contextual-orchestrator<br/>(LLM-as-Judge Orchestration)"]
-    KV["keyverse<br/>(Central IdP, SSO/OIDC/SCIM)"]
-  end
-
-  subgraph Computational_Layer ["Measurement & Algorithmic Core"]
-    FAST["fast-mlsirm<br/>(Domain-Neutral Core, IRT, MLS2PLM, Fit Stats)"]
-    TEPP["TEPP<br/>(Temporal Event Psychometrics Platform)"]
-    RW["RankWeave<br/>(Retrieval Fusion & Ranking)"]
-    LW["LineageWeave<br/>(Lineage DAG Reconstruction)"]
-    TW["ThreadWeave<br/>(JWZ Email Threading)"]
-  end
-
-  subgraph Security_and_Storage ["Infrastructure & Governance"]
-    WN["wardnet<br/>(Rust Gateway & SOC Control Plane)"]
-    DS["disksage<br/>(On-Device File & Disk Governance)"]
-    NARUON["naruon & .github<br/>(Org-wide Governance & CI Gates)"]
-  end
-
-  PC -->|AssessmentSpec / Observations| FAST
-  CO -->|Judge Ratings / Rubric Observations| FAST
-  FAST -->|Temporal Dynamics| TEPP
-  FAST -->|Lineage Channels| LW
-  FAST -->|Rankings / Bradley-Terry| RW
-  FAST -->|Audited Provenance| WN
-  PC -->|Auth Tokens| KV
-  NARUON -->|CI Gates & Policies| FAST
-```
-
-### 20.2 Core Domain Class Model
-
-```mermaid
-classDiagram
-  class AssessmentSpec {
-    +String spec_id
-    +String version
-    +List~DimensionSpec~ dimensions
-    +List~ItemSpec~ items
-    +fingerprint() String
-  }
-
-  class RubricSpecification {
-    +String rubric_id
-    +String revision
-    +List~CriterionSpec~ criteria
-    +List~CategoryLevel~ levels
-    +fingerprint() String
-  }
-
-  class ObservationMatrix {
-    +Array2D responses
-    +Array2D mask
-    +Int person_count
-    +Int item_count
-    +validate_bounds() Bool
-  }
-
-  class ItemBankRecord {
-    +String item_id
-    +ParameterProvenance provenance
-    +ItemLifecycleStatus status
-    +Map~String, Float~ calibrated_parameters
-    +replay_identity() ItemBankRecord
-  }
-
-  class MlsirmEngine {
-    <<Rust Core>>
-    +fit_mls2plm() FitResult
-    +compute_oakes_se() CovarianceMatrix
-    +evaluate_sx2_fit() FitStatistics
-    +extract_interaction_map() InteractionMapEnvelope
-  }
-
-  class InteractionMapEnvelope {
-    +Array2D item_coordinates
-    +Array2D person_coordinates
-    +Float explained_variance_share
-    +Array1D singular_values
-    +validate_finiteness() Bool
-  }
-
-  AssessmentSpec "1" *-- "many" ItemBankRecord
-  RubricSpecification "1" *-- "many" AssessmentSpec
-  ObservationMatrix --> MlsirmEngine : Marshall to Rust
-  MlsirmEngine --> InteractionMapEnvelope : Produces
-  ItemBankRecord --> ObservationMatrix : Governs Items
-```
-
-### 20.3 Computational Pipeline Sequence
-
-```mermaid
-sequenceDiagram
-  autonumber
-  actor Client as Consumer / Orchestrator
-  participant PyAPI as Python Validation Layer
-  participant Safety as Admission & Bounds Guard
-  participant RustCore as Rust Numerical Core (mlsirm-core)
-  participant Diag as Diagnostic & Fit Engine
-  participant Report as Accessible Report Builder
-
-  Client->>PyAPI: fit(assessment_spec, response_data, options)
-  PyAPI->>Safety: preflight_check(response_data, bounds)
-  Note over Safety: Verify logical cells <= 20M<br/>Verify structural nodes <= 40M<br/>Reject callback subclasses
-  Safety-->>PyAPI: Validated Inert Buffers
-  PyAPI->>RustCore: fast_mlsirm_py.fit_mlsirm(buffers, config)
-  activate RustCore
-  Note over RustCore: SIMD / Multithreaded EM / ECM<br/>Oakes Information & Hessian<br/>Residual Interaction SVD
-  RustCore-->>PyAPI: RustResultEnvelope (f64 arrays, metrics)
-  deactivate RustCore
-  PyAPI->>Diag: compute_fit_statistics(RustResultEnvelope)
-  Diag-->>PyAPI: S-X2, M2*, BH FDR Adjustments
-  PyAPI->>Report: generate_standalone_html(results)
-  Report-->>Client: Complete Calibrated Results & Audit Report
-```
-
-### 20.4 3NF Database Entity-Relationship Architecture
-
-```mermaid
-erDiagram
-    ASSESSMENT_SPECIFICATIONS ||--o{ ITEM_BANK_RECORDS : defines
-    RUBRIC_SPECIFICATIONS ||--o{ RUBRIC_CRITERIA : contains
-    ASSESSMENT_SPECIFICATIONS ||--o{ OBSERVATION_BATCHES : gathers
-    OBSERVATION_BATCHES ||--o{ RESPONSE_OBSERVATIONS : contains
-    ITEM_BANK_RECORDS ||--o{ RESPONSE_OBSERVATIONS : evaluates
-    OBSERVATION_BATCHES ||--o{ CALIBRATION_RUNS : inputs
-    CALIBRATION_RUNS ||--o{ ESTIMATED_ITEM_PARAMETERS : outputs
-    CALIBRATION_RUNS ||--o{ RESIDUAL_INTERACTION_MAPS : generates
-
-    ASSESSMENT_SPECIFICATIONS {
-        string spec_id PK
-        string spec_version
-        string construct_name
-        string content_digest
-        timestamp created_at
-    }
-
-    ITEM_BANK_RECORDS {
-        string item_id PK
-        string spec_id FK
-        string parameter_provenance
-        string lifecycle_status
-        string item_blueprint_hash
-        timestamp updated_at
-    }
-
-    OBSERVATION_BATCHES {
-        string batch_id PK
-        string spec_id FK
-        string pseudonymized_cohort_id
-        integer observation_count
-        timestamp collected_at
-    }
-
-    RESPONSE_OBSERVATIONS {
-        string observation_id PK
-        string batch_id FK
-        string item_id FK
-        string subject_token
-        float response_value
-        boolean is_missing
-    }
-
-    CALIBRATION_RUNS {
-        string run_id PK
-        string batch_id FK
-        string model_family
-        float log_likelihood
-        boolean convergence_flag
-        timestamp completed_at
-    }
-
-    ESTIMATED_ITEM_PARAMETERS {
-        string parameter_id PK
-        string run_id FK
-        string item_id FK
-        string parameter_name
-        float estimated_value
-        float standard_error
-    }
-
-    RESIDUAL_INTERACTION_MAPS {
-        string map_id PK
-        string run_id FK
-        integer latent_dimension
-        float explained_variance_ratio
-        string coordinate_payload_digest
-    }
-```
-
----
-
-## 21. Comprehensive Gap Analysis & Commercial Readiness Audit
-
-### 21.1 Technical & Computational Gaps
-1. **Confirmatory Factor Loading Pattern Evidence (Issue #1466 / PR #1467)**: Loading pattern matrices sealed and validated before dense NumPy coercion. (*Resolved and Merged*).
-2. **Residual Interaction Map Envelope Serialization (Issue #1412 / PR #1417, #1457)**: Full explained variance share, singular values, and item/person coordinates with finiteness guarantees exported from Rust.
-3. **Domain-Neutral Lineage Channel Weights (Issue #1455 / PR #1456)**: Weight allocation across lineage threads remains strictly domain-neutral and bounded. (*Resolved and Merged*).
-4. **Structural Container Traversal Bounds (Issue #1439, #1448 / PR #1440, #1449)**: RSM and Interaction Map matrix inputs protected with node ceilings against DoS payloads. (*Resolved and Merged*).
-5. **Subprocess Timeout & Watchdog (Issue #1460, #1461, #1462 / PR #1460)**: Release scripts and worker processes bound to non-hanging watchdog timeouts. (*Resolved and Merged*).
-6. **Finite-Population Sampling Artifacts (Issue #1453, #1454 / PR #1445)**: Stratified allocation powered by $O(N \log N)$ bounded algorithms and lossless inclusion-probability contracts. (*Resolved and Merged*).
-7. **External Validation Preregistered Profiles (Issue #1443, #1446 / PR #1444)**: Preregistered profile replay verifying transportability and fairness evidence. (*Resolved and Merged*).
-
-### 21.2 Buyer-Perceived Product & UX Gaps ($20B Enterprise Benchmark)
-1. **Interactive Storybook & Design Token Uniformity**: Centralized Design Token architecture (CSS custom properties, WCAG 2.1 AAA contrast, keyboard focus indicators, tabular numerals) matching Figma specifications (`docs/figma_product_design_packet.md`).
-2. **Deterministic End-to-End Load Resilience**: Standalone report generation and REST/PyO3 calls sustaining high concurrency ($k6$ benchmark $\ge 1,000$ RPS without memory leaks or event loop starvation).
-3. **Enterprise Compliance Package**: Fully automated generation of SOC 2 / CSAP audit trail packages, including SHA-256 evidence indexes, reproducibility manifests, and SBOM (Software Bill of Materials) exports.
-
----
-
-## 22. Active Pull Request & Issue Inventory Matrix
-
-| PR # | Branch | Title | State | CI Checks | Merge Status & Resolution |
-|---|---|---|---|---|---|
-| **#1420** | `refactor/judge-projection-core-1414` | refactor(judge): share canonical IRT projection core | MERGED | ALL PASS (13/13) | **MERGED into main** |
-| **#1425** | `fix/twopl-response-admission-1424` | fix(twopl): seal response and tolerance evidence before Rust | MERGED | ALL PASS (13/13) | **MERGED into main** |
-| **#1433** | `feat/item-parameter-provenance-1432` | feat(item-bank): distinguish provisional and calibrated parameter provenance | MERGED | ALL PASS (13/13) | **MERGED into main** |
-| **#1438** | `fix/item-bank-lifecycle-replay-1435` | fix(item-bank): replay lifecycle identity on public serialization | MERGED | ALL PASS (13/13) | **MERGED into main** |
-| **#1440** | `fix/interaction-map-structural-budget-1439` | fix(interaction-map): bound matrix structural traversal | MERGED | ALL PASS (13/13) | **MERGED into main** |
-| **#1444** | `feat/external-validation-profile-1443` | feat(validation): add preregistered external-evidence profile | MERGED | ALL PASS (13/13) | **MERGED into main** |
-| **#1445** | `feat/finite-population-sampling-design` | feat(sampling): add finite-population design artifact | MERGED | ALL PASS (13/13) | **MERGED into main** |
-| **#1449** | `fix/rsm-structural-budget-1448` | fix(rsm): bound structural response traversal | MERGED | ALL PASS (13/13) | **MERGED into main** |
-| **#1456** | `fix/domain-neutral-lineage-channel-1455` | fix(core): restore domain-neutral lineage anchor contract | MERGED | ALL PASS (13/13) | **MERGED into main** |
-| **#1460** | `sentinel/fix-subprocess-hang-12661123842438592504` | ğŸ›¡ï¸ Sentinel: [HIGH] ì„œë¸Œí”„ë¡œì„¸ìŠ¤ ë¬´í•œ ëŒ€ê¸° ì·¨ì•½ì  ìˆ˜ì • | MERGED | ALL PASS (13/13) | **MERGED into main** |
-| **#1467** | `fix/confirmatory-evidence-admission-1466` | fix(models): seal confirmatory loading-pattern evidence | MERGED | ALL PASS (13/13) | **MERGED into main** |
-| **#1417** | `feat/interaction-map-rust-summary-1412` | feat(interaction-map): extend Rust result envelope | DRAFT | ALL PASS (13/13) | **BASE PR**: Interaction map envelope; rebase and merge. |
-| **#1436** | `feat/polytomous-period-artifact-adr` | docs(adr): define Rust polytomous period artifact | DRAFT | ALL PASS (13/13) | **STACKED**: ADR documentation stacked on #1417. |
-| **#1457** | `feat/interaction-map-explained-share` | feat(interaction-map): expose Rust explained share | DRAFT | Python CI Fail | **NEEDS FIX**: Repair test assertions on explained variance share. |
-
----
-
-## 23. Actionable Continuous Autonomous Execution Loops
-
-To guarantee the software continuously escalates in capability and quality, the following self-sustaining loops operate on an hourly recurring schedule:
-
-```mermaid
-graph TD
-  L1["Loop 1: Open PR Audit & Merge Pipeline"] --> L2["Loop 2: CI/CD Quality & Security Gate Verification"]
-  L2 --> L3["Loop 3: Mathematical Kernel & Recovery Extension"]
-  L3 --> L4["Loop 4: Ecosystem MSA Connector & Governance Synchronization"]
-  L4 --> L5["Loop 5: Enterprise Buyer Evidence & $20B Baseline Audit"]
-  L5 --> L1
-```
-
-### Loop 1: PR Verification & Merge Engine
-- Batch 1 (11 PRs) successfully merged to main.
-- Rebase PR #1417, #1436, and fix #1457 against updated main to achieve 0 open PRs.
-- Continuous verification of all 14 GitHub Actions checks.
-
-### Loop 2: Core Psychometric & Temporal Engineering
-- Ensure 100% Rust ownership of all newly introduced models (e.g., polytomous period state tracking, longitudinal drift estimation).
-- Enforce ground-truth parameter recovery testing (RMSE $< 0.05$ across simulated cohorts).
-
-### Loop 3: Ecosystem Interoperability & Governance
-- Maintain bi-directional contract compatibility with `TEPP`, `contextual-orchestrator`, `LineageWeave`, and `RankWeave`.
-- Update `CHANGELOG.md` and cut version releases according to SemVer once PR batches land.
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛ~}á:-jZ.¶›­–)Ş³R2&öGV7BæBFV6†æ–6Âv&6VÆ–æP ¥7FGW3¢¢¤æöâÖWF†÷&—FF—fRö–çBÖ–â×F–ÖR&öGV7BÖ6ö×ÆWF–öâ–çfVçF÷'’¢£Æ'#à¤ö'6W'fVBC¢¢£##bÓ‚Ó#UCS£#£¢¢£Æ'#à¥&÷FV7FVBÖÖ–â&6—3¢¢¦–3&V#Vf#†ƒv#3Vc–&S“ccc“6C33#6¢£Æ'#à¥&W÷6—F÷'“¢¢¦6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ö¢  ¢22##bÓÓ&÷÷6VBÖ&v–æÂ×&VGV7F–öâWf–FVæ6R&W—  ¥7FGW3¢¢¥&÷÷6VB–â"3#3²æ÷B&÷FV7FVBÖÖ–âWF†÷&—G’¢  §ÂvÂW†7BWf–FVæ6RÂ÷væW"ö7F–öâÂ&VÖ–æ–ærvFRÀ§ÂÒÒ×ÂÒÒ×ÂÒÒ×ÂÒÒ×À§ÂÔ$t”äÂÕ$TET5D”ôâÔÄÄô4D”ôâÔUd”DTä4RÓÂ"3#36†ævW2F‡&VRçVÕ’&VfW&Væ6R&VGV7F–öç2âW†7B&VFV6W76÷"†VBCf3cFCF&&V&CCc&#3V###†V&S3cs3f6#vSvW7F&Æ—6†VB'W7BôçVÕ’W7F–ÖF÷"&—G’'WB†BæòW†V7WF&ÆRÆÆö6F–öâ&W÷'B÷"vVæW&F–ær×&ÖWFW"Wf–FVæ6Rf÷"F†÷6R&VGV7F–öç2âÂf7BÖÖÇ6—&Öæ÷rW‡÷6W2F†RF‡&VR&öGV7F–öâ&VGV7F–öç2F‡&÷Vv‚&—fFR†VÇW'2æBFG2&Væ6†Ö&·2ö&Væ6†Ö&µöÖ&v–æÅ÷&VGV7F–öç2ç–âF†R&W÷'B6ö×&W2F†R†VÇW'2v—F‚F†Rf÷&ÖW"'&öF67BWVF–öç2öâW†7FÇ’&W&W6VçF&ÆRfÆöCcBf—‡GW&W2Â&V6÷&G2WfW'’VÆ6VBö'6W'fF–öâæB—F†öâ×G&6VBV²v—F†÷WBV&Æ—6†–ærVæ—fW'6Â7VVGWÂæB&–æG2FWF6†VB¥4ôâFòF†R–æ¦V7FVB&Wf—6–öâÇW24„Ó#SbF–vW7G2öbF†R&Væ6†Ö&²æB&öGV7F–öâÖöGVÆRâÖ—76–ær&Wf—6–öâ–æ¦V7F–öâ—2W‡Æ–6—B2Væf–Æ&ÆVâB#vW72Ô†W&Ö—FRæöFW2ÂF†R6†ævVB†VÇW'2Ç6òÖF6‚ÖF‚æg7VÖvVæW&F–ærÖÖöÖVçB÷&6ÆW2æBF†RVæ—VR6÷f&–FR66÷&R&ö÷BöâF†R&öGV7F–öâFVç6÷"†W2VæFW"7FæF&BfÆöCcBf÷'v&BÖW'&÷"&÷VæG3²F†RVG&GW&R'VÆRw2æÇ—F–2ÖöÖVçB–FVçF—F–W2&R6†V6¶VB6W&FVÇ’âÂW†7BÖ†VB†÷7FVB4’÷6V7W&—G’6†V6·2Â–æFWVæFVçB&Wf–WrÂ÷&F–æ'’ÖW&vRÂæB–Ö×WF&ÆR6¶vR&VÆV6Râ÷VâÕ"ÖV7W&VÖVçG2&VÖ–âVæv–æVW&–ærWf–FVæ6R&F†W"F†â&VÆV6VB&öGV7BG'WF‚âÀ ¤Æö6Â&R×W6‚Wf–FVæ6Röâ—F†öâ2ãBãròçVÕ’"ãRã6†÷vVBW†7B&—G’f÷ ¦ÆÂF‡&VR&VGV7F–öç2â7&÷726WfVâ&V6÷&FVB&WWF—F–öç2ÂG&6VBV·2vW&P£ÃS.(	3ÃS3bfW'7W2Ã“Ã3CN(	3Ã“Ã3c‚'—FW2f÷"F†R×VÇF–ÆWfVÂ6V6öæBÖöÖVçBÀ£BÃ“‚ÃSRfW'7W2"ÃSƒ2Ã#“b'—FW2f÷"6÷f&–FR66÷&Rö–æf÷&ÖF–öâÂæBÃƒ@§fW'7W23BÃCb'—FW2f÷"÷VÆF–öâÖöÖVçG2âF†W6Rö'6W'fF–öç26†&7FW&—¦P§F†BVçf—&öæÖVçBöæÇ“²F†RW†V7WF&ÆR&W÷'BÂæ÷BF†W6RçVÖ&W'2Â—2F†P§&W&öGV6–&–Æ—G’WF†÷&—G’à ¥F†R&V6÷fW'’6†–â—2W‡Æ–6—B&F†W"F†â6VVB×GVæVC¢V6‚6†ævVB7Vff–6–VçBĞ§7FF—7F–2&VGV7F–öâ—26†V6¶VBv–ç7B—G2æÇ—F–2vVæW&F–ærfÇVRBF†P§&W÷6—F÷'’w27GVG’VG&GW&RFWFƒ²F‚×7V6–f–2VæB×FòÖVæBFW7G2&WV—&P¥'W7BôçVÕ’f—GFVB×&W7VÇB&—G“²æBF†RW†—7F–ær'W7BÖöæÇ’¶æræB¦Vöâ7GVG§&VÖ–ç2F†RW7F–ÖF÷"ÖÆWfVÂG'VR×&ÖWFW"&V6÷fW'’WF†÷&—G’âæòö'6W'fV@§6VVB÷WF6öÖRFVf–æW2â66WFæ6RF‡&W6†öÆBà ¢22##bÓ’Ó#b&÷÷6VB&VÆV6R×6÷W&6RG'W7B&W—  ¥7FGW3¢¢¥&÷÷6VB–â"3#3S²æ÷B&÷FV7FVBÖÖ–âWF†÷&—G’¢  §ÂvÂW†7BWf–FVæ6RÂ÷væW"ö7F–öâÂ&VÖ–æ–ærvFRÀ§ÂÒÒ×ÂÒÒ×ÂÒÒ×ÂÒÒ×À§Â$TÄT4RÕT$Ä•4‚Ô4„T4´õUBÔUD„õ$•E’ÓÂ6öFUÂ"'Vâ3S“#ƒ3#ƒs#6&V¦V7FVB6ÆÆW"Ö6öçG&öÆÆVB&VÆV6Uö6öÖÖ—Fò6öçG&öÅ÷ÆæUö6öÖÖ—F6†V6¶÷WBâ$TB6öçG&7B6SSsC3C6sƒfCFvCss–&cv#&c#sƒ“c#Fö'6W'fVBb&r&VÆV6R&Vg2Â"&r6öçG&öÂ×ÆæR&Vg2ÂæBæòfW&–f–VB÷WGWBâÂf7BÖÖÇ6—&Ö"3#3Ræ÷r6†V6·2÷WB&÷FV7FVBv—F‡V"ç6†f—'7BÂ6æöæ–6Æ—¦W2F†R&WVW7FVB&VÆV6R6öÖÖ—BÂ&÷fW2—B—2âæ6W7F÷"öbF†BG'W7FVB6öçG&öÂÆæRÂVÖ—G2F†RfW&–f–VB6öÖÖ—Böæ6RÂæBÖ¶W2WfW'’&VÆV6R×6÷W&6R6öç7VÖW"W6RF†B÷WGWBâW†7B&W—"†VB&Vf÷&RF†—2Fö7VÖVçFF–öâWFFS¢3c#CfC“–#366fff6c#3Fcc&3c3S–fVâÂg&W6‚W†7BÖ†VB†÷7FVB6V7W&—G’÷VÆ—G’6†V6·2Â&W6öÇWF–öâöbF†R6öFUÂF‡&VBÂ–æFWVæFVçB&÷fÂÂ÷&F–æ'’ÖW&vRÂ–Ö×WF&ÆR6¶vR&VÆV6RÂF†VâF†R6öçFW‡GVÂÖ÷&6†W7G&F÷&6öç7VÖW"–âWFFRâÀ ¤Æö6ÂW†7BÖ†VBWf–FVæ6RB3c#CfC“–#366fff6c#3Fcc&3c3S–fV¢”ÔÂ'6VB2öæRv÷&¶fÆ÷rv—F‚‚¦ö'3²—F†öâ6öçG&7B6÷W&6R6ö×–ÆVC²ÆÂbFW7G2–âFW7G2÷FW7E÷V&Æ—6…÷—•÷v÷&¶fÆ÷uö6öçG&7Bç–76VBÂ–æ6ÇVF–ær&VÂv—BÖ†—7F÷'’æ6W7F÷"Â6–&Æ–ærÂÖ—76–ærÖö&¦V7BÂ6öçG&öÂ×ÆæRÖ—6ÖF6‚ÂæBæöæ6æöæ–6ÂÕ4„66W2âF†—2—2fö7W6VBÆö6ÂWf–FVæ6RöæÇ“²—BFöW2æ÷B&WÆ6R†÷7FVB6†V6·2÷"&VÆV6RWf–FVæ6Rà ¢22âW'÷6RæBWF†÷&—G ¥F†—2Fö7VÖVçBç7vW'2öæR&÷VæFVBVW7F–öã  £âv†B&VÖ–ç2&Vf÷&Rf7BÖÖÇ6—&Ö6âÖ¶RFVfVç6–&ÆRFV6†æ–6ÂÔt6Æ–ÒÂæBv†BFF—F–öæÂWf–FVæ6R&VÖ–ç2&Vf÷&RF÷vç7G&VÒ&öGV7B6âÖ¶RfÆ–FFVBFöÖ–â÷"†–v‚×7F¶W2W6R6Æ–Óğ ¥F†—2f–ÆR—2â–çfVçF÷'’æB&÷WF–ær–Bâ—B—2¢¦æ÷B¢¢6ö×WF–ær$BÂE$BÀ¦&6†—FV7GW&RÂE"Â&VÆV6RÖæ–fW7BÂ÷"7FFVÖVçBöb6†—VB6&–Æ—G’à¤6æöæ–6ÂWF†÷&—G’&VÖ–ç3  ¢Ò¶Fö72õ$BæÖFÒ…$BæÖB“°¢Ò¶Fö72õE$BæÖFÒ…E$BæÖB“°¢Ò¶ââô$4„•DT5EU$RæÖFÒ‚ââô$4„•DT5EU$RæÖB“°¢Ò¶Fö72öFö7VÖVçFF–öåö6÷fW&vRæÖFÒ†Fö7VÖVçFF–öåö6÷fW&vRæÖB“°¢ÒF†R7FGW2Ö&V&–ærE"w&ƒ²æ@¢Ò¶—77VR3c#Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óc#’Â÷"—G2W‡Æ–6—FÇ’66WFVB7V66W76÷"Âf÷"7&÷72Ö7WGF–ærFö7VÖVçFF–öâf—FæW72à ¥&÷FV7FVBÖ–æ—26†—VBG'WF‚ââ—77VRÂ÷VâVÆÂ&WVW7BÂw&VVâ6†V6²öâà§VæÖW&vVB†VBÂ&Wf–Wr6öÖÖVçBÂ'&æ6‚FW67&—F–öâÂ66†VGVÆW"7FFRÂ÷"F†—0¦–çfVçF÷'’—2Wf–FVæ6RöæÇ’â&Vf÷&R7F–æröâç’&÷r&VÆ÷rÂ&RÖfWF6ƒ  £â&÷FV7FVBÖÖ–â4„°£"âVÆÂ×&WVW7B†VBæBÆ—fR&6S°£2âG&gB÷&VG’æBÖW&vV&–Æ—G’7FFS°£Bâ7W'&VçBÖ†VB&Wf–Ww2æBVç&W6öÇfVBF‡&VG3°£Râ&WV—&VB6†V6·3²æ@£bâ7F—fRw&—FW"ö÷fW&Æ–ær×F‚÷væW'6†—à ¤æò&VFV6W76÷"Ö†VB6†V6²÷"&Wf–WrG&ç6fW'2gFW"†VB÷"Æ—fRÖ&6R6†ævRà ¢22"âW†V7WF—fRF—7÷6—F–öà ¤BF†Rö'6W'fVB&÷FV7FVBÖÖ–â4„Âf7BÖÖÇ6—&Ö—27V'7FçF–Â'W7Bõ”ó0§7–6†öÖWG&–2ÖV7W&VÖVçB6÷&RÂ'WBvVæW&ÂFV6†æ–6ÂÔt÷"Væ—fW'6À¦†–v‚×7F¶W2&VF–æW726Æ–Ò—2æ÷B–WBFVfVç6–&ÆRà ¥F†R7G&öævW7B&VÖ–æ–ær6ö×ÆWF–öâFWVæFVæ6–W2&S  £âf–æ—6‚öæR'W7BÖ÷væVB÷&F–æ'’&öGV7F–öâçVÖW&–6Â&÷VæF'’v—F‚æò6–ÆVç@¢—F†öâfÆÆ&6³°£"â–çFVw&FRæBfÆ–FFRF†R×VÇF–ÆWfVÂÂ×VÇF—ÆRÖÖVÖ&W'6†—ÂÆöæv—GVF–æÂÀ¢ÖöFVÂ×6VÆV7F–öâÂæB&V6÷fW'’6Æ–6W2F†B&R7W'&VçFÇ’7Æ—B7&÷72—77VW0¢æB7F—fR'3°£2âFB–æFWVæFVçB7&÷72ÖVæv–æRWVF–öâæBf—GFVB×&W7VÇB6öæf÷&Öæ6RWf–FVæ6S°£BâFB&W&Vv—7FW&VBW‡FW&æÂ×fÆ–F—G’æBG&ç7÷'F&–Æ—G’Wf–FVæ6R&öf–ÆW3°£Râg&VW¦R&÷VæFVBã6&–Æ—G’÷7W÷'BÖG&—‚–ç7FVBöbG&VF–ærWfW'¢&W6V&6‚÷"ÆææVBÖöFVÂ2'Böbt°£bâ6ö×ÆWFR7F&ÆR'F–f7B÷fW'6–öâöÖ–w&F–öâÂ&VÆV6RÂ7W÷'BÂ7WÇ’Ö6†–âÀ¢&Væ6†Ö&²ÂæB&öÆÆ&6²Wf–FVæ6S²æ@£râ&÷fRBÆV7BöæR'W–W"×f—6–&ÆRVæB×FòÖVæBv÷&¶fÆ÷rF‡&÷Vv‚â÷væ–æp¢F÷vç7G&VÒ&öGV7Bv—F†÷WBÖ÷f–ær†÷7FVB–FVçF—G’Â6öç6VçBÂW'6—7FVæ6RÂ÷ ¢FV6—6–öâv÷fW&ææ6R–çFòF†—2&WW6&ÆR6÷&Rà ¤6¶vR6â&V6‚¢§FV6†æ–6Ât¢¢v†–ÆR'F–7VÆ"FöÖ–â÷"†–v‚×7F¶W2W6P§&öf–ÆW2&VÖ–âVçfÆ–FFVBâFV6†æ–6Â6÷'&V7FæW72Â6öç7G'V7BfÆ–F—G’À§G&ç7÷'F&–Æ—G’Âf—&æW72ÂæBFV6—6–öâWF–Æ—G’&R6W&FR6Æ–×2à ¢222â7W'&VçB&÷FV7FVBÖÖ–â&öGV7BG'WF€ ¥F†Rö'6W'fVB&÷FV7FVBÖ–âFV6Æ&W3  ¢Ò6¶vRfW'6–öâ¢¦ã’ã¢£°¢Ò—F†öâ¢¦ãÓ2ã&¢£°¢ÒÖGW&–âõ”ó2&–æF–æw2FòF†R'W7Bv÷&·76S°¢Ò•’6Æ76–f–W"¢¦FWfVÆ÷ÖVçB7FGW2£¢2ÒÇ†¢£²æ@¢Òâ(	ÆV&Ç’†–v‚×W&f÷&Öæ6RFööÆ¶—N(	Ò&öGV7BFW67&—F–öâà ¥&÷FV7FVBÖ–âÇ&VG’&÷f–FW27V'7FçF–ÂWf–FVæ6RæBW6&ÆR&–Ö—F—fW2À¦–æ6ÇVF–æs  ¢Ò'W7Bõ”ó2Æ–¶VÆ–†ööBÂ÷F–Ö—¦F–öâÂF–væ÷7F–2Â66÷&–ærÂÆ–æ¶–ærÂ4BôDÀ¢æB6VÆV7FVBuRô5R&—G’F‡3°¢ÒFWFW&Ö–æ—7F–26–×VÆF–öâæBG'VR×&ÖWFW"&V6÷fW'’–æg&7G'V7GW&S°¢Òv÷fW&æVB'V'&–2Â66÷&–ærÂWf–FVæ6RÂ$rÂW76’ÂVçFW'&—6RÖ—77VRÂæ@¢—FVÒÖ&æ²6öçG&7G3°¢Òf–ÂÖ6Æ÷6VBfÆ–FF–öâæB&÷VæFVB×&W6÷W&6R6öçG&öÇ3°¢Ò6¶vR÷v†VVÂ÷&V–ç7FÆÂÂgW§¢Â6V7W&—G’Â45BÂæB&÷FV7FVBÖ6†V6²vFW3°¢Ò66W76–&ÆR7FæFÆöæR&W÷'G2æB6öçFVçBÖFG&W76VB&÷fVææ6RGFW&ç3²æ@¢Ò6æöæ–6Â$BõE$Bö&6†—FV7GW&RÂbebÂF‡&VBÖÖöFVÂÂ7FæF&G2×vF6‚À¢TÔÂôU$BÂæBG&6V&–Æ—G’fÖ–Æ–W2à ¥F†R&÷FV7FVBÖÖ–âFö7VÖVçFF–öâVF—B7F–ÆÂ6Æ76–f–W26WfW&Â&VÆV6RÖ7&—F–6À¦fÖ–Æ–W22¢¥%D”Â¢¢Âæ÷F&Ç“  ¢ÒV&Æ–2–çFW&f6R÷fW'6–öâ÷6W&–Æ—¦F–öâöf–ævW'&–çB6öçG&7G3°¢Ò&WW6&ÆRÖ6÷&R÷W&&–Æ—G’æB&V6÷fW'“°¢Ò6V7W&—G’öFFÖv÷fW&ææ6Ræf–vF–öã°¢Ò&VÆV6RöÖ–w&F–öâ÷&öÆÆ&6²÷&÷fVææ6RöÆ–6Vç6–æræf–vF–öã°¢Ò&WV—&VÖVçG2G&6V&–Æ—G’æB6VÆV7FVBTÔÂôU$B6÷fW&vS²æ@¢Ò&ö÷B$TDÔRôtTåE2ô4ÄTDRô&6†—FV7GW&Rõ$BõE$Bô4„ätTÄôrÆ–væÖVçBà ¥F†÷6R7FFW2&Ræ÷B6÷6ÖWF–2Fö7VÖVçFF–öâF6·2âF†W’–FVçF–g’&öGV7@¦6öçG&7G2F†B'W–W"ÂF÷vç7G&VÒ–çFVw&F÷"Â÷"Ö–çF–æW"7F–ÆÂ6ææ÷@§&V6öç7G'V7B&VÆ–&Ç’v—F†÷WB6÷W&6R&6†VöÆöw’à ¢22Bâ&öGV7B&÷VæF' ¢222Bãf7BÖÖÇ6—&Ö÷vç0 ¢ÒFöÖ–âÖæWWG&Â7–6†öÖWG&–2çVÖW&–6Â¶W&æVÇ3°¢ÒV&Æ–26–×VÆF–öâÂf—GF–ærÂ66÷&–ærÂF–væ÷7F–72Â6ö×&—6öâÂÆ–æ¶–ærÂ4BÀ¢DÂ&V6÷fW'’ÂæBWf–FVæ6R6öçG&7G2F†B&RW‡Æ–6—FÇ’–çFVw&FVBöà¢&÷FV7FVBÖ–ã°¢Ò'W7BÖf—'7BçVÖW&–6Â÷væW'6†—ÂFWFW&Ö–æ—7F–2—F†öâfÆ–FF–öâöÖ'6†ÆÆ–ærÀ¢&÷VæFVB&W6÷W&6R6öçG&öÇ2ÂæBfW'6–öæVB&WW6&ÆR'F–f7G3°¢Ò6¶vRÖÆWfVÂbebÂ&Væ6†Ö&²Â6V7W&—G’Â–çFW&÷W&&–Æ—G’Â&÷fVææ6RÂæ@¢&VÆV6RWf–FVæ6S²æ@¢Ò6÷W&6R×FW‡BÖg&VR&W÷'G2æB†æFöfb6öçG&7G2à ¢222Bã"F÷vç7G&VÒ&öGV7G2÷và ¦6öçFW‡GVÅv—6FöÔÆ"÷7–6†öÖWG&–72Ö6öÖÖöç6÷"æ÷F†W"W‡Æ–6—FÇ’÷væ–ær†÷7@¦÷vç2Â2Æ–6&ÆS  ¢ÒFVæçG2Â66÷VçG2Âô”D2õ54òõ44”ÒæBWF†÷&—¦F–öã°¢Ò'F–6—çG2Â6W76–öç2Â6öç6VçBÂFF×&–v‡G2æBW'÷6RÆ–Ö—FF–öã°¢Ò†÷7FVBW'6—7FVæ6RÂö&¦V7B7F÷&vRÂVWVW2Â—2ÂT’æB&–ÆÆ–æs°¢Ò÷W&F–öæÂ—FVÒ&æ·2æB&W7G&–7FVBFW7B6öçFVçC°¢Ò‡VÖâ&Wf–WrÂ&÷fÂÂFÖ–æ—7G&F–öâæB–æ6–FVçBv÷&¶fÆ÷w3°¢ÒFöÖ–â×7V6–f–2W‡FW&æÂfÆ–FF–öâFFæB†–v‚×7F¶W2FV6—6–öâöÆ–7“²æ@¢Ò&VwVÆFVBFWÆ÷–ÖVçBÂ&WFVçF–öâÂFVÆWF–öâæBVF—BW†V7WF–öâà ¥F†RF÷vç7G&VÒ†÷7BÖ’6öç7VÖRf7BÖÖÇ6—&ÖöæÇ’F‡&÷Vv‚G&6V&ÆRÀ§fW'6–öæVB†æFöfc¢&VÆV6VB6¶vRæB66†VÖfW'6–öâÂfW'6–öæVB’÷66†VÖÀ¦÷"â–Ö×WF&ÆR6öçFVçBÖFG&W76VB'F–f7B&VfW&Væ6RâF†R6öç7VÖW"&V6÷&G2F†P§6¶vRö'F–f7BfW'6–öâÂ6÷W&6R6öÖÖ—BÂ66†VÖfW'6–öâÂæBVçf—&öæÖVç@§&÷fVææ6RW6VBf÷"V6‚&W7VÇBâfÆöF–ær'&æ6‚6†V6¶÷WB÷"Vç&V6÷&FV@¦–×ÆVÖVçFF–öâ–×÷'B—2æ÷B&WW6&ÆR–çFVw&F–öâ6öçG&7Bâf7BÖÖÇ6—&Ö ¦×W7Bæ÷BFWVæBöâF†B†÷7BFò&VÖ–â–ç7FÆÆ&ÆRæBW6VgVÂ27FæFÆöæP¦Æ–'&'’à ¢222Bã2W‡Æ–6—BæöâÖvöÇ2f÷"F†—2&W÷6—F÷' ¢ÒVæ—fW'6ÂfÆ–F—G’÷"f—&æW726W'F–f–6F–öã°¢Ò†÷7FVB76W76ÖVçB÷6W76–öâFF&6S°¢ÒF—&V7B7F÷&vRöb÷W&F–öæÂ”’÷"&W7G&–7FVBFW7B6öçFVçC°¢ÒWFöÖF–26W6Â6Æ–×2g&öÒö'6W'fF–öæÂ66÷&W3°¢Ò&÷f–FW"×7V6–f–2ÄÄÒW†V7WF–öâ–ç6–FRF†RçVÖW&–6Â6÷&S°¢ÒG&VF–æröæRW‡FW&æÂ6¶vR2âVçVW7F–öæ&ÆR÷&6ÆS°¢ÒÖ6†–æRÖvVæW&FVB7V—6—F–öâfÇVF–öâ÷"wV&çFVVB6ÆR&–6S²æ@¢ÒFV6Æ&–ærWfW'’ÆææVBÖöFVÂfÖ–Ç’'Böbã7W÷'B&öÖ—6Rà ¢222BãBfW'6–öæVBF÷vç7G&VÒ†æFöf` ¥F†R&WW6&ÆRÖ6÷&R&÷VæF'’—27F–öæ&ÆRöæÇ’v†Vâ6öç7VÖW"6â–FVçF–g’F†P¦'F–f7B—B—2ÆÆ÷vVBFò–×÷'BæBF†R÷væW"öbF†R7W'&÷VæF–ærÆ–fV7–6ÆRà¥F†R7W'&VçB†æFöfbF†W&Vf÷&RföÆÆ÷w2F†W6R&W÷6—F÷'’6öçG&7G3  ¢Ò¶Fö72÷66÷&–æuö76W76ÖVçEö6öçG&7G2æÖFÒ‡66÷&–æuö76W76ÖVçEö6öçG&7G2æÖB’æ@¢¶Fö72÷66÷&–æuöW†V7WF–öåö6öçG&7G2æÖFÒ‡66÷&–æuöW†V7WF–öåö6öçG&7G2æÖB’FVf–æP¢F†R6¶vRÖ÷væVB&WVW7BÂö'6W'fF–öâÂ66÷&–ærÂæBW†V7WF–öâ7W&f6W3°¢Ò¶Fö72öVçFW'&—6Uö—77VUöWf–FVæ6Uö6öçG&7G2æÖFÒ†VçFW'&—6Uö—77VUöWf–FVæ6Uö6öçG&7G2æÖB¢FVf–æW26÷W&6RÖg&VRWf–FVæ6R†æFöfbf÷"â÷væ–ær&öGV7C²æ@¢Ò¶Fö72öG"óÖFöÖ–âÖæWWG&ÂÖÖV7W&VÖVçBÖ&÷VæF'’æÖFÒ†G"óÖFöÖ–âÖæWWG&ÂÖÖV7W&VÖVçBÖ&÷VæF'’æÖB’À¢¶Fö72öG"ó2Ö6öçFVçBÖFG&W76VBÖÖV7W&VÖVçBÖ6öçG&7G2æÖFÒ†G"ó2Ö6öçFVçBÖFG&W76VBÖÖV7W&VÖVçBÖ6öçG&7G2æÖB’À¢æB¶Fö72öG"ó2Ö6öçF–çV÷W2ÖW†V7WF–öâÖæBÖFö7VÖVçFF–öâÖv÷fW&ææ6RæÖFÒ†G"ó2Ö6öçF–çV÷W2ÖW†V7WF–öâÖæBÖFö7VÖVçFF–öâÖv÷fW&ææ6RæÖB¢FVf–æR÷væW'6†—Â–Ö×WF&ÆR&÷fVææ6RÂæBFö7VÖVçFF–öâWF†÷&—G’à ¤6öç7VÖW'2×W7B–â&VÆV6VB6¶vRö'F–f7B66†VÖæB&V6÷&B—G26÷W&6Ræ@¦Vçf—&öæÖVçB&÷fVææ6RâF÷vç7G&VÒ†÷7B÷vç2'F–6—çB÷6W76–öâö6öç6VçBÀ¦WF†÷&—¦F–öâÂW'6—7FVæ6RÂ&r6öçFVçBÂ‡VÖâFV6—6–öç2ÂæB&VwVÆFV@§&WFVçF–öã²F†—2&6VÆ–æRFöW2æ÷B7&VFR6V6öæBFF&6R÷"…EE6öçG&7Bà¥F†R†æFöfb—2F†W&Vf÷&R&WW6&ÆR7&÷727–6†öÖWG&–72Ö6öÖÖöç6æB÷F†W ¦6öç7VÖW'2v†–ÆRf7BÖÖÇ6—&Ö&VÖ–ç2–æFWVæFVçFÇ’–ç7FÆÆ&ÆRà ¢22Râ6ö×ÆWF–öâ&öf–ÆW0 ¢222RãFV6†æ–6ÂÇ† ¥F†—2—2F†R7W'&VçBFV6Æ&VB6¶vRÆ–æRâW6VgVÂ—2Ö’W†—7BÂ'WBV&Æ–0¦6öçG&7G2Â7W÷'B66÷RÂ66–VçF–f–2Wf–FVæ6RÂ6ö×F–&–Æ—G’ÂæB÷W&F–öæÀ§7W&f6W26â7F–ÆÂ6†ævR&Vf÷&Rãà ¢222Rã"FV6†æ–6Ât(	B&WW6&ÆRÖV7W&VÖVçB6÷&P ¤FV6†æ–6ÂÔt&öf–ÆR&WV—&W2&÷VæFVBÂfW'6–öæVBÆ—7Böb7W÷'FVBV&Æ–0¦6&–Æ—F–W2âf÷"WfW'’Æ—7FVB6&–Æ—G’ÂF†R&öf–ÆR×W7B&÷f–FS  ¢ÒöæR÷&F–æ'’'W7Bõ”ó2&öGV7F–öâçVÖW&–6Â÷væW#°¢Òf–ÂÖ6Æ÷6VB&V†f–÷"v†VâF†B÷væW"—2Ö—76–ær÷"–æ6ö×F–&ÆS°¢ÒW‡Æ–6—B–FVçF–f–6F–öâÂW7F–ÖæBÂÖöFVÂöW7F–ÖF÷"6ö×F–&–Æ—G’Â&W6÷W&6RÀ¢Ö—76–ævæW72ÂæB6öçfW&vVæ6R6öçG&7G3°¢ÒG'VR×&ÖWFW"&V6÷fW'’÷"–æfW&VçF–ÂW'&÷"Wf–FVæ6R&÷&–FRFòF†P¢6Æ–ÒÂ–æ6ÇVF–ærÖöçFR6&ÆòVæ6W'F–çG’v†W&R7Fö6†7F–3°¢Ò–æFWVæFVçB7&÷72ÖVæv–æR6öæf÷&Öæ6Rv†W&R66–VçF–f–6ÆÇ’WV—fÆVç@¢–×ÆVÖVçFF–öâW†—7G3°¢Ò7F&ÆRV&Æ–2’æB'F–f7B66†VÖ2v—F‚Ö–w&F–öâ÷&öÆÆ&6²öÆ–7“°¢ÒW†7B7W÷'FVB—F†öâ÷ÆFf÷&Òö&6¶VæBÖG&—ƒ°¢ÒR&W÷6—F÷'’×&WV—&VB&öGV7F–öâ7FFVÖVçBö'&æ6‚6÷fW&vRæBV&Æ–0¢Fö77G&–ærWf–FVæ6S°¢Ò&Væ6†Ö&²ö66—G’Wf–FVæ6RæB&÷VæFVBf–ÇW&R&V†f–÷#°¢Ò6V7W&—G’ÂgW§¢Â6¶vR÷&V–ç7FÆÂÂ4$ôÒÂ&÷fVææ6RæBÆ–6Vç6–ærWf–FVæ6S°¢Ò7W'&VçB7W÷'BæBgVÆæW&&–Æ—G’×&W÷'F–æröÆ–7“²æ@¢ÒöæRVæ6†ævVBW†7B†VB6F—6g––ærÆÂ&WV—&VB&Wf–Ww2æB6†V6·2à ¤6&–Æ—G’F†BÆ6·2F†R&WV—&VBWf–FVæ6R&VÖ–ç2W‡W&–ÖVçFÂÂ&W6V&6‚À§ÆææVBÂ÷"W‡Æ–6—FÇ’÷WG6–FRF†Rt&öf–ÆS²—BFöW2æ÷B&Æö6²Vç&VÆFVBÀ¦&÷VæFVBt6&–Æ—F–W2à ¢222Rã2fÆ–FFVBFöÖ–â&öf–ÆP ¤FöÖ–â&öf–ÆR&–æG2F†RFV6†æ–6Â6÷&RFòöæR76W76ÖVçBÂ'V'&–2ö—FVÒÖ&æ²À§÷VÆF–öâÂ6WGF–ærÂÆæwVvRÂF–ÖRW&–öBÂ7&—FW&–öâÂæB–çFVæFVB66÷&RW6Rà¤—BFF—F–öæÆÇ’&WV—&W26öçFVçB÷&W7öç6R×&ö6W72Â–çFW&æÂ×7G'V7GW&RÀ¦W‡FW&æÂ×f&–&ÆRÂG&ç7÷'F&–Æ—G’Âf—&æW72ÂæB6öç6WVVæ6RWf–FVæ6Rà ¤FöÖ–â&öf–ÆR—2fW'6–öæVB–æFWVæFVçFÇ’öbF†R—F†öâ6¶vRâ6¶vP§Ww&FRFöW2æ÷BWFöÖF–6ÆÇ’fÆ–FFRâöÆB&öf–ÆRÂæBfÆ–FFVB&öf–ÆP¦FöW2æ÷B&÷fRWfW'’÷F†W"W6RöbF†R6ÖRW7F–ÖF÷"à ¢222RãB†–v‚×7F¶W2W6R&öf–ÆP ¤†–v‚×7F¶W2&öf–ÆRFF—F–öæÆÇ’&WV—&W2F†R÷væ–ær&öGV7N(	—2ÆVvÂÀ§&—f7’Â6V7W&—G’Â‡VÖâÖv÷fW&ææ6RÂ66W76–&–Æ—G’ÂGfW'6RÖ–×7BÀ¦Ööæ—F÷&–ærÂ–æ6–FVçBÂVÂÂæBFV6—6–öâ×öÆ–7’6öçG&öÇ2âF†—27FGW26ææ÷@¦&R–æfW'&VBg&öÒ6ögGv&RFW7G2Â&ÖWFW"&V6÷fW'’Â7&÷72ÖVæv–æRw&VVÖVçBÀ¦÷"76VB6¶vR&VÆV6RvFRà ¢22bâ7FGW2fö6'VÆ'’W6VB†W&P ¥F†—2&6VÆ–æR&WW6W2F†R&W÷6—F÷'(	—26æöæ–6Â6&–Æ—G’fö6'VÆ'“  ¢Ò¢¤”ÕÄTÔTåDTEôôåõ$õDT5DTEôÔ”â¢£°¢Ò¢¤”ÕÄTÔTåDTEôôåô5D•dUõ"¢£°¢Ò¢¥%D”Â¢£°¢Ò¢¤44UDTEô$4„•DT5EU$R¢£°¢Ò¢¥ÄääTB¢£°¢Ò¢¥$U4T$4…ôôäÅ’¢£°¢Ò¢¤Dõtå5E$TÒ¢£°¢Ò¢¥5UU%4TDTB¢£°¢Ò¢¥$T¤T5DTB¢£²æ@¢Ò¢¤õUEôôeõ44õR¢¢à ¤f÷"Æ—fR"&÷w2Â¢¥$T4„T4µõ$UT•$TB¢¢—2öæÇ’6æ6†÷Bææ÷FF–öââ—B—2æ÷B¦æWr6æöæ–6Â6&–Æ—G’ÖÖGW&—G’7FFRà ¢22râ7W'&VçBVÆÂ×&WVW7BWf–FVæ6P ¥F†RföÆÆ÷v–ærF&ÆR&V6÷&G2†–v‚ÖÆWfW&vRÆ—fRv÷&²ö'6W'fVBöà£##bÓ‚Ó#UCS£#£¢v–ç7B&÷FV7FV@¦Ö–ä–3&V#Vf#†ƒv#3Vc–&S“ccc“6C33#6âWfW'’&÷r—0¢¢¤”ÕÄTÔTåDTEôôåô5D•dUõ"ò$T4„T4µõ$UT•$TB¢¢ÂæWfW"6†—VBG'WF‚âw&VVà¦6†V6²öâç’&÷r—2æ÷B&÷FV7FVBÖÖ–â6&–Æ—G’VçF–ÂF†R"—2ÖW&vVBà §Â"Âö'6W'fVB†VBÂö'6W'fVB&öÆRÂ6ö×ÆWF–öâFWVæFVæ7’ò6WF–öâÀ§ÂÒÒÒÂÒÒÒÂÒÒÒÂÒÒÒÀ§Â²33c5Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂó3c2’ÂC#3#C#6N(
+fÂ6VÇ2æW7FVB7V'66÷&R&W7öç6Röw&÷WWf–FVæ6RG&fW'6Â&Vf÷&RçVÕ’ÖFW&–Æ—¦F–öâ†—77VR²33c%Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó3c"’’ÂG&gBBö'6W'fF–öã²6†V6·2VWVVC²&RÖfWF6‚G&gB÷&VG’Â6†V6·2æB&Wf–Ww2&Vf÷&R7F–ærÀ§Â²33CUÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂó3CR’Â&&3v&&(
+fÂ&÷VæG24BFÖ–æ—7G&F–öâWf–FVæ6R&Vf÷&RFVGWÆ–6F–öâöFVç6RÖ'6†ÆÆ–ær†—77VW2²33CEÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó3CB’õ²33CuÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó3Cr’õ²33SEÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó3SB’’ÂÖW&vRÖf÷'v&BöçFòÖ–ä–3&V#W6†VB†&&3v&&’gFW"&W6öÇf–ærF†R6¶vR×7W&f6R6öæfÆ–7C²g&W6‚7W'&VçBÖ†VB4’&WV—&VBÀ§Â²3#s•Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂó#s’’ÂvFFf&3(
+fÂW‡÷6W2'W7BöÇ—FöÖ÷W2&VF–7F–öç2v—F‚FÖ—76–öâ6fWG’†—77VW2²3#ƒÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó#ƒ’Â²3#ƒÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó#“’’ÂÖW&vRÖf÷'v&BöçFòÖ–ä–3&V#W6†VB†vFFf&3“²&VFV6W76÷"Ö†VB&Wf–Ww2&R†—7F÷&–6ÂgFW"F†R†VB6†ævRÀ§Â²3#•Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂó#’’Â&cFFS>(
+fÂ&V¦V7G2Æ÷77’W‡FVæFVB×&V6—6–öâ2ÕŒ+"66Æ"6öçG&öÇ2&Vf÷&R'W7BF—7F6‚†—77VR²3#…Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó#‚’’Â÷VâÂæöâÖG&gC²f—'7B7G&—‚GFV×Bf–ÆVBöâ&÷f–FW"f–Æ&–Æ—G’æBv2&W'Vã²7W'&VçBÖ†VB6†V6·2÷&Wf–Ww27F–ÆÂ&WV—&VBÀ§Â²3UÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂóR’Â–&FS“ƒ3~(
+fÂ'W7B6öçF–çV÷W2×F–ÖRô"Æöæv—GVF–æÂ&66‚W7F–ÖF÷"&WÆ–VBöâF†R7W'&VçB&Wf–Wrv÷&¶fÆ÷r†—77VR²3ScUÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óScR’’ÂWFòFFRv—F‚Ö–ã²&W6W'fRW†7B&V6÷fW'’Wf–FVæ6RF‡&÷Vv‚–çFVw&F–öã²&VFV6W76÷"Ö†VB$UTU5Eô4„ätU2v2&÷VæBFò7FÆR†VB4„À§Â²3““…Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂó““‚’Â3ssS#VN(
+fÂ&VÆV6Rö6†ævVÆör&W7–æ2ÇW2Æöv—7F–2ÔD”b6öçG&öÂ†&FVæ–ær†—77VR²3“S…Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó“S‚’’ÂÖW&vV&ÆS²f—'7B7G&—‚GFV×Bf–ÆVBöâ&÷f–FW"f–Æ&–Æ—G’æBv2&W'Vã²f÷&ÖÂ&÷fÂ7F–ÆÂ&WV—&VBÀ ¤BF†—2ö'6W'fF–öâÂv—D‡V"$U5BVçVÖW&FVB¢£b÷VâVÆÂ&WVW7G2¢£¢33c2À¢33CRÂ3#s’Â3#’Â3RÂ3““†â÷Vâ—77VW2çVÖ&W&VBC"ÂÆVB'’F†P¦FÖ—76–öâÖ&÷VæF'’fÖ–Ç’†33cVÂ33cFÂ33c&Â33SFÂ33CvÀ¦33CF’ÂF†RöÇ—FöÖ÷W2×&VF–7F–öâfÖ–Ç’†33vÂ33†Â3#“À¦3#“&Â3#ƒÂ3#ƒÂ3#“fÂ3#“vÂ33Â336Â33’À§F†Rv÷fW&ææ6R÷&÷fVææ6RfÖ–Ç’†3CfÂ3CFÂ3Â3SÀ¦33’ÂæBF†RfÆ–FF–öâö6öæf÷&Öæ6RfÖ–Ç’†3“fÂ3“FÂ3“&À¦3s†Â3S&’âF†RÆöærÖÆ—fVB7G'V7GW&Âv2&VÖ–â3c#†&÷VæFVBã ¦6&–Æ—G’÷7W÷'BÖG&—‚’Â3c#f…'W7BÖ÷væVB÷&F–æ'’&öGV7F–öâ&÷VæF'’’À¦æB3ScV†×VÇF–ÆWfVÂö×VÇF—ÆRÖÖVÖ&W'6†—öÆöæv—GVF–æÂ6ö×ÆWF–öâ’à ¥F†—2Æ—7B—2&W&öGV6–&ÆR6æ6†÷BÂæ÷BÖW&vR–ç7G'V7F–öââ6ö×ÆWF–öâ÷ ¦ÖW&vRFV6—6–öâ×W7B&Vv–âv—F‚g&W6‚&W÷6—F÷'’×v–FR"æBw&—FW"7vVWÀ¦–æ6ÇVF–ærW†7B†VBö&6RÂFWVæFVæ7’7F6²Â&Wf–Ww2ÂVç&W6öÇfVBF‡&VG2À§&WV—&VB6†V6·2ÂæB7F—fRF‚÷væW'6†—à ¥6–æ6RF†R&Wf–÷W2ö'6W'fF–öâƒ##bÓ‚Ó#’ÂF†R÷VâÕ"VWVR6öÆÆ6VBg&öĞ£sBFòbF‡&÷Vv‚æ÷&ÖÂ&Wf–WröÖW&vR7F—f—G’âæ÷F&Ç’–çFVw&FVB6–æ6RF†Vã ¥²3“SÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂó“S’†WFöÖF–0¥'W7B&6¶VæB²6öæf–wW&F–öâ†&FVæ–ær’Â²3EÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂóB¢†7&÷76VB×VÇF—ÆRÖÖVÖ&W'6†—W7F–ÖF÷"’Â²33Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂó3¢„f–vÖFW6–vâÖ&÷VæF'’E"’ÂF†Rcã’ã&VÆV6R7WBÂæBF†RöÇ—FöÖ÷W0¤u$Òôu4Òô4Bôd•2&ÖWFW"×&V6÷fW'’7V—FR‚332’à ¢222rã7WW'6VFVBÆ–æVvR&V6÷&@ ¥Gvò÷'†æVB6VçF–æVÂ6V7W&—G’'&æ6†W2vW&RFVÆWFVBöâ##bÓ‚Ó#R&V6W6P§&÷FV7FVBÖ–âÇ&VG’6†—27G&–7FÇ’7G&öævW"f—†W2f÷"F†V—"66÷W3  ¢Ò6VçF–æVÂÖf—‚Ö§6öâ×&V7W'6–öâÖ6öæf÷&Öæ6RÓC“cCScC3#ƒSƒC“&„¥4ôâ&V7W'6–öà¢Fõ2–â7&÷75öVæv–æUö6öæf÷&Öæ6Rç–’(	B7WW'6VFVB'’ÖW&vV@¢²333Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂó33¢†#Sƒ36¢&r¥4ôâFWF‚wV&B²FW7G2÷FW7Eö7&÷75öVæv–æUö6öæf÷&Öæ6Uö§6öåöFWF‚ç–’à¢Ò6VçF–æVÂÖÖVF—VÒÖf—‚×Væ&÷VæFVBÖ§6öâÖÆöF–ærÓ“C“SC“SƒC“6‡Væ&÷VæFV@¢¥4ôâÆöF–ær–â÷267&—G2’(	B7WW'6VFVB'’Ö–âw0¢67&—G2õö&÷VæFVEö§6öâç'6Uö§6öåö&÷VæFVB‚âââÂÖ…ö'—FW3Òâââ–†&FVæ–ær–à¢'V–ÆE÷%÷VWVUöv÷fW&ææ6Rç–Âv†–6‚&÷VæG2v—D‡V"7FF÷WB'—FW2&W–öæBF†P¢'&æ6‚w2&÷÷6Âà ¤—77VW2²33Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó3’À¥²33Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó3’Âæ@¥²335Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó32’vW&P¦6Æ÷6VBöâ##bÓ‚Ó#Rv—F‚&÷FV7FVBÖÖ–âWf–FVæ6S¢õE%U5DTEõ$TÅô4ôåE$ôÅõE•U6 ¦W†6ÇVFW2&ööÆVâ–FVçF—G’†Ö‡&Òç–Æ–æW2Cn(	3S’v—F‚&Vw&W76–öà¦FW7EöÖ‡&Õ÷&VÅö6öçG&öÅö&ööÆVåöFÖ—76–öâç–²6Æ76–g•öÖöFVÅ÷&VÆF–öâ‚– ¦Væf÷&6W2W†7B×G—RFÖ—76–öâæB&WÆ—2õ÷÷7Eö–æ—Eõö–çf&–çG0¢†ÖöFVÅ÷&VÆF–öâç–Æ–æW2CN(	3Cb’à ¢22‚â&öGV7BæBFV6†æ–6ÂvÖG&—€ §Âv”BÂ&–÷&—G’Â&WV—&VB÷WF6öÖRÂW†—7F–ær—77VRò"Wf–FVæ6RÂ6ö×ÆWF–öâFW7BÀ§ÂÒÒÒÂÒÒÒÂÒÒÒÂÒÒÒÂÒÒÒÀ§ÂtÓÂÂg&VW¦R&÷VæFVBã6&–Æ—G’Â7W÷'BæBÖGW&—G’ÖG&—ƒ²Fòæ÷BWVFRÆææVB&W6V&6‚v—F‚tÂ²3c#Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óc#’Â²3c3eÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óc3b’Â²3cC…Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ócC‚’ÂWfW'’V&Æ–26&–Æ—G’—26Æ76–f–VBÂ7W÷'FVBfW'6–öç2ÖF6‚ÖWFFFÂæBF†R&VÆV6RvFRÖ¶W2æòfÇVF–öâö6W'F–f–6F–öâ6Æ–ÒÀ§ÂtÓ"ÂÂöæR÷&F–æ'’'W7Bõ”ó2çVÖW&–6Â÷væW#²çVÕ’öæÇ’öâW‡Æ–6—B&VfW&Væ6R÷&—G’7W&f6W2Â²3c#eÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óc#b’Â²3c#uÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óc#r“²F†RWFöÖF–2Ö&6¶VæBæB&VfW&Væ6RÖ—6öÆF–öâ6Æ–6W2ÆæFVBöâ&÷FV7FVBÖ–âf–ÖW&vVB²3“SÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂó“S’õ²3sÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂós’Â&öGV7F–öâ6öæf–rô’6ææ÷B6–ÆVçFÇ’6VÆV7B—F†öâçVÖW&–73²Ö—76–ærö–æ6ö×F–&ÆR'W7Bf–Ç2&Vf÷&R&W7VÇBÖffV7F–ærv÷&²À§ÂtÓ2ÂÂ6ö×ÆWFRæöâÖFöÖ—7F–2×VÇF–ÆWfVÂÂ7&÷72Ö6Æ76–f–VBÂ×VÇF—ÆRÖÖVÖ&W'6†—æBÆöæv—GVF–æÂW7F–ÖF–öâv—F‚–FVçF–f–6F–öâæB&V6÷fW'’Â²3ScUÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óScR“²7&÷76VB×VÇF—ÆRÖÖVÖ&W'6†—W7F–ÖF÷"ÆæFVBf–ÖW&vVB²3EÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂóB’ÇW2F†R7&÷76VB×VÇF—ÆRÖÖVÖ&W'6†—&WÆ’‚3ƒ#vFfÆ–æVvR“²6öçF–çV÷W2×F–ÖRô"Æöæv—GVF–æÂ&66‚&VÖ–ç2öâ7F—fR"²3UÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂóR’Â&VÆ—7F–2Æ–væVB&–2ôÔRõ$Õ4Rö6÷fW&vRö6öçfW&vVæ6RæBFV×÷&ÂÆV¶vRFW7G273²&÷F‚7F6¶VB66–VçF–f–2FVÇF27W'f—fRÀ§ÂtÓBÂÂ&VÆF–öâ×6fRf7F÷"&WFVçF–öâÂ7G'V7GW&ÂÖöFVÂ6VÆV7F–öâæB–FVçF–f–VBW‡Æ÷&F÷'’×VÇF–F–ÖVç6–öæÂW7F–ÖF–öâÂ²3c…Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óc‚’Â²3c35Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óc32’Â²3SSÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óSS’Â"²3…Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂó‚’Âæòv–ææW"—2f÷&6VBv—F†÷WB&VÆF–öâÖ&÷&–FRFW7G2Â†VÆBÖ÷WBWf–FVæ6RÂ66÷&V&–Æ—G’æBG'VR×7G'V7GW&R&V6÷fW'’À§ÂtÓRÂÂ6Æ÷6R'V'&–2ÂvVæW&FVBÖ—FVÒÂ66÷&–ærÂ$rÂW76’ÂVçFW'&—6RÖ—77VRæB—FVÒÖ&æ²Æ–fV7–6ÆW2v—F†÷WB&ÆÆVÂ6öçG&7G2Â²33“uÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó3“r’Â²3CEÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óCB’Â²3cuÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ócr’Â²3c•Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óc’’Â"²35Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂó2’ÂöæR–Ö×WF&ÆR76W76ÖVçB÷'V'&–2÷66÷&–ærÆ–æVvR&V6†W2–Æ÷BÂ6Æ–'&F–öâÂfÆ–FF–öâÂÆ–fV7–6ÆRæB&W÷'BWf–FVæ6Rv—F†÷WB&÷f–FW"6÷WÆ–ær÷"6–ÆVçB7FFR&öÖ÷F–öâÀ§ÂtÓbÂÂ–æFWVæFVçFÇ’FW7BWVF–öç2æBf—GFVBW7F–ÖæG2v–ç7BW‡Æ–6—FÇ’ÖF6†VBÖGW&RVæv–æW2Â²3suÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ósr’6Æ÷6VB24ôÕÄUDTBgFW"F†R&WW6&ÆR6öæf÷&Öæ6R&÷fVææ6RÖæ–fW7BÆæFVB…²3ƒ%Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂóƒ"’“²&W6–GVÂfÆ–FF–öâÖfÖ–Ç’W†V7WF–öâWf–FVæ6RG&6·2VæFW"²3“%Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó“"’õ²3“EÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó“B’õ²3“eÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó“b’õ²3S%Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óS"’ÂfW'6–öæVB6&–Æ—Gœ9vVæv–æRÖG&—‚Âf—†VB×&ÖWFW"WVF–öâ6öæf÷&Öæ6Rf—'7BÂÆ–væVBf—GFVB×&W7VÇB6ö×&—6öç2Âf—6–&ÆRF—6w&VVÖVçB&Vv—7FW"À§ÂtÓrÂf÷"fÆ–FFVB6Æ–×2ÂFB&W&Vv—7FW&VBW‡FW&æÂfÆ–F—G’ÂÆæwVvR÷6—FR÷F–ÖRG&ç7÷'F&–Æ—G’Âf—&æW72æB7&—FW&–öâWf–FVæ6R&öf–ÆW2Â²3s…Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ós‚’ÂW‡FW&æÂWf–FVæ6R—2vVçV–æVÇ’†VÆB÷WC²6Æ–Ò&Vv—7FW"æ'&÷w2WFöÖF–6ÆÇ’öâ'6VçBÂf–ÆVB÷"–æFWFW&Ö–æFRWf–FVæ6RÀ§ÂtÓ‚ÂÂ7F&–Æ—¦RV&Æ–2'F–f7BÂ66†VÖÂ6W&–Æ—¦F–öâÂf–ævW'&–çBÂ6&–Æ—G’æBÖ–w&F–öâ6öçG&7G2Â²3c3uÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óc3r’Â²3cS5Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ócS2’Â²3C“•Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óC“’’Â7G&–7B$d2ƒ#S’'F–f7G2ÂæòVçf—&öæÖVçBÖFWVæFVçB6&–Æ—G’F÷væw&FRÂfW'6–öæVBÆöFW'2öÖ–w&F–öç2Â7&÷72ÖÆæwVvR6æöæ–6Âf—‡GW&W2À§ÂtÓ’ÂÂ6ö×ÆWFR&VÆV6R÷7W÷'B÷7WÇ’Ö6†–âWf–FVæ6RæBG'WF†gVÂ6ö×F–&–Æ—G’öÆ–7’Â²3cC…Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ócC‚’Â²3c#5Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óc#2’Â²3c3eÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óc3b’ÂFö7VÖVçFF–öâVF—B%D”Â7FFW2Â7W÷'FVBÆ–æR÷'VçF–ÖR÷ÆFf÷&×2&RFW7FVC²v†VVÂÂ4$ôÒÂ&÷fVææ6RÂÆ–6Vç6RÂ&öÆÆ&6²æBgVÆæW&&–Æ—G’&ö6W72&R6÷W&6RÖ†6‚Ö&÷VæBÀ§ÂtÓÂÂV&Æ—6‚66—G’÷W&f÷&Öæ6RVçfVÆ÷W2–ç7FVBöb—6öÆFVB7VVB6Æ–×2Â²3C5Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óC2’Â²3Sc5Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óSc2’Â&W&W6VçFF—fRì9v—FVÜ9vF–ÖVç6–öì9vf6WL9wF–ÖRv÷&¶ÆöG2&W÷'BÆFVæ7’ÂF‡&÷Vv‡WBÂV²%52õe$ÒÂf–ÇW&R6V–Æ–æw2æB5RôuR&—G’À§ÂtÓÂ÷W&F–öç2ÂVÆ–Ö–æFR÷'†æVBv÷&¶fÆ÷r–FVçF—F–W2æB&WF–â6ö×ÆWFRFW&Ö–æÂ7FF—7F–6Â÷&VÆV6RWf–FVæ6RÂ²3ƒ•Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óƒ’’Â"²3sÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂós’Â6ö×ÆWFRv–æFVBv÷&¶fÆ÷r&Vv—7G'’—2&V6öæ6–ÆVC²7W÷'FVBv÷&¶fÆ÷w2&VÖ–ã²7FF—7F–6Â7GVF–W2FW&Ö–æFRv—F‚GW&&ÆRWf–FVæ6RÀ§ÂtÓ"Â&öGV7BÂ&÷fRöæR'W–W"×f—6–&ÆRfW'F–6ÂF‡&÷Vv‚F÷vç7G&VÒ†÷7Bv†–ÆR&W6W'f–ær&W÷6—F÷'’÷væW'6†—Â²33“uÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ó3“r’Â²3CEÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óCB’Â²3cuÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2ócr’Â²3SƒEÒ†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Òö—77VW2óSƒB’Â6÷W&6RWf–FVæ6R(i"v÷fW&æVBö'6W'fF–öç2(i"'W7B6Æ–'&F–öâ(i"Væ6W'F–çG’öf—&æW72÷fÆ–FF–öâ(i"66W76–&ÆR&W÷'B(i"F÷vç7G&VÒ‡VÖâFV6—6–öâ—2&WÆ–&ÆRVæBFòVæBÀ§ÂtÓ2ÂF÷vç7G&VÒT’Âv†Vâ†÷7FVB6öç7VÖW"†2vV"7W&f6RÂÖ¶RT’7FFW2æB–çFW&7F–öç2VF—F&ÆR&F†W"F†âG&VF–ær7FF–267&VVç6†÷B2&öGV7BWf–FVæ6RÂ¶Fö72öG"óbÖf–vÖÖ'W–W"ÖWf–FVæ6RÖFW6–vâÖ&÷VæF'’æÖFÒ†G"óbÖf–vÖÖ'W–W"ÖWf–FVæ6RÖFW6–vâÖ&÷VæF'’æÖB’†ÖW&vVBf–²33Ò†‡GG3¢òöv—F‡V"æ6öÒô6öçFW‡GVÅv—6FöÔÆ"öf7BÖÖÇ6—&Ò÷VÆÂó3’’Â¶Fö72öf–vÖ÷&öGV7EöFW6–vå÷6¶WBæÖFÒ†f–vÖ÷&öGV7EöFW6–vå÷6¶WBæÖB’Â7F÷'–&öö²–çFW&7F–öâ×FW7F–ærwV–Fæ6RÂE"&V6÷&G2F†RW†7Bf–vÖf–ÆR”B†C3EdÔƒ„·#CDfGÄ6¶VÖ“²7F÷'–&öö²–çfVçF÷'’6÷fW'2F†RFVâT’õU‚F–ÖVç6–öç2&VÆ÷s²V6‚†–v‚×&—6²7F÷'’†2âWfVçBÖG&—fVâ–çFW&7F–öâ76W'F–öâæBâ66W76–&–Æ—G’&W7VÇBÀ ¢22’â÷&FW&VB6ö×ÆWF–öâ6WVVæ6P ¢2227FvR(	BW7F&Æ—6‚Æ—fR÷væW'6†—æBW†7BWf–FVæ6P £â&RÖfWF6‚ÆÂ÷Vâ'2Â&6W2Â†VG2Â&Wf–Ww2ÂF‡&VG2Â6†V6·2æB÷fW&Æ–æp¢F‡2à£"â&W6W'fRVæ—VR66–VçF–f–2FVÇF3²6Æ÷6R÷"7WW'6VFRGWÆ–6FW2öæÇ’v—F‚à¢W‡Æ–6—BÆ–æVvR&V6÷&Bà£2âFòæ÷Bv–FVâ"ÖW&VÇ’&V6W6Ræ÷F†W"ÆæR—2v—F–æröâ7F–öç2÷"&Wf–Wrà£Bâ&W6öÇfR–æg&7G'V7GW&Rf–ÇW&W2BF†V—"&ö÷Bv—F†÷WBvV¶Væ–ær66–VçF–f–2À¢6V7W&—G’Â6÷fW&vR÷"–æFWVæFVçB×&Wf–WrvFW2à ¢2227FvR(	B6Æ÷6RF†RFV6†æ–6ÂÔtçVÖW&–6Â&÷VæF' £â&V6öæ6–ÆR3“SæB3s6òöæRV&Æ–2&6¶VæB÷&VfW&Væ6R6öçG&7B7W'f—fW2à£"â6ö×ÆWFR3c#bò3c#r'W7B÷væW'6†—æBf–ÂÖ6Æ÷6VBWf–FVæ6Rà£2âFVf–æRF†Rf—'7B&÷VæFVBã6&–Æ—G’÷7W÷'BÖG&—‚VæFW"3c#ò3cC‚à£Bâ&V¦V7BGfW'F—6VBÖ'WB×Væ–×ÆVÖVçFVBÖöFVÌ9vW7F–ÖF÷"6öÖ&–æF–öç2&Vf÷&P¢f—GF–æræB&VÖ÷fRæ÷&ÖÂ×F‚æ÷D–×ÆVÖVçFVDW'&÷&7W&f6W2g&öÒF†Rt¢&öf–ÆRà ¢2227FvR"(	B–çFVw&FR66–VçF–f–2f÷VæFF–öâæB&V6÷fW' £âÆæBÆöæv—GVF–æÂæB×VÇF—ÆRÖÖVÖ&W'6†—v÷&²–âFWVæFVæ7’÷&FW"v†–ÆP¢&W6W'f–ær&÷F‚W†7B66–VçF–f–26Æ–6W2à£"â–çFVw&FRf7F÷"×&WFVçF–öâöÖöFVÂ×6VÆV7F–öâöÆ–7’öæÇ’v—F‚F†R&WV—&V@¢&VÆF–öâÂÆ–¶VÆ–†ööBÂ66÷&V&–Æ—G’Â†VÆBÖ÷WBæB&V6÷fW'’Wf–FVæ6Rà£2â6ö×ÆWFRGW&&ÆRW††W7F—fR&V6÷fW'’7GVF–W2v—F‚Ô54Rö–çFW'fÇ2æBW‡Æ–6—@¢f–ÆVB×&WÆ–6F–öâ6Æ76W2à£BâFBW‡Æ÷&F÷'’×VÇF–F–ÖVç6–öæÂÆöF–ærW7F–ÖF–öâöæÇ’gFW"—G0¢–FVçF–f–6F–öâæB&÷FF–öâ6öçG&7G2&R66WFVBà ¢2227FvR2(	B–æFWVæFVçBçVÖW&–6ÂfÆ–FF–öà ¤–×ÆVÖVçB3sr–â&÷]ù÷‹h‘éì¶»§q«^t½½¹Ñ•áÑÕ…±]¥Í‘½µ1…ˆ½™…ÍĞµµ±Í¥É´½¥ÍÍÕ•Ì¼ÄÀäØ¤°)lŒÄÄÔÉt¡¡ÑÑÁÌè¼½¥Ñ¡Õˆ¹½´½½¹Ñ•áÑÕ…±]¥Í‘½µ1…ˆ½™…ÍĞµµ±Í¥É´½¥ÍÍÕ•Ì¼ÄÄÔÈ¤¤¸)5…ÑÕÉ”•áÑ•É¹…°¥µÁ±•µ•¹Ñ…Ñ¥½¹Ì…É”Ù…±¥‘…Ñ¥½¸¥¹ÍÑÉÕµ•¹ÑÌ½¹±ä…¹¹•Ù•È‰•½µ”ÁÉ½‘ÕÑ¥½¸½‰Õ¥±½Á…­…”‘•Á•¹‘•¹¥•Ì¸((ŒŒŒlŒÄÀÜàƒŠP•áÑ•É¹…°Ù…±¥‘¥Ñä…¹ÑÉ…¹ÍÁ½ÉÑ…‰¥±¥ÑäÁÉ½™¥±•Ít¡¡ÑÑÁÌè¼½¥Ñ¡Õˆ¹½´½½¹Ñ•áÑÕ…±]¥Í‘½µ1…ˆ½™…ÍĞµµ±Í¥É´½¥ÍÍÕ•Ì¼ÄÀÜà¤()Q¡¥Ì¥ÍÍÕ”‘•™¥¹•ÌÁÉ•É•¥ÍÑ•É•°ÁÕÉÁ½Í”µ‰½Õ¹‘•Ù…±¥‘…Ñ¥½¸ÁÉ½™¥±•ÌÑ¡…Ğ­••À)Ñ•¡¹¥…°°½¹ÍÑÉÕĞ°ÑÉ…¹ÍÁ½ÉÑ…‰¥±¥Ñä°™…¥É¹•ÍÌ…¹‘•¥Í¥½¸µÕÑ¥±¥Ñä•Ù¥‘•¹”)Í•Á…É…Ñ”¸%ĞÉ•ÅÕ¥É•Ì¡•±µ½ÕĞÍ¥Ñ”½±…¹Õ…”½Ñ¥µ”½É…Ñ•È½É•Ù¥Í¥½¸Õ¹¥ÑÌ°)É¥Ñ•É¥½¸µÅÕ…±¥Ñä±¥µ¥Ñ…Ñ¥½¹Ì°•áÁ±¥¥Ğ™…¥±•½¥¹‘•Ñ•Éµ¥¹…Ñ”ÍÑ…Ñ•Ì…¹¹¼É…Ü)A%$½ÈÉ•ÍÑÉ¥Ñ•½¹Ñ•¹Ğ¥¸É•ÕÍ…‰±”…ÉÑ¥™…ÑÌ¸((ŒŒ€ÄÌ¸½Õµ•¹Ñ…Ñ¥½¸…¹AHµ…¥¹Ñ•¹…¹”ÉÕ±”()Q¡¥Ì‰…Í•±¥¹”Í¡½Õ±‰”É•™É•Í¡•½¹±äİ¡•¸„µ…Ñ•É¥…°ÁÉ½‘ÕĞµ½µÁ±•Ñ¥½¸)‰½Õ¹‘…Éä¡…¹•Ì¸%ĞµÕÍĞ¹½Ğ‰•½µ”„µ…¹Õ…±±äµ…¥¹Ñ…¥¹•µ¥ÉÉ½È½˜•Ù•Éä)½Á•¸AH¸()É•™É•Í Í¡…±°è((Ä¸Á¥¸Ñ¡”½‰Í•ÉÙ•ÁÉ½Ñ•Ñ•µµ…¥¸M!…¹‘…Ñ”ì(È¸ÅÕ•Éä±¥Ù”AH½¥ÍÍÕ”ÍÑ…Ñ”É…Ñ¡•ÈÑ¡…¸½Áå¥¹œÁÉ¥½ÈÍ¹…ÁÍ¡½ÑÌì(Ì¸ÁÉ•Í•ÉÙ”Ñ¡”…¹½¹¥…°µ…ÑÕÉ¥ÑäÙ½…‰Õ±…Éäì(Ğ¸±…ÍÍ¥™ä…Ñ¥Ù”İ½É¬…Ì…Ñ¥Ù”½¹±äì(Ô¸ÕÁ‘…Ñ”±¥¹­Ì…¹…À½İ¹•ÉÍ¡¥Àİ¥Ñ¡½ÕĞÉ•İÉ¥Ñ¥¹œ…¹½¹¥…°AI½QI½H(€€…ÕÑ¡½É¥Ñäì(Ø¸É•µ½Ù”É½İÌÑ¡…Ğ…É”¥¹Ñ•É…Ñ•°ÍÕÁ•ÉÍ•‘•½ÈÉ•©•Ñ•ì…¹(Ü¸É½ÕÑ”…¹ä¡…¹•ÁÉ½Ñ•Ñ•µµ…¥¸µ…ÑÕÉ¥ÑäÑ¼€ŒØÈÄ½È¥ÑÌ…•ÁÑ•ÍÕ•ÍÍ½È¸()Q¡”ÁÉ•™•ÉÉ•±½¹œµÑ•É´™½É´¥Ì„•¹•É…Ñ•½É•…µ½¹±äÙ¥•Üİ¡½Í”‘ÕÉ…‰±”¥¹ÁÕÑÌ)…É”Ñ¡”…¹½¹¥…°‘½Õµ•¹Ñ…Ñ¥½¸É…Á °ÁÉ½Ñ•Ñ•µµ…¥¸…Á…‰¥±¥ÑäÉ•¥ÍÑÉä°±¥Ù”)¥Ñ!Õˆµ•Ñ…‘…Ñ„°É•±•…Í”•Ù¥‘•¹”…¹Ù…±¥‘…Ñ¥½¸µ…¹¥™•ÍÑÌ¸((ŒŒ€ÄĞ¸MÑ…¹‘…É‘Ì…¹É•Í•…É ÍÑ…ÑÕÌ()UÍ”ÁÕ‰±¥Í¡•ÍÑ…¹‘…É‘Ì…Ì¹½Éµ…Ñ¥Ù”É•™•É•¹•Ì…¹‘É…™ÑÌ½É•Ù¥Í¥½¸ÁÉ½©•ÑÌ…Ì)İ…Ñ ¥Ñ•µÌ½¹±ä¸((´Q¡”€ÈÀÄĞ€©MÑ…¹‘…É‘Ì™½È‘Õ…Ñ¥½¹…°…¹AÍå¡½±½¥…°Q•ÍÑ¥¹œ¨¥ÌÑ¡”ÕÉÉ•¹Ğ(€ÁÕ‰±¥Í¡•Ñ•ÍÑ¥¹œµÍÑ…¹‘…É‰…Í•±¥¹”™½ÈÙ…±¥‘¥Ñä°™…¥É¹•ÍÌ…¹Í½É”µÕÍ”(€±…¥µÌ€¡µ•É¥…¸‘Õ…Ñ¥½¹…°I•Í•…É ÍÍ½¥…Ñ¥½¸•Ğ…°¸°€ÈÀÄĞ¤¸I°A(€…¹95É•Ù¥Í¥½¸İ½É¬¥Ì„İ…Ñ ¥Ñ•´Õ¹Ñ¥°„¹•Ü•‘¥Ñ¥½¸¥ÌÁÕ‰±¥Í¡•¸(´%M<½%€ÈÔÀÄÀèÈÀÈÌ¥ÌÑ¡”ÕÉÉ•¹ĞÁÕ‰±¥Í¡•ÁÉ½‘ÕĞµÅÕ…±¥Ñäµ½‘•°‰…Í•±¥¹”™½È(€Í½™Ñİ…É”ÁÉ½‘ÕĞÅÕ…±¥Ñä¡…É…Ñ•É¥ÍÑ¥Ì…¹ÅÕ…±¥Ñä•Ù…±Õ…Ñ¥½¸€¡%¹Ñ•É¹…Ñ¥½¹…°(€=É…¹¥é…Ñ¥½¸™½ÈMÑ…¹‘…É‘¥é…Ñ¥½¸€˜%¹Ñ•É¹…Ñ¥½¹…°±•ÑÉ½Ñ•¡¹¥…°½µµ¥ÍÍ¥½¸°(€€ÈÀÈÌ¤¸(´Q¡”%Q€ÈÀÄàÑ•ÍĞµ…‘…ÁÑ…Ñ¥½¸Õ¥‘•±¥¹•Ì½Ù•É¸ÑÉ…¹Í±…Ñ¥½¸½…‘…ÁÑ…Ñ¥½¸…¹(€É½ÍÌµ±…¹Õ…”•ÅÕ¥Ù…±•¹”•Ù¥‘•¹”ìÑÉ…¹Í±…Ñ¥½¸…±½¹”¥Ì¹½ĞÙ…±¥‘…Ñ¥½¸(€€¡%¹Ñ•É¹…Ñ¥½¹…°Q•ÍĞ½µµ¥ÍÍ¥½¸°€ÈÀÄà¤¸(´I€àÈÔä½Ù•É¹ÌÍÑÉ¥Ğ)M=8¥¹Ñ•É½Á•É…‰¥±¥Ñä…¹¥ÑÌÉ…µµ…È½•¹½‘¥¹œ(€‰½Õ¹‘…Éä€¡Q¡”%¹Ñ•É¹•Ğ¹¥¹••É¥¹œQ…Í¬½É”°€ÈÀÄÜ¤¸(´M•µ…¹Ñ¥ŒY•ÉÍ¥½¹¥¹œ€È¸À¸À¥ÌÑ¡”ÁÕ‰±¥ŒÙ•ÉÍ¥½¹¥¹œ‰…Í•±¥¹”Õ¹±•ÍÌ„µ½É”(€ÍÁ•¥™¥ŒÁ…­…”½¹ÑÉ…Ğ¥Ì…•ÁÑ•€¡AÉ•ÍÑ½¸µ]•É¹•È°€ÈÀÄÌ¤¸(´9%MPM@€àÀÀ´ÈÄàMM€Ä¸Ä¥ÌÑ¡”ÕÉÉ•¹Ğ™¥¹…°MM‰…Í•±¥¹”ìMM€Ä¸ÈÉ•µ…¥¹Ì(€„‘É…™Ğİ…Ñ ¥Ñ•´Õ¹Ñ¥°™¥¹…±¥é•ìÑ¡”MMÍÕÁÁ±¥•ÌÍ•ÕÉ”µ‘•Ù•±½Áµ•¹Ğ(€ÁÉ…Ñ¥•ÌÉ…Ñ¡•ÈÑ¡…¸„•ÉÑ¥™¥…Ñ¥½¸€¡9…Ñ¥½¹…°%¹ÍÑ¥ÑÕÑ”½˜MÑ…¹‘…É‘Ì…¹(€Q•¡¹½±½ä°€ÈÀÈÈ¤¸(´M1M€Ä¸È…¹MA`€Ì¸À¸Ä…É”ÍÑ…‰±”ÁÕ‰±¥Í¡•ÍÕÁÁ±äµ¡…¥¸½ÁÉ½Ù•¹…¹”…¹M	=4(€‰…Í•±¥¹•ÌìM1M…‘‘É•ÍÍ•Ì‰Õ¥±ÁÉ½Ù•¹…¹”…¹MA`…‘‘É•ÍÍ•Ìµ…¡¥¹”µÉ•…‘…‰±”(€±¥•¹Í¥¹œ½½µÁ½¹•¹Ğ¥¹Ñ•É¡…¹”¸É…™ĞÍÕ•ÍÍ½ÉÌµÕÍĞ¹½Ğ‰”ÁÉ•Í•¹Ñ•…Ì(€ÕÉÉ•¹Ğ½¹™½Éµ…¹”€¡M½™Ñİ…É”A…­…”…Ñ„á¡…¹”°€ÈÀÈĞìMÕÁÁ±äµ¡…¥¸(€1•Ù•±Ì™½ÈM½™Ñİ…É”ÉÑ¥™…ÑÌ°€ÈÀÈÔ¤¸()9¼ÍÑ…¹‘…ÉÉ•™•É•¹”¥¸Ñ¡¥Ì™¥±”¥Ì„•ÉÑ¥™¥…Ñ¥½¸±…¥´¸()I•Í•…É ÑÉ…•…‰¥±¥Ñä¥Ìµ…¥¹Ñ…¥¹•¥¸Ñ¡”…¹½¹¥…°)m‘½Ì½ÑÉ…•…‰¥±¥Ñä½É•Í•…É µ‰…Í¥Ì¹µ‘t¡ÑÉ…•…‰¥±¥Ñä½É•Í•…É µ‰…Í¥Ì¹µ¤¥¹‘•à)…¹Ñ¡”±¥¹­•ÁÉ¥µ…ÉäµÍ½ÕÉ”É•½É‘ÌÕ¹‘•Èm‘½Ì½Á…Á•ÉÌ½t¡Á…Á•ÉÌ½I5¹µ¤¸)Q¡”É•™•É•¹•Ì¥¸Ñ¡¥Ì‰…Í•±¥¹”•áÁ±…¥¸Ñ¡”ÁÉ½‘ÕĞ‘•¥Í¥½¸‰½Õ¹‘…ÉäìÑ¡•ä‘¼)¹½ĞÉ•Á±…”Ñ¡”µ½‘•°µÍÁ•¥™¥ŒÁ…Á•Èµ™¥ÉÍĞÉ•½ÉÉ•ÅÕ¥É•‰•™½É”¡…¹¥¹œ„)™½ÉµÕ±„°•ÍÑ¥µ…Ñ½È°™¥ĞÍÑ…Ñ¥ÍÑ¥Œ°½È¥¹Ñ•ÉÁÉ•Ñ…Ñ¥½¸µ™…¥¹œ½ÕÑÁÕĞ¸()Q¡”Á…­…”µ±¥Ñ•É…ÑÕÉ”•¹ÑÉ¥•Ì‰•±½Ü…É”¥¹±Õ‘•…Ì¥µÁ±•µ•¹Ñ…Ñ¥½¸½¹Ñ•áĞ°¹½Ğ)…ÌÍÕ‰ÍÑ¥ÑÕÑ•Ì™½ÈÁÉ¥µ…Éäµ•Ñ¡½‘½±½¥…°Ù…±¥‘…Ñ¥½¸è¡…±µ•ÉÌ€ ÈÀÄÈ¤‘•ÍÉ¥‰•Ì)µÕ±Ñ¥‘¥µ•¹Í¥½¹…°%IPÍ½™Ñİ…É”…¹¥ÑÌ•ÍÑ¥µ…Ñ¥½¸ÍÕÉ™…”ì5…¥È…¹!…Ñé¥¹•È( ÈÀÀÜ¤‘½Õµ•¹ÑÌ•áÑ•¹‘•I…Í µ½‘•°Ñ½½±¥¹œìI¥é½Á½Õ±½Ì€ ÈÀÀØ¤‘½Õµ•¹ÑÌ)±…Ñ•¹ĞµÙ…É¥…‰±”…¹%IP…¹…±åÍ¥ÌÑ½½±¥¹œìI½‰¥ÑéÍ •Ğ…°¸€ ÈÀÈÔ¤‘½Õµ•¹ÑÌÑ¡”)Q4Ñ•ÍĞµ…¹…±åÍ¥Ìµ½‘Õ±•Ì¸5½ÉÉ¥Ì•Ğ…°¸€ ÈÀÄä¤ÁÉ½Ù¥‘•ÌÑ¡”Í¥µÕ±…Ñ¥½¸µÍÑÕ‘ä)‘•Í¥¸É…Ñ¥½¹…±”ÕÍ•‰äÑ¡”É•½Ù•Éä•Ù¥‘•¹”É•ÅÕ¥É•µ•¹Ğ¸… Í½ÕÉ”¥Ì)±¥¹­•¥¸Ñ¡”A±¥ÍĞ‰•±½ÜÍ¼„É•Ù¥•İ•È…¸É•½¹ÍÑÉÕĞÑ¡”‘•¥Í¥½¸İ¥Ñ¡½ÕĞ)…•ÍÌÑ¼¡…Ğ¡¥ÍÑ½Éä¸((ŒŒ€ÄÔ¸A€İÑ É•™•É•¹”‰…Í•±¥¹”()µ•É¥…¸‘Õ…Ñ¥½¹…°I•Í•…É ÍÍ½¥…Ñ¥½¸°µ•É¥…¸AÍå¡½±½¥…°ÍÍ½¥…Ñ¥½¸°(˜9…Ñ¥½¹…°½Õ¹¥°½¸5•…ÍÕÉ•µ•¹Ğ¥¸‘Õ…Ñ¥½¸¸€ ÈÀÄĞ¤¸€©MÑ…¹‘…É‘Ì™½È)•‘Õ…Ñ¥½¹…°…¹ÁÍå¡½±½¥…°Ñ•ÍÑ¥¹œ¨¸µ•É¥…¸‘Õ…Ñ¥½¹…°I•Í•…É )ÍÍ½¥…Ñ¥½¸¸¡ÑÑÁÌè¼½İİÜ¹Ñ•ÍÑ¥¹ÍÑ…¹‘…É‘Ì¹¹•Ğ½½Á•¸µ…•ÍÌµ™¥±•Ì¹¡Ñµ°()¡…±µ•ÉÌ°H¸@¸€ ÈÀÄÈ¤¸µ¥ÉĞèµÕ±Ñ¥‘¥µ•¹Í¥½¹…°¥Ñ•´É•ÍÁ½¹Í”Ñ¡•½ÉäÁ…­…”)™½ÈÑ¡”H•¹Ù¥É½¹µ•¹Ğ¸€©)½ÕÉ¹…°½˜MÑ…Ñ¥ÍÑ¥…°M½™Ñİ…É”°€Ğà¨ Ø¤°€ÇŠLÈä¸)¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄàØÌÜ½©ÍÌ¹ØÀĞà¹¤ÀØ()%¹Ñ•É¹…Ñ¥½¹…°=É…¹¥é…Ñ¥½¸™½ÈMÑ…¹‘…É‘¥é…Ñ¥½¸€˜%¹Ñ•É¹…Ñ¥½¹…°±•ÑÉ½Ñ•¡¹¥…°)½µµ¥ÍÍ¥½¸¸€ ÈÀÈÌ¤¸€©MåÍÑ•µÌ…¹Í½™Ñİ…É”•¹¥¹••É¥¹ŸŠQMåÍÑ•µÌ…¹Í½™Ñİ…É”)ÅÕ…±¥ÑäÉ•ÅÕ¥É•µ•¹ÑÌ…¹•Ù…±Õ…Ñ¥½¸€¡MEÕ…I§ŠQAÉ½‘ÕĞÅÕ…±¥Ñäµ½‘•°¨(¡%M<½%€ÈÔÀÄÀèÈÀÈÌ¤¸¡ÑÑÁÌè¼½İİÜ¹¥Í¼¹½Éœ½ÍÑ…¹‘…É¼ÜàÄÜØ¹¡Ñµ°()%¹Ñ•É¹…Ñ¥½¹…°Q•ÍĞ½µµ¥ÍÍ¥½¸¸€ ÈÀÄà¤¸%QÕ¥‘•±¥¹•Ì™½ÈÑÉ…¹Í±…Ñ¥¹œ…¹)…‘…ÁÑ¥¹œÑ•ÍÑÌ€¡M•½¹•‘¥Ñ¥½¸¤¸€©%¹Ñ•É¹…Ñ¥½¹…°)½ÕÉ¹…°½˜Q•ÍÑ¥¹œ°€Äà¨ È¤°(ÄÀÇŠLÄÌĞ¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÀàÀ¼ÄÔÌÀÔÀÔà¸ÈÀÄÜ¸ÄÌäàÄØØ()5…¥È°@¸°€˜!…Ñé¥¹•È°H¸€ ÈÀÀÜ¤¸áÑ•¹‘•I…Í µ½‘•±¥¹œèQ¡”•I´Á…­…”™½È)Ñ¡”…ÁÁ±¥…Ñ¥½¸½˜%IPµ½‘•±Ì¥¸H¸€©)½ÕÉ¹…°½˜MÑ…Ñ¥ÍÑ¥…°M½™Ñİ…É”°€ÈÀ¨ ä¤°(ÇŠLÈÀ¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄàØÌÜ½©ÍÌ¹ØÀÈÀ¹¤Àä()5½ÉÉ¥Ì°P¸@¸°]¡¥Ñ”°$¸H¸°€˜É½İÑ¡•È°4¸(¸€ ÈÀÄä¤¸UÍ¥¹œÍ¥µÕ±…Ñ¥½¸ÍÑÕ‘¥•Ì)Ñ¼•Ù…±Õ…Ñ”ÍÑ…Ñ¥ÍÑ¥…°µ•Ñ¡½‘Ì¸€©MÑ…Ñ¥ÍÑ¥Ì¥¸5•‘¥¥¹”°€Ìà¨ ÄÄ¤°€ÈÀÜÓŠLÈÄÀÈ¸)¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÀÀÈ½Í¥´¸àÀàØ()9…Ñ¥½¹…°%¹ÍÑ¥ÑÕÑ”½˜MÑ…¹‘…É‘Ì…¹Q•¡¹½±½ä¸€ ÈÀÈÈ¤¸€©M•ÕÉ”Í½™Ñİ…É”)‘•Ù•±½Áµ•¹Ğ™É…µ•İ½É¬€¡MM¤Ù•ÉÍ¥½¸€Ä¸ÄèI•½µµ•¹‘…Ñ¥½¹Ì™½Èµ¥Ñ¥…Ñ¥¹œÑ¡”)É¥Í¬½˜Í½™Ñİ…É”ÙÕ±¹•É…‰¥±¥Ñ¥•Ì¨€¡9%MPM@€àÀÀ´ÈÄà¤¸)¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ØÀÈà½9%MP¹M@¸àÀÀ´ÈÄà()AÉ•ÍÑ½¸µ]•É¹•È°P¸€ ÈÀÄÌ¤¸€©M•µ…¹Ñ¥ŒY•ÉÍ¥½¹¥¹œ€È¸À¸À¨¸)¡ÑÑÁÌè¼½Í•µÙ•È¹½Éœ½ÍÁ•Œ½ØÈ¸À¸À¹¡Ñµ°()I¥é½Á½Õ±½Ì°¸€ ÈÀÀØ¤¸±Ñ´è¸HÁ…­…”™½È±…Ñ•¹ĞÙ…É¥…‰±”µ½‘•±¥¹œ…¹¥Ñ•´)É•ÍÁ½¹Í”…¹…±åÍ¥Ì¸€©)½ÕÉ¹…°½˜MÑ…Ñ¥ÍÑ¥…°M½™Ñİ…É”°€ÄÜ¨ Ô¤°€ÇŠLÈÔ¸)¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄàØÌÜ½©ÍÌ¹ØÀÄÜ¹¤ÀÔ()I½‰¥ÑéÍ °¸°-¥•™•È°P¸°€˜]Ô°4¸€ ÈÀÈÔ¤¸€©Q4èQ•ÍĞ…¹…±åÍ¥Ìµ½‘Õ±•Ì¨(¡HÁ…­…”Ù•ÉÍ¥½¸€Ğ¸Ğ´È¤¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÌÈØÄĞ½I8¹Á…­…”¹Q4()M½™Ñİ…É”A…­…”…Ñ„á¡…¹”¸€ ÈÀÈĞ¤¸€©MA`ÍÁ•¥™¥…Ñ¥½¸€Ì¸À¸Ä¨¸)¡ÑÑÁÌè¼½ÍÁ‘à¹¥Ñ¡Õˆ¹¥¼½ÍÁ‘àµÍÁ•Œ½ØÌ¸À¸Ä¼()MÕÁÁ±äµ¡…¥¸1•Ù•±Ì™½ÈM½™Ñİ…É”ÉÑ¥™…ÑÌ¸€ ÈÀÈÔ¤¸€©M1MÍÁ•¥™¥…Ñ¥½¸€Ä¸È¨¸)¡ÑÑÁÌè¼½Í±Í„¹‘•Ø½ÍÁ•Œ½ØÄ¸È¼()Q¡”%¹Ñ•É¹•Ğ¹¥¹••É¥¹œQ…Í¬½É”¸€ ÈÀÄÜ¤¸€©Q¡”)…Ù…MÉ¥ÁĞ=‰©•Ğ9½Ñ…Ñ¥½¸(¡)M=8¤‘…Ñ„¥¹Ñ•É¡…¹”™½Éµ…Ğ¨€¡I€àÈÔä¤¸)¡ÑÑÁÌè¼½İİÜ¹É™Œµ•‘¥Ñ½È¹½Éœ½É™Œ½É™ŒàÈÔä((ŒŒŒ…ÀèÙ•¹Ğ1¥¹•…”¡…¹¹•°İ•¥¡ÑÌÍÑ¥±°±…¬•ÍÑ¥µ…‰±”¥¹‘•Á•¹‘•¹Ğ½ÕÑ½µ•Ì()1¥¹•…•]•…Ù”H€ÀÈÀàÉ½ÕÑ•Ì¡…¹¹•°µİ•¥¡Ğ…É¥Ñ¡µ•Ñ¥Œ¡•É”°İ¡¥±”QA@AH€ŒÈÌÜ)ÁÕ‰±¥Í¡•ÌÑ¡”…•ÁÑ•Ñ•ÁÀ¹±¥¹•…•}É¥Ñ•É¥½¹}…¹¡½È¹ØÅ€ÉÕ¸µ±•Ù•°‘•¥Í¥½¸¸)Q¡…Ğ…ÉÑ¥™…Ğ‘½•Ì¹½Ğ½¹Ñ…¥¸Á…¥Èµ±•Ù•°¥¹‘•Á•¹‘•¹ĞÉ¥Ñ•É¥½¸½‰Í•ÉÙ…Ñ¥½¹Ì¸)Q¡”±•…äAåÑ¡½¸Á…Ñ ÌÍ½É”µ™±½½È‘¥¡½Ñ½µ¥é…Ñ¥½¸…¹¥¹Ñ•É¹…±±ä…¹¡½É•)51LÉA14Ñ¡•É•™½É”…¹¹½Ğ‰”Á½ÉÑ•…¹ÁÉ•Í•¹Ñ•…Ì…±¥‰É…Ñ•µ•…ÍÕÉ•µ•¹Ğ¸()Q¡¥Ì¡…¹”…‘‘ÌÑ¡”IÕÍĞ½¹Ñ¥¹Õ½ÕÌµ•Ù¥‘•¹”…¹•á…Ğ…¹¡½Èµ¥‘•¹Ñ¥Ñä)ÁÉ•É•ÅÕ¥Í¥Ñ”°İ¥Ñ €ÄÀÀ”±¥¹”½™Õ¹Ñ¥½¸½‰É…¹ ½Ù•É…”™½È¥ÑÌµ½‘Õ±”¸Q¡”)•ÍÑ¥µ…Ñ¥½¸É•ÍÕ±ĞÉ•µ…¥¹Ì•áÁ±¥¥Ñ±äÕ¹…Ù…¥±…‰±”¸½µÁ±•Ñ¥½¸É•ÅÕ¥É•Ì„QA@)ÍÕ•ÍÍ½È‰¥¹‘¥¹œ¥¹‘•Á•¹‘•¹ĞÉ¥Ñ•É¥½¸Á½ÍÑ•É¥½È½½ÕÑ½µ•ÌÑ¼Á…¥È¥‘•¹Ñ¥Ñ¥•Ì°)™½±±½İ•‰ä…¸…•ÁÑ••ÍÑ¥µ…Ñ½ÈH°IÕÍĞAT½ATÍ…µ”µ½‰©•Ñ¥Ù”Á…Ñ °)ÑÉÕ”µÁ…É…µ•Ñ•È…¹­¹½İ¸µİ•¥¡ĞÉ•½Ù•Éä°Õ¹•ÉÑ…¥¹Ñä½Ù•É…”°…¹ÁÉ½Ñ•Ñ•)¥¹Ñ•É…Ñ¥½¸¸A•É¥½µÉ•Á½ÉĞ…±¥‰É…Ñ¥½¸½…É•…Ñ•ÌÉ•µ…¥¸„Í•Á…É…Ñ”½İ¹•È‘•‰Ğ)…¹…É”¹½ĞÍ¥±•¹Ñ±ä‰Õ¹‘±•¥¹Ñ¼Ñ¡¥Ì½¹ÑÉ…Ğ¸((ŒŒ€ÄØ¸¡…¹”‰½Õ¹‘…Éä™½ÈÑ¡¥Ì‰…Í•±¥¹”()Q¡¥Ì‘½Õµ•¹Ğ¥¹ÑÉ½‘Õ•Ì¹¼ÁÉ½‘ÕÑ¥½¸½‘”°¹Õµ•É¥…°™½ÉµÕ±„°ÁÕ‰±¥ŒA$°)‘•Á•¹‘•¹ä°İ½É­™±½Ü°‘…Ñ…‰…Í”°Á…­…”Ù•ÉÍ¥½¸°ÍÕÁÁ½ÉĞÁÉ½µ¥Í”°É•±•…Í”°)•ÉÑ¥™¥…Ñ¥½¸½È¡…¹•±½œ•¹ÑÉä¸%ĞÉ•½É‘Ì„Á½¥¹Ğµ¥¸µÑ¥µ”ÁÉ½‘ÕĞµ½µÁ±•Ñ¥½¸)…¹…±åÍ¥Ì…¹É½ÕÑ•Ìİ½É¬Ñ¼•á¥ÍÑ¥¹œ½È¹•İ±äÉ•…Ñ•¥ÍÍÕ•Ì¸()Q¡”‘½Õµ•¹Ğ¥Ì½µÁ±•Ñ”İ¡•¸É•Ù¥•İ•ÉÌ…¸‘•Ñ•Éµ¥¹”è((´İ¡…ĞÁÉ½Ñ•Ñ•µ…¥¸…ÑÕ…±±äÍ¡¥ÁÌì(´İ¡…Ğ…Ñ¥Ù”AIÌµ…ä…‘‰ÕĞ‘¼¹½Ğå•ĞÍ¡¥Àì(´İ¡¥ •Ù¥‘•¹”‰±½­ÌÑ•¡¹¥…°ì(´İ¡¥ •Ù¥‘•¹”‰±½­Ì‘½µ…¥¸½¡¥ µÍÑ…­•Ì±…¥µÌì(´İ¡…ĞÉ•Á½Í¥Ñ½Éä½İ¹Ì•… É•µ…¥¹¥¹œ½¹•É¸ì…¹(´Ñ¡”¹•áĞÉ½½Ğµ…ÕÍ”µ¡…¹¥¹œ…Ñ¥½¸İ¥Ñ¡½ÕĞÉ•±å¥¹œ½¸¡…Ğ¡¥ÍÑ½Éä¸((´´´((ŒŒ€ÄÜ¸á•ÕÑ¥Ù”MÕµµ…Éä€˜€ÈÁ½µµ•É¥…°Y…±Õ…Ñ¥½¸Y¥Í¥½¸()™…ÍĞµµ±Í¥Éµ€¥ÌÑ¡”™½Õ¹‘…Ñ¥½¹…°°‘½µ…¥¸µ¹•ÕÑÉ…°ÁÍå¡½µ•ÑÉ¥Œµ•…ÍÕÉ•µ•¹Ğ…¹ÍÑ…Ñ¥ÍÑ¥…°½µÁÕÑ…Ñ¥½¸•¹¥¹”½˜Ñ¡”€¨©½¹Ñ•áÑÕ…±]¥Í‘½µ1…ˆ¨¨•½ÍåÍÑ•´¸%ĞÁÉ½Ù¥‘•Ìµ…Ñ¡•µ…Ñ¥…±±äÉ¥½É½ÕÌ°½¹Ñ•¹Ğµ…‘‘É•ÍÍ•°IÕÍĞµ‰…­•µ•…ÍÕÉ•µ•¹Ğµ½‘•±Ì°¥Ñ•´É•ÍÁ½¹Í”Ñ¡•½Éä€¡%IP¤°µÕ±Ñ¥‘¥µ•¹Í¥½¹…°±…Ñ•¹ĞÍÁ…”¥Ñ•´É•ÍÁ½¹Í”µ½‘•±¥¹œ€¡51M%I4€¼51LÉA14¤°µ…¹äµ™…•ĞÉ…Ñ•È…±¥‰É…Ñ¥½¸°•¹•É…±¥é…‰¥±¥ÑäÑ¡•½Éä€¡µÑ¡•½Éä¤°…ÕÑ½µ…Ñ•Í½É¥¹œÙ•É¥™¥…Ñ¥½¸°…¹±½¹¥ÑÕ‘¥¹…°ÍÑ…Ñ”ÑÉ…­¥¹œ¸((ŒŒŒ€Ä¸Ä½µµ•É¥…°Y…±Õ…Ñ¥½¸A½Í¥Ñ¥½¸€ ÈÁ¹Ñ•ÉÁÉ¥Í”MÑ…¹‘…É¤)Q¼Í…Ñ¥Í™äÑ¡”ÍÑ…¹‘…É½˜„µÕ±Ñ¤µ‰¥±±¥½¸‘½±±…È•¹Ñ•ÉÁÉ¥Í”µÉ…‘”™½Õ¹‘…Ñ¥½¹…°Í½™Ñİ…É”±…å•È°™…ÍĞµµ±Í¥Éµ€…‘¡•É•ÌÑ¼é•É¼µ½µÁÉ½µ¥Í”…É¡¥Ñ•ÑÕÉ…°¥¹Ù…É¥…¹ÑÌè(Ä¸€¨©5…Ñ¡•µ…Ñ¥…°QÉÕÑ ½Ù•È!•ÕÉ¥ÍÑ¥Ì¨¨è9¼…É‰¥ÑÉ…Éäİ•¥¡ÑÌ°¡•ÕÉ¥ÍÑ¥Ì°½ÈÕ¹É½Õ¹‘•ÉÕ±•Ì½˜Ñ¡Õµˆ¸Ù•ÉäÁ…É…µ•Ñ•È¥Ì•ÍÑ¥µ…Ñ•Ù¥„™½Éµ…°ÁÍå¡½µ•ÑÉ¥Œ…¹ÍÑ…Ñ¥ÍÑ¥…°µ•Ñ¡½‘Ìİ¥Ñ ÁÕ‰±¥Í¡•…ÍåµÁÑ½Ñ¥ŒÁÉ½Á•ÉÑ¥•Ì…¹ÍÑ…¹‘…É•ÉÉ½È•ÍÑ¥µ…Ñ•Ì¸(È¸€¨©IÕÍĞµ¥ÉÍĞ½µÁÕÑ…Ñ¥½¹…°M½Ù•É•¥¹Ñä¨¨èAÉ½‘ÕÑ¥½¸±¥­•±¥¡½½‘Ì°É…‘¥•¹ÑÌ°!•ÍÍ¥…¹Ì°=…­•Ì¥¹™½Éµ…Ñ¥½¸µ…ÑÉ¥•Ì°4½4½ÁÑ¥µ¥é•ÉÌ°5!I4É½ÕÑ¥¹•Ì°…¹]1•ÍÑ¥µ…Ñ½ÉÌ•á•ÕÑ”¥¸½µÁ¥±•IÕÍĞİ¥Ñ M%5…¹±½Üµ½¹Ñ•áĞµÍİ¥Ñ¡¥¹œµÕ±Ñ¥Ñ¡É•…‘¥¹œ€¡…¹AT‘•Ù¥”­•É¹•±Ìİ¡•É”…ÁÁ±¥…‰±”¤¸AåÑ¡½¸…ÑÌÍÑÉ¥Ñ±ä…Ì„ÑåÁ”µÍ…™”½É¡•ÍÑÉ…Ñ½È°‰½Õ¹‘…ÉäÙ…±¥‘…Ñ½È°…¹É•Á½ÉÑ¥¹œ±…å•È¸(Ì¸€¨©Ñ½µ¥ÍÑ¥Œ…±±…äAÉ•Ù•¹Ñ¥½¸¨¨è5½‘•±¥¹œ¡Õµ…¸°É…Ñ•È°½È$‰•¡…Ù¥½ÈÉ•ÅÕ¥É•Ì•áÁ±¥¥ĞÍÕÁÁ½ÉĞ™½ÈµÕ±Ñ¥±•Ù•°°É½ÍÌµ±…ÍÍ¥™¥•°µÕ±Ñ¥Á±”µµ•µ‰•ÉÍ¡¥À°Ñ•ÍÑ±•Ğ°…¹±½¹¥ÑÕ‘¥¹…°½Ñ•µÁ½É…°ÍÑÉÕÑÕÉ•Ì¸(Ğ¸€¨©1•…±±äM½Õ¹¹Ñ•ÉÁÉ¥Í”AÉ¥Ù…ä€˜M•ÕÉ¥Ñä¨¨èÕ±°…±¥¹µ•¹Ğİ¥Ñ M@…¹M=€ÈQÉÕÍĞM•ÉÙ¥•ÌÉ¥Ñ•É¥„¸A%$µ…Í­¥¹œÑ¡…Ğ‘…µ…•ÌÁÍå¡½µ•ÑÉ¥ŒÑÉ…­¥¹œ¥ÌÉ•Á±…•İ¥Ñ ¹½¸µ‘•ÍÑÉÕÑ¥Ù”°ÁÕÉÁ½Í”µ±¥µ¥Ñ•ÁÍ•Õ‘½¹åµ¥é…Ñ¥½¸°™¥•±µ±•Ù•°Ñ½­•¹¥é…Ñ¥½¸°…¹‘•Ñ•Éµ¥¹¥ÍÑ¥ŒÉåÁÑ½É…Á¡¥Œ±¥¹•…”¸(Ô¸€¨©½ÍåÍÑ•´5½‘Õ±…É¥Ñä€¡5M¤¨¨è½µÁ±•Ñ•±ä‘•½ÕÁ±•™É½´¡½ÍÑ•…ÁÁ±¥…Ñ¥½¸½¹•É¹Ì€¡Á•ÉÍ¥ÍÑ•¹”°İ•ˆU$°…ÕÑ ¤¸M•…µ±•ÍÍ±ä½¹ÍÕµ•‰ä½¹Ñ•áÑÕ…±]¥Í‘½µ1…ˆ½ÁÍå¡½µ•ÑÉ¥Ìµ½µµ½¹Í€°QAA€°½¹Ñ•áÑÕ…°µ½É¡•ÍÑÉ…Ñ½É€°I…¹­]•…Ù•€°1¥¹•…•]•…Ù•€°­•åÙ•ÉÍ•€°Q¡É•…‘]•…Ù•€°‘¥Í­Í…•€°…¹İ…É‘¹•Ñ€¸((´´´((ŒŒ€Äà¸ÕÑ¡½É¥Ñ…Ñ¥Ù”I•Í•…É €˜MÑ…¹‘…É‘Ì1¥Ñ•É…ÑÕÉ”€¡A€İÑ ¤((ŒŒŒ€Äà¸Ä5Õ±Ñ¥‘¥µ•¹Í¥½¹…°1…Ñ•¹ĞMÁ…”€˜%Ñ•´I•ÍÁ½¹Í”5½‘•±Ì(´€¨©)•½¸°4¸°)¥¸°$¸ ¸°M¡İ•¥¹‰•É•È°4¸°€˜	…Õ °L¸€ ÈÀÈÄ¤¸¨¨5…ÁÁ¥¹œÕ¹½‰Í•ÉÙ•¥Ñ•´µÉ•ÍÁ½¹‘•¹Ğ¥¹Ñ•É…Ñ¥½¹Ìè±…Ñ•¹ĞÍÁ…”¥Ñ•´É•ÍÁ½¹Í”µ½‘•°İ¥Ñ ¥¹Ñ•É…Ñ¥½¸µ…À¸€©AÍå¡½µ•ÑÉ¥­„¨°€àØ È¤°€ÌÜãŠLĞÀÌ¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÀÀÜ½ÌÄÄÌÌØ´ÀÈÄ´ÀäÜØÈ´Ô(´€¨©-…¹œ°$¸°€˜)•½¸°4¸€ ÈÀÈÔ¤¸¨¨5Õ±Ñ¥‘¥µ•¹Í¥½¹…°±…Ñ•¹ĞÍÁ…”¥Ñ•´É•ÍÁ½¹Í”µ½‘•±Ìè¹½Ñ”½¸Ñ¡”É•±…Ñ¥Ù¥Ñä½˜½¹‘¥Ñ¥½¹…°‘•Á•¹‘•¹”¸€©AÍå¡½µ•ÑÉ¥­„¨°€äÀ È¤°€ÜäçŠLàÈØ¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÀÄÜ½ÁÍä¸ÈÀÈÔ¸Ô(´€¨©5½±•¹……È°¸°€˜)•½¸°4¸€ ÈÀÈØ¤¸¨¨I•Õ±…É¥é•©½¥¹Ğµ…á¥µÕ´±¥­•±¥¡½½•ÍÑ¥µ…Ñ¥½¸½˜±…Ñ•¹ĞÍÁ…”¥Ñ•´É•ÍÁ½¹Í”µ½‘•±Ì¸€©AÍå¡½µ•ÑÉ¥­„¨°€äÄ°€ÌÌ×ŠLÌÔä¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÀÄÜ½ÁÍä¸ÈÀÈÔ¸ÄÀÀØà(´€¨©I½‰•ÉÑÌ°(¸L¸°½¹½¡Õ”°(¸H¸°€˜1…Õ¡±¥¸°(¸¸€ Äääà¤¸¨¨Q¡”•¹•É…±¥é•É…‘•U¹™½±‘¥¹œ5½‘•°è•¹•É…°Á…É…µ•ÑÉ¥Œ¥Ñ•´É•ÍÁ½¹Í”µ½‘•°™½ÈÕ¹™½±‘¥¹œÉ…‘•É•ÍÁ½¹Í•Ì¸€©QLI•Í•…É I•Á½ÉĞM•É¥•Ì¨°€Äääà Ä¤¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÀÀÈ½¨¸ÈÌÌÌ´àÔÀĞ¸Äääà¹ÑˆÀÄÜàÄ¹à(´€¨©Q…ä°0¸°±¤°T¸L¸°É…Í½Ü°¸°€˜]¥±±¥…µÌ°¸€ ÈÀÄÄ¤¸¨¨¥ÑÑ¥¹œ%IPµ½‘•±ÌÑ¼‘¥¡½Ñ½µ½ÕÌ…¹Á½±åÑ½µ½ÕÌ‘…Ñ„èÍÍ•ÍÍ¥¹œÑ¡”É•±…Ñ¥Ù”µ½‘•°µ‘…Ñ„™¥Ğ½˜¥‘•…°Á½¥¹Ğ…¹‘½µ¥¹…¹”µ½‘•±Ì¸€©ÁÁ±¥•AÍå¡½±½¥…°5•…ÍÕÉ•µ•¹Ğ¨°€ÌÔ Ğ¤°€ÈàÃŠLÈäÔ¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÄÜÜ¼ÀÄĞØØÈÄØÄÀÌäÀØÜĞ(´€¨©¡…±µ•ÉÌ°H¸@¸€ ÈÀÄÈ¤¸¨¨µ¥ÉĞèµÕ±Ñ¥‘¥µ•¹Í¥½¹…°¥Ñ•´É•ÍÁ½¹Í”Ñ¡•½ÉäÁ…­…”™½ÈÑ¡”H•¹Ù¥É½¹µ•¹Ğ¸€©)½ÕÉ¹…°½˜MÑ…Ñ¥ÍÑ¥…°M½™Ñİ…É”¨°€Ğà Ø¤°€ÇŠLÈä¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄàØÌÜ½©ÍÌ¹ØÀĞà¹¤ÀØ((ŒŒŒ€Äà¸È5½‘•°¥Ğ°¥…¹½ÍÑ¥ŒMÑ…Ñ¥ÍÑ¥Ì€˜ÍåµÁÑ½Ñ¥ŒU¹•ÉÑ…¥¹Ñä(´€¨©=É±…¹‘¼°4¸°€˜Q¡¥ÍÍ•¸°¸€ ÈÀÀÀ¤¸¨¨1¥­•±¥¡½½µ‰…Í•¥Ñ•´µ™¥Ğ¥¹‘¥•Ì™½È‘¥¡½Ñ½µ½ÕÌ¥Ñ•´É•ÍÁ½¹Í”Ñ¡•½Éäµ½‘•±Ì¸€©ÁÁ±¥•AÍå¡½±½¥…°5•…ÍÕÉ•µ•¹Ğ¨°€ÈĞ Ä¤°€ÔÃŠLØĞ¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÄÜÜ¼ÀÄĞØØÈÄÀÀÈÈÀÌÄÔÔà(´€¨©5…å‘•Ôµ=±¥Ù…É•Ì°¸°€˜)½”° ¸€ ÈÀÀÔ¤¸¨¨1¥µ¥Ñ•´…¹™Õ±°µ¥¹™½Éµ…Ñ¥½¸•ÍÑ¥µ…Ñ¥½¸…¹½½‘¹•ÍÌµ½˜µ™¥ĞÑ•ÍÑ¥¹œ¥¸€Éy¸½¹Ñ¥¹•¹äÑ…‰±•Ì¸€©)½ÕÉ¹…°½˜Ñ¡”µ•É¥…¸MÑ…Ñ¥ÍÑ¥…°ÍÍ½¥…Ñ¥½¸¨°€ÄÀÀ ĞÜÄ¤°€ÄÀÀçŠLÄÀÈÀ¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÄäà¼ÀÄØÈÄĞÔÀĞÀÀÀÀÀÈÀØä(´€¨©=…­•Ì°¸€ Ääää¤¸¨¨¥É•Ğ…±Õ±…Ñ¥½¸½˜Ñ¡”¥¹™½Éµ…Ñ¥½¸µ…ÑÉ¥àÙ¥„Ñ¡”4…±½É¥Ñ¡´¸€©)½ÕÉ¹…°½˜Ñ¡”I½å…°MÑ…Ñ¥ÍÑ¥…°M½¥•ÑäèM•É¥•Ì€¡MÑ…Ñ¥ÍÑ¥…°5•Ñ¡½‘½±½ä¤¨°€ØÄ È¤°€ĞÜçŠLĞàÈ¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÄÄÄ¼ÄĞØÜ´äàØà¸ÀÀÄàà(´€¨©	•¹©…µ¥¹¤°d¸°€˜!½¡‰•Éœ°d¸€ ÄääÔ¤¸¨¨½¹ÑÉ½±±¥¹œÑ¡”™…±Í”‘¥Í½Ù•ÉäÉ…Ñ”èÁÉ…Ñ¥…°…¹Á½İ•É™Õ°…ÁÁÉ½… Ñ¼µÕ±Ñ¥Á±”Ñ•ÍÑ¥¹œ¸€©)½ÕÉ¹…°½˜Ñ¡”I½å…°MÑ…Ñ¥ÍÑ¥…°M½¥•ÑäèM•É¥•Ì€¡5•Ñ¡½‘½±½¥…°¤¨°€ÔÜ Ä¤°€ÈàçŠLÌÀÀ¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÄÄÄ½¨¸ÈÔÄÜ´ØÄØÄ¸ÄääÔ¹ÑˆÀÈÀÌÄ¹à(´€¨©]…É´°P¸¸€ Ääàä¤¸¨¨]•¥¡Ñ•±¥­•±¥¡½½•ÍÑ¥µ…Ñ¥½¸½˜…‰¥±¥Ñä¥¸¥Ñ•´É•ÍÁ½¹Í”Ñ¡•½Éä¸€©AÍå¡½µ•ÑÉ¥­„¨°€ÔĞ Ì¤°€ĞÈßŠLĞÔÀ¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÀÀÜ½	ÀÈÈäĞØÈÜ((ŒŒŒ€Äà¸Ì5Õ±Ñ¥±•Ù•°°1½¹¥ÑÕ‘¥¹…°€˜5Õ±Ñ¥Á±”µ5•µ‰•ÉÍ¡¥À5½‘•±¥¹œ(´€¨©½à°(¸µ@¸°€˜±…Ì°¸¸\¸€ ÈÀÀÄ¤¸¨¨	…å•Í¥…¸•ÍÑ¥µ…Ñ¥½¸½˜„µÕ±Ñ¥±•Ù•°%IPµ½‘•°¸€©AÍå¡½µ•ÑÉ¥­„¨°€ØØ È¤°€ÈÜÇŠLÈàà¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÀÀÜ½	ÀÈÈäĞàÌä(´€¨©	½¬°H¸¸°€˜i¥µ½İÍ­¤°4¸¸€ ÄääÜ¤¸¨¨5Õ±Ñ¥Á±”É½ÕÀ%IP¸%¸\¸(¸Ù…¸‘•È1¥¹‘•¸€˜H¸,¸!…µ‰±•Ñ½¸€¡‘Ì¸¤°€©!…¹‘‰½½¬½˜5½‘•É¸%Ñ•´I•ÍÁ½¹Í”Q¡•½Éä¨€¡ÁÀ¸€ĞÌÏŠLĞĞà¤¸MÁÉ¥¹•È¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÄÀÀÜ¼äÜà´Ä´ĞÜÔÜ´ÈØäÄ´Ù|ÈÔ(´€¨©	É½İ¹”°\¸(¸°½±‘ÍÑ•¥¸° ¸°€˜I…Í‰…Í °(¸€ ÈÀÀÄ¤¸¨¨5Õ±Ñ¥Á±”µ•µ‰•ÉÍ¡¥À…¹É½ÍÌµ±…ÍÍ¥™¥•µ½‘•±Ì™½È•‘Õ…Ñ¥½¸…¹Í½¥…°É•Í•…É ¸€©)½ÕÉ¹…°½˜‘Õ…Ñ¥½¹…°…¹	•¡…Ù¥½É…°MÑ…Ñ¥ÍÑ¥Ì¨°€ÈØ È¤°€àßŠLÄÄĞ¸¡ÑÑÁÌè¼½‘½¤¹½Éœ¼ÄÀ¸ÌÄÀÈ¼ÄÀÜØääàØÀÈØÀÀÈÀàÜ((ŒŒŒ€Äà¸Ğ5•…ÍÕÉ•µ•¹ĞMÑ…¹‘…É‘Ì°•¹•É…±¥é…‰¥±¥ÑäQ¡•½Éä€˜114µ…Ìµ„µ)Õ‘”(´€¨©µ•É¥…¸‘Õ…Ñ¥½¹…°I•Í•…É ÍÍ½¥…Ñ¥½¸°µ•É¥…¸AÍå¡½±½¥…°ÍÍ½¥…Ñ¥½¸°€˜9…Ñ¥½¹…°½Õ¹¥°½¸5•…ÍÕÉ•µ•¹Ğ¥¸‘Õ…Ñ¥½¸¸€ ÈÀÄĞ¤¸¨¨€©MÑ…¹‘…É‘Ì™½È•‘Õ…Ñ¥½¹…°…¹ÁÍå¡½±½¥…°Ñ•ÍÑ¥¹œ¨¸µ•É¥…¸‘Õ…Ñ¥½¹…°I•Í•…É ÍÍ½¥…Ñ¥½¸¸(´€¨©	É•¹¹…¸°H¸0¸€ ÈÀÀÄ¤¸¨¨€©•¹•É…±¥é…‰¥±¥ÑäÑ¡•½Éä¨¸MÁÉ¥¹•ÈM¥•¹”€˜	ÕÍ¥¹•ÍÌ5•‘¥„¸(´€¨©1¥¸°¸°¡•¸°L¸°€˜Q¡½É¹”°(¸€ ÈÀÈĞ¤¸¨¨QI%9%QdèQ•ÍĞµÑ¥µ”½µÁÕÑ”É½ÕÑ¥¹œ…¹µÕ±Ñ¤µ…•¹ĞÍå¹•Éä™½È½µÁ±•àÉ•…Í½¹¥¹œ¸€©…Éa¥ØÁÉ•ÁÉ¥¹Ğ…Éa¥ØèÈĞÄÀ¹ááááà¨¸(´€¨©i¡½Ô°¸°•Ğ…°¸€ ÈÀÈĞ¤¸¨¨ÕÔ€˜½¹‘ÕÑ½Èèå¹…µ¥Œ½µÁÕÑ”…±±½…Ñ¥½¸…¹É•…Í½¹¥¹œ‘•ÁÑ ½É¡•ÍÑÉ…Ñ¥½¸¸€©½¹Ñ•áÑÕ…°%¹Ñ•±±¥•¹”I•Ù¥•Ü¨°€ÄÈ°€ÄÀÇŠLÄÈĞ¸((´´´((ŒŒ€Ää¸AÉ½‘ÕĞ€˜Q•¡¹¥…°I•ÅÕ¥É•µ•¹ÑÌMÁ•¥™¥…Ñ¥½¸€¡AI€˜QI¤((ŒŒŒ€Ää¸ÄÕ¹Ñ¥½¹…°I•ÅÕ¥É•µ•¹ÑÌ5…ÑÉ¥à)ğ%ğI•ÅÕ¥É•µ•¹ĞÉ•„ğMÁ•¥™¥…Ñ¥½¸•ÍÉ¥ÁÑ¥½¸ğAÉ¥µ…Éä	•¹•™¥¥…Éäğ)ğ´´µğ´´µğ´´µğ´´µğ)ğ€¨©AIµH´ÀÀÄ¨¨ğ5•…ÍÕÉ•µ•¹Ğ½¹ÑÉ…ÑÌğ…¹½¹¥…°Ù•ÉÍ¥½¹•ÍÍ•ÍÍµ•¹ÑMÁ•€…¹IÕ‰É¥MÁ•¥™¥…Ñ¥½¹€İ¥Ñ ¥µµÕÑ…‰±”M!´ÈÔØ™¥¹•ÉÁÉ¥¹Ñ¥¹œ¸ğÍÍ•ÍÍµ•¹Ğ¹¥¹••ÉÌğ)ğ€¨©AIµH´ÀÀÈ¨¨ğ%IP€˜51M%I45½‘•±Ìğ!¥ µÑ¡É½Õ¡ÁÕĞ•ÍÑ¥µ…Ñ¥½¸™½È€ÅA0°€ÉA0°€ÍA0°I4°A4°IM4°51MI4°51LÉA14°U1MI4°…¹U1LÉA14¸ğAÍå¡½µ•ÑÉ¥¥…¹Ìğ)ğ€¨©AIµH´ÀÀÌ¨¨ğIÕÍĞ½µÁÕÑ…Ñ¥½¸ğ±°4µÍÑ•À°µÍÑ•À°=…­•ÌM°5!I4°]1°…¹É…‘¥•¹Ğ…É¥Ñ¡µ•Ñ¥Œ½İ¹•‰äÉ…Ñ•Ì½µ±Í¥É´µ½É•€¸ğ½É”A•É™½Éµ…¹”ğ)ğ€¨©AIµH´ÀÀĞ¨¨ğ¥Ğ€˜¥…¹½ÍÑ¥ÌğL´‘axÈ°€‘5|È°€‘5|Éx¨°=É±…¹‘¼µQ¡¥ÍÍ•¸°…¹	•¹©…µ¥¹¤µ!½¡‰•ÉœHµ…‘©ÕÍÑ•Í¥¹¥™¥…¹”µ…ÑÉ¥•Ì¸ğI•Í•…É Y…±¥‘…Ñ¥½¸ğ)ğ€¨©AIµH´ÀÀÔ¨¨ğ)Õ‘”€˜I…Ñ•È…•ÑÌğ5…¹äµ…•ĞI…Í ½%IPÉ…Ñ•ÈÍ•Ù•É¥Ñä…±¥‰É…Ñ¥½¸°©Õ‘”‘É¥™Ğ‘•Ñ•Ñ¥½¸°…¹ÉÕ‰É¥Œ…Ñ•½Éäµ…ÁÁ¥¹œ¸ğ$Ù…±Õ…Ñ¥½¸Q•…µÌğ)ğ€¨©AIµH´ÀÀØ¨¨ğ¥¹¥Ñ”µA½ÁÕ±…Ñ¥½¸M…µÁ±¥¹œğMÑÉ…Ñ¥™¥•ÁÉ½‰…‰¥±¥ÍÑ¥ŒÍ…µÁ±¥¹œ‘•Í¥¹Ì°‰½Õ¹‘•…±±½…Ñ¥½¸°…¹•á…Ğ¥¹±ÕÍ¥½¸µÉ…Ñ¥¼ÑÉ…­¥¹œ¸ğMÕÉÙ•ä€˜ÍÍ•ÍÍµ•¹Ğğ)ğ€¨©AIµH´ÀÀÜ¨¨ğ5Õ±Ñ¥±•Ù•°€˜Q•µÁ½É…°ğÉ½ÍÌµ±…ÍÍ¥™¥•µÕ±Ñ¥Á±”µµ•µ‰•ÉÍ¡¥ÀÍÑÉÕÑÕÉ•Ì…¹½¹Ñ¥¹Õ½ÕÌ½‘¥ÍÉ•Ñ”±½¹¥ÑÕ‘¥¹…°ÍÑ…Ñ”•¹¥¹•Ì¸ğ	•¡…Ù¥½É…°I•Í•…É ğ)ğ€¨©AIµH´ÀÀà¨¨ğ%Ñ•´	…¹­¥¹œ€˜1¥™•å±”ğ½Ù•É¹•¥Ñ•´ÑÉ…¹Í¥Ñ¥½¸ÍÑ…Ñ•Ì€¡É…™Ğ€‘qÑ¼AÉ½Ù¥Í¥½¹…°€‘qÑ¼…±¥‰É…Ñ•€‘qÑ¼¹¡½É•€‘qÑ¼I•Ñ¥É•¤¸ğ¹Ñ•ÉÁÉ¥Í”=Á•É…Ñ¥½¹Ìğ)ğ€¨©AIµH´ÀÀä¨¨ğ¥…¹½ÍÑ¥ŒI•Á½ÉÑ¥¹œğMÑ…¹‘…±½¹”°…•ÍÍ¥‰±”€¡]€È¸Ä¤!Q50…Õ‘¥ĞÉ•Á½ÉÑÌİ¥Ñ M@¹½¹•Ì…¹Ñ…‰Õ±…È¹Õµ•É…±Ì¸ğ¹Ñ•ÉÁÉ¥Í”I•Ù¥•İ•ÉÌğ((ŒŒŒ€Ää¸ÈQ•¡¹¥…°I•ÅÕ¥É•µ•¹ÑÌ5…ÑÉ¥à)ğ%ğÉ¡¥Ñ•ÑÕÉ”É•„ğ%µÁ±•µ•¹Ñ…Ñ¥½¸½¹ÑÉ…Ğğ%¹Ù…É¥…¹Ğ€˜	½Õ¹‘…Éäğ)ğ´´µğ´´µğ´´µğ´´µğ)ğ€¨©QIµQ ´ÀÀÄ¨¨ğ5•µ½Éä€˜	½Õ¹‘Ìğ€ÈÁ4±½¥…°•±±Ì°€ĞÁ4ÍÑÉÕÑÕÉ…°¹½‘•Ì•¥±¥¹œ½¸…±°¥¹É•ÍÌ…ÉÉ…åÌ‰•™½É”9ÕµAä½IÕÍĞ…±±½…Ñ¥½¸¸ğ½L€¼==4%µµÕ¹¥Ñäğ)ğ€¨©QIµQ ´ÀÀÈ¨¨ğQåÁ”€˜M…±…È‘µ¥ÍÍ¥½¸ğá…Ğ¹Õµ•É¥Œ9ÕµAä€¼AåÑ¡½¸Í…±…ÈÕ¹¥Ù•ÉÍ”ì…±±‰…¬µ‰•…É¥¹œÍÕ‰±…ÍÍ•ÌÉ•©•Ñ•™…¥°µ±½Í•¸ğM…™•Ñä€¼AÉ•‘¥Ñ…‰¥±¥Ñäğ)ğ€¨©QIµQ ´ÀÀÌ¨¨ğ…Ñ…‰…Í”A•ÉÍ¥ÍÑ•¹”ğQ¡¥É9½Éµ…°½É´€ Í9¤°Í¹…­•}…Í”¹…µ¥¹œ€ ‘q”€Èİ½É‘Ì¤°UAMIP¥‘•µÁ½Ñ•¹Ğ½¹ÑÉ…ÑÌ¸ğ%¹Ñ•É¥Ñä€¼!½ĞµA…ÉÑ¥Ñ¥½¸ğ)ğ€¨©QIµQ ´ÀÀĞ¨¨ğM%5€¼5Õ±Ñ¥Ñ¡É•…‘¥¹œğI…å½¸µ‰…­•AT½…ÉÍ”Á…É…±±•±¥Í´°AT‘•Ù¥”­•É¹•°Á…É¥Ñäİ¥Ñ ÍÑÉ¥Ğ˜ØĞÉ•™•É•¹”‰½Õ¹‘Ì¸ğ1½Ü½¹Ñ•áĞMİ¥Ñ¡¥¹œğ)ğ€¨©QIµQ ´ÀÀÔ¨¨ğ¹Ñ•ÉÁÉ¥Í”½µÁ±¥…¹”ğM@€¼M=€ÈQåÁ”%$½¹ÑÉ½±ÌìA%$Ñ½­•¹¥é…Ñ¥½¸ÁÉ•Í•ÉÙ¥¹œ±½¹¥ÑÕ‘¥¹…°±¥¹­…”İ¥Ñ¡½ÕĞ‘…Ñ„±½ÍÌ¸ğ¹Ñ•ÉÁÉ¥Í”Õ‘¥Ğğ)ğ€¨©QIµQ ´ÀÀØ¨¨ğQ•ÍĞ€˜½Œ½Ù•É…”ğ€ÄÀÀ”Ñ•ÍĞ½Ù•É…”°€ÄÀÀ”‘½ÍÑÉ¥¹œ½Ù•É…”°ÑÉÕ”µÁ…É…µ•Ñ•ÈI5MÉ•½Ù•ÉäÑ•ÍÑÌ……¥¹ÍĞÉ½Õ¹ÑÉÕÑ ¸ğI•±•…Í”EÕ…±¥Ñä…Ñ”ğ((´´´((ŒŒ€ÈÀ¸É¡¥Ñ•ÑÕÉ”	±Õ•ÁÉ¥¹ÑÌ€˜U50MåÍÑ•´•Í¥¸((ŒŒŒ€ÈÀ¸Ä½ÍåÍÑ•´Q½Á½±½ä€˜5¥É½Í•ÉÙ¥•ÌMåÍÑ•´½¹Ñ•áĞ()µ•Éµ…¥)É…Á Q(€ÍÕ‰É…Á ±¥•¹Ñ}ÁÁ±¥…Ñ¥½¹Ìl‰¹Ñ•ÉÁÉ¥Í”€˜I•Í•…É ½¹ÍÕµ•ÉÌ‰t(€€€Al‰ÁÍå¡½µ•ÑÉ¥Ìµ½µµ½¹Ìñ‰È¼ø¡!½ÍÑ•AÉ½‘ÕĞ°‘µ¥¸A%Ì°ÕÑ ¤‰t(€€€=l‰½¹Ñ•áÑÕ…°µ½É¡•ÍÑÉ…Ñ½Èñ‰È¼ø¡114µ…Ìµ)Õ‘”=É¡•ÍÑÉ…Ñ¥½¸¤‰t(€€€-Yl‰­•åÙ•ÉÍ”ñ‰È¼ø¡•¹ÑÉ…°%‘@°MM<½=%½M%4¤‰t(€•¹((€ÍÕ‰É…Á ½µÁÕÑ…Ñ¥½¹…±}1…å•Èl‰5•…ÍÕÉ•µ•¹Ğ€˜±½É¥Ñ¡µ¥Œ½É”‰t(€€€MQl‰™…ÍĞµµ±Í¥É´ñ‰È¼ø¡½µ…¥¸µ9•ÕÑÉ…°½É”°%IP°51LÉA14°¥ĞMÑ…ÑÌ¤‰t(€€€QAAl‰QA@ñ‰È¼ø¡Q•µÁ½É…°Ù•¹ĞAÍå¡½µ•ÑÉ¥ÌA±…Ñ™½É´¤‰t(€€€I]l‰I…¹­]•…Ù”ñ‰È¼ø¡I•ÑÉ¥•Ù…°ÕÍ¥½¸€˜I…¹­¥¹œ¤‰t(€€€1]l‰1¥¹•…•]•…Ù”ñ‰È¼ø¡1¥¹•…”I•½¹ÍÑÉÕÑ¥½¸¤‰t(€€€Q]l‰Q¡É•…‘]•…Ù”ñ‰È¼ø¡)]hµ…¥°Q¡É•…‘¥¹œ¤‰t(€•¹((€ÍÕ‰É…Á M•ÕÉ¥Ñå}…¹‘}MÑ½É…”l‰%¹™É…ÍÑÉÕÑÕÉ”€˜½Ù•É¹…¹”‰t(€€€]9l‰İ…É‘¹•Ğñ‰È¼ø¡IÕÍĞ…Ñ•İ…ä€˜M=½¹ÑÉ½°A±…¹”¤‰t(€€€Ml‰‘¥Í­Í…”ñ‰È¼ø¡=¸µ•Ù¥”¥±”€˜¥Í¬½Ù•É¹…¹”¤‰t(€€€9IU=9l‰¹…ÉÕ½¸€˜€¹¥Ñ¡Õˆñ‰È¼ø¡=Éœµİ¥‘”½Ù•É¹…¹”€˜$…Ñ•Ì¤‰t(€•¹((€A€´´ùñÍÍ•ÍÍµ•¹ÑMÁ•Œ€¼=‰Í•ÉÙ…Ñ¥½¹ÍğMP(€<€´´ùñ)Õ‘”I…Ñ¥¹Ì€¼IÕ‰É¥Œ=‰Í•ÉÙ…Ñ¥½¹ÍğMP(€MP€´´ùñQ•µÁ½É…°å¹…µ¥ÍğQA@(€MP€´´ùñ1¥¹•…”¡…¹¹•±Íğ1\(€MP€´´ùñI…¹­¥¹Ì€¼	É…‘±•äµQ•ÉÉåğI\(€MP€´´ùñÕ‘¥Ñ•AÉ½Ù•¹…¹•ğ]8(€A€´´ùñÕÑ Q½­•¹Íğ-X(€9IU=8€´´ùñ$…Ñ•Ì€˜A½±¥¥•ÍğMP)€((ŒŒŒ€ÈÀ¸È½É”½µ…¥¸±…ÍÌ5½‘•°()µ•Éµ…¥)±…ÍÍ¥…É…´(€±…ÍÌÍÍ•ÍÍµ•¹ÑMÁ•Œì(€€€€­MÑÉ¥¹œÍÁ•}¥(€€€€­MÑÉ¥¹œÙ•ÉÍ¥½¸(€€€€­1¥ÍÑù¥µ•¹Í¥½¹MÁ•ø‘¥µ•¹Í¥½¹Ì(€€€€­1¥ÍÑù%Ñ•µMÁ•ø¥Ñ•µÌ(€€€€­™¥¹•ÉÁÉ¥¹Ğ ¤MÑÉ¥¹œ(€ô((€±…ÍÌIÕ‰É¥MÁ•¥™¥…Ñ¥½¸ì(€€€€­MÑÉ¥¹œÉÕ‰É¥}¥(€€€€­MÑÉ¥¹œÉ•Ù¥Í¥½¸(€€€€­1¥ÍÑùÉ¥Ñ•É¥½¹MÁ•øÉ¥Ñ•É¥„(€€€€­1¥ÍÑù…Ñ•½Éå1•Ù•±ø±•Ù•±Ì(€€€€­™¥¹•ÉÁÉ¥¹Ğ ¤MÑÉ¥¹œ(€ô((€±…ÍÌ=‰Í•ÉÙ…Ñ¥½¹5…ÑÉ¥àì(€€€€­ÉÉ…äÉÉ•ÍÁ½¹Í•Ì(€€€€­ÉÉ…äÉµ…Í¬(€€€€­%¹ĞÁ•ÉÍ½¹}½Õ¹Ğ(€€€€­%¹Ğ¥Ñ•µ}½Õ¹Ğ(€€€€­Ù…±¥‘…Ñ•}‰½Õ¹‘Ì ¤	½½°(€ô((€±…ÍÌ%Ñ•µ	…¹­I•½Éì(€€€€­MÑÉ¥¹œ¥Ñ•µ}¥(€€€€­A…É…µ•Ñ•ÉAÉ½Ù•¹…¹”ÁÉ½Ù•¹…¹”(€€€€­%Ñ•µ1¥™•å±•MÑ…ÑÕÌÍÑ…ÑÕÌ(€€€€­5…ÁùMÑÉ¥¹œ°±½…Ñø…±¥‰É…Ñ•‘}Á…É…µ•Ñ•ÉÌ(€€€€­É•Á±…å}¥‘•¹Ñ¥Ñä ¤%Ñ•µ	…¹­I•½É(€ô((€±…ÍÌ5±Í¥Éµ¹¥¹”ì(€€€€ğñIÕÍĞ½É”øø(€€€€­™¥Ñ}µ±ÌÉÁ±´ ¤¥ÑI•ÍÕ±Ğ(€€€€­½µÁÕÑ•}½…­•Í}Í” ¤½Ù…É¥…¹•5…ÑÉ¥à(€€€€­•Ù…±Õ…Ñ•}ÍàÉ}™¥Ğ ¤¥ÑMÑ…Ñ¥ÍÑ¥Ì(€€€€­•áÑÉ…Ñ}¥¹Ñ•É…Ñ¥½¹}µ…À ¤%¹Ñ•É…Ñ¥½¹5…Á¹Ù•±½Á”(€ô((€±…ÍÌ%¹Ñ•É…Ñ¥½¹5…Á¹Ù•±½Á”ì(€€€€­ÉÉ…äÉ¥Ñ•µ}½½É‘¥¹…Ñ•Ì(€€€€­ÉÉ…äÉÁ•ÉÍ½¹}½½É‘¥¹…Ñ•Ì(€€€€­±½…Ğ•áÁ±…¥¹•‘}Ù…É¥…¹•}Í¡…É”(€€€€­ÉÉ…äÅÍ¥¹Õ±…É}Ù…±Õ•Ì(€€€€­Ù…±¥‘…Ñ•}™¥¹¥Ñ•¹•ÍÌ ¤	½½°(€ô((€ÍÍ•ÍÍµ•¹ÑMÁ•Œ€ˆÄˆ€¨´´€‰µ…¹äˆ%Ñ•µ	…¹­I•½É(€IÕ‰É¥MÁ•¥™¥…Ñ¥½¸€ˆÄˆ€¨´´€‰µ…¹äˆÍÍ•ÍÍµ•¹ÑMÁ•Œ(€=‰Í•ÉÙ…Ñ¥½¹5…ÑÉ¥à€´´ø5±Í¥Éµ¹¥¹”€è5…ÉÍ¡…±°Ñ¼IÕÍĞ(€5±Í¥Éµ¹¥¹”€´´ø%¹Ñ•É…Ñ¥½¹5…Á¹Ù•±½Á”€èAÉ½‘Õ•Ì(€%Ñ•µ	…¹­I•½É€´´ø=‰Í•ÉÙ…Ñ¥½¹5…ÑÉ¥à€è½Ù•É¹Ì%Ñ•µÌ)€((ŒŒŒ€ÈÀ¸Ì½µÁÕÑ…Ñ¥½¹…°A¥Á•±¥¹”M•ÅÕ•¹”()µ•Éµ…¥)Í•ÅÕ•¹•¥…É…´(€…ÕÑ½¹Õµ‰•È(€…Ñ½È±¥•¹Ğ…Ì½¹ÍÕµ•È€¼=É¡•ÍÑÉ…Ñ½È(€Á…ÉÑ¥¥Á…¹ĞAåA$…ÌAåÑ¡½¸Y…±¥‘…Ñ¥½¸1…å•È(€Á…ÉÑ¥¥Á…¹ĞM…™•Ñä…Ì‘µ¥ÍÍ¥½¸€˜	½Õ¹‘ÌÕ…É(€Á…ÉÑ¥¥Á…¹ĞIÕÍÑ½É”…ÌIÕÍĞ9Õµ•É¥…°½É”€¡µ±Í¥É´µ½É”¤(€Á…ÉÑ¥¥Á…¹Ğ¥…œ…Ì¥…¹½ÍÑ¥Œ€˜¥Ğ¹¥¹”(€Á…ÉÑ¥¥Á…¹ĞI•Á½ÉĞ…Ì•ÍÍ¥‰±”I•Á½ÉĞ	Õ¥±‘•È((€±¥•¹Ğ´øùAåA$è™¥Ğ¡…ÍÍ•ÍÍµ•¹Ñ}ÍÁ•Œ°É•ÍÁ½¹Í•}‘…Ñ„°½ÁÑ¥½¹Ì¤(€AåA$´øùM…™•ÑäèÁÉ•™±¥¡Ñ}¡•¬¡É•ÍÁ½¹Í•}‘…Ñ„°‰½Õ¹‘Ì¤(€9½Ñ”½Ù•ÈM…™•ÑäèY•É¥™ä±½¥…°•±±Ì€ğô€ÈÁ4ñ‰È¼ùY•É¥™äÍÑÉÕÑÕÉ…°¹½‘•Ì€ğô€ĞÁ4ñ‰È¼ùI•©•Ğ…±±‰…¬ÍÕ‰±…ÍÍ•Ì(€M…™•Ñä´´øùAåA$èY…±¥‘…Ñ•%¹•ÉĞ	Õ™™•ÉÌ(€AåA$´øùIÕÍÑ½É”è™…ÍÑ}µ±Í¥Éµ}Áä¹™¥Ñ}µ±Í¥É´¡‰Õ™™•ÉÌ°½¹™¥œ¤(€…Ñ¥Ù…Ñ”IÕÍÑ½É”(€9½Ñ”½Ù•ÈIÕÍÑ½É”èM%5€¼5Õ±Ñ¥Ñ¡É•…‘•4€¼4ñ‰È¼ù=…­•Ì%¹™½Éµ…Ñ¥½¸€˜!•ÍÍ¥…¸ñ‰È¼ùI•Í¥‘Õ…°%¹Ñ•É…Ñ¥½¸MY(€IÕÍÑ½É”´´øùAåA$èIÕÍÑI•ÍÕ±Ñ¹Ù•±½Á”€¡˜ØĞ…ÉÉ…åÌ°µ•ÑÉ¥Ì¤(€‘•…Ñ¥Ù…Ñ”IÕÍÑ½É”(€AåA$´øù¥…œè½µÁÕÑ•}™¥Ñ}ÍÑ…Ñ¥ÍÑ¥Ì¡IÕÍÑI•ÍÕ±Ñ¹Ù•±½Á”¤(€¥…œ´´øùAåA$èLµ`È°4È¨°	 H‘©ÕÍÑµ•¹ÑÌ(€AåA$´øùI•Á½ÉĞè•¹•É…Ñ•}ÍÑ…¹‘…±½¹•}¡Ñµ°¡É•ÍÕ±ÑÌ¤(€I•Á½ÉĞ´´øù±¥•¹Ğè½µÁ±•Ñ”…±¥‰É…Ñ•I•ÍÕ±ÑÌ€˜Õ‘¥ĞI•Á½ÉĞ)€((ŒŒŒ€ÈÀ¸Ğ€Í9…Ñ…‰…Í”¹Ñ¥ÑäµI•±…Ñ¥½¹Í¡¥ÀÉ¡¥Ñ•ÑÕÉ”()µ•Éµ…¥)•É¥…É…´(€€€MMMM59Q}MA%%Q%=9Lñğ´µ½ì%Q5}	9-}I=IL€è‘•™¥¹•Ì(€€€IU	I%}MA%%Q%=9Lñğ´µ½ìIU	I%}I%QI%€è½¹Ñ…¥¹Ì(€€€MMMM59Q}MA%%Q%=9Lñğ´µ½ì=	MIYQ%=9}	Q!L€è…Ñ¡•ÉÌ(€€€=	MIYQ%=9}	Q!Lñğ´µ½ìIMA=9M}=	MIYQ%=9L€è½¹Ñ…¥¹Ì(€€€%Q5}	9-}I=ILñğ´µ½ìIMA=9M}=	MIYQ%=9L€è•Ù…±Õ…Ñ•Ì(€€€=	MIYQ%=9}	Q!Lñğ´µ½ì1%	IQ%=9}IU9L€è¥¹ÁÕÑÌ(€€€1%	IQ%=9}IU9Lñğ´µ½ìMQ%5Q}%Q5}AI5QIL€è½ÕÑÁÕÑÌ(€€€1%	IQ%=9}IU9Lñğ´µ½ìIM%U1}%9QIQ%=9}5AL€è•¹•É…Ñ•Ì((€€€MMMM59Q}MA%%Q%=9Lì(€€€€€€€ÍÑÉ¥¹œÍÁ•}¥A,(€€€€€€€ÍÑÉ¥¹œÍÁ•}Ù•ÉÍ¥½¸(€€€€€€€ÍÑÉ¥¹œ½¹ÍÑÉÕÑ}¹…µ”(€€€€€€€ÍÑÉ¥¹œ½¹Ñ•¹Ñ}‘¥•ÍĞ(€€€€€€€Ñ¥µ•ÍÑ…µÀÉ•…Ñ•‘}…Ğ(€€€ô((€€€%Q5}	9-}I=ILì(€€€€€€€ÍÑÉ¥¹œ¥Ñ•µ}¥A,(€€€€€€€ÍÑÉ¥¹œÍÁ•}¥,(€€€€€€€ÍÑÉ¥¹œÁ…É…µ•Ñ•É}ÁÉ½Ù•¹…¹”(€€€€€€€ÍÑÉ¥¹œ±¥™•å±•}ÍÑ…ÑÕÌ(€€€€€€€ÍÑÉ¥¹œ¥Ñ•µ}‰±Õ•ÁÉ¥¹Ñ}¡…Í (€€€€€€€Ñ¥µ•ÍÑ…µÀÕÁ‘…Ñ•‘}…Ğ(€€€ô((€€€=	MIYQ%=9}	Q!Lì(€€€€€€€ÍÑÉ¥¹œ‰…Ñ¡}¥A,(€€€€€€€ÍÑÉ¥¹œÍÁ•}¥,(€€€€€€€ÍÑÉ¥¹œÁÍ•Õ‘½¹åµ¥é•‘}½¡½ÉÑ}¥(€€€€€€€¥¹Ñ••È½‰Í•ÉÙ…Ñ¥½¹}½Õ¹Ğ(€€€€€€€Ñ¥µ•ÍÑ…µÀ½±±•Ñ•‘}…Ğ(€€€ô((€€€IMA=9M}=	MIYQ%=9Lì(€€€€€€€ÍÑÉ¥¹œ½‰Í•ÉÙ…Ñ¥½¹}¥A,(€€€€€€€ÍÑÉ¥¹œ‰…Ñ¡}¥,(€€€€€€€ÍÑÉ¥¹œ¥Ñ•µ}¥,(€€€€€€€ÍÑÉ¥¹œÍÕ‰©•Ñ}Ñ½­•¸(€€€€€€€™±½…ĞÉ•ÍÁ½¹Í•}Ù…±Õ”(€€€€€€€‰½½±•…¸¥Í}µ¥ÍÍ¥¹œ(€€€ô((€€€1%	IQ%=9}IU9Lì(€€€€€€€ÍÑÉ¥¹œÉÕ¹}¥A,(€€€€€€€ÍÑÉ¥¹œ‰…Ñ¡}¥,(€€€€€€€ÍÑÉ¥¹œµ½‘•±}™…µ¥±ä(€€€€€€€™±½…Ğ±½}±¥­•±¥¡½½(€€€€€€€‰½½±•…¸½¹Ù•É•¹•}™±…œ(€€€€€€€Ñ¥µ•ÍÑ…µÀ½µÁ±•Ñ•‘}…Ğ(€€€ô((€€€MQ%5Q}%Q5}AI5QILì(€€€€€€€ÍÑÉ¥¹œÁ…É…µ•Ñ•É}¥A,(€€€€€€€ÍÑÉ¥¹œÉÕ¹}¥,(€€€€€€€ÍÑÉ¥¹œ¥Ñ•µ}¥,(€€€€€€€ÍÑÉ¥¹œÁ…É…µ•Ñ•É}¹…µ”(€€€€€€€™±½…Ğ•ÍÑ¥µ…Ñ•‘}Ù…±Õ”(€€€€€€€™±½…ĞÍÑ…¹‘…É‘}•ÉÉ½È(€€€ô((€€€IM%U1}%9QIQ%=9}5ALì(€€€€€€€ÍÑÉ¥¹œµ…Á}¥A,(€€€€€€€ÍÑÉ¥¹œÉÕ¹}¥,(€€€€€€€¥¹Ñ••È±…Ñ•¹Ñ}‘¥µ•¹Í¥½¸(€€€€€€€™±½…Ğ•áÁ±…¥¹•‘}Ù…É¥…¹•}É…Ñ¥¼(€€€€€€€ÍÑÉ¥¹œ½½É‘¥¹…Ñ•}Á…å±½…‘}‘¥•ÍĞ(€€€ô)€((´´´((ŒŒ€ÈÄ¸½µÁÉ•¡•¹Í¥Ù”…À¹…±åÍ¥Ì€˜½µµ•É¥…°I•…‘¥¹•ÍÌÕ‘¥Ğ((ŒŒŒ€ÈÄ¸ÄQ•¡¹¥…°€˜½µÁÕÑ…Ñ¥½¹…°…ÁÌ(Ä¸€¨©½¹™¥Éµ…Ñ½Éä…Ñ½È1½…‘¥¹œA…ÑÑ•É¸Ù¥‘•¹”€¡%ÍÍÕ”€ŒÄĞØØ€¼AH€ŒÄĞØÜ¤¨¨è1½…‘¥¹œÁ…ÑÑ•É¸µ…ÑÉ¥•ÌÍ•…±•…¹Ù…±¥‘…Ñ•‰•™½É”‘•¹Í”9ÕµAä½•É¥½¸¸€ ©I•Í½±Ù•…¹5•É•¨¤¸(È¸€¨©I•Í¥‘Õ…°%¹Ñ•É…Ñ¥½¸5…À¹Ù•±½Á”M•É¥…±¥é…Ñ¥½¸€¡%ÍÍÕ”€ŒÄĞÄÈ€¼AH€ŒÄĞÄÜ°€ŒÄĞÔÜ¤¨¨èÕ±°•áÁ±…¥¹•Ù…É¥…¹”Í¡…É”°Í¥¹Õ±…ÈÙ…±Õ•Ì°…¹¥Ñ•´½Á•ÉÍ½¸½½É‘¥¹…Ñ•Ìİ¥Ñ ™¥¹¥Ñ•¹•ÍÌÕ…É…¹Ñ••Ì•áÁ½ÉÑ•™É½´IÕÍĞ¸(Ì¸€¨©½µ…¥¸µ9•ÕÑÉ…°1¥¹•…”¡…¹¹•°]•¥¡ÑÌ€¡%ÍÍÕ”€ŒÄĞÔÔ€¼AH€ŒÄĞÔØ¤¨¨è]•¥¡Ğ…±±½…Ñ¥½¸…É½ÍÌ±¥¹•…”Ñ¡É•…‘ÌÉ•µ…¥¹ÌÍÑÉ¥Ñ±ä‘½µ…¥¸µ¹•ÕÑÉ…°…¹‰½Õ¹‘•¸€ ©I•Í½±Ù•…¹5•É•¨¤¸(Ğ¸€¨©MÑÉÕÑÕÉ…°½¹Ñ…¥¹•ÈQÉ…Ù•ÉÍ…°	½Õ¹‘Ì€¡%ÍÍÕ”€ŒÄĞÌä°€ŒÄĞĞà€¼AH€ŒÄĞĞÀ°€ŒÄĞĞä¤¨¨èIM4…¹%¹Ñ•É…Ñ¥½¸5…Àµ…ÑÉ¥à¥¹ÁÕÑÌÁÉ½Ñ•Ñ•İ¥Ñ ¹½‘”•¥±¥¹Ì……¥¹ÍĞ½LÁ…å±½…‘Ì¸€ ©I•Í½±Ù•…¹5•É•¨¤¸(Ô¸€¨©MÕ‰ÁÉ½•ÍÌQ¥µ•½ÕĞ€˜]…Ñ¡‘½œ€¡%ÍÍÕ”€ŒÄĞØÀ°€ŒÄĞØÄ°€ŒÄĞØÈ€¼AH€ŒÄĞØÀ¤¨¨èI•±•…Í”ÍÉ¥ÁÑÌ…¹İ½É­•ÈÁÉ½•ÍÍ•Ì‰½Õ¹Ñ¼¹½¸µ¡…¹¥¹œİ…Ñ¡‘½œÑ¥µ•½ÕÑÌ¸€ ©I•Í½±Ù•…¹5•É•¨¤¸(Ø¸€¨©¥¹¥Ñ”µA½ÁÕ±…Ñ¥½¸M…µÁ±¥¹œÉÑ¥™…ÑÌ€¡%ÍÍÕ”€ŒÄĞÔÌ°€ŒÄĞÔĞ€¼AH€ŒÄĞĞÔ¤¨¨èMÑÉ…Ñ¥™¥•…±±½…Ñ¥½¸Á½İ•É•‰ä€‘<¡8q±½œ8¤‰½Õ¹‘•…±½É¥Ñ¡µÌ…¹±½ÍÍ±•ÍÌ¥¹±ÕÍ¥½¸µÁÉ½‰…‰¥±¥Ñä½¹ÑÉ…ÑÌ¸€ ©I•Í½±Ù•…¹5•É•¨¤¸(Ü¸€¨©áÑ•É¹…°Y…±¥‘…Ñ¥½¸AÉ•É•¥ÍÑ•É•AÉ½™¥±•Ì€¡%ÍÍÕ”€ŒÄĞĞÌ°€ŒÄĞĞØ€¼AH€ŒÄĞĞĞ¤¨¨èAÉ•É•¥ÍÑ•É•ÁÉ½™¥±”É•Á±…äÙ•É¥™å¥¹œÑÉ…¹ÍÁ½ÉÑ…‰¥±¥Ñä…¹™…¥É¹•ÍÌ•Ù¥‘•¹”¸€ ©I•Í½±Ù•…¹5•É•¨¤¸((ŒŒŒ€ÈÄ¸È	Õå•ÈµA•É•¥Ù•AÉ½‘ÕĞ€˜U`…ÁÌ€ ÈÁ¹Ñ•ÉÁÉ¥Í”	•¹¡µ…É¬¤(Ä¸€¨©%¹Ñ•É…Ñ¥Ù”MÑ½Éå‰½½¬€˜•Í¥¸Q½­•¸U¹¥™½Éµ¥Ñä¨¨è•¹ÑÉ…±¥é••Í¥¸Q½­•¸…É¡¥Ñ•ÑÕÉ”€¡MLÕÍÑ½´ÁÉ½Á•ÉÑ¥•Ì°]€È¸Ä½¹ÑÉ…ÍĞ°­•å‰½…É™½ÕÌ¥¹‘¥…Ñ½ÉÌ°Ñ…‰Õ±…È¹Õµ•É…±Ì¤µ…Ñ¡¥¹œ¥µ„ÍÁ•¥™¥…Ñ¥½¹Ì€¡‘½Ì½™¥µ…}ÁÉ½‘ÕÑ}‘•Í¥¹}Á…­•Ğ¹µ‘€¤¸(È¸€¨©•Ñ•Éµ¥¹¥ÍÑ¥Œ¹µÑ¼µ¹1½…I•Í¥±¥•¹”¨¨èMÑ…¹‘…±½¹”É•Á½ÉĞ•¹•É…Ñ¥½¸…¹IMP½Aå<Ì…±±ÌÍÕÍÑ…¥¹¥¹œ¡¥ ½¹ÕÉÉ•¹ä€ ‘¬Ø‰•¹¡µ…É¬€‘q”€Ä°ÀÀÀIALİ¥Ñ¡½ÕĞµ•µ½Éä±•…­Ì½È•Ù•¹Ğ±½½ÀÍÑ…ÉÙ…Ñ¥½¸¤¸(Ì¸€¨©¹Ñ•ÉÁÉ¥Í”½µÁ±¥…¹”A…­…”¨¨èÕ±±ä…ÕÑ½µ…Ñ••¹•É…Ñ¥½¸½˜M=€È€¼M@…Õ‘¥ĞÑÉ…¥°Á…­…•Ì°¥¹±Õ‘¥¹œM!´ÈÔØ•Ù¥‘•¹”¥¹‘•á•Ì°É•ÁÉ½‘Õ¥‰¥±¥Ñäµ…¹¥™•ÍÑÌ°…¹M	=4€¡M½™Ñİ…É”	¥±°½˜5…Ñ•É¥…±Ì¤•áÁ½ÉÑÌ¸((´´´((ŒŒ€ÈÈ¸Ñ¥Ù”AÕ±°I•ÅÕ•ÍĞ€˜%ÍÍÕ”%¹Ù•¹Ñ½Éä5…ÑÉ¥à()ğAH€Œğ	É…¹ ğQ¥Ñ±”ğMÑ…Ñ”ğ$¡•­Ìğ5•É”MÑ…ÑÕÌ€˜I•Í½±ÕÑ¥½¸ğ)ğ´´µğ´´µğ´´µğ´´µğ´´µğ´´µğ)ğ€¨¨ŒÄĞÈÀ¨¨ğÉ•™…Ñ½È½©Õ‘”µÁÉ½©•Ñ¥½¸µ½É”´ÄĞÄÑ€ğÉ•™…Ñ½È¡©Õ‘”¤èÍ¡…É”…¹½¹¥…°%IPÁÉ½©•Ñ¥½¸½É”ğ5Iğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©5I¥¹Ñ¼µ…¥¸¨¨ğ)ğ€¨¨ŒÄĞÈÔ¨¨ğ™¥à½Ñİ½Á°µÉ•ÍÁ½¹Í”µ…‘µ¥ÍÍ¥½¸´ÄĞÈÑ€ğ™¥à¡Ñİ½Á°¤èÍ•…°É•ÍÁ½¹Í”…¹Ñ½±•É…¹”•Ù¥‘•¹”‰•™½É”IÕÍĞğ5Iğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©5I¥¹Ñ¼µ…¥¸¨¨ğ)ğ€¨¨ŒÄĞÌÌ¨¨ğ™•…Ğ½¥Ñ•´µÁ…É…µ•Ñ•ÈµÁÉ½Ù•¹…¹”´ÄĞÌÉ€ğ™•…Ğ¡¥Ñ•´µ‰…¹¬¤è‘¥ÍÑ¥¹Õ¥Í ÁÉ½Ù¥Í¥½¹…°…¹…±¥‰É…Ñ•Á…É…µ•Ñ•ÈÁÉ½Ù•¹…¹”ğ5Iğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©5I¥¹Ñ¼µ…¥¸¨¨ğ)ğ€¨¨ŒÄĞÌà¨¨ğ™¥à½¥Ñ•´µ‰…¹¬µ±¥™•å±”µÉ•Á±…ä´ÄĞÌÕ€ğ™¥à¡¥Ñ•´µ‰…¹¬¤èÉ•Á±…ä±¥™•å±”¥‘•¹Ñ¥Ñä½¸ÁÕ‰±¥ŒÍ•É¥…±¥é…Ñ¥½¸ğ5Iğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©5I¥¹Ñ¼µ…¥¸¨¨ğ)ğ€¨¨ŒÄĞĞÀ¨¨ğ™¥à½¥¹Ñ•É…Ñ¥½¸µµ…ÀµÍÑÉÕÑÕÉ…°µ‰Õ‘•Ğ´ÄĞÌå€ğ™¥à¡¥¹Ñ•É…Ñ¥½¸µµ…À¤è‰½Õ¹µ…ÑÉ¥àÍÑÉÕÑÕÉ…°ÑÉ…Ù•ÉÍ…°ğ5Iğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©5I¥¹Ñ¼µ…¥¸¨¨ğ)ğ€¨¨ŒÄĞĞĞ¨¨ğ™•…Ğ½•áÑ•É¹…°µÙ…±¥‘…Ñ¥½¸µÁÉ½™¥±”´ÄĞĞÍ€ğ™•…Ğ¡Ù…±¥‘…Ñ¥½¸¤è…‘ÁÉ•É•¥ÍÑ•É••áÑ•É¹…°µ•Ù¥‘•¹”ÁÉ½™¥±”ğ5Iğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©5I¥¹Ñ¼µ…¥¸¨¨ğ)ğ€¨¨ŒÄĞĞÔ¨¨ğ™•…Ğ½™¥¹¥Ñ”µÁ½ÁÕ±…Ñ¥½¸µÍ…µÁ±¥¹œµ‘•Í¥¹€ğ™•…Ğ¡Í…µÁ±¥¹œ¤è…‘™¥¹¥Ñ”µÁ½ÁÕ±…Ñ¥½¸‘•Í¥¸…ÉÑ¥™…Ğğ5Iğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©5I¥¹Ñ¼µ…¥¸¨¨ğ)ğ€¨¨ŒÄĞĞä¨¨ğ™¥à½ÉÍ´µÍÑÉÕÑÕÉ…°µ‰Õ‘•Ğ´ÄĞĞá€ğ™¥à¡ÉÍ´¤è‰½Õ¹ÍÑÉÕÑÕÉ…°É•ÍÁ½¹Í”ÑÉ…Ù•ÉÍ…°ğ5Iğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©5I¥¹Ñ¼µ…¥¸¨¨ğ)ğ€¨¨ŒÄĞÔØ¨¨ğ™¥à½‘½µ…¥¸µ¹•ÕÑÉ…°µ±¥¹•…”µ¡…¹¹•°´ÄĞÔÕ€ğ™¥à¡½É”¤èÉ•ÍÑ½É”‘½µ…¥¸µ¹•ÕÑÉ…°±¥¹•…”…¹¡½È½¹ÑÉ…Ğğ5Iğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©5I¥¹Ñ¼µ…¥¸¨¨ğ)ğ€¨¨ŒÄĞØÀ¨¨ğÍ•¹Ñ¥¹•°½™¥àµÍÕ‰ÁÉ½•ÍÌµ¡…¹œ´ÄÈØØÄÄÈÌàĞÈĞÌàÔäÈÔÀÑ€ğƒÂ~n‡¾â<M•¹Ñ¥¹•°èm!%!tƒ²s®â3¶R®†s²ã²*ƒ®²Ó¶Vpƒ®2ªâÀƒ²Ş£²V÷²‚@ƒ²"c²‚Tğ5Iğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©5I¥¹Ñ¼µ…¥¸¨¨ğ)ğ€¨¨ŒÄĞØÜ¨¨ğ™¥à½½¹™¥Éµ…Ñ½Éäµ•Ù¥‘•¹”µ…‘µ¥ÍÍ¥½¸´ÄĞØÙ€ğ™¥à¡µ½‘•±Ì¤èÍ•…°½¹™¥Éµ…Ñ½Éä±½…‘¥¹œµÁ…ÑÑ•É¸•Ù¥‘•¹”ğ5Iğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©5I¥¹Ñ¼µ…¥¸¨¨ğ)ğ€¨¨ŒÄĞÄÜ¨¨ğ™•…Ğ½¥¹Ñ•É…Ñ¥½¸µµ…ÀµÉÕÍĞµÍÕµµ…Éä´ÄĞÄÉ€ğ™•…Ğ¡¥¹Ñ•É…Ñ¥½¸µµ…À¤è•áÑ•¹IÕÍĞÉ•ÍÕ±Ğ•¹Ù•±½Á”ğIPğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©	MAH¨¨è%¹Ñ•É…Ñ¥½¸µ…À•¹Ù•±½Á”ìÉ•‰…Í”…¹µ•É”¸ğ)ğ€¨¨ŒÄĞÌØ¨¨ğ™•…Ğ½Á½±åÑ½µ½ÕÌµÁ•É¥½µ…ÉÑ¥™…Ğµ…‘É€ğ‘½Ì¡…‘È¤è‘•™¥¹”IÕÍĞÁ½±åÑ½µ½ÕÌÁ•É¥½…ÉÑ¥™…ĞğIPğ10AML€ ÄÌ¼ÄÌ¤ğ€¨©MQ-¨¨èH‘½Õµ•¹Ñ…Ñ¥½¸ÍÑ…­•½¸€ŒÄĞÄÜ¸ğ)ğ€¨¨ŒÄĞÔÜ¨¨ğ™•…Ğ½¥¹Ñ•É…Ñ¥½¸µµ…Àµ•áÁ±…¥¹•µÍ¡…É•€ğ™•…Ğ¡¥¹Ñ•É…Ñ¥½¸µµ…À¤è•áÁ½Í”IÕÍĞ•áÁ±…¥¹•Í¡…É”ğIPğAåÑ¡½¸$…¥°ğ€¨©9L%`¨¨èI•Á…¥ÈÑ•ÍĞ…ÍÍ•ÉÑ¥½¹Ì½¸•áÁ±…¥¹•Ù…É¥…¹”Í¡…É”¸ğ((´´´((ŒŒ€ÈÌ¸Ñ¥½¹…‰±”½¹Ñ¥¹Õ½ÕÌÕÑ½¹½µ½ÕÌá•ÕÑ¥½¸1½½ÁÌ()Q¼Õ…É…¹Ñ•”Ñ¡”Í½™Ñİ…É”½¹Ñ¥¹Õ½ÕÍ±ä•Í…±…Ñ•Ì¥¸…Á…‰¥±¥Ñä…¹ÅÕ…±¥Ñä°Ñ¡”™½±±½İ¥¹œÍ•±˜µÍÕÍÑ…¥¹¥¹œ±½½ÁÌ½Á•É…Ñ”½¸…¸¡½ÕÉ±äÉ•ÕÉÉ¥¹œÍ¡•‘Õ±”è()µ•Éµ…¥)É…Á Q(€0Ål‰1½½À€Äè=Á•¸AHÕ‘¥Ğ€˜5•É”A¥Á•±¥¹”‰t€´´ø0Él‰1½½À€Èè$½EÕ…±¥Ñä€˜M•ÕÉ¥Ñä…Ñ”Y•É¥™¥…Ñ¥½¸‰t(€0È€´´ø0Íl‰1½½À€Ìè5…Ñ¡•µ…Ñ¥…°-•É¹•°€˜I•½Ù•ÉäáÑ•¹Í¥½¸‰t(€0Ì€´´ø0Ñl‰1½½À€Ğè½ÍåÍÑ•´5M½¹¹•Ñ½È€˜½Ù•É¹…¹”Må¹¡É½¹¥é…Ñ¥½¸‰t(€0Ğ€´´ø0Õl‰1½½À€Ôè¹Ñ•ÉÁÉ¥Í”	Õå•ÈÙ¥‘•¹”€˜€ÈÁ	…Í•±¥¹”Õ‘¥Ğ‰t(€0Ô€´´ø0Ä)€((ŒŒŒ1½½À€ÄèAHY•É¥™¥…Ñ¥½¸€˜5•É”¹¥¹”(´	…Ñ €Ä€ ÄÄAIÌ¤ÍÕ•ÍÍ™Õ±±äµ•É•Ñ¼µ…¥¸¸(´I•‰…Í”AH€ŒÄĞÄÜ°€ŒÄĞÌØ°…¹™¥à€ŒÄĞÔÜ……¥¹ÍĞÕÁ‘…Ñ•µ…¥¸Ñ¼…¡¥•Ù”€À½Á•¸AIÌ¸(´½¹Ñ¥¹Õ½ÕÌÙ•É¥™¥…Ñ¥½¸½˜…±°€ÄĞ¥Ñ!ÕˆÑ¥½¹Ì¡•­Ì¸((ŒŒŒ1½½À€Èè½É”AÍå¡½µ•ÑÉ¥Œ€˜Q•µÁ½É…°¹¥¹••É¥¹œ(´¹ÍÕÉ”€ÄÀÀ”IÕÍĞ½İ¹•ÉÍ¡¥À½˜…±°¹•İ±ä¥¹ÑÉ½‘Õ•µ½‘•±Ì€¡”¹œ¸°Á½±åÑ½µ½ÕÌÁ•É¥½ÍÑ…Ñ”ÑÉ…­¥¹œ°±½¹¥ÑÕ‘¥¹…°‘É¥™Ğ•ÍÑ¥µ…Ñ¥½¸¤¸(´¹™½É”É½Õ¹µÑÉÕÑ Á…É…µ•Ñ•ÈÉ•½Ù•ÉäÑ•ÍÑ¥¹œ€¡I5M€ğ€À¸ÀÔ…É½ÍÌÍ¥µÕ±…Ñ•½¡½ÉÑÌ¤¸((ŒŒŒ1½½À€Ìè½ÍåÍÑ•´%¹Ñ•É½Á•É…‰¥±¥Ñä€˜½Ù•É¹…¹”(´5…¥¹Ñ…¥¸‰¤µ‘¥É•Ñ¥½¹…°½¹ÑÉ…Ğ½µÁ…Ñ¥‰¥±¥Ñäİ¥Ñ QAA€°½¹Ñ•áÑÕ…°µ½É¡•ÍÑÉ…Ñ½É€°1¥¹•…•]•…Ù•€°…¹I…¹­]•…Ù•€¸(´UÁ‘…Ñ”!91=¹µ‘€…¹ÕĞÙ•ÉÍ¥½¸É•±•…Í•Ì…½É‘¥¹œÑ¼M•µY•È½¹”AH‰…Ñ¡•Ì±…¹¸(

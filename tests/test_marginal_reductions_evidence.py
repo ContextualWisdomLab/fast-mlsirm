@@ -82,6 +82,82 @@ def test_covariate_reduction_respects_float64_forward_error_bound() -> None:
         )
         assert abs(observed - oracle) <= forward_error_bound
 
+
+def test_changed_reductions_recover_their_generating_sufficient_statistics() -> None:
+    """Recover standard-normal moments and the covariate score root.
+
+    A 121-node Gauss-Hermite rule integrates these degree-two normal moments
+    exactly.  At the generating unit covariate coefficient, the expected
+    Bernoulli residual is zero and Fisher information is strictly positive, so
+    the score equation has its unique root at the truth.  Comparisons use the
+    standard floating-point summation-error model rather than empirical
+    tolerances.
+    """
+    nodes, weights = marginal._gh(121)
+    unit_roundoff = np.finfo(np.float64).eps / 2.0
+
+    multilevel_second_moment = marginal._multilevel_second_moment(
+        weights[None, :],
+        nodes,
+    )
+    population_weight, population_mean, population_second_moment = (
+        marginal._weighted_population_moments(weights[:, None], nodes)
+    )
+
+    covariate = np.array([[-1.0, 1.0], [1.0, -1.0]])
+    expected_count = np.broadcast_to(
+        weights[None, None, :, None],
+        (2, 2, weights.size, 1),
+    )
+    linear_predictor_at_truth = (
+        nodes[None, None, :, None] + covariate[:, :, None, None]
+    )
+    probability = 1.0 / (1.0 + np.exp(-linear_predictor_at_truth))
+    residual_at_truth = expected_count * probability - expected_count * probability
+    score_at_truth, information_at_truth = marginal._covariate_score_information(
+        residual_at_truth,
+        expected_count,
+        probability,
+        covariate,
+    )
+
+    supplied_rule_moments = (
+        math.fsum(float(value) for value in weights),
+        math.fsum(float(value) for value in weights * nodes),
+        math.fsum(float(value) for value in weights * nodes**2),
+    )
+    assert supplied_rule_moments == (1.0, 0.0, 1.0)
+
+    observed_and_terms = (
+        (multilevel_second_moment, weights * nodes**2),
+        (population_weight, weights),
+        (population_mean, weights * nodes),
+        (population_second_moment, weights * nodes**2),
+    )
+    fsum_oracles = (1.0, 1.0, 0.0, 1.0)
+    for (observed, terms), oracle in zip(observed_and_terms, fsum_oracles):
+        gamma = terms.size * unit_roundoff / (1.0 - terms.size * unit_roundoff)
+        bound = gamma * math.fsum(abs(float(value)) for value in terms)
+        assert abs(observed - oracle) <= bound
+
+    information_terms = (
+        expected_count
+        * probability
+        * (1.0 - probability)
+        * covariate[:, :, None, None] ** 2
+    )
+    information_oracle = math.fsum(float(value) for value in information_terms.flat)
+    information_gamma = information_terms.size * unit_roundoff / (
+        1.0 - information_terms.size * unit_roundoff
+    )
+    information_bound = information_gamma * math.fsum(
+        abs(float(value)) for value in information_terms.flat
+    )
+    assert score_at_truth == 0.0
+    assert information_at_truth > 0.0
+    assert abs(information_at_truth - information_oracle) <= information_bound
+
+
 def test_marginal_reductions_parity_evidence_multilevel() -> None:
     """Ensure optimization of multilevel reduction maintains Rust parity."""
     y, fid = _simulate(seed=1024, n_persons=100, n_items=12, n_dims=2, latent_dim=2)
