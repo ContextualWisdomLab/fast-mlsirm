@@ -240,10 +240,10 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
         fail.get("converged") is False
         and fail.get("termination_reason") in {"max_iter_reached", "step_limited"}
     )
-    if device == "gpu":
-        # Every valid focal/refit/budget call must dispatch; the reference
-        # calibration has no device argument and the invalid-map probe rejects
-        # before numerical execution. One base-fit receipt cannot certify all.
+    if device in {"gpu", "auto"}:
+        # GPU metadata describes all valid focal/refit/budget calls, including
+        # auto's allowed CPU fallback. The reference calibration has no device
+        # argument; the invalid-map probe rejects before numerical execution.
         results["gpu_execution_used"] = all(
             result.get("gpu_execution_used") is True for result in (fit, perm_fit, fail)
         )

@@ -418,6 +418,34 @@ def test_gpu_receipt_accepts_dispatch_in_every_valid_fit(monkeypatch) -> None:
     assert receipt["all_pass"] is True
 
 
+@pytest.mark.parametrize("fallback_call", [None, 1, 2, 3])
+def test_auto_reports_all_call_dispatch_without_rejecting_fallback(monkeypatch, fallback_call) -> None:
+    """Auto permits CPU fallback but must not label mixed execution as all-GPU."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = 0
+
+    def fipc(y, *args, device="cpu"):
+        nonlocal calls
+        assert device == "auto"
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        calls += 1
+        fit = original(y, *args)
+        used = calls != fallback_call
+        fit.update(gpu_execution_used=used, gpu_backend="Metal" if used else None)
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, device="auto")
+    assert calls == 3
+    assert receipt["gpu_execution_used"] is (fallback_call is None)
+    assert receipt["gpu_backend"] == ("Metal" if fallback_call is None else None)
+    assert receipt["all_pass"] is True
+
+
 def test_consumer_revision_comes_from_script_checkout(monkeypatch, tmp_path) -> None:
     module = _load_script()
     expected = module.subprocess.run(
