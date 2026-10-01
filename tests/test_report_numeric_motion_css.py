@@ -65,6 +65,7 @@ def test_rendered_report_uses_tabular_numerals_without_opacity_transitions(
     reduced_motion = style.split("@media (prefers-reduced-motion: reduce)", 1)[1]
     reduced_motion = reduced_motion.split("@media (max-width: 720px)", 1)[0]
     assert "transition-duration: 0.01ms !important;" in reduced_motion
+    assert "transition: none !important;" in _rule_body(reduced_motion, "  .bar-row")
 
 
 def test_rendered_report_preserves_keyboard_focus_on_main(tmp_path) -> None:
