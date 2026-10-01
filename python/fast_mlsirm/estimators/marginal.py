@@ -955,7 +955,7 @@ def fit_marginal_numpy(
             lse = np.squeeze(mc, axis=1) + np.log(np.exp(log_cluster - mc).sum(axis=1))
             loglik = float(lse.sum())
             cluster_post = np.exp(log_cluster - lse[:, None])  # (C, V)
-            # Optimized: Avoid intermediate (C, V) array allocation during axis-wise summation (~2.8x speedup)
+            # Reduce over clusters before weighting to avoid a second (C, V) array.
             sum_e_v2 = float(np.vdot(cluster_post.sum(axis=0), ctx["u_nodes"] ** 2))
             if zero_inflation:
                 zero_resp = (cluster_post[cluster_id] * (1.0 - w_irt_v)).sum(axis=1)
@@ -1173,7 +1173,7 @@ def fit_marginal_numpy(
             eta = eta_delta(delta)
             prob = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
             resid = rbar - n_all * prob
-            # Optimized: Avoid intermediate broadcast array allocation by summing first (~2.7x speedup)
+            # Reduce node axes before weighting to avoid broadcast work arrays.
             grad_d = float(np.vdot(resid.sum(axis=(2, 3)), w_cov))
             info_d = float(np.vdot((n_all * prob * (1.0 - prob)).sum(axis=(2, 3)), w_cov * w_cov))
             if info_d > 0.0:
@@ -1205,7 +1205,7 @@ def fit_marginal_numpy(
                     w_sum_ax = w.sum(axis=1)
                     w_sum = float(w_sum_ax.sum())
                     if w_sum > 1e-10:
-                        # Optimized: Avoid intermediate (Qt, Nx) array allocation by reducing before dot product (~1.4x speedup)
+                        # Reduce respondents before weighting to avoid (Qt, Nx) work arrays.
                         m1 = float(np.vdot(w_sum_ax, theta_g))
                         m2 = float(np.vdot(w_sum_ax, theta_g**2))
                         mean = m1 / w_sum
