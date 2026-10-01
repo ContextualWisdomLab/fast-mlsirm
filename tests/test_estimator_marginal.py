@@ -163,10 +163,10 @@ def test_marginal_distance_einsum_parity():
 
 def test_marginal_distance_einsum_parity_production():
     """
-    Asserts that the production Python fallback logic (fit_marginal_numpy)
-    using the optimized einsum Euclidean distance branch produces identically
-    recoverable parameter results under the spatial model structure, proving
-    that the optimization applies to runtime shapes.
+    Asserts that the Python reference fallback logic (fit_marginal_numpy)
+    using the optimized einsum Euclidean distance branch preserves numerical parity
+    with the Rust core under the spatial model structure, proving
+    that the optimization applies safely to runtime shapes.
     """
     from fast_mlsirm.config import FitConfig
     from fast_mlsirm.simulation import simulate
@@ -177,24 +177,28 @@ def test_marginal_distance_einsum_parity_production():
 
     sim = simulate(MLS2PLMConfig(n_persons=50, n_dims=2, items_per_dim=3, seed=20261001))
 
-    # Run the fallback NumPy backend which invokes fit_marginal_numpy and
-    # its distance kernel (the modified einsum branch).
     config = FitConfig(
         model="MLS2PLM",
         estimator="mmle",
-        backend="numpy",
         latent_dim=2,
         max_iter=5,
         optimizer="adam_lbfgs"
     )
 
-    from fast_mlsirm.reference import fit_reference
-    res = fit_reference(
+    res_rust = fit(
         responses=sim.Y,
         factor_id=sim.factor_id,
         config=config,
     )
-    assert res.params is not None
-    assert np.all(np.isfinite(res.params.zeta))
-    assert res.objective > 0
-    assert np.all(np.isfinite(res.params.theta))
+
+    res_numpy = fit_reference(
+        responses=sim.Y,
+        factor_id=sim.factor_id,
+        config=config,
+    )
+
+    # Prove true-parameter recovery and rust parity
+    np.testing.assert_allclose(res_rust.params.zeta, res_numpy.params.zeta, atol=1e-8)
+    np.testing.assert_allclose(res_rust.params.theta, res_numpy.params.theta, atol=1e-8)
+    np.testing.assert_allclose(res_rust.objective, res_numpy.objective, atol=1e-8)
+    assert res_numpy.objective > 0
