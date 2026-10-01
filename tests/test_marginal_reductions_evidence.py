@@ -1,5 +1,7 @@
 """Evidence for parity of optimized reductions in the marginal estimator."""
 
+import math
+
 import numpy as np
 import pytest
 
@@ -41,6 +43,44 @@ def test_reduction_helpers_preserve_hand_derived_values() -> None:
         170.0,
         3100.0,
     )
+
+
+def test_covariate_reduction_respects_float64_forward_error_bound() -> None:
+    """Bound the changed reduction order by the standard summation error model."""
+    random_generator = np.random.default_rng(2310)
+    shape = (3, 5, 7, 11)
+    residual = random_generator.normal(size=shape)
+    expected_count = random_generator.uniform(0.5, 4.0, size=shape)
+    probability = random_generator.uniform(0.1, 0.9, size=shape)
+    covariate = random_generator.normal(size=shape[:2])
+
+    score, information = marginal._covariate_score_information(
+        residual,
+        expected_count,
+        probability,
+        covariate,
+    )
+    score_terms = residual * covariate[:, :, None, None]
+    information_terms = (
+        expected_count
+        * probability
+        * (1.0 - probability)
+        * covariate[:, :, None, None] ** 2
+    )
+
+    for observed, terms in (
+        (score, score_terms),
+        (information, information_terms),
+    ):
+        oracle = math.fsum(float(value) for value in terms.flat)
+        unit_roundoff = np.finfo(np.float64).eps / 2.0
+        gamma = terms.size * unit_roundoff / (
+            1.0 - terms.size * unit_roundoff
+        )
+        forward_error_bound = gamma * math.fsum(
+            abs(float(value)) for value in terms.flat
+        )
+        assert abs(observed - oracle) <= forward_error_bound
 
 def test_marginal_reductions_parity_evidence_multilevel() -> None:
     """Ensure optimization of multilevel reduction maintains Rust parity."""

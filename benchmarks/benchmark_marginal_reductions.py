@@ -9,19 +9,28 @@ the recorded environment and do not imply a universal speedup.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import platform
 import time
 import tracemalloc
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
 
+from fast_mlsirm.estimators import marginal as marginal_module
 from fast_mlsirm.estimators.marginal import (
     _covariate_score_information,
     _multilevel_second_moment,
     _weighted_population_moments,
 )
+
+
+def _sha256(path: Path) -> str:
+    """Return the hexadecimal SHA-256 digest for one evidence source file."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _positive_integer(value: str) -> int:
@@ -152,6 +161,16 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
     return {
         "scope": "environment_specific_marginal_reduction_evidence",
         "interpretation": "No universal speed or memory claim.",
+        "provenance": {
+            "revision": os.environ.get(
+                "FAST_MLSIRM_EVIDENCE_REVISION",
+                "unavailable",
+            ),
+            "benchmark_sha256": _sha256(Path(__file__).resolve()),
+            "marginal_module_sha256": _sha256(
+                Path(marginal_module.__file__).resolve()
+            ),
+        },
         "environment": {
             "python_version": platform.python_version(),
             "numpy_version": np.__version__,
