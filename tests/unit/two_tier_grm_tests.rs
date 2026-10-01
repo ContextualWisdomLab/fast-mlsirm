@@ -267,10 +267,119 @@ fn tiny_data() -> (Vec<usize>, usize) {
     (y, n_persons)
 }
 
+// 중간 범위의 직접 cumulative-logistic oracle. production helper를 호출하지 않는다.
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn fixed_item_direct_objective(params: &[f64], free: &[usize], specific: bool,
+    coords: &[f64], ts: &[f64], p: usize, qs: usize, counts: &[Vec<f64>]) -> f64 {
+    let off = free.len() + usize::from(specific);
+    let beta = &params[off..];
+    let sigmoid = |x: f64| 1.0 / (1.0 + (-x).exp());
+    let mut f = 0.0;
+    for (node, row) in counts.iter().enumerate() {
+        let (g, h) = if specific { (node / qs, node % qs) } else { (node, 0) };
+        let mut base = 0.0;
+        for (t, &dim) in free.iter().enumerate() { base += params[t] * coords[g * p + dim]; }
+        if specific { base += params[free.len()] * ts[h]; }
+        for (cat, &count) in row.iter().enumerate() {
+            if count == 0.0 { continue; }
+            let prob = if cat == 0 { 1.0 - sigmoid(base + beta[0]) }
+                else if cat == beta.len() { sigmoid(base + beta[cat - 1]) }
+                else { sigmoid(base + beta[cat - 1]) - sigmoid(base + beta[cat]) };
+            f -= count * prob.ln();
+        }
+    }
+    f
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn fixed_item_return_contract(case: usize, v: &super::Validated, params: &[super::ItemParams],
+    coords: &[f64], ts: &[f64], cpu: &[Vec<Vec<f64>>], gpu: &[Vec<Vec<f64>>], input_hash: &str) {
+    use super::{item_neg_ll_grad, m_step_item};
+    use serde_json::json;
+    use sha2::Digest;
+    let items: &[usize] = match case { 0 => &[0, 4], 1 => &[0], _ => &[0] };
+    for &i in items {
+        let free = &v.free_primaries[i];
+        let specific = v.item_block[i].is_some();
+        let mut packed: Vec<f64> = free.iter().map(|&d| params[i].a_p[d]).collect();
+        if let Some(a) = params[i].a_s { packed.push(a); }
+        packed.extend_from_slice(&params[i].d);
+        let eval = |point: &[f64], counts: &[Vec<f64>]| item_neg_ll_grad(point, free,
+            specific, coords, ts, v.n_primary, v.grid_size, ts.len(), counts, v.n_cat);
+        let (f0, gradient) = eval(&packed, &cpu[i]);
+        let (gpu_f, gpu_gradient) = eval(&packed, &gpu[i]);
+        assert_eq!(f0.to_bits(), gpu_f.to_bits());
+        assert_eq!(gradient, gpu_gradient);
+        let direct = fixed_item_direct_objective(&packed, free, specific, coords, ts,
+            v.n_primary, ts.len(), &cpu[i]);
+        assert!(f0.is_finite() && direct.is_finite());
+        assert!((f0 - direct).abs() < 1e-4);
+        let mut fd_residual = 0.0_f64;
+        for col in 0..packed.len() {
+            let mut plus = packed.clone(); plus[col] += 1e-6;
+            let mut minus = packed.clone(); minus[col] -= 1e-6;
+            let fd = (fixed_item_direct_objective(&plus, free, specific, coords, ts,
+                v.n_primary, ts.len(), &cpu[i]) - fixed_item_direct_objective(&minus,
+                free, specific, coords, ts, v.n_primary, ts.len(), &cpu[i])) / 2e-6;
+            fd_residual = fd_residual.max((fd - gradient[col]).abs());
+        }
+        assert!(fd_residual.is_finite() && fd_residual < 1e-4);
+        let np = packed.len();
+        let mut hessian = vec![vec![0.0; np]; np];
+        for col in 0..np {
+            let mut point = packed.clone(); point[col] += 1e-5;
+            let g = eval(&point, &cpu[i]).1;
+            for row in 0..np { hessian[row][col] = (g[row] - gradient[row]) / 1e-5; }
+        }
+        let raw_hessian = hessian.clone();
+        for row in 0..np {
+            for col in 0..np { hessian[row][col] = 0.5 * (hessian[row][col] + hessian[col][row]); }
+            hessian[row][row] += 1e-8;
+        }
+        let cpu_return = m_step_item(packed.clone(), free, specific, coords, ts,
+            v.n_primary, v.grid_size, ts.len(), &cpu[i], v.n_cat, 1e-8, 1);
+        let gpu_return = m_step_item(packed.clone(), free, specific, coords, ts,
+            v.n_primary, v.grid_size, ts.len(), &gpu[i], v.n_cat, 1e-8, 1);
+        for (a, b) in cpu_return.iter().zip(&gpu_return) { assert_eq!(a.to_bits(), b.to_bits()); }
+        let returned_f = eval(&cpu_return, &cpu[i]).0;
+        let changed = cpu_return.iter().zip(&packed).any(|(a,b)| a.to_bits()!=b.to_bits());
+        assert!(cpu_return.iter().all(|x| x.is_finite()) && returned_f.is_finite());
+        assert!(returned_f <= f0);
+        let input = json!({"counts_input_sha256":input_hash,"case":case,"item":i,
+            "packed":packed,"free_primary_dimensions":free,"specific":specific,
+            "counts":cpu[i],"ridge":1e-8,"newton_iter":1});
+        let hash = format!("{:x}",sha2::Sha256::digest(serde_json::to_vec(&input).unwrap()));
+        println!("{}",json!({"event":"item_return_case","input":input,"input_sha256":hash,
+            "native_objective":f0,"direct_objective":direct,"objective_abs_delta":(f0-direct).abs(),
+            "gradient":gradient,"central_fd_max_abs_residual":fd_residual,
+            "raw_forward_fd_hessian":raw_hessian,"current_inplace_ridged_matrix":hessian,
+            "returned_params":cpu_return,"returned_objective":returned_f,"changed":changed,
+            "cpu_word_return_bits_equal":true,"branch_observed":false,
+            "backtracking_branch":"not instrumented; do not infer acceptance branch",
+            "fit_executed":false,"convergence":"not applicable"}));
+    }
+    if case == 2 {
+        let free = [0usize];
+        let packed = [1.0, 1e-18, 0.0];
+        let zero = vec![vec![0.0; 3]];
+        let (native_f, native_g) = item_neg_ll_grad(&packed,&free,false,&[1.0],&[0.0],1,1,1,&zero,3);
+        let direct_f = fixed_item_direct_objective(&packed,&free,false,&[1.0],&[0.0],1,1,&zero);
+        let returned = m_step_item(packed.to_vec(),&free,false,&[1.0],&[0.0],1,1,1,&zero,3,1e-8,1);
+        assert_eq!(direct_f,0.0);
+        assert!(native_g.iter().all(|x| x.is_finite() && *x==0.0));
+        assert_eq!(returned,packed);
+        println!("{}",json!({"event":"zero_count_legal_zero_probability_observation",
+            "packed":packed,"coords":[1.0],"counts":zero,"native_objective_finite":native_f.is_finite(),
+            "native_objective_is_nan":native_f.is_nan(),"direct_zero_count_objective":direct_f,
+            "native_gradient":native_g,"returned_unchanged":true,"fit_executed":false,
+            "convergence":"not applicable","production_modified":false}));
+    }
+}
+
 // 기존 Cai (2010, pp. 608–609) oracle를 재사용하는 고정 모수 검사다.
 // 기존 owned profile의 명시적 로컬 모드이며 fit·M-step은 실행하지 않는다.
 #[cfg(all(feature = "gpu", not(coverage)))]
-fn reference_gpu_fixed_bank_counts_contract(qp: usize, qs: usize, gpu_budget: u64, host_budget: u64) {
+fn reference_gpu_fixed_bank_counts_contract(qp: usize, qs: usize, gpu_budget: u64, host_budget: u64, item_update: bool) {
     use super::{build_primary_grid, e_step_gpu_person_moments, e_step_with_moments,
         gh_rule, item_logprob_tables, validate_data, ItemParams, ReducedFitStatistics};
     use serde_json::json;
@@ -389,6 +498,7 @@ fn reference_gpu_fixed_bank_counts_contract(qp: usize, qs: usize, gpu_budget: u6
         assert_eq!(short_ll.to_bits(), ll.to_bits());
         assert_eq!(short.counts, stats.counts);
         assert_eq!(short.cross, stats.cross);
+        let original_params = params.clone();
         params[0].d[0] += 0.125; // M-step이 아니라 별도로 선언한 다음 고정 state다.
         let fresh_input = json!({"initial_input_sha256":input_hash,
             "thresholds":params.iter().map(|x| x.d.as_slice()).collect::<Vec<_>>()});
@@ -402,6 +512,10 @@ fn reference_gpu_fixed_bank_counts_contract(qp: usize, qs: usize, gpu_budget: u6
         assert_eq!(next.counts, fresh.1);
         assert_eq!(next.cross, fresh.2);
         assert_ne!(next.counts, stats.counts);
+        if item_update {
+            fixed_item_return_contract(case, &v, &original_params, &coords, ts,
+                &cached.1, &stats.counts, &input_hash);
+        }
         println!("{}", json!({"event":"counts_case","input_sha256":input_hash,"input":input,
             "adapter_name":ctx.adapter_info.name,"adapter_backend":format!("{:?}",ctx.adapter_info.backend),
             "gpu_budget_bytes":gpu_budget,"short_batch_budget_bytes":short_budget,
@@ -410,7 +524,7 @@ fn reference_gpu_fixed_bank_counts_contract(qp: usize, qs: usize, gpu_budget: u6
             "gh_coords_prior_sha256":gh_hash,"fresh_input":fresh_input,"fresh_input_sha256":fresh_hash,
             "counts_max_abs_delta":count_gap,"cross_bits_equal":true,"likelihood_bits_equal":true,
             "mass_max_abs_residual":mass_residual,"batch_contract":"3_then_1","fresh_params_checked":true,
-            "fit_executed":false,"m_step_executed":false}));
+            "fit_executed":false,"m_step_executed":item_update}));
         positive_cases += 1;
         if case == 0 {
             let mut bad_y = y.clone(); bad_y[0] = k;
@@ -450,11 +564,12 @@ fn reference_gpu_fixed_bank_counts_contract(qp: usize, qs: usize, gpu_budget: u6
     }
     assert_eq!(positive_cases, 3);
     assert_eq!(rejected_cases, 7);
-    println!("counts_contract_positive_cases={positive_cases}, rejected_cases={rejected_cases}, fit=false, m_step=false");
+    println!("counts_contract_positive_cases={positive_cases}, rejected_cases={rejected_cases}, fit=false, m_step={item_update}");
 }
 
 /// 기본 모드는 고정 문항은행의 같은 GH 노드·가중치에서 1인의 적률을 대조한다.
-/// 명시적 counts 모드는 같은 helper로 작은 4인 고정 state의 통계만 검사한다.
+/// 명시적 counts 모드는 작은 4인 고정 state의 통계만 검사한다.
+/// 별도 itemupdate 모드는 그 고정 counts의 대표 item 반환을 대조한다.
 /// host 예산은 소스 유래 보수 추정 정책이며 실제 RSS 강제 상한이 아니다.
 /// 부모 작업에서 확인한 Cai (2010, pp. 608–609, Appendices A/B)의 사후
 /// 1·2차 적률이 근거다. 자료 생성·모수 갱신·수렴·회복도 검증은 하지 않는다.
@@ -508,8 +623,15 @@ fn reference_gpu_fixed_bank_kernel_profile() {
         Ok(value) if value == "1" => true,
         _ => panic!("G1_KERNEL_COUNTS_CONTRACT must be absent, 0 or 1"),
     };
-    if counts_contract {
-        reference_gpu_fixed_bank_counts_contract(q_primary, q_specific, gpu_budget, host_budget);
+    let itemupdate_contract = match std::env::var("G1_KERNEL_ITEMUPDATE_CONTRACT") {
+        Err(std::env::VarError::NotPresent) => false,
+        Ok(value) if value == "0" => false,
+        Ok(value) if value == "1" => true,
+        _ => panic!("G1_KERNEL_ITEMUPDATE_CONTRACT must be absent, 0 or 1"),
+    };
+    assert!(!(counts_contract && itemupdate_contract), "select only one fixed-state contract mode");
+    if counts_contract || itemupdate_contract {
+        reference_gpu_fixed_bank_counts_contract(q_primary, q_specific, gpu_budget, host_budget, itemupdate_contract);
         return;
     }
 
