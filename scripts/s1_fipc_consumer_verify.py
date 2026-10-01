@@ -93,13 +93,16 @@ def anchor_identification(
 
 
 def _shaped(fit: dict, n_persons: int) -> dict[str, np.ndarray]:
-    """Reshape the flat PyO3 outputs into item- and person-major arrays."""
-    return {
+    """Reshape finite PyO3 outputs into item- and person-major arrays."""
+    shaped = {
         "theta": np.asarray(fit["theta_p_eap"], dtype=np.float64).reshape(n_persons, N_PRIMARY),
         "a_primary": np.asarray(fit["a_primary"], dtype=np.float64).reshape(N_ITEMS, N_PRIMARY),
         "a_specific": np.asarray(fit["a_specific"], dtype=np.float64).reshape(N_ITEMS),
         "threshold": np.asarray(fit["threshold"], dtype=np.float64).reshape(N_ITEMS, N_CAT - 1),
     }
+    if any(not np.isfinite(value).all() for value in shaped.values()):
+        raise ValueError("Fit item parameters and EAP outputs must be finite.")
+    return shaped
 
 
 def simulate(seed: int, mean: np.ndarray, scale: np.ndarray) -> np.ndarray:
@@ -192,7 +195,8 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
     results["gpu_execution_used"] = fit.get("gpu_execution_used")
     results["gpu_backend"] = fit.get("gpu_backend")
     shaped = _shaped(fit, N_PERSONS)
-    results["responses_fit_eap_expected_raw"] = bool(fit["converged"] and np.isfinite(shaped["theta"]).all() and np.isfinite(expected_raw(shaped["theta"], shaped)).all())
+    fit_converged = fit.get("converged") is True
+    results["responses_fit_eap_expected_raw"] = bool(fit_converged and np.isfinite(shaped["theta"]).all() and np.isfinite(expected_raw(shaped["theta"], shaped)).all())
     # One seeded replicate: these are recovery errors, not Monte Carlo bias.
     results["focal_primary_mean_error"] = (np.asarray(fit["primary_mean"], dtype=np.float64) - FOCAL_MEAN).tolist()
     results["focal_primary_sd_error"] = (np.asarray(fit["primary_sd"], dtype=np.float64) - FOCAL_SD).tolist()
@@ -210,8 +214,13 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
     row_error = shaped["theta"][perm] - _shaped(perm_fit, N_PERSONS)["theta"]
     results["row_order_max_abs"] = float(np.max(np.abs(row_error)))
     results["row_order_rmse"] = float(np.sqrt(np.mean(np.square(row_error))))
-    results["row_order"] = bool(np.allclose(row_error, 0.0, atol=ROW_ORDER_ATOL, rtol=ROW_ORDER_RTOL))
-    results["row_order_diagnosis"] = "pass" if results["row_order"] else "refit_order_dependence"
+    refits_converged = fit.get("converged") is True and perm_fit.get("converged") is True
+    results["row_order"] = bool(refits_converged and np.allclose(row_error, 0.0, atol=ROW_ORDER_ATOL, rtol=ROW_ORDER_RTOL))
+    if not refits_converged:
+        results["row_order_diagnosis"] = "fit_error"
+        results["fipc_fit_error"] = "Both row-order fits must report convergence."
+    else:
+        results["row_order_diagnosis"] = "pass" if results["row_order"] else "refit_order_dependence"
     results["anchor_rows_fixed"] = bool(
         np.array_equal(shaped["a_primary"][ANCHOR], fixed["a_primary"].reshape(N_ITEMS, N_PRIMARY)[ANCHOR])
         and np.array_equal(shaped["a_specific"][ANCHOR], fixed["a_specific"].reshape(N_ITEMS)[ANCHOR])

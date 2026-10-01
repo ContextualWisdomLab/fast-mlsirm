@@ -119,6 +119,135 @@ def test_flattened_binding_outputs_are_reshaped_per_person(monkeypatch) -> None:
     assert receipt["focal_primary_mean_error"] == pytest.approx([0.6 - 0.65, -0.3 + 0.35])
 
 
+def test_nonconverged_permutation_cannot_certify_row_order(monkeypatch) -> None:
+    """Equal EAP rows do not certify a refit that exhausted its step budget."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = 0
+
+    def fipc(y, *args):
+        nonlocal calls
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary map must identify both dimensions")
+        calls += 1
+        fit = original(y, *args)
+        if calls == 2:
+            fit.update(converged=False, termination_reason="step_limited")
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    assert receipt["row_order_max_abs"] == 0.0
+    assert receipt["row_order"] is False
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert receipt["all_pass"] is False
+
+
+@pytest.mark.parametrize("invalid", [np.nan, np.inf, -np.inf])
+@pytest.mark.parametrize("call_number", [1, 2])
+def test_nonfinite_specific_loading_cannot_pass_receipt(monkeypatch, invalid, call_number) -> None:
+    """A free specific loading must be finite in either row-order fit."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = 0
+
+    def fipc(y, *args):
+        nonlocal calls
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary map must identify both dimensions")
+        calls += 1
+        fit = original(y, *args)
+        if calls == call_number:
+            fit["a_specific"][2] = invalid
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    json.dumps(receipt, allow_nan=False)
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert receipt["all_pass"] is False
+
+
+@pytest.mark.parametrize("convergence", [1, "true", "false", None])
+def test_truthy_convergence_cannot_certify_responses(monkeypatch, convergence) -> None:
+    """Only an explicit binding boolean certifies converged response scoring."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+
+    def fipc(y, *args):
+        fit = original(y, *args)
+        if fit["converged"]:
+            fit["converged"] = convergence
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    assert receipt["responses_fit_eap_expected_raw"] is False
+    assert receipt["row_order"] is False
+    assert receipt["all_pass"] is False
+
+
+@pytest.mark.parametrize("field", ["theta_p_eap", "a_primary", "a_specific", "threshold"])
+@pytest.mark.parametrize("call_number", [1, 2])
+def test_nonfinite_fit_output_cannot_pass_receipt(monkeypatch, field, call_number) -> None:
+    """Every item/EAP output is finite-checked in both row-order fits."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = 0
+
+    def fipc(y, *args):
+        nonlocal calls
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary map must identify both dimensions")
+        calls += 1
+        fit = original(y, *args)
+        if calls == call_number:
+            fit[field][0] = np.nan
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    json.dumps(receipt, allow_nan=False)
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert receipt["all_pass"] is False
+
+
+@pytest.mark.parametrize("call_number", [1, 2])
+def test_missing_permutation_convergence_fails_with_finite_diagnostics(monkeypatch, call_number) -> None:
+    """Missing convergence cannot pass, while computed finite row drift remains visible."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = 0
+
+    def fipc(y, *args):
+        nonlocal calls
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary map must identify both dimensions")
+        calls += 1
+        fit = original(y, *args)
+        if calls == call_number:
+            fit.pop("converged")
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None)
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert receipt["row_order"] is False
+    assert receipt["row_order_max_abs"] == 0.0
+    assert receipt["row_order_rmse"] == 0.0
+    assert receipt["all_pass"] is False
+
+
 def test_non_unit_focal_prior_detects_shrinking_sd(monkeypatch) -> None:
     """A focal SD below 1 moves the prior off the unit reference too."""
     module = _load_script()
