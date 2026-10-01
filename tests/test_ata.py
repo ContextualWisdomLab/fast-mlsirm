@@ -211,3 +211,41 @@ def test_invalid_arguments_raise():
             bank, fid, thetas, np.array([1.0]), length=2, model=MODEL,
             content=np.array(["A"] * 10), min_per_content={"B": 1},
         )
+
+def test_content_feasible_np_count_nonzero_parity():
+    """Verify that _content_feasible behaves identically through public ATA assembly path.
+    This exercises empty eligibility, repeated labels, minimum constraints, and boolean masks.
+    """
+    bank, fid = _bank(n_items=50)
+    thetas = np.array([-1.0, 0.0, 1.0])
+    target = np.array([4.0, 5.0, 4.0])
+
+    # Setup constraints that heavily exercise _content_feasible
+    # repeated labels
+    content = np.array(["A", "B", "C", "D", "E"] * 10)
+    min_per_content = {"A": 2, "B": 2, "C": 2, "D": 2, "E": 2}
+
+    # We will exclude some items to exercise empty eligibility or smaller masks
+    banned = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+
+    form = assemble_to_target(
+        bank,
+        fid,
+        thetas,
+        target,
+        length=20,
+        model=MODEL,
+        content=content,
+        min_per_content=min_per_content,
+        exclude=banned,
+        seed=42
+    )
+
+    assert form.items.size == 20
+    labels = content[form.items]
+    assert int(np.sum(labels == "A")) >= 2
+    assert int(np.sum(labels == "B")) >= 2
+    assert int(np.sum(labels == "C")) >= 2
+    assert int(np.sum(labels == "D")) >= 2
+    assert int(np.sum(labels == "E")) >= 2
+    assert not set(form.items.tolist()) & set(banned.tolist())
