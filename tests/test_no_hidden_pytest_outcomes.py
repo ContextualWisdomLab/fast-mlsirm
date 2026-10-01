@@ -17,11 +17,15 @@ References:
 
 from __future__ import annotations
 
+import re
+import shlex
 import shutil
 import subprocess
 import sys
 import textwrap
 from pathlib import Path
+
+import pytest
 
 REPO_TESTS_DIR = Path(__file__).resolve().parent
 ALLOWLIST_NAME = "allowed_non_execution.txt"
@@ -267,7 +271,7 @@ def _workflow_job_body(workflow: str, job_name: str) -> str:
 
     job_lines = [lines[start_index]]
     for line in lines[start_index + 1 :]:
-        if line.startswith("  ") and not line.startswith("    ") and line.endswith(":"):
+        if line.strip() and not line.lstrip().startswith("#") and len(line) - len(line.lstrip()) <= 2:
             break
         job_lines.append(line)
     return "\n".join(job_lines)
@@ -283,13 +287,73 @@ CAPABILITY_MODULES = (
 _OWNER_MARKER = "owned by "
 
 
+def _pytest_owner_nodes(body: str) -> set[str]:
+    """Recognize only the workflow's plain run scalars and direct pytest grammar.
+
+    This is static command ownership, not proof of runtime or GPU execution.
+    Unsupported YAML or shell syntax supplies no evidence.
+    """
+    if re.search(r"^    if: (?:false|0|['\"]false['\"]|\$\{\{\s*false\s*\}\})\s*$", body, re.MULTILINE):
+        return set()
+    try:
+        steps = body.split("\n    steps:\n", 1)[1]
+    except IndexError:
+        return set()
+    nodes: set[str] = set()
+    for step in re.split(r"\n(?=      - )", "\n" + steps):
+        lines = step.strip("\n").splitlines()
+        if not lines or not lines[0].startswith("      - "):
+            continue
+        # Conditional steps are not unconditional owners. Job-level event
+        # admission remains a separate runtime contract.
+        if any(re.match(r"^(?:      - |        )if:", line) for line in lines):
+            continue
+        runs = [i for i, line in enumerate(lines)
+                if re.match(r"^(?:      - |        )run: ", line)]
+        if len(runs) != 1:
+            continue
+        index = runs[0]
+        value = lines[index].split("run: ", 1)[1]
+        if value == "|":
+            block = []
+            for line in lines[index + 1:]:
+                if line.strip() and not line.startswith("          "):
+                    break
+                block.append(line[10:])
+            command = "\n".join(block).strip()
+        else:
+            continuation = next((line for line in lines[index + 1:] if line.strip()), "")
+            if continuation.startswith("          "):
+                continue
+            command = value
+        # A deliberately restricted grammar avoids borrowing selector tokens
+        # from comments, other commands, substitutions or option values.
+        command = command.replace("\\\n", " ")
+        if not re.fullmatch(r"[A-Za-z0-9_./:=\[\] -]+", command):
+            continue
+        tokens = shlex.split(command)
+        if not tokens or tokens[0] != "pytest":
+            continue
+        positional = []
+        for token in tokens[1:]:
+            if token == "-q" or (token.startswith("--junitxml=") and token != "--junitxml="):
+                continue
+            if not token.startswith("tests/"):
+                break
+            positional.append(token)
+        else:
+            nodes.update(positional)
+    return nodes
+
+
 def _capability_ownership_violations(allowlist: str, ci_workflow: str) -> list[str]:
     """Return every capability allowlist entry that lacks an executing CI owner.
 
     An entry is a capability entry when its reason declares ``owned by <job>``,
     names a GPU/``STAGE5_HIGH_Q`` gate, or its node lives in
     ``CAPABILITY_MODULES``. Each must be one exact node (no glob), declare its
-    owning job, and appear verbatim in that job's body, so a newly allowlisted
+    owning job, and be an exact positional selector in its direct pytest run,
+    so a newly allowlisted
     node without an executing job fails instead of silently widening the
     waiver.
     """
@@ -320,8 +384,8 @@ def _capability_ownership_violations(allowlist: str, ci_workflow: str) -> list[s
         except AssertionError:
             violations.append(f"{node}: declared owner job {job!r} does not exist")
             continue
-        if node not in body:
-            violations.append(f"{node}: owner job {job!r} never executes this node")
+        if node not in _pytest_owner_nodes(body):
+            violations.append(f"{node}: owner job {job!r} lacks a supported pytest command for this exact node")
     return violations
 
 
@@ -364,3 +428,63 @@ def test_capability_ownership_rejects_unowned_or_widened_entries() -> None:
     for label, entry in cases.items():
         violations = _capability_ownership_violations(allowlist + "\n" + entry + "\n", ci_workflow)
         assert violations, f"{label}: injected entry was not rejected"
+
+
+_CAPABILITY_NODE = "tests/test_bifactor_gpu_high_q.py::test_future_capability"
+
+
+@pytest.mark.parametrize("step", [
+    f"      # {_CAPABILITY_NODE}\n      - run: true",
+    f"      - name: {_CAPABILITY_NODE}\n        run: true",
+    f"      - run: true\n        env:\n          NODE: {_CAPABILITY_NODE}",
+    f"      - run: |\n          # pytest {_CAPABILITY_NODE}\n          true",
+    f"      - run: echo pytest {_CAPABILITY_NODE}",
+    f"      - run: pytest -k {_CAPABILITY_NODE}",
+    f"      - run: pytest {_CAPABILITY_NODE}_other",
+    f"      - run: |\n          pytest tests/other.py\n          echo {_CAPABILITY_NODE}",
+    f"      - run: |\n          cat <<EOF\n          pytest {_CAPABILITY_NODE}\n          EOF",
+    f"      - run: pytest {_CAPABILITY_NODE}; true",
+    f"      - run: pytest --collect-only {_CAPABILITY_NODE}",
+    f"      - run: pytest {_CAPABILITY_NODE}\n          --collect-only",
+    f"      - run: pytest {_CAPABILITY_NODE}\n\n          --collect-only",
+    f"      - if: false\n        run: pytest {_CAPABILITY_NODE}",
+    f"      - run: pytest {_CAPABILITY_NODE}\n        if: false",
+    f"      - run: |\n          pytest tests/other.py # comment \\\n          {_CAPABILITY_NODE}",
+])
+def test_capability_ownership_rejects_non_command_evidence(step: str) -> None:
+    workflow = f"jobs:\n  gpu-smoke:\n    steps:\n{step}\n"
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    )
+
+
+@pytest.mark.parametrize("step", [
+    f"      - run: pytest {_CAPABILITY_NODE}",
+    f"      - name: Evidence\n        run: |\n          pytest -q --junitxml=gpu.xml \\\n            {_CAPABILITY_NODE}",
+])
+def test_capability_ownership_accepts_exact_pytest_arguments(step: str) -> None:
+    workflow = f"jobs:\n  gpu-smoke:\n    steps:\n{step}\n"
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    ) == []
+
+
+@pytest.mark.parametrize("condition", ["false", "0", "'false'", '"false"', "${{ false }}"])
+def test_capability_ownership_rejects_disabled_jobs(condition: str) -> None:
+    workflow = (
+        f"jobs:\n  gpu-smoke:\n    if: {condition}\n    steps:\n"
+        f"      - run: pytest {_CAPABILITY_NODE}\n"
+    )
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    )
+
+
+def test_capability_ownership_cannot_borrow_sibling_command() -> None:
+    workflow = (
+        "jobs:\n  gpu-smoke:\n    steps:\n      - run: true\n"
+        f"  sibling:\n    steps:\n      - run: pytest {_CAPABILITY_NODE}\n"
+    )
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    )
