@@ -4,6 +4,13 @@
 
 ### Added
 
+- Add the Proposed Rust/PyO3 `holm-wald-one-sided-v1` numerical foundation for
+  permutation-invariant candidate superiority with Holm family-wise error
+  control and an explicit indeterminate result. It has no default error level
+  and is not decision-authorizing until #2315 supplies owner-produced joint
+  prediction uncertainty, calibration/coverage, fit denominators, and
+  provenance.
+
 - Saved multiple-group bifactor and two-tier GRM fits can now produce
   per-person conditional `l_z`, posterior trait estimates, observed-item
   counts, and caller-threshold flags. Optional seeded model resampling gives
