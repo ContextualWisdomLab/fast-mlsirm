@@ -51,3 +51,11 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2024-10-24 - 테마 변수 기반 텍스트 대비 향상
+**Learning:** 다크 모드를 지원하는 환경에서 배경색이 테마 변수(예: `var(--teal)`)로 지정된 경우, 텍스트 색상을 `white`와 같이 하드코딩하면 대비 제약 조건(Contrast ratio)을 충족하지 못해 접근성 문제가 발생할 수 있습니다.
+**Action:** 테마 배경색이 적용된 요소에는 항상 해당 테마 세트의 텍스트 변수(예: `var(--bg)`)를 함께 사용하여 라이트/다크 모드 모두에서 안전한 대비를 유지해야 합니다.
+
+## 2024-10-24 - 정적 데이터 시각화의 호버 애니메이션
+**Learning:** 상호작용이 없는 정적 데이터 시각화 요소(예: 차트 행)에 배경색 호버 효과를 추가할 때, 부드러운 전환(transition)을 설정하지 않으면 사용자가 인지하기 전에 화면이 갑작스럽게 변하여 사용자 경험(UX)이 저하될 수 있습니다.
+**Action:** 요소에 호버 시 시각적 상태 변화를 주는 경우 `transition: background-color 0.15s ease-in-out;`과 같은 CSS 속성을 추가하여 부드러운 애니메이션을 적용하고, 동시에 `@media (prefers-reduced-motion: reduce)`에서 이를 해제하여 접근성 지침을 준수해야 합니다.

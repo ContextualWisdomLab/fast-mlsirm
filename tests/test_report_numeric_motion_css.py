@@ -10,12 +10,16 @@ from fast_mlsirm.report import render_diagnostics_report
 
 def _rule_body(css: str, selector: str) -> str:
     """Return the declaration body for one exact CSS selector."""
-    match = re.search(rf"(?:^|\n){re.escape(selector)}\s*\{{(?P<body>.*?)\n\}}", css, re.DOTALL)
+    match = re.search(
+        rf"(?:^|\n){re.escape(selector)}\s*\{{(?P<body>.*?)\n\}}", css, re.DOTALL
+    )
     assert match is not None, f"missing CSS rule for {selector!r}"
     return match.group("body")
 
 
-def test_rendered_report_uses_tabular_numerals_without_opacity_transitions(tmp_path) -> None:
+def test_rendered_report_uses_tabular_numerals_without_opacity_transitions(
+    tmp_path,
+) -> None:
     """Numeric alignment and row cues must survive without peer-dimming transitions."""
     source = tmp_path / "fit_diagnostics.json"
     output = tmp_path / "report.html"
@@ -42,7 +46,7 @@ def test_rendered_report_uses_tabular_numerals_without_opacity_transitions(tmp_p
     assert "font-variant-numeric: tabular-nums;" in body_rule
 
     bar_row_rule = _rule_body(style, ".bar-row")
-    assert "transition:" not in bar_row_rule
+    assert "transition: background-color 0.15s ease-in-out;" in bar_row_rule
     assert "opacity:" not in bar_row_rule
     assert "padding: 4px 8px;" in bar_row_rule
     assert "border-radius: 4px;" in bar_row_rule
