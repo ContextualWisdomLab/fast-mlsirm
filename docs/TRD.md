@@ -138,6 +138,8 @@ docs/                     PRD/TRD, method docs, ADRs, doctoring, diagrams,
 
 **TRD-RAG-004** Candidate-independent perturbation anchors shall be supported for evaluator validation where feasible, such as unsupported-claim insertion, evidence deletion, distractor/citation swaps, and meaning-preserving paraphrases.
 
+**TRD-RAG-005** A candidate-ranking point estimate, unique maximum, or input order shall not authorize an operational winner. Decision superiority requires a versioned statistical decision model, joint uncertainty, multiplicity control where applicable, convergence and identification evidence, calibration/coverage with attempted and failed-fit denominators, and exact provenance. Missing evidence returns an explicit indeterminate outcome.
+
 ### 4.8 Factor/model structure and relation-safe comparison
 
 **TRD-MOD-001** Factor count/retention and structural model choice are separate workflows.

@@ -1,9 +1,17 @@
 # Product and technical gap baseline
 
 Status: **Non-authoritative point-in-time product-completion inventory**<br>
-Observed at: **2026-08-25T05:20:00Z**<br>
-Protected-main basis: **`9c12eab15fb8a187b135f9be1961f0693a431c23`**<br>
+Observed at: **2026-10-01T18:15:35Z**<br>
+Protected-main basis: **`a0d7958ead3b7bc474e45709ea8fa87122aa6406`**<br>
 Repository: **`ContextualWisdomLab/fast-mlsirm`**
+
+## 2026-10-02 proposed calibrated decision-superiority foundation
+
+Status: **Proposed; not protected-main or release authority**
+
+| Gap | Exact evidence | Owner/action | Remaining gate |
+|---|---|---|---|
+| `CALIBRATED-DECISION-SUPERIORITY-01` | Protected `0.11.4` `predict_proba` returns point estimates and contextual MLSRM `FitResult` exposes no joint prediction covariance. A unique maximum therefore cannot establish candidate superiority. Issue [#2315](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/2315) records the owner boundary. | This Proposed stack adds Rust-owned ordered one-sided Wald contrasts plus Holm (1979) family-wise error control, exact dyadic Bareiss/Sylvester covariance certification, outward-rounded normal-tail probability bounds, exact Holm cutoff comparisons, exact native-`float64` transport, explicit algorithm identity, adversarial SPD/non-PD boundary and permutation tests, and `indeterminate` for unresolved or non-unique evidence. ADR-0030 forbids treating this foundation alone as an operational decision certificate. | Add identified joint contextual-MLSRM prediction uncertainty; bind convergence and calibration/coverage evidence with attempted/failed-fit denominators and exact provenance; run true-parameter null/near/separated/sparse/ill-conditioned studies; obtain exact-head checks and independent approval; ordinary merge and immutable release; then bump the contextual-orchestrator consumer. |
 
 ## 2026-09-26 proposed release-source trust repair
 

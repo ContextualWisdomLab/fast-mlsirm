@@ -85,6 +85,7 @@ use mlsirm_core::classification::{
     WoodruffSawyerResult,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
+use mlsirm_core::decision_superiority::holm_wald_superiority as core_holm_wald_superiority;
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::detect::dimtest as core_dimtest;
 use mlsirm_core::dif::{
@@ -10342,6 +10343,46 @@ fn standard_errors_from_vcov(vcov: PyReadonlyArray2<'_, f64>) -> PyResult<Vec<f6
     core_standard_errors_from_vcov(vcov.as_slice()?, n).map_err(PyValueError::new_err)
 }
 
+/// Ordered one-sided Wald tests with Holm family-wise error control.
+#[pyfunction]
+fn holm_wald_superiority(
+    py: Python<'_>,
+    estimates: PyReadonlyArray1<'_, f64>,
+    covariance: PyReadonlyArray2<'_, f64>,
+    familywise_error_rate: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let shape = covariance.shape();
+    if shape.len() != 2 || shape[0] != shape[1] || shape[0] != estimates.len() {
+        return Err(PyValueError::new_err(
+            "covariance must be a square matrix matching estimates",
+        ));
+    }
+    let result = core_holm_wald_superiority(
+        estimates.as_slice()?,
+        covariance.as_slice()?,
+        familywise_error_rate,
+    )
+    .map_err(PyValueError::new_err)?;
+    let comparisons = pyo3::types::PyList::empty(py);
+    for comparison in result.comparisons {
+        let row = pyo3::types::PyDict::new(py);
+        row.set_item("candidate_index", comparison.candidate_index)?;
+        row.set_item("comparator_index", comparison.comparator_index)?;
+        row.set_item("estimate_difference", comparison.estimate_difference)?;
+        row.set_item(
+            "standard_error_upper_bound",
+            comparison.standard_error_upper_bound,
+        )?;
+        row.set_item("p_value_upper_bound", comparison.p_value_upper_bound)?;
+        row.set_item("null_rejected", comparison.null_rejected)?;
+        comparisons.append(row)?;
+    }
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("winner_index", result.winner_index)?;
+    out.set_item("comparisons", comparisons)?;
+    Ok(out.into())
+}
+
 /// Version of the Python-to-Rust marginal-MMLE call contract.
 const MARGINAL_CAPABILITY_VERSION: u32 = 1;
 
@@ -10694,6 +10735,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(second_order_test, m)?)?;
     m.add_function(wrap_pyfunction!(vcov_from_hessian, m)?)?;
     m.add_function(wrap_pyfunction!(standard_errors_from_vcov, m)?)?;
+    m.add_function(wrap_pyfunction!(holm_wald_superiority, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_mle, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_eap, m)?)?;
     m.add_function(wrap_pyfunction!(cat_ability_standard_error, m)?)?;
