@@ -219,3 +219,53 @@ def test_raw_oakes_fixed_fixture_remains_unchanged(core):
     np.testing.assert_array_equal(result.information, [[1.0]])
     np.testing.assert_array_equal(result.se, [1.0])
     assert core.calls["bifactor_oakes_se"][-2:] == (None, None)
+
+
+@pytest.mark.parametrize('multigroup', [False, True])
+@pytest.mark.parametrize('seed', [2**53+1, 11400714819323198485, 2**64-1])
+@pytest.mark.parametrize('kind', [int, np.uint64])
+@pytest.mark.parametrize('prior', [{}, {'slope_prior_mu': 0.0, 'slope_prior_sd': 0.5}])
+def test_full_wrapper_transports_exact_seed_only(monkeypatch, multigroup, seed, kind, prior):
+    recording = RecordingCore()
+    monkeypatch.setattr(fitstats, '_core_module', lambda: recording)
+    controls = dict(CONTROLS)
+    def call(value):
+        controls['seed'] = value
+        if multigroup:
+            return bifactor_multigroup.fit_bifactor_grm_multigroup(
+                RESPONSES, np.arange(len(RESPONSES)) % 2, SMAP,
+                N_CAT, N_SPECIFIC, **controls, **prior)
+        return bifactor_grm.fit_bifactor_grm(RESPONSES, SMAP, N_CAT, N_SPECIFIC, **controls, **prior)
+    key = 'fit_bifactor_grm_multigroup' if multigroup else 'fit_bifactor_grm'
+    seed_position = 15 if multigroup else 12
+    original_responses, original_map = RESPONSES.copy(), SMAP.copy()
+    call(1)
+    reference = recording.calls[key]
+    result = call(kind(seed))
+    actual = recording.calls[key]
+    assert type(actual[seed_position]) is int
+    assert actual[seed_position] == seed, 'caller seed must reach recording seam unchanged'
+    assert len(actual) == len(reference)
+    for i, (left, right) in enumerate(zip(actual, reference)):
+        if i != seed_position:
+            np.testing.assert_array_equal(left, right)
+    assert (result.slope_prior_mu, result.slope_prior_sd) == (
+        prior.get('slope_prior_mu'), prior.get('slope_prior_sd'))
+    np.testing.assert_array_equal(RESPONSES, original_responses)
+    np.testing.assert_array_equal(SMAP, original_map)
+
+
+@pytest.mark.parametrize('multigroup', [False, True])
+@pytest.mark.parametrize('bad', [-1, 2**64, True, 1.5])
+def test_full_wrapper_rejects_bad_seed_before_recording_seam(monkeypatch, multigroup, bad):
+    recording = RecordingCore()
+    monkeypatch.setattr(fitstats, '_core_module', lambda: recording)
+    controls = dict(CONTROLS, seed=bad)
+    with pytest.raises(ValueError):
+        if multigroup:
+            bifactor_multigroup.fit_bifactor_grm_multigroup(
+                RESPONSES, np.arange(len(RESPONSES)) % 2, SMAP,
+                N_CAT, N_SPECIFIC, **controls)
+        else:
+            bifactor_grm.fit_bifactor_grm(RESPONSES, SMAP, N_CAT, N_SPECIFIC, **controls)
+    assert recording.calls == {}

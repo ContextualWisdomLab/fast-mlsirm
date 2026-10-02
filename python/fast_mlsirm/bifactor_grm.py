@@ -145,6 +145,15 @@ def _slope_prior_pair(
 def _u64_seed(value: object) -> int:
     """Normalize the deterministic start seed without callbacks."""
 
+    # Inserted after the helper docstring only in a disposable AST.
+    # Exact builtin/scalar types avoid changing subclasses' float protocol.
+    if type(value) in (int, np.int8, np.int16, np.int32, np.int64,
+                       np.uint8, np.uint16, np.uint32, np.uint64):
+        exact = int(value)
+        if not 0 <= exact < 2**64:
+            raise ValueError("seed must be in [0, 2**64)")
+        return exact
+
     if isinstance(value, bool):
         raise ValueError("seed must be a non-negative integer")
     try:

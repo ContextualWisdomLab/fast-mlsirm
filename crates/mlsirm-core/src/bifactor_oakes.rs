@@ -83,10 +83,11 @@
 //! fixed by identification (orthogonal `N(0, 1)` factors; Gibbons et al.,
 //! 2007, "Model" section), so the vcov is conditional on them. The assembly
 //! is written against the [`PosteriorProvider`] trait and currently fills
-//! expected counts from the single-group reduced E-step. Multigroup Oakes
-//! SEs are unavailable: a valid multigroup fit needs joint information for
-//! shared/free item parameters and focal-group mean/variance parameters,
-//! including cross-information. A single group row cannot supply it.
+//! expected counts from the single-group reduced E-step. For multigroup
+//! fits, use [`crate::bifactor_multigroup_oakes::bifactor_multigroup_oakes_se`]
+//! for joint information for shared/free item parameters and focal-group
+//! mean/variance parameters, including cross-information.
+//! A single group row cannot supply it.
 //!
 //! # Failure reporting
 //!

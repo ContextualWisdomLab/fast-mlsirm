@@ -129,6 +129,15 @@ def _positive_real_control(value: object, name: str) -> float:
 def _u64_seed(value: object) -> int:
     """Normalize the deterministic start seed without callbacks."""
 
+    # Inserted after the helper docstring only in a disposable AST.
+    # Exact builtin/scalar types avoid changing subclasses' float protocol.
+    if type(value) in (int, np.int8, np.int16, np.int32, np.int64,
+                       np.uint8, np.uint16, np.uint32, np.uint64):
+        exact = int(value)
+        if not 0 <= exact < 2**64:
+            raise ValueError("seed must be in [0, 2**64)")
+        return exact
+
     if isinstance(value, bool):
         raise ValueError("seed must be a non-negative integer")
     try:
@@ -162,9 +171,9 @@ class BifactorMultigroupFit:
     convergence, ``final_loglik_change`` and start ranking refer to the
     log-posterior EM objective recorded in ``em_objective_trace``;
     ``loglik_trace`` stays the observed-data log-likelihood.
-    Multigroup Oakes SEs are unavailable until the joint information for
-    item and focal-group mean/variance parameters is implemented; passing
-    these stacked parameter rows to ``bifactor_oakes_se`` raises.
+    Passing these stacked parameter rows to the single-group
+    ``bifactor_oakes_se`` raises. Use ``bifactor_multigroup_oakes_se`` for
+    joint information for item and focal-group mean/variance parameters.
     """
 
     a_general: np.ndarray
@@ -284,6 +293,9 @@ def bifactor_multigroup_oakes_se(
         raise ValueError("fit parameter shapes do not match responses")
     if not all(np.isfinite(v).all() for v in (ag, as_, th, mu, sd, ss)):
         raise ValueError("fit parameters must be finite")
+    slope_prior_mu, slope_prior_sd = _slope_prior_pair(
+        fit.slope_prior_mu, fit.slope_prior_sd
+    )
     core = _core_module()
     if core is None or not hasattr(core, "bifactor_multigroup_oakes_se"):
         raise RuntimeError("bifactor_multigroup_oakes_se requires the compiled Rust core")
@@ -292,7 +304,7 @@ def bifactor_multigroup_oakes_se(
         np.where(observed, y, 0).astype(np.int64).ravel(), observed.ravel(),
         gid, smap, anchor, n_persons, n_items, n_groups, fit.n_specific,
         fit.n_cat, estimate_specific_vars, qg, qs, step,
-        fit.slope_prior_mu, fit.slope_prior_sd,
+        slope_prior_mu, slope_prior_sd,
     )
     labels = list(result["labels"])
     k = len(labels)
@@ -303,6 +315,8 @@ def bifactor_multigroup_oakes_se(
         se=None if result["se"] is None else np.asarray(result["se"]),
         positive_definite=bool(result["positive_definite"]),
         non_pd_reason=result["non_pd_reason"],
+        slope_prior_mu=slope_prior_mu,
+        slope_prior_sd=slope_prior_sd,
     )
 
 

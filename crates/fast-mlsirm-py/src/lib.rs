@@ -1399,6 +1399,19 @@ fn fit_bifactor_grm(
         Some(o) => Some(o.as_slice()?.to_vec()),
         None => None,
     };
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err("y must have length n_persons * n_items"));
+    }
+    if let Some(o) = obs_vec.as_ref() {
+        if o.len() != n_cells {
+            return Err(PyValueError::new_err(
+                "observed must have length n_persons * n_items",
+            ));
+        }
+    }
     // Missing cells may carry any negative placeholder (the Python wrapper
     // sends 0); only observed cells must be non-negative categories.
     let yy: Vec<usize> = y_slice
@@ -1523,6 +1536,19 @@ fn fit_bifactor_grm_multigroup(
         Some(o) => Some(o.as_slice()?.to_vec()),
         None => None,
     };
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err("y must have length n_persons * n_items"));
+    }
+    if let Some(o) = obs_vec.as_ref() {
+        if o.len() != n_cells {
+            return Err(PyValueError::new_err(
+                "observed must have length n_persons * n_items",
+            ));
+        }
+    }
     let yy: Vec<usize> = y_slice
         .iter()
         .enumerate()
@@ -1660,6 +1686,19 @@ fn bifactor_oakes_se(
         Some(o) => Some(o.as_slice()?.to_vec()),
         None => None,
     };
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err("y must have length n_persons * n_items"));
+    }
+    if let Some(o) = obs_vec.as_ref() {
+        if o.len() != n_cells {
+            return Err(PyValueError::new_err(
+                "observed must have length n_persons * n_items",
+            ));
+        }
+    }
     let yy: Vec<usize> = y_slice
         .iter()
         .enumerate()
