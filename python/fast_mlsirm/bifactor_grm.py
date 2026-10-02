@@ -112,10 +112,21 @@ def _positive_real_control(value: object, name: str) -> float:
 
 
 def _u64_seed(value: object) -> int:
-    """Normalize the deterministic start seed without callbacks."""
+    """Normalize the start seed without rounding integer inputs through binary64."""
 
     if isinstance(value, bool):
         raise ValueError("seed must be a non-negative integer")
+    if type(value) is int or (
+        isinstance(value, np.integer)
+        and type(value) in (
+            np.int8, np.int16, np.int32, np.int64, np.intp, np.longlong,
+            np.uint8, np.uint16, np.uint32, np.uint64, np.uintp, np.ulonglong,
+        )
+    ):
+        seed = int(value)
+        if not 0 <= seed < 2**64:
+            raise ValueError("seed must be in [0, 2**64)")
+        return seed
     try:
         numeric = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError, OverflowError):

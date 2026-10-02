@@ -18,7 +18,7 @@ Command (repeat from repo root)
 bash scripts/bifactor_estep_split_overlap_evidence.sh
 
 Equivalent direct invocation:
-cargo test --manifest-path crates/mlsirm-core/Cargo.toml --lib measure_concurrent_split_estep_vs_cpu_reference -- --nocapture
+cargo test --manifest-path crates/mlsirm-core/Cargo.toml --lib measure_concurrent_split_estep_vs_cpu_reference -- --ignored --nocapture
 
 What the timestamps guarantee
 -------------------------------

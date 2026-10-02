@@ -6,7 +6,7 @@
 //! shard counts), while expected-count tensors sum commutatively after the
 //! same sort so their totals do not depend on completion order.
 
-use crate::bifactor_grm::{log_sum_exp, general_only_without_prior, Validated};
+use crate::bifactor_grm::{general_only_without_prior, log_sum_exp, Validated};
 
 /// Per-shard execution record for provenance (#2001 §3.4).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -240,4 +240,3 @@ pub(crate) fn cpu_shard_bounds(n_persons: usize, n_shards: usize) -> Vec<(usize,
     }
     bounds
 }
-

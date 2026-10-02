@@ -346,6 +346,9 @@ pub(crate) fn validate(
     if !cfg.ridge.is_finite() || cfg.ridge <= 0.0 {
         return Err("ridge must be finite and positive".into());
     }
+    if let BifactorDevice::Split { gpu_person_start } = cfg.device {
+        parse_bifactor_device("split", n_persons, Some(gpu_person_start))?;
+    }
     let n_cells = n_persons
         .checked_mul(n_items)
         .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
@@ -823,7 +826,7 @@ fn e_step_same_host_split(
     Vec<Vec<Vec<f64>>>,
     Option<crate::bifactor_estep_split::EstepExecutionProvenance>,
 ) {
-    let split = gpu_person_start.min(v.n_persons.saturating_sub(1)).max(1);
+    let split = gpu_person_start;
     let tables_wrapped = vec![tables.to_vec()];
     let tg_wrapped = vec![tg.to_vec()];
     let ts_wrapped = vec![vec![ts.to_vec(); v.n_specific]];

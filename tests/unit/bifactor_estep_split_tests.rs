@@ -135,6 +135,58 @@ fn split_is_a_bifactor_only_device() {
 }
 
 #[test]
+fn direct_split_config_rejects_invalid_boundaries_before_fitting() {
+    let (y, n_persons) = tiny_data();
+    let mut cfg = BifactorGrmConfig {
+        q_general: 121,
+        q_specific: 121,
+        max_iter: 1,
+        tol: 1e-6,
+        n_starts: 1,
+        seed: 1,
+        newton_iter: 1,
+        ridge: 1e-8,
+        device: super::BifactorDevice::Cpu,
+    };
+    for at in [1, n_persons / 2, n_persons - 1] {
+        cfg.device = super::BifactorDevice::Split { gpu_person_start: at };
+        assert!(validate(
+            &y, None, &TINY_SPECIFIC_MAP, n_persons, TINY_N_ITEMS,
+            TINY_N_SPECIFIC, TINY_N_CAT, &cfg,
+        ).is_ok(), "valid caller boundary {at} must remain admitted");
+    }
+    for at in [0, n_persons, n_persons + 1, usize::MAX] {
+        cfg.device = super::BifactorDevice::Split { gpu_person_start: at };
+        let error = super::fit_bifactor_grm(
+            &y, None, &TINY_SPECIFIC_MAP, n_persons, TINY_N_ITEMS,
+            TINY_N_SPECIFIC, TINY_N_CAT, &cfg,
+        ).expect_err("direct Rust fit must reject an empty or invalid partition");
+        assert!(error.contains("split_at_person must be in"), "{error}");
+    }
+}
+
+#[test]
+fn direct_split_config_rejects_a_single_person_before_category_validation() {
+    let (y, _) = tiny_data();
+    let cfg = BifactorGrmConfig {
+        q_general: 121,
+        q_specific: 121,
+        max_iter: 1,
+        tol: 1e-6,
+        n_starts: 1,
+        seed: 1,
+        newton_iter: 1,
+        ridge: 1e-8,
+        device: super::BifactorDevice::Split { gpu_person_start: 1 },
+    };
+    let error = super::fit_bifactor_grm(
+        &y[..TINY_N_ITEMS], None, &TINY_SPECIFIC_MAP, 1, TINY_N_ITEMS,
+        TINY_N_SPECIFIC, TINY_N_CAT, &cfg,
+    ).expect_err("a single person cannot form two nonempty shards");
+    assert!(error.contains("requires at least two persons"), "{error}");
+}
+
+#[test]
 fn split_device_records_effective_device_provenance() {
     let (v, y, log_wg, log_ws, tg, ts, qg, qs) = tiny_estep_tables();
     let params = initial_params(&v, &y, None, 1, 0);
@@ -165,6 +217,7 @@ fn split_device_records_effective_device_provenance() {
     assert!(!prov.shards.is_empty());
 }
 
+#[cfg(all(feature = "gpu", not(coverage)))]
 fn measure_fixture(q: usize) -> (
     super::Validated,
     Vec<usize>,
@@ -225,6 +278,7 @@ fn measure_fixture(q: usize) -> (
     )
 }
 
+#[cfg(all(feature = "gpu", not(coverage)))]
 fn max_count_abs_diff(a: &[Vec<Vec<f64>>], b: &[Vec<Vec<f64>>]) -> f64 {
     let mut max_diff = 0.0f64;
     for (aa, bb) in a.iter().zip(b.iter()) {
@@ -239,6 +293,7 @@ fn max_count_abs_diff(a: &[Vec<Vec<f64>>], b: &[Vec<Vec<f64>>]) -> f64 {
 
 /// Manual overlap + parity evidence for PR #2043 (not a CI gate).
 /// Excluded from default `cargo test`; run with `-- --ignored`.
+#[cfg(all(feature = "gpu", not(coverage)))]
 #[test]
 #[ignore = "manual PR #2043 overlap evidence; not a default-suite gate"]
 fn measure_concurrent_split_estep_vs_cpu_reference() {
