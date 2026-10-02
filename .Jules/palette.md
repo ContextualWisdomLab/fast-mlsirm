@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2026-10-02 - 다크 모드에서의 고대비 유지 및 호버 트랜지션
+**Learning:** 다크 모드 환경을 지원하는 경우, CSS 변수를 활용하는 요소 위에 하드코딩된 색상(예: `color: white;`)을 사용하면 다크 모드 배경에서 글씨가 보이지 않거나 명도 대비 규정을 위반하는 문제가 발생합니다. 또한 상호작용 요소(호버 효과 등)는 부드러운 전환(`transition`)을 제공하여 사용자 경험을 향상시키되, 반드시 `@media (prefers-reduced-motion: reduce)`를 통해 애니메이션을 최소화하려는 사용자의 설정을 존중해야 합니다.
+**Action:** 항상 테마 CSS 변수를 쌍(예: `var(--bg)` 및 `var(--text)`)으로 사용하고, 시각적 호버 피드백에는 `transition: background-color 0.15s ease-in-out` 등을 추가합니다. 아울러 이와 같은 새로운 전환 효과를 추가할 때는 반드시 `prefers-reduced-motion` 블록 내에 `transition: none !important;`를 명시적으로 추가하여 접근성 규정을 준수합니다.
