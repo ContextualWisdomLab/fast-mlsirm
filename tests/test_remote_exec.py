@@ -604,6 +604,41 @@ def test_sqlite_process_cleanup_reaps_a_stalled_child() -> None:
     assert not child.is_alive()
 
 
+@pytest.mark.parametrize("durable", [False, True], ids=["memory", "sqlite"])
+@pytest.mark.parametrize("occupied", [False, True], ids=["empty", "committed"])
+def test_ledger_rejects_another_envelopes_outcome_without_changing_store(
+    tmp_path, durable: bool, occupied: bool,
+) -> None:
+    """A successful result must belong to the supplied envelope commit key."""
+    ledger = (
+        SQLiteOutcomeCommitLedger(tmp_path / "remote-outcomes.sqlite3")
+        if durable else OutcomeCommitLedger()
+    )
+    expected = _envelope(unit_index=0)
+    unrelated = _envelope(unit_index=1)
+    outcomes = LoopbackExecutor().run_batch(
+        (expected, unrelated),
+        lambda envelope, seed: {"unit_index": envelope.unit_index, "seed": seed},
+        worker_manifest=expected.manifest,
+    )
+    key = envelope_fingerprint(expected)
+    other_key = envelope_fingerprint(unrelated)
+    if occupied:
+        ledger.commit_success(key, outcomes[0])
+
+    with pytest.raises(ValueError, match="outcome fingerprint does not match commit key"):
+        ledger.commit_success(key, outcomes[1])
+
+    assert ledger.successful_count(key) == int(occupied)
+    assert ledger.committed_success(key) == (outcomes[0] if occupied else None)
+    assert ledger.successful_count(other_key) == 0
+    assert ledger.committed_success(other_key) is None
+    assert ledger.commit_success(key, outcomes[0]) == outcomes[0]
+    assert ledger.commit_success(key, outcomes[0]) == outcomes[0]
+    assert ledger.successful_count(key) == 1
+    assert ledger.committed_success(key) == outcomes[0]
+
+
 def test_sqlite_ledger_closes_connections_after_repeated_calls(tmp_path, monkeypatch) -> None:
     from fast_mlsirm import remote_exec
 

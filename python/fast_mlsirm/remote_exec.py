@@ -604,6 +604,8 @@ class OutcomeCommitLedger:
         """Commit one successful outcome or return the prior commit without re-recording."""
         if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
             raise ValueError("commit_success requires a completed outcome")
+        if outcome.envelope_fingerprint != fingerprint:
+            raise ValueError("outcome fingerprint does not match commit key")
         existing = self._successful.get(fingerprint)
         if existing is not None:
             return existing
@@ -669,6 +671,8 @@ class SQLiteOutcomeCommitLedger:
         key = _fingerprint(fingerprint, "fingerprint")
         if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
             raise ValueError("commit_success requires a completed outcome")
+        if outcome.envelope_fingerprint != key:
+            raise ValueError("outcome fingerprint does not match commit key")
         payload = json.dumps(
             outcome.to_dict(),
             ensure_ascii=False,
