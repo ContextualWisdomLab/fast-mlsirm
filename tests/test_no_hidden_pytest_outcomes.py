@@ -596,6 +596,8 @@ _CAPABILITY_NODE = "tests/test_bifactor_gpu_high_q.py::test_future_capability"
     f"      - run: pytest --collect-only {_CAPABILITY_NODE}",
     f"      - run: pytest {_CAPABILITY_NODE}\n          --collect-only",
     f"      - run: pytest {_CAPABILITY_NODE}\n\n          --collect-only",
+    f"      - run: pytest {_CAPABILITY_NODE}\n         --collect-only",
+    f"      - run: pytest {_CAPABILITY_NODE}\n\n         --collect-only",
     f"      - if: false\n        run: pytest {_CAPABILITY_NODE}",
     f"      - run: pytest {_CAPABILITY_NODE}\n        if: false",
     f"      - run: |\n          pytest tests/other.py # comment \\\n          {_CAPABILITY_NODE}",
