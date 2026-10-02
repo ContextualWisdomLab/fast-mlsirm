@@ -129,7 +129,7 @@ def call_fipc(y: np.ndarray, fixed: dict[str, np.ndarray], device: str = "cpu", 
     observed = np.ones(y.size, dtype=bool)
     # Pass device only when asked, so bindings without the argument still work.
     extra = {} if device == "cpu" else {"device": device}
-    return _core.fit_two_tier_grm_fipc(
+    fit = _core.fit_two_tier_grm_fipc(
         np.asarray(y, dtype=np.int64).reshape(-1), observed,
         kwargs.get("primary_map", PRIMARY_MAP).reshape(-1), SPECIFIC_MAP,
         N_PERSONS, N_ITEMS, N_PRIMARY, N_SPECIFIC, N_CAT, ANCHOR,
@@ -140,6 +140,14 @@ def call_fipc(y: np.ndarray, fixed: dict[str, np.ndarray], device: str = "cpu", 
         kwargs.get("estimate_specific_vars", False),
         **extra,
     )
+    # Check raw call metadata before aggregation can hide malformed values.
+    used = fit.get("gpu_execution_used")
+    backend = fit.get("gpu_backend")
+    if used is not None and type(used) is not bool:
+        raise ValueError("GPU execution metadata must be a boolean or null.")
+    if backend is not None and not isinstance(backend, str):
+        raise ValueError("GPU backend metadata must be a string or null.")
+    return fit
 
 
 def expected_raw(theta: np.ndarray, fit: dict) -> np.ndarray:
@@ -267,6 +275,8 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
 def build_receipt(
     consumer_sha: str | None, build_source_sha: str | None, device: str = "cpu"
 ) -> dict[str, object]:
+    if not isinstance(device, str) or device not in {"cpu", "gpu", "auto"}:
+        raise ValueError("Device must be one of cpu, gpu, auto")
     for revision, label in ((consumer_sha, "Consumer revision"), (build_source_sha, "Build source revision")):
         if revision is not None and (
             not isinstance(revision, str) or len(revision) != 40
@@ -309,6 +319,8 @@ def build_receipt(
             _fipc_gates(results, device)
         except Exception as exc:
             results.update(dict.fromkeys(GATES, False))
+            results["gpu_execution_used"] = None
+            results["gpu_backend"] = None
             results["row_order_max_abs"] = None
             results["row_order_rmse"] = None
             results["focal_primary_mean_error"] = None
@@ -316,6 +328,12 @@ def build_receipt(
             results["free_item_param_rmse"] = None
             results["row_order_diagnosis"] = "fit_error"
             results["fipc_fit_error"] = f"{type(exc).__name__}: {exc}"
+    if results["gpu_backend"] is not None and not isinstance(results["gpu_backend"], str):
+        results["gpu_backend"] = None
+        results["gpu_execution_used"] = None
+        results.update(dict.fromkeys(GATES, False))
+        results["row_order_diagnosis"] = "fit_error"
+        results["fipc_fit_error"] = "GPU backend metadata must be a string or null."
     invalid_metrics = False
     for key in (
         "row_order_max_abs", "row_order_rmse", "focal_primary_mean_error",

@@ -446,6 +446,63 @@ def test_auto_reports_all_call_dispatch_without_rejecting_fallback(monkeypatch, 
     assert receipt["all_pass"] is True
 
 
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+def test_nonstring_gpu_backend_cannot_pass_schema_receipt(monkeypatch, device) -> None:
+    """A binding metadata object cannot become a schema-invalid PASS receipt."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+
+    def fipc(y, *args, **kwargs):
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        fit = original(y, *args)
+        fit.update(gpu_execution_used=True, gpu_backend={"unexpected": "object"})
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, device=device)
+    json.dumps(receipt, allow_nan=False)
+    assert receipt["gpu_backend"] is None
+    assert receipt["gpu_execution_used"] is None
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert receipt["all_pass"] is False
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+@pytest.mark.parametrize("call_number", [1, 2, 3])
+@pytest.mark.parametrize("field, invalid", [
+    ("gpu_execution_used", 1), ("gpu_backend", {"unexpected": "object"}),
+])
+def test_dispatch_metadata_schema_checks_every_valid_call(monkeypatch, device, call_number, field, invalid) -> None:
+    """Aggregation must not hide malformed metadata from either later call."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = 0
+
+    def fipc(y, *args, **kwargs):
+        nonlocal calls
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        calls += 1
+        fit = original(y, *args)
+        fit.update(gpu_execution_used=True, gpu_backend="Metal")
+        if calls == call_number:
+            fit[field] = invalid
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, device=device)
+    json.dumps(receipt, allow_nan=False)
+    assert receipt["all_pass"] is False
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert receipt["gpu_execution_used"] is None
+    assert receipt["gpu_backend"] is None
+
+
 def test_consumer_revision_comes_from_script_checkout(monkeypatch, tmp_path) -> None:
     module = _load_script()
     expected = module.subprocess.run(
@@ -596,6 +653,38 @@ def test_wrong_map_gate_certifies_documented_validation(monkeypatch) -> None:
     monkeypatch.setattr(module, "_core", fake)
     receipt = module.build_receipt(None, None)
     assert receipt["wrong_model_reject"] is True
+    assert receipt["all_pass"] is True
+
+
+@pytest.mark.parametrize("device", ["invalid_device", "CPU", "", None, True, 1, []])
+def test_invalid_device_is_rejected_before_receipt_work(monkeypatch, device) -> None:
+    """Direct callers must obey the same device enum as the CLI and schema."""
+    module = _load_script()
+    monkeypatch.setattr(module, "_sha256", lambda _: pytest.fail("invalid device reached receipt work"))
+    with pytest.raises(ValueError, match="Device must be one of cpu, gpu, auto"):
+        module.build_receipt(None, None, device=device)
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+def test_valid_device_enum_preserves_receipt_acceptance(monkeypatch, device) -> None:
+    """All documented devices remain accepted; dispatch is a binding stand-in."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+
+    def fipc(y, *args, **kwargs):
+        assert kwargs.get("device", "cpu") == device
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        fit = original(y, *args)
+        fit.update(gpu_execution_used=device != "cpu", gpu_backend="Metal" if device != "cpu" else None)
+        return fit
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, device=device)
+    _assert_schema(receipt)
+    assert receipt["device_requested"] == device
     assert receipt["all_pass"] is True
 
 
