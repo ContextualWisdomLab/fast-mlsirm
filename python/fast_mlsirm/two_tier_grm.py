@@ -625,10 +625,10 @@ def expected_raw_two_tier_grm(
 
     return np.asarray(
         core.two_tier_expected_raw(
-            a_primary.reshape(-1),
-            a_specific,
-            threshold.reshape(-1),
-            theta.reshape(-1),
+            np.require(a_primary, requirements=["C", "A"]).reshape(-1),
+            np.require(a_specific, requirements=["C", "A"]),
+            np.require(threshold, requirements=["C", "A"]).reshape(-1),
+            np.require(theta, requirements=["C", "A"]).reshape(-1),
             smap_int.reshape(-1),
             int(n_cat),
             int(n_primary),
