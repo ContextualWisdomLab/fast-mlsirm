@@ -693,8 +693,20 @@ def _invoke_worker_process(
             if len(stdout) > stdout_limit:
                 process.kill()
             returncode = process.wait()
+        except BaseException:
+            process.kill()
+            process.wait()
+            raise
         finally:
             timer.cancel()
+            timer.join()
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stdin is not None:
+                try:
+                    process.stdin.close()
+                except BrokenPipeError:
+                    pass
         stderr_file.seek(0, os.SEEK_END)
         stderr_file.seek(max(0, stderr_file.tell() - 4096))
         stderr = stderr_file.read().decode("utf-8", errors="replace")
