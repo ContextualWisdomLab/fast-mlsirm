@@ -24,7 +24,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fast_mlsirm.bifactor_grm import bifactor_oakes_se, fit_bifactor_grm
+from fast_mlsirm.bifactor_grm import (
+    bifactor_oakes_se,
+    bifactor_oakes_se_from_fit,
+    fit_bifactor_grm,
+)
 
 N_PERSONS = 300
 N_ITEMS = 6
@@ -89,6 +93,34 @@ def _se_at_fit(fit, y: np.ndarray):
         q_general=7,
         q_specific=7,
         fd_step=1e-5,
+    )
+
+
+@pytest.mark.parametrize("prior", [{}, {"slope_prior_mu": 0.0, "slope_prior_sd": 0.5}])
+def test_from_fit_matches_raw_numeric_information(prior) -> None:
+    y = _simulate(SEED)
+    fit = fit_bifactor_grm(
+        y, SPECIFIC_MAP, N_CAT, N_SPECIFIC,
+        q_general=7, q_specific=7, max_iter=500, tol=1e-5,
+        n_starts=1, seed=SEED, **prior,
+    )
+    direct = bifactor_oakes_se_from_fit(
+        fit, y, q_general=7, q_specific=7, fd_step=1e-5
+    )
+    raw = bifactor_oakes_se(
+        fit.a_general, fit.a_specific, fit.threshold, y, SPECIFIC_MAP,
+        N_CAT, N_SPECIFIC, q_general=7, q_specific=7, fd_step=1e-5,
+        slope_prior_mu=fit.slope_prior_mu, slope_prior_sd=fit.slope_prior_sd,
+    )
+    np.testing.assert_array_equal(direct.information, raw.information)
+    assert direct.labels == raw.labels
+    assert direct.positive_definite == raw.positive_definite
+    assert direct.non_pd_reason == raw.non_pd_reason
+    if raw.se is not None:
+        np.testing.assert_array_equal(direct.se, raw.se)
+        np.testing.assert_array_equal(direct.vcov, raw.vcov)
+    assert (direct.slope_prior_mu, direct.slope_prior_sd) == (
+        fit.slope_prior_mu, fit.slope_prior_sd
     )
 
 
