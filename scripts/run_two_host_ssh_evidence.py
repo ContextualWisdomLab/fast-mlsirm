@@ -22,6 +22,7 @@ configured or not reachable.
 from __future__ import annotations
 
 import os
+import shlex
 import socket
 import subprocess
 import sys
@@ -131,9 +132,13 @@ def main() -> int:
                 "BatchMode=yes",
                 "--",
                 remote_host,
-                remote_interpreter,
-                "-c",
-                "import fast_mlsirm; print(fast_mlsirm.__version__)",
+                shlex.join(
+                    [
+                        remote_interpreter,
+                        "-c",
+                        "import fast_mlsirm; print(fast_mlsirm.__version__)",
+                    ]
+                ),
             ],
             capture_output=True,
             text=True,
@@ -178,8 +183,8 @@ def main() -> int:
         and outcome.provenance.worker_pid > 0,
         "cross_host_execution": outcome.provenance.cross_host_execution is True,
         "distinct_hostname": outcome.provenance.hostname != driver_host,
-        "library_function": outcome.result.get("library_function")
-        == "fast_mlsirm.simulate",
+        "library_function": isinstance(outcome.result, dict)
+        and outcome.result.get("library_function") == "fast_mlsirm.simulate",
         "fingerprint": envelope_fingerprint(envelope) == outcome.envelope_fingerprint,
     }
     for name, ok in checks.items():

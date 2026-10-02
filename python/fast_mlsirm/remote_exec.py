@@ -38,7 +38,7 @@ import socket
 import subprocess
 import sys
 import tempfile
-import threading
+import signal
 import time
 import unicodedata
 from pathlib import Path
@@ -358,7 +358,12 @@ class RemoteJobEnvelope:
 
 @dataclass(frozen=True, slots=True)
 class RemoteWorkerProvenance:
-    """Per-unit worker environment recorded with each remote outcome."""
+    """Per-unit environment and declared, unverified source/device identity.
+
+    ``source_sha256`` and device fields are caller declarations, not measured
+    installed-artifact or execution-path attestation. Legacy records retain
+    that limitation when restored without ``identity_verification``.
+    """
 
     hostname: str
     architecture: str
@@ -371,8 +376,11 @@ class RemoteWorkerProvenance:
     worker_host: str
     worker_pid: int
     cross_host_execution: bool
+    identity_verification: str = "declared_unverified"
 
     def __post_init__(self) -> None:
+        if type(self.identity_verification) is not str or self.identity_verification != "declared_unverified":
+            raise ValueError("identity_verification must be declared_unverified")
         if type(self) is not RemoteWorkerProvenance:
             raise ValueError("RemoteWorkerProvenance must be an exact package record")
         object.__setattr__(self, "hostname", _text(self.hostname, "hostname", maximum=128))
@@ -436,6 +444,7 @@ class RemoteWorkerProvenance:
             "worker_host": self.worker_host,
             "worker_pid": self.worker_pid,
             "cross_host_execution": self.cross_host_execution,
+            "identity_verification": self.identity_verification,
         }
 
 
@@ -545,6 +554,15 @@ class CohortMismatchError(ValueError):
     """Raised when a worker manifest fails the fail-closed cohort gate."""
 
 
+def _admit_remote_device_declarations(requested_device: object, effective_device: object) -> None:
+    """Limit transport labels until a measured device-readback contract exists."""
+    if (
+        type(requested_device) is not str or requested_device != "cpu"
+        or type(effective_device) is not str or effective_device != "cpu"
+    ):
+        raise ValueError("remote transport supports only cpu device declarations; actual device is unverified")
+
+
 def local_worker_provenance(
     manifest: RemoteRunManifest,
     *,
@@ -555,7 +573,7 @@ def local_worker_provenance(
     worker_pid: int | None = None,
     cross_host_execution: bool = False,
 ) -> RemoteWorkerProvenance:
-    """Build provenance for the current interpreter process."""
+    """Record local process details with unverified source/device declarations."""
     host = worker_host or socket.gethostname()
     pid = worker_pid if worker_pid is not None else os.getpid()
     return RemoteWorkerProvenance(
@@ -574,12 +592,26 @@ def local_worker_provenance(
 
 
 def result_identity_sha256(result: object) -> str:
-    """Return a stable SHA-256 digest for one JSON-serializable remote result."""
+    """Return a stable SHA-256 digest for one finite JSON remote result.
+
+    Nonfinite number literals are rejected rather than hashed as successful
+    output (Bray, 2017, Section 6, p. 7; Section 10, p. 10). Finite output
+    retains the existing canonical encoding. Python's permissive default is
+    overridden (Python Software Foundation, n.d., "Infinite and NaN Number
+    Values"). This validates transport, not scientific convergence.
+
+    References:
+        Bray, T. (Ed.). (2017). The JavaScript Object Notation (JSON) data
+            interchange format (RFC 8259). Internet Engineering Task Force.
+        Python Software Foundation. (n.d.). json—JSON encoder and decoder.
+            Python 3.14 documentation.
+    """
     payload = json.dumps(
         result,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
+        allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
@@ -643,74 +675,115 @@ def _invoke_worker_process(
     stdout_limit: int,
     timeout_seconds: float,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``fast_mlsirm.remote_worker`` locally or over SSH for ``worker_host``.
+    """Run a worker with deadline-bounded local input, output and wait.
 
-    The worker is killed after ``timeout_seconds``; at most ``stdout_limit + 1``
-    stdout bytes are read so an oversized reply is detected without buffering it.
-    stderr is spooled to a temporary file and only its tail is returned.
+    Nonblocking raw pipes retain at most ``stdout_limit + 1`` bytes. On POSIX,
+    cancellation signals only the new session's process group; elsewhere it
+    kills only the direct child. SSH cancellation stops the local client, not
+    necessarily the remote worker. Escaped descendants are not guaranteed to
+    terminate. Process creation is not interruptible and reaping has a separate
+    one-second allowance (Python Software Foundation, n.d.-a, ``Popen`` and
+    ``Popen.wait``; n.d.-b, ``os.set_blocking`` and ``os.killpg``).
+
+    References:
+        Python Software Foundation. (n.d.-a). subprocess—Subprocess management.
+            Python 3.14 documentation.
+        Python Software Foundation. (n.d.-b). os—Miscellaneous operating system
+            interfaces. Python 3.14 documentation.
     """
     worker_command = _worker_module_command(remote_interpreter)
     if _is_ssh_worker_host(worker_host):
-        # ``--`` keeps destinations that begin with ``-`` from being parsed as SSH
-        # options; the remote shell receives one quoted command string.
         argv = [
-            "ssh",
-            "-o",
-            "StrictHostKeyChecking=accept-new",
-            "-o",
-            "BatchMode=yes",
-            "--",
-            worker_host,
-            shlex.join(worker_command),
+            "ssh", "-o", "StrictHostKeyChecking=accept-new", "-o", "BatchMode=yes",
+            "--", worker_host, shlex.join(worker_command),
         ]
         env = None
     else:
         argv = worker_command
         env = _worker_subprocess_env()
+    request = memoryview(payload.encode("utf-8"))
+    deadline = time.monotonic() + timeout_seconds
+    stdout = bytearray()
+    timed_out = False
     with tempfile.TemporaryFile() as stderr_file:
         process = subprocess.Popen(
-            argv,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=stderr_file,
-            env=env,
+            argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=stderr_file, env=env, bufsize=0,
+            start_new_session=os.name == "posix",
         )
-        timed_out = threading.Event()
 
-        def _kill_on_timeout() -> None:
-            timed_out.set()
-            process.kill()
-
-        timer = threading.Timer(timeout_seconds, _kill_on_timeout)
-        timer.start()
-        try:
-            try:
-                process.stdin.write(payload.encode("utf-8"))
-                process.stdin.close()
-            except BrokenPipeError:
-                pass
-            stdout = process.stdout.read(stdout_limit + 1)
-            if len(stdout) > stdout_limit:
+        def _cancel_owned_process() -> None:
+            """Cancel only the process/session created by this invocation."""
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    # Group cancellation may be denied; keep the local deadline
+                    # by terminating only this invocation's direct child.
+                    process.kill()
+            else:
                 process.kill()
-            returncode = process.wait()
+
+        try:
+            if process.stdin is None or process.stdout is None:
+                raise OSError("worker process did not provide input/output pipes")
+            os.set_blocking(process.stdin.fileno(), False)
+            os.set_blocking(process.stdout.fileno(), False)
+            offset = 0
+            output_eof = False
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    _cancel_owned_process()
+                    break
+                progressed = False
+                if not output_eof:
+                    chunk = process.stdout.read(min(65536, stdout_limit + 1 - len(stdout)))
+                    if chunk == b"":
+                        output_eof = True
+                    elif chunk is not None:
+                        stdout.extend(chunk)
+                        progressed = True
+                        if len(stdout) > stdout_limit:
+                            _cancel_owned_process()
+                            break
+                if not process.stdin.closed:
+                    if offset == len(request):
+                        process.stdin.close()
+                    else:
+                        try:
+                            written = process.stdin.write(request[offset:offset + 65536])
+                        except BrokenPipeError:
+                            process.stdin.close()
+                        else:
+                            if written:
+                                offset += written
+                                progressed = True
+                if output_eof and process.poll() is not None:
+                    break
+                if not progressed:
+                    time.sleep(min(0.005, max(0, deadline - time.monotonic())))
+            returncode = process.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            # Cancellation has already been attempted before this wait. Do not
+            # silently grant a second reap allowance; the caller records FAILED.
+            raise
         except BaseException:
-            process.kill()
-            process.wait()
+            _cancel_owned_process()
+            process.wait(timeout=1.0)
             raise
         finally:
-            timer.cancel()
-            timer.join()
             if process.stdout is not None:
                 process.stdout.close()
             if process.stdin is not None:
-                try:
-                    process.stdin.close()
-                except BrokenPipeError:
-                    pass
+                process.stdin.close()
         stderr_file.seek(0, os.SEEK_END)
         stderr_file.seek(max(0, stderr_file.tell() - 4096))
         stderr = stderr_file.read().decode("utf-8", errors="replace")
-    if timed_out.is_set():
+    if timed_out:
         returncode = returncode or -9
         stderr = f"remote worker timed out after {timeout_seconds:g}s"
     return subprocess.CompletedProcess(
@@ -745,7 +818,11 @@ def _remote_worker_provenance_or_error(
     worker_hostname: str,
     driver_host: str,
 ) -> RemoteWorkerProvenance | str:
-    """Build attested worker provenance or return a fail-closed error message."""
+    """Validate version/timing readback; retain declared source/device identity.
+
+    Source/device declarations are not measured worker attestation. The
+    serialized identity_verification label keeps this distinction explicit.
+    """
     library_version = worker_payload.get("library_version")
     if type(library_version) is not str or not library_version.strip():
         return "remote worker payload missing library_version"
@@ -845,7 +922,8 @@ class LoopbackExecutor:
             started = time.perf_counter()
             try:
                 result = handler(envelope, unit_seed)
-            except Exception as exc:  # handler failures are recorded, not raised
+                output_identity = result_identity_sha256(result)
+            except Exception as exc:  # handler/output failures are recorded, not raised
                 elapsed = time.perf_counter() - started
                 failure_message = str(exc)
                 outcomes.append(
@@ -892,7 +970,7 @@ class LoopbackExecutor:
                         wall_clock_seconds=elapsed,
                     ),
                     input_identity_sha256=fingerprint,
-                    output_identity_sha256=result_identity_sha256(result),
+                    output_identity_sha256=output_identity,
                     envelope_fingerprint=fingerprint,
                     driver_host=socket.gethostname(),
                     driver_pid=os.getpid(),
@@ -952,6 +1030,7 @@ class SubprocessExecutor:
             if type(envelope) is not RemoteJobEnvelope:
                 raise TypeError("each envelope must be a RemoteJobEnvelope")
         _preflight_internal_shard_batch(envelope_batch)
+        _admit_remote_device_declarations(requested_device, effective_device)
         if payload is not None:
             payload_sha256 = payload_identity_sha256(payload)
         for envelope in envelope_batch:
@@ -1022,7 +1101,7 @@ class SubprocessExecutor:
                 stdout_limit=self._MAX_WORKER_STDOUT_BYTES,
                 timeout_seconds=self.timeout_seconds,
             )
-        except OSError as exc:
+        except (OSError, subprocess.TimeoutExpired) as exc:
             elapsed = time.perf_counter() - started
             return RemoteJobOutcome(
                 run_id=envelope.run_id,
@@ -1293,8 +1372,14 @@ class SubprocessExecutor:
             )
 
         result = worker_payload.get("result")
-        output_identity = result_identity_sha256(result)
-        if worker_payload.get("output_identity_sha256") != output_identity:
+        try:
+            output_identity = result_identity_sha256(result)
+        except (TypeError, ValueError) as exc:
+            output_identity = None
+            result_error = f"remote worker result is not finite JSON: {exc}"
+        else:
+            result_error = "remote worker output_identity_sha256 does not hash its result"
+        if output_identity is None or worker_payload.get("output_identity_sha256") != output_identity:
             return RemoteJobOutcome(
                 run_id=envelope.run_id,
                 unit_index=envelope.unit_index,
@@ -1302,7 +1387,7 @@ class SubprocessExecutor:
                 family=envelope.family,
                 delivery_state=RemoteJobDeliveryState.FAILED,
                 result=None,
-                error_message="remote worker output_identity_sha256 does not hash its result",
+                error_message=result_error,
                 provenance=provenance_or_error,
                 input_identity_sha256=fingerprint,
                 output_identity_sha256=None,

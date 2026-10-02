@@ -184,14 +184,21 @@ def test_noisy_worker_output_is_bounded(tmp_path: Path, monkeypatch: pytest.Monk
 def test_ssh_remote_command_is_shell_quoted(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: list[list[str]] = []
 
+    class _Pipe(io.BytesIO):
+        def fileno(self) -> int:
+            return 123
+
     class _Proc:
         returncode = 0
-        stdin = io.BytesIO()
-        stdout = io.BytesIO(b"")
+        stdin = _Pipe()
+        stdout = _Pipe(b"")
         stderr = io.BytesIO(b"")
 
         def __init__(self, argv, **kwargs) -> None:
             captured.append(argv)
+
+        def poll(self) -> int:
+            return 0
 
         def wait(self, timeout=None) -> int:
             return 0
@@ -199,6 +206,7 @@ def test_ssh_remote_command_is_shell_quoted(monkeypatch: pytest.MonkeyPatch) -> 
         def kill(self) -> None:
             pass
 
+    monkeypatch.setattr(remote_exec.os, "set_blocking", lambda *args: None)
     monkeypatch.setattr(remote_exec.subprocess, "Popen", _Proc)
     remote_exec._invoke_worker_process(
         "{}",
@@ -318,13 +326,19 @@ def test_worker_process_closes_owned_pipes(
 
 def test_worker_read_error_closes_pipes_and_reaps_child(monkeypatch: pytest.MonkeyPatch) -> None:
     """A driver read failure must not leave its owned child or pipes alive."""
-    class _BrokenReader(io.BytesIO):
+    class _Pipe(io.BytesIO):
+        def fileno(self) -> int:
+            return 123
+
+    class _BrokenReader(_Pipe):
         def read(self, size: int | None = -1):
             raise OSError("worker pipe read failed")
 
     class _Proc:
+        pid = 4242
+
         def __init__(self):
-            self.stdin = io.BytesIO()
+            self.stdin = _Pipe()
             self.stdout = _BrokenReader()
             self.kills = 0
             self.waits = 0
@@ -332,11 +346,13 @@ def test_worker_read_error_closes_pipes_and_reaps_child(monkeypatch: pytest.Monk
         def kill(self):
             self.kills += 1
 
-        def wait(self):
+        def wait(self, timeout=None):
             self.waits += 1
             return -9
 
     process = _Proc()
+    monkeypatch.setattr(remote_exec.os, "set_blocking", lambda *args: None)
+    monkeypatch.setattr(remote_exec.os, "killpg", lambda pid, sig: process.kill(), raising=False)
     monkeypatch.setattr(remote_exec.subprocess, "Popen", lambda *a, **k: process)
     with pytest.raises(OSError, match="worker pipe read failed"):
         remote_exec._invoke_worker_process(
