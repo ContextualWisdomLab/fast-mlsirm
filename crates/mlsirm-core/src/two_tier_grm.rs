@@ -885,8 +885,7 @@ pub(crate) fn e_step(
     let mut tmp_h = vec![0.0f64; qs];
     let mut block_acc_g = vec![0.0f64; v.n_specific * qs];
     let mut s_bar_sum = vec![0.0f64; p * p];
-    let tables = (v.n_primary == 1)
-        .then(|| fill_logprob_tables(v, params, coords, ts, n_grid, qs));
+    let tables = (v.n_primary == 1).then(|| fill_logprob_tables(v, params, coords, ts, n_grid, qs));
 
     let mut loglik = 0.0f64;
     for pp in 0..v.n_persons {
@@ -1580,8 +1579,8 @@ pub fn fit_two_tier_grm(
         .ok_or_else(|| "winning primary correlation is non-PD".to_string())?;
     let phi_inv = chol_inverse(&l, p);
     let log_w = reweighted_log_weights(&log_w0, &coords, &phi_inv, logdet, p);
-    let tables = (v.n_primary == 1)
-        .then(|| fill_logprob_tables(&v, &params, &coords, ts, n_grid, qs));
+    let tables =
+        (v.n_primary == 1).then(|| fill_logprob_tables(&v, &params, &coords, ts, n_grid, qs));
     let mut theta_p_eap = vec![0.0f64; n_persons * p];
     let mut theta_p_sd = vec![0.0f64; n_persons * p];
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * n_items + i]);
