@@ -16,6 +16,7 @@
 - The expected raw total is now computed in closed form,
   `Σ_i Σ_q w_q Σ_k σ(η_i + β_ik)`, which follows from linearity of
   expectation, instead of taking the mean of the Lord-Wingersky score
-  distribution. The two agree to 1e-12. The recursion stays available as the
-  verification oracle, and the per-row cost drops from quadratic to linear in
-  the number of items.
+  distribution. The two agree within 1e-12 on the retained comparison fixtures;
+  this is not a universal floating-point error bound. The recursion stays
+  available as the verification oracle, and the per-row cost drops from
+  quadratic to linear in the number of items.

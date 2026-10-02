@@ -565,13 +565,14 @@ def expected_raw_two_tier_grm(
 
     ``device`` selects the Rust execution device: ``"cpu"`` (default) evaluates
     the f64 closed form ``sum_i sum_q w_q sum_k sigmoid(eta_i + beta_ik)``
-    (linearity of expectation; identical to the Lord-Wingersky mean to
-    1e-12); ``"gpu"`` runs the wgpu f32 kernel with compensated summation and
-    warns before falling back to the CPU; ``"auto"`` uses the GPU when one is
-    available and falls back silently.
+    (linearity of expectation; within 1e-12 on the retained comparison
+    fixtures, not a universal floating-point error bound); ``"gpu"`` runs the
+    wgpu f32 kernel with compensated summation and warns before falling back
+    to the CPU; ``"auto"`` uses the GPU when one is available and falls back
+    silently.
 
     The recursion is the conditional-on-primary stage of Lord-Wingersky 2.0
-    (Cai, 2015, Eqs. 14-17, pp. 543-544), evaluated at the plug-in primary
+    (Cai, 2015, Eqs. 14-17, pp. 542-543), evaluated at the plug-in primary
     EAP rather than integrated over the primary density.
 
     Implementation basis: Cai, L. (2015). Lord-Wingersky algorithm version

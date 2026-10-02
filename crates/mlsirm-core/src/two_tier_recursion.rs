@@ -7,7 +7,7 @@
 //! ``TwoTierGrmResult.theta_p_eap``) and the specific tier is integrated out
 //! within each item block via Gauss-Hermite quadrature, then domains are
 //! convolved (Lord & Wingersky, 1984). This is the conditional-on-primary
-//! stage of Lord-Wingersky 2.0 (Cai, 2015, Eqs. 14-17, pp. 543-544): the
+//! stage of Lord-Wingersky 2.0 (Cai, 2015, Eqs. 14-17, pp. 542-543): the
 //! within-cluster likelihood ``L_n(u_n | eta)`` integrates the specific
 //! dimension, and cluster distributions combine into ``L(s | eta)``. Here
 //! ``eta`` is the plug-in primary EAP, so the final integration over the
@@ -354,9 +354,16 @@ pub fn two_tier_expected_raw_at_q_on(
 /// By linearity of expectation the mean needs no score distribution:
 /// ``E[T | theta_p] = sum_i sum_q w_q sum_{k=1}^{n_cat-1} sigmoid(eta_i + beta_ik)``
 /// with ``eta_i = a_i . theta_p + a_iS theta_{s,q}`` (``theta_s = 0`` for
-/// specific-free items), using ``E[X] = sum_{k>=1} P(X >= k)``. Equals the
-/// Lord-Wingersky mean (Cai, 2015, Eqs. 14-17), which is kept as the oracle
-/// [`two_tier_expected_raw_lw`].
+/// specific-free items), using ``E[X] = sum_{k>=1} P(X >= k)``. The
+/// conditional-on-primary dimension reduction follows Cai (2015, pp. 542–543, Eqs. 14–17).
+/// The Lord-Wingersky mean is retained as [`two_tier_expected_raw_lw`].
+/// Numerical agreement on retained fixtures is not a universal floating-point error bound.
+///
+/// Reference (APA 7th ed.):
+/// Cai, L. (2015). Lord–Wingersky algorithm version 2.0 for hierarchical item
+/// factor models with applications in test scoring, scale alignment, and model
+/// fit testing. Psychometrika, 80(2), 535–559.
+/// https://doi.org/10.1007/s11336-014-9411-3
 pub fn two_tier_expected_raw(
     params: &TwoTierItemParams,
     theta_primary: &[f64],
