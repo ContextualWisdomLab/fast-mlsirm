@@ -85,9 +85,8 @@ fn cpu_sharded_estep_matches_serial_bit_exact() {
     );
 
     for n_shards in [2, 3, 4, 6] {
-        let (ll_shard, counts_shard) = e_step_cpu_sharded(
-            &v, &y, None, &tables, &log_wg, &log_ws, qg, qs, n_shards,
-        );
+        let (ll_shard, counts_shard) =
+            e_step_cpu_sharded(&v, &y, None, &tables, &log_wg, &log_ws, qg, qs, n_shards);
         assert_eq!(
             ll_serial, ll_shard,
             "loglik must be bit-identical for {n_shards} CPU shards"
@@ -126,7 +125,9 @@ fn split_is_a_bifactor_only_device() {
     assert_eq!(crate::Device::parse("split"), None);
     assert_eq!(
         super::parse_bifactor_device("split", 10, Some(4)),
-        Ok(crate::bifactor_grm::BifactorDevice::Split { gpu_person_start: 4 })
+        Ok(crate::bifactor_grm::BifactorDevice::Split {
+            gpu_person_start: 4
+        })
     );
     assert_eq!(
         super::parse_bifactor_device("gpu", 10, None),
@@ -149,18 +150,39 @@ fn direct_split_config_rejects_invalid_boundaries_before_fitting() {
         device: super::BifactorDevice::Cpu,
     };
     for at in [1, n_persons / 2, n_persons - 1] {
-        cfg.device = super::BifactorDevice::Split { gpu_person_start: at };
-        assert!(validate(
-            &y, None, &TINY_SPECIFIC_MAP, n_persons, TINY_N_ITEMS,
-            TINY_N_SPECIFIC, TINY_N_CAT, &cfg,
-        ).is_ok(), "valid caller boundary {at} must remain admitted");
+        cfg.device = super::BifactorDevice::Split {
+            gpu_person_start: at,
+        };
+        assert!(
+            validate(
+                &y,
+                None,
+                &TINY_SPECIFIC_MAP,
+                n_persons,
+                TINY_N_ITEMS,
+                TINY_N_SPECIFIC,
+                TINY_N_CAT,
+                &cfg,
+            )
+            .is_ok(),
+            "valid caller boundary {at} must remain admitted"
+        );
     }
     for at in [0, n_persons, n_persons + 1, usize::MAX] {
-        cfg.device = super::BifactorDevice::Split { gpu_person_start: at };
+        cfg.device = super::BifactorDevice::Split {
+            gpu_person_start: at,
+        };
         let error = super::fit_bifactor_grm(
-            &y, None, &TINY_SPECIFIC_MAP, n_persons, TINY_N_ITEMS,
-            TINY_N_SPECIFIC, TINY_N_CAT, &cfg,
-        ).expect_err("direct Rust fit must reject an empty or invalid partition");
+            &y,
+            None,
+            &TINY_SPECIFIC_MAP,
+            n_persons,
+            TINY_N_ITEMS,
+            TINY_N_SPECIFIC,
+            TINY_N_CAT,
+            &cfg,
+        )
+        .expect_err("direct Rust fit must reject an empty or invalid partition");
         assert!(error.contains("split_at_person must be in"), "{error}");
     }
 }
@@ -177,12 +199,21 @@ fn direct_split_config_rejects_a_single_person_before_category_validation() {
         seed: 1,
         newton_iter: 1,
         ridge: 1e-8,
-        device: super::BifactorDevice::Split { gpu_person_start: 1 },
+        device: super::BifactorDevice::Split {
+            gpu_person_start: 1,
+        },
     };
     let error = super::fit_bifactor_grm(
-        &y[..TINY_N_ITEMS], None, &TINY_SPECIFIC_MAP, 1, TINY_N_ITEMS,
-        TINY_N_SPECIFIC, TINY_N_CAT, &cfg,
-    ).expect_err("a single person cannot form two nonempty shards");
+        &y[..TINY_N_ITEMS],
+        None,
+        &TINY_SPECIFIC_MAP,
+        1,
+        TINY_N_ITEMS,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &cfg,
+    )
+    .expect_err("a single person cannot form two nonempty shards");
     assert!(error.contains("requires at least two persons"), "{error}");
 }
 
@@ -218,7 +249,9 @@ fn split_device_records_effective_device_provenance() {
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
-fn measure_fixture(q: usize) -> (
+fn measure_fixture(
+    q: usize,
+) -> (
     super::Validated,
     Vec<usize>,
     Vec<Vec<f64>>,
@@ -265,17 +298,7 @@ fn measure_fixture(q: usize) -> (
     let tables = fill_logprob_tables(&v, &params, &tg, &ts, q, q);
     let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
     let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
-    (
-        v,
-        y,
-        tables,
-        log_wg,
-        log_ws,
-        tg.to_vec(),
-        ts.to_vec(),
-        q,
-        q,
-    )
+    (v, y, tables, log_wg, log_ws, tg.to_vec(), ts.to_vec(), q, q)
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
@@ -342,32 +365,18 @@ fn measure_concurrent_split_estep_vs_cpu_reference() {
         };
 
         let wall_start = Instant::now();
-        let gpu_submit = crate::gpu_bifactor::e_step_reduced_gpu_submit(
-            &inputs,
-            SPLIT_AT,
-            v.n_persons,
-        );
+        let gpu_submit =
+            crate::gpu_bifactor::e_step_reduced_gpu_submit(&inputs, SPLIT_AT, v.n_persons);
         let gpu_dispatched = Instant::now();
 
         let Some((pending, meta)) = gpu_submit else {
-            println!(
-                "\n[q={q}] SKIP: no GPU adapter (split would fall back to CPU-only)"
-            );
+            println!("\n[q={q}] SKIP: no GPU adapter (split would fall back to CPU-only)");
             continue;
         };
 
         let cpu_start = Instant::now();
         let cpu_partial = crate::bifactor_estep_split::e_step_cpu_person_range(
-            &v,
-            &y,
-            None,
-            &tables,
-            &log_wg,
-            &log_ws,
-            qg,
-            qs,
-            0,
-            SPLIT_AT,
+            &v, &y, None, &tables, &log_wg, &log_ws, qg, qs, 0, SPLIT_AT,
         );
         let cpu_end = Instant::now();
 
