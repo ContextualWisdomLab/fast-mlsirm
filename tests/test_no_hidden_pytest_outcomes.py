@@ -287,18 +287,69 @@ CAPABILITY_MODULES = (
 _OWNER_MARKER = "owned by "
 
 
-def _pytest_owner_nodes(body: str) -> set[str]:
+def _default_run_setting(source: str, indent: int, setting: str) -> str | None:
+    """Read one plain defaults.run setting; reject other mapping syntax.
+
+    Basis: GitHub (n.d.), Workflow syntax for GitHub Actions, defaults.run
+    and jobs.<job_id>.defaults.run sections. Job defaults override workflow
+    defaults. This restricted static parser is not a runtime execution proof.
+
+    References:
+        GitHub. (n.d.). Workflow syntax for GitHub Actions. GitHub Docs.
+        https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
+    """
+    lines = source.splitlines()
+    for key, depth in (("defaults", indent), ("run", indent + 2)):
+        entries = [i for i, line in enumerate(lines)
+                   if re.match(rf"^{' ' * depth}{key}:", line)]
+        if not entries:
+            return None
+        if len(entries) != 1:
+            return ""
+        start = entries[0]
+        if lines[start].split(":", 1)[1].strip():
+            return ""
+        end = next((i for i in range(start + 1, len(lines))
+                    if lines[i].strip() and not lines[i].lstrip().startswith("#")
+                    and len(lines[i]) - len(lines[i].lstrip()) <= depth), len(lines))
+        lines = lines[start + 1:end]
+    shells = [i for i, line in enumerate(lines)
+              if re.match(rf"^{' ' * (indent + 4)}{re.escape(setting)}:", line)]
+    if not shells:
+        return None
+    if len(shells) != 1:
+        return ""
+    index = shells[0]
+    continuation = next((line for line in lines[index + 1:] if line.strip()
+                         and not line.lstrip().startswith("#")), "")
+    if continuation and len(continuation) - len(continuation.lstrip()) > indent + 4:
+        return ""
+    return lines[index].split(":", 1)[1].strip()
+
+
+def _pytest_owner_nodes(body: str, workflow: str = "") -> set[str]:
     """Recognize only the workflow's plain run scalars and direct pytest grammar.
 
     This is static command ownership, not proof of runtime or GPU execution.
     Unsupported YAML or shell syntax supplies no evidence.
     """
-    if re.search(r"^    if: (?:false|0|['\"]false['\"]|\$\{\{\s*false\s*\}\})\s*$", body, re.MULTILINE):
+    if re.search(
+        r"^    if:[ ]+(?:false|0|['\"]false['\"]|\$\{\{\s*false\s*\}\})"
+        r"(?:[ \t]+#[^\n]*)?[ \t]*$",
+        body,
+        re.MULTILINE,
+    ):
         return set()
     try:
         steps = body.split("\n    steps:\n", 1)[1]
     except IndexError:
         return set()
+    inherited_shell = _default_run_setting(body, 4, "shell")
+    if inherited_shell is None:
+        inherited_shell = _default_run_setting(workflow, 0, "shell")
+    inherited_directory = _default_run_setting(body, 4, "working-directory")
+    if inherited_directory is None:
+        inherited_directory = _default_run_setting(workflow, 0, "working-directory")
     nodes: set[str] = set()
     for step in re.split(r"\n(?=      - )", "\n" + steps):
         lines = step.strip("\n").splitlines()
@@ -307,6 +358,34 @@ def _pytest_owner_nodes(body: str) -> set[str]:
         # Conditional steps are not unconditional owners. Job-level event
         # admission remains a separate runtime contract.
         if any(re.match(r"^(?:      - |        )if:", line) for line in lines):
+            continue
+        shells = [i for i, line in enumerate(lines)
+                  if re.match(r"^(?:      - |        )shell:", line)]
+        if len(shells) > 1:
+            continue
+        effective_shell = inherited_shell
+        if shells:
+            shell_index = shells[0]
+            effective_shell = lines[shell_index].split("shell:", 1)[1].strip()
+            continuation = next((line for line in lines[shell_index + 1:]
+                                 if line.strip() and not line.lstrip().startswith("#")), "")
+            if continuation.startswith("          "):
+                continue
+        if effective_shell is not None and effective_shell not in {"bash", "sh"}:
+            continue
+        directories = [i for i, line in enumerate(lines)
+                       if re.match(r"^(?:      - |        )working-directory:", line)]
+        if len(directories) > 1:
+            continue
+        effective_directory = inherited_directory
+        if directories:
+            directory_index = directories[0]
+            effective_directory = lines[directory_index].split("working-directory:", 1)[1].strip()
+            continuation = next((line for line in lines[directory_index + 1:]
+                                 if line.strip() and not line.lstrip().startswith("#")), "")
+            if continuation.startswith("          "):
+                continue
+        if effective_directory is not None and effective_directory not in {".", "./"}:
             continue
         runs = [i for i, line in enumerate(lines)
                 if re.match(r"^(?:      - |        )run: ", line)]
@@ -384,7 +463,7 @@ def _capability_ownership_violations(allowlist: str, ci_workflow: str) -> list[s
         except AssertionError:
             violations.append(f"{node}: declared owner job {job!r} does not exist")
             continue
-        if node not in _pytest_owner_nodes(body):
+        if node not in _pytest_owner_nodes(body, ci_workflow):
             violations.append(f"{node}: owner job {job!r} lacks a supported pytest command for this exact node")
     return violations
 
@@ -469,7 +548,17 @@ def test_capability_ownership_accepts_exact_pytest_arguments(step: str) -> None:
     ) == []
 
 
-@pytest.mark.parametrize("condition", ["false", "0", "'false'", '"false"', "${{ false }}"])
+@pytest.mark.parametrize("condition", [
+    "false", "0", "'false'", '"false"', "${{ false }}",
+    "false # disabled job cannot own evidence",
+    " false",
+    " ${{ false }}",
+    "  false # disabled job cannot own evidence",
+    "0 # disabled job cannot own evidence",
+    "'false' # disabled job cannot own evidence",
+    '"false" # disabled job cannot own evidence',
+    "${{ false }} # disabled job cannot own evidence",
+])
 def test_capability_ownership_rejects_disabled_jobs(condition: str) -> None:
     workflow = (
         f"jobs:\n  gpu-smoke:\n    if: {condition}\n    steps:\n"
@@ -478,6 +567,106 @@ def test_capability_ownership_rejects_disabled_jobs(condition: str) -> None:
     assert _capability_ownership_violations(
         f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
     )
+
+
+@pytest.mark.parametrize("condition", ["true # false", "${{ true }} # false"])
+def test_capability_ownership_accepts_enabled_job_with_comment(condition: str) -> None:
+    workflow = (
+        f"jobs:\n  gpu-smoke:\n    if: {condition}\n    steps:\n"
+        f"      - run: pytest {_CAPABILITY_NODE}\n"
+    )
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    ) == []
+
+
+@pytest.mark.parametrize("shell", ["echo {0}", "python"])
+@pytest.mark.parametrize("scope", ["step-first", "step-last", "job", "workflow"])
+def test_capability_ownership_rejects_unsupported_shell(shell: str, scope: str) -> None:
+    defaults = f"defaults:\n  run:\n    shell: {shell}\n"
+    prefix = defaults if scope == "workflow" else ""
+    job = textwrap.indent(defaults, "    ") if scope == "job" else ""
+    if scope == "step-first":
+        step = f"      - shell: {shell}\n        run: pytest {_CAPABILITY_NODE}\n"
+    else:
+        step = f"      - run: pytest {_CAPABILITY_NODE}\n"
+        if scope == "step-last":
+            step += f"        shell: {shell}\n"
+    workflow = prefix + f"jobs:\n  gpu-smoke:\n{job}    steps:\n" + step
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    )
+
+
+@pytest.mark.parametrize("workflow_shell,job_shell,step_shell", [
+    (None, None, "bash"),
+    (None, "sh", None),
+    ("bash", None, None),
+    ("echo {0}", "sh", None),
+    ("python", None, "bash"),
+    ("bash", "echo {0}", "sh"),
+])
+def test_capability_ownership_accepts_supported_effective_shell(
+    workflow_shell: str | None, job_shell: str | None, step_shell: str | None,
+) -> None:
+    workflow = (
+        f"defaults:\n  run:\n    shell: {workflow_shell}\n" if workflow_shell else ""
+    )
+    workflow += "jobs:\n  gpu-smoke:\n"
+    if job_shell:
+        workflow += f"    defaults:\n      run:\n        shell: {job_shell}\n"
+    workflow += f"    steps:\n      - run: pytest {_CAPABILITY_NODE}\n"
+    if step_shell:
+        workflow += f"        shell: {step_shell}\n"
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    ) == []
+
+
+@pytest.mark.parametrize("directory", ["other", "..", "${{ github.workspace }}", "'other'"])
+@pytest.mark.parametrize("scope", ["step-first", "step-last", "job", "workflow"])
+def test_capability_ownership_rejects_nonroot_working_directory(
+    directory: str, scope: str,
+) -> None:
+    defaults = f"defaults:\n  run:\n    working-directory: {directory}\n"
+    prefix = defaults if scope == "workflow" else ""
+    job = textwrap.indent(defaults, "    ") if scope == "job" else ""
+    if scope == "step-first":
+        step = f"      - working-directory: {directory}\n        run: pytest {_CAPABILITY_NODE}\n"
+    else:
+        step = f"      - run: pytest {_CAPABILITY_NODE}\n"
+        if scope == "step-last":
+            step += f"        working-directory: {directory}\n"
+    workflow = prefix + f"jobs:\n  gpu-smoke:\n{job}    steps:\n" + step
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    )
+
+
+@pytest.mark.parametrize("workflow_directory,job_directory,step_directory", [
+    (None, None, "."),
+    (None, "./", None),
+    (".", None, None),
+    ("other", ".", None),
+    ("other", None, "./"),
+    (".", "other", "."),
+])
+def test_capability_ownership_accepts_effective_root_directory(
+    workflow_directory: str | None, job_directory: str | None, step_directory: str | None,
+) -> None:
+    workflow = (
+        f"defaults:\n  run:\n    working-directory: {workflow_directory}\n"
+        if workflow_directory else ""
+    )
+    workflow += "jobs:\n  gpu-smoke:\n"
+    if job_directory:
+        workflow += f"    defaults:\n      run:\n        working-directory: {job_directory}\n"
+    workflow += f"    steps:\n      - run: pytest {_CAPABILITY_NODE}\n"
+    if step_directory:
+        workflow += f"        working-directory: {step_directory}\n"
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    ) == []
 
 
 def test_capability_ownership_cannot_borrow_sibling_command() -> None:
