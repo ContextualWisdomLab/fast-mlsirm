@@ -262,19 +262,27 @@ def test_zero_collected_stays_nonzero(tmp_path: Path) -> None:
 
 def _workflow_job_body(workflow: str, job_name: str) -> str:
     """Return one top-level GitHub Actions job without borrowing sibling evidence."""
-    lines = workflow.splitlines()
-    header = f"  {job_name}:"
-    try:
-        start_index = lines.index(header)
-    except ValueError as exc:
-        raise AssertionError(f"missing workflow job {job_name!r}") from exc
-
-    job_lines = [lines[start_index]]
-    for line in lines[start_index + 1 :]:
-        if line.strip() and not line.lstrip().startswith("#") and len(line) - len(line.lstrip()) <= 2:
-            break
-        job_lines.append(line)
-    return "\n".join(job_lines)
+    normalized = _plain_workflow_mapping(workflow)
+    structural = _plain_workflow_mapping(workflow, structural_only=True)
+    if normalized is None or structural is None:
+        raise AssertionError("unsupported workflow mapping")
+    lines = normalized.splitlines()
+    structure = structural.splitlines()
+    jobs = [i for i, line in enumerate(structure) if line == "jobs:"]
+    if len(jobs) != 1:
+        raise AssertionError("missing or duplicate jobs mapping")
+    start = jobs[0] + 1
+    end = next((i for i in range(start, len(structure))
+                if structure[i].strip() and not structure[i].lstrip().startswith("#")
+                and not structure[i].startswith(" ")), len(structure))
+    candidates = [i for i in range(start, end) if structure[i] == f"  {job_name}:"]
+    if len(candidates) != 1:
+        raise AssertionError(f"missing or duplicate workflow job {job_name!r}")
+    start_index = candidates[0]
+    stop = next((i for i in range(start_index + 1, end)
+                 if structure[i].strip() and not structure[i].lstrip().startswith("#")
+                 and len(structure[i]) - len(structure[i].lstrip()) <= 2), end)
+    return "\n".join(lines[start_index:stop])
 
 
 # Test modules whose skips are capability/opt-in gates evidenced by a
@@ -298,7 +306,10 @@ def _default_run_setting(source: str, indent: int, setting: str) -> str | None:
         GitHub. (n.d.). Workflow syntax for GitHub Actions. GitHub Docs.
         https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
     """
-    lines = source.splitlines()
+    structural = _plain_workflow_mapping(source, structural_only=True)
+    if structural is None:
+        return ""
+    lines = structural.splitlines()
     for key, depth in (("defaults", indent), ("run", indent + 2)):
         entries = [i for i, line in enumerate(lines)
                    if re.match(rf"^{' ' * depth}{key}:", line)]
@@ -327,23 +338,80 @@ def _default_run_setting(source: str, indent: int, setting: str) -> str | None:
     return lines[index].split(":", 1)[1].strip()
 
 
+def _plain_workflow_mapping(source: str, *, structural_only: bool = False) -> str | None:
+    """Normalize literal mapping keys, rejecting unsupported structural syntax.
+
+    Basis: YAML Language Development Team (2021), YAML 1.2.2, Sections
+    6.9 and 8.2.2. Node properties and explicit keys are not plain implicit
+    mappings. Scalar block contents are preserved and never parsed as keys.
+
+    References:
+        YAML Language Development Team. (2021). YAML Ain't Markup Language
+        (YAML) version 1.2.2. https://yaml.org/spec/1.2.2/
+    """
+    normalized: list[str] = []
+    scalar_indent: int | None = None
+    for line in source.splitlines():
+        stripped = line.lstrip(" ")
+        indent = len(line) - len(stripped)
+        if not stripped or stripped.startswith("#"):
+            normalized.append(line)
+            continue
+        if scalar_indent is not None:
+            if indent > scalar_indent:
+                normalized.append(" " if structural_only else line)
+                continue
+            scalar_indent = None
+        match = re.fullmatch(
+            r"([ ]*(?:- )?)(['\"]?)([A-Za-z_][A-Za-z0-9_.-]*)\2[ ]*:(.*)",
+            line,
+        )
+        if match is None:
+            return None
+        prefix, _, key, value = match.groups()
+        normalized.append(f"{prefix}{key}:{value}")
+        if re.fullmatch(r"[ ]*[|>][+-]?[ ]*(?:#.*)?", value):
+            scalar_indent = indent + (2 if stripped.startswith("- ") else 0)
+    return "\n".join(normalized)
+
+
 def _pytest_owner_nodes(body: str, workflow: str = "") -> set[str]:
     """Recognize only the workflow's plain run scalars and direct pytest grammar.
 
     This is static command ownership, not proof of runtime or GPU execution.
     Unsupported YAML or shell syntax supplies no evidence.
     """
-    if re.search(
-        r"^    if:[ ]+(?:false|0|['\"]false['\"]|\$\{\{\s*false\s*\}\})"
-        r"(?:[ \t]+#[^\n]*)?[ \t]*$",
-        body,
-        re.MULTILINE,
-    ):
+    normalized_body = _plain_workflow_mapping(body)
+    normalized_workflow = _plain_workflow_mapping(workflow)
+    if normalized_body is None or normalized_workflow is None:
         return set()
-    try:
-        steps = body.split("\n    steps:\n", 1)[1]
-    except IndexError:
+    body, workflow = normalized_body, normalized_workflow
+    structure = _plain_workflow_mapping(body, structural_only=True)
+    if structure is None:
         return set()
+    conditions = [line.split(":", 1)[1].strip() for line in structure.splitlines()
+                  if line.startswith("    if:")]
+    if len(conditions) > 1:
+        return set()
+    if conditions:
+        condition = re.split(r"[ \t]+#", conditions[0], maxsplit=1)[0].strip()
+        event_admission = (
+            "${{ github.event_name != 'pull_request' || "
+            "(!github.event.pull_request.draft && github.event.action != 'closed') }}"
+        )
+        if condition not in {"true", "True", "TRUE", "!!bool true", "${{ true }}", event_admission}:
+            return set()
+    structure_lines = structure.splitlines()
+    body_lines = body.splitlines()
+    starts = [i for i, line in enumerate(structure_lines) if line == "    steps:"]
+    if len(starts) != 1:
+        return set()
+    steps_start = starts[0] + 1
+    steps_end = next((i for i in range(steps_start, len(structure_lines))
+                      if structure_lines[i].strip()
+                      and not structure_lines[i].lstrip().startswith("#")
+                      and len(structure_lines[i]) - len(structure_lines[i].lstrip()) <= 4),
+                     len(structure_lines))
     inherited_shell = _default_run_setting(body, 4, "shell")
     if inherited_shell is None:
         inherited_shell = _default_run_setting(workflow, 0, "shell")
@@ -351,15 +419,17 @@ def _pytest_owner_nodes(body: str, workflow: str = "") -> set[str]:
     if inherited_directory is None:
         inherited_directory = _default_run_setting(workflow, 0, "working-directory")
     nodes: set[str] = set()
-    for step in re.split(r"\n(?=      - )", "\n" + steps):
-        lines = step.strip("\n").splitlines()
-        if not lines or not lines[0].startswith("      - "):
-            continue
+    step_starts = [i for i in range(steps_start, steps_end)
+                   if structure_lines[i].startswith("      - ")]
+    for position, start in enumerate(step_starts):
+        end = step_starts[position + 1] if position + 1 < len(step_starts) else steps_end
+        lines = body_lines[start:end]
+        metadata = structure_lines[start:end]
         # Conditional steps are not unconditional owners. Job-level event
         # admission remains a separate runtime contract.
-        if any(re.match(r"^(?:      - |        )if:", line) for line in lines):
+        if any(re.match(r"^(?:      - |        )if:", line) for line in metadata):
             continue
-        shells = [i for i, line in enumerate(lines)
+        shells = [i for i, line in enumerate(metadata)
                   if re.match(r"^(?:      - |        )shell:", line)]
         if len(shells) > 1:
             continue
@@ -373,7 +443,7 @@ def _pytest_owner_nodes(body: str, workflow: str = "") -> set[str]:
                 continue
         if effective_shell is not None and effective_shell not in {"bash", "sh"}:
             continue
-        directories = [i for i, line in enumerate(lines)
+        directories = [i for i, line in enumerate(metadata)
                        if re.match(r"^(?:      - |        )working-directory:", line)]
         if len(directories) > 1:
             continue
@@ -387,7 +457,7 @@ def _pytest_owner_nodes(body: str, workflow: str = "") -> set[str]:
                 continue
         if effective_directory is not None and effective_directory not in {".", "./"}:
             continue
-        runs = [i for i, line in enumerate(lines)
+        runs = [i for i, line in enumerate(metadata)
                 if re.match(r"^(?:      - |        )run: ", line)]
         if len(runs) != 1:
             continue
@@ -554,6 +624,9 @@ def test_capability_ownership_accepts_exact_pytest_arguments(step: str) -> None:
     " false",
     " ${{ false }}",
     "  false # disabled job cannot own evidence",
+    "${{ null }}", "${{ -0 }}", "${{ '' }}", "${{ 0.0 }}",
+    "null", "-0", "''", '""', "False", "FALSE", "!!bool false",
+    "${{ false && true }}", "${{ github.event.does_not_exist }}",
     "0 # disabled job cannot own evidence",
     "'false' # disabled job cannot own evidence",
     '"false" # disabled job cannot own evidence',
@@ -569,7 +642,11 @@ def test_capability_ownership_rejects_disabled_jobs(condition: str) -> None:
     )
 
 
-@pytest.mark.parametrize("condition", ["true # false", "${{ true }} # false"])
+@pytest.mark.parametrize("condition", [
+    "true # false", "${{ true }} # false", " true",
+    "${{ github.event_name != 'pull_request' || "
+    "(!github.event.pull_request.draft && github.event.action != 'closed') }}",
+])
 def test_capability_ownership_accepts_enabled_job_with_comment(condition: str) -> None:
     workflow = (
         f"jobs:\n  gpu-smoke:\n    if: {condition}\n    steps:\n"
@@ -664,6 +741,116 @@ def test_capability_ownership_accepts_effective_root_directory(
     workflow += f"    steps:\n      - run: pytest {_CAPABILITY_NODE}\n"
     if step_directory:
         workflow += f"        working-directory: {step_directory}\n"
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    ) == []
+
+
+@pytest.mark.parametrize("quote", ["'", '"', ""])
+@pytest.mark.parametrize("separator", ["", " ", "  "])
+@pytest.mark.parametrize("key,value,scope", [
+    ("shell", "python", "step"),
+    ("shell", "python", "job"),
+    ("shell", "python", "workflow"),
+    ("working-directory", "other", "step"),
+    ("working-directory", "other", "job"),
+    ("working-directory", "other", "workflow"),
+    ("if", "false", "step"),
+    ("if", "false", "job"),
+])
+def test_capability_ownership_rejects_quoted_metadata_keys(
+    quote: str, separator: str, key: str, value: str, scope: str,
+) -> None:
+    setting = f"{quote}{key}{quote}{separator}: {value}"
+    workflow = f"defaults:\n  run:\n    {setting}\n" if scope == "workflow" else ""
+    workflow += "jobs:\n  gpu-smoke:\n"
+    if scope == "job":
+        if key == "if":
+            workflow += f"    {setting}\n"
+        else:
+            workflow += f"    defaults:\n      run:\n        {setting}\n"
+    workflow += f"    steps:\n      - run: pytest {_CAPABILITY_NODE}\n"
+    if scope == "step":
+        workflow += f"        {setting}\n"
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    )
+
+
+@pytest.mark.parametrize("key", [r'"sh\u0065ll"', r'"working\u002ddirectory"'])
+def test_capability_ownership_rejects_escaped_metadata_keys(key: str) -> None:
+    workflow = (
+        f"jobs:\n  gpu-smoke:\n    steps:\n      - run: pytest {_CAPABILITY_NODE}\n"
+        f"        {key}: other\n"
+    )
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    )
+
+
+@pytest.mark.parametrize("key,value,scope", [
+    ("shell", "python", "step"), ("shell", "python", "job"),
+    ("shell", "python", "workflow"),
+    ("working-directory", "other", "step"),
+    ("working-directory", "other", "job"),
+    ("working-directory", "other", "workflow"),
+    ("if", "false", "step"), ("if", "false", "job"),
+])
+@pytest.mark.parametrize("form", ["explicit", "tagged", "anchored", "merge"])
+def test_capability_ownership_rejects_unsupported_mapping_structure(
+    key: str, value: str, scope: str, form: str,
+) -> None:
+    depth = 8 if scope == "step" or (scope == "job" and key != "if") else 4
+    indent = " " * depth
+    settings = {
+        "explicit": f"{indent}? {key}\n{indent}: {value}\n",
+        "tagged": f"{indent}!!str {key}: {value}\n",
+        "anchored": f"{indent}&setting {key}: {value}\n",
+        "merge": f"{indent}<<: {{{key}: {value}}}\n",
+    }
+    setting = settings[form]
+    workflow = "defaults:\n  run:\n" + setting if scope == "workflow" else ""
+    workflow += "jobs:\n  gpu-smoke:\n"
+    if scope == "job":
+        workflow += setting if key == "if" else "    defaults:\n      run:\n" + setting
+    workflow += f"    steps:\n      - run: pytest {_CAPABILITY_NODE}\n"
+    if scope == "step":
+        workflow += setting
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    )
+
+
+def test_capability_ownership_does_not_rewrite_literal_run_content() -> None:
+    workflow = (
+        "jobs:\n  gpu-smoke:\n    steps:\n      - run: |\n"
+        "          # !!str shell: python\n"
+        f"          pytest {_CAPABILITY_NODE}\n"
+        f"      - run: pytest {_CAPABILITY_NODE}\n"
+    )
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    ) == []
+
+
+@pytest.mark.parametrize("actual_job", ["actual", "gpu-smoke"])
+def test_capability_ownership_cannot_borrow_job_from_scalar(actual_job: str) -> None:
+    workflow = (
+        "name: |\n  gpu-smoke:\n    steps:\n"
+        f"      - run: pytest {_CAPABILITY_NODE}\n"
+        f"jobs:\n  {actual_job}:\n    steps:\n      - run: true\n"
+    )
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    )
+
+
+def test_capability_ownership_real_job_with_scalar_lookalike() -> None:
+    workflow = (
+        "name: |\n  gpu-smoke:\n    steps:\n      - run: true\n"
+        "jobs:\n  gpu-smoke:\n    steps:\n"
+        f"      - run: pytest {_CAPABILITY_NODE}\n"
+    )
     assert _capability_ownership_violations(
         f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
     ) == []
