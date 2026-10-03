@@ -42,6 +42,7 @@ from fast_mlsirm.remote_exec import (
     admit_remote_job_internal_shard,
     derive_index_seed,
     envelope_fingerprint,
+    result_identity_sha256,
 )
 
 _SHA = "a" * 64
@@ -90,7 +91,7 @@ def _commit_sqlite_candidate(database: str, candidate: str, start, result_queue)
             cross_host_execution=False,
         ),
         input_identity_sha256=fingerprint,
-        output_identity_sha256=_SHA_C,
+        output_identity_sha256=result_identity_sha256({"candidate": candidate}),
         envelope_fingerprint=fingerprint,
         driver_host=socket.gethostname(),
         driver_pid=os.getpid(),
@@ -637,6 +638,268 @@ def test_ledger_rejects_another_envelopes_outcome_without_changing_store(
     assert ledger.commit_success(key, outcomes[0]) == outcomes[0]
     assert ledger.successful_count(key) == 1
     assert ledger.committed_success(key) == outcomes[0]
+
+
+@pytest.mark.parametrize("access", ["lookup", "commit", "executor"])
+def test_sqlite_ledger_rejects_legacy_miskeyed_success_without_dispatch(
+    tmp_path, monkeypatch, access: str,
+) -> None:
+    """Reject a row the pre-guard ledger could persist under another unit's key."""
+    from fast_mlsirm import remote_exec
+
+    payload: dict[str, object] = dict(_MC_PAYLOAD)
+    manifest = _payload_manifest(payload)
+    expected = _envelope(unit_index=0, manifest=manifest)
+    unrelated = _envelope(unit_index=1, manifest=manifest)
+    outcomes = LoopbackExecutor().run_batch(
+        (expected, unrelated),
+        lambda envelope, seed: {"unit_index": envelope.unit_index, "seed": seed},
+        worker_manifest=manifest,
+    )
+    key = envelope_fingerprint(expected)
+    database = tmp_path / "legacy-outcomes.sqlite3"
+    ledger = SQLiteOutcomeCommitLedger(database)
+    stored_json = json.dumps(outcomes[1].to_dict())
+    connection = sqlite3.connect(database)
+    try:
+        with connection:
+            connection.execute(
+                "INSERT INTO successful_outcomes (fingerprint, outcome_json) VALUES (?, ?)",
+                (key, stored_json),
+            )
+    finally:
+        connection.close()
+    dispatched = []
+
+    def no_dispatch(*args, **kwargs):
+        dispatched.append(True)
+        raise AssertionError("invalid stored identity must fail before worker dispatch")
+
+    monkeypatch.setattr(remote_exec, "_invoke_worker_process", no_dispatch)
+    try:
+        with pytest.raises(ValueError, match="stored outcome fingerprint does not match commit key"):
+            if access == "lookup":
+                ledger.committed_success(key)
+            elif access == "commit":
+                ledger.commit_success(key, outcomes[0])
+            else:
+                SubprocessExecutor(socket.gethostname(), ledger=ledger).run_batch(
+                    (expected,), worker_manifest=manifest, payload=_MC_PAYLOAD
+                )
+    finally:
+        connection = sqlite3.connect(database)
+        try:
+            rows = connection.execute(
+                "SELECT fingerprint, outcome_json FROM successful_outcomes"
+            ).fetchall()
+        finally:
+            connection.close()
+        assert rows == [(key, stored_json)]
+        assert dispatched == []
+
+
+@pytest.mark.parametrize("access", ["lookup", "commit", "executor"])
+@pytest.mark.parametrize("state", ["completed", "failed"])
+def test_sqlite_success_readback_requires_completed_state(
+    tmp_path, monkeypatch, access: str, state: str,
+) -> None:
+    """Reject failed success rows without mutation or worker dispatch."""
+    from dataclasses import replace
+    from fast_mlsirm import remote_exec
+
+    payload: dict[str, object] = dict(_MC_PAYLOAD)
+    manifest = _payload_manifest(payload)
+    envelope = _envelope(unit_index=0, manifest=manifest)
+    valid = LoopbackExecutor().run_batch(
+        (envelope,), lambda envelope, seed: {"objective": 1.0},
+        worker_manifest=manifest,
+    )[0]
+    stored_outcome = valid if state == "completed" else replace(
+        valid, delivery_state=RemoteJobDeliveryState.FAILED, result=None,
+        output_identity_sha256=None, error_message="stored worker failure",
+    )
+    key = envelope_fingerprint(envelope)
+    stored_json = json.dumps(stored_outcome.to_dict())
+    database = tmp_path / "success-state.sqlite3"
+    ledger = SQLiteOutcomeCommitLedger(database)
+    connection = sqlite3.connect(database)
+    try:
+        with connection:
+            connection.execute(
+                "INSERT INTO successful_outcomes VALUES (?, ?)", (key, stored_json),
+            )
+    finally:
+        connection.close()
+    dispatched = []
+
+    def no_dispatch(*args, **kwargs):
+        dispatched.append(True)
+        raise AssertionError("stored success must be validated before dispatch")
+
+    monkeypatch.setattr(remote_exec, "_invoke_worker_process", no_dispatch)
+
+    def read():
+        if access == "lookup":
+            return ledger.committed_success(key)
+        if access == "commit":
+            return ledger.commit_success(key, valid)
+        return SubprocessExecutor(socket.gethostname(), ledger=ledger).run_batch(
+            (envelope,), worker_manifest=manifest, payload=_MC_PAYLOAD,
+        )[0]
+
+    try:
+        if state == "completed":
+            assert read() == valid
+        else:
+            with pytest.raises(ValueError, match="stored successful outcome must be completed"):
+                read()
+    finally:
+        connection = sqlite3.connect(database)
+        try:
+            assert connection.execute("SELECT * FROM successful_outcomes").fetchall() == [
+                (key, stored_json)
+            ]
+        finally:
+            connection.close()
+        assert dispatched == []
+
+
+def test_shared_outcome_decoder_preserves_terminal_failure() -> None:
+    """Generic decoding must still support failure records used by stream adapters."""
+    from fast_mlsirm import remote_exec
+
+    envelope = _envelope()
+    failure = LoopbackExecutor().run_batch(
+        (envelope,), lambda envelope, seed: (_ for _ in ()).throw(ValueError("failure")),
+        worker_manifest=envelope.manifest,
+    )[0]
+    assert failure.delivery_state is RemoteJobDeliveryState.FAILED
+    assert remote_exec._outcome_from_dict(
+        failure.to_dict(), fingerprint=envelope_fingerprint(envelope),
+    ) == failure
+
+
+@pytest.mark.parametrize("access", ["lookup", "commit", "executor"])
+@pytest.mark.parametrize(
+    "case", ["valid", "tamper", "nan", "inf", "-inf", "forged_nan", "forged_nested_inf"],
+)
+def test_sqlite_ledger_validates_stored_result_before_reuse(
+    tmp_path, monkeypatch, access: str, case: str,
+) -> None:
+    """Reject corrupted result bytes without replacing the row or dispatching."""
+    from fast_mlsirm import remote_exec
+
+    payload: dict[str, object] = dict(_MC_PAYLOAD)
+    manifest = _payload_manifest(payload)
+    envelope = _envelope(unit_index=0, manifest=manifest)
+    outcome = LoopbackExecutor().run_batch(
+        (envelope,), lambda envelope, seed: {"objective": 1.0},
+        worker_manifest=manifest,
+    )[0]
+    stored = outcome.to_dict()
+    corruptions = {
+        "tamper": 2.0, "nan": float("nan"), "inf": float("inf"),
+        "-inf": -float("inf"), "forged_nan": float("nan"),
+        "forged_nested_inf": {"nested": [float("inf")]},
+    }
+    if case != "valid":
+        stored["result"] = {"objective": corruptions[case]}
+        if case.startswith("forged_"):
+            stored["output_identity_sha256"] = hashlib.sha256(
+                json.dumps(
+                    stored["result"], ensure_ascii=False, sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+    stored_json = json.dumps(stored)
+    key = envelope_fingerprint(envelope)
+    database = tmp_path / "corrupted-result.sqlite3"
+    ledger = SQLiteOutcomeCommitLedger(database)
+    connection = sqlite3.connect(database)
+    try:
+        with connection:
+            connection.execute(
+                "INSERT INTO successful_outcomes VALUES (?, ?)", (key, stored_json),
+            )
+    finally:
+        connection.close()
+    dispatched = []
+
+    def no_dispatch(*args, **kwargs):
+        dispatched.append(True)
+        raise AssertionError("stored result must be checked before worker dispatch")
+
+    monkeypatch.setattr(remote_exec, "_invoke_worker_process", no_dispatch)
+
+    def read():
+        if access == "lookup":
+            return ledger.committed_success(key)
+        if access == "commit":
+            return ledger.commit_success(key, outcome)
+        return SubprocessExecutor(socket.gethostname(), ledger=ledger).run_batch(
+            (envelope,), worker_manifest=manifest, payload=_MC_PAYLOAD,
+        )[0]
+
+    try:
+        if case == "valid":
+            assert read() == outcome
+        else:
+            with pytest.raises(ValueError, match="stored completed result"):
+                read()
+    finally:
+        connection = sqlite3.connect(database)
+        try:
+            rows = connection.execute("SELECT * FROM successful_outcomes").fetchall()
+        finally:
+            connection.close()
+        assert rows == [(key, stored_json)]
+        assert dispatched == []
+
+
+@pytest.mark.parametrize("occupied", [False, True])
+@pytest.mark.parametrize("case", ["tamper", "forged_nan", "forged_nested_inf"])
+def test_sqlite_ledger_rejects_invalid_result_before_new_commit(
+    tmp_path, occupied: bool, case: str,
+) -> None:
+    """A rejected commit must not persist corruption or hide behind a winner."""
+    from dataclasses import replace
+
+    envelope = _envelope()
+    valid = LoopbackExecutor().run_batch(
+        (envelope,), lambda envelope, seed: {"objective": 1.0},
+        worker_manifest=envelope.manifest,
+    )[0]
+    result = {
+        "tamper": {"objective": 2.0},
+        "forged_nan": {"objective": float("nan")},
+        "forged_nested_inf": {"objective": {"nested": [float("inf")]}},
+    }[case]
+    digest = valid.output_identity_sha256
+    if case.startswith("forged_"):
+        digest = hashlib.sha256(
+            json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            .encode("utf-8")
+        ).hexdigest()
+    candidate = replace(valid, result=result, output_identity_sha256=digest)
+    database = tmp_path / "invalid-new-result.sqlite3"
+    ledger = SQLiteOutcomeCommitLedger(database)
+    key = valid.envelope_fingerprint
+    if occupied:
+        ledger.commit_success(key, valid)
+    connection = sqlite3.connect(database)
+    try:
+        before = connection.execute("SELECT * FROM successful_outcomes").fetchall()
+    finally:
+        connection.close()
+    try:
+        with pytest.raises(ValueError, match="stored completed result"):
+            ledger.commit_success(key, candidate)
+    finally:
+        connection = sqlite3.connect(database)
+        try:
+            assert connection.execute("SELECT * FROM successful_outcomes").fetchall() == before
+        finally:
+            connection.close()
 
 
 def test_sqlite_ledger_closes_connections_after_repeated_calls(tmp_path, monkeypatch) -> None:

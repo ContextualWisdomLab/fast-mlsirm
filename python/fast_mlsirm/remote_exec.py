@@ -664,7 +664,7 @@ class SQLiteOutcomeCommitLedger:
                 "SELECT outcome_json FROM successful_outcomes WHERE fingerprint = ?",
                 (key,),
             ).fetchone()
-        return None if row is None else _outcome_from_dict(json.loads(row[0]))
+        return None if row is None else _successful_outcome_from_dict(json.loads(row[0]), fingerprint=key)
 
     def commit_success(self, fingerprint: str, outcome: RemoteJobOutcome) -> RemoteJobOutcome:
         """Atomically commit the first success and return the durable winner."""
@@ -673,6 +673,9 @@ class SQLiteOutcomeCommitLedger:
             raise ValueError("commit_success requires a completed outcome")
         if outcome.envelope_fingerprint != key:
             raise ValueError("outcome fingerprint does not match commit key")
+        # Validate the candidate before INSERT OR IGNORE: otherwise invalid new
+        # results can be stored, or hidden by an existing valid winner.
+        _outcome_from_dict(outcome.to_dict(), fingerprint=key)
         payload = json.dumps(
             outcome.to_dict(),
             ensure_ascii=False,
@@ -691,13 +694,46 @@ class SQLiteOutcomeCommitLedger:
             ).fetchone()
         if row is None:  # pragma: no cover - SQLite transaction invariant
             raise RuntimeError("successful outcome commit was not persisted")
-        return _outcome_from_dict(json.loads(row[0]))
+        return _successful_outcome_from_dict(json.loads(row[0]), fingerprint=key)
 
 
-def _outcome_from_dict(payload: object) -> RemoteJobOutcome:
-    """Restore one package-produced outcome from durable JSON."""
+def _successful_outcome_from_dict(payload: object, *, fingerprint: str) -> RemoteJobOutcome:
+    """Restore a completed ledger winner without narrowing generic outcome decoding."""
+    outcome = _outcome_from_dict(payload, fingerprint=fingerprint)
+    if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
+        raise ValueError("stored successful outcome must be completed")
+    return outcome
+
+
+def _outcome_from_dict(payload: object, *, fingerprint: str) -> RemoteJobOutcome:
+    """Restore durable JSON only after checking its key and result identity.
+
+    Completed results retain the package's canonical digest encoding, with
+    nonfinite numbers rejected (Bray, 2017, Section 6, p. 7; Section 10,
+    p. 10). Python's permissive encoding is explicitly disabled (Python
+    Software Foundation, n.d., "JSONEncoder", ``allow_nan`` parameter).
+    Digest consistency does not establish worker attestation or convergence.
+
+    References:
+        Bray, T. (Ed.). (2017). The JavaScript Object Notation (JSON) data
+            interchange format (RFC 8259). Internet Engineering Task Force.
+        Python Software Foundation. (n.d.). json—JSON encoder and decoder.
+            Python 3.14 documentation.
+    """
     if type(payload) is not dict or type(payload.get("provenance")) is not dict:
         raise ValueError("stored outcome must be a package outcome mapping")
+    if payload.get("envelope_fingerprint") != fingerprint:
+        raise ValueError("stored outcome fingerprint does not match commit key")
+    if payload.get("delivery_state") == RemoteJobDeliveryState.COMPLETED.value:
+        try:
+            encoded_result = json.dumps(
+                payload.get("result"), ensure_ascii=False, sort_keys=True,
+                separators=(",", ":"), allow_nan=False,
+            ).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("stored completed result is not finite JSON") from exc
+        if payload.get("output_identity_sha256") != hashlib.sha256(encoded_result).hexdigest():
+            raise ValueError("stored completed result does not match output identity")
     provenance = payload["provenance"]
     return RemoteJobOutcome(
         run_id=payload["run_id"],
