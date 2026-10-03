@@ -72,7 +72,7 @@ def test_receipt_reports_missing_binding_honestly(monkeypatch) -> None:
     """Without the FIPC binding the receipt says so instead of hiding a TypeError."""
     module = _load_script()
     monkeypatch.delattr(module._core, "fit_two_tier_grm_fipc", raising=False)
-    receipt = module.build_receipt(consumer_sha=None, build_source_sha=None)
+    receipt = module.build_receipt(consumer_sha=None, build_source_sha=None, q_primary=7, q_specific=7, q_expected_raw=31)
 
     _assert_schema(receipt)
     assert receipt["row_order_diagnosis"] == "binding_unavailable"
@@ -88,7 +88,7 @@ def test_rank_deficient_anchor_fails_closed_before_fitting(monkeypatch) -> None:
     module = _load_script()
     monkeypatch.setattr(module, "ANCHOR", np.array([1, 1, 1, 0, 0, 0], dtype=bool))
     monkeypatch.setattr(module, "_core", _fake_core(module))
-    receipt = module.build_receipt(consumer_sha=None, build_source_sha=None)
+    receipt = module.build_receipt(consumer_sha=None, build_source_sha=None, q_primary=7, q_specific=7, q_expected_raw=31)
 
     _assert_schema(receipt)
     assert receipt["anchored_primary_rank"] == 1
@@ -109,7 +109,7 @@ def test_flattened_binding_outputs_are_reshaped_per_person(monkeypatch) -> None:
     """theta_p_eap arrives as n_persons*n_primary; the gates must work per person."""
     module = _load_script()
     monkeypatch.setattr(module, "_core", _fake_core(module))
-    receipt = module.build_receipt(consumer_sha=None, build_source_sha=None)
+    receipt = module.build_receipt(consumer_sha=None, build_source_sha=None, q_primary=7, q_specific=7, q_expected_raw=31)
 
     _assert_schema(receipt)
     assert "fipc_fit_error" not in receipt, receipt.get("fipc_fit_error")
@@ -138,7 +138,7 @@ def test_reference_requires_convergence_before_focal_fit(monkeypatch, convergenc
     fake.fit_two_tier_grm = reference
     fake.fit_two_tier_grm_fipc = lambda *args, **kwargs: pytest.fail("invalid reference reached focal fitting")
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["row_order_diagnosis"] == "fit_error"
     assert receipt["all_pass"] is False
 
@@ -162,7 +162,7 @@ def test_nonconverged_permutation_cannot_certify_row_order(monkeypatch) -> None:
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["row_order_max_abs"] == 0.0
     assert receipt["row_order"] is False
     assert receipt["row_order_diagnosis"] == "fit_error"
@@ -190,7 +190,7 @@ def test_nonfinite_specific_loading_cannot_pass_receipt(monkeypatch, invalid, ca
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     json.dumps(receipt, allow_nan=False)
     assert receipt["row_order_diagnosis"] == "fit_error"
     assert receipt["all_pass"] is False
@@ -211,7 +211,7 @@ def test_truthy_convergence_cannot_certify_responses(monkeypatch, convergence) -
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["responses_fit_eap_expected_raw"] is False
     assert receipt["row_order"] is False
     assert receipt["all_pass"] is False
@@ -238,7 +238,7 @@ def test_nonfinite_fit_output_cannot_pass_receipt(monkeypatch, field, call_numbe
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     json.dumps(receipt, allow_nan=False)
     assert receipt["row_order_diagnosis"] == "fit_error"
     assert receipt["all_pass"] is False
@@ -264,7 +264,7 @@ def test_missing_permutation_convergence_fails_with_finite_diagnostics(monkeypat
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["row_order_diagnosis"] == "fit_error"
     assert receipt["row_order"] is False
     assert receipt["row_order_max_abs"] == 0.0
@@ -294,7 +294,7 @@ def test_primary_moment_shape_and_finiteness_fail_closed(monkeypatch, field, inv
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     json.dumps(receipt, allow_nan=False)
     assert receipt["row_order_diagnosis"] == "fit_error"
     assert receipt["all_pass"] is False
@@ -321,7 +321,7 @@ def test_nonpositive_or_nonfinite_primary_sd_fails_closed(monkeypatch, invalid, 
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["row_order_diagnosis"] == "fit_error"
     assert receipt["all_pass"] is False
 
@@ -339,7 +339,7 @@ def test_non_unit_focal_prior_detects_shrinking_sd(monkeypatch) -> None:
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(consumer_sha=None, build_source_sha=None)
+    receipt = module.build_receipt(consumer_sha=None, build_source_sha=None, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["non_unit_focal_prior"] is True
 
 
@@ -358,7 +358,7 @@ def test_gpu_request_fails_closed_on_cpu_fallback(monkeypatch) -> None:
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(consumer_sha=None, build_source_sha=None, device="gpu")
+    receipt = module.build_receipt(consumer_sha=None, build_source_sha=None, device="gpu", q_primary=7, q_specific=7, q_expected_raw=31)
 
     _assert_schema(receipt)
     assert set(seen) == {"gpu"}
@@ -390,7 +390,7 @@ def test_gpu_receipt_requires_dispatch_in_every_valid_fit(monkeypatch, call_numb
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None, device="gpu")
+    receipt = module.build_receipt(None, None, device="gpu", q_primary=7, q_specific=7, q_expected_raw=31)
     assert calls == 3
     assert receipt["gpu_execution_used"] is False
     assert receipt["gpu_backend"] is None
@@ -412,7 +412,7 @@ def test_gpu_receipt_accepts_dispatch_in_every_valid_fit(monkeypatch) -> None:
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None, device="gpu")
+    receipt = module.build_receipt(None, None, device="gpu", q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["gpu_execution_used"] is True
     assert receipt["gpu_backend"] == "Metal"
     assert receipt["all_pass"] is True
@@ -439,7 +439,7 @@ def test_auto_reports_all_call_dispatch_without_rejecting_fallback(monkeypatch, 
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None, device="auto")
+    receipt = module.build_receipt(None, None, device="auto", q_primary=7, q_specific=7, q_expected_raw=31)
     assert calls == 3
     assert receipt["gpu_execution_used"] is (fallback_call is None)
     assert receipt["gpu_backend"] == ("Metal" if fallback_call is None else None)
@@ -462,7 +462,7 @@ def test_nonstring_gpu_backend_cannot_pass_schema_receipt(monkeypatch, device) -
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None, device=device)
+    receipt = module.build_receipt(None, None, device=device, q_primary=7, q_specific=7, q_expected_raw=31)
     json.dumps(receipt, allow_nan=False)
     assert receipt["gpu_backend"] is None
     assert receipt["gpu_execution_used"] is None
@@ -495,7 +495,7 @@ def test_dispatch_metadata_schema_checks_every_valid_call(monkeypatch, device, c
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None, device=device)
+    receipt = module.build_receipt(None, None, device=device, q_primary=7, q_specific=7, q_expected_raw=31)
     json.dumps(receipt, allow_nan=False)
     assert receipt["all_pass"] is False
     assert receipt["row_order_diagnosis"] == "fit_error"
@@ -540,7 +540,7 @@ def test_anchor_gate_checks_both_refits(monkeypatch, field, call_number) -> None
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["anchor_rows_fixed"] is False
     assert receipt["all_pass"] is False
     assert receipt["row_order_max_abs"] == 0.0
@@ -566,7 +566,7 @@ def test_specific_prior_gate_checks_both_refits(monkeypatch, call_number) -> Non
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["orthogonal_specific_prior_fixed"] is False
     assert receipt["all_pass"] is False
     assert receipt["row_order_max_abs"] == 0.0
@@ -584,7 +584,7 @@ def test_anchor_gate_detects_changed_specific_loading(monkeypatch) -> None:
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["anchor_rows_fixed"] is False
     assert receipt["all_pass"] is False
 
@@ -596,7 +596,7 @@ def test_invalid_revision_is_rejected_before_receipt_work(monkeypatch, field, in
     monkeypatch.setattr(module, "_sha256", lambda _: pytest.fail("invalid revision reached receipt work"))
     revisions = {"consumer_sha": None, "build_source_sha": None, field: invalid}
     with pytest.raises(ValueError, match="40 lowercase hexadecimal"):
-        module.build_receipt(**revisions)
+        module.build_receipt(**revisions, q_primary=7, q_specific=7, q_expected_raw=31)
 
 
 @pytest.mark.parametrize("field", ["theta_p_eap", "primary_mean", "primary_sd", "a_primary"])
@@ -612,7 +612,7 @@ def test_nonfinite_fit_metrics_remain_failed_standard_json(monkeypatch, field) -
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     json.dumps(receipt, allow_nan=False)
     _assert_schema(receipt)
     assert receipt["row_order_diagnosis"] == "fit_error"
@@ -633,7 +633,7 @@ def test_wrong_map_gate_does_not_certify_runtime_errors(monkeypatch, error_type)
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["wrong_model_reject"] is False
     assert receipt["all_pass"] is False
 
@@ -651,7 +651,7 @@ def test_wrong_map_gate_certifies_documented_validation(monkeypatch) -> None:
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["wrong_model_reject"] is True
     assert receipt["all_pass"] is True
 
@@ -662,7 +662,7 @@ def test_invalid_device_is_rejected_before_receipt_work(monkeypatch, device) -> 
     module = _load_script()
     monkeypatch.setattr(module, "_sha256", lambda _: pytest.fail("invalid device reached receipt work"))
     with pytest.raises(ValueError, match="Device must be one of cpu, gpu, auto"):
-        module.build_receipt(None, None, device=device)
+        module.build_receipt(None, None, device=device, q_primary=7, q_specific=7, q_expected_raw=31)
 
 
 @pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
@@ -682,7 +682,7 @@ def test_valid_device_enum_preserves_receipt_acceptance(monkeypatch, device) -> 
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None, device=device)
+    receipt = module.build_receipt(None, None, device=device, q_primary=7, q_specific=7, q_expected_raw=31)
     _assert_schema(receipt)
     assert receipt["device_requested"] == device
     assert receipt["all_pass"] is True
@@ -691,7 +691,7 @@ def test_valid_device_enum_preserves_receipt_acceptance(monkeypatch, device) -> 
 def test_valid_revision_labels_and_null_handling_are_preserved(monkeypatch) -> None:
     module = _load_script()
     monkeypatch.setattr(module, "_core", _fake_core(module))
-    receipt = module.build_receipt("a" * 40, "0" * 40)
+    receipt = module.build_receipt("a" * 40, "0" * 40, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["sha"] == "a" * 40
     assert receipt["build_source_sha"] == "0" * 40
     assert receipt["build_source_sha_present"] is True
@@ -700,8 +700,9 @@ def test_valid_revision_labels_and_null_handling_are_preserved(monkeypatch) -> N
 def test_cli_refuses_unsanitized_nonfinite_json(monkeypatch, capsys) -> None:
     module = _load_script()
     monkeypatch.setattr(module, "_arguments", lambda: SimpleNamespace(
-        consumer_sha=None, build_source_sha=None, device="cpu"))
-    monkeypatch.setattr(module, "build_receipt", lambda *args: {"row_order_max_abs": np.nan})
+        consumer_sha=None, build_source_sha=None, device="cpu",
+        q_primary=7, q_specific=7, q_expected_raw=31))
+    monkeypatch.setattr(module, "build_receipt", lambda *args, **kwargs: {"row_order_max_abs": np.nan})
     with pytest.raises(ValueError, match="JSON compliant"):
         module.main()
     assert capsys.readouterr().out == ""
@@ -731,7 +732,76 @@ def test_budget_failure_requires_documented_nonconvergence(monkeypatch, reason, 
 
     fake.fit_two_tier_grm_fipc = fipc
     monkeypatch.setattr(module, "_core", fake)
-    receipt = module.build_receipt(None, None)
+    receipt = module.build_receipt(None, None, q_primary=7, q_specific=7, q_expected_raw=31)
     assert receipt["convergence_failure"] is expected
     if not expected:
         assert receipt["all_pass"] is False
+
+
+BUDGET_OUTPUT_FIELDS = (
+    "theta_p_eap", "a_primary", "a_specific", "threshold", "primary_mean", "primary_sd",
+)
+
+
+def _budget_output_receipt(monkeypatch, device, field=None, missing=False):
+    """Mutate only the third valid call, keeping both row-order fits valid."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = []
+
+    def fipc(y, *args, **kwargs):
+        assert kwargs.get("device", "cpu") == device
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError(
+                "primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required"
+            )
+        result = original(y, *args)
+        calls.append((args[14], args[12:14]))
+        result.update(
+            gpu_execution_used=device != "cpu",
+            gpu_backend="Metal" if device != "cpu" else None,
+        )
+        if len(calls) == 3 and field is not None:
+            assert result["converged"] is False
+            assert result["termination_reason"] == "max_iter_reached"
+            if missing:
+                result.pop(field)
+            else:
+                result[field][0] = np.nan
+        return result
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(
+        None, None, device=device, q_primary=121, q_specific=121, q_expected_raw=121,
+    )
+    _assert_schema(receipt)
+    json.dumps(receipt, allow_nan=False)
+    assert calls == [(100, (121, 121)), (100, (121, 121)), (1, (121, 121))]
+    return receipt
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+@pytest.mark.parametrize("field", BUDGET_OUTPUT_FIELDS)
+def test_nonfinite_budget_return_cannot_certify_negative_control(monkeypatch, device, field):
+    receipt = _budget_output_receipt(monkeypatch, device, field=field)
+    assert receipt["all_pass"] is False, "nonfinite third-call arrays certified all_pass"
+    assert receipt["convergence_failure"] is False
+    assert receipt["row_order_diagnosis"] == "fit_error"
+
+
+@pytest.mark.parametrize("field", BUDGET_OUTPUT_FIELDS)
+def test_missing_budget_field_cannot_certify_negative_control(monkeypatch, field):
+    receipt = _budget_output_receipt(monkeypatch, "cpu", field=field, missing=True)
+    assert receipt["all_pass"] is False, "incomplete third-call arrays certified all_pass"
+    assert receipt["convergence_failure"] is False
+    assert receipt["row_order_diagnosis"] == "fit_error"
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+def test_finite_documented_budget_negative_remains_valid(monkeypatch, device):
+    receipt = _budget_output_receipt(monkeypatch, device)
+    assert receipt["all_pass"] is True
+    assert receipt["convergence_failure"] is True
+    assert receipt["row_order_diagnosis"] == "pass"

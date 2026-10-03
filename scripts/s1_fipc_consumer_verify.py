@@ -125,7 +125,10 @@ def simulate(seed: int, mean: np.ndarray, scale: np.ndarray) -> np.ndarray:
     return y
 
 
-def call_fipc(y: np.ndarray, fixed: dict[str, np.ndarray], device: str = "cpu", **kwargs):
+def call_fipc(
+    y: np.ndarray, fixed: dict[str, np.ndarray], device: str = "cpu", *,
+    q_primary: int, q_specific: int, **kwargs,
+):
     observed = np.ones(y.size, dtype=bool)
     # Pass device only when asked, so bindings without the argument still work.
     extra = {} if device == "cpu" else {"device": device}
@@ -134,7 +137,7 @@ def call_fipc(y: np.ndarray, fixed: dict[str, np.ndarray], device: str = "cpu", 
         kwargs.get("primary_map", PRIMARY_MAP).reshape(-1), SPECIFIC_MAP,
         N_PERSONS, N_ITEMS, N_PRIMARY, N_SPECIFIC, N_CAT, ANCHOR,
         fixed["a_primary"], fixed["a_specific"], fixed["threshold"],
-        kwargs.get("q_primary", 7), kwargs.get("q_specific", 7),
+        q_primary, q_specific,
         kwargs.get("max_iter", 100), kwargs.get("tol", 1e-5),
         kwargs.get("newton_iter", 5), kwargs.get("ridge", 1e-8),
         kwargs.get("estimate_specific_vars", False),
@@ -150,8 +153,8 @@ def call_fipc(y: np.ndarray, fixed: dict[str, np.ndarray], device: str = "cpu", 
     return fit
 
 
-def expected_raw(theta: np.ndarray, fit: dict) -> np.ndarray:
-    nodes, weights = np.polynomial.hermite.hermgauss(31)
+def expected_raw(theta: np.ndarray, fit: dict, *, q_specific: int) -> np.ndarray:
+    nodes, weights = np.polynomial.hermite.hermgauss(q_specific)
     nodes = nodes * np.sqrt(2.0)
     weights = weights / np.sqrt(np.pi)
     out = np.zeros(theta.shape[0])
@@ -186,6 +189,9 @@ def _arguments() -> argparse.Namespace:
         default=os.environ.get("FIPC_CONSUMER_SHA") or _git_sha(),
         help="consumer checkout revision (or FIPC_CONSUMER_SHA; defaults to git HEAD)",
     )
+    parser.add_argument("--q-primary", type=int, required=True)
+    parser.add_argument("--q-specific", type=int, required=True)
+    parser.add_argument("--q-expected-raw", type=int, required=True)
     return parser.parse_args()
 
 
@@ -196,23 +202,26 @@ GATES = (
 )
 
 
-def _fipc_gates(results: dict[str, object], device: str) -> None:
+def _fipc_gates(
+    results: dict[str, object], device: str, *,
+    q_primary: int, q_specific: int, q_expected_raw: int,
+) -> None:
     reference_y = simulate(SEED, np.zeros(N_PRIMARY), np.ones(N_PRIMARY))
     reference = _core.fit_two_tier_grm(
         reference_y.reshape(-1), np.ones(reference_y.size, dtype=bool),
         PRIMARY_MAP.reshape(-1), SPECIFIC_MAP, N_PERSONS, N_ITEMS, N_PRIMARY,
-        N_SPECIFIC, N_CAT, 7, 7, 100, 1e-5, 1, SEED,
+        N_SPECIFIC, N_CAT, q_primary, q_specific, 100, 1e-5, 1, SEED,
     )
     if reference.get("converged") is not True:
         raise ValueError("Reference calibration must report convergence before focal fitting.")
     fixed = {k: np.asarray(reference[k], dtype=np.float64) for k in ("a_primary", "a_specific", "threshold")}
     focal_y = simulate(SEED + 1, FOCAL_MEAN, FOCAL_SD)
-    fit = call_fipc(focal_y, fixed, device)
+    fit = call_fipc(focal_y, fixed, device, q_primary=q_primary, q_specific=q_specific)
     results["gpu_execution_used"] = fit.get("gpu_execution_used")
     results["gpu_backend"] = fit.get("gpu_backend")
     shaped = _shaped(fit, N_PERSONS)
     fit_converged = fit.get("converged") is True
-    results["responses_fit_eap_expected_raw"] = bool(fit_converged and np.isfinite(shaped["theta"]).all() and np.isfinite(expected_raw(shaped["theta"], shaped)).all())
+    results["responses_fit_eap_expected_raw"] = bool(fit_converged and np.isfinite(shaped["theta"]).all() and np.isfinite(expected_raw(shaped["theta"], shaped, q_specific=q_expected_raw)).all())
     # One seeded replicate: these are recovery errors, not Monte Carlo bias.
     results["focal_primary_mean_error"] = (np.asarray(fit["primary_mean"], dtype=np.float64) - FOCAL_MEAN).tolist()
     results["focal_primary_sd_error"] = (np.asarray(fit["primary_sd"], dtype=np.float64) - FOCAL_SD).tolist()
@@ -226,7 +235,7 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
     # scale; a scale change can go either way (the fixture's truth is 1.25, 0.8).
     results["non_unit_focal_prior"] = bool(np.max(np.abs(np.asarray(fit["primary_mean"]))) > 0.1 and np.max(np.abs(np.asarray(fit["primary_sd"]) - 1.0)) > 0.01)
     perm = np.random.default_rng(17).permutation(N_PERSONS)
-    perm_fit = call_fipc(focal_y[perm], fixed, device)
+    perm_fit = call_fipc(focal_y[perm], fixed, device, q_primary=q_primary, q_specific=q_specific)
     perm_shaped = _shaped(perm_fit, N_PERSONS)
     row_error = shaped["theta"][perm] - perm_shaped["theta"]
     results["row_order_max_abs"] = float(np.max(np.abs(row_error)))
@@ -243,7 +252,10 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
         for candidate in (shaped, perm_shaped)
         for key in ("a_primary", "a_specific", "threshold")
     )
-    fail = call_fipc(focal_y, fixed, device, max_iter=1)
+    fail = call_fipc(focal_y, fixed, device, q_primary=q_primary, q_specific=q_specific, max_iter=1)
+    # A budget-limited negative must still return valid finite item/EAP arrays;
+    # metadata alone cannot distinguish nonconvergence from corrupt output.
+    _shaped(fail, N_PERSONS)
     results["convergence_failure"] = bool(
         fail.get("converged") is False
         and fail.get("termination_reason") in {"max_iter_reached", "step_limited"}
@@ -264,7 +276,7 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
     bad_map = PRIMARY_MAP.copy()
     bad_map[:, 1] = False
     try:
-        call_fipc(focal_y, fixed, device, primary_map=bad_map, max_iter=10)
+        call_fipc(focal_y, fixed, device, q_primary=q_primary, q_specific=q_specific, primary_map=bad_map, max_iter=10)
         results["wrong_model_reject"] = False
     except ValueError as exc:
         results["wrong_model_reject"] = str(exc).startswith(
@@ -273,7 +285,8 @@ def _fipc_gates(results: dict[str, object], device: str) -> None:
 
 
 def build_receipt(
-    consumer_sha: str | None, build_source_sha: str | None, device: str = "cpu"
+    consumer_sha: str | None, build_source_sha: str | None, device: str = "cpu", *,
+    q_primary: int, q_specific: int, q_expected_raw: int,
 ) -> dict[str, object]:
     if not isinstance(device, str) or device not in {"cpu", "gpu", "auto"}:
         raise ValueError("Device must be one of cpu, gpu, auto")
@@ -316,7 +329,7 @@ def build_receipt(
         results["row_order_diagnosis"] = "binding_unavailable"
     else:
         try:
-            _fipc_gates(results, device)
+            _fipc_gates(results, device, q_primary=q_primary, q_specific=q_specific, q_expected_raw=q_expected_raw)
         except Exception as exc:
             results.update(dict.fromkeys(GATES, False))
             results["gpu_execution_used"] = None
@@ -354,7 +367,11 @@ def build_receipt(
 def main() -> None:
     args = _arguments()
     try:
-        receipt = build_receipt(args.consumer_sha, args.build_source_sha, args.device)
+        receipt = build_receipt(
+            args.consumer_sha, args.build_source_sha, args.device,
+            q_primary=args.q_primary, q_specific=args.q_specific,
+            q_expected_raw=args.q_expected_raw,
+        )
     except ValueError as exc:
         raise SystemExit(str(exc)) from None
     print(json.dumps(receipt, sort_keys=True, allow_nan=False))
