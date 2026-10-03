@@ -107,6 +107,8 @@ def _validate_contract_depth(content: str) -> None:
                 )
         elif char in "]}":
             depth -= 1
+            if depth < 0:
+                depth = 0
 
 
 def _contract_object(contract_json: str) -> dict[str, Any]:
