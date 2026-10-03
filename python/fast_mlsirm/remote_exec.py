@@ -25,6 +25,7 @@ complete call but must not be partitioned across index-derived split units.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import closing
 from dataclasses import dataclass
 from enum import Enum
 import hashlib
@@ -35,6 +36,7 @@ import math
 import re
 import shlex
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -71,6 +73,7 @@ class RemoteJobFamily(str, Enum):
     EM_M_STEP = "em_m_step"
     FIPC = "fipc"
     TWO_TIER = "two_tier"
+    BIFACTOR_BOOTSTRAP_REPLICATE = "bifactor_bootstrap_replicate"
 
 
 # These families may run remotely as complete calls. Only partitioning their
@@ -627,18 +630,185 @@ class OutcomeCommitLedger:
         return 1 if fingerprint in self._successful else 0
 
     def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None:
-        """Return the committed successful outcome for ``fingerprint``, if any."""
-        return self._successful.get(fingerprint)
+        """Return a winner only after revalidating its mutable result.
+
+        Finite JSON is required (Bray, 2017, Section 6, p. 7; Section 10,
+        p. 10), using the existing strict decoder rather than a new encoding
+        (Python Software Foundation, n.d., "JSONEncoder", ``allow_nan``).
+
+        References:
+            Bray, T. (Ed.). (2017). The JavaScript Object Notation (JSON) data
+                interchange format (RFC 8259). Internet Engineering Task Force.
+            Python Software Foundation. (n.d.). json—JSON encoder and decoder.
+                Python 3.14 documentation.
+        """
+        existing = self._successful.get(fingerprint)
+        if existing is not None:
+            _successful_outcome_from_dict(existing.to_dict(), fingerprint=fingerprint)
+        return existing
 
     def commit_success(self, fingerprint: str, outcome: RemoteJobOutcome) -> RemoteJobOutcome:
-        """Commit one successful outcome or return the prior commit without re-recording."""
+        """Validate the candidate and any prior winner before commit or reuse.
+
+        Finite JSON is required (Bray, 2017, Section 6, p. 7; Section 10,
+        p. 10), using the existing strict decoder rather than a new encoding
+        (Python Software Foundation, n.d., "JSONEncoder", ``allow_nan``).
+
+        References:
+            Bray, T. (Ed.). (2017). The JavaScript Object Notation (JSON) data
+                interchange format (RFC 8259). Internet Engineering Task Force.
+            Python Software Foundation. (n.d.). json—JSON encoder and decoder.
+                Python 3.14 documentation.
+        """
         if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
             raise ValueError("commit_success requires a completed outcome")
-        existing = self._successful.get(fingerprint)
+        if outcome.envelope_fingerprint != fingerprint:
+            raise ValueError("outcome fingerprint does not match commit key")
+        _successful_outcome_from_dict(outcome.to_dict(), fingerprint=fingerprint)
+        existing = self.committed_success(fingerprint)
         if existing is not None:
             return existing
         self._successful[fingerprint] = outcome
         return outcome
+
+
+class OutcomeCommitStore(Protocol):
+    """Successful-outcome store shared by remote execution backends."""
+
+    def successful_count(self, fingerprint: str) -> int: ...
+
+    def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None: ...
+
+    def commit_success(self, fingerprint: str, outcome: RemoteJobOutcome) -> RemoteJobOutcome: ...
+
+
+class SQLiteOutcomeCommitLedger:
+    """Durable, atomic successful-outcome ledger backed by SQLite.
+
+    This deduplicates successful outcome commits; workers may still compute the
+    same envelope more than once. A shared database file coordinates processes
+    on one host, not workers on multiple hosts.
+
+    A future Valkey Streams transport can implement :class:`OutcomeCommitStore`
+    without changing executors. SQLite is the local durable adapter.
+    """
+
+    def __init__(self, database: str | Path) -> None:
+        self._database = Path(database)
+        self._database.parent.mkdir(parents=True, exist_ok=True)
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS successful_outcomes "
+                "(fingerprint TEXT PRIMARY KEY, outcome_json TEXT NOT NULL)"
+            )
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self._database, timeout=30.0)
+
+    def successful_count(self, fingerprint: str) -> int:
+        """Return whether one successful outcome is durably committed."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) FROM successful_outcomes WHERE fingerprint = ?",
+                (key,),
+            ).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None:
+        """Return the durable successful outcome for ``fingerprint``, if any."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT outcome_json FROM successful_outcomes WHERE fingerprint = ?",
+                (key,),
+            ).fetchone()
+        return None if row is None else _successful_outcome_from_dict(json.loads(row[0]), fingerprint=key)
+
+    def commit_success(self, fingerprint: str, outcome: RemoteJobOutcome) -> RemoteJobOutcome:
+        """Atomically commit the first success and return the durable winner."""
+        key = _fingerprint(fingerprint, "fingerprint")
+        if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
+            raise ValueError("commit_success requires a completed outcome")
+        if outcome.envelope_fingerprint != key:
+            raise ValueError("outcome fingerprint does not match commit key")
+        # Validate the candidate before INSERT OR IGNORE: otherwise invalid new
+        # results can be stored, or hidden by an existing valid winner.
+        _outcome_from_dict(outcome.to_dict(), fingerprint=key)
+        payload = json.dumps(
+            outcome.to_dict(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO successful_outcomes (fingerprint, outcome_json) "
+                "VALUES (?, ?)",
+                (key, payload),
+            )
+            row = connection.execute(
+                "SELECT outcome_json FROM successful_outcomes WHERE fingerprint = ?",
+                (key,),
+            ).fetchone()
+        if row is None:  # pragma: no cover - SQLite transaction invariant
+            raise RuntimeError("successful outcome commit was not persisted")
+        return _successful_outcome_from_dict(json.loads(row[0]), fingerprint=key)
+
+
+def _successful_outcome_from_dict(payload: object, *, fingerprint: str) -> RemoteJobOutcome:
+    """Restore a completed ledger winner without narrowing generic outcome decoding."""
+    outcome = _outcome_from_dict(payload, fingerprint=fingerprint)
+    if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
+        raise ValueError("stored successful outcome must be completed")
+    return outcome
+
+
+def _outcome_from_dict(payload: object, *, fingerprint: str) -> RemoteJobOutcome:
+    """Restore durable JSON only after checking its key and result identity.
+
+    Completed results retain the package's canonical digest encoding, with
+    nonfinite numbers rejected (Bray, 2017, Section 6, p. 7; Section 10,
+    p. 10). Python's permissive encoding is explicitly disabled (Python
+    Software Foundation, n.d., "JSONEncoder", ``allow_nan`` parameter).
+    Digest consistency does not establish worker attestation or convergence.
+
+    References:
+        Bray, T. (Ed.). (2017). The JavaScript Object Notation (JSON) data
+            interchange format (RFC 8259). Internet Engineering Task Force.
+        Python Software Foundation. (n.d.). json—JSON encoder and decoder.
+            Python 3.14 documentation.
+    """
+    if type(payload) is not dict or type(payload.get("provenance")) is not dict:
+        raise ValueError("stored outcome must be a package outcome mapping")
+    if payload.get("envelope_fingerprint") != fingerprint:
+        raise ValueError("stored outcome fingerprint does not match commit key")
+    if payload.get("delivery_state") == RemoteJobDeliveryState.COMPLETED.value:
+        try:
+            encoded_result = json.dumps(
+                payload.get("result"), ensure_ascii=False, sort_keys=True,
+                separators=(",", ":"), allow_nan=False,
+            ).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("stored completed result is not finite JSON") from exc
+        if payload.get("output_identity_sha256") != hashlib.sha256(encoded_result).hexdigest():
+            raise ValueError("stored completed result does not match output identity")
+    provenance = payload["provenance"]
+    return RemoteJobOutcome(
+        run_id=payload["run_id"],
+        unit_index=payload["unit_index"],
+        unit_seed=payload["unit_seed"],
+        family=payload["family"],
+        delivery_state=payload["delivery_state"],
+        result=payload["result"],
+        error_message=payload["error_message"],
+        provenance=RemoteWorkerProvenance(**provenance),
+        input_identity_sha256=payload["input_identity_sha256"],
+        output_identity_sha256=payload["output_identity_sha256"],
+        envelope_fingerprint=payload["envelope_fingerprint"],
+        driver_host=payload["driver_host"],
+        driver_pid=payload["driver_pid"],
+    )
 
 
 def _is_ssh_worker_host(worker_host: str) -> bool:
@@ -991,7 +1161,7 @@ class SubprocessExecutor:
         worker_host: str,
         *,
         remote_interpreter: str | None = None,
-        ledger: OutcomeCommitLedger | None = None,
+        ledger: OutcomeCommitStore | None = None,
         driver_host: str | None = None,
         timeout_seconds: float = 3600.0,
     ) -> None:
