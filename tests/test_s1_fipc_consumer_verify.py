@@ -805,3 +805,58 @@ def test_finite_documented_budget_negative_remains_valid(monkeypatch, device):
     assert receipt["all_pass"] is True
     assert receipt["convergence_failure"] is True
     assert receipt["row_order_diagnosis"] == "pass"
+
+
+def _third_call_receipt(monkeypatch, device, field=None):
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = []
+
+    def fipc(y, *args, **kwargs):
+        assert kwargs.get("device", "cpu") == device
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError(
+                "primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required"
+            )
+        result = original(y, *args)
+        calls.append((args[14], args[12:14]))
+        result.update(gpu_execution_used=device != "cpu", gpu_backend="Metal" if device != "cpu" else None)
+        if len(calls) == 3 and field is not None:
+            assert result["converged"] is False
+            assert result["termination_reason"] == "max_iter_reached"
+            # Every value stays finite. Base/permutation remain unchanged and
+            # equal; mutate only an anchored row or the fixed specific SD.
+            result[field][0] += 0.125
+        return result
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(
+        None, None, device=device, q_primary=121, q_specific=121, q_expected_raw=121,
+    )
+    json.dumps(receipt, allow_nan=False)
+    _assert_schema(receipt)
+    assert calls == [(100, (121, 121)), (100, (121, 121)), (1, (121, 121))]
+    assert receipt["convergence_failure"] is True
+    assert receipt["row_order"] is True
+    assert receipt["row_order_diagnosis"] == "pass"
+    assert receipt["row_order_max_abs"] == 0.0
+    return receipt
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+@pytest.mark.parametrize("field", ["a_primary", "a_specific", "threshold", "specific_sd"])
+def test_budget_return_must_preserve_fixed_contract(monkeypatch, device, field):
+    receipt = _third_call_receipt(monkeypatch, device, field)
+    assert receipt["all_pass"] is False, "changed third-call fixed bank/prior certified all_pass"
+    gate = "orthogonal_specific_prior_fixed" if field == "specific_sd" else "anchor_rows_fixed"
+    assert receipt[gate] is False
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+def test_valid_budget_preserves_fixed_bank_and_prior(monkeypatch, device):
+    receipt = _third_call_receipt(monkeypatch, device)
+    assert receipt["anchor_rows_fixed"] is True
+    assert receipt["orthogonal_specific_prior_fixed"] is True
+    assert receipt["all_pass"] is True

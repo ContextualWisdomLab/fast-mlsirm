@@ -247,15 +247,15 @@ def _fipc_gates(
         results["fipc_fit_error"] = "Both row-order fits must report convergence."
     else:
         results["row_order_diagnosis"] = "pass" if results["row_order"] else "refit_order_dependence"
-    results["anchor_rows_fixed"] = all(
-        np.array_equal(candidate[key][ANCHOR], fixed[key].reshape(candidate[key].shape)[ANCHOR])
-        for candidate in (shaped, perm_shaped)
-        for key in ("a_primary", "a_specific", "threshold")
-    )
     fail = call_fipc(focal_y, fixed, device, q_primary=q_primary, q_specific=q_specific, max_iter=1)
     # A budget-limited negative must still return valid finite item/EAP arrays;
     # metadata alone cannot distinguish nonconvergence from corrupt output.
-    _shaped(fail, N_PERSONS)
+    fail_shaped = _shaped(fail, N_PERSONS)
+    results["anchor_rows_fixed"] = all(
+        np.array_equal(candidate[key][ANCHOR], fixed[key].reshape(candidate[key].shape)[ANCHOR])
+        for candidate in (shaped, perm_shaped, fail_shaped)
+        for key in ("a_primary", "a_specific", "threshold")
+    )
     results["convergence_failure"] = bool(
         fail.get("converged") is False
         and fail.get("termination_reason") in {"max_iter_reached", "step_limited"}
@@ -271,7 +271,7 @@ def _fipc_gates(
             results["gpu_backend"] = None
     results["orthogonal_specific_prior_fixed"] = all(
         np.array_equal(np.asarray(candidate["specific_sd"]), np.ones(N_SPECIFIC))
-        for candidate in (fit, perm_fit)
+        for candidate in (fit, perm_fit, fail)
     )
     bad_map = PRIMARY_MAP.copy()
     bad_map[:, 1] = False
