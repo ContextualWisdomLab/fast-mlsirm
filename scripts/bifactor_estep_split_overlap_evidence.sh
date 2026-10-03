@@ -10,6 +10,14 @@ export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
 
 OUT="${1:-docs/orchestration/bifactor-estep-split-overlap-2043-timestamps.txt}"
 mkdir -p "$(dirname "$OUT")"
+if [[ -e "$OUT" || -L "$OUT" ]]; then
+  printf 'Refusing to overwrite existing evidence: %s\n' "$OUT" >&2
+  exit 1
+fi
+# Reserve the new capture before Cargo starts; noclobber also rejects a
+# concurrently created regular file. Keep the opened descriptor for tee.
+set -o noclobber
+exec 3>"$OUT"
 
 {
   echo "# bifactor E-step split overlap evidence (PR #2043)"
@@ -20,6 +28,7 @@ mkdir -p "$(dirname "$OUT")"
   echo "# metal: $(system_profiler SPDisplaysDataType 2>/dev/null | awk '/Metal Support/ {print $3, $4; exit}')"
   echo
   cargo test --manifest-path crates/mlsirm-core/Cargo.toml --lib measure_concurrent_split_estep_vs_cpu_reference -- --ignored --nocapture
-} 2>&1 | tee "$OUT"
+} 2>&1 | tee /dev/fd/3
+exec 3>&-
 
 echo "Wrote $OUT"
