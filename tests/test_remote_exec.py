@@ -902,6 +902,98 @@ def test_sqlite_ledger_rejects_invalid_result_before_new_commit(
             connection.close()
 
 
+@pytest.mark.parametrize("occupied", [False, True], ids=["empty", "committed"])
+@pytest.mark.parametrize("case", ["tamper", "forged_nan", "forged_nested_inf"])
+def test_memory_ledger_rejects_invalid_result_before_commit(occupied: bool, case: str) -> None:
+    """Memory commits enforce the same finite-result digest as durable commits."""
+    from dataclasses import replace
+
+    envelope = _envelope()
+    valid = LoopbackExecutor().run_batch(
+        (envelope,), lambda envelope, seed: {"objective": 1.0},
+        worker_manifest=envelope.manifest,
+    )[0]
+    result = {
+        "tamper": {"objective": 2.0},
+        "forged_nan": {"objective": float("nan")},
+        "forged_nested_inf": {"objective": {"nested": [float("inf")]}},
+    }[case]
+    digest = valid.output_identity_sha256
+    if case.startswith("forged_"):
+        digest = hashlib.sha256(
+            json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            .encode("utf-8")
+        ).hexdigest()
+    candidate = replace(valid, result=result, output_identity_sha256=digest)
+    ledger = OutcomeCommitLedger()
+    key = valid.envelope_fingerprint
+    if occupied:
+        assert ledger.commit_success(key, valid) == valid
+    with pytest.raises(ValueError, match="stored completed result"):
+        ledger.commit_success(key, candidate)
+    assert ledger.successful_count(key) == int(occupied)
+    assert ledger.committed_success(key) == (valid if occupied else None)
+    assert ledger.commit_success(key, valid) == valid
+    assert ledger.successful_count(key) == 1
+
+
+@pytest.mark.parametrize("access", ["lookup", "commit", "executor"])
+@pytest.mark.parametrize("case", ["valid", "tamper", "nan"])
+def test_memory_ledger_validates_mutable_cached_result_before_reuse(
+    monkeypatch, access: str, case: str,
+) -> None:
+    """Nested mutation cannot turn a cached success into unchecked output."""
+    payload = dict(_MC_PAYLOAD)
+    manifest = _payload_manifest(payload)
+    envelope = _envelope(unit_index=0, manifest=manifest)
+    valid = LoopbackExecutor().run_batch(
+        (envelope,), lambda envelope, seed: {"nested": [1.0]},
+        worker_manifest=manifest,
+    )[0]
+    ledger = OutcomeCommitLedger()
+    key = valid.envelope_fingerprint
+    cached = ledger.commit_success(key, valid)
+    if case != "valid":
+        cached.result["nested"][0] = 2.0 if case == "tamper" else float("nan")
+    dispatched = []
+
+    def no_dispatch(*args, **kwargs):
+        dispatched.append(True)
+        raise AssertionError("cached result must be checked before worker dispatch")
+
+    from fast_mlsirm import remote_exec
+    monkeypatch.setattr(remote_exec, "_invoke_worker_process", no_dispatch)
+
+    def read():
+        if access == "lookup":
+            return ledger.committed_success(key)
+        if access == "commit":
+            replacement = LoopbackExecutor().run_batch(
+                (envelope,), lambda envelope, seed: {"nested": [1.0]},
+                worker_manifest=manifest,
+            )[0]
+            return ledger.commit_success(key, replacement)
+        return SubprocessExecutor(socket.gethostname(), ledger=ledger).run_batch(
+            (envelope,), worker_manifest=manifest, payload=payload,
+        )[0]
+
+    try:
+        if case == "valid":
+            assert read() == valid
+        else:
+            with pytest.raises(ValueError, match="stored completed result"):
+                read()
+    finally:
+        assert ledger.successful_count(key) == 1
+        assert ledger._successful[key] is cached
+        assert dispatched == []
+        if case == "tamper":
+            assert cached.result["nested"] == [2.0]
+        elif case == "nan":
+            import math
+            assert math.isnan(cached.result["nested"][0])
+
+
 def test_sqlite_ledger_closes_connections_after_repeated_calls(tmp_path, monkeypatch) -> None:
     from fast_mlsirm import remote_exec
 

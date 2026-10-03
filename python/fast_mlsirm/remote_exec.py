@@ -630,16 +630,42 @@ class OutcomeCommitLedger:
         return 1 if fingerprint in self._successful else 0
 
     def committed_success(self, fingerprint: str) -> RemoteJobOutcome | None:
-        """Return the committed successful outcome for ``fingerprint``, if any."""
-        return self._successful.get(fingerprint)
+        """Return a winner only after revalidating its mutable result.
+
+        Finite JSON is required (Bray, 2017, Section 6, p. 7; Section 10,
+        p. 10), using the existing strict decoder rather than a new encoding
+        (Python Software Foundation, n.d., "JSONEncoder", ``allow_nan``).
+
+        References:
+            Bray, T. (Ed.). (2017). The JavaScript Object Notation (JSON) data
+                interchange format (RFC 8259). Internet Engineering Task Force.
+            Python Software Foundation. (n.d.). json—JSON encoder and decoder.
+                Python 3.14 documentation.
+        """
+        existing = self._successful.get(fingerprint)
+        if existing is not None:
+            _successful_outcome_from_dict(existing.to_dict(), fingerprint=fingerprint)
+        return existing
 
     def commit_success(self, fingerprint: str, outcome: RemoteJobOutcome) -> RemoteJobOutcome:
-        """Commit one successful outcome or return the prior commit without re-recording."""
+        """Validate the candidate and any prior winner before commit or reuse.
+
+        Finite JSON is required (Bray, 2017, Section 6, p. 7; Section 10,
+        p. 10), using the existing strict decoder rather than a new encoding
+        (Python Software Foundation, n.d., "JSONEncoder", ``allow_nan``).
+
+        References:
+            Bray, T. (Ed.). (2017). The JavaScript Object Notation (JSON) data
+                interchange format (RFC 8259). Internet Engineering Task Force.
+            Python Software Foundation. (n.d.). json—JSON encoder and decoder.
+                Python 3.14 documentation.
+        """
         if outcome.delivery_state is not RemoteJobDeliveryState.COMPLETED:
             raise ValueError("commit_success requires a completed outcome")
         if outcome.envelope_fingerprint != fingerprint:
             raise ValueError("outcome fingerprint does not match commit key")
-        existing = self._successful.get(fingerprint)
+        _successful_outcome_from_dict(outcome.to_dict(), fingerprint=fingerprint)
+        existing = self.committed_success(fingerprint)
         if existing is not None:
             return existing
         self._successful[fingerprint] = outcome
