@@ -143,6 +143,17 @@ def call_fipc(
         kwargs.get("estimate_specific_vars", False),
         **extra,
     )
+    # Optional native diagnostics may not be emitted by older bindings, but
+    # present numeric outputs cannot be discarded to certify a finite fit.
+    for field in (
+        "theta_p_sd", "primary_cov", "loglik_trace", "fixed_loglik_trace",
+        "fixed_primary_first_moment_trace", "fixed_primary_second_moment_trace",
+        "fixed_specific_second_moment_trace", "prior_mean_trace",
+        "prior_covariance_trace", "prior_specific_sd_trace",
+        "final_loglik_change", "final_param_change",
+    ):
+        if field in fit and not np.isfinite(np.asarray(fit[field], dtype=np.float64)).all():
+            raise ValueError(f"Native diagnostic {field} must be finite.")
     # Check raw call metadata before aggregation can hide malformed values.
     used = fit.get("gpu_execution_used")
     backend = fit.get("gpu_backend")

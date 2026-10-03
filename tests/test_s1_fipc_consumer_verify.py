@@ -860,3 +860,99 @@ def test_valid_budget_preserves_fixed_bank_and_prior(monkeypatch, device):
     assert receipt["anchor_rows_fixed"] is True
     assert receipt["orthogonal_specific_prior_fixed"] is True
     assert receipt["all_pass"] is True
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+@pytest.mark.parametrize("call_number", [1, 2, 3])
+@pytest.mark.parametrize("invalid", [np.nan, np.inf, -np.inf])
+def test_present_fixed_specific_trace_must_be_finite(monkeypatch, device, call_number, invalid):
+    """Synthetic trace corruption follows the actual Q481 diagnostic field."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = []
+
+    def fipc(y, *args, **kwargs):
+        assert kwargs.get("device", "cpu") == device
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        result = original(y, *args)
+        calls.append((args[14], args[12:14]))
+        result.update(gpu_execution_used=device != "cpu", gpu_backend="Metal" if device != "cpu" else None)
+        result["fixed_specific_second_moment_trace"] = [9.875, 9.875]
+        if len(calls) == call_number:
+            result["fixed_specific_second_moment_trace"][1] = invalid
+        return result
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, device=device, q_primary=481, q_specific=241, q_expected_raw=121)
+    json.dumps(receipt, allow_nan=False)
+    assert receipt["all_pass"] is False, "nonfinite present native trace certified all_pass"
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert "fixed_specific_second_moment_trace" in receipt["fipc_fit_error"]
+    assert all(q == (481, 241) for _, q in calls)
+
+
+OPTIONAL_NATIVE_DIAGNOSTICS = (
+    "theta_p_sd", "primary_cov", "loglik_trace", "fixed_loglik_trace",
+    "fixed_primary_first_moment_trace", "fixed_primary_second_moment_trace",
+    "prior_mean_trace", "prior_covariance_trace", "prior_specific_sd_trace",
+    "final_loglik_change", "final_param_change",
+)
+
+
+@pytest.mark.parametrize("field", OPTIONAL_NATIVE_DIAGNOSTICS)
+@pytest.mark.parametrize("call_number", [1, 2, 3])
+def test_present_sibling_native_diagnostic_must_be_finite(monkeypatch, field, call_number):
+    """Present exported numeric diagnostics cannot evade shared call checks."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = []
+
+    def fipc(y, *args):
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        result = original(y, *args)
+        calls.append(args[12:14])
+        result[field] = np.nan if field.startswith("final_") else [0.5, np.nan]
+        if len(calls) != call_number:
+            result[field] = 0.5 if field.startswith("final_") else [0.5, 0.5]
+        return result
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, q_primary=121, q_specific=241, q_expected_raw=121)
+    json.dumps(receipt, allow_nan=False)
+    assert receipt["all_pass"] is False, "nonfinite sibling diagnostic certified all_pass"
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert field in receipt["fipc_fit_error"]
+    assert all(pair == (121, 241) for pair in calls)
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+def test_present_finite_native_diagnostics_preserve_acceptance(monkeypatch, device):
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = []
+
+    def fipc(y, *args, **kwargs):
+        assert kwargs.get("device", "cpu") == device
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        result = original(y, *args)
+        calls.append(args[12:14])
+        result.update(gpu_execution_used=device != "cpu", gpu_backend="Metal" if device != "cpu" else None)
+        for field in OPTIONAL_NATIVE_DIAGNOSTICS + ("fixed_specific_second_moment_trace",):
+            result[field] = 0.5 if field.startswith("final_") else [0.5, 0.5]
+        return result
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, device=device, q_primary=121, q_specific=241, q_expected_raw=121)
+    assert receipt["all_pass"] is True
+    assert receipt["row_order_diagnosis"] == "pass"
+    assert calls == [(121, 241)] * 3
+    json.dumps(receipt, allow_nan=False)
