@@ -48,6 +48,3 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
-## 2024-10-03 - np.count_nonzero를 사용하여 부울 배열 집계 속도 향상
-**Learning:** `np.sum(boolean_array)`는 내부적으로 중간 정수 배열을 할당하기 때문에 메모리 및 실행 속도 측면에서 비효율적입니다. 반면에 `np.count_nonzero(boolean_array)`는 이러한 중간 배열 할당을 피하여 10배 이상 빠르고 메모리 효율적입니다.
-**Action:** 부울 배열(예: 조건식 결과 배열)에서 True 값의 개수를 셀 때는 항상 `np.sum` 대신 `np.count_nonzero`를 사용하여 성능을 최적화하고 중간 배열 할당을 피합니다.
