@@ -170,7 +170,9 @@ def _raise_information_resource_limit() -> None:
     )
 
 
-def _preflight_builtin_real_tree(value: list | tuple, name: str) -> tuple[tuple[int, ...], int]:
+def _preflight_builtin_real_tree(
+    value: list | tuple, name: str
+) -> tuple[tuple[int, ...], int]:
     """Return rectangular shape/cell count without eager sibling expansion.
 
     The explicit stack holds one frame per active nesting level. Logical scalar
@@ -444,7 +446,8 @@ def _content_feasible(
         needed = max(0, minimum - counts.get(lbl, 0))
         if needed == 0:
             continue
-        available = int(np.sum(labels[eligible_now] == lbl))
+        # Optimized: replace np.sum(boolean_array) with np.count_nonzero(boolean_array) to avoid intermediate array allocation
+        available = int(np.count_nonzero(labels[eligible_now] == lbl))
         if available < needed:
             return False
     return True
@@ -463,7 +466,9 @@ def _exact_public_string(value: object, error_message: str) -> str:
     return value if type(value) is str else str(value)
 
 
-def _validated_content_labels(content: np.ndarray | None, n_items: int) -> np.ndarray | None:
+def _validated_content_labels(
+    content: np.ndarray | None, n_items: int
+) -> np.ndarray | None:
     """Return bounded exact string labels without arbitrary object coercion.
 
     Caller-controlled objects and string subclasses are rejected by exact type
@@ -637,7 +642,9 @@ def assemble_to_target(
     if not (1 <= length <= n_items):
         raise ValueError("length must be between 1 and the number of items")
 
-    min_counts, max_counts = _validated_content_constraints(min_per_content, max_per_content)
+    min_counts, max_counts = _validated_content_constraints(
+        min_per_content, max_per_content
+    )
     if (min_counts or max_counts) and labels is None:
         raise ValueError("content labels are required for content constraints")
 
@@ -695,7 +702,9 @@ def assemble_to_target(
             next_counts = dict(counts)
             if labels is not None:
                 next_counts[str(labels[i])] = next_counts.get(str(labels[i]), 0) + 1
-            if _content_feasible(labels, selected + [int(i)], next_counts, remaining, length, min_counts):
+            if _content_feasible(
+                labels, selected + [int(i)], next_counts, remaining, length, min_counts
+            ):
                 candidates.append(int(i))
         if not candidates:
             raise ValueError("could not assemble a form that satisfies the constraints")
