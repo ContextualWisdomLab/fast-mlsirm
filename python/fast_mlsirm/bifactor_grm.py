@@ -498,9 +498,9 @@ def bifactor_oakes_se(
 
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
     res = core.bifactor_oakes_se(
-        ag.reshape(-1),
-        as_.reshape(-1),
-        th.reshape(-1),
+        np.require(ag, requirements=["C", "A"]).reshape(-1),
+        np.require(as_, requirements=["C", "A"]).reshape(-1),
+        np.require(th, requirements=["C", "A"]).reshape(-1),
         yy,
         observed.reshape(-1),
         np.require(smap_int, requirements=["C", "A"]).reshape(-1),
@@ -700,10 +700,10 @@ def fit_bifactor_grm_fipc(
         int(n_items),
         int(n_specific_int),
         int(n_cat_int),
-        anchor_arr.reshape(-1),
-        fag.reshape(-1),
-        fas.reshape(-1),
-        fth.reshape(-1),
+        np.require(anchor_arr, requirements=["C", "A"]).reshape(-1),
+        np.require(fag, requirements=["C", "A"]).reshape(-1),
+        np.require(fas, requirements=["C", "A"]).reshape(-1),
+        np.require(fth, requirements=["C", "A"]).reshape(-1),
         int(q_general_int),
         int(q_specific_int),
         int(max_iter_int),
