@@ -7,7 +7,7 @@
 //! ``TwoTierGrmResult.theta_p_eap``) and the specific tier is integrated out
 //! within each item block via Gauss-Hermite quadrature, then domains are
 //! convolved (Lord & Wingersky, 1984). This is the conditional-on-primary
-//! stage of Lord-Wingersky 2.0 (Cai, 2015, Eqs. 14-17, pp. 543-544): the
+//! stage of Lord-Wingersky 2.0 (Cai, 2015, Eqs. 14-17, pp. 542-543): the
 //! within-cluster likelihood ``L_n(u_n | eta)`` integrates the specific
 //! dimension, and cluster distributions combine into ``L(s | eta)``. Here
 //! ``eta`` is the plug-in primary EAP, so the final integration over the
@@ -175,20 +175,18 @@ impl TwoTierItemParams {
 ///
 /// ``theta_primary`` is row-major ``n_persons * n_primary``. Returns row-major
 /// ``n_persons * (total_max_score + 1)``.
-pub fn two_tier_lord_wingersky(
+/// Shared scoring-input validation; returns ``(n_persons, blocks)``.
+fn validate_scoring_inputs(
     params: &TwoTierItemParams,
     theta_primary: &[f64],
     theta_specific: &[f64],
     weights_specific: &[f64],
-) -> Result<Vec<f64>, String> {
+) -> Result<(usize, Vec<Vec<usize>>), String> {
     params.check_dims()?;
-    let n_cat = params.n_cat;
-    let m1 = n_cat - 1;
     let p = params.n_primary;
     if theta_primary.len() % p != 0 {
         return Err("theta_primary length must be a multiple of n_primary".into());
     }
-    let n_persons = theta_primary.len() / p;
     let n_s = theta_specific.len();
     if weights_specific.len() != n_s {
         return Err("weights_specific length must match theta_specific".into());
@@ -196,11 +194,35 @@ pub fn two_tier_lord_wingersky(
     if n_s == 0 {
         return Err("specific-factor quadrature must have at least one node".into());
     }
+    // Specific-free items enter unweighted while loaded items are weighted by
+    // the rule, so the rule must be a probability measure on finite nodes.
+    let weight_sum: f64 = weights_specific.iter().sum();
+    if !theta_specific.iter().all(|v| v.is_finite())
+        || !weights_specific.iter().all(|w| w.is_finite() && *w >= 0.0)
+        || (weight_sum - 1.0).abs() > 1e-10
+    {
+        return Err(
+            "specific-factor rule must have finite nodes and non-negative weights summing to 1"
+                .into(),
+        );
+    }
     if !theta_primary.iter().all(|v| v.is_finite()) {
         return Err("theta_primary must be finite".into());
     }
+    Ok((theta_primary.len() / p, params.block_items()?))
+}
 
-    let blocks = params.block_items()?;
+pub fn two_tier_lord_wingersky(
+    params: &TwoTierItemParams,
+    theta_primary: &[f64],
+    theta_specific: &[f64],
+    weights_specific: &[f64],
+) -> Result<Vec<f64>, String> {
+    let (n_persons, blocks) =
+        validate_scoring_inputs(params, theta_primary, theta_specific, weights_specific)?;
+    let n_cat = params.n_cat;
+    let m1 = n_cat - 1;
+    let p = params.n_primary;
     let total_max_score = params.total_max_score();
     let mut out = vec![0.0_f64; n_persons * (total_max_score + 1)];
 
@@ -315,19 +337,122 @@ pub fn two_tier_expected_raw_at_q(
     two_tier_expected_raw(params, theta_primary, nodes, weights)
 }
 
-/// Expected raw total score at plug-in primary coordinates (Lord-Wingersky mean).
+/// [`two_tier_expected_raw_at_q`] with device dispatch; returns ``(values, used_gpu)``.
+pub fn two_tier_expected_raw_at_q_on(
+    params: &TwoTierItemParams,
+    theta_primary: &[f64],
+    q_specific: usize,
+    device: crate::Device,
+) -> Result<(Vec<f64>, bool), String> {
+    let (nodes, weights) = crate::quadrature::gh_rule(q_specific)
+        .ok_or_else(|| format!("unsupported specific-factor quadrature count {q_specific}"))?;
+    two_tier_expected_raw_on(params, theta_primary, nodes, weights, device)
+}
+
+/// Expected raw total at plug-in primary coordinates (single owner of the mean).
+///
+/// By linearity of expectation the mean needs no score distribution:
+/// ``E[T | theta_p] = sum_i sum_q w_q sum_{k=1}^{n_cat-1} sigmoid(eta_i + beta_ik)``
+/// with ``eta_i = a_i . theta_p + a_iS theta_{s,q}`` (``theta_s = 0`` for
+/// specific-free items), using ``E[X] = sum_{k>=1} P(X >= k)``. The
+/// conditional-on-primary dimension reduction follows Cai (2015, pp. 542–543, Eqs. 14–17).
+/// The Lord-Wingersky mean is retained as [`two_tier_expected_raw_lw`].
+/// Numerical agreement on retained fixtures is not a universal floating-point error bound.
+///
+/// Reference (APA 7th ed.):
+/// Cai, L. (2015). Lord–Wingersky algorithm version 2.0 for hierarchical item
+/// factor models with applications in test scoring, scale alignment, and model
+/// fit testing. Psychometrika, 80(2), 535–559.
+/// https://doi.org/10.1007/s11336-014-9411-3
 pub fn two_tier_expected_raw(
     params: &TwoTierItemParams,
     theta_primary: &[f64],
     theta_specific: &[f64],
     weights_specific: &[f64],
 ) -> Result<Vec<f64>, String> {
-    params.check_dims()?;
+    let (n_persons, _) =
+        validate_scoring_inputs(params, theta_primary, theta_specific, weights_specific)?;
     let p = params.n_primary;
-    if theta_primary.len() % p != 0 {
-        return Err("theta_primary length must be a multiple of n_primary".into());
+    let m1 = params.n_cat - 1;
+    let mut out = vec![0.0_f64; n_persons];
+    for (person, value) in out.iter_mut().enumerate() {
+        let th_p = &theta_primary[person * p..(person + 1) * p];
+        let mut total = 0.0_f64;
+        for (i, &s) in params.specific_map.iter().enumerate() {
+            let base: f64 = (0..p).map(|d| params.a_primary[i * p + d] * th_p[d]).sum();
+            let beta = &params.thresholds[i * m1..(i + 1) * m1];
+            let item_mean = |eta: f64| -> f64 { beta.iter().map(|b| sigmoid(eta + b)).sum() };
+            total += if s == -1 {
+                item_mean(base)
+            } else {
+                theta_specific
+                    .iter()
+                    .zip(weights_specific)
+                    .map(|(ths, w)| w * item_mean(base + params.a_specific[i] * ths))
+                    .sum::<f64>()
+            };
+        }
+        *value = total;
     }
-    let n_persons = theta_primary.len() / p;
+    Ok(out)
+}
+
+/// Device-dispatched [`two_tier_expected_raw`]. Returns ``(values, used_gpu)``.
+///
+/// ``Cpu`` always uses the f64 closed form. ``Gpu``/``Auto`` try the wgpu f32
+/// kernel (compensated summation) and fall back to the f64 CPU form when no
+/// adapter is usable; ``Gpu`` prints a warning on fallback. Validation runs on
+/// the CPU owner first, so every device rejects the same inputs.
+pub fn two_tier_expected_raw_on(
+    params: &TwoTierItemParams,
+    theta_primary: &[f64],
+    theta_specific: &[f64],
+    weights_specific: &[f64],
+    device: crate::Device,
+) -> Result<(Vec<f64>, bool), String> {
+    validate_scoring_inputs(params, theta_primary, theta_specific, weights_specific)?;
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    if device != crate::Device::Cpu {
+        if let Some(values) = crate::gpu_two_tier::expected_raw_gpu(
+            params,
+            theta_primary,
+            theta_specific,
+            weights_specific,
+        ) {
+            return Ok((values, true));
+        }
+        if device == crate::Device::Gpu {
+            eprintln!(
+                "fast-mlsirm: GPU two-tier expected raw unavailable, inputs exceed GPU bounds, or predictor precision is unsafe; falling back to the CPU implementation."
+            );
+        }
+    }
+    #[cfg(any(not(feature = "gpu"), coverage))]
+    let _ = device;
+    let values = two_tier_expected_raw(params, theta_primary, theta_specific, weights_specific)?;
+    Ok((values, false))
+}
+
+#[inline]
+fn sigmoid(z: f64) -> f64 {
+    if z >= 0.0 {
+        1.0 / (1.0 + (-z).exp())
+    } else {
+        let ez = z.exp();
+        ez / (1.0 + ez)
+    }
+}
+
+/// Lord-Wingersky mean of the total-score distribution (verification oracle
+/// for [`two_tier_expected_raw`]).
+pub fn two_tier_expected_raw_lw(
+    params: &TwoTierItemParams,
+    theta_primary: &[f64],
+    theta_specific: &[f64],
+    weights_specific: &[f64],
+) -> Result<Vec<f64>, String> {
+    let (n_persons, _) =
+        validate_scoring_inputs(params, theta_primary, theta_specific, weights_specific)?;
     let dist = two_tier_lord_wingersky(params, theta_primary, theta_specific, weights_specific)?;
     let total_max_score = params.total_max_score();
     let mut out = vec![0.0_f64; n_persons];

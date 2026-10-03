@@ -123,7 +123,7 @@ use mlsirm_core::fitstats::{
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
 use mlsirm_core::two_tier_recursion::{
-    two_tier_expected_raw_at_q as core_two_tier_expected_raw_at_q, TwoTierItemParams,
+    two_tier_expected_raw_at_q_on as core_two_tier_expected_raw_at_q_on, TwoTierItemParams,
 };
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
@@ -2109,7 +2109,11 @@ fn two_tier_oakes_se(
 /// Primary correlations ``Phi`` are not reintegrated at scoring time; the
 /// caller's primary coordinates are treated as fixed plug-in values, matching
 /// the bifactor expected-raw contract.
+///
+/// ``device`` is ``"cpu"`` (default, f64 closed form), ``"gpu"`` (wgpu f32 with
+/// a CPU fallback warning) or ``"auto"`` (GPU when available, silent fallback).
 #[pyfunction]
+#[pyo3(signature = (a_primary, a_specific, threshold, theta_p_eap, specific_map, n_cat, n_primary, n_specific, q_specific, device = "cpu"))]
 #[allow(clippy::too_many_arguments)]
 fn two_tier_expected_raw<'py>(
     py: Python<'py>,
@@ -2122,7 +2126,9 @@ fn two_tier_expected_raw<'py>(
     n_primary: usize,
     n_specific: usize,
     q_specific: usize,
+    device: &str,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let device = parse_device(device)?;
     if n_primary < 1 {
         return Err(PyValueError::new_err("n_primary must be >= 1"));
     }
@@ -2162,7 +2168,7 @@ fn two_tier_expected_raw<'py>(
             "theta_p_eap length must be a multiple of n_primary",
         ));
     }
-    let out = core_two_tier_expected_raw_at_q(&params, th, q_specific)
+    let (out, _used_gpu) = core_two_tier_expected_raw_at_q_on(&params, th, q_specific, device)
         .map_err(PyValueError::new_err)?;
     Ok(out.to_pyarray(py))
 }
