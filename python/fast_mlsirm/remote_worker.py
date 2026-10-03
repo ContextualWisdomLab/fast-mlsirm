@@ -126,12 +126,12 @@ def execute_se_derivatives(payload: dict[str, object]) -> dict[str, object]:
         np.asarray(payload["a_general"], dtype=np.float64),
         np.asarray(payload["a_specific"], dtype=np.float64),
         np.asarray(payload["threshold"], dtype=np.float64),
-        np.asarray(payload["responses"], dtype=np.int64),
-        np.asarray(payload["specific_map"], dtype=np.int64),
-        int(payload["n_cat"]),
-        int(payload["n_specific"]),
-        q_general=int(payload["q_general"]),
-        q_specific=int(payload["q_specific"]),
+        np.asarray(payload["responses"]),
+        np.asarray(payload["specific_map"]),
+        payload["n_cat"],
+        payload["n_specific"],
+        q_general=payload["q_general"],
+        q_specific=payload["q_specific"],
         fd_step=float(payload["fd_step"]),
     )
     information_sha256 = hashlib.sha256(res.information.tobytes()).hexdigest()
