@@ -77,6 +77,11 @@ pub(crate) struct ReducedEstepInputs<'a> {
     pub ts_groups: &'a [Vec<Vec<f64>>],
     pub log_wg: &'a [f64],
     pub log_ws: &'a [f64],
+    /// Also read back the per-person general-node posteriors and return
+    /// their sum over persons per node (`node_post`). Off for bifactor
+    /// callers, which do not need it; the two-tier E-step uses it for the
+    /// primary second-moment accumulator (#2282).
+    pub want_node_post: bool,
 }
 
 /// One reduced E-step sweep: marginal log-likelihood, expected counts with
@@ -93,6 +98,11 @@ pub(crate) struct ReducedEstepOutputs {
     pub s2_g: Vec<f64>,
     pub s2_spec: Vec<f64>,
     pub w_spec: Vec<f64>,
+    /// Posterior mass per general node summed over persons, `qg` entries,
+    /// accumulated in `f64` on the host from the `f32` per-person posteriors
+    /// (Bock & Aitkin, 1981, "artificial data" node weights). `Some` only
+    /// when `want_node_post` is set; requires `n_groups == 1`.
+    pub node_post: Option<Vec<f64>>,
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
@@ -702,19 +712,35 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let ll_staging = staging_buffer(device, "ll_read", np);
     let counts_staging = staging_buffer(device, "counts_read", ng * ni * stride * nc);
     let moments_staging = staging_buffer(device, "moments_read", ng * (3 + 2 * ns));
-    let read = submit_and_readback(
-        ctx,
-        encoder,
-        &[
-            (&ll_buf, &ll_staging, np),
-            (&counts_buf, &counts_staging, ng * ni * stride * nc),
-            (&moments_buf, &moments_staging, ng * (3 + 2 * ns)),
-        ],
-    )?;
+    let postg_staging = staging_buffer(device, "postg_read", np * qg);
+    let mut reads = vec![
+        (&ll_buf, &ll_staging, np),
+        (&counts_buf, &counts_staging, ng * ni * stride * nc),
+        (&moments_buf, &moments_staging, ng * (3 + 2 * ns)),
+    ];
+    // ponytail: reads back the full n_persons x qg posterior (4 bytes each)
+    // and sums per node on the host in f64; switch to an on-device node
+    // reduction if this readback becomes a measurable share of the sweep.
+    if inputs.want_node_post {
+        reads.push((&postg_buf, &postg_staging, np * qg));
+    }
+    let read = submit_and_readback(ctx, encoder, &reads)?;
     let mut iter = read.into_iter();
     let ll_vec = iter.next()?;
     let counts_vec = iter.next()?;
     let moments_vec = iter.next()?;
+    let node_post = if inputs.want_node_post {
+        let postg_vec = iter.next()?;
+        let mut acc = vec![0.0f64; qg];
+        for row in postg_vec.chunks_exact(qg) {
+            for (a, &v) in acc.iter_mut().zip(row) {
+                *a += f64::from(v);
+            }
+        }
+        Some(acc)
+    } else {
+        None
+    };
 
     let mut loglik = 0.0;
     for &v in &ll_vec {
@@ -745,6 +771,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         s2_g,
         s2_spec,
         w_spec,
+        node_post,
     })
 }
 

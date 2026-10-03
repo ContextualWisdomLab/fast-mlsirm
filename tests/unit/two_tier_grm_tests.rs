@@ -251,6 +251,7 @@ fn valid_config() -> TwoTierGrmConfig {
         seed: 42,
         newton_iter: 3,
         ridge: 1e-8,
+        device: crate::Device::Cpu,
     }
 }
 
@@ -580,4 +581,86 @@ fn non_convergence_is_reported_not_substituted() {
         fit.termination_reason, "max_iter_reached",
         "termination reason must say max_iter_reached"
     );
+}
+
+// ---------------------------------------------------------------------------
+// GPU reduced E-step parity (#2282): the wgpu f32 person sweep must agree
+// with the f64 CPU `e_step` reference on loglik, expected counts, and the
+// primary second-moment accumulator `s_bar`, within the f32 bounds stated
+// in the helper. Skipped when no adapter exists.
+// ---------------------------------------------------------------------------
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn assert_gpu_e_step_matches_cpu(primary_map: &[bool], n_primary: usize, phi: &[f64]) {
+    use crate::two_tier_grm::{
+        build_primary_grid, chol_inverse, cholesky_lower, e_step, e_step_gpu, gh_rule,
+        pack_params, reweighted_log_weights, validate,
+    };
+    if crate::gpu::GpuContext::get().is_none() {
+        eprintln!("no GPU adapter; skipping two-tier GPU E-step parity");
+        return;
+    }
+    let (a_p2, a_s, thresholds, _) = tiny_params();
+    let a_p: Vec<f64> = if n_primary == 2 {
+        a_p2
+    } else {
+        a_p2.chunks(2).map(|r| r[0] + r[1]).collect()
+    };
+    let (y, n_persons) = tiny_data();
+    let cfg = valid_config();
+    let v = validate(
+        &y, None, primary_map, &TINY_SPECIFIC_MAP, n_persons, TINY_N_ITEMS, n_primary,
+        TINY_N_SPECIFIC, TINY_N_CAT, &cfg,
+    )
+    .expect("valid tiny two-tier input");
+    let (tz, wz) = gh_rule(7).unwrap();
+    let (ts, ws) = gh_rule(5).unwrap();
+    let n_grid = v.grid_size;
+    let (coords, log_w0) = build_primary_grid(tz, wz, n_primary, n_grid);
+    let (l, logdet) = cholesky_lower(phi, n_primary).unwrap();
+    let log_w = reweighted_log_weights(&log_w0, &coords, &chol_inverse(&l, n_primary), logdet, n_primary);
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    let params = pack_params(&v, &a_p, &a_s, &thresholds);
+
+    let (ll_c, counts_c, sbar_c) =
+        e_step(&v, &y, None, &params, &log_w, &log_ws, &coords, ts, n_grid, ts.len());
+    let (ll_g, counts_g, sbar_g) =
+        e_step_gpu(&v, &y, None, &params, &log_w, &log_ws, &coords, ts, n_grid, ts.len())
+            .expect("adapter present, so the GPU sweep must run");
+
+    // Precision contract (measured on Apple M-series Metal, np = 12: |dll|
+    // 1.6e-6 (rel 1.2e-8), |d s_bar| 8.1e-7, |d count| 1.6e-6). On device,
+    // per-person node log-likelihoods, the per-block logsumexp, and the
+    // person reduction of expected counts run in f32; the per-person loglik
+    // terms and the per-node posterior mass (hence s_bar) are summed over
+    // persons in f64 on the host. The loglik bound is combined abs/rel;
+    // counts and s_bar are sums over persons, so their bound scales with
+    // n_persons.
+    let ll_tol = f64::max(1e-3, 1e-6 * ll_c.abs());
+    let sum_tol = 1e-5 * n_persons as f64;
+    assert!((ll_c - ll_g).abs() <= ll_tol, "loglik cpu={ll_c} gpu={ll_g}");
+    assert_eq!(sbar_c.len(), sbar_g.len());
+    for (c, g) in sbar_c.iter().zip(&sbar_g) {
+        assert!((c - g).abs() <= sum_tol, "s_bar cpu={c} gpu={g}");
+    }
+    for (i, (ci, gi)) in counts_c.iter().zip(&counts_g).enumerate() {
+        assert_eq!(ci.len(), gi.len(), "item {i} node count");
+        for (cn, gn) in ci.iter().zip(gi) {
+            for (c, g) in cn.iter().zip(gn) {
+                assert!((c - g).abs() <= sum_tol, "item {i} count cpu={c} gpu={g}");
+            }
+        }
+    }
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[test]
+fn gpu_e_step_matches_cpu_two_correlated_primaries() {
+    assert_gpu_e_step_matches_cpu(&TINY_PRIMARY_MAP, TINY_N_PRIMARY, &[1.0, 0.35, 0.35, 1.0]);
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[test]
+fn gpu_e_step_matches_cpu_single_primary() {
+    assert_gpu_e_step_matches_cpu(&[true; TINY_N_ITEMS], 1, &[1.0]);
 }
