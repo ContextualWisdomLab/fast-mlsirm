@@ -1058,11 +1058,19 @@ class ConformanceInventory:
                 f"manifest JSON must contain at most {MAX_MANIFEST_JSON_BYTES} bytes"
             )
         _validate_raw_manifest_depth(value)
+        def _reject_json_float(value_str: str) -> float:
+            import math
+            val = float(value_str)
+            if not math.isfinite(val):
+                raise ValueError(f"manifest JSON contains float overflow: {value_str}")
+            return val
+
         try:
             parsed = json.loads(
                 value,
                 object_pairs_hook=_reject_duplicate_json_keys,
                 parse_constant=_reject_json_constant,
+                parse_float=_reject_json_float,
             )
         except json.JSONDecodeError as exc:
             raise ValueError("manifest JSON must contain valid JSON") from exc
