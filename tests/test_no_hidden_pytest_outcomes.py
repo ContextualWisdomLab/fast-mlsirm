@@ -303,8 +303,10 @@ def _default_run_setting(source: str, indent: int, setting: str) -> str | None:
     defaults. This restricted static parser is not a runtime execution proof.
 
     References:
-        GitHub. (n.d.). Workflow syntax for GitHub Actions. GitHub Docs.
-        https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
+        GitHub. (n.d.). Setting a default shell and working directory
+        (``defaults.run``; ``jobs.<job_id>.defaults.run``). GitHub Docs.
+        https://docs.github.com/en/actions/how-tos/write-workflows/
+        choose-what-workflows-do/set-default-values-for-jobs
     """
     structural = _plain_workflow_mapping(source, structural_only=True)
     if structural is None:
@@ -347,7 +349,8 @@ def _plain_workflow_mapping(source: str, *, structural_only: bool = False) -> st
 
     References:
         YAML Language Development Team. (2021). YAML Ain't Markup Language
-        (YAML) version 1.2.2. https://yaml.org/spec/1.2.2/
+        (YAML) version 1.2.2 (Sections 6.9, 8.2.2).
+        https://yaml.org/spec/1.2.2/
     """
     normalized: list[str] = []
     scalar_indent: int | None = None
@@ -477,7 +480,7 @@ def _pytest_owner_nodes(body: str, workflow: str = "") -> set[str]:
             command = value
         # A deliberately restricted grammar avoids borrowing selector tokens
         # from comments, other commands, substitutions or option values.
-        command = command.replace("\\\n", " ")
+        command = command.replace("\\\n", "")
         if not re.fullmatch(r"[A-Za-z0-9_./:=\[\] -]+", command):
             continue
         tokens = shlex.split(command)
