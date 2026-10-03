@@ -26,6 +26,7 @@ from .remote_exec import (
     RemoteJobDeliveryState,
     RemoteJobEnvelope,
     RemoteJobFamily,
+    _admit_remote_device_declarations,
     payload_identity_sha256,
     result_identity_sha256,
 )
@@ -302,9 +303,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
+        _admit_remote_device_declarations(
+            request.get("requested_device", "cpu"), request.get("effective_device", "cpu")
+        )
         envelope = RemoteJobEnvelope.from_dict(request["envelope"])
         result = execute_envelope(envelope, request.get("payload"))
-    except Exception as exc:  # worker failures are serialized, not raised to driver
+        output_identity = result_identity_sha256(result)
+    except Exception as exc:  # worker/output failures are serialized, not raised to driver
         print(
             json.dumps(
                 {
@@ -329,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "delivery_state": RemoteJobDeliveryState.COMPLETED.value,
                 "result": result,
-                "output_identity_sha256": result_identity_sha256(result),
+                "output_identity_sha256": output_identity,
                 "worker_pid": os.getpid(),
                 "hostname": socket.gethostname(),
                 "architecture": platform.machine(),

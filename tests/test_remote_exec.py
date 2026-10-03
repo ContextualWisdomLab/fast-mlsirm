@@ -1120,4 +1120,3 @@ def test_subprocess_executor_fails_closed_on_non_finite_wall_clock(
 
     assert outcome.delivery_state is RemoteJobDeliveryState.FAILED
     assert "wall_clock_seconds" in (outcome.error_message or "")
-
