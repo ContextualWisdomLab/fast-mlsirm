@@ -1,0 +1,24 @@
+{
+  "tip_sha": "3fc6160a0f5f2be8df6349e0a1070b2c55958897",
+  "inputs": {
+    "fixture": "tiny two-tier FIPC",
+    "n_persons": 60,
+    "q_primary": 7,
+    "q_specific": 7,
+    "max_iter": 8,
+    "prior_init": {"mean": [0.0, 0.0], "cov": "I"}
+  },
+  "tip_baseline": {
+    "selected_decision": "iter=1;branch=mean_accept;alpha=1.000e-1;ll=-7.3751378502e2;fixed_ll=-7.3751378502e2;mean_ll=-7.3685270321e2;scale_first=true;mean_pd=true;mean=[-0.0309022991552216, -0.09455485007522234]",
+    "before_ll": -737.51378502,
+    "candidate_mean_ll": -736.85270321,
+    "pd": true,
+    "rejection_or_branch": "mean accepted only at alpha=0.1 after scale-first; full alpha=1.0 mean step never tried",
+    "prior_update_decision_trace_head": [
+      "iter=0;branch=joint_full_accept;ll=-7.3796328377e2;cand_ll=-7.3751378502e2;mean=[-0.026047795723652456, -0.0770490317794472]",
+      "iter=1;branch=mean_accept;alpha=1.000e-1;ll=-7.3751378502e2;fixed_ll=-7.3751378502e2;mean_ll=-7.3685270321e2;scale_first=true;mean_pd=true;mean=[-0.0309022991552216, -0.09455485007522234]"
+    ]
+  },
+  "root_cause": "scale-first recovery + mean trust region capped at 0.1 blocked earlier full remapped-LL-improving mean steps; pre-pairing skipped mean when scale accepted",
+  "post_repair_selected_decision": "iter=1;branch=mean_then_scale_accept;mean_alpha=1.000e0;scale_alpha=1.000e-1;ll=-7.3751378502e2;fixed_ll=-7.3751378502e2;scale_ll=-7.3428832892e2;scale_pd=true;mean=[-0.07459283003934392, -0.25210721473719855]"
+}
