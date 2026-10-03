@@ -202,17 +202,17 @@ def execute_fipc(payload: dict[str, object]) -> dict[str, object]:
 def execute_two_tier(payload: dict[str, object], unit_seed: int) -> dict[str, object]:
     """Run ``fit_two_tier_grm`` for one whole-call two-tier family unit."""
     fit = fit_two_tier_grm(
-        np.asarray(payload["responses"], dtype=np.int64),
-        np.asarray(payload["primary_map"], dtype=bool),
-        np.asarray(payload["specific_map"], dtype=np.int64),
-        int(payload["n_cat"]),
-        int(payload["n_primary"]),
-        int(payload["n_specific"]),
-        int(payload["q_primary"]),
-        int(payload["q_specific"]),
-        int(payload["max_iter"]),
-        float(payload["tol"]),
-        int(payload["n_starts"]),
+        np.asarray(payload["responses"]),
+        np.asarray(payload["primary_map"]),
+        np.asarray(payload["specific_map"]),
+        payload["n_cat"],
+        payload["n_primary"],
+        payload["n_specific"],
+        payload["q_primary"],
+        payload["q_specific"],
+        payload["max_iter"],
+        payload["tol"],
+        payload["n_starts"],
         unit_seed,
     )
     parameter_bytes = b"".join(
