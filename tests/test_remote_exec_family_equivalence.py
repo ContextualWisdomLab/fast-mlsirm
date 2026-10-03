@@ -181,6 +181,34 @@ def _scoring_person_payload() -> dict[str, object]:
     }
 
 
+def _bifactor_bootstrap_replicate_payload(*, rejected: bool = False) -> dict[str, object]:
+    from fast_mlsirm.bifactor_bootstrap import bootstrap_replicate_payload
+
+    rng = np.random.default_rng(20260930)
+    responses = rng.integers(0, 3, size=(40, 6)).astype(np.float64)
+    if rejected:
+        # Item 0 uses category 2 only in row 2; the unit-0 resample for this
+        # module's base_seed misses it, so the fit is rejected (#2001).
+        responses[:, 0] = rng.integers(0, 2, size=40)
+        responses[2, 0] = 2
+    return bootstrap_replicate_payload(
+        responses,
+        np.array([0, 0, 0, 1, 1, 1]),
+        3,
+        2,
+        None,
+        1,
+        None,
+        7,
+        7,
+        10,
+        1e-3,
+        1,
+        False,
+        "cpu",
+    )
+
+
 # Lazy factories keep collection green when fast_mlsirm._core is unavailable
 # (FIPC payload construction calls fit_polytomous at import time otherwise).
 FAMILY_PAYLOADS: tuple[
@@ -206,7 +234,27 @@ FAMILY_PAYLOADS: tuple[
     (RemoteJobFamily.REGRESSION_CONTRASTS, _regression_contrasts_payload),
     (RemoteJobFamily.FIPC, _fipc_payload),
     (RemoteJobFamily.TWO_TIER, _two_tier_payload),
+    (RemoteJobFamily.BIFACTOR_BOOTSTRAP_REPLICATE, _bifactor_bootstrap_replicate_payload),
+    (
+        RemoteJobFamily.BIFACTOR_BOOTSTRAP_REPLICATE,
+        lambda: _bifactor_bootstrap_replicate_payload(rejected=True),
+    ),
 )
+
+
+def test_rejected_bootstrap_replicate_payload_is_a_completed_rejection() -> None:
+    pytest.importorskip("fast_mlsirm._core")
+    payload = _bifactor_bootstrap_replicate_payload(rejected=True)
+    manifest = _payload_manifest(payload)
+    envelope = _envelope(
+        family=RemoteJobFamily.BIFACTOR_BOOTSTRAP_REPLICATE, payload_manifest=manifest
+    )
+    outcome = SubprocessExecutor(socket.gethostname()).run_batch(
+        (envelope,), worker_manifest=manifest, payload=payload
+    )[0]
+    assert outcome.delivery_state is RemoteJobDeliveryState.COMPLETED
+    assert outcome.result["rejected"] is True
+    assert "never observed" in outcome.result["error"]
 
 
 def test_remote_job_family_enum_is_family_complete() -> None:
