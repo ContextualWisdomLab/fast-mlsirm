@@ -176,14 +176,14 @@ def execute_regression_contrasts(payload: dict[str, object]) -> dict[str, object
 def execute_fipc(payload: dict[str, object]) -> dict[str, object]:
     """Run ``fit_poly_fipc`` for one whole-call FIPC family unit."""
     fit = fit_poly_fipc(
-        np.asarray(payload["responses"], dtype=np.int64),
-        int(payload["n_cat"]),
+        np.asarray(payload["responses"]),
+        payload["n_cat"],
         np.asarray(payload["anchor"], dtype=bool),
         np.asarray(payload["anchor_slope"], dtype=np.float64),
         np.asarray(payload["anchor_cat_params"], dtype=np.float64),
-        q_theta=int(payload["q_theta"]),
-        max_iter=int(payload["max_iter"]),
-        tol=float(payload["tol"]),
+        q_theta=payload["q_theta"],
+        max_iter=payload["max_iter"],
+        tol=payload["tol"],
     )
     parameter_bytes = b"".join(
         np.asarray(value).tobytes()
