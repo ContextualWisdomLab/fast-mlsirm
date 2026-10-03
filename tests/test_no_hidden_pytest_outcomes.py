@@ -601,6 +601,7 @@ _CAPABILITY_NODE = "tests/test_bifactor_gpu_high_q.py::test_future_capability"
     f"      - if: false\n        run: pytest {_CAPABILITY_NODE}",
     f"      - run: pytest {_CAPABILITY_NODE}\n        if: false",
     f"      - run: |\n          pytest tests/other.py # comment \\\n          {_CAPABILITY_NODE}",
+    f"      - run: |\n          pytest {_CAPABILITY_NODE}\\\n          tests/other.py::test_other",
 ])
 def test_capability_ownership_rejects_non_command_evidence(step: str) -> None:
     workflow = f"jobs:\n  gpu-smoke:\n    steps:\n{step}\n"
