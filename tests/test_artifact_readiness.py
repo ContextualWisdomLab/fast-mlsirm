@@ -386,6 +386,83 @@ def test_a09_all_owned_descriptors_close_on_refusal(installation, monkeypatch, r
     assert opened and sorted(opened) == sorted(closed)
 
 
+@pytest.mark.parametrize("public_api", [False, True])
+@pytest.mark.parametrize("cleanup_pass", [1, 2])
+@pytest.mark.parametrize("error_positions", [(), (0,), (1,), (2,), (0, 1)])
+def test_a09_prefix_cleanup_attempts_remaining_handles_after_close_error(
+        installation, monkeypatch, cleanup_pass, error_positions, public_api):
+    root, original_policy, original_startup = installation
+    parent = root / "outer/middle"
+    parent.mkdir(parents=True)
+    (root / "fast_mlsirm").rename(parent / "fast_mlsirm")
+    policy = copy.deepcopy(original_policy)
+    target = policy["targets"][0]
+    target["package_roots"] = ["outer/middle/fast_mlsirm"]
+    target["extension_member"] = "outer/middle/" + target["extension_member"]
+    for member in target["members"]:
+        member["path"] = "outer/middle/" + member["path"]
+    startup = copy.deepcopy(original_startup)
+    startup["loaded_origin"] = str(root / target["extension_member"])
+    startup["startup_policy_digest"] = _pin(policy)
+    original_open, original_close = MODULE.os.open, MODULE.os.close
+    original_member_open = MODULE._open
+    lifetimes, active, visits, injected = [], {}, 0, []
+
+    def open_file(*args, **kwargs):
+        fd = original_open(*args, **kwargs)
+        record = {"fd": fd, "prefix": False, "attempts": 0, "closed": False}
+        lifetimes.append(record)
+        active[fd] = record
+        return fd
+
+    def open_member(parent_fd, name, *, directory=False):
+        nonlocal visits
+        fd, initial = original_member_open(parent_fd, name, directory=directory)
+        if directory:
+            if name == "outer":
+                visits += 1
+            active[fd].update(prefix=True, cleanup_pass=visits,
+                             position={"fast_mlsirm": 0, "middle": 1, "outer": 2}[name])
+        return fd, initial
+
+    def close_file(fd):
+        record = active.pop(fd)
+        record["attempts"] += 1
+        original_close(fd)
+        record["closed"] = True
+        if (record["prefix"] and record["cleanup_pass"] == cleanup_pass
+                and record["position"] in error_positions):
+            message = f"close error at prefix {record['position']}"
+            injected.append(message)
+            raise OSError(message)
+
+    monkeypatch.setattr(MODULE.os, "open", open_file)
+    monkeypatch.setattr(MODULE.os, "close", close_file)
+    monkeypatch.setattr(MODULE, "_open", open_member)
+    monkeypatch.setattr(MODULE, "_safe_io_available", lambda: True)
+    try:
+        if error_positions and not public_api:
+            with pytest.raises(OSError, match=f"close error at prefix {error_positions[0]}"):
+                MODULE._verify_files(root, target, time.monotonic() + 10.0)
+        else:
+            report = _verify((root, policy, startup), pin=_pin(policy))
+            if error_positions:
+                assert (report.state, report.reason_code) == ("unknown", "io_unavailable")
+                assert report.observed_members_sha256 is None
+            else:
+                assert report.state == "ready"
+        assert len(injected) == len(error_positions)
+        assert not active, "prefix descriptor survived cleanup"
+        assert all(record["attempts"] == 1 and record["closed"] for record in lifetimes)
+        # Track lifetimes rather than numeric FD sets: the second pass reuses FDs.
+        assert visits == (cleanup_pass if error_positions else 2)
+    finally:
+        # A failing pre-fix reproduction must not leak its fixture-owned handles.
+        for fd in list(active):
+            original_close(fd)
+            del active[fd]
+
+
 def test_a12_streams_more_than_one_chunk_without_candidate_execution(installation):
     root, original, startup = installation
     policy = copy.deepcopy(original)

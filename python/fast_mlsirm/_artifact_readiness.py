@@ -308,6 +308,19 @@ def _hash_fd(fd, expected, deadline):
     return count, digest.hexdigest()
 
 
+def _close_owned(fds):
+    """Attempt each owned close once before propagating the first I/O error."""
+    first_error = None
+    for fd in fds:
+        try:
+            os.close(fd)
+        except OSError as exc:
+            if first_error is None:
+                first_error = exc
+    if first_error is not None:
+        raise first_error
+
+
 def _verify_files(root, target, deadline):
     expected = {m["path"]: m for m in target["members"]}
     observed, identities, snapshots, directories = {}, set(), {}, {}
@@ -398,8 +411,7 @@ def _verify_files(root, target, deadline):
                 for parent_fd, part, initial in bindings:
                     _check_path(parent_fd, part, initial)
             finally:
-                for fd in reversed(opened):
-                    os.close(fd)
+                _close_owned(reversed(opened))
         if set(observed) != set(expected):
             raise _Refusal("mismatch", "member_missing")
         # One bounded final closure pass; never retry a mutating installation.
@@ -419,8 +431,7 @@ def _verify_files(root, target, deadline):
                 for parent_fd, part, initial in bindings:
                     _check_path(parent_fd, part, initial)
             finally:
-                for fd in reversed(opened):
-                    os.close(fd)
+                _close_owned(reversed(opened))
         if final_names != set(expected):
             raise _Refusal("mismatch", "member_missing")
         if _stamp(os.fstat(root_fd)) != _stamp(initial_root) or _identity(os.stat(root, follow_symlinks=False)) != _identity(initial_root):
