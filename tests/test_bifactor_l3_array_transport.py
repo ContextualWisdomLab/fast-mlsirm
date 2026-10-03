@@ -258,3 +258,167 @@ def _check_item_parameter_transport(
             assert (value.tobytes(), value.shape, value.strides,
                     value.flags.aligned, value.flags.writeable) == snapshots[name]
         assert (bytes(backing) if isinstance(backing, bytearray) else backing.tobytes()) == backing_bytes
+
+
+@pytest.mark.parametrize("entry", ["fit", "oakes", "fipc"])
+@pytest.mark.parametrize("invalid", [0.5, -0.5, np.nan, np.inf])
+def test_specific_map_rejects_noninteger_float_before_binding(
+    monkeypatch: pytest.MonkeyPatch, entry: str, invalid: float,
+) -> None:
+    """Reject lossy casts before loader discovery; no numerical fit is executed.
+
+    NumPy Developers (n.d., ndarray.astype, Examples) illustrates fractional
+    truncation; numpy.isfinite (Parameters) identifies NaN/infinity. References:
+    NumPy Developers. (n.d.). numpy.ndarray.astype. NumPy reference guide.
+    NumPy Developers. (n.d.). numpy.isfinite. NumPy reference guide.
+    """
+    specific_map = np.array([0.0, invalid, 1.0, 1.0])
+    original = specific_map.tobytes()
+    loader_calls = []
+
+    def unexpected_loader():
+        loader_calls.append(True)
+        raise RuntimeError("invalid specific_map reached core discovery")
+
+    monkeypatch.setattr(fitstats, "_core_module", unexpected_loader)
+    try:
+        with pytest.raises(ValueError, match="specific_map entries must be"):
+            _call_specific_map_entry(entry, specific_map)
+    finally:
+        assert specific_map.tobytes() == original
+        assert not loader_calls
+
+
+@pytest.mark.parametrize("entry", ["fit", "oakes", "fipc"])
+def test_specific_map_accepts_integer_valued_float_without_changing_order(
+    monkeypatch: pytest.MonkeyPatch, entry: str,
+) -> None:
+    """Preserve valid float maps at the recording boundary, not native output."""
+    specific_map = np.array([0.0, 0.0, 1.0, 1.0])
+    original = specific_map.tobytes()
+    calls = []
+
+    class BindingReached(Exception):
+        """Stop after observing arguments without returning a fitted result."""
+
+    def binding(*args):
+        calls.append(args)
+        item_map = args[5] if entry == "oakes" else args[2]
+        np.testing.assert_array_equal(item_map, [0, 0, 1, 1])
+        assert item_map.dtype == np.dtype(np.int64)
+        assert item_map.flags.c_contiguous and item_map.flags.aligned
+        raise BindingReached
+
+    monkeypatch.setattr(
+        fitstats, "_core_module",
+        lambda: SimpleNamespace(fit_bifactor_grm=binding, bifactor_oakes_se=binding,
+                                fit_bifactor_grm_fipc=binding),
+    )
+    try:
+        with pytest.raises(BindingReached):
+            _call_specific_map_entry(entry, specific_map)
+    finally:
+        assert len(calls) == 1
+        assert specific_map.tobytes() == original
+
+
+@pytest.mark.parametrize("entry", ["fit", "oakes", "fipc"])
+@pytest.mark.parametrize("invalid", [float(2**63), float(-(2**63) - 2048)])
+def test_specific_map_rejects_out_of_int64_float_before_binding(monkeypatch, entry, invalid):
+    """Reject integral-valued floats outside the native signed-map range."""
+    smap = np.array([0.0, 0.0, 1.0, invalid], dtype=np.float64)
+    calls = []
+    monkeypatch.setattr(fitstats, "_core_module", lambda: calls.append(True))
+    with pytest.raises(ValueError, match="specific_map entries must"):
+        _call_specific_map_entry(entry, smap)
+    assert calls == []
+
+
+@pytest.mark.parametrize("entry", ["fit", "oakes", "fipc"])
+def test_specific_map_rejects_complex_dtype_before_binding(monkeypatch, entry):
+    """A complex array is not a real-valued item-to-specific map."""
+    smap = np.array([0, 0, 1, 1 + 0.5j], dtype=np.complex128)
+    calls = []
+    monkeypatch.setattr(fitstats, "_core_module", lambda: calls.append(True))
+    with pytest.raises(ValueError, match="specific_map entries must"):
+        _call_specific_map_entry(entry, smap)
+    assert calls == []
+
+
+@pytest.mark.parametrize("entry", ["fit", "oakes", "fipc"])
+def test_specific_map_rejects_unsigned_wrap_before_binding(monkeypatch, entry):
+    """Reject a uint64 value that would wrap to the valid -1 map sentinel.
+
+    Basis: NumPy Developers (n.d., ndarray.astype, casting parameter) and
+    NumPy Developers (n.d., numpy.iinfo, integer limits). References:
+    NumPy Developers. (n.d.). numpy.ndarray.astype. NumPy reference guide.
+    NumPy Developers. (n.d.). numpy.iinfo. NumPy reference guide.
+    """
+    specific_map = np.array([0, 0, 1, 2**64 - 1], dtype=np.uint64)
+    original = specific_map.tobytes()
+    loader_calls = []
+
+    def unexpected_loader():
+        loader_calls.append(True)
+        raise RuntimeError("unsigned overflow reached core discovery")
+
+    monkeypatch.setattr(fitstats, "_core_module", unexpected_loader)
+    try:
+        with pytest.raises(ValueError, match="specific_map entries must be"):
+            _call_specific_map_entry(entry, specific_map)
+    finally:
+        assert specific_map.tobytes() == original
+        assert not loader_calls
+
+
+@pytest.mark.parametrize("entry", ["fit", "oakes", "fipc"])
+def test_specific_map_preserves_valid_unsigned_values(monkeypatch, entry):
+    """Keep valid unsigned maps lossless at the recording core boundary."""
+    specific_map = np.array([0, 0, 1, 1], dtype=np.uint64)
+    original = specific_map.tobytes()
+    calls = []
+
+    class BindingReached(Exception):
+        """Stop after argument capture without numerical execution."""
+
+    def binding(*args):
+        calls.append(args)
+        item_map = args[5] if entry == "oakes" else args[2]
+        np.testing.assert_array_equal(item_map, [0, 0, 1, 1])
+        assert item_map.dtype == np.dtype(np.int64)
+        assert item_map.flags.c_contiguous and item_map.flags.aligned
+        raise BindingReached
+
+    monkeypatch.setattr(
+        fitstats, "_core_module",
+        lambda: SimpleNamespace(fit_bifactor_grm=binding, bifactor_oakes_se=binding,
+                                fit_bifactor_grm_fipc=binding),
+    )
+    try:
+        with pytest.raises(BindingReached):
+            _call_specific_map_entry(entry, specific_map)
+    finally:
+        assert len(calls) == 1
+        assert specific_map.tobytes() == original
+
+
+def _call_specific_map_entry(entry: str, specific_map: np.ndarray) -> None:
+    """Reach the actual wrapper using explicit controls and a recording core."""
+    y = np.array([[0, 1, 0, 1], [1, 0, 1, 0]], dtype=np.int64)
+    common = dict(n_cat=2, n_specific=2, q_general=121, q_specific=241)
+    if entry == "fit":
+        bifactor.fit_bifactor_grm(
+            y, specific_map, **common, max_iter=1, tol=1e-6,
+            n_starts=1, seed=20261004, device="cpu",
+        )
+    elif entry == "oakes":
+        bifactor.bifactor_oakes_se(
+            np.ones(4), np.ones(4), np.zeros((4, 1)), y, specific_map,
+            **common, fd_step=1e-4,
+        )
+    else:
+        bifactor.fit_bifactor_grm_fipc(
+            y, specific_map, **common, anchor=np.ones(4, dtype=bool),
+            fixed_a_general=np.ones(4), fixed_a_specific=np.ones(4),
+            fixed_threshold=np.zeros((4, 1)), max_iter=1, tol=1e-6,
+        )

@@ -275,11 +275,20 @@ def fit_bifactor_grm(
     smap = np.asarray(specific_map)
     if smap.ndim != 1 or smap.shape[0] != n_items:
         raise ValueError("specific_map must be a 1-D array of length n_items")
+    if smap.dtype.kind == "c":
+        raise ValueError("specific_map entries must be real integers")
     if smap.dtype.kind == "f":
         if not bool(np.isfinite(smap).all()):
             raise ValueError("specific_map entries must be finite integers")
         if bool((smap != np.floor(smap)).any()):
             raise ValueError("specific_map entries must be integers")
+        # The upper bound is exclusive: float64(int64.max) rounds to 2**63.
+        if bool(((smap < -(2.0**63)) | (smap >= 2.0**63)).any()):
+            raise ValueError("specific_map entries must be representable as int64")
+    if smap.dtype.kind == "u" and bool(
+        (smap > np.uint64(np.iinfo(np.int64).max)).any()
+    ):
+        raise ValueError("specific_map entries must be representable as int64")
     try:
         smap_int = smap.astype(np.int64, copy=False)
     except (TypeError, ValueError):
@@ -457,11 +466,20 @@ def bifactor_oakes_se(
     smap = np.asarray(specific_map)
     if smap.ndim != 1 or smap.shape[0] != n_items:
         raise ValueError("specific_map must be a 1-D array of length n_items")
+    if smap.dtype.kind == "c":
+        raise ValueError("specific_map entries must be real integers")
     if smap.dtype.kind == "f":
         if not bool(np.isfinite(smap).all()):
             raise ValueError("specific_map entries must be finite integers")
         if bool((smap != np.floor(smap)).any()):
             raise ValueError("specific_map entries must be integers")
+        # The upper bound is exclusive: float64(int64.max) rounds to 2**63.
+        if bool(((smap < -(2.0**63)) | (smap >= 2.0**63)).any()):
+            raise ValueError("specific_map entries must be representable as int64")
+    if smap.dtype.kind == "u" and bool(
+        (smap > np.uint64(np.iinfo(np.int64).max)).any()
+    ):
+        raise ValueError("specific_map entries must be representable as int64")
     try:
         smap_int = smap.astype(np.int64, copy=False)
     except (TypeError, ValueError):
@@ -651,6 +669,20 @@ def fit_bifactor_grm_fipc(
     smap = np.asarray(specific_map)
     if smap.ndim != 1 or smap.shape[0] != n_items:
         raise ValueError("specific_map must be a 1-D array of length n_items")
+    if smap.dtype.kind == "c":
+        raise ValueError("specific_map entries must be real integers")
+    if smap.dtype.kind == "f":
+        if not bool(np.isfinite(smap).all()):
+            raise ValueError("specific_map entries must be finite integers")
+        if bool((smap != np.floor(smap)).any()):
+            raise ValueError("specific_map entries must be integers")
+        # The upper bound is exclusive: float64(int64.max) rounds to 2**63.
+        if bool(((smap < -(2.0**63)) | (smap >= 2.0**63)).any()):
+            raise ValueError("specific_map entries must be representable as int64")
+    if smap.dtype.kind == "u" and bool(
+        (smap > np.uint64(np.iinfo(np.int64).max)).any()
+    ):
+        raise ValueError("specific_map entries must be representable as int64")
     try:
         smap_int = smap.astype(np.int64, copy=False)
     except (TypeError, ValueError):
