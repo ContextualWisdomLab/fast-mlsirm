@@ -102,6 +102,13 @@ def _finite_integer_control(value: object, name: str) -> int:
 
     if isinstance(value, bool):
         raise ValueError(f"{name} must be a finite integer")
+    # Preserve exact concrete integers; keep other conversion protocols unchanged.
+    integer_types = (
+        int, np.int8, np.int16, np.int32, np.int64, np.intp, np.longlong,
+        np.uint8, np.uint16, np.uint32, np.uint64, np.uintp, np.ulonglong,
+    )
+    if any(type(value) is scalar_type for scalar_type in integer_types):
+        return int(value)
     try:
         numeric = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError, OverflowError):
