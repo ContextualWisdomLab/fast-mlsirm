@@ -1087,14 +1087,21 @@ pub(crate) fn e_step(
                     }
                     block_acc_g[s * qs + h] = acc;
                 }
-                let mut others = gen_log[g] - log_w[g];
+                // Keep the prior in the joint numerator: subtracting its log
+                // first is undefined at a zero-mass primary node. This is
+                // the unchanged reduced posterior product (Cai, 2010,
+                // pp. 589-590, Eqs. 15-16; pp. 608-609, Appendix A).
+                // Reference: Cai, L. (2010). A two-tier full-information
+                // item factor analysis model with applications.
+                // Psychometrika, 75(4), 581-612. doi:10.1007/s11336-010-9178-0.
+                let mut others = gen_log[g];
                 for s2 in 0..v.n_specific {
                     if s2 != s {
                         others += log_i[s2 * n_grid + g];
                     }
                 }
                 for h in 0..qs {
-                    let log_post = log_w[g] + block_acc_g[s * qs + h] + others - log_lp;
+                    let log_post = block_acc_g[s * qs + h] + others - log_lp;
                     let post = log_post.exp();
                     for &i in members {
                         if !is_obs(pp, i) {
@@ -1262,14 +1269,21 @@ fn e_step_fipc_cpu(
                     }
                     block_acc_g[s * qs + h] = acc;
                 }
-                let mut others = gen_log[g] - log_w[g];
+                // Keep the prior in the joint numerator: subtracting its log
+                // first is undefined at a zero-mass primary node. This is
+                // the unchanged reduced posterior product (Cai, 2010,
+                // pp. 589-590, Eqs. 15-16; pp. 608-609, Appendix A).
+                // Reference: Cai, L. (2010). A two-tier full-information
+                // item factor analysis model with applications.
+                // Psychometrika, 75(4), 581-612. doi:10.1007/s11336-010-9178-0.
+                let mut others = gen_log[g];
                 for s2 in 0..v.n_specific {
                     if s2 != s {
                         others += log_i[s2 * n_grid + g];
                     }
                 }
                 for h in 0..qs {
-                    let post = (log_w[g] + block_acc_g[s * qs + h] + others - log_lp).exp();
+                    let post = (block_acc_g[s * qs + h] + others - log_lp).exp();
                     specific_mass[s] += post;
                     sum_specific2[s] += post * ts_by_specific[s][h] * ts_by_specific[s][h];
                     for &i in members {
@@ -3584,3 +3598,7 @@ pub fn two_tier_grm_reference_score_moments(
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_grm_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_zero_primary_mass_tests.rs"]
+mod zero_primary_mass_tests;
