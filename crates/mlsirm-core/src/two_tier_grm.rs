@@ -934,6 +934,12 @@ fn grm_selected_logprob(base: f64, thresholds: &[f64], category: usize) -> f64 {
     log_sigmoid(upper) + log_sigmoid(-lower) + (-(lower - upper).exp_m1()).ln()
 }
 
+#[cfg(test)]
+thread_local! {
+    static CATEGORY_EVALUATIONS_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static CATEGORY_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 #[inline]
 fn item_cat_logprob(
     v: &Validated,
@@ -945,6 +951,13 @@ fn item_cat_logprob(
     h: usize,
     cat: usize,
 ) -> f64 {
+    #[cfg(test)]
+    if CATEGORY_EVALUATIONS_ACTIVE
+        .try_with(|v| v.get())
+        .unwrap_or(false)
+    {
+        let _ = CATEGORY_EVALUATIONS.try_with(|v| v.set(v.get() + 1));
+    }
     let par = &params[i];
     let prim = item_primary_base(v, par, coords, g, i);
     let base = match par.a_s {
@@ -3176,14 +3189,25 @@ pub fn fit_two_tier_grm(
     let params = outcome.params;
     let phi = phi_from_z(&outcome.z_phi, p);
 
-    // Final EAP pass for the primary tier at the winning parameters.
-    // Streaming (same blocked GH product as the E-step; #1992): no full
-    // log-prob tables, and specific-tier scratch is O(S * qs) per primary
-    // node rather than O(S * n_grid * qs).
+    // Final EAP pass uses the same blocked GH product as the E-step.
+    // Current item cells are cached by exact primary-predictor bits;
+    // specific-tier scratch remains O(S * qs) per primary node rather
+    // than O(S * n_grid * qs).
     let (l, logdet) = cholesky_lower(&phi, p)
         .ok_or_else(|| "winning primary correlation is non-PD".to_string())?;
     let phi_inv = chol_inverse(&l, p);
     let log_w = reweighted_log_weights(&log_w0, &coords, &phi_inv, logdet, p);
+    // Rebuild current winning-parameter cells once for the posterior pass.
+    // The GRM response cells do not depend on person identity (Cai, 2010,
+    // p. 589, Eqs. 11-12); EAP/SD use unchanged reduced posterior weights
+    // (p. 591; p. 609, Appendix B). Primary-slot buffers are additional
+    // memory beyond the cached f64 cells; no cross-iteration cache is kept.
+    // Reference: Cai, L. (2010). A two-tier full-information item factor
+    // analysis model with applications. Psychometrika, 75(4), 581-612.
+    // doi:10.1007/s11336-010-9178-0.
+    let logprobs: Vec<OrdinaryItemLogprobs> = (0..v.n_items)
+        .map(|i| ordinary_item_logprobs(&v, y, observed, &params, &coords, ts, i, n_grid, qs))
+        .collect();
     let mut theta_p_eap = vec![0.0f64; n_persons * p];
     let mut theta_p_sd = vec![0.0f64; n_persons * p];
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * n_items + i]);
@@ -3198,7 +3222,7 @@ pub fn fit_two_tier_grm(
             }
             let yc = y[pp * n_items + i];
             for g in 0..n_grid {
-                gen_log[g] += item_cat_logprob(&v, &params, &coords, ts, i, g, 0, yc);
+                gen_log[g] += logprobs[i].get(g, 0, yc);
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
@@ -3210,7 +3234,7 @@ pub fn fit_two_tier_grm(
                             continue;
                         }
                         let yc = y[pp * n_items + i];
-                        acc += item_cat_logprob(&v, &params, &coords, ts, i, g, h, yc);
+                        acc += logprobs[i].get(g, h, yc);
                     }
                     tmp_h[h] = acc;
                 }

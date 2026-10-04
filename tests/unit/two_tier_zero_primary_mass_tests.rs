@@ -1211,4 +1211,410 @@ mod zero_primary_mass_regression {
         let _values = vec![1.0_f64; 32];
         assert_eq!(ALLOCATION_COUNT.with(|v| v.get()), 0);
     }
+
+    /// Response cells are person-independent at fixed item parameters (Cai,
+    /// 2010, p. 589, Eqs. 11-12); final EAP uses their reduced posterior
+    /// weights (p. 591; p. 609, Appendix B), without changing node counts.
+    ///
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn ordinary_final_eap_reuses_person_independent_cells() {
+        struct Scope;
+        impl Drop for Scope {
+            fn drop(&mut self) {
+                CATEGORY_EVALUATIONS_ACTIVE.with(|v| v.set(false));
+            }
+        }
+        let (_, y0, _, _, _, _, _) = fixture(121, 121, true);
+        let y: Vec<usize> = y0.iter().copied().cycle().take(60 * 4).collect();
+        let cfg = TwoTierGrmConfig {
+            q_primary: 121,
+            q_specific: 121,
+            max_iter: 1,
+            newton_iter: 1,
+            n_starts: 1,
+            estimate_primary_correlation: false,
+            seed: 20260921,
+            tol: 1e-6,
+            ridge: 1e-8,
+        };
+        CATEGORY_EVALUATIONS.with(|v| v.set(0));
+        CATEGORY_EVALUATIONS_ACTIVE.with(|v| v.set(true));
+        let scope = Scope;
+        let result =
+            fit_two_tier_grm(&y, None, &[true; 4], &[0, 0, 0, -1], 60, 4, 1, 1, 3, &cfg).unwrap();
+        drop(scope);
+        let evaluated = CATEGORY_EVALUATIONS.with(|v| v.get());
+        // Exactly two E-steps (initial and post-update), plus final EAP.
+        // The full all-category per-item table is an independent upper bound.
+        let bound = 3 * 4 * 121 * 121 * 3;
+        eprintln!("final_eap_category_evaluations={evaluated} upper_bound={bound}");
+        assert!(result
+            .theta_p_eap
+            .iter()
+            .chain(&result.theta_p_sd)
+            .all(|x| x.is_finite()));
+        assert!(!result.converged && result.n_iter == 1);
+        assert!(
+            evaluated <= bound,
+            "final EAP repeats person-independent item probabilities: {evaluated} > {bound}"
+        );
+    }
+
+    /// Frozen predecessor fitter, including its original final posterior
+    /// loop and reflection order (Cai, 2010, p. 591; p. 609, Appendix B).
+    /// Only the function name and visibility differ from the parent fitter.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[allow(clippy::too_many_arguments)]
+    fn predecessor_final_eap(
+        y: &[usize],
+        observed: Option<&[bool]>,
+        primary_map: &[bool],
+        specific_map: &[i32],
+        n_persons: usize,
+        n_items: usize,
+        n_primary: usize,
+        n_specific: usize,
+        n_cat: usize,
+        cfg: &TwoTierGrmConfig,
+    ) -> Result<TwoTierGrmResult, String> {
+        let v = validate(
+            y,
+            observed,
+            primary_map,
+            specific_map,
+            n_persons,
+            n_items,
+            n_primary,
+            n_specific,
+            n_cat,
+            cfg,
+        )?;
+        let p = v.n_primary;
+        let (tz, wz) = gh_rule(cfg.q_primary)?;
+        let (ts, ws) = gh_rule(cfg.q_specific)?;
+        let qs = ts.len();
+        let n_grid = v.grid_size;
+        let (coords, log_w0) = build_primary_grid(tz, wz, p, n_grid);
+        let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+
+        // Multi-start EM: deterministic starts, best observed loglik wins.
+        // A start that fails numerically is SKIPPED (its error is retained for
+        // the all-failed report); surviving starts are never mixed.
+        let mut best: Option<SingleStartOutcome> = None;
+        let mut best_ll = f64::NEG_INFINITY;
+        let mut best_start = 0usize;
+        let mut first_error: Option<String> = None;
+        let mut n_succeeded = 0usize;
+        for start in 0..cfg.n_starts {
+            match run_single_start(
+                &v, y, observed, cfg, &coords, &log_w0, ts, &log_ws, n_grid, qs, start,
+            ) {
+                Ok(outcome) => {
+                    n_succeeded += 1;
+                    let ll = *outcome
+                        .loglik_trace
+                        .last()
+                        .expect("EM trace is never empty");
+                    if best.is_none() || ll > best_ll {
+                        best_ll = ll;
+                        best = Some(outcome);
+                        best_start = start;
+                    }
+                }
+                Err(e) => {
+                    if first_error.is_none() {
+                        first_error = Some(format!("start {start}: {e}"));
+                    }
+                }
+            }
+        }
+        let outcome = best.ok_or_else(|| {
+            format!(
+                "all {} EM start(s) failed numerically; first error: {}",
+                cfg.n_starts,
+                first_error.unwrap_or_else(|| "unknown".into())
+            )
+        })?;
+        let _ = n_succeeded;
+        let params = outcome.params;
+        let phi = phi_from_z(&outcome.z_phi, p);
+
+        // Final EAP pass for the primary tier at the winning parameters.
+        // Streaming (same blocked GH product as the E-step; #1992): no full
+        // log-prob tables, and specific-tier scratch is O(S * qs) per primary
+        // node rather than O(S * n_grid * qs).
+        let (l, logdet) = cholesky_lower(&phi, p)
+            .ok_or_else(|| "winning primary correlation is non-PD".to_string())?;
+        let phi_inv = chol_inverse(&l, p);
+        let log_w = reweighted_log_weights(&log_w0, &coords, &phi_inv, logdet, p);
+        let mut theta_p_eap = vec![0.0f64; n_persons * p];
+        let mut theta_p_sd = vec![0.0f64; n_persons * p];
+        let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * n_items + i]);
+        let mut log_i = vec![0.0f64; v.n_specific * n_grid];
+        let mut log_like_g = vec![0.0f64; n_grid];
+        let mut tmp_h = vec![0.0f64; qs];
+        for pp in 0..n_persons {
+            let mut gen_log = log_w.clone();
+            for &i in &v.specific_free {
+                if !is_obs(pp, i) {
+                    continue;
+                }
+                let yc = y[pp * n_items + i];
+                for g in 0..n_grid {
+                    gen_log[g] += item_cat_logprob(&v, &params, &coords, ts, i, g, 0, yc);
+                }
+            }
+            for (s, members) in v.blocks.iter().enumerate() {
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws[h];
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * n_items + i];
+                            acc += item_cat_logprob(&v, &params, &coords, ts, i, g, h, yc);
+                        }
+                        tmp_h[h] = acc;
+                    }
+                    log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                }
+            }
+            for g in 0..n_grid {
+                let mut acc = gen_log[g];
+                for s in 0..v.n_specific {
+                    acc += log_i[s * n_grid + g];
+                }
+                log_like_g[g] = acc;
+            }
+            let log_lp = log_sum_exp(&log_like_g);
+            for d in 0..p {
+                let (mut m1, mut m2) = (0.0f64, 0.0f64);
+                for (g, &ll) in log_like_g.iter().enumerate() {
+                    let post = (ll - log_lp).exp();
+                    let t = coords[g * p + d];
+                    m1 += post * t;
+                    m2 += post * t * t;
+                }
+                theta_p_eap[pp * p + d] = m1;
+                theta_p_sd[pp * p + d] = (m2 - m1 * m1).max(0.0).sqrt();
+            }
+        }
+
+        // Assemble dense outputs.
+        let mut a_primary = vec![0.0f64; n_items * p];
+        let mut a_specific = vec![0.0f64; n_items];
+        let mut threshold = vec![0.0f64; n_items * v.m1];
+        let mut n_parameters = if cfg.estimate_primary_correlation {
+            p * (p.saturating_sub(1)) / 2
+        } else {
+            0
+        };
+        for (i, par) in params.iter().enumerate() {
+            for &dim in &v.free_primaries[i] {
+                a_primary[i * p + dim] = par.a_p[dim];
+                n_parameters += 1;
+            }
+            if let Some(a_s) = par.a_s {
+                a_specific[i] = a_s;
+                n_parameters += 1;
+            }
+            n_parameters += v.m1;
+            threshold[i * v.m1..(i + 1) * v.m1].copy_from_slice(&par.d);
+        }
+
+        // Per-dimension reflection canonicalization (module docs): each primary
+        // over its loading items (flipping slopes, the EAP column, and the Phi
+        // row/column signs jointly only when Phi is estimated), each specific
+        // within its block; fixed Phi remains bit-exact I;
+        // thresholds untouched.
+        let mut phi_work = phi;
+        for d in 0..p {
+            let loaders: Vec<usize> = (0..n_items)
+                .filter(|&i| v.free_primaries[i].contains(&d))
+                .collect();
+            let anchor = loaders
+                .iter()
+                .max_by(|&&i, &&j| {
+                    a_primary[i * p + d]
+                        .abs()
+                        .total_cmp(&a_primary[j * p + d].abs())
+                })
+                .copied()
+                .expect("validated primaries all load at least two items");
+            if a_primary[anchor * p + d] < 0.0 {
+                for &i in &loaders {
+                    a_primary[i * p + d] = -a_primary[i * p + d];
+                }
+                for pp in 0..n_persons {
+                    theta_p_eap[pp * p + d] = -theta_p_eap[pp * p + d];
+                }
+                if cfg.estimate_primary_correlation {
+                    for q in 0..p {
+                        if q != d {
+                            phi_work[d * p + q] = -phi_work[d * p + q];
+                            phi_work[q * p + d] = -phi_work[q * p + d];
+                        }
+                    }
+                }
+            }
+        }
+        for members in v.blocks.iter() {
+            let anchor = members
+                .iter()
+                .max_by(|&&i, &&j| a_specific[i].abs().total_cmp(&a_specific[j].abs()))
+                .copied()
+                .expect("validated blocks are non-empty");
+            if a_specific[anchor] < 0.0 {
+                for &i in members {
+                    a_specific[i] = -a_specific[i];
+                }
+            }
+        }
+
+        let mut category_counts = vec![0usize; n_items * n_cat];
+        for pp in 0..n_persons {
+            for i in 0..n_items {
+                if is_obs(pp, i) {
+                    category_counts[i * n_cat + y[pp * n_items + i]] += 1;
+                }
+            }
+        }
+
+        Ok(TwoTierGrmResult {
+            a_primary,
+            a_specific,
+            threshold,
+            phi: phi_work,
+            theta_p_eap,
+            theta_p_sd,
+            category_counts,
+            loglik_trace: outcome.loglik_trace,
+            n_iter: outcome.n_iter,
+            converged: outcome.converged,
+            termination_reason: outcome.termination_reason,
+            final_loglik_change: outcome.final_loglik_change,
+            best_start,
+            n_parameters,
+            primary_identification: if cfg.estimate_primary_correlation {
+                "correlated"
+            } else {
+                "orthogonal"
+            },
+        })
+    }
+
+    /// Response probabilities and posterior weights retain the predecessor
+    /// arithmetic (Cai, 2010, p. 589, Eqs. 11-12; p. 609, Appendix B).
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn ordinary_final_eap_cache_preserves_masked_posterior_vectors() {
+        for (p, qp, qs, mixed) in [(1, 121, 241, false), (1, 241, 121, true), (2, 7, 9, true)] {
+            let np = 12;
+            let ni = 6;
+            let y: Vec<usize> = (0..np * ni).map(|k| (k / ni + 2 * (k % ni)) % 3).collect();
+            let mut mask: Vec<bool> = (0..np * ni).map(|k| k % 13 != 0).collect();
+            // Preserve an entirely unobserved person's prior-only posterior.
+            mask[..ni].fill(false);
+            let primary_map: Vec<bool> = (0..ni * p)
+                .map(|k| p == 1 || k % p == usize::from(k / p >= 3))
+                .collect();
+            let specific_map = if mixed {
+                vec![0, 0, 0, 1, 1, -1]
+            } else {
+                vec![0, 0, 0, 1, 1, 1]
+            };
+            let cfg = TwoTierGrmConfig {
+                estimate_primary_correlation: p == 2,
+                q_primary: qp,
+                q_specific: qs,
+                max_iter: 1,
+                tol: 1e-8,
+                n_starts: 1,
+                seed: 20260921,
+                newton_iter: 1,
+                ridge: 1e-8,
+            };
+            let result = fit_two_tier_grm(
+                &y,
+                Some(&mask),
+                &primary_map,
+                &specific_map,
+                np,
+                ni,
+                p,
+                2,
+                3,
+                &cfg,
+            )
+            .unwrap();
+            let expected = predecessor_final_eap(
+                &y,
+                Some(&mask),
+                &primary_map,
+                &specific_map,
+                np,
+                ni,
+                p,
+                2,
+                3,
+                &cfg,
+            )
+            .unwrap();
+            assert_eq!(
+                result
+                    .theta_p_eap
+                    .iter()
+                    .map(|v| v.to_bits())
+                    .collect::<Vec<_>>(),
+                expected
+                    .theta_p_eap
+                    .iter()
+                    .map(|v| v.to_bits())
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                result
+                    .theta_p_sd
+                    .iter()
+                    .map(|v| v.to_bits())
+                    .collect::<Vec<_>>(),
+                expected
+                    .theta_p_sd
+                    .iter()
+                    .map(|v| v.to_bits())
+                    .collect::<Vec<_>>()
+            );
+            for (actual, original) in [
+                (&result.a_primary, &expected.a_primary),
+                (&result.a_specific, &expected.a_specific),
+                (&result.threshold, &expected.threshold),
+                (&result.phi, &expected.phi),
+                (&result.loglik_trace, &expected.loglik_trace),
+            ] {
+                assert_eq!(
+                    actual.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                    original.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+                );
+            }
+            assert_eq!(result.category_counts, expected.category_counts);
+            assert_eq!(
+                result.final_loglik_change.to_bits(),
+                expected.final_loglik_change.to_bits()
+            );
+            assert_eq!(result.termination_reason, expected.termination_reason);
+            assert_eq!(result.n_parameters, expected.n_parameters);
+            assert_eq!(result.best_start, expected.best_start);
+            assert!(!result.converged && result.n_iter == 1);
+            assert_eq!(result.converged, expected.converged);
+            assert_eq!(result.n_iter, expected.n_iter);
+        }
+    }
 }
