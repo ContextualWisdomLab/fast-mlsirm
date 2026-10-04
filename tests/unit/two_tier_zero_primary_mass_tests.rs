@@ -987,4 +987,228 @@ mod zero_primary_mass_regression {
             }
         }
     }
+
+    // Counts only allocations in the explicitly enabled current test thread.
+    // The guard restores counting even if an assertion unwinds.
+    struct ObjectiveAllocationCounter;
+    std::thread_local! {
+        static ALLOCATION_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        static ALLOCATION_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+    impl ObjectiveAllocationCounter {
+        fn record() {
+            let enabled = ALLOCATION_ACTIVE.try_with(|v| v.get()).unwrap_or(false);
+            if enabled {
+                let _ = ALLOCATION_COUNT.try_with(|v| v.set(v.get() + 1));
+            }
+        }
+    }
+    unsafe impl std::alloc::GlobalAlloc for ObjectiveAllocationCounter {
+        unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
+            Self::record();
+            unsafe { std::alloc::GlobalAlloc::alloc(&std::alloc::System, layout) }
+        }
+        unsafe fn alloc_zeroed(&self, layout: std::alloc::Layout) -> *mut u8 {
+            Self::record();
+            unsafe { std::alloc::GlobalAlloc::alloc_zeroed(&std::alloc::System, layout) }
+        }
+        unsafe fn dealloc(&self, pointer: *mut u8, layout: std::alloc::Layout) {
+            unsafe { std::alloc::GlobalAlloc::dealloc(&std::alloc::System, pointer, layout) }
+        }
+        unsafe fn realloc(
+            &self,
+            pointer: *mut u8,
+            layout: std::alloc::Layout,
+            size: usize,
+        ) -> *mut u8 {
+            Self::record();
+            unsafe { std::alloc::GlobalAlloc::realloc(&std::alloc::System, pointer, layout, size) }
+        }
+    }
+    #[global_allocator]
+    static OBJECTIVE_ALLOCATOR: ObjectiveAllocationCounter = ObjectiveAllocationCounter;
+    struct AllocationGuard;
+    impl Drop for AllocationGuard {
+        fn drop(&mut self) {
+            ALLOCATION_ACTIVE.with(|v| v.set(false));
+        }
+    }
+
+    /// Checks caller-local scratch reuse without changing the graded objective.
+    /// Basis: Cai (2010, p. 589, Eqs. 11-12; pp. 608-609, Appendix A).
+    /// The allocation budget is an implementation resource invariant, not a
+    /// quadrature, convergence, model fit or recovery acceptance threshold.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn objective_buffers_do_not_allocate_per_latent_node() {
+        let (v, y, pars, coords, lw, ts, lws) = fixture(121, 121, true);
+        let (_, counts, _) = e_step(
+            &v,
+            &y,
+            None,
+            &pars,
+            &lw,
+            &lws,
+            &coords,
+            &ts,
+            lw.len(),
+            ts.len(),
+        );
+        let i = 0;
+        let mut packed = vec![pars[i].a_p[0], pars[i].a_s.unwrap()];
+        packed.extend_from_slice(&pars[i].d);
+        ALLOCATION_COUNT.with(|v| v.set(0));
+        ALLOCATION_ACTIVE.with(|v| v.set(true));
+        let guard = AllocationGuard;
+        let actual = item_neg_ll_grad(
+            &packed,
+            &v.free_primaries[i],
+            true,
+            &coords,
+            &ts,
+            v.n_primary,
+            lw.len(),
+            ts.len(),
+            &counts[i],
+            v.n_cat,
+        );
+        drop(guard);
+        let allocations = ALLOCATION_COUNT.with(|v| v.get());
+        let expected = legacy_objective(
+            &packed,
+            &v.free_primaries[i],
+            true,
+            &coords,
+            &ts,
+            v.n_primary,
+            lw.len(),
+            ts.len(),
+            &counts[i],
+            v.n_cat,
+        );
+        assert_eq!(actual.0.to_bits(), expected.0.to_bits());
+        assert_eq!(
+            actual.1.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            expected.1.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+        );
+        eprintln!(
+            "objective_nodes={} objective_allocations={allocations}",
+            counts[i].len()
+        );
+        assert!(
+            allocations <= 5,
+            "objective allocation grows per latent node: {allocations}"
+        );
+    }
+
+    fn frozen_buffer_logprobs(base: f64, thresholds: &[f64]) -> Vec<f64> {
+        let kb = thresholds.len(); // number of boundaries = K-1
+        let mut out = vec![0.0_f64; kb + 1];
+        if kb == 0 {
+            out[0] = 0.0;
+            return out;
+        }
+        // category 0: 1 - sigmoid(base + beta_0) = sigmoid(-(base + beta_0))
+        out[0] = legacy_log_sigmoid(-(base + thresholds[0]));
+        // middle categories 1..K-2: P = sigmoid(base+beta_{k-1}) - sigmoid(base+beta_k)
+        for k in 1..kb {
+            let upper = base + thresholds[k - 1];
+            let lower = base + thresholds[k];
+            // sigmoid(upper) - sigmoid(lower)
+            // = sigmoid(upper) * sigmoid(-lower) * (1 - exp(lower - upper)).
+            // `-expm1` preserves a narrow category and avoids subtracting two
+            // rounded log-sigmoids in the same extreme tail.
+            out[k] = legacy_log_sigmoid(upper)
+                + legacy_log_sigmoid(-lower)
+                + (-(lower - upper).exp_m1()).ln();
+        }
+        // top category K-1: sigmoid(base + beta_{K-2})
+        out[kb] = legacy_log_sigmoid(base + thresholds[kb - 1]);
+        out
+    }
+
+    /// Exercises overwritten caller buffers against the frozen prior formula.
+    /// Basis: Cai (2010, p. 589, Eqs. 11-12), not a new probability model.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn reused_buffers_preserve_boundary_cells_and_overwrite_prior_values() {
+        let banks = vec![
+            vec![],
+            vec![0.],
+            vec![2., 0.3, -1.2],
+            vec![1000., 999.999999999, -1000.],
+            vec![1e-12, 0., -1e-12],
+            vec![0., 0.],
+            vec![-1., 1.],
+        ];
+        let mut comparisons = 0;
+        for thresholds in &banks {
+            let mut out = vec![f64::NAN; thresholds.len() + 1];
+            let mut gout = vec![f64::NAN; thresholds.len()];
+            for base in [-1e6, -1000., -40., -1., -0., 0., 0.3, 40., 1000., 1e6] {
+                let expected = frozen_buffer_logprobs(base, thresholds);
+                crate::poly::grm_logprobs_into(base, thresholds, &mut out);
+                assert_eq!(
+                    expected.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                    out.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+                );
+                assert_eq!(
+                    expected.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                    grm_logprobs(base, thresholds)
+                        .iter()
+                        .map(|v| v.to_bits())
+                        .collect::<Vec<_>>()
+                );
+                for pattern in 0..3 {
+                    let counts = (0..=thresholds.len())
+                        .map(|i| {
+                            if pattern == 0 {
+                                0.
+                            } else if pattern == 1 && i % 2 == 0 {
+                                0.
+                            } else {
+                                1. + i as f64 / 3.
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    let old = legacy_node_gradient(base, thresholds, &counts);
+                    let gb = crate::poly::grm_node_gradient_into(
+                        base, thresholds, &counts, &out, &mut gout,
+                    );
+                    assert_eq!(old.0.to_bits(), gb.to_bits());
+                    assert_eq!(
+                        old.1.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                        gout.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+                    );
+                    comparisons += 1;
+                }
+            }
+        }
+        assert_eq!(comparisons, 210);
+    }
+
+    #[test]
+    fn allocation_counter_restores_thread_scope_on_unwind() {
+        ALLOCATION_COUNT.with(|v| v.set(0));
+        let rejected = std::panic::catch_unwind(|| {
+            ALLOCATION_ACTIVE.with(|v| v.set(true));
+            let _guard = AllocationGuard;
+            std::thread::spawn(|| {
+                assert!(!ALLOCATION_ACTIVE.with(|v| v.get()));
+                let _values = vec![1.0_f64; 32];
+            })
+            .join()
+            .unwrap();
+            panic!("fixture-owned unwind");
+        });
+        assert!(rejected.is_err());
+        assert!(!ALLOCATION_ACTIVE.with(|v| v.get()));
+        ALLOCATION_COUNT.with(|v| v.set(0));
+        let _values = vec![1.0_f64; 32];
+        assert_eq!(ALLOCATION_COUNT.with(|v| v.get()), 0);
+    }
 }

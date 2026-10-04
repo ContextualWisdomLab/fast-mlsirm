@@ -209,7 +209,7 @@
 //! 50*(3), 325-335. https://doi.org/10.1111/1467-9876.00237 (full text read:
 //! high `Q` often required; do not invent a low default)
 
-use crate::poly::{grm_logprobs, grm_node_gradient_from_logprobs, solve_small};
+use crate::poly::{grm_logprobs, solve_small};
 
 // NOTE (stage-4 design): this module imposes no magic size caps. Upper
 // bounds without a documented origin are rejected in favor of correctness
@@ -2625,6 +2625,8 @@ fn item_neg_ll_grad(
     let beta = &params[off..];
     let mut ll = 0.0f64;
     let mut grad = vec![0.0f64; params.len()];
+    let mut lp = vec![0.0; beta.len() + 1];
+    let mut g_thr = vec![0.0; beta.len()];
     for (node, cnt) in counts.iter().enumerate() {
         let (g, h) = if has_specific {
             (node / qs, node % qs)
@@ -2639,9 +2641,9 @@ fn item_neg_ll_grad(
         if has_specific {
             base += params[k] * ts[h];
         }
-        let lp = grm_logprobs(base, beta);
+        crate::poly::grm_logprobs_into(base, beta, &mut lp);
         ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
-        let (g_base, g_thr) = grm_node_gradient_from_logprobs(base, beta, cnt, &lp);
+        let g_base = crate::poly::grm_node_gradient_into(base, beta, cnt, &lp, &mut g_thr);
         for (t, &dim) in free.iter().enumerate() {
             grad[t] += g_base * coords[g * n_primary + dim];
         }
