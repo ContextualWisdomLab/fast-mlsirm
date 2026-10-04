@@ -224,4 +224,40 @@ mod zero_primary_mass_regression {
             }
         }
     }
+
+    #[test]
+    fn selected_category_preserves_all_vector_cells_bitwise() {
+        let banks: Vec<Vec<f64>> = vec![
+            vec![],
+            vec![0.0],
+            vec![2.0, 0.3, -1.2],
+            vec![1000.0, 999.999999999, -1000.0],
+            vec![1e-12, 0.0, -1e-12],
+            (0..16).map(|i| 4.0 - i as f64 * 0.5).collect(),
+        ];
+        let bases = [
+            -1e6, -1000.0, -40.0, -1.0, -0.0, 0.0, 0.3, 40.0, 1000.0, 1e6,
+        ];
+        let mut pairs = 0;
+        for thresholds in &banks {
+            for base in bases {
+                let expected = grm_logprobs(base, thresholds);
+                for (category, value) in expected.iter().enumerate() {
+                    assert_eq!(
+                        grm_selected_logprob(base, thresholds, category).to_bits(),
+                        value.to_bits(),
+                        "base={base}, category={category}, thresholds={thresholds:?}",
+                    );
+                    pairs += 1;
+                }
+            }
+        }
+        assert_eq!(pairs, 320);
+    }
+
+    #[test]
+    #[should_panic]
+    fn selected_category_rejects_invalid_category() {
+        grm_selected_logprob(0.0, &[], 1);
+    }
 }

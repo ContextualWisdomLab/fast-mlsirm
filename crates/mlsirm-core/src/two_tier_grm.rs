@@ -890,6 +890,44 @@ fn item_primary_base(v: &Validated, par: &ItemParams, coords: &[f64], g: usize, 
 /// (`h` ignored / `t_s = 0` for specific-free items). Evaluates Cai et al.
 /// (2011, eq. 6–7, p. 227) on the fly so the E-step never materializes a
 /// full `n_grid * q_specific * n_cat` table per item (#1992 memory).
+/// Evaluate only the requested GRM category without allocating a category vector.
+///
+/// This selects the same cumulative-logit difference as `grm_logprobs` without
+/// changing its arithmetic (Cai, 2010, p. 589, Eqs. 11–12). The caller has already
+/// validated the item thresholds and response category. E-step quadrature,
+/// posterior counts and their summation order remain unchanged (Cai, 2010,
+/// pp. 589–590, Eqs. 15–16; pp. 608–609, Appendix A).
+///
+/// # References
+///
+/// Cai, L. (2010). A two-tier full-information item factor analysis model with
+/// applications. *Psychometrika, 75*(4), 581–612.
+/// https://doi.org/10.1007/s11336-010-9178-0
+#[inline]
+fn grm_selected_logprob(base: f64, thresholds: &[f64], category: usize) -> f64 {
+    let kb = thresholds.len();
+    assert!(category <= kb);
+    if kb == 0 {
+        return 0.0;
+    }
+    let log_sigmoid = |x: f64| {
+        if x >= 0.0 {
+            -(-x).exp().ln_1p()
+        } else {
+            x - x.exp().ln_1p()
+        }
+    };
+    if category == 0 {
+        return log_sigmoid(-(base + thresholds[0]));
+    }
+    if category == kb {
+        return log_sigmoid(base + thresholds[kb - 1]);
+    }
+    let upper = base + thresholds[category - 1];
+    let lower = base + thresholds[category];
+    log_sigmoid(upper) + log_sigmoid(-lower) + (-(lower - upper).exp_m1()).ln()
+}
+
 #[inline]
 fn item_cat_logprob(
     v: &Validated,
@@ -907,7 +945,7 @@ fn item_cat_logprob(
         Some(a_s) => prim + a_s * ts[h],
         None => prim,
     };
-    grm_logprobs(base, &par.d)[cat]
+    grm_selected_logprob(base, &par.d, cat)
 }
 
 #[inline]
@@ -930,7 +968,7 @@ fn item_cat_logprob_fipc(
         }
         None => prim,
     };
-    grm_logprobs(base, &par.d)[cat]
+    grm_selected_logprob(base, &par.d, cat)
 }
 
 fn canonical_person_order(v: &Validated, y: &[usize], observed: Option<&[bool]>) -> Vec<usize> {
