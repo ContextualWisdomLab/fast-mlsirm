@@ -345,14 +345,14 @@ def test_valkey_backend_publishes_device_fields_and_waits_for_delayed_outcomes()
     outcomes = backend.run_batch(
         envelopes,
         worker_manifest=_manifest(),
-        requested_device="gpu",
+        requested_device="cpu",
         effective_device="cpu",
         payload=_MC_PAYLOAD,
     )
 
     assert len(outcomes) == 2
     job_fields = [fields for _id, fields in client.streams["jobs"]]
-    assert all(job["requested_device"] == "gpu" for job in job_fields)
+    assert all(job["requested_device"] == "cpu" for job in job_fields)
     assert all(job["effective_device"] == "cpu" for job in job_fields)
 
 

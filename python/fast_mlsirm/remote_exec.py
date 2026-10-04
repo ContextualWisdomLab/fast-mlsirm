@@ -1238,6 +1238,7 @@ class ValkeyStreamsBackend:
         effective_device: str = "cpu",
         payload: Mapping[str, object] | None = None,
     ) -> tuple[RemoteJobOutcome, ...]:
+        _admit_remote_device_declarations(requested_device, effective_device)
         requested = _text(requested_device, "requested_device", maximum=32)
         effective = _text(effective_device, "effective_device", maximum=32)
         envelope_batch = _admit_payload_batch(envelopes, worker_manifest, payload)
