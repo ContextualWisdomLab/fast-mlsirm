@@ -358,4 +358,328 @@ mod zero_primary_mass_regression {
             }
         }
     }
+
+    // Same category probabilities in the complete-data objective and derivative
+    // (Cai, 2010, p. 589, Eqs. 11-12; pp. 608-609, Appendix A).
+    // Reference: Cai, L. (2010). A two-tier full-information item factor
+    // analysis model with applications. Psychometrika, 75(4), 581-612.
+    // doi:10.1007/s11336-010-9178-0.
+    fn legacy_log_sigmoid(x: f64) -> f64 {
+        if x >= 0.0 {
+            -(-x).exp().ln_1p()
+        } else {
+            x - x.exp().ln_1p()
+        }
+    }
+    fn legacy_node_gradient(base: f64, thresholds: &[f64], counts: &[f64]) -> (f64, Vec<f64>) {
+        let kb = thresholds.len();
+        let mut g_t = vec![0.0_f64; kb];
+        let mut g_base = 0.0_f64;
+        if kb == 0 {
+            return (0.0, g_t);
+        }
+        let log_p = grm_logprobs(base, thresholds);
+        // Evaluate v/P in log space. Directly exponentiating a valid tail category
+        // can underflow P to zero even though its score contribution is finite.
+        for j in 0..kb {
+            let eta = base + thresholds[j];
+            let log_v = legacy_log_sigmoid(eta) + legacy_log_sigmoid(-eta);
+            // d q / d s_j = r_{j+1}/P_{j+1} - r_j/P_j  (boundary j sits between cats j and j+1)
+            let right = if counts[j + 1] == 0.0 {
+                0.0
+            } else {
+                counts[j + 1] * (log_v - log_p[j + 1]).exp()
+            };
+            let left = if counts[j] == 0.0 {
+                0.0
+            } else {
+                counts[j] * (log_v - log_p[j]).exp()
+            };
+            g_t[j] = right - left;
+            g_base += right - left;
+        }
+        (g_base, g_t)
+    }
+    fn legacy_objective(
+        params: &[f64],
+        free: &[usize],
+        has_specific: bool,
+        coords: &[f64],
+        ts: &[f64],
+        n_primary: usize,
+        n_grid: usize,
+        qs: usize,
+        counts: &[Vec<f64>],
+        _n_cat: usize,
+    ) -> (f64, Vec<f64>) {
+        let k = free.len();
+        let off = k + usize::from(has_specific);
+        let beta = &params[off..];
+        let mut ll = 0.0f64;
+        let mut grad = vec![0.0f64; params.len()];
+        for (node, cnt) in counts.iter().enumerate() {
+            let (g, h) = if has_specific {
+                (node / qs, node % qs)
+            } else {
+                debug_assert!(node < n_grid);
+                (node, 0)
+            };
+            let mut base = 0.0f64;
+            for (t, &dim) in free.iter().enumerate() {
+                base += params[t] * coords[g * n_primary + dim];
+            }
+            if has_specific {
+                base += params[k] * ts[h];
+            }
+            let lp = grm_logprobs(base, beta);
+            ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+            let (g_base, g_thr) = legacy_node_gradient(base, beta, cnt);
+            for (t, &dim) in free.iter().enumerate() {
+                grad[t] += g_base * coords[g * n_primary + dim];
+            }
+            if has_specific {
+                grad[k] += g_base * ts[h];
+            }
+            for (j, gj) in g_thr.iter().enumerate() {
+                grad[off + j] += gj;
+            }
+        }
+        (-ll, grad.iter().map(|g| -g).collect())
+    }
+    fn legacy_newton(
+        mut params: Vec<f64>,
+        free: &[usize],
+        has_specific: bool,
+        coords: &[f64],
+        ts: &[f64],
+        n_primary: usize,
+        n_grid: usize,
+        qs: usize,
+        counts: &[Vec<f64>],
+        n_cat: usize,
+        ridge: f64,
+        n_newton: usize,
+    ) -> Vec<f64> {
+        let np = params.len();
+        for _ in 0..n_newton {
+            let (f0, g) = legacy_objective(
+                &params,
+                free,
+                has_specific,
+                coords,
+                ts,
+                n_primary,
+                n_grid,
+                qs,
+                counts,
+                n_cat,
+            );
+            let grad_norm = g.iter().map(|x| x * x).sum::<f64>().sqrt();
+            if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
+                break;
+            }
+            let h = 1e-5;
+            let mut hess = vec![vec![0.0f64; np]; np];
+            for j in 0..np {
+                let mut pj = params.clone();
+                pj[j] += h;
+                let (_f2, gj) = legacy_objective(
+                    &pj,
+                    free,
+                    has_specific,
+                    coords,
+                    ts,
+                    n_primary,
+                    n_grid,
+                    qs,
+                    counts,
+                    n_cat,
+                );
+                for r in 0..np {
+                    hess[r][j] = (gj[r] - g[r]) / h;
+                }
+            }
+            for r in 0..np {
+                for c in 0..np {
+                    hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
+                }
+                hess[r][r] += ridge;
+            }
+            let mut step = solve_small(hess, g.clone());
+            let mut directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum::<f64>();
+            if !step.iter().all(|s| s.is_finite()) || directional <= 0.0 {
+                step = g.clone();
+                directional = grad_norm * grad_norm;
+            }
+            let mut max_step = step.iter().map(|s| s.abs()).fold(0.0f64, f64::max);
+            if max_step > 2.0 {
+                for s in &mut step {
+                    *s *= 2.0 / max_step;
+                }
+                directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum();
+                max_step = 2.0;
+            }
+            let mut alpha = 1.0f64;
+            let mut accepted = false;
+            for _ in 0..25 {
+                let candidate: Vec<f64> = params
+                    .iter()
+                    .zip(&step)
+                    .map(|(value, direction)| value - alpha * direction)
+                    .collect();
+                let (candidate_f, _) = legacy_objective(
+                    &candidate,
+                    free,
+                    has_specific,
+                    coords,
+                    ts,
+                    n_primary,
+                    n_grid,
+                    qs,
+                    counts,
+                    n_cat,
+                );
+                if candidate_f.is_finite() && candidate_f <= f0 - 1e-4 * alpha * directional {
+                    params = candidate;
+                    accepted = true;
+                    break;
+                }
+                alpha *= 0.5;
+            }
+            if !accepted || alpha * max_step < 1e-9 {
+                break;
+            }
+        }
+        params
+    }
+    #[test]
+    fn reused_probability_gradient_preserves_boundary_cells() {
+        let banks = vec![
+            vec![],
+            vec![0.],
+            vec![2., 0.3, -1.2],
+            vec![1000., 999.999999999, -1000.],
+            vec![1e-12, 0., -1e-12],
+            (0..16).map(|i| 4. - i as f64 * 0.5).collect::<Vec<_>>(),
+        ];
+        let mut comparisons = 0;
+        for thr in &banks {
+            for base in [-1e6, -1000., -40., -1., -0., 0., 0.3, 40., 1000., 1e6] {
+                for pattern in 0..3 {
+                    let counts = (0..=thr.len())
+                        .map(|i| match pattern {
+                            0 => 0.,
+                            1 => {
+                                if i % 2 == 0 {
+                                    0.
+                                } else {
+                                    (i + 1) as f64 / 7.
+                                }
+                            }
+                            _ => 1. + i as f64 / 3.,
+                        })
+                        .collect::<Vec<_>>();
+                    let lp = grm_logprobs(base, thr);
+                    let old = legacy_node_gradient(base, thr, &counts);
+                    let new = crate::poly::grm_node_gradient_from_logprobs(base, thr, &counts, &lp);
+                    assert_eq!(old.0.to_bits(), new.0.to_bits());
+                    assert_eq!(old.1.len(), new.1.len());
+                    for (a, b) in old.1.iter().zip(&new.1) {
+                        assert_eq!(a.to_bits(), b.to_bits());
+                    }
+                    comparisons += 1;
+                }
+            }
+        }
+        assert_eq!(comparisons, 180);
+        println!("gradient_boundary_pairs={comparisons}");
+    }
+    #[test]
+    fn reused_probability_objective_and_newton_preserve_full_outputs() {
+        let (v, y, pars, coords, lw, ts, lws) = fixture(121, 121, true);
+        let mask = (0..y.len()).map(|i| i % 5 != 0).collect::<Vec<_>>();
+        let (_, counts, _) = e_step(
+            &v,
+            &y,
+            Some(&mask),
+            &pars,
+            &lw,
+            &lws,
+            &coords,
+            &ts,
+            lw.len(),
+            121,
+        );
+        for i in [0, 3] {
+            let free = &v.free_primaries[i];
+            let specific = v.item_block[i].is_some();
+            let par = &pars[i];
+            let mut packed = free.iter().map(|&d| par.a_p[d]).collect::<Vec<_>>();
+            if let Some(a) = par.a_s {
+                packed.push(a);
+            }
+            packed.extend(&par.d);
+            let old = legacy_objective(
+                &packed,
+                free,
+                specific,
+                &coords,
+                &ts,
+                v.n_primary,
+                lw.len(),
+                121,
+                &counts[i],
+                3,
+            );
+            let new = item_neg_ll_grad(
+                &packed,
+                free,
+                specific,
+                &coords,
+                &ts,
+                v.n_primary,
+                lw.len(),
+                121,
+                &counts[i],
+                3,
+            );
+            assert_eq!(old.0.to_bits(), new.0.to_bits());
+            assert_eq!(old.1.len(), new.1.len());
+            for (a, b) in old.1.iter().zip(&new.1) {
+                assert_eq!(a.to_bits(), b.to_bits());
+            }
+            let old = legacy_newton(
+                packed.clone(),
+                free,
+                specific,
+                &coords,
+                &ts,
+                v.n_primary,
+                lw.len(),
+                121,
+                &counts[i],
+                3,
+                1e-8,
+                1,
+            );
+            let new = m_step_item(
+                packed,
+                free,
+                specific,
+                &coords,
+                &ts,
+                v.n_primary,
+                lw.len(),
+                121,
+                &counts[i],
+                3,
+                1e-8,
+                1,
+            );
+            assert_eq!(old.len(), new.len());
+            for (a, b) in old.iter().zip(&new) {
+                assert_eq!(a.to_bits(), b.to_bits());
+            }
+        }
+    }
 }

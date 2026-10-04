@@ -114,13 +114,36 @@ pub fn grm_logprobs(base: f64, thresholds: &[f64]) -> Vec<f64> {
 /// at one node for the GRM cell. Returns `(g_base, g_thresholds)` where
 /// `g_thresholds[j]` is the derivative wrt boundary intercept `beta_j`.
 pub fn grm_node_gradient(base: f64, thresholds: &[f64], counts: &[f64]) -> (f64, Vec<f64>) {
+    if thresholds.is_empty() {
+        return (0.0, Vec::new());
+    }
+    let log_p = grm_logprobs(base, thresholds);
+    grm_node_gradient_from_logprobs(base, thresholds, counts, &log_p)
+}
+
+/// Evaluate the existing graded-response gradient using this same node's
+/// already computed category log-probabilities. The derivative uses the
+/// same P_jk as the complete-data objective (Cai, 2010, p. 589, Eqs. 11-12;
+/// pp. 608-609, Appendix A); this only reuses values, not a different model.
+/// Callers must supply `grm_logprobs(base, thresholds)` for these parameters.
+///
+/// # References (APA 7th ed.)
+///
+/// Cai, L. (2010). A two-tier full-information item factor analysis model
+/// with applications. *Psychometrika, 75*(4), 581-612.
+/// doi:10.1007/s11336-010-9178-0.
+pub(crate) fn grm_node_gradient_from_logprobs(
+    base: f64,
+    thresholds: &[f64],
+    counts: &[f64],
+    log_p: &[f64],
+) -> (f64, Vec<f64>) {
     let kb = thresholds.len();
     let mut g_t = vec![0.0_f64; kb];
     let mut g_base = 0.0_f64;
     if kb == 0 {
         return (0.0, g_t);
     }
-    let log_p = grm_logprobs(base, thresholds);
     // Evaluate v/P in log space. Directly exponentiating a valid tail category
     // can underflow P to zero even though its score contribution is finite.
     for j in 0..kb {
@@ -928,7 +951,10 @@ pub fn fit_poly_fipc(
         if anchor_cat_params[i].iter().any(|v| !v.is_finite()) {
             return Err(format!("anchor_cat_params[{i}] must be finite"));
         }
-        if anchor_cat_params[i].windows(2).any(|pair| pair[0] <= pair[1]) {
+        if anchor_cat_params[i]
+            .windows(2)
+            .any(|pair| pair[0] <= pair[1])
+        {
             return Err(format!(
                 "anchor_cat_params[{i}] must be strictly decreasing (GRM thresholds)"
             ));
@@ -1070,7 +1096,9 @@ pub fn fit_poly_fipc(
             return Err("non-finite FIPC focal moment update".into());
         }
         if var <= 0.0 {
-            return Err(format!("non-positive FIPC focal variance update ({var:.6e})"));
+            return Err(format!(
+                "non-positive FIPC focal variance update ({var:.6e})"
+            ));
         }
         mu = mean;
         sigma = var.sqrt();
@@ -1296,8 +1324,8 @@ pub fn fit_nominal(
         for i in 0..n_items {
             let mut scores = vec![0.0_f64; n_cat];
             let mut intercepts = vec![0.0_f64; n_cat];
-    scores[1..(z + 1)].copy_from_slice(&params[i][..z]);
-    intercepts[1..(z + 1)].copy_from_slice(&params[i][z..(z + z)]);
+            scores[1..(z + 1)].copy_from_slice(&params[i][..z]);
+            intercepts[1..(z + 1)].copy_from_slice(&params[i][z..(z + z)]);
             for (nd, &theta) in nodes.iter().enumerate() {
                 let lp = gpcm_logprobs(theta, &scores, &intercepts);
                 item_lp[i][nd * n_cat..(nd + 1) * n_cat].copy_from_slice(&lp);
@@ -1434,8 +1462,19 @@ pub fn poly_person_fit(
     flag_threshold: f64,
 ) -> Result<PolyPersonFit, String> {
     poly_person_fit_impl(
-        y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta, prior_mean,
-        prior_sd, flag_threshold, false,
+        y,
+        observed,
+        n_persons,
+        n_items,
+        n_cat,
+        slope,
+        cat_params,
+        model,
+        q_theta,
+        prior_mean,
+        prior_sd,
+        flag_threshold,
+        false,
     )
 }
 
@@ -1457,8 +1496,19 @@ pub fn poly_person_fit_focal(
     flag_threshold: f64,
 ) -> Result<PolyPersonFit, String> {
     poly_person_fit_impl(
-        y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta, prior_mean,
-        prior_sd, flag_threshold, true,
+        y,
+        observed,
+        n_persons,
+        n_items,
+        n_cat,
+        slope,
+        cat_params,
+        model,
+        q_theta,
+        prior_mean,
+        prior_sd,
+        flag_threshold,
+        true,
     )
 }
 

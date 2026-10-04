@@ -202,7 +202,7 @@
 //! 50*(3), 325-335. https://doi.org/10.1111/1467-9876.00237 (full text read:
 //! high `Q` often required; do not invent a low default)
 
-use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
+use crate::poly::{grm_logprobs, grm_node_gradient_from_logprobs, solve_small};
 
 // NOTE (stage-4 design): this module imposes no magic size caps. Upper
 // bounds without a documented origin are rejected in favor of correctness
@@ -2540,7 +2540,7 @@ fn item_neg_ll_grad(
         }
         let lp = grm_logprobs(base, beta);
         ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
-        let (g_base, g_thr) = grm_node_gradient(base, beta, cnt);
+        let (g_base, g_thr) = grm_node_gradient_from_logprobs(base, beta, cnt, &lp);
         for (t, &dim) in free.iter().enumerate() {
             grad[t] += g_base * coords[g * n_primary + dim];
         }
