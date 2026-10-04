@@ -956,3 +956,100 @@ def test_present_finite_native_diagnostics_preserve_acceptance(monkeypatch, devi
     assert receipt["row_order_diagnosis"] == "pass"
     assert calls == [(121, 241)] * 3
     json.dumps(receipt, allow_nan=False)
+
+
+@pytest.mark.parametrize("invalid", [np.nan, np.inf, -np.inf])
+def test_reference_present_specific_trace_rejected_before_focal(monkeypatch, invalid):
+    """A converged label cannot conceal nonfinite reference diagnostics."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm
+    focal_calls = []
+    focal_original = fake.fit_two_tier_grm_fipc
+
+    def reference(*args, **kwargs):
+        result = original(*args, **kwargs)
+        result["fixed_specific_second_moment_trace"] = [0.5, invalid]
+        return result
+
+    def focal(y, *args, **kwargs):
+        focal_calls.append(args[12:14])
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        return focal_original(y, *args)
+
+    fake.fit_two_tier_grm = reference
+    fake.fit_two_tier_grm_fipc = focal
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, q_primary=121, q_specific=241, q_expected_raw=121)
+    json.dumps(receipt, allow_nan=False)
+    assert receipt["all_pass"] is False, "nonfinite reference trace certified all_pass"
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert "fixed_specific_second_moment_trace" in receipt["fipc_fit_error"]
+    assert focal_calls == []
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+@pytest.mark.parametrize("diagnostics_present", [False, True])
+def test_finite_or_older_reference_diagnostics_preserve_acceptance(monkeypatch, device, diagnostics_present):
+    module = _load_script()
+    fake = _fake_core(module)
+    ref_original = fake.fit_two_tier_grm
+    focal_original = fake.fit_two_tier_grm_fipc
+    focal_calls = []
+
+    def reference(*args, **kwargs):
+        result = ref_original(*args, **kwargs)
+        if diagnostics_present:
+            for field in OPTIONAL_NATIVE_DIAGNOSTICS + ("fixed_specific_second_moment_trace",):
+                result[field] = 0.5 if field.startswith("final_") else [0.5, 0.5]
+        return result
+
+    def focal(y, *args, **kwargs):
+        assert kwargs.get("device", "cpu") == device
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        result = focal_original(y, *args)
+        focal_calls.append((args[14], args[12:14]))
+        result.update(gpu_execution_used=device != "cpu", gpu_backend="Metal" if device != "cpu" else None)
+        return result
+
+    fake.fit_two_tier_grm = reference
+    fake.fit_two_tier_grm_fipc = focal
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, device=device, q_primary=121, q_specific=241, q_expected_raw=121)
+    json.dumps(receipt, allow_nan=False)
+    assert receipt["all_pass"] is True
+    assert focal_calls == [(100, (121, 241)), (100, (121, 241)), (1, (121, 241))]
+
+
+@pytest.mark.parametrize("field", OPTIONAL_NATIVE_DIAGNOSTICS)
+@pytest.mark.parametrize("invalid", [np.nan, np.inf, -np.inf])
+def test_reference_present_sibling_diagnostic_rejected_before_focal(monkeypatch, field, invalid):
+    """Every present reference diagnostic shares the focal finite boundary."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm
+    focal_calls = []
+    focal_original = fake.fit_two_tier_grm_fipc
+
+    def reference(*args, **kwargs):
+        result = original(*args, **kwargs)
+        result[field] = invalid if field.startswith("final_") else [0.5, invalid]
+        return result
+
+    def focal(y, *args, **kwargs):
+        focal_calls.append(args[12:14])
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        return focal_original(y, *args)
+
+    fake.fit_two_tier_grm = reference
+    fake.fit_two_tier_grm_fipc = focal
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, q_primary=121, q_specific=241, q_expected_raw=121)
+    json.dumps(receipt, allow_nan=False)
+    assert receipt["all_pass"] is False, "nonfinite reference sibling certified all_pass"
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert field in receipt["fipc_fit_error"]
+    assert focal_calls == []

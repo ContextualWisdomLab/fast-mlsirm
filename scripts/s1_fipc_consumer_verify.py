@@ -125,6 +125,20 @@ def simulate(seed: int, mean: np.ndarray, scale: np.ndarray) -> np.ndarray:
     return y
 
 
+def _validate_native_diagnostics(fit: dict) -> None:
+    """Require finite present numeric diagnostics from any calibration return."""
+    # Older bindings may omit diagnostics; present values cannot be discarded.
+    for field in (
+        "theta_p_sd", "primary_cov", "loglik_trace", "fixed_loglik_trace",
+        "fixed_primary_first_moment_trace", "fixed_primary_second_moment_trace",
+        "fixed_specific_second_moment_trace", "prior_mean_trace",
+        "prior_covariance_trace", "prior_specific_sd_trace",
+        "final_loglik_change", "final_param_change",
+    ):
+        if field in fit and not np.isfinite(np.asarray(fit[field], dtype=np.float64)).all():
+            raise ValueError(f"Native diagnostic {field} must be finite.")
+
+
 def call_fipc(
     y: np.ndarray, fixed: dict[str, np.ndarray], device: str = "cpu", *,
     q_primary: int, q_specific: int, **kwargs,
@@ -143,17 +157,7 @@ def call_fipc(
         kwargs.get("estimate_specific_vars", False),
         **extra,
     )
-    # Optional native diagnostics may not be emitted by older bindings, but
-    # present numeric outputs cannot be discarded to certify a finite fit.
-    for field in (
-        "theta_p_sd", "primary_cov", "loglik_trace", "fixed_loglik_trace",
-        "fixed_primary_first_moment_trace", "fixed_primary_second_moment_trace",
-        "fixed_specific_second_moment_trace", "prior_mean_trace",
-        "prior_covariance_trace", "prior_specific_sd_trace",
-        "final_loglik_change", "final_param_change",
-    ):
-        if field in fit and not np.isfinite(np.asarray(fit[field], dtype=np.float64)).all():
-            raise ValueError(f"Native diagnostic {field} must be finite.")
+    _validate_native_diagnostics(fit)
     # Check raw call metadata before aggregation can hide malformed values.
     used = fit.get("gpu_execution_used")
     backend = fit.get("gpu_backend")
@@ -225,6 +229,7 @@ def _fipc_gates(
     )
     if reference.get("converged") is not True:
         raise ValueError("Reference calibration must report convergence before focal fitting.")
+    _validate_native_diagnostics(reference)
     fixed = {k: np.asarray(reference[k], dtype=np.float64) for k in ("a_primary", "a_specific", "threshold")}
     focal_y = simulate(SEED + 1, FOCAL_MEAN, FOCAL_SD)
     fit = call_fipc(focal_y, fixed, device, q_primary=q_primary, q_specific=q_specific)
