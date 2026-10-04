@@ -49,3 +49,26 @@ def test_ci_keeps_all_existing_execution_job_identities() -> None:
     """Do not remove a failing required producer to satisfy the routing check."""
     workflow = _WORKFLOW.read_text(encoding="utf-8")
     assert tuple(re.findall(r"^  ([A-Za-z0-9_-]+):$", workflow.split("jobs:\n", 1)[1], re.MULTILINE)) == _JOBS
+
+
+def test_isolated_runner_label_is_declared_without_lint_exemptions() -> None:
+    """Use normal actionlint discovery, never an external acceptance override.
+
+    Basis: actionlint v1.7.12 configuration documentation, Configuration file
+    and self-hosted-runner.labels sections (read after the initial RED).
+    The exact minimal declaration retains every linter check. It establishes
+    source configuration only, not eligible capacity or physical isolation.
+
+    References:
+        actionlint contributors. (n.d.). Configuration. actionlint
+        (Version 1.7.12), Configuration file and self-hosted-runner.labels.
+        https://github.com/rhysd/actionlint/blob/v1.7.12/docs/config.md
+    """
+    config = _ROOT / ".github" / "actionlint.yaml"
+    assert config.is_file(), "declare the new isolated runner label for normal lint discovery"
+    assert config.read_text(encoding="utf-8") == (
+        "# Custom label syntax only; runner capacity and isolation need operator evidence.\n"
+        "self-hosted-runner:\n"
+        "  labels:\n"
+        "    - cwlab-ci-isolated\n"
+    ), "declare only the exact custom label; do not add ignores or wildcard exemptions"
