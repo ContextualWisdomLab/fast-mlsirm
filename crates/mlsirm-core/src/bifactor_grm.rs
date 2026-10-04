@@ -167,13 +167,90 @@ pub struct BifactorGrmConfig {
     /// Compute device for the E-step sweep: `Cpu` runs the `f64` scalar
     /// sweep; `Gpu`/`Auto` run the WGSL `f32` person-parallel sweep when a
     /// compatible adapter exists and fall back to CPU otherwise (`Gpu`
-    /// warns on fallback, `Auto` does not).
-    pub device: crate::Device,
+    /// warns on fallback, `Auto` does not); `Split` runs the #2001 L3
+    /// same-host CPU+GPU person partition.
+    pub device: BifactorDevice,
 }
 
 // No `Default` impl: `q_general`/`q_specific` are quadrature node counts
 // with no sourced accuracy target for any particular value (Project rule,
 // issue #1929), so every field is a caller-owned, explicit choice.
+
+/// E-step device of the bifactor GRM fits: the shared [`crate::Device`]
+/// choices plus the #2001 L3 same-host CPU+GPU person split, which only this
+/// estimator implements. Keeping `Split` here (not on the shared enum) stops a
+/// split request from reaching scoring/likelihood APIs that read any non-CPU
+/// device as a GPU request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BifactorDevice {
+    Cpu,
+    Gpu,
+    Auto,
+    /// Persons `[0, gpu_person_start)` on CPU, `[gpu_person_start, n)` on GPU
+    /// when an adapter exists; otherwise the full sweep falls back to CPU.
+    Split { gpu_person_start: usize },
+}
+
+impl From<crate::Device> for BifactorDevice {
+    fn from(device: crate::Device) -> Self {
+        match device {
+            crate::Device::Cpu => Self::Cpu,
+            crate::Device::Gpu => Self::Gpu,
+            crate::Device::Auto => Self::Auto,
+        }
+    }
+}
+
+impl BifactorDevice {
+    /// Device for sweeps without a split implementation (the multigroup
+    /// E-step). Multigroup fits reject `Split` up front, so it maps to `Cpu`.
+    fn shared(self) -> crate::Device {
+        match self {
+            Self::Cpu | Self::Split { .. } => crate::Device::Cpu,
+            Self::Gpu => crate::Device::Gpu,
+            Self::Auto => crate::Device::Auto,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Cpu => "cpu",
+            Self::Gpu => "gpu",
+            Self::Auto => "auto",
+            Self::Split { .. } => "split",
+        }
+    }
+}
+
+/// Parse the bifactor E-step device string, including the L3 `split` mode.
+pub fn parse_bifactor_device(
+    name: &str,
+    n_persons: usize,
+    split_at_person: Option<usize>,
+) -> Result<BifactorDevice, String> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "split" => {
+            if n_persons < 2 {
+                return Err(
+                    "device=split requires at least two persons for a non-empty CPU/GPU partition"
+                        .into(),
+                );
+            }
+            let at = split_at_person.unwrap_or(n_persons / 2);
+            if !(1..n_persons).contains(&at) {
+                return Err(format!(
+                    "split_at_person must be in 1..{n_persons} for device=split; got {at}"
+                ));
+            }
+            Ok(BifactorDevice::Split {
+                gpu_person_start: at,
+            })
+        }
+        other => crate::Device::parse(other)
+            .map(BifactorDevice::from)
+            .ok_or_else(|| format!("device must be one of 'cpu', 'gpu', 'auto', 'split'; got '{name}'")),
+    }
+}
 
 /// Result of [`fit_bifactor_grm`].
 #[derive(Clone, Debug)]
@@ -200,6 +277,12 @@ pub struct BifactorGrmResult {
     pub best_start: usize,
     /// `sum_i (1 + has_specific(i) + (n_cat - 1))` free item parameters.
     pub n_parameters: usize,
+    /// Effective E-step device(s) of the FINAL E-step of the winning EM run
+    /// (`cpu`, `gpu`, `cpu+gpu`). Earlier sweeps and other starts are not
+    /// summarized: a mid-fit GPU fallback is reported on stderr, not here.
+    pub effective_device: String,
+    /// Per-shard provenance from the final E-step of the winning EM run.
+    pub estep_shards: Vec<crate::bifactor_estep_split::EstepShardProvenance>,
 }
 
 /// Validated problem structure shared by the fitter and the public
@@ -262,6 +345,9 @@ pub(crate) fn validate(
     }
     if !cfg.ridge.is_finite() || cfg.ridge <= 0.0 {
         return Err("ridge must be finite and positive".into());
+    }
+    if let BifactorDevice::Split { gpu_person_start } = cfg.device {
+        parse_bifactor_device("split", n_persons, Some(gpu_person_start))?;
     }
     let n_cells = n_persons
         .checked_mul(n_items)
@@ -479,7 +565,7 @@ pub(crate) fn fill_logprob_tables(
     tables
 }
 
-fn log_sum_exp(xs: &[f64]) -> f64 {
+pub(crate) fn log_sum_exp(xs: &[f64]) -> f64 {
     let mx = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
     if mx == f64::NEG_INFINITY {
         return f64::NEG_INFINITY;
@@ -498,7 +584,7 @@ fn log_sum_exp(xs: &[f64]) -> f64 {
 /// NaN expected counts that freeze the M-step while the relative loglik
 /// change still trips `tolerance_met` (#1976).
 #[inline]
-fn general_only_without_prior(gen_log: f64, log_w: f64) -> Option<f64> {
+pub(crate) fn general_only_without_prior(gen_log: f64, log_w: f64) -> Option<f64> {
     if !log_w.is_finite() {
         return None;
     }
@@ -540,9 +626,9 @@ fn refuse_tolerance_on_frozen_start(
 ///
 /// When `device` is `Gpu`/`Auto` and a compatible adapter exists, the
 /// person sweep runs in the WGSL `f32` kernels
-/// ([`crate::gpu_bifactor::e_step_reduced_gpu`]); otherwise — including the
-/// marginal-loglik oracle path, which always passes `Cpu` — the `f64`
-/// scalar sweep below runs.
+/// ([`crate::gpu_bifactor::e_step_reduced_gpu`]); `Split` runs a same-host
+/// CPU+GPU person partition (#2001 L3); otherwise — including the marginal-
+/// loglik oracle path, which always passes `Cpu` — the `f64` scalar sweep runs.
 #[allow(clippy::too_many_arguments)]
 // `tg`/`ts` feed only the cfg-gated GPU branch (group moments); the CPU
 // sweep below needs tables and log-weights alone.
@@ -558,11 +644,31 @@ pub(crate) fn e_step(
     qs: usize,
     tg: &[f64],
     ts: &[f64],
-    device: crate::Device,
-) -> (f64, Vec<Vec<Vec<f64>>>) {
+    device: BifactorDevice,
+) -> (
+    f64,
+    Vec<Vec<Vec<f64>>>,
+    Option<crate::bifactor_estep_split::EstepExecutionProvenance>,
+) {
+    if let BifactorDevice::Split { gpu_person_start } = device {
+        return e_step_same_host_split(
+            v,
+            y,
+            observed,
+            tables,
+            log_wg,
+            log_ws,
+            qg,
+            qs,
+            tg,
+            ts,
+            gpu_person_start,
+        );
+    }
+
     #[cfg(all(feature = "gpu", not(coverage)))]
     {
-        if device == crate::Device::Gpu || device == crate::Device::Auto {
+        if device == BifactorDevice::Gpu || device == BifactorDevice::Auto {
             // Host-side staging for the GPU path: `tables.to_vec()`,
             // `tg.to_vec()`, and `ts.to_vec()` (replicated per specific)
             // are real deep copies on every E-step call. Only `tables`
@@ -592,150 +698,306 @@ pub(crate) fn e_step(
                 log_ws,
             };
             if let Some(res) = crate::gpu_bifactor::e_step_reduced_gpu(&inputs) {
-                let stride = res.counts_stride_nodes;
-                let mut counts: Vec<Vec<Vec<f64>>> =
-                    Vec::with_capacity(v.n_items);
-                for i in 0..v.n_items {
-                    let base = i * stride * v.n_cat;
-                    if v.item_block[i].is_some() {
-                        counts.push(
-                            res.counts[base..base + qg * qs * v.n_cat]
-                                .chunks_exact(v.n_cat)
-                                .map(<[f64]>::to_vec)
-                                .collect(),
-                        );
-                    } else {
-                        counts.push(
-                            res.counts[base..base + qg * v.n_cat]
-                                .chunks_exact(v.n_cat)
-                                .map(<[f64]>::to_vec)
-                                .collect(),
-                        );
-                    }
-                }
-                return (res.loglik, counts);
+                let counts = counts_from_gpu_flat(&res, v, qg, qs);
+                let prov = crate::bifactor_estep_split::EstepExecutionProvenance {
+                    requested_device: device.label().to_string(),
+                    effective_device: "gpu".to_string(),
+                    shards: vec![crate::bifactor_estep_split::EstepShardProvenance {
+                        shard_index: 0,
+                        device: "gpu".to_string(),
+                        person_start: 0,
+                        person_end: v.n_persons,
+                    }],
+                };
+                return (res.loglik, counts, Some(prov));
             }
         }
     }
-    if device == crate::Device::Gpu {
+    if device == BifactorDevice::Gpu {
         eprintln!(
             "fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found; \
              falling back to CPU implementation."
         );
     }
-    let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
-    let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
-    for (i, par) in tables.iter().enumerate() {
-        let _ = par;
-        let n_nodes = if v.item_block[i].is_some() {
-            qg * qs
-        } else {
-            qg
-        };
-        counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
-    }
-    // Per-person scratch.
-    let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
-    let mut log_i = vec![0.0f64; v.n_specific * qg];
-    let mut gen_log = vec![0.0f64; qg];
-    let mut log_like_g = vec![0.0f64; qg];
-    let mut post_g = vec![0.0f64; qg];
-    let mut tmp_h = vec![0.0f64; qs];
+    let partial = crate::bifactor_estep_split::e_step_cpu_person_range(
+        v,
+        y,
+        observed,
+        tables,
+        log_wg,
+        log_ws,
+        qg,
+        qs,
+        0,
+        v.n_persons,
+    );
+    let prov = crate::bifactor_estep_split::EstepExecutionProvenance {
+        requested_device: device.label().to_string(),
+        effective_device: "cpu".to_string(),
+        shards: vec![crate::bifactor_estep_split::EstepShardProvenance {
+            shard_index: 0,
+            device: "cpu".to_string(),
+            person_start: 0,
+            person_end: v.n_persons,
+        }],
+    };
+    (
+        partial.per_person_loglik.iter().sum(),
+        partial.counts,
+        Some(prov),
+    )
+}
 
-    let mut loglik = 0.0f64;
-    for p in 0..v.n_persons {
-        // General-only log-likelihood per general node.
-        gen_log.copy_from_slice(log_wg);
-        for &i in &v.general_only {
-            if !is_obs(p, i) {
-                continue;
-            }
-            let yc = y[p * v.n_items + i];
-            let lp = &tables[i];
-            for g in 0..qg {
-                gen_log[g] += lp[g * v.n_cat + yc];
-            }
-        }
-        // Block accumulations: sum of item log-probs per (s, g, h).
-        for (s, members) in v.blocks.iter().enumerate() {
-            for g in 0..qg {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * v.n_items + i];
-                        acc += tables[i][(g * qs + h) * v.n_cat + yc];
-                    }
-                    block_acc[(s * qg + g) * qs + h] = acc;
-                }
-            }
-            for g in 0..qg {
-                for h in 0..qs {
-                    tmp_h[h] = block_acc[(s * qg + g) * qs + h];
-                }
-                log_i[s * qg + g] = log_sum_exp(&tmp_h);
-            }
-        }
-        for g in 0..qg {
-            let mut acc = gen_log[g];
-            for s in 0..v.n_specific {
-                acc += log_i[s * qg + g];
-            }
-            log_like_g[g] = acc;
-        }
-        let log_lp = log_sum_exp(&log_like_g);
-        loglik += log_lp;
-        for g in 0..qg {
-            post_g[g] = (log_like_g[g] - log_lp).exp();
-        }
-        // General-only expected counts share the marginal general posterior.
-        for &i in &v.general_only {
-            if !is_obs(p, i) {
-                continue;
-            }
-            let yc = y[p * v.n_items + i];
-            for g in 0..qg {
-                counts[i][g][yc] += post_g[g];
-            }
-        }
-        // Block items: joint (g, h) posterior marginalizing the other blocks.
-        for (s, members) in v.blocks.iter().enumerate() {
-            let any_obs = members.iter().any(|&i| is_obs(p, i));
-            if !any_obs {
-                continue;
-            }
-            for g in 0..qg {
-                // Sum of the OTHER blocks' log-integrals at g.
-                // Skip exactly-zero prior mass: `gen_log - log_wg` is NaN when
-                // both are -inf and would poison every item's expected counts.
-                let Some(mut others) = general_only_without_prior(gen_log[g], log_wg[g]) else {
-                    continue;
-                };
-                for s2 in 0..v.n_specific {
-                    if s2 != s {
-                        others += log_i[s2 * qg + g];
-                    }
-                }
-                for h in 0..qs {
-                    let log_post = log_wg[g] + block_acc[(s * qg + g) * qs + h] + others - log_lp;
-                    let post = log_post.exp();
-                    if !post.is_finite() {
-                        continue;
-                    }
-                    for &i in members {
-                        if !is_obs(p, i) {
-                            continue;
-                        }
-                        let yc = y[p * v.n_items + i];
-                        counts[i][g * qs + h][yc] += post;
-                    }
-                }
-            }
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn counts_from_gpu_flat(
+    res: &crate::gpu_bifactor::ReducedEstepOutputs,
+    v: &Validated,
+    qg: usize,
+    qs: usize,
+) -> Vec<Vec<Vec<f64>>> {
+    let stride = res.counts_stride_nodes;
+    let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
+    for i in 0..v.n_items {
+        let base = i * stride * v.n_cat;
+        if v.item_block[i].is_some() {
+            counts.push(
+                res.counts[base..base + qg * qs * v.n_cat]
+                    .chunks_exact(v.n_cat)
+                    .map(<[f64]>::to_vec)
+                    .collect(),
+            );
+        } else {
+            counts.push(
+                res.counts[base..base + qg * v.n_cat]
+                    .chunks_exact(v.n_cat)
+                    .map(<[f64]>::to_vec)
+                    .collect(),
+            );
         }
     }
-    (loglik, counts)
+    counts
+}
+
+#[cfg(any(not(feature = "gpu"), coverage))]
+fn counts_from_gpu_flat(
+    _res: &crate::gpu_bifactor::ReducedEstepOutputs,
+    _v: &Validated,
+    _qg: usize,
+    _qs: usize,
+) -> Vec<Vec<Vec<f64>>> {
+    Vec::new()
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn estep_partial_from_gpu(
+    res: crate::gpu_bifactor::ReducedEstepOutputs,
+    v: &Validated,
+    qg: usize,
+    qs: usize,
+    person_start: usize,
+    person_end: usize,
+) -> crate::bifactor_estep_split::EstepPartial {
+    let counts = counts_from_gpu_flat(&res, v, qg, qs);
+    crate::bifactor_estep_split::EstepPartial {
+        person_start,
+        person_end,
+        device_label: "gpu",
+        per_person_loglik: res.per_person_loglik,
+        counts,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn e_step_same_host_split(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    tables: &[Vec<f64>],
+    log_wg: &[f64],
+    log_ws: &[f64],
+    qg: usize,
+    qs: usize,
+    tg: &[f64],
+    ts: &[f64],
+    gpu_person_start: usize,
+) -> (
+    f64,
+    Vec<Vec<Vec<f64>>>,
+    Option<crate::bifactor_estep_split::EstepExecutionProvenance>,
+) {
+    let split = gpu_person_start;
+    let tables_wrapped = vec![tables.to_vec()];
+    let tg_wrapped = vec![tg.to_vec()];
+    let ts_wrapped = vec![vec![ts.to_vec(); v.n_specific]];
+    let inputs = crate::gpu_bifactor::ReducedEstepInputs {
+        y,
+        observed,
+        group_id: None,
+        n_persons: v.n_persons,
+        n_items: v.n_items,
+        n_specific: v.n_specific,
+        n_cat: v.n_cat,
+        qg,
+        qs,
+        n_groups: 1,
+        tables_groups: &tables_wrapped,
+        item_block: &v.item_block,
+        blocks: &v.blocks,
+        tg_groups: &tg_wrapped,
+        ts_groups: &ts_wrapped,
+        log_wg,
+        log_ws,
+    };
+    if let Some((pending, meta)) =
+        crate::gpu_bifactor::e_step_reduced_gpu_submit(&inputs, split, v.n_persons)
+    {
+        let cpu_partial = crate::bifactor_estep_split::e_step_cpu_person_range(
+            v,
+            y,
+            observed,
+            tables,
+            log_wg,
+            log_ws,
+            qg,
+            qs,
+            0,
+            split,
+        );
+        let Some(gpu_out) = crate::gpu_bifactor::complete_reduced_gpu_submit(&pending, &meta)
+        else {
+            eprintln!(
+                "fast-mlsirm: device=split GPU readback failed; falling back to CPU for all persons."
+            );
+            let partial = crate::bifactor_estep_split::e_step_cpu_person_range(
+                v, y, observed, tables, log_wg, log_ws, qg, qs, 0, v.n_persons,
+            );
+            let prov = crate::bifactor_estep_split::EstepExecutionProvenance {
+                requested_device: "split".to_string(),
+                effective_device: "cpu".to_string(),
+                shards: vec![crate::bifactor_estep_split::EstepShardProvenance {
+                    shard_index: 0,
+                    device: "cpu".to_string(),
+                    person_start: 0,
+                    person_end: v.n_persons,
+                }],
+            };
+            return (
+                partial.per_person_loglik.iter().sum(),
+                partial.counts,
+                Some(prov),
+            );
+        };
+        let gpu_partial = estep_partial_from_gpu(gpu_out, v, qg, qs, split, v.n_persons);
+        let partials = vec![cpu_partial, gpu_partial];
+        let prov = crate::bifactor_estep_split::provenance_from_partials("split", &partials);
+        let (loglik, counts) = crate::bifactor_estep_split::merge_estep_partials(partials);
+        return (loglik, counts, Some(prov));
+    }
+    eprintln!(
+        "fast-mlsirm: device=split requested but no usable GPU adapter was found; \
+         falling back to the CPU implementation for all persons."
+    );
+    let partial = crate::bifactor_estep_split::e_step_cpu_person_range(
+        v,
+        y,
+        observed,
+        tables,
+        log_wg,
+        log_ws,
+        qg,
+        qs,
+        0,
+        v.n_persons,
+    );
+    let prov = crate::bifactor_estep_split::EstepExecutionProvenance {
+        requested_device: "split".to_string(),
+        effective_device: "cpu".to_string(),
+        shards: vec![crate::bifactor_estep_split::EstepShardProvenance {
+            shard_index: 0,
+            device: "cpu".to_string(),
+            person_start: 0,
+            person_end: v.n_persons,
+        }],
+    };
+    (
+        partial.per_person_loglik.iter().sum(),
+        partial.counts,
+        Some(prov),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[cfg(any(not(feature = "gpu"), coverage))]
+fn e_step_same_host_split(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    tables: &[Vec<f64>],
+    log_wg: &[f64],
+    log_ws: &[f64],
+    qg: usize,
+    qs: usize,
+    _tg: &[f64],
+    _ts: &[f64],
+    _gpu_person_start: usize,
+) -> (
+    f64,
+    Vec<Vec<Vec<f64>>>,
+    Option<crate::bifactor_estep_split::EstepExecutionProvenance>,
+) {
+    let partial = crate::bifactor_estep_split::e_step_cpu_person_range(
+        v,
+        y,
+        observed,
+        tables,
+        log_wg,
+        log_ws,
+        qg,
+        qs,
+        0,
+        v.n_persons,
+    );
+    let prov = crate::bifactor_estep_split::EstepExecutionProvenance {
+        requested_device: "split".to_string(),
+        effective_device: "cpu".to_string(),
+        shards: vec![crate::bifactor_estep_split::EstepShardProvenance {
+            shard_index: 0,
+            device: "cpu".to_string(),
+            person_start: 0,
+            person_end: v.n_persons,
+        }],
+    };
+    (
+        partial.per_person_loglik.iter().sum(),
+        partial.counts,
+        Some(prov),
+    )
+}
+
+/// CPU-only multi-shard E-step for reduction-order invariance tests.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn e_step_cpu_sharded(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    tables: &[Vec<f64>],
+    log_wg: &[f64],
+    log_ws: &[f64],
+    qg: usize,
+    qs: usize,
+    n_shards: usize,
+) -> (f64, Vec<Vec<Vec<f64>>>) {
+    let bounds = crate::bifactor_estep_split::cpu_shard_bounds(v.n_persons, n_shards);
+    let partials: Vec<_> = bounds
+        .iter()
+        .map(|&(start, end)| {
+            crate::bifactor_estep_split::e_step_cpu_person_range(
+                v, y, observed, tables, log_wg, log_ws, qg, qs, start, end,
+            )
+        })
+        .collect();
+    crate::bifactor_estep_split::merge_estep_partials(partials)
 }
 
 /// Negative expected complete-data log-lik and gradient for ONE item.
@@ -879,6 +1141,8 @@ struct SingleStartOutcome {
     converged: bool,
     termination_reason: String,
     final_loglik_change: f64,
+    effective_device: String,
+    estep_shards: Vec<crate::bifactor_estep_split::EstepShardProvenance>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -926,12 +1190,18 @@ fn run_single_start(
     let mut n_iter = 0usize;
     let mut termination_reason = "max_iter_reached".to_string();
     let mut final_loglik_change = f64::NAN;
+    let mut effective_device = "cpu".to_string();
+    let mut estep_shards = Vec::new();
 
     loop {
         let tables = fill_logprob_tables(v, &params, tg, ts, qg, qs);
-        let (ll, counts) = e_step(
+        let (ll, counts, prov) = e_step(
             v, y, observed, &tables, log_wg, log_ws, qg, qs, tg, ts, cfg.device,
         );
+        if let Some(p) = prov {
+            effective_device = p.effective_device;
+            estep_shards = p.shards;
+        }
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
@@ -988,6 +1258,8 @@ fn run_single_start(
         converged,
         termination_reason,
         final_loglik_change,
+        effective_device,
+        estep_shards,
     })
 }
 
@@ -1189,6 +1461,8 @@ pub fn fit_bifactor_grm(
         final_loglik_change: outcome.final_loglik_change,
         best_start,
         n_parameters,
+        effective_device: outcome.effective_device,
+        estep_shards: outcome.estep_shards,
     })
 }
 
@@ -1224,7 +1498,7 @@ pub fn bifactor_grm_marginal_loglik(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
-        device: crate::Device::Cpu,
+        device: BifactorDevice::Cpu,
     };
     let v = validate(
         y,
@@ -1255,7 +1529,7 @@ pub fn bifactor_grm_marginal_loglik(
         tg,
         ts,
         // Exactness oracle: always the f64 CPU sweep.
-        crate::Device::Cpu,
+        BifactorDevice::Cpu,
     )
     .0)
 }
@@ -1292,7 +1566,7 @@ pub fn bifactor_grm_marginal_loglik_brute(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
-        device: crate::Device::Cpu,
+        device: BifactorDevice::Cpu,
     };
     let v = validate(
         y,
@@ -1544,7 +1818,7 @@ pub struct BifactorMultigroupConfig {
     /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
     pub estimate_specific_vars: bool,
     /// Compute device for the E-step sweep (see [`BifactorGrmConfig::device`]).
-    pub device: crate::Device,
+    pub device: BifactorDevice,
 }
 
 impl Default for BifactorMultigroupConfig {
@@ -1559,7 +1833,7 @@ impl Default for BifactorMultigroupConfig {
             newton_iter: 10,
             ridge: 1e-8,
             estimate_specific_vars: false,
-            device: crate::Device::Cpu,
+            device: BifactorDevice::Cpu,
         }
     }
 }
@@ -2105,7 +2379,7 @@ fn run_single_start_multigroup(
             log_ws,
             qg,
             qs,
-            cfg.device,
+            cfg.device.shared(),
         );
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
@@ -2319,6 +2593,12 @@ pub fn fit_bifactor_grm_multigroup(
     validate_multigroup_cfg(cfg)?;
     if n_groups < 1 {
         return Err("n_groups must be >= 1".into());
+    }
+    if n_groups > 1 && matches!(cfg.device, BifactorDevice::Split { .. }) {
+        return Err(
+            "device=split is supported for single-group fit_bifactor_grm only (#2001 L3 pilot)"
+                .into(),
+        );
     }
     // Multigroup-shaped inputs are validated BEFORE the single-group
     // delegation so malformed `group_id`/`anchor` fail loudly on every path
@@ -2976,7 +3256,7 @@ pub fn fit_bifactor_grm_fipc(
         // has no device knob of its own; this reused single-group validator
         // only checks shapes/blocks, never runs the E-step, so the device
         // choice here is inert either way.
-        device: crate::Device::Cpu,
+        device: BifactorDevice::Cpu,
     };
     let v = validate(
         y,
@@ -3361,3 +3641,7 @@ pub fn fit_bifactor_grm_fipc(
 #[cfg(test)]
 #[path = "../../../tests/unit/bifactor_grm_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/bifactor_estep_split_tests.rs"]
+mod bifactor_estep_split_tests;

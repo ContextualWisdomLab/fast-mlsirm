@@ -99,7 +99,7 @@ fn single_group_multigroup_matches_stage1_exactly() {
         seed: 20_260_916,
         newton_iter: 10,
         ridge: 1e-8,
-        device: mlsirm_core::Device::Cpu,
+        device: mlsirm_core::bifactor_grm::BifactorDevice::Cpu,
     };
     let single = fit_bifactor_grm(
         &y,
@@ -122,7 +122,7 @@ fn single_group_multigroup_matches_stage1_exactly() {
         seed: 20_260_916,
         newton_iter: 10,
         ridge: 1e-8,
-        device: mlsirm_core::Device::Cpu,
+        device: mlsirm_core::bifactor_grm::BifactorDevice::Cpu,
         estimate_specific_vars: false,
     };
     let group_id = vec![0usize; N_PERSONS];
@@ -227,7 +227,7 @@ fn uncapped_start_budget_is_accepted() {
         seed: 20_260_922,
         newton_iter: 10,
         ridge: 1e-8,
-        device: mlsirm_core::Device::Cpu,
+        device: mlsirm_core::bifactor_grm::BifactorDevice::Cpu,
         estimate_specific_vars: false,
     };
     let group_id = vec![0usize; 60];
