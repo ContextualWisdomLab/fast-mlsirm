@@ -1141,27 +1141,53 @@ class ValkeyStreamsOutcomeStore:
         fingerprints: Sequence[str],
         *,
         deadline: float,
+        prior_failed_fingerprints: Sequence[str] = (),
     ) -> Mapping[str, RemoteJobOutcome]:
         """Drain/claim until ``deadline`` or every fingerprint has a terminal outcome.
 
-        A committed success is preferred over a recorded failure. After the
-        wait loop exits, perform one final hash lookup so a drain that
-        persisted the last needed fingerprint at/after the deadline does not
-        report a false timeout.
+        A committed success is preferred over a recorded failure. The caller
+        may supply fingerprints whose failure was already present before new
+        publication. For those fingerprints only, keep waiting for a success
+        and omit ambiguous failures even at the deadline. This local policy
+        does not identify attempts: HSETNX retains the first hash value
+        (Valkey contributors, n.d.-a, command description), while XAUTOCLAIM
+        can redeliver prior pending records (Valkey contributors, n.d.-b,
+        command description). No failed hash is deleted, and record admission
+        and ACK behavior remain unchanged (Valkey contributors, n.d.-c,
+        command description).
+
+        Without an exclusion, cached failures remain terminal. After the wait
+        loop exits, perform one final lookup so an admitted success persisted
+        at/after the deadline is returned rather than reported as a timeout.
+
+        References:
+            Valkey contributors. (n.d.-a). HSETNX. Valkey command documentation.
+            Valkey contributors. (n.d.-b). XAUTOCLAIM. Valkey command documentation.
+            Valkey contributors. (n.d.-c). XACK. Valkey command documentation.
         """
         needed = {_fingerprint(fingerprint, "fingerprint") for fingerprint in fingerprints}
+        prior_failures = {
+            _fingerprint(fingerprint, "prior_failed_fingerprint")
+            for fingerprint in prior_failed_fingerprints
+        }
         found: dict[str, RemoteJobOutcome] = {}
         while needed - found.keys() and time.monotonic() < deadline:
             for fingerprint in list(needed - found.keys()):
                 outcome = self._terminal_outcome(fingerprint)
-                if outcome is not None:
+                if outcome is not None and (
+                    outcome.delivery_state is RemoteJobDeliveryState.COMPLETED
+                    or fingerprint not in prior_failures
+                ):
                     found[fingerprint] = outcome
             if len(found) == len(needed):
                 break
             self._drain(deadline=deadline)
         for fingerprint in list(needed - found.keys()):
             outcome = self._terminal_outcome(fingerprint)
-            if outcome is not None:
+            if outcome is not None and (
+                outcome.delivery_state is RemoteJobDeliveryState.COMPLETED
+                or fingerprint not in prior_failures
+            ):
                 found[fingerprint] = outcome
         return found
 
@@ -1238,6 +1264,22 @@ class ValkeyStreamsBackend:
         effective_device: str = "cpu",
         payload: Mapping[str, object] | None = None,
     ) -> tuple[RemoteJobOutcome, ...]:
+        """Publish admitted jobs without reusing a known prior failure as a reply.
+
+        Snapshot already-recorded failures before any job publication. For
+        those fingerprints, a later success is admissible but a failure remains
+        ambiguous, so the existing timeout is used if no success arrives.
+        HSETNX preserves the first field value (Valkey contributors, n.d.-a,
+        command description); pending-entry reclaim is not attempt identity
+        (Valkey contributors, n.d.-b, command description). This bounded policy
+        does not identify failures absent from the prepublication snapshot,
+        concurrent attempts, or a later failure of the new dispatch. Success
+        first-winner storage and malformed-record rejection remain unchanged.
+
+        References:
+            Valkey contributors. (n.d.-a). HSETNX. Valkey command documentation.
+            Valkey contributors. (n.d.-b). XAUTOCLAIM. Valkey command documentation.
+        """
         _admit_remote_device_declarations(requested_device, effective_device)
         requested = _text(requested_device, "requested_device", maximum=32)
         effective = _text(effective_device, "effective_device", maximum=32)
@@ -1248,6 +1290,13 @@ class ValkeyStreamsBackend:
             sort_keys=True,
             separators=(",", ":"),
             allow_nan=False,
+        )
+        fingerprints = tuple(envelope_fingerprint(envelope) for envelope in envelope_batch)
+        prior_failures = tuple(
+            fingerprint
+            for fingerprint in fingerprints
+            if (outcome := self._outcomes._terminal_outcome(fingerprint)) is not None
+            and outcome.delivery_state is RemoteJobDeliveryState.FAILED
         )
         for envelope in envelope_batch:
             fingerprint = envelope_fingerprint(envelope)
@@ -1267,8 +1316,11 @@ class ValkeyStreamsBackend:
                 },
             )
         deadline = time.monotonic() + self._wait_timeout_s
-        fingerprints = tuple(envelope_fingerprint(envelope) for envelope in envelope_batch)
-        committed = self._outcomes.wait_for_terminal(fingerprints, deadline=deadline)
+        committed = self._outcomes.wait_for_terminal(
+            fingerprints,
+            deadline=deadline,
+            prior_failed_fingerprints=prior_failures,
+        )
         outcomes = []
         for envelope in envelope_batch:
             fingerprint = envelope_fingerprint(envelope)
