@@ -996,6 +996,91 @@ fn canonical_person_order(v: &Validated, y: &[usize], observed: Option<&[bool]>)
     order
 }
 
+/// Current-call item cells keyed by exact primary predictor bits. Item
+/// response probabilities depend on latent coordinates and current item
+/// parameters, not respondent identity (Cai, 2010, p. 589, Eqs. 11-12;
+/// pp. 589-590, Eqs. 15-16). Equal predictor bits therefore reuse the same
+/// cells without changing any likelihood or posterior accumulation order.
+/// Rebuild at each E-step; never retain values across parameter/node updates.
+/// Worst-case cells do not exceed that item's full node/category count table.
+///
+/// # References (APA 7th ed.)
+///
+/// Cai, L. (2010). A two-tier full-information item factor analysis model
+/// with applications. *Psychometrika, 75*(4), 581-612.
+/// doi:10.1007/s11336-010-9178-0.
+struct OrdinaryItemLogprobs {
+    log_probabilities: Vec<f64>,
+    primary_slot: Vec<usize>,
+    specific_nodes: usize,
+    n_cat: usize,
+}
+impl OrdinaryItemLogprobs {
+    /// Read the same current node's category cell without changing reduced
+    /// posterior sums (Cai, 2010, p. 589, Eqs. 11-12; pp. 589-590, Eqs. 15-16).
+    ///
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. *Psychometrika, 75*(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    fn get(&self, g: usize, h: usize, category: usize) -> f64 {
+        let h = if self.specific_nodes == 1 { 0 } else { h };
+        self.log_probabilities
+            [(self.primary_slot[g] * self.specific_nodes + h) * self.n_cat + category]
+    }
+}
+/// Compute each distinct current item-predictor/category cell once; equal
+/// predictor bits denote the same GRM probabilities (Cai, 2010, p. 589,
+/// Eqs. 11-12). Rebuild before the current reduced posterior sums
+/// (Cai, 2010, pp. 589-590, Eqs. 15-16); no cross-iteration cache is retained.
+///
+/// Reference: Cai, L. (2010). A two-tier full-information item factor
+/// analysis model with applications. *Psychometrika, 75*(4), 581-612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn ordinary_item_logprobs(
+    v: &Validated,
+    _y: &[usize],
+    _observed: Option<&[bool]>,
+    params: &[ItemParams],
+    coords: &[f64],
+    ts: &[f64],
+    i: usize,
+    n_grid: usize,
+    qs: usize,
+) -> OrdinaryItemLogprobs {
+    let specific_nodes = if params[i].a_s.is_some() { qs } else { 1 };
+    let mut representatives = Vec::new();
+    let mut primary_slot = Vec::with_capacity(n_grid);
+    let mut keys = std::collections::HashMap::<u64, usize>::new();
+    for g in 0..n_grid {
+        let bits = item_primary_base(v, &params[i], coords, g, i).to_bits();
+        let slot = match keys.get(&bits) {
+            Some(&slot) => slot,
+            None => {
+                let slot = representatives.len();
+                keys.insert(bits, slot);
+                representatives.push(g);
+                slot
+            }
+        };
+        primary_slot.push(slot);
+    }
+    let mut values = Vec::with_capacity(representatives.len() * specific_nodes * v.n_cat);
+    for &g in &representatives {
+        for h in 0..specific_nodes {
+            for category in 0..v.n_cat {
+                values.push(item_cat_logprob(v, params, coords, ts, i, g, h, category));
+            }
+        }
+    }
+    OrdinaryItemLogprobs {
+        log_probabilities: values,
+        primary_slot,
+        specific_nodes,
+        n_cat: v.n_cat,
+    }
+}
+
 /// One reduced E-step sweep (Gibbons et al., 2007, eq. 15: the person
 /// marginal factored per primary node): observed-data loglik, expected
 /// category counts per item (`counts[i][node][k]`, `node = g * qs + h` for
@@ -1008,11 +1093,18 @@ fn canonical_person_order(v: &Validated, y: &[usize], observed: Option<&[bool]>)
 /// The primary product Gauss–Hermite grid (Golub & Welsch, 1969) is still
 /// fully summed — node counts remain caller-controlled with no silent cap
 /// (#1929; Lesaffre & Spiessens, 2001, warn that low `Q` can bias results).
-/// Category log-probs are evaluated on the fly, and the specific-tier
-/// scratch `block_acc` is sized `n_specific * q_specific` (one primary node
-/// at a time) rather than `n_specific * n_grid * q_specific`. Finite sums
-/// are associative, so the numerical value matches the materialised-table
-/// path up to ordinary floating-point roundoff order.
+/// Category log-probabilities are cached for this call by exact primary
+/// predictor bits (Cai, 2010, p. 589, Eqs. 11-12; pp. 589-590, Eqs. 15-16).
+/// Each item's cached f64 cell payload is no larger than its expected-count
+/// table; primary-slot indices and temporary key/representative buffers are
+/// additional memory. The cache is rebuilt for every E-step. The specific-tier
+/// scratch `block_acc` remains sized `n_specific * q_specific` (one primary
+/// node at a time), not `n_specific * n_grid * q_specific`. Lookup substitutions
+/// preserve the original likelihood and posterior accumulation order.
+///
+/// Reference: Cai, L. (2010). A two-tier full-information item factor
+/// analysis model with applications. *Psychometrika, 75*(4), 581-612.
+/// doi:10.1007/s11336-010-9178-0.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn e_step(
     v: &Validated,
@@ -1026,6 +1118,9 @@ pub(crate) fn e_step(
     n_grid: usize,
     qs: usize,
 ) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
+    let logprobs: Vec<OrdinaryItemLogprobs> = (0..v.n_items)
+        .map(|i| ordinary_item_logprobs(v, y, observed, params, coords, ts, i, n_grid, qs))
+        .collect();
     let p = v.n_primary;
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
     let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
@@ -1058,7 +1153,7 @@ pub(crate) fn e_step(
             }
             let yc = y[pp * v.n_items + i];
             for g in 0..n_grid {
-                gen_log[g] += item_cat_logprob(v, params, coords, ts, i, g, 0, yc);
+                gen_log[g] += logprobs[i].get(g, 0, yc);
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
@@ -1070,7 +1165,7 @@ pub(crate) fn e_step(
                             continue;
                         }
                         let yc = y[pp * v.n_items + i];
-                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        acc += logprobs[i].get(g, h, yc);
                     }
                     tmp_h[h] = acc;
                 }
@@ -1121,7 +1216,7 @@ pub(crate) fn e_step(
                             continue;
                         }
                         let yc = y[pp * v.n_items + i];
-                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        acc += logprobs[i].get(g, h, yc);
                     }
                     block_acc_g[s * qs + h] = acc;
                 }

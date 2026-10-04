@@ -682,4 +682,309 @@ mod zero_primary_mass_regression {
             }
         }
     }
+
+    fn legacy_ordinary_e_step(
+        v: &Validated,
+        y: &[usize],
+        observed: Option<&[bool]>,
+        params: &[ItemParams],
+        log_w: &[f64],
+        log_ws: &[f64],
+        coords: &[f64],
+        ts: &[f64],
+        n_grid: usize,
+        qs: usize,
+    ) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
+        let p = v.n_primary;
+        let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
+        let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
+        for i in 0..v.n_items {
+            let n_nodes = if v.item_block[i].is_some() {
+                n_grid * qs
+            } else {
+                n_grid
+            };
+            counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+        }
+        // Per-person scratch: O(n_grid) for primary marginals + O(S * qs) for
+        // the active primary node's specific-tier block (not O(S * n_grid * qs)).
+        let mut log_i = vec![0.0f64; v.n_specific * n_grid];
+        let mut gen_log = vec![0.0f64; n_grid];
+        let mut log_like_g = vec![0.0f64; n_grid];
+        let mut post_g = vec![0.0f64; n_grid];
+        let mut tmp_h = vec![0.0f64; qs];
+        let mut block_acc_g = vec![0.0f64; v.n_specific * qs];
+        let mut s_bar_sum = vec![0.0f64; p * p];
+
+        let mut loglik = 0.0f64;
+        for pp in 0..v.n_persons {
+            // Pass 1: person marginal per primary node (specific-free + block
+            // integrals), without storing per-(g,h) tables.
+            gen_log.copy_from_slice(log_w);
+            for &i in &v.specific_free {
+                if !is_obs(pp, i) {
+                    continue;
+                }
+                let yc = y[pp * v.n_items + i];
+                for g in 0..n_grid {
+                    gen_log[g] += item_cat_logprob(v, params, coords, ts, i, g, 0, yc);
+                }
+            }
+            for (s, members) in v.blocks.iter().enumerate() {
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws[h];
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * v.n_items + i];
+                            acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        }
+                        tmp_h[h] = acc;
+                    }
+                    log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                }
+            }
+            for g in 0..n_grid {
+                let mut acc = gen_log[g];
+                for s in 0..v.n_specific {
+                    acc += log_i[s * n_grid + g];
+                }
+                log_like_g[g] = acc;
+            }
+            let log_lp = log_sum_exp(&log_like_g);
+            loglik += log_lp;
+            for g in 0..n_grid {
+                post_g[g] = (log_like_g[g] - log_lp).exp();
+            }
+            for g in 0..n_grid {
+                let post = post_g[g];
+                for (jj, slot) in s_bar_sum.iter_mut().enumerate().take(p * p) {
+                    let j = jj / p;
+                    let k = jj % p;
+                    *slot += post * coords[g * p + j] * coords[g * p + k];
+                }
+            }
+            for &i in &v.specific_free {
+                if !is_obs(pp, i) {
+                    continue;
+                }
+                let yc = y[pp * v.n_items + i];
+                for g in 0..n_grid {
+                    counts[i][g][yc] += post_g[g];
+                }
+            }
+            // Pass 2: joint (g, h) posteriors for block items — recompute the
+            // active primary node's specific-tier block on the fly.
+            for (s, members) in v.blocks.iter().enumerate() {
+                let any_obs = members.iter().any(|&i| is_obs(pp, i));
+                if !any_obs {
+                    continue;
+                }
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws[h];
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * v.n_items + i];
+                            acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        }
+                        block_acc_g[s * qs + h] = acc;
+                    }
+                    // Keep the prior in the joint numerator: subtracting its log
+                    // first is undefined at a zero-mass primary node. This is
+                    // the unchanged reduced posterior product (Cai, 2010,
+                    // pp. 589-590, Eqs. 15-16; pp. 608-609, Appendix A).
+                    // Reference: Cai, L. (2010). A two-tier full-information
+                    // item factor analysis model with applications.
+                    // Psychometrika, 75(4), 581-612. doi:10.1007/s11336-010-9178-0.
+                    let mut others = gen_log[g];
+                    for s2 in 0..v.n_specific {
+                        if s2 != s {
+                            others += log_i[s2 * n_grid + g];
+                        }
+                    }
+                    for h in 0..qs {
+                        let log_post = block_acc_g[s * qs + h] + others - log_lp;
+                        let post = log_post.exp();
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * v.n_items + i];
+                            counts[i][g * qs + h][yc] += post;
+                        }
+                    }
+                }
+            }
+        }
+        (loglik, counts, s_bar_sum)
+    }
+
+    // Ordinary reduced posterior sums and GRM cells retain the same measure
+    // (Cai, 2010, p. 589, Eqs. 11-12; pp. 589-590, Eqs. 15-16).
+    // Reference: Cai, L. (2010). A two-tier full-information item factor
+    // analysis model with applications. Psychometrika, 75(4), 581-612.
+    // doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn projected_item_cells_preserve_observed_node_probabilities() {
+        let (mut v, y, mut parameters, base, lw, ts, _) = fixture(121, 121, true);
+        // Two-primary product grid: item0 ignores dimension1, item1 cross-loads.
+        let mut coords = Vec::new();
+        for &x in &base {
+            for &z in &base {
+                coords.extend([x, z]);
+            }
+        }
+        v.n_primary = 2;
+        v.grid_size = base.len() * base.len();
+        for i in 0..v.n_items {
+            v.free_primaries[i] = vec![0];
+            parameters[i].a_p = vec![parameters[i].a_p[0], 0.0];
+        }
+        v.free_primaries[1] = vec![0, 1];
+        parameters[1].a_p[1] = 0.3;
+        let mask = (0..y.len()).map(|i| i % 5 != 0).collect::<Vec<_>>();
+        let table = ordinary_item_logprobs(
+            &v,
+            &y,
+            Some(&mask),
+            &parameters,
+            &coords,
+            &ts,
+            0,
+            v.grid_size,
+            ts.len(),
+        );
+        assert_eq!(
+            table.log_probabilities.len(),
+            base.len() * ts.len() * v.n_cat,
+            "inactive primary axis must not multiply stored category cells"
+        );
+        for i in [0, 1, 3] {
+            let original = ordinary_item_logprobs(
+                &v,
+                &y,
+                Some(&mask),
+                &parameters,
+                &coords,
+                &ts,
+                i,
+                v.grid_size,
+                ts.len(),
+            );
+            for g in 0..v.grid_size {
+                for h in 0..if parameters[i].a_s.is_some() {
+                    ts.len()
+                } else {
+                    1
+                } {
+                    for c in 0..v.n_cat {
+                        assert_eq!(
+                            original.get(g, h, c).to_bits(),
+                            item_cat_logprob(&v, &parameters, &coords, &ts, i, g, h, c).to_bits()
+                        );
+                    }
+                }
+            }
+        }
+        let _ = lw;
+        parameters[0].d[0] += 0.25;
+        let rebuilt = ordinary_item_logprobs(
+            &v,
+            &y,
+            Some(&mask),
+            &parameters,
+            &coords,
+            &ts,
+            0,
+            v.grid_size,
+            ts.len(),
+        );
+        assert_ne!(
+            table.get(0, 0, 0).to_bits(),
+            rebuilt.get(0, 0, 0).to_bits(),
+            "a new E-step must not reuse old item parameters"
+        );
+    }
+
+    #[test]
+    fn projected_item_lookup_preserves_ordinary_estep_tuple() {
+        for mixed in [false, true] {
+            for mode in 0..6 {
+                let (v, mut y, mut parameters, coords, mut lw, mut ts, mut lws) =
+                    fixture(7, 11, mixed);
+                let mut mask = (0..y.len()).map(|i| i % 5 != 0).collect::<Vec<_>>();
+                match mode {
+                    0 => {}
+                    1 => {
+                        for pp in 0..v.n_persons {
+                            mask[pp * v.n_items] = false;
+                        }
+                    }
+                    2 => {
+                        for pp in 0..v.n_persons {
+                            for &i in &v.blocks[0] {
+                                mask[pp * v.n_items + i] = false;
+                            }
+                        }
+                    }
+                    3 => {
+                        lw[0] = f64::NEG_INFINITY;
+                        lws[0] = f64::NEG_INFINITY;
+                    }
+                    4 => {
+                        parameters[0].d = vec![1e-12, 0.0];
+                        parameters[1].a_p[0] = -1000.0;
+                        ts.iter_mut().for_each(|x| *x *= 1.7);
+                    }
+                    _ => {
+                        y.fill(0);
+                    }
+                }
+                let old = legacy_ordinary_e_step(
+                    &v,
+                    &y,
+                    Some(&mask),
+                    &parameters,
+                    &lw,
+                    &lws,
+                    &coords,
+                    &ts,
+                    lw.len(),
+                    ts.len(),
+                );
+                let new = e_step(
+                    &v,
+                    &y,
+                    Some(&mask),
+                    &parameters,
+                    &lw,
+                    &lws,
+                    &coords,
+                    &ts,
+                    lw.len(),
+                    ts.len(),
+                );
+                assert_eq!(old.0.to_bits(), new.0.to_bits());
+                assert_eq!(old.1.len(), new.1.len());
+                for (a, b) in old.1.iter().zip(&new.1) {
+                    assert_eq!(a.len(), b.len());
+                    for (a, b) in a.iter().zip(b) {
+                        assert_eq!(a.len(), b.len());
+                        for (x, y) in a.iter().zip(b) {
+                            assert_eq!(x.to_bits(), y.to_bits());
+                        }
+                    }
+                }
+                assert_eq!(old.2.len(), new.2.len());
+                for (x, y) in old.2.iter().zip(&new.2) {
+                    assert_eq!(x.to_bits(), y.to_bits());
+                }
+            }
+        }
+    }
 }
