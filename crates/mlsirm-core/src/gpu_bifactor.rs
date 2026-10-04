@@ -370,22 +370,41 @@ fn reduce_moments_g(
     let g = flat_idx(wid, lid, nwg);
     if (g >= dims.ng) { return; }
     let row = g * (3u + 2u * dims.ns);
-    var w = 0.0;
-    var s1 = 0.0;
-    var s2 = 0.0;
+    // Pairwise addition tree: Higham (1993, pp. 787-788, Eqs. 3.3-3.6).
+    // The online binary-carry layout is an implementation derivation.
+    // 32 levels cover the u32 buffer-index domain, not a quadrature cap.
+    // Reference: Higham, N. J. (1993). The accuracy of floating point
+    // summation. SIAM Journal on Scientific Computing, 14(4), 783-799.
+    // doi:10.1137/0914050.
+    var bins: array<vec3<f32>, 32>;
+    var count = 0u;
     for (var p = 0u; p < dims.np; p = p + 1u) {
         if (gid[p] != g) { continue; }
         for (var t = 0u; t < dims.qg; t = t + 1u) {
             let post = postg[p * dims.qg + t];
             let node = tg[g * dims.qg + t];
-            w = w + post;
-            s1 = s1 + post * node;
-            s2 = s2 + post * node * node;
+            var value = vec3<f32>(post, post * node, post * node * node);
+            var level = 0u;
+            var occupied = count;
+            loop {
+                if ((occupied & 1u) == 0u) { break; }
+                value = bins[level] + value;
+                occupied = occupied >> 1u;
+                level = level + 1u;
+            }
+            bins[level] = value;
+            count = count + 1u;
         }
     }
-    moments[row] = w;
-    moments[row + 1u] = s1;
-    moments[row + 2u] = s2;
+    var result = vec3<f32>(0.0);
+    for (var level = 0u; level < 32u; level = level + 1u) {
+        if ((count & (1u << level)) != 0u) {
+            result = bins[level] + result;
+        }
+    }
+    moments[row] = result.x;
+    moments[row + 1u] = result.y;
+    moments[row + 2u] = result.z;
 }
 
 // Per-(group, block) specific moments (w_spec, s2_spec).
@@ -401,8 +420,14 @@ fn reduce_moments_s(
     let g = idx / dims.ns;
     let s = idx % dims.ns;
     let row = g * (3u + 2u * dims.ns);
-    var w = 0.0;
-    var s2 = 0.0;
+    // Pairwise addition tree: Higham (1993, pp. 787-788, Eqs. 3.3-3.6).
+    // The online binary-carry layout is an implementation derivation.
+    // 32 levels cover the u32 buffer-index domain, not a quadrature cap.
+    // Reference: Higham, N. J. (1993). The accuracy of floating point
+    // summation. SIAM Journal on Scientific Computing, 14(4), 783-799.
+    // doi:10.1137/0914050.
+    var bins: array<vec2<f32>, 32>;
+    var count = 0u;
     for (var p = 0u; p < dims.np; p = p + 1u) {
         if (gid[p] != g) { continue; }
         if (anyobs[p * dims.ns + s] == 0u) { continue; }
@@ -410,13 +435,28 @@ fn reduce_moments_s(
             for (var h = 0u; h < dims.qs; h = h + 1u) {
                 let post = joint[((p * dims.ns + s) * dims.qg + t) * dims.qs + h];
                 let node = ts[(g * dims.ns + s) * dims.qs + h];
-                w = w + post;
-                s2 = s2 + post * node * node;
+                var value = vec2<f32>(post, post * node * node);
+                var level = 0u;
+                var occupied = count;
+                loop {
+                    if ((occupied & 1u) == 0u) { break; }
+                    value = bins[level] + value;
+                    occupied = occupied >> 1u;
+                    level = level + 1u;
+                }
+                bins[level] = value;
+                count = count + 1u;
             }
         }
     }
-    moments[row + 3u + s] = w;
-    moments[row + 3u + dims.ns + s] = s2;
+    var result = vec2<f32>(0.0);
+    for (var level = 0u; level < 32u; level = level + 1u) {
+        if ((count & (1u << level)) != 0u) {
+            result = bins[level] + result;
+        }
+    }
+    moments[row + 3u + s] = result.x;
+    moments[row + 3u + dims.ns + s] = result.y;
 }
 ";
 

@@ -82,14 +82,21 @@
 //!
 //! # Memory (exact blocked product-grid evaluation; #1992)
 //!
-//! Category log-probs and M-step node coordinates are evaluated on the fly
-//! over the full primary product Gauss–Hermite grid (Golub & Welsch, 1969;
-//! node counts remain caller-controlled with no silent cap — #1929;
-//! Lesaffre & Spiessens, 2001, warn that low `Q` can bias results). The
-//! specific-tier scratch is `O(n_specific * q_specific)` per active primary
-//! node rather than `O(n_specific * n_grid * q_specific)`. Finite sums are
-//! associative, so the numerical value matches a materialised-table path up
-//! to ordinary floating-point roundoff.//!
+//! Ordinary E-steps eagerly cache category log-probabilities for the current
+//! item parameters at each distinct primary-predictor bit pattern and specific
+//! node. Their f64 probability payload is bounded by the existing item count
+//! table payload; predictor maps, node indices, capacity and construction
+//! overhead are additional memory (see `ordinary_item_logprobs`). Focal CPU
+//! E-steps and M-step node coordinates remain evaluated on the fly over the
+//! full primary product Gauss–Hermite grid. Node counts remain caller-controlled
+//! without a silent cap. The active-node specific-tier scratch is
+//! `O(n_specific * q_specific)`, not `O(n_specific * n_grid * q_specific)`.
+//! The cache only substitutes identical scalar values; posterior/count
+//! accumulation order remains unchanged (Cai, 2010, pp. 608-609, Appendix A).
+//! Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+//! model with applications. Psychometrika, 75(4), 581-612.
+//! doi:10.1007/s11336-010-9178-0.
+//!
 //! The M-step updates each item by the per-item finite-difference-Hessian
 //! Newton of stage 1 (ridge = Hessian conditioning only, NOT a prior;
 //! backtracking line search REJECTS non-finite objectives, which is exactly
@@ -886,10 +893,9 @@ fn item_primary_base(v: &Validated, par: &ItemParams, coords: &[f64], g: usize, 
     prim
 }
 
-/// Category log-prob for item `i` at primary node `g` and specific node `h`
-/// (`h` ignored / `t_s = 0` for specific-free items). Evaluates Cai et al.
-/// (2011, eq. 6–7, p. 227) on the fly so the E-step never materializes a
-/// full `n_grid * q_specific * n_cat` table per item (#1992 memory).
+/// Evaluate one requested GRM category without constructing a category vector.
+/// Ordinary E-step callers may eagerly cache all categories at representative
+/// primary/specific nodes; this scalar helper alone does not bound caller memory.
 /// Evaluate only the requested GRM category without allocating a category vector.
 ///
 /// This selects the same cumulative-logit difference as `grm_logprobs` without
