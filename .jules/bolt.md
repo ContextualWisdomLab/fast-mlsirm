@@ -48,6 +48,3 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
-## 2025-05-19 - Replacing `.sum(axis=-1)` with Matrix Multiplication
-**Learning:** `(expected * weights[None, :]).sum(axis=1)`와 같이 numpy 내에서 `.sum(axis=1)` 혹은 마지막 차원에 대해 축소를 수행할 때, 이를 브로드캐스트 임시 배열을 생성하여 수행하게 되면 속도가 저하되고 불필요한 배열 할당이 발생합니다.
-**Action:** 축에 대한 단순 합계를 구할 때, `(A * B[None, :]).sum(axis=1)` 패턴의 경우 `A @ B`로 치환함으로써 중간 배열의 할당을 방지하고 성능을 약 5~6배 개선할 수 있습니다.

@@ -535,7 +535,7 @@ def check_focal_expected_total_score_monotonicity(
             termination_reason="marginalized",
         )
         expected = predict_expected_response_polytomous(cell, base.reshape(-1))
-        expected_total += expected.reshape(base.shape) @ weights
+        expected_total += (expected.reshape(base.shape) * weights[None, :]).sum(axis=1)
 
     return _decrease_report(grid, expected_total)
 
@@ -647,7 +647,7 @@ def check_bifactor_expected_total_score_monotonicity(
             termination_reason="marginalized",
         )
         expected = predict_expected_response_polytomous(cell, base.reshape(-1))
-        expected_total += expected.reshape(base.shape) @ weights
+        expected_total += (expected.reshape(base.shape) * weights[None, :]).sum(axis=1)
 
     return _decrease_report(grid, expected_total)
 
