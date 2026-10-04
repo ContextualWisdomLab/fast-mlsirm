@@ -51,10 +51,17 @@ def _validated_report(report: EssayScoreReport) -> EssayScoreReport:
 
 def _content_security_policy() -> str:
     """Return a restrictive meta-delivered policy for the standalone artifact."""
+    import base64
+    import hashlib
+
+    css = _css()
+    css_hash = base64.b64encode(hashlib.sha256(css.encode("utf-8")).digest()).decode(
+        "utf-8"
+    )
     return "; ".join(
         (
             "default-src 'none'",
-            "style-src 'unsafe-inline'",
+            f"style-src 'sha256-{css_hash}'",
             "img-src data:",
             "object-src 'none'",
             "base-uri 'none'",

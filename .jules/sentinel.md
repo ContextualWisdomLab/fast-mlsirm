@@ -59,3 +59,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+## 2026-10-04 - [CSP unsafe-inline removal and SVG CSS Regression]
+**Vulnerability:** The Content Security Policy in HTML reports used `unsafe-inline` for `style-src`, making them vulnerable to CSS injection if user-provided strings were unescaped.
+**Learning:** Removing `unsafe-inline` required changing dynamic inline styles (e.g. `style="width: 64%"`) to native attributes (e.g., `<svg width="64%">`). However, SVG elements like `<rect>` require the `fill` CSS property to render properly, whereas the original HTML `<div>` relied on `background`. Neglecting to add `fill` in the shared `_css()` caused a visual regression.
+**Prevention:** When refactoring HTML elements to SVG for CSP compliance, always verify and update the associated CSS classes to ensure they declare both HTML-compatible and SVG-compatible styling properties (e.g., both `background` and `fill`).

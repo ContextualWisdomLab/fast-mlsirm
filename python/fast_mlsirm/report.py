@@ -359,7 +359,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
                     '<div class="bar-row">',
                     f'<span class="bar-label">{escape(_row_label(row, index))}</span>',
                     '<div class="bar-track" aria-hidden="true">',
-                    f'<div class="bar-fill" style="width: {width:.1f}%"></div>',
+                    f'<svg width="{width:.1f}%" height="100%"><rect width="100%" height="100%" class="bar-fill" /></svg>',
                     "</div>",
                     f'<span class="bar-value"{_title_attr(value)}>{escape(_format_value(value))}</span>',
                     "</div>",
@@ -567,7 +567,14 @@ def _title_attr(value: Any) -> str:
 
 def _content_security_policy() -> str:
     """Return the strict CSP string embedded in every generated report."""
-    return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    import base64
+    import hashlib
+
+    css = _css()
+    css_hash = base64.b64encode(hashlib.sha256(css.encode("utf-8")).digest()).decode(
+        "utf-8"
+    )
+    return f"default-src 'none'; style-src 'sha256-{css_hash}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _css() -> str:
@@ -820,6 +827,7 @@ h3 {
   height: 100%;
   min-width: 8px;
   background: var(--teal);
+  fill: var(--teal);
   transform-origin: left;
   animation: bar-grow 0.8s ease-out forwards;
 }
