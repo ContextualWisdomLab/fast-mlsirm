@@ -1,10 +1,9 @@
-//! wgpu expected-raw totals for two-tier GRM scoring (closed form).
-//!
-//! One invocation per primary row evaluates
-//! `sum_i sum_q w_q sum_k sigmoid(eta_i + beta_ik)` in f32 with compensated
-//! (Kahan) summation. Rows are dispatched in bounded chunks so device memory
-//! does not grow with the row count. Returning `None` lets the caller use the
-//! f64 CPU reference in `two_tier_recursion`.
+//! Scratch source-bound wgpu contribution materialization plus host f64 reduction.
+//! Formula and quadrature unchanged; GPU/host mixed arithmetic, not all-GPU reduction.
+//! Basis: Higham (1993, pp. 785-786, Eqs. 2.6-2.8); input f32 and sigmoid
+//! error remain outside the accumulation bound. No universal accuracy claim.
+//! Higham, N. J. (1993). The accuracy of floating point summation. SIAM Journal
+//! on Scientific Computing, 14(4), 783-799. https://doi.org/10.1137/0914050
 
 use std::sync::OnceLock;
 
@@ -68,30 +67,23 @@ fn item_mean(item: u32, eta: f32) -> f32 {
 
 @compute @workgroup_size(64)
 fn expected_raw(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let row = gid.x;
-    if (row >= U.n_rows) { return; }
-    var total = 0.0;
-    var comp = 0.0;
-    for (var i = 0u; i < U.n_items; i = i + 1u) {
-        var base = 0.0;
-        for (var d = 0u; d < U.n_primary; d = d + 1u) {
-            base = base + a_primary[i * U.n_primary + d] * theta[row * U.n_primary + d];
-        }
-        var term = 0.0;
-        if (specific_free[i] == 1u) {
-            term = item_mean(i, base);
-        } else {
-            for (var q = 0u; q < U.n_nodes; q = q + 1u) {
-                term = term + weights[q] * item_mean(i, base + a_specific[i] * nodes[q]);
-            }
-        }
-        // Kahan compensated accumulation across items.
-        let y = term - comp;
-        let t = total + y;
-        comp = (t - total) - y;
-        total = t;
+    let idx = gid.x;
+    let width = U.n_items * U.n_nodes;
+    if (idx >= U.n_rows * width) { return; }
+    let row = idx / width;
+    let i = (idx % width) / U.n_nodes;
+    let q = idx % U.n_nodes;
+    var base = 0.0;
+    for (var d = 0u; d < U.n_primary; d = d + 1u) {
+        base = base + a_primary[i * U.n_primary + d] * theta[row * U.n_primary + d];
     }
-    out[row] = total;
+    if (specific_free[i] == 1u) {
+        var v = 0.0;
+        if (q == 0u) { v = item_mean(i, base); }
+        out[idx] = v;
+    } else {
+        out[idx] = weights[q] * item_mean(i, base + a_specific[i] * nodes[q]);
+    }
 }
 "#;
 
@@ -291,11 +283,22 @@ pub(crate) fn expected_raw_gpu(
     {
         return None;
     }
-    // Chunk rows so theta/out buffers stay within one binding and one dispatch.
-    let max_by_buffer = (limits.max_storage_buffer_binding_size as usize / 4) / p.max(1);
+    // Each weighted item/node contribution is materialized in f32; the
+    // host accumulates in f64 (Higham, 1993, pp. 785-786, Eqs. 2.6-2.8).
+    // Memory/dispatch admission returns None rather than changing caller Q.
+    let width = params.n_items().checked_mul(nodes.len())?;
+    if width == 0 || !fits(&limits, width) {
+        return None;
+    }
+    let element_limit = (limits.max_storage_buffer_binding_size as usize / 4)
+        .min((limits.max_buffer_size / 4) as usize);
+    let max_by_buffer = element_limit / p.max(width);
     let max_by_dispatch =
         limits.max_compute_workgroups_per_dimension as usize * WORKGROUP_SIZE as usize;
-    let chunk = max_by_buffer.min(max_by_dispatch).min(1 << 20);
+    let chunk = max_by_buffer
+        .min(max_by_dispatch / width)
+        .min(u32::MAX as usize / width)
+        .min(1 << 20);
     if chunk == 0 {
         return None;
     }
@@ -330,7 +333,8 @@ pub(crate) fn expected_raw_gpu(
             wgpu::BufferUsages::UNIFORM,
         );
         let theta_buf = buffer_init(device, bytemuck::cast_slice(&theta), storage);
-        let size = (rows * 4) as u64;
+        let elements = rows.checked_mul(width)?;
+        let size = elements.checked_mul(4)? as u64;
         let out_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("two-tier-expected-raw-out"),
             size,
@@ -372,7 +376,7 @@ pub(crate) fn expected_raw_gpu(
             let mut pass = encoder.begin_compute_pass(&Default::default());
             pass.set_pipeline(&context.pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            pass.dispatch_workgroups(u32::try_from(rows).ok()?.div_ceil(WORKGROUP_SIZE), 1, 1);
+            pass.dispatch_workgroups(u32::try_from(elements).ok()?.div_ceil(WORKGROUP_SIZE), 1, 1);
         }
         encoder.copy_buffer_to_buffer(&out_buf, 0, &readback, 0, size);
         queue.submit([encoder.finish()]);
@@ -380,7 +384,14 @@ pub(crate) fn expected_raw_gpu(
         device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
         let view = readback.slice(..).get_mapped_range().ok()?;
         let values: &[f32] = bytemuck::cast_slice(&view);
-        result.extend(values.iter().map(|&v| f64::from(v)));
+        if values.len() != elements {
+            return None;
+        }
+        result.extend(
+            values
+                .chunks_exact(width)
+                .map(|row| row.iter().map(|&v| f64::from(v)).sum::<f64>()),
+        );
         drop(view);
         readback.unmap();
     }

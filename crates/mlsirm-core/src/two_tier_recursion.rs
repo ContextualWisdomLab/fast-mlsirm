@@ -399,10 +399,27 @@ pub fn two_tier_expected_raw(
 
 /// Device-dispatched [`two_tier_expected_raw`]. Returns ``(values, used_gpu)``.
 ///
-/// ``Cpu`` always uses the f64 closed form. ``Gpu``/``Auto`` try the wgpu f32
-/// kernel (compensated summation) and fall back to the f64 CPU form when no
-/// adapter is usable; ``Gpu`` prints a warning on fallback. Validation runs on
-/// the CPU owner first, so every device rejects the same inputs.
+/// ``Cpu`` uses the f64 closed form. ``Gpu``/``Auto`` try weighted item/node
+/// f32 contributions on wgpu followed by host f64 accumulation: hybrid,
+/// not all-GPU reduction. ``used_gpu=true`` denotes successful GPU contribution
+/// execution, not an entirely GPU-computed total. No usable adapter, insufficient
+/// device bounds or unsafe predictor precision cause CPU fallback; ``Gpu``
+/// warns and ``Auto`` is silent. Validation precedes dispatch for every device.
+/// The caller's node count is unchanged. Each contribution/readback buffer is
+/// approximately ``rows * items * nodes * 4`` bytes per chunk, excluding other
+/// device buffers and host allocations.
+///
+/// The scoring estimand is unchanged (Cai, 2015, pp. 542-543, Eqs. 14-17).
+/// Accumulation uses binary64 in Higham (1993, pp. 785-786, Eqs. 2.6-2.8)'s
+/// recursive-summation rounding model. Input casts and GPU elementary-function
+/// error remain separate; retained fixture agreement is not a universal bound.
+///
+/// References (APA 7th ed.):
+/// Cai, L. (2015). Lord-Wingersky algorithm version 2.0 for hierarchical item
+/// factor models with applications in test scoring, scale alignment, and model
+/// fit testing. Psychometrika, 80(2), 535-559. doi:10.1007/s11336-014-9411-3.
+/// Higham, N. J. (1993). The accuracy of floating point summation. SIAM Journal
+/// on Scientific Computing, 14(4), 783-799. doi:10.1137/0914050.
 pub fn two_tier_expected_raw_on(
     params: &TwoTierItemParams,
     theta_primary: &[f64],

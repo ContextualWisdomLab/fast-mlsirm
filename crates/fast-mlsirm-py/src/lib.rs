@@ -2110,8 +2110,27 @@ fn two_tier_oakes_se(
 /// caller's primary coordinates are treated as fixed plug-in values, matching
 /// the bifactor expected-raw contract.
 ///
-/// ``device`` is ``"cpu"`` (default, f64 closed form), ``"gpu"`` (wgpu f32 with
-/// a CPU fallback warning) or ``"auto"`` (GPU when available, silent fallback).
+/// ``device`` is ``"cpu"`` (default, f64 closed form), ``"gpu"`` (weighted
+/// item/node f32 contributions on wgpu plus host f64 accumulation), or
+/// ``"auto"`` (the same hybrid path). This is not all-GPU reduction.
+/// ``"gpu"`` warns on CPU fallback; ``"auto"`` is silent. Fallback preserves
+/// the caller's node count when there is no usable adapter, device bounds are
+/// insufficient, or predictor precision is unsafe. Each contribution/readback buffer requires
+/// approximately ``rows * items * nodes * 4`` bytes per chunk, excluding other
+/// buffers and host allocations. This binding does not expose ``used_gpu``;
+/// a GPU request or equal CPU output does not certify hardware dispatch.
+///
+/// The conditional scoring estimand follows Cai (2015, pp. 542-543, Eqs. 14-17).
+/// Host accumulation uses Higham (1993, pp. 785-786, Eqs. 2.6-2.8)'s
+/// recursive-summation rounding model at binary64 precision, not an accuracy
+/// guarantee for f32 inputs or GPU elementary functions.
+///
+/// References (APA 7th ed.):
+/// Cai, L. (2015). Lord-Wingersky algorithm version 2.0 for hierarchical item
+/// factor models with applications in test scoring, scale alignment, and model
+/// fit testing. Psychometrika, 80(2), 535-559. doi:10.1007/s11336-014-9411-3.
+/// Higham, N. J. (1993). The accuracy of floating point summation. SIAM Journal
+/// on Scientific Computing, 14(4), 783-799. doi:10.1137/0914050.
 #[pyfunction]
 #[pyo3(signature = (a_primary, a_specific, threshold, theta_p_eap, specific_map, n_cat, n_primary, n_specific, q_specific, device = "cpu"))]
 #[allow(clippy::too_many_arguments)]

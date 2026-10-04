@@ -3,13 +3,17 @@
 ## Added
 
 - `expected_raw_two_tier_grm(..., device="cpu")` accepts `"gpu"` and `"auto"`.
-  The GPU path runs a wgpu f32 kernel with one thread per person or primary
-  grid row. It uses compensated summation and dispatches rows in chunks, so
-  device memory does not grow with the row count. `"gpu"` warns before falling
-  back to the CPU when no adapter is usable. `"auto"` falls back silently. The
-  default stays on the CPU. Before converting inputs, a conservative precision
-  check also falls back to f64 when rounding or cancellation could exceed the
-  predictor error budget. Finite inputs alone do not guarantee f32 accuracy.
+  The GPU path computes weighted item/node f32 contributions with wgpu and
+  uses host f64 accumulation. It is hybrid, not all-GPU reduction. The default
+  stays on the CPU. `"gpu"` warns on CPU fallback; `"auto"` is silent. No usable
+  adapter, insufficient device bounds or unsafe predictor precision can cause
+  fallback, without reducing the caller's node count. Each contribution/readback
+  buffer uses approximately `rows * items * nodes * 4` bytes per chunk, in
+  addition to other buffers and host allocations. This materialized path can
+  increase memory and transfer cost; no general speedup is claimed. The Python
+  result does not expose Rust's `used_gpu` flag. A GPU request or equal CPU
+  output is not a hardware-dispatch certificate. Finite inputs alone do not
+  guarantee f32 accuracy.
 
 ## Changed
 

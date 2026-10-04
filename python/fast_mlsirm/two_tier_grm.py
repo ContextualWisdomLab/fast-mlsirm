@@ -566,10 +566,21 @@ def expected_raw_two_tier_grm(
     ``device`` selects the Rust execution device: ``"cpu"`` (default) evaluates
     the f64 closed form ``sum_i sum_q w_q sum_k sigmoid(eta_i + beta_ik)``
     (linearity of expectation; within 1e-12 on the retained comparison
-    fixtures, not a universal floating-point error bound); ``"gpu"`` runs the
-    wgpu f32 kernel with compensated summation and warns before falling back
-    to the CPU; ``"auto"`` uses the GPU when one is available and falls back
-    silently.
+    fixtures, not a universal floating-point error bound). ``"gpu"`` computes
+    weighted item/node f32 contributions with wgpu, followed by host f64
+    accumulation. This is hybrid execution, not all-GPU reduction. ``"auto"``
+    uses the same path; ``"gpu"`` warns on CPU fallback and ``"auto"`` is silent.
+    No usable adapter, insufficient device bounds or unsafe predictor precision
+    can trigger fallback. The caller's node count is never reduced to fit the
+    GPU. Each contribution/readback buffer requires approximately
+    ``rows * items * nodes * 4`` bytes per chunk, excluding other buffers and
+    host allocations. The Python result does not expose the Rust ``used_gpu``
+    flag; requesting a GPU or matching CPU output does not certify dispatch.
+
+    Host accumulation uses binary64 rounding in the recursive-summation model
+    of Higham (1993, pp. 785-786, Eqs. 2.6-2.8). This changes accumulation
+    precision, not the f32 input casts or GPU elementary-function approximation,
+    and does not establish a universal accuracy guarantee.
 
     The recursion is the conditional-on-primary stage of Lord-Wingersky 2.0
     (Cai, 2015, Eqs. 14-17, pp. 542-543), evaluated at the plug-in primary
@@ -587,7 +598,9 @@ def expected_raw_two_tier_grm(
     57*(3), 423-436. https://doi.org/10.1007/BF02295430; Cai, L., Yang, J.
     S., & Hansen, M. (2011). Generalized full-information item bifactor
     analysis. *Psychological Methods, 16*(3), 221-248.
-    https://doi.org/10.1037/a0023350.
+    https://doi.org/10.1037/a0023350. Higham, N. J. (1993). The accuracy of
+    floating point summation. *SIAM Journal on Scientific Computing, 14*(4),
+    783-799. https://doi.org/10.1137/0914050.
     """
     q_specific_int = _finite_integer_control(q_specific, "q_specific")
     if q_specific_int < 1:
