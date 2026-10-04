@@ -1,7 +1,8 @@
 # Remote family I/O, model, and version identity (#2072)
 
-Status: acceptance evidence for PR #2072 follow-up. Does **not** close #2001,
-implement Valkey transport, or claim A4 completion.
+Status: acceptance evidence for PR #2072 follow-up, including injected-client
+Valkey Streams adapter contracts. Does **not** close #2001, certify real-server
+operation, or claim A4 completion.
 
 ## Problem
 
@@ -12,7 +13,7 @@ looked family-complete while worker dispatch was not.
 
 ## Contract
 
-Each remote unit carries three identity layers that must match before and after
+Each remote unit carries four identity layers that must match before and after
 dispatch:
 
 | Layer | Field(s) | Fail-closed rule |
@@ -88,7 +89,9 @@ python -m pytest tests/test_remote_exec.py -q
 
 ## Explicit non-claims
 
-- No Valkey/Redis Streams transport in this slice.
+- Valkey Streams adapters (`ValkeyStreamsOutcomeStore`, `ValkeyStreamsBackend`)
+  are injected-client contracts; recording-client tests do not certify
+  real-server operation.
 - The bootstrap adapter is included; cross-host always-on evidence remains unverified.
 - No formula or model-contract changes.
 - Does not close #2001 or #2071 durable-store follow-ups.
