@@ -78,6 +78,8 @@ References (APA 7th ed.):
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
+from fractions import Fraction
 
 import numpy as np
 
@@ -289,9 +291,26 @@ def fit_bifactor_grm(
         (smap > np.uint64(np.iinfo(np.int64).max)).any()
     ):
         raise ValueError("specific_map entries must be representable as int64")
+    if smap.dtype.kind == "O":
+        for value in smap:
+            if isinstance(value, (float, np.floating)):
+                if not np.isfinite(value) or value != np.floor(value):
+                    raise ValueError("specific_map entries must be finite integers")
+                if value < -(2**63) or value >= 2**63:
+                    raise ValueError("specific_map entries must be representable as int64")
+            elif isinstance(value, Decimal):
+                if not value.is_finite() or value != value.to_integral_value():
+                    raise ValueError("specific_map entries must be finite integers")
+                if value < -(2**63) or value >= 2**63:
+                    raise ValueError("specific_map entries must be representable as int64")
+            elif isinstance(value, Fraction):
+                if value.denominator != 1:
+                    raise ValueError("specific_map entries must be integers")
+                if value < -(2**63) or value >= 2**63:
+                    raise ValueError("specific_map entries must be representable as int64")
     try:
         smap_int = smap.astype(np.int64, copy=False)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("specific_map entries must be integers") from None
     if bool((smap_int < -1).any()) or bool((smap_int >= n_specific_int).any()):
         raise ValueError(
@@ -480,9 +499,26 @@ def bifactor_oakes_se(
         (smap > np.uint64(np.iinfo(np.int64).max)).any()
     ):
         raise ValueError("specific_map entries must be representable as int64")
+    if smap.dtype.kind == "O":
+        for value in smap:
+            if isinstance(value, (float, np.floating)):
+                if not np.isfinite(value) or value != np.floor(value):
+                    raise ValueError("specific_map entries must be finite integers")
+                if value < -(2**63) or value >= 2**63:
+                    raise ValueError("specific_map entries must be representable as int64")
+            elif isinstance(value, Decimal):
+                if not value.is_finite() or value != value.to_integral_value():
+                    raise ValueError("specific_map entries must be finite integers")
+                if value < -(2**63) or value >= 2**63:
+                    raise ValueError("specific_map entries must be representable as int64")
+            elif isinstance(value, Fraction):
+                if value.denominator != 1:
+                    raise ValueError("specific_map entries must be integers")
+                if value < -(2**63) or value >= 2**63:
+                    raise ValueError("specific_map entries must be representable as int64")
     try:
         smap_int = smap.astype(np.int64, copy=False)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("specific_map entries must be integers") from None
     if bool((smap_int < -1).any()) or bool((smap_int >= n_specific_int).any()):
         raise ValueError(
@@ -683,9 +719,26 @@ def fit_bifactor_grm_fipc(
         (smap > np.uint64(np.iinfo(np.int64).max)).any()
     ):
         raise ValueError("specific_map entries must be representable as int64")
+    if smap.dtype.kind == "O":
+        for value in smap:
+            if isinstance(value, (float, np.floating)):
+                if not np.isfinite(value) or value != np.floor(value):
+                    raise ValueError("specific_map entries must be finite integers")
+                if value < -(2**63) or value >= 2**63:
+                    raise ValueError("specific_map entries must be representable as int64")
+            elif isinstance(value, Decimal):
+                if not value.is_finite() or value != value.to_integral_value():
+                    raise ValueError("specific_map entries must be finite integers")
+                if value < -(2**63) or value >= 2**63:
+                    raise ValueError("specific_map entries must be representable as int64")
+            elif isinstance(value, Fraction):
+                if value.denominator != 1:
+                    raise ValueError("specific_map entries must be integers")
+                if value < -(2**63) or value >= 2**63:
+                    raise ValueError("specific_map entries must be representable as int64")
     try:
         smap_int = smap.astype(np.int64, copy=False)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("specific_map entries must be integers") from None
     if bool((smap_int < -1).any()) or bool((smap_int >= n_specific_int).any()):
         raise ValueError(

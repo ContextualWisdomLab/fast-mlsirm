@@ -422,3 +422,97 @@ def _call_specific_map_entry(entry: str, specific_map: np.ndarray) -> None:
             fixed_a_general=np.ones(4), fixed_a_specific=np.ones(4),
             fixed_threshold=np.zeros((4, 1)), max_iter=1, tol=1e-6,
         )
+
+
+@pytest.mark.parametrize('entry', ['fit', 'oakes', 'fipc'])
+@pytest.mark.parametrize('invalid', [0.5, -0.5, float('nan'), float('inf'), -float('inf'), float(2**63), -float(2**64)])
+def test_boxed_fraction_rejected_before_loader(monkeypatch, entry, invalid):
+    """Reject a real fraction even when NumPy stores it as a boxed scalar."""
+    values = np.array([0, invalid, 1, 1], dtype=object)
+    before = tuple(id(v) for v in values)
+    calls = []
+    def loader():
+        calls.append(True)
+        raise RuntimeError('boxed fractional map reached core discovery')
+    monkeypatch.setattr(fitstats, '_core_module', loader)
+    try:
+        with pytest.raises(ValueError, match='specific_map entries must'):
+            _call_specific_map_entry(entry, values)
+    finally:
+        assert tuple(id(v) for v in values) == before
+        assert calls == [], 'boxed fractional map reached core discovery'
+
+@pytest.mark.parametrize('entry', ['fit', 'oakes', 'fipc'])
+@pytest.mark.parametrize('dtype', ['integer', 'integral_float'])
+def test_valid_boxed_numeric_map_transport_preserved(monkeypatch, entry, dtype):
+    """Keep supported boxed integer values and integral floats lossless."""
+    values = np.array([0, 0, 1, 1] if dtype == 'integer' else [0., 0., 1., 1.], dtype=object)
+    before = tuple(id(v) for v in values)
+    calls = []
+    class BindingReached(Exception):
+        """Terminate at a recording binding before any numerical execution."""
+    def binding(*args):
+        transported = args[5] if entry == 'oakes' else args[2]
+        calls.append(transported.copy())
+        np.testing.assert_array_equal(transported, [0, 0, 1, 1])
+        assert transported.dtype == np.dtype(np.int64)
+        assert transported.flags.c_contiguous and transported.flags.aligned
+        raise BindingReached
+    monkeypatch.setattr(fitstats, '_core_module', lambda: SimpleNamespace(
+        fit_bifactor_grm=binding, bifactor_oakes_se=binding,
+        fit_bifactor_grm_fipc=binding))
+    try:
+        with pytest.raises(BindingReached):
+            _call_specific_map_entry(entry, values)
+    finally:
+        assert len(calls) == 1
+        assert tuple(id(v) for v in values) == before
+
+
+from decimal import Decimal
+from fractions import Fraction
+
+EXACT_NUMBER_OBSERVATIONS = []
+
+@pytest.mark.parametrize('entry', ['fit', 'oakes', 'fipc'])
+@pytest.mark.parametrize('invalid', [Decimal('0.5'), Decimal('-0.5'), Fraction(1, 2), Fraction(-1, 2)], ids=['decimal-positive-half', 'decimal-negative-half', 'fraction-positive-half', 'fraction-negative-half'])
+def test_exact_boxed_fraction_rejects_before_loader(monkeypatch, entry, invalid):
+    values = np.array([0, invalid, 1, 1], dtype=object)
+    original_ids = tuple(id(v) for v in values)
+    calls = []
+    def loader():
+        calls.append('core-discovery')
+        raise RuntimeError('exact boxed fraction reached excluded native loader')
+    monkeypatch.setattr(fitstats, '_core_module', loader)
+    try:
+        with pytest.raises(ValueError, match='specific_map entries must'):
+            _call_specific_map_entry(entry, values)
+    finally:
+        EXACT_NUMBER_OBSERVATIONS.append({'entry': entry, 'kind': type(invalid).__name__, 'value': str(invalid), 'invalid': True, 'loader_calls': len(calls), 'caller_identity_preserved': tuple(id(v) for v in values) == original_ids})
+        assert tuple(id(v) for v in values) == original_ids
+        assert not calls, 'fraction was narrowed before map admission'
+
+@pytest.mark.parametrize('entry', ['fit', 'oakes', 'fipc'])
+@pytest.mark.parametrize('kind', ['decimal', 'fraction'])
+def test_exact_boxed_integral_control_reaches_binding(monkeypatch, entry, kind):
+    constructor = Decimal if kind == 'decimal' else Fraction
+    values = np.array([constructor(0), constructor(0), constructor(1), constructor(1)], dtype=object)
+    original_ids = tuple(id(v) for v in values)
+    calls = []
+    class BindingReached(Exception):
+        pass
+    def binding(*args):
+        transported = args[5] if entry == 'oakes' else args[2]
+        calls.append(transported.tolist())
+        np.testing.assert_array_equal(transported, [0, 0, 1, 1])
+        assert transported.dtype == np.dtype(np.int64)
+        assert transported.flags.c_contiguous and transported.flags.aligned
+        raise BindingReached
+    monkeypatch.setattr(fitstats, '_core_module', lambda: SimpleNamespace(fit_bifactor_grm=binding, bifactor_oakes_se=binding, fit_bifactor_grm_fipc=binding))
+    try:
+        with pytest.raises(BindingReached):
+            _call_specific_map_entry(entry, values)
+    finally:
+        EXACT_NUMBER_OBSERVATIONS.append({'entry': entry, 'kind': kind, 'invalid': False, 'binding_calls': len(calls), 'transported': calls, 'caller_identity_preserved': tuple(id(v) for v in values) == original_ids})
+        assert len(calls) == 1
+        assert tuple(id(v) for v in values) == original_ids
