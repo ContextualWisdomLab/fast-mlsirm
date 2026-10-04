@@ -2047,27 +2047,17 @@ pub fn fit_two_tier_grm_fipc(
             }
             let free = &v.free_primaries[i];
             let has_specific = v.item_block[i].is_some();
-            let mut node_g = Vec::with_capacity(if has_specific {
-                n_grid * ts_std.len()
-            } else {
-                n_grid
-            });
-            let mut node_s = Vec::with_capacity(node_g.capacity());
-            if has_specific {
-                let specific =
-                    ts_by_specific[v.item_block[i].expect("specific item has a block")].as_slice();
-                for g in 0..n_grid {
-                    for &s in specific {
-                        node_g.extend_from_slice(&coords[g * n_primary..(g + 1) * n_primary]);
-                        node_s.push(s);
-                    }
-                }
-            } else {
-                for g in 0..n_grid {
-                    node_g.extend_from_slice(&coords[g * n_primary..(g + 1) * n_primary]);
-                    node_s.push(0.0);
-                }
-            }
+            // Counts use node g * qs + h. The objective indexes the compact
+            // primary support at g and this item's specific support at h;
+            // expanding primary nodes here would repeat the g index twice.
+            // Basis: Cai (2010, pp. 608-609, Appendix A), item complete-data
+            // likelihood evaluated at its corresponding quadrature tuple.
+            // Reference: Cai, L. (2010). A two-tier full-information item factor
+            // analysis model with applications. Psychometrika, 75(4), 581-612.
+            // doi:10.1007/s11336-010-9178-0.
+            let item_ts = v.item_block[i]
+                .map(|specific| ts_by_specific[specific].as_slice())
+                .unwrap_or(&[]);
             let mut packed = Vec::with_capacity(free.len() + usize::from(has_specific) + v.m1);
             for &d in free {
                 packed.push(params[i].a_p[d]);
@@ -2080,8 +2070,8 @@ pub fn fit_two_tier_grm_fipc(
                 packed,
                 free,
                 has_specific,
-                &node_g,
-                &node_s,
+                &coords,
+                item_ts,
                 n_primary,
                 n_grid,
                 ts_std.len(),

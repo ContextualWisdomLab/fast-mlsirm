@@ -204,6 +204,94 @@ fn fipc_accept_path_capture_frozen_mean_candidate() {
         "one decision per completed prior update"
     );
     let full_mean = fit.prior_update_decision_trace.iter().any(|d| {
+        d.contains("branch=joint_full_accept")
+            || ((d.contains("branch=mean_accept") || d.contains("branch=mean_then_scale_accept"))
+                && (d.contains("alpha=1.000e0") || d.contains("mean_alpha=1.000e0")))
+    });
+    assert!(
+        full_mean,
+        "a full joint or mean-recovery step must be accepted; decisions={:?}",
+        fit.prior_update_decision_trace
+    );
+    assert!(fit
+        .loglik_trace
+        .windows(2)
+        .all(|pair| { pair[1] >= pair[0] - 32.0 * f64::EPSILON * (1.0 + pair[0].abs()) }));
+    // First recovery mean step should move farther than the old 0.1 trust region.
+    let means: Vec<_> = fit.prior_mean_trace.chunks_exact(TINY_N_PRIMARY).collect();
+    assert!(means.len() >= 2);
+    let step = ((means[1][0] - means[0][0]).powi(2) + (means[1][1] - means[0][1]).powi(2)).sqrt();
+    assert!(
+        step > 0.02,
+        "first recovery mean step too small under alpha=0.1 crawl: step={step}, means={means:?}"
+    );
+}
+
+// Implementation-control fixture only: Q7 is not a quadrature study.
+// The sharper fixed bank forces rejection of the joint remapped candidate,
+// so the original mean-first/full-alpha contract is independently exercised.
+// Basis: Cai (2010, pp. 608-609, Appendix A), Gaussian complete-data moments;
+// mean-first recovery and its alpha policy are local implementation contracts,
+// not claimed paper prescriptions.
+// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+// model with applications. Psychometrika, 75(4), 581-612.
+// doi:10.1007/s11336-010-9178-0.
+#[test]
+fn fipc_mean_first_recovery_starts_at_full_alpha() {
+    // Real Rust accept-path capture (root msg_3bc4469b8ef1) + regression:
+    // tip 3fc6160a recovered mean only at alpha=0.1 after scale-first; a
+    // remapped-LL-improving mean step must be eligible from alpha=1.0.
+    let (mut a_primary, mut a_specific, mut thresholds, _) = tiny_params();
+    for value in &mut a_primary {
+        *value *= 4.0;
+    }
+    for value in &mut a_specific {
+        *value *= 4.0;
+    }
+    for value in &mut thresholds {
+        *value -= 8.0;
+    }
+    let n_persons = 12;
+    let mut y = vec![0usize; n_persons * TINY_N_ITEMS];
+    for p in 0..n_persons {
+        for i in 0..TINY_N_ITEMS {
+            y[p * TINY_N_ITEMS + i] = (p + i) % TINY_N_CAT;
+        }
+    }
+    let anchors = [true, true, true, true, true, true, true, true, false, false];
+    let fit = fit_two_tier_grm_fipc(
+        &y,
+        None,
+        &TINY_PRIMARY_MAP,
+        &TINY_SPECIFIC_MAP,
+        n_persons,
+        TINY_N_ITEMS,
+        TINY_N_PRIMARY,
+        TINY_N_SPECIFIC,
+        TINY_N_CAT,
+        &anchors,
+        &a_primary,
+        &a_specific,
+        &thresholds,
+        &TwoTierFipcConfig {
+            q_primary: 7,
+            q_specific: 7,
+            max_iter: 8,
+            tol: 1e-5,
+            newton_iter: 2,
+            ridge: 1e-8,
+            estimate_specific_vars: true,
+            device: crate::Device::Cpu,
+        },
+    )
+    .expect("accept-path capture fit");
+
+    assert_eq!(
+        fit.prior_update_decision_trace.len(),
+        fit.n_iter,
+        "one decision per completed prior update"
+    );
+    let full_mean = fit.prior_update_decision_trace.iter().any(|d| {
         (d.contains("branch=mean_accept") || d.contains("branch=mean_then_scale_accept"))
             && (d.contains("alpha=1.000e0") || d.contains("mean_alpha=1.000e0"))
     });
@@ -220,6 +308,9 @@ fn fipc_accept_path_capture_frozen_mean_candidate() {
         step > 0.02,
         "first recovery mean step too small under alpha=0.1 crawl: step={step}, means={means:?}"
     );
+    assert!(!fit.converged);
+    assert_eq!(fit.termination_reason, "prior_update_stalled");
+    assert_eq!(fit.n_rollback_full, 3);
 }
 
 #[test]

@@ -44,9 +44,9 @@
 
 #[cfg(all(feature = "gpu", not(coverage)))]
 use crate::gpu::GpuContext;
+use std::cell::RefCell;
 #[cfg(all(feature = "gpu", not(coverage)))]
 use wgpu::util::DeviceExt;
-use std::cell::RefCell;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct GpuDispatchReceipt {
@@ -341,7 +341,12 @@ fn reduce_counts_blk(
     let out = ((g * dims.ni + i) * dims.stride + t * dims.qs + h) * dims.nc + k;
     let s = item_block[i];
     if (s < 0) {
-        counts[out] = 0.0;
+        // General-only counts were written by reduce_counts_gen. Do not
+        // erase them in this later block-only pass (Cai, 2010, pp. 608-609,
+        // Appendix A: item-category expected counts at their node tuple).
+        // Reference: Cai, L. (2010). A two-tier full-information item factor
+        // analysis model with applications. Psychometrika, 75(4), 581-612.
+        // doi:10.1007/s11336-010-9178-0.
         return;
     }
     let su = u32(s);
@@ -457,14 +462,14 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     // Fail closed on storage binding budget before allocating (Metal/WebGPU
     // report these at runtime; never hardcode a byte cap).
     let buffer_lens = [
-        np * ni,                 // yobs as i32 — sized separately below
-        np * qg,                 // genlog / postg
-        np * ns * qg,            // logi
-        np * ns * qg * qs,       // blockacc / joint
-        np,                      // ll
-        np * ns,                 // anyobs
-        ng * ni * stride * nc,   // counts
-        ng * (3 + 2 * ns),       // moments
+        np * ni,               // yobs as i32 — sized separately below
+        np * qg,               // genlog / postg
+        np * ns * qg,          // logi
+        np * ns * qg * qs,     // blockacc / joint
+        np,                    // ll
+        np * ns,               // anyobs
+        ng * ni * stride * nc, // counts
+        ng * (3 + 2 * ns),     // moments
     ];
     for &len in &buffer_lens[1..] {
         if !storage_buffer_fits(&limits, len) {
@@ -599,11 +604,10 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     for binding in 12..=20u32 {
         entries.push(storage_entry(binding, false));
     }
-    let bind_group_layout =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("reduced_estep_bgl"),
-            entries: &entries,
-        });
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("reduced_estep_bgl"),
+        entries: &entries,
+    });
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("reduced_estep_bg"),
         layout: &bind_group_layout,
@@ -821,9 +825,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
 /// coverage: always returns `None` so the caller runs the CPU E-step.
 #[cfg(any(not(feature = "gpu"), coverage))]
 #[allow(dead_code)]
-pub(crate) fn e_step_reduced_gpu(
-    _inputs: &ReducedEstepInputs,
-) -> Option<ReducedEstepOutputs> {
+pub(crate) fn e_step_reduced_gpu(_inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
     set_fallback_reason("gpu_feature_disabled_or_coverage_build");
     None
 }
@@ -859,10 +861,16 @@ mod receipt_tests {
             gpu_dispatch_receipt()
         });
         let child_receipt = child.join().expect("receipt thread must finish");
-        assert_eq!(child_receipt.fallback_reason.as_deref(), Some("child_thread"));
+        assert_eq!(
+            child_receipt.fallback_reason.as_deref(),
+            Some("child_thread")
+        );
         assert_eq!(
             gpu_dispatch_receipt().fallback_reason.as_deref(),
             Some("main_thread")
         );
     }
 }
+#[cfg(test)]
+#[path = "../../../tests/unit/gpu_bifactor_count_tests.rs"]
+mod expected_count_tests;

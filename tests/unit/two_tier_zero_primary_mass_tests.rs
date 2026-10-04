@@ -260,4 +260,102 @@ mod zero_primary_mass_regression {
     fn selected_category_rejects_invalid_category() {
         grm_selected_logprob(0.0, &[], 1);
     }
+
+    // The item M-step must use each count cell's matching primary/specific
+    // quadrature tuple (Cai, 2010, pp. 608-609, Appendix A).
+    // Reference: Cai, L. (2010). A two-tier full-information item factor
+    // analysis model with applications. Psychometrika, 75(4), 581-612.
+    // doi:10.1007/s11336-010-9178-0.
+    fn compact_support_fit(qp: usize, qs: usize, device: crate::Device) -> TwoTierFipcResult {
+        let (v, y, parameters, _, _, _, _) = fixture(qp, qs, false);
+        let primary: Vec<f64> = parameters
+            .iter()
+            .flat_map(|p| p.a_p.iter().copied())
+            .collect();
+        let specific: Vec<f64> = parameters.iter().map(|p| p.a_s.unwrap()).collect();
+        let threshold: Vec<f64> = parameters
+            .iter()
+            .flat_map(|p| p.d.iter().copied())
+            .collect();
+        let result = fit_two_tier_grm_fipc(
+            &y,
+            None,
+            &[true; 4],
+            &[0; 4],
+            v.n_persons,
+            v.n_items,
+            v.n_primary,
+            v.n_specific,
+            v.n_cat,
+            &[true, true, false, false],
+            &primary,
+            &specific,
+            &threshold,
+            &TwoTierFipcConfig {
+                q_primary: qp,
+                q_specific: qs,
+                max_iter: 1,
+                tol: 1e-6,
+                newton_iter: 1,
+                ridge: 1e-8,
+                estimate_specific_vars: false,
+                device,
+            },
+        )
+        .expect("compact-support focal item update");
+        assert!(
+            !result.converged,
+            "one-step control must not claim convergence"
+        );
+        for i in 0..2 {
+            assert_eq!(result.a_primary[i].to_bits(), primary[i].to_bits());
+            assert_eq!(result.a_specific[i].to_bits(), specific[i].to_bits());
+            assert_eq!(
+                &result.threshold[i * 2..(i + 1) * 2],
+                &threshold[i * 2..(i + 1) * 2]
+            );
+        }
+        result
+    }
+
+    #[test]
+    fn fipc_first_update_compact_support_stabilizes_q121_q241() {
+        let a = compact_support_fit(121, 121, crate::Device::Cpu);
+        let b = compact_support_fit(241, 241, crate::Device::Cpu);
+        for (x, y) in a
+            .a_primary
+            .iter()
+            .zip(&b.a_primary)
+            .chain(a.a_specific.iter().zip(&b.a_specific))
+            .chain(a.threshold.iter().zip(&b.threshold))
+        {
+            assert!(
+                x.is_finite() && y.is_finite() && (x - y).abs() <= 1e-6,
+                "first free-item update must stabilize across explicit Q121 and Q241: {x} vs {y}"
+            );
+        }
+    }
+
+    #[test]
+    fn fipc_first_update_compact_support_gpu_cpu_parity() {
+        for q in [121, 241] {
+            let cpu = compact_support_fit(q, q, crate::Device::Cpu);
+            let gpu = compact_support_fit(q, q, crate::Device::Gpu);
+            if !gpu.gpu_execution_used {
+                assert!(gpu.cpu_fallback_reason.is_some());
+            }
+            for (x, y) in cpu
+                .a_primary
+                .iter()
+                .zip(&gpu.a_primary)
+                .chain(cpu.a_specific.iter().zip(&gpu.a_specific))
+                .chain(cpu.threshold.iter().zip(&gpu.threshold))
+            {
+                assert!(
+                    x.is_finite() && y.is_finite() && (x - y).abs() <= 1e-6,
+                    "free-item GPU/CPU update differs beyond unchanged precision: {x} vs {y}"
+                );
+            }
+        }
+    }
 }
