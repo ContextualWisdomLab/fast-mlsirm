@@ -231,3 +231,57 @@ def test_expected_raw_preserves_finite_native_scores(seam, fit, monkeypatch, val
     np.testing.assert_array_equal(actual, expected)
     assert len(native_calls) == 1 and calls == []
     assert native_calls[0][5:] == (3, 2, 1, 481, device)
+
+
+@pytest.mark.parametrize('device', ['cpu', 'auto', 'gpu'])
+@pytest.mark.parametrize('values', [
+    2.0, [], [1.25, 2.0], [0.0, 1.25, 2.0, 2.75],
+    [[1.25, 2.0, 2.75]], [[1.25], [2.0], [2.75]], [[[1.25, 2.0, 2.75]]],
+], ids=['scalar', 'empty', 'short', 'long', 'row', 'column', 'rank3'])
+def test_expected_raw_rejects_finite_native_shape_mismatch(seam, fit, monkeypatch, values, device):
+    """Enforce documented one-score-per-row transport; no numerical model change."""
+    module, calls = seam
+    original = {name: getattr(fit, name).copy() for name in
+                ('a_primary', 'a_specific', 'threshold', 'theta_p_eap')}
+    returned = np.asarray(values, dtype=np.float64)
+    assert np.isfinite(returned).all()
+    assert returned.shape != (fit.theta_p_eap.shape[0],)
+    native_calls = []
+
+    def binding(*args):
+        native_calls.append(args)
+        return returned
+
+    fitstats = sys.modules[module.__package__ + '.fitstats']
+    monkeypatch.setattr(fitstats, '_core_module', lambda: SimpleNamespace(two_tier_expected_raw=binding))
+    try:
+        with pytest.raises(ValueError, match='expected raw scores must have shape'):
+            module.expected_raw_two_tier_grm(fit, np.array([0, 0]), 121, device=device)
+    finally:
+        assert len(native_calls) == 1 and calls == []
+        assert native_calls[0][5:] == (3, 2, 1, 121, device)
+        for name, expected in original.items():
+            np.testing.assert_array_equal(getattr(fit, name), expected)
+        np.testing.assert_array_equal(returned, np.asarray(values, dtype=np.float64))
+
+
+@pytest.mark.parametrize('device', ['cpu', 'auto', 'gpu'])
+@pytest.mark.parametrize('rows', [0, 1, 3])
+def test_expected_raw_preserves_exact_native_row_vector(seam, fit, monkeypatch, rows, device):
+    """Keep empty, singleton and multi-person row vectors unchanged at caller Q."""
+    module, calls = seam
+    fit.theta_p_eap = fit.theta_p_eap[:rows].copy()
+    expected = np.array([1.25, 2.0, 2.75], dtype=np.float64)[:rows].copy()
+    native_calls = []
+
+    def binding(*args):
+        native_calls.append(args)
+        return expected
+
+    fitstats = sys.modules[module.__package__ + '.fitstats']
+    monkeypatch.setattr(fitstats, '_core_module', lambda: SimpleNamespace(two_tier_expected_raw=binding))
+    actual = module.expected_raw_two_tier_grm(fit, np.array([0, 0]), 481, device=device)
+    assert actual.shape == (rows,)
+    np.testing.assert_array_equal(actual, expected)
+    assert len(native_calls) == 1 and calls == []
+    assert native_calls[0][5:] == (3, 2, 1, 481, device)

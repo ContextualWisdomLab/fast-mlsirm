@@ -654,4 +654,6 @@ def expected_raw_two_tier_grm(
     )
     if not bool(np.isfinite(scores).all()):
         raise ValueError("expected raw scores must be finite")
+    if scores.shape != (theta.shape[0],):
+        raise ValueError("expected raw scores must have shape (n_persons,)")
     return scores
