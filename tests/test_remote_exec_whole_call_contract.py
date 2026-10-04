@@ -22,6 +22,28 @@ def test_document_describes_nonzero_whole_call_identifier_and_batch_limit():
     assert 'does not enforce a run-wide invariant across separate batches' in text
 
 
+def test_document_distinguishes_injected_adapter_from_acceptance():
+    """Implemented adapters must not be confused with deployment acceptance."""
+    text = (Path(__file__).parents[1] / 'docs/orchestration/remote-family-io-equivalence-2072.md').read_text()
+    status = text.split('\n\n', 2)[1]
+    assert 'ValkeyStreamsOutcomeStore' in status
+    assert 'ValkeyStreamsBackend' in status
+    assert 'injected-client' in status
+    assert 'Does **not** close #2001' in status
+    assert 'real-server, installed-wheel, cross-host, device, and scientific acceptance' in text
+    assert 'implement Valkey transport' not in status
+    assert 'No Valkey/Redis Streams transport in this slice.' not in text
+
+
+def test_document_identity_layer_count_matches_table():
+    """The declared count must match the existing four identity table rows."""
+    text = (Path(__file__).parents[1] / 'docs/orchestration/remote-family-io-equivalence-2072.md').read_text()
+    contract = text.split('## Contract\n', 1)[1].split('## Family', 1)[0]
+    rows = [line for line in contract.splitlines() if line.startswith('| ')]
+    assert len(rows) - 1 == 4
+    assert 'four identity layers' in contract
+
+
 @pytest.mark.parametrize('family', sorted(INTERNALLY_UNSHARDABLE_REMOTE_JOB_FAMILIES))
 def test_separate_batches_preserve_nonzero_whole_call_identifiers(family):
     """A batch guard cannot infer internal partitioning from an index alone."""
