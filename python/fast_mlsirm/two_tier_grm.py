@@ -608,9 +608,9 @@ def expected_raw_two_tier_grm(
     if not isinstance(device, str) or device not in ("cpu", "gpu", "auto"):
         raise ValueError("device must be one of 'cpu', 'gpu', 'auto'")
 
-    n_primary = int(fit.n_primary)
-    n_specific = int(fit.n_specific)
-    n_cat = int(fit.n_cat)
+    n_primary = _finite_integer_control(fit.n_primary, "fit.n_primary")
+    n_specific = _finite_integer_control(fit.n_specific, "fit.n_specific")
+    n_cat = _finite_integer_control(fit.n_cat, "fit.n_cat")
     a_specific = np.asarray(fit.a_specific, dtype=np.float64)
     if a_specific.ndim != 1:
         raise ValueError("fit.a_specific must be a 1-D array of length n_items")
@@ -637,7 +637,7 @@ def expected_raw_two_tier_grm(
     if core is None or not hasattr(core, "two_tier_expected_raw"):
         raise RuntimeError("expected_raw_two_tier_grm requires the compiled Rust core")
 
-    return np.asarray(
+    scores = np.asarray(
         core.two_tier_expected_raw(
             np.require(a_primary, requirements=["C", "A"]).reshape(-1),
             np.require(a_specific, requirements=["C", "A"]),
@@ -652,3 +652,6 @@ def expected_raw_two_tier_grm(
         ),
         dtype=np.float64,
     )
+    if not bool(np.isfinite(scores).all()):
+        raise ValueError("expected raw scores must be finite")
+    return scores

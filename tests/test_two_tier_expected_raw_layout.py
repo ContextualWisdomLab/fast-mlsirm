@@ -143,9 +143,91 @@ def test_expected_raw_aligns_contiguous_float_buffers(seam, fit, field):
     assert not getattr(fit, field).flags.aligned
 
 
+@pytest.mark.parametrize('device', ['cpu', 'auto', 'gpu'])
+@pytest.mark.parametrize('field,value', [
+    ('n_primary', 2.5), ('n_specific', 1.5), ('n_cat', 3.5),
+])
+def test_expected_raw_rejects_fractional_fit_dimensions(seam, fit, field, value, device):
+    """Reject malformed saved-fit metadata before native transport; no model change."""
+    module, calls = seam
+    setattr(fit, field, value)
+    with pytest.raises(ValueError, match=field):
+        module.expected_raw_two_tier_grm(fit, np.array([0, 0]), 121, device=device)
+    assert calls == []
+
+
+@pytest.mark.parametrize('device', ['cpu', 'auto', 'gpu'])
+@pytest.mark.parametrize('scalar', [np.int64, float])
+def test_expected_raw_integral_fit_dimensions_preserve_transport(seam, fit, scalar, device):
+    """Existing integer-valued metadata remains accepted with unchanged controls."""
+    module, calls = seam
+    for field in ('n_primary', 'n_specific', 'n_cat'):
+        setattr(fit, field, scalar(getattr(fit, field)))
+    module.expected_raw_two_tier_grm(fit, np.array([0, 0]), 241, device=device)
+    assert len(calls) == 1
+    assert calls[0][5:] == (3, 2, 1, 241, device)
+
+
+@pytest.mark.parametrize('device', ['cpu', 'auto', 'gpu'])
+def test_expected_raw_zero_specific_dimensions_preserve_free_items(seam, fit, device):
+    """A specific-free scoring bank needs no specific factors or fitted recalibration."""
+    module, calls = seam
+    fit.n_specific = 0
+    module.expected_raw_two_tier_grm(fit, np.array([-1, -1]), 121, device=device)
+    assert len(calls) == 1
+    np.testing.assert_array_equal(calls[0][4], [-1, -1])
+    assert calls[0][5:] == (3, 2, 0, 121, device)
+
+
 def test_expected_raw_invalid_device_does_not_reach_binding(seam, fit):
     """Layout normalization must not relax an unrelated public admission guard."""
     module, calls = seam
     with pytest.raises(ValueError, match='device'):
         module.expected_raw_two_tier_grm(fit, np.array([0, 0]), 121, device='cuda')
     assert calls == []
+
+
+@pytest.mark.parametrize('device', ['cpu', 'auto', 'gpu'])
+@pytest.mark.parametrize('bad', [np.nan, np.inf, -np.inf])
+def test_expected_raw_rejects_nonfinite_native_scores(seam, fit, monkeypatch, bad, device):
+    """Nonfinite native results must not escape as expected raw scores."""
+    module, calls = seam
+    original = [getattr(fit, name).copy() for name in
+                ('a_primary', 'a_specific', 'threshold', 'theta_p_eap')]
+    native_calls = []
+
+    def binding(*args):
+        native_calls.append(args)
+        return np.array([1.25, bad, 2.75])
+
+    fitstats = sys.modules[module.__package__ + '.fitstats']
+    monkeypatch.setattr(fitstats, '_core_module', lambda: SimpleNamespace(two_tier_expected_raw=binding))
+    try:
+        with pytest.raises(ValueError, match='expected raw scores must be finite'):
+            module.expected_raw_two_tier_grm(fit, np.array([0, 0]), 121, device=device)
+    finally:
+        assert len(native_calls) == 1
+        assert native_calls[0][5:] == (3, 2, 1, 121, device)
+        assert calls == []
+        for name, values in zip(('a_primary', 'a_specific', 'threshold', 'theta_p_eap'), original):
+            np.testing.assert_array_equal(getattr(fit, name), values)
+
+
+@pytest.mark.parametrize('device', ['cpu', 'auto', 'gpu'])
+@pytest.mark.parametrize('values', [[0., 2., 4.], [1.25, 2., 2.75], [0., 0., 0.]])
+def test_expected_raw_preserves_finite_native_scores(seam, fit, monkeypatch, values, device):
+    """The output guard must preserve finite values and explicit node counts."""
+    module, calls = seam
+    expected = np.array(values)
+    native_calls = []
+
+    def binding(*args):
+        native_calls.append(args)
+        return expected
+
+    fitstats = sys.modules[module.__package__ + '.fitstats']
+    monkeypatch.setattr(fitstats, '_core_module', lambda: SimpleNamespace(two_tier_expected_raw=binding))
+    actual = module.expected_raw_two_tier_grm(fit, np.array([0, 0]), 481, device=device)
+    np.testing.assert_array_equal(actual, expected)
+    assert len(native_calls) == 1 and calls == []
+    assert native_calls[0][5:] == (3, 2, 1, 481, device)
