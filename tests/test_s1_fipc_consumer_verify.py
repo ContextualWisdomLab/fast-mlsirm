@@ -1053,3 +1053,156 @@ def test_reference_present_sibling_diagnostic_rejected_before_focal(monkeypatch,
     assert receipt["row_order_diagnosis"] == "fit_error"
     assert field in receipt["fipc_fit_error"]
     assert focal_calls == []
+
+
+STOP_CONTRADICTION_REASONS = ("step_limited", "max_iter_reached", "prior_update_stalled")
+
+
+def _termination_metadata_receipt(monkeypatch, device, position, reason):
+    """Record synthetic contradictory labels without invoking native fitting."""
+    module = _load_script()
+    fake = _fake_core(module)
+    reference = fake.fit_two_tier_grm
+    focal = fake.fit_two_tier_grm_fipc
+    calls = []
+
+    def mutate(result):
+        assert result["converged"] is True
+        if reason is None:
+            result.pop("termination_reason", None)
+        else:
+            result["termination_reason"] = reason
+        return result
+
+    def reference_return(*args, **kwargs):
+        result = reference(*args, **kwargs)
+        return mutate(result) if position == "reference" else result
+
+    def focal_return(y, *args, **kwargs):
+        assert kwargs.get("device", "cpu") == device
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError(
+                "primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required"
+            )
+        result = focal(y, *args)
+        calls.append((args[14], args[12:14]))
+        result.update(gpu_execution_used=device != "cpu", gpu_backend="Metal" if device != "cpu" else None)
+        target = 1 if position == "base" else 2
+        if position != "reference" and len(calls) == target:
+            mutate(result)
+        return result
+
+    fake.fit_two_tier_grm = reference_return
+    fake.fit_two_tier_grm_fipc = focal_return
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(
+        None, None, device=device, q_primary=121, q_specific=121, q_expected_raw=121,
+    )
+    _assert_schema(receipt)
+    json.dumps(receipt, allow_nan=False)
+    return receipt, calls
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+@pytest.mark.parametrize("position", ["reference", "base", "permuted"])
+@pytest.mark.parametrize("reason", STOP_CONTRADICTION_REASONS)
+def test_converged_label_cannot_override_present_nonconvergence_reason(monkeypatch, device, position, reason):
+    """An explicit failed-stop label cannot certify an otherwise valid receipt."""
+    receipt, calls = _termination_metadata_receipt(monkeypatch, device, position, reason)
+    assert receipt["all_pass"] is False, "contradictory native stop labels certified all_pass"
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert receipt["fipc_fit_error"] == "ValueError: Native convergence metadata contradicts termination reason."
+    count = {"reference": 0, "base": 1, "permuted": 2}[position]
+    assert calls == [(100, (121, 121))] * count
+    assert receipt["gpu_execution_used"] is None
+    assert receipt["gpu_backend"] is None
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+@pytest.mark.parametrize("position", ["reference", "base", "permuted"])
+@pytest.mark.parametrize("reason", [None, "tolerance", "tolerance_met"])
+def test_compatible_converged_stop_metadata_preserves_receipt(monkeypatch, device, position, reason):
+    """Absent older exports and both existing tolerance spellings remain valid."""
+    receipt, calls = _termination_metadata_receipt(monkeypatch, device, position, reason)
+    assert receipt["all_pass"] is True
+    assert receipt["row_order_diagnosis"] == "pass"
+    assert calls == [(100, (121, 121)), (100, (121, 121)), (1, (121, 121))]
+    assert receipt["convergence_failure"] is True
+    assert "fipc_fit_error" not in receipt
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+@pytest.mark.parametrize("bank_case, expected_rank", [("zero", 0), ("first_axis_only", 1), ("second_axis_only", 1), ("signed_full", 2), ("scaled_full", 2), ("true_full", 2)])
+def test_actual_fixed_anchor_rank_controls_focal_admission(monkeypatch, device, bank_case, expected_rank):
+    """Actual anchor slopes, not their binary pattern, must span focal location.
+
+    Kim (2006, pp. 359-360) bases fixed calibration on the old item scale.
+    The rank necessity is derived here from the implemented A_anchor @ mu
+    predictor; it is not a multidimensional theorem attributed to Kim.
+
+    References
+    ----------
+    Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+        methods. Journal of Educational Measurement, 43(4), 355-381.
+        https://doi.org/10.1111/j.1745-3984.2006.00021.x
+    """
+    module = _load_script()
+    bank = module.TRUE_A_P.copy()
+    if bank_case == "zero":
+        bank[module.ANCHOR] = 0.0
+    elif bank_case == "first_axis_only":
+        bank[module.ANCHOR, 1] = 0.0
+    elif bank_case == "second_axis_only":
+        bank[module.ANCHOR, 0] = 0.0
+    elif bank_case == "signed_full":
+        bank[:, 0] *= -1.0
+    elif bank_case == "scaled_full":
+        bank *= np.array([0.25, 4.0])
+    # Free slopes remain full-rank even in rank-deficient anchored banks.
+    assert np.linalg.matrix_rank(bank[~module.ANCHOR]) == 2
+    assert np.linalg.matrix_rank(bank[module.ANCHOR]) == expected_rank
+    assert module.anchor_identification(module.PRIMARY_MAP, module.SPECIFIC_MAP, module.ANCHOR, False)["anchored_primary_rank"] == 2
+    before = bank.copy()
+    fake = _fake_core(module)
+    reference = fake.fit_two_tier_grm
+    focal = fake.fit_two_tier_grm_fipc
+    calls = []
+
+    def reference_return(*args, **kwargs):
+        result = reference(*args, **kwargs)
+        result["a_primary"] = bank.reshape(-1).copy()
+        return result
+
+    def focal_return(y, *args, **kwargs):
+        assert kwargs.get("device", "cpu") == device
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        calls.append((args[14], args[12:14]))
+        result = focal(y, *args)
+        result.update(gpu_execution_used=device != "cpu", gpu_backend="Metal" if device != "cpu" else None)
+        return result
+
+    fake.fit_two_tier_grm = reference_return
+    fake.fit_two_tier_grm_fipc = focal_return
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, device=device, q_primary=121, q_specific=121, q_expected_raw=121)
+    _assert_schema(receipt)
+    json.dumps(receipt, allow_nan=False)
+    if expected_rank < 2:
+        assert receipt["all_pass"] is False, "rank-deficient actual fixed anchor bank certified all_pass"
+        assert calls == [], "unidentified actual bank reached focal fitter"
+        assert receipt["anchor_identified"] is False
+        assert receipt["anchored_primary_rank"] == expected_rank
+        assert receipt["row_order_diagnosis"] == "not_identified"
+        assert receipt["row_order_max_abs"] is None
+        assert receipt["gpu_execution_used"] is None
+        assert all(receipt[key] is False for key in module.GATES)
+    else:
+        assert receipt["all_pass"] is True, receipt.get("fipc_fit_error")
+        assert receipt["anchor_identified"] is True
+        assert receipt["anchored_primary_rank"] == 2
+        assert receipt["row_order_diagnosis"] == "pass"
+        assert calls == [(100, (121, 121)), (100, (121, 121)), (1, (121, 121))]
+        assert receipt["anchor_rows_fixed"] is True
+        assert receipt["convergence_failure"] is True
+    assert np.array_equal(bank, before)

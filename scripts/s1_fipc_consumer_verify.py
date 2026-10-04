@@ -76,13 +76,21 @@ def anchor_identification(
     anchor: np.ndarray,
     estimate_specific_vars: bool,
 ) -> dict[str, object]:
-    """Check that the fixed items pin every focal latent moment being estimated.
+    """Screen the anchor pattern before reference calibration is available.
 
-    Under FIPC the focal-group metric comes only from the fixed items (Kim,
-    2006).  The focal primary mean enters the anchored items through
-    ``A_anchor @ mu``, so ``mu`` is identified only when the anchored
-    primary-loading pattern has full column rank.  When specific variances are
-    estimated, each specific block likewise needs an anchored item.
+    Kim (2006, pp. 359-360) describes fixed item parameters carrying the old
+    scale. This binary-map rank is only a structural preflight. The actual
+    fixed loading matrix is checked after reference calibration: the necessary
+    location condition follows from the implemented ``A_anchor @ mu`` term,
+    not a multidimensional theorem in Kim. Neither screen proves variance or
+    global identification. When specific variances are estimated, each
+    specific block also needs an anchored item.
+
+    References
+    ----------
+    Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+        methods. Journal of Educational Measurement, 43(4), 355-381.
+        https://doi.org/10.1111/j.1745-3984.2006.00021.x
     """
     rank = int(np.linalg.matrix_rank(np.asarray(primary_map, dtype=float)[anchor]))
     specific_ok = not estimate_specific_vars or set(np.unique(specific_map)) <= set(np.unique(specific_map[anchor]))
@@ -137,6 +145,10 @@ def _validate_native_diagnostics(fit: dict) -> None:
     ):
         if field in fit and not np.isfinite(np.asarray(fit[field], dtype=np.float64)).all():
             raise ValueError(f"Native diagnostic {field} must be finite.")
+    if fit.get("converged") is True and fit.get("termination_reason") in {
+        "step_limited", "max_iter_reached", "prior_update_stalled",
+    }:
+        raise ValueError("Native convergence metadata contradicts termination reason.")
 
 
 def call_fipc(
@@ -231,6 +243,14 @@ def _fipc_gates(
         raise ValueError("Reference calibration must report convergence before focal fitting.")
     _validate_native_diagnostics(reference)
     fixed = {k: np.asarray(reference[k], dtype=np.float64) for k in ("a_primary", "a_specific", "threshold")}
+    if any(not np.isfinite(value).all() for value in fixed.values()):
+        raise ValueError("Reference fixed item parameters must be finite.")
+    actual_rank = int(np.linalg.matrix_rank(fixed["a_primary"].reshape(N_ITEMS, N_PRIMARY)[ANCHOR]))
+    results["anchored_primary_rank"] = actual_rank
+    if actual_rank < N_PRIMARY:
+        results["anchor_identified"] = False
+        results["row_order_diagnosis"] = "not_identified"
+        return
     focal_y = simulate(SEED + 1, FOCAL_MEAN, FOCAL_SD)
     fit = call_fipc(focal_y, fixed, device, q_primary=q_primary, q_specific=q_specific)
     results["gpu_execution_used"] = fit.get("gpu_execution_used")
