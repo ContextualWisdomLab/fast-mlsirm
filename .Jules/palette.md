@@ -51,3 +51,6 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+## 2026-10-04 - CSS 테마 및 대비 개선: 하드코딩된 색상 사용 지양
+**Learning:** 독립형 HTML 리포트에서 CSS 클래스 (예: `.skip-link`) 내부에 `color: white;`와 같이 하드코딩된 색상을 사용하면, 다크 모드나 테마가 변경될 때 배경 색상 변수(예: `var(--teal)`)와의 대비가 깨져 접근성에 문제가 발생할 수 있음을 확인했습니다.
+**Action:** 항상 배경색 변수와 짝을 이루는 텍스트 색상 변수(예: `color: var(--bg);`)를 사용하여 색상 스킴이 변경되더라도 가독성과 명도 대비가 유지되도록 해야 합니다. 또한, 이를 방지하는 회귀 테스트(`assert 'color: white;' not in html`)를 `test_report_focus_contrast.py`에 추가하여 디자인 변형 시 문제를 사전에 차단합니다.
