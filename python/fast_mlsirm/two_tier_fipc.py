@@ -169,8 +169,13 @@ def two_tier_reference_expected_score_moments(
         q_p,
         q_s,
     )
+    mean = float(out["mean"])
+    second_moment = float(out["second_moment"])
+    variance = float(out["variance"])
+    if not np.isfinite([mean, second_moment, variance]).all():
+        raise ValueError("reference expected-score moments must be finite")
     return TwoTierReferenceExpectedScoreMoments(
-        float(out["mean"]), float(out["second_moment"]), float(out["variance"]),
+        mean, second_moment, variance,
         p_mean, p_sd, int(mask.sum()), q_p, q_s,
     )
 
@@ -192,6 +197,17 @@ def score_two_tier_fipc_group_persons(
     ``expected_raw`` is :func:`expected_raw_two_tier_grm` at those EAPs.
     Reference moments use anchor rows and the reference primary prior only.
     """
+    _check_orthogonal(fit)
+    eap = np.asarray(fit.theta_p_eap, dtype=np.float64)
+    if eap.ndim != 2 or eap.shape[1] != int(fit.n_primary):
+        raise ValueError("fit.theta_p_eap must have shape (n_persons, n_primary)")
+    if not np.all(np.isfinite(eap)):
+        raise ValueError("fit.theta_p_eap must be finite")
+    posterior_sd = np.asarray(fit.theta_p_sd, dtype=np.float64)
+    if posterior_sd.shape != eap.shape:
+        raise ValueError("fit.theta_p_sd must have the same shape as fit.theta_p_eap")
+    if not np.all(np.isfinite(posterior_sd)) or np.any(posterior_sd < 0.0):
+        raise ValueError("fit.theta_p_sd must be finite and nonnegative")
     reference = two_tier_reference_expected_score_moments(
         fit,
         specific_map,
@@ -202,9 +218,8 @@ def score_two_tier_fipc_group_persons(
         q_specific=q_specific,
     )
     expected_raw = expected_raw_two_tier_grm(fit, specific_map, reference.q_specific)
-    eap = np.asarray(fit.theta_p_eap, dtype=np.float64)
     return TwoTierFipcGroupPersonScores(
-        eap, np.asarray(fit.theta_p_sd, dtype=np.float64), expected_raw, reference, fit
+        eap, posterior_sd, expected_raw, reference, fit
     )
 
 

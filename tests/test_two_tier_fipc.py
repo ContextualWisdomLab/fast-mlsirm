@@ -183,3 +183,332 @@ def test_payload_contract_is_serializable_and_explicit() -> None:
     assert out["expected_raw"] == direct.expected_raw.tolist()
     with pytest.raises(ValueError, match="missing"):
         execute_two_tier_fipc_group_person_score_payload({"fit": {}})
+
+
+# Posterior SD is supplied fit data, not recomputed by these admission tests.
+# Recording callbacks verify pre-dispatch rejection, not numerical accuracy.
+@pytest.mark.parametrize("route", ["scorer", "payload"])
+@pytest.mark.parametrize(
+    "case", ["scalar", "flat", "wrong_rows", "wrong_columns", "nan", "positive_inf",
+             "negative_inf", "negative", "none"],
+)
+def test_posterior_sd_rejected_before_scoring_dispatch(monkeypatch, route, case):
+    import fast_mlsirm.two_tier_fipc as scorer
+
+    values = {
+        "scalar": 0.5,
+        "flat": np.full(6, 0.5),
+        "wrong_rows": np.full((2, 2), 0.5),
+        "wrong_columns": np.full((3, 1), 0.5),
+        "nan": np.full((3, 2), np.nan),
+        "positive_inf": np.full((3, 2), np.inf),
+        "negative_inf": np.full((3, 2), -np.inf),
+        "negative": np.full((3, 2), -0.5),
+        "none": None,
+    }
+    fit = replace(_fit(), theta_p_sd=values[case])
+    calls = []
+
+    def reference(*args, **kwargs):
+        calls.append("reference")
+        return scorer.TwoTierReferenceExpectedScoreMoments(
+            3.0, 10.0, 1.0, np.zeros(2), np.ones(2), 3, 121, 241
+        )
+
+    def expected(*args, **kwargs):
+        calls.append("expected_raw")
+        return np.array([2.0, 3.0, 4.0])
+
+    monkeypatch.setattr(scorer, "two_tier_reference_expected_score_moments", reference)
+    monkeypatch.setattr(scorer, "expected_raw_two_tier_grm", expected)
+    with pytest.raises(ValueError, match="theta_p_sd"):
+        if route == "scorer":
+            scorer.score_two_tier_fipc_group_persons(
+                fit, SPECIFIC_MAP, ANCHOR, q_primary=121, q_specific=241
+            )
+        else:
+            scorer.execute_two_tier_fipc_group_person_score_payload({
+                "fit": vars(fit), "specific_map": SPECIFIC_MAP.tolist(),
+                "anchor": ANCHOR.tolist(), "q_primary": 121, "q_specific": 241,
+            })
+    assert calls == [], "invalid posterior SD must fail before scoring dispatch"
+
+
+@pytest.mark.parametrize("route", ["scorer", "payload"])
+@pytest.mark.parametrize("case", ["ordinary", "zero", "noncontiguous"])
+def test_posterior_sd_valid_values_preserve_scoring_transport(monkeypatch, route, case):
+    import json
+    import fast_mlsirm.two_tier_fipc as scorer
+
+    sd = np.full((3, 2), 0.5)
+    if case == "zero":
+        sd.fill(0.0)
+    elif case == "noncontiguous":
+        sd = np.full((3, 4), 0.5)[:, ::2]
+        assert not sd.flags.c_contiguous
+    fit = replace(_fit(), theta_p_sd=sd)
+    before = {name: np.asarray(getattr(fit, name)).copy() for name in (
+        "a_primary", "a_specific", "threshold", "phi", "theta_p_eap", "theta_p_sd"
+    )}
+    calls = []
+    expected_values = np.array([2.0, 3.0, 4.0])
+
+    def reference(got_fit, smap, anchor, **kwargs):
+        np.testing.assert_array_equal(got_fit.theta_p_eap, fit.theta_p_eap)
+        np.testing.assert_array_equal(smap, SPECIFIC_MAP)
+        np.testing.assert_array_equal(anchor, ANCHOR)
+        assert kwargs["q_primary"] == 121 and kwargs["q_specific"] == 241
+        calls.append("reference")
+        return scorer.TwoTierReferenceExpectedScoreMoments(
+            3.0, 10.0, 1.0, np.zeros(2), np.ones(2), 3, 121, 241
+        )
+
+    def expected(got_fit, smap, q_specific):
+        np.testing.assert_array_equal(got_fit.theta_p_eap, fit.theta_p_eap)
+        np.testing.assert_array_equal(smap, SPECIFIC_MAP)
+        assert q_specific == 241
+        calls.append("expected_raw")
+        return expected_values
+
+    monkeypatch.setattr(scorer, "two_tier_reference_expected_score_moments", reference)
+    monkeypatch.setattr(scorer, "expected_raw_two_tier_grm", expected)
+    if route == "scorer":
+        output = scorer.score_two_tier_fipc_group_persons(
+            fit, SPECIFIC_MAP, ANCHOR, q_primary=121, q_specific=241
+        )
+        np.testing.assert_array_equal(output.theta_primary_eap, fit.theta_p_eap)
+        np.testing.assert_array_equal(output.theta_primary_sd, sd)
+        np.testing.assert_array_equal(output.expected_raw, expected_values)
+    else:
+        output = scorer.execute_two_tier_fipc_group_person_score_payload({
+            "fit": vars(fit), "specific_map": SPECIFIC_MAP.tolist(),
+            "anchor": ANCHOR.tolist(), "q_primary": 121, "q_specific": 241,
+        })
+        assert output["theta_primary_eap"] == fit.theta_p_eap.tolist()
+        assert output["theta_primary_sd"] == sd.tolist()
+        assert output["expected_raw"] == expected_values.tolist()
+        json.dumps(output, allow_nan=False)
+    assert calls == ["reference", "expected_raw"]
+    for name, values in before.items():
+        np.testing.assert_array_equal(getattr(fit, name), values)
+
+
+@pytest.mark.parametrize("route", ["scorer", "payload"])
+def test_posterior_sd_missing_field_keeps_predispatch_rejection(monkeypatch, route):
+    from types import SimpleNamespace
+    import fast_mlsirm.two_tier_fipc as scorer
+
+    fields = vars(_fit()).copy()
+    del fields["theta_p_sd"]
+    calls = []
+
+    def forbidden(*args, **kwargs):
+        calls.append("scoring_dispatch")
+        raise AssertionError("missing posterior SD must not dispatch scoring")
+
+    # Keep the genuine reference helper's existing required-field check.
+    monkeypatch.setattr(scorer, "expected_raw_two_tier_grm", forbidden)
+    with pytest.raises(TypeError, match="theta_p_sd"):
+        if route == "scorer":
+            scorer.score_two_tier_fipc_group_persons(
+                SimpleNamespace(**fields), SPECIFIC_MAP, ANCHOR,
+                q_primary=121, q_specific=241,
+            )
+        else:
+            scorer.execute_two_tier_fipc_group_person_score_payload({
+                "fit": fields, "specific_map": SPECIFIC_MAP.tolist(),
+                "anchor": ANCHOR.tolist(), "q_primary": 121, "q_specific": 241,
+            })
+    assert calls == []
+
+
+# Native-return admission controls: explicit recorded native values, not fit truth.
+@pytest.mark.parametrize("route", ["reference", "scorer", "payload"])
+@pytest.mark.parametrize("field", ["mean", "second_moment", "variance"])
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")], ids=["nan", "posinf", "neginf"])
+def test_reference_moments_nonfinite_rejected_before_expected_scoring(monkeypatch, route, field, bad):
+    from types import SimpleNamespace
+    import fast_mlsirm.fitstats as fitstats
+    import fast_mlsirm.two_tier_fipc as scorer
+
+    fit = _fit()
+    saved = {name: np.asarray(getattr(fit, name)).copy() for name in (
+        "a_primary", "a_specific", "threshold", "phi", "theta_p_eap", "theta_p_sd"
+    )}
+    native = {"mean": 3.0, "second_moment": 10.0, "variance": 1.0}
+    native[field] = bad
+    calls = []
+
+    def reference(*args):
+        calls.append("reference")
+        assert args[-2:] == (121, 241)
+        return dict(native)
+
+    def expected(*args, **kwargs):
+        calls.append("expected_raw")
+        return np.array([2.0, 3.0, 4.0])
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: SimpleNamespace(
+        two_tier_grm_reference_score_moments=reference
+    ))
+    monkeypatch.setattr(scorer, "expected_raw_two_tier_grm", expected)
+    try:
+        with pytest.raises(ValueError, match="reference"):
+            if route == "reference":
+                scorer.two_tier_reference_expected_score_moments(
+                    fit, SPECIFIC_MAP, ANCHOR, q_primary=121, q_specific=241
+                )
+            elif route == "scorer":
+                scorer.score_two_tier_fipc_group_persons(
+                    fit, SPECIFIC_MAP, ANCHOR, q_primary=121, q_specific=241
+                )
+            else:
+                scorer.execute_two_tier_fipc_group_person_score_payload({
+                    "fit": vars(fit), "specific_map": SPECIFIC_MAP.tolist(),
+                    "anchor": ANCHOR.tolist(), "q_primary": 121, "q_specific": 241,
+                })
+        # Repaired contract: reference transport occurs, expected transport does not.
+        assert calls == ["reference"]
+    finally:
+        for name, value in saved.items():
+            np.testing.assert_array_equal(getattr(fit, name), value)
+
+
+@pytest.mark.parametrize("route", ["reference", "scorer", "payload"])
+@pytest.mark.parametrize("case", ["ordinary", "zero_variance"])
+def test_reference_moments_finite_values_preserve_transport(monkeypatch, route, case):
+    import json
+    from types import SimpleNamespace
+    import fast_mlsirm.fitstats as fitstats
+    import fast_mlsirm.two_tier_fipc as scorer
+
+    fit = _fit()
+    native = {"mean": 3.0, "second_moment": 10.0, "variance": 1.0}
+    if case == "zero_variance":
+        native.update(second_moment=9.0, variance=0.0)
+    calls = []
+
+    def reference(*args):
+        calls.append("reference")
+        assert args[-2:] == (121, 241)
+        return dict(native)
+
+    def expected(got_fit, smap, q):
+        calls.append("expected_raw")
+        assert got_fit is fit or np.array_equal(got_fit.theta_p_eap, fit.theta_p_eap)
+        np.testing.assert_array_equal(smap, SPECIFIC_MAP)
+        assert q == 241
+        return np.array([2.0, 3.0, 4.0])
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: SimpleNamespace(
+        two_tier_grm_reference_score_moments=reference
+    ))
+    monkeypatch.setattr(scorer, "expected_raw_two_tier_grm", expected)
+    if route == "reference":
+        result = scorer.two_tier_reference_expected_score_moments(
+            fit, SPECIFIC_MAP, ANCHOR, q_primary=121, q_specific=241
+        )
+        actual = {name: getattr(result, name) for name in native}
+        assert result.q_primary == 121 and result.q_specific == 241
+    elif route == "scorer":
+        result = scorer.score_two_tier_fipc_group_persons(
+            fit, SPECIFIC_MAP, ANCHOR, q_primary=121, q_specific=241
+        )
+        actual = {name: getattr(result.reference_moments, name) for name in native}
+        np.testing.assert_array_equal(result.expected_raw, [2.0, 3.0, 4.0])
+    else:
+        result = scorer.execute_two_tier_fipc_group_person_score_payload({
+            "fit": vars(fit), "specific_map": SPECIFIC_MAP.tolist(),
+            "anchor": ANCHOR.tolist(), "q_primary": 121, "q_specific": 241,
+        })
+        actual = {name: result["reference_expected_score"][name] for name in native}
+        assert result["expected_raw"] == [2.0, 3.0, 4.0]
+        json.dumps(result, allow_nan=False)
+    assert actual == native
+    assert calls == (["reference"] if route == "reference" else ["reference", "expected_raw"])
+    json.dumps(actual, allow_nan=False)
+
+
+@pytest.mark.parametrize("route", ["direct", "scorer", "payload"])
+@pytest.mark.parametrize("values", [
+    2.0, [], [1.0, 2.0], [1.0, 2.0, 3.0, 4.0],
+    [[1.0, 2.0, 3.0]], [[1.0], [2.0], [3.0]], [[[1.0, 2.0, 3.0]]],
+], ids=["scalar", "empty", "short", "long", "row", "column", "rank3"])
+def test_expected_raw_shape_rejected_on_nine_argument_routes(monkeypatch, route, values):
+    """Require one score per input row; a local transport contract, not a model change."""
+    import fast_mlsirm.fitstats as fitstats
+    from types import SimpleNamespace
+    fit = _fit()
+    returned = np.asarray(values, dtype=np.float64)
+    calls = []
+    before = {name: getattr(fit, name).copy() for name in
+              ("a_primary", "a_specific", "threshold", "theta_p_eap", "theta_p_sd")}
+
+    def expected(*args):
+        assert len(args) == 9 and args[5:] == (4, 2, 2, 241)
+        calls.append("expected")
+        return returned
+
+    def reference(*args):
+        assert args[-2:] == (121, 241)
+        calls.append("reference")
+        return {"mean": 1.0, "second_moment": 2.0, "variance": 1.0}
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: SimpleNamespace(
+        two_tier_expected_raw=expected, two_tier_grm_reference_score_moments=reference))
+    try:
+        with pytest.raises(ValueError, match="expected raw scores must have shape"):
+            if route == "direct":
+                expected_raw_two_tier_grm(fit, SPECIFIC_MAP, 241)
+            elif route == "scorer":
+                score_two_tier_fipc_group_persons(fit, SPECIFIC_MAP, ANCHOR,
+                                                 q_primary=121, q_specific=241)
+            else:
+                execute_two_tier_fipc_group_person_score_payload({
+                    "fit": vars(fit), "specific_map": SPECIFIC_MAP.tolist(),
+                    "anchor": ANCHOR.tolist(), "q_primary": 121, "q_specific": 241})
+    finally:
+        assert calls == (["expected"] if route == "direct" else ["reference", "expected"])
+        for name, value in before.items():
+            np.testing.assert_array_equal(getattr(fit, name), value)
+        np.testing.assert_array_equal(returned, np.asarray(values, dtype=np.float64))
+
+
+@pytest.mark.parametrize("route", ["direct", "scorer", "payload"])
+@pytest.mark.parametrize("rows", [0, 1, 3])
+def test_expected_raw_shape_valid_vectors_preserve_nine_argument_routes(monkeypatch, route, rows):
+    """Keep empty, singleton and multirow scores without flattening or padding."""
+    import fast_mlsirm.fitstats as fitstats
+    from types import SimpleNamespace
+    import json
+    fit = replace(_fit(), theta_p_eap=_fit().theta_p_eap[:rows].copy(),
+                  theta_p_sd=_fit().theta_p_sd[:rows].copy())
+    returned = np.array([1.0, 2.0, 3.0])[:rows].copy()
+    calls = []
+
+    def expected(*args):
+        assert len(args) == 9 and args[5:] == (4, 2, 2, 241)
+        calls.append("expected")
+        return returned
+
+    def reference(*args):
+        assert args[-2:] == (121, 241)
+        calls.append("reference")
+        return {"mean": 1.0, "second_moment": 2.0, "variance": 1.0}
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: SimpleNamespace(
+        two_tier_expected_raw=expected, two_tier_grm_reference_score_moments=reference))
+    if route == "direct":
+        actual = expected_raw_two_tier_grm(fit, SPECIFIC_MAP, 241)
+    elif route == "scorer":
+        actual = score_two_tier_fipc_group_persons(fit, SPECIFIC_MAP, ANCHOR,
+                                                  q_primary=121, q_specific=241).expected_raw
+    else:
+        result = execute_two_tier_fipc_group_person_score_payload({
+            "fit": vars(fit), "specific_map": SPECIFIC_MAP.tolist(),
+            "anchor": ANCHOR.tolist(), "q_primary": 121, "q_specific": 241})
+        json.dumps(result, allow_nan=False)
+        actual = np.asarray(result["expected_raw"], dtype=np.float64)
+    assert actual.shape == (rows,)
+    np.testing.assert_array_equal(actual, returned)
+    assert calls == (["expected"] if route == "direct" else ["reference", "expected"])
