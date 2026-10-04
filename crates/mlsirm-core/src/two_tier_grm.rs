@@ -938,6 +938,8 @@ fn grm_selected_logprob(base: f64, thresholds: &[f64], category: usize) -> f64 {
 thread_local! {
     static CATEGORY_EVALUATIONS_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static CATEGORY_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static OBJECTIVE_CELL_EVALUATIONS_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static OBJECTIVE_CELL_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[inline]
@@ -2640,6 +2642,18 @@ fn item_neg_ll_grad(
     let mut grad = vec![0.0f64; params.len()];
     let mut lp = vec![0.0; beta.len() + 1];
     let mut g_thr = vec![0.0; beta.len()];
+    // Reuse only exact current-predictor GRM cells (Cai, 2010, p. 589,
+    // Eqs. 11-12; p. 590, M-step description). Count rows and gradient
+    // sums retain their original order; no cache survives this call.
+    // Only cache when an inactive primary axis can repeat predictors;
+    // fully active primary supports retain the allocation-free node path.
+    // Cell payload is bounded by counts.len() * (beta.len() + 1);
+    // map keys/slots and capacity are additional memory.
+    // Reference: Cai, L. (2010). A two-tier full-information item factor
+    // analysis model with applications. Psychometrika, 75(4), 581-612.
+    // doi:10.1007/s11336-010-9178-0.
+    let mut slots = std::collections::HashMap::<u64, usize>::new();
+    let mut cells = Vec::<f64>::new();
     for (node, cnt) in counts.iter().enumerate() {
         let (g, h) = if has_specific {
             (node / qs, node % qs)
@@ -2654,7 +2668,30 @@ fn item_neg_ll_grad(
         if has_specific {
             base += params[k] * ts[h];
         }
-        crate::poly::grm_logprobs_into(base, beta, &mut lp);
+        if free.len() < n_primary {
+            match slots.entry(base.to_bits()) {
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    let offset = *entry.get();
+                    let width = lp.len();
+                    lp.copy_from_slice(&cells[offset..offset + width]);
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    #[cfg(test)]
+                    if OBJECTIVE_CELL_EVALUATIONS_ACTIVE.with(|active| active.get()) {
+                        OBJECTIVE_CELL_EVALUATIONS.with(|count| count.set(count.get() + 1));
+                    }
+                    crate::poly::grm_logprobs_into(base, beta, &mut lp);
+                    entry.insert(cells.len());
+                    cells.extend_from_slice(&lp);
+                }
+            }
+        } else {
+            #[cfg(test)]
+            if OBJECTIVE_CELL_EVALUATIONS_ACTIVE.with(|active| active.get()) {
+                OBJECTIVE_CELL_EVALUATIONS.with(|count| count.set(count.get() + 1));
+            }
+            crate::poly::grm_logprobs_into(base, beta, &mut lp);
+        }
         ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
         let g_base = crate::poly::grm_node_gradient_into(base, beta, cnt, &lp, &mut g_thr);
         for (t, &dim) in free.iter().enumerate() {

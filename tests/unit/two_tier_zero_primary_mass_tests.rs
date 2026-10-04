@@ -1617,4 +1617,354 @@ mod zero_primary_mass_regression {
             assert_eq!(result.n_iter, expected.n_iter);
         }
     }
+
+    /// Reuse exact GRM cells without combining posterior-count rows.
+    /// Basis: Cai (2010), p. 589, Eqs. 11-12; p. 590, M-step description.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn item_objective_reuses_exact_probability_cells() {
+        let q = 121usize;
+        let grid = q * q;
+        let coords: Vec<f64> = (0..grid)
+            .flat_map(|g| [(g % q) as f64 / 16.0 - 3.75, (g / q) as f64 / 16.0 - 3.75])
+            .collect();
+        let ts: Vec<f64> = (0..q).map(|h| h as f64 / 16.0 - 3.75).collect();
+        let counts: Vec<Vec<f64>> = (0..grid * q)
+            .map(|node| vec![0.0, (node % 11) as f64 / 100.0, 0.1, 0.2])
+            .collect();
+        let params = [1.2, 0.7, 1.4, 0.0, -1.3];
+        let mut distinct = std::collections::HashSet::new();
+        for node in 0..counts.len() {
+            let (g, h) = (node / q, node % q);
+            let mut base = 0.0;
+            base += params[0] * coords[g * 2];
+            base += params[1] * ts[h];
+            distinct.insert(base.to_bits());
+        }
+        assert!(distinct.len() < counts.len());
+        OBJECTIVE_CELL_EVALUATIONS.with(|count| count.set(0));
+        OBJECTIVE_CELL_EVALUATIONS_ACTIVE.with(|active| active.set(true));
+        let result = std::panic::catch_unwind(|| {
+            item_neg_ll_grad(&params, &[0], true, &coords, &ts, 2, grid, q, &counts, 4)
+        });
+        OBJECTIVE_CELL_EVALUATIONS_ACTIVE.with(|active| active.set(false));
+        let result = result.unwrap();
+        assert!(result.0.is_finite() && result.1.iter().all(|x| x.is_finite()));
+        let evaluations = OBJECTIVE_CELL_EVALUATIONS.with(|count| count.get());
+        assert_eq!(
+            evaluations,
+            distinct.len(),
+            "identical predictor cells were recomputed"
+        );
+    }
+
+    fn predecessor_item_objective(
+        params: &[f64],
+        free: &[usize],
+        has_specific: bool,
+        coords: &[f64],
+        ts: &[f64],
+        n_primary: usize,
+        n_grid: usize,
+        qs: usize,
+        counts: &[Vec<f64>],
+        _n_cat: usize,
+    ) -> (f64, Vec<f64>) {
+        let k = free.len();
+        let off = k + usize::from(has_specific);
+        let beta = &params[off..];
+        let mut ll = 0.0f64;
+        let mut grad = vec![0.0f64; params.len()];
+        let mut lp = vec![0.0; beta.len() + 1];
+        let mut g_thr = vec![0.0; beta.len()];
+        for (node, cnt) in counts.iter().enumerate() {
+            let (g, h) = if has_specific {
+                (node / qs, node % qs)
+            } else {
+                debug_assert!(node < n_grid);
+                (node, 0)
+            };
+            let mut base = 0.0f64;
+            for (t, &dim) in free.iter().enumerate() {
+                base += params[t] * coords[g * n_primary + dim];
+            }
+            if has_specific {
+                base += params[k] * ts[h];
+            }
+            crate::poly::grm_logprobs_into(base, beta, &mut lp);
+            ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+            let g_base = crate::poly::grm_node_gradient_into(base, beta, cnt, &lp, &mut g_thr);
+            for (t, &dim) in free.iter().enumerate() {
+                grad[t] += g_base * coords[g * n_primary + dim];
+            }
+            if has_specific {
+                grad[k] += g_base * ts[h];
+            }
+            for (j, gj) in g_thr.iter().enumerate() {
+                grad[off + j] += gj;
+            }
+        }
+        (-ll, grad.iter().map(|g| -g).collect())
+    }
+
+    fn predecessor_item_newton(
+        mut params: Vec<f64>,
+        free: &[usize],
+        has_specific: bool,
+        coords: &[f64],
+        ts: &[f64],
+        n_primary: usize,
+        n_grid: usize,
+        qs: usize,
+        counts: &[Vec<f64>],
+        n_cat: usize,
+        ridge: f64,
+        n_newton: usize,
+    ) -> Vec<f64> {
+        let np = params.len();
+        for _ in 0..n_newton {
+            let (f0, g) = predecessor_item_objective(
+                &params,
+                free,
+                has_specific,
+                coords,
+                ts,
+                n_primary,
+                n_grid,
+                qs,
+                counts,
+                n_cat,
+            );
+            let grad_norm = g.iter().map(|x| x * x).sum::<f64>().sqrt();
+            if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
+                break;
+            }
+            let h = 1e-5;
+            let mut hess = vec![vec![0.0f64; np]; np];
+            for j in 0..np {
+                let mut pj = params.clone();
+                pj[j] += h;
+                let (_f2, gj) = predecessor_item_objective(
+                    &pj,
+                    free,
+                    has_specific,
+                    coords,
+                    ts,
+                    n_primary,
+                    n_grid,
+                    qs,
+                    counts,
+                    n_cat,
+                );
+                for r in 0..np {
+                    hess[r][j] = (gj[r] - g[r]) / h;
+                }
+            }
+            for r in 0..np {
+                for c in 0..np {
+                    hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
+                }
+                hess[r][r] += ridge;
+            }
+            let mut step = solve_small(hess, g.clone());
+            let mut directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum::<f64>();
+            if !step.iter().all(|s| s.is_finite()) || directional <= 0.0 {
+                step = g.clone();
+                directional = grad_norm * grad_norm;
+            }
+            let mut max_step = step.iter().map(|s| s.abs()).fold(0.0f64, f64::max);
+            if max_step > 2.0 {
+                for s in &mut step {
+                    *s *= 2.0 / max_step;
+                }
+                directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum();
+                max_step = 2.0;
+            }
+            let mut alpha = 1.0f64;
+            let mut accepted = false;
+            for _ in 0..25 {
+                let candidate: Vec<f64> = params
+                    .iter()
+                    .zip(&step)
+                    .map(|(value, direction)| value - alpha * direction)
+                    .collect();
+                let (candidate_f, _) = predecessor_item_objective(
+                    &candidate,
+                    free,
+                    has_specific,
+                    coords,
+                    ts,
+                    n_primary,
+                    n_grid,
+                    qs,
+                    counts,
+                    n_cat,
+                );
+                if candidate_f.is_finite() && candidate_f <= f0 - 1e-4 * alpha * directional {
+                    params = candidate;
+                    accepted = true;
+                    break;
+                }
+                alpha *= 0.5;
+            }
+            if !accepted || alpha * max_step < 1e-9 {
+                break;
+            }
+        }
+        params
+    }
+
+    /// Compare exact predecessor accumulation and solver under explicit Q121.
+    /// Basis: Cai (2010), p. 589, Eqs. 11-12; p. 590, E-step-table M-step.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn item_objective_cache_preserves_gradient_and_newton_bits() {
+        let q = 121;
+        let (nodes, _) = quadrature::require_gh_rule(q, "q_primary").unwrap();
+        let (ts, _) = quadrature::require_gh_rule(q, "q_specific").unwrap();
+        for n_primary in [1usize, 2] {
+            let coords: Vec<f64> = nodes
+                .iter()
+                .flat_map(|&x| {
+                    if n_primary == 1 {
+                        vec![x]
+                    } else {
+                        vec![x, 0.0]
+                    }
+                })
+                .collect();
+            for has_specific in [false, true] {
+                let counts: Vec<Vec<f64>> = (0..if has_specific { q * q } else { q })
+                    .map(|n| {
+                        vec![
+                            if n % 5 == 0 { 0.0 } else { 0.1 },
+                            (n % 7) as f64 / 20.0,
+                            0.2,
+                            0.0,
+                        ]
+                    })
+                    .collect();
+                for slope in [0.0, -0.0, 1.2, -0.9] {
+                    let mut params = vec![slope];
+                    if has_specific {
+                        params.push(0.7);
+                    }
+                    params.extend_from_slice(&[1.4, 0.0, -1.3]);
+                    let expected = predecessor_item_objective(
+                        &params,
+                        &[0],
+                        has_specific,
+                        &coords,
+                        ts,
+                        n_primary,
+                        q,
+                        q,
+                        &counts,
+                        4,
+                    );
+                    let actual = item_neg_ll_grad(
+                        &params,
+                        &[0],
+                        has_specific,
+                        &coords,
+                        ts,
+                        n_primary,
+                        q,
+                        q,
+                        &counts,
+                        4,
+                    );
+                    assert_eq!(actual.0.to_bits(), expected.0.to_bits());
+                    assert_eq!(
+                        actual.1.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                        expected.1.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+                    );
+                    // Use a distinct second call; values must not leak across parameters.
+                    params[0] += 0.31;
+                    let expected = predecessor_item_newton(
+                        params.clone(),
+                        &[0],
+                        has_specific,
+                        &coords,
+                        ts,
+                        n_primary,
+                        q,
+                        q,
+                        &counts,
+                        4,
+                        1e-8,
+                        1,
+                    );
+                    let actual = m_step_item(
+                        params,
+                        &[0],
+                        has_specific,
+                        &coords,
+                        ts,
+                        n_primary,
+                        q,
+                        q,
+                        &counts,
+                        4,
+                        1e-8,
+                        1,
+                    );
+                    assert_eq!(
+                        actual.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                        expected.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+                    );
+                }
+            }
+        }
+    }
+
+    /// Retain zero-count and invalid-trial outcomes without normalizing them.
+    /// Basis: Cai (2010), p. 589, Eqs. 11-12; p. 590, M-step description.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn item_objective_cache_retains_zero_counts_and_invalid_trials() {
+        let q = 121usize;
+        let coords: Vec<f64> = (0..q)
+            .map(|n| if n % 2 == 0 { 0.0 } else { -0.0 })
+            .collect();
+        let coords: Vec<f64> = coords.iter().flat_map(|&x| [x, 0.0]).collect();
+        let ts = vec![0.0; q];
+        for counts in [
+            vec![vec![0.0; 4]; q * q],
+            vec![vec![0.0, 0.2, 0.1, 0.0]; q * q],
+        ] {
+            for params in [
+                [1.2, 0.7, 1.4, 0.0, -1.3],
+                [1.2, 0.7, 0.0, 0.0, -1.3],
+                [1.2, 0.7, -1.0, 1.0, -1.3],
+                [f64::INFINITY, 0.7, 1.4, 0.0, -1.3],
+            ] {
+                let expected = predecessor_item_objective(
+                    &params,
+                    &[0],
+                    true,
+                    &coords,
+                    &ts,
+                    2,
+                    q,
+                    q,
+                    &counts,
+                    4,
+                );
+                let actual =
+                    item_neg_ll_grad(&params, &[0], true, &coords, &ts, 2, q, q, &counts, 4);
+                assert_eq!(actual.0.to_bits(), expected.0.to_bits());
+                assert_eq!(
+                    actual.1.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                    expected.1.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
 }
