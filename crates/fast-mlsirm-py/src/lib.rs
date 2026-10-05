@@ -121,7 +121,12 @@ use mlsirm_core::fitstats::{
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
-use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
+use mlsirm_core::two_tier_grm::{
+    fit_two_tier_grm as core_fit_two_tier_grm,
+    fit_two_tier_grm_fipc as core_fit_two_tier_grm_fipc,
+    two_tier_grm_reference_score_moments as core_two_tier_grm_reference_score_moments,
+    TwoTierFipcConfig, TwoTierGrmConfig,
+};
 use mlsirm_core::two_tier_recursion::{
     two_tier_expected_raw_at_q_on as core_two_tier_expected_raw_at_q_on, TwoTierItemParams,
 };
@@ -1975,6 +1980,130 @@ fn fit_two_tier_grm(
     Ok(out.into())
 }
 
+/// Focal-group fixed-item parameter calibration (FIPC) for the two-tier GRM.
+/// Anchored rows retain the supplied reference parameters. The core uses
+/// Gaussian posterior-moment updates and remapped standard quadrature,
+/// not fixed-point discrete-weight MWU-MEM. Kim (2006, pp. 362-363, Eqs. 14-15)
+/// describes updates of weights at fixed ability points. Cai (2010, pp. 587-590, Eqs. 4-6 and 15-16;
+/// pp. 608-609, Appendix A) supplies the normal-factor and complete-data EM
+/// basis, not this implementation's quadrature remapping, jitter, damping,
+/// or scale-recovery policy. This binding forwards the core result; its
+/// presence and metadata do not certify convergence, quadrature stabilization,
+/// parameter recovery, or physical GPU execution.
+///
+/// # References (APA 7th ed.)
+///
+/// Cai, L. (2010). A two-tier full-information item factor analysis model
+/// with applications. *Psychometrika, 75*(4), 581-612.
+/// https://doi.org/10.1007/s11336-010-9178-0
+///
+/// Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+/// methods. *Journal of Educational Measurement, 43*(4), 355-381.
+/// https://doi.org/10.1111/j.1745-3984.2006.00021.x
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, primary_map, specific_map, n_persons, n_items, n_primary, n_specific, n_cat, anchor, fixed_a_primary, fixed_a_specific, fixed_threshold, q_primary, q_specific, max_iter = 500, tol = 1e-6, newton_iter = 10, ridge = 1e-8, estimate_specific_vars = false, device = "cpu"))]
+fn fit_two_tier_grm_fipc(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    primary_map: PyReadonlyArray1<'_, bool>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_primary: usize,
+    n_specific: usize,
+    n_cat: usize,
+    anchor: PyReadonlyArray1<'_, bool>,
+    fixed_a_primary: PyReadonlyArray1<'_, f64>,
+    fixed_a_specific: PyReadonlyArray1<'_, f64>,
+    fixed_threshold: PyReadonlyArray1<'_, f64>,
+    q_primary: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+    newton_iter: usize,
+    ridge: f64,
+    estimate_specific_vars: bool,
+    device: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let y_slice = y.as_slice()?;
+    let obs_vec = observed.as_ref().map(|o| o.as_slice().map(|v| v.to_vec())).transpose()?;
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    if obs_vec.as_ref().is_some_and(|o| o.len() != n_cells) {
+        return Err(PyValueError::new_err(
+            "observed must have length n_persons * n_items",
+        ));
+    }
+    let yy: Vec<usize> = y_slice.iter().enumerate().map(|(idx, &v)| {
+        if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) { return Ok(0); }
+        usize::try_from(v).map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+    }).collect::<PyResult<_>>()?;
+    let pmap = primary_map.as_slice()?.to_vec();
+    let smap: Vec<i32> = specific_map.as_slice()?.iter().map(|&v| i32::try_from(v).map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))).collect::<PyResult<_>>()?;
+    let anchor_vec = anchor.as_slice()?.to_vec();
+    let fixed_p = fixed_a_primary.as_slice()?.to_vec();
+    let fixed_s = fixed_a_specific.as_slice()?.to_vec();
+    let fixed_d = fixed_threshold.as_slice()?.to_vec();
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    let cfg = TwoTierFipcConfig { q_primary, q_specific, max_iter, tol, newton_iter, ridge, estimate_specific_vars, device };
+    let res = py.detach(|| core_fit_two_tier_grm_fipc(&yy, obs_vec.as_deref(), &pmap, &smap, n_persons, n_items, n_primary, n_specific, n_cat, &anchor_vec, &fixed_p, &fixed_s, &fixed_d, &cfg)).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("a_primary", res.a_primary)?;
+    out.set_item("a_specific", res.a_specific)?;
+    out.set_item("threshold", res.threshold)?;
+    out.set_item("primary_mean", res.primary_mean)?;
+    out.set_item("primary_cov", res.primary_cov)?;
+    out.set_item("primary_sd", res.primary_sd)?;
+    out.set_item("specific_sd", res.specific_sd)?;
+    out.set_item("theta_p_eap", res.theta_p_eap)?;
+    out.set_item("theta_p_sd", res.theta_p_sd)?;
+    out.set_item("category_counts", res.category_counts)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("fixed_loglik_trace", res.fixed_loglik_trace)?;
+    out.set_item(
+        "fixed_primary_first_moment_trace",
+        res.fixed_primary_first_moment_trace,
+    )?;
+    out.set_item(
+        "fixed_primary_second_moment_trace",
+        res.fixed_primary_second_moment_trace,
+    )?;
+    out.set_item(
+        "fixed_specific_second_moment_trace",
+        res.fixed_specific_second_moment_trace,
+    )?;
+    out.set_item("prior_mean_trace", res.prior_mean_trace)?;
+    out.set_item("prior_covariance_trace", res.prior_covariance_trace)?;
+    out.set_item("prior_specific_sd_trace", res.prior_specific_sd_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("final_param_change", res.final_param_change)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("n_accepted_prior_steps", res.n_accepted_prior_steps)?;
+    out.set_item("n_rollback_full", res.n_rollback_full)?;
+    out.set_item("consecutive_rollback", res.consecutive_rollback)?;
+    out.set_item(
+        "prior_update_decision_trace",
+        res.prior_update_decision_trace,
+    )?;
+    out.set_item("gpu_execution_used", res.gpu_execution_used)?;
+    out.set_item("gpu_backend", res.gpu_backend)?;
+    out.set_item("gpu_device_name", res.gpu_device_name)?;
+    out.set_item("cpu_fallback_reason", res.cpu_fallback_reason)?;
+    Ok(out.into())
+}
+
 /// Observed-information SEs for the confirmatory two-tier GRM via Oakes
 /// (1999, eq. 6, p. 480). Free vector: free primary slopes, optional
 /// specific slope, thresholds, and Fisher-`z` primary correlations only when
@@ -2190,6 +2319,59 @@ fn two_tier_expected_raw<'py>(
     let (out, _used_gpu) = core_two_tier_expected_raw_at_q_on(&params, th, q_specific, device)
         .map_err(PyValueError::new_err)?;
     Ok(out.to_pyarray(py))
+}
+
+/// Mean, second moment and variance of the anchor-only expected raw total
+/// under an independent normal reference prior on the primaries (Phi = I),
+/// each specific factor N(0, 1)
+/// (`mlsirm_core::two_tier_grm::two_tier_grm_reference_score_moments`).
+/// `a_primary`/`a_specific`/`threshold`/`specific_map` describe the anchor
+/// items only. Returns a dict with `mean`, `second_moment`, `variance`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn two_tier_grm_reference_score_moments(
+    py: Python<'_>,
+    a_primary: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_cat: usize,
+    n_primary: usize,
+    n_specific: usize,
+    primary_mean: PyReadonlyArray1<'_, f64>,
+    primary_sd: PyReadonlyArray1<'_, f64>,
+    q_primary: usize,
+    q_specific: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let specific_map = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| i32::try_from(v))
+        .collect::<Result<Vec<i32>, _>>()
+        .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))?;
+    let params = TwoTierItemParams {
+        a_primary: a_primary.as_slice()?.to_vec(),
+        a_specific: a_specific.as_slice()?.to_vec(),
+        thresholds: threshold.as_slice()?.to_vec(),
+        specific_map,
+        n_primary,
+        n_specific,
+        n_cat,
+    };
+    let (p_mu, p_sd) = (
+        primary_mean.as_slice()?.to_vec(),
+        primary_sd.as_slice()?.to_vec(),
+    );
+    let res = py
+        .detach(|| {
+            core_two_tier_grm_reference_score_moments(&params, &p_mu, &p_sd, q_primary, q_specific)
+        })
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("mean", res.mean)?;
+    out.set_item("second_moment", res.second_moment)?;
+    out.set_item("variance", res.variance)?;
+    Ok(out.into())
 }
 
 /// Confirmatory MULTIDIMENSIONAL generalized partial credit model fit (Muraki, 1992;
@@ -10631,8 +10813,10 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bifactor_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_two_tier_grm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_two_tier_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_expected_raw, m)?)?;
+    m.add_function(wrap_pyfunction!(two_tier_grm_reference_score_moments, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;
