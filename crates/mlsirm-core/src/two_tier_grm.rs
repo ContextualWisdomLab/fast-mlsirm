@@ -86,9 +86,14 @@
 //! for the current item parameters at each distinct primary-predictor bit
 //! pattern and current specific node. Each cache's f64 probability payload is
 //! bounded by its item's full count-table f64 payload when that table is retained;
-//! count tables and probability caches then coexist. CPU focal EM omits only
-//! anchored-item count tables, not their probability cells or posterior moments.
-//! For omitted tables, the full-table comparison is conceptual, not allocated memory.
+//! count tables and probability caches then coexist. CPU focal EM omits
+//! anchored-item count tables while retaining their probability cells and
+//! log marginals. When specific variances are fixed and no observed free item
+//! in a block needs counts, it also omits unconsumed specific posterior mass
+//! and second moments for that block. Primary moments remain unchanged;
+//! default full outputs, estimated-specific-variance updates, final EAP and
+//! non-CPU dispatch retain their original calculation. For omitted tables,
+//! the full-table comparison is conceptual, not allocated memory.
 //! Per-item primary-slot indices and Vec capacities are retained with the cache;
 //! representatives and hash-map buckets require additional peak construction memory.
 //! Nested focal count-row allocations and all vector/map overhead are additional
@@ -1584,6 +1589,7 @@ fn e_step_fipc_cpu(
         n_grid,
         qs,
         None,
+        true,
     )
 }
 
@@ -1606,6 +1612,7 @@ fn e_step_fipc_cpu_counts(
     n_grid: usize,
     qs: usize,
     anchor: Option<&[bool]>,
+    estimate_specific_vars: bool,
 ) -> (
     f64,
     Vec<Vec<Vec<f64>>>,
@@ -1749,6 +1756,12 @@ fn e_step_fipc_cpu_counts(
             if !members.iter().any(|&i| is_obs(pp, i)) {
                 continue;
             }
+            // This specific posterior feeds only its item counts and optional
+            // specific variance update. Log marginals above remain mandatory.
+            if !estimate_specific_vars && !members.iter().any(|&i| needs_count(i) && is_obs(pp, i))
+            {
+                continue;
+            }
             for g in 0..n_grid {
                 for h in 0..qs {
                     let mut acc = log_ws_by_specific[s][h];
@@ -1773,6 +1786,8 @@ fn e_step_fipc_cpu_counts(
                     }
                 }
                 for h in 0..qs {
+                    #[cfg(test)]
+                    SPECIFIC_POSTERIOR_EVALUATIONS.with(|c| c.set(c.get() + 1));
                     let post = (block_acc_g[s * qs + h] + others - log_lp).exp();
                     specific_mass[s] += post;
                     sum_specific2[s] += post * ts_by_specific[s][h] * ts_by_specific[s][h];
@@ -1909,6 +1924,69 @@ fn e_step_fipc_anchored(
         n_grid,
         qs,
         Some(anchor),
+        true,
+    )
+}
+
+/// Project only consumed specific posterior outputs (Cai, 2010, pp. 608–609).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn e_step_fipc_anchored_moments(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+    device: crate::Device,
+    anchor: &[bool],
+    estimate_specific_vars: bool,
+) -> (
+    f64,
+    Vec<Vec<Vec<f64>>>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+) {
+    #[cfg(test)]
+    FIT_ANCHOR_PROJECTION_CALLS.with(|c| c.set(c.get() + 1));
+    if device != crate::Device::Cpu {
+        return e_step_fipc(
+            v,
+            y,
+            observed,
+            params,
+            log_w,
+            log_ws_by_specific,
+            coords,
+            ts_by_specific,
+            n_grid,
+            qs,
+            device,
+        );
+    }
+    e_step_fipc_cpu_counts(
+        v,
+        y,
+        observed,
+        params,
+        log_w,
+        log_ws_by_specific,
+        coords,
+        ts_by_specific,
+        n_grid,
+        qs,
+        Some(anchor),
+        estimate_specific_vars,
     )
 }
 
@@ -2803,7 +2881,7 @@ pub fn fit_two_tier_grm_fipc(
         fixed_primary_second_moment_trace.extend_from_slice(&fixed_m2);
         fixed_specific_second_moment_trace.extend_from_slice(&fixed_specific_m2);
         let (ll, counts, sum_primary, sum_primary2, sum_specific2, specific_mass, _, _) =
-            e_step_fipc_anchored(
+            e_step_fipc_anchored_moments(
                 &v,
                 y,
                 observed,
@@ -2816,6 +2894,7 @@ pub fn fit_two_tier_grm_fipc(
                 ts_std.len(),
                 cfg.device,
                 anchor,
+                cfg.estimate_specific_vars,
             );
         let previous = loglik_trace.last().copied();
         // loglik_trace contains consecutive production evaluations, including
@@ -4692,6 +4771,15 @@ mod free_count_projection_tests;
 mod free_count_legacy_fitter;
 
 #[cfg(test)]
+#[path = "../../../tests/unit/two_tier_specific_projection_tests.rs"]
+mod specific_projection_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_specific_projection_legacy_fitter.rs"]
+mod specific_projection_legacy_fitter;
+
+#[cfg(test)]
 thread_local! {
     static FIT_ANCHOR_PROJECTION_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static SPECIFIC_POSTERIOR_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
