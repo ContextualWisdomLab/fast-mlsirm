@@ -10,6 +10,11 @@
 //! moments — while the `f64` CPU path in [`crate::bifactor_grm`] remains the
 //! numerical reference. When no GPU adapter satisfies the binding budget the
 //! entry point returns `None` and the caller falls back to CPU.
+//! The default sweep retains all outputs. A caller-local consumed-output
+//! projection may omit the specific-moment reduction when it is unused:
+//! counts, primary outputs and shader arithmetic remain unchanged, while
+//! omitted specific moment slots are zero. All buffers and the full shader
+//! are still constructed, so this does not claim an allocation reduction.
 //!
 //! # Precision
 //!
@@ -473,6 +478,21 @@ const MIN_STORAGE_BUFFERS: u32 = 20;
 /// caller falls back to the `f64` CPU sweep over the same tables.
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
+    e_step_reduced_gpu_consumed(inputs, true)
+}
+
+/// Reduced sweep retaining default full outputs; callers may omit unconsumed
+/// specific moments only (Cai, 2010, pp. 608–609, Appendix A). Omitted
+/// specific outputs are zero, not estimated moments. The default entry and
+/// all buffer allocations remain full; only the unconsumed dispatch is absent.
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) fn e_step_reduced_gpu_consumed(
+    inputs: &ReducedEstepInputs,
+    specific_moments: bool,
+) -> Option<ReducedEstepOutputs> {
     use crate::gpu::{
         dispatch_count, dispatch_workgroups_nd, output_buffer, staging_buffer, storage_buffer_fits,
         storage_entry, submit_and_readback,
@@ -776,7 +796,19 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         (&pl_cblk, dispatch_count(ng * ni * qg * qs * nc)),
         (&pl_mg, dispatch_count(ng)),
         (&pl_ms, dispatch_count(ng * ns)),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    .filter_map(|(phase, pair)| {
+        if phase == 6 && !specific_moments {
+            return None;
+        }
+        #[cfg(test)]
+        if phase == 6 {
+            SPECIFIC_MOMENT_DISPATCHES.with(|v| v.set(v.get() + 1));
+        }
+        Some(pair)
+    }) {
         let Some((dx, dy, dz)) = dispatch_workgroups_nd(groups.max(1), max_wg) else {
             set_fallback_reason("workgroup_dispatch_limit");
             return None;
@@ -869,6 +901,28 @@ pub(crate) fn e_step_reduced_gpu(_inputs: &ReducedEstepInputs) -> Option<Reduced
     set_fallback_reason("gpu_feature_disabled_or_coverage_build");
     None
 }
+
+#[cfg(any(not(feature = "gpu"), coverage))]
+pub(crate) fn e_step_reduced_gpu_consumed(inputs: &ReducedEstepInputs, _specific_moments: bool) -> Option<ReducedEstepOutputs> {
+    e_step_reduced_gpu(inputs)
+}
+
+#[cfg(test)]
+thread_local! { static SPECIFIC_MOMENT_DISPATCHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/gpu_bifactor_consumed_moment_tests.rs"]
+mod consumed_moment_tests;
+
+#[cfg(test)]
+pub(crate) fn reset_specific_moment_dispatch_count() {
+    SPECIFIC_MOMENT_DISPATCHES.with(|v| v.set(0));
+}
+#[cfg(test)]
+pub(crate) fn specific_moment_dispatch_count() -> usize {
+    SPECIFIC_MOMENT_DISPATCHES.with(|v| v.get())
+}
+
 
 #[cfg(test)]
 mod receipt_tests {

@@ -91,8 +91,11 @@
 //! log marginals. When specific variances are fixed and no observed free item
 //! in a block needs counts, it also omits unconsumed specific posterior mass
 //! and second moments for that block. Primary moments remain unchanged;
-//! Default full outputs, estimated-specific-variance updates and non-CPU
-//! dispatch retain their original calculation. Final CPU primary EAP and SD
+//! Default full outputs, estimated-specific-variance updates and the original
+//! full CPU fallback retain their calculation. The fixed-specific moving GPU
+//! path omits only unused specific moments; its full allocation, probability
+//! cells, item counts, primary moments and person outputs remain unchanged.
+//! Final CPU primary EAP and SD
 //! retain their original arithmetic while omitting all discarded item-count
 //! and joint-specific-posterior work. For omitted tables, the full-table
 //! comparison is conceptual, not allocated memory.
@@ -1970,6 +1973,36 @@ fn e_step_fipc_anchored_moments(
     #[cfg(test)]
     FIT_ANCHOR_PROJECTION_CALLS.with(|c| c.set(c.get() + 1));
     if device != crate::Device::Cpu {
+        if !estimate_specific_vars {
+            if let Some(result) = e_step_fipc_gpu_consumed(
+                v,
+                y,
+                observed,
+                params,
+                log_w,
+                log_ws_by_specific,
+                coords,
+                ts_by_specific,
+                n_grid,
+                qs,
+                false,
+            ) {
+                return result;
+            }
+            // Preserve the original full CPU fallback, including its moments.
+            return e_step_fipc_cpu(
+                v,
+                y,
+                observed,
+                params,
+                log_w,
+                log_ws_by_specific,
+                coords,
+                ts_by_specific,
+                n_grid,
+                qs,
+            );
+        }
         return e_step_fipc(
             v,
             y,
@@ -2082,6 +2115,49 @@ fn e_step_fipc_gpu(
     Vec<f64>,
     Vec<f64>,
 )> {
+    e_step_fipc_gpu_consumed(
+        v,
+        y,
+        observed,
+        params,
+        log_w,
+        log_ws_by_specific,
+        coords,
+        ts_by_specific,
+        n_grid,
+        qs,
+        true,
+    )
+}
+
+/// Full GPU counts and primary outputs with optional consumed specific moments.
+/// Basis: Cai (2010, pp. 608–609, Appendix A).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn e_step_fipc_gpu_consumed(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+    specific_moments: bool,
+) -> Option<(
+    f64,
+    Vec<Vec<Vec<f64>>>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+)> {
     let person_order = canonical_person_order(v, y, observed);
     let mut canonical_y = vec![0usize; y.len()];
     let mut canonical_observed = observed.map(|_| vec![false; y.len()]);
@@ -2126,7 +2202,7 @@ fn e_step_fipc_gpu(
         log_wg: log_w,
         log_ws,
     };
-    let result = crate::gpu_bifactor::e_step_reduced_gpu(&inputs)?;
+    let result = crate::gpu_bifactor::e_step_reduced_gpu_consumed(&inputs, specific_moments)?;
     let mut counts = Vec::with_capacity(v.n_items);
     for i in 0..v.n_items {
         let nodes = if v.item_block[i].is_some() {
@@ -4899,6 +4975,10 @@ mod final_person_legacy_fitter;
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_gpu_table_cache_tests.rs"]
 mod gpu_table_cache_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_gpu_consumed_moment_tests.rs"]
+mod gpu_consumed_moment_tests;
 
 #[cfg(test)]
 thread_local! {
