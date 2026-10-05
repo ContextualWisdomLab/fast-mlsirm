@@ -52,3 +52,7 @@
 ## 2025-05-19 - MMLE E-step matrix algebra optimization
 **Learning:** During the E-step, computing `neg = ((1.0 - y_filled) * obs_f) @ log_p0.T` explicitly allocates a full-sized `(N, J)` intermediate array before the matrix multiplication.
 **Action:** Use matrix algebra to combine terms: `y_obs @ (log_p1.T - log_p0.T) + obs_f @ log_p0.T + log_weights`. This completely avoids the intermediate `(N, J)` array allocation and yields a ~1.67x speedup in the E-step computation.
+
+## 2025-05-19 - Numerical Parity and Cancellation in E-step algebra
+**Learning:** Rewriting E-step joint log-likelihood arrays to avoid intermediate allocations (e.g., `pos = (y * obs) @ log_p1.T` and `neg = ((1 - y) * obs) @ log_p0.T` into `y_obs @ (log_p1.T - log_p0.T) + obs @ log_p0.T`) is algebraically equivalent but not numerically equivalent. It changes the binary64 summation path, altering posteriors, M-step updates, and convergence trajectories, breaking parity with the Rust core. It also introduces a catastrophic cancellation path for extreme nodes (where `(log_p1 - log_p0) + log_p0` loses precision compared to `log_p1` alone).
+**Action:** Never propose isolated performance edits (like matrix algebra simplification) that change the binary64 summation path of an estimator without explicit cross-engine parity evidence. Such changes fall under formula renovation and must not be done as local performance plumbing.
