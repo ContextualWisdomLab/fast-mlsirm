@@ -531,6 +531,10 @@ class BifactorGrmFipcFit:
     termination_reason: str
     final_loglik_change: float
     n_parameters: int
+    gpu_execution_used: bool = False
+    gpu_backend: str | None = None
+    gpu_device_name: str | None = None
+    cpu_fallback_reason: str | None = None
 
 
 def fit_bifactor_grm_fipc(
@@ -549,6 +553,7 @@ def fit_bifactor_grm_fipc(
     newton_iter: int = 10,
     ridge: float = 1e-8,
     estimate_specific_vars: bool = False,
+    device: str = "cpu",
 ) -> BifactorGrmFipcFit:
     """Fit the focal group with fixed anchor items (FIPC; compute in Rust).
 
@@ -568,7 +573,11 @@ def fit_bifactor_grm_fipc(
     reflection canonicalization, no rescaling of the latent points per Kim,
     2006, p. 362). ``q_general``/``q_specific`` are caller-owned
     Gauss-Hermite node counts (any ``int >= 1``; #1929 removed the
-    fixed-table cap).
+    fixed-table cap). ``device`` selects the existing reduced E-step: CPU
+    uses binary64 arithmetic, GPU uses the existing binary32 kernel, and
+    auto may fall back. Explicit GPU rejects a native CPU-fallback result.
+    Item maximization and final EAP evaluation remain on the CPU; selecting
+    GPU does not certify convergence or numerical precision.
 
     References (APA 7th ed.):
 
@@ -657,6 +666,8 @@ def fit_bifactor_grm_fipc(
     core = _core_module()
     if core is None or not hasattr(core, "fit_bifactor_grm_fipc"):
         raise RuntimeError("fit_bifactor_grm_fipc requires the compiled Rust core")
+    if not isinstance(device, str) or device not in {"cpu", "gpu", "auto"}:
+        raise ValueError("device must be one of cpu, gpu, auto")
 
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
     res = core.fit_bifactor_grm_fipc(
@@ -678,7 +689,21 @@ def fit_bifactor_grm_fipc(
         int(newton_int),
         float(ridge_float),
         bool(estimate_specific_vars),
+        **({} if device == "cpu" else {"device": device}),
     )
+    used = res.get("gpu_execution_used", False)
+    backend = res.get("gpu_backend")
+    device_name = res.get("gpu_device_name")
+    fallback_reason = res.get("cpu_fallback_reason")
+    if type(used) is not bool:
+        raise ValueError("gpu_execution_used must be a boolean")
+    if any(value is not None and not isinstance(value, str)
+           for value in (backend, device_name, fallback_reason)):
+        raise ValueError("GPU backend, device name and fallback reason must be strings or null")
+    if used and (not backend or not device_name):
+        raise ValueError("GPU execution identity requires a nonempty backend and device name")
+    if device == "gpu" and (used is not True or fallback_reason is not None):
+        raise RuntimeError("GPU FIPC requested but the native fit did not complete without CPU fallback")
     return BifactorGrmFipcFit(
         a_general=np.asarray(res["a_general"], dtype=np.float64),
         a_specific=np.asarray(res["a_specific"], dtype=np.float64),
@@ -701,4 +726,8 @@ def fit_bifactor_grm_fipc(
         termination_reason=str(res["termination_reason"]),
         final_loglik_change=float(res["final_loglik_change"]),
         n_parameters=int(res["n_parameters"]),
+        gpu_execution_used=used,
+        gpu_backend=backend,
+        gpu_device_name=device_name,
+        cpu_fallback_reason=fallback_reason,
     )
