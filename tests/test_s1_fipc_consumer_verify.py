@@ -1272,3 +1272,100 @@ def test_true_gpu_dispatch_named_backend_preserves_original_receipt(monkeypatch,
     assert receipt["gpu_execution_used"] is True
     assert receipt["gpu_backend"] == backend
     assert calls == [(100, (121, 241)), (100, (121, 241)), (1, (121, 241))]
+
+
+def test_expected_raw_q481_reference_is_finite_and_symmetric():
+    """A symmetric four-category bank has total expectation nine at zero."""
+    module = _load_script()
+    theta = np.zeros((2, 2), dtype=np.float64)
+    fit = {
+        "a_primary": module.TRUE_A_P.copy(),
+        "a_specific": np.array([.6, .7, -.8, .5, -.4, .9]),
+        "threshold": np.tile(np.array([1.2, 0.0, -1.2]), (6, 1)),
+    }
+    actual = module.expected_raw(theta, fit, q_specific=481)
+    assert actual.shape == (2,) and np.isfinite(actual).all()
+    np.testing.assert_allclose(actual, [9.0, 9.0], atol=1e-10, rtol=1e-10)
+
+
+@pytest.mark.parametrize("q", [1, 121, 241, 481, 961])
+def test_normal_reference_rule_preserves_requested_count_and_moments(q):
+    """Analytic moments check the standard-normal metric, not fit accuracy."""
+    module = _load_script()
+    nodes, weights = module._normal_reference_rule(np.int64(q))
+    assert nodes.shape == weights.shape == (q,)
+    assert nodes.dtype == weights.dtype == np.dtype("float64")
+    assert np.isfinite(nodes).all() and np.isfinite(weights).all()
+    assert (weights >= 0).all() and (np.diff(nodes) > 0).all()
+    np.testing.assert_array_equal(nodes, -nodes[::-1])
+    np.testing.assert_array_equal(weights, weights[::-1])
+    np.testing.assert_allclose(weights.sum(), 1.0, atol=1e-12, rtol=1e-12)
+    if q == 1:
+        np.testing.assert_array_equal(nodes, [0.0])
+        np.testing.assert_array_equal(weights, [1.0])
+    else:
+        for degree, moment in [(2, 1.0), (4, 3.0), (6, 15.0), (8, 105.0)]:
+            np.testing.assert_allclose(weights @ nodes**degree, moment, atol=1e-10, rtol=1e-10)
+
+
+@pytest.mark.parametrize("q", [0, -1, True, np.bool_(True), 1.0, "121", None])
+def test_normal_reference_rule_rejects_invalid_count_before_solver(monkeypatch, q):
+    module = _load_script()
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Invalid count reached the eigensolver")
+    monkeypatch.setattr(module.np.linalg, "eigh", forbidden)
+    with pytest.raises(ValueError, match="positive integer"):
+        module._normal_reference_rule(q)
+
+
+@pytest.mark.parametrize("corruption", ["nodes_nan", "vectors_nan", "zero_mass"])
+def test_normal_reference_rule_rejects_invalid_solver_output(monkeypatch, corruption):
+    module = _load_script()
+    def invalid(matrix):
+        q = matrix.shape[0]
+        nodes = np.arange(q, dtype=np.float64)
+        vectors = np.eye(q)
+        if corruption == "nodes_nan":
+            nodes[0] = np.nan
+        elif corruption == "vectors_nan":
+            vectors[0, 0] = np.nan
+        else:
+            vectors[0] = 0.0
+        return nodes, vectors
+    monkeypatch.setattr(module.np.linalg, "eigh", invalid)
+    with pytest.raises(ValueError, match="finite nodes and weights with positive mass"):
+        module._normal_reference_rule(121)
+
+
+@pytest.mark.parametrize("q", [121, 241])
+def test_normal_reference_rule_matches_original_low_order_expected_raw(q):
+    """A distinct category-probability calculation uses the prior NumPy rule."""
+    module = _load_script()
+    theta = np.array([[-1.4, .3], [.6, -.8], [1.2, 1.1]])
+    fit = {"a_primary": module.TRUE_A_P.copy(),
+           "a_specific": np.array([.6, .7, -.8, .5, -.4, .9]),
+           "threshold": module.TRUE_D.copy()}
+    nodes, weights = np.polynomial.hermite.hermgauss(q)
+    nodes *= np.sqrt(2.0)
+    weights /= np.sqrt(np.pi)
+    reference = np.zeros(theta.shape[0])
+    for item in range(6):
+        base = theta @ fit["a_primary"][item]
+        cum = 1.0 / (1.0 + np.exp(-(base[:, None, None] + fit["a_specific"][item] * nodes[None, :, None] + fit["threshold"][item])))
+        probabilities = np.concatenate((1.0 - cum[..., :1], -np.diff(cum, axis=-1), cum[..., -1:]), axis=-1)
+        reference += (probabilities @ np.arange(4)) @ weights
+    actual = module.expected_raw(theta, fit, q_specific=q)
+    np.testing.assert_allclose(actual, reference, atol=1e-10, rtol=1e-10)
+
+
+def test_expected_raw_general_only_bank_retains_analytic_curve():
+    module = _load_script()
+    theta = np.array([[-1.4, .3], [.6, -.8], [1.2, 1.1]])
+    fit = {"a_primary": module.TRUE_A_P.copy(),
+           "a_specific": np.zeros(6), "threshold": module.TRUE_D.copy()}
+    reference = np.zeros(3)
+    for item in range(6):
+        eta = (theta @ fit["a_primary"][item])[:, None] + fit["threshold"][item]
+        reference += (1.0 / (1.0 + np.exp(-eta))).sum(axis=1)
+    actual = module.expected_raw(theta, fit, q_specific=481)
+    np.testing.assert_array_equal(actual, reference)

@@ -182,10 +182,47 @@ def call_fipc(
     return fit
 
 
+def _normal_reference_rule(q: int) -> tuple[np.ndarray, np.ndarray]:
+    """Generate a caller-selected standard-normal Gauss-Hermite rule.
+
+    Golub and Welsch (1969, pp. 222-223, Eqs. 2.1-2.6) identify nodes
+    with Jacobi-matrix eigenvalues and weights with squared first components
+    of normalized eigenvectors. For the probabilists' Hermite recurrence
+    (NIST, n.d., Eq. 18.9.1, Table 18.9.1), normalizing He_k by sqrt(k!)
+    gives diagonal zero and off-diagonal sqrt(k). The normal measure has
+    total mass one. This is a recurrence substitution, not a new estimator.
+
+    NumPy's dense symmetric eigensolver is used, not the paper's QR code.
+    Matrix/eigenvector storage is O(q**2); floating-point tail weights can
+    be zero. Symmetry averaging and unit-mass normalization do not certify
+    integration accuracy. The caller must check refinement separately.
+
+    References
+    ----------
+    Golub, G. H., & Welsch, J. H. (1969). Calculation of Gauss quadrature
+        rules. Mathematics of Computation, 23(106), 221-230.
+        https://doi.org/10.1090/S0025-5718-69-99647-1
+    National Institute of Standards and Technology. (n.d.). Recurrence
+        relations and derivatives. Digital Library of Mathematical
+        Functions, Section 18.9. https://dlmf.nist.gov/18.9
+    """
+    if isinstance(q, (bool, np.bool_)) or not isinstance(q, (int, np.integer)) or q < 1:
+        raise ValueError("q_specific must be a positive integer")
+    q = int(q)
+    off_diagonal = np.sqrt(np.arange(1, q, dtype=np.float64))
+    matrix = np.diag(off_diagonal, 1) + np.diag(off_diagonal, -1)
+    nodes, vectors = np.linalg.eigh(matrix)
+    weights = vectors[0] ** 2
+    nodes = (nodes - nodes[::-1]) / 2.0
+    weights = (weights + weights[::-1]) / 2.0
+    mass = float(weights.sum())
+    if not np.isfinite(nodes).all() or not np.isfinite(weights).all() or not np.isfinite(mass) or mass <= 0:
+        raise ValueError("Reference quadrature must have finite nodes and weights with positive mass")
+    return nodes, weights / mass
+
+
 def expected_raw(theta: np.ndarray, fit: dict, *, q_specific: int) -> np.ndarray:
-    nodes, weights = np.polynomial.hermite.hermgauss(q_specific)
-    nodes = nodes * np.sqrt(2.0)
-    weights = weights / np.sqrt(np.pi)
+    nodes, weights = _normal_reference_rule(q_specific)
     out = np.zeros(theta.shape[0])
     for i in range(N_ITEMS):
         base = theta @ fit["a_primary"][i]
