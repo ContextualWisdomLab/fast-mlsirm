@@ -3257,6 +3257,10 @@ fn item_neg_ll_grad<C: CountRows + ?Sized>(
         // At the current predictor, the boundary ratios do not depend on the
         // count row (Cai, 2010, pp. 608–609, Appendix A). Multiply and sum each
         // original row in its original order, retaining zero-count branches.
+        #[cfg(test)]
+        if ITEM_LINE_SEARCH_ACTIVE.with(|v| v.get()) {
+            ITEM_LINE_SEARCH_GRADIENT_ROWS.with(|v| v.set(v.get() + 1));
+        }
         let g_base = if free.len() < n_primary {
             let mut g_base = 0.0f64;
             for j in 0..beta.len() {
@@ -3292,6 +3296,72 @@ fn item_neg_ll_grad<C: CountRows + ?Sized>(
         }
     }
     (-ll, grad.iter().map(|g| -g).collect())
+}
+
+/// Expected complete-data item objective only for Newton trial acceptance.
+/// Use the identical category probabilities, count-row order and scalar sum
+/// as `item_neg_ll_grad`; gradients and boundary ratios are not consumed here.
+/// Probability reuse is call-local and only for an inactive primary axis,
+/// retaining the predecessor's direct-node path on fully active support.
+/// Basis: Cai (2010, pp. 608–609, Appendix A).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn item_neg_ll<C: CountRows + ?Sized>(
+    params: &[f64],
+    free: &[usize],
+    has_specific: bool,
+    coords: &[f64],
+    ts: &[f64],
+    n_primary: usize,
+    n_grid: usize,
+    qs: usize,
+    counts: &C,
+    _n_cat: usize,
+) -> f64 {
+    let k = free.len();
+    let off = k + usize::from(has_specific);
+    let beta = &params[off..];
+    let mut ll = 0.0f64;
+    let mut lp = vec![0.0; beta.len() + 1];
+    // At most one probability vector per distinct exact predictor; map
+    // keys, capacities and construction overhead are additional memory.
+    let mut slots = std::collections::HashMap::<u64, usize>::new();
+    let mut cells = Vec::<f64>::new();
+    for (node, cnt) in counts.rows().enumerate() {
+        let (g, h) = if has_specific {
+            (node / qs, node % qs)
+        } else {
+            debug_assert!(node < n_grid);
+            (node, 0)
+        };
+        let mut base = 0.0f64;
+        for (t, &dim) in free.iter().enumerate() {
+            base += params[t] * coords[g * n_primary + dim];
+        }
+        if has_specific {
+            base += params[k] * ts[h];
+        }
+        if free.len() < n_primary {
+            match slots.entry(base.to_bits()) {
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    let offset = *entry.get();
+                    let width = lp.len();
+                    lp.copy_from_slice(&cells[offset..offset + width]);
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    crate::poly::grm_logprobs_into(base, beta, &mut lp);
+                    entry.insert(cells.len());
+                    cells.extend_from_slice(&lp);
+                }
+            }
+        } else {
+            crate::poly::grm_logprobs_into(base, beta, &mut lp);
+        }
+        ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+    }
+    -ll
 }
 
 /// Newton M-step for one item — the Bock-Aitkin M-step item ascent (Cai et
@@ -3382,7 +3452,9 @@ fn m_step_item<C: CountRows + ?Sized>(
                 .zip(&step)
                 .map(|(value, direction)| value - alpha * direction)
                 .collect();
-            let (candidate_f, _) = item_neg_ll_grad(
+            #[cfg(test)]
+            ITEM_LINE_SEARCH_ACTIVE.with(|v| v.set(true));
+            let candidate_f = item_neg_ll(
                 &candidate,
                 free,
                 has_specific,
@@ -3394,6 +3466,8 @@ fn m_step_item<C: CountRows + ?Sized>(
                 counts,
                 n_cat,
             );
+            #[cfg(test)]
+            ITEM_LINE_SEARCH_ACTIVE.with(|v| v.set(false));
             if candidate_f.is_finite() && candidate_f <= f0 - 1e-4 * alpha * directional {
                 params = candidate;
                 accepted = true;
@@ -4404,3 +4478,16 @@ mod scalar_block_pattern_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_fixed_moment_output_tests.rs"]
 mod fixed_moment_output_tests;
+
+#[cfg(test)]
+thread_local! {
+    static ITEM_LINE_SEARCH_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static ITEM_LINE_SEARCH_GRADIENT_ROWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_item_line_search_output_tests.rs"]
+mod item_line_search_output_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_item_line_search_legacy.rs"]
+mod item_line_search_legacy;
