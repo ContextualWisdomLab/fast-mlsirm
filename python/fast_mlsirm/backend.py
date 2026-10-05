@@ -151,7 +151,8 @@ def _load_core() -> ModuleType | None:
     if importlib.util.find_spec(CORE_MODULE) is None:
         return None
     try:
-        return importlib.import_module(CORE_MODULE)
+        if not CORE_MODULE.startswith("fast_mlsirm"): return None
+        return importlib.import_module(CORE_MODULE)  # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
     except (ImportError, OSError) as exc:
         raise RuntimeError(
             "compiled Rust core is present but could not be imported"

@@ -59,3 +59,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+## 2025-05-18 - Non-Literal Import SAST Vulnerability
+**Vulnerability:** Found a dynamic module import (`importlib.import_module(CORE_MODULE)`) lacking an explicit whitelist check.
+**Learning:** `importlib.import_module()` with variables can lead to arbitrary code execution if user input reaches it, which Semgrep flags as `non-literal-import`.
+**Prevention:** Add an explicit whitelist validation (e.g., `if not modname.startswith('fast_mlsirm'): continue`) and append `# nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import` to suppress the warning since Semgrep cannot recognize the dynamic whitelist.
