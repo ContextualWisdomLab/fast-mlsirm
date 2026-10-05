@@ -940,6 +940,8 @@ thread_local! {
     static CATEGORY_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static OBJECTIVE_CELL_EVALUATIONS_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static OBJECTIVE_CELL_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static BLOCK_MARGINAL_EVALUATIONS_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static BLOCK_MARGINAL_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[inline]
@@ -1120,8 +1122,14 @@ fn ordinary_item_logprobs(
 /// table; primary-slot indices and temporary key/representative buffers are
 /// additional memory. The cache is rebuilt for every E-step. The specific-tier
 /// scratch `block_acc` remains sized `n_specific * q_specific` (one primary
-/// node at a time), not `n_specific * n_grid * q_specific`. Lookup substitutions
-/// preserve the original likelihood and posterior accumulation order.
+/// node at a time), not `n_specific * n_grid * q_specific`. Block log-marginal
+/// vectors are memoized by their ordered observed categories and missingness
+/// within this call only. This is an implementation reuse of the block factors
+/// in Cai (2010, pp. 589-590, Eqs. 15-16; pp. 607-608, Appendix A), not grouping
+/// respondents or changing the integration rule. The added f64 payload has at
+/// most `n_persons * n_specific * n_grid` cells; keys, map capacity and vector
+/// capacities are additional memory. No universal speedup or RSS bound follows.
+/// All person, likelihood, posterior and count accumulation orders are unchanged.
 ///
 /// Reference: Cai, L. (2010). A two-tier full-information item factor
 /// analysis model with applications. *Psychometrika, 75*(4), 581-612.
@@ -1163,6 +1171,11 @@ pub(crate) fn e_step(
     let mut block_acc_g = vec![0.0f64; v.n_specific * qs];
     let mut s_bar_sum = vec![0.0f64; p * p];
 
+    // Call-local, block-specific observed-category signatures; missing values are not read.
+    let mut block_log_marginals: Vec<std::collections::HashMap<Vec<Option<usize>>, Vec<f64>>> = (0
+        ..v.blocks.len())
+        .map(|_| std::collections::HashMap::new())
+        .collect();
     let mut loglik = 0.0f64;
     for pp in 0..v.n_persons {
         // Pass 1: person marginal per primary node (specific-free + block
@@ -1178,19 +1191,39 @@ pub(crate) fn e_step(
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
-            for g in 0..n_grid {
-                for h in 0..qs {
-                    let mut acc = log_ws[h];
-                    for &i in members {
-                        if !is_obs(pp, i) {
-                            continue;
-                        }
-                        let yc = y[pp * v.n_items + i];
-                        acc += logprobs[i].get(g, h, yc);
+            let signature: Vec<Option<usize>> = members
+                .iter()
+                .map(|&i| {
+                    if is_obs(pp, i) {
+                        Some(y[pp * v.n_items + i])
+                    } else {
+                        None
                     }
-                    tmp_h[h] = acc;
+                })
+                .collect();
+            if let Some(cached) = block_log_marginals[s].get(&signature) {
+                log_i[s * n_grid..(s + 1) * n_grid].copy_from_slice(cached);
+            } else {
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws[h];
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * v.n_items + i];
+                            acc += logprobs[i].get(g, h, yc);
+                        }
+                        tmp_h[h] = acc;
+                    }
+                    #[cfg(test)]
+                    if BLOCK_MARGINAL_EVALUATIONS_ACTIVE.with(|active| active.get()) {
+                        BLOCK_MARGINAL_EVALUATIONS.with(|count| count.set(count.get() + 1));
+                    }
+                    log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
                 }
-                log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                block_log_marginals[s]
+                    .insert(signature, log_i[s * n_grid..(s + 1) * n_grid].to_vec());
             }
         }
         for g in 0..n_grid {
