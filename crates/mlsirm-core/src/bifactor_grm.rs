@@ -849,6 +849,9 @@ fn m_step_item(
     params
 }
 
+#[path = "bifactor_full_fipc.rs"]
+pub mod full_fipc;
+
 fn checked_em_loglik_change(
     current: f64,
     previous: Option<f64>,
