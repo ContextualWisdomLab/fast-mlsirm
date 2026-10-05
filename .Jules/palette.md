@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2023-10-24 - Bulk Copying in Preformatted Text Blocks
+**Learning:** Users often need to copy the entirety of data exports (like JSON or CSV payloads) displayed in `<pre>` blocks. Without a specific CSS property, users are forced to manually click and drag across potentially thousands of lines, which is tedious and prone to error. Applying `user-select: all;` globally to all `<pre>` blocks, however, creates a poor UX for general code snippets, as it prevents users from highlighting single words or lines.
+**Action:** When creating UI elements containing data exports intended for bulk copying, apply the CSS property `user-select: all;` to enable single-click selection. Crucially, strictly scope this rule to specific export containers (e.g., `.export-block pre`) rather than applying it globally.
