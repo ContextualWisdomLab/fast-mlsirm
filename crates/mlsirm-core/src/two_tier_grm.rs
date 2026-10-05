@@ -96,7 +96,8 @@
 //! without a silent cap. Active-node specific-tier scratch alone is
 //! `O(n_specific * q_specific)`, not `O(n_specific * n_grid * q_specific)`;
 //! this scratch bound does not describe the full cache/count working set.
-//! Scalar focal likelihood and fixed-support moment-only diagnostics also retain
+//! Full focal CPU E-steps, scalar focal likelihood and fixed-support
+//! moment-only diagnostics also retain
 //! one n_grid f64 marginal vector per distinct ordered observed/missing block
 //! pattern in the current call, together with probability cells and scratch.
 //! Signature keys, hash-map buckets and vector capacities add overhead. These
@@ -1596,6 +1597,14 @@ fn e_step_fipc_cpu(
     let mut specific_mass = vec![0.0; v.n_specific];
     let mut person_eap = vec![0.0; v.n_persons * p];
     let mut person_sd = vec![0.0; v.n_persons * p];
+    // Rebuild for this call's current item cells, affine support and weights.
+    // Cache only identical block marginals; posterior/count sums stay per person.
+    // Payload: n_grid f64s per distinct ordered observed/missing block pattern,
+    // plus signature keys, map buckets and vector capacities.
+    let mut block_log_marginals: Vec<std::collections::HashMap<Vec<Option<usize>>, Vec<f64>>> = (0
+        ..v.blocks.len())
+        .map(|_| std::collections::HashMap::new())
+        .collect();
     let mut loglik = 0.0;
 
     let person_order = canonical_person_order(v, y, observed);
@@ -1611,17 +1620,35 @@ fn e_step_fipc_cpu(
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
-            for g in 0..n_grid {
-                for h in 0..qs {
-                    let mut acc = log_ws_by_specific[s][h];
-                    for &i in members {
-                        if is_obs(pp, i) {
-                            acc += cells[i].get(g, h, y[pp * v.n_items + i]);
-                        }
+            let signature: Vec<Option<usize>> = members
+                .iter()
+                .map(|&i| {
+                    if is_obs(pp, i) {
+                        Some(y[pp * v.n_items + i])
+                    } else {
+                        None
                     }
-                    tmp_h[h] = acc;
+                })
+                .collect();
+            if let Some(cached) = block_log_marginals[s].get(&signature) {
+                log_i[s * n_grid..(s + 1) * n_grid].copy_from_slice(cached);
+            } else {
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws_by_specific[s][h];
+                        for &i in members {
+                            if is_obs(pp, i) {
+                                acc += cells[i].get(g, h, y[pp * v.n_items + i]);
+                            }
+                        }
+                        tmp_h[h] = acc;
+                    }
+                    #[cfg(test)]
+                    FULL_BLOCK_MARGINAL_EVALUATIONS.with(|c| c.set(c.get() + 1));
+                    log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
                 }
-                log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                block_log_marginals[s]
+                    .insert(signature, log_i[s * n_grid..(s + 1) * n_grid].to_vec());
             }
         }
         for g in 0..n_grid {
@@ -4533,3 +4560,10 @@ mod fixed_block_marginal_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_fixed_block_marginal_legacy.rs"]
 mod fixed_block_marginal_legacy;
+#[cfg(test)]
+thread_local! {
+    static FULL_BLOCK_MARGINAL_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_full_block_marginal_tests.rs"]
+mod full_block_marginal_tests;
