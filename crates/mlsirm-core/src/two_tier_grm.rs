@@ -91,9 +91,11 @@
 //! log marginals. When specific variances are fixed and no observed free item
 //! in a block needs counts, it also omits unconsumed specific posterior mass
 //! and second moments for that block. Primary moments remain unchanged;
-//! default full outputs, estimated-specific-variance updates, final EAP and
-//! non-CPU dispatch retain their original calculation. For omitted tables,
-//! the full-table comparison is conceptual, not allocated memory.
+//! Default full outputs, estimated-specific-variance updates and non-CPU
+//! dispatch retain their original calculation. Final CPU primary EAP and SD
+//! retain their original arithmetic while omitting all discarded item-count
+//! and joint-specific-posterior work. For omitted tables, the full-table
+//! comparison is conceptual, not allocated memory.
 //! Per-item primary-slot indices and Vec capacities are retained with the cache;
 //! representatives and hash-map buckets require additional peak construction memory.
 //! Nested focal count-row allocations and all vector/map overhead are additional
@@ -1593,8 +1595,10 @@ fn e_step_fipc_cpu(
     )
 }
 
-/// CPU posterior arithmetic shared by full and anchor-count projections.
-/// Only unconsumed count-table rows may be omitted; all other sums are identical.
+/// CPU posterior arithmetic shared by full and consumed-output projections.
+/// Anchor projections omit unconsumed item counts; fixed-specific projections
+/// also omit joint specific posteriors when no observed item needs counts.
+/// The final-primary-person projection consumes only unchanged EAP and SD.
 /// Basis: Cai (2010, pp. 608–609, Appendix A).
 /// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
 /// model with applications. Psychometrika, 75(4), 581–612.
@@ -2132,6 +2136,60 @@ fn e_step_fipc_gpu(
         person_eap,
         person_sd,
     ))
+}
+
+/// Final focal primary EAP/SD projection on the same direct-quadrature measure.
+/// Basis: Cai (2010, p. 609, Appendix B); item and specific outputs are
+/// distinct E-step tables (pp. 608–609, Appendix A).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn focal_person_outputs(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+    device: crate::Device,
+) -> (Vec<f64>, Vec<f64>) {
+    if device == crate::Device::Cpu {
+        let all_fixed = vec![true; v.n_items];
+        let (_, _, _, _, _, _, eap, sd) = e_step_fipc_cpu_counts(
+            v,
+            y,
+            observed,
+            params,
+            log_w,
+            log_ws_by_specific,
+            coords,
+            ts_by_specific,
+            n_grid,
+            qs,
+            Some(&all_fixed),
+            false,
+        );
+        return (eap, sd);
+    }
+    let (_, _, _, _, _, _, eap, sd) = e_step_fipc(
+        v,
+        y,
+        observed,
+        params,
+        log_w,
+        log_ws_by_specific,
+        coords,
+        ts_by_specific,
+        n_grid,
+        qs,
+        device,
+    );
+    (eap, sd)
 }
 
 fn fipc_primary_coords(
@@ -3324,7 +3382,7 @@ pub fn fit_two_tier_grm_fipc(
     // Keep the final EAP pass on exactly the same direct-quadrature measure.
     let log_ws_by_specific: Vec<Vec<f64>> = (0..n_specific).map(|_| log_ws.clone()).collect();
     let log_w = log_w0.clone();
-    let (_, _, _, _, _, _, theta_p_eap, theta_p_sd) = e_step_fipc(
+    let (theta_p_eap, theta_p_sd) = focal_person_outputs(
         &v,
         y,
         observed,
@@ -4777,6 +4835,14 @@ mod specific_projection_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_specific_projection_legacy_fitter.rs"]
 mod specific_projection_legacy_fitter;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_final_person_projection_tests.rs"]
+mod final_person_projection_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_final_person_legacy_fitter.rs"]
+mod final_person_legacy_fitter;
 
 #[cfg(test)]
 thread_local! {
