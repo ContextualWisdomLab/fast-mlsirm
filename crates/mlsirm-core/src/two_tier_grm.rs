@@ -1958,6 +1958,14 @@ fn focal_loglik_cpu(
     let mut gen_log = vec![0.0; n_grid];
     let mut log_like_g = vec![0.0; n_grid];
     let mut tmp_h = vec![0.0; qs];
+    // Call-local signatures include observed/missing categories in member order.
+    // The exact current weights, support and item parameters are not reused
+    // across calls. Cache payload is one n_grid vector per distinct pattern
+    // per block, in addition to probability cells and per-person scratch.
+    let mut block_log_marginals: Vec<std::collections::HashMap<Vec<Option<usize>>, Vec<f64>>> = (0
+        ..v.blocks.len())
+        .map(|_| std::collections::HashMap::new())
+        .collect();
     let mut loglik = 0.0;
 
     let person_order = canonical_person_order(v, y, observed);
@@ -1973,17 +1981,37 @@ fn focal_loglik_cpu(
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
-            for g in 0..n_grid {
-                for h in 0..qs {
-                    let mut acc = log_ws_by_specific[s][h];
-                    for &i in members {
-                        if is_obs(pp, i) {
-                            acc += cells[i].get(g, h, y[pp * v.n_items + i]);
-                        }
+            let signature: Vec<Option<usize>> = members
+                .iter()
+                .map(|&i| {
+                    if is_obs(pp, i) {
+                        Some(y[pp * v.n_items + i])
+                    } else {
+                        None
                     }
-                    tmp_h[h] = acc;
+                })
+                .collect();
+            if let Some(cached) = block_log_marginals[s].get(&signature) {
+                log_i[s * n_grid..(s + 1) * n_grid].copy_from_slice(cached);
+            } else {
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws_by_specific[s][h];
+                        for &i in members {
+                            if is_obs(pp, i) {
+                                acc += cells[i].get(g, h, y[pp * v.n_items + i]);
+                            }
+                        }
+                        tmp_h[h] = acc;
+                    }
+                    #[cfg(test)]
+                    if BLOCK_MARGINAL_EVALUATIONS_ACTIVE.with(|active| active.get()) {
+                        BLOCK_MARGINAL_EVALUATIONS.with(|count| count.set(count.get() + 1));
+                    }
+                    log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
                 }
-                log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                block_log_marginals[s]
+                    .insert(signature, log_i[s * n_grid..(s + 1) * n_grid].to_vec());
             }
         }
         for g in 0..n_grid {
@@ -4225,3 +4253,7 @@ thread_local! {
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_focal_likelihood_only_tests.rs"]
 mod focal_likelihood_only_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_scalar_block_pattern_tests.rs"]
+mod scalar_block_pattern_tests;
