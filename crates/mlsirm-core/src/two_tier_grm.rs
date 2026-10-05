@@ -940,6 +940,8 @@ thread_local! {
     static CATEGORY_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static OBJECTIVE_CELL_EVALUATIONS_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static OBJECTIVE_CELL_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static GRADIENT_BOUNDARY_EVALUATIONS_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static GRADIENT_BOUNDARY_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static BLOCK_MARGINAL_EVALUATIONS_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static BLOCK_MARGINAL_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
@@ -2839,13 +2841,16 @@ fn item_neg_ll_grad<C: CountRows + ?Sized>(
     // sums retain their original order; no cache survives this call.
     // Only cache when an inactive primary axis can repeat predictors;
     // fully active primary supports retain the allocation-free node path.
-    // Cell payload is bounded by counts.len() * (beta.len() + 1);
+    // Per predictor, cache beta.len() + 1 category cells and 2 * beta.len()
+    // boundary ratios. Each predictor represents at least one count row;
     // map keys/slots and capacity are additional memory.
     // Reference: Cai, L. (2010). A two-tier full-information item factor
     // analysis model with applications. Psychometrika, 75(4), 581-612.
     // doi:10.1007/s11336-010-9178-0.
     let mut slots = std::collections::HashMap::<u64, usize>::new();
     let mut cells = Vec::<f64>::new();
+    let mut ratios = Vec::<f64>::new();
+    let mut ratio_offset = 0usize;
     for (node, cnt) in counts.rows().enumerate() {
         let (g, h) = if has_specific {
             (node / qs, node % qs)
@@ -2866,6 +2871,7 @@ fn item_neg_ll_grad<C: CountRows + ?Sized>(
                     let offset = *entry.get();
                     let width = lp.len();
                     lp.copy_from_slice(&cells[offset..offset + width]);
+                    ratio_offset = (offset / width) * (2 * beta.len());
                 }
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     #[cfg(test)]
@@ -2875,6 +2881,25 @@ fn item_neg_ll_grad<C: CountRows + ?Sized>(
                     crate::poly::grm_logprobs_into(base, beta, &mut lp);
                     entry.insert(cells.len());
                     cells.extend_from_slice(&lp);
+                    ratio_offset = ratios.len();
+                    #[cfg(test)]
+                    if GRADIENT_BOUNDARY_EVALUATIONS_ACTIVE.with(|active| active.get()) {
+                        GRADIENT_BOUNDARY_EVALUATIONS
+                            .with(|count| count.set(count.get() + beta.len()));
+                    }
+                    for j in 0..beta.len() {
+                        let eta = base + beta[j];
+                        let log_sigmoid = |x: f64| {
+                            if x >= 0.0 {
+                                -(-x).exp().ln_1p()
+                            } else {
+                                x - x.exp().ln_1p()
+                            }
+                        };
+                        let log_v = log_sigmoid(eta) + log_sigmoid(-eta);
+                        ratios.push((log_v - lp[j + 1]).exp());
+                        ratios.push((log_v - lp[j]).exp());
+                    }
                 }
             }
         } else {
@@ -2885,7 +2910,33 @@ fn item_neg_ll_grad<C: CountRows + ?Sized>(
             crate::poly::grm_logprobs_into(base, beta, &mut lp);
         }
         ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
-        let g_base = crate::poly::grm_node_gradient_into(base, beta, cnt, &lp, &mut g_thr);
+        // At the current predictor, the boundary ratios do not depend on the
+        // count row (Cai, 2010, pp. 608–609, Appendix A). Multiply and sum each
+        // original row in its original order, retaining zero-count branches.
+        let g_base = if free.len() < n_primary {
+            let mut g_base = 0.0f64;
+            for j in 0..beta.len() {
+                let right = if cnt[j + 1] == 0.0 {
+                    0.0
+                } else {
+                    cnt[j + 1] * ratios[ratio_offset + 2 * j]
+                };
+                let left = if cnt[j] == 0.0 {
+                    0.0
+                } else {
+                    cnt[j] * ratios[ratio_offset + 2 * j + 1]
+                };
+                g_thr[j] = right - left;
+                g_base += right - left;
+            }
+            g_base
+        } else {
+            #[cfg(test)]
+            if GRADIENT_BOUNDARY_EVALUATIONS_ACTIVE.with(|active| active.get()) {
+                GRADIENT_BOUNDARY_EVALUATIONS.with(|count| count.set(count.get() + beta.len()));
+            }
+            crate::poly::grm_node_gradient_into(base, beta, cnt, &lp, &mut g_thr)
+        };
         for (t, &dim) in free.iter().enumerate() {
             grad[t] += g_base * coords[g * n_primary + dim];
         }

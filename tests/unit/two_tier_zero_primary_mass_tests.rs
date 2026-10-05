@@ -2483,4 +2483,144 @@ mod zero_primary_mass_regression {
             );
         }
     }
+
+    /// Reuse count-independent boundary ratios without combining count rows.
+    /// Basis: Cai (2010), p. 589, Eqs. 11–12; pp. 608–609, Appendix A,
+    /// complete-data item likelihood and its likelihood equations.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. *Psychometrika, 75*(4), 581–612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn item_gradient_reuses_exact_boundary_ratios() {
+        let q = 121usize;
+        let grid = q * q;
+        let coords: Vec<f64> = (0..grid)
+            .flat_map(|g| [(g % q) as f64 / 16.0 - 3.75, (g / q) as f64 / 16.0 - 3.75])
+            .collect();
+        let ts: Vec<f64> = (0..q).map(|h| h as f64 / 16.0 - 3.75).collect();
+        let counts: Vec<Vec<f64>> = (0..grid * q)
+            .map(|node| vec![0.0, (node % 11) as f64 / 100.0, 0.1, 0.2])
+            .collect();
+        let params = [1.2, 0.7, 1.4, 0.0, -1.3];
+        let mut distinct = std::collections::HashSet::new();
+        for node in 0..counts.len() {
+            let (g, h) = (node / q, node % q);
+            let mut base = 0.0;
+            base += params[0] * coords[g * 2];
+            base += params[1] * ts[h];
+            distinct.insert(base.to_bits());
+        }
+        GRADIENT_BOUNDARY_EVALUATIONS.with(|count| count.set(0));
+        GRADIENT_BOUNDARY_EVALUATIONS_ACTIVE.with(|active| active.set(true));
+        let result = std::panic::catch_unwind(|| {
+            item_neg_ll_grad(&params, &[0], true, &coords, &ts, 2, grid, q, &counts, 4)
+        });
+        GRADIENT_BOUNDARY_EVALUATIONS_ACTIVE.with(|active| active.set(false));
+        let result = result.unwrap();
+        assert!(result.0.is_finite() && result.1.iter().all(|x| x.is_finite()));
+        let evaluations = GRADIENT_BOUNDARY_EVALUATIONS.with(|count| count.get());
+        println!(
+            "gradient_boundary_evaluations={evaluations} distinct_predictors={}",
+            distinct.len()
+        );
+        assert_eq!(
+            evaluations,
+            distinct.len() * 3,
+            "identical gradient ratios were recomputed"
+        );
+    }
+
+    /// Preserve predecessor item likelihood, gradient and Newton bits at Q121.
+    /// Basis: Cai (2010), pp. 608–609, Appendix A, complete-data item
+    /// likelihood and its likelihood equations; row sums are not regrouped.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. *Psychometrika, 75*(4), 581–612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn item_gradient_ratio_cache_preserves_boundary_and_newton_bits() {
+        let q = 121usize;
+        let coords: Vec<f64> = (0..q).flat_map(|g| [g as f64 / 16.0 - 3.75, 0.0]).collect();
+        let ts: Vec<f64> = (0..q).map(|h| h as f64 / 16.0 - 3.75).collect();
+        let mut objective_pairs = 0usize;
+        let mut newton_pairs = 0usize;
+        for free in [vec![0usize], vec![0usize, 1usize]] {
+            for specific in [false, true] {
+                let n = if specific { q * q } else { q };
+                for count_mode in 0..3 {
+                    let counts: Vec<Vec<f64>> = (0..n)
+                        .map(|node| match count_mode {
+                            0 => vec![0.0; 4],
+                            1 => vec![0.0, (node % 11) as f64 / 100.0, 0.1, 0.2],
+                            _ => vec![0.1, 0.0, (node % 7) as f64 / 50.0, 0.0],
+                        })
+                        .collect();
+                    let flat = OrdinaryItemCounts {
+                        values: counts.iter().flatten().copied().collect(),
+                        n_cat: 4,
+                    };
+                    for slope in [0.0, -0.0, 1.2, -0.9, 1e3, f64::INFINITY] {
+                        for beta in [
+                            [1.4, 0.0, -1.3],
+                            [0.0, 0.0, -1.3],
+                            [-1.0, 1.0, -1.3],
+                            [1e3, 0.0, -1e3],
+                        ] {
+                            let mut params = vec![slope];
+                            if free.len() == 2 {
+                                params.push(0.31);
+                            }
+                            if specific {
+                                params.push(0.7);
+                            }
+                            params.extend_from_slice(&beta);
+                            let expected = predecessor_item_objective(
+                                &params, &free, specific, &coords, &ts, 2, q, q, &counts, 4,
+                            );
+                            let nested = item_neg_ll_grad(
+                                &params, &free, specific, &coords, &ts, 2, q, q, &counts, 4,
+                            );
+                            let contiguous = item_neg_ll_grad(
+                                &params, &free, specific, &coords, &ts, 2, q, q, &flat, 4,
+                            );
+                            for actual in [nested, contiguous] {
+                                assert_eq!(actual.0.to_bits(), expected.0.to_bits());
+                                assert_eq!(
+                                    actual.1.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                                    expected.1.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+                                );
+                                objective_pairs += 1;
+                            }
+                            if slope.is_finite() && slope.abs() < 2.0 && beta == [1.4, 0.0, -1.3] {
+                                let expected = predecessor_item_newton(
+                                    params.clone(),
+                                    &free,
+                                    specific,
+                                    &coords,
+                                    &ts,
+                                    2,
+                                    q,
+                                    q,
+                                    &counts,
+                                    4,
+                                    1e-8,
+                                    2,
+                                );
+                                let actual = m_step_item(
+                                    params, &free, specific, &coords, &ts, 2, q, q, &flat, 4, 1e-8,
+                                    2,
+                                );
+                                assert_eq!(
+                                    actual.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                                    expected.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+                                );
+                                newton_pairs += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(objective_pairs, 576);
+        assert_eq!(newton_pairs, 48);
+    }
 }
