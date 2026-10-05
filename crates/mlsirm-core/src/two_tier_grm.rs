@@ -93,7 +93,8 @@
 //! and second moments for that block. Primary moments remain unchanged;
 //! Default full outputs, estimated-specific-variance updates and the original
 //! full CPU fallback retain their calculation. The fixed-specific moving GPU
-//! path omits only unused specific moments; its full allocation, probability
+//! path and scalar GPU likelihood omit only unused specific moments; their
+//! full allocation, probability
 //! cells, item counts, primary moments and person outputs remain unchanged.
 //! Final CPU primary EAP and SD
 //! retain their original arithmetic while omitting all discarded item-count
@@ -2438,8 +2439,9 @@ fn focal_loglik_cpu(
     loglik
 }
 
-/// Use the CPU scalar path only when CPU was selected; preserve non-CPU
-/// dispatch and its existing fallback semantics verbatim through `e_step_fipc`.
+/// Use the CPU scalar path when CPU was selected. Non-CPU scalar likelihood
+/// omits only the unused specific-moment reduction; full counts and primary
+/// outputs remain computed and discarded. Preserve the full CPU fallback.
 /// Basis: Cai (2010, pp. 589–590, Eqs. 15–16).
 /// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
 /// model with applications. Psychometrika, 75(4), 581–612.
@@ -2472,7 +2474,7 @@ fn focal_loglik(
             qs,
         )
     } else {
-        e_step_fipc(
+        if let Some(result) = e_step_fipc_gpu_consumed(
             v,
             y,
             observed,
@@ -2483,7 +2485,22 @@ fn focal_loglik(
             ts_by_specific,
             n_grid,
             qs,
-            device,
+            false,
+        ) {
+            return result.0;
+        }
+        // Preserve the predecessor's full CPU fallback and likelihood order.
+        e_step_fipc_cpu(
+            v,
+            y,
+            observed,
+            params,
+            log_w,
+            log_ws_by_specific,
+            coords,
+            ts_by_specific,
+            n_grid,
+            qs,
         )
         .0
     }
@@ -4979,6 +4996,10 @@ mod gpu_table_cache_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_gpu_consumed_moment_tests.rs"]
 mod gpu_consumed_moment_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_gpu_scalar_moment_tests.rs"]
+mod gpu_scalar_moment_tests;
 
 #[cfg(test)]
 thread_local! {
