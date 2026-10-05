@@ -1967,4 +1967,369 @@ mod zero_primary_mass_regression {
             }
         }
     }
+
+    /// Inspect repeated block signatures without combining respondent sums.
+    /// Basis: Cai (2010), pp. 589-590, Eqs. 14-16; pp. 607-608, Appendix A.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn ordinary_estep_reuses_exact_block_response_marginals() {
+        let (v, y, params, coords, lw, ts, lws) = fixture(121, 121, true);
+        let mask: Vec<bool> = (0..v.n_persons)
+            .flat_map(|person| [true, person % 4 != 0, person % 5 != 0, true])
+            .collect();
+        let distinct: usize = v
+            .blocks
+            .iter()
+            .map(|items| {
+                (0..v.n_persons)
+                    .map(|person| {
+                        items
+                            .iter()
+                            .map(|&item| {
+                                if mask[person * v.n_items + item] {
+                                    Some(y[person * v.n_items + item])
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<std::collections::HashSet<_>>()
+                    .len()
+            })
+            .sum();
+        assert!(distinct < v.n_persons * v.n_specific);
+        BLOCK_MARGINAL_EVALUATIONS.with(|count| count.set(0));
+        BLOCK_MARGINAL_EVALUATIONS_ACTIVE.with(|active| active.set(true));
+        let result = std::panic::catch_unwind(|| {
+            e_step(
+                &v,
+                &y,
+                Some(&mask),
+                &params,
+                &lw,
+                &lws,
+                &coords,
+                &ts,
+                lw.len(),
+                ts.len(),
+            )
+        });
+        BLOCK_MARGINAL_EVALUATIONS_ACTIVE.with(|active| active.set(false));
+        let (ll, counts, moments) = result.unwrap();
+        assert!(ll.is_finite());
+        assert!(counts
+            .iter()
+            .flatten()
+            .flatten()
+            .chain(moments.iter())
+            .all(|x| x.is_finite()));
+        assert_eq!(
+            BLOCK_MARGINAL_EVALUATIONS.with(|count| count.get()),
+            distinct * lw.len(),
+            "identical block-response likelihoods were recomputed"
+        );
+    }
+
+    /// Retain the exact pre-memoization E-step arithmetic as a test oracle.
+    /// Basis: Cai (2010), pp. 589-590, Eqs. 15-16; pp. 607-608, Appendix A.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    fn predecessor_block_pattern_e_step(
+        v: &Validated,
+        y: &[usize],
+        observed: Option<&[bool]>,
+        params: &[ItemParams],
+        log_w: &[f64],
+        log_ws: &[f64],
+        coords: &[f64],
+        ts: &[f64],
+        n_grid: usize,
+        qs: usize,
+    ) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
+        let logprobs: Vec<OrdinaryItemLogprobs> = (0..v.n_items)
+            .map(|i| ordinary_item_logprobs(v, y, observed, params, coords, ts, i, n_grid, qs))
+            .collect();
+        let p = v.n_primary;
+        let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
+        let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
+        for i in 0..v.n_items {
+            let n_nodes = if v.item_block[i].is_some() {
+                n_grid * qs
+            } else {
+                n_grid
+            };
+            counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+        }
+        // Per-person scratch: O(n_grid) for primary marginals + O(S * qs) for
+        // the active primary node's specific-tier block (not O(S * n_grid * qs)).
+        let mut log_i = vec![0.0f64; v.n_specific * n_grid];
+        let mut gen_log = vec![0.0f64; n_grid];
+        let mut log_like_g = vec![0.0f64; n_grid];
+        let mut post_g = vec![0.0f64; n_grid];
+        let mut tmp_h = vec![0.0f64; qs];
+        let mut block_acc_g = vec![0.0f64; v.n_specific * qs];
+        let mut s_bar_sum = vec![0.0f64; p * p];
+
+        let mut loglik = 0.0f64;
+        for pp in 0..v.n_persons {
+            // Pass 1: person marginal per primary node (specific-free + block
+            // integrals), without storing per-(g,h) tables.
+            gen_log.copy_from_slice(log_w);
+            for &i in &v.specific_free {
+                if !is_obs(pp, i) {
+                    continue;
+                }
+                let yc = y[pp * v.n_items + i];
+                for g in 0..n_grid {
+                    gen_log[g] += logprobs[i].get(g, 0, yc);
+                }
+            }
+            for (s, members) in v.blocks.iter().enumerate() {
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws[h];
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * v.n_items + i];
+                            acc += logprobs[i].get(g, h, yc);
+                        }
+                        tmp_h[h] = acc;
+                    }
+                    log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                }
+            }
+            for g in 0..n_grid {
+                let mut acc = gen_log[g];
+                for s in 0..v.n_specific {
+                    acc += log_i[s * n_grid + g];
+                }
+                log_like_g[g] = acc;
+            }
+            let log_lp = log_sum_exp(&log_like_g);
+            loglik += log_lp;
+            for g in 0..n_grid {
+                post_g[g] = (log_like_g[g] - log_lp).exp();
+            }
+            for g in 0..n_grid {
+                let post = post_g[g];
+                for (jj, slot) in s_bar_sum.iter_mut().enumerate().take(p * p) {
+                    let j = jj / p;
+                    let k = jj % p;
+                    *slot += post * coords[g * p + j] * coords[g * p + k];
+                }
+            }
+            for &i in &v.specific_free {
+                if !is_obs(pp, i) {
+                    continue;
+                }
+                let yc = y[pp * v.n_items + i];
+                for g in 0..n_grid {
+                    counts[i][g][yc] += post_g[g];
+                }
+            }
+            // Pass 2: joint (g, h) posteriors for block items — recompute the
+            // active primary node's specific-tier block on the fly.
+            for (s, members) in v.blocks.iter().enumerate() {
+                let any_obs = members.iter().any(|&i| is_obs(pp, i));
+                if !any_obs {
+                    continue;
+                }
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws[h];
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * v.n_items + i];
+                            acc += logprobs[i].get(g, h, yc);
+                        }
+                        block_acc_g[s * qs + h] = acc;
+                    }
+                    // Keep the prior in the joint numerator: subtracting its log
+                    // first is undefined at a zero-mass primary node. This is
+                    // the unchanged reduced posterior product (Cai, 2010,
+                    // pp. 589-590, Eqs. 15-16; pp. 608-609, Appendix A).
+                    // Reference: Cai, L. (2010). A two-tier full-information
+                    // item factor analysis model with applications.
+                    // Psychometrika, 75(4), 581-612. doi:10.1007/s11336-010-9178-0.
+                    let mut others = gen_log[g];
+                    for s2 in 0..v.n_specific {
+                        if s2 != s {
+                            others += log_i[s2 * n_grid + g];
+                        }
+                    }
+                    for h in 0..qs {
+                        let log_post = block_acc_g[s * qs + h] + others - log_lp;
+                        let post = log_post.exp();
+                        for &i in members {
+                            if !is_obs(pp, i) {
+                                continue;
+                            }
+                            let yc = y[pp * v.n_items + i];
+                            counts[i][g * qs + h][yc] += post;
+                        }
+                    }
+                }
+            }
+        }
+        (loglik, counts, s_bar_sum)
+    }
+
+    /// Verify block reuse without changing ordered person statistics.
+    /// Basis: Cai (2010), pp. 589-590, Eqs. 15-16; pp. 607-608, Appendix A.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn ordinary_block_pattern_cache_preserves_masked_highq_tuple() {
+        for (qp, qs) in [(121, 121), (241, 121), (121, 241), (481, 121), (121, 481)] {
+            let (mut v, mut y, mut params, mut coords, mut lw, mut ts, mut lws) =
+                fixture(qp, qs, true);
+            // Block-specific maps must not collide with a sibling's identical signature.
+            v.n_specific = 2;
+            v.blocks = vec![vec![0, 1], vec![2]];
+            v.item_block = vec![Some(0), Some(0), Some(1), None];
+            let mask: Vec<bool> = (0..v.n_persons)
+                .flat_map(|person| [person % 4 != 0, person % 4 != 0, person % 5 != 0, true])
+                .collect();
+            for (n, observed) in mask.iter().enumerate() {
+                if !observed {
+                    y[n] = usize::MAX;
+                }
+            }
+            // Include a zero-primary-mass node without changing the previous guard.
+            coords.insert(0, -43.0);
+            lw.insert(0, f64::NEG_INFINITY);
+            v.grid_size += 1;
+            for shifted in [false, true] {
+                if shifted {
+                    for par in &mut params {
+                        par.d[0] += 0.21;
+                        par.a_p[0] *= 1.07;
+                    }
+                    for x in &mut coords {
+                        *x += 0.03;
+                    }
+                    for x in &mut ts {
+                        *x -= 0.04;
+                    }
+                    lw[1] -= 0.15;
+                    lws[0] -= 0.2;
+                }
+                let expected = predecessor_block_pattern_e_step(
+                    &v,
+                    &y,
+                    Some(&mask),
+                    &params,
+                    &lw,
+                    &lws,
+                    &coords,
+                    &ts,
+                    lw.len(),
+                    ts.len(),
+                );
+                let actual = e_step(
+                    &v,
+                    &y,
+                    Some(&mask),
+                    &params,
+                    &lw,
+                    &lws,
+                    &coords,
+                    &ts,
+                    lw.len(),
+                    ts.len(),
+                );
+                assert!(actual.0.is_finite());
+                assert_eq!(actual.0.to_bits(), expected.0.to_bits());
+                assert_eq!(
+                    actual
+                        .1
+                        .iter()
+                        .flatten()
+                        .flatten()
+                        .map(|x| x.to_bits())
+                        .collect::<Vec<_>>(),
+                    expected
+                        .1
+                        .iter()
+                        .flatten()
+                        .flatten()
+                        .map(|x| x.to_bits())
+                        .collect::<Vec<_>>()
+                );
+                assert_eq!(
+                    actual.2.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                    expected.2.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    /// Characterize missing and empty helper blocks independently of public validation.
+    /// Basis: Cai (2010), pp. 589-590, Eqs. 15-16; pp. 607-608, Appendix A.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn ordinary_block_pattern_cache_preserves_unobserved_and_empty_helpers() {
+        let (mut v, mut y, params, coords, lw, ts, lws) = fixture(121, 121, true);
+        v.n_specific = 2;
+        v.blocks.push(vec![]);
+        let observed = vec![false; y.len()];
+        y.fill(usize::MAX);
+        let expected = predecessor_block_pattern_e_step(
+            &v,
+            &y,
+            Some(&observed),
+            &params,
+            &lw,
+            &lws,
+            &coords,
+            &ts,
+            lw.len(),
+            ts.len(),
+        );
+        let actual = e_step(
+            &v,
+            &y,
+            Some(&observed),
+            &params,
+            &lw,
+            &lws,
+            &coords,
+            &ts,
+            lw.len(),
+            ts.len(),
+        );
+        assert!(actual.0.is_finite());
+        assert_eq!(actual.0.to_bits(), expected.0.to_bits());
+        assert_eq!(
+            actual
+                .1
+                .iter()
+                .flatten()
+                .flatten()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>(),
+            expected
+                .1
+                .iter()
+                .flatten()
+                .flatten()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            actual.2.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+            expected.2.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+        );
+    }
 }
