@@ -100,7 +100,7 @@ import numpy as np
 def _finite_integer_control(value: object, name: str) -> int:
     """Normalize a trusted finite integer-valued scalar without callbacks."""
 
-    if isinstance(value, bool):
+    if isinstance(value, (bool, np.bool_)):
         raise ValueError(f"{name} must be a finite integer")
     # Preserve exact concrete integers; keep other conversion protocols unchanged.
     integer_types = (
@@ -150,7 +150,7 @@ def _specific_map_control(specific_map: object, n_items: int, n_specific: int) -
 def _positive_real_control(value: object, name: str) -> float:
     """Normalize a trusted finite positive real scalar without callbacks."""
 
-    if isinstance(value, bool):
+    if isinstance(value, (bool, np.bool_)):
         raise ValueError(f"{name} must be a real number")
     try:
         numeric = float(value)  # type: ignore[arg-type]
@@ -164,8 +164,17 @@ def _positive_real_control(value: object, name: str) -> float:
 def _u64_seed(value: object) -> int:
     """Normalize the deterministic start seed without callbacks."""
 
-    if isinstance(value, bool):
+    if isinstance(value, (bool, np.bool_)):
         raise ValueError("seed must be a non-negative integer")
+    integer_types = (
+        int, np.int8, np.int16, np.int32, np.int64, np.intp, np.longlong,
+        np.uint8, np.uint16, np.uint32, np.uint64, np.uintp, np.ulonglong,
+    )
+    if any(type(value) is scalar_type for scalar_type in integer_types):
+        seed = int(value)
+        if not 0 <= seed < 2**64:
+            raise ValueError("seed must be in [0, 2**64)")
+        return seed
     try:
         numeric = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError, OverflowError):
