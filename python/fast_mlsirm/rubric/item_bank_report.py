@@ -472,6 +472,9 @@ def render_item_bank_report_html(
         "<style>"
         "body{font-family:system-ui,sans-serif;line-height:1.5;margin:0;}"
         "main{max-width:72rem;margin:auto;padding:1.25rem;}"
+        ".table-scroll{overflow-x:auto;}"
+        ".table-scroll:focus:not(:focus-visible){outline:none;}"
+        ".table-scroll:focus-visible{outline:3px solid currentColor;outline-offset:3px;}"
         ".skip-link{position:absolute;left:.5rem;top:.5rem;padding:.5rem;}"
         ":focus-visible{outline:3px solid currentColor;outline-offset:2px;}"
         "table{border-collapse:collapse;width:100%;margin-block:1rem;}"
@@ -486,15 +489,15 @@ def render_item_bank_report_html(
         "Summary</h2><dl>"
         f"{summary}</dl></section>\n"
         '<section aria-labelledby="evidence-heading"><h2 id="evidence-heading">'
-        "Evidence</h2><table><caption>Evidence inventory</caption>"
+        'Evidence</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Evidence inventory"><table><caption>Evidence inventory</caption>'
         "<thead><tr><th scope=\"col\">Evidence class</th>"
         "<th scope=\"col\">Status</th></tr></thead><tbody>"
-        f"{evidence_rows}</tbody></table></section>\n"
+        f"{evidence_rows}</tbody></table></div></section>\n"
         '<section aria-labelledby="timeline-heading"><h2 id="timeline-heading">'
-        "Timeline</h2><table><caption>Lifecycle timeline</caption>"
+        'Timeline</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Lifecycle timeline"><table><caption>Lifecycle timeline</caption>'
         "<thead><tr><th scope=\"col\">State</th>"
         "<th scope=\"col\">Reason</th><th scope=\"col\">Record fingerprint</th>"
-        f"</tr></thead><tbody>{timeline_rows}</tbody></table></section>\n"
+        f"</tr></thead><tbody>{timeline_rows}</tbody></table></div></section>\n"
         '<section aria-labelledby="limitations-heading">'
         '<h2 id="limitations-heading">Limitations</h2>'
         f"{limitations_html}</section>\n"

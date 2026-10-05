@@ -163,6 +163,10 @@ def test_report_escapes_untrusted_text_and_exposes_accessible_table_semantics() 
     assert '<th scope="col">Execution status</th>' in html_text
     assert "Exact values are shown in text; this report has no hover-only evidence." in html_text
 
+    assert '<div class="table-scroll" tabindex="0" role="region"' in html_text
+    assert ".table-scroll { overflow-x: auto; }" in html_text
+    assert ".table-scroll:focus:not(:focus-visible) { outline: none; }" in html_text
+
 
 def test_report_exposes_exact_inventory_and_run_provenance() -> None:
     """A buyer must be able to reconstruct the evidence identity from visible text."""

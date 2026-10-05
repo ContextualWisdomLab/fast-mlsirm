@@ -171,6 +171,9 @@ def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
     assert '<main id="main-content">' in rendered
     assert '<a class="skip-link" href="#main-content">Skip to report</a>' in rendered
     assert "Item bank &lt;release&gt; &amp; review" in rendered
+    assert '<div class="table-scroll" tabindex="0" role="region"' in rendered
+    assert ".table-scroll{overflow-x:auto;}" in rendered
+    assert ".table-scroll:focus:not(:focus-visible){outline:none;}" in rendered
     assert f"<dt>Blueprint</dt><dd>{records[-1].blueprint_id}</dd>" in rendered
     assert "<dt>Approved-use scope</dt><dd>production_scoring</dd>" in rendered
     assert "<dt>Approved-use scope</dt><dd>none</dd>" in piloting_rendered

@@ -11,7 +11,7 @@ from .cross_engine_conformance import ConformanceInventory
 _CSP = (
     "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; "
     "img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; "
-    "style-src 'none'"
+    "style-src 'unsafe-inline'"
 )
 _DISCLAIMER = (
     "Numerical conformance evidence is not construct validity, fairness, or "
@@ -41,7 +41,12 @@ def _data_row(values: tuple[object | None, ...]) -> str:
 
 def _key_value_table(caption: str, rows: tuple[tuple[str, object | None], ...]) -> str:
     """Render an accessible two-column key/value table."""
-    rendered = ["<table>", f"<caption>{escape(caption, quote=True)}</caption>"]
+    escaped_caption = escape(caption, quote=True)
+    rendered = [
+        f'<div class="table-scroll" tabindex="0" role="region" aria-label="{escaped_caption}">',
+        "<table>",
+        f"<caption>{escaped_caption}</caption>",
+    ]
     rendered.append(_header_row(("Field", "Exact value")))
     for label, value in rows:
         rendered.append(
@@ -50,7 +55,7 @@ def _key_value_table(caption: str, rows: tuple[tuple[str, object | None], ...]) 
             f"<td>{_text(value)}</td>"
             "</tr>"
         )
-    rendered.append("</table>")
+    rendered.extend(["</table>", "</div>"])
     return "\n".join(rendered)
 
 
@@ -119,7 +124,12 @@ def _render_capabilities(manifest: dict[str, object]) -> str:
         "Comparison scope",
         "Evidence rows",
     )
-    rows = ["<table>", "<caption>Capability coverage</caption>", _header_row(labels)]
+    rows = [
+        '<div class="table-scroll" tabindex="0" role="region" aria-label="Capability coverage">',
+        "<table>",
+        "<caption>Capability coverage</caption>",
+        _header_row(labels),
+    ]
     for capability in capabilities:
         if type(capability) is not dict:
             raise ValueError("capability must be a canonical dictionary")
@@ -141,7 +151,7 @@ def _render_capabilities(manifest: dict[str, object]) -> str:
                 )
             )
         )
-    rows.append("</table>")
+    rows.extend(["</table>", "</div>"])
     return "\n".join(rows)
 
 
@@ -168,6 +178,7 @@ def _render_evidence(manifest: dict[str, object]) -> str:
         "Limitation",
     )
     rows = [
+        '<div class="table-scroll" tabindex="0" role="region" aria-label="Capability × engine conformance evidence">',
         "<table>",
         "<caption>Capability × engine conformance evidence</caption>",
         _header_row(labels),
@@ -230,7 +241,7 @@ def _render_evidence(manifest: dict[str, object]) -> str:
                     )
                 )
             )
-    rows.append("</table>")
+    rows.extend(["</table>", "</div>"])
     if evidence_count == 0:
         rows.insert(
             0,
@@ -353,6 +364,11 @@ def render_conformance_report(manifest_json: str) -> tuple[str, str]:
         f'<meta http-equiv="Content-Security-Policy" content="{escape(_CSP, quote=True)}">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<title>Cross-engine conformance evidence</title>",
+        "<style>",
+        ".table-scroll { overflow-x: auto; }",
+        ".table-scroll:focus:not(:focus-visible) { outline: none; }",
+        ".table-scroll:focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }",
+        "</style>",
         "</head>",
         "<body>",
         "<main>",
