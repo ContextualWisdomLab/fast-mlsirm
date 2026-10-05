@@ -319,3 +319,7 @@ def test_parse_json_bounded_rejects_text_subclass_before_encoding() -> None:
         parse_json_bounded(_HostileText("{}"))
 
     assert _HostileText.encodes == 0
+
+def test_parse_json_bounded_rejects_numeric_overflow() -> None:
+    with pytest.raises(ValueError, match="non-finite JSON numeric value"):
+        parse_json_bounded('{"a": 1e999}')
