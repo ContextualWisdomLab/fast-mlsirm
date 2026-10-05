@@ -96,6 +96,12 @@
 //! without a silent cap. Active-node specific-tier scratch alone is
 //! `O(n_specific * q_specific)`, not `O(n_specific * n_grid * q_specific)`;
 //! this scratch bound does not describe the full cache/count working set.
+//! Scalar focal likelihood and fixed-support moment-only diagnostics also retain
+//! one n_grid f64 marginal vector per distinct ordered observed/missing block
+//! pattern in the current call, together with probability cells and scratch.
+//! Signature keys, hash-map buckets and vector capacities add overhead. These
+//! invocation-local caches do not merge respondent moment sums or persist across
+//! support, weight or item-parameter changes; no universal RSS bound is implied.
 //! The cache only substitutes identical scalar values; posterior/count
 //! accumulation order remains unchanged (Cai, 2010, pp. 608-609, Appendix A).
 //! Reference: Cai, L. (2010). A two-tier full-information item factor analysis
@@ -2152,6 +2158,13 @@ fn fixed_fipc_moments_cpu(
     let mut sum_primary = vec![0.0; p];
     let mut sum_primary2 = vec![0.0; p * p];
     let mut sum_specific2 = vec![0.0; v.n_specific];
+    // Invocation-local marginal cache: current item cells, support and weights
+    // remain fixed within this call. Preserve canonical per-person moment sums.
+    // Payload is n_grid f64s per distinct ordered observed/missing block pattern.
+    let mut block_log_marginals: Vec<std::collections::HashMap<Vec<Option<usize>>, Vec<f64>>> = (0
+        ..v.blocks.len())
+        .map(|_| std::collections::HashMap::new())
+        .collect();
     let mut loglik = 0.0;
 
     let person_order = canonical_person_order(v, y, observed);
@@ -2167,17 +2180,35 @@ fn fixed_fipc_moments_cpu(
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
-            for g in 0..n_grid {
-                for h in 0..qs {
-                    let mut acc = log_ws_by_specific[s][h];
-                    for &i in members {
-                        if is_obs(pp, i) {
-                            acc += cells[i].get(g, h, y[pp * v.n_items + i]);
-                        }
+            let signature: Vec<Option<usize>> = members
+                .iter()
+                .map(|&i| {
+                    if is_obs(pp, i) {
+                        Some(y[pp * v.n_items + i])
+                    } else {
+                        None
                     }
-                    tmp_h[h] = acc;
+                })
+                .collect();
+            if let Some(cached) = block_log_marginals[s].get(&signature) {
+                log_i[s * n_grid..(s + 1) * n_grid].copy_from_slice(cached);
+            } else {
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws_by_specific[s][h];
+                        for &i in members {
+                            if is_obs(pp, i) {
+                                acc += cells[i].get(g, h, y[pp * v.n_items + i]);
+                            }
+                        }
+                        tmp_h[h] = acc;
+                    }
+                    #[cfg(test)]
+                    FIXED_BLOCK_MARGINAL_EVALUATIONS.with(|count| count.set(count.get() + 1));
+                    log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
                 }
-                log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                block_log_marginals[s]
+                    .insert(signature, log_i[s * n_grid..(s + 1) * n_grid].to_vec());
             }
         }
         for g in 0..n_grid {
@@ -4491,3 +4522,14 @@ mod item_line_search_output_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_item_line_search_legacy.rs"]
 mod item_line_search_legacy;
+
+#[cfg(test)]
+thread_local! {
+    static FIXED_BLOCK_MARGINAL_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_fixed_block_marginal_tests.rs"]
+mod fixed_block_marginal_tests;
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_fixed_block_marginal_legacy.rs"]
+mod fixed_block_marginal_legacy;
