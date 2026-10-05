@@ -156,7 +156,12 @@ def test_report_escapes_untrusted_text_and_exposes_accessible_table_semantics() 
     assert "<script>alert('x')</script>" not in html_text
     assert "&lt;script&gt;unsafe&lt;/script&gt;" in html_text
     assert "&lt;script&gt;alert(&#x27;x&#x27;)&lt;/script&gt;" in html_text
-    assert '<meta http-equiv="Content-Security-Policy"' in html_text
+
+    # Assert strict CSP value is used, not 'unsafe-inline' or 'none'
+    csp_meta = '<meta http-equiv="Content-Security-Policy" content="default-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;; frame-src &#x27;none&#x27;; img-src &#x27;none&#x27;; media-src &#x27;none&#x27;; object-src &#x27;none&#x27;; script-src &#x27;none&#x27;; style-src &#x27;sha256-wcZ8T2yRxdUy765jEEM+LfKQEvM2BoYZbwCfCciFbJo=&#x27;">'
+    assert csp_meta in html_text
+    assert 'unsafe-inline' not in html_text
+
     assert "<script" not in html_text.lower()
     assert "<caption>Capability × engine conformance evidence</caption>" in html_text
     assert '<th scope="col">Capability</th>' in html_text

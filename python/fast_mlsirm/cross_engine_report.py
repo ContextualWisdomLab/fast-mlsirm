@@ -11,7 +11,7 @@ from .cross_engine_conformance import ConformanceInventory
 _CSP = (
     "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; "
     "img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; "
-    "style-src 'unsafe-inline'"
+    "style-src 'sha256-wcZ8T2yRxdUy765jEEM+LfKQEvM2BoYZbwCfCciFbJo='"
 )
 _DISCLAIMER = (
     "Numerical conformance evidence is not construct validity, fairness, or "
