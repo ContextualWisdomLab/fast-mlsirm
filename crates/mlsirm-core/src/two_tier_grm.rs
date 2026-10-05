@@ -1571,6 +1571,8 @@ fn e_step_fipc_cpu(
         } else {
             n_grid
         };
+        #[cfg(test)]
+        FOCAL_COUNT_ROWS.with(|counter| counter.set(counter.get() + nodes));
         counts.push(vec![vec![0.0; v.n_cat]; nodes]);
     }
     let cells: Vec<OrdinaryItemLogprobs> = (0..v.n_items)
@@ -1927,6 +1929,127 @@ fn fipc_primary_coords(
     coords
 }
 
+/// Scalar focal observed-data log-likelihood on the current transformed support.
+/// Evaluate the same reduced marginal sum, in the same person/node/item order,
+/// without constructing unused posterior counts, population moments or EAP.
+/// The main EM, fixed-moment diagnostic and final-person paths remain separate.
+/// Basis: Cai (2010, pp. 589–590, Eqs. 15–16; pp. 607–609, Appendix A).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn focal_loglik_cpu(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+) -> f64 {
+    let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
+    let cells: Vec<OrdinaryItemLogprobs> = (0..v.n_items)
+        .map(|i| focal_item_logprobs(v, params, coords, ts_by_specific, i, n_grid, qs))
+        .collect();
+    let mut log_i = vec![0.0; v.n_specific * n_grid];
+    let mut gen_log = vec![0.0; n_grid];
+    let mut log_like_g = vec![0.0; n_grid];
+    let mut tmp_h = vec![0.0; qs];
+    let mut loglik = 0.0;
+
+    let person_order = canonical_person_order(v, y, observed);
+    for pp in person_order {
+        gen_log.copy_from_slice(log_w);
+        for &i in &v.specific_free {
+            if !is_obs(pp, i) {
+                continue;
+            }
+            let yc = y[pp * v.n_items + i];
+            for g in 0..n_grid {
+                gen_log[g] += cells[i].get(g, 0, yc);
+            }
+        }
+        for (s, members) in v.blocks.iter().enumerate() {
+            for g in 0..n_grid {
+                for h in 0..qs {
+                    let mut acc = log_ws_by_specific[s][h];
+                    for &i in members {
+                        if is_obs(pp, i) {
+                            acc += cells[i].get(g, h, y[pp * v.n_items + i]);
+                        }
+                    }
+                    tmp_h[h] = acc;
+                }
+                log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+            }
+        }
+        for g in 0..n_grid {
+            let mut acc = gen_log[g];
+            for s in 0..v.n_specific {
+                acc += log_i[s * n_grid + g];
+            }
+            log_like_g[g] = acc;
+        }
+        let log_lp = log_sum_exp(&log_like_g);
+        loglik += log_lp;
+    }
+    loglik
+}
+
+/// Use the CPU scalar path only when CPU was selected; preserve non-CPU
+/// dispatch and its existing fallback semantics verbatim through `e_step_fipc`.
+/// Basis: Cai (2010, pp. 589–590, Eqs. 15–16).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn focal_loglik(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+    device: crate::Device,
+) -> f64 {
+    if device == crate::Device::Cpu {
+        focal_loglik_cpu(
+            v,
+            y,
+            observed,
+            params,
+            log_w,
+            log_ws_by_specific,
+            coords,
+            ts_by_specific,
+            n_grid,
+            qs,
+        )
+    } else {
+        e_step_fipc(
+            v,
+            y,
+            observed,
+            params,
+            log_w,
+            log_ws_by_specific,
+            coords,
+            ts_by_specific,
+            n_grid,
+            qs,
+            device,
+        )
+        .0
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn direct_fipc_loglik(
     v: &Validated,
@@ -1951,22 +2074,19 @@ fn direct_fipc_loglik(
         .collect();
     let log_ws_by_specific: Vec<Vec<f64>> =
         (0..specific_sd.len()).map(|_| log_ws.to_vec()).collect();
-    Some(
-        e_step_fipc(
-            v,
-            y,
-            observed,
-            params,
-            log_w0,
-            &log_ws_by_specific,
-            &coords,
-            &ts_by_specific,
-            n_grid,
-            ts_std.len(),
-            device,
-        )
-        .0,
-    )
+    Some(focal_loglik(
+        v,
+        y,
+        observed,
+        params,
+        log_w0,
+        &log_ws_by_specific,
+        &coords,
+        &ts_by_specific,
+        n_grid,
+        ts_std.len(),
+        device,
+    ))
 }
 
 /// Evaluate one FIPC state on the initial standard-normal GH histogram.
@@ -2510,7 +2630,7 @@ pub fn fit_two_tier_grm_fipc(
                     .collect();
                 let candidate_weights: Vec<Vec<f64>> =
                     (0..n_specific).map(|_| log_ws.clone()).collect();
-                e_step_fipc(
+                focal_loglik(
                     &v,
                     y,
                     observed,
@@ -2523,7 +2643,6 @@ pub fn fit_two_tier_grm_fipc(
                     ts_std.len(),
                     cfg.device,
                 )
-                .0
             })
         };
         let acceptance_tolerance = 32.0 * f64::EPSILON * (1.0 + ll.abs());
@@ -2591,7 +2710,7 @@ pub fn fit_two_tier_grm_fipc(
                     .collect();
                 let candidate_weights: Vec<Vec<f64>> =
                     (0..n_specific).map(|_| log_ws.clone()).collect();
-                let remapped_ll = e_step_fipc(
+                let remapped_ll = focal_loglik(
                     &v,
                     y,
                     observed,
@@ -2603,8 +2722,7 @@ pub fn fit_two_tier_grm_fipc(
                     n_grid,
                     ts_std.len(),
                     cfg.device,
-                )
-                .0;
+                );
                 if remapped_ll.is_finite() && remapped_ll >= ll - acceptance_tolerance {
                     accepted = true;
                     decision = format!(
@@ -4100,3 +4218,10 @@ mod focal_cell_cache_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_focal_cell_cache_legacy.rs"]
 mod focal_cell_cache_legacy;
+#[cfg(test)]
+thread_local! {
+    static FOCAL_COUNT_ROWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_focal_likelihood_only_tests.rs"]
+mod focal_likelihood_only_tests;
