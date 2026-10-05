@@ -101,7 +101,13 @@
 //! Nested focal count-row allocations and all vector/map overhead are additional
 //! to these f64 payload bounds (see `ordinary_item_logprobs` and `focal_item_logprobs`).
 //! Focal caches are rebuilt for every call's current affine primary and scaled
-//! specific support. M-step node coordinates remain evaluated on the fly over
+//! specific support. GPU table preparation also reuses exact current predictor
+//! bits while retaining the original expanded table layout for transport.
+//! Its current per-item cache can equal one full item table's f64 payload;
+//! during expansion it coexists with that table and completed item tables,
+//! plus slot/representative vectors and map keys/capacities. This is added
+//! CPU-side construction memory, not a device-memory or RSS guarantee.
+//! M-step node coordinates remain evaluated on the fly over
 //! the full primary product Gauss–Hermite grid. Node counts remain caller-controlled
 //! without a silent cap. Active-node specific-tier scratch alone is
 //! `O(n_specific * q_specific)`, not `O(n_specific * n_grid * q_specific)`;
@@ -1994,6 +2000,66 @@ fn e_step_fipc_anchored_moments(
     )
 }
 
+/// Full GPU table layout, evaluated on current item/support probability cells.
+/// A per-item predictor-bit cache is rebuilt each call. Its f64 payload can be
+/// as large as that item's expanded table and coexists with that table during
+/// expansion and with previously completed item tables. Slot/representative
+/// vectors and hash-map allocation are additional peak working memory.
+/// Basis: Cai (2010, p. 589, Eqs. 11–12; pp. 589–590, Eqs. 15–16;
+/// pp. 608–609, Appendix A). Predictor-bit reuse is an implementation choice.
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+fn focal_gpu_tables(
+    v: &Validated,
+    params: &[ItemParams],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+) -> Vec<Vec<f64>> {
+    let mut tables = Vec::with_capacity(v.n_items);
+    for i in 0..v.n_items {
+        let block = v.item_block[i];
+        let specific_nodes = if block.is_some() { qs } else { 1 };
+        let mut slots = Vec::with_capacity(n_grid);
+        let mut representatives = Vec::new();
+        let mut keys = std::collections::HashMap::<u64, usize>::new();
+        for g in 0..n_grid {
+            let bits = item_primary_base(v, &params[i], coords, g, i).to_bits();
+            let slot = match keys.get(&bits) {
+                Some(&slot) => slot,
+                None => {
+                    let slot = representatives.len();
+                    keys.insert(bits, slot);
+                    representatives.push(g);
+                    slot
+                }
+            };
+            slots.push(slot);
+        }
+        let mut cache = vec![0.0; representatives.len() * specific_nodes * v.n_cat];
+        for (slot, &g) in representatives.iter().enumerate() {
+            for h in 0..specific_nodes {
+                for cat in 0..v.n_cat {
+                    cache[(slot * specific_nodes + h) * v.n_cat + cat] =
+                        item_cat_logprob_fipc(v, params, coords, ts_by_specific, i, g, h, cat);
+                }
+            }
+        }
+        let mut table = vec![0.0; n_grid * specific_nodes * v.n_cat];
+        for g in 0..n_grid {
+            for h in 0..specific_nodes {
+                for cat in 0..v.n_cat {
+                    table[(g * specific_nodes + h) * v.n_cat + cat] =
+                        cache[(slots[g] * specific_nodes + h) * v.n_cat + cat];
+                }
+            }
+        }
+        tables.push(table);
+    }
+    tables
+}
 #[allow(clippy::too_many_arguments)]
 fn e_step_fipc_gpu(
     v: &Validated,
@@ -2039,21 +2105,7 @@ fn e_step_fipc_gpu(
     if log_ws.len() != qs || coords.len() != n_grid * v.n_primary {
         return None;
     }
-    let mut tables = Vec::with_capacity(v.n_items);
-    for i in 0..v.n_items {
-        let block = v.item_block[i];
-        let nodes = if block.is_some() { n_grid * qs } else { n_grid };
-        let mut table = vec![0.0; nodes * v.n_cat];
-        for g in 0..n_grid {
-            for h in 0..if block.is_some() { qs } else { 1 } {
-                for cat in 0..v.n_cat {
-                    table[(g * if block.is_some() { qs } else { 1 } + h) * v.n_cat + cat] =
-                        item_cat_logprob_fipc(v, params, coords, ts_by_specific, i, g, h, cat);
-                }
-            }
-        }
-        tables.push(table);
-    }
+    let tables = focal_gpu_tables(v, params, coords, ts_by_specific, n_grid, qs);
     let ts_groups = vec![ts_by_specific.to_vec()];
     let inputs = crate::gpu_bifactor::ReducedEstepInputs {
         y: &canonical_y,
@@ -4843,6 +4895,10 @@ mod final_person_projection_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_final_person_legacy_fitter.rs"]
 mod final_person_legacy_fitter;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_gpu_table_cache_tests.rs"]
+mod gpu_table_cache_tests;
 
 #[cfg(test)]
 thread_local! {
