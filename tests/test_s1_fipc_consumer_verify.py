@@ -1206,3 +1206,69 @@ def test_actual_fixed_anchor_rank_controls_focal_admission(monkeypatch, device, 
         assert receipt["anchor_rows_fixed"] is True
         assert receipt["convergence_failure"] is True
     assert np.array_equal(bank, before)
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+@pytest.mark.parametrize("call_number", [1, 2, 3])
+@pytest.mark.parametrize("backend_case", ["missing", "null", "empty", "whitespace"])
+def test_true_gpu_dispatch_requires_named_backend_each_call(monkeypatch, device, call_number, backend_case):
+    """A true dispatch flag alone cannot certify an unidentified GPU backend."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = []
+
+    def fipc(y, *args, **kwargs):
+        assert kwargs.get("device", "cpu") == device
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        result = original(y, *args)
+        calls.append((args[14], args[12:14]))
+        result.update(gpu_execution_used=True, gpu_backend="Metal")
+        if len(calls) == call_number:
+            if backend_case == "missing":
+                result.pop("gpu_backend")
+            else:
+                result["gpu_backend"] = {"null": None, "empty": "", "whitespace": " \t\n"}[backend_case]
+        return result
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, device=device, q_primary=121, q_specific=241, q_expected_raw=121)
+    _assert_schema(receipt)
+    json.dumps(receipt, allow_nan=False)
+    assert receipt["all_pass"] is False, "true GPU flag with unidentified backend certified all_pass"
+    assert receipt["row_order_diagnosis"] == "fit_error"
+    assert receipt["fipc_fit_error"] == "ValueError: GPU execution requires a nonempty backend name."
+    assert receipt["gpu_execution_used"] is None
+    assert receipt["gpu_backend"] is None
+    assert calls == [(100 if i < 2 else 1, (121, 241)) for i in range(call_number)]
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+@pytest.mark.parametrize("backend", ["Metal", "Vulkan"])
+def test_true_gpu_dispatch_named_backend_preserves_original_receipt(monkeypatch, device, backend):
+    """Operational metadata validation does not restrict legitimate backend names."""
+    module = _load_script()
+    fake = _fake_core(module)
+    original = fake.fit_two_tier_grm_fipc
+    calls = []
+
+    def fipc(y, *args, **kwargs):
+        assert kwargs.get("device", "cpu") == device
+        if not np.array_equal(args[1], module.PRIMARY_MAP.reshape(-1)):
+            raise ValueError("primary dimension 1 has 0 loading item(s); at least two loading items per primary dimension are required")
+        result = original(y, *args)
+        calls.append((args[14], args[12:14]))
+        result.update(gpu_execution_used=True, gpu_backend=backend)
+        return result
+
+    fake.fit_two_tier_grm_fipc = fipc
+    monkeypatch.setattr(module, "_core", fake)
+    receipt = module.build_receipt(None, None, device=device, q_primary=121, q_specific=241, q_expected_raw=121)
+    _assert_schema(receipt)
+    json.dumps(receipt, allow_nan=False)
+    assert receipt["all_pass"] is True
+    assert receipt["gpu_execution_used"] is True
+    assert receipt["gpu_backend"] == backend
+    assert calls == [(100, (121, 241)), (100, (121, 241)), (1, (121, 241))]

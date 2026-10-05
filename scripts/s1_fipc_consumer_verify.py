@@ -177,6 +177,8 @@ def call_fipc(
         raise ValueError("GPU execution metadata must be a boolean or null.")
     if backend is not None and not isinstance(backend, str):
         raise ValueError("GPU backend metadata must be a string or null.")
+    if used is True and (not isinstance(backend, str) or not backend.strip()):
+        raise ValueError("GPU execution requires a nonempty backend name.")
     return fit
 
 
