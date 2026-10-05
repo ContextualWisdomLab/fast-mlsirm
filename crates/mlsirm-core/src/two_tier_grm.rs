@@ -85,7 +85,10 @@
 //! Ordinary and focal CPU E-steps eagerly cache category log-probabilities
 //! for the current item parameters at each distinct primary-predictor bit
 //! pattern and current specific node. Each cache's f64 probability payload is
-//! bounded by its item's count-table f64 payload, but count tables and probability caches coexist.
+//! bounded by its item's full count-table f64 payload when that table is retained;
+//! count tables and probability caches then coexist. CPU focal EM omits only
+//! anchored-item count tables, not their probability cells or posterior moments.
+//! For omitted tables, the full-table comparison is conceptual, not allocated memory.
 //! Per-item primary-slot indices and Vec capacities are retained with the cache;
 //! representatives and hash-map buckets require additional peak construction memory.
 //! Nested focal count-row allocations and all vector/map overhead are additional
@@ -1569,10 +1572,59 @@ fn e_step_fipc_cpu(
     Vec<f64>,
     Vec<f64>,
 ) {
+    e_step_fipc_cpu_counts(
+        v,
+        y,
+        observed,
+        params,
+        log_w,
+        log_ws_by_specific,
+        coords,
+        ts_by_specific,
+        n_grid,
+        qs,
+        None,
+    )
+}
+
+/// CPU posterior arithmetic shared by full and anchor-count projections.
+/// Only unconsumed count-table rows may be omitted; all other sums are identical.
+/// Basis: Cai (2010, pp. 608–609, Appendix A).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn e_step_fipc_cpu_counts(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+    anchor: Option<&[bool]>,
+) -> (
+    f64,
+    Vec<Vec<Vec<f64>>>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+) {
     let p = v.n_primary;
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
+    let needs_count = |i: usize| anchor.is_none_or(|a| !a[i]);
     let mut counts = Vec::with_capacity(v.n_items);
     for i in 0..v.n_items {
+        if !needs_count(i) {
+            counts.push(Vec::new());
+            continue;
+        }
         let nodes = if v.item_block[i].is_some() {
             n_grid * qs
         } else {
@@ -1685,7 +1737,7 @@ fn e_step_fipc_cpu(
             }
         }
         for &i in &v.specific_free {
-            if !is_obs(pp, i) {
+            if !needs_count(i) || !is_obs(pp, i) {
                 continue;
             }
             let yc = y[pp * v.n_items + i];
@@ -1725,7 +1777,7 @@ fn e_step_fipc_cpu(
                     specific_mass[s] += post;
                     sum_specific2[s] += post * ts_by_specific[s][h] * ts_by_specific[s][h];
                     for &i in members {
-                        if is_obs(pp, i) {
+                        if needs_count(i) && is_obs(pp, i) {
                             counts[i][g * qs + h][y[pp * v.n_items + i]] += post;
                         }
                     }
@@ -1795,6 +1847,68 @@ fn e_step_fipc(
         ts_by_specific,
         n_grid,
         qs,
+    )
+}
+
+/// Focal EM consumes item counts only for unanchored rows.
+/// Population moments and individual outputs retain their original calculation.
+/// Basis: Cai (2010, pp. 608–609, Appendix A, expected item frequencies and M-step).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn e_step_fipc_anchored(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+    device: crate::Device,
+    anchor: &[bool],
+) -> (
+    f64,
+    Vec<Vec<Vec<f64>>>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+) {
+    #[cfg(test)]
+    FIT_ANCHOR_PROJECTION_CALLS.with(|c| c.set(c.get() + 1));
+    if device != crate::Device::Cpu {
+        return e_step_fipc(
+            v,
+            y,
+            observed,
+            params,
+            log_w,
+            log_ws_by_specific,
+            coords,
+            ts_by_specific,
+            n_grid,
+            qs,
+            device,
+        );
+    }
+    e_step_fipc_cpu_counts(
+        v,
+        y,
+        observed,
+        params,
+        log_w,
+        log_ws_by_specific,
+        coords,
+        ts_by_specific,
+        n_grid,
+        qs,
+        Some(anchor),
     )
 }
 
@@ -2689,7 +2803,7 @@ pub fn fit_two_tier_grm_fipc(
         fixed_primary_second_moment_trace.extend_from_slice(&fixed_m2);
         fixed_specific_second_moment_trace.extend_from_slice(&fixed_specific_m2);
         let (ll, counts, sum_primary, sum_primary2, sum_specific2, specific_mass, _, _) =
-            e_step_fipc(
+            e_step_fipc_anchored(
                 &v,
                 y,
                 observed,
@@ -2701,6 +2815,7 @@ pub fn fit_two_tier_grm_fipc(
                 n_grid,
                 ts_std.len(),
                 cfg.device,
+                anchor,
             );
         let previous = loglik_trace.last().copied();
         // loglik_trace contains consecutive production evaluations, including
@@ -4567,3 +4682,16 @@ thread_local! {
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_full_block_marginal_tests.rs"]
 mod full_block_marginal_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_free_count_projection_tests.rs"]
+mod free_count_projection_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_free_count_legacy_fitter.rs"]
+mod free_count_legacy_fitter;
+
+#[cfg(test)]
+thread_local! {
+    static FIT_ANCHOR_PROJECTION_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
