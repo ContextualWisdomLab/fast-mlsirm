@@ -1,7 +1,9 @@
 # Remote family I/O, model, and version identity (#2072)
 
-Status: acceptance evidence for PR #2072 follow-up. Does **not** close #2001,
-implement Valkey transport, or claim A4 completion.
+Status: acceptance evidence for PR #2072 follow-up. The current source includes
+injected-client `ValkeyStreamsOutcomeStore` and `ValkeyStreamsBackend` adapters.
+Does **not** close #2001 or claim A4 completion. Adapter presence does not establish
+real-server, installed-wheel, cross-host, device, and scientific acceptance.
 
 ## Problem
 
@@ -12,7 +14,7 @@ looked family-complete while worker dispatch was not.
 
 ## Contract
 
-Each remote unit carries three identity layers that must match before and after
+Each remote unit carries four identity layers that must match before and after
 dispatch:
 
 | Layer | Field(s) | Fail-closed rule |
@@ -52,6 +54,7 @@ envelope and payload share the same `output_identity_sha256`.
 | `regression_contrasts` | `fast_mlsirm.regression.fit_ols_hc` + `contrast` | Whole call only |
 | `fipc` | `fast_mlsirm.polytomous.fit_poly_fipc` | Whole call only |
 | `two_tier` | `fast_mlsirm.two_tier_grm.fit_two_tier_grm` | Whole call only |
+| `bifactor_bootstrap_replicate` | `fast_mlsirm.bifactor_bootstrap._fit_single_replicate` (via `run_bootstrap_replicate_payload`) | Independent replicate units; seed from `derive_index_seed`, same as the local replicate seed. Only documented unobserved-category or empty-item `ValueError` resampling failures return a completed `rejected` record; other exceptions propagate and the worker serializes them as `FAILED` (#2001) |
 
 Internally unshardable families may still run on a remote host as one complete
 call. `unit_index` is a nonnegative whole-call identifier and seed input; a
@@ -87,7 +90,8 @@ python -m pytest tests/test_remote_exec.py -q
 
 ## Explicit non-claims
 
-- No Valkey/Redis Streams transport in this slice.
-- No bootstrap adapter or cross-host always-on evidence.
+- Injected-client Valkey/Redis Streams adapters are implemented; this document
+  does not certify deployed-server operation or complete retry-attempt isolation.
+- The bootstrap adapter is included; cross-host always-on evidence remains unverified.
 - No formula or model-contract changes.
 - Does not close #2001 or #2071 durable-store follow-ups.

@@ -18,6 +18,7 @@ import numpy as np
 from importlib.metadata import PackageNotFoundError, version
 
 from ._fit_public import fit
+from .bifactor_bootstrap import run_bootstrap_replicate_payload
 from .bifactor_grm import bifactor_oakes_se
 from .config import FitConfig, MLS2PLMConfig
 from .polytomous import fit_poly_fipc
@@ -125,12 +126,12 @@ def execute_se_derivatives(payload: dict[str, object]) -> dict[str, object]:
         np.asarray(payload["a_general"], dtype=np.float64),
         np.asarray(payload["a_specific"], dtype=np.float64),
         np.asarray(payload["threshold"], dtype=np.float64),
-        np.asarray(payload["responses"], dtype=np.int64),
-        np.asarray(payload["specific_map"], dtype=np.int64),
-        int(payload["n_cat"]),
-        int(payload["n_specific"]),
-        q_general=int(payload["q_general"]),
-        q_specific=int(payload["q_specific"]),
+        np.asarray(payload["responses"]),
+        np.asarray(payload["specific_map"]),
+        payload["n_cat"],
+        payload["n_specific"],
+        q_general=payload["q_general"],
+        q_specific=payload["q_specific"],
         fd_step=float(payload["fd_step"]),
     )
     information_sha256 = hashlib.sha256(res.information.tobytes()).hexdigest()
@@ -175,14 +176,14 @@ def execute_regression_contrasts(payload: dict[str, object]) -> dict[str, object
 def execute_fipc(payload: dict[str, object]) -> dict[str, object]:
     """Run ``fit_poly_fipc`` for one whole-call FIPC family unit."""
     fit = fit_poly_fipc(
-        np.asarray(payload["responses"], dtype=np.int64),
-        int(payload["n_cat"]),
+        np.asarray(payload["responses"]),
+        payload["n_cat"],
         np.asarray(payload["anchor"], dtype=bool),
         np.asarray(payload["anchor_slope"], dtype=np.float64),
         np.asarray(payload["anchor_cat_params"], dtype=np.float64),
-        q_theta=int(payload["q_theta"]),
-        max_iter=int(payload["max_iter"]),
-        tol=float(payload["tol"]),
+        q_theta=payload["q_theta"],
+        max_iter=payload["max_iter"],
+        tol=payload["tol"],
     )
     parameter_bytes = b"".join(
         np.asarray(value).tobytes()
@@ -201,17 +202,17 @@ def execute_fipc(payload: dict[str, object]) -> dict[str, object]:
 def execute_two_tier(payload: dict[str, object], unit_seed: int) -> dict[str, object]:
     """Run ``fit_two_tier_grm`` for one whole-call two-tier family unit."""
     fit = fit_two_tier_grm(
-        np.asarray(payload["responses"], dtype=np.int64),
-        np.asarray(payload["primary_map"], dtype=bool),
-        np.asarray(payload["specific_map"], dtype=np.int64),
-        int(payload["n_cat"]),
-        int(payload["n_primary"]),
-        int(payload["n_specific"]),
-        int(payload["q_primary"]),
-        int(payload["q_specific"]),
-        int(payload["max_iter"]),
-        float(payload["tol"]),
-        int(payload["n_starts"]),
+        np.asarray(payload["responses"]),
+        np.asarray(payload["primary_map"]),
+        np.asarray(payload["specific_map"]),
+        payload["n_cat"],
+        payload["n_primary"],
+        payload["n_specific"],
+        payload["q_primary"],
+        payload["q_specific"],
+        payload["max_iter"],
+        payload["tol"],
+        payload["n_starts"],
         unit_seed,
     )
     parameter_bytes = b"".join(
@@ -268,6 +269,8 @@ def execute_envelope(
         return execute_fipc(payload)
     if envelope.family is RemoteJobFamily.TWO_TIER:
         return execute_two_tier(payload, unit_seed)
+    if envelope.family is RemoteJobFamily.BIFACTOR_BOOTSTRAP_REPLICATE:
+        return run_bootstrap_replicate_payload(payload, envelope.unit_index, unit_seed)
     raise ValueError(f"unsupported remote family {envelope.family.value!r}")
 
 
