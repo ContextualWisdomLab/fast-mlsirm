@@ -85,7 +85,10 @@
 //! Ordinary and focal CPU E-steps eagerly cache category log-probabilities
 //! for the current item parameters at each distinct primary-predictor bit
 //! pattern and current specific node. Each cache's f64 probability payload is
-//! bounded by its item's count-table f64 payload, but count tables and probability caches coexist.
+//! bounded by its item's full count-table f64 payload when that table is retained;
+//! count tables and probability caches then coexist. CPU focal EM omits only
+//! anchored-item count tables, not their probability cells or posterior moments.
+//! For omitted tables, the full-table comparison is conceptual, not allocated memory.
 //! Per-item primary-slot indices and Vec capacities are retained with the cache;
 //! representatives and hash-map buckets require additional peak construction memory.
 //! Nested focal count-row allocations and all vector/map overhead are additional
@@ -96,6 +99,13 @@
 //! without a silent cap. Active-node specific-tier scratch alone is
 //! `O(n_specific * q_specific)`, not `O(n_specific * n_grid * q_specific)`;
 //! this scratch bound does not describe the full cache/count working set.
+//! Full focal CPU E-steps, scalar focal likelihood and fixed-support
+//! moment-only diagnostics also retain
+//! one n_grid f64 marginal vector per distinct ordered observed/missing block
+//! pattern in the current call, together with probability cells and scratch.
+//! Signature keys, hash-map buckets and vector capacities add overhead. These
+//! invocation-local caches do not merge respondent moment sums or persist across
+//! support, weight or item-parameter changes; no universal RSS bound is implied.
 //! The cache only substitutes identical scalar values; posterior/count
 //! accumulation order remains unchanged (Cai, 2010, pp. 608-609, Appendix A).
 //! Reference: Cai, L. (2010). A two-tier full-information item factor analysis
@@ -1562,15 +1572,66 @@ fn e_step_fipc_cpu(
     Vec<f64>,
     Vec<f64>,
 ) {
+    e_step_fipc_cpu_counts(
+        v,
+        y,
+        observed,
+        params,
+        log_w,
+        log_ws_by_specific,
+        coords,
+        ts_by_specific,
+        n_grid,
+        qs,
+        None,
+    )
+}
+
+/// CPU posterior arithmetic shared by full and anchor-count projections.
+/// Only unconsumed count-table rows may be omitted; all other sums are identical.
+/// Basis: Cai (2010, pp. 608–609, Appendix A).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn e_step_fipc_cpu_counts(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+    anchor: Option<&[bool]>,
+) -> (
+    f64,
+    Vec<Vec<Vec<f64>>>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+) {
     let p = v.n_primary;
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
+    let needs_count = |i: usize| anchor.is_none_or(|a| !a[i]);
     let mut counts = Vec::with_capacity(v.n_items);
     for i in 0..v.n_items {
+        if !needs_count(i) {
+            counts.push(Vec::new());
+            continue;
+        }
         let nodes = if v.item_block[i].is_some() {
             n_grid * qs
         } else {
             n_grid
         };
+        #[cfg(test)]
+        FOCAL_COUNT_ROWS.with(|counter| counter.set(counter.get() + nodes));
         counts.push(vec![vec![0.0; v.n_cat]; nodes]);
     }
     let cells: Vec<OrdinaryItemLogprobs> = (0..v.n_items)
@@ -1588,6 +1649,14 @@ fn e_step_fipc_cpu(
     let mut specific_mass = vec![0.0; v.n_specific];
     let mut person_eap = vec![0.0; v.n_persons * p];
     let mut person_sd = vec![0.0; v.n_persons * p];
+    // Rebuild for this call's current item cells, affine support and weights.
+    // Cache only identical block marginals; posterior/count sums stay per person.
+    // Payload: n_grid f64s per distinct ordered observed/missing block pattern,
+    // plus signature keys, map buckets and vector capacities.
+    let mut block_log_marginals: Vec<std::collections::HashMap<Vec<Option<usize>>, Vec<f64>>> = (0
+        ..v.blocks.len())
+        .map(|_| std::collections::HashMap::new())
+        .collect();
     let mut loglik = 0.0;
 
     let person_order = canonical_person_order(v, y, observed);
@@ -1603,17 +1672,35 @@ fn e_step_fipc_cpu(
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
-            for g in 0..n_grid {
-                for h in 0..qs {
-                    let mut acc = log_ws_by_specific[s][h];
-                    for &i in members {
-                        if is_obs(pp, i) {
-                            acc += cells[i].get(g, h, y[pp * v.n_items + i]);
-                        }
+            let signature: Vec<Option<usize>> = members
+                .iter()
+                .map(|&i| {
+                    if is_obs(pp, i) {
+                        Some(y[pp * v.n_items + i])
+                    } else {
+                        None
                     }
-                    tmp_h[h] = acc;
+                })
+                .collect();
+            if let Some(cached) = block_log_marginals[s].get(&signature) {
+                log_i[s * n_grid..(s + 1) * n_grid].copy_from_slice(cached);
+            } else {
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws_by_specific[s][h];
+                        for &i in members {
+                            if is_obs(pp, i) {
+                                acc += cells[i].get(g, h, y[pp * v.n_items + i]);
+                            }
+                        }
+                        tmp_h[h] = acc;
+                    }
+                    #[cfg(test)]
+                    FULL_BLOCK_MARGINAL_EVALUATIONS.with(|c| c.set(c.get() + 1));
+                    log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
                 }
-                log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                block_log_marginals[s]
+                    .insert(signature, log_i[s * n_grid..(s + 1) * n_grid].to_vec());
             }
         }
         for g in 0..n_grid {
@@ -1650,7 +1737,7 @@ fn e_step_fipc_cpu(
             }
         }
         for &i in &v.specific_free {
-            if !is_obs(pp, i) {
+            if !needs_count(i) || !is_obs(pp, i) {
                 continue;
             }
             let yc = y[pp * v.n_items + i];
@@ -1690,7 +1777,7 @@ fn e_step_fipc_cpu(
                     specific_mass[s] += post;
                     sum_specific2[s] += post * ts_by_specific[s][h] * ts_by_specific[s][h];
                     for &i in members {
-                        if is_obs(pp, i) {
+                        if needs_count(i) && is_obs(pp, i) {
                             counts[i][g * qs + h][y[pp * v.n_items + i]] += post;
                         }
                     }
@@ -1760,6 +1847,68 @@ fn e_step_fipc(
         ts_by_specific,
         n_grid,
         qs,
+    )
+}
+
+/// Focal EM consumes item counts only for unanchored rows.
+/// Population moments and individual outputs retain their original calculation.
+/// Basis: Cai (2010, pp. 608–609, Appendix A, expected item frequencies and M-step).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn e_step_fipc_anchored(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+    device: crate::Device,
+    anchor: &[bool],
+) -> (
+    f64,
+    Vec<Vec<Vec<f64>>>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+) {
+    #[cfg(test)]
+    FIT_ANCHOR_PROJECTION_CALLS.with(|c| c.set(c.get() + 1));
+    if device != crate::Device::Cpu {
+        return e_step_fipc(
+            v,
+            y,
+            observed,
+            params,
+            log_w,
+            log_ws_by_specific,
+            coords,
+            ts_by_specific,
+            n_grid,
+            qs,
+            device,
+        );
+    }
+    e_step_fipc_cpu_counts(
+        v,
+        y,
+        observed,
+        params,
+        log_w,
+        log_ws_by_specific,
+        coords,
+        ts_by_specific,
+        n_grid,
+        qs,
+        Some(anchor),
     )
 }
 
@@ -1927,6 +2076,155 @@ fn fipc_primary_coords(
     coords
 }
 
+/// Scalar focal observed-data log-likelihood on the current transformed support.
+/// Evaluate the same reduced marginal sum, in the same person/node/item order,
+/// without constructing unused posterior counts, population moments or EAP.
+/// The main EM, fixed-moment diagnostic and final-person paths remain separate.
+/// Basis: Cai (2010, pp. 589–590, Eqs. 15–16; pp. 607–609, Appendix A).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn focal_loglik_cpu(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+) -> f64 {
+    let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
+    let cells: Vec<OrdinaryItemLogprobs> = (0..v.n_items)
+        .map(|i| focal_item_logprobs(v, params, coords, ts_by_specific, i, n_grid, qs))
+        .collect();
+    let mut log_i = vec![0.0; v.n_specific * n_grid];
+    let mut gen_log = vec![0.0; n_grid];
+    let mut log_like_g = vec![0.0; n_grid];
+    let mut tmp_h = vec![0.0; qs];
+    // Call-local signatures include observed/missing categories in member order.
+    // The exact current weights, support and item parameters are not reused
+    // across calls. Cache payload is one n_grid vector per distinct pattern
+    // per block, in addition to probability cells and per-person scratch.
+    let mut block_log_marginals: Vec<std::collections::HashMap<Vec<Option<usize>>, Vec<f64>>> = (0
+        ..v.blocks.len())
+        .map(|_| std::collections::HashMap::new())
+        .collect();
+    let mut loglik = 0.0;
+
+    let person_order = canonical_person_order(v, y, observed);
+    for pp in person_order {
+        gen_log.copy_from_slice(log_w);
+        for &i in &v.specific_free {
+            if !is_obs(pp, i) {
+                continue;
+            }
+            let yc = y[pp * v.n_items + i];
+            for g in 0..n_grid {
+                gen_log[g] += cells[i].get(g, 0, yc);
+            }
+        }
+        for (s, members) in v.blocks.iter().enumerate() {
+            let signature: Vec<Option<usize>> = members
+                .iter()
+                .map(|&i| {
+                    if is_obs(pp, i) {
+                        Some(y[pp * v.n_items + i])
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Some(cached) = block_log_marginals[s].get(&signature) {
+                log_i[s * n_grid..(s + 1) * n_grid].copy_from_slice(cached);
+            } else {
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws_by_specific[s][h];
+                        for &i in members {
+                            if is_obs(pp, i) {
+                                acc += cells[i].get(g, h, y[pp * v.n_items + i]);
+                            }
+                        }
+                        tmp_h[h] = acc;
+                    }
+                    #[cfg(test)]
+                    if BLOCK_MARGINAL_EVALUATIONS_ACTIVE.with(|active| active.get()) {
+                        BLOCK_MARGINAL_EVALUATIONS.with(|count| count.set(count.get() + 1));
+                    }
+                    log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                }
+                block_log_marginals[s]
+                    .insert(signature, log_i[s * n_grid..(s + 1) * n_grid].to_vec());
+            }
+        }
+        for g in 0..n_grid {
+            let mut acc = gen_log[g];
+            for s in 0..v.n_specific {
+                acc += log_i[s * n_grid + g];
+            }
+            log_like_g[g] = acc;
+        }
+        let log_lp = log_sum_exp(&log_like_g);
+        loglik += log_lp;
+    }
+    loglik
+}
+
+/// Use the CPU scalar path only when CPU was selected; preserve non-CPU
+/// dispatch and its existing fallback semantics verbatim through `e_step_fipc`.
+/// Basis: Cai (2010, pp. 589–590, Eqs. 15–16).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn focal_loglik(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+    device: crate::Device,
+) -> f64 {
+    if device == crate::Device::Cpu {
+        focal_loglik_cpu(
+            v,
+            y,
+            observed,
+            params,
+            log_w,
+            log_ws_by_specific,
+            coords,
+            ts_by_specific,
+            n_grid,
+            qs,
+        )
+    } else {
+        e_step_fipc(
+            v,
+            y,
+            observed,
+            params,
+            log_w,
+            log_ws_by_specific,
+            coords,
+            ts_by_specific,
+            n_grid,
+            qs,
+            device,
+        )
+        .0
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn direct_fipc_loglik(
     v: &Validated,
@@ -1951,22 +2249,173 @@ fn direct_fipc_loglik(
         .collect();
     let log_ws_by_specific: Vec<Vec<f64>> =
         (0..specific_sd.len()).map(|_| log_ws.to_vec()).collect();
-    Some(
-        e_step_fipc(
-            v,
-            y,
-            observed,
-            params,
-            log_w0,
-            &log_ws_by_specific,
-            &coords,
-            &ts_by_specific,
-            n_grid,
-            ts_std.len(),
-            device,
-        )
-        .0,
-    )
+    Some(focal_loglik(
+        v,
+        y,
+        observed,
+        params,
+        log_w0,
+        &log_ws_by_specific,
+        &coords,
+        &ts_by_specific,
+        n_grid,
+        ts_std.len(),
+        device,
+    ))
+}
+
+/// Fixed-support CPU diagnostic with exactly its consumed likelihood and moments.
+/// Preserve person, primary-node, specific-node and item summation order from
+/// the full E-step; omit only posterior count tables and individual EAP outputs.
+/// This is not the moving-support EM or final-person output path.
+/// Basis: Cai (2010, pp. 589–590, Eqs. 15–16; pp. 607–609, Appendix A).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn fixed_fipc_moments_cpu(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws_by_specific: &[Vec<f64>],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    n_grid: usize,
+    qs: usize,
+) -> (f64, Vec<f64>, Vec<f64>, Vec<f64>) {
+    let p = v.n_primary;
+    let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
+    let cells: Vec<OrdinaryItemLogprobs> = (0..v.n_items)
+        .map(|i| focal_item_logprobs(v, params, coords, ts_by_specific, i, n_grid, qs))
+        .collect();
+    let mut log_i = vec![0.0; v.n_specific * n_grid];
+    let mut gen_log = vec![0.0; n_grid];
+    let mut log_like_g = vec![0.0; n_grid];
+    let mut post_g = vec![0.0; n_grid];
+    let mut tmp_h = vec![0.0; qs];
+    let mut block_acc_g = vec![0.0; v.n_specific * qs];
+    let mut sum_primary = vec![0.0; p];
+    let mut sum_primary2 = vec![0.0; p * p];
+    let mut sum_specific2 = vec![0.0; v.n_specific];
+    // Invocation-local marginal cache: current item cells, support and weights
+    // remain fixed within this call. Preserve canonical per-person moment sums.
+    // Payload is n_grid f64s per distinct ordered observed/missing block pattern.
+    let mut block_log_marginals: Vec<std::collections::HashMap<Vec<Option<usize>>, Vec<f64>>> = (0
+        ..v.blocks.len())
+        .map(|_| std::collections::HashMap::new())
+        .collect();
+    let mut loglik = 0.0;
+
+    let person_order = canonical_person_order(v, y, observed);
+    for pp in person_order {
+        gen_log.copy_from_slice(log_w);
+        for &i in &v.specific_free {
+            if !is_obs(pp, i) {
+                continue;
+            }
+            let yc = y[pp * v.n_items + i];
+            for g in 0..n_grid {
+                gen_log[g] += cells[i].get(g, 0, yc);
+            }
+        }
+        for (s, members) in v.blocks.iter().enumerate() {
+            let signature: Vec<Option<usize>> = members
+                .iter()
+                .map(|&i| {
+                    if is_obs(pp, i) {
+                        Some(y[pp * v.n_items + i])
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Some(cached) = block_log_marginals[s].get(&signature) {
+                log_i[s * n_grid..(s + 1) * n_grid].copy_from_slice(cached);
+            } else {
+                for g in 0..n_grid {
+                    for h in 0..qs {
+                        let mut acc = log_ws_by_specific[s][h];
+                        for &i in members {
+                            if is_obs(pp, i) {
+                                acc += cells[i].get(g, h, y[pp * v.n_items + i]);
+                            }
+                        }
+                        tmp_h[h] = acc;
+                    }
+                    #[cfg(test)]
+                    FIXED_BLOCK_MARGINAL_EVALUATIONS.with(|count| count.set(count.get() + 1));
+                    log_i[s * n_grid + g] = log_sum_exp(&tmp_h);
+                }
+                block_log_marginals[s]
+                    .insert(signature, log_i[s * n_grid..(s + 1) * n_grid].to_vec());
+            }
+        }
+        for g in 0..n_grid {
+            let mut acc = gen_log[g];
+            for s in 0..v.n_specific {
+                acc += log_i[s * n_grid + g];
+            }
+            log_like_g[g] = acc;
+        }
+        let log_lp = log_sum_exp(&log_like_g);
+        loglik += log_lp;
+        for g in 0..n_grid {
+            post_g[g] = (log_like_g[g] - log_lp).exp();
+        }
+        for d in 0..p {
+            let mut m1 = 0.0;
+            for g in 0..n_grid {
+                let t = coords[g * p + d];
+                m1 += post_g[g] * t;
+            }
+            sum_primary[d] += m1;
+        }
+        for j in 0..p {
+            for k in 0..p {
+                let mut m = 0.0;
+                for g in 0..n_grid {
+                    m += post_g[g] * coords[g * p + j] * coords[g * p + k];
+                }
+                sum_primary2[j * p + k] += m;
+            }
+        }
+        for (s, members) in v.blocks.iter().enumerate() {
+            if !members.iter().any(|&i| is_obs(pp, i)) {
+                continue;
+            }
+            for g in 0..n_grid {
+                for h in 0..qs {
+                    let mut acc = log_ws_by_specific[s][h];
+                    for &i in members {
+                        if is_obs(pp, i) {
+                            acc += cells[i].get(g, h, y[pp * v.n_items + i]);
+                        }
+                    }
+                    block_acc_g[s * qs + h] = acc;
+                }
+                // Keep the prior in the joint numerator: subtracting its log
+                // first is undefined at a zero-mass primary node. This is
+                // the unchanged reduced posterior product (Cai, 2010,
+                // pp. 589-590, Eqs. 15-16; pp. 608-609, Appendix A).
+                // Reference: Cai, L. (2010). A two-tier full-information
+                // item factor analysis model with applications.
+                // Psychometrika, 75(4), 581-612. doi:10.1007/s11336-010-9178-0.
+                let mut others = gen_log[g];
+                for s2 in 0..v.n_specific {
+                    if s2 != s {
+                        others += log_i[s2 * n_grid + g];
+                    }
+                }
+                for h in 0..qs {
+                    let post = (block_acc_g[s * qs + h] + others - log_lp).exp();
+                    sum_specific2[s] += post * ts_by_specific[s][h] * ts_by_specific[s][h];
+                }
+            }
+        }
+    }
+    (loglik, sum_primary, sum_primary2, sum_specific2)
 }
 
 /// Evaluate one FIPC state on the initial standard-normal GH histogram.
@@ -1993,6 +2442,20 @@ fn fixed_fipc_e_step(
     qs: usize,
     device: crate::Device,
 ) -> (f64, Vec<f64>, Vec<f64>, Vec<f64>) {
+    if device == crate::Device::Cpu {
+        return fixed_fipc_moments_cpu(
+            v,
+            y,
+            observed,
+            params,
+            log_w,
+            log_ws_by_specific,
+            coords,
+            ts_by_specific,
+            n_grid,
+            qs,
+        );
+    }
     let (loglik, _, sum_primary, sum_primary2, sum_specific2, _, _, _) = e_step_fipc(
         v,
         y,
@@ -2340,7 +2803,7 @@ pub fn fit_two_tier_grm_fipc(
         fixed_primary_second_moment_trace.extend_from_slice(&fixed_m2);
         fixed_specific_second_moment_trace.extend_from_slice(&fixed_specific_m2);
         let (ll, counts, sum_primary, sum_primary2, sum_specific2, specific_mass, _, _) =
-            e_step_fipc(
+            e_step_fipc_anchored(
                 &v,
                 y,
                 observed,
@@ -2352,6 +2815,7 @@ pub fn fit_two_tier_grm_fipc(
                 n_grid,
                 ts_std.len(),
                 cfg.device,
+                anchor,
             );
         let previous = loglik_trace.last().copied();
         // loglik_trace contains consecutive production evaluations, including
@@ -2510,7 +2974,7 @@ pub fn fit_two_tier_grm_fipc(
                     .collect();
                 let candidate_weights: Vec<Vec<f64>> =
                     (0..n_specific).map(|_| log_ws.clone()).collect();
-                e_step_fipc(
+                focal_loglik(
                     &v,
                     y,
                     observed,
@@ -2523,7 +2987,6 @@ pub fn fit_two_tier_grm_fipc(
                     ts_std.len(),
                     cfg.device,
                 )
-                .0
             })
         };
         let acceptance_tolerance = 32.0 * f64::EPSILON * (1.0 + ll.abs());
@@ -2591,7 +3054,7 @@ pub fn fit_two_tier_grm_fipc(
                     .collect();
                 let candidate_weights: Vec<Vec<f64>> =
                     (0..n_specific).map(|_| log_ws.clone()).collect();
-                let remapped_ll = e_step_fipc(
+                let remapped_ll = focal_loglik(
                     &v,
                     y,
                     observed,
@@ -2603,8 +3066,7 @@ pub fn fit_two_tier_grm_fipc(
                     n_grid,
                     ts_std.len(),
                     cfg.device,
-                )
-                .0;
+                );
                 if remapped_ll.is_finite() && remapped_ll >= ll - acceptance_tolerance {
                     accepted = true;
                     decision = format!(
@@ -2968,6 +3430,10 @@ fn item_neg_ll_grad<C: CountRows + ?Sized>(
         // At the current predictor, the boundary ratios do not depend on the
         // count row (Cai, 2010, pp. 608–609, Appendix A). Multiply and sum each
         // original row in its original order, retaining zero-count branches.
+        #[cfg(test)]
+        if ITEM_LINE_SEARCH_ACTIVE.with(|v| v.get()) {
+            ITEM_LINE_SEARCH_GRADIENT_ROWS.with(|v| v.set(v.get() + 1));
+        }
         let g_base = if free.len() < n_primary {
             let mut g_base = 0.0f64;
             for j in 0..beta.len() {
@@ -3003,6 +3469,72 @@ fn item_neg_ll_grad<C: CountRows + ?Sized>(
         }
     }
     (-ll, grad.iter().map(|g| -g).collect())
+}
+
+/// Expected complete-data item objective only for Newton trial acceptance.
+/// Use the identical category probabilities, count-row order and scalar sum
+/// as `item_neg_ll_grad`; gradients and boundary ratios are not consumed here.
+/// Probability reuse is call-local and only for an inactive primary axis,
+/// retaining the predecessor's direct-node path on fully active support.
+/// Basis: Cai (2010, pp. 608–609, Appendix A).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn item_neg_ll<C: CountRows + ?Sized>(
+    params: &[f64],
+    free: &[usize],
+    has_specific: bool,
+    coords: &[f64],
+    ts: &[f64],
+    n_primary: usize,
+    n_grid: usize,
+    qs: usize,
+    counts: &C,
+    _n_cat: usize,
+) -> f64 {
+    let k = free.len();
+    let off = k + usize::from(has_specific);
+    let beta = &params[off..];
+    let mut ll = 0.0f64;
+    let mut lp = vec![0.0; beta.len() + 1];
+    // At most one probability vector per distinct exact predictor; map
+    // keys, capacities and construction overhead are additional memory.
+    let mut slots = std::collections::HashMap::<u64, usize>::new();
+    let mut cells = Vec::<f64>::new();
+    for (node, cnt) in counts.rows().enumerate() {
+        let (g, h) = if has_specific {
+            (node / qs, node % qs)
+        } else {
+            debug_assert!(node < n_grid);
+            (node, 0)
+        };
+        let mut base = 0.0f64;
+        for (t, &dim) in free.iter().enumerate() {
+            base += params[t] * coords[g * n_primary + dim];
+        }
+        if has_specific {
+            base += params[k] * ts[h];
+        }
+        if free.len() < n_primary {
+            match slots.entry(base.to_bits()) {
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    let offset = *entry.get();
+                    let width = lp.len();
+                    lp.copy_from_slice(&cells[offset..offset + width]);
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    crate::poly::grm_logprobs_into(base, beta, &mut lp);
+                    entry.insert(cells.len());
+                    cells.extend_from_slice(&lp);
+                }
+            }
+        } else {
+            crate::poly::grm_logprobs_into(base, beta, &mut lp);
+        }
+        ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+    }
+    -ll
 }
 
 /// Newton M-step for one item — the Bock-Aitkin M-step item ascent (Cai et
@@ -3093,7 +3625,9 @@ fn m_step_item<C: CountRows + ?Sized>(
                 .zip(&step)
                 .map(|(value, direction)| value - alpha * direction)
                 .collect();
-            let (candidate_f, _) = item_neg_ll_grad(
+            #[cfg(test)]
+            ITEM_LINE_SEARCH_ACTIVE.with(|v| v.set(true));
+            let candidate_f = item_neg_ll(
                 &candidate,
                 free,
                 has_specific,
@@ -3105,6 +3639,8 @@ fn m_step_item<C: CountRows + ?Sized>(
                 counts,
                 n_cat,
             );
+            #[cfg(test)]
+            ITEM_LINE_SEARCH_ACTIVE.with(|v| v.set(false));
             if candidate_f.is_finite() && candidate_f <= f0 - 1e-4 * alpha * directional {
                 params = candidate;
                 accepted = true;
@@ -4100,3 +4636,62 @@ mod focal_cell_cache_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_focal_cell_cache_legacy.rs"]
 mod focal_cell_cache_legacy;
+#[cfg(test)]
+thread_local! {
+    static FOCAL_COUNT_ROWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_focal_likelihood_only_tests.rs"]
+mod focal_likelihood_only_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_scalar_block_pattern_tests.rs"]
+mod scalar_block_pattern_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_fixed_moment_output_tests.rs"]
+mod fixed_moment_output_tests;
+
+#[cfg(test)]
+thread_local! {
+    static ITEM_LINE_SEARCH_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static ITEM_LINE_SEARCH_GRADIENT_ROWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_item_line_search_output_tests.rs"]
+mod item_line_search_output_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_item_line_search_legacy.rs"]
+mod item_line_search_legacy;
+
+#[cfg(test)]
+thread_local! {
+    static FIXED_BLOCK_MARGINAL_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_fixed_block_marginal_tests.rs"]
+mod fixed_block_marginal_tests;
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_fixed_block_marginal_legacy.rs"]
+mod fixed_block_marginal_legacy;
+#[cfg(test)]
+thread_local! {
+    static FULL_BLOCK_MARGINAL_EVALUATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_full_block_marginal_tests.rs"]
+mod full_block_marginal_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_free_count_projection_tests.rs"]
+mod free_count_projection_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_free_count_legacy_fitter.rs"]
+mod free_count_legacy_fitter;
+
+#[cfg(test)]
+thread_local! {
+    static FIT_ANCHOR_PROJECTION_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
