@@ -1741,7 +1741,7 @@ fn bifactor_oakes_se(
 ///     https://doi.org/10.1177/0146621606289485
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, anchor, fixed_a_general, fixed_a_specific, fixed_threshold, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, newton_iter = 10, ridge = 1e-8, estimate_specific_vars = false))]
+#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, anchor, fixed_a_general, fixed_a_specific, fixed_threshold, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, newton_iter = 10, ridge = 1e-8, estimate_specific_vars = false, device = "cpu"))]
 fn fit_bifactor_grm_fipc(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1762,7 +1762,10 @@ fn fit_bifactor_grm_fipc(
     newton_iter: usize,
     ridge: f64,
     estimate_specific_vars: bool,
+    device: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of cpu, gpu, auto"))?;
     let y_slice = y.as_slice()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
         Some(o) => Some(o.as_slice()?.to_vec()),
@@ -1800,6 +1803,7 @@ fn fit_bifactor_grm_fipc(
         newton_iter,
         ridge,
         estimate_specific_vars,
+        device,
     };
     let res = py
         .detach(|| {
@@ -1835,6 +1839,95 @@ fn fit_bifactor_grm_fipc(
     out.set_item("termination_reason", res.termination_reason)?;
     out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("gpu_execution_used", res.gpu_execution_used)?;
+    out.set_item("gpu_backend", res.gpu_backend)?;
+    out.set_item("gpu_device_name", res.gpu_device_name)?;
+    out.set_item("cpu_fallback_reason", res.cpu_fallback_reason)?;
+    Ok(out.into())
+}
+
+/// All-fixed orthogonal focal calibration: Cai et al. (2011, pp. 230–232,
+/// Eqs. 15–17) and Kim (2006, pp. 360–363); full references in core module.
+/// No score computation; all means/variances free, item parameters unchanged.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, specific_map, n_persons, n_items, n_specific, n_cat, fixed_a_general, fixed_a_specific, fixed_threshold, initial_mean, initial_sd, q_general, q_specific, max_iter, tol, device))]
+fn fit_bifactor_grm_fipc_full(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_specific: usize,
+    n_cat: usize,
+    fixed_a_general: PyReadonlyArray1<'_, f64>,
+    fixed_a_specific: PyReadonlyArray1<'_, f64>,
+    fixed_threshold: PyReadonlyArray1<'_, f64>,
+    initial_mean: PyReadonlyArray1<'_, f64>,
+    initial_sd: PyReadonlyArray1<'_, f64>,
+    q_general: usize,
+    q_specific: usize,
+    max_iter: usize,
+    tol: f64,
+    device: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    use mlsirm_core::bifactor_grm::full_fipc::{
+        fit_bifactor_grm_fipc_full as fit, BifactorFullFipcConfig,
+    };
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of cpu, gpu, auto"))?;
+    let yy = y
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("complete nonnegative responses required"))
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    let smap = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            i32::try_from(v).map_err(|_| PyValueError::new_err("specific_map entries must fit i32"))
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    let ag = fixed_a_general.as_slice()?.to_vec();
+    let a_s = fixed_a_specific.as_slice()?.to_vec();
+    let threshold = fixed_threshold.as_slice()?.to_vec();
+    let mean = initial_mean.as_slice()?.to_vec();
+    let sd = initial_sd.as_slice()?.to_vec();
+    let cfg = BifactorFullFipcConfig {
+        q_general,
+        q_specific,
+        max_iter,
+        tol,
+        device,
+    };
+    let r = py
+        .detach(|| {
+            fit(
+                &yy, &smap, n_persons, n_items, n_specific, n_cat, &ag, &a_s, &threshold, &mean,
+                &sd, &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("mean", r.mean)?;
+    out.set_item("sd", r.sd)?;
+    out.set_item("a_general", r.a_general)?;
+    out.set_item("a_specific", r.a_specific)?;
+    out.set_item("threshold", r.threshold)?;
+    out.set_item("loglik_trace", r.loglik_trace)?;
+    out.set_item("n_iter", r.n_iter)?;
+    out.set_item("converged", r.converged)?;
+    out.set_item("termination_reason", r.termination_reason)?;
+    out.set_item("final_loglik_change", r.final_loglik_change)?;
+    out.set_item("em_map_displacement", r.em_map_displacement)?;
+    out.set_item("n_parameters", r.n_parameters)?;
+    out.set_item("gpu_execution_used", r.gpu_execution_used)?;
+    out.set_item("gpu_backend", r.gpu_backend)?;
+    out.set_item("gpu_device_name", r.gpu_device_name)?;
+    out.set_item("cpu_fallback_reason", r.cpu_fallback_reason)?;
     Ok(out.into())
 }
 
@@ -10787,6 +10880,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_multigroup, m)?)?;
     m.add_function(wrap_pyfunction!(bifactor_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_fipc, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_bifactor_grm_fipc_full, m)?)?;
     m.add_function(wrap_pyfunction!(fit_two_tier_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_two_tier_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_oakes_se, m)?)?;

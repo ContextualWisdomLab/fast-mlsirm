@@ -173,3 +173,41 @@ def test_expected_raw_rejects_bool_complex_maps_and_malformed_fit_arrays() -> No
             SPECIFIC_MAP,
             q_specific=21,
         )
+
+
+def _storage_layout_fit():
+    """Create finite monotonic four-item parameters without fitting."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        a_primary=np.array([[.75,-.3],[1.1,.25],[-.4,.9],[.6,-1.2]],dtype=np.float64),
+        a_specific=np.array([.7,-.6,.8,1.1],dtype=np.float64),
+        threshold=np.array([[1.2,.1,-1.0],[.8,-.2,-1.1],[1.5,.3,-.7],[.9,-.1,-1.4]],dtype=np.float64),
+        theta_p_eap=np.array([[-1.7,.2],[.0,-.9],[.45,1.3],[1.8,-.6],[-.7,-1.2]],dtype=np.float64),
+        n_primary=2,n_specific=2,n_cat=4,
+    )
+
+
+@pytest.mark.parametrize('field',['a_primary','a_specific','threshold','theta_p_eap'])
+@pytest.mark.parametrize('storage',['strided','unaligned'])
+def test_expected_raw_accepts_valid_noncontiguous_and_unaligned_arrays(field,storage):
+    """Compare logical-value twins through the actual native score consumer."""
+    from types import SimpleNamespace
+
+    fit=_storage_layout_fit();smap=np.array([0,0,1,1],dtype=np.int64)
+    base=expected_raw_two_tier_grm(fit,smap,q_specific=121)
+    source=getattr(fit,field)
+    if storage=='strided':
+        backing=np.empty(source.size*2,dtype=np.float64)
+        view=backing[::2].reshape(source.shape)
+        assert not view.flags.c_contiguous
+    else:
+        backing=bytearray(source.nbytes+1)
+        view=np.ndarray(source.shape,dtype=np.float64,buffer=backing,offset=1)
+        assert view.flags.c_contiguous and not view.flags.aligned
+    view[...]=source
+    before=view.tobytes()
+    trial=SimpleNamespace(**{**vars(fit),field:view})
+    result=expected_raw_two_tier_grm(trial,smap,q_specific=121)
+    np.testing.assert_array_equal(result,base)
+    assert view.tobytes()==before

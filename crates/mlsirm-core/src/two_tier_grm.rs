@@ -82,15 +82,20 @@
 //!
 //! # Memory (exact blocked product-grid evaluation; #1992)
 //!
-//! Ordinary E-steps eagerly cache category log-probabilities for the current
-//! item parameters at each distinct primary-predictor bit pattern and specific
-//! node. Their f64 probability payload is bounded by the existing item count
-//! table payload; predictor maps, node indices, capacity and construction
-//! overhead are additional memory (see `ordinary_item_logprobs`). Focal CPU
-//! E-steps and M-step node coordinates remain evaluated on the fly over the
-//! full primary product Gauss–Hermite grid. Node counts remain caller-controlled
-//! without a silent cap. The active-node specific-tier scratch is
-//! `O(n_specific * q_specific)`, not `O(n_specific * n_grid * q_specific)`.
+//! Ordinary and focal CPU E-steps eagerly cache category log-probabilities
+//! for the current item parameters at each distinct primary-predictor bit
+//! pattern and current specific node. Each cache's f64 probability payload is
+//! bounded by its item's count-table f64 payload, but count tables and probability caches coexist.
+//! Per-item primary-slot indices and Vec capacities are retained with the cache;
+//! representatives and hash-map buckets require additional peak construction memory.
+//! Nested focal count-row allocations and all vector/map overhead are additional
+//! to these f64 payload bounds (see `ordinary_item_logprobs` and `focal_item_logprobs`).
+//! Focal caches are rebuilt for every call's current affine primary and scaled
+//! specific support. M-step node coordinates remain evaluated on the fly over
+//! the full primary product Gauss–Hermite grid. Node counts remain caller-controlled
+//! without a silent cap. Active-node specific-tier scratch alone is
+//! `O(n_specific * q_specific)`, not `O(n_specific * n_grid * q_specific)`;
+//! this scratch bound does not describe the full cache/count working set.
 //! The cache only substitutes identical scalar values; posterior/count
 //! accumulation order remains unchanged (Cai, 2010, pp. 608-609, Appendix A).
 //! Reference: Cai, L. (2010). A two-tier full-information item factor analysis
@@ -894,8 +899,8 @@ fn item_primary_base(v: &Validated, par: &ItemParams, coords: &[f64], g: usize, 
 }
 
 /// Evaluate one requested GRM category without constructing a category vector.
-/// Ordinary E-step callers may eagerly cache all categories at representative
-/// primary/specific nodes; this scalar helper alone does not bound caller memory.
+/// Ordinary and focal CPU E-step callers may eagerly cache all categories at
+/// representative primary/specific nodes; this scalar helper alone does not bound caller memory.
 /// Evaluate only the requested GRM category without allocating a category vector.
 ///
 /// This selects the same cumulative-logit difference as `grm_logprobs` without
@@ -984,6 +989,10 @@ fn item_cat_logprob_fipc(
     h: usize,
     cat: usize,
 ) -> f64 {
+    #[cfg(test)]
+    if CATEGORY_EVALUATIONS_ACTIVE.try_with(|v| v.get()).unwrap_or(false) {
+        let _ = CATEGORY_EVALUATIONS.try_with(|v| v.set(v.get() + 1));
+    }
     let par = &params[i];
     let prim = item_primary_base(v, par, coords, g, i);
     let base = match par.a_s {
@@ -1021,7 +1030,8 @@ fn canonical_person_order(v: &Validated, y: &[usize], observed: Option<&[bool]>)
     order
 }
 
-/// Current-call item cells keyed by exact primary predictor bits. Item
+/// Ordinary and focal current-call item cells keyed by exact primary predictor
+/// bits; their builders supply the appropriate current specific support. Item
 /// response probabilities depend on latent coordinates and current item
 /// parameters, not respondent identity (Cai, 2010, p. 589, Eqs. 11-12;
 /// pp. 589-590, Eqs. 15-16). Equal predictor bits therefore reuse the same
@@ -1465,6 +1475,66 @@ fn e_step_with_counts<C: CountStorage>(
     (loglik, counts, s_bar_sum)
 }
 
+/// Per-call focal probability cells on the current transformed support.
+/// Cai (2010, p.589,Eqs.11–12; pp.589–590,Eqs.15–16; pp.608–609,Appendix A):
+/// response probabilities depend on item parameters and nodes, not persons.
+/// Exact primary-predictor bits share cells; rebuilding each call preserves
+/// focal prior and item updates. Posterior/likelihood sums retain their order.
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika,75(4),581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+fn focal_item_logprobs(
+    v: &Validated,
+    params: &[ItemParams],
+    coords: &[f64],
+    ts_by_specific: &[Vec<f64>],
+    i: usize,
+    n_grid: usize,
+    qs: usize,
+) -> OrdinaryItemLogprobs {
+    let specific_nodes = if params[i].a_s.is_some() { qs } else { 1 };
+    let mut representatives = Vec::new();
+    let mut slots = Vec::with_capacity(n_grid);
+    let mut keys = std::collections::HashMap::<u64, usize>::new();
+    for g in 0..n_grid {
+        let bits = item_primary_base(v, &params[i], coords, g, i).to_bits();
+        let slot = match keys.get(&bits) {
+            Some(&slot) => slot,
+            None => {
+                let slot = representatives.len();
+                keys.insert(bits, slot);
+                representatives.push(g);
+                slot
+            }
+        };
+        slots.push(slot);
+    }
+    let mut values = Vec::with_capacity(representatives.len() * specific_nodes * v.n_cat);
+    for &g in &representatives {
+        for h in 0..specific_nodes {
+            for category in 0..v.n_cat {
+                values.push(item_cat_logprob_fipc(
+                    v,
+                    params,
+                    coords,
+                    ts_by_specific,
+                    i,
+                    g,
+                    h,
+                    category,
+                ));
+            }
+        }
+    }
+    OrdinaryItemLogprobs {
+        log_probabilities: values,
+        primary_slot: slots,
+        specific_nodes,
+        n_cat: v.n_cat,
+    }
+}
+
 /// FIPC E-step with posterior moments for a focal primary distribution.  The
 /// caller supplies the fixed product grid after the current affine transform
 /// and the specific grid after its current scale transform.  Keeping this
@@ -1503,6 +1573,9 @@ fn e_step_fipc_cpu(
         };
         counts.push(vec![vec![0.0; v.n_cat]; nodes]);
     }
+    let cells: Vec<OrdinaryItemLogprobs> = (0..v.n_items)
+        .map(|i| focal_item_logprobs(v, params, coords, ts_by_specific, i, n_grid, qs))
+        .collect();
     let mut log_i = vec![0.0; v.n_specific * n_grid];
     let mut gen_log = vec![0.0; n_grid];
     let mut log_like_g = vec![0.0; n_grid];
@@ -1526,7 +1599,7 @@ fn e_step_fipc_cpu(
             }
             let yc = y[pp * v.n_items + i];
             for g in 0..n_grid {
-                gen_log[g] += item_cat_logprob_fipc(v, params, coords, ts_by_specific, i, g, 0, yc);
+                gen_log[g] += cells[i].get(g, 0, yc);
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
@@ -1535,16 +1608,7 @@ fn e_step_fipc_cpu(
                     let mut acc = log_ws_by_specific[s][h];
                     for &i in members {
                         if is_obs(pp, i) {
-                            acc += item_cat_logprob_fipc(
-                                v,
-                                params,
-                                coords,
-                                ts_by_specific,
-                                i,
-                                g,
-                                h,
-                                y[pp * v.n_items + i],
-                            );
+                            acc += cells[i].get(g, h, y[pp * v.n_items + i]);
                         }
                     }
                     tmp_h[h] = acc;
@@ -1603,16 +1667,7 @@ fn e_step_fipc_cpu(
                     let mut acc = log_ws_by_specific[s][h];
                     for &i in members {
                         if is_obs(pp, i) {
-                            acc += item_cat_logprob_fipc(
-                                v,
-                                params,
-                                coords,
-                                ts_by_specific,
-                                i,
-                                g,
-                                h,
-                                y[pp * v.n_items + i],
-                            );
+                            acc += cells[i].get(g, h, y[pp * v.n_items + i]);
                         }
                     }
                     block_acc_g[s * qs + h] = acc;
@@ -4037,3 +4092,11 @@ mod tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_zero_primary_mass_tests.rs"]
 mod zero_primary_mass_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_focal_cell_cache_tests.rs"]
+mod focal_cell_cache_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_focal_cell_cache_legacy.rs"]
+mod focal_cell_cache_legacy;
