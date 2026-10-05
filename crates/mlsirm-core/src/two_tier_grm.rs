@@ -1104,6 +1104,122 @@ fn ordinary_item_logprobs(
     }
 }
 
+/// Contiguous expected-category counts, preserving item/node/category indexing.
+/// This storage representation leaves Cai's E-step frequencies and M-step sums
+/// unchanged (Cai, 2010, pp. 607–609, Appendix A); it is not a new estimator.
+///
+/// Reference: Cai, L. (2010). A two-tier full-information item factor
+/// analysis model with applications. *Psychometrika, 75*(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+pub(crate) struct OrdinaryItemCounts {
+    values: Vec<f64>,
+    n_cat: usize,
+}
+impl OrdinaryItemCounts {
+    /// Number of unchanged category rows (Cai, 2010, pp. 607–608).
+    fn len(&self) -> usize {
+        self.values.len() / self.n_cat
+    }
+    /// Borrow ordered node rows without allocation (Cai, 2010, pp. 607–608).
+    fn iter(&self) -> std::slice::ChunksExact<'_, f64> {
+        self.values.chunks_exact(self.n_cat)
+    }
+}
+impl std::ops::Index<usize> for OrdinaryItemCounts {
+    type Output = [f64];
+    /// Borrow the original node's category row (Cai, 2010, pp. 607–608).
+    fn index(&self, node: usize) -> &Self::Output {
+        &self.values[node * self.n_cat..(node + 1) * self.n_cat]
+    }
+}
+impl std::ops::IndexMut<usize> for OrdinaryItemCounts {
+    /// Update that same row in the original order (Cai, 2010, pp. 607–608).
+    fn index_mut(&mut self, node: usize) -> &mut Self::Output {
+        &mut self.values[node * self.n_cat..(node + 1) * self.n_cat]
+    }
+}
+impl<'a> IntoIterator for &'a OrdinaryItemCounts {
+    type Item = &'a [f64];
+    type IntoIter = std::slice::ChunksExact<'a, f64>;
+    /// Iterate borrowed rows in node order (Cai, 2010, pp. 607–608).
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+/// Borrow either focal nested counts or ordinary contiguous counts in unchanged
+/// node/category order (Cai, 2010, pp. 608–609, Appendix A).
+///
+/// Reference: Cai, L. (2010). A two-tier full-information item factor
+/// analysis model with applications. *Psychometrika, 75*(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+trait CountRows {
+    fn len(&self) -> usize;
+    fn rows(&self) -> impl Iterator<Item = &[f64]>;
+}
+impl CountRows for OrdinaryItemCounts {
+    /// Preserve count row cardinality (Cai, 2010, pp. 608–609).
+    fn len(&self) -> usize {
+        self.len()
+    }
+    /// Borrow the same ordered rows (Cai, 2010, pp. 608–609).
+    fn rows(&self) -> impl Iterator<Item = &[f64]> {
+        self.iter()
+    }
+}
+impl CountRows for [Vec<f64>] {
+    /// Preserve focal count cardinality (Cai, 2010, pp. 608–609).
+    fn len(&self) -> usize {
+        self.len()
+    }
+    /// Borrow existing focal rows unchanged (Cai, 2010, pp. 608–609).
+    fn rows(&self) -> impl Iterator<Item = &[f64]> {
+        self.iter().map(Vec::as_slice)
+    }
+}
+impl CountRows for Vec<Vec<f64>> {
+    /// Preserve existing caller count cardinality (Cai, 2010, pp. 608–609).
+    fn len(&self) -> usize {
+        self.len()
+    }
+    /// Borrow existing caller rows unchanged (Cai, 2010, pp. 608–609).
+    fn rows(&self) -> impl Iterator<Item = &[f64]> {
+        self.iter().map(Vec::as_slice)
+    }
+}
+
+/// Construct and update the same expected-category rows with either storage
+/// representation (Cai, 2010, pp. 607–608, Appendix A).
+/// Reference: Cai, L. (2010). A two-tier full-information item factor
+/// analysis model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+trait CountStorage {
+    fn zeros(n_nodes: usize, n_cat: usize) -> Self;
+    fn row_mut(&mut self, node: usize) -> &mut [f64];
+}
+impl CountStorage for OrdinaryItemCounts {
+    /// Allocate one category payload (Cai, 2010, pp. 607–608).
+    fn zeros(n_nodes: usize, n_cat: usize) -> Self {
+        Self {
+            values: vec![0.0; n_nodes * n_cat],
+            n_cat,
+        }
+    }
+    /// Update unchanged category cells (Cai, 2010, pp. 607–608).
+    fn row_mut(&mut self, node: usize) -> &mut [f64] {
+        &mut self[node]
+    }
+}
+impl CountStorage for Vec<Vec<f64>> {
+    /// Preserve existing nested consumers (Cai, 2010, pp. 607–608).
+    fn zeros(n_nodes: usize, n_cat: usize) -> Self {
+        vec![vec![0.0; n_cat]; n_nodes]
+    }
+    /// Update unchanged nested cells (Cai, 2010, pp. 607–608).
+    fn row_mut(&mut self, node: usize) -> &mut [f64] {
+        &mut self[node]
+    }
+}
+
 /// One reduced E-step sweep (Gibbons et al., 2007, eq. 15: the person
 /// marginal factored per primary node): observed-data loglik, expected
 /// category counts per item (`counts[i][node][k]`, `node = g * qs + h` for
@@ -1147,19 +1263,62 @@ pub(crate) fn e_step(
     n_grid: usize,
     qs: usize,
 ) -> (f64, Vec<Vec<Vec<f64>>>, Vec<f64>) {
+    e_step_with_counts::<Vec<Vec<f64>>>(
+        v, y, observed, params, log_w, log_ws, coords, ts, n_grid, qs,
+    )
+}
+
+/// Use contiguous ordinary-fit category counts without changing arithmetic.
+/// The borrowed rows implement the same E-step frequencies and M-step sums
+/// (Cai, 2010, pp. 607–609, Appendix A). Nested Oakes consumers retain `e_step`.
+/// Payload cells are unchanged; allocator/header savings do not bound total RSS.
+/// Reference: Cai, L. (2010). A two-tier full-information item factor
+/// analysis model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn e_step_contiguous(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws: &[f64],
+    coords: &[f64],
+    ts: &[f64],
+    n_grid: usize,
+    qs: usize,
+) -> (f64, Vec<OrdinaryItemCounts>, Vec<f64>) {
+    e_step_with_counts::<OrdinaryItemCounts>(
+        v, y, observed, params, log_w, log_ws, coords, ts, n_grid, qs,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn e_step_with_counts<C: CountStorage>(
+    v: &Validated,
+    y: &[usize],
+    observed: Option<&[bool]>,
+    params: &[ItemParams],
+    log_w: &[f64],
+    log_ws: &[f64],
+    coords: &[f64],
+    ts: &[f64],
+    n_grid: usize,
+    qs: usize,
+) -> (f64, Vec<C>, Vec<f64>) {
     let logprobs: Vec<OrdinaryItemLogprobs> = (0..v.n_items)
         .map(|i| ordinary_item_logprobs(v, y, observed, params, coords, ts, i, n_grid, qs))
         .collect();
     let p = v.n_primary;
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * v.n_items + i]);
-    let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
+    let mut counts: Vec<C> = Vec::with_capacity(v.n_items);
     for i in 0..v.n_items {
         let n_nodes = if v.item_block[i].is_some() {
             n_grid * qs
         } else {
             n_grid
         };
-        counts.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+        counts.push(C::zeros(n_nodes, v.n_cat));
     }
     // Per-person scratch: O(n_grid) for primary marginals + O(S * qs) for
     // the active primary node's specific-tier block (not O(S * n_grid * qs)).
@@ -1252,7 +1411,7 @@ pub(crate) fn e_step(
             }
             let yc = y[pp * v.n_items + i];
             for g in 0..n_grid {
-                counts[i][g][yc] += post_g[g];
+                counts[i].row_mut(g)[yc] += post_g[g];
             }
         }
         // Pass 2: joint (g, h) posteriors for block items — recompute the
@@ -1295,7 +1454,7 @@ pub(crate) fn e_step(
                             continue;
                         }
                         let yc = y[pp * v.n_items + i];
-                        counts[i][g * qs + h][yc] += post;
+                        counts[i].row_mut(g * qs + h)[yc] += post;
                     }
                 }
             }
@@ -2656,7 +2815,7 @@ pub fn fit_two_tier_grm_fipc(
 /// for block items, `node = g` for specific-free) so the M-step never
 /// materializes an `n_grid * qs * n_primary` coordinate tensor (#1992).
 #[allow(clippy::too_many_arguments)]
-fn item_neg_ll_grad(
+fn item_neg_ll_grad<C: CountRows + ?Sized>(
     params: &[f64],
     free: &[usize],
     has_specific: bool,
@@ -2665,7 +2824,7 @@ fn item_neg_ll_grad(
     n_primary: usize,
     n_grid: usize,
     qs: usize,
-    counts: &[Vec<f64>],
+    counts: &C,
     _n_cat: usize,
 ) -> (f64, Vec<f64>) {
     let k = free.len();
@@ -2687,7 +2846,7 @@ fn item_neg_ll_grad(
     // doi:10.1007/s11336-010-9178-0.
     let mut slots = std::collections::HashMap::<u64, usize>::new();
     let mut cells = Vec::<f64>::new();
-    for (node, cnt) in counts.iter().enumerate() {
+    for (node, cnt) in counts.rows().enumerate() {
         let (g, h) = if has_specific {
             (node / qs, node % qs)
         } else {
@@ -2747,7 +2906,7 @@ fn item_neg_ll_grad(
 /// `grm.rs`).
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::needless_range_loop)] // finite-difference Hessian is inherently indexed (mirrors `grm.rs`)
-fn m_step_item(
+fn m_step_item<C: CountRows + ?Sized>(
     mut params: Vec<f64>,
     free: &[usize],
     has_specific: bool,
@@ -2756,7 +2915,7 @@ fn m_step_item(
     n_primary: usize,
     n_grid: usize,
     qs: usize,
-    counts: &[Vec<f64>],
+    counts: &C,
     n_cat: usize,
     ridge: f64,
     n_newton: usize,
@@ -3075,7 +3234,7 @@ fn run_single_start(
             .ok_or_else(|| format!("primary correlation became non-PD at iteration {n_iter}"))?;
         let phi_inv = chol_inverse(&l, p);
         let log_w = reweighted_log_weights(log_w0, coords, &phi_inv, logdet, p);
-        let (ll, counts, s_bar_sum) = e_step(
+        let (ll, counts, s_bar_sum) = e_step_contiguous(
             v, y, observed, &params, &log_w, log_ws, coords, ts, n_grid, qs,
         );
         let previous = loglik_trace.last().copied();
@@ -3527,7 +3686,7 @@ fn reduced_loglik(
     let log_w = reweighted_log_weights(&log_w0, &coords, &phi_inv, logdet, p);
     let params = pack_params(v, a_primary, a_specific, thresholds);
     let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
-    Ok(e_step(
+    Ok(e_step_contiguous(
         v, y, observed, &params, &log_w, &log_ws, &coords, ts, n_grid, qs,
     )
     .0)
