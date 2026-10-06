@@ -87,11 +87,25 @@ fn log_sigmoid(x: f64) -> f64 {
 /// of graded scores. *Psychometrika, 34*(S1), 1–97.
 /// https://doi.org/10.1007/BF03372160
 pub fn grm_logprobs(base: f64, thresholds: &[f64]) -> Vec<f64> {
+    let mut out = vec![0.0_f64; thresholds.len() + 1];
+    grm_logprobs_into(base, thresholds, &mut out);
+    out
+}
+
+/// Write this node's graded-category probabilities into caller-local storage.
+/// This uses the identical cumulative differences and operation order as
+/// `grm_logprobs` (Cai, 2010, p. 589, Eqs. 11-12). The caller must provide
+/// exactly `thresholds.len() + 1` cells; no quadrature choice is implied.
+///
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581-612.
+/// doi:10.1007/s11336-010-9178-0.
+pub(crate) fn grm_logprobs_into(base: f64, thresholds: &[f64], out: &mut [f64]) {
     let kb = thresholds.len(); // number of boundaries = K-1
-    let mut out = vec![0.0_f64; kb + 1];
+    debug_assert_eq!(out.len(), kb + 1);
     if kb == 0 {
         out[0] = 0.0;
-        return out;
+        return;
     }
     // category 0: 1 - sigmoid(base + beta_0) = sigmoid(-(base + beta_0))
     out[0] = log_sigmoid(-(base + thresholds[0]));
@@ -107,20 +121,63 @@ pub fn grm_logprobs(base: f64, thresholds: &[f64]) -> Vec<f64> {
     }
     // top category K-1: sigmoid(base + beta_{K-2})
     out[kb] = log_sigmoid(base + thresholds[kb - 1]);
-    out
 }
 
 /// Gradient of the expected complete-data log-likelihood `sum_k r_k log P(Y=k)`
 /// at one node for the GRM cell. Returns `(g_base, g_thresholds)` where
 /// `g_thresholds[j]` is the derivative wrt boundary intercept `beta_j`.
 pub fn grm_node_gradient(base: f64, thresholds: &[f64], counts: &[f64]) -> (f64, Vec<f64>) {
-    let kb = thresholds.len();
-    let mut g_t = vec![0.0_f64; kb];
-    let mut g_base = 0.0_f64;
-    if kb == 0 {
-        return (0.0, g_t);
+    if thresholds.is_empty() {
+        return (0.0, Vec::new());
     }
     let log_p = grm_logprobs(base, thresholds);
+    grm_node_gradient_from_logprobs(base, thresholds, counts, &log_p)
+}
+
+/// Evaluate the existing graded-response gradient using this same node's
+/// already computed category log-probabilities. The derivative uses the
+/// same P_jk as the complete-data objective (Cai, 2010, p. 589, Eqs. 11-12;
+/// pp. 608-609, Appendix A); this only reuses values, not a different model.
+/// Callers must supply `grm_logprobs(base, thresholds)` for these parameters.
+///
+/// # References (APA 7th ed.)
+///
+/// Cai, L. (2010). A two-tier full-information item factor analysis model
+/// with applications. *Psychometrika, 75*(4), 581-612.
+/// doi:10.1007/s11336-010-9178-0.
+pub(crate) fn grm_node_gradient_from_logprobs(
+    base: f64,
+    thresholds: &[f64],
+    counts: &[f64],
+    log_p: &[f64],
+) -> (f64, Vec<f64>) {
+    let mut g_t = vec![0.0_f64; thresholds.len()];
+    let g_base = grm_node_gradient_into(base, thresholds, counts, log_p, &mut g_t);
+    (g_base, g_t)
+}
+
+/// Write the identical node gradient into caller-local boundary storage.
+/// The provided probabilities must be from these same parameters; this only
+/// reuses storage for the expected-complete-data calculation (Cai, 2010,
+/// p. 589, Eqs. 11-12; pp. 608-609, Appendix A). Every boundary cell is
+/// overwritten; the caller supplies exactly `thresholds.len()` cells.
+///
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581-612.
+/// doi:10.1007/s11336-010-9178-0.
+pub(crate) fn grm_node_gradient_into(
+    base: f64,
+    thresholds: &[f64],
+    counts: &[f64],
+    log_p: &[f64],
+    g_t: &mut [f64],
+) -> f64 {
+    let kb = thresholds.len();
+    debug_assert_eq!(g_t.len(), kb);
+    let mut g_base = 0.0_f64;
+    if kb == 0 {
+        return 0.0;
+    }
     // Evaluate v/P in log space. Directly exponentiating a valid tail category
     // can underflow P to zero even though its score contribution is finite.
     for j in 0..kb {
@@ -140,7 +197,7 @@ pub fn grm_node_gradient(base: f64, thresholds: &[f64], counts: &[f64]) -> (f64,
         g_t[j] = right - left;
         g_base += right - left;
     }
-    (g_base, g_t)
+    g_base
 }
 
 /// Hessian of the expected complete-data log-likelihood `sum_k r_k log P(Y=k)`
@@ -928,7 +985,10 @@ pub fn fit_poly_fipc(
         if anchor_cat_params[i].iter().any(|v| !v.is_finite()) {
             return Err(format!("anchor_cat_params[{i}] must be finite"));
         }
-        if anchor_cat_params[i].windows(2).any(|pair| pair[0] <= pair[1]) {
+        if anchor_cat_params[i]
+            .windows(2)
+            .any(|pair| pair[0] <= pair[1])
+        {
             return Err(format!(
                 "anchor_cat_params[{i}] must be strictly decreasing (GRM thresholds)"
             ));
@@ -1070,7 +1130,9 @@ pub fn fit_poly_fipc(
             return Err("non-finite FIPC focal moment update".into());
         }
         if var <= 0.0 {
-            return Err(format!("non-positive FIPC focal variance update ({var:.6e})"));
+            return Err(format!(
+                "non-positive FIPC focal variance update ({var:.6e})"
+            ));
         }
         mu = mean;
         sigma = var.sqrt();
@@ -1296,8 +1358,8 @@ pub fn fit_nominal(
         for i in 0..n_items {
             let mut scores = vec![0.0_f64; n_cat];
             let mut intercepts = vec![0.0_f64; n_cat];
-    scores[1..(z + 1)].copy_from_slice(&params[i][..z]);
-    intercepts[1..(z + 1)].copy_from_slice(&params[i][z..(z + z)]);
+            scores[1..(z + 1)].copy_from_slice(&params[i][..z]);
+            intercepts[1..(z + 1)].copy_from_slice(&params[i][z..(z + z)]);
             for (nd, &theta) in nodes.iter().enumerate() {
                 let lp = gpcm_logprobs(theta, &scores, &intercepts);
                 item_lp[i][nd * n_cat..(nd + 1) * n_cat].copy_from_slice(&lp);
@@ -1434,8 +1496,19 @@ pub fn poly_person_fit(
     flag_threshold: f64,
 ) -> Result<PolyPersonFit, String> {
     poly_person_fit_impl(
-        y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta, prior_mean,
-        prior_sd, flag_threshold, false,
+        y,
+        observed,
+        n_persons,
+        n_items,
+        n_cat,
+        slope,
+        cat_params,
+        model,
+        q_theta,
+        prior_mean,
+        prior_sd,
+        flag_threshold,
+        false,
     )
 }
 
@@ -1457,8 +1530,19 @@ pub fn poly_person_fit_focal(
     flag_threshold: f64,
 ) -> Result<PolyPersonFit, String> {
     poly_person_fit_impl(
-        y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta, prior_mean,
-        prior_sd, flag_threshold, true,
+        y,
+        observed,
+        n_persons,
+        n_items,
+        n_cat,
+        slope,
+        cat_params,
+        model,
+        q_theta,
+        prior_mean,
+        prior_sd,
+        flag_threshold,
+        true,
     )
 }
 
