@@ -12,7 +12,7 @@ import platform
 import socket
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -283,6 +283,35 @@ def execute_envelope(
     raise ValueError(f"unsupported remote family {envelope.family.value!r}")
 
 
+def _xreadgroup_entries(fresh: object) -> list[object]:
+    """Return job entries from any redis-py ``XREADGROUP`` response container.
+
+    redis-py returns RESP2 ``[(stream, entries)]`` pairs, a unified mapping
+    ``{stream: entries}``, or a native RESP3 mapping that wraps the entry list
+    once, ``{stream: [entries]}`` (Redis contributors, 2026, ``parse_xread``,
+    ``parse_xread_unified`` and ``parse_xread_resp3``). Only the container is
+    normalized; each record is still validated by the worker before execution.
+
+    References:
+        Redis contributors. (2026). helpers.py (Version 8.1.0) [Source code].
+            redis-py.
+    """
+    if not fresh:
+        return []
+    is_mapping = isinstance(fresh, Mapping)
+    entries: list[object] = []
+    for _stream, messages in fresh.items() if is_mapping else fresh:
+        if (
+            is_mapping
+            and len(messages) == 1
+            and isinstance(messages[0], (list, tuple))
+            and (not messages[0] or isinstance(messages[0][0], (list, tuple)))
+        ):
+            messages = messages[0]
+        entries.extend(messages)
+    return entries
+
+
 @dataclass(frozen=True, slots=True)
 class ValkeyWorkerPass:
     """Counts from one :meth:`ValkeyStreamsWorker.run_once` pass."""
@@ -365,8 +394,7 @@ class ValkeyStreamsWorker:
             fresh = self._client.xreadgroup(
                 self._group, self._consumer, streams, self._batch_size, self._block_ms
             )
-        for _stream, messages in fresh or []:
-            records.extend(messages)
+        records.extend(_xreadgroup_entries(fresh))
         counts = {"completed": 0, "failed": 0, "skipped": 0, "poisoned": 0}
         for record_id, raw_fields in records:
             counts[self._process(raw_fields)] += 1

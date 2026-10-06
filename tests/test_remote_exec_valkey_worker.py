@@ -421,3 +421,36 @@ def test_reclaimed_live_job_can_execute_twice_but_commit_one_success() -> None:
     )
     assert store.committed_success(first.envelope_fingerprint) == first
     assert store.successful_count(first.envelope_fingerprint) == 1
+
+
+@pytest.mark.parametrize("shape", ["resp2", "native-resp3", "unified"])
+@pytest.mark.parametrize("encoded", [False, True])
+def test_worker_reads_jobs_from_each_xreadgroup_response_shape(shape, encoded) -> None:
+    """redis-py returns RESP2 pairs, a unified mapping, or a native RESP3 mapping
+    that wraps the entry list once; the worker must process the job in each case."""
+    envelope = _envelope(unit_index=31)
+    stream, record_id, fields = _JOBS, "1-0", _job_record(envelope)
+    if encoded:
+        stream, record_id = stream.encode(), record_id.encode()
+        fields = {key.encode(): value.encode() for key, value in fields.items()}
+    entries = [(record_id, fields)]
+
+    class ShapedValkey(FakeValkey):
+        served = False
+
+        def xreadgroup(self, groupname, consumername, streams, count, block=None):
+            self.commands.append("XREADGROUP")
+            if self.served:
+                return [] if shape == "resp2" else {}
+            self.served = True
+            if shape == "resp2":
+                return [(stream, entries)]
+            return {stream: [entries] if shape == "native-resp3" else entries}
+
+    client = ShapedValkey()
+    tally = _worker(client).run_once()
+
+    assert (tally.completed, tally.failed, tally.poisoned) == (1, 0, 0)
+    assert client.acked == [record_id]
+    (outcome,) = _published_outcomes(client)
+    assert outcome.unit_index == 31
