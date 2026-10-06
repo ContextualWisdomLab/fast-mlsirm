@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           # cargo test --exact exits 0 when the filter matches no test, so
           # require exactly one executed passing test (fail-closed, #1869).
-          cargo test --release -p mlsirm-core \
+          cargo test --locked --release -p mlsirm-core \
             --test literature_true_parameter_recovery \
             kang_jeon_2025_minimum_cell_recovers_true_parameters \
             -- --ignored --exact --nocapture 2>&1 | tee kang-jeon-recovery.log
@@ -94,7 +94,7 @@ jobs:
           set -euo pipefail
           # cargo test --exact exits 0 when the filter matches no test, so
           # require exactly one executed passing test (fail-closed, #1869).
-          cargo test --release -p mlsirm-core \
+          cargo test --locked --release -p mlsirm-core \
             --test higher_order_mc_recovery \
             higher_order_dina_recovery_respects_monte_carlo_tolerance \
             -- --ignored --exact --nocapture 2>&1 | tee higher-order-dina-recovery.log
@@ -114,7 +114,7 @@ jobs:
       - name: Run multidimensional GRM Monte Carlo recovery
         run: |
           set -euo pipefail
-          cargo test --release -p mlsirm-core --lib \
+          cargo test --locked --release -p mlsirm-core --lib \
             grm::tests::mc_grm_recovery_500 \
             -- --ignored --exact --nocapture --test-threads=1 \
             2>&1 | tee grm-recovery-study.log
@@ -159,7 +159,7 @@ jobs:
           set -euo pipefail
           # cargo test --exact exits 0 when the filter matches no test, so
           # require exactly one executed passing test (fail-closed, #1869).
-          cargo test --release -p mlsirm-core \
+          cargo test --locked --release -p mlsirm-core \
             --test literature_true_parameter_recovery \
             gpu_recovery_matches_cpu_on_paper_design \
             -- --ignored --exact --nocapture 2>&1 | tee gpu-recovery-parity.log
