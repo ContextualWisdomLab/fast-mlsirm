@@ -14,6 +14,7 @@ https://doi.org/10.1007/s11336-014-9411-3
 """
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+import os
 import sys
 
 import numpy as np
@@ -236,9 +237,12 @@ def test_native_provenance_parity_when_binding_available():
     np.testing.assert_array_equal(cpu.expected_raw, legacy_cpu)
     max_score = n_items * (n_cat - 1)
     bound = (8 + n_items * (n_cat - 1) * q) * 2.0**-24 * max_score
+    require_gpu = os.environ.get("FAST_MLSIRM_REQUIRE_SCORE_GPU") is not None
     for device in ("auto", "gpu"):
         result = fm.score_two_tier_grm_expected_raw(fit, smap, q, device=device)
         assert type(result.used_gpu) is bool and result.device_requested == device
+        if require_gpu:
+            assert result.used_gpu, f"device={device}: hardware run requires actual GPU execution"
         if result.used_gpu:
             np.testing.assert_allclose(result.expected_raw, legacy_cpu, rtol=0.0, atol=bound,
                                        err_msg=f"device={device} used_gpu=True")

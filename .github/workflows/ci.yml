@@ -172,6 +172,27 @@ jobs:
           if skipped != 0:
               raise SystemExit(f"GPU evidence contained {skipped} skipped test(s)")
           PY
+      - name: Run two-tier expected-raw GPU provenance evidence without a skip
+        env:
+          FAST_MLSIRM_REQUIRE_SCORE_GPU: "1"
+        run: |
+          pytest -q --junitxml=gpu-provenance-junit.xml \
+            tests/test_two_tier_expected_raw_provenance.py::test_native_provenance_parity_when_binding_available
+      - name: Reject skipped GPU provenance evidence
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+
+          root = ElementTree.parse(Path("gpu-provenance-junit.xml")).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          tests = sum(int(suite.attrib.get("tests", "0")) for suite in suites)
+          skipped = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)
+          if tests < 1:
+              raise SystemExit("GPU provenance evidence did not execute a test")
+          if skipped != 0:
+              raise SystemExit(f"GPU provenance evidence contained {skipped} skipped test(s)")
+          PY
 
   fuzz:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
