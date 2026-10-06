@@ -48,3 +48,6 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+## 2026-10-06 - boolean array에서 np.sum 대신 np.count_nonzero 사용
+**Learning:** 파이썬 내에서 boolean array를 대상으로 조건을 만족하는 요소의 개수를 셀 때 `np.sum(boolean_array)`를 사용하면 boolean 데이터를 정수형으로 형변환하기 위해 중간 메모리(정수형 배열)를 할당하게 되어 불필요한 성능 저하가 발생합니다. `np.count_nonzero`는 이러한 형변환 없이 0이 아닌 값의 개수를 세기 때문에 할당을 방지하고 성능을 높입니다.
+**Action:** boolean array에서 요소의 개수를 집계할 때 중간 메모리 할당 방지 및 성능 향상을 위해 항상 `np.count_nonzero`를 사용하도록 합니다.
