@@ -1,0 +1,4 @@
+# Custom label syntax only; runner capacity and isolation need operator evidence.
+self-hosted-runner:
+  labels:
+    - cwlab-ci-isolated
