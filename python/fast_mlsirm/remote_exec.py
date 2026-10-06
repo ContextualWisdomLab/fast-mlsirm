@@ -774,18 +774,28 @@ def _json_nesting_exceeds(text: str, limit: int) -> bool:
     return False
 
 
-def _valkey_outcome(raw: object) -> RemoteJobOutcome:
-    """Decode one Valkey outcome under the worker stdout size and depth bounds."""
+def _valkey_json(raw: object, field: str) -> object:
+    """Decode one Valkey JSON field under the worker stdout size and depth bounds."""
     text = _valkey_text(raw)
     if len(text.encode("utf-8")) > _MAX_VALKEY_OUTCOME_JSON_BYTES:
         raise ValueError(
-            f"Valkey outcome JSON exceeds {_MAX_VALKEY_OUTCOME_JSON_BYTES} bytes"
+            f"Valkey {field} JSON exceeds {_MAX_VALKEY_OUTCOME_JSON_BYTES} bytes"
         )
     if _json_nesting_exceeds(text, _MAX_VALKEY_OUTCOME_JSON_DEPTH):
         raise ValueError(
-            f"Valkey outcome JSON nests deeper than {_MAX_VALKEY_OUTCOME_JSON_DEPTH}"
+            f"Valkey {field} JSON nests deeper than {_MAX_VALKEY_OUTCOME_JSON_DEPTH}"
         )
-    return _outcome_from_dict(json.loads(text))
+    return json.loads(text)
+
+
+def _valkey_outcome(raw: object) -> RemoteJobOutcome:
+    """Decode one Valkey outcome record under the size and depth bounds."""
+    return _outcome_from_dict(_valkey_json(raw, "outcome"))
+
+
+def valkey_committed_key(outcomes_stream: str) -> str:
+    """Return the first-success hash key paired with ``outcomes_stream``."""
+    return f"{_text(outcomes_stream, 'stream')}:committed"
 
 
 class ValkeyStreamsOutcomeStore:
@@ -814,7 +824,7 @@ class ValkeyStreamsOutcomeStore:
     ) -> None:
         self._client = client
         self._stream = _text(stream, "stream")
-        self._committed_key = f"{self._stream}:committed"
+        self._committed_key = valkey_committed_key(self._stream)
         self._failed_key = f"{self._stream}:failed"
         self._group = _text(group, "group")
         self._consumer = _text(consumer, "consumer")
@@ -1086,6 +1096,8 @@ class ValkeyStreamsBackend:
     ) -> None:
         self._client = client
         self._jobs_stream = _text(jobs_stream, "jobs_stream")
+        self._driver_host = socket.gethostname()
+        self._driver_pid = os.getpid()
         if (
             type(wait_timeout_s) not in (int, float)
             or not math.isfinite(wait_timeout_s)
@@ -1136,6 +1148,8 @@ class ValkeyStreamsBackend:
                     "requested_device": requested,
                     "effective_device": effective,
                     "payload": payload_json,
+                    "driver_host": self._driver_host,
+                    "driver_pid": str(self._driver_pid),
                 },
             )
         deadline = time.monotonic() + self._wait_timeout_s

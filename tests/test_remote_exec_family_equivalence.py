@@ -255,6 +255,57 @@ def test_local_and_subprocess_outcomes_match_for_family(
     assert outcome.result == local_result
 
 
+@pytest.mark.parametrize(("family", "payload_factory"), FAMILY_PAYLOADS)
+def test_local_and_valkey_outcomes_match_for_family(
+    family: RemoteJobFamily,
+    payload_factory,
+) -> None:
+    """Every family round-trips ValkeyStreamsBackend -> ValkeyStreamsWorker unchanged."""
+    pytest.importorskip("fast_mlsirm._core")
+    from fast_mlsirm.remote_exec import ValkeyStreamsBackend
+    from fast_mlsirm.remote_worker import ValkeyStreamsWorker
+
+    from test_remote_exec_valkey import FakeValkey
+
+    payload = payload_factory()
+    manifest = _manifest() if payload is None else _payload_manifest(payload)
+    envelope = _envelope(family=family, payload_manifest=manifest)
+    local_result = execute_envelope(envelope, payload)
+
+    class RoundTripValkey(FakeValkey):
+        worker = None
+
+        def xadd(self, name, fields):
+            record_id = super().xadd(name, fields)
+            if name == "jobs":
+                self.worker.run_once()
+            return record_id
+
+    client = RoundTripValkey()
+    client.worker = ValkeyStreamsWorker(
+        client,
+        jobs_stream="jobs",
+        outcomes_stream="outcomes",
+        group="workers",
+        consumer="w1",
+        worker_manifest=manifest,
+        block_ms=0,
+    )
+    (outcome,) = ValkeyStreamsBackend(
+        client,
+        jobs_stream="jobs",
+        outcomes_stream="outcomes",
+        group="drivers",
+        consumer="d1",
+        block_ms=0,
+        wait_timeout_s=30.0,
+    ).run_batch((envelope,), worker_manifest=manifest, payload=payload)
+
+    assert outcome.delivery_state is RemoteJobDeliveryState.COMPLETED, outcome.error_message
+    assert outcome.output_identity_sha256 == result_identity_sha256(local_result)
+    assert outcome.input_identity_sha256 == envelope_fingerprint(envelope)
+    assert outcome.result == local_result
+
 def test_cohort_manifest_mismatch_fails_closed_before_dispatch() -> None:
     """Mismatched library_version in the worker manifest must not dispatch."""
     payload = _fit_payload()

@@ -1,0 +1,27 @@
+{
+  "record_kind": "nonsecret_summary_of_peer_receipts_not_independent_infrastructure_inspection",
+  "source_receipt_sha256": {
+    "state.json": "c44b066937d5dc5aa0335c910e74c198c65e7fa9b431eb396b0505807a39045c",
+    "cleanup.json": "ef9b6d5f71d3f00b40e93df095a6236ea95bcfa98beab647708ff0b9396176e6",
+    "absence.json": "fcf3970140f4a776165dc83da2a7857b36f8afe818ab84aa7e6824aeb62c8cee",
+    "image-inspection.json": "e88b9dc8c2060a62f67ee53299bfa8f8a6dd793dc7772f8bfb25e7e74acd0c31"
+  },
+  "initial_setup_returncode": 1,
+  "initial_setup_failure": "container started; subsequent docker port lookup reported no public mapping and exited 1",
+  "recovery": "same running container accessed by owned localhost-only SSH forwarding to private network; no new container or relaxed isolation",
+  "container_id": "f5937949f460c12faa567be930501d01a721810b91cec0d2031df82191219350",
+  "actual_daemon_started_utc": "2026-09-30T03:33:33.106385844Z",
+  "resource_receipt": "{\"Dead\":false,\"Error\":\"\",\"ExitCode\":0,\"FinishedAt\":\"0001-01-01T00:00:00Z\",\"OOMKilled\":false,\"Paused\":false,\"Pid\":2425978,\"Restarting\":false,\"Running\":true,\"StartedAt\":\"2026-09-30T03:33:33.106385844Z\",\"Status\":\"running\"} 134217728 134217728 500000000 64\ntmpfs              32M    1M   32M    1% /var/tmp/fmls-valkey-probe-095134b9a8ca4470\n",
+  "restart": {
+    "before": "2026-09-30T03:37:11.820299+00:00",
+    "after": "2026-09-30T03:37:14.664518+00:00",
+    "output": "f5937949f460c12faa567be930501d01a721810b91cec0d2031df82191219350\nvalkey_version:8.1.10\nrun_id:2efca3bbdd7a23b58181d9055fdae985b458451a\n",
+    "ping": "PONG",
+    "method": "docker restart --time 5 (graceful SIGTERM, same container and AOF mount)"
+  },
+  "image_metadata_kind": "transcription_of_preflight_tool_results_not_new_inspection",
+  "image_id": "sha256:fee6a73c9364ef88905e9c1805c3afb7f584af721696af00a4a60e6a8bcb3a49",
+  "image_repo_digest": "valkey/valkey@sha256:d2e18f3410b6f616de1417f570fa55261af2898b9c5b2cfb6781ce2373ea43d1",
+  "image_evidence_limit": "This file transcribes previous read-only tool results from the session. It is not an independent remote verification or a fresh registry inspection. Original state, cleanup and absence receipt files are unchanged.",
+  "privacy": "peer host/account and private routing address omitted; original receipts identified by SHA-256"
+}

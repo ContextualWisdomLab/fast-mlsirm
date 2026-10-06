@@ -1,0 +1,24 @@
+{
+  "record_kind": "fixture_envelope_identities_asserted_by_successful_before_after_phases",
+  "original_phase_state_sha256": "e3fce937bf3ae5c8c694d117173704fb75193e972304ea432c2805b8619a629c",
+  "records": [
+    {
+      "unit_index": 0,
+      "unit_seed": 20260917,
+      "fault": "ack",
+      "envelope_fingerprint": "442f0b39abaad10ee09f5b717f928973637018f1ccd86e25a7606157ac4b9c7c",
+      "asserted_output_identity_sha256": "a39526f5e39de91e0a439988be9863d0e0d70fe0c38ee265e5bb6aa0c3c23f90",
+      "payload_sha256": "23e69ace04d20ba4a41bf849511997526d05e954fba76edfd1d33f9f5150a700",
+      "source_sha256_is_fixture_not_attestation": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "unit_index": 1,
+      "unit_seed": 11400714819343459402,
+      "fault": "publish",
+      "envelope_fingerprint": "032c6960bde6dc7d89681c4e42ea5a90ae94fe65b1b251c580f65ae3d0e3b51b",
+      "asserted_output_identity_sha256": "46292cc78ce6205c0c82c0da766e6abfb13ac39280d486bd30b9c7f3e7f2f70f",
+      "payload_sha256": "23e69ace04d20ba4a41bf849511997526d05e954fba76edfd1d33f9f5150a700",
+      "source_sha256_is_fixture_not_attestation": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ]
+}
