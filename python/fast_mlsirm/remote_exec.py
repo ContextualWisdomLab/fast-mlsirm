@@ -936,6 +936,14 @@ class ValkeyStreamsOutcomeStore:
         the next fetch so a deadline exit cannot leave a large in-memory backlog
         uncommitted. Claim and fresh loops re-check the remaining deadline so a
         stream that keeps receiving messages cannot hang past ``deadline``.
+        Fresh responses may be RESP2 pairs, unified mappings, or native RESP3
+        mappings with one enclosing entry list (Redis contributors, 2026,
+        ``parse_xread``, ``parse_xread_unified``, and ``parse_xread_resp3``).
+        Normalize only that container; retain outcome validation before ACK.
+
+        References:
+            Redis contributors. (2026). helpers.py (Version 8.1.0)
+                [Source code]. redis-py.
         """
         start_id = "0-0"
         while True:
@@ -971,7 +979,18 @@ class ValkeyStreamsOutcomeStore:
             if not fresh:
                 break
             batch: list[tuple[object, dict[object, object]]] = []
-            for _stream, messages in fresh:
+            streams = fresh.items() if isinstance(fresh, Mapping) else fresh
+            for _stream, messages in streams:
+                if (
+                    isinstance(fresh, Mapping)
+                    and len(messages) == 1
+                    and isinstance(messages[0], (list, tuple))
+                    and (
+                        not messages[0]
+                        or isinstance(messages[0][0], (list, tuple))
+                    )
+                ):
+                    messages = messages[0]
                 batch.extend(messages)
             if batch:
                 self._accept_records(batch)
