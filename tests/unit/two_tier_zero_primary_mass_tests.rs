@@ -957,7 +957,7 @@ mod zero_primary_mass_regression {
                     lw.len(),
                     ts.len(),
                 );
-                let new = e_step(
+                let new = e_step_contiguous(
                     &v,
                     &y,
                     Some(&mask),
@@ -2004,7 +2004,7 @@ mod zero_primary_mass_regression {
         BLOCK_MARGINAL_EVALUATIONS.with(|count| count.set(0));
         BLOCK_MARGINAL_EVALUATIONS_ACTIVE.with(|active| active.set(true));
         let result = std::panic::catch_unwind(|| {
-            e_step(
+            e_step_contiguous(
                 &v,
                 &y,
                 Some(&mask),
@@ -2235,7 +2235,7 @@ mod zero_primary_mass_regression {
                     lw.len(),
                     ts.len(),
                 );
-                let actual = e_step(
+                let actual = e_step_contiguous(
                     &v,
                     &y,
                     Some(&mask),
@@ -2297,7 +2297,7 @@ mod zero_primary_mass_regression {
             lw.len(),
             ts.len(),
         );
-        let actual = e_step(
+        let actual = e_step_contiguous(
             &v,
             &y,
             Some(&observed),
@@ -2331,5 +2331,156 @@ mod zero_primary_mass_regression {
             actual.2.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
             expected.2.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
         );
+    }
+
+    /// Counts implement Cai's expected category frequencies without node-local allocation.
+    /// Basis: Cai (2010, pp. 607–609, Appendix A). This allocation bound is an
+    /// implementation resource regression, not quadrature or scientific acceptance.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581–612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn ordinary_estep_counts_do_not_allocate_per_node() {
+        let (v, y, params, coords, lw, ts, lws) = fixture(121, 121, true);
+        ALLOCATION_COUNT.with(|value| value.set(0));
+        ALLOCATION_ACTIVE.with(|value| value.set(true));
+        let guard = AllocationGuard;
+        let actual = e_step_contiguous(
+            &v,
+            &y,
+            None,
+            &params,
+            &lw,
+            &lws,
+            &coords,
+            &ts,
+            lw.len(),
+            ts.len(),
+        );
+        drop(guard);
+        let allocations = ALLOCATION_COUNT.with(|value| value.get());
+        assert!(actual.0.is_finite());
+        assert!(actual
+            .1
+            .iter()
+            .flatten()
+            .flatten()
+            .all(|value| value.is_finite()));
+        println!("ordinary_count_allocation_calls={allocations}");
+        assert!(
+            allocations < lw.len() * ts.len(),
+            "ordinary count allocation scales with latent nodes: {allocations}"
+        );
+    }
+
+    /// Borrowed contiguous rows preserve complete objective and Newton results.
+    /// Basis: Cai (2010, pp. 608–609, Appendix A); no count aggregation or
+    /// Hessian, clipping, ridge, or line-search changes are permitted.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581–612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    fn contiguous_counts_preserve_nested_objective_and_newton_bits() {
+        let (v, y, params, coords, lw, ts, lws) = fixture(121, 241, true);
+        let mask = (0..y.len()).map(|index| index % 5 != 0).collect::<Vec<_>>();
+        let nested = e_step(
+            &v,
+            &y,
+            Some(&mask),
+            &params,
+            &lw,
+            &lws,
+            &coords,
+            &ts,
+            lw.len(),
+            ts.len(),
+        );
+        let contiguous = e_step_contiguous(
+            &v,
+            &y,
+            Some(&mask),
+            &params,
+            &lw,
+            &lws,
+            &coords,
+            &ts,
+            lw.len(),
+            ts.len(),
+        );
+        assert_eq!(nested.0.to_bits(), contiguous.0.to_bits());
+        assert_eq!(
+            nested.2.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+            contiguous.2.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+        );
+        for i in 0..v.n_items {
+            let mut packed = vec![params[i].a_p[0]];
+            if let Some(slope) = params[i].a_s {
+                packed.push(slope);
+            }
+            packed.extend_from_slice(&params[i].d);
+            let free = &v.free_primaries[i];
+            let specific = params[i].a_s.is_some();
+            let before = item_neg_ll_grad(
+                &packed,
+                free,
+                specific,
+                &coords,
+                &ts,
+                v.n_primary,
+                lw.len(),
+                ts.len(),
+                &nested.1[i],
+                v.n_cat,
+            );
+            let after = item_neg_ll_grad(
+                &packed,
+                free,
+                specific,
+                &coords,
+                &ts,
+                v.n_primary,
+                lw.len(),
+                ts.len(),
+                &contiguous.1[i],
+                v.n_cat,
+            );
+            assert_eq!(before.0.to_bits(), after.0.to_bits());
+            assert_eq!(
+                before.1.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                after.1.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+            );
+            let before = m_step_item(
+                packed.clone(),
+                free,
+                specific,
+                &coords,
+                &ts,
+                v.n_primary,
+                lw.len(),
+                ts.len(),
+                &nested.1[i],
+                v.n_cat,
+                1e-8,
+                2,
+            );
+            let after = m_step_item(
+                packed,
+                free,
+                specific,
+                &coords,
+                &ts,
+                v.n_primary,
+                lw.len(),
+                ts.len(),
+                &contiguous.1[i],
+                v.n_cat,
+                1e-8,
+                2,
+            );
+            assert_eq!(
+                before.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                after.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+            );
+        }
     }
 }
