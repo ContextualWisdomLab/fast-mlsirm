@@ -139,7 +139,9 @@ def compute_expected_graded_item_score(
 
     Category probabilities follow Samejima's (1969) graded response model:
     each category is the difference of adjacent cumulative boundary curves
-    (eq. 4-4), here in logistic form ``P(Y >= k | eta) = sigmoid(eta + beta_k)``,
+    (Samejima, 1969, p. 20, Eq. 4-4), here in the logistic form of the
+    boundary curve (Samejima, 1969, p. 32, Eq. 5-36) with the scaling factor
+    absorbed into the slope, ``P(Y >= k | eta) = sigmoid(eta + beta_k)``,
     evaluated by the compiled Rust core. The integration itself is the
     caller-defined discrete quadrature described above.
 
@@ -169,8 +171,9 @@ def compute_expected_graded_item_score(
         ``prod(len(nodes) for nodes in integration_nodes)`` (1 when nothing is
         integrated) must not exceed it. Checked with exact integer arithmetic
         before any grid-sized allocation; node counts are never capped. The
-        grid is evaluated in fixed-size blocks, so memory does not grow with
-        the grid size, but run time does.
+        grid is evaluated in fixed-size blocks, so no grid-sized array is
+        allocated; only one partial sum per block is retained, and run time
+        grows with the grid size.
 
     Returns
     -------
@@ -345,6 +348,16 @@ def expected_graded_scale_score(
     float
         ``sum_i E[Y_i | G]`` after integrating the requested columns for
         each item.
+
+    References
+    ----------
+    Samejima, F. (1969). Estimation of latent ability using a response pattern
+    of graded scores. *Psychometrika, 34*(S1), 1-97.
+    https://doi.org/10.1007/BF03372160
+
+    Wichura, M. J. (1988). Algorithm AS 241: The percentage points of the
+    normal distribution. *Applied Statistics, 37*(3), 477-484.
+    https://doi.org/10.2307/2347330
     """
     slopes_arr = np.asarray(slopes, dtype=np.float64)
     if slopes_arr.ndim != 2 or slopes_arr.shape[0] == 0:
