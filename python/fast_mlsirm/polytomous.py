@@ -769,6 +769,16 @@ def fit_polytomous(
     parameter state; reaching ``max_iter`` is reported as nonconvergence.
     ``n_cat`` is limited to 2..64 and ``max_iter`` to 1..100,000.
 
+    EM stops with ``converged=True`` when ``final_delta = loglik_t -
+    loglik_{t-1}`` is at most ``stopping_tolerance = tol * (1 + |loglik_{t-1}|)``,
+    so ``tol`` is a relative log-likelihood criterion; compare ``final_delta``
+    with the returned ``stopping_tolerance``, never with ``tol``. A decrease
+    larger than ``32 * eps * (1 + |loglik_{t-1}|)`` is rejected as non-monotone.
+    EM converges linearly at a rate set by the fraction of missing information
+    (Dempster, Laird, & Rubin, 1977), so a small relative change does not bound
+    the remaining distance to the optimum; analyses that need parameter-level
+    stability should refit with a tighter ``tol`` as a sensitivity check.
+
     Slopes are UNCONSTRAINED, so a reverse-keyed item is returned with a
     negative ``slope`` rather than being floored at zero. Because
     ``(a, theta) -> (-a, -theta)`` leaves the likelihood unchanged, the sign of
@@ -1412,10 +1422,24 @@ def fit_nominal_polytomous(
     ``converged=False`` with ``termination_reason="max_iter"`` distinguishes an
     exhausted iteration budget from tolerance-based convergence.
 
+    EM stops with ``converged=True`` when ``final_delta = loglik_t -
+    loglik_{t-1}`` is at most ``stopping_tolerance = tol * (1 + |loglik_{t-1}|)``,
+    so ``tol`` is a relative log-likelihood criterion; compare ``final_delta``
+    with the returned ``stopping_tolerance``, never with ``tol``. A decrease
+    larger than ``32 * eps * (1 + |loglik_{t-1}|)`` is rejected as non-monotone.
+    EM converges linearly at a rate set by the fraction of missing information
+    (Dempster, Laird, & Rubin, 1977), so a small relative change does not bound
+    the remaining distance to the optimum; analyses that need parameter-level
+    stability should refit with a tighter ``tol`` as a sensitivity check.
+
     References (APA 7th ed.):
         Bock, R. D. (1972). Estimating item parameters and latent ability when
             responses are scored in two or more nominal categories.
             *Psychometrika, 37*(1), 29–51. https://doi.org/10.1007/BF02291411
+        Dempster, A. P., Laird, N. M., & Rubin, D. B. (1977). Maximum
+            likelihood from incomplete data via the EM algorithm. *Journal of
+            the Royal Statistical Society: Series B (Methodological), 39*(1),
+            1–22. https://doi.org/10.1111/j.2517-6161.1977.tb01600.x
         Thissen, D., Cai, L., & Bock, R. D. (2010). The nominal categories item
             response model. In *Handbook of polytomous item response theory
             models* (pp. 43-75). Routledge.
@@ -2422,8 +2446,23 @@ def fit_poly_fipc(
     pp. 361-362; Paek & Young, 2005). ``q_theta`` is a caller-owned
     Gauss-Hermite count (one of 7, 11, 15, 21, 31, 41, 61, 81, 121).
 
+    EM stops with ``converged=True`` when ``final_delta = loglik_t -
+    loglik_{t-1}`` is at most ``stopping_tolerance = tol * (1 + |loglik_{t-1}|)``,
+    so ``tol`` is a relative log-likelihood criterion; compare ``final_delta``
+    with the returned ``stopping_tolerance``, never with ``tol``. A decrease
+    larger than ``32 * eps * (1 + |loglik_{t-1}|)`` is rejected as non-monotone.
+    EM converges linearly at a rate set by the fraction of missing information
+    (Dempster, Laird, & Rubin, 1977), so a small relative change does not bound
+    the remaining distance to the optimum; analyses that need parameter-level
+    stability should refit with a tighter ``tol`` as a sensitivity check.
+
     References
     ----------
+    Dempster, A. P., Laird, N. M., & Rubin, D. B. (1977). Maximum likelihood
+    from incomplete data via the EM algorithm. *Journal of the Royal
+    Statistical Society: Series B (Methodological), 39*(1), 1–22.
+    https://doi.org/10.1111/j.2517-6161.1977.tb01600.x
+
     Kim, S. (2006). A comparative study of IRT fixed parameter calibration
     methods. *Journal of Educational Measurement, 43*(4), 355–381.
     https://doi.org/10.1111/j.1745-3984.2006.00021.x
