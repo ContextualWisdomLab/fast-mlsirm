@@ -337,11 +337,14 @@ def test_fipc_seed1000_damping_does_not_report_convergence(device):
 
     Chalmers (2012, p. 6) motivates checking change between EM iterations;
     docs/fipc-convergence.md records the full-step and parameter-change policy.
+    Seed 1039 replaces the original seed 1000. After the corrected M-step
+    (0d91229e2), the seed-1000 fit accepts every joint step, so this fixture
+    no longer reaches the damped branch.
     """
     from fast_mlsirm import _core
 
     n_persons = 180
-    rng = np.random.default_rng(1000)
+    rng = np.random.default_rng(1039)
     z0, z1 = rng.normal(size=(2, n_persons))
     theta = np.column_stack((0.65 + 1.25 * z0, -0.35 + 0.8 * z1))
     theta_s = rng.normal(size=(n_persons, N_SPECIFIC))
