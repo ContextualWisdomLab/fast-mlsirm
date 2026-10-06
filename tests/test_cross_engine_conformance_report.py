@@ -244,3 +244,15 @@ def test_long_form_json_rejects_tampered_manifest_before_projection() -> None:
 
     with pytest.raises(ValueError, match="inventory_fingerprint"):
         render_conformance_long_form_json(json.dumps(manifest))
+
+def test_report_csp_value_is_pinned() -> None:
+    """The CSP must remain strictly pinned to prevent unsafe-inline regressions."""
+    html_text, _ = render_conformance_report(_canonical_json(_executed_inventory()))
+    # 3CpGnqYNOoAwHzQpmwUs8SmEoJIWmaQol1jLxy+OBpQ= is the hash of the injected style text
+    expected_csp = (
+        "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; "
+        "img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; "
+        "style-src 'sha256-GhDN9kDWHJvhAHvKMjr8CcrvXRcKGW+6Un/RDs1CfEQ='"
+    )
+    from html import escape
+    assert escape(expected_csp, quote=True) in html_text
