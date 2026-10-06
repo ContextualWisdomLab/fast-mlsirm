@@ -1,6 +1,6 @@
 # Two-tier GRM single-primary fit speed: September 20, 2026 record
 
-## Historical fix
+## Fixed
 
 - The September 20, 2026 PR #2070 implementation addressed a single-primary
   two-tier graded response slowdown in 0.11.4. That implementation filled
@@ -14,7 +14,7 @@
   iteration caps, or the model formula. This describes that historical
   implementation, not the current implementation.
 
-## Current-source and acceptance boundary
+## Changed
 
 - Consumer commit `96b3397e7890dd062c0bffd8c8f4e58298792005` uses the ordinary
   exact-primary-predictor probability bank across primary dimensions; it does
