@@ -47,6 +47,7 @@ def _per_item_sum(theta: np.ndarray = THETA) -> float:
             columns,
             nodes,
             weights,
+            max_grid_points=4,
         )
     return total
 
@@ -60,6 +61,7 @@ def test_total_equals_sum_of_per_item_calls() -> None:
         INTEGRATE_COLUMNS,
         FACTOR_VARIANCES,
         n_nodes=N_NODES,
+        max_grid_points=6,
     )
     assert result == reference
 
@@ -77,6 +79,7 @@ def test_scaled_nodes_not_unit_variance() -> None:
             columns,
             nodes,
             weights,
+            max_grid_points=4,
         )
 
     scaled_result = expected_graded_scale_score(
@@ -86,6 +89,7 @@ def test_scaled_nodes_not_unit_variance() -> None:
         INTEGRATE_COLUMNS,
         FACTOR_VARIANCES,
         n_nodes=N_NODES,
+        max_grid_points=6,
     )
     assert scaled_result != unscaled_reference
 
@@ -98,6 +102,7 @@ def test_fixed_general_factor_preserved() -> None:
         INTEGRATE_COLUMNS,
         FACTOR_VARIANCES,
         n_nodes=N_NODES,
+        max_grid_points=6,
     )
     shifted_theta = THETA.copy()
     shifted_theta[0] = 1.75
@@ -108,6 +113,7 @@ def test_fixed_general_factor_preserved() -> None:
         INTEGRATE_COLUMNS,
         FACTOR_VARIANCES,
         n_nodes=N_NODES,
+        max_grid_points=6,
     )
     assert shifted != baseline
     assert shifted == _per_item_sum(shifted_theta)
@@ -121,6 +127,7 @@ def test_one_and_two_column_items_integrated() -> None:
         INTEGRATE_COLUMNS[:1],
         FACTOR_VARIANCES,
         n_nodes=N_NODES,
+        max_grid_points=6,
     )
     two_column_only = expected_graded_scale_score(
         SLOPES[1:],
@@ -129,6 +136,7 @@ def test_one_and_two_column_items_integrated() -> None:
         INTEGRATE_COLUMNS[1:],
         FACTOR_VARIANCES,
         n_nodes=N_NODES,
+        max_grid_points=6,
     )
     combined = expected_graded_scale_score(
         SLOPES,
@@ -137,6 +145,7 @@ def test_one_and_two_column_items_integrated() -> None:
         INTEGRATE_COLUMNS,
         FACTOR_VARIANCES,
         n_nodes=N_NODES,
+        max_grid_points=6,
     )
     assert combined == one_column + two_column_only
 
@@ -149,6 +158,7 @@ def _scale_call(**overrides) -> float:
         "integrate_columns": INTEGRATE_COLUMNS,
         "factor_variances": FACTOR_VARIANCES,
         "n_nodes": N_NODES,
+        "max_grid_points": 6,
     }
     kwargs.update(overrides)
     return expected_graded_scale_score(**kwargs)

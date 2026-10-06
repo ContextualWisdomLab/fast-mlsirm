@@ -7,6 +7,7 @@ caller-supplied subset of latent dimensions while the remaining coordinates
 
 from __future__ import annotations
 
+import itertools
 import math
 from collections.abc import Sequence
 
@@ -22,6 +23,47 @@ from .polytomous import (
 __all__ = ["compute_expected_graded_item_score", "expected_graded_scale_score"]
 
 _INTEGRATION_WEIGHT_TOLERANCE = 1e-12
+# Evaluation block: grid points per Rust kernel call. This bounds working memory
+# only; it never limits node counts or total work (see ``max_grid_points``).
+# 65_536 points * MAX_POLYTOMOUS_CATEGORIES (64) = 4,194,304 prediction cells,
+# below the 20,000,000-cell single-call limit in ``_polytomous_predictions``.
+_GRID_BLOCK_POINTS = 65_536
+
+
+def _validated_grid_budget(value) -> int:
+    """Exact positive integer work budget (no upper bound; caller-owned)."""
+    value_type = type(value)
+    if value_type is not int and not (
+        isinstance(value, np.integer) and not isinstance(value, np.bool_)
+    ):
+        raise ValueError("max_grid_points must be a positive integer")
+    budget = int(value)
+    if budget < 1:
+        raise ValueError("max_grid_points must be a positive integer")
+    return budget
+
+
+def _validated_node_count(value) -> int:
+    """Exact positive node count, same contract as ``equal_probability_normal_nodes``.
+
+    Converted to a Python ``int`` *before* any power is taken so NumPy integer
+    scalars cannot wrap (``np.int64(2**32) ** 2 == 0``).
+    """
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
+        raise ValueError("n_nodes must be a positive integer")
+    count = int(value)
+    if count < 1:
+        raise ValueError("n_nodes must be >= 1")
+    return count
+
+
+def _admit_grid_work(work: int, budget: int, detail: str) -> None:
+    """Fail closed when exact Cartesian work exceeds the caller's budget."""
+    if work > budget:
+        raise ValueError(
+            f"Cartesian quadrature grid has {work} points ({detail}), exceeding "
+            f"max_grid_points={budget}; pass a larger max_grid_points to admit this work"
+        )
 
 
 def _grm_expected_scores(thresholds: np.ndarray, linear_predictors: np.ndarray) -> np.ndarray:
@@ -80,6 +122,8 @@ def compute_expected_graded_item_score(
     integrate_columns: Sequence[int],
     integration_nodes: Sequence[np.ndarray],
     integration_weights: Sequence[np.ndarray],
+    *,
+    max_grid_points: int,
 ) -> float:
     """Return the expected category score of one graded item after integration.
 
@@ -120,6 +164,13 @@ def compute_expected_graded_item_score(
         probability measure over that axis (non-negative entries summing to
         one). Multi-axis integration uses the product measure on the Cartesian
         product of node grids.
+    max_grid_points:
+        Required caller-owned work budget: the exact Cartesian grid size
+        ``prod(len(nodes) for nodes in integration_nodes)`` (1 when nothing is
+        integrated) must not exceed it. Checked with exact integer arithmetic
+        before any grid-sized allocation; node counts are never capped. The
+        grid is evaluated in fixed-size blocks, so memory does not grow with
+        the grid size, but run time does.
 
     Returns
     -------
@@ -158,6 +209,8 @@ def compute_expected_graded_item_score(
             "integration_nodes and integration_weights must align with integrate_columns"
         )
 
+    budget = _validated_grid_budget(max_grid_points)
+
     node_arrays: list[np.ndarray] = []
     weight_arrays: list[np.ndarray] = []
     for index, column in enumerate(columns):
@@ -177,17 +230,69 @@ def compute_expected_graded_item_score(
         node_arrays.append(nodes)
         weight_arrays.append(weights)
 
+    sizes = [int(nodes.size) for nodes in node_arrays]
+    _admit_grid_work(math.prod(sizes), budget, f"per-axis node counts {sizes}")
+
     fixed_theta = theta_arr.copy()
     fixed_theta[columns] = 0.0
-    linear_predictor = np.asarray(float(slope_arr @ fixed_theta))
-    joint_weight = np.ones((), dtype=np.float64)
-    for axis, column in enumerate(columns):
-        shape = [1] * len(columns)
-        shape[axis] = -1
-        linear_predictor = linear_predictor + slope_arr[column] * node_arrays[axis].reshape(shape)
-        joint_weight = joint_weight * weight_arrays[axis].reshape(shape)
-    expected = _grm_expected_scores(thresholds_arr, linear_predictor.reshape(-1))
-    return float(np.dot(np.broadcast_to(joint_weight, linear_predictor.shape).reshape(-1), expected))
+    base = float(slope_arr @ fixed_theta)
+    axis_eta = [slope_arr[column] * node_arrays[axis] for axis, column in enumerate(columns)]
+    return _blocked_expected_score(thresholds_arr, base, axis_eta, weight_arrays)
+
+
+def _blocked_expected_score(
+    thresholds: np.ndarray,
+    base: float,
+    axis_eta: list[np.ndarray],
+    axis_weights: list[np.ndarray],
+) -> float:
+    """Product-measure expectation evaluated in blocks of at most ``block`` points.
+
+    Axes split into iterated outer axes, one sliced axis, and a trailing
+    vectorized suffix whose size is at most ``block``; each kernel call sees at
+    most ``block`` points, so memory is O(block + sum of axis sizes). Partial
+    sums are combined with ``math.fsum``. A grid that fits in one block takes
+    the same single-call path (same summation order) as a full broadcast.
+    """
+    block = _GRID_BLOCK_POINTS
+    sizes = [values.size for values in axis_eta]
+    n_axes = len(sizes)
+    start, suffix_points = n_axes, 1
+    while start > 0 and suffix_points * sizes[start - 1] <= block:
+        start -= 1
+        suffix_points *= sizes[start]
+    # Seed with ``base`` only for a single-block grid so its additions match
+    # the historical broadcast order bit for bit.
+    suffix_eta = np.asarray(base if start == 0 else 0.0)
+    suffix_weight = np.ones((), dtype=np.float64)
+    for offset, axis in enumerate(range(start, n_axes)):
+        shape = [1] * (n_axes - start)
+        shape[offset] = -1
+        suffix_eta = suffix_eta + axis_eta[axis].reshape(shape)
+        suffix_weight = suffix_weight * axis_weights[axis].reshape(shape)
+    suffix_shape = tuple(sizes[start:])
+    suffix_eta = np.broadcast_to(suffix_eta, suffix_shape).reshape(-1)
+    suffix_weight = np.broadcast_to(suffix_weight, suffix_shape).reshape(-1)
+    if start == 0:
+        expected = _grm_expected_scores(thresholds, suffix_eta)
+        return float(np.dot(suffix_weight, expected))
+
+    split = start - 1
+    run = block // suffix_points
+    partials: list[float] = []
+    for outer in itertools.product(*(range(size) for size in sizes[:split])):
+        shift = base
+        outer_weight = 1.0
+        for axis, position in enumerate(outer):
+            shift += float(axis_eta[axis][position])
+            outer_weight *= float(axis_weights[axis][position])
+        for low in range(0, sizes[split], run):
+            high = min(low + run, sizes[split])
+            eta = (shift + axis_eta[split][low:high])[:, None] + suffix_eta[None, :]
+            weight = axis_weights[split][low:high, None] * suffix_weight[None, :]
+            expected = _grm_expected_scores(thresholds, eta.reshape(-1))
+            partials.append(outer_weight * float(np.dot(weight.reshape(-1), expected)))
+    return math.fsum(partials)
 
 
 def expected_graded_scale_score(
@@ -198,6 +303,7 @@ def expected_graded_scale_score(
     factor_variances: np.ndarray,
     *,
     n_nodes: int,
+    max_grid_points: int,
 ) -> float:
     """Return the expected total graded scale score ``E[T | G]`` after integration.
 
@@ -227,6 +333,12 @@ def expected_graded_scale_score(
     n_nodes:
         Number of equal-probability quadrature nodes per integrated dimension.
         Required with no default; callers choose precision for their study.
+    max_grid_points:
+        Required caller-owned work budget for the whole scale: the exact total
+        ``sum_i n_nodes ** len(integrate_columns[i])`` grid points must not
+        exceed it. Checked with exact Python integers after every item's
+        columns are validated and before any quadrature node is constructed or
+        any item is evaluated. Node counts are never capped by the package.
 
     Returns
     -------
@@ -267,16 +379,28 @@ def expected_graded_scale_score(
     if len(integrate_columns) != n_items:
         raise ValueError("integrate_columns must have one entry per item")
 
-    base_nodes, base_weights = equal_probability_normal_nodes(n_nodes)
+    item_columns = [_validated_columns(columns, n_dims) for columns in integrate_columns]
+    node_count = _validated_node_count(n_nodes)
+    budget = _validated_grid_budget(max_grid_points)
+    item_work = [node_count ** len(columns) for columns in item_columns]
+    _admit_grid_work(
+        sum(item_work),
+        budget,
+        f"sum over items of n_nodes ** len(integrate_columns[i]) with n_nodes={node_count}",
+    )
 
+    # Node construction is O(n_nodes); it is covered by the admitted work
+    # because n_nodes <= sum(item_work) whenever any item integrates. When no
+    # item integrates, no nodes are built at all.
     scaled_by_column: dict[int, tuple[np.ndarray, np.ndarray]] = {}
-    for column in range(n_dims):
-        scale = float(np.sqrt(variances[column]))
-        scaled_by_column[column] = (base_nodes * scale, base_weights.copy())
+    if any(item_columns):
+        base_nodes, base_weights = equal_probability_normal_nodes(node_count)
+        for column in sorted({column for columns in item_columns for column in columns}):
+            scale = float(np.sqrt(variances[column]))
+            scaled_by_column[column] = (base_nodes * scale, base_weights.copy())
 
     total = 0.0
-    for item_index in range(n_items):
-        columns = _validated_columns(integrate_columns[item_index], n_dims)
+    for item_index, columns in enumerate(item_columns):
         item_nodes = tuple(scaled_by_column[column][0] for column in columns)
         item_weights = tuple(scaled_by_column[column][1] for column in columns)
         total += compute_expected_graded_item_score(
@@ -286,5 +410,6 @@ def expected_graded_scale_score(
             columns,
             item_nodes,
             item_weights,
+            max_grid_points=item_work[item_index],
         )
     return total

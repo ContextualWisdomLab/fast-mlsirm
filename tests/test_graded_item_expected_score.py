@@ -51,6 +51,7 @@ def test_one_integrated_column_matches_hand_computation() -> None:
         integrate_columns=(1,),
         integration_nodes=(NODES,),
         integration_weights=(WEIGHTS,),
+        max_grid_points=2,
     )
     assert result == pytest.approx(reference, rel=1e-12)
 
@@ -64,6 +65,7 @@ def test_two_integrated_columns_use_product_weights() -> None:
         integrate_columns=(1, 2),
         integration_nodes=(NODES, NODES),
         integration_weights=(WEIGHTS, WEIGHTS),
+        max_grid_points=4,
     )
     assert result == pytest.approx(reference, rel=1e-12)
 
@@ -80,6 +82,7 @@ def test_non_integrated_column_stays_at_fixed_value() -> None:
         integrate_columns=(1,),
         integration_nodes=(NODES,),
         integration_weights=(WEIGHTS,),
+        max_grid_points=2,
     )
     shifted = compute_expected_graded_item_score(
         SLOPE,
@@ -88,6 +91,7 @@ def test_non_integrated_column_stays_at_fixed_value() -> None:
         integrate_columns=(1,),
         integration_nodes=(NODES,),
         integration_weights=(WEIGHTS,),
+        max_grid_points=2,
     )
 
     assert shifted != baseline
@@ -102,6 +106,7 @@ def _call_with_weights(weights: np.ndarray) -> float:
         integrate_columns=(1,),
         integration_nodes=(NODES,),
         integration_weights=(weights,),
+        max_grid_points=2,
     )
 
 
@@ -139,6 +144,7 @@ def _call_with(**overrides) -> float:
         "integrate_columns": (1,),
         "integration_nodes": (NODES,),
         "integration_weights": (WEIGHTS,),
+        "max_grid_points": 4,
     }
     kwargs.update(overrides)
     return compute_expected_graded_item_score(**kwargs)
