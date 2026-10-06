@@ -680,7 +680,6 @@ def _admission_fixture(root: Path) -> dict:
     import zipfile
     import json
     import runpy
-    import zipfile
     legs = _expected_legs()
     platforms = {"x86_64-unknown-linux-gnu": "manylinux2014_x86_64",
                  "aarch64-unknown-linux-gnu": "manylinux2014_aarch64",
