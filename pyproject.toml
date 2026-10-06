@@ -28,7 +28,7 @@ Issues = "https://github.com/ContextualWisdomLab/fast-mlsirm/issues"
 Changelog = "https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "hypothesis>=6", "packaging>=23"]
+dev = ["pytest>=8", "hypothesis>=6", "packaging>=23", "sortedcontainers==2.4.0"]
 # Coverage-guided fuzzing runs only on Atheris wheel-supported CPython/Linux
 # x86_64 targets. Hypothesis remains available elsewhere. License and bundled
 # source evidence are tracked in docs/security/license-evidence-0.11.5.md.
@@ -71,3 +71,6 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 fail_under = 100
+
+[tool.uv.sources]
+sortedcontainers = { path = "third_party/wheels/sortedcontainers-2.4.0-py3-none-any.whl" }

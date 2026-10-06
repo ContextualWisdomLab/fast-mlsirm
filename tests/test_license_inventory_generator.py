@@ -1529,6 +1529,22 @@ def test_reviewed_python_companion_requires_exact_member_and_sibling_grant(tmp_p
     assert files[path]["candidate_verified"] is False
 
 
+def test_locked_sortedcontainers_source_wheel_has_complete_bound_license():
+    root = Path(__file__).resolve().parents[1]
+    wheel = root / "third_party/wheels/sortedcontainers-2.4.0-py3-none-any.whl"
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    locked = next(p for p in L.tomllib.loads((root / "uv.lock").read_text())["package"]
+                  if p["name"] == "sortedcontainers")
+    assert locked["wheels"] == [{"filename": wheel.name, "hash": f"sha256:{digest}"}]
+    assert locked["source"] == {"path": wheel.relative_to(root).as_posix()}
+    evidence = L.python_artifact_evidence(wheel)
+    assert evidence["sha256"] == digest
+    files = {f["path"].rsplit("/", 1)[-1]: f for f in evidence["license_files"]}
+    assert set(files) == {"LICENSE", "LICENSE-APACHE-2.0.txt"}
+    assert files["LICENSE"]["reviewed_companion_grants"] == ["Apache-2.0"]
+    assert all(f["candidate_verified"] for f in files.values())
+
+
 @pytest.mark.parametrize("pinned", [True, False])
 def test_external_runtime_dependency_is_pinned_to_its_wheel(tmp_path, monkeypatch, pinned):
     """Vendored-native findings become notes only for the exact pinned wheel of an external dependency."""

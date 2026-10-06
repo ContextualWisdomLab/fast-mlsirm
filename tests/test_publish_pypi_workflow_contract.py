@@ -296,6 +296,16 @@ def test_pypi_publish_uses_a_pinned_package_owned_uploader() -> None:
     assert 'license_member = f"{root}/LICENSE"' in sdist
 
 
+def test_pypi_publish_reads_back_the_admitted_public_matrix() -> None:
+    publish = _job_block(_workflow_text(), "publish-pypi")
+    assert "ref: ${{ github.sha }}" in publish
+    assert "persist-credentials: false" in publish
+    assert publish.index("skip-existing: true") < publish.index(
+        "Verify published PyPI matrix against admission"
+    )
+    assert "python3 scripts/ci/verify_published_pypi.py admission/admitted-manifest.tsv '${{ inputs.release_tag }}'" in publish
+
+
 def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> None:
     text = _workflow_text()
     assets = _job_block(text, "release-assets")

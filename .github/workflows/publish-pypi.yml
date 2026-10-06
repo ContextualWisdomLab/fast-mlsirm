@@ -1929,6 +1929,10 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           pattern: dist-*
@@ -1957,3 +1961,5 @@ jobs:
           # Partial publishes (wheels accepted, sdist rejected) must be
           # retryable without failing on already-uploaded filenames.
           skip-existing: true
+      - name: Verify published PyPI matrix against admission
+        run: python3 scripts/ci/verify_published_pypi.py admission/admitted-manifest.tsv '${{ inputs.release_tag }}'
