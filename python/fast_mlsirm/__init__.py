@@ -64,6 +64,8 @@ from .bifactor_bootstrap import (
     run_bifactor_bootstrap as run_bifactor_bootstrap,
 )
 from .personfit_multidim import compute_person_fit_multidim as compute_person_fit_multidim
+from .two_tier_grm import TwoTierGrmExpectedRawScores as TwoTierGrmExpectedRawScores
+from .two_tier_grm import score_two_tier_grm_expected_raw as score_two_tier_grm_expected_raw
 
 # Harden historical public adapters before copying legacy exports. These
 # wrappers validate and normalize semantic controls/evidence only; result
@@ -303,6 +305,8 @@ except _PackageNotFoundError:
     __version__ = "0+unknown"
 
 __all__ = list(_legacy_init.__all__) + [
+    "TwoTierGrmExpectedRawScores",
+    "score_two_tier_grm_expected_raw",
     "CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1",
     "BifactorScoreabilityResult",
     "bifactor_scoreability",

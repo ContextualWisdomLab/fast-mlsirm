@@ -590,8 +590,10 @@ def expected_raw_two_tier_grm(
     can trigger fallback. The caller's node count is never reduced to fit the
     GPU. Each contribution/readback buffer requires approximately
     ``rows * items * nodes * 4`` bytes per chunk, excluding other buffers and
-    host allocations. The Python result does not expose the Rust ``used_gpu``
-    flag; requesting a GPU or matching CPU output does not certify dispatch.
+    host allocations. This function returns values only and does not expose the
+    Rust ``used_gpu`` flag; requesting a GPU or matching CPU output does not
+    certify dispatch. Use :func:`score_two_tier_grm_expected_raw` to obtain the
+    same values together with the dispatcher's ``used_gpu`` provenance.
 
     Host accumulation uses binary64 rounding in the recursive-summation model
     of Higham (1993, pp. 785-786, Eqs. 2.6-2.8). This changes accumulation
@@ -618,12 +620,30 @@ def expected_raw_two_tier_grm(
     floating point summation. *SIAM Journal on Scientific Computing, 14*(4),
     783-799. https://doi.org/10.1137/0914050.
     """
+    args, n_persons = _expected_raw_native_args(fit, specific_map, q_specific, device)
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "two_tier_expected_raw"):
+        raise RuntimeError("expected_raw_two_tier_grm requires the compiled Rust core")
+
+    return _checked_expected_raw(core.two_tier_expected_raw(*args), n_persons)
+
+
+def _expected_raw_native_args(
+    fit: TwoTierGrmFit, specific_map: np.ndarray, q_specific: object, device: object
+) -> tuple[tuple, int]:
+    """Validate controls and fit, then build the exact native argument tuple.
+
+    Shared by both expected-raw entry points so their admission cannot drift;
+    order is ``q_specific``, ``device``, then fit arrays (transport only).
+    """
     q_specific_int = _finite_integer_control(q_specific, "q_specific")
     if q_specific_int < 1:
         raise ValueError("q_specific must be >= 1")
     if not isinstance(device, str) or device not in ("cpu", "gpu", "auto"):
         raise ValueError("device must be one of 'cpu', 'gpu', 'auto'")
-
     n_primary = _finite_integer_control(fit.n_primary, "fit.n_primary")
     n_specific = _finite_integer_control(fit.n_specific, "fit.n_specific")
     n_cat = _finite_integer_control(fit.n_cat, "fit.n_cat")
@@ -647,29 +667,93 @@ def expected_raw_two_tier_grm(
     if not bool(np.isfinite(theta).all()):
         raise ValueError("fit.theta_p_eap must be finite")
 
+    args = (
+        np.require(a_primary, requirements=["C", "A"]).reshape(-1),
+        np.require(a_specific, requirements=["C", "A"]),
+        np.require(threshold, requirements=["C", "A"]).reshape(-1),
+        np.require(theta, requirements=["C", "A"]).reshape(-1),
+        smap_int.reshape(-1),
+        int(n_cat),
+        int(n_primary),
+        int(n_specific),
+        int(q_specific_int),
+        device,
+    )
+    return args, int(theta.shape[0])
+
+
+def _checked_expected_raw(raw: object, n_persons: int) -> np.ndarray:
+    """Apply the shared finite/shape admission to native expected raw values."""
+    scores = np.asarray(raw, dtype=np.float64)
+    if not bool(np.isfinite(scores).all()):
+        raise ValueError("expected raw scores must be finite")
+    if scores.shape != (n_persons,):
+        raise ValueError("expected raw scores must have shape (n_persons,)")
+    return scores
+
+
+@dataclass(frozen=True)
+class TwoTierGrmExpectedRawScores:
+    """Expected raw totals plus the device that actually computed them.
+
+    ``device_requested`` echoes the caller's request. ``used_gpu`` is the Rust
+    dispatcher's own flag: ``True`` means the weighted item/node f32
+    contributions ran on wgpu with host f64 accumulation (hybrid, not all-GPU
+    reduction); ``False`` means the f64 CPU closed form produced every value,
+    including silent ``"auto"`` fallback. It is execution provenance, not an
+    accuracy certificate.
+    """
+
+    expected_raw: np.ndarray
+    device_requested: str
+    used_gpu: bool
+
+
+def score_two_tier_grm_expected_raw(
+    fit: TwoTierGrmFit,
+    specific_map: np.ndarray,
+    q_specific: int,
+    *,
+    device: str = "cpu",
+) -> TwoTierGrmExpectedRawScores:
+    """Score plug-in expected raw totals and report the executing device.
+
+    Computes exactly the values of :func:`expected_raw_two_tier_grm` (same
+    validation, same native arguments, same estimand) and additionally returns
+    the Rust ``used_gpu`` flag so callers can record whether a ``"gpu"`` or
+    ``"auto"`` request actually executed on the GPU or fell back to the CPU.
+    ``q_specific`` remains required (ADR-0028 / #1929); node counts are never
+    reduced to fit a device. Malformed native provenance, or a CPU request that
+    reports GPU execution, raises ``RuntimeError`` rather than being coerced.
+
+    The estimand is the conditional-on-primary stage of Lord-Wingersky 2.0
+    (Cai, 2015, Eqs. 14-17, pp. 542-543) at the plug-in primary EAP.
+
+    Reference: Cai, L. (2015). Lord-Wingersky algorithm version 2.0 for
+    hierarchical item factor models with applications in test scoring, scale
+    alignment, and model fit testing. *Psychometrika, 80*(2), 535-559.
+    https://doi.org/10.1007/s11336-014-9411-3
+    """
+    args, n_persons = _expected_raw_native_args(fit, specific_map, q_specific, device)
+
     from .fitstats import _core_module
 
     core = _core_module()
-    if core is None or not hasattr(core, "two_tier_expected_raw"):
-        raise RuntimeError("expected_raw_two_tier_grm requires the compiled Rust core")
+    if core is None or not hasattr(core, "two_tier_expected_raw_with_provenance"):
+        raise RuntimeError("score_two_tier_grm_expected_raw requires the compiled Rust core")
 
-    scores = np.asarray(
-        core.two_tier_expected_raw(
-            np.require(a_primary, requirements=["C", "A"]).reshape(-1),
-            np.require(a_specific, requirements=["C", "A"]),
-            np.require(threshold, requirements=["C", "A"]).reshape(-1),
-            np.require(theta, requirements=["C", "A"]).reshape(-1),
-            smap_int.reshape(-1),
-            int(n_cat),
-            int(n_primary),
-            int(n_specific),
-            int(q_specific_int),
-            device,
-        ),
-        dtype=np.float64,
+    payload = core.two_tier_expected_raw_with_provenance(*args)
+    if not isinstance(payload, dict) or set(payload) != {"values", "used_gpu"}:
+        raise RuntimeError("native expected raw provenance must be {'values', 'used_gpu'}")
+    used_gpu = payload["used_gpu"]
+    if type(used_gpu) is not bool:
+        raise RuntimeError("native expected raw provenance used_gpu must be a bool")
+    if device == "cpu" and used_gpu:
+        raise RuntimeError("native expected raw provenance reports GPU for a CPU request")
+    expected_raw = _checked_expected_raw(payload["values"], n_persons)
+    expected_raw.setflags(write=False)
+    return TwoTierGrmExpectedRawScores(
+        expected_raw=expected_raw,
+        device_requested=device,
+        used_gpu=used_gpu,
     )
-    if not bool(np.isfinite(scores).all()):
-        raise ValueError("expected raw scores must be finite")
-    if scores.shape != (theta.shape[0],):
-        raise ValueError("expected raw scores must have shape (n_persons,)")
-    return scores

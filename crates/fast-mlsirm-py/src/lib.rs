@@ -2247,7 +2247,8 @@ fn two_tier_oakes_se(
 /// insufficient, or predictor precision is unsafe. Each contribution/readback buffer requires
 /// approximately ``rows * items * nodes * 4`` bytes per chunk, excluding other
 /// buffers and host allocations. This binding does not expose ``used_gpu``;
-/// a GPU request or equal CPU output does not certify hardware dispatch.
+/// a GPU request or equal CPU output does not certify hardware dispatch. Use
+/// ``two_tier_expected_raw_with_provenance`` for the dispatcher's flag.
 ///
 /// The conditional scoring estimand follows Cai (2015, pp. 542-543, Eqs. 14-17).
 /// Host accumulation uses Higham (1993, pp. 785-786, Eqs. 2.6-2.8)'s
@@ -2276,6 +2277,81 @@ fn two_tier_expected_raw<'py>(
     q_specific: usize,
     device: &str,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let (out, _used_gpu) = two_tier_expected_raw_dispatch(
+        a_primary,
+        a_specific,
+        threshold,
+        theta_p_eap,
+        specific_map,
+        n_cat,
+        n_primary,
+        n_specific,
+        q_specific,
+        device,
+    )?;
+    Ok(out.to_pyarray(py))
+}
+
+/// Same inputs, validation, estimand and values as ``two_tier_expected_raw``,
+/// returned as ``{"values": ndarray, "used_gpu": bool}``. ``used_gpu`` is the
+/// dispatcher's own flag: ``true`` only when the weighted item/node f32
+/// contributions ran on wgpu (hybrid with host f64 accumulation); ``false`` for
+/// the f64 CPU closed form, including silent ``"auto"`` fallback. It is
+/// execution provenance, not an accuracy certificate. The conditional scoring
+/// estimand follows Cai (2015, pp. 542-543, Eqs. 14-17).
+///
+/// References (APA 7th ed.):
+/// Cai, L. (2015). Lord-Wingersky algorithm version 2.0 for hierarchical item
+/// factor models with applications in test scoring, scale alignment, and model
+/// fit testing. Psychometrika, 80(2), 535-559. doi:10.1007/s11336-014-9411-3.
+#[pyfunction]
+#[pyo3(signature = (a_primary, a_specific, threshold, theta_p_eap, specific_map, n_cat, n_primary, n_specific, q_specific, device = "cpu"))]
+#[allow(clippy::too_many_arguments)]
+fn two_tier_expected_raw_with_provenance(
+    py: Python<'_>,
+    a_primary: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    theta_p_eap: PyReadonlyArray1<'_, f64>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_cat: usize,
+    n_primary: usize,
+    n_specific: usize,
+    q_specific: usize,
+    device: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let (values, used_gpu) = two_tier_expected_raw_dispatch(
+        a_primary,
+        a_specific,
+        threshold,
+        theta_p_eap,
+        specific_map,
+        n_cat,
+        n_primary,
+        n_specific,
+        q_specific,
+        device,
+    )?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("values", values.to_pyarray(py))?;
+    out.set_item("used_gpu", used_gpu)?;
+    Ok(out.into())
+}
+
+/// Shared validation and device dispatch for both expected-raw bindings.
+#[allow(clippy::too_many_arguments)]
+fn two_tier_expected_raw_dispatch(
+    a_primary: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    theta_p_eap: PyReadonlyArray1<'_, f64>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_cat: usize,
+    n_primary: usize,
+    n_specific: usize,
+    q_specific: usize,
+    device: &str,
+) -> PyResult<(Vec<f64>, bool)> {
     let device = parse_device(device)?;
     if n_primary < 1 {
         return Err(PyValueError::new_err("n_primary must be >= 1"));
@@ -2316,9 +2392,8 @@ fn two_tier_expected_raw<'py>(
             "theta_p_eap length must be a multiple of n_primary",
         ));
     }
-    let (out, _used_gpu) = core_two_tier_expected_raw_at_q_on(&params, th, q_specific, device)
-        .map_err(PyValueError::new_err)?;
-    Ok(out.to_pyarray(py))
+    core_two_tier_expected_raw_at_q_on(&params, th, q_specific, device)
+        .map_err(PyValueError::new_err)
 }
 
 /// Mean, second moment and variance of the anchor-only expected raw total
@@ -10816,6 +10891,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_two_tier_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_expected_raw, m)?)?;
+    m.add_function(wrap_pyfunction!(two_tier_expected_raw_with_provenance, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_grm_reference_score_moments, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
