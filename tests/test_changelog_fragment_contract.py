@@ -10,6 +10,8 @@ import pytest
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts" / "render_changelog_fragments.py"
 RELEASED_CHANGELOG = ROOT / "CHANGELOG.md"
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+CHECK_COMMAND = "python scripts/render_changelog_fragments.py --check CHANGELOG.md"
 
 
 def _module():
@@ -179,6 +181,77 @@ def test_cli_check_and_update_modes_are_fail_closed(tmp_path, capsys):
 
     assert module.main(["--update", str(changelog)]) == 0
     assert module.main(["--check", str(changelog)]) == 0
+
+
+def _stale_aggregate_changelog(module) -> str:
+    """Return a changelog whose managed block holds already-released notes."""
+    return (
+        "# Changelog\n\n"
+        "## Unreleased\n\n"
+        "### Changed\n\n"
+        "- Manual note.\n\n"
+        f"{module.BEGIN_MARKER}\n"
+        "### Changed\n\n"
+        "#### Already released\n\n"
+        "- Stale.\n"
+        f"{module.END_MARKER}\n\n"
+        "## [1.0.0] - 2026-08-01\n\n"
+        "### Added\n\n"
+        "- Historical note.\n"
+    )
+
+
+def test_nonempty_inventory_never_leaves_a_stale_aggregate_block(tmp_path):
+    """With fragments present, a stale managed block fails check and is replaced.
+
+    The block must neither survive ``--update`` nor be stripped as if the
+    inventory were empty: exactly one marker pair holding exactly the current
+    fragments remains, and manual notes plus history stay byte-for-byte.
+    """
+    module = _module()
+    changelog = tmp_path / "CHANGELOG.md"
+    fragment = _fragment(tmp_path / "100-first.md")
+    original = _stale_aggregate_changelog(module)
+    changelog.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="stale"):
+        module.check_changelog(changelog, (fragment,))
+    assert changelog.read_text(encoding="utf-8") == original
+
+    module.update_changelog(changelog, (fragment,))
+    module.check_changelog(changelog, (fragment,))
+    updated = changelog.read_text(encoding="utf-8")
+    assert updated.count(module.BEGIN_MARKER) == 1
+    assert updated.count(module.END_MARKER) == 1
+    block = updated.split(module.BEGIN_MARKER, 1)[1].split(module.END_MARKER, 1)[0]
+    assert block == "\n### Added\n\n#### First feature\n\n- Alpha.\n"
+    assert "Already released" not in updated
+    assert "- Stale." not in updated
+    assert updated.split(module.BEGIN_MARKER, 1)[0] == original.split(
+        module.BEGIN_MARKER, 1
+    )[0]
+    assert updated.split("## [1.0.0]", 1)[1] == original.split("## [1.0.0]", 1)[1]
+
+
+def test_committed_changelog_matches_repository_fragments():
+    """The committed aggregate block must equal the rendered fragment inventory."""
+    module = _module()
+    module.check_changelog(RELEASED_CHANGELOG)
+
+
+def test_pull_request_ci_fails_closed_on_changelog_fragment_drift():
+    """The required ``python`` matrix runs the fragment drift check on every PR."""
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    start = workflow.index("  python-matrix:\n")
+    end = workflow.index("\n  python:\n", start)
+    job = workflow[start:end]
+    run_lines = [
+        line.strip().removeprefix("- ").strip()
+        for line in job.splitlines()
+        if line.strip().removeprefix("- ").startswith("run:")
+    ]
+    assert "run: pytest" in run_lines
+    assert f"run: {CHECK_COMMAND}" in run_lines
 
 
 def test_render_contract_rejects_empty_and_malformed_fragments(tmp_path):
