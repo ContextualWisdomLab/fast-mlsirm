@@ -217,7 +217,6 @@ def test_public_mmle_fails_closed_without_allocating_fallback_grid(
     else:
         monkeypatch.setattr(_core, "fit_mmle_2pl", None)
 
-    from fast_mlsirm.config import FitConfig
     from fast_mlsirm.fit import _fit_mmle
 
     observed = np.ones_like(responses, dtype=bool)
