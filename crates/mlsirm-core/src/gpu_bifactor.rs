@@ -273,10 +273,8 @@ fn reduce_counts_gen(
     let i = (idx / (dims.nc * dims.qg)) % dims.ni;
     let g = idx / (dims.nc * dims.qg * dims.ni);
     let out = ((g * dims.ni + i) * dims.stride + t) * dims.nc + k;
-    if (item_block[i] >= 0) {
-        counts[out] = 0.0;
-        return;
-    }
+    // Block items: every node slot (t, h) is owned by `reduce_counts_blk`.
+    if (item_block[i] >= 0) { return; }
     var sum = 0.0;
     for (var p = 0u; p < dims.np; p = p + 1u) {
         if (gid[p] != g) { continue; }
@@ -304,7 +302,10 @@ fn reduce_counts_blk(
     let out = ((g * dims.ni + i) * dims.stride + t * dims.qs + h) * dims.nc + k;
     let s = item_block[i];
     if (s < 0) {
-        counts[out] = 0.0;
+        // General-only items: slots 0..qg hold `reduce_counts_gen` sums
+        // (an earlier pass); only zero the unused tail so each slot has one
+        // writer.
+        if (t * dims.qs + h >= dims.qg) { counts[out] = 0.0; }
         return;
     }
     let su = u32(s);
