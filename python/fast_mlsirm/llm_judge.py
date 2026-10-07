@@ -48,6 +48,18 @@ def _duplicate_free_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return value
 
 
+def _reject_float_nonfinite(value: str) -> float:
+    import math
+    f_val = float(value)
+    if not math.isfinite(f_val):
+        raise JudgeFormatError("judge response JSON contains non-finite float")
+    return f_val
+
+
+def _reject_constant(_value: str) -> float:
+    raise JudgeFormatError("judge response JSON contains unsupported constant")
+
+
 def _category_count(value: Any) -> int:
     if (
         type(value) is not int
@@ -409,7 +421,12 @@ def _response_object(raw: str, *, required_fields: set[str]) -> dict[str, Any]:
     text = raw.strip()
     _validate_raw_json_depth(text)
     try:
-        value = json.loads(text, object_pairs_hook=_duplicate_free_object)
+        value = json.loads(
+            text,
+            object_pairs_hook=_duplicate_free_object,
+            parse_constant=_reject_constant,
+            parse_float=_reject_float_nonfinite,
+        )
     except _DuplicateJsonKeyError as exc:
         raise JudgeFormatError("judge response contains duplicate JSON object keys") from exc
     except json.JSONDecodeError as exc:
