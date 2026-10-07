@@ -85,7 +85,7 @@ def test_expected_raw_two_tier_grm_is_lord_wingersky_eap_plugin_not_joint_poster
     """
     sig = inspect.signature(expected_raw_two_tier_grm)
     assert "phi" not in sig.parameters
-    assert set(sig.parameters) == {"fit", "specific_map", "q_specific"}
+    assert set(sig.parameters) == {"fit", "specific_map", "q_specific", "device"}
 
     y = _simulate(SEED + 2)
     fit = _fit(y)
@@ -184,3 +184,17 @@ def test_expected_raw_rejects_unordered_thresholds() -> None:
             SPECIFIC_MAP,
             q_specific=21,
         )
+
+
+def test_expected_raw_device_dispatch_matches_cpu_within_f32_bound() -> None:
+    fit = _fit(_simulate(SEED + 8))
+    cpu = expected_raw_two_tier_grm(fit, SPECIFIC_MAP, q_specific=21)
+    # Derived bound from the #2271 design memo: (8 + I*(K-1)*Q) * 2^-24 * max_score.
+    max_score = N_ITEMS * (N_CAT - 1)
+    bound = (8 + N_ITEMS * (N_CAT - 1) * 21) * 2.0**-24 * max_score
+    for device in ("auto", "gpu"):
+        scores = expected_raw_two_tier_grm(fit, SPECIFIC_MAP, q_specific=21, device=device)
+        np.testing.assert_allclose(scores, cpu, rtol=0.0, atol=bound)
+    for bad in ("cuda", None, 1):
+        with pytest.raises(ValueError, match="device"):
+            expected_raw_two_tier_grm(fit, SPECIFIC_MAP, q_specific=21, device=bad)

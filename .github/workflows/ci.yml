@@ -23,13 +23,15 @@ jobs:
   python-matrix:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
     name: python (${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: ${{ matrix.python-version }}
@@ -49,7 +51,7 @@ jobs:
     name: python
     needs: python-matrix
     if: ${{ always() && (github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed')) }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     steps:
       - name: Require every CPython matrix leg
         run: |
@@ -59,9 +61,11 @@ jobs:
 
   rust:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -79,13 +83,15 @@ jobs:
     # Exact GPU and study-precision nodes below own every corresponding
     # non-execution allowlist entry. The full paper-design recovery study
     # remains in the scheduled/manual workflow.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     timeout-minutes: 240
     env:
       WGPU_BACKEND: vulkan
       XDG_RUNTIME_DIR: /tmp/fast-mlsirm-xdg-runtime
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -166,6 +172,27 @@ jobs:
           if skipped != 0:
               raise SystemExit(f"GPU evidence contained {skipped} skipped test(s)")
           PY
+      - name: Run two-tier expected-raw GPU provenance evidence without a skip
+        env:
+          FAST_MLSIRM_REQUIRE_SCORE_GPU: "1"
+        run: |
+          pytest -q --junitxml=gpu-provenance-junit.xml \
+            tests/test_two_tier_expected_raw_provenance.py::test_native_provenance_parity_when_binding_available
+      - name: Reject skipped GPU provenance evidence
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+
+          root = ElementTree.parse(Path("gpu-provenance-junit.xml")).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          tests = sum(int(suite.attrib.get("tests", "0")) for suite in suites)
+          skipped = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)
+          if tests < 1:
+              raise SystemExit("GPU provenance evidence did not execute a test")
+          if skipped != 0:
+              raise SystemExit(f"GPU provenance evidence contained {skipped} skipped test(s)")
+          PY
 
   fuzz:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
@@ -173,9 +200,11 @@ jobs:
     # property-based Hypothesis tests already run in the `python` job (via the
     # dev extra); this job adds the Atheris coverage-guided harnesses with a
     # ~60s-per-target budget. Longer campaigns can be run nightly if desired.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -220,9 +249,11 @@ jobs:
 
   package:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
