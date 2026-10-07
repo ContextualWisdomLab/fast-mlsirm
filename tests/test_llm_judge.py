@@ -1128,3 +1128,18 @@ def test_judge_accepts_bounded_json_nesting() -> None:
         criteria=CRITERIA,
     )
     assert result.score == 0.8
+
+def test_judge_rejects_nonfinite_numbers():
+    from fast_mlsirm.llm_judge import _response_object, JudgeFormatError
+
+    # Try parsing NaN
+    with pytest.raises(JudgeFormatError, match="judge response contains non-finite numbers"):
+        _response_object('{"score": NaN}', required_fields={"score"})
+
+    # Try parsing Infinity
+    with pytest.raises(JudgeFormatError, match="judge response contains non-finite numbers"):
+        _response_object('{"score": Infinity}', required_fields={"score"})
+
+    # Try parsing overflow that becomes Infinity
+    with pytest.raises(JudgeFormatError, match="judge response contains non-finite numbers"):
+        _response_object('{"score": 1e999}', required_fields={"score"})
