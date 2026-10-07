@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   recover-missing-pypi:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     timeout-minutes: 15
     permissions:
       contents: read
