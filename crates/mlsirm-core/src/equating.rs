@@ -497,8 +497,10 @@ fn paired_moments(a: &[f64], b: &[f64]) -> (f64, f64, f64, f64, f64) {
     let n = a.len() as f64;
     let ma = a.iter().sum::<f64>() / n;
     let mb = b.iter().sum::<f64>() / n;
-    let va = a.iter().map(|&x| (x - ma).powi(2)).sum::<f64>() / n;
-    let vb = b.iter().map(|&x| (x - mb).powi(2)).sum::<f64>() / n;
+    // Optimization: Avoid powi(2) to reduce function call overhead in hot loops
+    let va = a.iter().map(|&x| { let diff = x - ma; diff * diff }).sum::<f64>() / n;
+    // Optimization: Avoid powi(2) to reduce function call overhead in hot loops
+    let vb = b.iter().map(|&x| { let diff = x - mb; diff * diff }).sum::<f64>() / n;
     let cov = a
         .iter()
         .zip(b)

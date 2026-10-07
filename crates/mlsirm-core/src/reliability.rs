@@ -2507,7 +2507,9 @@ fn ncohen_q(
     let t3 =
         one_m_pi0 * one_m_pi0 * (pi12 * (rate2 + pi2d).powi(2) + pi21 * (pid2 + rate1).powi(2));
     let t4 = (pi0 * pie - 2.0 * pie + pi0).powi(2);
-    (t1 + t2 + t3 - t4) / one_m_pie.powi(4)
+    // Optimization: Avoid powi(4) to reduce function call overhead in hot loops
+    let omp2 = one_m_pie * one_m_pie;
+    (t1 + t2 + t3 - t4) / (omp2 * omp2)
 }
 
 /// Closed-form sample size for testing Cohen's kappa on a 2x2 table.

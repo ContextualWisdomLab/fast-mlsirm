@@ -439,7 +439,8 @@ pub fn minres_fa_corr(corr: &[f64], p: usize, nf: usize) -> Result<MinresFaResul
         }
     }
     let communalities: Vec<f64> = (0..p)
-        .map(|r| (0..nf).map(|k| loadings[r * nf + k].powi(2)).sum())
+        // Optimization: Avoid powi(2) to reduce function call overhead in hot loops
+        .map(|r| (0..nf).map(|k| { let l = loadings[r * nf + k]; l * l }).sum())
         .collect();
     Ok(MinresFaResult {
         loadings,

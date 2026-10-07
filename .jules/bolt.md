@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2025-02-18 - Avoid powi in hot loops
+**Learning:** `powi(2)`, `powi(3)`, and `powi(4)` functions in Rust standard library can introduce function call overhead and branch prediction issues inside tight mathematical loops in the Rust core engine.
+**Action:** Replace `x.powi(2)` with `x * x`, `x.powi(3)` with `x * x * x`, and `x.powi(4)` with `{ let x2 = x * x; x2 * x2 }` manually in critical code paths (like rotation criteria, classification statistics, and joint estimation) to reduce overhead and improve execution speed.
