@@ -913,3 +913,187 @@ fn dense_quadrature_fit_never_claims_tolerance_at_start_slopes() {
         assert_eq!(fit.termination_reason, "numerical_em_stall");
     }
 }
+
+// ---------------------------------------------------------------------------
+// #2353: general-only items keep their GPU expected counts.
+//
+// In the reduced likelihood a general-only item contributes through the
+// general dimension only (Cai, Yang, & Hansen, 2011, pp. 231-232, Eqs.
+// 15-17), so its expected counts over the general nodes are not zero. On
+// the GPU, `reduce_counts_gen` writes those counts and the later
+// `reduce_counts_blk` pass must not overwrite them. The fixture combines
+// two groups with one general-only item; `MLSIRM_REQUIRE_GPU=1` turns a
+// missing adapter into a failure instead of a trivially exact CPU
+// fallback.
+// ---------------------------------------------------------------------------
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[test]
+fn estep_gpu_keeps_general_only_counts_single_and_multigroup() {
+    use super::{e_step, e_step_multigroup, fill_logprob_tables, gh_rule, initial_params, validate};
+
+    const N_ITEMS: usize = 5;
+    const MAP: [i32; N_ITEMS] = [0, 0, 1, 1, -1];
+    const GENERAL_ONLY: usize = 4;
+    if crate::gpu::GpuContext::get().is_none() {
+        assert!(
+            std::env::var("MLSIRM_REQUIRE_GPU").as_deref() != Ok("1"),
+            "MLSIRM_REQUIRE_GPU=1 but no GPU adapter is available"
+        );
+        eprintln!("no GPU adapter; skipping general-only GPU count parity");
+        return;
+    }
+    let (y4, n_persons) = tiny_data();
+    let extra = [0usize, 1, 2, 2, 1, 0, 1, 2, 0, 2, 0, 1];
+    let mut y = Vec::with_capacity(n_persons * N_ITEMS);
+    for p in 0..n_persons {
+        y.extend_from_slice(&y4[p * TINY_N_ITEMS..(p + 1) * TINY_N_ITEMS]);
+        y.push(extra[p]);
+    }
+    let cfg = valid_config();
+    let v = validate(&y, None, &MAP, n_persons, N_ITEMS, TINY_N_SPECIFIC, TINY_N_CAT, &cfg)
+        .expect("fixture with one general-only item must validate");
+    let (tg, wg) = gh_rule(7).expect("Q=7 rule must exist");
+    let (ts, ws) = gh_rule(7).expect("Q=7 rule must exist");
+    let params = initial_params(&v, &y, None, cfg.seed, 0);
+    let log_wg: Vec<f64> = wg.iter().map(|w| w.ln()).collect();
+    let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
+    // Per item: counts[node][category].
+    let max_abs = |a: &[Vec<f64>], b: &[Vec<f64>]| -> f64 {
+        assert_eq!(a.len(), b.len());
+        let mut m = 0.0f64;
+        for (an, bn) in a.iter().zip(b) {
+            assert_eq!(an.len(), bn.len());
+            for (&p, &q) in an.iter().zip(bn) {
+                assert!(p.is_finite() && q.is_finite(), "non-finite expected count");
+                m = m.max((p - q).abs());
+            }
+        }
+        m
+    };
+    let mass = |c: &[Vec<f64>]| -> f64 { c.iter().flatten().sum() };
+
+    // Single group.
+    let tables = fill_logprob_tables(&v, &params, tg, ts, 7, 7);
+    let (_, c_cpu) = e_step(
+        &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts, crate::Device::Cpu,
+    );
+    let (_, c_gpu) = e_step(
+        &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts, crate::Device::Gpu,
+    );
+    let cpu_mass = mass(&c_cpu[GENERAL_ONLY]);
+    assert!((cpu_mass - n_persons as f64).abs() < 1e-9, "CPU mass {cpu_mass}");
+    let gpu_mass = mass(&c_gpu[GENERAL_ONLY]);
+    assert!(
+        (gpu_mass - cpu_mass).abs() <= 1e-4,
+        "single-group general-only GPU count mass {gpu_mass} != CPU {cpu_mass}"
+    );
+    for i in 0..N_ITEMS {
+        let d = max_abs(&c_cpu[i], &c_gpu[i]);
+        assert!(d <= 1e-4, "single-group item {i}: max|cpu-gpu| = {d:.3e}");
+    }
+
+    // Direct kernel success is required: adapter presence alone does not
+    // exclude the public E-step's internal CPU fallback.
+    let tables_groups = vec![tables.clone()];
+    let tg_groups_single = vec![tg.to_vec()];
+    let ts_groups_single = vec![vec![ts.to_vec(); TINY_N_SPECIFIC]];
+    let direct_single = crate::gpu_bifactor::e_step_reduced_gpu(
+        &crate::gpu_bifactor::ReducedEstepInputs {
+            y: &y,
+            observed: None,
+            group_id: None,
+            n_persons,
+            n_items: N_ITEMS,
+            n_specific: TINY_N_SPECIFIC,
+            n_cat: TINY_N_CAT,
+            qg: 7,
+            qs: 7,
+            n_groups: 1,
+            tables_groups: &tables_groups,
+            item_block: &v.item_block,
+            blocks: &v.blocks,
+            tg_groups: &tg_groups_single,
+            ts_groups: &ts_groups_single,
+            log_wg: &log_wg,
+            log_ws: &log_ws,
+            want_node_post: false,
+        },
+    ).expect("single-group GPU kernel must execute, not fall back");
+    assert!(direct_single.loglik.is_finite());
+    assert!(direct_single.counts.iter().all(|x| x.is_finite()));
+    for i in 0..N_ITEMS {
+        let base = i * direct_single.counts_stride_nodes * TINY_N_CAT;
+        let n_nodes = if MAP[i] < 0 { 7 } else { 49 };
+        let direct: Vec<Vec<f64>> = direct_single.counts[base..base + n_nodes * TINY_N_CAT]
+            .chunks_exact(TINY_N_CAT).map(<[f64]>::to_vec).collect();
+        assert!(max_abs(&c_cpu[i], &direct) <= 1e-4, "single direct item {i}");
+        assert!(max_abs(&c_gpu[i], &direct) <= 1e-4, "single public item {i}");
+    }
+
+    // Two groups (persons alternate), shifted general nodes in group 1.
+    let group_id: Vec<usize> = (0..n_persons).map(|p| p % 2).collect();
+    let params_groups = vec![params.clone(), params.clone()];
+    let tg_groups = vec![tg.to_vec(), tg.iter().map(|x| 0.3 + 1.2 * x).collect()];
+    let ts_groups = vec![vec![ts.to_vec(); TINY_N_SPECIFIC]; 2];
+    let run = |device| {
+        e_step_multigroup(
+            &v, &y, None, &group_id, 2, &params_groups, &tg_groups, &ts_groups, &log_wg,
+            &log_ws, 7, 7, device,
+        )
+    };
+    let (ll_c, mc_cpu, ..) = run(crate::Device::Cpu);
+    let (ll_g, mc_gpu, ..) = run(crate::Device::Gpu);
+    assert!((ll_c - ll_g).abs() <= 1e-3, "multigroup loglik cpu={ll_c} gpu={ll_g}");
+    let tables_groups: Vec<Vec<Vec<f64>>> = (0..2)
+        .map(|g| fill_logprob_tables(&v, &params_groups[g], &tg_groups[g], ts, 7, 7))
+        .collect();
+    let direct_multi = crate::gpu_bifactor::e_step_reduced_gpu(
+        &crate::gpu_bifactor::ReducedEstepInputs {
+            y: &y,
+            observed: None,
+            group_id: Some(&group_id),
+            n_persons,
+            n_items: N_ITEMS,
+            n_specific: TINY_N_SPECIFIC,
+            n_cat: TINY_N_CAT,
+            qg: 7,
+            qs: 7,
+            n_groups: 2,
+            tables_groups: &tables_groups,
+            item_block: &v.item_block,
+            blocks: &v.blocks,
+            tg_groups: &tg_groups,
+            ts_groups: &ts_groups,
+            log_wg: &log_wg,
+            log_ws: &log_ws,
+            want_node_post: false,
+        },
+    ).expect("multigroup GPU kernel must execute, not fall back");
+    assert!(direct_multi.loglik.is_finite());
+    assert!(direct_multi.counts.iter().all(|x| x.is_finite()));
+    assert!((ll_c - direct_multi.loglik).abs() <= 1e-3);
+    for g in 0..2 {
+        for i in 0..N_ITEMS {
+            let base = (g * N_ITEMS + i) * direct_multi.counts_stride_nodes * TINY_N_CAT;
+            let n_nodes = if MAP[i] < 0 { 7 } else { 49 };
+            let direct: Vec<Vec<f64>> = direct_multi.counts[base..base + n_nodes * TINY_N_CAT]
+                .chunks_exact(TINY_N_CAT).map(<[f64]>::to_vec).collect();
+            assert!(max_abs(&mc_cpu[g][i], &direct) <= 1e-4, "group {g} direct item {i}");
+            assert!(max_abs(&mc_gpu[g][i], &direct) <= 1e-4, "group {g} public item {i}");
+        }
+    }
+    for g in 0..2 {
+        let cpu_mass = mass(&mc_cpu[g][GENERAL_ONLY]);
+        assert!((cpu_mass - (n_persons / 2) as f64).abs() < 1e-9, "group {g} CPU mass {cpu_mass}");
+        let gpu_mass = mass(&mc_gpu[g][GENERAL_ONLY]);
+        assert!(
+            (gpu_mass - cpu_mass).abs() <= 1e-4,
+            "group {g} general-only GPU count mass {gpu_mass} != CPU {cpu_mass}"
+        );
+        for i in 0..N_ITEMS {
+            let d = max_abs(&mc_cpu[g][i], &mc_gpu[g][i]);
+            assert!(d <= 1e-4, "group {g} item {i}: max|cpu-gpu| = {d:.3e}");
+        }
+    }
+}

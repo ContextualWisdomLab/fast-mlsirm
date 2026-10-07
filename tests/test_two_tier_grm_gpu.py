@@ -22,6 +22,7 @@ analysis of graded response data. *Applied Psychological Measurement,
 31*(1), 4-19. https://doi.org/10.1177/0146621606289485
 """
 
+import os
 import time
 
 import numpy as np
@@ -72,12 +73,67 @@ def test_two_tier_gpu_fit_matches_cpu(capfd, primary_correlation):
     gpu = fit_two_tier_grm(responses, pmap, smap, **kw, device="gpu")
     t2 = time.perf_counter()
     err = capfd.readouterr().err
+    if os.environ.get("MLSIRM_REQUIRE_GPU") == "1":
+        assert "falling back" not in err, err
     print(
         f"\n[two-tier P=2 q=11 {primary_correlation}] CPU {t1 - t0:.3f}s vs "
         f"GPU {t2 - t1:.3f}s (gpu_executed={'falling back' not in err}); "
         f"max|Δa|={np.max(np.abs(cpu.a_primary - gpu.a_primary)):.3e} "
         f"|Δloglik|={abs(cpu.loglik_trace[-1] - gpu.loglik_trace[-1]):.3e}"
     )
+    assert cpu.converged == gpu.converged
+    assert cpu.n_iter == gpu.n_iter
+    np.testing.assert_allclose(cpu.a_primary, gpu.a_primary, atol=ATOL)
+    np.testing.assert_allclose(cpu.a_specific, gpu.a_specific, atol=ATOL)
+    np.testing.assert_allclose(cpu.threshold, gpu.threshold, atol=ATOL)
+    np.testing.assert_allclose(cpu.phi, gpu.phi, atol=ATOL)
+    assert abs(cpu.loglik_trace[-1] - gpu.loglik_trace[-1]) <= LOGLIK_ATOL
+
+
+def _missing_mask(responses, smap, seed=11):
+    """MAR mask with whole-block-missing rows.
+
+    Persons ``4k + 1`` miss every item of specific block 0 and persons
+    ``4k + 2`` miss block 1, so the GPU ``anyobs`` path sees blocks with
+    no observation; the rest drop about 15 % of responses at random.
+    """
+    rng = np.random.default_rng(seed)
+    y = responses.copy()
+    y[rng.uniform(size=y.shape) < 0.15] = np.nan
+    y[1::4, smap == 0] = np.nan
+    y[2::4, smap == 1] = np.nan
+    return y
+
+
+@pytest.mark.parametrize("specific_free", [False, True])
+def test_two_tier_gpu_fit_matches_cpu_with_missing_blocks(capfd, specific_free):
+    """GPU/CPU fit agreement with missing blocks and specific-free items.
+
+    ``specific_map == -1`` items contribute through the primaries only
+    (Cai, 2010, pp. 583-584), so the GPU counts kernels must keep their
+    expected counts; missing responses are dropped MAR on both devices.
+    """
+    responses, pmap, smap, n_cat = _fixture()
+    if specific_free:
+        smap = smap.copy()
+        smap[[3, 7]] = -1
+    y = _missing_mask(responses, smap)
+    kw = dict(
+        n_cat=n_cat,
+        n_primary=2,
+        n_specific=2,
+        q_primary=11,
+        q_specific=11,
+        max_iter=200,
+        tol=1e-5,
+        n_starts=1,
+        seed=3,
+    )
+    cpu = fit_two_tier_grm(y, pmap, smap, **kw, device="cpu")
+    gpu = fit_two_tier_grm(y, pmap, smap, **kw, device="gpu")
+    err = capfd.readouterr().err
+    if os.environ.get("MLSIRM_REQUIRE_GPU") == "1":
+        assert "falling back" not in err, err
     assert cpu.converged == gpu.converged
     assert cpu.n_iter == gpu.n_iter
     np.testing.assert_allclose(cpu.a_primary, gpu.a_primary, atol=ATOL)

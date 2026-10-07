@@ -841,23 +841,6 @@ fn item_cat_logprob(
     grm_logprobs(primary + par.a_s.map_or(0.0, |a_s| a_s * ts[h]), &par.d)[cat]
 }
 
-/// One reduced E-step sweep (Gibbons et al., 2007, eq. 15: the person
-/// marginal factored per primary node): observed-data loglik, expected
-/// category counts per item (`counts[i][node][k]`, `node = g * qs + h` for
-/// block items, `node = g` for specific-free items), and the summed
-/// posterior primary second moment (`s_bar_sum[j * p + k] += sum_p sum_g
-/// post_pg z_gj z_gk`, divided by `n_persons` by the caller).
-///
-/// # Memory (exact blocked product-grid evaluation; #1992)
-///
-/// The primary product Gauss–Hermite grid (Golub & Welsch, 1969) is still
-/// fully summed — node counts remain caller-controlled with no silent cap
-/// (#1929; Lesaffre & Spiessens, 2001, warn that low `Q` can bias results).
-/// Single-primary category log-probs are filled once per sweep and reused
-/// across persons; multi-primary fits retain streamed evaluation. The
-/// specific-tier scratch `block_acc` remains sized
-/// `n_specific * q_specific` (one primary node at a time) rather than
-/// `n_specific * n_grid * q_specific`.
 /// GPU person sweep for the reduced E-step: the two-tier reduction (Cai,
 /// 2010, pp. 583-584) is the Gibbons-Hedeker bifactor reduction with the
 /// general node generalized to the flattened primary product grid, so the
@@ -935,6 +918,23 @@ pub(crate) fn e_step_gpu(
     None
 }
 
+/// One reduced E-step sweep (Gibbons et al., 2007, eq. 15: the person
+/// marginal factored per primary node): observed-data loglik, expected
+/// category counts per item (`counts[i][node][k]`, `node = g * qs + h` for
+/// block items, `node = g` for specific-free items), and the summed
+/// posterior primary second moment (`s_bar_sum[j * p + k] += sum_p sum_g
+/// post_pg z_gj z_gk`, divided by `n_persons` by the caller).
+///
+/// # Memory (exact blocked product-grid evaluation; #1992)
+///
+/// The primary product Gauss–Hermite grid (Golub & Welsch, 1969) is still
+/// fully summed — node counts remain caller-controlled with no silent cap
+/// (#1929; Lesaffre & Spiessens, 2001, warn that low `Q` can bias results).
+/// Single-primary category log-probs are filled once per sweep and reused
+/// across persons; multi-primary fits retain streamed evaluation. The
+/// specific-tier scratch `block_acc` remains sized
+/// `n_specific * q_specific` (one primary node at a time) rather than
+/// `n_specific * n_grid * q_specific`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn e_step(
     v: &Validated,
@@ -1479,8 +1479,9 @@ fn run_single_start(
         };
         if gpu.is_none() && cfg.device == crate::Device::Gpu && n_iter == 0 {
             eprintln!(
-                "fast-mlsirm: GPU two-tier E-step requested but no usable GPU adapter was found; \
-                 falling back to CPU implementation."
+                "fast-mlsirm: GPU two-tier E-step requested but no usable GPU adapter was found \
+                 or the problem exceeds the adapter's buffer limits; falling back to CPU \
+                 implementation."
             );
         }
         let (ll, counts, s_bar_sum) = gpu.unwrap_or_else(|| {

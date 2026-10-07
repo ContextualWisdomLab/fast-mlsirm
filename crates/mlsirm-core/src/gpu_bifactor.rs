@@ -198,7 +198,9 @@ fn accumulate(
             }
             blockacc[((p * dims.ns + s) * dims.qg + t) * dims.qs + h] = acc;
         }
-        anyobs[p * dims.ns + s] = seen;
+        if (t == 0u) {
+            anyobs[p * dims.ns + s] = seen;
+        }
         logi[(p * dims.ns + s) * dims.qg + t] =
             lse_h(((p * dims.ns + s) * dims.qg + t) * dims.qs, dims.qs);
     }
@@ -283,10 +285,8 @@ fn reduce_counts_gen(
     let i = (idx / (dims.nc * dims.qg)) % dims.ni;
     let g = idx / (dims.nc * dims.qg * dims.ni);
     let out = ((g * dims.ni + i) * dims.stride + t) * dims.nc + k;
-    if (item_block[i] >= 0) {
-        counts[out] = 0.0;
-        return;
-    }
+    // Block items: every node slot (t, h) is owned by `reduce_counts_blk`.
+    if (item_block[i] >= 0) { return; }
     var sum = 0.0;
     for (var p = 0u; p < dims.np; p = p + 1u) {
         if (gid[p] != g) { continue; }
@@ -314,7 +314,10 @@ fn reduce_counts_blk(
     let out = ((g * dims.ni + i) * dims.stride + t * dims.qs + h) * dims.nc + k;
     let s = item_block[i];
     if (s < 0) {
-        counts[out] = 0.0;
+        // General-only items: slots 0..qg hold `reduce_counts_gen` sums
+        // (an earlier pass); only zero the unused tail so each slot has one
+        // writer.
+        if (t * dims.qs + h >= dims.qg) { counts[out] = 0.0; }
         return;
     }
     let su = u32(s);
@@ -395,10 +398,12 @@ const MIN_STORAGE_BUFFERS: u32 = 20;
 
 /// GPU reduced E-step sweep.
 ///
-/// Returns `None` when no compatible GPU adapter can be initialized (or when
-/// the `gpu` feature is disabled), signalling the caller to run the CPU
-/// implementation. A `None` here is never a silent wrong result: every
-/// caller falls back to the `f64` CPU sweep over the same tables.
+/// Returns `None` when no compatible GPU adapter can be initialized, when a
+/// buffer or dispatch exceeds the adapter's limits, when `want_node_post` is
+/// set with `n_groups != 1`, or when the `gpu` feature is disabled,
+/// signalling the caller to run the CPU implementation. A `None` here is
+/// never a silent wrong result: every caller falls back to the `f64` CPU
+/// sweep over the same tables.
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
     use crate::gpu::{
@@ -422,6 +427,11 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let qs = inputs.qs;
     let ng = inputs.n_groups;
     let stride = qg * qs;
+    // `node_post` sums `postg` over every person regardless of `group_id`,
+    // so it is only defined for a single group.
+    if inputs.want_node_post && ng != 1 {
+        return None;
+    }
 
     // Fail closed on storage binding budget before allocating (Metal/WebGPU
     // report these at runtime; never hardcode a byte cap).
@@ -712,7 +722,6 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let ll_staging = staging_buffer(device, "ll_read", np);
     let counts_staging = staging_buffer(device, "counts_read", ng * ni * stride * nc);
     let moments_staging = staging_buffer(device, "moments_read", ng * (3 + 2 * ns));
-    let postg_staging = staging_buffer(device, "postg_read", np * qg);
     let mut reads = vec![
         (&ll_buf, &ll_staging, np),
         (&counts_buf, &counts_staging, ng * ni * stride * nc),
@@ -721,8 +730,10 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     // ponytail: reads back the full n_persons x qg posterior (4 bytes each)
     // and sums per node on the host in f64; switch to an on-device node
     // reduction if this readback becomes a measurable share of the sweep.
-    if inputs.want_node_post {
-        reads.push((&postg_buf, &postg_staging, np * qg));
+    let postg_staging =
+        inputs.want_node_post.then(|| staging_buffer(device, "postg_read", np * qg));
+    if let Some(staging) = postg_staging.as_ref() {
+        reads.push((&postg_buf, staging, np * qg));
     }
     let read = submit_and_readback(ctx, encoder, &reads)?;
     let mut iter = read.into_iter();

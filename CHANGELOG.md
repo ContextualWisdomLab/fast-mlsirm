@@ -9,11 +9,6 @@
   counts, and caller-threshold flags. Optional seeded model resampling gives
   an empirical lower-tail probability; no cross-loading `l_z*` or normal-null
   calibration is claimed (#2116).
-- Two-tier GRM fits accept `device="gpu"` or `"auto"` to run the EM
-  E-step on the GPU; the M-step stays on the CPU. Results agree with the
-  CPU fit within single-precision tolerance. On an Apple Metal adapter, a
-  two-primary fit (300 persons, 11-point grids) ran 5.9-7.1 times faster.
-  `"cpu"` remains the default (#2282).
 
 ### Changed
 
