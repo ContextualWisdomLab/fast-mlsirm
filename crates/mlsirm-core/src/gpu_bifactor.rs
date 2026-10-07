@@ -10,6 +10,16 @@
 //! moments — while the `f64` CPU path in [`crate::bifactor_grm`] remains the
 //! numerical reference. When no GPU adapter satisfies the binding budget the
 //! entry point returns `None` and the caller falls back to CPU.
+//! The default sweep retains all outputs. A caller-local consumed-output
+//! projection may omit the specific-moment reduction when it is unused:
+//! counts and primary outputs remain unchanged, while omitted specific
+//! moment slots are zero. Full specific reductions partition the original
+//! compact ordered binary-carry tree into 256-leaf tiles and recombine its
+//! original tail orientation. The tile is not a quadrature/node limit.
+//! When specific moments are consumed, the count buffer additionally holds
+//! two f32 partials per group/block/tile; readback still returns only the
+//! original count slots. Omitted-specific callers allocate no tile payload.
+//! This is scheduling reuse, not a precision or fitted-convergence claim.
 //!
 //! # Precision
 //!
@@ -44,8 +54,42 @@
 
 #[cfg(all(feature = "gpu", not(coverage)))]
 use crate::gpu::GpuContext;
+use std::cell::RefCell;
 #[cfg(all(feature = "gpu", not(coverage)))]
 use wgpu::util::DeviceExt;
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct GpuDispatchReceipt {
+    pub used: bool,
+    pub backend: Option<String>,
+    pub device_name: Option<String>,
+    pub fallback_reason: Option<String>,
+}
+
+thread_local! {
+    static LAST_RECEIPT: RefCell<GpuDispatchReceipt> = RefCell::new(GpuDispatchReceipt::default());
+}
+
+pub(crate) fn reset_gpu_dispatch_receipt() {
+    LAST_RECEIPT.with(|receipt| *receipt.borrow_mut() = GpuDispatchReceipt::default());
+}
+
+pub(crate) fn gpu_dispatch_receipt() -> GpuDispatchReceipt {
+    LAST_RECEIPT.with(|receipt| receipt.borrow().clone())
+}
+
+fn set_fallback_reason(reason: &'static str) {
+    LAST_RECEIPT.with(|receipt| receipt.borrow_mut().fallback_reason = Some(reason.into()));
+}
+
+fn record_gpu_success(backend: &str, device_name: &str) {
+    LAST_RECEIPT.with(|receipt| {
+        let mut dispatch = receipt.borrow_mut();
+        dispatch.used = true;
+        dispatch.backend = Some(backend.to_owned());
+        dispatch.device_name = Some(device_name.to_owned());
+    });
+}
 
 /// Inputs for one reduced E-step sweep. `tables_groups[g][i]` holds the
 /// log-probability table of group `g`, item `i` (`qg * qs * n_cat` entries
@@ -93,6 +137,9 @@ pub(crate) struct ReducedEstepOutputs {
     pub s2_g: Vec<f64>,
     pub s2_spec: Vec<f64>,
     pub w_spec: Vec<f64>,
+    /// Per-person posterior over the general-node axis. FIPC uses this to
+    /// recover moments on its affine multi-primary coordinates.
+    pub postg: Vec<f64>,
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
@@ -304,7 +351,12 @@ fn reduce_counts_blk(
     let out = ((g * dims.ni + i) * dims.stride + t * dims.qs + h) * dims.nc + k;
     let s = item_block[i];
     if (s < 0) {
-        counts[out] = 0.0;
+        // General-only counts were written by reduce_counts_gen. Do not
+        // erase them in this later block-only pass (Cai, 2010, pp. 608-609,
+        // Appendix A: item-category expected counts at their node tuple).
+        // Reference: Cai, L. (2010). A two-tier full-information item factor
+        // analysis model with applications. Psychometrika, 75(4), 581-612.
+        // doi:10.1007/s11336-010-9178-0.
         return;
     }
     let su = u32(s);
@@ -328,22 +380,41 @@ fn reduce_moments_g(
     let g = flat_idx(wid, lid, nwg);
     if (g >= dims.ng) { return; }
     let row = g * (3u + 2u * dims.ns);
-    var w = 0.0;
-    var s1 = 0.0;
-    var s2 = 0.0;
+    // Pairwise addition tree: Higham (1993, pp. 787-788, Eqs. 3.3-3.6).
+    // The online binary-carry layout is an implementation derivation.
+    // 32 levels cover the u32 buffer-index domain, not a quadrature cap.
+    // Reference: Higham, N. J. (1993). The accuracy of floating point
+    // summation. SIAM Journal on Scientific Computing, 14(4), 783-799.
+    // doi:10.1137/0914050.
+    var bins: array<vec3<f32>, 32>;
+    var count = 0u;
     for (var p = 0u; p < dims.np; p = p + 1u) {
         if (gid[p] != g) { continue; }
         for (var t = 0u; t < dims.qg; t = t + 1u) {
             let post = postg[p * dims.qg + t];
             let node = tg[g * dims.qg + t];
-            w = w + post;
-            s1 = s1 + post * node;
-            s2 = s2 + post * node * node;
+            var value = vec3<f32>(post, post * node, post * node * node);
+            var level = 0u;
+            var occupied = count;
+            loop {
+                if ((occupied & 1u) == 0u) { break; }
+                value = bins[level] + value;
+                occupied = occupied >> 1u;
+                level = level + 1u;
+            }
+            bins[level] = value;
+            count = count + 1u;
         }
     }
-    moments[row] = w;
-    moments[row + 1u] = s1;
-    moments[row + 2u] = s2;
+    var result = vec3<f32>(0.0);
+    for (var level = 0u; level < 32u; level = level + 1u) {
+        if ((count & (1u << level)) != 0u) {
+            result = bins[level] + result;
+        }
+    }
+    moments[row] = result.x;
+    moments[row + 1u] = result.y;
+    moments[row + 2u] = result.z;
 }
 
 // Per-(group, block) specific moments (w_spec, s2_spec).
@@ -359,8 +430,14 @@ fn reduce_moments_s(
     let g = idx / dims.ns;
     let s = idx % dims.ns;
     let row = g * (3u + 2u * dims.ns);
-    var w = 0.0;
-    var s2 = 0.0;
+    // Pairwise addition tree: Higham (1993, pp. 787-788, Eqs. 3.3-3.6).
+    // The online binary-carry layout is an implementation derivation.
+    // 32 levels cover the u32 buffer-index domain, not a quadrature cap.
+    // Reference: Higham, N. J. (1993). The accuracy of floating point
+    // summation. SIAM Journal on Scientific Computing, 14(4), 783-799.
+    // doi:10.1137/0914050.
+    var bins: array<vec2<f32>, 32>;
+    var count = 0u;
     for (var p = 0u; p < dims.np; p = p + 1u) {
         if (gid[p] != g) { continue; }
         if (anyobs[p * dims.ns + s] == 0u) { continue; }
@@ -368,13 +445,28 @@ fn reduce_moments_s(
             for (var h = 0u; h < dims.qs; h = h + 1u) {
                 let post = joint[((p * dims.ns + s) * dims.qg + t) * dims.qs + h];
                 let node = ts[(g * dims.ns + s) * dims.qs + h];
-                w = w + post;
-                s2 = s2 + post * node * node;
+                var value = vec2<f32>(post, post * node * node);
+                var level = 0u;
+                var occupied = count;
+                loop {
+                    if ((occupied & 1u) == 0u) { break; }
+                    value = bins[level] + value;
+                    occupied = occupied >> 1u;
+                    level = level + 1u;
+                }
+                bins[level] = value;
+                count = count + 1u;
             }
         }
     }
-    moments[row + 3u + s] = w;
-    moments[row + 3u + dims.ns + s] = s2;
+    var result = vec2<f32>(0.0);
+    for (var level = 0u; level < 32u; level = level + 1u) {
+        if ((count & (1u << level)) != 0u) {
+            result = bins[level] + result;
+        }
+    }
+    moments[row + 3u + s] = result.x;
+    moments[row + 3u + dims.ns + s] = result.y;
 }
 ";
 
@@ -382,6 +474,43 @@ fn reduce_moments_s(
 /// bind group (1 uniform + 11 read-only + 9 read-write buffers).
 #[cfg(all(feature = "gpu", not(coverage)))]
 const MIN_STORAGE_BUFFERS: u32 = 20;
+
+/// Checked leaf-tile and combined count/scratch layout, not a node cap.
+/// Keep all original count slots and append two f32 values per group/block
+/// tile; the merge retains the original ordered tree and tail orientation.
+/// Basis: Higham (1993, pp. 783, 797).
+/// Reference: Higham, N. J. (1993). The accuracy of floating point summation.
+/// SIAM Journal on Scientific Computing, 14(4), 783–799. doi:10.1137/0914050.
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[allow(clippy::too_many_arguments)]
+fn specific_tree_layout(
+    np: usize,
+    qg: usize,
+    qs: usize,
+    ng: usize,
+    ns: usize,
+    ni: usize,
+    nc: usize,
+    partitioned: bool,
+) -> Option<(usize, usize)> {
+    let leaves = np.checked_mul(qg)?.checked_mul(qs)?;
+    let counts = ng
+        .checked_mul(ni)?
+        .checked_mul(qg)?
+        .checked_mul(qs)?
+        .checked_mul(nc)?;
+    if !partitioned {
+        return Some((0, counts));
+    }
+    // Shader ceil and compact leaf ordinals use u32. Leave room for +255.
+    u32::try_from(leaves.checked_add(255)?).ok()?;
+    let capacity = leaves.div_ceil(256);
+    let tiles = ng.checked_mul(ns)?.checked_mul(capacity)?;
+    let len = counts.checked_add(tiles.checked_mul(2)?)?;
+    u32::try_from(tiles).ok()?;
+    u32::try_from(len).ok()?;
+    Some((capacity, len))
+}
 
 /// GPU reduced E-step sweep.
 ///
@@ -391,13 +520,40 @@ const MIN_STORAGE_BUFFERS: u32 = 20;
 /// caller falls back to the `f64` CPU sweep over the same tables.
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
+    e_step_reduced_gpu_consumed(inputs, true)
+}
+
+/// Reduced sweep retaining default full outputs; callers may omit unconsumed
+/// specific moments only (Cai, 2010, pp. 608–609, Appendix A). Omitted
+/// specific outputs are zero, not estimated moments. The default entry and
+/// original output slots remain full. Consumed specific moments append two
+/// f32 partials per group/block/256-leaf tile to the count buffer, checked
+/// against runtime storage and u32 indexing before allocation. They use an
+/// additional compute pass but unchanged product/addition orientation;
+/// omitted-specific callers retain the original allocation and dispatches.
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) fn e_step_reduced_gpu_consumed(
+    inputs: &ReducedEstepInputs,
+    specific_moments: bool,
+) -> Option<ReducedEstepOutputs> {
     use crate::gpu::{
         dispatch_count, dispatch_workgroups_nd, output_buffer, staging_buffer, storage_buffer_fits,
         storage_entry, submit_and_readback,
     };
+    #[cfg(test)]
+    let original_specific = ORIGINAL_SPECIFIC_TREE.with(|v| v.get());
+    #[cfg(not(test))]
+    let original_specific = false;
 
-    let ctx = GpuContext::get()?;
+    let Some(ctx) = GpuContext::get() else {
+        set_fallback_reason("no_usable_adapter_or_device");
+        return None;
+    };
     if ctx.adapter_storage_buffers() < MIN_STORAGE_BUFFERS {
+        set_fallback_reason("adapter_storage_buffer_limit");
         return None;
     }
     let device = &ctx.device;
@@ -412,26 +568,43 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let qs = inputs.qs;
     let ng = inputs.n_groups;
     let stride = qg * qs;
+    // 256 is a leaf tile, never a quadrature/node limit. Checked scratch
+    // payload and shader offsets fail closed before allocation or dispatch.
+    let Some((chunk_capacity, counts_len)) = specific_tree_layout(
+        np,
+        qg,
+        qs,
+        ng,
+        ns,
+        ni,
+        nc,
+        specific_moments && !original_specific,
+    ) else {
+        set_fallback_reason("specific_tree_index_or_payload_limit");
+        return None;
+    };
 
     // Fail closed on storage binding budget before allocating (Metal/WebGPU
     // report these at runtime; never hardcode a byte cap).
     let buffer_lens = [
-        np * ni,                 // yobs as i32 — sized separately below
-        np * qg,                 // genlog / postg
-        np * ns * qg,            // logi
-        np * ns * qg * qs,       // blockacc / joint
-        np,                      // ll
-        np * ns,                 // anyobs
-        ng * ni * stride * nc,   // counts
-        ng * (3 + 2 * ns),       // moments
+        np * ni,               // yobs as i32 — sized separately below
+        np * qg,               // genlog / postg
+        np * ns * qg,          // logi
+        np * ns * qg * qs,     // blockacc / joint
+        np,                    // ll
+        np * ns,               // anyobs
+        ng * ni * stride * nc, // counts
+        ng * (3 + 2 * ns),     // moments
     ];
     for &len in &buffer_lens[1..] {
         if !storage_buffer_fits(&limits, len) {
+            set_fallback_reason("storage_buffer_limit");
             return None;
         }
     }
     // yobs is i32; reuse the f32-sized check with equal element width.
     if !storage_buffer_fits(&limits, buffer_lens[0]) {
+        set_fallback_reason("response_buffer_limit");
         return None;
     }
 
@@ -462,6 +635,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         }
     }
     if !storage_buffer_fits(&limits, tables.len()) {
+        set_fallback_reason("table_buffer_limit");
         return None;
     }
     let mut block_of = vec![-1i32; ni];
@@ -531,12 +705,23 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let postg_buf = output_buffer(device, "postg", np * qg);
     let joint_buf = output_buffer(device, "joint", np * ns * qg * qs);
     let anyobs_buf = output_buffer(device, "anyobs", np * ns);
-    let counts_buf = output_buffer(device, "counts", ng * ni * stride * nc);
+    if !storage_buffer_fits(&limits, counts_len) {
+        set_fallback_reason("specific_tree_storage_limit");
+        return None;
+    }
+    let counts_buf = output_buffer(device, "counts", counts_len);
     let moments_buf = output_buffer(device, "moments", ng * (3 + 2 * ns));
 
+    let partitioned_shader;
+    let shader = if specific_moments && !original_specific {
+        partitioned_shader = format!("{SHADER}\n{}", include_str!("gpu_specific_tree.wgsl"));
+        partitioned_shader.as_str()
+    } else {
+        SHADER
+    };
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("bifactor_reduced_estep"),
-        source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+        source: wgpu::ShaderSource::Wgsl(shader.into()),
     });
 
     let mut entries = vec![wgpu::BindGroupLayoutEntry {
@@ -555,11 +740,10 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     for binding in 12..=20u32 {
         entries.push(storage_entry(binding, false));
     }
-    let bind_group_layout =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("reduced_estep_bgl"),
-            entries: &entries,
-        });
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("reduced_estep_bgl"),
+        entries: &entries,
+    });
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("reduced_estep_bg"),
         layout: &bind_group_layout,
@@ -672,7 +856,16 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let pl_cgen = make("reduce_counts_gen");
     let pl_cblk = make("reduce_counts_blk");
     let pl_mg = make("reduce_moments_g");
-    let pl_ms = make("reduce_moments_s");
+    let pl_ms = make(if specific_moments && !original_specific {
+        "specific_merge"
+    } else {
+        "reduce_moments_s"
+    });
+    let pl_chunks = if specific_moments && !original_specific {
+        Some(make("specific_chunks"))
+    } else {
+        None
+    };
 
     // One compute pass per kernel so storage writes are visible downstream.
     // Factor each 1-D workgroup count into x/y/z against the adapter's
@@ -680,16 +873,32 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     // scale q×item×category grids (e.g. AC late-life q=241) do not panic.
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    for (pipeline, groups) in [
+    let mut phases = vec![
         (&pl_acc, dispatch_count(np * qg)),
         (&pl_norm, dispatch_count(np)),
         (&pl_joint, dispatch_count(np * ns * qg)),
         (&pl_cgen, dispatch_count(ng * ni * qg * nc)),
         (&pl_cblk, dispatch_count(ng * ni * qg * qs * nc)),
         (&pl_mg, dispatch_count(ng)),
-        (&pl_ms, dispatch_count(ng * ns)),
-    ] {
-        let (dx, dy, dz) = dispatch_workgroups_nd(groups.max(1), max_wg)?;
+    ];
+    if specific_moments {
+        #[cfg(test)]
+        SPECIFIC_MOMENT_DISPATCHES.with(|v| v.set(v.get() + 1));
+        if let Some(ref chunks) = pl_chunks {
+            phases.push((chunks, dispatch_count(ng * ns * chunk_capacity)));
+            #[cfg(test)]
+            SPECIFIC_LEAF_SPAN.with(|v| v.set((np * qg * qs).min(256)));
+        } else {
+            #[cfg(test)]
+            SPECIFIC_LEAF_SPAN.with(|v| v.set(np * qg * qs));
+        }
+        phases.push((&pl_ms, dispatch_count(ng * ns)));
+    }
+    for (pipeline, groups) in phases {
+        let Some((dx, dy, dz)) = dispatch_workgroups_nd(groups.max(1), max_wg) else {
+            set_fallback_reason("workgroup_dispatch_limit");
+            return None;
+        };
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: None,
             timestamp_writes: None,
@@ -700,21 +909,39 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     }
 
     let ll_staging = staging_buffer(device, "ll_read", np);
+    let postg_staging = staging_buffer(device, "postg_read", np * qg);
     let counts_staging = staging_buffer(device, "counts_read", ng * ni * stride * nc);
     let moments_staging = staging_buffer(device, "moments_read", ng * (3 + 2 * ns));
-    let read = submit_and_readback(
+    let Some(read) = submit_and_readback(
         ctx,
         encoder,
         &[
             (&ll_buf, &ll_staging, np),
+            (&postg_buf, &postg_staging, np * qg),
             (&counts_buf, &counts_staging, ng * ni * stride * nc),
             (&moments_buf, &moments_staging, ng * (3 + 2 * ns)),
         ],
-    )?;
+    ) else {
+        set_fallback_reason("gpu_submit_or_readback_failure");
+        return None;
+    };
     let mut iter = read.into_iter();
-    let ll_vec = iter.next()?;
-    let counts_vec = iter.next()?;
-    let moments_vec = iter.next()?;
+    let Some(ll_vec) = iter.next() else {
+        set_fallback_reason("gpu_readback_missing_loglik");
+        return None;
+    };
+    let Some(postg_vec) = iter.next() else {
+        set_fallback_reason("gpu_readback_missing_posterior");
+        return None;
+    };
+    let Some(counts_vec) = iter.next() else {
+        set_fallback_reason("gpu_readback_missing_counts");
+        return None;
+    };
+    let Some(moments_vec) = iter.next() else {
+        set_fallback_reason("gpu_readback_missing_moments");
+        return None;
+    };
 
     let mut loglik = 0.0;
     for &v in &ll_vec {
@@ -736,6 +963,9 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         }
     }
 
+    {
+        record_gpu_success(ctx.backend(), ctx.device_name());
+    }
     Some(ReducedEstepOutputs {
         loglik,
         counts: counts_vec.into_iter().map(f64::from).collect(),
@@ -745,6 +975,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
         s2_g,
         s2_spec,
         w_spec,
+        postg: postg_vec.into_iter().map(f64::from).collect(),
     })
 }
 
@@ -752,8 +983,83 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
 /// coverage: always returns `None` so the caller runs the CPU E-step.
 #[cfg(any(not(feature = "gpu"), coverage))]
 #[allow(dead_code)]
-pub(crate) fn e_step_reduced_gpu(
-    _inputs: &ReducedEstepInputs,
-) -> Option<ReducedEstepOutputs> {
+pub(crate) fn e_step_reduced_gpu(_inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
+    set_fallback_reason("gpu_feature_disabled_or_coverage_build");
     None
 }
+
+#[cfg(any(not(feature = "gpu"), coverage))]
+pub(crate) fn e_step_reduced_gpu_consumed(inputs: &ReducedEstepInputs, _specific_moments: bool) -> Option<ReducedEstepOutputs> {
+    e_step_reduced_gpu(inputs)
+}
+
+#[cfg(test)]
+thread_local! { static SPECIFIC_MOMENT_DISPATCHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+
+#[cfg(test)]
+thread_local! { static SPECIFIC_LEAF_SPAN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+#[cfg(test)]
+thread_local! { static ORIGINAL_SPECIFIC_TREE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/gpu_specific_leaf_partition_tests.rs"]
+mod specific_leaf_partition_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/gpu_bifactor_consumed_moment_tests.rs"]
+mod consumed_moment_tests;
+
+#[cfg(test)]
+pub(crate) fn reset_specific_moment_dispatch_count() {
+    SPECIFIC_MOMENT_DISPATCHES.with(|v| v.set(0));
+}
+#[cfg(test)]
+pub(crate) fn specific_moment_dispatch_count() -> usize {
+    SPECIFIC_MOMENT_DISPATCHES.with(|v| v.get())
+}
+
+
+#[cfg(test)]
+mod receipt_tests {
+    use super::*;
+
+    #[test]
+    fn fallback_history_survives_later_gpu_success() {
+        reset_gpu_dispatch_receipt();
+        set_fallback_reason("gpu_submit_or_readback_failure");
+        record_gpu_success("Metal", "Apple M5");
+        let receipt = gpu_dispatch_receipt();
+        assert!(receipt.used);
+        assert_eq!(receipt.backend.as_deref(), Some("Metal"));
+        assert_eq!(receipt.device_name.as_deref(), Some("Apple M5"));
+        assert_eq!(
+            receipt.fallback_reason.as_deref(),
+            Some("gpu_submit_or_readback_failure")
+        );
+    }
+
+    #[test]
+    fn receipt_state_is_thread_local() {
+        reset_gpu_dispatch_receipt();
+        set_fallback_reason("main_thread");
+        let child = std::thread::spawn(|| {
+            let receipt = gpu_dispatch_receipt();
+            assert!(!receipt.used);
+            assert!(receipt.fallback_reason.is_none());
+            set_fallback_reason("child_thread");
+            gpu_dispatch_receipt()
+        });
+        let child_receipt = child.join().expect("receipt thread must finish");
+        assert_eq!(
+            child_receipt.fallback_reason.as_deref(),
+            Some("child_thread")
+        );
+        assert_eq!(
+            gpu_dispatch_receipt().fallback_reason.as_deref(),
+            Some("main_thread")
+        );
+    }
+}
+#[cfg(test)]
+#[path = "../../../tests/unit/gpu_bifactor_count_tests.rs"]
+mod expected_count_tests;
