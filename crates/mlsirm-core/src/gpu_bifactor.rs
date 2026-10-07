@@ -10,6 +10,16 @@
 //! moments — while the `f64` CPU path in [`crate::bifactor_grm`] remains the
 //! numerical reference. When no GPU adapter satisfies the binding budget the
 //! entry point returns `None` and the caller falls back to CPU.
+//! The default sweep retains all outputs. A caller-local consumed-output
+//! projection may omit the specific-moment reduction when it is unused:
+//! counts and primary outputs remain unchanged, while omitted specific
+//! moment slots are zero. Full specific reductions partition the original
+//! compact ordered binary-carry tree into 256-leaf tiles and recombine its
+//! original tail orientation. The tile is not a quadrature/node limit.
+//! When specific moments are consumed, the count buffer additionally holds
+//! two f32 partials per group/block/tile; readback still returns only the
+//! original count slots. Omitted-specific callers allocate no tile payload.
+//! This is scheduling reuse, not a precision or fitted-convergence claim.
 //!
 //! # Precision
 //!
@@ -465,6 +475,43 @@ fn reduce_moments_s(
 #[cfg(all(feature = "gpu", not(coverage)))]
 const MIN_STORAGE_BUFFERS: u32 = 20;
 
+/// Checked leaf-tile and combined count/scratch layout, not a node cap.
+/// Keep all original count slots and append two f32 values per group/block
+/// tile; the merge retains the original ordered tree and tail orientation.
+/// Basis: Higham (1993, pp. 783, 797).
+/// Reference: Higham, N. J. (1993). The accuracy of floating point summation.
+/// SIAM Journal on Scientific Computing, 14(4), 783–799. doi:10.1137/0914050.
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[allow(clippy::too_many_arguments)]
+fn specific_tree_layout(
+    np: usize,
+    qg: usize,
+    qs: usize,
+    ng: usize,
+    ns: usize,
+    ni: usize,
+    nc: usize,
+    partitioned: bool,
+) -> Option<(usize, usize)> {
+    let leaves = np.checked_mul(qg)?.checked_mul(qs)?;
+    let counts = ng
+        .checked_mul(ni)?
+        .checked_mul(qg)?
+        .checked_mul(qs)?
+        .checked_mul(nc)?;
+    if !partitioned {
+        return Some((0, counts));
+    }
+    // Shader ceil and compact leaf ordinals use u32. Leave room for +255.
+    u32::try_from(leaves.checked_add(255)?).ok()?;
+    let capacity = leaves.div_ceil(256);
+    let tiles = ng.checked_mul(ns)?.checked_mul(capacity)?;
+    let len = counts.checked_add(tiles.checked_mul(2)?)?;
+    u32::try_from(tiles).ok()?;
+    u32::try_from(len).ok()?;
+    Some((capacity, len))
+}
+
 /// GPU reduced E-step sweep.
 ///
 /// Returns `None` when no compatible GPU adapter can be initialized (or when
@@ -473,10 +520,33 @@ const MIN_STORAGE_BUFFERS: u32 = 20;
 /// caller falls back to the `f64` CPU sweep over the same tables.
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
+    e_step_reduced_gpu_consumed(inputs, true)
+}
+
+/// Reduced sweep retaining default full outputs; callers may omit unconsumed
+/// specific moments only (Cai, 2010, pp. 608–609, Appendix A). Omitted
+/// specific outputs are zero, not estimated moments. The default entry and
+/// original output slots remain full. Consumed specific moments append two
+/// f32 partials per group/block/256-leaf tile to the count buffer, checked
+/// against runtime storage and u32 indexing before allocation. They use an
+/// additional compute pass but unchanged product/addition orientation;
+/// omitted-specific callers retain the original allocation and dispatches.
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581–612.
+/// doi:10.1007/s11336-010-9178-0.
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) fn e_step_reduced_gpu_consumed(
+    inputs: &ReducedEstepInputs,
+    specific_moments: bool,
+) -> Option<ReducedEstepOutputs> {
     use crate::gpu::{
         dispatch_count, dispatch_workgroups_nd, output_buffer, staging_buffer, storage_buffer_fits,
         storage_entry, submit_and_readback,
     };
+    #[cfg(test)]
+    let original_specific = ORIGINAL_SPECIFIC_TREE.with(|v| v.get());
+    #[cfg(not(test))]
+    let original_specific = false;
 
     let Some(ctx) = GpuContext::get() else {
         set_fallback_reason("no_usable_adapter_or_device");
@@ -498,6 +568,21 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let qs = inputs.qs;
     let ng = inputs.n_groups;
     let stride = qg * qs;
+    // 256 is a leaf tile, never a quadrature/node limit. Checked scratch
+    // payload and shader offsets fail closed before allocation or dispatch.
+    let Some((chunk_capacity, counts_len)) = specific_tree_layout(
+        np,
+        qg,
+        qs,
+        ng,
+        ns,
+        ni,
+        nc,
+        specific_moments && !original_specific,
+    ) else {
+        set_fallback_reason("specific_tree_index_or_payload_limit");
+        return None;
+    };
 
     // Fail closed on storage binding budget before allocating (Metal/WebGPU
     // report these at runtime; never hardcode a byte cap).
@@ -620,12 +705,23 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let postg_buf = output_buffer(device, "postg", np * qg);
     let joint_buf = output_buffer(device, "joint", np * ns * qg * qs);
     let anyobs_buf = output_buffer(device, "anyobs", np * ns);
-    let counts_buf = output_buffer(device, "counts", ng * ni * stride * nc);
+    if !storage_buffer_fits(&limits, counts_len) {
+        set_fallback_reason("specific_tree_storage_limit");
+        return None;
+    }
+    let counts_buf = output_buffer(device, "counts", counts_len);
     let moments_buf = output_buffer(device, "moments", ng * (3 + 2 * ns));
 
+    let partitioned_shader;
+    let shader = if specific_moments && !original_specific {
+        partitioned_shader = format!("{SHADER}\n{}", include_str!("gpu_specific_tree.wgsl"));
+        partitioned_shader.as_str()
+    } else {
+        SHADER
+    };
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("bifactor_reduced_estep"),
-        source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+        source: wgpu::ShaderSource::Wgsl(shader.into()),
     });
 
     let mut entries = vec![wgpu::BindGroupLayoutEntry {
@@ -760,7 +856,16 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     let pl_cgen = make("reduce_counts_gen");
     let pl_cblk = make("reduce_counts_blk");
     let pl_mg = make("reduce_moments_g");
-    let pl_ms = make("reduce_moments_s");
+    let pl_ms = make(if specific_moments && !original_specific {
+        "specific_merge"
+    } else {
+        "reduce_moments_s"
+    });
+    let pl_chunks = if specific_moments && !original_specific {
+        Some(make("specific_chunks"))
+    } else {
+        None
+    };
 
     // One compute pass per kernel so storage writes are visible downstream.
     // Factor each 1-D workgroup count into x/y/z against the adapter's
@@ -768,15 +873,28 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
     // scale q×item×category grids (e.g. AC late-life q=241) do not panic.
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    for (pipeline, groups) in [
+    let mut phases = vec![
         (&pl_acc, dispatch_count(np * qg)),
         (&pl_norm, dispatch_count(np)),
         (&pl_joint, dispatch_count(np * ns * qg)),
         (&pl_cgen, dispatch_count(ng * ni * qg * nc)),
         (&pl_cblk, dispatch_count(ng * ni * qg * qs * nc)),
         (&pl_mg, dispatch_count(ng)),
-        (&pl_ms, dispatch_count(ng * ns)),
-    ] {
+    ];
+    if specific_moments {
+        #[cfg(test)]
+        SPECIFIC_MOMENT_DISPATCHES.with(|v| v.set(v.get() + 1));
+        if let Some(ref chunks) = pl_chunks {
+            phases.push((chunks, dispatch_count(ng * ns * chunk_capacity)));
+            #[cfg(test)]
+            SPECIFIC_LEAF_SPAN.with(|v| v.set((np * qg * qs).min(256)));
+        } else {
+            #[cfg(test)]
+            SPECIFIC_LEAF_SPAN.with(|v| v.set(np * qg * qs));
+        }
+        phases.push((&pl_ms, dispatch_count(ng * ns)));
+    }
+    for (pipeline, groups) in phases {
         let Some((dx, dy, dz)) = dispatch_workgroups_nd(groups.max(1), max_wg) else {
             set_fallback_reason("workgroup_dispatch_limit");
             return None;
@@ -869,6 +987,37 @@ pub(crate) fn e_step_reduced_gpu(_inputs: &ReducedEstepInputs) -> Option<Reduced
     set_fallback_reason("gpu_feature_disabled_or_coverage_build");
     None
 }
+
+#[cfg(any(not(feature = "gpu"), coverage))]
+pub(crate) fn e_step_reduced_gpu_consumed(inputs: &ReducedEstepInputs, _specific_moments: bool) -> Option<ReducedEstepOutputs> {
+    e_step_reduced_gpu(inputs)
+}
+
+#[cfg(test)]
+thread_local! { static SPECIFIC_MOMENT_DISPATCHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+
+#[cfg(test)]
+thread_local! { static SPECIFIC_LEAF_SPAN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+#[cfg(test)]
+thread_local! { static ORIGINAL_SPECIFIC_TREE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/gpu_specific_leaf_partition_tests.rs"]
+mod specific_leaf_partition_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/gpu_bifactor_consumed_moment_tests.rs"]
+mod consumed_moment_tests;
+
+#[cfg(test)]
+pub(crate) fn reset_specific_moment_dispatch_count() {
+    SPECIFIC_MOMENT_DISPATCHES.with(|v| v.set(0));
+}
+#[cfg(test)]
+pub(crate) fn specific_moment_dispatch_count() -> usize {
+    SPECIFIC_MOMENT_DISPATCHES.with(|v| v.get())
+}
+
 
 #[cfg(test)]
 mod receipt_tests {
