@@ -252,7 +252,8 @@ fn simple_structure_metrics(
     for i in 0..rows {
         let row = &pattern[i * factors + first..(i + 1) * factors];
         let row_ss: f64 = row.iter().map(|x| x * x).sum();
-        let row_fourth: f64 = row.iter().map(|x| x.powi(4)).sum();
+        // Optimization: Avoid powi(4) to reduce function call overhead in hot loops
+        let row_fourth: f64 = row.iter().map(|x| { let x2 = x * x; x2 * x2 }).sum();
         complexity_numerator += row_ss * row_ss - row_fourth;
         complexity_denominator += row_ss * row_ss;
         for (j, value) in row.iter().enumerate() {
