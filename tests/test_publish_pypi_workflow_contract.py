@@ -303,7 +303,8 @@ def test_pypi_publish_reads_back_the_admitted_public_matrix() -> None:
     assert publish.index("skip-existing: true") < publish.index(
         "Verify published PyPI matrix against admission"
     )
-    assert "python3 scripts/ci/verify_published_pypi.py admission/admitted-manifest.tsv '${{ inputs.release_tag }}'" in publish
+    assert "python3 scripts/ci/verify_published_pypi.py admission/admitted-manifest.tsv \"$RELEASE_TAG\"" in publish
+    assert "RELEASE_TAG: ${{ inputs.release_tag }}" in publish
 
 
 def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> None:
@@ -595,7 +596,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
     assert "release-dependency-license-strix-gate.yml@b6cebb36dc11afe409a7fee8a3262827255c029c" in central
     assert "needs: [verify-release, reproducibility-record]" in central
-    assert "secrets: inherit" in central
+    assert "secrets:\n      OPENSAR_AUTH_TOKEN: ${{ secrets.OPENSAR_AUTH_TOKEN }}" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
     assert "full_set_verdict_artifact_id" in admission
     assert "full_set_verdict_artifact_digest" in admission
