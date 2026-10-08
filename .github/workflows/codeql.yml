@@ -2,6 +2,7 @@ name: CodeQL
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -12,7 +13,7 @@ jobs:
     # Branch protection requires a deterministic Actions-language CodeQL check
     # on PRs. Default setup remains the repository's code-scanning upload owner.
     name: Analyze (actions)
-    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow_ref == 'ContextualWisdomLab/fast-mlsirm/.github/workflows/codeql.yml@refs/heads/main' && '{"group":"CWL central CodeQL","labels":["self-hosted","Linux","X64"]}' || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow_ref == 'ContextualWisdomLab/fast-mlsirm/.github/workflows/codeql.yml@refs/heads/main' && '{"group":"CWL central CodeQL","labels":["self-hosted","Linux","X64"]}' || '["self-hosted","Linux","X64","cwlab-ci-isolated"]') }}
     permissions:
       contents: read
       security-events: write
@@ -36,7 +37,7 @@ jobs:
     # the current default setup is configured for Actions only.
     if: github.event_name == 'workflow_dispatch'
     name: Analyze (python)
-    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow_ref == 'ContextualWisdomLab/fast-mlsirm/.github/workflows/codeql.yml@refs/heads/main' && '{"group":"CWL central CodeQL","labels":["self-hosted","Linux","X64"]}' || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow_ref == 'ContextualWisdomLab/fast-mlsirm/.github/workflows/codeql.yml@refs/heads/main' && '{"group":"CWL central CodeQL","labels":["self-hosted","Linux","X64"]}' || '["self-hosted","Linux","X64","cwlab-ci-isolated"]') }}
     permissions:
       contents: read
       security-events: write

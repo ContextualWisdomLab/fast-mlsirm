@@ -23,13 +23,15 @@ jobs:
   python-matrix:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
     name: python (${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: ${{ matrix.python-version }}
@@ -49,7 +51,7 @@ jobs:
     name: python
     needs: python-matrix
     if: ${{ always() && (github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed')) }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     steps:
       - name: Require every CPython matrix leg
         run: |
@@ -59,9 +61,11 @@ jobs:
 
   rust:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -79,13 +83,15 @@ jobs:
     # Exact GPU and study-precision nodes below own every corresponding
     # non-execution allowlist entry. The full paper-design recovery study
     # remains in the scheduled/manual workflow.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     timeout-minutes: 240
     env:
       WGPU_BACKEND: vulkan
       XDG_RUNTIME_DIR: /tmp/fast-mlsirm-xdg-runtime
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -157,14 +163,53 @@ jobs:
           from pathlib import Path
           from xml.etree import ElementTree
 
+          required = {
+              ("tests.test_marginal_parity", "test_marginal_gpu_agrees_with_cpu_loosely"),
+              ("tests.test_bifactor_gpu_high_q", "test_bifactor_gpu_parity_q121"),
+              ("tests.test_bifactor_gpu_high_q", "test_bifactor_gpu_parity_q241"),
+              ("tests.test_bifactor_gpu_high_q", "test_bifactor_gpu_parity_q481"),
+              ("tests.test_bifactor_gpu_high_q", "test_bifactor_gpu_parity_q241_wide_items_metal_workgroups"),
+              ("tests.test_bifactor_gpu_high_q", "test_bifactor_cpu_q121_vs_q241_agree"),
+              ("tests.test_bifactor_bootstrap_benchmark", "test_joint_bootstrap_cpu_vs_gpu_wall_time_q121"),
+          }
+
+          def count(node, field):
+              value = node.attrib.get(field, "")
+              if not value.isascii() or not value.isdecimal():
+                  raise SystemExit(f"GPU evidence has invalid {field} count")
+              return int(value)
+
           root = ElementTree.parse(Path("gpu-junit.xml")).getroot()
-          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
-          tests = sum(int(suite.attrib.get("tests", "0")) for suite in suites)
-          skipped = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)
-          if tests < 1:
+          if root.tag == "testsuite":
+              suites = [root]
+          elif root.tag == "testsuites" and all(child.tag == "testsuite" for child in root):
+              suites = list(root)
+          else:
+              raise SystemExit("GPU evidence has unsupported JUnit layout")
+          if not suites:
               raise SystemExit("GPU evidence did not execute a test")
-          if skipped != 0:
-              raise SystemExit(f"GPU evidence contained {skipped} skipped test(s)")
+          identities = []
+          for suite in suites:
+              if any(child.tag not in {"testcase", "properties", "system-out", "system-err"} for child in suite):
+                  raise SystemExit("GPU evidence has unsupported suite children")
+              cases = list(suite.findall("testcase"))
+              if list(suite.iter("testcase")) != cases:
+                  raise SystemExit("GPU evidence has nested testcase rows")
+              if count(suite, "tests") != len(cases):
+                  raise SystemExit("GPU evidence header/testcase count mismatch")
+              for field, tag in (("failures", "failure"), ("errors", "error"), ("skipped", "skipped")):
+                  actual = sum(len(list(case.iter(tag))) for case in cases)
+                  if count(suite, field) != actual or actual != 0:
+                      raise SystemExit(f"GPU evidence contained invalid or nonzero {field}")
+              identities.extend((case.get("classname"), case.get("name")) for case in cases)
+          if len(identities) != len(required) or set(identities) != required:
+              raise SystemExit("GPU evidence requires each exact selector once, without extras")
+          if root.tag == "testsuites":
+              for field in ("tests", "failures", "errors", "skipped"):
+                  if field in root.attrib:
+                      expected = len(identities) if field == "tests" else 0
+                      if count(root, field) != expected:
+                          raise SystemExit("GPU evidence aggregate header count mismatch")
           PY
 
   fuzz:
@@ -173,9 +218,11 @@ jobs:
     # property-based Hypothesis tests already run in the `python` job (via the
     # dev extra); this job adds the Atheris coverage-guided harnesses with a
     # ~60s-per-target budget. Longer campaigns can be run nightly if desired.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -220,9 +267,11 @@ jobs:
 
   package:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
