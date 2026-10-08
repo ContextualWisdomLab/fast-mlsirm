@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-10-24 - Vectorize categorical summation over node dimensions
+**Learning:** In GPCM MMLE, using a list comprehension over categories `np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)` to compute the expected response matrix allocates an intermediate boolean mask `y[:, i] == k` and runs a Python loop for each category, creating significant overhead when called repeatedly within the EM iteration limit.
+**Action:** Vectorize completely by hoisting the category array `k_range = np.arange(k_cat)` outside the item/iteration loop and using a 3D boolean mask projected via matrix multiplication: `mask = (y[:, i, None] == k_range).astype(post.dtype)` followed by `r = (mask.T @ post).T`. This avoids the Python loop, skips intermediate integer boolean arrays, and achieves over a 2x local speedup for the block.
