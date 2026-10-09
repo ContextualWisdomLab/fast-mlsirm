@@ -10,4 +10,4 @@ permissions:
 
 jobs:
   central:
-    uses: ContextualWisdomLab/.github/.github/workflows/fast-mlsirm-codeql.yml@b97821885a08d9dae556da34b730677d14ee8c97
+    uses: ContextualWisdomLab/.github/.github/workflows/fast-mlsirm-codeql.yml@deb86d0a96a9478319dd015a902131d698fa79e2
