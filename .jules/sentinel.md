@@ -59,3 +59,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+## 2024-10-24 - [Semgrep SAST vulnerabilities in GitHub Actions]
+**Vulnerability:** Shell injections via untrusted string interpolation (`${{ inputs.release_tag }}`) in bash `run:` scripts and broad `secrets: inherit` passing in GitHub Actions reusable workflows.
+**Learning:** These practices violate the principle of least privilege and expose the runner to malicious code execution or secret theft.
+**Prevention:** Pass untrusted inputs via `env:` variables and explicitly map required secrets in workflows using the `secrets:` dictionary.
