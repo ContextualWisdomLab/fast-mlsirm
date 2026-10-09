@@ -683,7 +683,11 @@ def _report_css() -> str:
 :root { color: #172026; background: #f5f7f8; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
 * { box-sizing: border-box; }
 body { margin: 0; }
+.skip-link { position: absolute; left: -9999px; z-index: 999; padding: 1em; background-color: #fff; color: #172026; text-decoration: none; border: 1px solid #172026; }
+.skip-link:focus, .skip-link:focus-visible { left: 50%; transform: translateX(-50%); outline: 3px solid #0f766e; outline-offset: 3px; }
 main { max-width: 1180px; margin: 0 auto; padding: 32px 20px 56px; }
+main:focus:not(:focus-visible) { outline: none; }
+main:focus-visible { outline: 3px solid #0f766e; }
 .hero { background: #12343b; color: #fff; border-radius: 8px; padding: 28px; }
 .hero p, .hero h1 { margin: 0; }
 .hero p { color: #b7d7d0; font-size: 0.86rem; font-weight: 700; text-transform: uppercase; }
@@ -862,7 +866,9 @@ def _render_report(manifest: dict[str, Any]) -> str:
             _report_css(),
             "</style>",
             "</head>",
-            "<body><main>",
+            "<body>",
+            '<a class="skip-link" href="#main-content">Skip to report content</a>',
+            '<main id="main-content" tabindex="-1">',
             '<section class="hero"><p>fast-mlsirm buyer governance</p><h1>PR Queue Governance</h1>',
             f"<span>Repository: {escape(str(manifest.get('repo', '')))} · "
             f"Base: {escape(str(manifest.get('base_sha', '')))} · "
