@@ -39,14 +39,15 @@ def test_actions_codeql_runs_on_pull_requests_while_python_stays_manual() -> Non
     assert "if: github.event_name == 'workflow_dispatch'" in python_job
 
 
-def test_advanced_jobs_do_not_upload_while_default_setup_is_enabled() -> None:
-    """Run real CodeQL queries without competing with default setup SARIF ownership."""
+def test_advanced_jobs_publish_sarif_without_optional_artifact_uploads() -> None:
+    """Publish scans directly and require nonempty local results despite artifact quota."""
     workflow = workflow_source(WORKFLOW_PATH)
-    actions_job = _job_block(workflow, "analyze-actions", "analyze-python")
-    python_job = _job_block(workflow, "analyze-python")
-
-    assert "upload: never" in actions_job
-    assert "upload: never" in python_job
+    for language, job in (("actions", _job_block(workflow, "analyze-actions", "analyze-python")),
+                          ("python", _job_block(workflow, "analyze-python"))):
+        assert "security-events: write" in job
+        assert "upload: never" not in job
+        assert "actions/upload-artifact@" not in job
+        assert f"test -s codeql-results/{language}/{language}.sarif" in job
 
 
 def test_codeql_workflow_keeps_pinned_actions_and_least_permissions() -> None:
@@ -63,9 +64,7 @@ def test_self_hosted_diagnostics_use_isolated_runners_without_persisted_credenti
     workflow = workflow_source(WORKFLOW_PATH)
     for job in (_job_block(workflow, "analyze-actions", "analyze-python"),
                 _job_block(workflow, "analyze-python")):
-        assert "    runs-on:\n      group: CWL CI isolated\n      labels: [self-hosted, Linux, X64]" in job
+        assert "    runs-on:\n      group: CWL CI isolated\n      labels: [self-hosted, linux, x64, cwlab-ci-isolated]" in job
         assert "CWL central CodeQL" not in job
         assert "ubuntu-latest" not in job
         assert "persist-credentials: false" in job
-        assert "if-no-files-found: error" in job
-        assert "upload: never" in job
