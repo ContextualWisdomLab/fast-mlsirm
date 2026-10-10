@@ -16,7 +16,7 @@ permissions:
 jobs:
   PR:
     if: ${{ !github.event.pull_request.draft && github.event.action != 'closed' }}
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     permissions:
       contents: read
       security-events: write
