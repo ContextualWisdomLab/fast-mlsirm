@@ -1,6 +1,7 @@
 """Repository contracts for the reviewed Rust compiler baseline."""
 
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 import tomllib
 from pathlib import Path
@@ -102,7 +103,7 @@ def test_every_product_and_statistical_rust_action_uses_1_97_1() -> None:
 
     expected_counts = ((_CI, 4), (_STUDIES, 5))
     for workflow_path, expected in expected_counts:
-        workflow = workflow_path.read_text(encoding="utf-8")
+        workflow = workflow_source(workflow_path)
         steps = _rust_toolchain_steps(workflow)
         assert len(steps) == expected
         assert all(action == _ACTION for action, _ in steps)

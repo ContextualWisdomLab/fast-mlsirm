@@ -15,6 +15,7 @@ https://github.com/ContextualWisdomLab/fast-mlsirm/issues/1869
 """
 
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 from pathlib import Path
 
@@ -38,7 +39,7 @@ _EXECUTION_ASSERTION = "test result: ok. 1 passed"
 
 def _workflow_text() -> str:
     """Return the Statistical Studies workflow text under contract."""
-    return _WORKFLOW.read_text(encoding="utf-8")
+    return workflow_source(_WORKFLOW)
 
 
 def test_dedicated_recovery_steps_reference_their_exact_tests():

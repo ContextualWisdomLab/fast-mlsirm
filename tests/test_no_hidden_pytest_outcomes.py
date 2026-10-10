@@ -16,6 +16,7 @@ References:
 """
 
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 import shutil
 import subprocess
@@ -328,9 +329,7 @@ def _capability_ownership_violations(allowlist: str, ci_workflow: str) -> list[s
 def test_allowlisted_capability_nodes_have_exact_ci_owners() -> None:
     """Require every capability allowlist entry to be executed by its owning CI job."""
     allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text(encoding="utf-8")
-    ci_workflow = (
-        REPO_TESTS_DIR.parent / ".github" / "workflows" / "ci.yml"
-    ).read_text(encoding="utf-8")
+    ci_workflow = workflow_source(REPO_TESTS_DIR.parent / ".github" / "workflows" / "ci.yml")
     gpu_smoke_job = _workflow_job_body(ci_workflow, "gpu-smoke")
     fuzz_job = _workflow_job_body(ci_workflow, "fuzz")
 
@@ -350,9 +349,7 @@ def test_allowlisted_capability_nodes_have_exact_ci_owners() -> None:
 
 def test_capability_ownership_rejects_unowned_or_widened_entries() -> None:
     """A new capability node without an executing owner job must be reported."""
-    ci_workflow = (
-        REPO_TESTS_DIR.parent / ".github" / "workflows" / "ci.yml"
-    ).read_text(encoding="utf-8")
+    ci_workflow = workflow_source(REPO_TESTS_DIR.parent / ".github" / "workflows" / "ci.yml")
     allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text(encoding="utf-8")
     unowned = "tests/test_bifactor_gpu_high_q.py::test_unowned_future_capability"
     cases = {

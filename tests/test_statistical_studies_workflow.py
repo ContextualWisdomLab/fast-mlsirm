@@ -1,6 +1,7 @@
 """Workflow-contract tests separating bounded PR CI from exhaustive studies."""
 
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 from pathlib import Path
 
@@ -14,7 +15,7 @@ _SHARD_RUNNER = _ROOT / "scripts" / "run_ignored_rust_shard.py"
 
 def test_pull_request_ci_keeps_exhaustive_studies_out_of_the_queue():
     """PR CI retains one GPU smoke while excluding all exhaustive sweeps."""
-    text = _PR_CI.read_text(encoding="utf-8")
+    text = workflow_source(_PR_CI)
     assert "gpu-smoke:" in text
     assert "rust-ignored:" not in text
     assert "rust-pyo3-ignored:" not in text
@@ -28,10 +29,11 @@ def test_pull_request_ci_keeps_exhaustive_studies_out_of_the_queue():
 
 def test_exhaustive_studies_are_scheduled_manual_and_release_triggered():
     """The heavy evidence suite is reproducible without blocking every PR."""
-    text = _STUDIES.read_text(encoding="utf-8")
-    assert "workflow_dispatch:" in text
-    assert 'cron: "17 2 * * *"' in text
-    assert '      - "v*"' in text
+    text = workflow_source(_STUDIES)
+    caller = _STUDIES.read_text(encoding="utf-8")
+    assert "workflow_dispatch:" in caller
+    assert 'cron: "17 2 * * *"' in caller
+    assert '      - "v*"' in caller
     assert "rust-ignored:" in text
     assert "rust-pyo3-ignored:" in text
     assert "rust-recovery:" in text
@@ -41,7 +43,7 @@ def test_exhaustive_studies_are_scheduled_manual_and_release_triggered():
 
 def test_ignored_rust_shards_allow_long_recovery_evidence_to_finish():
     """The shard deadline exceeds the historical 30-minute study timeout."""
-    text = _STUDIES.read_text(encoding="utf-8")
+    text = workflow_source(_STUDIES)
     rust_ignored = text[text.index("  rust-ignored:"):text.index("\n  rust-pyo3-ignored:")]
     assert "timeout-minutes: 180" in rust_ignored
     assert 'FAST_MLSIRM_STATISTICAL_TEST_TIMEOUT_SECONDS: "7200"' in rust_ignored
@@ -49,7 +51,7 @@ def test_ignored_rust_shards_allow_long_recovery_evidence_to_finish():
 
 def test_statistical_studies_declare_the_secret_boundary():
     """The evidence workflow documents the reviewed secret-input policy."""
-    text = _STUDIES.read_text(encoding="utf-8")
+    text = workflow_source(_STUDIES)
     assert "Secret boundary:" in text
     assert "${{ secrets.NAME }}" in text
     assert "never hardcode" in text
@@ -57,7 +59,7 @@ def test_statistical_studies_declare_the_secret_boundary():
 
 def test_statistical_studies_are_read_only_and_never_rewrite_source():
     """Scientific evidence runs reviewed code and cannot commit replacements."""
-    text = _STUDIES.read_text(encoding="utf-8")
+    text = workflow_source(_STUDIES)
     assert "contents: read" in text
     assert "contents: write" not in text
     assert "git push" not in text
@@ -67,7 +69,7 @@ def test_statistical_studies_are_read_only_and_never_rewrite_source():
 
 def test_grm_recovery_checkout_does_not_persist_credentials():
     """The dedicated GRM study keeps checkout credentials away from Rust tests."""
-    text = _STUDIES.read_text(encoding="utf-8")
+    text = workflow_source(_STUDIES)
     _, grm_block = text.split("\n  grm-recovery:\n", maxsplit=1)
     grm_block, _ = grm_block.split("\n  gpu-recovery:\n", maxsplit=1)
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in grm_block
@@ -76,7 +78,7 @@ def test_grm_recovery_checkout_does_not_persist_credentials():
 
 def test_statistical_studies_checkouts_do_not_persist_credentials():
     """Every scheduled study checkout withholds the Actions token from cargo test."""
-    text = _STUDIES.read_text(encoding="utf-8")
+    text = workflow_source(_STUDIES)
     checkout = "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
     checkout_tails = text.split(checkout)[1:]
     assert len(checkout_tails) == 5
@@ -88,7 +90,7 @@ def test_statistical_studies_checkouts_do_not_persist_credentials():
 
 def test_grm_recovery_publishes_a_durable_study_log():
     """Buyers can download bias/RMSE/convergence lines after the job log expires."""
-    text = _STUDIES.read_text(encoding="utf-8")
+    text = workflow_source(_STUDIES)
     _, grm_block = text.split("\n  grm-recovery:\n", maxsplit=1)
     grm_block, _ = grm_block.split("\n  gpu-recovery:\n", maxsplit=1)
     assert "timeout-minutes: 120" in grm_block
@@ -110,7 +112,7 @@ def test_grm_recovery_publishes_a_durable_study_log():
 
 def test_general_and_pyo3_jobs_follow_the_declared_workspace_boundary():
     """The general inventory uses workspace metadata; excluded PyO3 is separate."""
-    workflow = _STUDIES.read_text(encoding="utf-8")
+    workflow = workflow_source(_STUDIES)
     workspace = _WORKSPACE.read_text(encoding="utf-8")
     runner = _SHARD_RUNNER.read_text(encoding="utf-8")
     assert 'members = ["crates/mlsirm-core"]' in workspace
@@ -120,14 +122,14 @@ def test_general_and_pyo3_jobs_follow_the_declared_workspace_boundary():
     assert '"workspace_members"' in runner
     assert "--exclude-package" not in workflow
     assert (
-        "cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml"
+        "cargo test --locked --release --manifest-path crates/fast-mlsirm-py/Cargo.toml"
         in workflow
     )
 
 
 def test_dedicated_study_exclusions_are_target_qualified_and_executed_elsewhere():
     """Every shard exclusion identifies one package, target, and test function."""
-    text = _STUDIES.read_text(encoding="utf-8")
+    text = workflow_source(_STUDIES)
     identifiers = (
         "mlsirm-core/test/literature_true_parameter_recovery::"
         "kang_jeon_2025_minimum_cell_recovers_true_parameters",

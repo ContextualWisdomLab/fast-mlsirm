@@ -12,6 +12,7 @@ quarantine test names instead of fixing their source.
 """
 
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 from pathlib import Path
 
@@ -33,7 +34,7 @@ _STATISTICAL_WORKFLOW = (
 def test_historical_exact_threshold_test_stays_removed() -> None:
     """The superseded exact-proportion study must not return, nor be skipped."""
     source = _CDM_TESTS.read_text(encoding="utf-8")
-    workflow = _STATISTICAL_WORKFLOW.read_text(encoding="utf-8")
+    workflow = workflow_source(_STATISTICAL_WORKFLOW)
 
     assert "mc_ho_recovery_500" not in source
     assert "conv_rate >= 0.95" not in source
@@ -43,7 +44,7 @@ def test_historical_exact_threshold_test_stays_removed() -> None:
 def test_replacement_gate_owns_finite_monte_carlo_acceptance() -> None:
     """The dedicated reviewed study must implement and execute the MCSE floor."""
     source = _REPLACEMENT_STUDY.read_text(encoding="utf-8")
-    workflow = _STATISTICAL_WORKFLOW.read_text(encoding="utf-8")
+    workflow = workflow_source(_STATISTICAL_WORKFLOW)
 
     assert "fn higher_order_dina_recovery_respects_monte_carlo_tolerance()" in source
     assert "nominal_convergence" in source

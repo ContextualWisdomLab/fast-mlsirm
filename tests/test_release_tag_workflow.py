@@ -1,6 +1,7 @@
 """Contract tests for the fail-closed manual release-tag workflow."""
 
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 from pathlib import Path
 
@@ -11,12 +12,12 @@ _PUBLISH = Path(__file__).parents[1] / ".github" / "workflows" / "publish-pypi.y
 
 def _workflow_text() -> str:
     """Return the release-tag workflow as UTF-8 text."""
-    return _WORKFLOW.read_text(encoding="utf-8")
+    return workflow_source(_WORKFLOW)
 
 
 def _creator_text() -> str:
     """Return the post-admission job that creates the tag and release (R5a)."""
-    text = _PUBLISH.read_text(encoding="utf-8")
+    text = workflow_source(_PUBLISH)
     start = text.index("  create-tag-and-release:\n")
     end = text.index("\n  release-assets:\n", start)
     return text[start:end]
@@ -25,7 +26,8 @@ def _creator_text() -> str:
 def test_release_tag_workflow_is_manual_least_privilege_and_serialized():
     """Publishing is explicit, globally serialized, and write-scoped to one job."""
     text = _workflow_text()
-    assert "workflow_dispatch:" in text
+    caller = _WORKFLOW.read_text(encoding="utf-8")
+    assert "workflow_dispatch:" in caller
     assert "schedule:" not in text
     assert "push:" not in text
     assert "permissions:\n  contents: read" in text
@@ -33,7 +35,7 @@ def test_release_tag_workflow_is_manual_least_privilege_and_serialized():
     # verify-and-dispatch workflow holds no contents write at all.
     assert "contents: write" not in text
     assert "permissions:\n      contents: write" in _creator_text()
-    assert "group: release-tag\n" in text
+    assert "group: central-fast-mlsirm-release-tag-release-tag\n" in text
     assert "cancel-in-progress: false" in text
     assert "timeout-minutes: 10" in text
 

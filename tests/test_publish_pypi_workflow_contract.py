@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 from pathlib import Path
 import gzip
@@ -22,11 +23,11 @@ PYPI_PUBLISH_SHA = "dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
 
 
 def _workflow_text() -> str:
-    return WORKFLOW.read_text(encoding="utf-8")
+    return workflow_source(WORKFLOW)
 
 
 def _release_tag_workflow_text() -> str:
-    return RELEASE_TAG_WORKFLOW.read_text(encoding="utf-8")
+    return workflow_source(RELEASE_TAG_WORKFLOW)
 
 
 def _job_block(text: str, name: str) -> str:
@@ -228,7 +229,7 @@ def test_release_tag_workflow_explicitly_dispatches_package_publish() -> None:
     # publication workflow definition. The dispatch also carries the exact
     # release-tag run commit so a moving default branch cannot silently select a
     # different publication control plane between verification and dispatch.
-    assert "  workflow_dispatch:\n" in publish_text
+    assert "  workflow_dispatch:\n" in WORKFLOW.read_text(encoding="utf-8")
     assert "      release_tag:\n" in publish_text
     assert "      release_commit:\n" in publish_text
     assert "      control_plane_commit:\n" in publish_text
@@ -662,7 +663,10 @@ def test_universal2_x86_runtime_capture_precedes_release_record() -> None:
     job = _job_block(workflow, "macos-x86-runtime")
     record = _job_block(workflow, "reproducibility-record")
     assert "needs: [verify-release, wheels]" in job
-    assert "runs-on: macos-15-intel" in job
+    # No admitted macOS runner exists; retain the full-evidence prerequisites.
+    assert "if: ${{ false }}" in job
+    assert "group: CWL CI isolated" in job
+    assert "runs-on: macos-15-intel" not in job
     assert 'python-version: ["3.12", "3.13", "3.14"]' in job
     assert "architecture: x64" in job
     assert "ref: ${{ needs.verify-release.outputs.release_commit }}" not in job
