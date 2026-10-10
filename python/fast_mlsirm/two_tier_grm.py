@@ -195,6 +195,8 @@ def fit_two_tier_grm(
     n_starts: int,
     seed: int,
     primary_correlation: str = "estimate",
+    *,
+    device: str = "cpu",
 ) -> TwoTierGrmFit:
     """Fit the single-group polytomous two-tier GRM (compute in Rust).
 
@@ -222,6 +224,10 @@ def fit_two_tier_grm(
     non-obvious decision, and the APA 7th references.
     ``primary_correlation='estimate'`` preserves the existing correlated-primary
     fit; ``'identity'`` fixes Phi exactly to I (Cai, 2010, pp. 583-584).
+    ``device`` selects the E-step sweep: ``'cpu'`` runs the ``f64`` scalar
+    sweep; ``'gpu'`` runs the WGSL ``f32`` person-parallel sweep and falls
+    back to CPU (with a warning) when no GPU adapter is available; ``'auto'``
+    prefers GPU without warning. The M-step always runs on the CPU.
     In identity mode, distinct free-loading item sets for each primary pair
     are necessary to rule out continuous orthogonal rotations; per-column
     reflection canonicalization handles the remaining sign ambiguity.
@@ -236,6 +242,8 @@ def fit_two_tier_grm(
         "estimate", "identity"
     ):
         raise ValueError("primary_correlation must be 'estimate' or 'identity'")
+    if not isinstance(device, str) or device.strip().lower() not in ("cpu", "gpu", "auto"):
+        raise ValueError(f"device must be one of 'cpu', 'gpu', 'auto'; got {device!r}")
     n_cat_int = _finite_integer_control(n_cat, "n_cat")
     if n_cat_int < 2:
         raise ValueError("n_cat must be >= 2")
@@ -338,6 +346,7 @@ def fit_two_tier_grm(
         int(n_starts_int),
         int(seed_int),
         primary_correlation,
+        device.strip().lower(),
     )
     return TwoTierGrmFit(
         a_primary=np.asarray(res["a_primary"], dtype=np.float64).reshape(
