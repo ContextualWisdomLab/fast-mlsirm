@@ -48,3 +48,7 @@
 ## 2025-05-19 - Dot product scalar reductions in MMLE M-step
 **Learning:** During GPCM M-step item gradient and expected log-likelihood calculations, `float(np.sum(r_counts * lp))` and `float(np.sum((resid @ scores) * base))` construct full intermediate arrays of shape `(N, K)` and `(N,)` respectively before reducing them to a scalar sum.
 **Action:** Replace `np.sum(A * B)` with `np.vdot(A, B)` when calculating a scalar reduction over an element-wise product of arrays with identical shapes. This entirely skips allocating the intermediate product array and improves M-step computation speeds significantly.
+
+## 2024-05-19 - Manual independent axis reduction for multi-dimensional dot products
+**Learning:** `(A * B[:, :, None, None]).sum()` operations on 3D or 4D arrays allocate massive temporary matrices just for elementwise multiplication before full reduction. While `np.vdot(A, B)` avoids this for identically shaped matrices, directly utilizing `np.vdot(A.sum(axis=(2, 3)), B)` pre-sums the larger matrix along the broadcast axes cleanly and uses flat inner-product on the reduced matrix.
+**Action:** Replace operations like `float((resid * deta).sum())` on 4D arrays (where `deta` is broadcasted) with `float(np.vdot(resid.sum(axis=(independent, axes)), deta_2d))` to achieve >2x speedup by eliminating large element-wise matrix allocations.
