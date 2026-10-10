@@ -1,0 +1,16 @@
+fast-mlsirm
+Copyright (c) 2026 ContextualWisdomLab. Licensed under the MIT License (see LICENSE).
+
+The compiled extension fast_mlsirm._core statically links third-party Rust
+crates. Their license texts and notices that require reproduction are shipped
+next to this file:
+
+- NOTICE-libm-0.2.16-LICENSE.txt: libm 0.2.16 license (MIT, with Apache-2.0
+  text and notice-preserving terms for code derived from musl and FreeBSD/Sun).
+- NOTICE-libm-0.2.16-source-notices.txt: the Sun Microsystems, BSD-2-Clause
+  and core-math (MIT) notices found in libm 0.2.16 source files.
+- NOTICE-cfg_aliases-0.2.2-NOTICES.md: cfg_aliases 0.2.2 third-party MIT
+  attribution notice for tectonic_cfg_support.
+
+The full dependency list is in the CycloneDX SBOM under the wheel's
+dist-info/sboms directory.
