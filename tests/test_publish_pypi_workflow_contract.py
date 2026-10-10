@@ -595,7 +595,7 @@ def test_central_full_set_gate_is_required_before_admission() -> None:
     assert "selected_sdist_filename: ${{ steps.bind-distributions.outputs.selected_sdist_filename }}" in record
     assert "release-dependency-license-strix-gate.yml@b6cebb36dc11afe409a7fee8a3262827255c029c" in central
     assert "needs: [verify-release, reproducibility-record]" in central
-    assert "secrets: inherit" in central
+    assert "secrets:\n      OPENSAR_AUTH_TOKEN: ${{ secrets.OPENSAR_AUTH_TOKEN }}" in central
     assert "needs: [verify-release, reproducibility-record, dependency-gate]" in admission
     assert "full_set_verdict_artifact_id" in admission
     assert "full_set_verdict_artifact_digest" in admission

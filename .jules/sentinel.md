@@ -59,3 +59,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+## YYYY-MM-DD - [Prevent secrets: inherit in GitHub Actions]
+**Vulnerability:** The `publish-pypi.yml` GitHub Actions workflow used `secrets: inherit` when calling a reusable workflow.
+**Learning:** Using `secrets: inherit` violates the principle of least privilege, exposing all repository secrets to the called workflow. The Semgrep CI blocks this issue.
+**Prevention:** Instead of `secrets: inherit`, pass explicit secrets using the `secrets:` mapping (e.g., `OPENSAR_AUTH_TOKEN: ${{ secrets.OPENSAR_AUTH_TOKEN }}`). Always update corresponding tests that assert workflow contents when making these changes.
