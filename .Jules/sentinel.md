@@ -1,0 +1,4 @@
+## 2026-10-10 - [JSON Numeric Overflow Denial of Service (DoS)]
+**Vulnerability:** Python's default `json.loads` natively parses extremely large numbers (e.g. `1e999`) as infinity floating-point values without failing. It also natively parses unsupported constants (`NaN`, `Infinity`) when permissive extensions are enabled. This presents a DoS risk where uncontrolled memory utilization or silent numerical corruption could occur.
+**Learning:** `json.loads` must not just disable permissive extensions via `parse_constant` but also must strictly define a `parse_float` hook to filter values mapping to float infinity.
+**Prevention:** Across all bounded JSON processing points, ensure both `parse_constant` and `parse_float` hooks are utilized that enforce `math.isfinite()` bounds, preventing silent mapping of JSON numbers into Infinity limits.

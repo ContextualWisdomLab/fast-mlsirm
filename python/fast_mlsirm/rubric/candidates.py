@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import math
 from typing import Any, Iterable, TypeAlias
 
 from .generation import GenerationRequest, MAX_RAW_RESPONSE_CHARACTERS
@@ -87,6 +88,13 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def _reject_nonfinite(_value: str) -> None:
     """Reject NaN and infinity tokens accepted by Python's permissive decoder."""
     raise _NonFiniteJsonNumber
+
+
+def _reject_nonfinite_float(value: str) -> float:
+    f_val = float(value)
+    if not math.isfinite(f_val):
+        raise _NonFiniteJsonNumber
+    return f_val
 
 
 def _validate_raw_json_depth(content: str) -> None:
@@ -948,6 +956,7 @@ def parse_generated_item_candidate(
             raw_json,
             object_pairs_hook=_unique_object,
             parse_constant=_reject_nonfinite,
+            parse_float=_reject_nonfinite_float,
         )
     except _DuplicateJsonKey:
         raise _error(
