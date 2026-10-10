@@ -50,6 +50,11 @@ include = [
     { path = "LICENSE", format = "sdist" },
     { path = "NOTICE*", format = "sdist" },
     { path = "LICENSE-THIRD-PARTY", format = "sdist" },
+    # The release workflow executes target selection from the extracted sdist.
+    { path = "tools/select_third_party_license.sh", format = "sdist" },
+    { path = "tools/verify_wheel_license.py", format = "sdist" },
+    { path = "tools/third_party_licenses.snapshot.json", format = "sdist" },
+    { path = "docs/security/license-evidence-0.11.5/target-notices/*", format = "sdist" },
 ]
 
 [tool.pytest.ini_options]
