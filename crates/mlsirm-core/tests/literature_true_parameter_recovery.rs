@@ -13,9 +13,7 @@
 //! checks. See `docs/papers/true-parameter-recovery-study.md` for complete
 //! equation, identification, metric, and citation traceability.
 
-use mlsirm_core::marginal::{
-    fit_marginal, MarginalConfig, MarginalResult, PopulationSpec,
-};
+use mlsirm_core::marginal::{fit_marginal, MarginalConfig, MarginalResult, PopulationSpec};
 use mlsirm_core::{Device, ModelConfig, ModelType, PenaltyConfig};
 
 const N_DIMS: usize = 2;
@@ -84,7 +82,9 @@ struct RecoveryMetrics {
 fn linspace(start: f64, end: f64, count: usize) -> Vec<f64> {
     assert!(count >= 2);
     let step = (end - start) / (count - 1) as f64;
-    (0..count).map(|index| start + step * index as f64).collect()
+    (0..count)
+        .map(|index| start + step * index as f64)
+        .collect()
 }
 
 fn sigmoid(value: f64) -> f64 {
@@ -99,23 +99,18 @@ fn sigmoid(value: f64) -> f64 {
 fn simulate_paper_cell(n_persons: usize, seed: u64) -> StudyCell {
     assert!(n_persons > 0);
     let mut rng = Lcg(seed);
-    let factor_id: Vec<usize> = (0..N_ITEMS)
-        .map(|item| item / ITEMS_PER_DIM)
-        .collect();
+    let factor_id: Vec<usize> = (0..N_ITEMS).map(|item| item / ITEMS_PER_DIM).collect();
     let a_true = linspace(0.5, 2.5, N_ITEMS);
     let mut b_true = linspace(0.0, 5.0, N_ITEMS);
     rng.shuffle(&mut b_true);
-    let zeta_true: Vec<f64> = (0..N_ITEMS * LATENT_DIM)
-        .map(|_| rng.normal())
-        .collect();
+    let zeta_true: Vec<f64> = (0..N_ITEMS * LATENT_DIM).map(|_| rng.normal()).collect();
 
     let mut theta_true = vec![0.0; n_persons * N_DIMS];
     let mut xi_true = vec![0.0; n_persons * LATENT_DIM];
     for person in 0..n_persons {
         let common = rng.normal();
         theta_true[person * N_DIMS] = common;
-        theta_true[person * N_DIMS + 1] =
-            RHO * common + (1.0 - RHO * RHO).sqrt() * rng.normal();
+        theta_true[person * N_DIMS + 1] = RHO * common + (1.0 - RHO * RHO).sqrt() * rng.normal();
         for axis in 0..LATENT_DIM {
             xi_true[person * LATENT_DIM + axis] = rng.normal();
         }
@@ -126,16 +121,18 @@ fn simulate_paper_cell(n_persons: usize, seed: u64) -> StudyCell {
         for item in 0..N_ITEMS {
             let mut squared_distance = EPS_DISTANCE;
             for axis in 0..LATENT_DIM {
-                let difference = xi_true[person * LATENT_DIM + axis]
-                    - zeta_true[item * LATENT_DIM + axis];
+                let difference =
+                    xi_true[person * LATENT_DIM + axis] - zeta_true[item * LATENT_DIM + axis];
                 squared_distance += difference * difference;
             }
             let dimension = factor_id[item];
-            let eta = a_true[item] * theta_true[person * N_DIMS + dimension]
-                + b_true[item]
+            let eta = a_true[item] * theta_true[person * N_DIMS + dimension] + b_true[item]
                 - GAMMA * squared_distance.sqrt();
-            y[person * N_ITEMS + item] =
-                if rng.next_f64() < sigmoid(eta) { 1.0 } else { 0.0 };
+            y[person * N_ITEMS + item] = if rng.next_f64() < sigmoid(eta) {
+                1.0
+            } else {
+                0.0
+            };
         }
     }
 
@@ -225,7 +222,10 @@ fn standardized(values: &[f64]) -> Vec<f64> {
         .sum::<f64>()
         / values.len() as f64;
     let scale = variance.sqrt().max(1e-12);
-    values.iter().map(|value| (value - center) / scale).collect()
+    values
+        .iter()
+        .map(|value| (value - center) / scale)
+        .collect()
 }
 
 fn interaction_adjusted_easiness(
@@ -236,17 +236,15 @@ fn interaction_adjusted_easiness(
 ) -> Vec<f64> {
     const DRAWS: usize = 2_048;
     let mut rng = Lcg(seed);
-    let xi_draws: Vec<f64> = (0..DRAWS * LATENT_DIM)
-        .map(|_| rng.normal())
-        .collect();
+    let xi_draws: Vec<f64> = (0..DRAWS * LATENT_DIM).map(|_| rng.normal()).collect();
     (0..N_ITEMS)
         .map(|item| {
             let mut distance_sum = 0.0;
             for draw in 0..DRAWS {
                 let mut squared_distance = EPS_DISTANCE;
                 for axis in 0..LATENT_DIM {
-                    let difference = xi_draws[draw * LATENT_DIM + axis]
-                        - zeta[item * LATENT_DIM + axis];
+                    let difference =
+                        xi_draws[draw * LATENT_DIM + axis] - zeta[item * LATENT_DIM + axis];
                     squared_distance += difference * difference;
                 }
                 distance_sum += squared_distance.sqrt();
@@ -263,8 +261,8 @@ fn pairwise_distances(points: &[f64], rows: usize) -> Vec<f64> {
         for right in left + 1..rows {
             let mut squared_distance = 0.0;
             for axis in 0..LATENT_DIM {
-                let difference = points[left * LATENT_DIM + axis]
-                    - points[right * LATENT_DIM + axis];
+                let difference =
+                    points[left * LATENT_DIM + axis] - points[right * LATENT_DIM + axis];
                 squared_distance += difference * difference;
             }
             distances.push(squared_distance.sqrt());
@@ -290,18 +288,10 @@ fn theta_correlation(cell: &StudyCell, result: &MarginalResult) -> f64 {
 
 fn recovery_metrics(cell: &StudyCell, result: &MarginalResult) -> RecoveryMetrics {
     let a_estimated: Vec<f64> = result.alpha.iter().map(|value| value.exp()).collect();
-    let adjusted_truth = interaction_adjusted_easiness(
-        &cell.b_true,
-        &cell.zeta_true,
-        GAMMA,
-        0xA11CE,
-    );
-    let adjusted_estimate = interaction_adjusted_easiness(
-        &result.b,
-        &result.zeta,
-        result.tau.exp(),
-        0xA11CE,
-    );
+    let adjusted_truth =
+        interaction_adjusted_easiness(&cell.b_true, &cell.zeta_true, GAMMA, 0xA11CE);
+    let adjusted_estimate =
+        interaction_adjusted_easiness(&result.b, &result.zeta, result.tau.exp(), 0xA11CE);
     let xi_truth_distance = pairwise_distances(&cell.xi_true, cell.n_persons);
     let xi_estimated_distance = pairwise_distances(&result.xi_eap, cell.n_persons);
     let zeta_truth_distance = pairwise_distances(&cell.zeta_true, N_ITEMS);
@@ -346,8 +336,7 @@ fn simple_structure_equation_matches_general_dot_product() {
     let distance = ((xi[0] - zeta[0]).powi(2) + (xi[1] - zeta[1]).powi(2)).sqrt();
     let simple = alpha.exp() * theta[factor] + intercept - tau.exp() * distance;
     let discrimination = [0.0, alpha.exp()];
-    let general = discrimination[0] * theta[0] + discrimination[1] * theta[1]
-        + intercept
+    let general = discrimination[0] * theta[0] + discrimination[1] * theta[1] + intercept
         - tau.exp() * distance;
     assert!((simple - general).abs() < 1e-15);
 }

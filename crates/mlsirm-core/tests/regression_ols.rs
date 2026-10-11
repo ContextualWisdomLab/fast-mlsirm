@@ -16,9 +16,7 @@ fn assert_close(a: f64, b: f64, tol: f64) {
 fn ols_recovers_exact_plane() {
     let n = 4usize;
     let k = 3usize;
-    let x = vec![
-        1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0,
-    ];
+    let x = vec![1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0];
     let y = vec![1.0, 3.0, 4.0, 6.0];
     let fit = fit_ols(&x, &y, n, k).expect("OLS");
     assert_close(fit.beta[0], 1.0, 1e-10);
