@@ -303,7 +303,7 @@ def test_pypi_publish_reads_back_the_admitted_public_matrix() -> None:
     assert publish.index("skip-existing: true") < publish.index(
         "Verify published PyPI matrix against admission"
     )
-    assert "python3 scripts/ci/verify_published_pypi.py admission/admitted-manifest.tsv '${{ inputs.release_tag }}'" in publish
+    assert "python3 scripts/ci/verify_published_pypi.py admission/admitted-manifest.tsv \"$RELEASE_TAG\"" in publish
 
 
 def test_pypi_publish_can_recover_independently_of_immutable_asset_upload() -> None:

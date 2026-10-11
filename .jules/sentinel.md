@@ -59,3 +59,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+## YYYY-MM-DD - [GitHub Actions Shell Injection]
+**Vulnerability:** Shell injection vulnerability via direct interpolation of `${{ inputs.release_tag }}` inside a `run:` step.
+**Learning:** GitHub contexts like `inputs` can contain arbitrary user input and can lead to command injection if expanded directly inside bash scripts, bypassing normal sanitization.
+**Prevention:** Always pass untrusted GitHub context data to `run:` steps by binding them to `env:` variables and using standard shell variable expansion (e.g. `"$RELEASE_TAG"`).
