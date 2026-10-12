@@ -178,8 +178,8 @@ def compute_expected_graded_item_score(
         integrated) must not exceed it. Checked with exact integer arithmetic
         before any grid-sized allocation; node counts are never capped. The
         grid is evaluated in fixed-size blocks, so no grid-sized array is
-        allocated; only one partial sum per block is retained, and run time
-        grows with the grid size.
+        allocated; block partial sums are streamed to ``math.fsum`` rather
+        than retained in a list. Run time grows with the grid size.
 
     Returns
     -------
@@ -288,20 +288,21 @@ def _blocked_expected_score(
 
     split = start - 1
     run = block // suffix_points
-    partials: list[float] = []
-    for outer in itertools.product(*(range(size) for size in sizes[:split])):
-        shift = base
-        outer_weight = 1.0
-        for axis, position in enumerate(outer):
-            shift += float(axis_eta[axis][position])
-            outer_weight *= float(axis_weights[axis][position])
-        for low in range(0, sizes[split], run):
-            high = min(low + run, sizes[split])
-            eta = (shift + axis_eta[split][low:high])[:, None] + suffix_eta[None, :]
-            weight = axis_weights[split][low:high, None] * suffix_weight[None, :]
-            expected = _grm_expected_scores(thresholds, eta.reshape(-1))
-            partials.append(outer_weight * float(np.dot(weight.reshape(-1), expected)))
-    return math.fsum(partials)
+    def partials():
+        for outer in itertools.product(*(range(size) for size in sizes[:split])):
+            shift = base
+            outer_weight = 1.0
+            for axis, position in enumerate(outer):
+                shift += float(axis_eta[axis][position])
+                outer_weight *= float(axis_weights[axis][position])
+            for low in range(0, sizes[split], run):
+                high = min(low + run, sizes[split])
+                eta = (shift + axis_eta[split][low:high])[:, None] + suffix_eta[None, :]
+                weight = axis_weights[split][low:high, None] * suffix_weight[None, :]
+                expected = _grm_expected_scores(thresholds, eta.reshape(-1))
+                yield outer_weight * float(np.dot(weight.reshape(-1), expected))
+
+    return math.fsum(partials())
 
 
 def expected_graded_scale_score(
