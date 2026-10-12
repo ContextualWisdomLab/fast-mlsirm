@@ -1094,6 +1094,11 @@ jobs:
       sdist_filename: ${{ needs.reproducibility-record.outputs.selected_sdist_filename }}
     secrets:
       OPENSAR_AUTH_TOKEN: ${{ secrets.OPENSAR_AUTH_TOKEN }}
+      BYTEZ_API_KEY: ${{ secrets.BYTEZ_API_KEY }}
+      NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+      NVIDIA_NIM_API_KEY_SUB: ${{ secrets.NVIDIA_NIM_API_KEY_SUB }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
   # R5b/R5c: nothing is tagged, released or published until the exact thirteen
   # files match both the reproducibility record and a successful same-run
