@@ -1403,6 +1403,27 @@ fn fit_bifactor_grm(
     split_at_person: Option<usize>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
+    // Validate response geometry before any placeholder-dependent mask indexing.
+    if n_persons == 0 || n_items == 0 {
+        return Err(PyValueError::new_err(
+            "n_persons and n_items must be positive",
+        ));
+    }
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    if let Some(o) = &observed {
+        if o.len() != n_cells {
+            return Err(PyValueError::new_err(
+                "observed must have length n_persons * n_items",
+            ));
+        }
+    }
     let obs_vec: Option<Vec<bool>> = match &observed {
         Some(o) => Some(o.as_slice()?.to_vec()),
         None => None,
@@ -1533,6 +1554,27 @@ fn fit_bifactor_grm_multigroup(
     device: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
+    // Validate response geometry before any placeholder-dependent mask indexing.
+    if n_persons == 0 || n_items == 0 {
+        return Err(PyValueError::new_err(
+            "n_persons and n_items must be positive",
+        ));
+    }
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    if let Some(o) = &observed {
+        if o.len() != n_cells {
+            return Err(PyValueError::new_err(
+                "observed must have length n_persons * n_items",
+            ));
+        }
+    }
     let obs_vec: Option<Vec<bool>> = match &observed {
         Some(o) => Some(o.as_slice()?.to_vec()),
         None => None,
@@ -1660,6 +1702,27 @@ fn bifactor_oakes_se(
     fd_step: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
+    // Validate response geometry before any placeholder-dependent mask indexing.
+    if n_persons == 0 || n_items == 0 {
+        return Err(PyValueError::new_err(
+            "n_persons and n_items must be positive",
+        ));
+    }
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    if let Some(o) = &observed {
+        if o.len() != n_cells {
+            return Err(PyValueError::new_err(
+                "observed must have length n_persons * n_items",
+            ));
+        }
+    }
     let obs_vec: Option<Vec<bool>> = match &observed {
         Some(o) => Some(o.as_slice()?.to_vec()),
         None => None,
@@ -1781,6 +1844,27 @@ fn fit_bifactor_grm_fipc(
     estimate_specific_vars: bool,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let y_slice = y.as_slice()?;
+    // Validate response geometry before any placeholder-dependent mask indexing.
+    if n_persons == 0 || n_items == 0 {
+        return Err(PyValueError::new_err(
+            "n_persons and n_items must be positive",
+        ));
+    }
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    if let Some(o) = &observed {
+        if o.len() != n_cells {
+            return Err(PyValueError::new_err(
+                "observed must have length n_persons * n_items",
+            ));
+        }
+    }
     let obs_vec: Option<Vec<bool>> = match &observed {
         Some(o) => Some(o.as_slice()?.to_vec()),
         None => None,
@@ -1923,6 +2007,27 @@ fn fit_two_tier_grm(
         }
     };
     let y_slice = y.as_slice()?;
+    // Validate response geometry before any placeholder-dependent mask indexing.
+    if n_persons == 0 || n_items == 0 {
+        return Err(PyValueError::new_err(
+            "n_persons and n_items must be positive",
+        ));
+    }
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    if let Some(o) = &observed {
+        if o.len() != n_cells {
+            return Err(PyValueError::new_err(
+                "observed must have length n_persons * n_items",
+            ));
+        }
+    }
     let obs_vec: Option<Vec<bool>> = match &observed {
         Some(o) => Some(o.as_slice()?.to_vec()),
         None => None,
@@ -2050,6 +2155,27 @@ fn two_tier_oakes_se(
         }
     };
     let y_slice = y.as_slice()?;
+    // Validate response geometry before any placeholder-dependent mask indexing.
+    if n_persons == 0 || n_items == 0 {
+        return Err(PyValueError::new_err(
+            "n_persons and n_items must be positive",
+        ));
+    }
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    if let Some(o) = &observed {
+        if o.len() != n_cells {
+            return Err(PyValueError::new_err(
+                "observed must have length n_persons * n_items",
+            ));
+        }
+    }
     let obs_vec: Option<Vec<bool>> = match &observed {
         Some(o) => Some(o.as_slice()?.to_vec()),
         None => None,

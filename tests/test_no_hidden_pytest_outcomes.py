@@ -17,6 +17,7 @@ References:
 
 from __future__ import annotations
 
+import hashlib
 import re
 import shlex
 import shutil
@@ -303,8 +304,10 @@ def _default_run_setting(source: str, indent: int, setting: str) -> str | None:
     defaults. This restricted static parser is not a runtime execution proof.
 
     References:
-        GitHub. (n.d.). Workflow syntax for GitHub Actions. GitHub Docs.
-        https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
+        GitHub. (n.d.). Setting a default shell and working directory
+        (``defaults.run``; ``jobs.<job_id>.defaults.run``). GitHub Docs.
+        https://docs.github.com/en/actions/how-tos/write-workflows/
+        choose-what-workflows-do/set-default-values-for-jobs
     """
     structural = _plain_workflow_mapping(source, structural_only=True)
     if structural is None:
@@ -344,11 +347,16 @@ def _plain_workflow_mapping(source: str, *, structural_only: bool = False) -> st
     Basis: YAML Language Development Team (2021), YAML 1.2.2, Sections
     6.9 and 8.2.2. Node properties and explicit keys are not plain implicit
     mappings. Scalar block contents are preserved and never parsed as keys.
+    C0 controls other than tab/LF and NEL, LS and PS are rejected, because
+    ``str.splitlines`` breaks on them while YAML 1.2 keeps them as content.
 
     References:
         YAML Language Development Team. (2021). YAML Ain't Markup Language
-        (YAML) version 1.2.2. https://yaml.org/spec/1.2.2/
+        (YAML) version 1.2.2 (Sections 6.9, 8.2.2).
+        https://yaml.org/spec/1.2.2/
     """
+    if re.search(r"[\x00-\x08\x0b-\x1f\x7f\x85\u2028\u2029]", source):
+        return None
     normalized: list[str] = []
     scalar_indent: int | None = None
     for line in source.splitlines():
@@ -375,17 +383,89 @@ def _plain_workflow_mapping(source: str, *, structural_only: bool = False) -> st
     return "\n".join(normalized)
 
 
+def _owner_environment_supported(source: str, indent: int) -> bool:
+    """Admit only plain literal device/study env and explicitly empty addopts.
+
+    All declared scopes must be supported; lower-scope overrides do not
+    rescue unsupported declarations. This conservative subset intentionally
+    rejects plugin/import/PATH controls and unknown env names or expressions.
+
+    Basis: pytest-dev (n.d.), API reference, Environment Variables,
+    PYTEST_ADDOPTS; GitHub (n.d.), Store information in variables, Defining
+    environment variables for a single workflow; and GitHub (n.d.), Workflow
+    commands, Setting an environment variable. These are section locators,
+    not paper equations; these referenced sections were read for this repair.
+
+    References:
+        pytest-dev. (n.d.). API reference (Environment Variables).
+            https://docs.pytest.org/en/stable/reference/reference.html
+        GitHub. (n.d.). Store information in variables.
+            https://docs.github.com/en/actions/how-tos/write-workflows/
+            choose-what-workflows-do/use-variables
+        GitHub. (n.d.). Workflow commands for GitHub Actions
+            (Setting an environment variable; Adding a system path).
+            https://docs.github.com/en/actions/reference/
+            workflows-and-actions/workflow-commands
+    """
+    normalized = _plain_workflow_mapping(source)
+    structure = _plain_workflow_mapping(source, structural_only=True)
+    if normalized is None or structure is None:
+        return False
+    lines = normalized.splitlines()
+    metadata = structure.splitlines()
+    entries = [i for i, line in enumerate(metadata)
+               if re.match(rf"^{' ' * indent}(?:- )?env:", line)]
+    if not entries:
+        return True
+    if len(entries) != 1:
+        return False
+    start = entries[0]
+    if lines[start].split("env:", 1)[1].strip():
+        return False
+    depth = indent + (2 if lines[start].lstrip().startswith("- ") else 0)
+    end = next((i for i in range(start + 1, len(metadata))
+                if metadata[i].strip() and not metadata[i].lstrip().startswith("#")
+                and len(metadata[i]) - len(metadata[i].lstrip()) <= depth), len(metadata))
+    seen: set[str] = set()
+    for line in lines[start + 1:end]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        match = re.fullmatch(rf"{' ' * (depth + 2)}([A-Za-z_][A-Za-z0-9_]*):[ ]*(.*)", line)
+        if match is None:
+            return False
+        key, value = match.groups()
+        if key in seen:
+            return False
+        seen.add(key)
+        if key == "PYTEST_ADDOPTS":
+            if value not in {"''", '""'}:
+                return False
+        elif key not in {"WGPU_BACKEND", "XDG_RUNTIME_DIR", "STAGE5_HIGH_Q",
+                         "STAGE5_HIGH_Q_BOOTSTRAP_REPS"}:
+            return False
+        elif re.fullmatch(r"[A-Za-z0-9_./-]+|'[A-Za-z0-9_./-]+'|\"[A-Za-z0-9_./-]+\"", value) is None:
+            return False
+    return bool(seen)
+
+
 def _pytest_owner_nodes(body: str, workflow: str = "") -> set[str]:
     """Recognize only the workflow's plain run scalars and direct pytest grammar.
 
     This is static command ownership, not proof of runtime or GPU execution.
-    Unsupported YAML or shell syntax supplies no evidence.
+    Unsupported YAML, declared env, prior action or shell sources supply no
+    evidence. Runtime runner env, installed plugins and pytest config still
+    require actual fail-closed test execution; they are not proved by parsing.
+    Known setup steps are bound to complete source hashes, not broad command
+    prefixes. Unknown dynamic GITHUB_ENV/GITHUB_PATH sources poison later
+    ownership even when their producing step is conditional or unsupported.
     """
     normalized_body = _plain_workflow_mapping(body)
     normalized_workflow = _plain_workflow_mapping(workflow)
     if normalized_body is None or normalized_workflow is None:
         return set()
     body, workflow = normalized_body, normalized_workflow
+    if not _owner_environment_supported(workflow, 0) or not _owner_environment_supported(body, 4):
+        return set()
     structure = _plain_workflow_mapping(body, structural_only=True)
     if structure is None:
         return set()
@@ -421,10 +501,79 @@ def _pytest_owner_nodes(body: str, workflow: str = "") -> set[str]:
     nodes: set[str] = set()
     step_starts = [i for i in range(steps_start, steps_end)
                    if structure_lines[i].startswith("      - ")]
+    environment_files_supported = True
     for position, start in enumerate(step_starts):
         end = step_starts[position + 1] if position + 1 < len(step_starts) else steps_end
         lines = body_lines[start:end]
         metadata = structure_lines[start:end]
+        # Environment files affect subsequent steps even if this step cannot
+        # itself supply command evidence. Inspect before shell/if filtering.
+        for line in lines:
+            content = line.strip()
+            if content.startswith("#"):
+                continue
+            if "GITHUB_PATH" in content:
+                environment_files_supported = False
+            if "GITHUB_ENV" in content or "github.env" in content:
+                literal_device_write = (
+                    re.fullmatch(
+                        r'echo "VK_ICD_FILENAMES=[A-Za-z0-9_./-]+" >> "\$GITHUB_ENV"',
+                        content,
+                    )
+                    and [l.strip() for l in lines if l.strip()]
+                    == ['- run: |', content]
+                )
+                # Bind the ENTIRE inspected legacy device step, not a suffix
+                # that could conceal an earlier execution-altering command.
+                # This is source identity only, not a shell/runtime proof.
+                existing_device_write = (
+                    hashlib.sha256("\n".join(lines).rstrip("\n").encode()).hexdigest()
+                    == "9cacb1bc828f0da7991883a9129eb0f4c556ada8db280714b3a44c9b4f573a66"
+                )
+                if not literal_device_write and not existing_device_write:
+                    environment_files_supported = False
+        step_text = "\n".join(lines).rstrip("\n")
+        inspected_setup = hashlib.sha256(step_text.encode()).hexdigest() in {
+            # Current complete GPU preparation run steps, source-only binding.
+            "9cacb1bc828f0da7991883a9129eb0f4c556ada8db280714b3a44c9b4f573a66",
+            "cc59046c94afcaa2800e54efa01f118ed24239262f842600102ae25356201a23",
+            "ad7e39774ba14a17b92d5a9de5e7157ee303d4c6777452cfc5aaa3d440648789",
+            "d9118341b2b767b4721a435312e7058af17baa87554dd0f7feb814d5de180711",
+        }
+        if any(re.match(r"^(?:      - |        )uses:", line) for line in metadata):
+            if hashlib.sha256(step_text.encode()).hexdigest() not in {
+                # Pinned, fully literal setup steps in the current CI source.
+                "c898b8b27d405b8283e30b2b3ac52293efc1b1c311d8c2200606bd0bcc96bc63",
+                "17818c30f295cb4222d169fd88ec852122c0ea51c414623474dec6f903373cbd",
+                "788aa9ad43373f9af794a0642e4e0c126a64f1e5d608720d88acbd0b7e393109",
+            }:
+                environment_files_supported = False
+        raw_runs = [i for i, line in enumerate(metadata)
+                    if re.match(r"^(?:      - |        )run: ", line)]
+        if raw_runs and not inspected_setup:
+            raw_index = raw_runs[0]
+            raw_command = lines[raw_index].split("run: ", 1)[1]
+            if raw_command == "|":
+                raw_command = "\n".join(line[10:] for line in lines[raw_index + 1:]
+                                        if line.startswith("          "))
+            raw_command = "\n".join(line for line in raw_command.splitlines()
+                                    if not line.lstrip().startswith("#")).strip()
+            raw_command = raw_command.replace("\\\n", "")
+            if not (
+                raw_command == "true"
+                or re.fullmatch(r"pytest [A-Za-z0-9_./:=\[\] -]+", raw_command)
+                or re.fullmatch(
+                    r'echo "VK_ICD_FILENAMES=[A-Za-z0-9_./-]+" >> "\$GITHUB_ENV"',
+                    raw_command,
+                )
+            ):
+                # Opaque shell/Python can write environment files indirectly;
+                # a missing literal GITHUB_ENV token is not a safe exemption.
+                environment_files_supported = False
+        step_source = "\n".join(lines)
+        step_source = re.sub(r"^      - ", "        ", step_source, count=1)
+        if not environment_files_supported or not _owner_environment_supported(step_source, 8):
+            continue
         # Conditional steps are not unconditional owners. Job-level event
         # admission remains a separate runtime contract.
         if any(re.match(r"^(?:      - |        )if:", line) for line in metadata):
@@ -477,7 +626,7 @@ def _pytest_owner_nodes(body: str, workflow: str = "") -> set[str]:
             command = value
         # A deliberately restricted grammar avoids borrowing selector tokens
         # from comments, other commands, substitutions or option values.
-        command = command.replace("\\\n", " ")
+        command = command.replace("\\\n", "")
         if not re.fullmatch(r"[A-Za-z0-9_./:=\[\] -]+", command):
             continue
         tokens = shlex.split(command)
@@ -505,6 +654,9 @@ def _capability_ownership_violations(allowlist: str, ci_workflow: str) -> list[s
     so a newly allowlisted
     node without an executing job fails instead of silently widening the
     waiver.
+    The module component of the conftest pattern (text before the first
+    ``#``) must be exact, because a module glob can waive capability nodes
+    without naming any ``CAPABILITY_MODULES`` path.
     """
     violations: list[str] = []
     for raw in allowlist.splitlines():
@@ -513,6 +665,15 @@ def _capability_ownership_violations(allowlist: str, ci_workflow: str) -> list[s
             continue
         node, _, reason = line.partition(" # ")
         node = node.strip()
+        pattern = line.split("#", 1)[0].strip()
+        if node != pattern:
+            violations.append(
+                f"{pattern}: allowlist waiver pattern differs from the ownership selector"
+            )
+            continue
+        if any(char in pattern.split("::", 1)[0] for char in "*?["):
+            violations.append(f"{pattern}: module component must be exact, not a glob")
+            continue
         is_capability = (
             _OWNER_MARKER in reason
             or "GPU" in reason
@@ -521,7 +682,7 @@ def _capability_ownership_violations(allowlist: str, ci_workflow: str) -> list[s
         )
         if not is_capability:
             continue
-        if "*" in node:
+        if any(char in node for char in "*?["):
             violations.append(f"{node}: capability entry must be one exact node, not a glob")
             continue
         if _OWNER_MARKER not in reason:
@@ -601,6 +762,7 @@ _CAPABILITY_NODE = "tests/test_bifactor_gpu_high_q.py::test_future_capability"
     f"      - if: false\n        run: pytest {_CAPABILITY_NODE}",
     f"      - run: pytest {_CAPABILITY_NODE}\n        if: false",
     f"      - run: |\n          pytest tests/other.py # comment \\\n          {_CAPABILITY_NODE}",
+    f"      - run: |\n          pytest {_CAPABILITY_NODE}\\\n          tests/other.py::test_other",
 ])
 def test_capability_ownership_rejects_non_command_evidence(step: str) -> None:
     workflow = f"jobs:\n  gpu-smoke:\n    steps:\n{step}\n"
@@ -866,3 +1028,201 @@ def test_capability_ownership_cannot_borrow_sibling_command() -> None:
     assert _capability_ownership_violations(
         f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
     )
+
+
+@pytest.mark.parametrize("scope", ["workflow", "job", "step-first", "step-last"])
+@pytest.mark.parametrize("addopts,rejected", [
+    ("--collect-only", True),
+    ('""', False),
+])
+def test_capability_ownership_environment_addopts(
+    scope: str, addopts: str, rejected: bool,
+) -> None:
+    workflow = f"env:\n  PYTEST_ADDOPTS: {addopts}\n" if scope == "workflow" else ""
+    workflow += "jobs:\n  gpu-smoke:\n"
+    if scope == "job":
+        workflow += f"    env:\n      PYTEST_ADDOPTS: {addopts}\n"
+    workflow += "    steps:\n"
+    if scope == "step-first":
+        workflow += f"      - env:\n          PYTEST_ADDOPTS: {addopts}\n"
+        workflow += f"        run: pytest {_CAPABILITY_NODE}\n"
+    else:
+        workflow += f"      - run: pytest {_CAPABILITY_NODE}\n"
+        if scope == "step-last":
+            workflow += f"        env:\n          PYTEST_ADDOPTS: {addopts}\n"
+    violations = _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    )
+    assert bool(violations) is rejected
+
+
+@pytest.mark.parametrize("prior", [
+    "      - uses: local/opaque-action@main",
+    "      - uses: ./opaque-action",
+    "      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97\n"
+    "        with:\n          python-version: ${{ steps.unknown.outputs.version }}",
+])
+def test_capability_ownership_rejects_opaque_prior_action(prior: str) -> None:
+    workflow = (
+        f"jobs:\n  gpu-smoke:\n    steps:\n{prior}\n"
+        f"      - run: pytest {_CAPABILITY_NODE}\n"
+    )
+    assert _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    )
+
+
+@pytest.mark.parametrize("addopts", [
+    "--co", "'-q --collect-only'", "${{ vars.PYTEST_ADDOPTS }}", "|\n            --collect-only",
+    "null", "-q", "'-k never_selected'",
+])
+@pytest.mark.parametrize("scope", ["workflow", "job", "step-first", "step-last"])
+def test_capability_ownership_rejects_unsupported_addopts(addopts: str, scope: str) -> None:
+    test_capability_ownership_environment_addopts(scope, addopts, True)
+
+
+@pytest.mark.parametrize("position", ["none", "middle", "prefix"])
+def test_capability_ownership_device_environment_source(position: str) -> None:
+    workflow = (REPO_TESTS_DIR.parent / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    if position != "none":
+        anchor = '          test -n "$LVP_ICD"' if position == "middle" else '          . /etc/os-release'
+        workflow = workflow.replace(anchor, '          eval "$PREPARE"\n' + anchor)
+    allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text(encoding="utf-8")
+    assert bool(_capability_ownership_violations(allowlist, workflow)) is (position != "none")
+
+
+@pytest.mark.parametrize("prior,rejected", [
+    ('echo "PYTEST_ADDOPTS=--collect-only" >> "$GITHUB_ENV"', True),
+    ('printf "%s\\n" "$OPTIONS" >> "$GITHUB_ENV"', True),
+    ('echo "$BIN" >> "$GITHUB_PATH"', True),
+    ('echo "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp.json" >> "$GITHUB_ENV"', False),
+    ('eval "$PREPARE"\n          echo "VK_ICD_FILENAMES=/tmp/lvp.json" >> "$GITHUB_ENV"', True),
+    ('echo "PYTEST_ADDOPTS=--collect-only" >> "${GITHUB_ENV}"', True),
+    ('echo "PYTEST_ADDOPTS=--collect-only" >> "${{ github.env }}"', True),
+    ('eval "$PREPARE"', True),
+    ('python scripts/change_environment.py', True),
+    ('f="$GITHUB_ENV"\n          echo "$OPTIONS" >> "$f"', True),
+    ('true', False),
+])
+def test_capability_ownership_prior_environment_file(
+    prior: str, rejected: bool,
+) -> None:
+    workflow = (
+        "jobs:\n  gpu-smoke:\n    steps:\n"
+        f"      - run: |\n          {prior}\n"
+        f"      - run: pytest {_CAPABILITY_NODE}\n"
+    )
+    violations = _capability_ownership_violations(
+        f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke", workflow
+    )
+    assert bool(violations) is rejected
+
+
+_BREAK_SEPARATORS = {
+    "nel": "\x85", "ls": "\u2028", "ps": "\u2029", "vt": "\x0b", "ff": "\x0c",
+    "fs": "\x1c", "gs": "\x1d", "rs": "\x1e", "cr": "\r",
+}
+_GPU_EVIDENCE_ANCHOR = "      - name: Reject skipped GPU evidence\n"
+
+
+def _hidden_owner_workflow(separator: str, placement: str) -> str:
+    """Hide a pytest owner step behind a non-LF break inside the real gpu-smoke job."""
+    workflow = (REPO_TESTS_DIR.parent / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert workflow.count(_GPU_EVIDENCE_ANCHOR) == 1
+    prefix = "      # note" if placement == "comment" else "      - name: noop # note"
+    return workflow.replace(
+        _GPU_EVIDENCE_ANCHOR,
+        f"{prefix}{separator}      - run: pytest {_CAPABILITY_NODE}\n{_GPU_EVIDENCE_ANCHOR}", 1)
+
+
+@pytest.mark.parametrize("placement", ["comment", "trailing_comment"])
+@pytest.mark.parametrize("separator", sorted(_BREAK_SEPARATORS))
+def test_capability_ownership_rejects_non_lf_line_breaks(separator: str, placement: str) -> None:
+    """splitlines() must not credit a step that YAML 1.2 readers keep inside a comment."""
+    allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text(encoding="utf-8")
+    entry = f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke\n"
+    workflow = _hidden_owner_workflow(_BREAK_SEPARATORS[separator], placement)
+    assert _capability_ownership_violations(allowlist + entry, workflow)
+
+
+@pytest.mark.parametrize("placement", ["comment", "trailing_comment"])
+def test_capability_ownership_lf_control_still_credits_owner(placement: str) -> None:
+    allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text(encoding="utf-8")
+    entry = f"{_CAPABILITY_NODE} # GPU owned by gpu-smoke\n"
+    workflow = _hidden_owner_workflow("\n", placement)
+    assert _capability_ownership_violations(allowlist + entry, workflow) == []
+# Allowlist entries whose *module* component is a glob. conftest waives any
+# node fnmatch-matching the "#"-stripped pattern, but the gate classified
+# capability entries only by exact module string, so these escaped review.
+_MODULE_GLOB_ENTRIES = {
+    "trailing_star_no_separator": "tests/test_bifactor_gpu_high_q.py* # precision gate (reviewed)",
+    "question_mark": "tests/test_bifactor_gpu_high_?.py::* # precision gate (reviewed)",
+    "character_class": "tests/test_bifactor_gpu_high_[q].py::test_bifactor_gpu_parity_q121 # precision gate (reviewed)",
+    "module_prefix_star": "tests/test_bifactor_*::* # precision gate (reviewed)",
+    "directory_star": "tests/*::test_bifactor_gpu_parity_q4* # precision gate (reviewed)",
+    "leading_star": "*::test_marginal_gpu_agrees_with_cpu_loosely # precision gate (reviewed)",
+    "lowercase_gpu_reason": "tests/test_marginal_par*::test_marginal_gpu_agrees_with_cpu_loosely # gpu adapter absent (reviewed)",
+    "bootstrap_module": "tests/test_bifactor_bootstrap_bench*::* # wall-time study (reviewed)",
+    "hash_without_spaces": "tests/test_bifactor_gpu_high_q.p?::*#precision gate",
+    "tab_before_hash": "tests/test_bifactor_gpu_high_q.p[y]::*\t# precision gate",
+}
+
+
+@pytest.mark.parametrize("label", sorted(_MODULE_GLOB_ENTRIES))
+def test_capability_ownership_rejects_module_component_globs(label: str) -> None:
+    """A module-glob entry can waive capability nodes and must be reported."""
+    allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text(encoding="utf-8")
+    ci_workflow = (REPO_TESTS_DIR.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    entry = _MODULE_GLOB_ENTRIES[label]
+    assert _capability_ownership_violations(allowlist + entry + "\n", ci_workflow)
+
+
+def test_capability_ownership_keeps_exact_module_function_globs() -> None:
+    """A trailing function glob under an exact non-capability module stays allowed."""
+    allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text(encoding="utf-8")
+    ci_workflow = (REPO_TESTS_DIR.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    entry = "tests/test_cdm_response_admission.py::test_cdm_fits_reject_* # extended-precision gate (reviewed)"
+    assert _capability_ownership_violations(allowlist + entry + "\n", ci_workflow) == []
+
+
+def test_second_hash_separator_restores_a_fnmatch_selector() -> None:
+    """A later ' # ' makes the gate keep the prefix the first hash removed."""
+    import fnmatch as _fn
+
+    allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text(encoding="utf-8")
+    ci_workflow = (
+        REPO_TESTS_DIR.parent / ".github" / "workflows" / "ci.yml"
+    ).read_text(encoding="utf-8")
+    waived = "tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q121"
+    node = "tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q12?"
+    entry = node + "#not-a-comment # GPU owned by gpu-smoke\n"
+    pattern = entry.split("#", 1)[0].strip()
+    violations = _capability_ownership_violations(allowlist + entry, ci_workflow)
+    assert any(pattern in item and "differs from the ownership selector" in item for item in violations), violations
+    assert pattern == node
+    assert _fn.fnmatchcase(waived, pattern) is True
+
+
+@pytest.mark.parametrize("suffix", [" # GPU owned by gpu-smoke", "#GPU owned by gpu-smoke", "\t# GPU owned by gpu-smoke", "#ignored # GPU owned by gpu-smoke"])
+@pytest.mark.parametrize("pattern", [
+    "tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q12?",
+    "tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q12[1]",
+    "tests/test_bifactor_gpu_high_?.py::test_bifactor_gpu_parity_q121",
+    "tests/test_bifactor_*::*",
+])
+def test_cross_increment_waiver_owner_boundary(pattern: str, suffix: str) -> None:
+    """Every actual conftest glob waiver is denied before exact-command attribution."""
+    import runpy
+    policy = runpy.run_path(str(REPO_TESTS_DIR / "conftest.py"))
+    node = "tests/test_bifactor_gpu_high_q.py::test_bifactor_gpu_parity_q121"
+    assert policy["_is_allowlisted"](node, [pattern])
+    workflow = (REPO_TESTS_DIR.parent / ".github/workflows/ci.yml").read_text()
+    violations = _capability_ownership_violations(pattern + suffix, workflow)
+    assert any("not a glob" in v or "differs from the ownership selector" in v for v in violations), violations
+
+
+def test_cross_increment_real_allowlist_positive() -> None:
+    """All actual allowlist entries retain their original valid owner mapping."""
+    workflow = (REPO_TESTS_DIR.parent / ".github/workflows/ci.yml").read_text()
+    allowlist = (REPO_TESTS_DIR / ALLOWLIST_NAME).read_text()
+    assert _capability_ownership_violations(allowlist, workflow) == []

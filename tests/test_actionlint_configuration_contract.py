@@ -13,6 +13,7 @@ def test_actionlint_declares_only_the_required_custom_runner_label() -> None:
     config = _ROOT / ".github" / "actionlint.yaml"
     assert config.is_file(), "normal actionlint configuration is missing"
     assert config.read_text(encoding="utf-8") == (
+        "# Custom label syntax only; runner capacity and isolation need operator evidence.\n"
         "self-hosted-runner:\n"
         "  labels:\n"
         "    - cwlab-ci-isolated\n"
