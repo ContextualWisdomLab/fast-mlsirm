@@ -59,3 +59,14 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+## 2026-10-12 - [Least Privilege & Shell Injection in GitHub Actions]
+**Vulnerability:**
+1. A GitHub Actions workflow used `secrets: inherit` to pass all repository secrets to a reusable workflow. This violates the principle of least privilege, as the called workflow gets access to secrets it might not need.
+2. The workflow interpolated the untrusted `github` context variable (`${{ inputs.release_tag }}`) directly into a `run` step script. This allows an attacker to inject arbitrary shell commands.
+
+**Learning:**
+GitHub Actions variables like `inputs` and `github` context must be treated as untrusted data. Direct interpolation into `run` blocks exposes runners to shell injection attacks. Additionally, passing all secrets to reusable workflows unnecessarily widens the blast radius if the downstream workflow is compromised.
+
+**Prevention:**
+- Never use `secrets: inherit`. Always pass required secrets explicitly via a `secrets:` map (e.g., `OPENSAR_AUTH_TOKEN: ${{ secrets.OPENSAR_AUTH_TOKEN }}`).
+- Never directly interpolate untrusted variables (`${{ ... }}`) into `run` steps. Instead, bind them to intermediate environment variables using `env:` and reference the environment variable safely in the shell script (e.g., `"$RELEASE_TAG"`).
