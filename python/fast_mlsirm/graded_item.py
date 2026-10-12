@@ -60,10 +60,16 @@ def _validated_node_count(value) -> int:
 def _admit_grid_work(work: int, budget: int, detail: str) -> None:
     """Fail closed when exact Cartesian work exceeds the caller's budget."""
     if work > budget:
-        raise ValueError(
-            f"Cartesian quadrature grid has {work} points ({detail}), exceeding "
-            f"max_grid_points={budget}; pass a larger max_grid_points to admit this work"
-        )
+        try:
+            message = (
+                f"Cartesian quadrature grid has {work} points ({detail}), exceeding "
+                f"max_grid_points={budget}; pass a larger max_grid_points to admit this work"
+            )
+        except ValueError:
+            # Decimal conversion may exceed Python's integer-string safety limit.
+            # Keep exact admission unchanged and never relax the process-wide limit.
+            message = "Cartesian quadrature grid exceeds max_grid_points; integer counts omitted"
+        raise ValueError(message) from None
 
 
 def _grm_expected_scores(thresholds: np.ndarray, linear_predictors: np.ndarray) -> np.ndarray:
@@ -399,7 +405,7 @@ def expected_graded_scale_score(
     _admit_grid_work(
         sum(item_work),
         budget,
-        f"sum over items of n_nodes ** len(integrate_columns[i]) with n_nodes={node_count}",
+        "sum over items of n_nodes ** len(integrate_columns[i])",
     )
 
     # Node construction is O(n_nodes); it is covered by the admitted work
