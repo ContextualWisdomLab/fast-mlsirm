@@ -265,3 +265,32 @@ def test_issue_1976_dense_q_never_tolerance_met_at_start_slopes() -> None:
     elif np.allclose(fit.a_general, 1.0):
         assert not fit.converged
         assert fit.termination_reason == "numerical_em_stall"
+
+
+def test_split_device_matches_cpu_and_reports_contiguous_shards() -> None:
+    # #2001 L3: device="split" partitions persons CPU [0, k) / GPU [k, n).
+    # Without a GPU adapter it falls back to CPU; either way the estimates
+    # must agree with the CPU sweep (GPU shard is f32, hence the tolerance)
+    # and the shard provenance must tile [0, n) in ascending person order.
+    y = _simulate(SEED)
+    cpu = _fit(y, device="cpu")
+    split = _fit(y, device="split", split_at_person=N_PERSONS // 3)
+    assert split.effective_device in ("cpu", "cpu+gpu")
+    # Same tolerances as the CPU-vs-GPU parity gate in test_bifactor_gpu.py.
+    np.testing.assert_allclose(split.a_general, cpu.a_general, atol=1e-4)
+    np.testing.assert_allclose(split.threshold, cpu.threshold, atol=1e-4)
+    assert abs(split.loglik_trace[-1] - cpu.loglik_trace[-1]) < 1e-3
+    shards = split.estep_shards
+    assert shards and shards[0]["person_start"] == 0
+    assert shards[-1]["person_end"] == N_PERSONS
+    for prev, nxt in zip(shards, shards[1:]):
+        assert prev["person_end"] == nxt["person_start"]
+    if split.effective_device == "cpu+gpu":
+        assert [s["device"] for s in shards] == ["cpu", "gpu"]
+        assert shards[0]["person_end"] == N_PERSONS // 3
+
+
+@pytest.mark.parametrize("split_at", [0, N_PERSONS, N_PERSONS + 5])
+def test_split_at_person_out_of_range_is_rejected(split_at: int) -> None:
+    with pytest.raises(ValueError):
+        _fit(_simulate(SEED), device="split", split_at_person=split_at)

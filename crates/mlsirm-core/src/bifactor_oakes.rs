@@ -203,7 +203,7 @@ impl Stage1Provider {
             // The Oakes assembly's E-step reruns are exact f64 scalar work
             // (the cross term needs analytic precision), never the f32 GPU
             // kernels.
-            device: crate::Device::Cpu,
+            device: crate::bifactor_grm::BifactorDevice::Cpu,
         };
         let v = validate(
             y,
@@ -309,7 +309,7 @@ impl PosteriorProvider for Stage1Provider {
     fn posterior_at(&self, packed: &[f64]) -> Result<OakesPosterior, String> {
         let params = self.unpack(packed);
         let tables = fill_logprob_tables(&self.v, &params, &self.tg, &self.ts, self.qg, self.qs);
-        let (_, counts) = e_step(
+        let (_, counts, _) = e_step(
             &self.v,
             &self.y,
             self.observed.as_deref(),
@@ -320,7 +320,7 @@ impl PosteriorProvider for Stage1Provider {
             self.qs,
             &self.tg,
             &self.ts,
-            crate::Device::Cpu,
+            crate::bifactor_grm::BifactorDevice::Cpu,
         );
         let mut node_g = Vec::with_capacity(self.v.n_items);
         let mut node_s = Vec::with_capacity(self.v.n_items);

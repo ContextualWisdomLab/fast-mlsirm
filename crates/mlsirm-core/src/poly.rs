@@ -566,11 +566,24 @@ fn m_step_item(
             }
         }
         // symmetrize + ridge for a well-posed solve
+        #[cfg(test)]
+        let raw_hessian = sibling_hessian_tests::raw_if_active(&hess);
+        // Higham (1989, author reprint pp. 3–4, §2): project each
+        // original off-diagonal pair before overwriting either entry.
+        // Reference: Higham, N. J. (1989). Matrix nearness problems and
+        // applications. In M. J. C. Gover & S. Barnett (Eds.), Applications
+        // of matrix theory (pp. 1–27). Oxford University Press.
         for r in 0..np {
-            for c in 0..np {
-                hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
+            for c in 0..r {
+                let pair = 0.5 * (hess[r][c] + hess[c][r]);
+                hess[r][c] = pair;
+                hess[c][r] = pair;
             }
             hess[r][r] += 1e-8;
+        }
+        #[cfg(test)]
+        if let Some(raw) = raw_hessian {
+            sibling_hessian_tests::record(raw, &hess);
         }
         let (step, directional, max_step) =
             stabilized_newton_step(solve_small(hess, g.clone()), &g, grad_norm);
@@ -1166,11 +1179,24 @@ fn nominal_m_step(
                 hess[r][j] = (gj[r] - g[r]) / h;
             }
         }
+        #[cfg(test)]
+        let raw_hessian = sibling_hessian_tests::raw_if_active(&hess);
+        // Higham (1989, author reprint pp. 3–4, §2): project each
+        // original off-diagonal pair before overwriting either entry.
+        // Reference: Higham, N. J. (1989). Matrix nearness problems and
+        // applications. In M. J. C. Gover & S. Barnett (Eds.), Applications
+        // of matrix theory (pp. 1–27). Oxford University Press.
         for r in 0..np {
-            for c in 0..np {
-                hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
+            for c in 0..r {
+                let pair = 0.5 * (hess[r][c] + hess[c][r]);
+                hess[r][c] = pair;
+                hess[c][r] = pair;
             }
             hess[r][r] += 1e-8;
+        }
+        #[cfg(test)]
+        if let Some(raw) = raw_hessian {
+            sibling_hessian_tests::record(raw, &hess);
         }
         let (step, directional, max_step) =
             stabilized_newton_step(solve_small(hess, g.clone()), &g, grad_norm);
@@ -3044,3 +3070,8 @@ pub fn poly_s_x2(
 #[cfg(test)]
 #[path = "../../../tests/unit/poly_tests.rs"]
 mod tests;
+
+
+#[cfg(test)]
+#[path = "../../../tests/unit/poly_sibling_hessian_tests.rs"]
+mod sibling_hessian_tests;

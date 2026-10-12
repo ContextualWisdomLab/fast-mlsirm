@@ -1083,11 +1083,26 @@ fn m_step_item(
                 hess[r][j] = (gj[r] - g[r]) / h;
             }
         }
+        #[cfg(test)]
+        let raw_hessian =
+            NEWTON_HESSIAN_CAPTURE.with(|capture| capture.borrow().as_ref().map(|_| hess.clone()));
+        // Higham (1989, reprint pp. 3–4, §2): (H + H^T)/2 uses
+        // each original off-diagonal pair before either value is replaced.
         for r in 0..np {
-            for c in 0..np {
-                hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
+            for c in 0..r {
+                let pair = 0.5 * (hess[r][c] + hess[c][r]);
+                hess[r][c] = pair;
+                hess[c][r] = pair;
             }
             hess[r][r] += ridge;
+        }
+        #[cfg(test)]
+        if let Some(raw) = raw_hessian {
+            NEWTON_HESSIAN_CAPTURE.with(|capture| {
+                if let Some(rows) = capture.borrow_mut().as_mut() {
+                    rows.push(("item", raw, hess.clone()));
+                }
+            });
         }
         let mut step = solve_small(hess, g.clone());
         let mut directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum::<f64>();
@@ -1243,11 +1258,26 @@ fn m_step_phi(
         if !hess.iter().all(|row| row.iter().all(|x| x.is_finite())) {
             break;
         }
+        #[cfg(test)]
+        let raw_hessian =
+            NEWTON_HESSIAN_CAPTURE.with(|capture| capture.borrow().as_ref().map(|_| hess.clone()));
+        // Higham (1989, reprint pp. 3–4, §2): (H + H^T)/2 uses
+        // each original off-diagonal pair before either value is replaced.
         for r in 0..m {
-            for c in 0..m {
-                hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
+            for c in 0..r {
+                let pair = 0.5 * (hess[r][c] + hess[c][r]);
+                hess[r][c] = pair;
+                hess[c][r] = pair;
             }
             hess[r][r] += ridge;
+        }
+        #[cfg(test)]
+        if let Some(raw) = raw_hessian {
+            NEWTON_HESSIAN_CAPTURE.with(|capture| {
+                if let Some(rows) = capture.borrow_mut().as_mut() {
+                    rows.push(("correlation", raw, hess.clone()));
+                }
+            });
         }
         let mut step = solve_small(hess, g.clone());
         let mut directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum::<f64>();
@@ -2026,3 +2056,18 @@ pub(crate) fn pack_params(
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_grm_tests.rs"]
 mod tests;
+#[cfg(test)]
+type HessianObservation = (&'static str, Vec<Vec<f64>>, Vec<Vec<f64>>);
+
+#[cfg(test)]
+thread_local! {
+    static NEWTON_HESSIAN_CAPTURE: std::cell::RefCell<Option<Vec<HessianObservation>>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_hessian_symmetry_tests.rs"]
+mod hessian_symmetry_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_symmetry_corrected_reference.rs"]
+mod symmetry_corrected_reference;

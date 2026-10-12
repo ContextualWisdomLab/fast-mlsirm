@@ -23,13 +23,15 @@ jobs:
   python-matrix:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
     name: python (${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: ${{ matrix.python-version }}
@@ -49,7 +51,7 @@ jobs:
     name: python
     needs: python-matrix
     if: ${{ always() && (github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed')) }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     steps:
       - name: Require every CPython matrix leg
         run: |
@@ -59,9 +61,11 @@ jobs:
 
   rust:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -79,13 +83,15 @@ jobs:
     # Exact GPU and study-precision nodes below own every corresponding
     # non-execution allowlist entry. The full paper-design recovery study
     # remains in the scheduled/manual workflow.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     timeout-minutes: 240
     env:
       WGPU_BACKEND: vulkan
       XDG_RUNTIME_DIR: /tmp/fast-mlsirm-xdg-runtime
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -173,9 +179,11 @@ jobs:
     # property-based Hypothesis tests already run in the `python` job (via the
     # dev extra); this job adds the Atheris coverage-guided harnesses with a
     # ~60s-per-target budget. Longer campaigns can be run nightly if desired.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -220,9 +228,11 @@ jobs:
 
   package:
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft && github.event.action != 'closed') }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, cwlab-ci-isolated]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"

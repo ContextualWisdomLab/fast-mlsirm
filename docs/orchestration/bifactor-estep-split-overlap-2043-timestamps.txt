@@ -1,0 +1,78 @@
+# bifactor E-step split overlap evidence (PR #2043)
+# captured: 2026-09-19T21:50:29Z
+# command: cargo test --manifest-path crates/mlsirm-core/Cargo.toml --lib measure_concurrent_split_estep_vs_cpu_reference -- --nocapture
+# host: Apple M5
+# metal: Metal 4
+# git_head: e991f32c47b0339083d7a9052b1b31851145a79d (pre-evidence commit; rerun script after checkout)
+# rustc: 1.97.1 (8bab26f4f 2026-07-14)
+# cargo: 1.97.1 (c980f4866 2026-06-30)
+
+warning: unused variable: `tables`
+  --> crates/mlsirm-core/src/../../../tests/unit/bifactor_estep_split_tests.rs:61:9
+   |
+61 |     let tables = fill_logprob_tables(&v, &params, &tg, &ts, 7, 7);
+   |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_tables`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `submit_and_readback` is never used
+   --> crates/mlsirm-core/src/gpu.rs:461:15
+    |
+461 | pub(crate) fn submit_and_readback(
+    |               ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `ni`, `nc`, `qg`, `qs`, `person_start`, and `person_end` are never read
+   --> crates/mlsirm-core/src/gpu_bifactor.rs:104:9
+    |
+102 | pub(crate) struct ReducedEstepGpuMeta {
+    |                   ------------------- fields in this struct
+103 |     pub ng: usize,
+104 |     pub ni: usize,
+    |         ^^
+105 |     pub ns: usize,
+106 |     pub nc: usize,
+    |         ^^
+107 |     pub qg: usize,
+    |         ^^
+108 |     pub qs: usize,
+    |         ^^
+109 |     pub stride: usize,
+110 |     pub person_start: usize,
+    |         ^^^^^^^^^^^^
+111 |     pub person_end: usize,
+    |         ^^^^^^^^^^
+
+warning: `mlsirm-core` (lib test) generated 3 warnings (run `cargo fix --lib -p mlsirm-core --tests` to apply 1 suggestion)
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.50s
+     Running unittests src/entrypoint.rs (target/debug/deps/mlsirm_core-ed2facb48d9beec2)
+
+running 1 test
+
+=== measure_concurrent_split_estep_vs_cpu_reference q=21 ===
+effective_device=cpu+gpu
+  shard 0: device=cpu persons=[0, 60)
+  shard 1: device=gpu persons=[60, 120)
+cpu_shard: start=0.168085s end=0.172007s duration=0.003922s (monotonic offset from wall_start)
+gpu_shard: dispatched=0.168085s end=0.194323s active_duration=0.026238s
+intervals_overlap=true
+cpu_loglik=-8.873744206146e2 split_loglik=-8.873744394638e2
+max_abs_loglik_diff=1.884918e-5
+max_abs_count_diff=1.798021e-6
+wall_seconds=0.194857
+
+=== measure_concurrent_split_estep_vs_cpu_reference q=121 ===
+effective_device=cpu+gpu
+  shard 0: device=cpu persons=[0, 60)
+  shard 1: device=gpu persons=[60, 120)
+cpu_shard: start=0.029098s end=0.430663s duration=0.401566s (monotonic offset from wall_start)
+gpu_shard: dispatched=0.029097s end=0.431824s active_duration=0.402726s
+intervals_overlap=true
+cpu_loglik=-8.873744208261e2 split_loglik=-8.873744395696e2
+max_abs_loglik_diff=1.874344e-5
+max_abs_count_diff=4.141800e-7
+wall_seconds=0.438472
+test bifactor_grm::bifactor_estep_split_tests::measure_concurrent_split_estep_vs_cpu_reference ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1237 filtered out; finished in 0.82s
