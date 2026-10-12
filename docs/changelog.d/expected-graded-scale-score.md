@@ -10,8 +10,12 @@
   Weights that are not a probability measure are rejected.
 - `equal_probability_normal_nodes(n)` returns the mid-bin normal quantiles
   `Phi^{-1}((k - 0.5) / n)` with weights `1/n`, exactly symmetric about zero.
-  It uses the standard library's AS 241 inverse normal, so no new dependency
-  is added.
+  The Rust core uses an AS 241 seed and twofold residual correction for exact
+  rational midpoint probabilities, with direct-tail refinement. No SciPy or
+  new runtime dependency is added. An updated compiled binding is required;
+  an old core is rejected instead of used as a lower-precision fallback.
+  Independent fixed-reference tests retain a one-ULP criterion; this does not
+  assert a universal correctly-rounded or continuous-integration guarantee.
 
 Item expectations are computed by the compiled Rust core, which also rejects
 thresholds that are not strictly decreasing.
