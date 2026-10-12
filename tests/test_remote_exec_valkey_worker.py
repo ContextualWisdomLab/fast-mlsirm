@@ -66,7 +66,9 @@ def _published_outcomes(client):
     from fast_mlsirm.remote_exec import _outcome_from_dict
 
     return [
-        _outcome_from_dict(json.loads(fields["outcome"]))
+        _outcome_from_dict(
+            json.loads(fields["outcome"]), fingerprint=fields["fingerprint"]
+        )
         for _id, fields in client.streams.get(_OUTCOMES, [])
     ]
 

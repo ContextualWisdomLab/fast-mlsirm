@@ -22,12 +22,21 @@ envelope. Like ``SubprocessExecutor``, ``run_batch`` requires the numerical
 identity equals every envelope's ``manifest.payload_sha256``; the job record
 carries it as a canonical-JSON ``payload`` field so workers never execute a
 unit without its configuration. Outcomes return ordered by
-``(unit_index, run_id)``.
+``(unit_index, run_id)``. Device fields are declarations, not device
+attestation: this transport currently admits only the exact ``cpu`` labels
+and rejects unsupported labels before publishing a job. Fresh stream replies
+are normalized from RESP2 pairs, unified mappings, and native redis-py RESP3
+mappings without changing record validation or acknowledgement order.
 
 Failed outcomes are terminal. The first failure per fingerprint is stored in
 ``{stream}:failed`` and acknowledged, so ``run_batch`` returns it beside the
 successful units instead of timing out. A later success for the same
 fingerprint still wins, and ``committed_success`` reports successes only.
+Before publishing a retry, ``run_batch`` snapshots failures already stored for
+its fingerprints. For those fingerprints it waits for a success rather than
+returning the old failure as the new dispatch's reply. If no success arrives,
+it raises the existing timeout; this policy does not identify individual
+attempts or distinguish concurrent failures.
 Outcome records larger than 1 MiB (the worker stdout bound) or nested deeper
 than 64 arrays/objects are rejected before they are acknowledged, and
 ``wait_timeout_s`` must be a finite positive number.

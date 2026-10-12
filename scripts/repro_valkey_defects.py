@@ -48,7 +48,17 @@ from fast_mlsirm.remote_exec import (  # noqa: E402
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
-from test_remote_exec import _envelope, _manifest  # noqa: E402
+from test_remote_exec import _MC_PAYLOAD, _payload_manifest  # noqa: E402
+from test_remote_exec import _envelope as _base_envelope  # noqa: E402
+
+
+def _manifest():
+    return _payload_manifest(_MC_PAYLOAD)
+
+
+def _envelope(**kwargs):
+    kwargs.setdefault("manifest", _manifest())
+    return _base_envelope(**kwargs)
 
 
 def _completed(unit_index: int, result: object):
@@ -243,7 +253,9 @@ def main() -> int:
             min_idle_ms=0,
         )
         try:
-            got_batch = backend.run_batch(tuple(envs), worker_manifest=_manifest())
+            got_batch = backend.run_batch(
+                tuple(envs), worker_manifest=_manifest(), payload=_MC_PAYLOAD
+            )
             results.append(
                 (
                     "deadline_drain_multi_batch_raw_stream",
@@ -254,7 +266,7 @@ def main() -> int:
             results.append(("deadline_drain_multi_batch_raw_stream", f"FAIL {exc}"))
 
         # --- empty-stream deadline (must not hang on BLOCK 0) ---
-        # Watchdog thread fails closed if wait_for_committed exceeds upper bound.
+        # Watchdog thread fails closed if wait_for_terminal exceeds upper bound.
         empty_stream = f"fast-mlsirm:ev:{suffix}:empty"
         empty_group = f"fast-mlsirm-ev-{suffix}-empty"
         owned.extend([empty_stream, f"{empty_stream}:committed"])
@@ -281,7 +293,7 @@ def main() -> int:
         t0 = time.monotonic()
         deadline = t0 + wait_s
         try:
-            found = store_empty.wait_for_committed((missing_fp,), deadline=deadline)
+            found = store_empty.wait_for_terminal((missing_fp,), deadline=deadline)
             empty_result["found"] = found
         finally:
             done_empty.set()
@@ -328,7 +340,7 @@ def main() -> int:
             min_idle_ms=0,
         )
         late_deadline = time.monotonic() + 0.05
-        late_found = store_late.wait_for_committed(
+        late_found = store_late.wait_for_terminal(
             (late_outcome.envelope_fingerprint,), deadline=late_deadline
         )
         results.append(
@@ -444,11 +456,23 @@ def main() -> int:
             wait_timeout_s=3.0,
             min_idle_ms=0,
         )
+        rejected_gpu = False
+        before_gpu = client.xlen(jobs_dev)
+        try:
+            backend_dev.run_batch(
+                (env,), worker_manifest=_manifest(), payload=_MC_PAYLOAD,
+                requested_device="gpu", effective_device="cpu",
+            )
+        except ValueError:
+            rejected_gpu = client.xlen(jobs_dev) == before_gpu
+        results.append(("unsupported_gpu_rejected_before_publish",
+                        "PASS" if rejected_gpu else "FAIL GPU request was published"))
         backend_dev.run_batch(
             (env,),
             worker_manifest=_manifest(),
-            requested_device="gpu",
+            requested_device="cpu",
             effective_device="cpu",
+            payload=_MC_PAYLOAD,
         )
         entries = client.xrange(jobs_dev)
         fields = entries[0][1] if entries else {}
@@ -456,7 +480,7 @@ def main() -> int:
             (
                 "device_field_preservation",
                 "PASS"
-                if fields.get("requested_device") == "gpu"
+                if fields.get("requested_device") == "cpu"
                 and fields.get("effective_device") == "cpu"
                 else f"FAIL fields={fields!r}",
             )
