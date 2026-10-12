@@ -7090,6 +7090,25 @@ fn grm_cell_logprobs(base: f64, thresholds: PyReadonlyArray1<'_, f64>) -> PyResu
     Ok(core_grm_logprobs(base, thresholds.as_slice()?))
 }
 
+/// Required-count rational midpoint normal nodes delegated to the Rust core.
+///
+/// Basis: Wichura (1988, pp. 478–480, 482–484) and NIST DLMF §7.9,
+/// Eq. 7.9.1; see `mlsirm_core::normal_quantile` for complete APA references
+/// and the repository-derived residual-correction scope. No count default.
+#[pyfunction]
+#[pyo3(signature = (n_nodes))]
+fn equal_probability_normal_nodes(
+    py: Python<'_>,
+    n_nodes: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let (nodes, weights) = mlsirm_core::normal_quantile::equal_probability_normal_nodes(n_nodes)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("nodes", PyArray1::from_vec(py, nodes))?;
+    out.set_item("weights", PyArray1::from_vec(py, weights))?;
+    Ok(out.into())
+}
+
 /// Batched public GRM/GPCM category probabilities and expected category scores.
 #[pyfunction]
 #[pyo3(signature = (theta, slope, cat_params, n_items, n_cat, model))]
@@ -10713,6 +10732,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(empirical_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(gpcm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
+    m.add_function(wrap_pyfunction!(equal_probability_normal_nodes, m)?)?;
     m.add_function(wrap_pyfunction!(polytomous_predictions, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_fipc, m)?)?;
