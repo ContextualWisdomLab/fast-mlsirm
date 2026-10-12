@@ -42,6 +42,7 @@ jobs:
       - name: Resolve control-plane commit and PyPI inventory
         id: inventory
         env:
+          GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG_HINT: ${{ github.event.release.tag_name }}
@@ -55,8 +56,9 @@ jobs:
           echo "control_plane_commit=$CONTROL_PLANE_COMMIT" >> "$GITHUB_OUTPUT"
 
           pypi_json="$(mktemp)"
+          release_tags="$(mktemp)"
           cleanup() {
-            rm -f "$pypi_json"
+            rm -f "$pypi_json" "$release_tags"
           }
           trap cleanup EXIT
 
@@ -83,24 +85,22 @@ jobs:
           print(f"loaded {len(versions)} PyPI versions for fast-mlsirm")
           PY
 
-          candidate_tags=()
           if [ "$EVENT_NAME" = "release" ] && [ -n "${RELEASE_TAG_HINT:-}" ]; then
-            candidate_tags+=("$RELEASE_TAG_HINT")
+            printf '%s\n' "$RELEASE_TAG_HINT" > "$release_tags"
           else
-            # gh release list is scoped to this repository and avoids a broad
-            # REST pagination loop for every org repo.
-            while IFS= read -r tag; do
-              [ -n "$tag" ] || continue
-              candidate_tags+=("$tag")
-            done < <(
-              gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
-                --json tagName \
-                --jq '.[].tagName'
-            )
+            # Keep listing synchronous: process substitution hides gh failures.
+            if gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+              --json tagName \
+              --jq '.[].tagName' > "$release_tags"; then
+              :
+            else
+              exit "$?"
+            fi
           fi
 
           : > gap_tags.txt
-          for tag in "${candidate_tags[@]}"; do
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
             if ! printf '%s' "$tag" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
               echo "skipping non-canonical release tag: $tag"
               continue
@@ -111,7 +111,7 @@ jobs:
               continue
             fi
             printf '%s\n' "$tag" >> gap_tags.txt
-          done
+          done < "$release_tags"
 
           if [ ! -s gap_tags.txt ]; then
             echo "no PyPI gaps detected"
