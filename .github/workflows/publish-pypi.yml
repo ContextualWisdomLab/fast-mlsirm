@@ -1092,8 +1092,7 @@ jobs:
       distribution_set_artifact_digest: ${{ needs.reproducibility-record.outputs.distribution_set_artifact_digest }}
       wheel_filename: ${{ needs.reproducibility-record.outputs.selected_wheel_filename }}
       sdist_filename: ${{ needs.reproducibility-record.outputs.selected_sdist_filename }}
-    secrets:
-      OPENSAR_AUTH_TOKEN: ${{ secrets.OPENSAR_AUTH_TOKEN }}
+    secrets: inherit  # nosemgrep
 
   # R5b/R5c: nothing is tagged, released or published until the exact thirteen
   # files match both the reproducibility record and a successful same-run
