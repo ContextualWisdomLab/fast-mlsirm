@@ -531,6 +531,10 @@ class BifactorGrmFipcFit:
     termination_reason: str
     final_loglik_change: float
     n_parameters: int
+    gpu_execution_used: bool = False
+    gpu_backend: str | None = None
+    gpu_device_name: str | None = None
+    cpu_fallback_reason: str | None = None
 
 
 def fit_bifactor_grm_fipc(
@@ -549,6 +553,7 @@ def fit_bifactor_grm_fipc(
     newton_iter: int = 10,
     ridge: float = 1e-8,
     estimate_specific_vars: bool = False,
+    device: str = "cpu",
 ) -> BifactorGrmFipcFit:
     """Fit the focal group with fixed anchor items (FIPC; compute in Rust).
 
@@ -568,7 +573,11 @@ def fit_bifactor_grm_fipc(
     reflection canonicalization, no rescaling of the latent points per Kim,
     2006, p. 362). ``q_general``/``q_specific`` are caller-owned
     Gauss-Hermite node counts (any ``int >= 1``; #1929 removed the
-    fixed-table cap).
+    fixed-table cap). ``device`` selects the existing reduced E-step: CPU
+    uses binary64 arithmetic, GPU uses the existing binary32 kernel, and
+    auto may fall back. Explicit GPU rejects a native CPU-fallback result.
+    Item maximization and final EAP evaluation remain on the CPU; selecting
+    GPU does not certify convergence or numerical precision.
 
     References (APA 7th ed.):
 
@@ -657,6 +666,8 @@ def fit_bifactor_grm_fipc(
     core = _core_module()
     if core is None or not hasattr(core, "fit_bifactor_grm_fipc"):
         raise RuntimeError("fit_bifactor_grm_fipc requires the compiled Rust core")
+    if not isinstance(device, str) or device not in {"cpu", "gpu", "auto"}:
+        raise ValueError("device must be one of cpu, gpu, auto")
 
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
     res = core.fit_bifactor_grm_fipc(
@@ -678,7 +689,21 @@ def fit_bifactor_grm_fipc(
         int(newton_int),
         float(ridge_float),
         bool(estimate_specific_vars),
+        **({} if device == "cpu" else {"device": device}),
     )
+    used = res.get("gpu_execution_used", False)
+    backend = res.get("gpu_backend")
+    device_name = res.get("gpu_device_name")
+    fallback_reason = res.get("cpu_fallback_reason")
+    if type(used) is not bool:
+        raise ValueError("gpu_execution_used must be a boolean")
+    if any(value is not None and not isinstance(value, str)
+           for value in (backend, device_name, fallback_reason)):
+        raise ValueError("GPU backend, device name and fallback reason must be strings or null")
+    if used and (not backend or not device_name):
+        raise ValueError("GPU execution identity requires a nonempty backend and device name")
+    if device == "gpu" and (used is not True or fallback_reason is not None):
+        raise RuntimeError("GPU FIPC requested but the native fit did not complete without CPU fallback")
     return BifactorGrmFipcFit(
         a_general=np.asarray(res["a_general"], dtype=np.float64),
         a_specific=np.asarray(res["a_specific"], dtype=np.float64),
@@ -701,4 +726,112 @@ def fit_bifactor_grm_fipc(
         termination_reason=str(res["termination_reason"]),
         final_loglik_change=float(res["final_loglik_change"]),
         n_parameters=int(res["n_parameters"]),
+        gpu_execution_used=used,
+        gpu_backend=backend,
+        gpu_device_name=device_name,
+        cpu_fallback_reason=fallback_reason,
     )
+
+
+@dataclass
+class BifactorFullFipcFit:
+    """All-fixed population fit, G followed by specific factors; no scores."""
+    mean: np.ndarray
+    sd: np.ndarray
+    a_general: np.ndarray
+    a_specific: np.ndarray
+    threshold: np.ndarray
+    loglik_trace: np.ndarray
+    n_iter: int
+    converged: bool
+    termination_reason: str
+    final_loglik_change: float | None
+    em_map_displacement: float
+    n_parameters: int
+    gpu_execution_used: bool
+    gpu_backend: str | None
+    gpu_device_name: str | None
+    cpu_fallback_reason: str | None
+
+
+def fit_bifactor_grm_fipc_full(
+    responses: np.ndarray, specific_map: np.ndarray, n_cat: int, n_specific: int,
+    fixed_a_general: np.ndarray, fixed_a_specific: np.ndarray,
+    fixed_threshold: np.ndarray, initial_mean: np.ndarray, initial_sd: np.ndarray,
+    q_general: int, q_specific: int, max_iter: int, tol: float, device: str,
+) -> BifactorFullFipcFit:
+    """All-fixed orthogonal focal means/variances, without participant scoring.
+
+    Basis: Cai et al. (2011, pp. 230–232, Eqs. 15–17), population restrictions
+    and reduced integration; Kim (2006, pp. 360–363), iterated fixed-item
+    calibration. All inputs are caller owned. Complete observed responses
+    only; missing responses raise ValueError. G and specific means and SDs
+    are free; all item parameters remain fixed, offdiagonal covariances zero.
+    Full EM steps, no rollback/clamping. Stopping requires relative likelihood
+    change and mean/log-SD EM-map displacement <= tol. GPU E-step uses existing
+    binary32 arithmetic, CPU binary64; tolerance is not an accuracy guarantee.
+    This MML-EM fit is not a stochastic MHRM fit. No node-count defaults/caps.
+
+    References:
+        Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
+            item bifactor analysis. Psychological Methods, 16(3), 221–248.
+            doi:10.1037/a0023350.
+        Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+            methods. Journal of Educational Measurement, 43(4), 355–381.
+            doi:10.1111/j.1745-3984.2006.00021.x.
+    """
+    controls = {name: _finite_integer_control(value, name) for name, value in
+                (("n_cat",n_cat),("n_specific",n_specific),("q_general",q_general),
+                 ("q_specific",q_specific),("max_iter",max_iter))}
+    if controls['n_cat'] < 2 or any(controls[k] < 1 for k in ('n_specific','q_general','q_specific','max_iter')):
+        raise ValueError("n_cat >= 2 and other integer controls >= 1 required")
+    tolerance = _positive_real_control(tol, "tol")
+    if not isinstance(device,str) or device not in {"cpu","gpu","auto"}:
+        raise ValueError("device must be one of cpu, gpu, auto")
+    y=np.asarray(responses)
+    if y.ndim!=2 or y.dtype.kind not in 'biuf' or not y.size:
+        raise ValueError("responses must be a nonempty numeric persons x items array")
+    if not np.isfinite(y).all() or (y<0).any():
+        raise ValueError("complete observed responses required; missing responses unsupported")
+    if (y!=np.floor(y)).any() or (y>=controls['n_cat']).any():
+        raise ValueError("responses must be integer categories in 0..n_cat-1")
+    nperson,nitems=y.shape; ns=controls['n_specific'];nc=controls['n_cat']
+    smap=np.asarray(specific_map)
+    if smap.shape!=(nitems,) or smap.dtype.kind not in 'iuf' or not np.isfinite(smap).all() or (smap!=np.floor(smap)).any() or (smap < -1).any() or (smap>=ns).any():
+        raise ValueError("specific_map must contain integer -1 or specific factor indices")
+    def finite_array(value,shape,name):
+        raw=np.asarray(value)
+        if raw.dtype.kind not in 'biuf' or raw.shape!=shape or not np.isfinite(raw).all():
+            raise ValueError(f"{name} must be a finite real array with shape {shape}")
+        return np.require(raw,dtype=np.float64,requirements=['C','A'])
+    ag=finite_array(fixed_a_general,(nitems,),"fixed_a_general")
+    a_s=finite_array(fixed_a_specific,(nitems,),"fixed_a_specific")
+    th=finite_array(fixed_threshold,(nitems,nc-1),"fixed_threshold")
+    mean=finite_array(initial_mean,(ns+1,),"initial_mean")
+    sd=finite_array(initial_sd,(ns+1,),"initial_sd")
+    if (sd<=0).any():
+        raise ValueError("initial_sd must be positive")
+    from .fitstats import _core_module
+    core=_core_module()
+    if core is None or not hasattr(core,'fit_bifactor_grm_fipc_full'):
+        raise RuntimeError("full focal means require the compiled Rust core")
+    r=core.fit_bifactor_grm_fipc_full(np.require(y,dtype=np.int64,requirements=['C','A']).reshape(-1),
+        np.require(smap,dtype=np.int64,requirements=['C','A']),nperson,nitems,ns,nc,
+        ag,a_s,th.reshape(-1),mean,sd,controls['q_general'],controls['q_specific'],
+        controls['max_iter'],tolerance,device)
+    if r['gpu_execution_used'] is not True and r['gpu_execution_used'] is not False:
+        raise ValueError("GPU execution receipt must be Boolean")
+    used=r['gpu_execution_used'];backend=r['gpu_backend'];name=r['gpu_device_name'];fallback=r['cpu_fallback_reason']
+    if used and (not isinstance(backend,str) or not backend.strip() or not isinstance(name,str) or not name.strip()):
+        raise ValueError("GPU execution identity requires backend and device name")
+    if device=='gpu' and (not used or fallback is not None):
+        raise ValueError("GPU-only execution required")
+    if r['converged'] is not True and r['converged'] is not False:
+        raise ValueError("convergence receipt must be Boolean")
+    return BifactorFullFipcFit(
+        mean=np.asarray(r['mean']),sd=np.asarray(r['sd']),a_general=np.asarray(r['a_general']),
+        a_specific=np.asarray(r['a_specific']),threshold=np.asarray(r['threshold']).reshape(nitems,nc-1),
+        loglik_trace=np.asarray(r['loglik_trace']),n_iter=int(r['n_iter']),converged=r['converged'],
+        termination_reason=r['termination_reason'],final_loglik_change=r['final_loglik_change'],
+        em_map_displacement=float(r['em_map_displacement']),n_parameters=int(r['n_parameters']),
+        gpu_execution_used=used,gpu_backend=backend,gpu_device_name=name,cpu_fallback_reason=fallback)

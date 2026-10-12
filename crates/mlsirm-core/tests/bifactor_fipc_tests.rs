@@ -181,6 +181,7 @@ fn fipc_config() -> BifactorFipcConfig {
         newton_iter: 10,
         ridge: 1e-8,
         estimate_specific_vars: false,
+        device: mlsirm_core::Device::Cpu,
     }
 }
 

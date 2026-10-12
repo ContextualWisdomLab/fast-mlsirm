@@ -612,7 +612,7 @@ def expected_raw_two_tier_grm(
     if core is None or not hasattr(core, "two_tier_expected_raw"):
         raise RuntimeError("expected_raw_two_tier_grm requires the compiled Rust core")
 
-    return np.asarray(
+    scores = np.asarray(
         core.two_tier_expected_raw(
             a_primary.reshape(-1),
             a_specific,
@@ -626,3 +626,6 @@ def expected_raw_two_tier_grm(
         ),
         dtype=np.float64,
     )
+    if scores.shape != (theta.shape[0],):
+        raise ValueError("expected raw scores must have shape (n_persons,)")
+    return scores

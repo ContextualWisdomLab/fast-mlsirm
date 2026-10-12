@@ -849,6 +849,9 @@ fn m_step_item(
     params
 }
 
+#[path = "bifactor_full_fipc.rs"]
+pub mod full_fipc;
+
 fn checked_em_loglik_change(
     current: f64,
     previous: Option<f64>,
@@ -2848,6 +2851,8 @@ pub struct BifactorFipcConfig {
     pub ridge: f64,
     /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
     pub estimate_specific_vars: bool,
+    /// E-step execution selector; explicit GPU rejects a CPU fallback result.
+    pub device: crate::Device,
 }
 
 impl Default for BifactorFipcConfig {
@@ -2860,6 +2865,7 @@ impl Default for BifactorFipcConfig {
             newton_iter: 10,
             ridge: 1e-8,
             estimate_specific_vars: false,
+            device: crate::Device::Cpu,
         }
     }
 }
@@ -2902,6 +2908,10 @@ pub struct BifactorFipcResult {
     /// focal distribution parameters (general mean/variance, and the specific
     /// variances when estimated).
     pub n_parameters: usize,
+    pub gpu_execution_used: bool,
+    pub gpu_backend: Option<String>,
+    pub gpu_device_name: Option<String>,
+    pub cpu_fallback_reason: Option<String>,
 }
 
 /// Fit the focal group with fixed anchor items (Kim, 2006, MWU-MEM) for the
@@ -2943,6 +2953,7 @@ pub fn fit_bifactor_grm_fipc(
     fixed_threshold: &[f64],
     cfg: &BifactorFipcConfig,
 ) -> Result<BifactorFipcResult, String> {
+    crate::gpu_bifactor::reset_gpu_dispatch_receipt();
     // Config checks mirror `validate_multigroup_cfg` exactly (quadrature must
     // resolve a Gauss-Hermite rule; lower bounds only; caller-owned numerics
     // behave identically).
@@ -2972,11 +2983,9 @@ pub fn fit_bifactor_grm_fipc(
         seed: 0x9E37_79B9_7F4A_7C15,
         newton_iter: cfg.newton_iter,
         ridge: cfg.ridge,
-        // FIPC (#1912 stage-2b) predates the GPU E-step (#1931, stage 5) and
-        // has no device knob of its own; this reused single-group validator
-        // only checks shapes/blocks, never runs the E-step, so the device
-        // choice here is inert either way.
-        device: crate::Device::Cpu,
+        // Structural validation never executes an E-step. The actual selector
+        // is forwarded to the focal sweep below without changing its measure.
+        device: cfg.device,
     };
     let v = validate(
         y,
@@ -3104,9 +3113,17 @@ pub fn fit_bifactor_grm_fipc(
             &log_ws,
             qg,
             qs,
-            // FIPC predates the GPU E-step (#1931); always run the CPU sweep.
-            crate::Device::Cpu,
+            cfg.device,
         );
+        let dispatch = crate::gpu_bifactor::gpu_dispatch_receipt();
+        if cfg.device == crate::Device::Gpu
+            && (!dispatch.used || dispatch.fallback_reason.is_some())
+        {
+            return Err(format!(
+                "GPU FIPC requested but no GPU-only E-step result is available: {}",
+                dispatch.fallback_reason.as_deref().unwrap_or("gpu_execution_unavailable")
+            ));
+        }
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter)?;
         loglik_trace.push(ll);
@@ -3339,6 +3356,7 @@ pub fn fit_bifactor_grm_fipc(
         n_parameters += v.n_specific;
     }
 
+    let dispatch = crate::gpu_bifactor::gpu_dispatch_receipt();
     Ok(BifactorFipcResult {
         a_general,
         a_specific,
@@ -3355,6 +3373,10 @@ pub fn fit_bifactor_grm_fipc(
         termination_reason,
         final_loglik_change,
         n_parameters,
+        gpu_execution_used: dispatch.used,
+        gpu_backend: dispatch.backend,
+        gpu_device_name: dispatch.device_name,
+        cpu_fallback_reason: dispatch.fallback_reason,
     })
 }
 
