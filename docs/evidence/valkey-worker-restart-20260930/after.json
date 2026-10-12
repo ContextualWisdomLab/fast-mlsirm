@@ -1,0 +1,10 @@
+{
+  "phase": "after",
+  "started_kst": "2026-09-30T12:38:22.264179+09:00",
+  "finished_kst": "2026-09-30T12:38:26.586896+09:00",
+  "elapsed_seconds": 4.32,
+  "exit_code": 0,
+  "stdout": "{\"phase\": \"after\", \"daemon_restart_verified\": true, \"pending_recovered\": 2, \"executed\": 1, \"skipped\": 1, \"fingerprint_seed_result_digest\": \"PASS\", \"scope\": \"existing-editable-local-numerics, remote-disposable-daemon\"}",
+  "stderr": "",
+  "scope": "local editable worker, production MC dispatch, remote disposable daemon"
+}

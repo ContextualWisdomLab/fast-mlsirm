@@ -1,0 +1,10 @@
+{
+  "phase": "before",
+  "started_kst": "2026-09-30T12:36:11.496464+09:00",
+  "finished_kst": "2026-09-30T12:36:12.499301+09:00",
+  "elapsed_seconds": 1.003,
+  "exit_code": 0,
+  "stdout": "{\"phase\": \"before\", \"pending_jobs\": 2, \"committed_successes\": 1, \"appendfsync\": \"always\"}",
+  "stderr": "",
+  "scope": "local editable worker, production MC dispatch, remote disposable daemon"
+}
