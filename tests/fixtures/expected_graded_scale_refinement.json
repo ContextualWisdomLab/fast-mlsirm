@@ -1,0 +1,181 @@
+{
+  "provenance": {
+    "source_results_sha256": "ce9731d2ec5772e7017874288f7fd93694530b717c04fe360fa8e818040a4b0e",
+    "reference_method": "Independent adaptive GK7/15, cross-checked against GH200; finite [-12,12] truncation. Embedded errors are estimates, not certified bounds.",
+    "scope": "Fixed-fixture engineering regression only; no universal accuracy tolerance or scientific acceptance."
+  },
+  "fixtures": {
+    "a_one_item_D2_K4": {
+      "inputs": {
+        "slopes": [
+          [
+            1.4,
+            0.9
+          ]
+        ],
+        "thresholds": [
+          [
+            1.5,
+            0.2,
+            -1.1
+          ]
+        ],
+        "theta": [
+          0.35,
+          0.0
+        ],
+        "integrate_columns": [
+          [
+            1
+          ]
+        ],
+        "factor_variances": [
+          1.0,
+          1.0
+        ]
+      },
+      "continuous_reference": 1.8655482551596423,
+      "cross_method_discrepancy": 0.0,
+      "estimated_reference_error": 5.039039650648124e-16,
+      "retained_errors": {
+        "121": 0.00016349671099247232,
+        "241": 7.240781444317612e-05,
+        "481": 3.1863289736921985e-05,
+        "961": 1.3968689946075585e-05
+      }
+    },
+    "b_three_items_D4_bifactor": {
+      "inputs": {
+        "slopes": [
+          [
+            1.2,
+            0.8,
+            0.0,
+            0.0
+          ],
+          [
+            0.9,
+            0.0,
+            1.3,
+            0.0
+          ],
+          [
+            1.1,
+            0.6,
+            0.7,
+            0.5
+          ]
+        ],
+        "thresholds": [
+          [
+            2.0,
+            0.5,
+            -0.4,
+            -1.8
+          ],
+          [
+            1.1,
+            0.0,
+            -0.9,
+            -2.2
+          ],
+          [
+            1.7,
+            0.3,
+            -0.6,
+            -1.5
+          ]
+        ],
+        "theta": [
+          -0.6,
+          0.4,
+          0.0,
+          1.1
+        ],
+        "integrate_columns": [
+          [
+            1
+          ],
+          [
+            2
+          ],
+          [
+            1,
+            2
+          ]
+        ],
+        "factor_variances": [
+          1.0,
+          2.25,
+          4.0,
+          1.0
+        ]
+      },
+      "continuous_reference": 5.0272407647335875,
+      "cross_method_discrepancy": 3.552713678800501e-15,
+      "estimated_reference_error": 8.052280208639165e-15,
+      "retained_errors": {
+        "121": 0.00025335015172345265,
+        "241": 0.0001038667661967807,
+        "481": 4.2673726627917574e-05,
+        "961": 1.758760487113875e-05
+      }
+    },
+    "c_zero_variance_column": {
+      "inputs": {
+        "slopes": [
+          [
+            1.0,
+            0.7,
+            1.2
+          ],
+          [
+            0.8,
+            1.5,
+            0.0
+          ]
+        ],
+        "thresholds": [
+          [
+            1.2,
+            -0.3,
+            -1.6
+          ],
+          [
+            0.9,
+            0.1,
+            -1.4
+          ]
+        ],
+        "theta": [
+          0.25,
+          -0.5,
+          0.0
+        ],
+        "integrate_columns": [
+          [
+            2,
+            1
+          ],
+          [
+            1
+          ]
+        ],
+        "factor_variances": [
+          1.0,
+          0.0,
+          1.69
+        ]
+      },
+      "continuous_reference": 3.0617603018064745,
+      "cross_method_discrepancy": 0.0,
+      "estimated_reference_error": 5.111765568833365e-16,
+      "retained_errors": {
+        "121": 3.071296740486673e-06,
+        "241": 1.1126824999152518e-06,
+        "481": 4.056495974680274e-07,
+        "961": 1.491553898169684e-07
+      }
+    }
+  }
+}
