@@ -512,8 +512,8 @@ def test_consumer_revision_comes_from_script_checkout(monkeypatch, tmp_path) -> 
     module.subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     module.subprocess.run(
         ["git", "-C", str(tmp_path), "-c", "user.name=Fixture",
-         "-c", "user.email=fixture@example.invalid", "commit", "-q",
-         "--allow-empty", "-m", "Unrelated checkout"], check=True,
+         "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgSign=false",
+         "commit", "-q", "--allow-empty", "-m", "Unrelated checkout"], check=True,
     )
     monkeypatch.chdir(tmp_path)
     assert module._git_sha() == expected
@@ -1369,3 +1369,32 @@ def test_expected_raw_general_only_bank_retains_analytic_curve():
         reference += (1.0 / (1.0 + np.exp(-eta))).sum(axis=1)
     actual = module.expected_raw(theta, fit, q_specific=481)
     np.testing.assert_array_equal(actual, reference)
+
+
+@pytest.mark.parametrize("environment_sha", [None, "", "a" * 40])
+def test_cli_build_source_environment_preserves_optional_provenance(
+    monkeypatch, environment_sha,
+):
+    """An empty environment label is absent, not malformed build provenance."""
+    import sys
+
+    module = _load_script()
+    if environment_sha is None:
+        monkeypatch.delenv("FIPC_BUILD_SOURCE_SHA", raising=False)
+    else:
+        monkeypatch.setenv("FIPC_BUILD_SOURCE_SHA", environment_sha)
+    monkeypatch.setattr(sys, "argv", [
+        "s1_fipc_consumer_verify", "--q-primary", "121", "--q-specific", "121",
+        "--q-expected-raw", "121",
+    ])
+    args = module._arguments()
+    assert args.build_source_sha == (environment_sha or None)
+    monkeypatch.setattr(module, "_core", SimpleNamespace(__file__=__file__))
+    receipt = module.build_receipt(
+        None, args.build_source_sha, q_primary=121, q_specific=121,
+        q_expected_raw=121,
+    )
+    assert receipt["build_source_sha"] == (environment_sha or None)
+    assert receipt["build_source_sha_present"] is bool(environment_sha)
+    assert receipt["row_order_diagnosis"] == "binding_unavailable"
+    _assert_schema(receipt)

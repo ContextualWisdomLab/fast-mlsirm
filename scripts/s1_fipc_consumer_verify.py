@@ -243,7 +243,7 @@ def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--build-source-sha",
-        default=os.environ.get("FIPC_BUILD_SOURCE_SHA"),
+        default=os.environ.get("FIPC_BUILD_SOURCE_SHA") or None,
         help="source revision used to build the loaded extension (or FIPC_BUILD_SOURCE_SHA)",
     )
     parser.add_argument(
