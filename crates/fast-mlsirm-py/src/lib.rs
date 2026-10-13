@@ -1426,7 +1426,7 @@ fn fit_bifactor_grm(
         .iter()
         .enumerate()
         .map(|(idx, &v)| {
-            if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) {
+            if v < 0 && obs_vec.as_ref().is_some_and(|o| !o[idx]) {
                 return Ok(0usize);
             }
             usize::try_from(v)
@@ -1561,7 +1561,7 @@ fn fit_bifactor_grm_multigroup(
         .iter()
         .enumerate()
         .map(|(idx, &v)| {
-            if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) {
+            if v < 0 && obs_vec.as_ref().is_some_and(|o| !o[idx]) {
                 return Ok(0usize);
             }
             usize::try_from(v)
@@ -1986,7 +1986,7 @@ fn fit_bifactor_grm_fipc(
         .iter()
         .enumerate()
         .map(|(idx, &v)| {
-            if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) {
+            if v < 0 && obs_vec.as_ref().is_some_and(|o| !o[idx]) {
                 return Ok(0usize);
             }
             usize::try_from(v)
@@ -2220,7 +2220,7 @@ fn fit_two_tier_grm(
         .iter()
         .enumerate()
         .map(|(idx, &v)| {
-            if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) {
+            if v < 0 && obs_vec.as_ref().is_some_and(|o| !o[idx]) {
                 return Ok(0usize);
             }
             usize::try_from(v)
@@ -2347,7 +2347,7 @@ fn fit_two_tier_grm_fipc(
         ));
     }
     let yy: Vec<usize> = y_slice.iter().enumerate().map(|(idx, &v)| {
-        if v < 0 && obs_vec.as_ref().is_none_or(|o| !o[idx]) { return Ok(0); }
+        if v < 0 && obs_vec.as_ref().is_some_and(|o| !o[idx]) { return Ok(0); }
         usize::try_from(v).map_err(|_| PyValueError::new_err("y categories must be non-negative"))
     }).collect::<PyResult<_>>()?;
     let pmap = primary_map.as_slice()?.to_vec();
