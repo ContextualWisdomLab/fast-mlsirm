@@ -274,7 +274,7 @@ fn reduce_counts_gen(
     let g = idx / (dims.nc * dims.qg * dims.ni);
     let out = ((g * dims.ni + i) * dims.stride + t) * dims.nc + k;
     if (item_block[i] >= 0) {
-        counts[out] = 0.0;
+        // Block-item counts belong exclusively to reduce_counts_blk.
         return;
     }
     var sum = 0.0;
@@ -304,7 +304,7 @@ fn reduce_counts_blk(
     let out = ((g * dims.ni + i) * dims.stride + t * dims.qs + h) * dims.nc + k;
     let s = item_block[i];
     if (s < 0) {
-        counts[out] = 0.0;
+        // General-only counts were written by reduce_counts_gen; preserve them.
         return;
     }
     let su = u32(s);
@@ -381,7 +381,7 @@ fn reduce_moments_s(
 /// Minimum `max_storage_buffers_per_shader_stage` for the reduced E-step
 /// bind group (1 uniform + 11 read-only + 9 read-write buffers).
 #[cfg(all(feature = "gpu", not(coverage)))]
-const MIN_STORAGE_BUFFERS: u32 = 20;
+pub(crate) const MIN_STORAGE_BUFFERS: u32 = 20;
 
 /// GPU reduced E-step sweep.
 ///
