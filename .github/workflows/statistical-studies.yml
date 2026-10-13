@@ -14,4 +14,4 @@ permissions:
 
 jobs:
   central:
-    uses: ContextualWisdomLab/.github/.github/workflows/fast-mlsirm-statistical-studies.yml@930078af06db837db8d2650345770402630cb65e
+    uses: ContextualWisdomLab/.github/.github/workflows/fast-mlsirm-statistical-studies.yml@635c0f3bac4e2b3eff93206f4eab82bfadcdc349
