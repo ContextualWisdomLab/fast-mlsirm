@@ -11,6 +11,8 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
+from tests.workflow_contract_source import workflow_source
+
 
 _WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
 _SELECTORS = (
@@ -30,7 +32,7 @@ _IDENTITIES = tuple(
 
 def _guard() -> str:
     """Extract only the real workflow guard, not a fixture implementation."""
-    workflow = _WORKFLOW.read_text(encoding="utf-8")
+    workflow = workflow_source(_WORKFLOW)
     step = workflow.split("      - name: Reject skipped GPU evidence\n", 1)[1]
     script = step.split("python - <<'PY'\n", 1)[1].split("          PY\n", 1)[0]
     return textwrap.dedent(script)
@@ -192,7 +194,7 @@ def test_nested_extra_testcase_is_rejected(tmp_path, monkeypatch):
 
 def test_guard_manifest_matches_unchanged_positional_science_command():
     """Bind the expected tuple inventory to the original command's selectors."""
-    workflow = _WORKFLOW.read_text(encoding="utf-8")
+    workflow = workflow_source(_WORKFLOW)
     command = workflow.split("pytest -q --junitxml=gpu-junit.xml", 1)[1].split(
         "      - name: Reject skipped GPU evidence", 1
     )[0]
