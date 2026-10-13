@@ -64,7 +64,9 @@ from .nominal import fit_nominal as fit_nominal, NominalResponseFit as NominalRe
 from .grm import fit_grm as fit_grm, GrmFit as GrmFit
 from .bifactor_grm import fit_bifactor_grm as fit_bifactor_grm, BifactorGrmFit as BifactorGrmFit
 from .bifactor_grm import bifactor_oakes_se as bifactor_oakes_se, BifactorOakesSe as BifactorOakesSe
+from .bifactor_grm import bifactor_oakes_se_from_fit as bifactor_oakes_se_from_fit
 from .bifactor_multigroup import fit_bifactor_grm_multigroup as fit_bifactor_grm_multigroup, BifactorMultigroupFit as BifactorMultigroupFit
+from .bifactor_multigroup import bifactor_multigroup_oakes_se as bifactor_multigroup_oakes_se
 from .two_tier_grm import fit_two_tier_grm as fit_two_tier_grm, TwoTierGrmFit as TwoTierGrmFit
 from .two_tier_grm import two_tier_oakes_se as two_tier_oakes_se, TwoTierOakesSe as TwoTierOakesSe
 from .two_tier_grm import expected_raw_two_tier_grm as expected_raw_two_tier_grm
@@ -232,6 +234,8 @@ from .serving import (bank_information as bank_information,
                       load_serving_bundle as load_serving_bundle,
                       score_respondents as score_respondents)
 from .preprocessing import irtree_expand as irtree_expand
+from .graded_item import compute_expected_graded_item_score as compute_expected_graded_item_score
+from .graded_item import expected_graded_scale_score as expected_graded_scale_score
 from .polytomous import fit_polytomous as fit_polytomous, PolytomousFit as PolytomousFit, score_polytomous as score_polytomous, information_polytomous as information_polytomous, polytomous_category_probabilities as polytomous_category_probabilities, polytomous_expected_response as polytomous_expected_response, expected_total_score_monotonicity as expected_total_score_monotonicity, focal_expected_total_score_monotonicity as focal_expected_total_score_monotonicity, bifactor_expected_total_score_monotonicity as bifactor_expected_total_score_monotonicity, ExpectedScoreMonotonicity as ExpectedScoreMonotonicity, fit_lsirm_polytomous as fit_lsirm_polytomous, PolyLsirmFit as PolyLsirmFit, polytomous_information_criteria as polytomous_information_criteria, item_fit_polytomous as item_fit_polytomous, m2_polytomous as m2_polytomous, local_dependence_polytomous as local_dependence_polytomous, fit_nominal_polytomous as fit_nominal_polytomous, NominalFit as NominalFit, person_fit_polytomous as person_fit_polytomous, cat_simulate_polytomous as cat_simulate_polytomous, dif_polytomous as dif_polytomous, dif_polytomous_purified as dif_polytomous_purified, dif_polytomous_anchor_sets as dif_polytomous_anchor_sets, u3_person_fit_polytomous as u3_person_fit_polytomous, u3_cutoff_polytomous as u3_cutoff_polytomous, check_bifactor_expected_total_score_monotonicity as check_bifactor_expected_total_score_monotonicity, simulate_cat_polytomous as simulate_cat_polytomous, detect_dif_polytomous as detect_dif_polytomous, detect_dif_anchor_sets_polytomous as detect_dif_anchor_sets_polytomous, detect_dif_polytomous_purified as detect_dif_polytomous_purified, check_expected_total_score_monotonicity as check_expected_total_score_monotonicity, check_focal_expected_total_score_monotonicity as check_focal_expected_total_score_monotonicity, compute_information_polytomous as compute_information_polytomous, compute_item_fit_polytomous as compute_item_fit_polytomous, diagnose_local_dependence_polytomous as diagnose_local_dependence_polytomous, compute_person_fit_polytomous as compute_person_fit_polytomous, predict_category_probabilities_polytomous as predict_category_probabilities_polytomous, predict_expected_response_polytomous as predict_expected_response_polytomous, compute_information_criteria_polytomous as compute_information_criteria_polytomous, compute_u3_cutoff_polytomous as compute_u3_cutoff_polytomous, compute_u3_person_fit_polytomous as compute_u3_person_fit_polytomous
 from .dif import (mantel_haenszel_dif as mantel_haenszel_dif, logistic_dif as logistic_dif,
                   mantel_haenszel_dif_purified as mantel_haenszel_dif_purified,
@@ -411,8 +415,10 @@ __all__ = [  # noqa: RUF022
     "fit_bifactor_grm",
     "BifactorGrmFit",
     "bifactor_oakes_se",
+    "bifactor_oakes_se_from_fit",
     "BifactorOakesSe",
     "fit_bifactor_grm_multigroup",
+    "bifactor_multigroup_oakes_se",
     "BifactorMultigroupFit",
     "fit_two_tier_grm",
     "TwoTierGrmFit",
@@ -608,6 +614,8 @@ __all__ = [  # noqa: RUF022
     "compute_person_fit_polytomous",
     "predict_category_probabilities_polytomous",
     "predict_expected_response_polytomous",
+    "compute_expected_graded_item_score",
+    "expected_graded_scale_score",
     "compute_information_criteria_polytomous",
     "compute_u3_cutoff_polytomous",
     "compute_u3_person_fit_polytomous",

@@ -78,6 +78,8 @@ pub fn fit_bifactor_grm_fipc_full(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        // Full FIPC is marginal maximum likelihood; no slope prior.
+        slope_prior: SlopePrior::None,
         device: cfg.device,
     };
     let v = validate(
@@ -185,7 +187,12 @@ pub fn fit_bifactor_grm_fipc_full(
         } else {
             kernel_ll
         };
-        final_change = checked_em_loglik_change(ll, trace.last().copied(), n_iter)?;
+        final_change = checked_em_loglik_change(
+            ll,
+            trace.last().copied(),
+            n_iter,
+            "observed-data log-likelihood",
+        )?;
         trace.push(ll);
         let mut next_mean = vec![0.0; dim];
         let mut next_sd = vec![0.0; dim];

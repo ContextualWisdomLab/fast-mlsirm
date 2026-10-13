@@ -211,3 +211,14 @@ def test_expected_raw_accepts_valid_noncontiguous_and_unaligned_arrays(field,sto
     result=expected_raw_two_tier_grm(trial,smap,q_specific=121)
     np.testing.assert_array_equal(result,base)
     assert view.tobytes()==before
+
+
+def test_expected_raw_rejects_unordered_thresholds() -> None:
+    fit = _fit(_simulate(SEED + 7))
+    assert np.all(np.diff(fit.threshold, axis=1) < 0), "fit must emit ordered thresholds"
+    with pytest.raises(ValueError, match="strictly decreasing"):
+        expected_raw_two_tier_grm(
+            replace(fit, threshold=fit.threshold[:, ::-1].copy()),
+            SPECIFIC_MAP,
+            q_specific=21,
+        )
