@@ -19,4 +19,4 @@ permissions:
 
 jobs:
   central:
-    uses: ContextualWisdomLab/.github/.github/workflows/fast-mlsirm-cflite_pr.yml@6723a2bd4127b05763cbe24dbf61e4951a058bc8
+    uses: ContextualWisdomLab/.github/.github/workflows/fast-mlsirm-cflite_pr.yml@a422fa25c0e7f72590a38a6a5b78d16d998b85bd

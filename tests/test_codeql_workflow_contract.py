@@ -68,3 +68,26 @@ def test_self_hosted_diagnostics_use_isolated_runners_without_persisted_credenti
         assert "CWL central CodeQL" not in job
         assert "ubuntu-latest" not in job
         assert "persist-credentials: false" in job
+
+
+
+def test_codeql_explicitly_admits_ready_without_losing_default_pr_activities() -> None:
+    """Admit Ready alongside the three default PR activities, and only those.
+
+    Basis: GitHub (n.d.), Events that trigger workflows, pull_request section,
+    activity-types table and default-activity note. The read section says that
+    opened, synchronize and reopened are defaults; Ready needs explicit types.
+    This source contract does not prove an actual hosted event or job executed.
+
+    References:
+        GitHub. (n.d.). Events that trigger workflows (pull_request section).
+            GitHub Docs. https://docs.github.com/en/actions/reference/
+            workflows-and-actions/events-that-trigger-workflows
+    """
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    trigger_block = workflow.split("\npermissions:\n", 1)[0]
+    assert trigger_block == (
+        "name: CodeQL\n\non:\n  pull_request:\n"
+        "    types: [opened, synchronize, reopened, ready_for_review]\n"
+        "  workflow_dispatch:\n"
+    ), "CodeQL must admit Ready and preserve all default PR activities"

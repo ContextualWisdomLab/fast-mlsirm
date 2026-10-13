@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   central:
-    uses: ContextualWisdomLab/.github/.github/workflows/fast-mlsirm-publish-pypi.yml@6723a2bd4127b05763cbe24dbf61e4951a058bc8
+    uses: ContextualWisdomLab/.github/.github/workflows/fast-mlsirm-publish-pypi.yml@a422fa25c0e7f72590a38a6a5b78d16d998b85bd
     with:
       release_tag: ${{ inputs.release_tag }}
       release_commit: ${{ inputs.release_commit }}
