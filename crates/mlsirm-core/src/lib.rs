@@ -2,6 +2,7 @@ pub mod agreement;
 pub mod bifactor_grm;
 pub mod bifactor_indices;
 pub mod bifactor_oakes;
+pub mod bifactor_multigroup_oakes;
 pub mod bifactor_recursion;
 pub mod cdm;
 pub mod classification;
@@ -57,6 +58,7 @@ pub mod testlet;
 pub mod twopl;
 pub mod two_tier_grm;
 pub mod two_tier_oakes;
+pub mod two_tier_recursion;
 pub mod utility;
 
 /// Checked size arithmetic shared by public-input validators.
