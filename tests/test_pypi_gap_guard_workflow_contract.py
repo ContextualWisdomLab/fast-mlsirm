@@ -10,13 +10,15 @@ import textwrap
 
 import pytest
 
+from tests.workflow_contract_source import workflow_source
+
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/pypi-gap-guard.yml"
 
 
 def _inventory_step() -> str:
-    """Read the actual inventory step, including its declared environment."""
-    text = WORKFLOW.read_text(encoding="utf-8")
+    """Read the pinned central producer's inventory step and environment."""
+    text = workflow_source(WORKFLOW)
     inventory = text.split("      - name: Resolve control-plane commit and PyPI inventory\n", 1)[1]
     return inventory.split("\n      - name:", 1)[0]
 
