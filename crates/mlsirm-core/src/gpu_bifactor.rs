@@ -259,9 +259,30 @@ fn normalize(
         if (acc > mx) { mx = acc; }
         postg[p * dims.qg + t] = acc;
     }
-    var denom = 0.0;
+    // Ordered binary-carry pairwise summation of shifted exponentials.
+    // Higham (1993, pp. 787–788, Sec. 3, Eqs. 3.3–3.6) gives the
+    // pairwise-summation basis. This is a numerical implementation change,
+    // not a model change or a universal error guarantee.
+    var bins: array<f32, 32>;
+    var count = 0u;
     for (var t = 0u; t < dims.qg; t = t + 1u) {
-        denom = denom + exp(postg[p * dims.qg + t] - mx);
+        var value = exp(postg[p * dims.qg + t] - mx);
+        var occupied = count;
+        var level = 0u;
+        loop {
+            if ((occupied & 1u) == 0u) { break; }
+            value = bins[level] + value;
+            occupied = occupied >> 1u;
+            level = level + 1u;
+        }
+        bins[level] = value;
+        count = count + 1u;
+    }
+    var denom = 0.0;
+    for (var level = 0u; level < 32u; level = level + 1u) {
+        if ((count & (1u << level)) != 0u) {
+            denom = bins[level] + denom;
+        }
     }
     ll_buf[p] = mx + log(denom);
     for (var t = 0u; t < dims.qg; t = t + 1u) {

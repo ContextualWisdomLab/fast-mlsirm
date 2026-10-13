@@ -25,4 +25,4 @@ permissions:
 
 jobs:
   central:
-    uses: ContextualWisdomLab/.github/.github/workflows/fast-mlsirm-hourly-pr-governance.yml@635c0f3bac4e2b3eff93206f4eab82bfadcdc349
+    uses: ContextualWisdomLab/.github/.github/workflows/fast-mlsirm-hourly-pr-governance.yml@4e32b99ec79b6565800d1081f60acfea368adecd
