@@ -7,5 +7,6 @@
 include!("lib.rs");
 
 pub mod interaction_map;
+pub mod normal_quantile;
 pub mod rotation;
 pub mod sampling_design;
