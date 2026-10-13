@@ -1,4 +1,5 @@
 """Contracts for the supported Python versions exercised by pull-request CI."""
+from tests.workflow_contract_source import workflow_source
 
 from pathlib import Path
 
@@ -9,7 +10,7 @@ _PYPROJECT = Path(__file__).parents[1] / "pyproject.toml"
 
 def _python_matrix_job_source() -> str:
     """Return the matrix Python suite job without unrelated CI jobs."""
-    workflow = _CI_WORKFLOW.read_text(encoding="utf-8")
+    workflow = workflow_source(_CI_WORKFLOW)
     start = workflow.index("  python-matrix:\n")
     end = workflow.index("\n  python:\n", start)
     return workflow[start:end]
@@ -17,7 +18,7 @@ def _python_matrix_job_source() -> str:
 
 def _python_gate_job_source() -> str:
     """Return the required-status aggregate job named exactly ``python``."""
-    workflow = _CI_WORKFLOW.read_text(encoding="utf-8")
+    workflow = workflow_source(_CI_WORKFLOW)
     start = workflow.index("  python:\n")
     end = workflow.index("\n  rust:\n", start)
     return workflow[start:end]

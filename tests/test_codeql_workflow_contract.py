@@ -1,6 +1,7 @@
 """Regression contract for the required Actions-language CodeQL PR gate."""
 
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 from pathlib import Path
 
@@ -19,12 +20,13 @@ def _job_block(workflow: str, job_id: str, next_job_id: str | None = None) -> st
 
 def test_actions_codeql_runs_on_pull_requests_while_python_stays_manual() -> None:
     """Keep the required Actions context reachable without duplicating Python CodeQL."""
-    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-    trigger_block = workflow.split("\npermissions:\n", 1)[0]
+    wrapper = WORKFLOW_PATH.read_text(encoding="utf-8")
+    trigger_block = wrapper.split("\npermissions:\n", 1)[0]
 
     assert "  pull_request:\n" in trigger_block
     assert "  workflow_dispatch:\n" in trigger_block
 
+    workflow = workflow_source(WORKFLOW_PATH)
     actions_job = _job_block(workflow, "analyze-actions", "analyze-python")
     python_job = _job_block(workflow, "analyze-python")
 
@@ -37,19 +39,20 @@ def test_actions_codeql_runs_on_pull_requests_while_python_stays_manual() -> Non
     assert "if: github.event_name == 'workflow_dispatch'" in python_job
 
 
-def test_advanced_jobs_do_not_upload_while_default_setup_is_enabled() -> None:
-    """Run real CodeQL queries without competing with default setup SARIF ownership."""
-    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-    actions_job = _job_block(workflow, "analyze-actions", "analyze-python")
-    python_job = _job_block(workflow, "analyze-python")
-
-    assert "upload: never" in actions_job
-    assert "upload: never" in python_job
+def test_advanced_jobs_publish_sarif_without_optional_artifact_uploads() -> None:
+    """Publish scans directly and require nonempty local results despite artifact quota."""
+    workflow = workflow_source(WORKFLOW_PATH)
+    for language, job in (("actions", _job_block(workflow, "analyze-actions", "analyze-python")),
+                          ("python", _job_block(workflow, "analyze-python"))):
+        assert "security-events: write" in job
+        assert "upload: never" not in job
+        assert "actions/upload-artifact@" not in job
+        assert f"test -s codeql-results/{language}/{language}.sarif" in job
 
 
 def test_codeql_workflow_keeps_pinned_actions_and_least_permissions() -> None:
     """The trigger repair must not loosen action pinning or workflow permissions."""
-    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = workflow_source(WORKFLOW_PATH)
 
     assert "permissions:\n  contents: read\n" in workflow
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in workflow
@@ -57,15 +60,34 @@ def test_codeql_workflow_keeps_pinned_actions_and_least_permissions() -> None:
     assert "github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd" in workflow
 
 
-def test_self_hosted_diagnostics_require_the_protected_main_workflow() -> None:
-    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+def test_self_hosted_diagnostics_use_isolated_runners_without_persisted_credentials() -> None:
+    workflow = workflow_source(WORKFLOW_PATH)
     for job in (_job_block(workflow, "analyze-actions", "analyze-python"),
                 _job_block(workflow, "analyze-python")):
-        selector = next(line for line in job.splitlines() if line.startswith("    runs-on:"))
-        assert "github.event_name == 'workflow_dispatch' &&" in selector
-        assert "github.ref == 'refs/heads/main' &&" in selector
-        assert "github.workflow_ref == 'ContextualWisdomLab/fast-mlsirm/.github/workflows/codeql.yml@refs/heads/main' &&" in selector
-        assert '\"group\":\"CWL central CodeQL\"' in selector
-        assert "|| '\"ubuntu-latest\"'" in selector
-        assert "if-no-files-found: error" in job
-        assert "upload: never" in job
+        assert "    runs-on:\n      group: CWL CI isolated\n      labels: [self-hosted, linux, x64, cwlab-ci-isolated]" in job
+        assert "CWL central CodeQL" not in job
+        assert "ubuntu-latest" not in job
+        assert "persist-credentials: false" in job
+
+
+
+def test_codeql_explicitly_admits_ready_without_losing_default_pr_activities() -> None:
+    """Admit Ready alongside the three default PR activities, and only those.
+
+    Basis: GitHub (n.d.), Events that trigger workflows, pull_request section,
+    activity-types table and default-activity note. The read section says that
+    opened, synchronize and reopened are defaults; Ready needs explicit types.
+    This source contract does not prove an actual hosted event or job executed.
+
+    References:
+        GitHub. (n.d.). Events that trigger workflows (pull_request section).
+            GitHub Docs. https://docs.github.com/en/actions/reference/
+            workflows-and-actions/events-that-trigger-workflows
+    """
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    trigger_block = workflow.split("\npermissions:\n", 1)[0]
+    assert trigger_block == (
+        "name: CodeQL\n\non:\n  pull_request:\n"
+        "    types: [opened, synchronize, reopened, ready_for_review]\n"
+        "  workflow_dispatch:\n"
+    ), "CodeQL must admit Ready and preserve all default PR activities"
