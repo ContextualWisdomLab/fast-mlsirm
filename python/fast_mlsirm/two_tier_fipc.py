@@ -151,6 +151,10 @@ def two_tier_reference_expected_score_moments(
         raise ValueError("fit.a_primary/threshold shapes are inconsistent with n_items")
     p_mean = _vector(primary_mean, n_primary, "primary_mean")
     p_sd = _vector(primary_sd, n_primary, "primary_sd")
+    if not np.isfinite(p_mean).all():
+        raise ValueError("primary_mean must be finite")
+    if not np.isfinite(p_sd).all() or np.any(p_sd <= 0.0):
+        raise ValueError("primary_sd must be finite and strictly positive")
     from .fitstats import _core_module
 
     core = _core_module()
