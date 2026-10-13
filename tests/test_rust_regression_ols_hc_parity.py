@@ -12,7 +12,7 @@ import math
 import numpy as np
 import pytest
 
-from fast_mlsirm import chi2_sf_df1, contrast, fit_ols_hc
+from fast_mlsirm import adjusted_r_squared, chi2_sf_df1, contrast, fit_ols_hc
 from fast_mlsirm.regression import f_sf, t_sf
 
 
@@ -132,3 +132,39 @@ def test_regression_core_exports_without_scipy_rscript():
     src = open(reg.__file__, encoding="utf-8").read()
     assert "scipy" not in src.lower()
     assert "rscript" not in src.lower()
+
+
+def test_normal_wald_tail_and_same_fit_contrast_vectors():
+    # Independent fixed values: P(Chi2_1 >= z²) = erfc(|z| / sqrt(2)).
+    for z in (0.0, 1.0, 1.959963984540054, 8.0, 12.0, 20.0):
+        expected = math.erfc(abs(z) / math.sqrt(2.0))
+        actual = chi2_sf_df1(z * z)
+        assert math.isclose(actual, expected, rel_tol=1e-11, abs_tol=0.0)
+        assert 0.0 < actual <= 1.0
+
+    beta = np.array([0.2, -0.4, 0.3, 0.8, 0.1, -0.1, 0.25, -0.2, 0.05, 0.15])
+    vcov = np.diag(np.arange(1.0, 11.0) / 100.0)
+    vcov[6, 7] = vcov[7, 6] = 0.01
+    df = 32.0
+    h4 = np.array([0, 0, 0, 1, 0, 0, 2, -3, 0, -6], dtype=float)
+    h5 = np.array([0, 0, 0, 1, 0, 0, -2, 3, 0, -6], dtype=float)
+    difference = np.array([0, 0, 0, 0, 0, 0, 4, -6, 0, 0], dtype=float)
+    for vec in [*np.eye(10), h4, h5, difference]:
+        got = contrast(beta, vcov, vec, df=df)
+        estimate = float(vec @ beta)
+        se = math.sqrt(float(vec @ vcov @ vec))
+        expected = math.erfc(abs(estimate / se) / math.sqrt(2.0))
+        assert math.isclose(got["estimate"], estimate, rel_tol=1e-12, abs_tol=1e-12)
+        assert math.isclose(got["SE"], se, rel_tol=1e-12)
+        assert math.isclose(got["p_chi2"], expected, rel_tol=1e-11)
+    h4_result = contrast(beta, vcov, h4, df=df)
+    assert not math.isclose(h4_result["p_t"], h4_result["p_chi2"], rel_tol=1e-4)
+
+
+def test_adjusted_r_squared_reduced_design_contract():
+    # k counts the intercept; n=8, k=3 gives residual df=5.
+    assert math.isclose(adjusted_r_squared(8, 3, 5.0, 20.0), 0.65)
+    assert adjusted_r_squared(8, 3, 30.0, 20.0) < 0.0
+    for args in ((3, 3, 1.0, 2.0), (8, 3, -1.0, 2.0), (8, 3, 1.0, 0.0)):
+        with pytest.raises(ValueError):
+            adjusted_r_squared(*args)

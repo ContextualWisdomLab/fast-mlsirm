@@ -168,3 +168,24 @@ extension is unavailable. Omitting `--require-rust` skips only the second,
 explicit `--backend rust` fit; it does not enable a NumPy fallback for the
 automatic production acceptance path. Explicit NumPy remains a reference and
 parity choice outside this release-acceptance path.
+
+## Linux Platform Floor and the NumPy Runtime Dependency
+
+- fast-mlsirm Linux wheels target `manylinux2014` (glibc 2.17), as set in
+  `.github/workflows/publish-pypi.yml`. The 0.11.5 cp312 x86_64 core was built in
+  the pinned `manylinux2014` image and `auditwheel show` reports
+  `manylinux_2_17_x86_64` (highest symbol `GLIBC_2.16`).
+- NumPy is an external runtime dependency (`numpy>=1.24`). It is not bundled in
+  fast-mlsirm wheels or the sdist, so its platform floor follows NumPy's own
+  release policy: NumPy 2.5 publishes only `manylinux_2_27`/`manylinux_2_28`
+  Linux wheels, and its `meson.build` requires GCC >= 10.3, which the
+  `manylinux2014` toolchain (GCC 10.2.1) cannot provide. An environment with
+  NumPy 2.5 therefore has an effective glibc floor of 2.27/2.28 regardless of
+  the fast-mlsirm wheel.
+- The official NumPy wheels vendor `libgfortran` and `libquadmath`. Because
+  NumPy is installed by the user and not shipped by fast-mlsirm, these do not
+  violate the rule against bundling GPL/LGPL/AGPL code in fast-mlsirm artifacts.
+- Research consumption (A3) must use a Fortran-free NumPy build (OpenBLAS with
+  `NOFORTRAN=1 C_LAPACK=1`, no `libgfortran`/`libquadmath` in the wheel) and
+  record its wheel SHA256 next to the fast-mlsirm wheel SHA256 in the
+  reproduction log.
