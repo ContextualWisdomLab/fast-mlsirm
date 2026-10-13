@@ -79,6 +79,7 @@ pub(crate) fn e_step_multigroup(
                 ts_groups,
                 log_wg,
                 log_ws,
+                want_node_post: false,
             };
             if let Some(res) = crate::gpu_bifactor::e_step_reduced_gpu(&inputs) {
                 let stride = res.counts_stride_nodes;

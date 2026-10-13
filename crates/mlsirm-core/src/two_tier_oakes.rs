@@ -165,6 +165,8 @@ impl Provider {
             seed: 0,
             newton_iter: 1,
             ridge: 1e-8,
+            // Oakes differentiates the EM map numerically; keep the f64 CPU sweep.
+            device: crate::Device::Cpu,
         };
         let v = validate(
             y,

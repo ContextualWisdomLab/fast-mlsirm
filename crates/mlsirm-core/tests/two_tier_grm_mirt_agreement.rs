@@ -224,6 +224,7 @@ fn two_tier_grm_agrees_with_mirt_bfactor_two_tier_graded() {
         seed: 0x2E54_1EED_2026_0916,
         newton_iter: 10,
         ridge: 1e-8,
+        device: mlsirm_core::Device::Cpu,
     };
     let fit = fit_two_tier_grm(
         &y,
