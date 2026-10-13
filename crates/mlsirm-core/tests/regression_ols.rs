@@ -103,3 +103,23 @@ fn adjusted_r_squared_uses_total_design_columns() {
     assert!(adjusted_r_squared(8, 3, -1.0, 2.0).is_err());
     assert!(adjusted_r_squared(8, 3, 1.0, 0.0).is_err());
 }
+
+#[test]
+fn adjusted_r_squared_rejects_nonfinite_inputs_and_arithmetic_overflow() {
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(adjusted_r_squared(8, 3, invalid, 2.0).is_err());
+        assert!(adjusted_r_squared(8, 3, 1.0, invalid).is_err());
+    }
+    assert!(adjusted_r_squared(8, 0, 1.0, 2.0).is_err());
+    // Both inputs are valid finite sums, but their ratio overflows.
+    assert_eq!(
+        adjusted_r_squared(8, 3, f64::MAX, f64::MIN_POSITIVE).unwrap_err(),
+        "non-finite adjusted R squared"
+    );
+    // A finite ratio can also overflow after the degrees-of-freedom scaling.
+    assert_eq!(
+        adjusted_r_squared(8, 7, f64::MAX / 2.0, 1.0).unwrap_err(),
+        "non-finite adjusted R squared"
+    );
+    assert_eq!(adjusted_r_squared(8, 7, 0.0, 1.0).unwrap(), 1.0);
+}
