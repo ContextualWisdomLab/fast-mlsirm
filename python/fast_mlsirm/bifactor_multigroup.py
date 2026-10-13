@@ -94,6 +94,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .bifactor_grm import _optional_float, _slope_prior_pair
+
 
 
 def _finite_integer_control(value: object, name: str) -> int:
@@ -127,6 +129,15 @@ def _positive_real_control(value: object, name: str) -> float:
 def _u64_seed(value: object) -> int:
     """Normalize the deterministic start seed without callbacks."""
 
+    # Inserted after the helper docstring only in a disposable AST.
+    # Exact builtin/scalar types avoid changing subclasses' float protocol.
+    if type(value) in (int, np.int8, np.int16, np.int32, np.int64,
+                       np.uint8, np.uint16, np.uint32, np.uint64):
+        exact = int(value)
+        if not 0 <= exact < 2**64:
+            raise ValueError("seed must be in [0, 2**64)")
+        return exact
+
     if isinstance(value, bool):
         raise ValueError("seed must be a non-negative integer")
     try:
@@ -155,6 +166,14 @@ class BifactorMultigroupFit:
     n_items x n_cat``. ``termination_reason`` is ``"tolerance_met"``,
     ``"max_iter_reached"``, or ``"numerical_em_stall"`` (see #1976);
     ``best_start`` the winning start in ``0..n_starts``.
+
+    Under a slope prior (``slope_prior_mu``/``slope_prior_sd`` set),
+    convergence, ``final_loglik_change`` and start ranking refer to the
+    log-posterior EM objective recorded in ``em_objective_trace``;
+    ``loglik_trace`` stays the observed-data log-likelihood.
+    Passing these stacked parameter rows to the single-group
+    ``bifactor_oakes_se`` raises. Use ``bifactor_multigroup_oakes_se`` for
+    joint information for item and focal-group mean/variance parameters.
     """
 
     a_general: np.ndarray
@@ -176,6 +195,12 @@ class BifactorMultigroupFit:
     final_loglik_change: float
     best_start: int
     n_parameters: int
+    slope_prior_mu: float | None = None
+    slope_prior_sd: float | None = None
+    # EM objective (MAXIMIZED; unlike FitResult.objective_trace) per E-step: log-likelihood + log slope prior under a prior
+    # (monotone), identical to ``loglik_trace`` without one. ``loglik_trace``
+    # keeps its meaning and may decrease under a prior.
+    em_objective_trace: np.ndarray | None = None
 
 
 def bifactor_multigroup_oakes_se(
@@ -197,6 +222,12 @@ def bifactor_multigroup_oakes_se(
     Then focal groups in order have `general_mean:g, general_var:g` and,
     when estimated, `specific_var:g:s`. The reference distribution is fixed.
 
+    A MAP fit (``fit.slope_prior_mu``/``fit.slope_prior_sd`` set) adds the
+    lognormal ``|a|`` prior curvature on each estimated slope: common items
+    once, free items per group. ``information`` is then the negative
+    log-posterior curvature and ``vcov``/``se`` a Laplace approximation to
+    the posterior covariance (Mislevy, 1986), not a sampling covariance.
+
     Basis: Oakes (1999, eq. 6, p. 480); Cai, Yang, and Hansen (2011, p. 230);
     Gibbons et al. (2007, eqs. 9 and 15, pp. 7 and 9).
     References (APA 7th): Oakes, D. (1999). Direct calculation of the
@@ -211,6 +242,8 @@ def bifactor_multigroup_oakes_se(
     A. (2007). Full-information item bifactor analysis of graded response
     data. *Applied Psychological Measurement, 31*(1), 4–19.
     https://doi.org/10.1177/0146621606289485
+    Mislevy, R. J. (1986). Bayes modal estimation in item response models.
+    *Psychometrika, 51*(2), 177–195. https://doi.org/10.1007/BF02293979
     """
     from .bifactor_grm import BifactorOakesSe
     from .fitstats import _core_module
@@ -260,6 +293,9 @@ def bifactor_multigroup_oakes_se(
         raise ValueError("fit parameter shapes do not match responses")
     if not all(np.isfinite(v).all() for v in (ag, as_, th, mu, sd, ss)):
         raise ValueError("fit parameters must be finite")
+    slope_prior_mu, slope_prior_sd = _slope_prior_pair(
+        fit.slope_prior_mu, fit.slope_prior_sd
+    )
     core = _core_module()
     if core is None or not hasattr(core, "bifactor_multigroup_oakes_se"):
         raise RuntimeError("bifactor_multigroup_oakes_se requires the compiled Rust core")
@@ -268,6 +304,7 @@ def bifactor_multigroup_oakes_se(
         np.where(observed, y, 0).astype(np.int64).ravel(), observed.ravel(),
         gid, smap, anchor, n_persons, n_items, n_groups, fit.n_specific,
         fit.n_cat, estimate_specific_vars, qg, qs, step,
+        slope_prior_mu, slope_prior_sd,
     )
     labels = list(result["labels"])
     k = len(labels)
@@ -278,6 +315,8 @@ def bifactor_multigroup_oakes_se(
         se=None if result["se"] is None else np.asarray(result["se"]),
         positive_definite=bool(result["positive_definite"]),
         non_pd_reason=result["non_pd_reason"],
+        slope_prior_mu=slope_prior_mu,
+        slope_prior_sd=slope_prior_sd,
     )
 
 
@@ -297,6 +336,8 @@ def fit_bifactor_grm_multigroup(
     seed: int,
     estimate_specific_vars: bool = False,
     device: str = "cpu",
+    slope_prior_mu: float | None = None,
+    slope_prior_sd: float | None = None,
 ) -> BifactorMultigroupFit:
     """Fit the multiple-group polytomous bifactor GRM (compute in Rust).
 
@@ -328,9 +369,26 @@ def fit_bifactor_grm_multigroup(
     per the no-magic-caps rule — upper-bounded only where a real constraint
     exists); unobserved categories raise; ``max_iter`` exhaustion returns
     ``converged=False`` instead of substituting values.
+    ``slope_prior_mu`` / ``slope_prior_sd`` (both or neither) request MAP
+    estimation under a lognormal prior on ``|a|`` for every ESTIMATED slope:
+    free items once per group and common (anchored) items once per shared
+    parameter, so the prior also acts under the default ``anchor=None``.
+    Omitted = plain MML; the fitted prior is recorded on the result.
 
-    See the module docstring for the model, the paper basis of every
-    non-obvious decision, and the APA 7th references.
+    The MAP basis is Chalmers (2012, p. 14), who demonstrates a bifactor
+    calibration with an item prior, and Mislevy (1985, p. 13, following
+    Equation 3.9), who gives prior-augmented EM score equations. The
+    lognormal density on signed ``|a|`` and its shared/free-item counting
+    are this crate's extension, not formulas attributed to those papers.
+    See the module docstring for the model and other references.
+
+    References (APA 7th ed.):
+        Chalmers, R. P. (2012). mirt: A multidimensional item response
+        theory package for the R environment. *Journal of Statistical
+        Software, 48*(6), 1-29. https://doi.org/10.18637/jss.v048.i06
+        Mislevy, R. J. (1985). *Bayes modal estimation in item response
+        models* (Research Report RR-85-33). Educational Testing Service.
+        https://doi.org/10.1002/j.2330-8516.1985.tb00118.x
     """
     n_cat_int = _finite_integer_control(n_cat, "n_cat")
     if n_cat_int < 2:
@@ -356,6 +414,7 @@ def fit_bifactor_grm_multigroup(
     seed_int = _u64_seed(seed)
     if not isinstance(estimate_specific_vars, bool):
         raise ValueError("estimate_specific_vars must be a bool")
+    slope_prior_mu, slope_prior_sd = _slope_prior_pair(slope_prior_mu, slope_prior_sd)
 
     y = np.asarray(responses)
     if np.iscomplexobj(y):
@@ -472,6 +531,8 @@ def fit_bifactor_grm_multigroup(
         int(seed_int),
         bool(estimate_specific_vars),
         device_str,
+        slope_prior_mu,
+        slope_prior_sd,
     )
     return BifactorMultigroupFit(
         a_general=np.asarray(res["a_general"], dtype=np.float64).reshape(
@@ -505,4 +566,7 @@ def fit_bifactor_grm_multigroup(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+        slope_prior_mu=_optional_float(res["slope_prior_mu"]),
+        slope_prior_sd=_optional_float(res["slope_prior_sd"]),
+        em_objective_trace=np.asarray(res["em_objective_trace"], dtype=np.float64),
     )

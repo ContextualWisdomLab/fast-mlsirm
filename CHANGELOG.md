@@ -24,6 +24,17 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
+#### Multigroup bifactor Oakes information under a slope prior (#2113 phase 2)
+
+- `bifactor_multigroup_oakes_se` now honors a MAP fit. When the fit records
+  `slope_prior_mu` / `slope_prior_sd`, the joint information adds the diagonal
+  lognormal `|a|` prior curvature on each estimated slope: common items once,
+  free items once per group, and none on thresholds or group distributions.
+  `information` is then the negative log-posterior curvature, and `vcov`/`se`
+  are a Laplace approximation to the posterior covariance (Mislevy, 1986,
+  https://doi.org/10.1007/BF02293979), not a sampling covariance. Fits without
+  a prior return the unchanged ML information.
+
 #### Joint multigroup bifactor Oakes ML information (#2113)
 
 - Add `bifactor_multigroup_oakes_se` in Rust, PyO3, and Python for joint ML
@@ -38,6 +49,30 @@
   about 25%. Reproduce with `python scripts/bifactor_multigroup_oakes_calibration.py
   --replicates 5 --persons-per-group 340 --q-general 121 --q-specific 121
   --fd-step 1e-6 --seed <seed>`.
+
+#### Bifactor GRM opt-in lognormal |a| slope prior
+
+- `fit_bifactor_grm` and `fit_bifactor_grm_multigroup` accept paired
+  `slope_prior_mu` / `slope_prior_sd` for MAP estimation under a lognormal
+  prior on `|a|` (folded lognormal on signed slopes; no defaults). In the
+  multigroup fit the prior applies to free items per group AND to common
+  (anchored) items once per shared parameter, so it is active under the
+  default `anchor=None`. FIPC exposes no prior knob. Results record the
+  fitted prior (`slope_prior_mu` / `slope_prior_sd`). Under a prior the EM
+  monotonicity guard, `tol` convergence, `final_loglik_change` and
+  multi-start ranking use the log posterior; `loglik_trace` stays the
+  observed-data log-likelihood.
+- `bifactor_oakes_se` accepts the same prior. With it, `information` is the
+  negative log-posterior curvature (Oakes observed information plus the
+  diagonal prior curvature on slopes) and `vcov`/`se` are a posterior-curvature
+  (Laplace) approximation to the posterior covariance, not a frequentist
+  sampling covariance (Mislevy, 1985, p. 13,
+  https://doi.org/10.1002/j.2330-8516.1985.tb00118.x).
+  Omitting the prior remains the MML observed-information SE.
+- The single-group `bifactor_oakes_se` entry point rejects multigroup fit
+  objects and stacked rows, because extracting one group row cannot supply a
+  valid multigroup SE; use `bifactor_multigroup_oakes_se`, which carries the
+  joint item and focal-group mean/variance information and the fitted prior.
 
 #### Release license evidence and NumPy lock reconciliation
 
