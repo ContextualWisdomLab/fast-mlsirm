@@ -28,19 +28,29 @@ fn specific_chunks(
     if (begin >= count_total) { return; }
     let count = min(chunk_size, count_total - begin);
     var bins: array<vec2<f32>, 32>;
+    let per_person = dims.qg * dims.qs;
+    var current_rank = begin / per_person;
+    var p = 0u;
+    var rank = 0u;
+    loop {
+        if (gid[p] == g && anyobs[p * dims.ns + s] != 0u) {
+            if (rank == current_rank) { break; }
+            rank = rank + 1u;
+        }
+        p = p + 1u;
+    }
     for (var k = 0u; k < count; k = k + 1u) {
         let ordinal = begin + k;
-        let person_rank = ordinal / (dims.qg * dims.qs);
+        let person_rank = ordinal / per_person;
         let t = (ordinal / dims.qs) % dims.qg;
         let h = ordinal % dims.qs;
-        var p = 0u;
-        var rank = 0u;
-        loop {
-            if (gid[p] == g && anyobs[p * dims.ns + s] != 0u) {
-                if (rank == person_rank) { break; }
-                rank = rank + 1u;
-            }
+        if (person_rank != current_rank) {
             p = p + 1u;
+            loop {
+                if (gid[p] == g && anyobs[p * dims.ns + s] != 0u) { break; }
+                p = p + 1u;
+            }
+            current_rank = person_rank;
         }
         let post = joint[((p * dims.ns + s) * dims.qg + t) * dims.qs + h];
         let node = ts[(g * dims.ns + s) * dims.qs + h];
