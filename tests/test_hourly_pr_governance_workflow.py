@@ -1,6 +1,7 @@
 """Contract tests for the hourly PR-queue governance workflow."""
 
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 import json
 import subprocess
@@ -21,7 +22,7 @@ _WORKFLOW = (
 
 def _workflow_text() -> str:
     """Return the scheduled workflow as UTF-8 text."""
-    return _WORKFLOW.read_text(encoding="utf-8")
+    return workflow_source(_WORKFLOW)
 
 
 def _build_step_script() -> str:
@@ -87,7 +88,7 @@ def _manifest(
 
 def test_hourly_governance_workflow_exists_and_runs_every_hour():
     """The repository records queue-governance evidence on an hourly cadence."""
-    text = _workflow_text()
+    text = _WORKFLOW.read_text(encoding="utf-8")
     assert "workflow_dispatch:" in text
     assert "schedule:" in text
     assert 'cron: "0 * * * *"' in text
@@ -117,7 +118,7 @@ def test_hourly_governance_workflow_builds_and_publishes_evidence():
 
 def test_hourly_governance_workflow_tracks_implementation_and_contract_tests():
     """Changes to duplicate-claim governance trigger the evidence workflow."""
-    text = _workflow_text()
+    text = _WORKFLOW.read_text(encoding="utf-8")
     assert "scripts/build_pr_queue_governance.py" in text
     assert "tests/test_pr_queue_governance.py" in text
     assert "tests/test_hourly_pr_governance_workflow.py" in text
