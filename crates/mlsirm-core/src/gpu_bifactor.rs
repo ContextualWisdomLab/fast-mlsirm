@@ -212,9 +212,30 @@ fn normalize(
         if (acc > mx) { mx = acc; }
         postg[p * dims.qg + t] = acc;
     }
-    var denom = 0.0;
+    // Ordered binary-carry pairwise summation of shifted exponentials.
+    // Higham (1993, pp. 787–788, Sec. 3, Eqs. 3.3–3.6) gives the
+    // pairwise-summation basis. This is a numerical implementation change,
+    // not a model change or a universal error guarantee.
+    var bins: array<f32, 32>;
+    var count = 0u;
     for (var t = 0u; t < dims.qg; t = t + 1u) {
-        denom = denom + exp(postg[p * dims.qg + t] - mx);
+        var value = exp(postg[p * dims.qg + t] - mx);
+        var occupied = count;
+        var level = 0u;
+        loop {
+            if ((occupied & 1u) == 0u) { break; }
+            value = bins[level] + value;
+            occupied = occupied >> 1u;
+            level = level + 1u;
+        }
+        bins[level] = value;
+        count = count + 1u;
+    }
+    var denom = 0.0;
+    for (var level = 0u; level < 32u; level = level + 1u) {
+        if ((count & (1u << level)) != 0u) {
+            denom = bins[level] + denom;
+        }
     }
     ll_buf[p] = mx + log(denom);
     for (var t = 0u; t < dims.qg; t = t + 1u) {
@@ -274,7 +295,7 @@ fn reduce_counts_gen(
     let g = idx / (dims.nc * dims.qg * dims.ni);
     let out = ((g * dims.ni + i) * dims.stride + t) * dims.nc + k;
     if (item_block[i] >= 0) {
-        counts[out] = 0.0;
+        // Block-item counts belong exclusively to reduce_counts_blk.
         return;
     }
     var sum = 0.0;
@@ -304,7 +325,7 @@ fn reduce_counts_blk(
     let out = ((g * dims.ni + i) * dims.stride + t * dims.qs + h) * dims.nc + k;
     let s = item_block[i];
     if (s < 0) {
-        counts[out] = 0.0;
+        // General-only counts were written by reduce_counts_gen; preserve them.
         return;
     }
     let su = u32(s);
@@ -381,7 +402,7 @@ fn reduce_moments_s(
 /// Minimum `max_storage_buffers_per_shader_stage` for the reduced E-step
 /// bind group (1 uniform + 11 read-only + 9 read-write buffers).
 #[cfg(all(feature = "gpu", not(coverage)))]
-const MIN_STORAGE_BUFFERS: u32 = 20;
+pub(crate) const MIN_STORAGE_BUFFERS: u32 = 20;
 
 /// GPU reduced E-step sweep.
 ///
