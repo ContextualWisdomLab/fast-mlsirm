@@ -334,8 +334,12 @@ def test_rejects_out_of_range_caller_arguments() -> None:
 def test_q_primary_and_q_specific_are_required() -> None:
     """No unsourced defaults exist for the node counts (Project rule, #1929)."""
     y = _simulate(SEED)
-    with pytest.raises(TypeError):
-        fit_two_tier_grm(y, PRIMARY_MAP, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC, max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15)
+    with pytest.raises(TypeError, match="q_primary.*q_specific"):
+        fit_two_tier_grm(
+            y, PRIMARY_MAP, SPECIFIC_MAP, N_CAT, N_PRIMARY, N_SPECIFIC,
+            max_iter=500, tol=1e-6, n_starts=1, seed=0x9E3779B97F4A7C15,
+            e_step_n_chunks=1, e_step_n_threads=1,
+        )
 
 
 def test_e_step_controls_are_required() -> None:

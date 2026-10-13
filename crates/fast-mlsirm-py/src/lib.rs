@@ -53,19 +53,13 @@ use mlsirm_core::sampling_design::{
 };
 
 use mlsirm_core::bifactor_grm::{
-    fit_bifactor_grm as core_fit_bifactor_grm,
-    fit_bifactor_grm_fipc as core_fit_bifactor_grm_fipc,
+    fit_bifactor_grm as core_fit_bifactor_grm, fit_bifactor_grm_fipc as core_fit_bifactor_grm_fipc,
     fit_bifactor_grm_multigroup as core_fit_bifactor_grm_multigroup, BifactorFipcConfig,
-    BifactorGrmConfig, BifactorMultigroupConfig,
+    BifactorGrmConfig, BifactorMultigroupConfig, SlopePrior,
 };
+use mlsirm_core::bifactor_multigroup_oakes::bifactor_multigroup_oakes_se as core_bifactor_multigroup_oakes_se;
 use mlsirm_core::bifactor_oakes::{
     bifactor_oakes_se as core_bifactor_oakes_se, BifactorOakesConfig,
-};
-use mlsirm_core::personfit_multidim::{
-    person_fit_multidim as core_person_fit_multidim, MultidimPersonFitInput,
-};
-use mlsirm_core::two_tier_oakes::{
-    two_tier_oakes_se as core_two_tier_oakes_se, TwoTierOakesConfig,
 };
 use mlsirm_core::cdm::{
     fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina, fit_ho_cdm as core_fit_ho_cdm,
@@ -121,7 +115,6 @@ use mlsirm_core::fitstats::{
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
-use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
     gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, phi_lambda as core_phi_lambda,
@@ -136,16 +129,19 @@ use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::mokken::{aisp as core_mokken_aisp, coef_h as core_mokken_coef_h};
 use mlsirm_core::nominal::{fit_nominal as core_fit_nominal_model, NominalConfig};
 use mlsirm_core::parallel::parallel_analysis as core_parallel_analysis;
+use mlsirm_core::personfit_multidim::{
+    person_fit_multidim as core_person_fit_multidim, MultidimPersonFitInput,
+};
 use mlsirm_core::personfit_np::person_fit_np as core_person_fit_np;
 use mlsirm_core::poly::{
     fit_nominal as core_fit_nominal, fit_poly_fipc as core_fit_poly_fipc,
-    fit_poly_unidim as core_fit_poly_unidim,
-    gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
-    poly_cat_simulate as core_poly_cat_simulate, poly_dif_sweep as core_poly_dif,
-    poly_information_curves as core_poly_information_curves,
-    poly_person_fit as core_poly_person_fit, poly_person_fit_focal as core_poly_person_fit_focal, poly_s_x2 as core_poly_s_x2,
-    score_poly_eap as core_score_poly_eap, u3_poly_bootstrap_cutoff as core_u3_poly_cutoff,
-    u3_poly_person_fit as core_u3_poly_person_fit, PolyModel,
+    fit_poly_unidim as core_fit_poly_unidim, gpcm_logprobs as core_gpcm_logprobs,
+    grm_logprobs as core_grm_logprobs, poly_cat_simulate as core_poly_cat_simulate,
+    poly_dif_sweep as core_poly_dif, poly_information_curves as core_poly_information_curves,
+    poly_person_fit as core_poly_person_fit, poly_person_fit_focal as core_poly_person_fit_focal,
+    poly_s_x2 as core_poly_s_x2, score_poly_eap as core_score_poly_eap,
+    u3_poly_bootstrap_cutoff as core_u3_poly_cutoff, u3_poly_person_fit as core_u3_poly_person_fit,
+    PolyModel,
 };
 use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
 use mlsirm_core::rasch_cml::{
@@ -190,6 +186,13 @@ use mlsirm_core::standard_setting::hofstee as core_hofstee;
 use mlsirm_core::subscores::subscores as core_subscores;
 use mlsirm_core::test_form::assemble_test_form_greedy as core_assemble_test_form_greedy;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
+use mlsirm_core::two_tier_grm::{fit_two_tier_grm as core_fit_two_tier_grm, TwoTierGrmConfig};
+use mlsirm_core::two_tier_oakes::{
+    two_tier_oakes_se as core_two_tier_oakes_se, TwoTierOakesConfig,
+};
+use mlsirm_core::two_tier_recursion::{
+    two_tier_expected_raw_at_q as core_two_tier_expected_raw_at_q, TwoTierItemParams,
+};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
 use mlsirm_core::utility::{
     selection_utility as core_selection_utility, taylor_russell as core_taylor_russell,
@@ -226,7 +229,7 @@ use mlsirm_core::{
     neg_loglik_and_grad_device as core_neg_loglik_and_grad_device, Device, ModelConfig, ModelType,
     Params, PenaltyConfig,
 };
-use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
+use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods, ToPyArray};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -1373,7 +1376,7 @@ fn parse_device(name: &str) -> PyResult<mlsirm_core::Device> {
 /// `converged = False` instead of substituting values.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu", *, e_step_n_chunks, e_step_n_threads))]
+#[pyo3(signature = (y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, device = "cpu", slope_prior_mu = None, slope_prior_sd = None, *, e_step_n_chunks, e_step_n_threads))]
 fn fit_bifactor_grm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1390,6 +1393,8 @@ fn fit_bifactor_grm(
     n_starts: usize,
     seed: u64,
     device: &str,
+    slope_prior_mu: Option<f64>,
+    slope_prior_sd: Option<f64>,
     e_step_n_chunks: usize,
     e_step_n_threads: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
@@ -1398,6 +1403,21 @@ fn fit_bifactor_grm(
         Some(o) => Some(o.as_slice()?.to_vec()),
         None => None,
     };
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    if let Some(o) = obs_vec.as_ref() {
+        if o.len() != n_cells {
+            return Err(PyValueError::new_err(
+                "observed must have length n_persons * n_items",
+            ));
+        }
+    }
     // Missing cells may carry any negative placeholder (the Python wrapper
     // sends 0); only observed cells must be non-negative categories.
     let yy: Vec<usize> = y_slice
@@ -1419,6 +1439,7 @@ fn fit_bifactor_grm(
                 .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
         })
         .collect::<PyResult<_>>()?;
+    let slope_prior = parse_slope_prior(slope_prior_mu, slope_prior_sd)?;
     let cfg = BifactorGrmConfig {
         q_general,
         q_specific,
@@ -1430,6 +1451,7 @@ fn fit_bifactor_grm(
         // Python and out of #1929's quadrature-node scope.
         newton_iter: 10,
         ridge: 1e-8,
+        slope_prior,
         device: parse_device(device)?,
         e_step_n_chunks,
         e_step_n_threads,
@@ -1464,6 +1486,10 @@ fn fit_bifactor_grm(
     out.set_item("n_parameters", res.n_parameters)?;
     out.set_item("e_step_n_chunks", res.e_step_n_chunks)?;
     out.set_item("e_step_n_threads", res.e_step_n_threads)?;
+    let (prior_mu, prior_sd) = slope_prior_parts(res.slope_prior);
+    out.set_item("slope_prior_mu", prior_mu)?;
+    out.set_item("slope_prior_sd", prior_sd)?;
+    out.set_item("em_objective_trace", res.em_objective_trace)?;
     Ok(out.into())
 }
 
@@ -1491,7 +1517,7 @@ fn fit_bifactor_grm(
 /// `n_groups == 1` this bit-reproduces `fit_bifactor_grm`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, group_id, n_groups, specific_map, n_persons, n_items, n_specific, n_cat, anchor = None, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, estimate_specific_vars = false, device = "cpu", *, e_step_n_chunks, e_step_n_threads))]
+#[pyo3(signature = (y, observed, group_id, n_groups, specific_map, n_persons, n_items, n_specific, n_cat, anchor = None, q_general = 21, q_specific = 11, max_iter = 500, tol = 1e-6, n_starts = 1, seed = 0x9E37_79B9_7F4A_7C15, estimate_specific_vars = false, device = "cpu", slope_prior_mu = None, slope_prior_sd = None, *, e_step_n_chunks, e_step_n_threads))]
 fn fit_bifactor_grm_multigroup(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -1512,6 +1538,8 @@ fn fit_bifactor_grm_multigroup(
     seed: u64,
     estimate_specific_vars: bool,
     device: &str,
+    slope_prior_mu: Option<f64>,
+    slope_prior_sd: Option<f64>,
     e_step_n_chunks: usize,
     e_step_n_threads: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
@@ -1520,6 +1548,21 @@ fn fit_bifactor_grm_multigroup(
         Some(o) => Some(o.as_slice()?.to_vec()),
         None => None,
     };
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    if let Some(o) = obs_vec.as_ref() {
+        if o.len() != n_cells {
+            return Err(PyValueError::new_err(
+                "observed must have length n_persons * n_items",
+            ));
+        }
+    }
     let yy: Vec<usize> = y_slice
         .iter()
         .enumerate()
@@ -1551,6 +1594,7 @@ fn fit_bifactor_grm_multigroup(
         Some(a) => Some(a.as_slice()?.to_vec()),
         None => None,
     };
+    let slope_prior = parse_slope_prior(slope_prior_mu, slope_prior_sd)?;
     let cfg = BifactorMultigroupConfig {
         q_general,
         q_specific,
@@ -1559,6 +1603,7 @@ fn fit_bifactor_grm_multigroup(
         n_starts,
         seed,
         estimate_specific_vars,
+        slope_prior,
         device: parse_device(device)?,
         e_step_n_chunks,
         e_step_n_threads,
@@ -1600,6 +1645,10 @@ fn fit_bifactor_grm_multigroup(
     out.set_item("n_parameters", res.n_parameters)?;
     out.set_item("e_step_n_chunks", res.e_step_n_chunks)?;
     out.set_item("e_step_n_threads", res.e_step_n_threads)?;
+    let (prior_mu, prior_sd) = slope_prior_parts(res.slope_prior);
+    out.set_item("slope_prior_mu", prior_mu)?;
+    out.set_item("slope_prior_sd", prior_sd)?;
+    out.set_item("em_objective_trace", res.em_objective_trace)?;
     Ok(out.into())
 }
 
@@ -1627,9 +1676,10 @@ fn fit_bifactor_grm_multigroup(
 /// Full-information item bifactor analysis of graded response data.
 /// *Applied Psychological Measurement, 31*(1), 4-19.
 /// https://doi.org/10.1177/0146621606289485
+/// Private raw-array single-group Oakes kernel; fit provenance is checked by Python (#2113).
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (a_general, a_specific, threshold, y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general, q_specific, fd_step))]
+#[pyo3(signature = (a_general, a_specific, threshold, y, observed, specific_map, n_persons, n_items, n_specific, n_cat, q_general, q_specific, fd_step, slope_prior_mu = None, slope_prior_sd = None))]
 fn bifactor_oakes_se(
     py: Python<'_>,
     a_general: PyReadonlyArray1<'_, f64>,
@@ -1645,12 +1695,30 @@ fn bifactor_oakes_se(
     q_general: usize,
     q_specific: usize,
     fd_step: f64,
+    slope_prior_mu: Option<f64>,
+    slope_prior_sd: Option<f64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    let slope_prior = parse_slope_prior(slope_prior_mu, slope_prior_sd)?;
     let y_slice = y.as_slice()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
         Some(o) => Some(o.as_slice()?.to_vec()),
         None => None,
     };
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows usize"))?;
+    if y_slice.len() != n_cells {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    if let Some(o) = obs_vec.as_ref() {
+        if o.len() != n_cells {
+            return Err(PyValueError::new_err(
+                "observed must have length n_persons * n_items",
+            ));
+        }
+    }
     let yy: Vec<usize> = y_slice
         .iter()
         .enumerate()
@@ -1690,6 +1758,7 @@ fn bifactor_oakes_se(
         q_general,
         q_specific,
         fd_step,
+        slope_prior,
     };
     let res = py
         .detach(|| {
@@ -1716,6 +1785,156 @@ fn bifactor_oakes_se(
     out.set_item("positive_definite", res.positive_definite)?;
     out.set_item("non_pd_reason", res.non_pd_reason)?;
     Ok(out.into())
+}
+
+/// Joint ML observed information. Oakes (1999, eq. 6, p. 480);
+/// Cai, Yang, and Hansen (2011, p. 230). References: Oakes, D. (1999).
+/// Direct calculation of the information matrix via the EM algorithm.
+/// *JRSS B, 61*(2), 479–482. https://doi.org/10.1111/1467-9868.00188
+/// Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
+/// item bifactor analysis. *Psychological Methods, 16*(3), 221–248.
+/// https://doi.org/10.1037/a0023350
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn bifactor_multigroup_oakes_se(
+    py: Python<'_>,
+    a_general: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    general_mean: PyReadonlyArray1<'_, f64>,
+    general_sd: PyReadonlyArray1<'_, f64>,
+    specific_sd: PyReadonlyArray1<'_, f64>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    group: PyReadonlyArray1<'_, i64>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    anchor: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    n_items: usize,
+    n_groups: usize,
+    n_specific: usize,
+    n_cat: usize,
+    estimate_specific_vars: bool,
+    q_general: usize,
+    q_specific: usize,
+    fd_step: f64,
+    slope_prior_mu: Option<f64>,
+    slope_prior_sd: Option<f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let slope_prior = parse_slope_prior(slope_prior_mu, slope_prior_sd)?;
+    if n_cat < 2 || n_items < 1 || n_groups < 1 || n_specific < 1 {
+        return Err(PyValueError::new_err(
+            "n_cat >= 2 and dimensions >= 1 required",
+        ));
+    }
+    let rows = |v: &[f64], width: usize| -> PyResult<Vec<Vec<f64>>> {
+        if v.len()
+            != n_groups
+                .checked_mul(width)
+                .ok_or_else(|| PyValueError::new_err("shape overflow"))?
+        {
+            return Err(PyValueError::new_err("parameter table shape mismatch"));
+        }
+        Ok(v.chunks_exact(width).map(|r| r.to_vec()).collect())
+    };
+    let ag = rows(a_general.as_slice()?, n_items)?;
+    let as_ = rows(a_specific.as_slice()?, n_items)?;
+    let threshold_width = n_items
+        .checked_mul(n_cat - 1)
+        .ok_or_else(|| PyValueError::new_err("threshold shape overflow"))?;
+    let th = rows(threshold.as_slice()?, threshold_width)?;
+    let ss = rows(specific_sd.as_slice()?, n_specific)?;
+    let mu = general_mean.as_slice()?.to_vec();
+    let sd = general_sd.as_slice()?.to_vec();
+    let obs = observed.as_slice()?.to_vec();
+    let yy: Vec<usize> = y
+        .as_slice()?
+        .iter()
+        .enumerate()
+        .map(|(j, &v)| {
+            if v < 0 && obs.get(j) == Some(&false) {
+                return Ok(0);
+            }
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("observed category must be nonnegative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let gid: Vec<usize> = group
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            usize::try_from(v).map_err(|_| PyValueError::new_err("group must be nonnegative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let smap: Vec<i32> = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| i32::try_from(v).map_err(|_| PyValueError::new_err("specific_map out of range")))
+        .collect::<PyResult<_>>()?;
+    let anchors = anchor.as_slice()?.to_vec();
+    let cfg = BifactorOakesConfig {
+        q_general,
+        q_specific,
+        fd_step,
+        slope_prior,
+    };
+    let res = py
+        .detach(|| {
+            core_bifactor_multigroup_oakes_se(
+                &ag,
+                &as_,
+                &th,
+                &mu,
+                &sd,
+                &ss,
+                &yy,
+                Some(&obs),
+                &gid,
+                n_groups,
+                &smap,
+                n_persons,
+                n_items,
+                n_specific,
+                n_cat,
+                &anchors,
+                estimate_specific_vars,
+                &cfg,
+            )
+        })
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("labels", res.labels)?;
+    out.set_item("information", res.information)?;
+    out.set_item("vcov", res.vcov)?;
+    out.set_item("se", res.se)?;
+    out.set_item("positive_definite", res.positive_definite)?;
+    out.set_item("non_pd_reason", res.non_pd_reason)?;
+    Ok(out.into())
+}
+
+/// Build the optional bifactor slope prior from the paired Python kwargs
+/// (both `None` = MML; both set = lognormal on `|a|`; validated, never
+/// clamped).
+fn parse_slope_prior(mu: Option<f64>, sd: Option<f64>) -> PyResult<SlopePrior> {
+    let prior = match (mu, sd) {
+        (None, None) => SlopePrior::None,
+        (Some(mu), Some(sd)) => SlopePrior::Lognormal { mu, sd },
+        _ => {
+            return Err(PyValueError::new_err(
+                "slope_prior_mu and slope_prior_sd must be provided together",
+            ))
+        }
+    };
+    prior.validate().map_err(PyValueError::new_err)?;
+    Ok(prior)
+}
+
+/// `(mu, sd)` of a fitted slope prior for result dicts (`(None, None)` = MML).
+fn slope_prior_parts(prior: SlopePrior) -> (Option<f64>, Option<f64>) {
+    match prior {
+        SlopePrior::None => (None, None),
+        SlopePrior::Lognormal { mu, sd } => (Some(mu), Some(sd)),
+    }
 }
 
 /// Focal-group fixed-item parameter calibration (FIPC) for the polytomous
@@ -2115,6 +2334,72 @@ fn two_tier_oakes_se(
     out.set_item("positive_definite", res.positive_definite)?;
     out.set_item("non_pd_reason", res.non_pd_reason)?;
     Ok(out.into())
+}
+
+/// Plug-in expected raw total scores for a fitted two-tier GRM (Lord-Wingersky, 1984).
+///
+/// ``theta_p_eap`` is row-major ``n_persons * n_primary`` primary coordinates
+/// (typically ``TwoTierGrmFit.theta_p_eap``). ``specific_map`` uses ``-1`` for
+/// specific-free items. ``q_specific`` is a required Gauss-Hermite node count.
+/// Primary correlations ``Phi`` are not reintegrated at scoring time; the
+/// caller's primary coordinates are treated as fixed plug-in values, matching
+/// the bifactor expected-raw contract.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn two_tier_expected_raw<'py>(
+    py: Python<'py>,
+    a_primary: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    theta_p_eap: PyReadonlyArray1<'_, f64>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_cat: usize,
+    n_primary: usize,
+    n_specific: usize,
+    q_specific: usize,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    if n_primary < 1 {
+        return Err(PyValueError::new_err("n_primary must be >= 1"));
+    }
+    if n_cat < 2 {
+        return Err(PyValueError::new_err("n_cat must be at least 2"));
+    }
+    let n_items = a_specific.len();
+    let specific_map = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| i32::try_from(v))
+        .collect::<Result<Vec<i32>, _>>()
+        .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))?;
+    let params = TwoTierItemParams {
+        a_primary: a_primary.as_slice()?.to_vec(),
+        a_specific: a_specific.as_slice()?.to_vec(),
+        thresholds: threshold.as_slice()?.to_vec(),
+        specific_map,
+        n_primary,
+        n_specific,
+        n_cat,
+    };
+    if params.a_primary.len() != n_items * n_primary {
+        return Err(PyValueError::new_err(
+            "a_primary length must be n_items * n_primary",
+        ));
+    }
+    let m1 = n_cat - 1;
+    if params.thresholds.len() != n_items * m1 {
+        return Err(PyValueError::new_err(
+            "threshold length must be n_items * (n_cat - 1)",
+        ));
+    }
+    let th = theta_p_eap.as_slice()?;
+    if th.len() % n_primary != 0 {
+        return Err(PyValueError::new_err(
+            "theta_p_eap length must be a multiple of n_primary",
+        ));
+    }
+    let out = core_two_tier_expected_raw_at_q(&params, th, q_specific)
+        .map_err(PyValueError::new_err)?;
+    Ok(out.to_pyarray(py))
 }
 
 /// Confirmatory MULTIDIMENSIONAL generalized partial credit model fit (Muraki, 1992;
@@ -7109,6 +7394,25 @@ fn grm_cell_logprobs(base: f64, thresholds: PyReadonlyArray1<'_, f64>) -> PyResu
     Ok(core_grm_logprobs(base, thresholds.as_slice()?))
 }
 
+/// Required-count rational midpoint normal nodes delegated to the Rust core.
+///
+/// Basis: Wichura (1988, pp. 478–480, 482–484) and NIST DLMF §7.9,
+/// Eq. 7.9.1; see `mlsirm_core::normal_quantile` for complete APA references
+/// and the repository-derived residual-correction scope. No count default.
+#[pyfunction]
+#[pyo3(signature = (n_nodes))]
+fn equal_probability_normal_nodes(
+    py: Python<'_>,
+    n_nodes: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let (nodes, weights) = mlsirm_core::normal_quantile::equal_probability_normal_nodes(n_nodes)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("nodes", PyArray1::from_vec(py, nodes))?;
+    out.set_item("weights", PyArray1::from_vec(py, weights))?;
+    Ok(out.into())
+}
+
 /// Batched public GRM/GPCM category probabilities and expected category scores.
 #[pyfunction]
 #[pyo3(signature = (theta, slope, cat_params, n_items, n_cat, model))]
@@ -7395,25 +7699,50 @@ fn multidim_person_fit(
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
     let yy = poly_responses(y.as_slice()?, obs, n_cat)?;
-    let groups = group.as_slice()?.iter().map(|&g| {
-        usize::try_from(g).map_err(|_| PyValueError::new_err("group entries must be non-negative"))
-    }).collect::<PyResult<Vec<_>>>()?;
-    let smap = specific_map.as_slice()?.iter().map(|&s| {
-        i32::try_from(s).map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
-    }).collect::<PyResult<Vec<_>>>()?;
+    let groups = group
+        .as_slice()?
+        .iter()
+        .map(|&g| {
+            usize::try_from(g)
+                .map_err(|_| PyValueError::new_err("group entries must be non-negative"))
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    let smap = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&s| {
+            i32::try_from(s)
+                .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))
+        })
+        .collect::<PyResult<Vec<_>>>()?;
     let input = MultidimPersonFitInput {
-        y: &yy, observed: obs, group: &groups, specific_map: &smap,
-        a_primary: a_primary.as_slice()?, a_specific: a_specific.as_slice()?,
-        threshold: threshold.as_slice()?, primary_mean: primary_mean.as_slice()?,
-        primary_cov: primary_cov.as_slice()?, specific_sd: specific_sd.as_slice()?,
-        n_persons, n_items, n_primary, n_specific, n_groups, n_cat,
-        q_primary, q_specific, flag_threshold,
+        y: &yy,
+        observed: obs,
+        group: &groups,
+        specific_map: &smap,
+        a_primary: a_primary.as_slice()?,
+        a_specific: a_specific.as_slice()?,
+        threshold: threshold.as_slice()?,
+        primary_mean: primary_mean.as_slice()?,
+        primary_cov: primary_cov.as_slice()?,
+        specific_sd: specific_sd.as_slice()?,
+        n_persons,
+        n_items,
+        n_primary,
+        n_specific,
+        n_groups,
+        n_cat,
+        q_primary,
+        q_specific,
+        flag_threshold,
     };
     let result = core_person_fit_multidim(&input).map_err(PyValueError::new_err)?;
-    let null_p_value = n_reps.map(|reps| {
-        mlsirm_core::personfit_multidim::person_fit_multidim_resampling(&input, reps, seed)
-            .map_err(PyValueError::new_err)
-    }).transpose()?;
+    let null_p_value = n_reps
+        .map(|reps| {
+            mlsirm_core::personfit_multidim::person_fit_multidim_resampling(&input, reps, seed)
+                .map_err(PyValueError::new_err)
+        })
+        .transpose()?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("lz", result.lz)?;
     out.set_item("primary_eap", result.primary_eap)?;
@@ -10554,9 +10883,11 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_bifactor_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_multigroup, m)?)?;
     m.add_function(wrap_pyfunction!(bifactor_oakes_se, m)?)?;
+    m.add_function(wrap_pyfunction!(bifactor_multigroup_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(fit_bifactor_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(fit_two_tier_grm, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_oakes_se, m)?)?;
+    m.add_function(wrap_pyfunction!(two_tier_expected_raw, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;
@@ -10732,6 +11063,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(empirical_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(gpcm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
+    m.add_function(wrap_pyfunction!(equal_probability_normal_nodes, m)?)?;
     m.add_function(wrap_pyfunction!(polytomous_predictions, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_fipc, m)?)?;
