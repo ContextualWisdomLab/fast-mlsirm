@@ -1,4 +1,5 @@
 """Inert archive/Git fixtures through the workflow's actual identity consumers."""
+from tests.workflow_contract_source import workflow_source
 import copy
 import hashlib
 import io
@@ -16,7 +17,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 M = runpy.run_path(str(ROOT / "scripts/ci/release_artifact_transport.py"))
-WORKFLOW = (ROOT / ".github/workflows/publish-pypi.yml").read_text()
+WORKFLOW = workflow_source(ROOT / ".github/workflows/publish-pypi.yml")
 
 
 @pytest.fixture
