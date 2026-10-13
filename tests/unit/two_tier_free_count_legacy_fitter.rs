@@ -1,5 +1,8 @@
 use super::*;
 
+/// Retained outer EM loop for free-count projection parity.
+/// Numerical helpers are shared with live production; this is not a frozen
+/// independent implementation and cannot detect drift in those shared helpers.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn legacy_fit_two_tier_grm_fipc(
     y: &[usize],

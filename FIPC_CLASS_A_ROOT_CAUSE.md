@@ -26,12 +26,16 @@ only by mapped primary nodes and scaled specific nodes, never by density-ratio
 weights. Final scoring repeats the same direct-GH mapping and standard weights,
 so reported EAPs use the measure used during fitting.
 
-When a full prior update fails the direct-GH likelihood check, backtracking now
+When a full prior update fails the direct-GH likelihood check, joint backtracking
 interpolates the free item parameters and focal prior together from the previous
-accepted state. Shrinking only the prior while retaining the full item M-step
-candidate tested an inconsistent pair and caused every trial to roll back; the
-joint step preserves the E-step/M-step coordinate relationship while allowing a
-small monotone update toward the non-unit focal fixture.
+accepted state. An accepted candidate must have a finite remapped likelihood
+that does not decrease beyond the existing roundoff acceptance margin. The
+fixture's generating means and SDs are not optimizer inputs or acceptance targets.
+Shrinking only the prior while retaining the full item M-step candidate tested
+an inconsistent pair. If joint backtracking fails, the current implementation
+restores the baseline and attempts mean-first recovery starting at alpha 1.0,
+then scale recovery, before recording a full rollback. Both recovery paths use
+the remapped production likelihood and retain the existing improvement guards.
 
 To prevent an otherwise unbounded direct-GH retry loop, three consecutive full
 rollbacks terminate with `termination_reason="prior_update_stalled"` and

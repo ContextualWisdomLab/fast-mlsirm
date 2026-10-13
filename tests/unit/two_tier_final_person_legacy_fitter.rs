@@ -1,6 +1,8 @@
 use super::*;
 
-/// Exact bc3c3d3 predecessor fitter for final-person output parity.
+/// bc3c3d3 outer EM loop retained for final-person output parity.
+/// Numerical helpers are shared with live production; this is not a frozen
+/// independent implementation and cannot detect drift in those shared helpers.
 /// Basis: Cai (2010, p. 609, Appendix B; pp. 608–609, Appendix A).
 /// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
 /// model with applications. Psychometrika, 75(4), 581–612.

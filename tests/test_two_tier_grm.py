@@ -332,7 +332,7 @@ def test_unobserved_category_fails_loudly() -> None:
 
 
 @pytest.mark.parametrize("device", ["cpu", "gpu"])
-def test_fipc_seed1000_damping_does_not_report_convergence(device):
+def test_fipc_seed1039_damping_does_not_report_convergence(device):
     """Low-resolution stopping-rule reproduction, not a recovery study.
 
     Chalmers (2012, p. 6) motivates checking change between EM iterations;

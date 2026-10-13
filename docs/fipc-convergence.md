@@ -43,12 +43,18 @@ full-step eligibility here refers to the outer joint EM acceptance decision.
 
 ## Reproduction and limits
 
-The low-resolution seed-1000 bug reproduction uses 180 people, six four-category
-items, two primary and two specific factors, and anchors at items 0, 1, 3, and 4.
-Two item rows remain free. At seven quadrature nodes per dimension, the old fit
-reported convergence at iteration 92 after accepting a joint step of about
-`1.907e-6`; its likelihood change became zero although preceding iterations
-still gained about 0.023 each. A flat damped step is not convergence evidence.
+The current low-resolution damping regression uses seed 1039, 180 people, six
+four-category items, two primary and two specific factors, and anchors at items
+0, 1, 3, and 4. Two item rows remain free. Its pytest name is
+`test_fipc_seed1039_damping_does_not_report_convergence`. Seed 1039 replaced
+seed 1000 after the corrected M-step made the original fixture accept full joint
+steps rather than exercise damping.
+
+The original seed-1000 bug capture is a separate historical result: at seven
+quadrature nodes per dimension, the old fit reported convergence at iteration
+92 after accepting a joint step of about `1.907e-6`; its likelihood change became
+zero although preceding iterations still gained about 0.023 each. A flat damped
+step is not convergence evidence. These values are not a seed-1039 execution.
 
 Seven-node runs reproduce this control-flow defect only. They are not
 study-quality numerical precision or recovery evidence. Repository study
@@ -112,11 +118,16 @@ remapped primary and scaled specific supports without any change.
 This is a separate implementation diagnostic, not the production likelihood,
 prior-update statistic, stopping criterion, or a monotonic EM objective. Its LL
 need not increase after a production update. Existing fixture-specific assertions
-about improvement are retained, not promoted to a general guarantee. The new
-explicit low-Q Rust control distinguishes fixed from remapped support and checks
-that changed item parameters still affect the fixed evaluation. In the bounded
-scratch proposal that Rust control is uncompiled and unexecuted; source wiring
-and synthetic finite-sum controls are not native or scientific acceptance.
+about improvement are retained, not promoted to a general guarantee. The merged
+low-Q Rust control `fipc_fixed_support_is_independent_of_focal_remapping`
+distinguishes fixed from remapped support and checks that changed item parameters
+still affect the fixed evaluation.
+
+On October 13, 2026, that exact control was executed with the retained native
+lib-test binary for the same fitter and fixture bytes: one passed, zero failed,
+zero ignored. It evaluates CPU E-step states at Q=7 without a calibration fit.
+This closes execution of this particular diagnostic only; it is not current
+whole-library, GPU, precision-refinement, convergence, or recovery acceptance.
 
 ## Recovery and stopping measure separation
 
@@ -139,9 +150,10 @@ the returned trace at tolerance exits, not the convergence predicate. A
 new checked likelihood evaluation; this trace contract does not certify that
 exit or turn its last checked delta into a new convergence result.
 
-The successor proposal has source/scalar/trace-oracle controls only. Its Rust
-code and retained numerical regressions still require execution by the existing
-native owner; those controls do not establish compiled, GPU or recovery acceptance.
+The merged successor includes the fixed-support control and trace-oracle
+regressions. The dated CPU diagnostic execution above does not establish that
+all successor regressions passed, nor does it establish current whole-library,
+GPU, or recovery acceptance. Those wider gates remain separate.
 
 ## Reference
 
@@ -156,6 +168,11 @@ CC BY 3.0 redistribution with attribution. The PDF is unchanged. The two pinned
 source links were saved to Zotero as `KP6V3NIH` and `JRM2T2X5`.
 
 ## Local regression evidence
+
+The September 30, 2026 record below belongs to the original seed-1000 fixture,
+not the current seed-1039 damping regression. The fixture source at the record's
+integration commit used `default_rng(1000)`; the later seed change is not applied
+retroactively to its hardware receipt or numerical values.
 
 On September 30, 2026, the real-binding seed-1000 regression passed for CPU and
 GPU requests. The separate hardware receipt confirmed Metal execution on
