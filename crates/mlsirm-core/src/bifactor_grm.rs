@@ -1982,12 +1982,35 @@ struct MultiStartOutcome {
     final_loglik_change: f64,
 }
 
+#[cfg(test)]
+thread_local! {
+    static AC_BLOCK_LSE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static AC_CACHE_F64: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static AC_COUNT_BUFFERS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+fn ac_reset_calls() {AC_BLOCK_LSE.with(|n|n.set(0));AC_CACHE_F64.with(|n|n.set(0));AC_COUNT_BUFFERS.with(|n|n.set(0));}
+
 /// One reduced E-step sweep over all groups: total observed-data loglik, plus
 /// per-group expected category counts (`counts[g][i][node][k]`,
 /// `node = t * qs + h` for block items, `node = t` for general-only items)
 /// and the posterior moments that drive the group-distribution M-step
 /// (`s1_g/s2_g` for the general factor, `s2_spec[g][s]` for the specifics at
 /// zero mean).
+///
+/// Basis: Cai et al. (2011, pp. 231–232, Equations 15–17; p. 248,
+/// Equation C6), local full-text sections read. The invocation-local integral
+/// cache and flat internal count layout are locally derived implementation
+/// choices, not methods prescribed by that article. Group/block/response-mask
+/// keys preserve table identity; individual additions retain the original order.
+/// Numeric cache payload is `unique_patterns * qg * size_of::<f64>()`, excluding
+/// map/keys/capacity. Flat counts add transient storage; nested returned counts
+/// still allocate per node. Neither choice establishes a speedup or a mode.
+///
+/// # References
+/// Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information item
+/// bifactor analysis. *Psychological Methods, 16*(3), 221–248.
+/// doi:10.1037/a0023350
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
 #[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
@@ -2114,20 +2137,23 @@ pub(crate) fn e_step_multigroup(
         );
     }
 
-    let mut counts: Vec<Vec<Vec<Vec<f64>>>> = Vec::with_capacity(n_groups);
-    for g in 0..n_groups {
-        let _ = g;
-        let mut cg = Vec::with_capacity(v.n_items);
+    // Private storage discriminator: one numeric buffer during accumulation.
+    // The original nested return is rebuilt afterward; that adds transient
+    // memory and does not reduce total output allocations or prove a speedup.
+    let mut count_offsets = Vec::with_capacity(n_groups * v.n_items);
+    let mut count_nodes = Vec::with_capacity(n_groups * v.n_items);
+    let mut count_len = 0usize;
+    for _g in 0..n_groups {
         for i in 0..v.n_items {
-            let n_nodes = if v.item_block[i].is_some() {
-                qg * qs
-            } else {
-                qg
-            };
-            cg.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+            let n_nodes = if v.item_block[i].is_some() { qg * qs } else { qg };
+            count_offsets.push(count_len);
+            count_nodes.push(n_nodes);
+            count_len += n_nodes * v.n_cat;
         }
-        counts.push(cg);
     }
+    #[cfg(test)]
+    AC_COUNT_BUFFERS.with(|n|n.set(n.get()+1));
+    let mut flat_counts = vec![0.0f64; count_len];
     let mut w_acc = vec![0.0f64; n_groups];
     let mut s1_g = vec![0.0f64; n_groups];
     let mut s2_g = vec![0.0f64; n_groups];
@@ -2145,6 +2171,15 @@ pub(crate) fn e_step_multigroup(
     let mut post_g = vec![0.0f64; qg];
     let mut tmp_h = vec![0.0f64; qs];
 
+    // Invocation-local reuse of identical block integrands. Group and block
+    // own their tables; masks distinguish missing from observed category 0.
+    // Store original f64 bits; all per-person posterior additions stay below.
+    // Cache only Qg log-integrals, not the Qg*Qs block arrays. Recompute
+    // block_acc for every person in the original order for posterior use.
+    let mut block_cache: std::collections::HashMap<
+        (usize, usize, Vec<Option<usize>>), Vec<f64>
+    > = std::collections::HashMap::new();
+
     let mut loglik = 0.0f64;
     for p in 0..v.n_persons {
         let g = group_id[p];
@@ -2161,6 +2196,11 @@ pub(crate) fn e_step_multigroup(
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
+            let pattern: Vec<Option<usize>> = members.iter().map(|&i| {
+                if is_obs(p, i) { Some(y[p * v.n_items + i]) } else { None }
+            }).collect();
+            let key = (g, s, pattern);
+            let integral_start = s * qg;
             for t in 0..qg {
                 for h in 0..qs {
                     let mut acc = log_ws[h];
@@ -2174,12 +2214,21 @@ pub(crate) fn e_step_multigroup(
                     block_acc[(s * qg + t) * qs + h] = acc;
                 }
             }
+            if let Some(cached_integrals) = block_cache.get(&key) {
+                log_i[integral_start..integral_start + qg].copy_from_slice(cached_integrals);
+                continue;
+            }
             for t in 0..qg {
                 for h in 0..qs {
                     tmp_h[h] = block_acc[(s * qg + t) * qs + h];
                 }
+                #[cfg(test)]
+                AC_BLOCK_LSE.with(|n| n.set(n.get()+1));
                 log_i[s * qg + t] = log_sum_exp(&tmp_h);
             }
+            #[cfg(test)]
+            AC_CACHE_F64.with(|n| n.set(n.get() + qg));
+            block_cache.insert(key, log_i[integral_start..integral_start + qg].to_vec());
         }
         for t in 0..qg {
             let mut acc = gen_log[t];
@@ -2205,7 +2254,7 @@ pub(crate) fn e_step_multigroup(
             }
             let yc = y[p * v.n_items + i];
             for t in 0..qg {
-                counts[g][i][t][yc] += post_g[t];
+                flat_counts[count_offsets[g * v.n_items + i] + t * v.n_cat + yc] += post_g[t];
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
@@ -2238,12 +2287,20 @@ pub(crate) fn e_step_multigroup(
                             continue;
                         }
                         let yc = y[p * v.n_items + i];
-                        counts[g][i][t * qs + h][yc] += post;
+                        flat_counts[count_offsets[g * v.n_items + i] + (t * qs + h) * v.n_cat + yc] += post;
                     }
                 }
             }
         }
     }
+    let counts: Vec<Vec<Vec<Vec<f64>>>> = (0..n_groups).map(|g| {
+        (0..v.n_items).map(|i| {
+            let item = g * v.n_items + i;
+            let start = count_offsets[item];
+            let stop = start + count_nodes[item] * v.n_cat;
+            flat_counts[start..stop].chunks_exact(v.n_cat).map(<[f64]>::to_vec).collect()
+        }).collect()
+    }).collect();
     (loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec)
 }
 
@@ -3604,3 +3661,13 @@ pub fn fit_bifactor_grm_fipc(
 #[cfg(test)]
 #[path = "../../../tests/unit/bifactor_grm_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "bifactor_cpu_storage_tests.rs"]
+mod ac_cpu_storage_tests;
+
+// The GPU module is compiled out under coverage builds (see lib.rs), so the
+// fixed GPU regression only exists where a Device::Gpu entry can reach it.
+#[cfg(all(test, feature = "gpu", not(coverage)))]
+#[path="ac_gpu_fixed_tests.rs"]
+mod ac_gpu_fixed_tests;
