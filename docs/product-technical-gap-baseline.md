@@ -1044,3 +1044,26 @@ graph TD
 ### Loop 3: Ecosystem Interoperability & Governance
 - Maintain bi-directional contract compatibility with `TEPP`, `contextual-orchestrator`, `LineageWeave`, and `RankWeave`.
 - Update `CHANGELOG.md` and cut version releases according to SemVer once PR batches land.
+
+## Cross-engine report keyboard/CSP Gap
+
+**Context Map:** `fast-mlsirm` owns the standalone cross-engine conformance
+report renderer and its browser security/accessibility contract. No external UI
+service or shared Core dependency is required for this static evidence view.
+
+**Gap:** Keyboard users lacked a direct bypass to the report body. The first
+candidate added that bypass but also changed `style-src 'none'` to
+`style-src 'unsafe-inline'`, introduced inline CSS, and suppressed a focus
+outline. That traded one accessibility improvement for a weaker buyer-visible
+security boundary and an ambiguous focus state.
+
+**Action/evidence:** The report now emits a visible semantic skip-link before a
+uniquely identified `main` target with `tabindex="-1"`. Browser-native link and
+focus rendering require no inline CSS, script, animation, or CSP exception. A
+regression contract requires the link/target, `style-src 'none'`, no `<style>`
+element, and no `outline: none` rule.
+
+**Status:** Proposed / PR #2196 / merge HOLD. Local package tests require the
+compiled Rust extension, which is unavailable in the current repair runtime;
+fresh exact-head hosted CI, security checks, visual/browser verification, and
+qualifying independent review remain mandatory before merge.
