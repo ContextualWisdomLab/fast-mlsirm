@@ -1,5 +1,15 @@
 //! Horn's parallel analysis for principal-component retention.
 //!
+//! # Naming: "parallel" is the psychometric method, not threads
+//!
+//! "Parallel" here is the name of Horn's (1965) retention method: observed
+//! eigenvalues are compared with those of *parallel* random data sets of the
+//! same shape. This module is not thread or data parallelism: it spawns no
+//! threads and uses no rayon/`std::thread` primitives. It keeps its name to
+//! avoid import churn (#2009). Readers of the CPU-parallelism track
+//! (#2001/#2002/#2003) want the bifactor E-step person sweep,
+//! `crate::bifactor_grm::e_step` (the `for p in 0..v.n_persons` loop).
+//!
 //! Compares the eigenvalues of the Pearson correlation matrix of an observed
 //! `n x p` data matrix against the mean (or a Glorfeld upper-centile) of
 //! eigenvalues obtained from correlation matrices of `n_iterations` random

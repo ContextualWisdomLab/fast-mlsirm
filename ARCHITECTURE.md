@@ -226,6 +226,13 @@ mathematical invariant: raw values where identified, Procrustes-aligned
 loadings/coordinates under arbitrary rotation, pairwise distances for latent
 geometry, and linked/scaled parameter errors after scale alignment.
 
+Naming note: `crates/mlsirm-core/src/parallel.rs` implements Horn's parallel
+analysis (component retention, exported as `parallel_analysis`); it is not
+thread parallelism and contains no threading. The name is kept to avoid import
+churn (#2009). For the CPU-parallelism track (#2001/#2002/#2003), the hot
+person loop is the bifactor E-step sweep `bifactor_grm::e_step` in
+`crates/mlsirm-core/src/bifactor_grm.rs`.
+
 ### 5.2 Scientific evidence
 
 True-parameter recovery is a release mechanism. Bias, RMSE, coverage,
