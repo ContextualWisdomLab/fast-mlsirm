@@ -73,3 +73,9 @@ def test_scrollable_export_focus_indicator_respects_motion_preferences() -> None
     assert "outline-offset: -2px;" in stylesheet
     assert "@media (prefers-reduced-motion: reduce)" in stylesheet
     assert "transition-duration: 0.01ms !important;" in stylesheet
+
+def test_scrollable_export_block_pre_user_select() -> None:
+    """Ensure export blocks allow single-click selection for bulk copying."""
+    stylesheet = _css()
+    assert ".export-block pre {" in stylesheet
+    assert "user-select: all;" in stylesheet
