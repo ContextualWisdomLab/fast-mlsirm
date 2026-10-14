@@ -63,6 +63,12 @@ from .bifactor_bootstrap import (
     BifactorBootstrapResult as BifactorBootstrapResult,
     run_bifactor_bootstrap as run_bifactor_bootstrap,
 )
+from ._core import (
+    binomial_interval_coverage as binomial_interval_coverage,
+    binomial_quantile as binomial_quantile,
+    linear_percentile as linear_percentile,
+    mc_rank_interval as mc_rank_interval,
+)
 from .personfit_multidim import compute_person_fit_multidim as compute_person_fit_multidim
 
 # Harden historical public adapters before copying legacy exports. These
@@ -372,6 +378,10 @@ __all__ = list(_legacy_init.__all__) + [
     "enumerate_bifactor_direct",
     "BifactorBootstrapResult",
     "run_bifactor_bootstrap",
+    "binomial_quantile",
+    "binomial_interval_coverage",
+    "linear_percentile",
+    "mc_rank_interval",
 ]
 
 del _PackageNotFoundError, _distribution_version, _public_fit, _public_name

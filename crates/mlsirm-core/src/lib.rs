@@ -4,6 +4,7 @@ pub mod bifactor_indices;
 pub mod bifactor_oakes;
 pub mod bifactor_multigroup_oakes;
 pub mod bifactor_recursion;
+pub mod bootstrap_mc;
 pub mod cdm;
 pub mod classification;
 pub mod crm;
