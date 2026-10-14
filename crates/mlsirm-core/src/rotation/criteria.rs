@@ -545,13 +545,15 @@ fn tandem(l: &[f64], rows: usize, factors: usize, first: bool) -> CriterionEvalu
 
 fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
     let sum2: f64 = l.iter().map(|x| x * x).sum();
-    let sum4: f64 = l.iter().map(|x| x.powi(4)).sum();
+    // Optimization: Avoid powi(4) to reduce function call overhead in hot loops
+    let sum4: f64 = l.iter().map(|x| { let x2 = x * x; x2 * x2 }).sum();
     if sum2 <= 0.0 || sum4 <= 0.0 {
         return Err("oblimax requires nonzero loadings".into());
     }
     let gradient = l
         .iter()
-        .map(|x| -(4.0 * x.powi(3) / sum4 - 4.0 * x / sum2))
+        // Optimization: Avoid powi(3) to reduce function call overhead in hot loops
+        .map(|x| -(4.0 * (x * x * x) / sum4 - 4.0 * x / sum2))
         .collect();
     Ok(CriterionEvaluation {
         value: -(sum4.ln() - 2.0 * sum2.ln()),
@@ -583,8 +585,10 @@ fn bentler(l: &[f64], rows: usize, factors: usize) -> Result<CriterionEvaluation
 
 fn quartimax(l: &[f64]) -> CriterionEvaluation {
     CriterionEvaluation {
-        value: -0.25 * l.iter().map(|x| x.powi(4)).sum::<f64>(),
-        gradient: l.iter().map(|x| -x.powi(3)).collect(),
+        // Optimization: Avoid powi(4) to reduce function call overhead in hot loops
+        value: -0.25 * l.iter().map(|x| { let x2 = x * x; x2 * x2 }).sum::<f64>(),
+        // Optimization: Avoid powi(3) to reduce function call overhead in hot loops
+        gradient: l.iter().map(|x| -(x * x * x)).collect(),
     }
 }
 
