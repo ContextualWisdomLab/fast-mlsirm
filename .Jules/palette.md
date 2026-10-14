@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2025-02-12 - 다크 모드 접근성을 위한 하드코딩된 색상 회피
+**Learning:** 테마 배경색 CSS 변수(예: `var(--teal)`) 위에 텍스트 색상을 `white`와 같이 하드코딩하면 다크 모드에서 명도 대비 기준을 위반하여 접근성에 심각한 영향을 줄 수 있다는 것을 발견했습니다.
+**Action:** 테마 배경 변수를 사용하는 요소에 텍스트 색상을 지정할 때는 하드코딩된 색상 대신 접근성을 만족하는 쌍(pair)인 테마 변수(예: `color: var(--bg)`)를 항상 사용해야 합니다.
