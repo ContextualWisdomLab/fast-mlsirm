@@ -49,12 +49,15 @@ def _validated_report(report: EssayScoreReport) -> EssayScoreReport:
     return replayed
 
 
-def _content_security_policy() -> str:
+def _content_security_policy(css_content: str) -> str:
     """Return a restrictive meta-delivered policy for the standalone artifact."""
+    import base64
+    import hashlib
+    digest = base64.b64encode(hashlib.sha256(css_content.encode("utf-8")).digest()).decode("utf-8")
     return "; ".join(
         (
             "default-src 'none'",
-            "style-src 'unsafe-inline'",
+            f"style-src 'sha256-{digest}'",
             "img-src data:",
             "object-src 'none'",
             "base-uri 'none'",
@@ -320,7 +323,7 @@ def _render_html(report: EssayScoreReport, title: str) -> str:
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             '<meta http-equiv="Content-Security-Policy" '
-            f'content="{escape(_content_security_policy(), quote=True)}">',
+            f'content="{escape(_content_security_policy(_css()), quote=True)}">',
             f"<title>{escape(title)}</title>",
             f"<style>{_css()}</style>",
             "</head>",

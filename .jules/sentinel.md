@@ -59,3 +59,8 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+
+## 2026-09-25 - [CSP Unsafe-Inline Mitigation in HTML Reports]
+**Vulnerability:** The HTML reports used `'unsafe-inline'` for `style-src` in the Content Security Policy (CSP), which introduces CSS injection and layout manipulation risks.
+**Learning:** Using `unsafe-inline` makes the CSP permissive to arbitrary injected styles. By dynamically hashing the inline CSS (`_css()`) using SHA-256 at runtime and injecting `sha256-<hash>` into the `style-src` directive, we achieve strict execution constraints for inline styles without externalizing resources. It's important to propagate the modified signature to all call sites (e.g., `calibration_report_html.py`, `validation_report_html.py`) to prevent `TypeError` regressions.
+**Prevention:** Do not use `'unsafe-inline'` in `style-src`. Always use runtime content hashing (`sha256-...`) for dynamically generated inline styles and ensure all associated function calls are updated when a signature changes.
