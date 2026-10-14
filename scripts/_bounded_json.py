@@ -122,6 +122,14 @@ def _reject_nonfinite_constant(_: str) -> None:
     raise ValueError(_NONFINITE_NUMBER_ERROR)
 
 
+def _reject_float_nonfinite(value: str) -> float:
+    import math
+    f_val = float(value)
+    if not math.isfinite(f_val):
+        raise ValueError(_NONFINITE_NUMBER_ERROR)
+    return f_val
+
+
 def _reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     """Build one JSON object while rejecting repeated member names."""
     result: dict[str, Any] = {}
@@ -138,6 +146,7 @@ def _loads_interoperable_json(content: str) -> Any:
         content,
         object_pairs_hook=_reject_duplicate_members,
         parse_constant=_reject_nonfinite_constant,
+        parse_float=_reject_float_nonfinite,
     )
 
 
