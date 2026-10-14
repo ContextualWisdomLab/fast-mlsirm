@@ -186,16 +186,21 @@ pub fn person_fit_np(x: &[Vec<f64>]) -> Result<PersonFitNp, String> {
     // ZU3 complete-data scalars (ZU3.R:34-38; for complete data each
     // `rowSums(pos.no.NAs %*% v)` term is the scalar sum(v) per row —
     // verified in the adversarial spec review).
-    let s1: f64 = pi.iter().zip(&lo).map(|(&p, &l)| p * l).sum();
-    let s2: f64 = pi.iter().zip(&lo).map(|(&p, &l)| p * (1.0 - p) * l).sum();
-    let s3: f64 = pi.iter().sum();
-    let s4: f64 = pi.iter().map(|&p| p * (1.0 - p)).sum();
-    let beta: f64 = pi
-        .iter()
-        .zip(&lo)
-        .map(|(&p, &l)| p * (1.0 - p) * l * l)
-        .sum::<f64>()
-        - s2 * s2 / s4;
+    let (s1, s2, s3, s4, beta_term) = pi.iter().zip(&lo).fold(
+        (0.0, 0.0, 0.0, 0.0, 0.0),
+        |(a1, a2, a3, a4, ab), (&p, &l)| {
+            let p_comp = 1.0 - p;
+            let p_p_comp = p * p_comp;
+            (
+                a1 + p * l,
+                a2 + p_p_comp * l,
+                a3 + p,
+                a4 + p_p_comp,
+                ab + p_p_comp * l * l,
+            )
+        },
+    );
+    let beta = beta_term - s2 * s2 / s4;
 
     // Cstar cumulative pi sums (Cstar.R:26-38).
     let mut pi_desc = pi.clone();
