@@ -953,6 +953,7 @@ tbody tr:hover {
   background: var(--hover-bg);
   font-variant-numeric: tabular-nums;
   white-space: pre;
+  user-select: all;
 }
 
 .export-block pre:focus:not(:focus-visible) {
