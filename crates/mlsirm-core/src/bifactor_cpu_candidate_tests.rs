@@ -123,7 +123,10 @@ pub(crate) fn fixture(
         q,
         q,
         crate::Device::Cpu,
-    );
+        1,
+        &crate::estep_parallel::PersonChunkPool::new(1).expect("one-thread pool"),
+    )
+    .expect("serial multigroup E-step");
     let calls = calls();
     let mut output = vec![ll];
     for group in counts {

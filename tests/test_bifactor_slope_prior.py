@@ -22,7 +22,7 @@ RESPONSES = np.array(
     [[0, 1, 2, 0], [1, 2, 0, 1], [2, 0, 1, 2], [0, 2, 1, 0], [1, 1, 1, 1], [2, 2, 2, 2]]
 )
 N_PERSONS = RESPONSES.shape[0]
-CONTROLS = dict(q_general=7, q_specific=7, max_iter=5, tol=1e-4, n_starts=1, seed=1)
+CONTROLS = dict(q_general=7, q_specific=7, max_iter=5, tol=1e-4, n_starts=1, seed=1, e_step_n_chunks=1, e_step_n_threads=1)
 
 
 class RecordingCore:
@@ -49,6 +49,8 @@ class RecordingCore:
             "final_loglik_change": 0.0,
             "best_start": 0,
             "n_parameters": 1,
+            "e_step_n_chunks": 1,
+            "e_step_n_threads": 1,
         }
 
     def _with_prior(self, res: dict, args: tuple) -> dict:
@@ -56,13 +58,17 @@ class RecordingCore:
         res["slope_prior_mu"], res["slope_prior_sd"] = args[-2:]
         return res
 
-    def fit_bifactor_grm(self, *args):
+    def fit_bifactor_grm(self, *args, e_step_n_chunks, e_step_n_threads):
         self.calls["fit_bifactor_grm"] = args
-        return self._with_prior(self._fit(1), args)
+        result = self._with_prior(self._fit(1), args)
+        result.update(e_step_n_chunks=e_step_n_chunks, e_step_n_threads=e_step_n_threads)
+        return result
 
-    def fit_bifactor_grm_multigroup(self, *args):
+    def fit_bifactor_grm_multigroup(self, *args, e_step_n_chunks, e_step_n_threads):
         self.calls["fit_bifactor_grm_multigroup"] = args
-        return self._with_prior(self._fit(args[3]), args)
+        result = self._with_prior(self._fit(args[3]), args)
+        result.update(e_step_n_chunks=e_step_n_chunks, e_step_n_threads=e_step_n_threads)
+        return result
 
     def bifactor_oakes_se(self, *args):
         self.calls["bifactor_oakes_se"] = args
@@ -269,3 +275,26 @@ def test_full_wrapper_rejects_bad_seed_before_recording_seam(monkeypatch, multig
         else:
             bifactor_grm.fit_bifactor_grm(RESPONSES, SMAP, N_CAT, N_SPECIFIC, **controls)
     assert recording.calls == {}
+
+
+@pytest.mark.parametrize('method', ['fit_bifactor_grm', 'fit_bifactor_grm_multigroup'])
+def test_recording_core_rejects_unknown_estep_keyword(method):
+    """The recording seam must not hide a misspelled production keyword."""
+    recording = RecordingCore()
+    with pytest.raises(TypeError, match='unexpected keyword'):
+        getattr(recording, method)(
+            None, None, None, 2, None, None,
+            e_step_n_chunks=3, e_step_n_threads=2, ignored_control=True,
+        )
+    assert recording.calls == {}
+
+
+@pytest.mark.parametrize('method', ['fit_bifactor_grm', 'fit_bifactor_grm_multigroup'])
+def test_recording_core_preserves_estep_provenance(method):
+    """Echo the explicit controls rather than manufacturing serial provenance."""
+    recording = RecordingCore()
+    result = getattr(recording, method)(
+        None, None, None, 2, None, None,
+        e_step_n_chunks=3, e_step_n_threads=2,
+    )
+    assert (result['e_step_n_chunks'], result['e_step_n_threads']) == (3, 2)

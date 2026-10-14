@@ -123,9 +123,13 @@ def test_bifactor_gpu_parity_q121(capfd):
     kw = _fit_kwargs(121)
 
     t0 = time.perf_counter()
-    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu")
+    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t1 = time.perf_counter()
-    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
+    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t2 = time.perf_counter()
 
     slope_diff, threshold_diff, loglik_diff = _report(
@@ -147,9 +151,13 @@ def test_bifactor_gpu_parity_q241(capfd):
     kw = _fit_kwargs(241)
 
     t0 = time.perf_counter()
-    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu")
+    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t1 = time.perf_counter()
-    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
+    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t2 = time.perf_counter()
 
     slope_diff, threshold_diff, loglik_diff = _report(
@@ -171,9 +179,13 @@ def test_bifactor_gpu_parity_q481(capfd):
     kw = _fit_kwargs(481)
 
     t0 = time.perf_counter()
-    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu")
+    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t1 = time.perf_counter()
-    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
+    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t2 = time.perf_counter()
 
     slope_diff, threshold_diff, loglik_diff = _report(
@@ -200,9 +212,13 @@ def test_bifactor_gpu_parity_q241_wide_items_metal_workgroups(capfd):
     kw = _fit_kwargs(241, max_iter=4)
 
     t0 = time.perf_counter()
-    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu")
+    fit_cpu = fit_bifactor_grm(responses, smap, **kw, device="cpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t1 = time.perf_counter()
-    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu")
+    fit_gpu = fit_bifactor_grm(responses, smap, **kw, device="gpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t2 = time.perf_counter()
 
     slope_diff, threshold_diff, loglik_diff = _report(
@@ -222,9 +238,13 @@ def test_bifactor_cpu_q121_vs_q241_agree():
     """CPU fits at 121 and 241 nodes agree (integral-convergence check)."""
     responses, smap, _ = _fixture()
     t0 = time.perf_counter()
-    fit121 = fit_bifactor_grm(responses, smap, **_fit_kwargs(121), device="cpu")
+    fit121 = fit_bifactor_grm(responses, smap, **_fit_kwargs(121), device="cpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t1 = time.perf_counter()
-    fit241 = fit_bifactor_grm(responses, smap, **_fit_kwargs(241), device="cpu")
+    fit241 = fit_bifactor_grm(responses, smap, **_fit_kwargs(241), device="cpu",
+        e_step_n_chunks=1,
+        e_step_n_threads=1)
     t2 = time.perf_counter()
 
     loglik_diff = abs(

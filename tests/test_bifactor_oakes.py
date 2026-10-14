@@ -78,6 +78,8 @@ def _fit(y: np.ndarray):
         tol=1e-5,
         n_starts=1,
         seed=SEED,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
 
 
@@ -102,7 +104,7 @@ def test_from_fit_matches_raw_numeric_information(prior) -> None:
     fit = fit_bifactor_grm(
         y, SPECIFIC_MAP, N_CAT, N_SPECIFIC,
         q_general=7, q_specific=7, max_iter=500, tol=1e-5,
-        n_starts=1, seed=SEED, **prior,
+        n_starts=1, seed=SEED, e_step_n_chunks=1, e_step_n_threads=1, **prior,
     )
     direct = bifactor_oakes_se_from_fit(
         fit, y, q_general=7, q_specific=7, fd_step=1e-5

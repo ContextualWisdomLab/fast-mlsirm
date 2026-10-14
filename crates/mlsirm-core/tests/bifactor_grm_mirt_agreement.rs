@@ -199,6 +199,8 @@ fn bifactor_grm_agrees_with_mirt_bfactor_graded() {
         ridge: 1e-8,
         slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         device: mlsirm_core::Device::Cpu,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     };
     let fit = fit_bifactor_grm(
         &y,

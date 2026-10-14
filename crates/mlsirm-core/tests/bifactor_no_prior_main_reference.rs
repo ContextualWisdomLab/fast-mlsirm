@@ -95,6 +95,8 @@ fn none_path_matches_main_reference_single_and_multigroup() {
             ridge: 1e-8,
             slope_prior: SlopePrior::None,
             device: mlsirm_core::Device::Cpu,
+            e_step_n_chunks: 1,
+            e_step_n_threads: 1,
         },
     )
     .expect("single-group reference fit");
@@ -195,6 +197,8 @@ fn none_path_matches_main_reference_single_and_multigroup() {
             slope_prior: SlopePrior::None,
             estimate_specific_vars: false,
             device: mlsirm_core::Device::Cpu,
+            e_step_n_chunks: 1,
+            e_step_n_threads: 1,
         },
     )
     .expect("multigroup reference fit");

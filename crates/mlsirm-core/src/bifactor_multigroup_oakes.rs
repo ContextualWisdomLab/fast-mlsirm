@@ -104,7 +104,10 @@ impl Joint<'_> {
             self.x.len(),
             self.z.len(),
             crate::Device::Cpu,
-        );
+            1,
+            &crate::estep_parallel::PersonChunkPool::new(1).expect("one-thread pool"),
+        )
+        .expect("serial multigroup E-step");
         (loglik, counts)
     }
 
@@ -322,6 +325,8 @@ pub fn bifactor_multigroup_oakes_se(
         ridge: 1e-8,
         slope_prior: SlopePrior::None,
         device: crate::Device::Cpu,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     };
     let v = validate(
         y,
@@ -708,6 +713,8 @@ mod tests {
                 ridge: 1e-8,
                 slope_prior: SlopePrior::None,
                 device: crate::Device::Cpu,
+                e_step_n_chunks: 1,
+                e_step_n_threads: 1,
             },
         )
         .unwrap();

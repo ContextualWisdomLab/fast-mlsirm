@@ -196,6 +196,8 @@ fn se_matches_empirical_sd_over_simulation_replicates() {
         ridge: 1e-8,
         slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         device: mlsirm_core::Device::Cpu,
+        e_step_n_chunks: 1,
+        e_step_n_threads: 1,
     };
     let oakes_cfg = BifactorOakesConfig {
         q_general: CAL_QG,
@@ -349,6 +351,8 @@ fn estimates_stabilize_as_grid_grows_within_supported_cap() {
             ridge: 1e-8,
             slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
             device: mlsirm_core::Device::Cpu,
+            e_step_n_chunks: 1,
+            e_step_n_threads: 1,
         };
         let fit = fit_bifactor_grm(
             &y,
@@ -449,6 +453,8 @@ fn study_settings_se_converges_at_121_vs_241_nodes() {
             ridge: 1e-8,
             slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
             device: mlsirm_core::Device::Cpu,
+            e_step_n_chunks: 1,
+            e_step_n_threads: 1,
         };
         let fit = fit_bifactor_grm(
             &y,

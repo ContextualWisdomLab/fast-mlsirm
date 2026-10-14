@@ -51,6 +51,8 @@ def _fit(responses: np.ndarray):
         tol=1e-5,
         n_starts=1,
         seed=SEED,
+        e_step_n_chunks=1,
+        e_step_n_threads=1,
     )
 
 

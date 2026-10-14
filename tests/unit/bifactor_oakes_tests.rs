@@ -502,6 +502,8 @@ fn six_item_mle_is_positive_definite_with_matching_vcov_and_se() {
             ridge: 1e-8,
             slope_prior: crate::bifactor_grm::SlopePrior::None,
             device: crate::Device::Cpu,
+            e_step_n_chunks: 1,
+            e_step_n_threads: 1,
         };
         let fit = fit_bifactor_grm(
             &y,

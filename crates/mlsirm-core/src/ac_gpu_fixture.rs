@@ -107,8 +107,23 @@ pub(crate) fn fixture(
         .collect();
     reset_calls();
     let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec) = e_step_multigroup(
-        &v, &y, observed, &group, 2, &params, &tg, &ts, &log_wg, &log_ws, q, q, device,
-    );
+        &v,
+        &y,
+        observed,
+        &group,
+        2,
+        &params,
+        &tg,
+        &ts,
+        &log_wg,
+        &log_ws,
+        q,
+        q,
+        device,
+        1,
+        &crate::estep_parallel::PersonChunkPool::new(1).expect("one-thread pool"),
+    )
+    .expect("serial multigroup E-step");
     let calls = calls();
     let mut output = vec![ll];
     for group in counts {

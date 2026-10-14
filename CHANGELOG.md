@@ -48,7 +48,7 @@
   [0.776, 1.349]. The interval covers 1 but cannot detect miscalibration below
   about 25%. Reproduce with `python scripts/bifactor_multigroup_oakes_calibration.py
   --replicates 5 --persons-per-group 340 --q-general 121 --q-specific 121
-  --fd-step 1e-6 --seed <seed>`.
+  --fd-step 1e-6 --seed <seed> --e-step-n-chunks 1 --e-step-n-threads 1`.
 
 #### Bifactor GRM opt-in lognormal |a| slope prior
 

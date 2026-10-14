@@ -2,6 +2,7 @@
 
 Usage: python scripts/bifactor_multigroup_oakes_calibration.py --replicates R
     --persons-per-group N --q-general QG --q-specific QS --fd-step H
+    --e-step-n-chunks C --e-step-n-threads T
 
 The bootstrap interval measures Monte Carlo uncertainty in SD/mean-SE across
 the R independent simulated data sets. Oakes (1999, eq. 6, p. 480);
@@ -32,11 +33,20 @@ def main():
     parser.add_argument("--q-general", type=int, required=True)
     parser.add_argument("--q-specific", type=int, required=True)
     parser.add_argument("--fd-step", type=float, required=True)
+    parser.add_argument("--e-step-n-chunks", type=int, help="required for fitting; unused with --precision-only")
+    parser.add_argument("--e-step-n-threads", type=int, help="required for fitting; unused with --precision-only")
     parser.add_argument("--compare-q-general", type=int)
     parser.add_argument("--compare-q-specific", type=int)
     parser.add_argument("--precision-only", action="store_true")
     parser.add_argument("--seed", type=int, default=2113)
     args = parser.parse_args()
+    if not args.precision_only:
+        missing = [flag for flag, value in (
+            ("--e-step-n-chunks", args.e_step_n_chunks),
+            ("--e-step-n-threads", args.e_step_n_threads),
+        ) if value is None]
+        if missing:
+            parser.error("the following arguments are required: " + ", ".join(missing))
     if args.replicates < 3 or args.persons_per_group < 1:
         parser.error("at least 3 replicates and 1 person per group are required")
     if args.precision_only and (not args.compare_q_general or not args.compare_q_specific):
@@ -91,7 +101,9 @@ def main():
         fit = fit_bifactor_grm_multigroup(
             y, group, smap, 4, 3, anchor, q_general=args.q_general,
             q_specific=args.q_specific, max_iter=500, tol=1e-6,
-            n_starts=1, seed=args.seed+rep)
+            n_starts=1, seed=args.seed+rep,
+            e_step_n_chunks=args.e_step_n_chunks,
+            e_step_n_threads=args.e_step_n_threads)
         if not fit.converged:
             raise RuntimeError(f"replicate {rep} did not converge")
         oakes = bifactor_multigroup_oakes_se(

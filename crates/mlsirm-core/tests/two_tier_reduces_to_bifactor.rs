@@ -126,6 +126,8 @@ fn two_tier_with_single_primary_matches_bifactor_fit() {
             ridge: 1e-8,
             slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
             device: mlsirm_core::Device::Cpu,
+            e_step_n_chunks: 1,
+            e_step_n_threads: 1,
         },
     )
     .expect("stage-1 fit must succeed");
@@ -155,6 +157,8 @@ fn two_tier_with_single_primary_matches_bifactor_fit() {
             seed: 0x9E37_79B9_7F4A_7C15,
             newton_iter: 10,
             ridge: 1e-8,
+            e_step_n_chunks: 1,
+            e_step_n_threads: 1,
         },
     )
     .expect("two-tier P=1 fit must succeed");
