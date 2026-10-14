@@ -66,6 +66,7 @@ fn focal_fixed_specific_caller_omits_only_unused_gpu_moments() {
         (&full.6, &projected.6),
         (&full.7, &projected.7),
     ] {
+        assert_eq!(a.len(), b.len());
         assert!(a.iter().zip(b).all(|(a, b)| a.to_bits() == b.to_bits()));
     }
     assert_eq!(

@@ -43,7 +43,12 @@ full-step eligibility here refers to the outer joint EM acceptance decision.
 
 ## Reproduction and limits
 
-The low-resolution seed-1000 bug reproduction uses 180 people, six four-category
+This section records historical pre-`0d91229e2` evidence, not the current
+negative-fixture execution. The current negative fixture in
+`tests/test_two_tier_grm.py` uses seed 1039; the older seed-1000 measurements
+below retain their original numerical values and binary generation.
+
+The historical low-resolution seed-1000 bug reproduction uses 180 people, six four-category
 items, two primary and two specific factors, and anchors at items 0, 1, 3, and 4.
 Two item rows remain free. At seven quadrature nodes per dimension, the old fit
 reported convergence at iteration 92 after accepting a joint step of about
@@ -156,6 +161,10 @@ CC BY 3.0 redistribution with attribution. The PDF is unchanged. The two pinned
 source links were saved to Zotero as `KP6V3NIH` and `JRM2T2X5`.
 
 ## Local regression evidence
+
+The following receipt is historical pre-`0d91229e2` seed-1000 evidence. It
+does not describe the current seed-1039 negative fixture or the current successor
+binary. No new fit measurements are asserted here.
 
 On September 30, 2026, the real-binding seed-1000 regression passed for CPU and
 GPU requests. The separate hardware receipt confirmed Metal execution on

@@ -663,7 +663,7 @@ mod zero_primary_mass_regression {
                 1e-8,
                 1,
             );
-            let old = crate::two_tier_grm::symmetry_corrected_reference::symmetry_corrected_newton(
+            let fd_reference = crate::two_tier_grm::symmetry_corrected_reference::symmetry_corrected_newton(
                 packed.clone(),
                 1e-8,
                 1,
@@ -682,10 +682,30 @@ mod zero_primary_mass_regression {
                     )
                 },
             );
+
             historical_difference |= historical
                 .iter()
-                .zip(&old)
+                .zip(&fd_reference)
                 .any(|(old, corrected)| old.to_bits() != corrected.to_bits());
+let old = crate::two_tier_grm::symmetry_corrected_reference::analytic_reference_newton(
+                packed.clone(),
+                1e-8,
+                1,
+                |trial| {
+                    crate::two_tier_grm::symmetry_corrected_reference::item_analytic_reference(
+                        trial,
+                        free,
+                        specific,
+                        &coords,
+                        &ts,
+                        v.n_primary,
+                        lw.len(),
+                        121,
+                        &counts[i],
+                        3,
+                    )
+                },
+            );
             let new = m_step_item(
                 packed,
                 free,
@@ -1928,7 +1948,7 @@ mod zero_primary_mass_regression {
                         1e-8,
                         1,
                     );
-                    let expected =
+                    let fd_reference =
                         crate::two_tier_grm::symmetry_corrected_reference::symmetry_corrected_newton(
                             params.clone(),
                             1e-8,
@@ -1948,10 +1968,31 @@ mod zero_primary_mass_regression {
                                 )
                             },
                         );
+
                     historical_difference |= historical
                         .iter()
-                        .zip(&expected)
+                        .zip(&fd_reference)
                         .any(|(old, corrected)| old.to_bits() != corrected.to_bits());
+let expected =
+                        crate::two_tier_grm::symmetry_corrected_reference::analytic_reference_newton(
+                            params.clone(),
+                            1e-8,
+                            1,
+                            |trial| {
+                                crate::two_tier_grm::symmetry_corrected_reference::item_analytic_reference(
+                                    trial,
+                                    &[0],
+                                    has_specific,
+                                    &coords,
+                                    ts,
+                                    n_primary,
+                                    q,
+                                    q,
+                                    &counts,
+                                    4,
+                                )
+                            },
+                        );
                     let actual = m_step_item(
                         params,
                         &[0],
@@ -2664,15 +2705,21 @@ mod zero_primary_mass_regression {
                                     1e-8,
                                     2,
                                 );
-                                let expected = crate::two_tier_grm::symmetry_corrected_reference::symmetry_corrected_newton(
+                                let fd_reference = crate::two_tier_grm::symmetry_corrected_reference::symmetry_corrected_newton(
                                     params.clone(), 1e-8, 2,
                                     |trial| predecessor_item_objective(trial, &free, specific,
                                         &coords, &ts, 2, q, q, &counts, 4),
                                 );
+
                                 historical_difference |= historical
                                     .iter()
-                                    .zip(&expected)
+                                    .zip(&fd_reference)
                                     .any(|(old, corrected)| old.to_bits() != corrected.to_bits());
+let expected = crate::two_tier_grm::symmetry_corrected_reference::analytic_reference_newton(
+                                    params.clone(), 1e-8, 2,
+                                    |trial| crate::two_tier_grm::symmetry_corrected_reference::item_analytic_reference(trial, &free, specific,
+                                        &coords, &ts, 2, q, q, &counts, 4),
+                                );
                                 let actual = m_step_item(
                                     params, &free, specific, &coords, &ts, 2, q, q, &flat, 4, 1e-8, 2,
                                 );

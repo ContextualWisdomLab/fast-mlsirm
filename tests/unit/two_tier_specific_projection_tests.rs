@@ -85,6 +85,7 @@ fn fixed_specific_projection_skips_only_unconsumed_block_posteriors() {
             assert_eq!(a.len(), b.len());
             assert!(a.iter().zip(b).all(|(a, b)| a.to_bits() == b.to_bits()));
         }
+        assert_eq!(actual.1.len(), previous.1.len());
         for (a, b) in actual.1.iter().zip(&previous.1) {
             assert_eq!(a.len(), b.len());
             for (a, b) in a.iter().zip(b) {
@@ -117,6 +118,7 @@ fn fixed_specific_projection_skips_only_unconsumed_block_posteriors() {
             true,
         );
         for (a, b) in [(&retained.4, &previous.4), (&retained.5, &previous.5)] {
+            assert_eq!(a.len(), b.len());
             assert!(a.iter().zip(b).all(|(a, b)| a.to_bits() == b.to_bits()));
         }
         // When every observed free item is masked, no block posterior is consumed.
@@ -159,6 +161,7 @@ fn fixed_specific_projection_skips_only_unconsumed_block_posteriors() {
             (&masked.6, &masked_full.6),
             (&masked.7, &masked_full.7),
         ] {
+            assert_eq!(a.len(), b.len());
             assert!(a.iter().zip(b).all(|(a, b)| a.to_bits() == b.to_bits()));
         }
         coords[10] += 0.125;

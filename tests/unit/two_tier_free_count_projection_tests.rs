@@ -336,6 +336,7 @@ fn anchor_projection_p2_preserves_all_consumed_outputs() {
                 "P2 output phase{phase}"
             );
         }
+        assert_eq!(actual.1.len(), previous.1.len());
         for (i, (a, b)) in actual.1.iter().zip(&previous.1).enumerate() {
             if anchor[i] {
                 assert!(a.is_empty());

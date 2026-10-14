@@ -26,8 +26,15 @@ fn check(ridge: f64) {
         !rows.is_empty(),
         "actual Newton caller must reach its solver"
     );
+    // Analytic production supplies an already symmetric raw Hessian.
+    // Asymmetric projection discrimination is tested explicitly below.
+    check_rows(rows, ridge, false);
+}
+fn check_rows(rows: Vec<(Vec<Vec<f64>>, Vec<Vec<f64>>)>, ridge: f64, expect_asymmetric: bool) {
     let mut asymmetric_input = false;
     for (raw, delivered) in rows {
+        assert_eq!(raw.len(), delivered.len());
+        for row in raw.iter().chain(delivered.iter()) { assert_eq!(row.len(), raw.len()); }
         for r in 0..raw.len() {
             assert_eq!(delivered[r][r].to_bits(), (raw[r][r] + ridge).to_bits());
             for c in 0..r {
@@ -46,10 +53,8 @@ fn check(ridge: f64) {
             }
         }
     }
-    assert!(
-        asymmetric_input,
-        "fixture must exercise a genuinely asymmetric FD approximation"
-    );
+    assert_eq!(asymmetric_input, expect_asymmetric,
+        "analytic caller and explicit asymmetric control must retain their distinct input contracts");
 }
 fn fixture() -> (Vec<f64>, Vec<Vec<f64>>) {
     let (x, _) = crate::quadrature::require_gh_rule(121, "q").unwrap();
@@ -76,4 +81,13 @@ fn sibling_hessian_actual_bifactor_item() {
     );
     assert!(result.iter().all(|v| v.is_finite()));
     check(1e-8);
+    // Explicitly asymmetric matrix exercises original-pair and ridge oracles
+    // independently of the analytic production input, without changing Newton.
+    let raw = vec![vec![2.0, 3.0], vec![7.0, 11.0]];
+    let delivered = vec![vec![2.0 + 1e-8, 5.0], vec![5.0, 11.0 + 1e-8]];
+    check_rows(vec![(raw.clone(), delivered.clone())], 1e-8, true);
+    let mut corrupted = delivered;
+    corrupted[0][1] = 0.5 * (5.0 + raw[0][1]);
+    assert!(std::panic::catch_unwind(|| check_rows(vec![(raw, corrupted)], 1e-8, true)).is_err(),
+        "sequential in-place reuse of an averaged entry must fail the original-pair oracle");
 }

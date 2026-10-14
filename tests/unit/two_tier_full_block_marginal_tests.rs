@@ -188,6 +188,7 @@ fn full_p2_output_matches_predecessor_on_shifted_correlated_support() {
                 "P2 output phase{phase}"
             );
         }
+        assert_eq!(actual.1.len(), previous.1.len());
         for (a, b) in actual.1.iter().zip(&previous.1) {
             assert_eq!(a.len(), b.len());
             for (a, b) in a.iter().zip(b) {

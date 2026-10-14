@@ -150,7 +150,7 @@ fn objective_projection_matches_gradient_objective_and_original_newton_bits() {
                 1e-8,
                 2,
             );
-            let previous = symmetry_corrected_reference::symmetry_corrected_newton(
+            let fd_reference = symmetry_corrected_reference::symmetry_corrected_newton(
                 valid.clone(),
                 1e-8,
                 2,
@@ -169,10 +169,30 @@ fn objective_projection_matches_gradient_objective_and_original_newton_bits() {
                     )
                 },
             );
+
             historical_difference |= historical
                 .iter()
-                .zip(&previous)
+                .zip(&fd_reference)
                 .any(|(old, corrected)| old.to_bits() != corrected.to_bits());
+let previous = symmetry_corrected_reference::analytic_reference_newton(
+                valid.clone(),
+                1e-8,
+                2,
+                |trial| {
+                    crate::two_tier_grm::symmetry_corrected_reference::item_analytic_reference(
+                        trial,
+                        &free,
+                        specific,
+                        &coords,
+                        &ts,
+                        2,
+                        q + 1,
+                        q,
+                        &counts,
+                        3,
+                    )
+                },
+            );
             let actual = m_step_item(
                 valid,
                 &free,

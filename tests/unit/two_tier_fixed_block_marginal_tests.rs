@@ -173,6 +173,7 @@ fn fixed_marginal_p2_matches_exact_predecessor_on_changed_support() {
             (&actual.2, &previous.2),
             (&actual.3, &previous.3),
         ] {
+            assert_eq!(a.len(), b.len());
             assert!(
                 a.iter().zip(b).all(|(a, b)| a.to_bits() == b.to_bits()),
                 "P2 phase{phase}"
