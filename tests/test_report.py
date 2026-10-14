@@ -281,3 +281,10 @@ def test_render_table_region_has_keyboard_focus_style(tmp_path):
     assert "tbody tr:hover" in html
     assert '<div class="bar-chart" aria-hidden="true">' in html
     assert '<div class="bar-track" aria-hidden="true">' in html
+
+
+def test_export_block_pre_user_select_all():
+    from fast_mlsirm.report import _css
+    css = _css()
+    assert ".export-block pre {" in css
+    assert "user-select: all;" in css
