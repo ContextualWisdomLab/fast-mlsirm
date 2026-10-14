@@ -15,6 +15,8 @@ import warnings
 
 import numpy as np
 
+from .._gauss_hermite import probabilists_gauss_hermite
+
 MAX_FACTOR_DIMENSIONS = 64
 MAX_GPCM_CATEGORIES = 256
 MAX_MARGINAL_WORKING_SET = 100_000_000
@@ -275,11 +277,11 @@ def _preflight_xi_node_count(
 
 def _gh(q: int) -> tuple[np.ndarray, np.ndarray]:
     """Return ``q``-point probabilists' Gauss-Hermite nodes and unit-sum weights."""
-    # #1929: no node-count cap; hermegauss handles any q >= 1 natively.
+    # #1929: no node-count cap. ``hermegauss`` alone overflows from q = 371
+    # (#2110), so use the shared rule that stays finite for any q >= 1.
     if q < 1:
         raise ValueError(f"q must be >= 1; got {q}")
-    nodes, weights = np.polynomial.hermite_e.hermegauss(q)
-    return nodes, weights / weights.sum()
+    return probabilists_gauss_hermite(q)
 
 
 def _model_flags(model: str) -> tuple[bool, bool]:
