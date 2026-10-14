@@ -6,6 +6,7 @@
 
 include!("lib.rs");
 
+pub mod binary64_mean;
 pub mod interaction_map;
 pub mod normal_quantile;
 pub mod rotation;
