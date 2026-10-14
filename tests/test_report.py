@@ -1,4 +1,6 @@
 import json
+import re
+from html import unescape
 
 import pytest
 
@@ -255,6 +257,45 @@ def test_render_report_requires_html_output(tmp_path):
 
     with pytest.raises(ValueError, match="must end with .html"):
         render_diagnostics_report(source, out)
+
+
+def test_bar_chart_encodes_distinct_values_as_distinct_magnitudes(tmp_path):
+    """Distinct candidate values must render as distinct bar magnitudes."""
+    source = tmp_path / "dimension_diagnostics.json"
+    out = tmp_path / "dimensions.html"
+    source.write_text(
+        json.dumps(
+            {
+                "candidates": [
+                    {"latent_dim": 1.0, "heldout_loglik": -30.0},
+                    {"latent_dim": 2.0, "heldout_loglik": -20.0},
+                    {"latent_dim": 3.0, "heldout_loglik": -10.0},
+                ],
+                "best": {"latent_dim": 3.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    render_diagnostics_report(source, out)
+
+    html = out.read_text(encoding="utf-8")
+    # The magnitude may be carried by an inline width or by a native <progress>
+    # value; the contract is that three distinct inputs produce three distinct
+    # bars, not which element carries them.
+    magnitudes = re.findall(r'class="bar-(?:fill|track)"[^>]*?(?:width: |value=")([\d.]+)', html)
+    assert len(magnitudes) == 3, html
+    assert len(set(magnitudes)) == 3, magnitudes
+
+    # Whatever carries it, a CSP hash covers <style> elements but never style
+    # attributes. If the markup still uses one, the directive governing
+    # attributes has to keep allowing them, or every bar collapses to
+    # `.bar-fill { min-width: 8px }` and the chart silently reads flat.
+    if 'style="' in html:
+        policy = unescape(html.split('Content-Security-Policy" content="')[1].split('"')[0])
+        governing = "style-src-attr" if "style-src-attr" in policy else "style-src"
+        directive = policy.split(governing, 1)[1].split(";")[0]
+        assert "'unsafe-inline'" in directive, policy
 
 
 def test_render_table_region_has_keyboard_focus_style(tmp_path):
