@@ -2909,17 +2909,19 @@ fn run_single_start_multigroup(
             }
         }
         // M-step, focal group distributions (reference g = 0 pinned to
-        // N(0, I)): an ECM conditional-maximization step (Meng & Rubin,
-        // 1993, sec. 1, p. 269: each CM-step increases Q, so ECM is a GEM
-        // and increases the likelihood; Dempster, Laird, & Rubin, 1977,
-        // sec. 3, eq. 3.5 and Theorem 1, p. 7) on the SAME expected complete-data log-likelihood the item
-        // step just ascended — this iteration's expected counts, the updated
-        // item parameters, and nodes `mu + sigma x` / `tau x` as functions of
-        // the population parameters. The Bock-Aitkin/Bock-Zimowski posterior-
-        // moment update moved the nodes without ascending that function, so
-        // the guarded observed-data quadrature log-likelihood could decrease
-        // (#2093). `log sigma`/`log tau` keep positivity structural: NO
-        // clamping; a non-finite or non-positive result fails loudly.
+        // N(0, I)): a bounded GEM population-ascent step (Dempster, Laird, &
+        // Rubin, 1977, sec. 3, eq. 3.5 and Theorem 1, p. 7) on the SAME
+        // expected complete-data log-likelihood the item step just ascended —
+        // this iteration's expected counts, the updated item parameters, and
+        // nodes `mu + sigma x` / `tau x` as functions of the population
+        // parameters. `newton_descent` accepts only Armijo-improving updates
+        // and may stop after `cfg.newton_iter` before reaching the conditional
+        // maximum of Q, so this is not claimed to be an ECM CM-step. The
+        // Bock-Aitkin/Bock-Zimowski posterior-moment update moved the nodes
+        // without ascending that function, so the guarded observed-data
+        // quadrature log-likelihood could decrease (#2093). `log sigma`/`log
+        // tau` keep positivity structural: NO clamping; a non-finite or
+        // non-positive result fails loudly.
         for g in 1..n_groups {
             let n_spec = if cfg.estimate_specific_vars {
                 v.n_specific
