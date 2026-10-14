@@ -61,6 +61,26 @@ We implement and verify the following components:
 - Does not mutate or replace the existing simple-structure MLSIRM / MLS2PLM item response models in place.
 - Does not implement non-compensatory or partially-ordered multidimensional response models.
 - Does not replace Hosted Psychometrics Commons assessment execution services or persistent participant schemas.
+- **Does not claim same-host concurrent CPU+GPU numeric work-sharing.** This ADR’s `device` axis is exclusive per E-step (`cpu` XOR `gpu`/`auto` with fallback). GPU detection, CPU fallback, sequential EM (GPU E-step then CPU M-step), and `ThreadPoolExecutor` replicate parallelism are **not** the same-host concurrent split. Remote Valkey/Redis Streams (#2001 §2) alone also does **not** satisfy that requirement.
+- **Does not claim a remote multi-host mixed numeric API** beyond optional follow-on work tracked on #2001; this ADR’s bootstrap dispatcher is local threads.
+
+## Follow-on requirements — same-host CPU+GPU concurrent numeric split (recorded 2026-09-19)
+
+**Status: REQUIREMENT only — not implemented under this ADR.** Tracking: reopen/extend [#2001](https://github.com/ContextualWisdomLab/fast-mlsirm/issues/2001) (new § “same-host heterogeneous numeric split”); do not conflate with GIL (#2000) or Valkey Streams (§2).
+
+User-facing need: on **one machine**, CPU and GPU **simultaneously** perform **non-overlapping numerical** work for the same research fit/bootstrap contract, then aggregate results. Remote network distribution alone does not meet this need.
+
+### Acceptance criteria (must all hold before claiming done)
+
+1. **Same-host concurrent execution:** Within one library call (fit or bootstrap batch), CPU and GPU numeric kernels run concurrently (overlapping wall time), not merely sequential stages or exclusive `device=` selection.
+2. **Non-overlapping work partition:** Explicit, deterministic partition of numeric work (e.g. person/node/replicate shards) with no double-count and no silent gap; partition rule documented and tested.
+3. **Result aggregation:** Single caller-visible result identical in contract to the single-device path (parameters, loglik/counts, bootstrap summaries), with aggregation rules and failure handling documented.
+4. **Per-device provenance:** Every aggregated run records per-device participation (which shards, device id/adapter, library version/sha, wall time, thread budget used).
+5. **Accuracy vs single-device:** Same seed/data: agreement gates vs pure-CPU and (where applicable) pure-GPU references within documented tolerances (f32 GPU envelope already used for parity tests).
+6. **Measured performance:** Wall-clock evidence vs single-device baselines on a stated host; no theoretical speedup claims without archive/JSON measurements.
+7. **Thread/memory budget:** Caller-visible caps for CPU threads and GPU/host memory; over-budget fails closed or documents truncation; budgets do not silently oversubscribe past the cap.
+
+Implementation evidence must be linked separately from this requirement record. Until then, treat any “hetero done” claim as false.
 
 ## Consequences and trade-offs
 
