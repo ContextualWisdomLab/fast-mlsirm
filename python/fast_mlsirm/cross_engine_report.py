@@ -34,9 +34,15 @@ def _header_row(labels: tuple[str, ...]) -> str:
     ) + "</tr>"
 
 
-def _data_row(values: tuple[object | None, ...]) -> str:
+def _data_row(values: tuple[object | None, ...], row_header_column: int | None = None) -> str:
     """Render one escaped table row."""
-    return "<tr>" + "".join(f"<td>{_text(value)}</td>" for value in values) + "</tr>"
+    cells = []
+    for i, value in enumerate(values):
+        if row_header_column is not None and i == row_header_column:
+            cells.append(f'<th scope="row">{_text(value)}</th>')
+        else:
+            cells.append(f"<td>{_text(value)}</td>")
+    return "<tr>" + "".join(cells) + "</tr>"
 
 
 def _key_value_table(caption: str, rows: tuple[tuple[str, object | None], ...]) -> str:
@@ -138,7 +144,8 @@ def _render_capabilities(manifest: dict[str, object]) -> str:
                     capability["identification"],
                     capability["comparison_scope"],
                     len(evidence),
-                )
+                ),
+                row_header_column=0,
             )
         )
     rows.append("</table>")
@@ -198,7 +205,8 @@ def _render_evidence(manifest: dict[str, object]) -> str:
                         None,
                         None,
                         "No independent engine evidence row is recorded for this capability.",
-                    )
+                    ),
+                    row_header_column=0,
                 )
             )
             continue
@@ -227,7 +235,8 @@ def _render_evidence(manifest: dict[str, object]) -> str:
                         evidence["environment_sha256"],
                         evidence["artifact_sha256"],
                         evidence["limitation"],
-                    )
+                    ),
+                    row_header_column=0,
                 )
             )
     rows.append("</table>")
