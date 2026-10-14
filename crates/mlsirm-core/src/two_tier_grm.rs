@@ -84,16 +84,18 @@
 //!
 //! # Memory (exact blocked product-grid evaluation; #1992)
 //!
-//! Category log-probs and M-step node coordinates are evaluated on the fly
-//! over the full primary product Gauss–Hermite grid (Golub & Welsch, 1969;
+//! For the single-primary specialization, category log-probs are filled once
+//! per E-step and reused across persons. Multi-primary fits and M-step node
+//! coordinates stay streamed over the full primary product Gauss–Hermite grid
+//! (Golub & Welsch, 1969;
 //! node counts remain caller-controlled with no silent cap — #1929;
 //! Lesaffre & Spiessens, 2001, warn that low `Q` can bias results). The
 //! specific-tier scratch is `O(n_specific * q_specific)` per active primary
 //! node rather than `O(n_specific * n_grid * q_specific)`. Finite sums are
 //! associative, so the numerical value matches a materialised-table path up
 //! to ordinary floating-point roundoff.//!
-//! The M-step updates each item by the per-item finite-difference-Hessian
-//! Newton of stage 1 (ridge = Hessian conditioning only, NOT a prior;
+//! The M-step updates each item by the per-item analytic-Hessian Newton of
+//! stage 1 (#2030: one node sweep through `poly::grm_node_hessian`; ridge = Hessian conditioning only, NOT a prior;
 //! backtracking line search REJECTS non-finite objectives, which is exactly
 //! how the ordered-threshold constraint is maintained WITHOUT an explicit
 //! reparametrization — the crate's shared ascent convention from `grm.rs`),
@@ -204,7 +206,7 @@
 //! 50*(3), 325-335. https://doi.org/10.1111/1467-9876.00237 (full text read:
 //! high `Q` often required; do not invent a low default)
 
-use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
+use crate::poly::{grm_logprobs, grm_node_gradient, grm_node_hessian, solve_small};
 
 // NOTE (stage-4 design): this module imposes no magic size caps. Upper
 // bounds without a documented origin are rejected in favor of correctness
@@ -790,10 +792,33 @@ fn item_primary_base(v: &Validated, par: &ItemParams, coords: &[f64], g: usize, 
     prim
 }
 
-/// Category log-prob for item `i` at primary node `g` and specific node `h`
-/// (`h` ignored / `t_s = 0` for specific-free items). Evaluates Cai et al.
-/// (2011, eq. 6–7, p. 227) on the fly so the E-step never materializes a
-/// full `n_grid * q_specific * n_cat` table per item (#1992 memory).
+fn fill_logprob_tables(
+    v: &Validated,
+    params: &[ItemParams],
+    coords: &[f64],
+    ts: &[f64],
+    n_grid: usize,
+    qs: usize,
+) -> Vec<Vec<f64>> {
+    params
+        .iter()
+        .enumerate()
+        .map(|(i, par)| {
+            let h_count = if par.a_s.is_some() { qs } else { 1 };
+            let mut table = vec![0.0; n_grid * h_count * v.n_cat];
+            for g in 0..n_grid {
+                let primary = item_primary_base(v, par, coords, g, i);
+                for h in 0..h_count {
+                    let base = primary + par.a_s.map_or(0.0, |a_s| a_s * ts[h]);
+                    table[(g * h_count + h) * v.n_cat..(g * h_count + h + 1) * v.n_cat]
+                        .copy_from_slice(&grm_logprobs(base, &par.d));
+                }
+            }
+            table
+        })
+        .collect()
+}
+
 #[inline]
 fn item_cat_logprob(
     v: &Validated,
@@ -806,12 +831,8 @@ fn item_cat_logprob(
     cat: usize,
 ) -> f64 {
     let par = &params[i];
-    let prim = item_primary_base(v, par, coords, g, i);
-    let base = match par.a_s {
-        Some(a_s) => prim + a_s * ts[h],
-        None => prim,
-    };
-    grm_logprobs(base, &par.d)[cat]
+    let primary = item_primary_base(v, par, coords, g, i);
+    grm_logprobs(primary + par.a_s.map_or(0.0, |a_s| a_s * ts[h]), &par.d)[cat]
 }
 
 /// One reduced E-step sweep (Gibbons et al., 2007, eq. 15: the person
@@ -826,11 +847,11 @@ fn item_cat_logprob(
 /// The primary product Gauss–Hermite grid (Golub & Welsch, 1969) is still
 /// fully summed — node counts remain caller-controlled with no silent cap
 /// (#1929; Lesaffre & Spiessens, 2001, warn that low `Q` can bias results).
-/// Category log-probs are evaluated on the fly, and the specific-tier
-/// scratch `block_acc` is sized `n_specific * q_specific` (one primary node
-/// at a time) rather than `n_specific * n_grid * q_specific`. Finite sums
-/// are associative, so the numerical value matches the materialised-table
-/// path up to ordinary floating-point roundoff order.
+/// Single-primary category log-probs are filled once per sweep and reused
+/// across persons; multi-primary fits retain streamed evaluation. The
+/// specific-tier scratch `block_acc` remains sized
+/// `n_specific * q_specific` (one primary node at a time) rather than
+/// `n_specific * n_grid * q_specific`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn e_step(
     v: &Validated,
@@ -864,11 +885,11 @@ pub(crate) fn e_step(
     let mut tmp_h = vec![0.0f64; qs];
     let mut block_acc_g = vec![0.0f64; v.n_specific * qs];
     let mut s_bar_sum = vec![0.0f64; p * p];
+    let tables = (v.n_primary == 1).then(|| fill_logprob_tables(v, params, coords, ts, n_grid, qs));
 
     let mut loglik = 0.0f64;
     for pp in 0..v.n_persons {
-        // Pass 1: person marginal per primary node (specific-free + block
-        // integrals), without storing per-(g,h) tables.
+        // Pass 1: person marginal per primary node (specific-free + block integrals).
         gen_log.copy_from_slice(log_w);
         for &i in &v.specific_free {
             if !is_obs(pp, i) {
@@ -876,7 +897,10 @@ pub(crate) fn e_step(
             }
             let yc = y[pp * v.n_items + i];
             for g in 0..n_grid {
-                gen_log[g] += item_cat_logprob(v, params, coords, ts, i, g, 0, yc);
+                gen_log[g] += tables.as_ref().map_or_else(
+                    || item_cat_logprob(v, params, coords, ts, i, g, 0, yc),
+                    |tables| tables[i][g * v.n_cat + yc],
+                );
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
@@ -888,7 +912,10 @@ pub(crate) fn e_step(
                             continue;
                         }
                         let yc = y[pp * v.n_items + i];
-                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        acc += tables.as_ref().map_or_else(
+                            || item_cat_logprob(v, params, coords, ts, i, g, h, yc),
+                            |tables| tables[i][(g * qs + h) * v.n_cat + yc],
+                        );
                     }
                     tmp_h[h] = acc;
                 }
@@ -939,7 +966,10 @@ pub(crate) fn e_step(
                             continue;
                         }
                         let yc = y[pp * v.n_items + i];
-                        acc += item_cat_logprob(v, params, coords, ts, i, g, h, yc);
+                        acc += tables.as_ref().map_or_else(
+                            || item_cat_logprob(v, params, coords, ts, i, g, h, yc),
+                            |tables| tables[i][(g * qs + h) * v.n_cat + yc],
+                        );
                     }
                     block_acc_g[s * qs + h] = acc;
                 }
@@ -968,8 +998,8 @@ pub(crate) fn e_step(
 
 /// Negative expected complete-data log-lik and gradient for ONE item — the
 /// Bock-Aitkin M-step item ascent (Cai et al., 2011, "Maximum Marginal
-/// Likelihood Estimation" section) with the crate's shared
-/// finite-difference-Hessian Newton convention (`grm.rs`).
+/// Likelihood Estimation" section). Serves the Armijo line search (value)
+/// and the FD Hessian test oracle; Newton uses [`item_neg_ll_grad_hess`].
 /// `params = [free primary slopes..., (a_S?), d_1..d_{K-1}]` (primary slopes
 /// in ascending-dimension order). Node coordinates are derived on the fly
 /// from the primary product grid and specific GH nodes (`node = g * qs + h`
@@ -1023,13 +1053,149 @@ fn item_neg_ll_grad(
     (-ll, grad.iter().map(|g| -g).collect())
 }
 
-/// Newton M-step for one item — the Bock-Aitkin M-step item ascent (Cai et
-/// al., 2011, "Maximum Marginal Likelihood Estimation" section) with the
-/// crate's shared ascent convention (FD Hessian, ridge conditioning,
-/// backtracking; non-finite rejection keeps `d` strictly ordered, as in
-/// `grm.rs`).
+/// Negative expected complete-data log-lik, gradient, and analytic Hessian
+/// for ONE two-tier GRM item in a single node sweep (#2030).
+///
+/// At fixed E-step expected counts the complete-data criterion separates per
+/// item (Bock & Aitkin, 1981, pp. 445, 448). Per node the GRM cell Hessian
+/// ([`grm_node_hessian`]; Gibbons et al., 2007, eq. 9 and Appendix A4-A6) is
+/// chained through the linear predictor `eta = x' a + d` with design vector
+/// `x = [free primary coordinates..., t_S?]`; second derivatives of `eta`
+/// vanish, so the blocks are `grand * x x'`, `x * row_sums'`, and the
+/// threshold matrix. At `P = 1` this is operand-for-operand the stage-1
+/// [`crate::bifactor_grm`] item Hessian, which keeps the two-tier fit an
+/// exact reduction of the bifactor fit. Signed for minimisation of `-Q`.
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::needless_range_loop)] // finite-difference Hessian is inherently indexed (mirrors `grm.rs`)
+pub(crate) fn item_neg_ll_grad_hess(
+    params: &[f64],
+    free: &[usize],
+    has_specific: bool,
+    coords: &[f64],
+    ts: &[f64],
+    n_primary: usize,
+    n_grid: usize,
+    qs: usize,
+    counts: &[Vec<f64>],
+) -> (f64, Vec<f64>, Vec<Vec<f64>>) {
+    let np = params.len();
+    let k = free.len();
+    let off = k + usize::from(has_specific);
+    let beta = &params[off..];
+    let mut ll = 0.0f64;
+    let mut grad = vec![0.0f64; np];
+    let mut hess = vec![vec![0.0f64; np]; np];
+    let mut x = vec![0.0f64; off];
+    for (node, cnt) in counts.iter().enumerate() {
+        let (g, h) = if has_specific {
+            (node / qs, node % qs)
+        } else {
+            debug_assert!(node < n_grid);
+            (node, 0)
+        };
+        for (t, &dim) in free.iter().enumerate() {
+            x[t] = coords[g * n_primary + dim];
+        }
+        if has_specific {
+            x[k] = ts[h];
+        }
+        let mut base = 0.0f64;
+        for (xt, pt) in x.iter().zip(params) {
+            base += pt * xt;
+        }
+        let lp = grm_logprobs(base, beta);
+        ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+        let (g_base, g_thr) = grm_node_gradient(base, beta, cnt);
+        for (gt, xt) in grad.iter_mut().zip(&x) {
+            *gt += g_base * xt;
+        }
+        for (j, gj) in g_thr.iter().enumerate() {
+            grad[off + j] += gj;
+        }
+        let (grand, row_sums, mat) = grm_node_hessian(base, beta, cnt);
+        for t in 0..off {
+            for u in 0..off {
+                hess[t][u] += x[t] * x[u] * grand;
+            }
+        }
+        for (j, rj) in row_sums.iter().enumerate() {
+            let dj = off + j;
+            for t in 0..off {
+                let c = x[t] * rj;
+                hess[t][dj] += c;
+                hess[dj][t] += c;
+            }
+            for (l, hjl) in mat[j].iter().enumerate() {
+                hess[dj][off + l] += hjl;
+            }
+        }
+    }
+    for row in &mut hess {
+        for v in row.iter_mut() {
+            *v = -*v;
+        }
+    }
+    (-ll, grad.iter().map(|g| -g).collect(), hess)
+}
+
+/// Forward finite-difference Hessian of [`item_neg_ll_grad`] — test oracle
+/// only (#2030); production Newton uses [`item_neg_ll_grad_hess`].
+#[cfg(test)]
+#[allow(clippy::needless_range_loop)] // FD Hessian is inherently indexed
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn item_neg_ll_fd_hessian(
+    params: &[f64],
+    free: &[usize],
+    has_specific: bool,
+    coords: &[f64],
+    ts: &[f64],
+    n_primary: usize,
+    n_grid: usize,
+    qs: usize,
+    counts: &[Vec<f64>],
+    h: f64,
+) -> (Vec<f64>, Vec<Vec<f64>>) {
+    let np = params.len();
+    let eval = |p: &[f64]| {
+        item_neg_ll_grad(
+            p,
+            free,
+            has_specific,
+            coords,
+            ts,
+            n_primary,
+            n_grid,
+            qs,
+            counts,
+            0,
+        )
+        .1
+    };
+    let g = eval(params);
+    let mut hess = vec![vec![0.0f64; np]; np];
+    for j in 0..np {
+        let mut pj = params.to_vec();
+        pj[j] += h;
+        let gj = eval(&pj);
+        for r in 0..np {
+            hess[r][j] = (gj[r] - g[r]) / h;
+        }
+    }
+    for r in 0..np {
+        for c in 0..r {
+            let avg = 0.5 * (hess[r][c] + hess[c][r]);
+            hess[r][c] = avg;
+            hess[c][r] = avg;
+        }
+    }
+    (g, hess)
+}
+
+/// Newton M-step for one item — the Bock-Aitkin M-step item ascent (Cai et
+/// al., 2011, "Maximum Marginal Likelihood Estimation" section) using the
+/// analytic item Hessian ([`item_neg_ll_grad_hess`], one node sweep per
+/// Newton evaluation), ridge conditioning, and backtracking; non-finite
+/// rejection keeps `d` strictly ordered, as in `grm.rs` (#2030).
+#[allow(clippy::too_many_arguments)]
 fn m_step_item(
     mut params: Vec<f64>,
     free: &[usize],
@@ -1044,9 +1210,8 @@ fn m_step_item(
     ridge: f64,
     n_newton: usize,
 ) -> Vec<f64> {
-    let np = params.len();
     for _ in 0..n_newton {
-        let (f0, g) = item_neg_ll_grad(
+        let (f0, g, mut hess) = item_neg_ll_grad_hess(
             &params,
             free,
             has_specific,
@@ -1056,38 +1221,13 @@ fn m_step_item(
             n_grid,
             qs,
             counts,
-            n_cat,
         );
         let grad_norm = g.iter().map(|x| x * x).sum::<f64>().sqrt();
         if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
             break;
         }
-        let h = 1e-5;
-        let mut hess = vec![vec![0.0f64; np]; np];
-        for j in 0..np {
-            let mut pj = params.clone();
-            pj[j] += h;
-            let (_f2, gj) = item_neg_ll_grad(
-                &pj,
-                free,
-                has_specific,
-                coords,
-                ts,
-                n_primary,
-                n_grid,
-                qs,
-                counts,
-                n_cat,
-            );
-            for r in 0..np {
-                hess[r][j] = (gj[r] - g[r]) / h;
-            }
-        }
-        for r in 0..np {
-            for c in 0..np {
-                hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
-            }
-            hess[r][r] += ridge;
+        for (r, row) in hess.iter_mut().enumerate() {
+            row[r] += ridge;
         }
         let mut step = solve_small(hess, g.clone());
         let mut directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum::<f64>();
@@ -1543,13 +1683,14 @@ pub fn fit_two_tier_grm(
     let phi = phi_from_z(&outcome.z_phi, p);
 
     // Final EAP pass for the primary tier at the winning parameters.
-    // Streaming (same blocked GH product as the E-step; #1992): no full
-    // log-prob tables, and specific-tier scratch is O(S * qs) per primary
-    // node rather than O(S * n_grid * qs).
+    // Same blocked GH product as the E-step; single-primary probabilities are
+    // reused across persons and specific-tier scratch stays O(S * qs).
     let (l, logdet) = cholesky_lower(&phi, p)
         .ok_or_else(|| "winning primary correlation is non-PD".to_string())?;
     let phi_inv = chol_inverse(&l, p);
     let log_w = reweighted_log_weights(&log_w0, &coords, &phi_inv, logdet, p);
+    let tables =
+        (v.n_primary == 1).then(|| fill_logprob_tables(&v, &params, &coords, ts, n_grid, qs));
     let mut theta_p_eap = vec![0.0f64; n_persons * p];
     let mut theta_p_sd = vec![0.0f64; n_persons * p];
     let is_obs = |pp: usize, i: usize| observed.is_none_or(|o| o[pp * n_items + i]);
@@ -1564,7 +1705,10 @@ pub fn fit_two_tier_grm(
             }
             let yc = y[pp * n_items + i];
             for g in 0..n_grid {
-                gen_log[g] += item_cat_logprob(&v, &params, &coords, ts, i, g, 0, yc);
+                gen_log[g] += tables.as_ref().map_or_else(
+                    || item_cat_logprob(&v, &params, &coords, ts, i, g, 0, yc),
+                    |tables| tables[i][g * n_cat + yc],
+                );
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
@@ -1576,7 +1720,10 @@ pub fn fit_two_tier_grm(
                             continue;
                         }
                         let yc = y[pp * n_items + i];
-                        acc += item_cat_logprob(&v, &params, &coords, ts, i, g, h, yc);
+                        acc += tables.as_ref().map_or_else(
+                            || item_cat_logprob(&v, &params, &coords, ts, i, g, h, yc),
+                            |tables| tables[i][(g * qs + h) * n_cat + yc],
+                        );
                     }
                     tmp_h[h] = acc;
                 }

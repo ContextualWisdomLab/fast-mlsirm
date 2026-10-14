@@ -54,14 +54,20 @@
 //!
 //! where `G_pg` is the general-only item likelihood at node `g`. The E-step
 //! cost is `O(Q_G * sum_s Q_S * |block_s|)` per person instead of
-//! `O(Q_G * Q_S^S * n_items)`. The M-step is a per-item finite-difference-
-//! Hessian Newton over `[a_G, a_S?, d_1..d_{K-1}]`, byte-for-byte the ascent
-//! of `grm::fit_grm`'s item step (ridge = Hessian conditioning only, NOT a
-//! parameter prior; an optional caller-supplied lognormal MAP prior on
-//! `|a|` may be layered on top — see [`SlopePrior`]; backtracking line
-//! search REJECTS non-finite objectives, which is exactly how the ordered-
-//! threshold constraint is maintained WITHOUT an explicit reparametrization
-//! — see `grm.rs`).
+//! `O(Q_G * Q_S^S * n_items)`. The M-step is a per-item Newton step over
+//! `[a_G, a_S?, d_1..d_{K-1}]` using the **analytic** expected complete-data
+//! gradient and Hessian at the fixed E-step counts (Bock & Aitkin, 1981,
+//! pp. 445, 448; Gibbons et al., 2007, eq. 9 and Appendix A4–A6): one node
+//! sweep builds `(f, g, H)` via [`crate::poly::grm_node_hessian`] chained
+//! through `η = a_G t_G + a_S t_S + d` (the same Term-A algebra as
+//! [`crate::bifactor_oakes::q_hessian_analytic`] / Oakes, 1999, eq. 6). Ridge
+//! remains Hessian conditioning only, NOT a prior; backtracking line search
+//! REJECTS non-finite objectives, which is exactly how the ordered-threshold
+//! constraint is maintained WITHOUT an explicit reparametrization — see
+//! `grm.rs`. An optional caller-supplied lognormal MAP prior on `|a|` adds
+//! its exact gradient and curvature to the same Newton system — see
+//! [`SlopePrior`]. Finite differences are retained only as a test
+//! cross-check (#2030), never in the production Newton path.
 //!
 //! # Identification and reflection
 //!
@@ -135,8 +141,14 @@
 //! Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
 //! item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
 //! 443-459. https://doi.org/10.1007/BF02293801
+//!
+//! Oakes, D. (1999). Direct calculation of the information matrix via the EM
+//! algorithm. *Journal of the Royal Statistical Society Series B: Statistical
+//! Methodology, 61*(2), 479-482. https://doi.org/10.1111/1467-9868.00188
 
-use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
+use crate::poly::{grm_logprobs, grm_node_gradient, grm_node_hessian, solve_small};
+use std::cell::Cell;
+use std::time::Instant;
 
 // NOTE (stage-1 review fix-up, updated #1929): this module imposes no magic
 // size caps. Upper bounds without a documented origin (a previous revision
@@ -708,8 +720,7 @@ pub(crate) fn e_step(
             };
             if let Some(res) = crate::gpu_bifactor::e_step_reduced_gpu(&inputs) {
                 let stride = res.counts_stride_nodes;
-                let mut counts: Vec<Vec<Vec<f64>>> =
-                    Vec::with_capacity(v.n_items);
+                let mut counts: Vec<Vec<Vec<f64>>> = Vec::with_capacity(v.n_items);
                 for i in 0..v.n_items {
                     let base = i * stride * v.n_cat;
                     if v.item_block[i].is_some() {
@@ -853,9 +864,98 @@ pub(crate) fn e_step(
     (loglik, counts)
 }
 
+// Optional M-step node-sweep counters (#2030 / #2022 contract). When
+// enable_mstep_sweep_counters is on, every item_neg_ll_* entry records
+// its class; production Newton never increments fd after the analytic
+// Hessian lands.
+// Thread-local so concurrent tests (or fits on other threads) never
+// contaminate each other's counts; the M-step and phase timers run on the
+// calling thread.
+thread_local! {
+    static MSTEP_SWEEP_ENABLED: Cell<bool> = const { Cell::new(false) };
+    static MSTEP_SWEEP_BASE: Cell<u64> = const { Cell::new(0) };
+    static MSTEP_SWEEP_FD: Cell<u64> = const { Cell::new(0) };
+    static MSTEP_SWEEP_LINESEARCH: Cell<u64> = const { Cell::new(0) };
+    static MSTEP_SWEEP_NEWTON: Cell<u64> = const { Cell::new(0) };
+    static PHASE_NS_FILL: Cell<u64> = const { Cell::new(0) };
+    static PHASE_NS_ESTEP: Cell<u64> = const { Cell::new(0) };
+    static PHASE_NS_MSTEP: Cell<u64> = const { Cell::new(0) };
+}
+
+fn bump(counter: &'static std::thread::LocalKey<Cell<u64>>, by: u64) {
+    counter.with(|c| c.set(c.get() + by));
+}
+
+/// Enable or disable bifactor item M-step sweep counters on the calling
+/// thread (tests / recount).
+pub fn enable_mstep_sweep_counters(on: bool) {
+    MSTEP_SWEEP_ENABLED.with(|c| c.set(on));
+}
+
+/// Reset the calling thread's bifactor item M-step sweep counters to zero.
+pub fn reset_mstep_sweep_counters() {
+    for counter in [
+        &MSTEP_SWEEP_BASE,
+        &MSTEP_SWEEP_FD,
+        &MSTEP_SWEEP_LINESEARCH,
+        &MSTEP_SWEEP_NEWTON,
+        &PHASE_NS_FILL,
+        &PHASE_NS_ESTEP,
+        &PHASE_NS_MSTEP,
+    ] {
+        counter.with(|c| c.set(0));
+    }
+}
+
+/// `(base, fd, linesearch, newton_steps)` on the calling thread since the
+/// last reset.
+pub fn mstep_sweep_counters() -> (u64, u64, u64, u64) {
+    (
+        MSTEP_SWEEP_BASE.with(Cell::get),
+        MSTEP_SWEEP_FD.with(Cell::get),
+        MSTEP_SWEEP_LINESEARCH.with(Cell::get),
+        MSTEP_SWEEP_NEWTON.with(Cell::get),
+    )
+}
+
+/// `(fill_logprob_tables_ns, e_step_ns, m_step_ns)` accumulated on the
+/// calling thread while counters are enabled (#2030 phase recount; ratios
+/// only).
+pub fn mstep_phase_ns() -> (u64, u64, u64) {
+    (
+        PHASE_NS_FILL.with(Cell::get),
+        PHASE_NS_ESTEP.with(Cell::get),
+        PHASE_NS_MSTEP.with(Cell::get),
+    )
+}
+
+#[inline]
+fn bump_sweep(kind: SweepKind) {
+    if !MSTEP_SWEEP_ENABLED.with(Cell::get) {
+        return;
+    }
+    let counter = match kind {
+        SweepKind::Base => &MSTEP_SWEEP_BASE,
+        SweepKind::Fd => &MSTEP_SWEEP_FD,
+        SweepKind::LineSearch => &MSTEP_SWEEP_LINESEARCH,
+        SweepKind::Newton => &MSTEP_SWEEP_NEWTON,
+    };
+    bump(counter, 1);
+}
+
+#[derive(Clone, Copy)]
+enum SweepKind {
+    Base,
+    #[cfg_attr(not(test), allow(dead_code))] // only the FD test oracle records it
+    Fd,
+    LineSearch,
+    Newton,
+}
+
 /// Negative expected complete-data log-lik and gradient for ONE item.
 /// `params = [a_G, (a_S?), d_1..d_{K-1}]`; `node_g[node]` / `node_s[node]`
 /// hold the latent coordinates (`node_s` ignored for general-only items).
+/// Used by Armijo line search (value only) and the FD Hessian test oracle.
 fn item_neg_ll_grad(
     params: &[f64],
     has_specific: bool,
@@ -901,35 +1001,229 @@ fn item_neg_ll_grad(
     (nll, out_grad)
 }
 
-/// Newton M-step for one item — the `grm::fit_grm` ascent restricted to the
-/// bifactor linear predictor (FD Hessian, ridge conditioning, backtracking;
-/// non-finite rejection keeps `d` strictly ordered).
-#[allow(clippy::too_many_arguments)]
-fn m_step_item(
-    params: Vec<f64>,
+/// Negative expected complete-data log-lik, gradient, and analytic Hessian
+/// for ONE bifactor GRM item in a single node sweep.
+///
+/// At fixed E-step expected counts (Bock & Aitkin, 1981, pp. 445, 448;
+/// Gibbons et al., 2007, Appendix A4–A6), the complete-data criterion
+/// separates per item. Per node the GRM cell Hessian
+/// ([`grm_node_hessian`]) is chained through
+/// `η = a_G · t_G + a_S · t_S + d` (Gibbons et al., 2007, eq. 9); second
+/// derivatives of `η` vanish, so only first-order chain terms appear — the
+/// same Term-A algebra as [`crate::bifactor_oakes::q_hessian_analytic`]
+/// (Oakes, 1999, eq. 6), specialised to one item and signed for
+/// minimisation of `-Q`.
+///
+/// When `record_base` is true and sweep counters are enabled, increments the
+/// Base class (Newton evaluation).
+pub(crate) fn item_neg_ll_grad_hess(
+    params: &[f64],
     has_specific: bool,
     node_g: &[f64],
     node_s: &[f64],
     counts: &[Vec<f64>],
-    n_cat: usize,
+    record_base: bool,
+) -> (f64, Vec<f64>, Vec<Vec<f64>>) {
+    if record_base {
+        bump_sweep(SweepKind::Base);
+    }
+    let np = params.len();
+    let off = if has_specific { 2 } else { 1 };
+    let beta = &params[off..];
+    let mut ll = 0.0f64;
+    let mut grad = vec![0.0f64; np];
+    let mut hess = vec![vec![0.0f64; np]; np];
+    for (node, cnt) in counts.iter().enumerate() {
+        let (tg, ts) = (node_g[node], if has_specific { node_s[node] } else { 0.0 });
+        let base = if has_specific {
+            params[0] * tg + params[1] * ts
+        } else {
+            params[0] * tg
+        };
+        let lp = grm_logprobs(base, beta);
+        ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+        let (g_base, g_thr) = grm_node_gradient(base, beta, cnt);
+        grad[0] += g_base * tg;
+        if has_specific {
+            grad[1] += g_base * ts;
+        }
+        for (j, gj) in g_thr.iter().enumerate() {
+            grad[off + j] += gj;
+        }
+        let (grand, row_sums, mat) = grm_node_hessian(base, beta, cnt);
+        hess[0][0] += tg * tg * grand;
+        if has_specific {
+            hess[1][1] += ts * ts * grand;
+            let cross = tg * ts * grand;
+            hess[0][1] += cross;
+            hess[1][0] += cross;
+        }
+        for (j, rj) in row_sums.iter().enumerate() {
+            let dj = off + j;
+            let cg = tg * rj;
+            hess[0][dj] += cg;
+            hess[dj][0] += cg;
+            if has_specific {
+                let cs = ts * rj;
+                hess[1][dj] += cs;
+                hess[dj][1] += cs;
+            }
+            for (l, hjl) in mat[j].iter().enumerate() {
+                hess[dj][off + l] += hjl;
+            }
+        }
+    }
+    for row in &mut hess {
+        for h in row.iter_mut() {
+            *h = -*h;
+        }
+    }
+    (-ll, grad.iter().map(|g| -g).collect(), hess)
+}
+
+/// Forward finite-difference Hessian of [`item_neg_ll_grad`] — test oracle
+/// only (#2030). Each column re-enters the full node grid; production Newton
+/// must not call this.
+#[cfg(test)]
+#[allow(clippy::needless_range_loop)] // FD Hessian is inherently indexed
+pub(crate) fn item_neg_ll_fd_hessian(
+    params: &[f64],
+    has_specific: bool,
+    node_g: &[f64],
+    node_s: &[f64],
+    counts: &[Vec<f64>],
+    h: f64,
+) -> (Vec<f64>, Vec<Vec<f64>>) {
+    let np = params.len();
+    let (f0, g) = {
+        bump_sweep(SweepKind::Base);
+        item_neg_ll_grad(
+            params,
+            has_specific,
+            node_g,
+            node_s,
+            counts,
+            0,
+            SlopePrior::None,
+        )
+    };
+    let _ = f0;
+    let mut hess = vec![vec![0.0f64; np]; np];
+    for j in 0..np {
+        let mut pj = params.to_vec();
+        pj[j] += h;
+        bump_sweep(SweepKind::Fd);
+        let (_f2, gj) = item_neg_ll_grad(
+            &pj,
+            has_specific,
+            node_g,
+            node_s,
+            counts,
+            0,
+            SlopePrior::None,
+        );
+        for r in 0..np {
+            hess[r][j] = (gj[r] - g[r]) / h;
+        }
+    }
+    for r in 0..np {
+        for c in 0..r {
+            let avg = 0.5 * (hess[r][c] + hess[c][r]);
+            hess[r][c] = avg;
+            hess[c][r] = avg;
+        }
+    }
+    (g, hess)
+}
+
+/// Newton M-step for one item — analytic Hessian (one node sweep per Newton
+/// evaluation), ridge conditioning, Armijo backtracking; non-finite
+/// rejection keeps `d` strictly ordered (#2030).
+#[allow(clippy::too_many_arguments)]
+fn m_step_item(
+    mut params: Vec<f64>,
+    has_specific: bool,
+    node_g: &[f64],
+    node_s: &[f64],
+    counts: &[Vec<f64>],
+    _n_cat: usize,
     ridge: f64,
     n_newton: usize,
     slope_prior: SlopePrior,
 ) -> Vec<f64> {
-    newton_descent(
-        params,
-        |p| item_neg_ll_grad(p, has_specific, node_g, node_s, counts, n_cat, slope_prior),
-        ridge,
-        n_newton,
-    )
+    for _ in 0..n_newton {
+        bump_sweep(SweepKind::Newton);
+        let (mut f0, mut g, mut hess) =
+            item_neg_ll_grad_hess(&params, has_specific, node_g, node_s, counts, true);
+        // MAP: add -log p(|a|) on each estimated slope. The prior is separable
+        // in the slopes, so it contributes its exact derivative and diagonal
+        // curvature to the analytic system.
+        if let SlopePrior::Lognormal { mu, sd } = slope_prior {
+            let n_slopes = if has_specific { 2 } else { 1 };
+            for k in 0..n_slopes {
+                let mut prior_grad = 0.0;
+                add_lnorm_abs_slope_prior(params[k], mu, sd, &mut f0, &mut prior_grad);
+                g[k] += prior_grad;
+                hess[k][k] += lnorm_abs_slope_prior_curvature(params[k], mu, sd);
+            }
+        }
+        let grad_norm = g.iter().map(|x| x * x).sum::<f64>().sqrt();
+        if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
+            break;
+        }
+        for (r, row) in hess.iter_mut().enumerate() {
+            row[r] += ridge;
+        }
+        let mut step = solve_small(hess, g.clone());
+        let mut directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum::<f64>();
+        if !step.iter().all(|s| s.is_finite()) || directional <= 0.0 {
+            step = g.clone();
+            directional = grad_norm * grad_norm;
+        }
+        let mut max_step = step.iter().map(|s| s.abs()).fold(0.0f64, f64::max);
+        if max_step > 2.0 {
+            for s in &mut step {
+                *s *= 2.0 / max_step;
+            }
+            directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum();
+            max_step = 2.0;
+        }
+        let mut alpha = 1.0f64;
+        let mut accepted = false;
+        for _ in 0..25 {
+            let candidate: Vec<f64> = params
+                .iter()
+                .zip(&step)
+                .map(|(value, direction)| value - alpha * direction)
+                .collect();
+            bump_sweep(SweepKind::LineSearch);
+            let (candidate_f, _) = item_neg_ll_grad(
+                &candidate,
+                has_specific,
+                node_g,
+                node_s,
+                counts,
+                0,
+                slope_prior,
+            );
+            if candidate_f.is_finite() && candidate_f <= f0 - 1e-4 * alpha * directional {
+                params = candidate;
+                accepted = true;
+                break;
+            }
+            alpha *= 0.5;
+        }
+        if !accepted || alpha * max_step < 1e-9 {
+            break;
+        }
+    }
+    params
 }
 
-/// The damped Newton descent shared by the item and population M-steps:
-/// FD Hessian of `f`'s gradient, ridge conditioning, steepest-descent
-/// fallback, max-step 2, Armijo backtracking. A step is taken only when it
-/// decreases `f`, so `f` never increases (the GEM requirement; Dempster,
-/// Laird, & Rubin, 1977).
-#[allow(clippy::needless_range_loop)] // finite-difference Hessian is inherently indexed (mirrors `grm.rs`)
+/// The damped Newton descent used by the multigroup population M-step.
+/// This finite-difference helper remains separate from the analytic item
+/// Hessian path above.
+#[allow(clippy::needless_range_loop)]
 fn newton_descent(
     mut params: Vec<f64>,
     f: impl Fn(&[f64]) -> (f64, Vec<f64>),
@@ -996,8 +1290,6 @@ fn newton_descent(
     params
 }
 
-/// `-log p(slopes)` summed over the given estimated items (constants
-/// omitted, as in the M-step); exactly `0.0` without a prior.
 fn slope_prior_neg_log<'a>(
     prior: SlopePrior,
     items: impl IntoIterator<Item = &'a ItemParams>,
@@ -1034,7 +1326,9 @@ fn checked_em_loglik_change(
     objective: &str,
 ) -> Result<Option<f64>, String> {
     if !current.is_finite() {
-        return Err(format!("non-finite EM {objective} at iteration {iteration}"));
+        return Err(format!(
+            "non-finite EM {objective} at iteration {iteration}"
+        ));
     }
     let Some(previous) = previous else {
         return Ok(None);
@@ -1111,10 +1405,19 @@ fn run_single_start(
     let objective_name = em_objective_name(cfg.slope_prior);
 
     loop {
+        let phase_on = MSTEP_SWEEP_ENABLED.with(Cell::get);
+        let t_fill = phase_on.then(Instant::now);
         let tables = fill_logprob_tables(v, &params, tg, ts, qg, qs);
+        if let Some(t0) = t_fill {
+            bump(&PHASE_NS_FILL, t0.elapsed().as_nanos() as u64);
+        }
+        let t_estep = phase_on.then(Instant::now);
         let (ll, counts) = e_step(
             v, y, observed, &tables, log_wg, log_ws, qg, qs, tg, ts, cfg.device,
         );
+        if let Some(t0) = t_estep {
+            bump(&PHASE_NS_ESTEP, t0.elapsed().as_nanos() as u64);
+        }
         // MAP: GEM ascends log-likelihood + log prior, not the likelihood.
         let objective = ll - slope_prior_neg_log(cfg.slope_prior, &params);
         let change = checked_em_loglik_change(objective, previous, n_iter, objective_name)?;
@@ -1133,6 +1436,7 @@ fn run_single_start(
         if n_iter == cfg.max_iter {
             break;
         }
+        let t_mstep = phase_on.then(Instant::now);
         for i in 0..v.n_items {
             let has_specific = v.item_block[i].is_some();
             let mut packed = Vec::with_capacity(1 + has_specific as usize + v.m1);
@@ -1159,6 +1463,9 @@ fn run_single_start(
             } else {
                 params[i].d = updated[1..].to_vec();
             }
+        }
+        if let Some(t0) = t_mstep {
+            bump(&PHASE_NS_MSTEP, t0.elapsed().as_nanos() as u64);
         }
         n_iter += 1;
     }
@@ -1993,7 +2300,11 @@ thread_local! {
     static AC_COUNT_BUFFERS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 #[cfg(test)]
-fn ac_reset_calls() {AC_BLOCK_LSE.with(|n|n.set(0));AC_CACHE_F64.with(|n|n.set(0));AC_COUNT_BUFFERS.with(|n|n.set(0));}
+fn ac_reset_calls() {
+    AC_BLOCK_LSE.with(|n| n.set(0));
+    AC_CACHE_F64.with(|n| n.set(0));
+    AC_COUNT_BUFFERS.with(|n| n.set(0));
+}
 
 /// One reduced E-step sweep over all groups: total observed-data loglik, plus
 /// per-group expected category counts (`counts[g][i][node][k]`,
@@ -2053,8 +2364,7 @@ pub(crate) fn e_step_multigroup(
                     let mut lp = vec![0.0f64; qg * qs * v.n_cat];
                     for t in 0..qg {
                         for h in 0..qs {
-                            let base =
-                                par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
+                            let base = par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
                             let probs = grm_logprobs(base, &par.d);
                             lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
                                 .copy_from_slice(&probs);
@@ -2100,8 +2410,7 @@ pub(crate) fn e_step_multigroup(
             };
             if let Some(res) = crate::gpu_bifactor::e_step_reduced_gpu(&inputs) {
                 let stride = res.counts_stride_nodes;
-                let mut counts: Vec<Vec<Vec<Vec<f64>>>> =
-                    Vec::with_capacity(n_groups);
+                let mut counts: Vec<Vec<Vec<Vec<f64>>>> = Vec::with_capacity(n_groups);
                 for g in 0..n_groups {
                     let mut cg = Vec::with_capacity(v.n_items);
                     for i in 0..v.n_items {
@@ -2149,14 +2458,18 @@ pub(crate) fn e_step_multigroup(
     let mut count_len = 0usize;
     for _g in 0..n_groups {
         for i in 0..v.n_items {
-            let n_nodes = if v.item_block[i].is_some() { qg * qs } else { qg };
+            let n_nodes = if v.item_block[i].is_some() {
+                qg * qs
+            } else {
+                qg
+            };
             count_offsets.push(count_len);
             count_nodes.push(n_nodes);
             count_len += n_nodes * v.n_cat;
         }
     }
     #[cfg(test)]
-    AC_COUNT_BUFFERS.with(|n|n.set(n.get()+1));
+    AC_COUNT_BUFFERS.with(|n| n.set(n.get() + 1));
     let mut flat_counts = vec![0.0f64; count_len];
     let mut w_acc = vec![0.0f64; n_groups];
     let mut s1_g = vec![0.0f64; n_groups];
@@ -2180,9 +2493,8 @@ pub(crate) fn e_step_multigroup(
     // Store original f64 bits; all per-person posterior additions stay below.
     // Cache only Qg log-integrals, not the Qg*Qs block arrays. Recompute
     // block_acc for every person in the original order for posterior use.
-    let mut block_cache: std::collections::HashMap<
-        (usize, usize, Vec<Option<usize>>), Vec<f64>
-    > = std::collections::HashMap::new();
+    let mut block_cache: std::collections::HashMap<(usize, usize, Vec<Option<usize>>), Vec<f64>> =
+        std::collections::HashMap::new();
 
     let mut loglik = 0.0f64;
     for p in 0..v.n_persons {
@@ -2200,9 +2512,16 @@ pub(crate) fn e_step_multigroup(
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
-            let pattern: Vec<Option<usize>> = members.iter().map(|&i| {
-                if is_obs(p, i) { Some(y[p * v.n_items + i]) } else { None }
-            }).collect();
+            let pattern: Vec<Option<usize>> = members
+                .iter()
+                .map(|&i| {
+                    if is_obs(p, i) {
+                        Some(y[p * v.n_items + i])
+                    } else {
+                        None
+                    }
+                })
+                .collect();
             let key = (g, s, pattern);
             let integral_start = s * qg;
             for t in 0..qg {
@@ -2227,7 +2546,7 @@ pub(crate) fn e_step_multigroup(
                     tmp_h[h] = block_acc[(s * qg + t) * qs + h];
                 }
                 #[cfg(test)]
-                AC_BLOCK_LSE.with(|n| n.set(n.get()+1));
+                AC_BLOCK_LSE.with(|n| n.set(n.get() + 1));
                 log_i[s * qg + t] = log_sum_exp(&tmp_h);
             }
             #[cfg(test)]
@@ -2276,8 +2595,7 @@ pub(crate) fn e_step_multigroup(
                     }
                 }
                 for h in 0..qs {
-                    let log_post =
-                        log_wg[t] + block_acc[(s * qg + t) * qs + h] + others - log_lp;
+                    let log_post = log_wg[t] + block_acc[(s * qg + t) * qs + h] + others - log_lp;
                     let post = log_post.exp();
                     if !post.is_finite() {
                         continue;
@@ -2291,20 +2609,29 @@ pub(crate) fn e_step_multigroup(
                             continue;
                         }
                         let yc = y[p * v.n_items + i];
-                        flat_counts[count_offsets[g * v.n_items + i] + (t * qs + h) * v.n_cat + yc] += post;
+                        flat_counts
+                            [count_offsets[g * v.n_items + i] + (t * qs + h) * v.n_cat + yc] +=
+                            post;
                     }
                 }
             }
         }
     }
-    let counts: Vec<Vec<Vec<Vec<f64>>>> = (0..n_groups).map(|g| {
-        (0..v.n_items).map(|i| {
-            let item = g * v.n_items + i;
-            let start = count_offsets[item];
-            let stop = start + count_nodes[item] * v.n_cat;
-            flat_counts[start..stop].chunks_exact(v.n_cat).map(<[f64]>::to_vec).collect()
-        }).collect()
-    }).collect();
+    let counts: Vec<Vec<Vec<Vec<f64>>>> = (0..n_groups)
+        .map(|g| {
+            (0..v.n_items)
+                .map(|i| {
+                    let item = g * v.n_items + i;
+                    let start = count_offsets[item];
+                    let stop = start + count_nodes[item] * v.n_cat;
+                    flat_counts[start..stop]
+                        .chunks_exact(v.n_cat)
+                        .map(<[f64]>::to_vec)
+                        .collect()
+                })
+                .collect()
+        })
+        .collect();
     (loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec)
 }
 
@@ -2328,9 +2655,16 @@ fn population_neg_q(
         let (node_g, node_s): (Vec<f64>, Vec<f64>) = match v.item_block[i] {
             Some(s) => tg_std
                 .iter()
-                .flat_map(|&xg| ts_std.iter().map(move |&xs| (mu + sigma * xg, taus[s] * xs)))
+                .flat_map(|&xg| {
+                    ts_std
+                        .iter()
+                        .map(move |&xs| (mu + sigma * xg, taus[s] * xs))
+                })
                 .unzip(),
-            None => (tg_std.iter().map(|&xg| mu + sigma * xg).collect(), vec![0.0; tg_std.len()]),
+            None => (
+                tg_std.iter().map(|&xg| mu + sigma * xg).collect(),
+                vec![0.0; tg_std.len()],
+            ),
         };
         let mut packed = vec![par.a_g];
         packed.extend(par.a_s);
@@ -2587,7 +2921,11 @@ fn run_single_start_multigroup(
         // (#2093). `log sigma`/`log tau` keep positivity structural: NO
         // clamping; a non-finite or non-positive result fails loudly.
         for g in 1..n_groups {
-            let n_spec = if cfg.estimate_specific_vars { v.n_specific } else { 0 };
+            let n_spec = if cfg.estimate_specific_vars {
+                v.n_specific
+            } else {
+                0
+            };
             let mut x0 = vec![mus[g], sigmas[g].ln()];
             x0.extend(taus[g][..n_spec].iter().map(|t| t.ln()));
             let neg_q = |x: &[f64]| {
@@ -2596,7 +2934,14 @@ fn run_single_start_multigroup(
                     taus_x[s] = x[2 + s].exp();
                 }
                 population_neg_q(
-                    v, &params_groups[g], &counts[g], tg_std, ts_std, x[0], x[1].exp(), &taus_x,
+                    v,
+                    &params_groups[g],
+                    &counts[g],
+                    tg_std,
+                    ts_std,
+                    x[0],
+                    x[1].exp(),
+                    &taus_x,
                 )
             };
             let x = newton_descent(x0, |x| fd_value_grad(&neg_q, x), cfg.ridge, cfg.newton_iter);
@@ -2813,7 +3158,9 @@ pub fn fit_bifactor_grm_multigroup(
                     }
                 }
                 if !any {
-                    return Err(format!("free item {i} has no observed responses in group {g}"));
+                    return Err(format!(
+                        "free item {i} has no observed responses in group {g}"
+                    ));
                 }
                 if let Some(k) = (0..n_cat).find(|&k| !seen[k]) {
                     return Err(format!(
@@ -2906,8 +3253,7 @@ pub fn fit_bifactor_grm_multigroup(
                     let mut lp = vec![0.0f64; qg * qs * v.n_cat];
                     for t in 0..qg {
                         for h in 0..qs {
-                            let base =
-                                par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
+                            let base = par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
                             let probs = grm_logprobs(base, &par.d);
                             lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
                                 .copy_from_slice(&probs);
@@ -3014,11 +3360,7 @@ pub fn fit_bifactor_grm_multigroup(
     let anchor_g = anchored_items
         .iter()
         .flat_map(|&i| (0..n_groups).map(move |g| (g, i)))
-        .max_by(|&(g1, i1), &(g2, i2)| {
-            a_general[g1][i1]
-                .abs()
-                .total_cmp(&a_general[g2][i2].abs())
-        })
+        .max_by(|&(g1, i1), &(g2, i2)| a_general[g1][i1].abs().total_cmp(&a_general[g2][i2].abs()))
         .expect("at least one anchored item");
     if a_general[anchor_g.0][anchor_g.1] < 0.0 {
         for row in a_general.iter_mut() {
@@ -3357,7 +3699,9 @@ pub fn fit_bifactor_grm_fipc(
         return Err("anchor must have length n_items".into());
     }
     if !anchor.iter().any(|&a| a) {
-        return Err("at least one anchored (fixed) item is required to identify the focal scale".into());
+        return Err(
+            "at least one anchored (fixed) item is required to identify the focal scale".into(),
+        );
     }
     if fixed_a_general.len() != n_items || fixed_a_specific.len() != n_items {
         return Err("fixed_a_general/fixed_a_specific must have length n_items".into());
@@ -3473,7 +3817,8 @@ pub fn fit_bifactor_grm_fipc(
             crate::Device::Cpu,
         );
         let previous = loglik_trace.last().copied();
-        let change = checked_em_loglik_change(ll, previous, n_iter, "observed-data log-likelihood")?;
+        let change =
+            checked_em_loglik_change(ll, previous, n_iter, "observed-data log-likelihood")?;
         loglik_trace.push(ll);
         if let Some(change) = change {
             let prev = previous.expect("change requires a previous log-likelihood");
@@ -3735,5 +4080,5 @@ mod ac_cpu_storage_tests;
 // The GPU module is compiled out under coverage builds (see lib.rs), so the
 // fixed GPU regression only exists where a Device::Gpu entry can reach it.
 #[cfg(all(test, feature = "gpu", not(coverage)))]
-#[path="ac_gpu_fixed_tests.rs"]
+#[path = "ac_gpu_fixed_tests.rs"]
 mod ac_gpu_fixed_tests;

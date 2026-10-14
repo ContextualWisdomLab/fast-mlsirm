@@ -8,6 +8,8 @@ import re
 
 import pytest
 
+from tests.workflow_contract_source import workflow_source
+
 _ROOT = Path(__file__).resolve().parents[1]
 _WORKFLOW = _ROOT / ".github" / "workflows" / "ci.yml"
 _JOBS = ("python-matrix", "python", "rust", "gpu-smoke", "fuzz", "package")
@@ -25,9 +27,8 @@ def _job(workflow: str, name: str) -> str:
 @pytest.mark.parametrize("name", _JOBS)
 def test_ci_jobs_require_isolated_linux_x64_self_hosted_routing(name: str) -> None:
     """Keep every current CI job off hosted/control/scanner fallback routes."""
-    job = _job(_WORKFLOW.read_text(encoding="utf-8"), name)
-    selectors = re.findall(r"^    runs-on: (.+)$", job, re.MULTILINE)
-    assert selectors == ["[self-hosted, Linux, X64, cwlab-ci-isolated]"], (
+    job = _job(workflow_source(_WORKFLOW), name)
+    assert re.search(r"^    runs-on:\n      group: CWL CI isolated\n      labels: \[self-hosted, linux, x64, cwlab-ci-isolated\]$", job, re.MULTILINE), (
         f"{name} must request the operator-provisioned isolated pool, without fallback"
     )
 
@@ -57,13 +58,13 @@ def _assert_checkout_credentials(job: str) -> None:
 @pytest.mark.parametrize("name", _CHECKOUT_JOBS)
 def test_ci_checkouts_do_not_persist_credentials(name: str) -> None:
     """Executable PR code must not inherit a checkout-persisted Git credential."""
-    job = _job(_WORKFLOW.read_text(encoding="utf-8"), name)
+    job = _job(workflow_source(_WORKFLOW), name)
     _assert_checkout_credentials(job)
 
 
 def test_ci_keeps_all_existing_execution_job_identities() -> None:
     """Do not remove a failing required producer to satisfy the routing check."""
-    workflow = _WORKFLOW.read_text(encoding="utf-8")
+    workflow = workflow_source(_WORKFLOW)
     assert tuple(re.findall(r"^  ([A-Za-z0-9_-]+):$", workflow.split("jobs:\n", 1)[1], re.MULTILINE)) == _JOBS
 
 
@@ -105,7 +106,7 @@ class Text:
 @pytest.mark.parametrize('variant,quote,space,name_first',VARIANTS)
 @pytest.mark.parametrize('kind',['unsafe_second','safe_singleton'])
 def test_checkout_guard_recognizes_literal_step_variants(monkeypatch,name,variant,quote,space,name_first,kind):
-    base=_WORKFLOW.read_text(encoding='utf-8')
+    base=workflow_source(_WORKFLOW)
     job=_job(base,name)
     matches=list(re.finditer(r'^      - uses: actions/checkout@[^\n]+\n(.*?)(?=^      - |\Z)',job,re.M|re.S))
     assert len(matches)==1
@@ -116,7 +117,7 @@ def test_checkout_guard_recognizes_literal_step_variants(monkeypatch,name,varian
     changed=job.replace(original,replacement,1)
     assert changed!=job or (kind=='safe_singleton' and variant=='plain')
     start=base.index(job);workflow=base[:start]+changed+base[start+len(job):]
-    monkeypatch.setattr(__import__(__name__, fromlist=['_WORKFLOW']), '_WORKFLOW', Text(workflow))
+    monkeypatch.setattr(__import__(__name__, fromlist=['workflow_source']), 'workflow_source', lambda _path: workflow)
     # Execute original unchanged test function, not a lookalike parser.
     rejected=False
     try:test_ci_checkouts_do_not_persist_credentials(name)

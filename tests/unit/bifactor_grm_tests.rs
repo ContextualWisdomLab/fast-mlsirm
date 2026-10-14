@@ -27,8 +27,7 @@ use crate::bifactor_grm::{
     add_lnorm_abs_slope_prior, bifactor_grm_marginal_loglik, bifactor_grm_marginal_loglik_brute,
     checked_em_loglik_change, em_objective_name, fit_bifactor_grm, fit_bifactor_grm_multigroup,
     gh_rule, lnorm_abs_slope_prior_curvature, run_single_start, slope_prior_neg_log, validate,
-    BifactorGrmConfig, BifactorMultigroupConfig, BifactorMultigroupResult, ItemParams,
-    SlopePrior,
+    BifactorGrmConfig, BifactorMultigroupConfig, BifactorMultigroupResult, ItemParams, SlopePrior,
 };
 
 // ---------------------------------------------------------------------------
@@ -232,8 +231,15 @@ fn real_prior_fit_pulls_slopes_toward_prior_and_records_provenance() {
 fn tiny_multigroup(n_groups: usize, slope_prior: SlopePrior) -> BifactorMultigroupResult {
     let (y, n_persons) = tiny_data();
     let group_id: Vec<usize> = (0..n_persons).map(|p| p % n_groups).collect();
-    fit_mg(&y, &group_id, n_groups, &TINY_SPECIFIC_MAP, None, slope_prior)
-        .expect("tiny multigroup fit must run")
+    fit_mg(
+        &y,
+        &group_id,
+        n_groups,
+        &TINY_SPECIFIC_MAP,
+        None,
+        slope_prior,
+    )
+    .expect("tiny multigroup fit must run")
 }
 
 fn fit_mg(
@@ -302,7 +308,9 @@ impl Lcg {
 fn simulate_two_groups(n_per_group: usize, seed: u64) -> (Vec<usize>, Vec<usize>) {
     let a_g = [1.3, 1.1, 0.9, 1.2, 1.0, 0.8];
     let a_s = [1.0, 0.9, 1.1, 0.8, 1.0, 0.9];
-    let d = [1.2, -0.8, 1.0, -1.0, 1.3, -0.7, 1.1, -0.9, 0.9, -1.1, 1.2, -0.8];
+    let d = [
+        1.2, -0.8, 1.0, -1.0, 1.3, -0.7, 1.1, -0.9, 0.9, -1.1, 1.2, -0.8,
+    ];
     let mut rng = Lcg(seed);
     let (mut y, mut group_id) = (Vec::new(), Vec::new());
     for g in 0..2 {
@@ -338,7 +346,10 @@ fn sim_mg(anchor: Option<&[bool]>, slope_prior: SlopePrior) -> BifactorMultigrou
 const FAR_MU: f64 = -1.2039728043259361; // ln(0.3)
 
 fn far_prior() -> SlopePrior {
-    SlopePrior::Lognormal { mu: FAR_MU, sd: 0.03 }
+    SlopePrior::Lognormal {
+        mu: FAR_MU,
+        sd: 0.03,
+    }
 }
 
 #[test]
@@ -373,7 +384,10 @@ fn multigroup_prior_acts_on_common_items_under_default_anchor() {
     // prior enters once per item (group-0 row), not once per group.
     let gap = map.em_objective_trace.last().unwrap() - map.loglik_trace.last().unwrap();
     let expected = -slope_prior_neg_log(far_prior(), &item_rows(&map, 0, &all));
-    assert!((gap - expected).abs() < 1e-9, "gap={gap}, expected={expected}");
+    assert!(
+        (gap - expected).abs() < 1e-9,
+        "gap={gap}, expected={expected}"
+    );
 }
 
 #[test]
@@ -393,7 +407,10 @@ fn multigroup_prior_acts_on_common_and_free_items_with_partial_anchor() {
         }
     }
     for &i in &common {
-        assert_eq!(map.a_general[0][i], map.a_general[1][i], "common item {i} shared");
+        assert_eq!(
+            map.a_general[0][i], map.a_general[1][i],
+            "common item {i} shared"
+        );
     }
     assert_monotone(&map.em_objective_trace);
     // Common items enter the prior once; free items once per group.
@@ -401,7 +418,10 @@ fn multigroup_prior_acts_on_common_and_free_items_with_partial_anchor() {
     rows.extend(item_rows(&map, 1, &free));
     let gap = map.em_objective_trace.last().unwrap() - map.loglik_trace.last().unwrap();
     let expected = -slope_prior_neg_log(far_prior(), &rows);
-    assert!((gap - expected).abs() < 1e-9, "gap={gap}, expected={expected}");
+    assert!(
+        (gap - expected).abs() < 1e-9,
+        "gap={gap}, expected={expected}"
+    );
 }
 
 fn rows_gap(r: &BifactorMultigroupResult, g: usize, items: &[usize]) -> f64 {
@@ -412,7 +432,10 @@ fn rows_gap(r: &BifactorMultigroupResult, g: usize, items: &[usize]) -> f64 {
 
 fn assert_monotone(trace: &[f64]) {
     for w in trace.windows(2) {
-        assert!(w[1] >= w[0] - 1e-9 * (1.0 + w[0].abs()), "objective decreased: {trace:?}");
+        assert!(
+            w[1] >= w[0] - 1e-9 * (1.0 + w[0].abs()),
+            "objective decreased: {trace:?}"
+        );
     }
 }
 
@@ -440,8 +463,15 @@ fn reproducer_multigroup_mml_on_toy_fixture_runs() {
     let (y, n_persons) = tiny_data();
     let group_id: Vec<usize> = (0..n_persons).map(|p| p % 2).collect();
     for anchor in [None, Some(&[true, true, false, false][..])] {
-        fit_mg(&y, &group_id, 2, &TINY_SPECIFIC_MAP, anchor, SlopePrior::None)
-            .expect("MG MML on the toy fixture must run");
+        fit_mg(
+            &y,
+            &group_id,
+            2,
+            &TINY_SPECIFIC_MAP,
+            anchor,
+            SlopePrior::None,
+        )
+        .expect("MG MML on the toy fixture must run");
     }
 }
 
@@ -450,7 +480,10 @@ fn em_guard_rejects_a_real_log_posterior_decrease() {
     let prior = SlopePrior::Lognormal { mu: 0.0, sd: 1.0 };
     let err = checked_em_loglik_change(-10.0, Some(-9.0), 3, em_objective_name(prior))
         .expect_err("a posterior decrease must be rejected");
-    assert!(err.contains("log posterior") && err.contains("decreased"), "{err}");
+    assert!(
+        err.contains("log posterior") && err.contains("decreased"),
+        "{err}"
+    );
     assert_eq!(
         checked_em_loglik_change(-9.0, Some(-10.0), 3, em_objective_name(prior)),
         Ok(Some(1.0))
@@ -479,7 +512,10 @@ fn no_prior_objective_trace_is_the_loglik_trace_bit_for_bit() {
 #[test]
 fn multistart_ranks_starts_by_log_posterior() {
     let (y, n_persons) = tiny_data();
-    let prior = SlopePrior::Lognormal { mu: 0.5f64.ln(), sd: 0.3 };
+    let prior = SlopePrior::Lognormal {
+        mu: 0.5f64.ln(),
+        sd: 0.3,
+    };
     let cfg = BifactorGrmConfig {
         n_starts: 3,
         ..prior_fit_config(prior)
@@ -513,20 +549,39 @@ fn multistart_ranks_starts_by_log_posterior() {
     let finals: Vec<(f64, f64)> = (0..cfg.n_starts)
         .map(|start| {
             let o = run_single_start(
-                &v, &y, None, &cfg, tg, ts, &log_wg, &log_ws, tg.len(), ts.len(), start,
+                &v,
+                &y,
+                None,
+                &cfg,
+                tg,
+                ts,
+                &log_wg,
+                &log_ws,
+                tg.len(),
+                ts.len(),
+                start,
             )
             .expect("start runs");
-            (*o.em_objective_trace.last().unwrap(), *o.loglik_trace.last().unwrap())
+            (
+                *o.em_objective_trace.last().unwrap(),
+                *o.loglik_trace.last().unwrap(),
+            )
         })
         .collect();
     let best_objective = finals.iter().map(|f| f.0).fold(f64::NEG_INFINITY, f64::max);
-    assert_eq!(finals[fit.best_start].0, best_objective, "starts: {finals:?}");
+    assert_eq!(
+        finals[fit.best_start].0, best_objective,
+        "starts: {finals:?}"
+    );
     assert_eq!(*fit.em_objective_trace.last().unwrap(), best_objective);
 }
 
 #[test]
 fn multigroup_single_group_prior_matches_single_group_fit() {
-    let prior = SlopePrior::Lognormal { mu: 0.5f64.ln(), sd: 0.1 };
+    let prior = SlopePrior::Lognormal {
+        mu: 0.5f64.ln(),
+        sd: 0.1,
+    };
     let (y, n_persons) = tiny_data();
     let single = fit_bifactor_grm(
         &y,
@@ -547,15 +602,21 @@ fn multigroup_single_group_prior_matches_single_group_fit() {
 
 #[test]
 fn slope_prior_rejects_invalid_hyperparameters() {
-    assert!(SlopePrior::Lognormal { mu: f64::NAN, sd: 1.0 }
-        .validate()
-        .is_err());
+    assert!(SlopePrior::Lognormal {
+        mu: f64::NAN,
+        sd: 1.0
+    }
+    .validate()
+    .is_err());
     assert!(SlopePrior::Lognormal { mu: 0.0, sd: 0.0 }
         .validate()
         .is_err());
-    assert!(SlopePrior::Lognormal { mu: 0.0, sd: f64::INFINITY }
-        .validate()
-        .is_err());
+    assert!(SlopePrior::Lognormal {
+        mu: 0.0,
+        sd: f64::INFINITY
+    }
+    .validate()
+    .is_err());
 }
 
 fn valid_data() -> (Vec<usize>, usize) {
@@ -897,9 +958,7 @@ fn estep_gpu_matches_cpu_counts_and_loglik() {
     // Without a GPU adapter the GPU entry falls back to CPU and the
     // comparison is trivially exact; the fit-level Python test pins the
     // real-device numbers.
-    use super::{
-        e_step, fill_logprob_tables, gh_rule, initial_params, validate,
-    };
+    use super::{e_step, fill_logprob_tables, gh_rule, initial_params, validate};
 
     let (y, n_persons) = tiny_data();
     let cfg = valid_config();
@@ -922,11 +981,29 @@ fn estep_gpu_matches_cpu_counts_and_loglik() {
     let log_ws: Vec<f64> = ws.iter().map(|w| w.ln()).collect();
 
     let (ll_cpu, counts_cpu) = e_step(
-        &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
+        &v,
+        &y,
+        None,
+        &tables,
+        &log_wg,
+        &log_ws,
+        7,
+        7,
+        tg,
+        ts,
         crate::Device::Cpu,
     );
     let (ll_gpu, counts_gpu) = e_step(
-        &v, &y, None, &tables, &log_wg, &log_ws, 7, 7, tg, ts,
+        &v,
+        &y,
+        None,
+        &tables,
+        &log_wg,
+        &log_ws,
+        7,
+        7,
+        tg,
+        ts,
         crate::Device::Gpu,
     );
 
@@ -1065,9 +1142,7 @@ fn estep_duplicate_persons_scale_loglik_and_counts() {
 /// verify these integrals and masked expected counts at each general node.
 #[test]
 fn estep_shared_block_subvector_yields_identical_log_i() {
-    use super::{
-        e_step, fill_logprob_tables, gh_rule, initial_params, log_sum_exp, validate,
-    };
+    use super::{e_step, fill_logprob_tables, gh_rule, initial_params, log_sum_exp, validate};
 
     // Two persons share block-0 responses [1, 2] but differ on block 1.
     // A third person differs on block 0 so the test is not vacuous.
@@ -1174,13 +1249,21 @@ fn estep_shared_block_subvector_yields_identical_log_i() {
                 let row = &y[person * TINY_N_ITEMS..(person + 1) * TINY_N_ITEMS];
                 let mask = [!mask_first, true, false, false];
                 let (ll, counts) = e_step(
-                    &v, row, Some(&mask), &tables, &log_wg, &log_ws,
-                    qg, qs, tg, ts, crate::Device::Cpu,
+                    &v,
+                    row,
+                    Some(&mask),
+                    &tables,
+                    &log_wg,
+                    &log_ws,
+                    qg,
+                    qs,
+                    tg,
+                    ts,
+                    crate::Device::Cpu,
                 );
                 let expected = if mask_first {
                     let terms: Vec<f64> = (0..qs)
-                        .map(|h| log_ws[h]
-                            + tables[1][(g * qs + h) * TINY_N_CAT + row[1]])
+                        .map(|h| log_ws[h] + tables[1][(g * qs + h) * TINY_N_CAT + row[1]])
                         .collect();
                     log_sum_exp(&terms)
                 } else {
@@ -1191,8 +1274,10 @@ fn estep_shared_block_subvector_yields_identical_log_i() {
                 for i in 0..TINY_N_ITEMS {
                     let total: f64 = counts[i].iter().flatten().sum();
                     let expected_count = if mask[i] { 1.0 } else { 0.0 };
-                    assert!((total - expected_count).abs() <= 1e-12,
-                        "production expected count violates missing mask for item {i}");
+                    assert!(
+                        (total - expected_count).abs() <= 1e-12,
+                        "production expected count violates missing mask for item {i}"
+                    );
                 }
             }
         }
@@ -1245,7 +1330,10 @@ fn zero_prior_weight_nodes_do_not_nan_estep_counts() {
         ts,
         crate::Device::Cpu,
     );
-    assert!(ll.is_finite(), "observed-data loglik must stay finite; got {ll}");
+    assert!(
+        ll.is_finite(),
+        "observed-data loglik must stay finite; got {ll}"
+    );
     for (i, item_counts) in counts.iter().enumerate() {
         for (node, cat) in item_counts.iter().enumerate() {
             for (k, &c) in cat.iter().enumerate() {
@@ -1380,15 +1468,21 @@ fn toy_multigroup(
 #[test]
 fn multigroup_em_population_step_is_monotone_and_moves() {
     // The ECM population step must never decrease the guarded quadrature
-    // log-likelihood, and must actually move the focal distribution (a
-    // rejected/stalled step would also be "monotone"). Convergence is NOT
-    // asserted: the 12-person toy is separable, so slopes diverge and no
-    // finite MLE exists; only the ascent property is testable here.
-    for (q, seed, spec) in [(7, 42, false), (15, 42, false), (61, 42, false), (7, 7, false), (7, 42, true)] {
+    // log-likelihood, and must actually move the focal distribution.
+    for (q, seed, spec) in [
+        (7, 42, false),
+        (15, 42, false),
+        (61, 42, false),
+        (7, 7, false),
+        (7, 42, true),
+    ] {
         let fit = toy_multigroup(q, seed, spec)
             .unwrap_or_else(|e| panic!("q={q} seed={seed} spec={spec}: {e}"));
         for w in fit.loglik_trace.windows(2) {
-            assert!(w[1] >= w[0], "q={q} seed={seed} spec={spec}: loglik decreased {w:?}");
+            assert!(
+                w[1] >= w[0],
+                "q={q} seed={seed} spec={spec}: loglik decreased {w:?}"
+            );
         }
         assert!(
             fit.general_mean[1] != 0.0 && fit.general_sd[1] != 1.0,
@@ -1398,4 +1492,306 @@ fn multigroup_em_population_step_is_monotone_and_moves() {
             assert!(fit.specific_sd[1].iter().all(|&t| t != 1.0));
         }
     }
+}
+
+// #2030: analytic item Hessian vs FD; Newton sweep classes (FD must be unused).
+// ---------------------------------------------------------------------------
+
+fn toy_item_counts(
+    has_specific: bool,
+    n_nodes: usize,
+    n_cat: usize,
+) -> (Vec<f64>, Vec<f64>, Vec<Vec<f64>>, Vec<f64>) {
+    let node_g: Vec<f64> = (0..n_nodes)
+        .map(|i| -1.5 + 3.0 * (i as f64) / ((n_nodes - 1) as f64))
+        .collect();
+    let node_s: Vec<f64> = if has_specific {
+        (0..n_nodes)
+            .map(|i| 0.8 * ((i as f64) * 0.37).sin())
+            .collect()
+    } else {
+        vec![0.0; n_nodes]
+    };
+    let mut counts = vec![vec![0.0f64; n_cat]; n_nodes];
+    for (node, row) in counts.iter_mut().enumerate() {
+        for (k, c) in row.iter_mut().enumerate() {
+            *c = 0.35 + 0.15 * ((node + 2 * k) as f64).sin().abs();
+        }
+    }
+    let params = if has_specific {
+        vec![1.1, 0.7, 1.2, 0.1, -1.0]
+    } else {
+        vec![0.9, 0.8, -0.2, -1.1]
+    };
+    (node_g, node_s, counts, params)
+}
+
+#[test]
+fn analytic_item_hessian_matches_fd_block_and_general_only() {
+    use super::{item_neg_ll_fd_hessian, item_neg_ll_grad_hess};
+
+    for has_specific in [true, false] {
+        let (node_g, node_s, counts, params) = toy_item_counts(has_specific, 11, 4);
+        let (_f, g_an, h_an) =
+            item_neg_ll_grad_hess(&params, has_specific, &node_g, &node_s, &counts, false);
+        let (g_fd, h_fd) =
+            item_neg_ll_fd_hessian(&params, has_specific, &node_g, &node_s, &counts, 1e-5);
+        let np = params.len();
+        let mut worst_g = 0.0f64;
+        let mut worst_h = 0.0f64;
+        for i in 0..np {
+            worst_g = worst_g.max((g_an[i] - g_fd[i]).abs() / (1.0 + g_fd[i].abs()));
+            for j in 0..np {
+                worst_h = worst_h.max((h_an[i][j] - h_fd[i][j]).abs() / (1.0 + h_fd[i][j].abs()));
+            }
+        }
+        assert!(
+            worst_g <= 1e-8,
+            "analytic gradient must match FD base gradient; has_specific={has_specific}, worst={worst_g:.3e}"
+        );
+        assert!(
+            worst_h <= 5e-4,
+            "analytic Hessian must match forward-FD of analytic gradient; \
+             has_specific={has_specific}, worst={worst_h:.3e}"
+        );
+    }
+}
+
+#[test]
+fn analytic_item_hessian_with_slope_prior_matches_fd() {
+    // The production Newton system under MAP is the analytic likelihood
+    // system plus the slope prior's gradient and diagonal curvature. Check
+    // that sum against a central difference of the prior-aware objective.
+    use super::{
+        add_lnorm_abs_slope_prior, item_neg_ll_grad, item_neg_ll_grad_hess,
+        lnorm_abs_slope_prior_curvature, SlopePrior,
+    };
+    let (mu, sd) = (0.5f64.ln(), 0.4);
+    let prior = SlopePrior::Lognormal { mu, sd };
+    for has_specific in [true, false] {
+        let (node_g, node_s, counts, params) = toy_item_counts(has_specific, 11, 4);
+        let (mut f, mut g, mut h) =
+            item_neg_ll_grad_hess(&params, has_specific, &node_g, &node_s, &counts, false);
+        let n_slopes = if has_specific { 2 } else { 1 };
+        for k in 0..n_slopes {
+            let mut pg = 0.0;
+            add_lnorm_abs_slope_prior(params[k], mu, sd, &mut f, &mut pg);
+            g[k] += pg;
+            h[k][k] += lnorm_abs_slope_prior_curvature(params[k], mu, sd);
+        }
+        let (f_ref, g_ref) =
+            item_neg_ll_grad(&params, has_specific, &node_g, &node_s, &counts, 0, prior);
+        assert!(
+            (f - f_ref).abs() <= 1e-10 * (1.0 + f_ref.abs()),
+            "objective {f} vs {f_ref}"
+        );
+        let np = params.len();
+        let eps = 1e-5;
+        for j in 0..np {
+            assert!(
+                (g[j] - g_ref[j]).abs() <= 1e-10 * (1.0 + g_ref[j].abs()),
+                "gradient[{j}] {} vs {}",
+                g[j],
+                g_ref[j]
+            );
+            let mut up = params.clone();
+            let mut dn = params.clone();
+            up[j] += eps;
+            dn[j] -= eps;
+            let gu = item_neg_ll_grad(&up, has_specific, &node_g, &node_s, &counts, 0, prior).1;
+            let gd = item_neg_ll_grad(&dn, has_specific, &node_g, &node_s, &counts, 0, prior).1;
+            for i in 0..np {
+                let fd = (gu[i] - gd[i]) / (2.0 * eps);
+                assert!(
+                    (h[i][j] - fd).abs() <= 1e-5 * (1.0 + fd.abs()),
+                    "MAP Hessian[{i}][{j}] has_specific={has_specific}: analytic {} vs FD {fd}",
+                    h[i][j]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn mstep_newton_records_zero_fd_sweeps() {
+    use super::{
+        enable_mstep_sweep_counters, fit_bifactor_grm, mstep_sweep_counters,
+        reset_mstep_sweep_counters, BifactorGrmConfig,
+    };
+
+    let n_persons = 48usize;
+    let n_items = 7usize;
+    let n_specific = 2usize;
+    let n_cat = 3usize;
+    let specific_map: [i32; 7] = [0, 0, 0, 1, 1, 1, -1];
+    let mut y = vec![0usize; n_persons * n_items];
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            y[p * n_items + i] = (p + 2 * i) % n_cat;
+        }
+    }
+    let cfg = BifactorGrmConfig {
+        q_general: 9,
+        q_specific: 9,
+        max_iter: 3,
+        tol: 1e-300,
+        n_starts: 1,
+        seed: 2030,
+        newton_iter: 4,
+        ridge: 1e-8,
+        device: crate::Device::Cpu,
+        slope_prior: SlopePrior::None,
+    };
+    enable_mstep_sweep_counters(true);
+    reset_mstep_sweep_counters();
+    let fit = fit_bifactor_grm(
+        &y,
+        None,
+        &specific_map,
+        n_persons,
+        n_items,
+        n_specific,
+        n_cat,
+        &cfg,
+    )
+    .expect("tiny fit for sweep accounting");
+    let (base, fd, linesearch, newton) = mstep_sweep_counters();
+    enable_mstep_sweep_counters(false);
+    assert!(
+        fit.n_iter >= 1,
+        "fit must enter the EM loop; got n_iter={}",
+        fit.n_iter
+    );
+    assert_eq!(
+        fd, 0,
+        "analytic Newton must not FD-reenter the node grid; got fd={fd}"
+    );
+    assert!(
+        newton > 0 && base > 0,
+        "expected Newton/Base activity; newton={newton} base={base} ls={linesearch}"
+    );
+    // Each Newton step that reaches the analytic evaluation records exactly
+    // one Base; early-exit on tiny grad may leave base == newton.
+    assert!(
+        base <= newton + 1,
+        "Base should track Newton evaluations; base={base} newton={newton}"
+    );
+    let total = base + fd + linesearch;
+    let per_newton = total as f64 / newton as f64;
+    assert!(
+        per_newton < 8.0,
+        "post-FD path should be far below the old ~33 sweeps/Newton; got {per_newton:.2}"
+    );
+}
+
+#[test]
+#[ignore = "#2030 recount: q=41/241 n=1020 max_iter=5; run with --ignored (minutes)"]
+fn mstep_sweep_recount_q41_q241_synthetic_cp3_shape() {
+    // #2022/#2030 contract shape (13 items · 4 cats · 3 specifics · n=1020 ·
+    // max_iter=5), synthetic responses — recount Base/FD/LS, not absolute
+    // wall seconds. Avoidance CSV is not vendored in-tree.
+    use super::{
+        enable_mstep_sweep_counters, fit_bifactor_grm, mstep_phase_ns, mstep_sweep_counters,
+        reset_mstep_sweep_counters, BifactorGrmConfig,
+    };
+    use std::time::Instant;
+
+    let n_persons = 1020usize;
+    let n_items = 13usize;
+    let n_specific = 3usize;
+    let n_cat = 4usize;
+    let specific_map: [i32; 13] = [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, -1];
+    let mut y = vec![0usize; n_persons * n_items];
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            y[p * n_items + i] = (p.wrapping_mul(17) + 3 * i) % n_cat;
+        }
+    }
+
+    let mut rows = Vec::new();
+    for q in [41usize, 241usize] {
+        let cfg = BifactorGrmConfig {
+            q_general: q,
+            q_specific: q,
+            max_iter: 5,
+            tol: 1e-300,
+            n_starts: 1,
+            seed: 20260917,
+            newton_iter: 10,
+            ridge: 1e-8,
+            device: crate::Device::Cpu,
+            slope_prior: SlopePrior::None,
+        };
+        enable_mstep_sweep_counters(true);
+        reset_mstep_sweep_counters();
+        let t0 = Instant::now();
+        let fit = fit_bifactor_grm(
+            &y,
+            None,
+            &specific_map,
+            n_persons,
+            n_items,
+            n_specific,
+            n_cat,
+            &cfg,
+        )
+        .unwrap_or_else(|e| panic!("q={q} fit failed: {e}"));
+        let wall = t0.elapsed();
+        let (base, fd, linesearch, newton) = mstep_sweep_counters();
+        let (fill_ns, estep_ns, mstep_ns) = mstep_phase_ns();
+        enable_mstep_sweep_counters(false);
+        let total = base + fd + linesearch;
+        assert!(fit.n_iter > 0, "q={q}: expected at least one M-step pass");
+        let em_mstep_passes = fit.n_iter as u64;
+        let per_pass = total as f64 / em_mstep_passes as f64;
+        let phases = (fill_ns + estep_ns + mstep_ns) as f64;
+        let m_share = if phases > 0.0 {
+            mstep_ns as f64 / phases
+        } else {
+            f64::NAN
+        };
+        eprintln!(
+            "SWEEP_RECOUNT q={q} n={n_persons} wall_s={:.3} base={base} fd={fd} \
+             ls={linesearch} newton={newton} total={total} per_em_mstep_pass={per_pass:.1} \
+             fill_s={:.3} estep_s={:.3} mstep_s={:.3} mstep_share={m_share:.3} \
+             n_iter={} reason={}",
+            wall.as_secs_f64(),
+            fill_ns as f64 / 1e9,
+            estep_ns as f64 / 1e9,
+            mstep_ns as f64 / 1e9,
+            fit.n_iter,
+            fit.termination_reason
+        );
+        assert_eq!(fd, 0, "q={q}: FD class must be unused");
+        assert!(newton > 0, "q={q}: expected Newton steps");
+        assert_eq!(
+            base, newton,
+            "q={q}: Base must equal Newton (one analytic sweep per step); \
+             base={base} newton={newton}"
+        );
+        // Pre-#2030 was ~434 sweeps / EM M-step pass (FD ≈ 65%). Analytic
+        // path is Base+LS only; LS retries keep this above 1×Newton but
+        // well below the FD-era floor.
+        assert!(
+            per_pass < 250.0,
+            "q={q}: per-pass sweeps {per_pass:.1} still look FD-era (~434)"
+        );
+        let ls_per_newton = linesearch as f64 / newton as f64;
+        assert!(
+            ls_per_newton < 3.0,
+            "q={q}: unexpected LS fan-out {ls_per_newton:.2} per Newton"
+        );
+        rows.push((q, base, fd, linesearch, newton, total, per_pass, m_share));
+    }
+    // Call counts stay nearly q-independent (#2022 observation).
+    let ratio = rows[1].5 as f64 / rows[0].5 as f64;
+    assert!(
+        (0.85..1.15).contains(&ratio),
+        "total sweep ratio q241/q41 should be ~1; got {ratio:.3}"
+    );
+    eprintln!(
+        "SWEEP_RECOUNT_SUMMARY q41_per_pass={:.1} q241_per_pass={:.1} \
+         q41_mstep_share={:.3} q241_mstep_share={:.3} total_ratio={ratio:.3}",
+        rows[0].6, rows[1].6, rows[0].7, rows[1].7
+    );
 }

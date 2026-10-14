@@ -1,6 +1,7 @@
 """Fail-first contract for serializing derived changelog rendering at release."""
 
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 from pathlib import Path
 
@@ -12,7 +13,7 @@ _CHANGELOG_TEST = _ROOT / "tests" / "test_changelog_fragment_contract.py"
 
 def test_release_workflow_checks_fragment_aggregate_before_tag_state() -> None:
     """Immutable publication must fail closed on fragment/CHANGELOG drift."""
-    workflow = _RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    workflow = workflow_source(_RELEASE_WORKFLOW)
     parity_check = "python scripts/render_changelog_fragments.py --check CHANGELOG.md"
     tag_state = "Verify the release is absent and classify the tag state"
     tag_create = "Atomically create the immutable release tag"
@@ -23,7 +24,7 @@ def test_release_workflow_checks_fragment_aggregate_before_tag_state() -> None:
     # R5a: the tag is created after release admission by publish-pypi.yml,
     # which repeats the drift check before classifying and creating the tag.
     assert tag_create not in workflow
-    publish = (_ROOT / ".github" / "workflows" / "publish-pypi.yml").read_text(encoding="utf-8")
+    publish = workflow_source(_ROOT / ".github" / "workflows" / "publish-pypi.yml")
     creator = publish[publish.index("  create-tag-and-release:\n"):]
     post_state = "Classify the tag and release state after admission"
     assert creator.index(parity_check) < creator.index(post_state) < creator.index(tag_create)

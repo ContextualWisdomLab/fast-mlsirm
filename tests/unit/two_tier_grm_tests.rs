@@ -581,3 +581,64 @@ fn non_convergence_is_reported_not_substituted() {
         "termination reason must say max_iter_reached"
     );
 }
+
+// ---------------------------------------------------------------------------
+// #2030: analytic item M-step Hessian vs the forward-FD oracle.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn analytic_item_hessian_matches_fd_for_block_and_primary_only_items() {
+    use super::{item_neg_ll_fd_hessian, item_neg_ll_grad_hess};
+
+    // P = 2 primary product grid (qp = 3 -> 9 nodes) and qs = 4 specific nodes.
+    let (p, qp, qs, n_cat) = (2usize, 3usize, 4usize, 4usize);
+    let n_grid = qp * qp;
+    let mut coords = vec![0.0f64; n_grid * p];
+    for g in 0..n_grid {
+        coords[g * p] = -1.2 + 1.2 * (g / qp) as f64;
+        coords[g * p + 1] = -1.0 + 1.0 * (g % qp) as f64 + 0.1;
+    }
+    let ts = [-1.4, -0.45, 0.5, 1.3];
+    // (free primaries, has_specific, params = [a_p..., a_s?, d_1..d_{K-1}])
+    let cases: [(&[usize], bool, Vec<f64>); 3] = [
+        (&[0, 1], true, vec![1.1, 0.6, 0.7, 1.2, 0.1, -1.0]),
+        (&[1], true, vec![0.9, -0.5, 1.0, -0.2, -1.1]),
+        (&[0, 1], false, vec![0.8, 1.3, 0.9, 0.0, -0.9]),
+    ];
+    for (free, has_specific, params) in cases {
+        let n_nodes = if has_specific { n_grid * qs } else { n_grid };
+        let counts: Vec<Vec<f64>> = (0..n_nodes)
+            .map(|node| {
+                (0..n_cat)
+                    .map(|k| 0.35 + 0.15 * ((node + 2 * k) as f64).sin().abs())
+                    .collect()
+            })
+            .collect();
+        let args = (free, has_specific, &coords[..], &ts[..], p, n_grid, qs);
+        let (_f, g_an, h_an) = item_neg_ll_grad_hess(
+            &params, args.0, args.1, args.2, args.3, args.4, args.5, args.6, &counts,
+        );
+        let (g_fd, h_fd) = item_neg_ll_fd_hessian(
+            &params, args.0, args.1, args.2, args.3, args.4, args.5, args.6, &counts, 1e-5,
+        );
+        let np = params.len();
+        let mut worst_g = 0.0f64;
+        let mut worst_h = 0.0f64;
+        for i in 0..np {
+            worst_g = worst_g.max((g_an[i] - g_fd[i]).abs() / (1.0 + g_fd[i].abs()));
+            for j in 0..np {
+                assert_eq!(h_an[i][j], h_an[j][i], "analytic Hessian must be symmetric");
+                worst_h = worst_h.max((h_an[i][j] - h_fd[i][j]).abs() / (1.0 + h_fd[i][j].abs()));
+            }
+        }
+        assert!(
+            worst_g <= 1e-12,
+            "analytic gradient must equal the base gradient; free={free:?}, worst={worst_g:.3e}"
+        );
+        assert!(
+            worst_h <= 5e-4,
+            "analytic Hessian must match forward-FD of the analytic gradient; \
+             free={free:?} has_specific={has_specific}, worst={worst_h:.3e}"
+        );
+    }
+}
