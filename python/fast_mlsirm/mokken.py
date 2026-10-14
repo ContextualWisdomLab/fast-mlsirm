@@ -59,7 +59,12 @@ class MokkenResult:
 def _real_control(name: str, value: object) -> float:
     """Normalize one trusted finite real scalar without caller callbacks."""
     value_type = type(value)
-    if value_type is int or value_type is float:
+    if value_type is int:
+        try:
+            parsed = float(value)
+        except OverflowError:
+            raise ValueError(f"{name} must be finite") from None
+    elif value_type is float:
         parsed = float(value)
     elif any(value_type is trusted for trusted in _TRUSTED_NUMPY_REAL_TYPES):
         parsed = float(value)

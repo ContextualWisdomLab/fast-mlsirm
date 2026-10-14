@@ -70,6 +70,31 @@ def test_mokken_rejects_hostile_alpha_before_core(
         )
 
 
+@pytest.mark.parametrize("name", ["lower_bound", "alpha"])
+@pytest.mark.parametrize(
+    "overflow",
+    [10**400, -(10**400)],
+    ids=["positive", "negative"],
+)
+def test_mokken_rejects_binary64_overflowing_int_control_before_responses(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    overflow: int,
+) -> None:
+    """Exact ints beyond binary64 fail the control contract, not ``float()``."""
+    _forbid_core(monkeypatch)
+    responses = np.array(
+        [
+            [_HostileNumber(), _HostileNumber()],
+            [_HostileNumber(), _HostileNumber()],
+        ],
+        dtype=object,
+    )
+
+    with pytest.raises(ValueError, match=f"^{name} must be finite$"):
+        mokken.mokken_analysis(responses, **{name: overflow})
+
+
 def test_mokken_rejects_complex_responses_before_real_narrowing_or_core(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
