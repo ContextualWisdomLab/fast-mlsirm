@@ -1044,3 +1044,11 @@ graph TD
 ### Loop 3: Ecosystem Interoperability & Governance
 - Maintain bi-directional contract compatibility with `TEPP`, `contextual-orchestrator`, `LineageWeave`, and `RankWeave`.
 - Update `CHANGELOG.md` and cut version releases according to SemVer once PR batches land.
+
+---
+
+## 24. NumPy GPCM Expected-Count Workspace Gap (PR #2195)
+
+| Gap | Root cause | Action | Exact evidence | Status |
+|---|---|---|---|---|
+| The NumPy parity-reference GPCM E-step scaled temporary memory with persons × categories. | The reviewed head `574662e073643c6973fc1fddebcbeaa5676d4214` broadcast responses against every category and then converted the full boolean matrix before multiplication. Its documentation incorrectly claimed that no intermediate boolean allocation occurred. | Preserve the Bock–Aitkin expected-frequency reduction while accumulating each quadrature node with weighted `np.bincount`; retain the compiled Rust core as the production owner. | RED/GREEN test `tests/test_gpcm_expected_count_workspace.py`; direct numerical parity at `(N, K, Q) = (1, 2, 1), (37, 5, 9), (1003, 32, 13)`; Bock and Aitkin (1981, Equation 12, p. 447). | **Implemented in Draft PR #2195; exact-head hosted checks and independent review pending.** |
