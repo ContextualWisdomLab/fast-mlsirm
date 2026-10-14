@@ -943,11 +943,19 @@ def parse_generated_item_candidate(
             "provider output exceeds the allowed size",
         )
     _validate_raw_json_depth(raw_json)
+    def _reject_float_nonfinite(value):
+        import math
+        f_val = float(value)
+        if not math.isfinite(f_val):
+            raise _NonFiniteJsonNumber("JSON numbers must be finite")
+        return f_val
+
     try:
         decoded = json.loads(
             raw_json,
             object_pairs_hook=_unique_object,
             parse_constant=_reject_nonfinite,
+            parse_float=_reject_float_nonfinite,
         )
     except _DuplicateJsonKey:
         raise _error(

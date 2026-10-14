@@ -49,7 +49,7 @@ References (APA 7th ed.)
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Sequence
 
 import numpy as np
 
