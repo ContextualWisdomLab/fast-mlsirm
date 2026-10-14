@@ -39,7 +39,7 @@ security posture, test strategy, and operability artifacts. Pair with root
                     └──────────┬───────────┘
                                ▼
                     ┌──────────────────────┐
-                    │ Rust numeric core    │  no network; deterministic math
+                    │ Rust numeric core    │  no network; contract-scoped reproducibility
                     │ CPU multithread/GPU  │
                     └──────────┬───────────┘
                                ▼
@@ -67,6 +67,7 @@ STRIDE focus for this package:
 | Layer | Evidence |
 | --- | --- |
 | Rust equation + recovery | `cargo test`; true-parameter recovery sentinels |
+| Rotation reproducibility | Formula tolerance, explicit arithmetic-route guards, golden binary64 identity and repeatability where a criterion declares that contract; cross-target claims require hosted target parity |
 | Python API fail-closed | Hostile control suites (equating, exposure, node_rule, ATA, …) |
 | Multilevel contracts | Factory seal, multi-membership weights, temporal order |
 | GPU | Explicit parity vs CPU in CI (`gpu-smoke`) |
@@ -87,6 +88,7 @@ STRIDE focus for this package:
 | MLS2PLM point estimate | PRD formula contract | `crates/mlsirm-core`, `fit.py` | recovery RMSE tests |
 | Multilevel nesting | MMLE design + Fox & Glas (2001) | `PopulationSpec::Multilevel` + `estimate_crossed_person_effects` | multilevel recovery / contracts |
 | Temporal occasions | Longitudinal contracts RFC | `TemporalOccasion` | `tests/test_multilevel_*.py` |
+| Oblimax deterministic reference | `docs/doctoring/oblimax_deterministic_reference.md` | `RotationCriterion::Oblimax` | `rotation_moment_contract.rs` + finite-difference suite |
 | Python 3.14 support | ADR-004 | `.github/workflows/ci.yml` | `tests/test_ci_python_314_contract.py` |
 
 ## UML — component view
