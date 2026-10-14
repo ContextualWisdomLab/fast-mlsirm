@@ -1,0 +1,420 @@
+//! Rust-owned known-truth recovery evidence for crossed contextual effects.
+//!
+//! The design is crossed (school x neighbourhood) with weighted multiple
+//! membership in the school classification. The metrics are scoped to the
+//! centered MAP effects estimated by this crate; they are not uncertainty or
+//! causal-effect evidence.
+//!
+//! Fox, J.-P., & Glas, C. A. W. (2001). Bayesian estimation of a multilevel
+//! IRT model. *Psychometrika, 66*, 271-288.
+//! https://doi.org/10.1007/BF02294839
+//!
+//! Browne, W. J., Goldstein, H., & Rasbash, J. (2001). Multiple membership
+//! multiple classification (MMMC) models. *Statistical Modelling, 1*(2),
+//! 103-124. https://doi.org/10.1177/1471082X0100100202
+
+use mlsirm_core::multilevel::{estimate_crossed_person_effects, CrossedPersonEffectConfig};
+use mlsirm_core::Device;
+
+const N_ITEMS: usize = 28;
+const N_SCHOOLS: usize = 4;
+const N_NEIGHBOURHOODS: usize = 3;
+const COPIES_PER_CELL: usize = 8;
+
+struct Lcg(u64);
+
+impl Lcg {
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        self.0
+    }
+
+    fn uniform(&mut self) -> f64 {
+        ((self.next_u64() >> 11) as f64) * (1.0 / 9007199254740992.0)
+    }
+}
+
+fn sigmoid(value: f64) -> f64 {
+    if value >= 0.0 {
+        1.0 / (1.0 + (-value).exp())
+    } else {
+        let exp_value = value.exp();
+        exp_value / (1.0 + exp_value)
+    }
+}
+
+fn recovery_fixture() -> (
+    Vec<f64>,
+    Vec<usize>,
+    Vec<usize>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+) {
+    let schools = [-1.2, -0.4, 0.4, 1.2];
+    let neighbourhoods = [-0.8, 0.0, 0.8];
+    let mut responses = Vec::new();
+    let mut row_offsets = vec![0];
+    let mut context_indices = Vec::new();
+    let mut weights = Vec::new();
+    let mut rng = Lcg(0x5EED_2025);
+
+    for (school, &school_effect) in schools.iter().enumerate() {
+        let partner = (school + 1) % N_SCHOOLS;
+        for (neighbourhood, &neighbourhood_effect) in neighbourhoods.iter().enumerate() {
+            for copy in 0..COPIES_PER_CELL {
+                if copy % 3 == 0 {
+                    context_indices.extend([school, partner]);
+                    weights.extend([0.70, 0.30]);
+                } else {
+                    context_indices.push(school);
+                    weights.push(1.0);
+                }
+                context_indices.push(N_SCHOOLS + neighbourhood);
+                weights.push(1.0);
+                row_offsets.push(context_indices.len());
+
+                let school_location = if copy % 3 == 0 {
+                    0.70 * school_effect + 0.30 * schools[partner]
+                } else {
+                    school_effect
+                };
+                let location = school_location + neighbourhood_effect;
+                for item in 0..N_ITEMS {
+                    let intercept = -1.4 + 2.8 * item as f64 / (N_ITEMS - 1) as f64;
+                    let probability = sigmoid(location + intercept);
+                    responses.push(if rng.uniform() < probability {
+                        1.0
+                    } else {
+                        0.0
+                    });
+                }
+            }
+        }
+    }
+
+    let intercepts = (0..N_ITEMS)
+        .map(|item| -1.4 + 2.8 * item as f64 / (N_ITEMS - 1) as f64)
+        .collect();
+    let truth = vec![-1.2, -0.4, 0.4, 1.2, -0.8, 0.0, 0.8];
+    (
+        responses,
+        row_offsets,
+        context_indices,
+        weights,
+        intercepts,
+        truth,
+    )
+}
+
+fn recovery_metrics(estimated: &[f64], truth: &[f64]) -> (f64, f64, f64) {
+    let errors: Vec<f64> = estimated
+        .iter()
+        .zip(truth)
+        .map(|(estimate, expected)| estimate - expected)
+        .collect();
+    let bias = errors.iter().sum::<f64>() / errors.len() as f64;
+    let mae = errors.iter().map(|error| error.abs()).sum::<f64>() / errors.len() as f64;
+    let rmse = (errors.iter().map(|error| error * error).sum::<f64>() / errors.len() as f64).sqrt();
+    (bias, mae, rmse)
+}
+
+fn recovery_config(worker_count: usize) -> CrossedPersonEffectConfig {
+    CrossedPersonEffectConfig {
+        prior_precision: 0.25,
+        max_iter: 40,
+        tol: 1e-8,
+        worker_count,
+        device: Device::Cpu,
+    }
+}
+
+fn fit_recovery_fixture(
+    responses: &[f64],
+    row_offsets: &[usize],
+    context_indices: &[usize],
+    weights: &[f64],
+    intercepts: &[f64],
+    worker_count: usize,
+) -> mlsirm_core::multilevel::CrossedPersonEffectEstimate {
+    estimate_crossed_person_effects(
+        responses,
+        row_offsets,
+        context_indices,
+        weights,
+        &[1.0; N_ITEMS],
+        intercepts,
+        &[],
+        &[0, N_SCHOOLS, N_SCHOOLS + N_NEIGHBOURHOODS],
+        N_SCHOOLS * N_NEIGHBOURHOODS * COPIES_PER_CELL,
+        N_ITEMS,
+        N_SCHOOLS + N_NEIGHBOURHOODS,
+        recovery_config(worker_count),
+    )
+    .expect("known-truth recovery fixture must fit")
+}
+
+fn reverse_edges_within_rows(
+    row_offsets: &[usize],
+    context_indices: &[usize],
+    weights: &[f64],
+) -> (Vec<usize>, Vec<f64>) {
+    let mut reversed_indices = context_indices.to_vec();
+    let mut reversed_weights = weights.to_vec();
+    for window in row_offsets.windows(2) {
+        reversed_indices[window[0]..window[1]].reverse();
+        reversed_weights[window[0]..window[1]].reverse();
+    }
+    (reversed_indices, reversed_weights)
+}
+
+#[test]
+fn crossed_multiple_membership_map_recovers_centered_context_effects() {
+    let (responses, row_offsets, context_indices, weights, intercepts, truth) = recovery_fixture();
+    let estimate = fit_recovery_fixture(
+        &responses,
+        &row_offsets,
+        &context_indices,
+        &weights,
+        &intercepts,
+        4,
+    );
+
+    assert!(
+        estimate.converged,
+        "termination: {}",
+        estimate.termination_reason
+    );
+    let (bias, mae, rmse) = recovery_metrics(&estimate.effects, &truth);
+    assert!(bias.abs() < 0.10, "centered-effect bias too high: {bias}");
+    assert!(mae < 0.20, "centered-effect MAE too high: {mae}");
+    assert!(rmse < 0.25, "centered-effect RMSE too high: {rmse}");
+}
+
+#[test]
+fn crossed_multiple_membership_map_is_deterministic_across_worker_counts() {
+    let (responses, row_offsets, context_indices, weights, intercepts, _) = recovery_fixture();
+    let single_worker = fit_recovery_fixture(
+        &responses,
+        &row_offsets,
+        &context_indices,
+        &weights,
+        &intercepts,
+        1,
+    );
+    let four_workers = fit_recovery_fixture(
+        &responses,
+        &row_offsets,
+        &context_indices,
+        &weights,
+        &intercepts,
+        4,
+    );
+
+    assert_eq!(single_worker, four_workers);
+}
+
+#[test]
+fn crossed_multiple_membership_map_is_invariant_to_membership_edge_order() {
+    let (responses, row_offsets, context_indices, weights, intercepts, _) = recovery_fixture();
+    let baseline = fit_recovery_fixture(
+        &responses,
+        &row_offsets,
+        &context_indices,
+        &weights,
+        &intercepts,
+        4,
+    );
+    let (reversed_indices, reversed_weights) =
+        reverse_edges_within_rows(&row_offsets, &context_indices, &weights);
+    let permuted = fit_recovery_fixture(
+        &responses,
+        &row_offsets,
+        &reversed_indices,
+        &reversed_weights,
+        &intercepts,
+        4,
+    );
+
+    assert_eq!(baseline, permuted);
+}
+
+#[test]
+fn crossed_multiple_membership_map_recovers_under_design_dependent_missingness() {
+    let (mut responses, row_offsets, context_indices, weights, intercepts, truth) =
+        recovery_fixture();
+    let n_persons = N_SCHOOLS * N_NEIGHBOURHOODS * COPIES_PER_CELL;
+    let mut missing = 0usize;
+    for person in 0..n_persons {
+        for item in 0..N_ITEMS {
+            if (person + 2 * item) % 7 == 0 {
+                responses[person * N_ITEMS + item] = f64::NAN;
+                missing += 1;
+            }
+        }
+    }
+    assert!(missing > 0);
+    assert!(missing < responses.len());
+
+    let estimate = fit_recovery_fixture(
+        &responses,
+        &row_offsets,
+        &context_indices,
+        &weights,
+        &intercepts,
+        4,
+    );
+    assert!(
+        estimate.converged,
+        "termination under design-dependent missingness: {}",
+        estimate.termination_reason
+    );
+
+    let (bias, mae, rmse) = recovery_metrics(&estimate.effects, &truth);
+    assert!(
+        bias.abs() < 0.12,
+        "missingness recovery centered-effect bias too high: {bias}"
+    );
+    assert!(
+        mae < 0.24,
+        "missingness recovery centered-effect MAE too high: {mae}"
+    );
+    assert!(
+        rmse < 0.30,
+        "missingness recovery centered-effect RMSE too high: {rmse}"
+    );
+}
+
+#[test]
+fn crossed_estimator_rejects_nonunit_membership_total_within_classification() {
+    let result = estimate_crossed_person_effects(
+        &[1.0],
+        &[0, 2],
+        &[0, 2],
+        &[0.5, 1.0],
+        &[1.0],
+        &[0.0],
+        &[],
+        &[0, 2, 4],
+        1,
+        1,
+        4,
+        CrossedPersonEffectConfig {
+            prior_precision: 1.0,
+            max_iter: 5,
+            tol: 1e-8,
+            worker_count: 1,
+            device: Device::Cpu,
+        },
+    );
+
+    assert_eq!(
+        result.expect_err("non-unit per-classification membership must fail"),
+        "membership weights must sum to one within every classification"
+    );
+}
+
+#[test]
+fn crossed_estimator_matches_python_fsum_at_membership_tolerance_boundary() {
+    // Python's canonical `math.fsum` gives 1.000000000001 for the first
+    // classification, whose binary64 distance from 1.0 is slightly greater
+    // than 1e-12. The predecessor Kahan accumulation rounded one ulp lower,
+    // placing the same evidence just inside the tolerance.
+    let first_classification = [
+        7.676237741209798e-7,
+        0.010651417140530308,
+        0.37423755141246917,
+        1.8575352962363634e-15,
+        0.5826288549775351,
+        5.823656030563999e-10,
+        1.9684656270709796e-5,
+        0.011488089146313166,
+        7.743814099960723e-5,
+        0.020896196320740357,
+    ];
+    let mut weights = first_classification.to_vec();
+    weights.push(1.0);
+    let context_indices: Vec<usize> = (0..=10).collect();
+
+    let result = estimate_crossed_person_effects(
+        &[1.0],
+        &[0, 11],
+        &context_indices,
+        &weights,
+        &[1.0],
+        &[0.0],
+        &[],
+        &[0, 10, 12],
+        1,
+        1,
+        12,
+        CrossedPersonEffectConfig {
+            prior_precision: 1.0,
+            max_iter: 5,
+            tol: 1e-8,
+            worker_count: 1,
+            device: Device::Cpu,
+        },
+    );
+
+    assert_eq!(
+        result.expect_err("Rust admission must match Python fsum at the tolerance boundary"),
+        "membership weights must sum to one within every classification"
+    );
+}
+
+#[test]
+fn crossed_estimator_accepts_python_fsum_inside_membership_tolerance() {
+    // CPython math.fsum returns 1.0000000000009999 for the first classification,
+    // which is inside the canonical absolute 1e-12 tolerance. The predecessor
+    // Kahan accumulation rounds one ulp upward to 1.000000000001 and rejects it.
+    // Every individual weight remains in the canonical (0, 1] domain.
+    let first_classification = [
+        1.9080461298558075e-16,
+        9.26012622591619e-16,
+        5.813061702718314e-16,
+        1.6807044696602153e-17,
+        8.606165289348356e-9,
+        3.389135198729678e-11,
+        0.00656530695076703,
+        0.00962474423041273,
+        0.9837618364076457,
+        4.222039461884459e-5,
+        1.077907614020802e-6,
+        1.0119314101587687e-15,
+        1.1534629612038173e-9,
+        8.128695222221698e-9,
+        3.934149096477111e-14,
+        4.795391627014789e-6,
+        7.960559777858064e-10,
+    ];
+    let mut weights = first_classification.to_vec();
+    weights.push(1.0);
+    let context_indices: Vec<usize> = (0..=17).collect();
+
+    let result = estimate_crossed_person_effects(
+        &[1.0],
+        &[0, 18],
+        &context_indices,
+        &weights,
+        &[1.0],
+        &[0.0],
+        &[],
+        &[0, 17, 19],
+        1,
+        1,
+        19,
+        CrossedPersonEffectConfig {
+            prior_precision: 1.0,
+            max_iter: 5,
+            tol: 1e-8,
+            worker_count: 1,
+            device: Device::Cpu,
+        },
+    );
+
+    result.expect("Rust admission must accept the Python-fsum side of the tolerance boundary");
+}
