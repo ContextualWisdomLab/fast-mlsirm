@@ -207,7 +207,7 @@ def _render_html(report: EssayValidationEvidenceReport, title: str) -> str:
             '<h2 id="metrics-heading">Descriptive metrics</h2>',
             metrics,
             "</section>",
-            '<section aria-labelledby="json-heading">',
+            '<section class="export-block" aria-labelledby="json-heading">',
             '<h2 id="json-heading">Canonical JSON</h2>',
             "<p>The complete deterministic evidence payload is available below for audit reconstruction.</p>",
             '<pre tabindex="0" role="region" aria-label="Canonical essay validation evidence JSON">',
