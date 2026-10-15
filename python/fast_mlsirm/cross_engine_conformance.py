@@ -903,6 +903,15 @@ def _reject_json_constant(value: str) -> object:
     raise ValueError(f"manifest JSON contains unsupported constant: {value}")
 
 
+def _reject_json_float_nonfinite(value: str) -> float:
+    """Reject normal numeric floats that evaluate to Infinity due to overflow."""
+    import math
+    f_val = float(value)
+    if not math.isfinite(f_val):
+        raise ValueError(f"manifest JSON contains unsupported non-finite float: {value}")
+    return f_val
+
+
 def _validate_raw_manifest_depth(content: str) -> None:
     """Reject JSON strings whose nesting depth exceeds the maximum budget."""
     depth = 0
@@ -1063,6 +1072,7 @@ class ConformanceInventory:
                 value,
                 object_pairs_hook=_reject_duplicate_json_keys,
                 parse_constant=_reject_json_constant,
+                parse_float=_reject_json_float_nonfinite,
             )
         except json.JSONDecodeError as exc:
             raise ValueError("manifest JSON must contain valid JSON") from exc
