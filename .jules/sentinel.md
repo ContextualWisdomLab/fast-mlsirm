@@ -59,3 +59,8 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+
+## 2025-02-28 - json.loads Float Overflow via Missing parse_float Hook
+**Vulnerability:** Untrusted JSON payloads containing excessively large float literals (e.g., `1e999`) bypass standard `parse_constant` protections because Python's `float()` silently casts them to `Infinity`, leading to unauthorized Infinity propagation in memory.
+**Learning:** We assumed that hooking `parse_constant` to reject tokens like `Infinity` and `NaN` was sufficient for JSON security. However, Python's `json.loads` processes extremely large scalar numbers via `float()`, bypassing `parse_constant`. We discovered this affected `io.py`, `llm_judge.py`, `candidates.py`, and `cross_engine_conformance.py`.
+**Prevention:** To prevent float overflow vulnerabilities when using `json.loads` on untrusted JSON, you must explicitly provide a `parse_float` hook that converts the string to a float and strictly validates it using `math.isfinite()`.
