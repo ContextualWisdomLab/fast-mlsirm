@@ -59,3 +59,7 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+## 2026-10-14 - [JSON Depth Validation Underflow Bypass]
+**Vulnerability:** 수동 JSON 깊이 검증 로직에서 닫는 괄호(`]}`)가 불일치하게 입력될 경우 깊이 카운터가 0 미만으로 언더플로우되는 취약점이 발견되었습니다. 공격자가 인위적으로 카운터를 음수로 만든 후 깊게 중첩된 페이로드를 전달하면 `MAX_JSON_NESTING_DEPTH` 검사를 우회하게 되고, 이후 Python의 `json.loads`에 도달하여 `RecursionError`를 발생시켜 애플리케이션을 크래시(서비스 거부, DoS)시킬 수 있었습니다.
+**Learning:** 깊이를 추적하는 상태 머신이나 파싱 유틸리티를 작성할 때, 닫는 기호에서 카운터를 단순히 감소시키고 최소값(예: 0)으로 제한하지 않으면, 공격자가 잘못된 입력을 통해 상태를 조작할 수 있는 벡터가 열리게 됩니다.
+**Prevention:** 기반 엔진으로 처리를 위임하기 전에 명시적인 바운드 체크를 수행할 때, 잘못된 입력으로 인한 언더플로우를 방지하기 위해 중첩 깊이 카운터는 항상 0 이상의 값으로 유지(예: `depth = max(0, depth - 1)`)해야 합니다.
