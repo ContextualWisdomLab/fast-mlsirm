@@ -9,7 +9,12 @@ import numpy as np
 from .config import FitConfig, _trusted_integer
 from .irt_contract import fit_irt_experiment, validate_irt_experiment_readiness
 from .math import sigmoid, standardize
-from .objective import compute_linear_predictor, get_model_flags, prepare_response, validate_factor_id
+from .objective import (
+    compute_linear_predictor,
+    get_model_flags,
+    prepare_response,
+    validate_factor_id,
+)
 from .types import (
     DimensionalityDiagnostics,
     FitDiagnostics,
@@ -46,9 +51,7 @@ def predict_proba(
     Evaluates ``sigmoid`` of the model linear predictor, optionally restricting
     to a subset of ``persons`` and/or ``items``.
     """
-    factors = validate_factor_id(
-        factor_id, len(params.b), params.theta.shape[1]
-    )
+    factors = validate_factor_id(factor_id, len(params.b), params.theta.shape[1])
     sub = _subset_params(params, persons, items)
     if items is not None:
         factors = factors[np.asarray(items, dtype=np.int64)]
@@ -56,7 +59,9 @@ def predict_proba(
     return sigmoid(eta)
 
 
-def _leniency_residuals(y: np.ndarray, observed: np.ndarray, prob: np.ndarray) -> dict[str, np.ndarray | float]:
+def _leniency_residuals(
+    y: np.ndarray, observed: np.ndarray, prob: np.ndarray
+) -> dict[str, np.ndarray | float]:
     """Compute an observed-minus-expected pass-rate proxy for response leniency.
 
     This is an adaptation inspired by the content-independent response-bias
@@ -151,7 +156,9 @@ def fit_diagnostics(
     m2_q_u = _trusted_integer(m2_q_u, "m2_q_u")
     m2_q_xi = _trusted_integer(m2_q_xi, "m2_q_xi")
     if include_m2 and estimator is None:
-        raise ValueError("include_m2 requires the actual estimator: jmle, cmle, or mmle")
+        raise ValueError(
+            "include_m2 requires the actual estimator: jmle, cmle, or mmle"
+        )
     if include_m2 and convergence_status is not None:
         status = str(convergence_status).strip().lower()
         if status != "converged":
@@ -225,8 +232,14 @@ def fit_diagnostics(
         estimator_name = str(estimator).lower()
         if group_id is not None:
             if estimator_name != "mmle":
-                raise ValueError("multiple-group M2 currently requires estimator='mmle'")
-            if population is None or "mu" not in population or "sigma" not in population:
+                raise ValueError(
+                    "multiple-group M2 currently requires estimator='mmle'"
+                )
+            if (
+                population is None
+                or "mu" not in population
+                or "sigma" not in population
+            ):
                 raise ValueError("multiple-group M2 requires population mu and sigma")
             limited = m2_multigroup(
                 responses=y,
@@ -307,7 +320,9 @@ def fit_diagnostics(
                 "m2_inference_note": limited.inference_note,
                 "m2_n_groups": float(limited.n_groups),
                 "m2_n_clusters": (
-                    float(limited.n_clusters) if limited.n_clusters is not None else float("nan")
+                    float(limited.n_clusters)
+                    if limited.n_clusters is not None
+                    else float("nan")
                 ),
             }
         )
@@ -767,36 +782,40 @@ def _factor_fit(
     if factors.shape != (y.shape[1],):
         raise ValueError("factor_id length must match number of items")
 
-    rows = []
-    for factor in np.unique(factors):
-        cols = factors == factor
-        rows.append(
-            (
-                float(factor),
-                float(observed[:, cols].sum()),
-                float((y[:, cols] * observed[:, cols]).sum()),
-                float((prob[:, cols] * observed[:, cols]).sum()),
-                float(residual[:, cols].sum()),
-                float((variance[:, cols] * observed[:, cols]).sum()),
-                float((residual[:, cols] * residual[:, cols]).sum()),
-                float(pearson_sq[:, cols].sum()),
-            )
-        )
+    unique_factors, factor_inv = np.unique(factors, return_inverse=True)
+    n_factors = unique_factors.size
 
-    table = np.asarray(rows, dtype=np.float64)
-    variance_sum = table[:, 5]
-    count = table[:, 1]
-    safe_count = np.maximum(count, 1.0)
-    safe_variance = np.maximum(variance_sum, 1e-12)
+    # Optimization: Create a 2D boolean mapping mask and use matrix multiplication (@)
+    # instead of a slow python for loop over unique_factors to leverage fast BLAS operations.
+    mask = (factor_inv[:, None] == np.arange(n_factors)).astype(np.float64)
+
+    obs_per_item = observed.sum(axis=0)
+    score_per_item = (y * observed).sum(axis=0)
+    exp_per_item = (prob * observed).sum(axis=0)
+    res_per_item = residual.sum(axis=0)
+    var_per_item = (variance * observed).sum(axis=0)
+    res_sq_per_item = (residual * residual).sum(axis=0)
+    pearson_sq_per_item = pearson_sq.sum(axis=0)
+
+    obs_count = obs_per_item @ mask
+    score = score_per_item @ mask
+    exp_score = exp_per_item @ mask
+    raw_res = res_per_item @ mask
+    var_sum = var_per_item @ mask
+    res_sq = res_sq_per_item @ mask
+    pearson = pearson_sq_per_item @ mask
+
+    safe_count = np.maximum(obs_count, 1.0)
+    safe_variance = np.maximum(var_sum, 1e-12)
     return {
-        "factor_id": table[:, 0],
-        "observed_count": count,
-        "score": table[:, 2],
-        "expected_score": table[:, 3],
-        "raw_residual": table[:, 4],
-        "standardized_residual": table[:, 4] / np.sqrt(safe_variance),
-        "infit_mnsq": table[:, 6] / safe_variance,
-        "outfit_mnsq": table[:, 7] / safe_count,
+        "factor_id": unique_factors.astype(np.float64),
+        "observed_count": obs_count,
+        "score": score,
+        "expected_score": exp_score,
+        "raw_residual": raw_res,
+        "standardized_residual": raw_res / np.sqrt(safe_variance),
+        "infit_mnsq": res_sq / safe_variance,
+        "outfit_mnsq": pearson / safe_count,
     }
 
 
