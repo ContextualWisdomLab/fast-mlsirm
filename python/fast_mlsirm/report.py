@@ -944,7 +944,7 @@ tbody tr:hover {
   border-top: 1px dashed var(--line);
 }
 
-.export-block pre {
+.export-block pre, pre.export-block {
   margin: 0;
   padding: 10px;
   overflow-x: auto;
@@ -953,6 +953,7 @@ tbody tr:hover {
   background: var(--hover-bg);
   font-variant-numeric: tabular-nums;
   white-space: pre;
+  user-select: all;
 }
 
 .export-block pre:focus:not(:focus-visible) {
