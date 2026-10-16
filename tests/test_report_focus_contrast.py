@@ -56,3 +56,9 @@ def test_focus_containers_suppress_mouse_click_outlines(tmp_path: Path) -> None:
     assert ".export-block pre:focus:not(:focus-visible) {\n  outline: none;\n}" in html
     assert ".table-wrap:focus {\n  outline: none;\n}" not in html
     assert ".export-block pre:focus {\n  outline: none;\n}" not in html
+
+
+def test_no_hardcoded_white_text_color(tmp_path: Path) -> None:
+    """Thematic components must not use hardcoded white text to prevent dark mode contrast failures."""
+    html = _render_report(tmp_path)
+    assert "color: white;" not in html
