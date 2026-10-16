@@ -36,7 +36,7 @@ def _header_row(labels: tuple[str, ...]) -> str:
 
 def _data_row(values: tuple[object | None, ...]) -> str:
     """Render one escaped table row."""
-    return "<tr>" + "".join(f"<td>{_text(value)}</td>" for value in values) + "</tr>"
+    return "<tr>" + "".join(f"<th scope=\"row\">{_text(value)}</th>" if i == 0 else f"<td>{_text(value)}</td>" for i, value in enumerate(values)) + "</tr>"
 
 
 def _key_value_table(caption: str, rows: tuple[tuple[str, object | None], ...]) -> str:
