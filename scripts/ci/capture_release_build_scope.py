@@ -21,7 +21,7 @@ from release_artifact_transport import (expected_maturin_binary_sha256, hash_fil
 
 
 def _run(*args: str) -> str:
-    return subprocess.run(args, check=True, capture_output=True, text=True).stdout.strip()
+    return subprocess.run(args, check=True, capture_output=True, text=True, timeout=300).stdout.strip()
 
 
 def _python_packages_with_files() -> list[dict]:

@@ -16,7 +16,7 @@ from release_artifact_transport import hash_file, wheel_identity
 
 
 def _run(*args: str, cwd: Path) -> str:
-    return subprocess.run(args, cwd=cwd, check=True, capture_output=True, text=True).stdout
+    return subprocess.run(args, cwd=cwd, check=True, capture_output=True, text=True, timeout=300).stdout
 
 
 def _packages(output: str) -> list[dict[str, str]]:
