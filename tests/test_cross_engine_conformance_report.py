@@ -161,6 +161,8 @@ def test_report_escapes_untrusted_text_and_exposes_accessible_table_semantics() 
     assert "<caption>Capability × engine conformance evidence</caption>" in html_text
     assert '<th scope="col">Capability</th>' in html_text
     assert '<th scope="col">Execution status</th>' in html_text
+    assert '<th scope="row">dichotomous_probability</th>' in html_text
+    assert "<td>partially_covered</td>" in html_text
     assert "Exact values are shown in text; this report has no hover-only evidence." in html_text
 
 
