@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
 import stat
 import tempfile
@@ -305,10 +306,18 @@ def _load_json_bounded(
         """Reject Python JSON decoder extensions outside interoperable JSON."""
         raise ValueError(f"{source} contains a non-finite JSON numeric value")
 
+    def reject_nonfinite_float(value_str: str) -> float:
+        """Reject numeric overflow to infinity."""
+        value = float(value_str)
+        if not math.isfinite(value):
+            raise ValueError(f"{source} contains a non-finite JSON numeric value")
+        return value
+
     kwargs = {
         "parse_constant": (
             reject_nonfinite_constant if parse_constant is None else parse_constant
         ),
+        "parse_float": reject_nonfinite_float,
         "object_pairs_hook": reject_duplicate_members,
     }
     return json.loads(content, **kwargs)

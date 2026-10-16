@@ -9,6 +9,7 @@ then delegates syntax and value construction to :mod:`json`.
 from __future__ import annotations
 
 import json
+import math
 import os
 import stat
 from pathlib import Path
@@ -122,6 +123,14 @@ def _reject_nonfinite_constant(_: str) -> None:
     raise ValueError(_NONFINITE_NUMBER_ERROR)
 
 
+def _reject_nonfinite_float(value_str: str) -> float:
+    """Reject numeric overflow to infinity."""
+    value = float(value_str)
+    if not math.isfinite(value):
+        raise ValueError(_NONFINITE_NUMBER_ERROR)
+    return value
+
+
 def _reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     """Build one JSON object while rejecting repeated member names."""
     result: dict[str, Any] = {}
@@ -138,6 +147,7 @@ def _loads_interoperable_json(content: str) -> Any:
         content,
         object_pairs_hook=_reject_duplicate_members,
         parse_constant=_reject_nonfinite_constant,
+        parse_float=_reject_nonfinite_float,
     )
 
 

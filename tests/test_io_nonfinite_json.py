@@ -37,3 +37,9 @@ def test_load_json_bounded_preserves_explicit_parse_constant_policy(tmp_path):
         parse_constant=parse_constant,
     ) == {"value": "custom"}
     assert observed == ["NaN"]
+
+def test_load_json_bounded_rejects_numeric_overflow(tmp_path):
+    path = tmp_path / "test.json"
+    path.write_text('{"a": 1e999}')
+    with pytest.raises(ValueError, match="non-finite JSON numeric value"):
+        _load_json_bounded(path, source="test")
