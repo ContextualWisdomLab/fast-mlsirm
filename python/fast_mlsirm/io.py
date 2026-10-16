@@ -291,6 +291,8 @@ def _load_json_bounded(
                 )
         elif char in "]}":
             depth -= 1
+            if depth < 0:
+                depth = 0
 
     def reject_duplicate_members(pairs):
         """Build one JSON object while rejecting repeated member names."""

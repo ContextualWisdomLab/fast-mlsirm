@@ -115,6 +115,8 @@ def _validate_raw_json_depth(content: str) -> None:
                 )
         elif char in "]}":
             depth -= 1
+            if depth < 0:
+                depth = 0
 
 
 def _validate_json_depth(value: Any) -> None:
