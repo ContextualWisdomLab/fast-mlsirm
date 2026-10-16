@@ -12,7 +12,7 @@ import pytest
 
 import fast_mlsirm
 import fast_mlsirm.inference as inference_mod
-from fast_mlsirm import FitConfig, MLSIRMParams, PenaltyConfig
+from fast_mlsirm import FitConfig, MLSIRMParams
 from fast_mlsirm.estimators.mmle import fit_mmle_2pl
 from fast_mlsirm.inference import (
     oakes_standard_errors,

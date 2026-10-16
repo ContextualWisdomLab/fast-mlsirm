@@ -18,7 +18,6 @@ from fast_mlsirm.rubric import RubricSpecification
 from .._contract_safety import artifact_digest, bounded_values, freeze_metadata
 from .._validation import (
     ASSESSMENT_SCHEMA_VERSION,
-    AssessmentSpecError,
     CanonicalContract,
     assessment_error,
     assessment_schema_version,
