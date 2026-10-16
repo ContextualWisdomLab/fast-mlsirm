@@ -28,10 +28,6 @@
 **Learning:** Screen readers only treat `<section>` as a landmark region if it has an accessible name. Without an accessible name, the region is not easily navigable via screen reader rotor menus.
 **Action:** Always provide an accessible name to `<section>` using `aria-labelledby` pointing to its main heading's `id`.
 
-## 2025-02-12 - CSS Hover-Focus Isolation for Dense Visualizations
-**Learning:** Dense bar charts or lists can be difficult to visually parse. Highlighting the currently hovered row by dimming the surrounding rows greatly improves visual focus and UX.
-**Action:** Use a CSS pattern like `.container:hover .item:not(:hover) { opacity: 0.5; }` (along with `transition` properties on the item) to isolate visual focus during interaction with dense data visualizations.
-
 ## 2024-08-01 - Focus Visible Styles for Skip-to-Content Targets
 **Learning:** While `outline: none;` on a `<main>` container properly removes the visual artifact when users click inside the content area, it completely breaks keyboard accessibility for users navigating via the "Skip to main content" link because no focus indicator is shown when the target is focused.
 **Action:** When overriding the focus outline on semantic containers like `<main>`, always provide a `.element:focus-visible` rule (e.g., `outline: 3px solid var(--primary-color)`) after the `:focus { outline: none; }` rule to ensure keyboard navigation remains visibly accessible without disrupting mouse interactions.
@@ -51,3 +47,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2026-10-06 - User Select All for Code Export Blocks
+**Learning:** Code export blocks containing JSON and CSV content are often difficult to manually highlight correctly, leading to partial copies.
+**Action:** Apply `user-select: all;` to the `<pre>` tags housing bulk JSON or CSV exports. This enables users to copy the complete payload perfectly with a single click. Ensure it is specifically scoped to these exact export elements (e.g. `.export-block pre` or `<pre>` tags intended for bulk copying) so that partial selections on other generic text blocks are not blocked.
