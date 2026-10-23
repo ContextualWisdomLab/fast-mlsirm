@@ -101,7 +101,7 @@ def _complete_report():
 def test_complete_report_marks_only_criterion_identifiers_as_row_headers(
     tmp_path: Path,
 ) -> None:
-    """Full rendered output scopes criterion IDs without relabeling evidence data."""
+    """Full rendered output scopes criterion and evidence row identifiers."""
     report = _complete_report()
     output = tmp_path / "semantic-table-report.html"
     render_essay_score_report_html(report, output)
@@ -120,10 +120,11 @@ def test_complete_report_marks_only_criterion_identifiers_as_row_headers(
         for row in criterion_rows
         for cell in row[1:]
     )
+    assert all(row[0][:2] == ("th", "row") for row in evidence_rows)
     assert all(
         cell[:2] == ("td", None)
         for row in evidence_rows
-        for cell in row
+        for cell in row[1:]
     )
     assert json.loads(parser.canonical_json) == report.to_dict()
 
