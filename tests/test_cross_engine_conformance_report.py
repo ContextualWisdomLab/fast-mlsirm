@@ -164,6 +164,16 @@ def test_report_escapes_untrusted_text_and_exposes_accessible_table_semantics() 
     assert "Exact values are shown in text; this report has no hover-only evidence." in html_text
 
 
+def test_report_skip_link_preserves_the_no_inline_style_csp() -> None:
+    """The skip target stays usable without adding CSP-blocked inline styles."""
+    html_text, _ = render_conformance_report(_canonical_json(_executed_inventory()))
+
+    assert "style-src &#x27;none&#x27;" in html_text
+    assert "<style>" not in html_text
+    assert '<a class="skip-link" href="#main-content">Skip to report content</a>' in html_text
+    assert '<main id="main-content" tabindex="-1">' in html_text
+
+
 def test_report_exposes_exact_inventory_and_run_provenance() -> None:
     """A buyer must be able to reconstruct the evidence identity from visible text."""
     inventory = _executed_inventory()
