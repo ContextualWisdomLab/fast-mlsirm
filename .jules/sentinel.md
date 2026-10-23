@@ -59,3 +59,16 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+
+## 2026-09-30 - JSON depth budget counter underflow
+**Finding:** Malformed JSON beginning with unmatched closing delimiters could
+drive the raw depth counter below zero in the rubric and LLM-judge parsers.
+The JSON decoder still rejected the payload, so this was not a valid-JSON
+admission bypass; it changed the earlier fail-closed error category and made
+the raw depth budget inconsistent across parser boundaries.
+
+**Learning:** A raw resource-budget scanner must keep its counter monotonic at
+the lower bound even when later syntax validation will reject the input.
+
+**Prevention:** Decrement a JSON nesting counter only when it is positive, and
+keep real-behavior regression tests at each untrusted string parser boundary.

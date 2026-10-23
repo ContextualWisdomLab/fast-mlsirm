@@ -1112,6 +1112,17 @@ def test_judge_rejects_excessive_json_nesting() -> None:
         )
 
 
+def test_judge_depth_budget_is_not_offset_by_unmatched_closers() -> None:
+    """Unmatched closers cannot offset the raw judge-response depth budget."""
+    payload = "]" * 100 + '{"a":' * 100 + "1" + "}" * 100
+    with pytest.raises(JudgeFormatError, match="nesting exceeds maximum depth"):
+        ContextualOrchestratorJudge(_FakeOrchestrator(payload)).judge(
+            task="task",
+            answer="answer",
+            criteria=CRITERIA,
+        )
+
+
 def test_judge_accepts_bounded_json_nesting() -> None:
     """Nesting at the admitted depth still parses when the payload is valid."""
     # Build a valid judge payload with modest nesting under the limit.
