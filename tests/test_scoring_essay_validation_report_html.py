@@ -184,3 +184,13 @@ def test_renderer_rejects_mutated_metric_identity_with_structured_error(
         )
     assert caught.value.code == "unknown_essay_validation_metric"
     assert caught.value.path == "$.report.metrics[0].metric_id"
+
+def test_export_block_user_select_all_applied_to_canonical_json(tmp_path: Path) -> None:
+    """The canonical JSON export blocks support single-click select-all."""
+    report = build_report()
+    output = tmp_path / "export.html"
+    render_essay_validation_evidence_report_html(report, output)
+    html = output.read_text(encoding="utf-8")
+
+    assert '.export-block pre { user-select: all; }' in html
+    assert '<section aria-labelledby="json-heading" class="export-block">' in html
