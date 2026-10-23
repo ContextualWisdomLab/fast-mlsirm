@@ -40,6 +40,17 @@ def test_skip_link_is_revealed_for_every_actual_focus_state(tmp_path: Path) -> N
     assert "outline: 3px solid var(--teal);" in focus_rule
 
 
+def test_skip_link_contrast_uses_thematic_variables(tmp_path: Path) -> None:
+    """Skip link text color must adapt to the theme to maintain contrast."""
+    html = _render_report(tmp_path)
+    selector = ".skip-link {"
+
+    assert html.count(selector) >= 1
+    rule = html.split(selector, maxsplit=1)[1].split("}", maxsplit=1)[0]
+    assert "color: var(--bg);" in rule
+    assert "color: white;" not in rule
+
+
 def test_hover_does_not_dim_unrelated_chart_or_table_content(tmp_path: Path) -> None:
     """Pointer hover must preserve peer contrast and retain the active-row cue."""
     html = _render_report(tmp_path)
