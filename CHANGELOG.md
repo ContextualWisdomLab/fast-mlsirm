@@ -12,6 +12,13 @@
 
 ### Changed
 
+- Standalone report JSON/CSV export regions now apply atomic text selection
+  only for fine-pointer devices. Touch and coarse-pointer users retain native
+  partial selection; keyboard focus, exact-value tables, JSON/CSV payloads,
+  escaping, and reduced-motion behavior are unchanged. This is a pointer
+  convenience, not a dedicated keyboard or assistive-technology copy action
+  (#2304).
+
 - Polytomous person fit now requires convergence by default, including for
   duck-typed fits with unknown convergence. `allow_unconverged=True` permits
   diagnostic use only for legacy or duck-typed fits and marks the result
