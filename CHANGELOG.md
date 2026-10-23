@@ -4,6 +4,18 @@
 
 ### Added
 
+- Add the Proposed Rust/PyO3 `holm-wald-one-sided-v1` numerical foundation for
+  permutation-invariant candidate superiority with Holm family-wise error
+  control and an explicit indeterminate result. Exact dyadic conversion plus
+  fraction-free Bareiss/Sylvester certification makes covariance admission
+  independent of binary64 rounding and candidate order;
+  outward-rounded normal-tail bounds and exact dyadic Holm comparisons prevent
+  anti-conservative boundary rejection; and the Python boundary admits exact
+  native `float64` evidence without lossy coercion. The public comparison names
+  its conservative `standard_error_upper_bound` explicitly. It has no default error level and is not
+  decision-authorizing until #2315 supplies owner-produced joint prediction
+  uncertainty, calibration/coverage, fit denominators, and provenance.
+
 - Saved multiple-group bifactor and two-tier GRM fits can now produce
   per-person conditional `l_z`, posterior trait estimates, observed-item
   counts, and caller-threshold flags. Optional seeded model resampling gives

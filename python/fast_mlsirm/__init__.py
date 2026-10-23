@@ -36,6 +36,14 @@ from ._scaling_control_safety import install as _install_scaling_control_safety
 from ._serving_export_safety import install as _install_serving_export_safety
 from .interaction_map import ResidualInteractionMap as ResidualInteractionMap
 from .interaction_map import residual_interaction_map as residual_interaction_map
+from .decision_superiority import (
+    DECISION_SUPERIORITY_ALGORITHM as DECISION_SUPERIORITY_ALGORITHM,
+)
+from .decision_superiority import (
+    WaldSuperiorityComparison as WaldSuperiorityComparison,
+)
+from .decision_superiority import WaldSuperiorityResult as WaldSuperiorityResult
+from .decision_superiority import assess_wald_superiority as assess_wald_superiority
 from .sampling_design import (
     ACHIEVED_PROPORTION_SCHEMA_VERSION as ACHIEVED_PROPORTION_SCHEMA_VERSION,
 )
@@ -303,6 +311,10 @@ except _PackageNotFoundError:
     __version__ = "0+unknown"
 
 __all__ = list(_legacy_init.__all__) + [
+    "DECISION_SUPERIORITY_ALGORITHM",
+    "WaldSuperiorityComparison",
+    "WaldSuperiorityResult",
+    "assess_wald_superiority",
     "CONTEXTUAL_ORCHESTRATOR_CONTRACT_V1",
     "BifactorScoreabilityResult",
     "bifactor_scoreability",

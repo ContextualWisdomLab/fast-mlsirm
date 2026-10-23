@@ -8,6 +8,7 @@ pub mod cdm;
 pub mod classification;
 pub mod crm;
 pub mod detect;
+pub mod decision_superiority;
 pub mod dif;
 pub mod equating;
 pub mod exposure;
