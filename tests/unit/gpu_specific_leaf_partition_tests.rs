@@ -102,6 +102,7 @@ fn specific_leaf_dispatch_is_partitioned() {
             ("w_acc", &original.w_acc, &full.w_acc),
             ("s1_g", &original.s1_g, &full.s1_g),
             ("s2_g", &original.s2_g, &full.s2_g),
+            ("s1_spec", &original.s1_spec, &full.s1_spec),
             ("s2_spec", &original.s2_spec, &full.s2_spec),
             ("w_spec", &original.w_spec, &full.w_spec),
         ] {
@@ -124,6 +125,7 @@ fn specific_leaf_dispatch_is_partitioned() {
         assert!(omitted
             .s2_spec
             .iter()
+            .chain(&omitted.s1_spec)
             .chain(&omitted.w_spec)
             .all(|v| v.to_bits() == 0));
     }
@@ -142,7 +144,7 @@ fn specific_tree_layout_checks_payload_without_quadrature_cap() {
         let counts = 3 * 3 * q * q * 3;
         assert_eq!(
             specific_tree_layout(13, q, q, 3, 3, 3, 3, true),
-            Some((tiles, counts + 18 * tiles))
+            Some((tiles, counts + 27 * tiles))
         );
         assert_eq!(
             specific_tree_layout(13, q, q, 3, 3, 3, 3, false),
@@ -152,7 +154,7 @@ fn specific_tree_layout_checks_payload_without_quadrature_cap() {
     for leaves in [255, 256, 257, 511, 512, 513] {
         assert_eq!(
             specific_tree_layout(leaves, 1, 1, 1, 1, 1, 1, true),
-            Some((leaves.div_ceil(256), 1 + 2 * leaves.div_ceil(256)))
+            Some((leaves.div_ceil(256), 1 + 3 * leaves.div_ceil(256)))
         );
     }
     assert_eq!(

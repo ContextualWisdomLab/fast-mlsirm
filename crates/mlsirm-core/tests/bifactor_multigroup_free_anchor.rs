@@ -58,6 +58,7 @@ fn cfg() -> BifactorMultigroupConfig {
         slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         device: mlsirm_core::Device::Cpu,
         estimate_specific_vars: false,
+        estimate_specific_means: false,
     }
 }
 

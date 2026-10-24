@@ -109,7 +109,7 @@ pub(crate) fn fixture(
         })
         .collect();
     reset_calls();
-    let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec) = e_step_multigroup(
+    let (ll, counts, w_acc, s1_g, s2_g, _s1_spec, s2_spec, w_spec) = e_step_multigroup(
         &v,
         &y,
         observed,

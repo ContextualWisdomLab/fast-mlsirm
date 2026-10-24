@@ -1985,7 +1985,7 @@ pub(crate) fn pack_params(
 
 /// Configuration for [`fit_bifactor_grm_multigroup`]. Numeric fields mirror
 /// [`BifactorGrmConfig`]; `estimate_specific_vars` selects whether focal
-/// specific-factor variances (means fixed at 0) are estimated (`true`) or
+/// specific-factor variances are estimated (`true`) or
 /// held at the reference value 1 (`false`).
 #[derive(Clone, Copy, Debug)]
 pub struct BifactorMultigroupConfig {
@@ -2007,6 +2007,8 @@ pub struct BifactorMultigroupConfig {
     pub slope_prior: SlopePrior,
     /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
     pub estimate_specific_vars: bool,
+    /// Estimate focal specific means; reference remains zero.
+    pub estimate_specific_means: bool,
     /// Compute device for the E-step sweep (see [`BifactorGrmConfig::device`]).
     pub device: crate::Device,
 }
@@ -2024,6 +2026,7 @@ impl Default for BifactorMultigroupConfig {
             ridge: 1e-8,
             slope_prior: SlopePrior::None,
             estimate_specific_vars: false,
+            estimate_specific_means: false,
             device: crate::Device::Cpu,
         }
     }
@@ -2050,6 +2053,8 @@ pub struct BifactorMultigroupResult {
     /// Specific-factor SDs, `n_groups x n_specific` (`[0][*] == 1` pinned;
     /// focal rows are 1 unless `estimate_specific_vars`).
     pub specific_sd: Vec<Vec<f64>>,
+    /// Specific-factor means, group by block; reference row is zero.
+    pub specific_mean: Vec<Vec<f64>>,
     /// General-factor EAP on the common scale, length `n_persons`.
     pub theta_g_eap: Vec<f64>,
     /// General-factor posterior SD, length `n_persons`.
@@ -2072,6 +2077,42 @@ pub struct BifactorMultigroupResult {
     /// EM objective per E-step (see [`BifactorGrmResult::em_objective_trace`];
     /// common items contribute their prior once, free items once per group).
     pub em_objective_trace: Vec<f64>,
+}
+
+
+fn canonicalize_multigroup_specific(
+    blocks: &[Vec<usize>], anchor_vec: &[bool],
+    a_specific: &mut [Vec<f64>], specific_mean: &mut [Vec<f64>],
+) {
+    let n_groups = a_specific.len();
+    for (s, members) in blocks.iter().enumerate() {
+        let anchored_members: Vec<usize> =
+            members.iter().copied().filter(|&i| anchor_vec[i]).collect();
+        // Prefer anchored members; fall back to the whole block only when it
+        // has no anchored item.
+        let candidates: &[usize] = if anchored_members.is_empty() {
+            members
+        } else {
+            &anchored_members
+        };
+        let anchor = (0..n_groups)
+            .flat_map(|g| candidates.iter().map(move |&i| (g, i)))
+            .max_by(|&(g1, i1), &(g2, i2)| {
+                a_specific[g1][i1]
+                    .abs()
+                    .total_cmp(&a_specific[g2][i2].abs())
+            })
+            .expect("validated blocks are non-empty");
+        if a_specific[anchor.0][anchor.1] < 0.0 {
+            for g in 0..n_groups {
+                specific_mean[g][s] = -specific_mean[g][s];
+                for &i in members {
+                    a_specific[g][i] = -a_specific[g][i];
+                }
+            }
+        }
+    }
+
 }
 
 fn validate_multigroup_cfg(cfg: &BifactorMultigroupConfig) -> Result<(), String> {
@@ -2126,7 +2167,8 @@ fn initial_params_multigroup(
     seed: u64,
     start: usize,
     estimate_specific_vars: bool,
-) -> (Vec<Vec<ItemParams>>, Vec<f64>, Vec<f64>, Vec<Vec<f64>>) {
+    estimate_specific_means: bool,
+) -> (Vec<Vec<ItemParams>>, Vec<f64>, Vec<f64>, Vec<Vec<f64>>, Vec<Vec<f64>>) {
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
     let mut rng = SplitMix64(seed ^ (0x9E37_79B9_7F4A_7C15u64.wrapping_mul(start as u64 + 1)));
     // Base-rate intercepts: pooled for anchored, per-group for free.
@@ -2228,7 +2270,14 @@ fn initial_params_multigroup(
             }
         }
     }
-    (params_groups, mus, sigmas, taus)
+    // Draw after the legacy jitter sequence so opt-out is bit-reproducible.
+    let mut specific_mus = vec![vec![0.0; v.n_specific]; n_groups];
+    if start > 0 && estimate_specific_means {
+        for row in specific_mus.iter_mut().skip(1) {
+            for mean in row { *mean = 0.2 * rng.standard_normal(); }
+        }
+    }
+    (params_groups, mus, sigmas, taus, specific_mus)
 }
 
 struct MultiStartOutcome {
@@ -2236,6 +2285,7 @@ struct MultiStartOutcome {
     mus: Vec<f64>,
     sigmas: Vec<f64>,
     taus: Vec<Vec<f64>>,
+    specific_mus: Vec<Vec<f64>>,
     loglik_trace: Vec<f64>,
     /// EM objective per E-step (== `loglik_trace` without a prior); its last
     /// value ranks starts.
@@ -2259,8 +2309,8 @@ fn ac_reset_calls() {AC_BLOCK_LSE.with(|n|n.set(0));AC_CACHE_F64.with(|n|n.set(0
 /// per-group expected category counts (`counts[g][i][node][k]`,
 /// `node = t * qs + h` for block items, `node = t` for general-only items)
 /// and the posterior moments that drive the group-distribution M-step
-/// (`s1_g/s2_g` for the general factor, `s2_spec[g][s]` for the specifics at
-/// zero mean).
+/// (`s1_g/s2_g` for general and `s1_spec/s2_spec` for specific factors
+/// on the common affine scale).
 ///
 /// Basis: Cai et al. (2011, pp. 231–232, Equations 15–17; p. 248,
 /// Equation C6), local full-text sections read. The invocation-local integral
@@ -2298,6 +2348,7 @@ pub(crate) fn e_step_multigroup(
     Vec<f64>,
     Vec<f64>,
     Vec<f64>,
+    Vec<Vec<f64>>,
     Vec<Vec<f64>>,
     Vec<Vec<f64>>,
 ) {
@@ -2380,16 +2431,18 @@ pub(crate) fn e_step_multigroup(
                     }
                     counts.push(cg);
                 }
+                let mut s1_spec = vec![vec![0.0; v.n_specific]; n_groups];
                 let mut s2_spec = vec![vec![0.0; v.n_specific]; n_groups];
                 let mut w_spec = vec![vec![0.0; v.n_specific]; n_groups];
                 for g in 0..n_groups {
                     for s in 0..v.n_specific {
+                        s1_spec[g][s] = res.s1_spec[g * v.n_specific + s];
                         s2_spec[g][s] = res.s2_spec[g * v.n_specific + s];
                         w_spec[g][s] = res.w_spec[g * v.n_specific + s];
                     }
                 }
                 return (
-                    res.loglik, counts, res.w_acc, res.s1_g, res.s2_g, s2_spec, w_spec,
+                    res.loglik, counts, res.w_acc, res.s1_g, res.s2_g, s1_spec, s2_spec, w_spec,
                 );
             }
         }
@@ -2421,6 +2474,7 @@ pub(crate) fn e_step_multigroup(
     let mut w_acc = vec![0.0f64; n_groups];
     let mut s1_g = vec![0.0f64; n_groups];
     let mut s2_g = vec![0.0f64; n_groups];
+    let mut s1_spec = vec![vec![0.0f64; v.n_specific]; n_groups];
     let mut s2_spec = vec![vec![0.0f64; v.n_specific]; n_groups];
     // Per-(group, block) posterior mass for the specific-variance M-step:
     // persons with no observed item in block `s` contribute nothing to that
@@ -2542,9 +2596,10 @@ pub(crate) fn e_step_multigroup(
                     if !post.is_finite() {
                         continue;
                     }
-                    // Specific moments at zero mean for the variance M-step.
+                    // Common-scale first/second moments for location and scale.
                     let ts = ts_groups[g][s][h];
                     w_spec[g][s] += post;
+                    s1_spec[g][s] += post * ts;
                     s2_spec[g][s] += post * ts * ts;
                     for &i in members {
                         if !is_obs(p, i) {
@@ -2565,7 +2620,7 @@ pub(crate) fn e_step_multigroup(
             flat_counts[start..stop].chunks_exact(v.n_cat).map(<[f64]>::to_vec).collect()
         }).collect()
     }).collect();
-    (loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec)
+    (loglik, counts, w_acc, s1_g, s2_g, s1_spec, s2_spec, w_spec)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2586,7 +2641,7 @@ fn run_single_start_multigroup(
     qs: usize,
     start: usize,
 ) -> Result<MultiStartOutcome, String> {
-    let (mut params_groups, mut mus, mut sigmas, mut taus) = initial_params_multigroup(
+    let (mut params_groups, mut mus, mut sigmas, mut taus, mut specific_mus) = initial_params_multigroup(
         v,
         y,
         observed,
@@ -2596,6 +2651,7 @@ fn run_single_start_multigroup(
         cfg.seed,
         start,
         cfg.estimate_specific_vars,
+        cfg.estimate_specific_means,
     );
     let start_params_groups = params_groups.clone();
     // Latent coordinates per expected-count node (rebuilt when mus/sigmas/
@@ -2622,11 +2678,11 @@ fn run_single_start_multigroup(
             }
             for s in 0..v.n_specific {
                 for (h, &x) in ts_std.iter().enumerate() {
-                    ts_groups[g][s][h] = taus[g][s] * x;
+                    ts_groups[g][s][h] = specific_mus[g][s] + taus[g][s] * x;
                 }
             }
         }
-        let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec) = e_step_multigroup(
+        let (ll, counts, w_acc, s1_g, s2_g, s1_spec, s2_spec, w_spec) = e_step_multigroup(
             v,
             y,
             observed,
@@ -2775,8 +2831,8 @@ fn run_single_start_multigroup(
         // M-step, focal group distributions (reference g = 0 pinned to
         // N(0, I)). General: mu = mean EAP, var = mean posterior second
         // moment minus mu^2 (Bock-Aitkin/Bock-Zimowski moment update).
-        // Specifics (when estimated): tau^2 = mean posterior second moment
-        // at zero mean. All unconstrained-positive with NO clamping: a
+        // Specifics: mean = posterior first moment; variance = posterior
+        // second moment minus the estimated mean squared (zero if fixed). All unconstrained-positive with NO clamping: a
         // non-finite or non-positive update fails the start loudly.
         for g in 1..n_groups {
             if w_acc[g] <= 0.0 || !w_acc[g].is_finite() {
@@ -2794,7 +2850,7 @@ fn run_single_start_multigroup(
             }
             mus[g] = mean;
             sigmas[g] = var.sqrt();
-            if cfg.estimate_specific_vars {
+            if cfg.estimate_specific_vars || cfg.estimate_specific_means {
                 for s in 0..v.n_specific {
                     // Denominator counts only persons observed in this block
                     // (block-wise MAR must not dilute the variance update).
@@ -2803,7 +2859,15 @@ fn run_single_start_multigroup(
                             "group {g} specific-{s} has no posterior mass"
                         ));
                     }
-                    let vrow = s2_spec[g][s] / w_spec[g][s];
+                    let mean = if cfg.estimate_specific_means {
+                        s1_spec[g][s] / w_spec[g][s]
+                    } else { 0.0 };
+                    if !mean.is_finite() {
+                        return Err(format!("non-finite group-{g} specific-{s} mean update"));
+                    }
+                    specific_mus[g][s] = mean;
+                    if !cfg.estimate_specific_vars { continue; }
+                    let vrow = s2_spec[g][s] / w_spec[g][s] - mean * mean;
                     if !vrow.is_finite() {
                         return Err(format!("non-finite group-{g} specific-{s} update"));
                     }
@@ -2832,6 +2896,7 @@ fn run_single_start_multigroup(
         mus,
         sigmas,
         taus,
+        specific_mus,
         loglik_trace,
         em_objective_trace,
         n_iter,
@@ -2926,6 +2991,7 @@ pub fn fit_bifactor_grm_multigroup(
             general_mean: vec![0.0],
             general_sd: vec![1.0],
             specific_sd: vec![vec![1.0; n_specific]],
+            specific_mean: vec![vec![0.0; n_specific]],
             theta_g_eap: single.theta_g_eap,
             theta_g_sd: single.theta_g_sd,
             group_category_counts: vec![single.category_counts],
@@ -3089,7 +3155,7 @@ pub fn fit_bifactor_grm_multigroup(
         }
         for s in 0..v.n_specific {
             for (h, &x) in ts_std.iter().enumerate() {
-                ts_groups[g][s][h] = outcome.taus[g][s] * x;
+                ts_groups[g][s][h] = outcome.specific_mus[g][s] + outcome.taus[g][s] * x;
             }
         }
     }
@@ -3199,6 +3265,7 @@ pub fn fit_bifactor_grm_multigroup(
     let mut general_mean = outcome.mus;
     let general_sd = outcome.sigmas;
     let specific_sd = outcome.taus;
+    let mut specific_mean = outcome.specific_mus;
 
     // Joint reflection canonicalization across groups: one decision per
     // dimension, so anchored equality is preserved. The sign is read from
@@ -3231,32 +3298,7 @@ pub fn fit_bifactor_grm_multigroup(
             *t = -*t;
         }
     }
-    for members in v.blocks.iter() {
-        let anchored_members: Vec<usize> =
-            members.iter().copied().filter(|&i| anchor_vec[i]).collect();
-        // Prefer anchored members; fall back to the whole block only when it
-        // has no anchored item.
-        let candidates: &[usize] = if anchored_members.is_empty() {
-            members
-        } else {
-            &anchored_members
-        };
-        let anchor = (0..n_groups)
-            .flat_map(|g| candidates.iter().map(move |&i| (g, i)))
-            .max_by(|&(g1, i1), &(g2, i2)| {
-                a_specific[g1][i1]
-                    .abs()
-                    .total_cmp(&a_specific[g2][i2].abs())
-            })
-            .expect("validated blocks are non-empty");
-        if a_specific[anchor.0][anchor.1] < 0.0 {
-            for g in 0..n_groups {
-                for &i in members {
-                    a_specific[g][i] = -a_specific[g][i];
-                }
-            }
-        }
-    }
+    canonicalize_multigroup_specific(&v.blocks, &anchor_vec, &mut a_specific, &mut specific_mean);
 
     let mut group_category_counts = vec![vec![0usize; n_items * n_cat]; n_groups];
     for p in 0..n_persons {
@@ -3278,6 +3320,9 @@ pub fn fit_bifactor_grm_multigroup(
         }
     }
     n_parameters += (n_groups - 1) * 2;
+    if cfg.estimate_specific_means {
+        n_parameters += (n_groups - 1) * v.n_specific;
+    }
     if cfg.estimate_specific_vars {
         n_parameters += (n_groups - 1) * v.n_specific;
     }
@@ -3289,6 +3334,7 @@ pub fn fit_bifactor_grm_multigroup(
         general_mean,
         general_sd,
         specific_sd,
+        specific_mean,
         theta_g_eap,
         theta_g_sd,
         group_category_counts,
@@ -3660,7 +3706,7 @@ pub fn fit_bifactor_grm_fipc(
             .collect();
         let tg_groups = vec![tg.clone()];
         let ts_groups = vec![ts_focal.clone()];
-        let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec) = e_step_multigroup(
+        let (ll, counts, w_acc, s1_g, s2_g, _s1_spec, s2_spec, w_spec) = e_step_multigroup(
             &v,
             y,
             observed,
@@ -3962,3 +4008,7 @@ mod sibling_hessian_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/bifactor_fixed_category_policy_tests.rs"]
 mod fixed_category_policy_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/specific_mean_tests.rs"]
+mod specific_mean_tests;

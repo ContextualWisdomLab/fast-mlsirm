@@ -135,6 +135,7 @@ pub(crate) struct ReducedEstepOutputs {
     pub w_acc: Vec<f64>,
     pub s1_g: Vec<f64>,
     pub s2_g: Vec<f64>,
+    pub s1_spec: Vec<f64>,
     pub s2_spec: Vec<f64>,
     pub w_spec: Vec<f64>,
     /// Per-person posterior over the general-node axis. FIPC uses this to
@@ -400,7 +401,7 @@ fn reduce_moments_g(
 ) {
     let g = flat_idx(wid, lid, nwg);
     if (g >= dims.ng) { return; }
-    let row = g * (3u + 2u * dims.ns);
+    let row = g * (3u + 3u * dims.ns);
     // Pairwise addition tree: Higham (1993, pp. 787-788, Eqs. 3.3-3.6).
     // The online binary-carry layout is an implementation derivation.
     // 32 levels cover the u32 buffer-index domain, not a quadrature cap.
@@ -438,7 +439,8 @@ fn reduce_moments_g(
     moments[row + 2u] = result.z;
 }
 
-// Per-(group, block) specific moments (w_spec, s2_spec).
+// Per-(group, block) specific moments (mass, first, second); each group
+// row is [w_g, s1_g, s2_g, w_spec[ns], s1_spec[ns], s2_spec[ns]].
 @compute @workgroup_size(64)
 fn reduce_moments_s(
     @builtin(workgroup_id) wid: vec3<u32>,
@@ -450,14 +452,14 @@ fn reduce_moments_s(
     if (idx >= total) { return; }
     let g = idx / dims.ns;
     let s = idx % dims.ns;
-    let row = g * (3u + 2u * dims.ns);
+    let row = g * (3u + 3u * dims.ns);
     // Pairwise addition tree: Higham (1993, pp. 787-788, Eqs. 3.3-3.6).
     // The online binary-carry layout is an implementation derivation.
     // 32 levels cover the u32 buffer-index domain, not a quadrature cap.
     // Reference: Higham, N. J. (1993). The accuracy of floating point
     // summation. SIAM Journal on Scientific Computing, 14(4), 783-799.
     // doi:10.1137/0914050.
-    var bins: array<vec2<f32>, 32>;
+    var bins: array<vec3<f32>, 32>;
     var count = 0u;
     for (var p = 0u; p < dims.np; p = p + 1u) {
         if (gid[p] != g) { continue; }
@@ -466,7 +468,7 @@ fn reduce_moments_s(
             for (var h = 0u; h < dims.qs; h = h + 1u) {
                 let post = joint[((p * dims.ns + s) * dims.qg + t) * dims.qs + h];
                 let node = ts[(g * dims.ns + s) * dims.qs + h];
-                var value = vec2<f32>(post, post * node * node);
+                var value = vec3<f32>(post, post * node, post * node * node);
                 var level = 0u;
                 var occupied = count;
                 loop {
@@ -480,7 +482,7 @@ fn reduce_moments_s(
             }
         }
     }
-    var result = vec2<f32>(0.0);
+    var result = vec3<f32>(0.0);
     for (var level = 0u; level < 32u; level = level + 1u) {
         if ((count & (1u << level)) != 0u) {
             result = bins[level] + result;
@@ -488,6 +490,7 @@ fn reduce_moments_s(
     }
     moments[row + 3u + s] = result.x;
     moments[row + 3u + dims.ns + s] = result.y;
+    moments[row + 3u + 2u * dims.ns + s] = result.z;
 }
 ";
 
@@ -497,7 +500,7 @@ fn reduce_moments_s(
 pub(crate) const MIN_STORAGE_BUFFERS: u32 = 20;
 
 /// Checked leaf-tile and combined count/scratch layout, not a node cap.
-/// Keep all original count slots and append two f32 values per group/block
+/// Keep all original count slots and append three f32 values per group/block
 /// tile; the merge retains the original ordered tree and tail orientation.
 /// Basis: Higham (1993, pp. 783, 797).
 /// Reference: Higham, N. J. (1993). The accuracy of floating point summation.
@@ -527,7 +530,7 @@ fn specific_tree_layout(
     u32::try_from(leaves.checked_add(255)?).ok()?;
     let capacity = leaves.div_ceil(256);
     let tiles = ng.checked_mul(ns)?.checked_mul(capacity)?;
-    let len = counts.checked_add(tiles.checked_mul(2)?)?;
+    let len = counts.checked_add(tiles.checked_mul(3)?)?;
     u32::try_from(tiles).ok()?;
     u32::try_from(len).ok()?;
     Some((capacity, len))
@@ -547,7 +550,7 @@ pub(crate) fn e_step_reduced_gpu(inputs: &ReducedEstepInputs) -> Option<ReducedE
 /// Reduced sweep retaining default full outputs; callers may omit unconsumed
 /// specific moments only (Cai, 2010, pp. 608–609, Appendix A). Omitted
 /// specific outputs are zero, not estimated moments. The default entry and
-/// original output slots remain full. Consumed specific moments append two
+/// original output slots remain full. Consumed specific moments append three
 /// f32 partials per group/block/256-leaf tile to the count buffer, checked
 /// against runtime storage and u32 indexing before allocation. They use an
 /// additional compute pass but unchanged product/addition orientation;
@@ -615,7 +618,7 @@ pub(crate) fn e_step_reduced_gpu_consumed(
         np,                    // ll
         np * ns,               // anyobs
         ng * ni * stride * nc, // counts
-        ng * (3 + 2 * ns),     // moments
+        ng * (3 + 3 * ns),     // moments
     ];
     for &len in &buffer_lens[1..] {
         if !storage_buffer_fits(&limits, len) {
@@ -731,7 +734,7 @@ pub(crate) fn e_step_reduced_gpu_consumed(
         return None;
     }
     let counts_buf = output_buffer(device, "counts", counts_len);
-    let moments_buf = output_buffer(device, "moments", ng * (3 + 2 * ns));
+    let moments_buf = output_buffer(device, "moments", ng * (3 + 3 * ns));
 
     let partitioned_shader;
     let shader = if specific_moments && !original_specific {
@@ -932,7 +935,7 @@ pub(crate) fn e_step_reduced_gpu_consumed(
     let ll_staging = staging_buffer(device, "ll_read", np);
     let postg_staging = staging_buffer(device, "postg_read", np * qg);
     let counts_staging = staging_buffer(device, "counts_read", ng * ni * stride * nc);
-    let moments_staging = staging_buffer(device, "moments_read", ng * (3 + 2 * ns));
+    let moments_staging = staging_buffer(device, "moments_read", ng * (3 + 3 * ns));
     let Some(read) = submit_and_readback(
         ctx,
         encoder,
@@ -940,7 +943,7 @@ pub(crate) fn e_step_reduced_gpu_consumed(
             (&ll_buf, &ll_staging, np),
             (&postg_buf, &postg_staging, np * qg),
             (&counts_buf, &counts_staging, ng * ni * stride * nc),
-            (&moments_buf, &moments_staging, ng * (3 + 2 * ns)),
+            (&moments_buf, &moments_staging, ng * (3 + 3 * ns)),
         ],
     ) else {
         set_fallback_reason("gpu_submit_or_readback_failure");
@@ -968,10 +971,11 @@ pub(crate) fn e_step_reduced_gpu_consumed(
     for &v in &ll_vec {
         loglik += f64::from(v);
     }
-    let row = 3 + 2 * ns;
+    let row = 3 + 3 * ns;
     let mut w_acc = vec![0.0; ng];
     let mut s1_g = vec![0.0; ng];
     let mut s2_g = vec![0.0; ng];
+    let mut s1_spec = vec![0.0; ng * ns];
     let mut s2_spec = vec![0.0; ng * ns];
     let mut w_spec = vec![0.0; ng * ns];
     for g in 0..ng {
@@ -980,7 +984,8 @@ pub(crate) fn e_step_reduced_gpu_consumed(
         s2_g[g] = f64::from(moments_vec[g * row + 2]);
         for s in 0..ns {
             w_spec[g * ns + s] = f64::from(moments_vec[g * row + 3 + s]);
-            s2_spec[g * ns + s] = f64::from(moments_vec[g * row + 3 + ns + s]);
+            s1_spec[g * ns + s] = f64::from(moments_vec[g * row + 3 + ns + s]);
+            s2_spec[g * ns + s] = f64::from(moments_vec[g * row + 3 + 2 * ns + s]);
         }
     }
 
@@ -994,6 +999,7 @@ pub(crate) fn e_step_reduced_gpu_consumed(
         w_acc,
         s1_g,
         s2_g,
+        s1_spec,
         s2_spec,
         w_spec,
         postg: postg_vec.into_iter().map(f64::from).collect(),

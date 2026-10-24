@@ -194,6 +194,7 @@ fn none_path_matches_main_reference_single_and_multigroup() {
             ridge: 1e-8,
             slope_prior: SlopePrior::None,
             estimate_specific_vars: false,
+        estimate_specific_means: false,
             device: mlsirm_core::Device::Cpu,
         },
     )
