@@ -155,7 +155,7 @@ pub fn fit_bifactor_grm_fipc_full(
         if tg.iter().chain(ts.iter().flatten()).any(|x| !x.is_finite()) {
             return Err("non-finite affine quadrature support".into());
         }
-        let (kernel_ll, counts, mass, s1, s2, _, _) = e_step_multigroup(
+        let (kernel_ll, counts, mass, s1, s2, _, _, _) = e_step_multigroup(
             &v,
             y,
             None,

@@ -297,6 +297,7 @@ fn bifactor_fipc_matches_concurrent_at_true_anchors() {
             ridge: 1e-8,
             slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
             estimate_specific_vars: false,
+            estimate_specific_means: false,
             device: mlsirm_core::Device::Cpu,
         },
     )

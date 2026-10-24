@@ -90,7 +90,7 @@ impl Joint<'_> {
                     .collect()
             })
             .collect();
-        let (loglik, counts, _, _, _, _, _) = e_step_multigroup(
+        let (loglik, counts, _, _, _, _, _, _) = e_step_multigroup(
             &self.v,
             self.y,
             self.observed,

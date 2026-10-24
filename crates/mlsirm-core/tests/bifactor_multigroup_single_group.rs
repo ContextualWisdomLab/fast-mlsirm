@@ -126,6 +126,7 @@ fn single_group_multigroup_matches_stage1_exactly() {
         slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         device: mlsirm_core::Device::Cpu,
         estimate_specific_vars: false,
+        estimate_specific_means: false,
     };
     let group_id = vec![0usize; N_PERSONS];
     let multi = fit_bifactor_grm_multigroup(
@@ -232,6 +233,7 @@ fn uncapped_start_budget_is_accepted() {
         slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         device: mlsirm_core::Device::Cpu,
         estimate_specific_vars: false,
+        estimate_specific_means: false,
     };
     let group_id = vec![0usize; 60];
     let fit = fit_bifactor_grm_multigroup(

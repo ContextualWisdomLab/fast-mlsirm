@@ -159,6 +159,7 @@ fn multigroup_recovers_group_shifts_and_shared_items() {
         slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         device: mlsirm_core::Device::Cpu,
         estimate_specific_vars: false,
+        estimate_specific_means: false,
     };
     let fit = fit_bifactor_grm_multigroup(
         &y,

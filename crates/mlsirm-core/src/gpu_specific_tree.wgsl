@@ -27,7 +27,7 @@ fn specific_chunks(
     let begin = chunk * chunk_size;
     if (begin >= count_total) { return; }
     let count = min(chunk_size, count_total - begin);
-    var bins: array<vec2<f32>, 32>;
+    var bins: array<vec3<f32>, 32>;
     let per_person = dims.qg * dims.qs;
     var current_rank = begin / per_person;
     var p = 0u;
@@ -54,7 +54,7 @@ fn specific_chunks(
         }
         let post = joint[((p * dims.ns + s) * dims.qg + t) * dims.qs + h];
         let node = ts[(g * dims.ns + s) * dims.qs + h];
-        var value = vec2<f32>(post, post * node * node);
+        var value = vec3<f32>(post, post * node, post * node * node);
         var occupied = k;
         var level = 0u;
         loop {
@@ -65,13 +65,14 @@ fn specific_chunks(
         }
         bins[level] = value;
     }
-    var result = vec2<f32>(0.0);
+    var result = vec3<f32>(0.0);
     for (var level = 0u; level < 32u; level = level + 1u) {
         if ((count & (1u << level)) != 0u) { result = bins[level] + result; }
     }
-    let offset = dims.ng * dims.ni * dims.stride * dims.nc + 2u * idx;
+    let offset = dims.ng * dims.ni * dims.stride * dims.nc + 3u * idx;
     counts[offset] = result.x;
     counts[offset + 1u] = result.y;
+    counts[offset + 2u] = result.z;
 }
 
 @compute @workgroup_size(64)
@@ -92,10 +93,10 @@ fn specific_merge(
     let count_total = persons * dims.qg * dims.qs;
     let full = count_total / 256u;
     let tail = count_total % 256u;
-    let offset = dims.ng * dims.ni * dims.stride * dims.nc + 2u * idx * capacity;
-    var bins: array<vec2<f32>, 32>;
+    let offset = dims.ng * dims.ni * dims.stride * dims.nc + 3u * idx * capacity;
+    var bins: array<vec3<f32>, 32>;
     for (var k = 0u; k < full; k = k + 1u) {
-        var value = vec2<f32>(counts[offset + 2u * k], counts[offset + 2u * k + 1u]);
+        var value = vec3<f32>(counts[offset + 3u * k], counts[offset + 3u * k + 1u], counts[offset + 3u * k + 2u]);
         var occupied = k;
         var level = 0u;
         loop {
@@ -106,14 +107,15 @@ fn specific_merge(
         }
         bins[level] = value;
     }
-    var result = vec2<f32>(0.0);
+    var result = vec3<f32>(0.0);
     if (tail != 0u) {
-        result = vec2<f32>(counts[offset + 2u * full], counts[offset + 2u * full + 1u]);
+        result = vec3<f32>(counts[offset + 3u * full], counts[offset + 3u * full + 1u], counts[offset + 3u * full + 2u]);
     }
     for (var level = 0u; level < 32u; level = level + 1u) {
         if ((full & (1u << level)) != 0u) { result = bins[level] + result; }
     }
-    let row = g * (3u + 2u * dims.ns);
+    let row = g * (3u + 3u * dims.ns);
     moments[row + 3u + s] = result.x;
     moments[row + 3u + dims.ns + s] = result.y;
+    moments[row + 3u + 2u * dims.ns + s] = result.z;
 }
