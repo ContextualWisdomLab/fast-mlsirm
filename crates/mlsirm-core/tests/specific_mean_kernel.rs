@@ -59,20 +59,97 @@ fn specific_mean_fixed_sd_and_disabled_mean_contracts() {
         assert!(!r.converged);
     }
 }
-#[cfg(feature="gpu")]
 #[test]
-#[ignore="requires owner-held host GPU lease"]
-fn specific_mean_gpu_fit_matches_cpu_and_terminal_dispatch() {
-    let (y,g)=data();
-    let cfg=BifactorMultigroupConfig {q_general:7,q_specific:7,max_iter:2,tol:1e-12,
-        estimate_specific_means:true,estimate_specific_vars:true,..Default::default()};
-    let a=fit_bifactor_grm_multigroup(&y,None,&g,2,&[0,0,-1,-1],g.len(),4,1,3,None,&cfg).unwrap();
-    let b=fit_bifactor_grm_multigroup(&y,None,&g,2,&[0,0,-1,-1],g.len(),4,1,3,None,
-        &BifactorMultigroupConfig {device:Device::Gpu,..cfg}).unwrap();
-    assert!(!a.converged && !b.converged);
-    assert_eq!(b.termination_reason,"max_iter_reached");
-    for (x,y) in a.specific_mean.iter().flatten().zip(b.specific_mean.iter().flatten()) {assert!((x-y).abs()<2e-4);}
-    for (x,y) in a.specific_sd.iter().flatten().zip(b.specific_sd.iter().flatten()) {assert!((x-y).abs()<2e-4);}
-    for (x,y) in a.loglik_trace.iter().zip(&b.loglik_trace) {assert!((x-y).abs()<2e-3);}
-
+fn specific_mean_rejects_unanchored_specific_block() {
+    // Reviewer F1: block 0/general have anchors; block 1 is entirely free.
+    // All declared categories occur in every group/item.
+    let mut y = Vec::new();
+    let mut groups = Vec::new();
+    for g in 0..2 {
+        for pattern in 0..243 {
+            groups.push(g);
+            for i in 0..5 {
+                y.push((pattern / 3usize.pow(i)) % 3);
+            }
+        }
+    }
+    let cfg = BifactorMultigroupConfig {
+        q_general: 3, q_specific: 3, max_iter: 1,
+        estimate_specific_means: true, estimate_specific_vars: false,
+        device: Device::Cpu, ..Default::default()
+    };
+    let err = fit_bifactor_grm_multigroup(
+        &y, None, &groups, 2, &[0, 0, 1, 1, -1], groups.len(), 5, 2, 3,
+        Some(&[true, true, false, false, true]), &cfg,
+    ).expect_err("an entirely free block cannot link a focal specific mean");
+    assert!(err.contains("specific-1") && err.contains("anchor"), "{err}");
+    // Opt-out keeps the previous zero-specific-mean contract.
+    assert!(fit_bifactor_grm_multigroup(
+        &y, None, &groups, 2, &[0, 0, 1, 1, -1], groups.len(), 5, 2, 3,
+        Some(&[true, true, false, false, true]),
+        &BifactorMultigroupConfig { estimate_specific_means: false, ..cfg },
+    ).is_ok());
 }
+
+#[test]
+fn specific_mean_rejects_rank_deficient_joint_anchor_locations() {
+    // Both items are common and the block has an anchor. Equal response
+    // columns keep their fitted loading rows identical, so only one joint
+    // location contrast is linked despite two anchor rows.
+    let groups: Vec<usize> = (0..2).flat_map(|g| std::iter::repeat_n(g, 9)).collect();
+    let y: Vec<usize> = (0..18).flat_map(|p| [p % 3, p % 3]).collect();
+    let cfg = BifactorMultigroupConfig {
+        q_general: 3, q_specific: 3, max_iter: 1,
+        estimate_specific_means: true, device: Device::Cpu, ..Default::default()
+    };
+    let err = fit_bifactor_grm_multigroup(
+        &y, None, &groups, 2, &[0, 0], groups.len(), 2, 1, 3, None, &cfg,
+    ).expect_err("per-block anchor presence cannot prove joint location rank");
+    assert!(err.contains("location") && err.contains("rank"), "{err}");
+}
+
+#[test]
+fn specific_mean_rejects_unobserved_focal_block_anchor() {
+    let (y, groups) = data();
+    let mut obs = vec![true; y.len()];
+    for (p, &g) in groups.iter().enumerate() {
+        if g == 1 { obs[p * 4] = false; }
+    }
+    let cfg = BifactorMultigroupConfig {
+        q_general: 3, q_specific: 3, max_iter: 1,
+        estimate_specific_means: true, device: Device::Cpu, ..Default::default()
+    };
+    // A nominally common item absent from the focal data cannot link that
+    // block's location; its free sibling still has complete category support.
+    let err = fit_bifactor_grm_multigroup(&y, Some(&obs), &groups, 2,
+        &[0, 0, -1, -1], groups.len(), 4, 1, 3,
+        Some(&[true, false, true, true]), &cfg).unwrap_err();
+    assert!(err.contains("group 1") && err.contains("location") && err.contains("rank"), "{err}");
+}
+
+#[test]
+fn specific_mean_rejects_disjoint_reference_and_focal_anchor_observations() {
+    let mut y = Vec::new();
+    let mut groups = Vec::new();
+    let mut obs = Vec::new();
+    for g in 0..2 { for pattern in 0..81 {
+        groups.push(g);
+        for i in 0..8 {
+            y.push((pattern / 3usize.pow((i % 4) as u32)) % 3);
+            obs.push((i % 4 < 2) == (g == 0));
+        }
+    }}
+    let cfg = BifactorMultigroupConfig {
+        q_general: 3, q_specific: 3, max_iter: 1,
+        estimate_specific_means: true, device: Device::Cpu, ..Default::default()
+    };
+    // Each group separately observes block + general-only anchors, but no
+    // common item has data on both sides of the reference/focal link.
+    let err = fit_bifactor_grm_multigroup(&y, Some(&obs), &groups, 2,
+        &[0, 0, 0, 0, -1, -1, -1, -1], groups.len(), 8, 1, 3, None, &cfg)
+        .expect_err("disjoint observed anchor banks cannot link locations");
+    assert!(err.contains("location") && err.contains("rank"), "{err}");
+}
+
+// The ignored physical-GPU fit/terminal test lives in
+// tests/unit/specific_mean_tests.rs, next to the private dispatch observer.

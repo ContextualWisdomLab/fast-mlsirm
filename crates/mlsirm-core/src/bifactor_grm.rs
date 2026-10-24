@@ -2007,7 +2007,10 @@ pub struct BifactorMultigroupConfig {
     pub slope_prior: SlopePrior,
     /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
     pub estimate_specific_vars: bool,
-    /// Estimate focal specific means; reference remains zero.
+    /// Estimate focal specific means; reference remains zero. Requires an
+    /// anchor in every block and full joint location rank of fitted shared
+    /// loading rows observed in both reference and focal groups. This direct
+    /// reference-link screen is not a full-model identification proof.
     pub estimate_specific_means: bool,
     /// Compute device for the E-step sweep (see [`BifactorGrmConfig::device`]).
     pub device: crate::Device,
@@ -2623,6 +2626,61 @@ pub(crate) fn e_step_multigroup(
     (loglik, counts, w_acc, s1_g, s2_g, s1_spec, s2_spec, w_spec)
 }
 
+// Cai et al. (2011, p. 230) require sufficient cross-group restrictions;
+// their graded predictor (p. 225, Eq. 6) gives the local necessary condition
+// A_anchor * location_shift = 0 => location_shift = 0. This numerical
+// column-rank screen is derived here, not a full Fisher-information check.
+// Reference: Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized
+// full-information item bifactor analysis. Psychological Methods, 16(3),
+// 221–248. https://doi.org/10.1037/a0023350
+fn validate_specific_mean_location_rank(
+    v: &Validated,
+    params: &[ItemParams],
+    anchor: &[bool],
+) -> Result<(), String> {
+    let n_dim = 1 + v.n_specific;
+    let rows: Vec<Vec<f64>> = params.iter().enumerate()
+        .filter(|(i, _)| anchor[*i])
+        .map(|(i, p)| {
+            let mut row = vec![0.0; n_dim];
+            row[0] = p.a_g;
+            if let Some(s) = v.item_block[i] {
+                row[1 + s] = p.a_s.unwrap_or(0.0);
+            }
+            // Row rescaling preserves rank and avoids overflowing norms.
+            let scale = row.iter().map(|x| x.abs()).fold(0.0_f64, f64::max);
+            if scale > 0.0 { for x in &mut row { *x /= scale; } }
+            row
+        }).collect();
+    let error = || format!(
+        "anchor loading location rank is deficient; require {} independent general/specific columns",
+        n_dim
+    );
+    if rows.len() < n_dim || rows.iter().flatten().any(|x| !x.is_finite()) {
+        return Err(error());
+    }
+    let tol = 64.0 * f64::EPSILON * rows.len().max(n_dim) as f64;
+    let mut basis: Vec<Vec<f64>> = Vec::with_capacity(n_dim);
+    for col in 0..n_dim {
+        let mut column: Vec<f64> = rows.iter().map(|row| row[col]).collect();
+        let norm = column.iter().fold(0.0_f64, |norm, &x| norm.hypot(x));
+        if norm == 0.0 || !norm.is_finite() { return Err(error()); }
+        for x in &mut column { *x /= norm; }
+        // Twice-reorthogonalized modified Gram-Schmidt, column-scaled.
+        for _ in 0..2 {
+            for q in &basis {
+                let dot: f64 = column.iter().zip(q).map(|(x, y)| x * y).sum();
+                for (x, y) in column.iter_mut().zip(q) { *x -= dot * y; }
+            }
+        }
+        let norm = column.iter().fold(0.0_f64, |norm, &x| norm.hypot(x));
+        if !norm.is_finite() || norm <= tol { return Err(error()); }
+        for x in &mut column { *x /= norm; }
+        basis.push(column);
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
 fn run_single_start_multigroup(
@@ -2682,6 +2740,8 @@ fn run_single_start_multigroup(
                 }
             }
         }
+        #[cfg(test)]
+        specific_mean_tests::begin_fit_sweep();
         let (ll, counts, w_acc, s1_g, s2_g, s1_spec, s2_spec, w_spec) = e_step_multigroup(
             v,
             y,
@@ -2697,6 +2757,8 @@ fn run_single_start_multigroup(
             qs,
             cfg.device,
         );
+        #[cfg(test)]
+        let sweep_index = specific_mean_tests::record_fit_sweep(start, n_iter);
         // MAP: GEM ascends log-likelihood + log prior. Common (anchored)
         // items count once (group 0 row), free items once per group.
         let prior_nll = slope_prior_neg_log(
@@ -2720,10 +2782,14 @@ fn run_single_start_multigroup(
             if final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
                 converged = true;
                 termination_reason = "tolerance_met".to_string();
+                #[cfg(test)]
+                specific_mean_tests::mark_terminal_fit_sweep(sweep_index);
                 break;
             }
         }
         if n_iter == cfg.max_iter {
+            #[cfg(test)]
+            specific_mean_tests::mark_terminal_fit_sweep(sweep_index);
             break;
         }
         // M-step, item parameters: anchored items pool every group's nodes
@@ -2891,6 +2957,21 @@ fn run_single_start_multigroup(
         converged = false;
         termination_reason = "numerical_em_stall".to_string();
     }
+    // Test the fitted shared loading rows, not their deliberately symmetric
+    // initial values. A rejected start cannot compete for the best objective.
+    if cfg.estimate_specific_means {
+        for g in 1..n_groups {
+            let effective_anchor: Vec<bool> = (0..v.n_items).map(|i| {
+                anchor[i] && [0, g].iter().all(|&side| {
+                    (0..v.n_persons).any(|p| {
+                        group_id[p] == side && observed.is_none_or(|o| o[p * v.n_items + i])
+                    })
+                })
+            }).collect();
+            validate_specific_mean_location_rank(v, &params_groups[g], &effective_anchor)
+                .map_err(|e| format!("group {g}: {e}"))?;
+        }
+    }
     Ok(MultiStartOutcome {
         params_groups,
         mus,
@@ -2914,8 +2995,14 @@ fn run_single_start_multigroup(
 /// `specific_map` is length `n_items` with `-1` for general-only items and
 /// `0..n_specific` otherwise; `anchor` is `None` (all items common) or length
 /// `n_items` with `true` = common across groups and `false` = free per group
-/// (at least one anchored item is required when `n_groups >= 2` to link the
-/// scales — Cai, Yang, & Hansen, 2011). Runs `n_starts` EM runs and keeps the
+/// (at least one anchored item is required when `n_groups >= 2`; this is
+/// only a necessary linking condition, not a general identification theorem
+/// — Cai, Yang, & Hansen, 2011, p. 230). With free specific means, every
+/// block additionally needs an anchor and each start's fitted shared loading
+/// rows observed in both reference and focal data must have full joint
+/// location column rank for every focal group. Indirect-only linking through
+/// other focal groups is outside this conservative admission contract.
+/// Runs `n_starts` EM runs and keeps the
 /// best loglik. With `n_groups == 1` this delegates to [`fit_bifactor_grm`]
 /// and bit-reproduces the stage-1 result. Returns `Err` on malformed input,
 /// unobserved categories (pooled for every item; per-group for every free
@@ -3058,6 +3145,15 @@ pub fn fit_bifactor_grm_multigroup(
              (Cai, Yang, & Hansen, 2011)"
                 .into(),
         );
+    }
+    if cfg.estimate_specific_means {
+        for (s, members) in v.blocks.iter().enumerate() {
+            if !members.iter().any(|&i| anchor_vec[i]) {
+                return Err(format!(
+                    "specific-{s} mean requires an anchored (common) item in its block"
+                ));
+            }
+        }
     }
     // Free items need every declared category in EVERY group (their per-group
     // boundaries are otherwise unidentified). Anchored items are identified
