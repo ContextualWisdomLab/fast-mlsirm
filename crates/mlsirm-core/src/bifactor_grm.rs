@@ -356,6 +356,32 @@ pub(crate) fn validate(
     n_cat: usize,
     cfg: &BifactorGrmConfig,
 ) -> Result<Validated, String> {
+    validate_with_category_policy(
+        y, observed, specific_map, n_persons, n_items, n_specific, n_cat, cfg, true,
+    )
+}
+
+/// Validate the existing fixed/free category-admission contract.
+/// Observed responses select modeled category probabilities (Cai, 2010,
+/// p. 588, Eq. 9). Allowing absent categories in an all-fixed bank is an
+/// adopted software policy, not a policy prescribed by that paper or
+/// proof of population identification/convergence. Other checks remain.
+///
+/// Reference: Cai, L. (2010). A two-tier full-information item factor
+/// analysis model with applications. Psychometrika, 75(4), 581–612.
+/// https://doi.org/10.1007/s11336-010-9178-0
+#[allow(clippy::too_many_arguments)]
+fn validate_with_category_policy(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_specific: usize,
+    n_cat: usize,
+    cfg: &BifactorGrmConfig,
+    require_observed_categories: bool,
+) -> Result<Validated, String> {
     cfg.slope_prior.validate()?;
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
@@ -462,7 +488,7 @@ pub(crate) fn validate(
         if !any {
             return Err(format!("item {i} has no observed responses"));
         }
-        if let Some(k) = (0..n_cat).find(|&k| !seen[k]) {
+        if let Some(k) = (0..n_cat).find(|&k| require_observed_categories && !seen[k]) {
             return Err(format!(
                 "item {i} category {k} is never observed (unidentified GRM boundary); every \
                  declared category must be observed"
@@ -1157,8 +1183,25 @@ fn m_step_item(
         if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
             break;
         }
-        for (r, row) in hess.iter_mut().enumerate() {
-            row[r] += ridge;
+        #[cfg(test)]
+        let raw_hessian = sibling_hessian_tests::raw_if_active(&hess);
+        // Higham (1989, author reprint p. 4, Section 2) gives (H + H^T)/2
+        // for the original square-matrix entries; write each pair only once.
+        // This symmetry projection is not a covariance/fit-accuracy guarantee.
+        // Reference: Higham, N. J. (1989). Matrix nearness problems and
+        // applications. In M. J. C. Gover & S. Barnett (Eds.), Applications
+        // of matrix theory (pp. 1–27). Oxford University Press.
+        for r in 0..hess.len() {
+            for c in 0..r {
+                let pair = 0.5 * (hess[r][c] + hess[c][r]);
+                hess[r][c] = pair;
+                hess[c][r] = pair;
+            }
+            hess[r][r] += ridge;
+        }
+        #[cfg(test)]
+        if let Some(raw) = raw_hessian {
+            sibling_hessian_tests::record(raw, &hess);
         }
         let mut step = solve_small(hess, g.clone());
         let mut directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum::<f64>();
@@ -1205,6 +1248,9 @@ fn m_step_item(
     }
     params
 }
+
+#[path = "bifactor_full_fipc.rs"]
+pub mod full_fipc;
 
 /// `-log p(slopes)` summed over the given estimated items (constants
 /// omitted, as in the M-step); exactly `0.0` without a prior.
@@ -3364,6 +3410,8 @@ pub struct BifactorFipcConfig {
     pub ridge: f64,
     /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
     pub estimate_specific_vars: bool,
+    /// E-step execution selector; explicit GPU rejects a CPU fallback result.
+    pub device: crate::Device,
 }
 
 impl Default for BifactorFipcConfig {
@@ -3376,6 +3424,7 @@ impl Default for BifactorFipcConfig {
             newton_iter: 10,
             ridge: 1e-8,
             estimate_specific_vars: false,
+            device: crate::Device::Cpu,
         }
     }
 }
@@ -3418,6 +3467,10 @@ pub struct BifactorFipcResult {
     /// focal distribution parameters (general mean/variance, and the specific
     /// variances when estimated).
     pub n_parameters: usize,
+    pub gpu_execution_used: bool,
+    pub gpu_backend: Option<String>,
+    pub gpu_device_name: Option<String>,
+    pub cpu_fallback_reason: Option<String>,
 }
 
 /// Fit the focal group with fixed anchor items (Kim, 2006, MWU-MEM) for the
@@ -3459,6 +3512,7 @@ pub fn fit_bifactor_grm_fipc(
     fixed_threshold: &[f64],
     cfg: &BifactorFipcConfig,
 ) -> Result<BifactorFipcResult, String> {
+    crate::gpu_bifactor::reset_gpu_dispatch_receipt();
     // Config checks mirror `validate_multigroup_cfg` exactly (quadrature must
     // resolve a Gauss-Hermite rule; lower bounds only; caller-owned numerics
     // behave identically).
@@ -3489,11 +3543,9 @@ pub fn fit_bifactor_grm_fipc(
         newton_iter: cfg.newton_iter,
         ridge: cfg.ridge,
         slope_prior: SlopePrior::None,
-        // FIPC (#1912 stage-2b) predates the GPU E-step (#1931, stage 5) and
-        // has no device knob of its own; this reused single-group validator
-        // only checks shapes/blocks, never runs the E-step, so the device
-        // choice here is inert either way.
-        device: crate::Device::Cpu,
+        // Structural validation never executes an E-step. The actual selector
+        // is forwarded to the focal sweep below without changing its measure.
+        device: cfg.device,
     };
     let v = validate(
         y,
@@ -3621,9 +3673,17 @@ pub fn fit_bifactor_grm_fipc(
             &log_ws,
             qg,
             qs,
-            // FIPC predates the GPU E-step (#1931); always run the CPU sweep.
-            crate::Device::Cpu,
+            cfg.device,
         );
+        let dispatch = crate::gpu_bifactor::gpu_dispatch_receipt();
+        if cfg.device == crate::Device::Gpu
+            && (!dispatch.used || dispatch.fallback_reason.is_some())
+        {
+            return Err(format!(
+                "GPU FIPC requested but no GPU-only E-step result is available: {}",
+                dispatch.fallback_reason.as_deref().unwrap_or("gpu_execution_unavailable")
+            ));
+        }
         let previous = loglik_trace.last().copied();
         let change = checked_em_loglik_change(ll, previous, n_iter, "observed-data log-likelihood")?;
         loglik_trace.push(ll);
@@ -3857,6 +3917,7 @@ pub fn fit_bifactor_grm_fipc(
         n_parameters += v.n_specific;
     }
 
+    let dispatch = crate::gpu_bifactor::gpu_dispatch_receipt();
     Ok(BifactorFipcResult {
         a_general,
         a_specific,
@@ -3873,6 +3934,10 @@ pub fn fit_bifactor_grm_fipc(
         termination_reason,
         final_loglik_change,
         n_parameters,
+        gpu_execution_used: dispatch.used,
+        gpu_backend: dispatch.backend,
+        gpu_device_name: dispatch.device_name,
+        cpu_fallback_reason: dispatch.fallback_reason,
     })
 }
 
@@ -3889,3 +3954,11 @@ mod ac_cpu_storage_tests;
 #[cfg(all(test, feature = "gpu", not(coverage)))]
 #[path="ac_gpu_fixed_tests.rs"]
 mod ac_gpu_fixed_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/bifactor_grm_sibling_hessian_tests.rs"]
+mod sibling_hessian_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/bifactor_fixed_category_policy_tests.rs"]
+mod fixed_category_policy_tests;
