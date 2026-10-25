@@ -217,6 +217,32 @@ class ControllerTests(unittest.TestCase):
                     self.assertEqual(result['final_anchor'], [True]*3)
                     self.assertEqual(len(backend.calls), 2)
 
+    def test_last_anchor_removal_is_rejected_fresh_and_replayed(self):
+        for max_rounds in (1, 3):
+            for replay in (False, True):
+                with self.subTest(max_rounds=max_rounds, replay=replay):
+                    req = request()
+                    req.update(anchor=[True, False, False], max_rounds=max_rounds)
+                    backend = SyntheticNative()
+                    native = backend.sequential_dif_round_gpu
+
+                    def remove_last(raw):
+                        output = json.loads(native(raw))
+                        row = output['result']['rounds'][0]
+                        row.update(removed=0, status='retest_all')
+                        output['result']['final_anchor'] = [False, False, False]
+                        return json.dumps(output)
+
+                    backend.sequential_dif_round_gpu = remove_last
+                    with tempfile.TemporaryDirectory() as root, patch.object(controller, '_native', return_value=backend):
+                        result = controller.run_sequential_dif(req, archive=root)
+                        if replay:
+                            result = controller.run_sequential_dif(req, archive=root)
+                        self.assertEqual(result['status'], 'native_contract_failed')
+                        self.assertEqual(result['final_anchor'], req['anchor'])
+                        self.assertEqual(len(backend.calls), 1)
+                        self.assertEqual(result['rounds'], [])
+
     def test_archive_mutation_is_rejected_without_fitting(self):
         backend = SyntheticNative()
         with tempfile.TemporaryDirectory() as root, patch.object(controller, '_native', return_value=backend):

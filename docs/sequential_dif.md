@@ -96,8 +96,10 @@ E-step-only implementation does not satisfy the contract.
 
 `_core.sequential_dif_round_gpu(json_request) -> json_string` must:
 
-1. Preflight strict GPU availability before any fit. Propagate device errors
-   without CPU fitting, including failures from losing starts.
+1. Preflight strict GPU availability before any fit. Raise device errors
+   without CPU fitting, including failures from losing starts. This is the
+   compiled supplier's obligation; the Python controller archives these
+   exceptions under the failed-output policy below.
 2. Run one full native family round with the exact input settings and complete
    response matrix, using library-owned private fit objects.
 3. Return `request_sha256` over the exact input JSON string.
@@ -126,8 +128,12 @@ native output and its digest with file fsync.
 Completed rounds are validated and reused without refitting. Changed requests
 (including prior/Hessian settings), native identity drift, and corrupted output
 are refused. A pending round without a completed output requires explicit owner
-reconciliation; it is never automatically refit. Native exceptions are retained
-as failed output and are not automatically retried.
+reconciliation; it is never automatically refit. Native exceptions, including
+device errors, are retained as failed output;
+the public controller returns `native_contract_failed` with `failed_output`
+on the first call and replay, without reconstructing the original exception
+class or automatically retrying. The resulting mask must retain at least one
+anchor, so removing the final anchor fails validation before another dispatch.
 
 The manifest stores input digests, not response arrays. Native outputs can
 contain sensitive fitted values. Keep archives outside public repositories and
@@ -152,6 +158,7 @@ settlement require integration with the archive owner before operational use.
 - Verify the public import from a freshly built candidate package and run the
   full applicable suite and independent review before release adoption.
 
-These missing dependencies keep this contribution in Draft. The implemented
-controller and its tests can be reviewed independently without claiming a native
-capability that does not exist.
+This contribution is eligible for source-component review and normal CI while
+native integration and release adoption remain pending. The implemented
+controller and its tests do not establish a native capability that does not
+exist.

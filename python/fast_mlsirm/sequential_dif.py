@@ -39,6 +39,18 @@ def run_sequential_dif(request, *, archive):
     callback can replace the native fitter. The current main native library
     lacks this strict E+M entry point, and is refused before fitting. See the
     companion contract for the independent GPU M-step owner's integration.
+    Native exceptions are archived as failed output without automatic retry;
+    they are not re-raised as their original Python exception class.
+
+    Chalmers (2012, Section 3.1, pp. 5-7) describes the EM estimation context.
+    The single-removal and archive policies are software contracts, not
+    procedures validated by that source.
+
+    References
+    ----------
+    Chalmers, R. P. (2012). mirt: A multidimensional item response theory
+    package for the R environment. Journal of Statistical Software, 48(6),
+    1-29. https://doi.org/10.18637/jss.v048.i06
     """
     request = json.loads(_json(request))
     anchors = request.get('anchor')
@@ -158,6 +170,8 @@ def _validate_output(output, request):
             if type(removed) is not int or not 0 <= removed < n or not anchors[removed] or row['status'] != 'retest_all':
                 raise ValueError('invalid single removal')
             after[removed] = False
+            if not any(after):
+                raise ValueError('cannot remove the final anchor')
         elif row['status'] != 'stable_no_further_removal':
             raise ValueError('invalid terminal status')
     final = result['final_anchor']
