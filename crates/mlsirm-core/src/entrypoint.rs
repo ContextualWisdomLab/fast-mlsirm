@@ -10,3 +10,7 @@ pub mod interaction_map;
 pub mod normal_quantile;
 pub mod rotation;
 pub mod sampling_design;
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub mod gpu_mstep;
+#[cfg(all(feature = "gpu", not(coverage)))]
+mod gpu_grm_estep;
