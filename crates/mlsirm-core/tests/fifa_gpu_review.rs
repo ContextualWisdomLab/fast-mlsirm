@@ -1,6 +1,15 @@
 #![cfg(feature = "gpu")]
 use mlsirm_core::samefit_fifa::gpu::evaluate;
 use mlsirm_core::samefit_grm::PackedArchive;
+#[path = "support/fifa_hardware.rs"]
+mod hardware;
+
+#[test]
+fn hardware_cases_require_explicit_selection() {
+    hardware::assert_hardware_cases_are_ignored(&[
+        "independent_boundaries::gpu_large_slope_norm_overflow_observation",
+    ]);
+}
 
 fn identity(p: usize) -> Vec<f64> {
     let mut cov = vec![0.; p * p];
@@ -146,6 +155,7 @@ mod independent_boundaries {
         );
     }
     #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
     fn gpu_large_slope_norm_overflow_observation() {
         for slope in [1e10, 1e15, 1e20, 1e30] {
             let a = PackedArchive::new(vec![true], 2, 2, vec![slope, 0., 0., 0.]).unwrap();

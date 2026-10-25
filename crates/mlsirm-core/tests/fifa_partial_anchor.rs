@@ -1,7 +1,18 @@
 #![cfg(feature = "gpu")]
 use mlsirm_core::samefit_fifa::{gpu::evaluate, transform};
 use mlsirm_core::samefit_grm::PackedArchive;
+#[path = "support/fifa_hardware.rs"]
+mod hardware;
+
 #[test]
+fn hardware_cases_require_explicit_selection() {
+    hardware::assert_hardware_cases_are_ignored(&[
+        "mixed_anchor_every_jacobian_and_covariance_cell",
+    ]);
+}
+
+#[test]
+#[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
 fn mixed_anchor_every_jacobian_and_covariance_cell() {
     let mask = vec![true, false];
     let x = vec![1.4, 0.7, 0.2, -1.2, 0.4, -0.1, 1.8, 0.9, 0.3, 0.2, 0.4];

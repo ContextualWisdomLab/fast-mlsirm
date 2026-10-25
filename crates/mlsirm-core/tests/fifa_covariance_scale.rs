@@ -1,6 +1,15 @@
 #![cfg(feature = "gpu")]
 use mlsirm_core::samefit_fifa::gpu::evaluate;
 use mlsirm_core::samefit_grm::PackedArchive;
+#[path = "support/fifa_hardware.rs"]
+mod hardware;
+
+#[test]
+fn hardware_cases_require_explicit_selection() {
+    hardware::assert_hardware_cases_are_ignored(&[
+        "positive_covariance_preserves_gpu_variances_across_scales",
+    ]);
+}
 
 fn archive() -> PackedArchive {
     PackedArchive::new(vec![true], 2, 2, vec![1., 1., 0., 0.]).unwrap()
@@ -51,6 +60,7 @@ fn rounded_covariance_is_rejected_across_scales() {
     }
 }
 #[test]
+#[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
 fn positive_covariance_preserves_gpu_variances_across_scales() {
     for exponent in [-100, -68, -48, 0, 48, 100] {
         let scale = 2.0_f64.powi(exponent);

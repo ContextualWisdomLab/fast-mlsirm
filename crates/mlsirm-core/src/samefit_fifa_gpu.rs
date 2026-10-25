@@ -73,7 +73,7 @@ fn positive_definite_covariance(matrix: &[f64], p: usize) -> bool {
     let mut lower = vec![0.0; matrix.len()];
     for i in 0..p {
         for j in 0..=i {
-            let mut value = 0.5 * (matrix[i * p + j] / scale) + 0.5 * (matrix[j * p + i] / scale);
+            let mut value = matrix[i * p + j] / scale;
             for k in 0..j {
                 value -= lower[i * p + k] * lower[j * p + k];
             }
@@ -127,8 +127,10 @@ mod admission_tests {
 /// f32 implementation of the coefficient convention documented by
 /// [`super::transform`] and first-order propagation `J C J^T` (Joint Committee
 /// for Guides in Metrology, 2011, p. 15, §6.2.1.3, Eq. 3).
-/// Covariance admission uses scale-normalized Cholesky twice: on f64 input
-/// and on the exact f32-rounded matrix (Higham, 2009, pp. 251–253).
+/// Covariance symmetry uses relative tolerance 1e-7 against the largest entry,
+/// without an absolute floor. Accepted roundoff is replaced by the pair mean.
+/// Scale-normalized Cholesky checks that symmetric f64 matrix and its exact
+/// f32-rounded upload (Higham, 2009, pp. 251–253).
 /// Numerical caps/guards are implementation policy, not statistical validity.
 ///
 /// # References
@@ -155,18 +157,29 @@ pub fn evaluate(a: &PackedArchive, cov: &[f64]) -> Result<Output, String> {
         .iter()
         .map(|&b| f64::from_bits(b) as f32)
         .collect();
-    let c: Vec<f32> = cov.iter().map(|&v| v as f32).collect();
+    let mut c: Vec<f32> = cov.iter().map(|&v| v as f32).collect();
     if x.iter().chain(&c).any(|v| !v.is_finite()) {
         return Err("nonfinite f32 input".into());
     }
+    let scale = cov.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
+    let mut symmetric_cov = cov.to_vec();
     for i in 0..p {
-        for k in 0..p {
-            if (cov[i * p + k] - cov[k * p + i]).abs() > 1e-7 * (1. + cov[i * p + k].abs()) {
+        for k in 0..i {
+            let left = cov[i * p + k];
+            let right = cov[k * p + i];
+            if scale > 0.0 && (left / scale - right / scale).abs() > 1e-7 {
                 return Err("asymmetric parameter covariance".into());
             }
+            // Canonicalize only admitted relative roundoff. Check and upload
+            // the same matrix; casting one shared mean keeps f32 symmetry exact.
+            let mean = 0.5 * left + 0.5 * right;
+            symmetric_cov[i * p + k] = mean;
+            symmetric_cov[k * p + i] = mean;
+            c[i * p + k] = mean as f32;
+            c[k * p + i] = mean as f32;
         }
     }
-    if !positive_definite_covariance(cov, p) {
+    if !positive_definite_covariance(&symmetric_cov, p) {
         return Err("nonpositive parameter covariance".into());
     }
     // Validate the matrix that is actually transferred to the f32 shader.

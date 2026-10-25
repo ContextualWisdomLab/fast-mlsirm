@@ -25,7 +25,10 @@ returns f64 containers of f32 results. CPU or unknown adapter types are refused;
 backend labels alone are insufficient. Validation includes finite inputs,
 positive-definite symmetric covariance, normal-range exponentials, preserved
 f32 intercept ordering, checked shape arithmetic and storage/dispatch limits.
-The positive-definiteness check also applies to the actual f32-rounded covariance;
+Symmetry is checked relative to the largest absolute covariance entry, with
+implementation tolerance `1e-7` and no absolute scale floor. Accepted off-diagonal
+roundoff is replaced by the pair's mean. The same symmetric matrix is checked for
+positive definiteness, rounded to f32, checked again and uploaded to the shader;
 a covariance that loses rank or becomes indefinite in transfer is refused.
 CPU inference rejects a nonfinite inverse even when there are no display rows.
 These checks do not guarantee accuracy for every condition number or scale.
@@ -35,6 +38,22 @@ The CPU information inverse and SE/CI are not GPU computations.
 Tests use declared implementation tolerances, not literature-derived scientific
 acceptance thresholds. Mixed-anchor tests compare every Jacobian coordinate to
 finite differences and every covariance cell to an independent double contraction.
+
+Physical-GPU integration cases use the same explicit-ignore policy as GPU M-step
+tests. Normal `cargo test --locked --workspace` runs validation-only cases and
+native registration guards; hardware absence is not converted into a passing test.
+On an actual GPU host, execute the FIFA cohort explicitly:
+
+```sh
+cargo test --locked -p mlsirm-core \
+  --test fifa_gpu --test fifa_partial_anchor --test fifa_gpu_review \
+  --test fifa_covariance_scale --test fifa_covariance_symmetry \
+  -- --include-ignored --test-threads=1
+```
+
+This command must fail if the required hardware path cannot execute. Default
+ignored counts are not hardware acceptance. Validation also runs in the explicit
+cohort; malformed covariance is rejected before device acquisition.
 
 ## Method basis and limits
 
@@ -65,8 +84,8 @@ model/anchor mask. It is neither simultaneous nor selection-adjusted and may
 cross the natural bounds of a transformed coefficient. A finite positive
 information matrix alone does not establish the required statistical regularity.
 
-GPU covariance admission uses a FIFA-local Cholesky check on both the original
-f64 covariance and the actual f32 values converted back exactly to f64. Each
+GPU covariance admission uses a FIFA-local Cholesky check on both the admitted
+symmetric f64 covariance and the actual uploaded f32 values converted back exactly to f64. Each
 matrix is divided by its largest absolute entry before factorization. All pivots
 must be finite and strictly positive (Higham, 2009, p. 251, Eq. 1; p. 253).
 The positive rescaling preserves definiteness in exact arithmetic and avoids the

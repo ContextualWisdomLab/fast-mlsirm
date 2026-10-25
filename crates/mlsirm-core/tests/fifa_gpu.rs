@@ -1,7 +1,55 @@
 #![cfg(feature = "gpu")]
 use mlsirm_core::samefit_fifa::{gpu::evaluate, infer, transform};
 use mlsirm_core::samefit_grm::PackedArchive;
+#[path = "support/fifa_hardware.rs"]
+mod hardware;
+
 #[test]
+fn hardware_cases_require_explicit_selection() {
+    hardware::assert_hardware_cases_are_ignored(&[
+        "free_item_gpu_all_rows_jacobian_covariance",
+        "anchored_negative_slope_gpu_and_invalid_covariance",
+    ]);
+}
+
+#[test]
+fn invalid_covariance_is_rejected_without_gpu() {
+    let a = PackedArchive::new(
+        vec![true],
+        3,
+        3,
+        vec![-2., 1., 2f64.ln(), 0.5, 1.5f64.ln(), -0.3, 0.8f64.ln()],
+    )
+    .unwrap();
+    let p = a.coordinates().unwrap().len();
+    assert_eq!(
+        evaluate(&a, &[]).err().unwrap(),
+        "GPU workspace or covariance shape invalid"
+    );
+    let mut bad = vec![0.; p * p];
+    for i in 0..p {
+        bad[i * p + i] = 1.;
+    }
+    bad[0] = f64::NAN;
+    assert_eq!(evaluate(&a, &bad).err().unwrap(), "nonfinite f32 input");
+    let zero = PackedArchive::new(vec![true], 2, 2, vec![0., 1., 0., 0.]).unwrap();
+    assert_eq!(
+        evaluate(&zero, &[0.; 16]).err().unwrap(),
+        "nonpositive parameter covariance"
+    );
+    assert_eq!(
+        evaluate(
+            &zero,
+            &[1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.]
+        )
+        .err()
+        .unwrap(),
+        "difficulty undefined at zero slope"
+    );
+}
+
+#[test]
+#[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
 fn free_item_gpu_all_rows_jacobian_covariance() {
     let a = PackedArchive::new(
         vec![false],
@@ -53,6 +101,7 @@ fn free_item_gpu_all_rows_jacobian_covariance() {
 }
 
 #[test]
+#[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
 fn anchored_negative_slope_gpu_and_invalid_covariance() {
     let a = PackedArchive::new(
         vec![true],
