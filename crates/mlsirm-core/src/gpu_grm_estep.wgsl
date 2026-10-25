@@ -7,7 +7,7 @@ fn lg(d:f32)->f32 {if(d<0.01){return log(d)+log(1.0-d*0.5+d*d/6.0-d*d*d/24.0);}r
 fn main(){
  let n=u32(data[0]);let items=u32(data[1]);let dims=u32(data[2]);let cat=u32(data[3]);let q=u32(data[4]);
  let nodes=5u;let weights=nodes+q*dims;let params=weights+q;let responses=params+items*(dims+cat-1u);
- let counts=1u;let theta=counts+items*q*cat;let scratch=theta+n*dims;let lp=scratch+q;
+ let counts=1u;let theta=counts+items*q*cat;let scratch=theta+n*dims;let lp=scratch+q;let marginal=lp+items*q*cat;
  for(var cell=0u;cell<theta+n*dims;cell++){result[cell]=0.0;}
  for(var i=0u;i<items;i++){
   let par=params+i*(dims+cat-1u);
@@ -30,11 +30,20 @@ fn main(){
    result[scratch+nd]=v;maximum=max(maximum,v);
   }
   var denom=0.0;for(var nd=0u;nd<q;nd++){denom+=exp(result[scratch+nd]-maximum);}
-  result[0]+=maximum+log(denom);
+  result[marginal+p]=maximum+log(denom);
   for(var nd=0u;nd<q;nd++){
    let post=exp(result[scratch+nd]-maximum)/denom;
    for(var i=0u;i<items;i++){let y=data[responses+p*items+i];if(y>=0.0){result[counts+(i*q+nd)*cat+u32(y)]+=post;}}
    for(var d=0u;d<dims;d++){result[theta+p*dims+d]+=post*data[nodes+nd*dims+d];}
   }
  }
+ // Balanced device-only sum, including odd tails; no host numerical reduction.
+ var width=n;
+ while(width>1u){
+  let next=(width+1u)/2u;
+  for(var i=0u;i<width/2u;i++){result[marginal+i]=result[marginal+2u*i]+result[marginal+2u*i+1u];}
+  if(width%2u==1u){result[marginal+next-1u]=result[marginal+width-1u];}
+  width=next;
+ }
+ result[0]=result[marginal];
 }

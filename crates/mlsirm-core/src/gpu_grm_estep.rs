@@ -1,4 +1,13 @@
 //! GRM E sweep on the device; see `gpu_mstep` for the verified paper contract.
+//!
+//! Person log marginals use pairwise device summation (Higham, 1993, p. 788,
+//! Eq. 3.6), retaining odd tails at each level. The addition-tree bound does
+//! not bound quadrature, transcendental, or posterior-count error; caller
+//! tolerance remains an implementation contract, not a paper guarantee.
+//!
+//! Higham, N. J. (1993). The accuracy of floating point summation.
+//! *SIAM Journal on Scientific Computing, 14*(4), 783–799.
+//! https://doi.org/10.1137/0914050
 use crate::gpu_mstep::{checked_buffer, dispatch, limits};
 pub(crate) struct Expectation {
     pub loglik: f64,
@@ -37,9 +46,13 @@ pub(crate) fn expectation(
         add(add(add(5, node_cells)?, q)?, param_cells)?,
         response_cells,
     )?;
+    // Retain one device marginal per person for a balanced device reduction.
     let output = add(
-        add(add(add(1, count_cells)?, theta_cells)?, q)?,
-        count_cells,
+        add(
+            add(add(add(1, count_cells)?, theta_cells)?, q)?,
+            count_cells,
+        )?,
+        n,
     )?;
     let (limit, _) = limits()?;
     checked_buffer(input, limit)?;
@@ -55,8 +68,11 @@ pub(crate) fn expectation(
     }
     if !nodes
         .iter()
-        .chain(logw)
         .all(|x| x.is_finite() && (*x as f32).is_finite())
+        || !logw
+            .iter()
+            .all(|x| *x == f64::NEG_INFINITY || (x.is_finite() && (*x as f32).is_finite()))
+        || !logw.iter().any(|x| x.is_finite())
     {
         return Err("nonfinite GPU quadrature".into());
     }

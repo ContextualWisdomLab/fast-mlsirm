@@ -1,8 +1,13 @@
 //! Strict device execution of the canonical GRM expected-count criterion.
 //!
 //! Chalmers (2012, p. 3, Eq. 2; pp. 5–6, Eqs. 6–11) supplies the unchanged
-//! category-probability and EM contracts. Device precision and Newton controls
-//! are implementation choices, not accuracy guarantees from that paper.
+//! category-probability and EM contracts. Equations 6–11 explicitly illustrate
+//! dichotomous EM; Eq. 2 supplies the ordinal category probabilities used here.
+//! Device precision and Newton controls are implementation choices, not accuracy
+//! guarantees from that paper. Hardware tests follow the repository's explicit
+//! ignored physical-GPU gate: run `cargo test -p mlsirm-core --lib gpu_mstep
+//! -- --include-ignored --nocapture --test-threads=1` on hardware. Ordinary CI
+//! skips these dispatch tests; that skip is not GPU execution evidence.
 //!
 //! Chalmers, R. P. (2012). mirt: A multidimensional item response theory package
 //! for the R environment. *Journal of Statistical Software, 48*(6), 1–29.
@@ -467,6 +472,7 @@ mod tests {
         }
     }
     #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
     fn gpu_mstep_narrow_threshold_derivatives() {
         for gap in [1e-4, 1e-6, 1e-8] {
             let p = [1.0, gap, 0.0];
@@ -507,12 +513,14 @@ mod tests {
         }
     }
     #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
     fn gpu_mstep_small_positive_tail_preserved() {
         let actual = evaluate_grm(&[1.0, 0.0], false, &[20.0], &[], &vec![vec![0.0, 1.0]]).unwrap();
         let expected = (-20.0f64).exp().ln_1p();
         assert!((actual.objective / expected - 1.0).abs() < 1e-5);
     }
     #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
     fn gpu_mstep_narrow_tail_is_finite() {
         let p = [1.0, 0.00000001, 0.0];
         let g = [80.0];
@@ -522,6 +530,7 @@ mod tests {
         assert!((actual.objective - expected.0).abs() < 0.001);
     }
     #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
     fn gpu_mstep_real_dispatch_matches_analytic_reference() {
         let p = [1.1, 0.6, 0.8, -0.7];
         let g = [-1.0, -0.2, 0.5, 1.2];
@@ -572,6 +581,7 @@ mod tests {
         }
     }
     #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
     fn gpu_mstep_signed_prior_matches_canonical_contract() {
         let p = [-1.1, 0.6, 0.8, -0.7];
         let nodes = [-1.0, 0.4, 0.5, -0.7];
@@ -604,6 +614,7 @@ mod tests {
         .is_err());
     }
     #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
     fn gpu_mstep_update_and_deterministic_failures() {
         let params = [1.1, 0.8, -0.7];
         let nodes = [-1.0, -0.2, 0.5, 1.2];
@@ -667,6 +678,7 @@ mod tests {
         (y, n, items)
     }
     #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
     fn gpu_mstep_canonical_strict_fit_converges() {
         let (y, n, items) = synthetic();
         let ctrl = control();
@@ -721,6 +733,7 @@ mod tests {
         );
     }
     #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
     fn gpu_mstep_canonical_strict_rejects_nonconvergence() {
         let (y, n, items) = synthetic();
         let ctrl = control();
@@ -741,6 +754,7 @@ mod tests {
         println!("GPU_NEGATIVE_REJECTION {err}");
     }
     #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
     fn gpu_mstep_estep_matches_missing_multidimensional_reference() {
         let y = [0, 1, 1, 0, 2, 2];
         let observed = [true, false, true, true, true, true];
@@ -820,5 +834,198 @@ mod tests {
             &[]
         )
         .is_err());
+    }
+}
+
+// Synthetic regression controls; hardware execution is an explicit gate.
+#[cfg(test)]
+mod independent_review {
+    use super::*;
+
+    fn hardware_available() -> bool {
+        match limits() {
+            Ok(_) => true,
+            Err(error) => {
+                eprintln!("INDEPENDENT_GPU_NOT_EXECUTED {error}");
+                false
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
+    fn independent_review_zero_mass_quadrature() {
+        assert!(
+            hardware_available(),
+            "this evidence cohort requires hardware GPU"
+        );
+        let params = vec![vec![1.0, 0.0]];
+        let dims = vec![vec![0]];
+        let nodes = [-1.0, 0.0, 1.0];
+        let with_zero = crate::gpu_grm_estep::expectation(
+            &[0, 1],
+            None,
+            2,
+            1,
+            1,
+            2,
+            &nodes,
+            &[f64::NEG_INFINITY, 0.0, f64::NEG_INFINITY],
+            &params,
+            &dims,
+        );
+        assert!(
+            with_zero.is_ok(),
+            "valid zero-mass nodes rejected: {:?}",
+            with_zero.err()
+        );
+        let with_zero = with_zero.unwrap();
+        let positive = crate::gpu_grm_estep::expectation(
+            &[0, 1],
+            None,
+            2,
+            1,
+            1,
+            2,
+            &[0.0],
+            &[0.0],
+            &params,
+            &dims,
+        )
+        .unwrap();
+        assert_eq!(with_zero.loglik, positive.loglik);
+        assert_eq!(with_zero.theta, positive.theta);
+        assert_eq!(with_zero.counts[0][0], vec![0.0, 0.0]);
+        assert_eq!(with_zero.counts[0][1], positive.counts[0][0]);
+        assert_eq!(with_zero.counts[0][2], vec![0.0, 0.0]);
+        for invalid in [
+            vec![f64::NEG_INFINITY; 3],
+            vec![f64::NAN, 0.0, 0.0],
+            vec![f64::INFINITY, 0.0, 0.0],
+        ] {
+            assert!(crate::gpu_grm_estep::expectation(
+                &[0, 1],
+                None,
+                2,
+                1,
+                1,
+                2,
+                &nodes,
+                &invalid,
+                &params,
+                &dims,
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
+    fn independent_review_native_gh_zero_tails() {
+        assert!(
+            hardware_available(),
+            "this evidence cohort requires hardware GPU"
+        );
+        let x = crate::nodes::build_xi_nodes(crate::nodes::XiRule::GaussHermite { q_xi: 481 }, 1)
+            .unwrap();
+        let zeros = x.logw.iter().filter(|w| **w == f64::NEG_INFINITY).count();
+        println!(
+            "INDEPENDENT_GH nodes={} zero_mass_nodes={zeros}",
+            x.logw.len()
+        );
+        assert!(
+            zeros > 0,
+            "fixture must reach the real zero-weight producer"
+        );
+        let actual = crate::gpu_grm_estep::expectation(
+            &[0, 1],
+            None,
+            2,
+            1,
+            1,
+            2,
+            &x.grid,
+            &x.logw,
+            &[vec![1.0, 0.0]],
+            &[vec![0]],
+        );
+        assert!(
+            actual.is_ok(),
+            "native valid GH rule rejected: {:?}",
+            actual.err()
+        );
+    }
+
+    #[test]
+    #[ignore = "requires an actual GPU adapter; fallback is an unmet hardware gate"]
+    fn independent_review_loglik_replication_stability() {
+        assert!(
+            hardware_available(),
+            "this evidence cohort requires hardware GPU"
+        );
+        let items = 6;
+        let n = 10_000;
+        let params = vec![vec![1.0, 0.0]; items];
+        let dims = vec![vec![0]; items];
+        let single = crate::gpu_grm_estep::expectation(
+            &vec![1; items],
+            None,
+            1,
+            items,
+            1,
+            2,
+            &[0.0],
+            &[0.0],
+            &params,
+            &dims,
+        )
+        .unwrap();
+        let bulk = crate::gpu_grm_estep::expectation(
+            &vec![1; n * items],
+            None,
+            n,
+            items,
+            1,
+            2,
+            &[0.0],
+            &[0.0],
+            &params,
+            &dims,
+        )
+        .unwrap();
+        // Compare two genuine library GPU results; no independent estimator.
+        // This is an implementation test bound, not a paper accuracy guarantee.
+        let expected = single.loglik * n as f64;
+        let error = (bulk.loglik - expected).abs();
+        let bound = 4.0 * f32::EPSILON as f64 * (1.0 + expected.abs());
+        println!("INDEPENDENT_LOGLIK n={n} items={items} bulk={} repeated_single={expected} error={error} bound={bound}", bulk.loglik);
+        assert!(
+            error <= bound,
+            "serial f32 accumulation exceeds replication bound"
+        );
+        // The fitter uses cfg.tol * (1 + abs(previous_ll)). This fixture
+        // checks that scale, not convergence of an arbitrary fitted model.
+        let caller_bound = crate::grm::GrmConfig::default().tol * (1.0 + expected.abs());
+        assert!(error <= caller_bound);
+        for persons in [3, 127, 10_001] {
+            let actual = crate::gpu_grm_estep::expectation(
+                &vec![1; persons * items],
+                None,
+                persons,
+                items,
+                1,
+                2,
+                &[0.0],
+                &[0.0],
+                &params,
+                &dims,
+            )
+            .unwrap();
+            let expected = single.loglik * persons as f64;
+            assert!(
+                (actual.loglik - expected).abs()
+                    <= crate::grm::GrmConfig::default().tol * (1.0 + expected.abs())
+            );
+        }
     }
 }

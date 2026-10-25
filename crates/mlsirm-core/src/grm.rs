@@ -437,7 +437,9 @@ pub fn fit_grm(
 }
 
 /// Strict device E/M execution of the same canonical GRM MML contract.
-/// Chalmers (2012, p. 3, Eq. 2; pp. 5–6, Eqs. 6–11); full APA reference in module docs.
+/// Chalmers (2012, p. 3, Eq. 2; pp. 5–6, Eqs. 6–11); full APA reference in
+/// [`crate::gpu_mstep`]. Equations 6–11 illustrate dichotomous EM; the category
+/// probabilities in Eq. 2 define this implementation's ordinal extension.
 /// Initialization, quadrature construction and reflection canonicalization are host operations.
 /// Returns an error on unavailable GPU, failed solve/search, or EM nonconvergence.
 /// Newton iteration budget and ridge must match `cfg`; all precision controls are caller-owned.
