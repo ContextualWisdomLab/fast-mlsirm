@@ -20,3 +20,5 @@ pub mod sampling_design;
 pub mod gpu_mstep;
 #[cfg(all(feature = "gpu", not(coverage)))]
 mod gpu_grm_estep;
+
+pub mod samefit_fifa;
