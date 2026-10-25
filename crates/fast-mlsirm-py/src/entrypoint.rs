@@ -10,6 +10,7 @@ include!("lib.rs");
 
 mod ata_bindings;
 mod bifactor_bindings;
+mod dif_information_criteria_bindings;
 mod multilevel_bindings;
 mod rating_range_bindings;
 mod regression_bindings;

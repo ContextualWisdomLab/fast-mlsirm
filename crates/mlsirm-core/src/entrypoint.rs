@@ -6,6 +6,7 @@
 
 include!("lib.rs");
 
+pub mod dif_information_criteria;
 pub mod interaction_map;
 pub mod normal_quantile;
 pub mod rotation;
@@ -15,5 +16,9 @@ pub mod samefit_grm_gpu;
 pub mod samefit_grm_joint;
 pub mod samefit_strict;
 pub mod sampling_design;
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub mod gpu_mstep;
+#[cfg(all(feature = "gpu", not(coverage)))]
+mod gpu_grm_estep;
 
 pub mod samefit_fifa;
