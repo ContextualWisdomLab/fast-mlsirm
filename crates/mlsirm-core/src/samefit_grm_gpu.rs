@@ -18,6 +18,15 @@ pub struct GpuMoments {
 /// Xi is per observation within each group, not the joint N/N_g-scaled matrix.
 /// Quadrature nodes/normalized weights are explicit. Inputs/decoding run on CPU;
 /// all marginal integration, cross moments, and covariance subtraction run GPU.
+/// Maydeu-Olivares (2013, p. 77, Equation 4; p. 78, Equation 10) defines the
+/// marginal-moment covariance used by the projector. Here Xi = E[hh'] - E[h]E[h]'
+/// in cumulative-indicator coordinates; GPU f32 is an implementation choice,
+/// not an accuracy guarantee supplied by the paper.
+///
+/// # References
+/// Maydeu-Olivares, A. (2013). Goodness-of-fit assessment of item response theory
+/// models. *Measurement: Interdisciplinary Research and Perspectives, 11*(3),
+/// 71–101. https://doi.org/10.1080/15366367.2013.831680
 pub fn moments_gpu(
     a: &PackedArchive,
     nodes: &[f64],

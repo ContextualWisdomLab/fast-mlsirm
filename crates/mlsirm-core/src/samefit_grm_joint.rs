@@ -7,6 +7,14 @@ use crate::samefit_grm::{decode, Coordinate, PackedArchive};
 
 /// Hybrid joint M2: GPU f32 moments/Xi, CPU f64 tangent/projection/distributions.
 /// The empirical-margin independence baseline is new, not a recovered historical null.
+/// Maydeu-Olivares (2013, p. 78, Equations 10–11) supplies the joint quadratic
+/// form. Independent groups use block covariance N/N_g * Xi_g. Returned
+/// measured-rank df does not establish calibration at nonidentified points.
+///
+/// # References
+/// Maydeu-Olivares, A. (2013). Goodness-of-fit assessment of item response theory
+/// models. *Measurement: Interdisciplinary Research and Perspectives, 11*(3),
+/// 71–101. https://doi.org/10.1080/15366367.2013.831680
 #[cfg(feature = "gpu")]
 pub fn joint_diagnostics(
     y: &[usize],
@@ -22,6 +30,15 @@ pub enum MomentBackend {
     Cpu,
     Gpu,
 }
+/// Joint residual projection with explicit moment backend selection.
+/// Maydeu-Olivares (2013, p. 78, Equations 10–11) supplies the quadratic form;
+/// p. 82, Equations 26–28 supplies RMSEA. The implementation's measured rank
+/// is algebraic; rank-deficient points require separate calibration evidence.
+///
+/// # References
+/// Maydeu-Olivares, A. (2013). Goodness-of-fit assessment of item response theory
+/// models. *Measurement: Interdisciplinary Research and Perspectives, 11*(3),
+/// 71–101. https://doi.org/10.1080/15366367.2013.831680
 #[cfg(feature = "gpu")]
 pub fn joint_diagnostics_with_backend(
     y: &[usize],
@@ -41,9 +58,8 @@ pub fn joint_diagnostics_with_backend(
     let s = cons.len();
     let total = s * ng;
     let p = a.packed_bits().len();
-    if total <= p {
-        return Err("nonpositive joint df".into());
-    }
+    // Packed columns can be redundant. Positive df is checked by the measured
+    // tangent rank in strict::project, not by the raw coordinate count.
     let (nodes, weights) = crate::samefit_grm::quadrature(q)?;
     let gpu = if matches!(backend, MomentBackend::Cpu) {
         crate::samefit_strict::cpu_moments(a, &nodes, &weights)?
@@ -186,6 +202,15 @@ pub fn joint_diagnostics_with_backend(
     Ok(output)
 }
 
+/// Enumerate cumulative univariate and cross-item bivariate indicators.
+/// Maydeu-Olivares (2013, pp. 77–78, Equations 4 and 10–11) defines the
+/// first/second-order moment space; cumulative indicators are its invertible
+/// nonredundant category-indicator basis change.
+///
+/// # References
+/// Maydeu-Olivares, A. (2013). Goodness-of-fit assessment of item response theory
+/// models. *Measurement: Interdisciplinary Research and Perspectives, 11*(3),
+/// 71–101. https://doi.org/10.1080/15366367.2013.831680
 pub fn constraints(j: usize, z: usize) -> Vec<Vec<(usize, usize)>> {
     let mut out = vec![];
     for i in 0..j {
@@ -206,6 +231,15 @@ pub fn constraints(j: usize, z: usize) -> Vec<Vec<(usize, usize)>> {
 }
 /// CPU f64 analytic tangent, including focal mean and log SD via theta=mu+sd*z.
 /// This is not GPU execution. Used as a numerical oracle and integration stage.
+/// Maydeu-Olivares (2013, p. 77, Equation 4) defines Delta as the derivative of
+/// univariate/bivariate probabilities in the fitted coordinates. Product and
+/// chain rules here evaluate that derivative after a cumulative-indicator basis
+/// change. The paper does not specify GPU arithmetic or this coordinate encoding.
+///
+/// # References
+/// Maydeu-Olivares, A. (2013). Goodness-of-fit assessment of item response theory
+/// models. *Measurement: Interdisciplinary Research and Perspectives, 11*(3),
+/// 71–101. https://doi.org/10.1080/15366367.2013.831680
 pub fn analytic_moments_delta(
     a: &PackedArchive,
     nodes: &[f64],
@@ -291,6 +325,14 @@ pub fn analytic_moments_delta(
 }
 /// Reuse native distribution functions and comparative metrics; CPU f64 stage.
 /// RMSEA and CI follow Maydeu-Olivares (2013), equations 26–28.
+/// Maydeu-Olivares (2013, p. 82, Equations 26–28) gives the N*df denominator
+/// and the 0.95/0.05 noncentral-CDF endpoints. Derived numerical range checks
+/// are fail-closed implementation guards, not scientific acceptance cutoffs.
+///
+/// # References
+/// Maydeu-Olivares, A. (2013). Goodness-of-fit assessment of item response theory
+/// models. *Measurement: Interdisciplinary Research and Perspectives, 11*(3),
+/// 71–101. https://doi.org/10.1080/15366367.2013.831680
 pub fn fit_indices(
     m2: f64,
     df: f64,
@@ -311,8 +353,27 @@ pub fn fit_indices(
         return Err("invalid fit index inputs".into());
     }
     let denom = n as f64 * df;
+    if !denom.is_finite() || denom <= 0.0 {
+        return Err("nonfinite or nonpositive RMSEA denominator".into());
+    }
+    let p_value = crate::fitstats::chi2_sf(m2, df);
+    let lower_lambda = crate::fitstats::nc_lambda_for(m2, df, 0.95);
+    let upper_lambda = crate::fitstats::nc_lambda_for(m2, df, 0.05);
+    let rmsea = ((m2 - df).max(0.0) / denom).sqrt();
+    let lower = (lower_lambda / denom).sqrt();
+    let upper = (upper_lambda / denom).sqrt();
+    if !p_value.is_finite()
+        || !(0.0..=1.0).contains(&p_value)
+        || [lower_lambda, upper_lambda, rmsea, lower, upper]
+            .iter()
+            .any(|v| !v.is_finite() || *v < 0.0)
+        || lower_lambda > upper_lambda
+        || lower > upper
+    {
+        return Err("invalid fit index distribution output".into());
+    }
     let (cfi, tli) = crate::fitstats::comparative_fit_metrics(m2, df, null_m2, null_df);
     Ok(
-        serde_json::json!({"m2":m2,"df":df,"p_value":crate::fitstats::chi2_sf(m2,df),"rmsea":((m2-df).max(0.0)/denom).sqrt(),"rmsea_ci90_lower":(crate::fitstats::nc_lambda_for(m2,df,0.95)/denom).sqrt(),"rmsea_ci90_upper":(crate::fitstats::nc_lambda_for(m2,df,0.05)/denom).sqrt(),"cfi":cfi,"tli":tli,"null_m2":null_m2,"null_df":null_df,"distribution_device":"cpu_f64","rmsea_denominator":"N * df","rmsea_denominator_value":denom}),
+        serde_json::json!({"m2":m2,"df":df,"p_value":p_value,"rmsea":rmsea,"rmsea_ci90_lower":lower,"rmsea_ci90_upper":upper,"cfi":cfi,"tli":tli,"null_m2":null_m2,"null_df":null_df,"distribution_device":"cpu_f64","rmsea_denominator":"N * df","rmsea_denominator_value":denom}),
     )
 }

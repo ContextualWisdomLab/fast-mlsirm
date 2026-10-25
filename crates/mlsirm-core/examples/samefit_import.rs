@@ -27,6 +27,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for other in &matches {
         if other["packed"] != summary["packed"]
             || other["coordinate_map"] != summary["coordinate_map"]
+            || other["anchor"] != summary["anchor"]
+            || other["q_general"] != summary["q_general"]
+            || other["loglik_cpu_f64"] != summary["loglik_cpu_f64"]
         {
             return Err("identity collision".into());
         }
