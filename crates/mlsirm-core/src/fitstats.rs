@@ -852,6 +852,11 @@ pub struct InformationCriteria {
 }
 
 pub fn information_criteria(loglik: f64, n_parameters: usize, n: usize) -> InformationCriteria {
+    // Check the exact count domain before binary64 rounding can change N - K - 1.
+    let aicc_denominator = n
+        .checked_sub(n_parameters)
+        .and_then(|gap| gap.checked_sub(1))
+        .filter(|&denominator| denominator > 0);
     let k = n_parameters as f64;
     let nf = n as f64;
     let dev = -2.0 * loglik;
@@ -862,8 +867,8 @@ pub fn information_criteria(loglik: f64, n_parameters: usize, n: usize) -> Infor
         n,
         aic,
         bic: dev + k * nf.ln(),
-        aicc: if nf - k - 1.0 > 0.0 {
-            aic + 2.0 * k * (k + 1.0) / (nf - k - 1.0)
+        aicc: if let Some(denominator) = aicc_denominator {
+            aic + 2.0 * k * (k + 1.0) / denominator as f64
         } else {
             f64::NAN
         },
