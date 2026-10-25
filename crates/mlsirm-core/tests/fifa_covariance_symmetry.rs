@@ -89,6 +89,11 @@ fn canonical_roundoff(exponents: &[i32]) {
             assert_eq!(actual.dispatches, 3);
             assert_eq!(actual.estimates, expected.estimates);
             assert_eq!(actual.jacobian, expected.jacobian);
+            let n = actual.estimates.len();
+            // These two rows retain the packed slope and first intercept, so
+            // their covariance cells expose the actual f32 upload unchanged.
+            assert_eq!(actual.covariance[2 * n + 4], f64::from(mean as f32));
+            assert_eq!(actual.covariance[4 * n + 2], f64::from(mean as f32));
             assert_eq!(
                 actual.covariance, expected.covariance,
                 "2^{exponent}: the checked mean must be the f32 matrix uploaded"
