@@ -53,6 +53,48 @@ fn workspace_shape(
     }
     Ok((n, np, nn, total))
 }
+/// FIFA-only Cholesky admission (Higham, 2009, p. 251, Eq. 1; p. 253).
+/// Divide by the largest entry before factoring to remove the covariance's
+/// units from the pivot test. Require finite, strictly positive pivots; no
+/// absolute eigenvalue cutoff, diagonal loading or pseudoinverse is used.
+/// This floating-point test has the near-boundary limits discussed on p. 252.
+///
+/// Higham, N. J. (2009). Cholesky factorization. *Wiley Interdisciplinary
+/// Reviews: Computational Statistics, 1*(2), 251–254.
+/// https://doi.org/10.1002/wics.18
+fn positive_definite_covariance(matrix: &[f64], p: usize) -> bool {
+    if p == 0 || p.checked_mul(p) != Some(matrix.len()) {
+        return false;
+    }
+    let scale = matrix.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
+    if !scale.is_finite() || scale <= 0.0 || matrix.iter().any(|v| !v.is_finite()) {
+        return false;
+    }
+    let mut lower = vec![0.0; matrix.len()];
+    for i in 0..p {
+        for j in 0..=i {
+            let mut value = 0.5 * (matrix[i * p + j] / scale) + 0.5 * (matrix[j * p + i] / scale);
+            for k in 0..j {
+                value -= lower[i * p + k] * lower[j * p + k];
+            }
+            if !value.is_finite() {
+                return false;
+            }
+            if i == j {
+                if value <= 0.0 {
+                    return false;
+                }
+                lower[i * p + j] = value.sqrt();
+            } else {
+                lower[i * p + j] = value / lower[j * p + j];
+                if !lower[i * p + j].is_finite() {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
 #[cfg(test)]
 mod admission_tests {
     #[test]
@@ -82,6 +124,22 @@ mod admission_tests {
         }
     }
 }
+/// f32 implementation of the coefficient convention documented by
+/// [`super::transform`] and first-order propagation `J C J^T` (Joint Committee
+/// for Guides in Metrology, 2011, p. 15, §6.2.1.3, Eq. 3).
+/// Covariance admission uses scale-normalized Cholesky twice: on f64 input
+/// and on the exact f32-rounded matrix (Higham, 2009, pp. 251–253).
+/// Numerical caps/guards are implementation policy, not statistical validity.
+///
+/// # References
+/// Higham, N. J. (2009). Cholesky factorization. *Wiley Interdisciplinary
+/// Reviews: Computational Statistics, 1*(2), 251–254.
+/// https://doi.org/10.1002/wics.18
+///
+/// Joint Committee for Guides in Metrology. (2011). *Evaluation of measurement
+/// data—Supplement 2 to the “Guide to the expression of uncertainty in
+/// measurement”—Extension to any number of output quantities* (JCGM 102:2011).
+/// https://doi.org/10.59161/JCGM102-2011
 pub fn evaluate(a: &PackedArchive, cov: &[f64]) -> Result<Output, String> {
     let coords = a.coordinates()?;
     let p = coords.len();
@@ -108,15 +166,13 @@ pub fn evaluate(a: &PackedArchive, cov: &[f64]) -> Result<Output, String> {
             }
         }
     }
-    let (positive, minimum, _) = crate::inference::second_order_test(cov, p, 0.)?;
-    if !positive || minimum <= 0. {
+    if !positive_definite_covariance(cov, p) {
         return Err("nonpositive parameter covariance".into());
     }
     // Validate the matrix that is actually transferred to the f32 shader.
     // Rounding can destroy positive definiteness or erase a positive variance.
     let rounded_cov: Vec<f64> = c.iter().map(|&value| f64::from(value)).collect();
-    let (positive, minimum, _) = crate::inference::second_order_test(&rounded_cov, p, 0.)?;
-    if !positive || minimum <= 0. {
+    if !positive_definite_covariance(&rounded_cov, p) {
         return Err("nonpositive f32 parameter covariance".into());
     }
     for (coord, &value) in coords.iter().zip(&x) {

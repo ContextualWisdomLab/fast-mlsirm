@@ -1,5 +1,10 @@
 //! One-factor grouped GRM coefficient transform and likelihood ACOV delta method.
 //! Logistic latent-response residual variance pi²/3; reference mean=0, SD=1.
+//!
+//! Method scope: Muthén and Asparouhov (2002, pp. 2–5, Eqs. 1–9, 16–19)
+//! describe CP/LRV parameterizations; the exact standard-logistic representation
+//! used here is derived in `docs/samefit_fifa.md`. No normal-ogive/logit identity
+//! is assumed. See the public method comments for verified locators/references.
 use crate::samefit_grm::{decode, Coordinate, PackedArchive};
 use serde::Serialize;
 #[cfg(feature = "gpu")]
@@ -30,6 +35,21 @@ impl Transformation {
 /// representations of the SAME fitted logit GRM, not a second factor fit.
 /// `threshold_standardized` is the latent-response category boundary at theta=mu,
 /// divided by total response SD; its sign is opposite the GRM intercept.
+///
+/// Muthén and Asparouhov (2002, pp. 2–5, Eqs. 1–9, 16–19) give the
+/// conditional-probability/LRV formulation. This implementation declares
+/// `L=a*theta+epsilon`, independent standard-logistic epsilon, boundary `-d`;
+/// its variance is `(a*sigma)^2+pi²/3`. The logistic variance is given by
+/// R Core Team (n.d., Details). Standardization and analytic differentiation
+/// are algebra under this convention, not a probit approximation or a new fit.
+///
+/// # References
+/// Muthén, B., & Asparouhov, T. (2002). *Latent variable analysis with categorical
+/// outcomes: Multiple-group and growth modeling in Mplus* (Mplus Web Notes
+/// No. 4, Version 5). https://statmodel.com/download/webnotes/CatMGLong.pdf
+///
+/// R Core Team. (n.d.). *The logistic distribution* (R stats documentation,
+/// version 4.6.0). https://stat.ethz.ch/R-manual/R-devel/library/stats/html/Logistic.html
 pub fn transform(a: &PackedArchive) -> Result<Transformation, String> {
     let d = decode(a)?;
     let coords = a.coordinates()?;
@@ -141,6 +161,25 @@ pub struct InferenceRow {
     pub ci95_upper: f64,
 }
 /// Refuse indefiniteness, asymmetry or rank loss rather than pseudoinverse SE.
+///
+/// First-order `J C J^T` uses the sensitivity-matrix rule of Joint Committee
+/// for Guides in Metrology (2011, p. 15, §6.2.1.3, Eq. 3; first-order scope
+/// in §5.6.1). `C` is the inverse supplied observed likelihood information;
+/// the caller must establish ML regularity and the fixed model/anchor mask.
+/// Pointwise normal-Wald intervals use the standard-normal 97.5th percentile
+/// (Xu & Long, 2005, pp. 554–556, §7.2, Eq. 2). They may cross coefficient
+/// bounds and do not adjust for anchor selection. The inverse residual bound
+/// is an implementation check, not a literature-derived scientific threshold.
+///
+/// # References
+/// Joint Committee for Guides in Metrology. (2011). *Evaluation of measurement
+/// data—Supplement 2 to the “Guide to the expression of uncertainty in
+/// measurement”—Extension to any number of output quantities* (JCGM 102:2011).
+/// https://doi.org/10.59161/JCGM102-2011
+///
+/// Xu, J., & Long, J. S. (2005). Confidence intervals for predicted outcomes in
+/// regression models for categorical outcomes. *The Stata Journal, 5*(4), 537–559.
+/// https://doi.org/10.1177/1536867X0500500405
 pub fn infer(t: &Transformation, information: &[f64]) -> Result<Inference, String> {
     let p = t.n_parameters;
     if p == 0
