@@ -253,6 +253,7 @@ pub(crate) struct GpuContext {
     grad_zeta: wgpu::ComputePipeline,
     backend: String,
     device_name: String,
+    pub(crate) device_type: wgpu::DeviceType,
 }
 
 static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
@@ -346,6 +347,7 @@ impl GpuContext {
             grad_zeta: make("grad_zeta_kernel"),
             backend: format!("{:?}", adapter_info.backend),
             device_name: adapter_info.name,
+            device_type: adapter_info.device_type,
             layout,
             device,
             queue,
