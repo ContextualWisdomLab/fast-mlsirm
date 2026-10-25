@@ -1915,7 +1915,7 @@ fn srmsr_from_sum(sum_squared: f64, count: usize) -> f64 {
     }
 }
 
-fn comparative_fit_metrics(m2: f64, df: f64, null_m2: f64, null_df: f64) -> (f64, f64) {
+pub(crate) fn comparative_fit_metrics(m2: f64, df: f64, null_m2: f64, null_df: f64) -> (f64, f64) {
     let cfi_denom = null_m2 - null_df;
     let cfi = if null_m2 > m2 && cfi_denom > 0.0 {
         (1.0 - (m2 - df) / cfi_denom).clamp(0.0, 1.0)
@@ -2187,7 +2187,7 @@ fn ncchi2_cdf(x: f64, df: f64, lam: f64) -> f64 {
 
 /// Smallest noncentrality `lam` with `ncchi2_cdf(x, df, lam) = target` (the CDF
 /// is monotone decreasing in `lam`); returns 0 if already unattainable.
-fn nc_lambda_for(x: f64, df: f64, target: f64) -> f64 {
+pub(crate) fn nc_lambda_for(x: f64, df: f64, target: f64) -> f64 {
     if chi2_cdf(x, df) <= target {
         return 0.0;
     }
