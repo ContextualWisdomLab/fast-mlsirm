@@ -15,3 +15,5 @@ pub mod samefit_grm_gpu;
 pub mod samefit_grm_joint;
 pub mod samefit_strict;
 pub mod sampling_design;
+
+pub mod samefit_fifa;
