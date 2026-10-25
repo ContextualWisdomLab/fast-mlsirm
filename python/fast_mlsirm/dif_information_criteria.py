@@ -115,7 +115,11 @@ def _validate_evidence(fit: DifFitEvidence) -> None:
         fit.loglik, (float, int, np.floating, np.integer)
     ):
         raise ValueError("loglik must be a finite real scalar")
-    if not math.isfinite(fit.loglik):
+    try:
+        finite = math.isfinite(fit.loglik)
+    except OverflowError:
+        finite = False
+    if not finite:
         raise ValueError("loglik must be finite")
     _integer(fit.n_persons, "n_persons", 2)
     _integer(fit.n_parameters, "n_parameters", 0)

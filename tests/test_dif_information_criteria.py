@@ -290,3 +290,75 @@ def test_compact_aicc_domain_also_rejects(route):
     augmented = replace(compact, loglik=-496.0, n_parameters=13)
     with pytest.raises(ValueError, match="AICc is undefined"):
         _compare_scalar_boundary(compact, augmented, "AICc", route)
+
+
+@pytest.mark.parametrize("side", ["compact", "augmented"])
+@pytest.mark.parametrize(
+    "loglik",
+    [10**400, -(10**400)],
+    ids=["huge-positive-int", "huge-negative-int"],
+)
+def test_public_comparison_rejects_oversized_loglik_with_value_error(loglik, side):
+    compact = DifFitEvidence(-500.0, 10, 200, True, "synthetic:same")
+    augmented = replace(compact, loglik=-496.0, n_parameters=12)
+    if side == "compact":
+        compact = replace(compact, loglik=loglik)
+    else:
+        augmented = replace(augmented, loglik=loglik)
+    with pytest.raises(ValueError, match="^loglik must be finite$"):
+        compare_dif_information_criteria(compact, augmented, criterion="AIC")
+
+
+@pytest.mark.parametrize(
+    "compact_loglik,augmented_loglik",
+    [
+        (-500.0, -496.0),
+        (-500, -496),
+        (np.float64(-500.0), np.float64(-496.0)),
+        (np.int64(-500), np.int64(-496)),
+    ],
+    ids=["float", "int", "numpy-float", "numpy-int"],
+)
+def test_public_comparison_preserves_finite_loglik_scalars(
+    compact_loglik, augmented_loglik
+):
+    compact = DifFitEvidence(compact_loglik, 10, 200, True, "synthetic:same")
+    augmented = replace(compact, loglik=augmented_loglik, n_parameters=12)
+    result = compare_dif_information_criteria(compact, augmented, criterion="AIC")
+    assert result.compact_ic == 1020.0
+    assert result.augmented_ic == 1016.0
+    assert result.delta_ic == -4.0
+    assert result.prefer_augmented is True
+    assert result.arithmetic_backend == "rust_cpu_f64"
+
+
+@pytest.mark.parametrize("side", ["compact", "augmented"])
+@pytest.mark.parametrize(
+    "loglik", [math.nan, math.inf, -math.inf], ids=["nan", "inf", "negative-inf"]
+)
+def test_public_comparison_rejects_nonfinite_loglik_with_value_error(loglik, side):
+    compact = DifFitEvidence(-500.0, 10, 200, True, "synthetic:same")
+    augmented = replace(compact, loglik=-496.0, n_parameters=12)
+    if side == "compact":
+        compact = replace(compact, loglik=loglik)
+    else:
+        augmented = replace(augmented, loglik=loglik)
+    with pytest.raises(ValueError, match="^loglik must be finite$"):
+        compare_dif_information_criteria(compact, augmented, criterion="AIC")
+
+
+@pytest.mark.parametrize("side", ["compact", "augmented"])
+@pytest.mark.parametrize(
+    "loglik",
+    [True, False, np.bool_(True), np.bool_(False)],
+    ids=["true", "false", "numpy-true", "numpy-false"],
+)
+def test_public_comparison_rejects_bool_loglik_before_float_coercion(loglik, side):
+    compact = DifFitEvidence(-500.0, 10, 200, True, "synthetic:same")
+    augmented = replace(compact, loglik=-496.0, n_parameters=12)
+    if side == "compact":
+        compact = replace(compact, loglik=loglik)
+    else:
+        augmented = replace(augmented, loglik=loglik)
+    with pytest.raises(ValueError, match="^loglik must be a finite real scalar$"):
+        compare_dif_information_criteria(compact, augmented, criterion="AIC")
