@@ -4,6 +4,16 @@
 //! Maydeu-Olivares, A. (2013). Goodness-of-fit assessment of item response theory
 //! models. Measurement, 11(3), 71–101. https://doi.org/10.1080/15366367.2013.831680
 use serde_json::{json, Value};
+/// Project whitened residuals off the measured tangent span without ridge.
+/// Maydeu-Olivares (2013, p. 78, Equations 10–11 and the orthogonal-complement
+/// expression below Equation 11) supplies the projection basis. Measured rank
+/// yields algebraic df only; at nonidentified points it does not certify the
+/// regular-model chi-square reference distribution.
+///
+/// # References
+/// Maydeu-Olivares, A. (2013). Goodness-of-fit assessment of item response theory
+/// models. *Measurement: Interdisciplinary Research and Perspectives, 11*(3),
+/// 71–101. https://doi.org/10.1080/15366367.2013.831680
 pub fn project(
     e: &[f64],
     d: &[f64],
@@ -50,7 +60,20 @@ pub fn project(
     };
     let mut r = whiten(e);
     let mut cols: Vec<Vec<f64>> = (0..p)
-        .map(|c| whiten(&(0..s).map(|i| d[i * p + c]).collect::<Vec<_>>()))
+        .map(|c| {
+            // Remove parameter units before whitening to avoid finite scaling overflow.
+            let scale = (0..s).map(|i| d[i * p + c].abs()).fold(0.0, f64::max);
+            let column: Vec<_> = (0..s)
+                .map(|i| {
+                    if scale > 0.0 {
+                        d[i * p + c] / scale
+                    } else {
+                        0.0
+                    }
+                })
+                .collect();
+            whiten(&column)
+        })
         .collect();
     if r.iter()
         .chain(cols.iter().flatten())
@@ -60,13 +83,12 @@ pub fn project(
     }
     // Normalize columns so rank does not depend on parameter units.
     for c in &mut cols {
-        let norm = c.iter().map(|v| v * v).sum::<f64>().sqrt();
-        if !norm.is_finite() {
-            return Err("nonfinite tangent norm".into());
-        }
-        if norm > 0.0 {
+        let scale = c.iter().map(|v| v.abs()).fold(0.0, f64::max);
+        if scale > 0.0 {
+            // Never form scale * norm: that product can overflow for finite columns.
+            let norm = c.iter().map(|v| (v / scale).powi(2)).sum::<f64>().sqrt();
             for v in c {
-                *v /= norm;
+                *v = (*v / scale) / norm;
             }
         }
     }
@@ -115,6 +137,15 @@ pub fn project(
         json!({"m2":m2,"rank":rank,"df":s-rank,"ridge":0.0,"rank_tolerance":tol,"normalized_tangent_pivots":pivots,"xi_min_cholesky_pivot":min_pivot,"xi_max_diagonal":scale}),
     )
 }
+/// CPU f64 cumulative moments and covariance, using E[hh'] - E[h]E[h]'.
+/// Maydeu-Olivares (2013, p. 77, Equation 4; p. 78, Equation 10) supplies the
+/// moment covariance required for projection; cumulative indicators apply the
+/// same linear basis change to moments, covariance and tangent.
+///
+/// # References
+/// Maydeu-Olivares, A. (2013). Goodness-of-fit assessment of item response theory
+/// models. *Measurement: Interdisciplinary Research and Perspectives, 11*(3),
+/// 71–101. https://doi.org/10.1080/15366367.2013.831680
 #[cfg(feature = "gpu")]
 pub fn cpu_moments(
     a: &crate::samefit_grm::PackedArchive,

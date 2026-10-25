@@ -26,7 +26,18 @@ column pivoting and two-pass modified Gram–Schmidt. Rank uses machine epsilon
 times the larger matrix dimension. Returned df is moment count minus measured
 rank. Non-positive-definite covariance is rejected: no ridge, pseudoinverse, or
 CPU fallback is used to rescue a failed calculation. Pivot diagnostics are
-numerical diagnostics, not a finite-sample calibration certificate.
+numerical diagnostics, not a finite-sample calibration certificate. The joint
+consumer delegates df admission to this measured rank, including when packed
+coordinates are redundant. Positive algebraic df at a nonidentified parameter
+point does not establish the regular-model chi-square reference distribution.
+Finite tangent columns are max-absolute scaled before whitening and normalized
+with a scaled sum of squares, without changing the rank cutoff.
+
+The result-file consumer requires repeated identities to agree in packed values,
+coordinate map, anchor mask, quadrature and terminal likelihood before selecting
+a summary. Fit-index calculation rejects nonfinite derived N*df denominators,
+p-values and noncentral limits, or reversed limits, before JSON serialization.
+Undefined comparative indices retain their separate nullable contract.
 
 ## Numerical backend and limitations
 
