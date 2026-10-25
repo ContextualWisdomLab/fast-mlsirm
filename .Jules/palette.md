@@ -51,3 +51,7 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+
+## 2026-09-30 - 차트 행 호버 시 배경색 전환 효과 누락
+**Learning:** 호버 시 배경색이 변하는 인터랙티브 요소는 급격한 시각적 변화를 방지하고 일관성을 유지하기 위해 적절한 CSS 전환(예: `transition: background-color 0.15s ease-in-out`)을 포함해야 합니다.
+**Action:** `.bar-row`와 같이 호버 시 시각적 상태가 변경되는 요소에 CSS 전환 속성을 추가합니다.
