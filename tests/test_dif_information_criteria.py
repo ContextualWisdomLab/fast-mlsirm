@@ -1,11 +1,14 @@
 """DIF relative-model selection acceptance tests (synthetic evidence only)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import math
 
 import numpy as np
 import pytest
 
 from fast_mlsirm.dif_information_criteria import (
+    DifFitEvidence,
+    _native_core,
     compare_dif_information_criteria,
     dif_fit_evidence,
 )
@@ -189,3 +192,101 @@ def test_fit_adapter_requires_explicit_likelihood_kind_for_untagged_fit():
     fit = NativeFitShape(np.array([-500.0]), 10)
     with pytest.raises(ValueError, match="likelihood_kind"):
         dif_fit_evidence(fit, n_persons=200, comparison_key="same")
+
+
+_USIZE_MAX = int(np.iinfo(np.uintp).max)
+_AICC_DOMAIN_CASES = [
+    pytest.param(13, 12, False, id="n-equals-k-plus-one"),
+    pytest.param(12, 12, False, id="n-equals-k"),
+    pytest.param(11, 12, False, id="n-below-k"),
+    pytest.param(14, 12, True, id="first-valid-small"),
+    pytest.param(_USIZE_MAX, _USIZE_MAX, False, id="usize-max-k"),
+    pytest.param(_USIZE_MAX, _USIZE_MAX - 1, False, id="usize-max-undefined"),
+    pytest.param(_USIZE_MAX, _USIZE_MAX - 2, True, id="usize-max-first-valid"),
+]
+if _USIZE_MAX > 2**53:
+    _AICC_DOMAIN_CASES += [
+        pytest.param(
+            9_007_199_254_740_994, 9_007_199_254_740_993, False, id="rounded-invalid"
+        ),
+        pytest.param(
+            9_007_199_254_740_995, 9_007_199_254_740_993, True, id="large-first-valid"
+        ),
+        pytest.param(
+            9_007_199_254_740_994, 9_007_199_254_740_992, True, id="large-gap-rounds"
+        ),
+    ]
+
+
+def _compare_scalar_boundary(compact, augmented, criterion, route):
+    if route == "public":
+        result = compare_dif_information_criteria(
+            compact, augmented, criterion=criterion
+        )
+        return (
+            result.compact_ic,
+            result.augmented_ic,
+            result.delta_ic,
+            result.prefer_augmented,
+        )
+
+    def row(fit):
+        return (
+            fit.loglik,
+            fit.n_parameters,
+            fit.n_persons,
+            fit.converged,
+            fit.likelihood_kind,
+            fit.comparison_key,
+        )
+
+    result = _native_core().compare_dif_information_criteria(
+        row(compact), row(augmented), criterion
+    )
+    return (
+        result["compact_ic"],
+        result["augmented_ic"],
+        result["delta_ic"],
+        result["prefer_augmented"],
+    )
+
+
+@pytest.mark.parametrize("route", ["public", "native"])
+@pytest.mark.parametrize("n,k,defined", _AICC_DOMAIN_CASES)
+def test_aicc_exact_integer_domain_through_public_and_native(n, k, defined, route):
+    compact = DifFitEvidence(-500.0, 0, n, True, "synthetic:same-rows-estimator-grid")
+    augmented = replace(compact, loglik=-496.0, n_parameters=k)
+    if not defined:
+        with pytest.raises(ValueError, match="AICc is undefined"):
+            _compare_scalar_boundary(compact, augmented, "AICc", route)
+    else:
+        assert n - k - 1 == 1
+        kf = float(k)
+        expected = 992.0 + 2.0 * kf + 2.0 * kf * (kf + 1.0)
+        c, a, delta, prefer = _compare_scalar_boundary(
+            compact, augmented, "AICc", route
+        )
+        assert c == 1000.0
+        assert a == expected
+        assert delta == expected - 1000.0
+        assert prefer is (expected < 1000.0)
+
+
+@pytest.mark.parametrize("route", ["public", "native"])
+@pytest.mark.parametrize("criterion", ["AIC", "BIC", "SABIC", "CAIC"])
+def test_undefined_aicc_does_not_reject_other_criteria(criterion, route):
+    compact = DifFitEvidence(
+        -500.0, 0, _USIZE_MAX, True, "synthetic:same-rows-estimator-grid"
+    )
+    augmented = replace(compact, loglik=-496.0, n_parameters=_USIZE_MAX)
+    c, a, delta, prefer = _compare_scalar_boundary(compact, augmented, criterion, route)
+    assert all(math.isfinite(value) for value in (c, a, delta))
+    assert prefer is (delta < 0.0)
+
+
+@pytest.mark.parametrize("route", ["public", "native"])
+def test_compact_aicc_domain_also_rejects(route):
+    compact = DifFitEvidence(-500.0, 12, 13, True, "synthetic:same-rows-estimator-grid")
+    augmented = replace(compact, loglik=-496.0, n_parameters=13)
+    with pytest.raises(ValueError, match="AICc is undefined"):
+        _compare_scalar_boundary(compact, augmented, "AICc", route)
