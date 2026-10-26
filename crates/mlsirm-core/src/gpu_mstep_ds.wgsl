@@ -11,9 +11,15 @@ fn ds(x:f32)->vec2<f32>{return vec2<f32>(x,0.0);}
 var<workgroup> rounding: atomic<u32>;
 fn rn(x:f32)->f32 {atomicStore(&rounding,bitcast<u32>(x));return bitcast<f32>(atomicLoad(&rounding));}
 fn add(a:vec2<f32>,b:vec2<f32>)->vec2<f32>{
+ // TwoSum both word pairs before combining them. Adding low words to the
+ // high residual one at a time loses their rounding error on cancellation
+ // (e.g. adjacent thresholds); that error becomes relative error in log(gap).
  let s=rn(a.x+b.x);let v=rn(s-a.x);
- let e=rn(rn(rn(rn(a.x-rn(s-v))+rn(b.x-v))+a.y)+b.y);
- let h=rn(s+e);return vec2<f32>(h,rn(e-rn(h-s)));
+ let e=rn(rn(a.x-rn(s-v))+rn(b.x-v));
+ let t=rn(a.y+b.y);let z=rn(t-a.y);
+ let f=rn(rn(a.y-rn(t-z))+rn(b.y-z));
+ let c=rn(e+t);let h=rn(s+c);let l=rn(rn(c-rn(h-s))+f);
+ let hi=rn(h+l);return vec2<f32>(hi,rn(l-rn(hi-h)));
 }
 fn neg(a:vec2<f32>)->vec2<f32>{return -a;}
 fn sub(a:vec2<f32>,b:vec2<f32>)->vec2<f32>{return add(a,-b);}
@@ -118,6 +124,71 @@ fn prior(slot:u32)->vec2<f32>{
  }
  return value;
 }
+// Evaluate log ratios before reduction: subtracting two total criteria loses
+// the O(step^2) Newton decrement to O(criterion) rounding near stationarity.
+fn em1(x:vec2<f32>)->vec2<f32>{
+ if(lt(ab(x),ds(0.1))){
+  var term=x;var sum=x;
+  for(var j=2u;j<=18u;j++){term=divd(mul(term,x),ds(f32(j)));sum=add(sum,term);}
+  return sum;
+ }
+ return sub(ex(x),ds(1.0));
+}
+fn l1p(x:vec2<f32>)->vec2<f32>{
+ if(lt(ab(x),ds(0.1))){
+  var term=x;var sum=x;
+  for(var j=2u;j<=18u;j++){term=mul(term,-x);sum=add(sum,divd(term,ds(f32(j))));}
+  return sum;
+ }
+ return lg(add(ds(1.0),x));
+}
+fn ls_delta(x:vec2<f32>,dx:vec2<f32>)->vec2<f32>{
+ if(lt(ds(0.1),ab(dx))){return sub(ls(add(x,dx)),ls(x));}
+ return -l1p(mul(sig(-x),em1(-dx)));
+}
+fn objective_delta()->vec2<f32>{
+ let p=np();let off=u32(data[1].x);let nn=u32(data[2].x);let m=p-off;let w=width();
+ var total=ds(0.0);
+ for(var n=0u;n<nn;n++){
+  let start=3u+p+n*(p+1u);var eta=ds(0.0);var de=ds(0.0);
+  for(var d=0u;d<off;d++){
+   eta=add(eta,mul(result[w+d],data[start+d]));
+   de=add(de,mul(sub(result[w+p+d],result[w+d]),data[start+d]));
+  }
+  for(var c=0u;c<=m;c++){
+   let count=data[start+off+c];if(count.x==0.0){continue;}
+   var delta=ds(0.0);
+   if(c==0u || c==m){
+    let b=select(off,p-1u,c==m);let x=add(eta,result[w+b]);
+    let dx=add(de,sub(result[w+p+b],result[w+b]));
+    delta=ls_delta(-x,-dx);if(c==m){delta=ls_delta(x,dx);}
+   }else{
+    let b=off+c-1u;let k=b+1u;
+    let db=sub(result[w+p+b],result[w+b]);let dk=sub(result[w+p+k],result[w+k]);
+    let gap=sub(result[w+b],result[w+k]);
+    delta=add(ls_delta(add(eta,result[w+b]),add(de,db)),ls_delta(-add(eta,result[w+k]),-add(de,dk)));
+    let next_gap=sub(result[w+p+b],result[w+p+k]);
+    var gap_delta=sub(lg(gap_mass(next_gap)),lg(gap_mass(gap)));
+    if(lt(ab(sub(db,dk)),mul(ds(0.1),gap))){
+     gap_delta=l1p(divd(mul(ex(-gap),-em1(-sub(db,dk))),gap_mass(gap)));
+    }
+    delta=add(delta,gap_delta);
+   }
+   total=sub(total,mul(count,delta));
+  }
+ }
+ let ctl=control();
+ if(data[ctl].x!=0.0){
+  for(var d=0u;d<off;d++){
+   let a=result[w+d];let next=result[w+p+d];
+   // A sign crossing is not a local log ratio; use the absolute ratio.
+   var dl=l1p(divd(sub(ab(next),ab(a)),ab(a)));
+   let sd=data[ctl+2u];let z=divd(sub(lg(ab(a)),data[ctl+1u]),sd);let dz=divd(dl,sd);
+   total=add(total,add(dl,mul(dz,add(z,mul(ds(0.5),dz)))));
+  }
+ }
+ return total;
+}
 @compute @workgroup_size(1)
 fn main(){
  trial=false;arithmetic_range_failure=false;let p=np();let off=u32(data[1].x);let w=width();let ctl=control();let step=w+2u*p;let rb=step+p;
@@ -160,7 +231,13 @@ fn main(){
    if(valid){
     let f=add(criterion(0u),prior(0u));result[rb+1u]=add(result[rb+1u],ds(1.0));result[rb+4u]=add(result[rb+4u],ds(1.0));
     if(arithmetic_range_failure){result[rb]=ds(6.0);return;}
-    if(finite(f)&&le(f,sub(f0,mul(data[ctl+9u],mul(alpha,directional))))&&lt(ds(0.0),actual_change)){accepted=true;}
+    var sufficient=finite(f)&&le(f,sub(f0,mul(data[ctl+9u],mul(alpha,directional))));
+    if(finite(f) && !sufficient){
+     let delta=objective_delta();
+     if(arithmetic_range_failure){result[rb]=ds(6.0);return;}
+     sufficient=finite(delta)&&le(delta,-mul(data[ctl+9u],mul(alpha,directional)));
+    }
+    if(sufficient&&lt(ds(0.0),actual_change)){accepted=true;}
     // Below the caller's step tolerance the objective decrement is quadratic
     // and can be unresolvable even though the gradient is still nonstationary.
     // Admit a full local Newton correction only on strict gradient improvement

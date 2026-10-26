@@ -2690,7 +2690,7 @@ fn multigroup_m_step_item(
     device: crate::Device, params: Vec<f64>, has_specific: bool,
     node_g: &[f64], node_s: &[f64], counts: &[Vec<f64>], n_cat: usize,
     ridge: f64, n_newton: usize, prior: SlopePrior,
-) -> Result<Vec<f64>, String> {
+) -> Result<(Vec<f64>, bool), String> {
     if device == crate::Device::Gpu {
         #[cfg(all(feature = "gpu", not(coverage)))]
         {
@@ -2708,13 +2708,13 @@ fn multigroup_m_step_item(
             let (updated, receipt) = crate::gpu_mstep::update_grm(
                 &params, off, &nodes, counts, prior, &control)?;
             eprintln!("MULTIGROUP_MSTEP_RECEIPT {}", serde_json::to_string(&receipt).unwrap());
-            return Ok(updated);
+            return Ok((updated, receipt.iteration_limit_updates != 0));
         }
         #[cfg(not(all(feature = "gpu", not(coverage))))]
         return Err("GPU M-step unavailable; CPU fallback forbidden".into());
     }
-    Ok(m_step_item(params, has_specific, node_g, node_s, counts,
-        n_cat, ridge, n_newton, prior))
+    Ok((m_step_item(params, has_specific, node_g, node_s, counts,
+        n_cat, ridge, n_newton, prior), false))
 }
 
 fn run_single_start_multigroup(
@@ -2759,6 +2759,9 @@ fn run_single_start_multigroup(
     let mut previous: Option<f64> = None;
     let mut em_objective_trace: Vec<f64> = Vec::new();
     let objective_name = em_objective_name(cfg.slope_prior);
+    // Preserve bounded GPU updates without promoting their iteration limit
+    // into EM convergence. Reset this witness for every completed sweep.
+    let mut last_m_step_limited = false;
 
     loop {
         // Common-scale group nodes for this sweep.
@@ -2813,7 +2816,8 @@ fn run_single_start_multigroup(
         if let Some(change) = change {
             let prev = prev_objective.expect("change requires a previous objective");
             final_loglik_change = change;
-            if final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
+            if !last_m_step_limited
+                && final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
                 converged = true;
                 termination_reason = "tolerance_met".to_string();
                 #[cfg(test)]
@@ -2826,6 +2830,7 @@ fn run_single_start_multigroup(
             specific_mean_tests::mark_terminal_fit_sweep(sweep_index);
             break;
         }
+        last_m_step_limited = false;
         // M-step, item parameters: anchored items pool every group's nodes
         // and expected counts (Bock-Zimowski pooling); free items fit per
         // group. Stacked node order is groups outer, `(t, h)` inner with
@@ -2861,7 +2866,7 @@ fn run_single_start_multigroup(
                     packed.push(a_s);
                 }
                 packed.extend_from_slice(&params_groups[0][i].d);
-                let updated = multigroup_m_step_item(
+                let (updated, limited) = multigroup_m_step_item(
                     cfg.device,
                     packed,
                     has_specific,
@@ -2877,6 +2882,7 @@ fn run_single_start_multigroup(
                     // under the default all-common `anchor = None`.
                     cfg.slope_prior,
                 )?;
+                last_m_step_limited |= limited;
                 for g in 0..n_groups {
                     params_groups[g][i].a_g = updated[0];
                     if has_specific {
@@ -2908,7 +2914,7 @@ fn run_single_start_multigroup(
                         packed.push(a_s);
                     }
                     packed.extend_from_slice(&params_groups[g][i].d);
-                    let updated = multigroup_m_step_item(
+                    let (updated, limited) = multigroup_m_step_item(
                         cfg.device,
                         packed,
                         has_specific,
@@ -2920,6 +2926,7 @@ fn run_single_start_multigroup(
                         cfg.newton_iter,
                         cfg.slope_prior,
                     )?;
+                    last_m_step_limited |= limited;
                     params_groups[g][i].a_g = updated[0];
                     if has_specific {
                         params_groups[g][i].a_s = Some(updated[1]);

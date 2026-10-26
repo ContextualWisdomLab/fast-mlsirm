@@ -38,6 +38,9 @@ pub struct StageReceipt {
     pub e_step_gpu_dispatches: usize,
     pub m_step_gpu_dispatches: usize,
     pub cpu_numerical_fallbacks: usize,
+    /// Bounded item updates that exhaust Newton iterations without a device
+    /// stationarity check. These remain valid updates, not convergence evidence.
+    pub iteration_limit_updates: usize,
 }
 impl StageReceipt {
     pub(crate) fn add(&mut self, rhs: &Self) {
@@ -51,6 +54,7 @@ impl StageReceipt {
         self.e_step_gpu_dispatches += rhs.e_step_gpu_dispatches;
         self.m_step_gpu_dispatches += rhs.m_step_gpu_dispatches;
         self.cpu_numerical_fallbacks += rhs.cpu_numerical_fallbacks;
+        self.iteration_limit_updates += rhs.iteration_limit_updates;
     }
 }
 
@@ -483,6 +487,7 @@ pub fn update_grm(
             line_search: c[5] as usize,
             parameter_update: c[6] as usize,
             m_step_gpu_dispatches: usize::from(c[6] > 0.0),
+            iteration_limit_updates: usize::from(status == 5),
             ..Default::default()
         },
     ))
@@ -1129,3 +1134,7 @@ mod independent_review {
 #[cfg(test)]
 #[path = "gpu_stationarity_review_tests.rs"]
 mod stationarity_review;
+
+#[cfg(test)]
+#[path = "gpu_multigroup_line_search_tests.rs"]
+mod multigroup_line_search_tests;
