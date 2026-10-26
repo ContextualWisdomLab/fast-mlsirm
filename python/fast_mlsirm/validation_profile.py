@@ -201,6 +201,7 @@ class ValidationProfile:
     population: str
     setting: str
     decision_use: str
+    protocol_registered_at: datetime
     analysis_cutoff: datetime
     evidence_references: tuple[ValidationEvidenceReference, ...]
 
@@ -223,7 +224,15 @@ class ValidationProfile:
             "model_fingerprint",
         ):
             object.__setattr__(self, name, _fingerprint(getattr(self, name), name))
+
+        registered_at = _utc_datetime(
+            self.protocol_registered_at,
+            "protocol_registered_at",
+        )
         cutoff = _utc_datetime(self.analysis_cutoff, "analysis_cutoff")
+        if registered_at > cutoff:
+            raise ValueError("protocol_registered_at must not exceed analysis_cutoff")
+        object.__setattr__(self, "protocol_registered_at", registered_at)
         object.__setattr__(self, "analysis_cutoff", cutoff)
 
         raw = self.evidence_references
@@ -246,7 +255,8 @@ class ValidationProfile:
             if evidence_id in seen_ids:
                 raise ValueError("evidence_id must be unique within a validation profile")
             seen_ids[evidence_id] = content["artifact_fingerprint"]
-            if reference.available_time > cutoff:
+            available_time = _utc_datetime(reference.available_time, "available_time")
+            if available_time > cutoff:
                 raise ValueError("available_time must not exceed analysis_cutoff")
             normalized.append(reference)
 
@@ -282,7 +292,13 @@ class ValidationProfile:
                 "model_fingerprint",
             )
         }
+        registered_at = _utc_datetime(
+            self.protocol_registered_at,
+            "protocol_registered_at",
+        )
         cutoff = _utc_datetime(self.analysis_cutoff, "analysis_cutoff")
+        if registered_at > cutoff:
+            raise ValueError("protocol_registered_at must not exceed analysis_cutoff")
 
         raw = self.evidence_references
         if type(raw) not in {list, tuple}:
@@ -322,6 +338,7 @@ class ValidationProfile:
             "population": scalar_values["population"],
             "setting": scalar_values["setting"],
             "decision_use": scalar_values["decision_use"],
+            "protocol_registered_at": _timestamp_text(registered_at),
             "analysis_cutoff": _timestamp_text(cutoff),
             "evidence_references": evidence_payloads,
         }
