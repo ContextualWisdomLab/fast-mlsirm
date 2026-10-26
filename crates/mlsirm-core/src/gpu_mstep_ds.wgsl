@@ -161,6 +161,21 @@ fn main(){
     let f=add(criterion(0u),prior(0u));result[rb+1u]=add(result[rb+1u],ds(1.0));result[rb+4u]=add(result[rb+4u],ds(1.0));
     if(arithmetic_range_failure){result[rb]=ds(6.0);return;}
     if(finite(f)&&le(f,sub(f0,mul(data[ctl+9u],mul(alpha,directional))))&&lt(ds(0.0),actual_change)){accepted=true;}
+    // Below the caller's step tolerance the objective decrement is quadratic
+    // and can be unresolvable even though the gradient is still nonstationary.
+    // Admit a full local Newton correction only on strict gradient improvement
+    // that already meets the unchanged gradient tolerance.
+    // This is not convergence: the next iteration must evaluate the gradient.
+    if(bt==0u && le(actual_change,data[ctl+7u]) && lt(ds(0.0),actual_change)){
+     var trial_norm=ds(0.0);var trial_finite=true;
+     for(var j=1u;j<=p;j++){
+      let g=add(criterion(j),prior(j));trial_finite=trial_finite&&finite(g);
+      if(lt(trial_norm,ab(g))){trial_norm=ab(g);}
+     }
+     if(arithmetic_range_failure){result[rb]=ds(6.0);return;}
+     result[rb+2u]=add(result[rb+2u],ds(1.0));
+     if(finite(f) && trial_finite && lt(trial_norm,norm) && le(trial_norm,data[ctl+6u])){accepted=true;}
+    }
    }
    result[rb+6u]=add(result[rb+6u],ds(1.0));trial=false;
    if(accepted){break;}alpha=mul(alpha,ds(0.5));
@@ -168,7 +183,8 @@ fn main(){
   if(!accepted){result[rb]=ds(4.0);return;}
   for(var j=0u;j<p;j++){result[w+j]=result[w+p+j];}
   result[rb+7u]=add(result[rb+7u],ds(1.0));result[rb+8u]=add(result[rb+8u],ds(1.0));
-  if(le(actual_change,data[ctl+7u])){result[rb]=ds(1.0);return;}
+  // A small step alone cannot certify stationarity at the caller's gradient
+  // tolerance. Re-evaluate on device at the updated parameters next iteration.
  }
  result[rb]=ds(5.0);
 }

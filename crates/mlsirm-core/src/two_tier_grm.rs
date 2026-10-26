@@ -1218,7 +1218,7 @@ impl<'a> IntoIterator for &'a OrdinaryItemCounts {
 /// Reference: Cai, L. (2010). A two-tier full-information item factor
 /// analysis model with applications. *Psychometrika, 75*(4), 581–612.
 /// doi:10.1007/s11336-010-9178-0.
-trait CountRows {
+pub(crate) trait CountRows {
     fn len(&self) -> usize;
     fn rows(&self) -> impl Iterator<Item = &[f64]>;
 }

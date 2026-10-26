@@ -1125,3 +1125,7 @@ mod independent_review {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "gpu_stationarity_review_tests.rs"]
+mod stationarity_review;
