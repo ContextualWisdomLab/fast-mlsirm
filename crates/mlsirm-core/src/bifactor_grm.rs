@@ -2013,6 +2013,10 @@ pub struct BifactorMultigroupConfig {
     /// reference-link screen is not a full-model identification proof.
     pub estimate_specific_means: bool,
     /// Compute device for the E-step sweep (see [`BifactorGrmConfig::device`]).
+    /// For multiple groups, explicit `Gpu` also requires hardware GPU item
+    /// M-steps: unavailable GPU builds/adapters and numerical errors are
+    /// returned without CPU M-step fallback. `Auto` retains its existing
+    /// routing; one-group calls delegate to [`fit_bifactor_grm`].
     pub device: crate::Device,
 }
 
@@ -2685,7 +2689,6 @@ fn validate_specific_mean_location_rank(
 #[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
 // Candidate connection: preserve caller Newton controls; never recover a device
 // optimizer error with CPU numerical work. Full strict E/M composition is separate.
-#[allow(clippy::too_many_arguments)]
 fn multigroup_m_step_item(
     device: crate::Device, params: Vec<f64>, has_specific: bool,
     node_g: &[f64], node_s: &[f64], counts: &[Vec<f64>], n_cat: usize,
@@ -2707,7 +2710,6 @@ fn multigroup_m_step_item(
             };
             let (updated, receipt) = crate::gpu_mstep::update_grm(
                 &params, off, &nodes, counts, prior, &control)?;
-            eprintln!("MULTIGROUP_MSTEP_RECEIPT {}", serde_json::to_string(&receipt).unwrap());
             return Ok((updated, receipt.iteration_limit_updates != 0));
         }
         #[cfg(not(all(feature = "gpu", not(coverage))))]

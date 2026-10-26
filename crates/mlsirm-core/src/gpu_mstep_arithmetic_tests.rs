@@ -1,12 +1,14 @@
 //! Native compiler tests of the exact production arithmetic, not CPU emulation.
 use super::*;
 
-fn scalar(op: &str, values: &[f64]) -> Vec<f64> {
+fn scalar_probe(op: &str, values: &[f64], report_flag: &str) -> Vec<(f64, bool)> {
     let prefix = include_str!("gpu_mstep_ds.wgsl")
         .split("fn np()")
         .next()
         .unwrap();
-    let source = format!("{prefix}\n@compute @workgroup_size(1) fn probe(@builtin(global_invocation_id) id:vec3<u32>) {{ result[id.x]={op}(data[id.x]); }}");
+    // Each invocation owns its private flag and two output pairs. Read the
+    // production flag independently of the exponential's rounded value.
+    let source = format!("{prefix}\n@compute @workgroup_size(1) fn probe(@builtin(global_invocation_id) id:vec3<u32>) {{ arithmetic_range_failure=false; result[2u*id.x]={op}(data[id.x]); result[2u*id.x+1u]=ds(select(0.0,1.0,{report_flag})); }}");
     let data: Vec<f32> = values
         .iter()
         .flat_map(|&v| {
@@ -17,14 +19,56 @@ fn scalar(op: &str, values: &[f64]) -> Vec<f64> {
     dispatch(
         &source,
         &data,
-        values.len() * 2,
+        values.len() * 4,
         values.len() as u32,
         "probe",
     )
     .unwrap()
-    .chunks_exact(2)
-    .map(|v| v[0] as f64 + v[1] as f64)
+    .chunks_exact(4)
+    .map(|v| {
+        assert!(v[2] == 0.0 || v[2] == 1.0, "invalid range flag {}", v[2]);
+        assert_eq!(v[3], 0.0);
+        (v[0] as f64 + v[1] as f64, v[2] == 1.0)
+    })
     .collect()
+}
+
+fn scalar_with_range(op: &str, values: &[f64]) -> Vec<(f64, bool)> {
+    scalar_probe(op, values, "arithmetic_range_failure")
+}
+
+fn assert_exp_range(x: f64, y: f64, range_failure: bool) {
+    if x < -66.0 {
+        assert!(range_failure, "missing arithmetic range refusal at {x}");
+    } else {
+        let expected = x.exp();
+        assert!(!range_failure, "in-range exponential refused at {x}");
+        assert!(
+            y.is_finite() && y > 0.0 && (y / expected - 1.0).abs() <= 1e-9,
+            "in-range exp x={x} gpu={y:e} native={expected:e}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires owner-held physical GPU lease"]
+#[should_panic(expected = "missing arithmetic range refusal at -90")]
+fn gpu_mstep_arithmetic_range_oracle_rejects_suppressed_flag() {
+    // Test-only readback mutant: the production arithmetic prefix is unchanged.
+    // The old absolute tail assertion accepts the rounded zero; this oracle
+    // must reject the missing refusal even though the value is unchanged.
+    let (value, flag) = scalar_probe("ex", &[-90.0], "false")[0];
+    assert_exp_range(-90.0, value, flag);
+}
+
+fn scalar(op: &str, values: &[f64]) -> Vec<f64> {
+    scalar_with_range(op, values)
+        .into_iter()
+        .map(|(value, range_failure)| {
+            assert!(!range_failure, "unexpected arithmetic range refusal");
+            value
+        })
+        .collect()
 }
 
 #[test]
@@ -100,15 +144,30 @@ fn gpu_mstep_arithmetic_large_count_tail_must_not_fake_stationarity() {
 #[test]
 #[ignore = "requires owner-held physical GPU lease"]
 fn gpu_mstep_arithmetic_exp_tails_and_overflow() {
-    let values = [-70.0, -80.0, -90.0, -100.0, -104.0, -120.0];
-    let got = scalar("ex", &values);
-    for (&x, y) in values.iter().zip(got) {
+    // Both neighbors round to the same high word as -66. The low word must
+    // decide refusal, and one invocation's flag must not contaminate another.
+    let epsilon = 2.0_f64.powi(-30);
+    let values = [
+        -70.0,
+        -66.0,
+        -80.0,
+        -66.0 + epsilon,
+        -90.0,
+        0.0,
+        -100.0,
+        -66.0 - epsilon,
+        -104.0,
+        -120.0,
+        -60.0,
+    ];
+    assert_eq!((-66.0 - epsilon) as f32, -66.0_f32);
+    assert_eq!((-66.0 + epsilon) as f32, -66.0_f32);
+    let got = scalar_with_range("ex", &values);
+    assert_eq!(got.len(), values.len());
+    for (&x, (y, range_failure)) in values.iter().zip(got) {
         let expected = x.exp();
-        eprintln!(
-            "EXP_TAIL x={x} gpu={y:e} native={expected:e} relative={:e}",
-            (y / expected - 1.0).abs()
-        );
-        assert!(y.is_finite() && (y - expected).abs() <= 1e-9);
+        eprintln!("EXP_TAIL x={x:.12} gpu={y:e} native={expected:e} range_failure={range_failure}");
+        assert_exp_range(x, y, range_failure);
     }
     let got = scalar("ex", &[90.0, 1000.0]);
     for y in got {
