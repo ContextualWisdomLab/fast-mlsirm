@@ -284,10 +284,12 @@ fn pack(
         || params[off..]
             .windows(2)
             .any(|x| (x[0] as f32) <= (x[1] as f32))
-        || counts
-            .iter()
-            .flatten()
-            .any(|x| !x.is_finite() || *x < 0.0 || !(*x as f32).is_finite())
+        || counts.iter().flatten().any(|x| {
+            !x.is_finite()
+                || *x < 0.0
+                || !(*x as f32).is_finite()
+                || (*x != 0.0 && (*x as f32) == 0.0)
+        })
     {
         return Err("nonfinite, negative count or unordered GRM boundary".into());
     }
@@ -389,7 +391,10 @@ pub fn update_grm(
     checked_buffer(cells, limits()?.0)?;
     // Two-word storage must be admitted before any additional packing allocation.
     let (input_cells, _) = checked_layout(params.len(), off, counts.len(), limit, groups)?;
-    checked_buffer(input_cells.checked_mul(2).ok_or("GPU input overflow")?, limit)?;
+    checked_buffer(
+        input_cells.checked_mul(2).ok_or("GPU input overflow")?,
+        limit,
+    )?;
     checked_buffer(cells.checked_mul(2).ok_or("GPU scratch overflow")?, limit)?;
     let (mut data, width) = pack(params, off, nodes, counts, prior)?;
     let ctl = data.len() - 7;
@@ -415,20 +420,38 @@ pub fn update_grm(
         precise[ctl - 2] = mu;
         precise[ctl - 1] = sd;
     }
-    precise[ctl..].copy_from_slice(&[control.ridge, control.iterations as f64,
-        control.backtracks as f64, control.gradient_tolerance, control.step_tolerance,
-        control.pivot_tolerance, control.armijo]);
+    precise[ctl..].copy_from_slice(&[
+        control.ridge,
+        control.iterations as f64,
+        control.backtracks as f64,
+        control.gradient_tolerance,
+        control.step_tolerance,
+        control.pivot_tolerance,
+        control.armijo,
+    ]);
     let mut packed = Vec::with_capacity(precise.len() * 2);
-    for value in precise { let hi = value as f32; packed.extend([hi, (value - hi as f64) as f32]); }
-    let raw = dispatch(include_str!("gpu_mstep_ds.wgsl"), &packed,
-        cells.checked_mul(2).ok_or("GPU scratch overflow")?, 1, "main")?;
-    let v: Vec<f64> = raw.chunks_exact(2).map(|x| x[0] as f64 + x[1] as f64).collect();
+    for value in precise {
+        let hi = value as f32;
+        packed.extend([hi, (value - hi as f64) as f32]);
+    }
+    let raw = dispatch(
+        include_str!("gpu_mstep_ds.wgsl"),
+        &packed,
+        cells.checked_mul(2).ok_or("GPU scratch overflow")?,
+        1,
+        "main",
+    )?;
+    let v: Vec<f64> = raw
+        .chunks_exact(2)
+        .map(|x| x[0] as f64 + x[1] as f64)
+        .collect();
     let status = v[meta] as u32;
     if status != 1 && status != 5 {
         let reason = match status {
             2 => "nonfinite criterion",
             3 => "linear solve failure",
             4 => "line-search failure",
+            6 => "two-word arithmetic range exceeded",
             _ => "invalid completion status",
         };
         return Err(format!(
@@ -464,6 +487,10 @@ pub fn update_grm(
         },
     ))
 }
+
+#[cfg(test)]
+#[path = "gpu_mstep_arithmetic_tests.rs"]
+mod arithmetic_tests;
 
 #[cfg(test)]
 mod tests {
@@ -676,22 +703,50 @@ mod tests {
     fn gpu_mstep_strict_two_word_subulp_and_stationarity() {
         let p = [1.1, 0.8, -0.7];
         let nodes = [-1.0, -0.2, 0.5, 1.2];
-        let counts = vec![vec![8.0,3.0,1.0],vec![3.0,4.0,2.0],vec![1.0,2.0,5.0],vec![1.0,1.0,9.0]];
-        let ctrl = NewtonControl {iterations:20, backtracks:25, ridge:1e-8,
-            gradient_tolerance:1e-9, step_tolerance:1e-9, pivot_tolerance:1e-14, armijo:1e-4};
-        for prior in [SlopePrior::None, SlopePrior::Lognormal{mu:0.2,sd:0.8}] {
-            let (updated,receipt)=update_grm(&p,1,&nodes,&counts,prior,&ctrl).unwrap();
-            let (_,mut gradient,_)=crate::bifactor_grm::item_neg_ll_grad_hess(&updated,false,&nodes,&[],&counts,false);
-            if let SlopePrior::Lognormal{mu,sd}=prior {
-                let mut objective=0.0;
-                crate::bifactor_grm::add_lnorm_abs_slope_prior(updated[0],mu,sd,&mut objective,&mut gradient[0]);
+        let counts = vec![
+            vec![8.0, 3.0, 1.0],
+            vec![3.0, 4.0, 2.0],
+            vec![1.0, 2.0, 5.0],
+            vec![1.0, 1.0, 9.0],
+        ];
+        let ctrl = NewtonControl {
+            iterations: 20,
+            backtracks: 25,
+            ridge: 1e-8,
+            gradient_tolerance: 1e-9,
+            step_tolerance: 1e-9,
+            pivot_tolerance: 1e-14,
+            armijo: 1e-4,
+        };
+        for prior in [SlopePrior::None, SlopePrior::Lognormal { mu: 0.2, sd: 0.8 }] {
+            let (updated, receipt) = update_grm(&p, 1, &nodes, &counts, prior, &ctrl).unwrap();
+            let (_, mut gradient, _) = crate::bifactor_grm::item_neg_ll_grad_hess(
+                &updated,
+                false,
+                &nodes,
+                &[],
+                &counts,
+                false,
+            );
+            if let SlopePrior::Lognormal { mu, sd } = prior {
+                let mut objective = 0.0;
+                crate::bifactor_grm::add_lnorm_abs_slope_prior(
+                    updated[0],
+                    mu,
+                    sd,
+                    &mut objective,
+                    &mut gradient[0],
+                );
             }
-            let norm=gradient.iter().map(|x|x.abs()).fold(0.0,f64::max);
+            let norm = gradient.iter().map(|x| x.abs()).fold(0.0, f64::max);
             eprintln!("STRICT_STATIONARITY prior={prior:?} norm={norm} receipt={receipt:?}");
-            assert!(norm<=1e-9,"native f64 reference gradient {norm}");
-            assert!(updated.iter().any(|x| *x != (*x as f32) as f64),"low words lost");
-            assert!(receipt.parameter_update>0);
-            assert_eq!(receipt.cpu_numerical_fallbacks,0);
+            assert!(norm <= 1e-9, "native f64 reference gradient {norm}");
+            assert!(
+                updated.iter().any(|x| *x != (*x as f32) as f64),
+                "low words lost"
+            );
+            assert!(receipt.parameter_update > 0);
+            assert_eq!(receipt.cpu_numerical_fallbacks, 0);
         }
     }
     fn synthetic() -> (Vec<usize>, usize, usize) {

@@ -2,6 +2,9 @@
 @group(0) @binding(0) var<storage, read> data: array<vec2<f32>>;
 @group(0) @binding(1) var<storage, read_write> result: array<vec2<f32>>;
 var<private> trial: bool;
+// A raw pair cannot preserve a low word once scaling reaches f32 subnormals.
+// Propagate a typed refusal to the host instead of admitting false stationarity.
+var<private> arithmetic_range_failure: bool;
 fn ds(x:f32)->vec2<f32>{return vec2<f32>(x,0.0);}
 // Observable round-to-f32 boundaries prevent Metal fast-math reassociation
 // from deleting the low word. Exactly one invocation owns this workgroup.
@@ -24,19 +27,26 @@ fn le(a:vec2<f32>,b:vec2<f32>)->bool{return !lt(b,a);}
 fn ab(a:vec2<f32>)->vec2<f32>{if(lt(a,ds(0.0))){return -a;}return a;}
 fn finite(a:vec2<f32>)->bool{return abs(a.x)<=3.402823466e38 && abs(a.y)<=3.402823466e38;}
 fn ex(a:vec2<f32>)->vec2<f32>{
+ // Preserve at least 32 normal significand bits before raw-pair scaling.
+ // This is a representation refusal, not a clamp or relaxed Newton tolerance.
+ if(lt(a,ds(-66.0))){arithmetic_range_failure=true;}
  // Range reduction and Taylor evaluation avoid f32 transcendental rounding.
  let ln2=vec2<f32>(0.6931471824645996,-1.904654323148236e-9);
  let k=round(a.x*1.4426950408889634);let r=sub(a,mul(ds(k),ln2));
  var term=ds(1.0);var sum=term;
  for(var j=1u;j<=18u;j++){term=divd(mul(term,r),ds(f32(j)));sum=add(sum,term);}
- return mul(sum,ds(ldexp(1.0,i32(k))));
+ // Split scaling so a finite result near MAX_F32 never materializes 2^128.
+ let high=i32(clamp(k,-126.0,127.0));
+ return mul(mul(sum,ds(ldexp(1.0,high))),ds(ldexp(1.0,i32(k)-high)));
 }
 fn lg(a:vec2<f32>)->vec2<f32>{
- let k=floor(log2(a.x));let m=divd(a,ds(ldexp(1.0,i32(k))));
+ // Read the exponent from the representation; log2(MAX_F32) can round to 128.
+ let parts=frexp(a.x);let k=parts.exp-1;
+ let m=vec2<f32>(ldexp(a.x,-k),ldexp(a.y,-k));
  let z=divd(sub(m,ds(1.0)),add(m,ds(1.0)));let z2=mul(z,z);
  var term=z;var sum=z;
  for(var j=3u;j<=39u;j+=2u){term=mul(term,z2);sum=add(sum,divd(term,ds(f32(j))));}
- return add(mul(ds(2.0),sum),mul(ds(k),vec2<f32>(0.6931471824645996,-1.904654323148236e-9)));
+ return add(mul(ds(2.0),sum),mul(ds(f32(k)),vec2<f32>(0.6931471824645996,-1.904654323148236e-9)));
 }
 fn ls(x:vec2<f32>)->vec2<f32>{
  let z=ex(-ab(x));var l=lg(add(ds(1.0),z));
@@ -110,13 +120,14 @@ fn prior(slot:u32)->vec2<f32>{
 }
 @compute @workgroup_size(1)
 fn main(){
- trial=false;let p=np();let off=u32(data[1].x);let w=width();let ctl=control();let step=w+2u*p;let rb=step+p;
+ trial=false;arithmetic_range_failure=false;let p=np();let off=u32(data[1].x);let w=width();let ctl=control();let step=w+2u*p;let rb=step+p;
  for(var j=0u;j<9u;j++){result[rb+j]=ds(0.0);}
  for(var j=0u;j<p;j++){result[w+j]=data[3u+j];}
  for(var it=0u;it<u32(data[ctl+4u].x);it++){
   var norm=ds(0.0);
   for(var slot=0u;slot<w;slot++){
    result[slot]=add(criterion(slot),prior(slot));
+   if(arithmetic_range_failure){result[rb]=ds(6.0);return;}
    if(!finite(result[slot])){result[rb]=ds(2.0);return;}
    if(slot>0u && slot<=p && lt(norm,ab(result[slot]))){norm=ab(result[slot]);}
   }
@@ -148,6 +159,7 @@ fn main(){
    if(data[ctl].x!=0.0){for(var j=0u;j<off;j++){valid=valid&&(par(j).x!=0.0 || par(j).y!=0.0);}}
    if(valid){
     let f=add(criterion(0u),prior(0u));result[rb+1u]=add(result[rb+1u],ds(1.0));result[rb+4u]=add(result[rb+4u],ds(1.0));
+    if(arithmetic_range_failure){result[rb]=ds(6.0);return;}
     if(finite(f)&&le(f,sub(f0,mul(data[ctl+9u],mul(alpha,directional))))&&lt(ds(0.0),actual_change)){accepted=true;}
    }
    result[rb+6u]=add(result[rb+6u],ds(1.0));trial=false;
