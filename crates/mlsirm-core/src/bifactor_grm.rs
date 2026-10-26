@@ -2683,6 +2683,40 @@ fn validate_specific_mean_location_rank(
 
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
+// Candidate connection: preserve caller Newton controls; never recover a device
+// optimizer error with CPU numerical work. Full strict E/M composition is separate.
+#[allow(clippy::too_many_arguments)]
+fn multigroup_m_step_item(
+    device: crate::Device, params: Vec<f64>, has_specific: bool,
+    node_g: &[f64], node_s: &[f64], counts: &[Vec<f64>], n_cat: usize,
+    ridge: f64, n_newton: usize, prior: SlopePrior,
+) -> Result<Vec<f64>, String> {
+    if device == crate::Device::Gpu {
+        #[cfg(all(feature = "gpu", not(coverage)))]
+        {
+            let off = if has_specific { 2 } else { 1 };
+            let mut nodes = Vec::with_capacity(node_g.len() * off);
+            for (i, &g) in node_g.iter().enumerate() {
+                nodes.push(g);
+                if has_specific { nodes.push(node_s[i]); }
+            }
+            let control = crate::gpu_mstep::NewtonControl {
+                iterations: n_newton, backtracks: 25, ridge,
+                gradient_tolerance: 1e-9, step_tolerance: 1e-9,
+                pivot_tolerance: 1e-14, armijo: 1e-4,
+            };
+            let (updated, receipt) = crate::gpu_mstep::update_grm(
+                &params, off, &nodes, counts, prior, &control)?;
+            eprintln!("MULTIGROUP_MSTEP_RECEIPT {}", serde_json::to_string(&receipt).unwrap());
+            return Ok(updated);
+        }
+        #[cfg(not(all(feature = "gpu", not(coverage))))]
+        return Err("GPU M-step unavailable; CPU fallback forbidden".into());
+    }
+    Ok(m_step_item(params, has_specific, node_g, node_s, counts,
+        n_cat, ridge, n_newton, prior))
+}
+
 fn run_single_start_multigroup(
     v: &Validated,
     y: &[usize],
@@ -2827,7 +2861,8 @@ fn run_single_start_multigroup(
                     packed.push(a_s);
                 }
                 packed.extend_from_slice(&params_groups[0][i].d);
-                let updated = m_step_item(
+                let updated = multigroup_m_step_item(
+                    cfg.device,
                     packed,
                     has_specific,
                     &stacked_g,
@@ -2841,7 +2876,7 @@ fn run_single_start_multigroup(
                     // parameter — otherwise the prior would be a silent no-op
                     // under the default all-common `anchor = None`.
                     cfg.slope_prior,
-                );
+                )?;
                 for g in 0..n_groups {
                     params_groups[g][i].a_g = updated[0];
                     if has_specific {
@@ -2873,7 +2908,8 @@ fn run_single_start_multigroup(
                         packed.push(a_s);
                     }
                     packed.extend_from_slice(&params_groups[g][i].d);
-                    let updated = m_step_item(
+                    let updated = multigroup_m_step_item(
+                        cfg.device,
                         packed,
                         has_specific,
                         &node_g,
@@ -2883,7 +2919,7 @@ fn run_single_start_multigroup(
                         cfg.ridge,
                         cfg.newton_iter,
                         cfg.slope_prior,
-                    );
+                    )?;
                     params_groups[g][i].a_g = updated[0];
                     if has_specific {
                         params_groups[g][i].a_s = Some(updated[1]);
