@@ -5193,3 +5193,7 @@ mod hessian_symmetry_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_symmetry_corrected_reference.rs"]
 mod symmetry_corrected_reference;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_bifactor_count_parity_tests.rs"]
+mod bifactor_count_parity_tests;
