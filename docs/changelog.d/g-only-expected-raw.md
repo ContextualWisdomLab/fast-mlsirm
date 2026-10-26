@@ -1,5 +1,7 @@
 # G-only expected raw scoring
 
+## Added
+
 `fast_mlsirm.two_tier_g_only.expected_raw_g_only` calls the strict native
 GPU mean scorer. For a two-primary bank in `(G, W)` order with `Phi == I`,
 it integrates `W ~ N(mean_w, sd_w²)` and independent, zero-mean specifics
@@ -20,7 +22,7 @@ variance, posterior uncertainty or a converged/adopted fit. Shared nuisance
 factors matter for distributions and covariance; no independence of item
 responses after marginalization is claimed.
 
-## Precision and range
+**Precision and range**
 
 The native shader uses pairwise binary-tree sums and normalizes the
 uploaded f32 quadrature masses on device. Host admission bounds uploaded
@@ -36,7 +38,7 @@ M1, including a 24-item binary constant total of exactly 12 at 15, 121 and
 criterion), and finite extreme/reassociated overflow refusals. These are
 synthetic software checks, not study quadrature or scientific acceptance.
 
-## Verification
+**Verification**
 
 - CPU-only boundary controls: `pytest tests/test_two_tier_g_only_controls.py`.
 - Explicit physical-GPU acceptance:
@@ -51,7 +53,7 @@ The scoped change imports the exact repaired scorer and its tests, not the
 separate GPU item optimizer, two-word Newton shader, or GRM fitting changes.
 It depends only on the already-existing GPU buffer/dispatch utility.
 
-## Primary sources
+**Primary sources**
 
 Cai (2010, p. 589, Eqs. 11-12) defines the cumulative GRM/category
 probabilities. Cai (2015, pp. 542-543, Eqs. 14-17) defines the two-tier
