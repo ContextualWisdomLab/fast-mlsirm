@@ -143,6 +143,205 @@ pub fn transform(a: &PackedArchive) -> Result<Transformation, String> {
     }
     Ok(out)
 }
+
+/// Multigroup bifactor GRM latent-response FIFA coefficient transform over
+/// `bifactor_coordinates`.
+///
+/// For group `g`, item `i`, general factor `G ~ N(mu_{G,g}, sigma_{G,g}^2)`, and
+/// orthogonal specific factor `S_{s(i)} ~ N(mu_{S,g,s}, sigma_{S,g,s}^2)`, the
+/// underlying logistic latent response has variance
+/// `V_{g,i} = (a_{G,g,i} sigma_{G,g})^2 + (a_{S,g,i} sigma_{S,g,s})^2 + pi^2 / 3`
+/// and total SD `D_{g,i} = sqrt(V_{g,i})`. Standardized general/specific loadings
+/// and thresholds at the group mean `(mu_{G,g}, mu_{S,g,s})` are differentiated
+/// analytically with respect to every coordinate in `a.coordinates()` for delta-method
+/// inference via [`infer`] or [`infer_bifactor`].
+pub fn transform_bifactor(
+    a: &crate::samefit_grm::BifactorPackedArchive,
+) -> Result<Transformation, String> {
+    use crate::mask_grm::Coordinate as BifactorCoordinate;
+    let d = crate::samefit_grm::decode_bifactor(a)?;
+    let coords = a.coordinates()?;
+    let p = coords.len();
+    let j = a.n_items();
+    let z = a.n_categories() - 1;
+    let n_spec = a.n_specific();
+    let spec_map = a.specific_map();
+    let common = a.anchor();
+    let mut out = Transformation {
+        rows: vec![],
+        jacobian: vec![],
+        n_parameters: p,
+    };
+    let v = std::f64::consts::PI.powi(2) / 3.;
+    for g in 0..a.n_groups() {
+        let mut dm_g = vec![0.; p];
+        let mut ds_g = vec![0.; p];
+        for (c, coord) in coords.iter().enumerate() {
+            match *coord {
+                BifactorCoordinate::Mean(h) if h == g => dm_g[c] = 1.,
+                BifactorCoordinate::LogSd(h) if h == g => ds_g[c] = d.general_sds[g],
+                _ => (),
+            }
+        }
+        out.add(format!("g{g}.mean"), d.general_means[g], dm_g.clone())?;
+        out.add(format!("g{g}.sd"), d.general_sds[g], ds_g.clone())?;
+        let mut dm_s = vec![vec![0.; p]; n_spec];
+        let mut ds_s = vec![vec![0.; p]; n_spec];
+        for s in 0..n_spec {
+            for (c, coord) in coords.iter().enumerate() {
+                match *coord {
+                    BifactorCoordinate::SpecificMean(h, sp) if h == g && sp == s => {
+                        dm_s[s][c] = 1.;
+                    }
+                    BifactorCoordinate::SpecificLogSd(h, sp) if h == g && sp == s => {
+                        ds_s[s][c] = d.specific_sds[g * n_spec + s];
+                    }
+                    _ => (),
+                }
+            }
+            out.add(
+                format!("g{g}.specific[{s}].mean"),
+                d.specific_means[g * n_spec + s],
+                dm_s[s].clone(),
+            )?;
+            out.add(
+                format!("g{g}.specific[{s}].sd"),
+                d.specific_sds[g * n_spec + s],
+                ds_s[s].clone(),
+            )?;
+        }
+        for i in 0..j {
+            let ix = g * j + i;
+            let ag = d.general_slope[ix];
+            let aspec = d.specific_slope[ix];
+            let sd_g = d.general_sds[g];
+            let sp = spec_map[i];
+            let (mu_s, sd_s) = if sp >= 0 {
+                let s = sp as usize;
+                (
+                    d.specific_means[g * n_spec + s],
+                    d.specific_sds[g * n_spec + s],
+                )
+            } else {
+                (0.0, 1.0)
+            };
+            let eg = ag * sd_g;
+            let es = if sp >= 0 { aspec * sd_s } else { 0.0 };
+            let denom = (eg * eg + es * es + v).sqrt();
+            let mut dag = vec![0.; p];
+            let mut das = vec![0.; p];
+            let mut dd = vec![vec![0.; p]; z];
+            for (c, coord) in coords.iter().enumerate() {
+                let owns = |h: usize, item: usize| item == i && (h == g || common[i]);
+                match *coord {
+                    BifactorCoordinate::Slope(h, item) if owns(h, item) => dag[c] = 1.,
+                    BifactorCoordinate::SpecificSlope(h, item) if owns(h, item) => das[c] = 1.,
+                    BifactorCoordinate::FirstIntercept(h, item) if owns(h, item) => {
+                        for row in &mut dd {
+                            row[c] = 1.;
+                        }
+                    }
+                    BifactorCoordinate::LogGap(h, item, k) if owns(h, item) => {
+                        for row in dd.iter_mut().skip(k) {
+                            row[c] = -f64::from_bits(a.packed_bits()[c]).exp();
+                        }
+                    }
+                    _ => (),
+                }
+            }
+            let deg: Vec<_> = (0..p).map(|c| sd_g * dag[c] + ag * ds_g[c]).collect();
+            let des: Vec<_> = if sp >= 0 {
+                let s = sp as usize;
+                (0..p).map(|c| sd_s * das[c] + aspec * ds_s[s][c]).collect()
+            } else {
+                vec![0.; p]
+            };
+            out.add(format!("g{g}.i{i}.slope_logit"), ag, dag.clone())?;
+            let dlg: Vec<_> = (0..p)
+                .map(|c| ((es * es + v) * deg[c] - eg * es * des[c]) / denom.powi(3))
+                .collect();
+            out.add(
+                format!("g{g}.i{i}.lambda_logit_latent_response"),
+                eg / denom,
+                dlg,
+            )?;
+            if sp >= 0 {
+                out.add(
+                    format!("g{g}.i{i}.specific_slope_logit"),
+                    aspec,
+                    das.clone(),
+                )?;
+                let dls: Vec<_> = (0..p)
+                    .map(|c| ((eg * eg + v) * des[c] - eg * es * deg[c]) / denom.powi(3))
+                    .collect();
+                out.add(
+                    format!("g{g}.i{i}.specific_lambda_logit_latent_response"),
+                    es / denom,
+                    dls,
+                )?;
+            }
+            let dpsi: Vec<_> = (0..p)
+                .map(|c| -2.0 * v * (eg * deg[c] + es * des[c]) / denom.powi(4))
+                .collect();
+            out.add(
+                format!("g{g}.i{i}.uniqueness_latent_response"),
+                v / (denom * denom),
+                dpsi,
+            )?;
+            for k in 0..z {
+                let intercept = d.intercepts[ix * z + k];
+                out.add(
+                    format!("g{g}.i{i}.intercept[{k}]"),
+                    intercept,
+                    dd[k].clone(),
+                )?;
+                if ag.abs() < 1e-12 {
+                    return Err("difficulty undefined at zero slope".into());
+                }
+                out.add(
+                    format!("g{g}.i{i}.difficulty[{k}]"),
+                    -intercept / ag,
+                    (0..p)
+                        .map(|c| -dd[k][c] / ag + intercept * dag[c] / ag.powi(2))
+                        .collect(),
+                )?;
+                let centered =
+                    intercept + ag * d.general_means[g] + if sp >= 0 { aspec * mu_s } else { 0.0 };
+                let dc: Vec<_> = (0..p)
+                    .map(|c| {
+                        let spec_term = if sp >= 0 {
+                            let s = sp as usize;
+                            mu_s * das[c] + aspec * dm_s[s][c]
+                        } else {
+                            0.0
+                        };
+                        dd[k][c] + d.general_means[g] * dag[c] + ag * dm_g[c] + spec_term
+                    })
+                    .collect();
+                let dt: Vec<_> = (0..p)
+                    .map(|c| {
+                        -dc[c] / denom + centered * (eg * deg[c] + es * des[c]) / denom.powi(3)
+                    })
+                    .collect();
+                out.add(
+                    format!("g{g}.i{i}.threshold_standardized[{k}]"),
+                    -centered / denom,
+                    dt,
+                )?;
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Transform multigroup bifactor coordinates and apply observed-information delta SEs.
+pub fn infer_bifactor(
+    a: &crate::samefit_grm::BifactorPackedArchive,
+    information: &[f64],
+) -> Result<Inference, String> {
+    let t = transform_bifactor(a)?;
+    infer(&t, information)
+}
 #[derive(Debug, Serialize)]
 pub struct Inference {
     pub rows: Vec<InferenceRow>,

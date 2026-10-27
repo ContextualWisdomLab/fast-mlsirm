@@ -165,6 +165,7 @@ pub fn current() -> serde_json::Value {
     out.insert("crates/mlsirm-core/tests/bifactor_no_prior_main_reference.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/bifactor_no_prior_main_reference.rs")))));
     out.insert("crates/mlsirm-core/tests/bifactor_oakes_calibration.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/bifactor_oakes_calibration.rs")))));
     out.insert("crates/mlsirm-core/tests/bifactor_oakes_mirt.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/bifactor_oakes_mirt.rs")))));
+    out.insert("crates/mlsirm-core/tests/bifactor_samefit_fifa.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/bifactor_samefit_fifa.rs")))));
     out.insert("crates/mlsirm-core/tests/bifactor_work_budget.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/bifactor_work_budget.rs")))));
     out.insert("crates/mlsirm-core/tests/dif_information_criteria.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/dif_information_criteria.rs")))));
     out.insert("crates/mlsirm-core/tests/fifa_covariance_scale.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/fifa_covariance_scale.rs")))));
@@ -217,9 +218,6 @@ pub fn current() -> serde_json::Value {
     out.insert("fuzz/Cargo.toml".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../../../fuzz/Cargo.toml")))));
     out.insert("fuzz/fuzz_targets/neg_loglik.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../../../fuzz/fuzz_targets/neg_loglik.rs")))));
     out.insert("rust-toolchain.toml".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../../../rust-toolchain.toml")))));
-    out.insert("target/debug/build/serde-a0cb4b829f42cb54/out/private.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../../../target/debug/build/serde-a0cb4b829f42cb54/out/private.rs")))));
-    out.insert("target/debug/build/serde_core-679997ad222bf2be/out/private.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../../../target/debug/build/serde_core-679997ad222bf2be/out/private.rs")))));
-    out.insert("target/debug/build/thiserror-57b0e2911707cf5b/out/private.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../../../target/debug/build/thiserror-57b0e2911707cf5b/out/private.rs")))));
     out.insert("tests/unit/agreement_tests.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../../../tests/unit/agreement_tests.rs")))));
     out.insert("tests/unit/bifactor_fixed_category_policy_tests.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../../../tests/unit/bifactor_fixed_category_policy_tests.rs")))));
     out.insert("tests/unit/bifactor_grm_sibling_hessian_tests.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../../../tests/unit/bifactor_grm_sibling_hessian_tests.rs")))));
