@@ -3,6 +3,8 @@
 use super::*;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+#[path = "mask_grm_resume.rs"]
+pub mod resume;
 
 pub fn capabilities_json() -> String {
     json!({"schema_version":1,"fit_backend":"gpu_two_word_e_tables_item_m_group_cm_eap_host_information",
