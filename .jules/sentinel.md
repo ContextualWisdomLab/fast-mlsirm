@@ -59,3 +59,8 @@ errors for governance and procurement evidence.
 **Vulnerability:** Even when using `parse_constant` to reject `NaN` and `Infinity`, `json.loads` can still deserialize floating point numbers that evaluate to Infinity due to overflow (e.g., `1e999`).
 **Learning:** `parse_constant` only intercepts explicit JSON literal constants like `NaN` or `Infinity`. Standard numeric values that exceed float limits silently become `inf` when parsed by default in Python.
 **Prevention:** In addition to `parse_constant`, always provide a `parse_float` hook to `json.loads` that explicitly converts strings to floats and validates them using `math.isfinite()`.
+
+## 2024-05-20 - JSON Depth Validation Counter Underflow
+**Vulnerability:** A manual JSON depth validation logic was vulnerable to counter underflow. Attackers could artificially lower the depth counter by inserting unmatched closing brackets (e.g., `]}`), allowing subsequent deep nesting that bypasses the `max_depth` check and can trigger `RecursionError` in `json.loads`.
+**Learning:** Manual tracking of bracket counts is susceptible to negative values when unbalanced brackets are introduced.
+**Prevention:** Ensure the depth counter cannot go below zero. Check `depth > 0` before decrementing (e.g., `elif char in "]}" and depth > 0:`).
