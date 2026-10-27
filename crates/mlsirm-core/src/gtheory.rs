@@ -207,8 +207,10 @@ pub fn gtheory_pi(
         *m /= fp;
     }
 
-    let ss_p = fi * pm.iter().map(|m| (m - grand).powi(2)).sum::<f64>();
-    let ss_i = fp * im.iter().map(|m| (m - grand).powi(2)).sum::<f64>();
+    // Optimization: Avoid powi(2) to reduce function call overhead in hot loops
+    let ss_p = fi * pm.iter().map(|m| { let diff = m - grand; diff * diff }).sum::<f64>();
+    // Optimization: Avoid powi(2) to reduce function call overhead in hot loops
+    let ss_i = fp * im.iter().map(|m| { let diff = m - grand; diff * diff }).sum::<f64>();
     let mut ss_pi = 0.0;
     for p in 0..n_p {
         for i in 0..n_i {

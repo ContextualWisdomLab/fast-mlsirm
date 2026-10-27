@@ -56,7 +56,11 @@ fn covariance_q(c: f64, s11: f64, s12: f64, s22: f64, sigma_tau2: f64) -> f64 {
 fn cubic_real_roots(qa: f64, qb: f64, qc: f64) -> Vec<f64> {
     let p = qb - qa * qa / 3.0;
     let q = 2.0 * qa * qa * qa / 27.0 - qa * qb / 3.0 + qc;
-    let discriminant = (q * 0.5).powi(2) + (p / 3.0).powi(3);
+    // Optimization: Avoid powi(3) to reduce function call overhead in hot loops
+    let p3 = p / 3.0;
+    // Optimization: Avoid powi(2) to reduce function call overhead in hot loops
+    let q2 = q * 0.5;
+    let discriminant = (q2 * q2) + (p3 * p3 * p3);
     let shift = -qa / 3.0;
     let scale = (q * q).abs() + (p * p * p).abs() + 1.0;
     let disc_tol = 64.0 * f64::EPSILON * scale;
@@ -72,7 +76,9 @@ fn cubic_real_roots(qa: f64, qb: f64, qc: f64) -> Vec<f64> {
         vec![2.0 * u + shift, -u + shift]
     } else {
         let radius = 2.0 * (-p / 3.0).sqrt();
-        let cos_arg = (-0.5 * q / (-(p / 3.0).powi(3)).sqrt()).clamp(-1.0, 1.0);
+        // Optimization: Avoid powi(3) to reduce function call overhead in hot loops
+        let p3 = p / 3.0;
+        let cos_arg = (-0.5 * q / (-(p3 * p3 * p3)).sqrt()).clamp(-1.0, 1.0);
         let phi = cos_arg.acos();
         (0..3)
             .map(|k| radius * ((phi + 2.0 * std::f64::consts::PI * k as f64) / 3.0).cos() + shift)

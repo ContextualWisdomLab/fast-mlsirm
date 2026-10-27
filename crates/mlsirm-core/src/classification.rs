@@ -622,8 +622,10 @@ pub fn livingston_lewis(
     if !(ts2 > 0.0) {
         return Err("estimated true-score variance is not positive".into());
     }
-    let g3 = (m[3] - 3.0 * m1 * m[2] + 2.0 * m1.powi(3)) / ts2.powf(1.5);
-    let g4 = (m[4] - 4.0 * m1 * m[3] + 6.0 * m1 * m1 * m[2] - 3.0 * m1.powi(4)) / (ts2 * ts2);
+    // Optimization: Avoid powi(3) to reduce function call overhead in hot loops
+    let g3 = (m[3] - 3.0 * m1 * m[2] + 2.0 * (m1 * m1 * m1)) / ts2.powf(1.5);
+    // Optimization: Avoid powi(4) to reduce function call overhead in hot loops
+    let g4 = (m[4] - 4.0 * m1 * m[3] + 6.0 * m1 * m1 * m[2] - 3.0 * { let m12 = m1 * m1; m12 * m12 }) / (ts2 * ts2);
     // Four-parameter beta moment fit with two-parameter fail-safe.
     let mut used_two_parameter = true;
     let (mut a, mut b, mut lower, mut upper) = (f64::NAN, f64::NAN, 0.0, 1.0);
@@ -1063,8 +1065,10 @@ pub fn hanson_brennan(
     let mut used_two_parameter = true;
     let (mut a, mut b, mut lower, mut upper) = (f64::NAN, f64::NAN, 0.0, 1.0);
     if !two_parameter {
-        let g3 = (m[2] - 3.0 * m1 * m[1] + 2.0 * m1.powi(3)) / ts2.powf(1.5);
-        let g4 = (m[3] - 4.0 * m1 * m[2] + 6.0 * m1 * m1 * m[1] - 3.0 * m1.powi(4)) / (ts2 * ts2);
+        // Optimization: Avoid powi(3) to reduce function call overhead in hot loops
+        let g3 = (m[2] - 3.0 * m1 * m[1] + 2.0 * (m1 * m1 * m1)) / ts2.powf(1.5);
+        // Optimization: Avoid powi(4) to reduce function call overhead in hot loops
+        let g4 = (m[3] - 4.0 * m1 * m[2] + 6.0 * m1 * m1 * m[1] - 3.0 * { let m12 = m1 * m1; m12 * m12 }) / (ts2 * ts2);
         let rr = 6.0 * (g4 - g3 * g3 - 1.0) / (6.0 + 3.0 * g3 * g3 - 2.0 * g4);
         let d = 1.0
             - 24.0 * (rr + 1.0) / ((rr + 2.0) * (rr + 3.0) * g4 - 3.0 * (rr - 6.0) * (rr + 1.0));
