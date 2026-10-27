@@ -103,8 +103,6 @@ pub(crate) mod gpu_bifactor;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_group_update;
 #[cfg(all(feature = "gpu", not(coverage)))]
-pub(crate) mod gpu_bifactor_scoring;
-#[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_multilevel;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelType {

@@ -963,9 +963,7 @@ fn grm_selected_logprob(base: f64, thresholds: &[f64], category: usize) -> f64 {
     }
     let upper = base + thresholds[category - 1];
     let lower = base + thresholds[category];
-    // Match grm_logprobs: cancel the shared base before full-logit rounding.
-    let gap = thresholds[category] - thresholds[category - 1];
-    log_sigmoid(upper) + log_sigmoid(-lower) + (-gap.exp_m1()).ln()
+    log_sigmoid(upper) + log_sigmoid(-lower) + (-(lower - upper).exp_m1()).ln()
 }
 
 #[cfg(test)]

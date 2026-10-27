@@ -26,7 +26,7 @@ pub(super) fn update(
     sds: &mut [f64],
     sm: &mut [Vec<f64>],
     ss: &mut [Vec<f64>],
-) -> Result<bool, String> {
+) -> Result<(bool, String, String), String> {
     let mut limited = false;
     for g in 1..pars.len() {
         // (factor index, SD rather than mean); general factor index0.
@@ -200,5 +200,10 @@ pub(super) fn update(
             }
         }
     }
-    Ok(limited)
+    let ctx = crate::gpu::GpuContext::get().ok_or("GPU unavailable after group readback")?;
+    Ok((
+        limited,
+        ctx.backend().to_owned(),
+        ctx.device_name().to_owned(),
+    ))
 }

@@ -409,6 +409,17 @@ fn retained_q7_returned_bank_strict_final_posterior() {
     ACTIVE.with(|v| v.set(false));
     let r = out.unwrap();
     assert!(r.converged);
+    r.validate_gpu_evidence(
+        &y,
+        None,
+        &gid,
+        2,
+        &[-1; 4],
+        &[true, true, false, true],
+        &cfg,
+        false,
+    )
+    .unwrap();
     let (x, w) = gh_rule(7).unwrap();
     let (z, u) = gh_rule(1).unwrap();
     let lw: Vec<_> = w.iter().map(|w| w.ln()).collect();
@@ -471,7 +482,7 @@ fn retained_q7_returned_bank_strict_final_posterior() {
     .0;
     assert!((cpu - gpu).abs() < 1e-9);
     assert!((cpu - r.loglik_trace.last().unwrap()).abs() < 1e-9);
-    eprintln!("RETURNED_BANK qg=7 iterations={} loglik={:.16e} native_abs_error={:.16e} sweeps={} full_gpu=false",r.n_iter,gpu,(cpu-gpu).abs(),r.dispatch.len());
+    eprintln!("RETURNED_BANK qg=7 iterations={} loglik={:.16e} native_abs_error={:.16e} sweeps={} item_receipts={} full_gpu={}",r.n_iter,gpu,(cpu-gpu).abs(),r.dispatch.len(),r.dispatch.iter().map(|r|r.items.len()).sum::<usize>(),r.execution_evidence.as_ref().unwrap().full_gpu);
     let _ = (z, u);
 }
 
@@ -557,7 +568,7 @@ fn conditional_group_m_step_ascends_same_counts_mixed() {
         5,
         crate::Device::Gpu,
     );
-    let limited = group_em::update(
+    let (limited, backend, device) = group_em::update(
         &v,
         &pars,
         &before.1,
@@ -609,5 +620,5 @@ fn conditional_group_m_step_ascends_same_counts_mixed() {
         (mus[0], sigmas[0], sm[0][0], ss[0][0]),
         (0.0, 1.0, 0.0, 1.0)
     );
-    eprintln!("MIXED_GROUP_CONDITIONAL qg=7 qs=5 gain={:.16e} native_abs_error={:.16e} limited={limited}",after-before.0,(native-after).abs());
+    eprintln!("MIXED_GROUP_CONDITIONAL qg=7 qs=5 gain={:.16e} native_abs_error={:.16e} limited={limited} backend={backend} device={device}",after-before.0,(native-after).abs());
 }

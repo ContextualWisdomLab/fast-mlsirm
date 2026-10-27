@@ -78,7 +78,7 @@ pub(crate) fn gpu_dispatch_receipt() -> GpuDispatchReceipt {
     LAST_RECEIPT.with(|receipt| receipt.borrow().clone())
 }
 
-pub(crate) fn set_fallback_reason(reason: &'static str) {
+fn set_fallback_reason(reason: &'static str) {
     LAST_RECEIPT.with(|receipt| receipt.borrow_mut().fallback_reason = Some(reason.into()));
 }
 
