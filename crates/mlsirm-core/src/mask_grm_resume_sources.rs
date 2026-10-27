@@ -165,6 +165,7 @@ pub fn current() -> serde_json::Value {
     out.insert("crates/mlsirm-core/tests/bifactor_no_prior_main_reference.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/bifactor_no_prior_main_reference.rs")))));
     out.insert("crates/mlsirm-core/tests/bifactor_oakes_calibration.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/bifactor_oakes_calibration.rs")))));
     out.insert("crates/mlsirm-core/tests/bifactor_oakes_mirt.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/bifactor_oakes_mirt.rs")))));
+    out.insert("crates/mlsirm-core/tests/bifactor_samefit_fifa.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/bifactor_samefit_fifa.rs")))));
     out.insert("crates/mlsirm-core/tests/bifactor_work_budget.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/bifactor_work_budget.rs")))));
     out.insert("crates/mlsirm-core/tests/dif_information_criteria.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/dif_information_criteria.rs")))));
     out.insert("crates/mlsirm-core/tests/fifa_covariance_scale.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/fifa_covariance_scale.rs")))));

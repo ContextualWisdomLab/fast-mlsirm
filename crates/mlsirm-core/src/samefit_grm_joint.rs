@@ -377,3 +377,488 @@ pub fn fit_indices(
         serde_json::json!({"m2":m2,"df":df,"p_value":p_value,"rmsea":rmsea,"rmsea_ci90_lower":lower,"rmsea_ci90_upper":upper,"cfi":cfi,"tli":tli,"null_m2":null_m2,"null_df":null_df,"distribution_device":"cpu_f64","rmsea_denominator":"N * df","rmsea_denominator_value":denom}),
     )
 }
+
+pub fn bifactor_moments_delta(
+    a: &crate::samefit_grm::BifactorPackedArchive,
+    nodes: &[f64],
+    weights: &[f64],
+) -> Result<(Vec<f64>, Vec<f64>, Vec<f64>), String> {
+    bifactor_moments_delta_grid(a, nodes, weights, nodes, weights)
+}
+
+fn validate_quadrature(nodes: &[f64], weights: &[f64]) -> Result<(), String> {
+    if nodes.is_empty()
+        || nodes.len() != weights.len()
+        || nodes.iter().any(|v| !v.is_finite())
+        || weights.iter().any(|v| !v.is_finite() || *v < 0.0)
+        || (weights.iter().sum::<f64>() - 1.0).abs() > 1e-10
+    {
+        return Err("invalid quadrature".into());
+    }
+    Ok(())
+}
+
+/// CPU f64 bifactor cumulative moments, analytic tangent Delta, and groupwise Xi
+/// using the Gibbons and Hedeker (1992, pp. 424–428, Eqs. 2–11) shared-G
+/// conditional independence reduction over `bifactor_coordinates`.
+pub fn bifactor_moments_delta_grid(
+    a: &crate::samefit_grm::BifactorPackedArchive,
+    nodes_g: &[f64],
+    weights_g: &[f64],
+    nodes_s: &[f64],
+    weights_s: &[f64],
+) -> Result<(Vec<f64>, Vec<f64>, Vec<f64>), String> {
+    use crate::mask_grm::Coordinate as BifactorCoordinate;
+    let d = crate::samefit_grm::decode_bifactor(a)?;
+    let coords = a.coordinates()?;
+    let p = coords.len();
+    let j = a.n_items();
+    let z = a.n_categories() - 1;
+    let groups = a.n_groups();
+    let n_spec = a.n_specific();
+    let spec_map = a.specific_map();
+    validate_quadrature(nodes_g, weights_g)?;
+    if n_spec > 0 {
+        validate_quadrature(nodes_s, weights_s)?;
+    }
+    let (xs, ws): (&[f64], &[f64]) = if n_spec > 0 {
+        (nodes_s, weights_s)
+    } else {
+        (std::slice::from_ref(&0.0), std::slice::from_ref(&1.0))
+    };
+    let qs = xs.len();
+    let cons = constraints(j, z);
+    let s_mom = cons.len();
+    let mut m = vec![0.0; groups * s_mom];
+    let mut delta = vec![0.0; groups * s_mom * p];
+    let mut xi = vec![0.0; groups * s_mom * s_mom];
+    let common = a.anchor();
+    let mut merged_table = Vec::with_capacity(s_mom * (s_mom + 1) / 2);
+    for r in 0..s_mom {
+        for c in 0..=r {
+            let mut items = [(0usize, 0usize); 4];
+            let mut len = 0usize;
+            for &(i, k) in cons[r].iter().chain(cons[c].iter()) {
+                if let Some(pos) = (0..len).find(|&idx| items[idx].0 == i) {
+                    items[pos].1 = items[pos].1.max(k);
+                } else {
+                    items[len] = (i, k);
+                    len += 1;
+                }
+            }
+            merged_table.push((items, len));
+        }
+    }
+    for g in 0..groups {
+        let mut cross = vec![0.0; s_mom * (s_mom + 1) / 2];
+        for (&tg_node, &wg) in nodes_g.iter().zip(weights_g) {
+            let theta_g = d.general_means[g] + d.general_sds[g] * tg_node;
+            let mut p_node = vec![0.0; j * z * qs];
+            let mut d_node = vec![0.0; j * z * qs * p];
+            let mut p_bar = vec![0.0; j * z];
+            let mut d_bar = vec![0.0; j * z * p];
+            for i in 0..j {
+                let sp = spec_map[i];
+                let ag = d.general_slope[g * j + i];
+                let aspec = d.specific_slope[g * j + i];
+                if sp < 0 {
+                    for k in 0..z {
+                        let row = i * z + k;
+                        let eta = ag * theta_g + d.intercepts[(g * j + i) * z + k];
+                        let prob = 1.0 / (1.0 + (-eta).exp());
+                        p_bar[row] = prob;
+                        for ts_idx in 0..qs {
+                            p_node[row * qs + ts_idx] = prob;
+                        }
+                        let ds = prob * (1.0 - prob);
+                        for (c, coord) in coords.iter().enumerate() {
+                            let v = match *coord {
+                                BifactorCoordinate::Slope(h, item)
+                                    if item == i && (h == g || common[i]) =>
+                                {
+                                    theta_g
+                                }
+                                BifactorCoordinate::FirstIntercept(h, item)
+                                    if item == i && (h == g || common[i]) =>
+                                {
+                                    1.0
+                                }
+                                BifactorCoordinate::LogGap(h, item, gap)
+                                    if item == i && (h == g || common[i]) && gap <= k =>
+                                {
+                                    -f64::from_bits(a.packed_bits()[c]).exp()
+                                }
+                                BifactorCoordinate::Mean(h) if h == g => ag,
+                                BifactorCoordinate::LogSd(h) if h == g => {
+                                    ag * d.general_sds[g] * tg_node
+                                }
+                                _ => 0.0,
+                            };
+                            let deriv = ds * v;
+                            d_bar[row * p + c] = deriv;
+                            for ts_idx in 0..qs {
+                                d_node[(row * qs + ts_idx) * p + c] = deriv;
+                            }
+                        }
+                    }
+                } else {
+                    let s_idx = sp as usize;
+                    let mu_s = d.specific_means[g * n_spec + s_idx];
+                    let sd_s = d.specific_sds[g * n_spec + s_idx];
+                    for (ts_idx, (&ts_node, &ws_val)) in xs.iter().zip(ws).enumerate() {
+                        let theta_s = mu_s + sd_s * ts_node;
+                        for k in 0..z {
+                            let row = i * z + k;
+                            let eta =
+                                ag * theta_g + aspec * theta_s + d.intercepts[(g * j + i) * z + k];
+                            let prob = 1.0 / (1.0 + (-eta).exp());
+                            p_node[row * qs + ts_idx] = prob;
+                            p_bar[row] += ws_val * prob;
+                            let ds = prob * (1.0 - prob);
+                            for (c, coord) in coords.iter().enumerate() {
+                                let v = match *coord {
+                                    BifactorCoordinate::Slope(h, item)
+                                        if item == i && (h == g || common[i]) =>
+                                    {
+                                        theta_g
+                                    }
+                                    BifactorCoordinate::SpecificSlope(h, item)
+                                        if item == i && (h == g || common[i]) =>
+                                    {
+                                        theta_s
+                                    }
+                                    BifactorCoordinate::FirstIntercept(h, item)
+                                        if item == i && (h == g || common[i]) =>
+                                    {
+                                        1.0
+                                    }
+                                    BifactorCoordinate::LogGap(h, item, gap)
+                                        if item == i && (h == g || common[i]) && gap <= k =>
+                                    {
+                                        -f64::from_bits(a.packed_bits()[c]).exp()
+                                    }
+                                    BifactorCoordinate::Mean(h) if h == g => ag,
+                                    BifactorCoordinate::LogSd(h) if h == g => {
+                                        ag * d.general_sds[g] * tg_node
+                                    }
+                                    BifactorCoordinate::SpecificMean(h, s)
+                                        if h == g && s == s_idx =>
+                                    {
+                                        aspec
+                                    }
+                                    BifactorCoordinate::SpecificLogSd(h, s)
+                                        if h == g && s == s_idx =>
+                                    {
+                                        aspec * sd_s * ts_node
+                                    }
+                                    _ => 0.0,
+                                };
+                                let deriv = ds * v;
+                                d_node[(row * qs + ts_idx) * p + c] = deriv;
+                                d_bar[row * p + c] += ws_val * deriv;
+                            }
+                        }
+                    }
+                }
+            }
+            for (r, cs) in cons.iter().enumerate() {
+                let row_out = g * s_mom + r;
+                if cs.len() == 1 {
+                    let (i, k) = cs[0];
+                    let row = i * z + k;
+                    m[row_out] += wg * p_bar[row];
+                    for c in 0..p {
+                        delta[row_out * p + c] += wg * d_bar[row * p + c];
+                    }
+                } else {
+                    let (i, k) = cs[0];
+                    let (h, l) = cs[1];
+                    let r1 = i * z + k;
+                    let r2 = h * z + l;
+                    if spec_map[i] >= 0 && spec_map[i] == spec_map[h] {
+                        let mut val = 0.0;
+                        for (ts_idx, &ws_val) in ws.iter().enumerate() {
+                            let p1 = p_node[r1 * qs + ts_idx];
+                            let p2 = p_node[r2 * qs + ts_idx];
+                            val += ws_val * p1 * p2;
+                            for c in 0..p {
+                                let d1 = d_node[(r1 * qs + ts_idx) * p + c];
+                                let d2 = d_node[(r2 * qs + ts_idx) * p + c];
+                                delta[row_out * p + c] += wg * ws_val * (d1 * p2 + p1 * d2);
+                            }
+                        }
+                        m[row_out] += wg * val;
+                    } else {
+                        let p1 = p_bar[r1];
+                        let p2 = p_bar[r2];
+                        m[row_out] += wg * p1 * p2;
+                        for c in 0..p {
+                            let d1 = d_bar[r1 * p + c];
+                            let d2 = d_bar[r2 * p + c];
+                            delta[row_out * p + c] += wg * (d1 * p2 + p1 * d2);
+                        }
+                    }
+                }
+            }
+            for (pair_idx, &(ref items, len)) in merged_table.iter().enumerate() {
+                let mut used = [false; 4];
+                let mut cond_prod = 1.0;
+                for a_idx in 0..len {
+                    if used[a_idx] {
+                        continue;
+                    }
+                    used[a_idx] = true;
+                    let (ia, ka) = items[a_idx];
+                    let sp = spec_map[ia];
+                    if sp < 0 {
+                        cond_prod *= p_bar[ia * z + ka];
+                    } else {
+                        let mut block_rows = [ia * z + ka, 0, 0, 0];
+                        let mut block_len = 1usize;
+                        for b_idx in (a_idx + 1)..len {
+                            if !used[b_idx] && spec_map[items[b_idx].0] == sp {
+                                used[b_idx] = true;
+                                block_rows[block_len] = items[b_idx].0 * z + items[b_idx].1;
+                                block_len += 1;
+                            }
+                        }
+                        if block_len == 1 {
+                            cond_prod *= p_bar[block_rows[0]];
+                        } else {
+                            let mut block_sum = 0.0;
+                            for (ts_idx, &ws_val) in ws.iter().enumerate() {
+                                let mut term = ws_val;
+                                for &r_row in &block_rows[..block_len] {
+                                    term *= p_node[r_row * qs + ts_idx];
+                                }
+                                block_sum += term;
+                            }
+                            cond_prod *= block_sum;
+                        }
+                    }
+                }
+                cross[pair_idx] += wg * cond_prod;
+            }
+        }
+        let mut pair_idx = 0usize;
+        for r in 0..s_mom {
+            for c in 0..=r {
+                let v = cross[pair_idx] - m[g * s_mom + r] * m[g * s_mom + c];
+                xi[g * s_mom * s_mom + r * s_mom + c] = v;
+                xi[g * s_mom * s_mom + c * s_mom + r] = v;
+                pair_idx += 1;
+            }
+        }
+    }
+    Ok((m, delta, xi))
+}
+
+/// Diagnostic control: evaluate cumulative moments as if within-block items were
+/// conditionally independent given G alone (marginalizing each item over S first).
+/// Used by tests to verify that `bifactor_moments_delta` integrates shared-S
+/// joint probabilities rather than replacing them with a product shortcut.
+pub fn independent_specific_product_moments(
+    a: &crate::samefit_grm::BifactorPackedArchive,
+    nodes: &[f64],
+    weights: &[f64],
+) -> Result<Vec<f64>, String> {
+    let d = crate::samefit_grm::decode_bifactor(a)?;
+    let j = a.n_items();
+    let z = a.n_categories() - 1;
+    let groups = a.n_groups();
+    let n_spec = a.n_specific();
+    let spec_map = a.specific_map();
+    validate_quadrature(nodes, weights)?;
+    let (xs, ws): (&[f64], &[f64]) = if n_spec > 0 {
+        (nodes, weights)
+    } else {
+        (std::slice::from_ref(&0.0), std::slice::from_ref(&1.0))
+    };
+    let cons = constraints(j, z);
+    let s_mom = cons.len();
+    let mut m = vec![0.0; groups * s_mom];
+    for g in 0..groups {
+        for (&tg_node, &wg) in nodes.iter().zip(weights) {
+            let theta_g = d.general_means[g] + d.general_sds[g] * tg_node;
+            let mut p_bar = vec![0.0; j * z];
+            for i in 0..j {
+                let sp = spec_map[i];
+                let ag = d.general_slope[g * j + i];
+                let aspec = d.specific_slope[g * j + i];
+                if sp < 0 {
+                    for k in 0..z {
+                        let eta = ag * theta_g + d.intercepts[(g * j + i) * z + k];
+                        p_bar[i * z + k] = 1.0 / (1.0 + (-eta).exp());
+                    }
+                } else {
+                    let s_idx = sp as usize;
+                    let mu_s = d.specific_means[g * n_spec + s_idx];
+                    let sd_s = d.specific_sds[g * n_spec + s_idx];
+                    for (&ts_node, &ws_val) in xs.iter().zip(ws) {
+                        let theta_s = mu_s + sd_s * ts_node;
+                        for k in 0..z {
+                            let eta =
+                                ag * theta_g + aspec * theta_s + d.intercepts[(g * j + i) * z + k];
+                            p_bar[i * z + k] += ws_val / (1.0 + (-eta).exp());
+                        }
+                    }
+                }
+            }
+            for (r, cs) in cons.iter().enumerate() {
+                let val = cs.iter().map(|&(i, k)| p_bar[i * z + k]).product::<f64>();
+                m[g * s_mom + r] += wg * val;
+            }
+        }
+    }
+    Ok(m)
+}
+
+/// Native CPU f64 multigroup bifactor same-fit M2, CFI, TLI, RMSEA diagnostics.
+/// Integrates shared-G and shared-S joint probabilities via Gibbons and Hedeker
+/// (1992, pp. 424–428, Eqs. 2–11) and projects in Maydeu-Olivares (2013, p. 78,
+/// Eqs. 10–11; p. 82, Eqs. 26–28) cumulative-moment space over `bifactor_coordinates`.
+pub fn bifactor_joint_diagnostics(
+    y: &[usize],
+    groups: &[usize],
+    a: &crate::samefit_grm::BifactorPackedArchive,
+    q_general: usize,
+    q_specific: usize,
+) -> Result<serde_json::Value, String> {
+    let j = a.n_items();
+    let z = a.n_categories() - 1;
+    let ng = a.n_groups();
+    let n = groups.len();
+    if n == 0 || y.len() != n * j || y.iter().any(|&v| v > z) || groups.iter().any(|&g| g >= ng) {
+        return Err("invalid complete joint input".into());
+    }
+    let cons = constraints(j, z);
+    let s = cons.len();
+    let total = s * ng;
+    let p = a.packed_bits().len();
+    let (xg, wg) = crate::samefit_grm::quadrature(q_general)?;
+    let (xs, ws) = if a.n_specific() > 0 {
+        crate::samefit_grm::quadrature(q_specific)?
+    } else {
+        (vec![0.0], vec![1.0])
+    };
+    let (moments, delta, group_xi) = bifactor_moments_delta_grid(a, &xg, &wg, &xs, &ws)?;
+    let mut counts = vec![0usize; ng];
+    let mut obs = vec![0.0; total];
+    for (row, &g) in groups.iter().enumerate() {
+        counts[g] += 1;
+        for (r, c) in cons.iter().enumerate() {
+            if c.iter().all(|&(i, k)| y[row * j + i] > k) {
+                obs[g * s + r] += 1.0;
+            }
+        }
+    }
+    if counts.iter().any(|&v| v == 0) {
+        return Err("empty group".into());
+    }
+    for g in 0..ng {
+        for r in 0..s {
+            obs[g * s + r] /= counts[g] as f64;
+        }
+    }
+    let residual: Vec<_> = obs.iter().zip(&moments).map(|(o, m)| o - m).collect();
+    let mut xi = vec![0.0; total * total];
+    for g in 0..ng {
+        for r in 0..s {
+            for c in 0..s {
+                xi[(g * s + r) * total + g * s + c] =
+                    group_xi[g * s * s + r * s + c] * n as f64 / counts[g] as f64;
+            }
+        }
+    }
+    let strict = crate::samefit_strict::project(&residual, &delta, xi, total, p, n as f64)?;
+    let m2 = strict["m2"].as_f64().ok_or("missing M2")?;
+    let mut null_m2 = 0.0;
+    let mut null_df = 0.0;
+    let mut baseline_projections = vec![];
+    let null_p = j * z;
+    for g in 0..ng {
+        let margin = &obs[g * s..g * s + null_p];
+        if margin.iter().any(|&v| v <= 0.0 || v >= 1.0) {
+            return Err("boundary independence margin".into());
+        }
+        let product =
+            |cs: &[(usize, usize)]| cs.iter().map(|&(i, k)| margin[i * z + k]).product::<f64>();
+        let nm: Vec<_> = cons.iter().map(|c| product(c)).collect();
+        let mut nd = vec![0.0; s * null_p];
+        let mut nx = vec![0.0; s * s];
+        for (r, c) in cons.iter().enumerate() {
+            for (idx, &(i, k)) in c.iter().enumerate() {
+                nd[r * null_p + i * z + k] = c
+                    .iter()
+                    .enumerate()
+                    .filter(|(h, _)| *h != idx)
+                    .map(|(_, &(i, k))| margin[i * z + k])
+                    .product();
+            }
+            for (h, other) in cons.iter().enumerate() {
+                let mut merged = c.clone();
+                for &(i, k) in other {
+                    if let Some(v) = merged.iter_mut().find(|v| v.0 == i) {
+                        v.1 = v.1.max(k);
+                    } else {
+                        merged.push((i, k));
+                    }
+                }
+                nx[r * s + h] = product(&merged) - nm[r] * nm[h];
+            }
+        }
+        let ne: Vec<_> = obs[g * s..(g + 1) * s]
+            .iter()
+            .zip(&nm)
+            .map(|(o, m)| o - m)
+            .collect();
+        let bp = crate::samefit_strict::project(&ne, &nd, nx, s, null_p, counts[g] as f64)?;
+        null_m2 += bp["m2"].as_f64().ok_or("missing baseline M2")?;
+        null_df += bp["df"].as_f64().ok_or("missing baseline df")?;
+        baseline_projections.push(bp);
+    }
+    let mut output = fit_indices(m2, strict["df"].as_f64().unwrap(), n, null_m2, null_df)?;
+    output["strict_projection"] = strict;
+    output["baseline_projections"] = serde_json::json!(baseline_projections);
+    let mut residual_rows = vec![];
+    let mut squared = 0.0;
+    let mut pair_count = 0;
+    for g in 0..ng {
+        let mut row = 0;
+        for i in 0..j {
+            for h in i + 1..j {
+                let pair = j * z + row * z * z;
+                let oi = obs[g * s + i * z];
+                let oh = obs[g * s + h * z];
+                let mi = moments[g * s + i * z];
+                let mh = moments[g * s + h * z];
+                let denom_o = (oi * (1.0 - oi) * oh * (1.0 - oh)).sqrt();
+                let denom_m = (mi * (1.0 - mi) * mh * (1.0 - mh)).sqrt();
+                if denom_o == 0.0 || denom_m == 0.0 {
+                    return Err("degenerate first threshold residual".into());
+                }
+                let residual = (obs[g * s + pair] - oi * oh) / denom_o
+                    - (moments[g * s + pair] - mi * mh) / denom_m;
+                squared += residual * residual;
+                pair_count += 1;
+                residual_rows
+                    .push(serde_json::json!({"group":g,"item_i":i,"item_j":h,"residual":residual}));
+                row += 1;
+            }
+        }
+    }
+    output["first_threshold_indicator_srmsr"] =
+        serde_json::json!((squared / pair_count as f64).sqrt());
+    output["first_threshold_indicator_residuals"] = serde_json::json!(residual_rows);
+    output["integration"] = serde_json::json!("shared_g_conditional_specific");
+    output["baseline"] = serde_json::json!(
+        "new groupwise empirical cumulative margins; external independence comparator"
+    );
+    output["n_moments"] = serde_json::json!(total);
+    output["n_parameters"] = serde_json::json!(p);
+    output["n_specific"] = serde_json::json!(a.n_specific());
+    output["group_counts"] = serde_json::json!(counts);
+    output["quadpts"] = serde_json::json!(q_general);
+    output["specific_quadpts"] = serde_json::json!(q_specific);
+    Ok(output)
+}
