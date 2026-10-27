@@ -27,6 +27,39 @@ UNITS=('alternative','pair','family')
 DEFAULT_POLICY={'max_rss_bytes':8*1024**3,'max_stream_bytes':128*1024**2,
  'min_free_bytes':1024**3,'poll_seconds':1.0,'heartbeat_seconds':5.0,'settlement_seconds':10.0}
 EVENTS={'optimizer_start','optimizer_terminal','fit_start','resume_unit_start','resume_unit_terminal'}
+# Keep the actual Popen owner and a duplicated canonical lease on uncertain cleanup.
+# This process must not admit another child until the same owner reconciles it.
+UNRESOLVED_CUSTODY={}
+
+def require_safe_child_wait():
+    if signal.getsignal(signal.SIGCHLD)!=signal.SIG_DFL:
+        raise RuntimeError('inherited SIGCHLD must be SIG_DFL for original child wait status')
+
+def reconcile_custody():
+    require_safe_child_wait()
+    for pid,(child,lease_fd,primary,secondary) in tuple(UNRESOLVED_CUSTODY.items()):
+        if child.poll() is None or not group_absent(pid):
+            return False
+        status=child.wait()
+        if type(status) is not int or type(child.returncode) is not int or status!=child.returncode:
+            return False
+        if lease_fd is not None:os.close(lease_fd)
+        del UNRESOLVED_CUSTODY[pid]
+    return not UNRESOLVED_CUSTODY
+
+def hold_unresolved_custody(poll_seconds):
+    """Retain this original parent and canonical lease; never relaunch work.
+
+    An unresolved terminal is already durable before entry. Only exact root
+    wait plus positively observed group absence releases the held descriptor.
+    A parent must not kill this custodian merely to obtain a tool return.
+    """
+    while UNRESOLVED_CUSTODY:
+        try:
+            if reconcile_custody():break
+        except BaseException:pass  # observation uncertainty cannot release custody
+        try:time.sleep(poll_seconds)
+        except BaseException:pass
 
 def validate_policy(policy):
     if set(policy)!=set(DEFAULT_POLICY):raise ValueError('explicit resource/settlement policy required; wallclock deadlines are not supported')
@@ -106,6 +139,7 @@ def validate_admission(admission,bindings,policy,unit):
     return admission
 
 def inspect(binary,spec,expected):
+    require_safe_child_wait()
     env=dict(os.environ,FMLS_DS_GPU_LEASED='0',FAST_MLSIRM_DIF_PROGRESS='0')
     env.pop('FMLS_RESUME_ADMITTED_SPEC',None);env.pop('FMLS_RESUME_ADMITTED_UNIT',None)
     # This short timeout bounds the restore-only tool, not an optimizing child.
@@ -143,22 +177,34 @@ def supervise(argv,output,env,policy,*,lease_fd=None,lease_identity=None,cancel_
     comes from native events; a heartbeat is explicitly only observer liveness.
     No automatic restart occurs, including after an uncertain settlement.
     """
+    require_safe_child_wait()
+    if UNRESOLVED_CUSTODY:raise RuntimeError('unresolved custody: no new child spawn')
     policy=validate_policy(policy);output=Path(output);output.mkdir(mode=0o700,exist_ok=False)
     start=time.monotonic();t={'schema':2,'argv':argv,'started':datetime.datetime.now().astimezone().isoformat(),
       'host':socket.gethostname(),'policy':policy,'deadline_seconds':None,'child_waited':False,
       'child_exit':None,'process_group_absent':False,'stop_reason':None,'error':None,
       'progress_errors':[],'progress_records':0,'partial_tail_bytes':{'stdout':0,'stderr':0},'lease':lease_identity}
-    p=None;files={};offsets={'stdout':0,'stderr':0};buffers={'stdout':b'','stderr':b''};last_heartbeat=0
-    def drain():
+    p=None;lease_guard=None;files={};offsets={'stdout':0,'stderr':0};buffers={'stdout':b'','stderr':b''};last_heartbeat=0
+    primary_error=None;cleanup_errors=[]
+    def describe(error):
+        try:return type(error).__name__+': '+str(error)
+        except BaseException:return 'unformattable supervisor error'
+    def cleanup_error(stage,error):
+        cleanup_errors.append(error)
+        text=stage+': '+describe(error)
+        if text not in t.setdefault('settlement_errors',[]):t['settlement_errors'].append(text)
+    def drain(names=None):
         total=0
-        for name,f in files.items():
+        for name in files if names is None else names:
+            f=files[name]
             f.flush();os.fsync(f.fileno())
             size=os.fstat(f.fileno()).st_size;total+=size
-            if total>policy['max_stream_bytes']:stop('stream_limit')
+            t.setdefault('stream_bytes',{})[name]=size
+            if sum(t['stream_bytes'].values())>policy['max_stream_bytes']:stop('stream_limit')
             with (output/name).open('rb') as src:
                 src.seek(offsets[name])
                 while offsets[name]<size:
-                    allowed=policy['max_stream_bytes']-offsets[name]
+                    allowed=policy['max_stream_bytes']-sum(offsets.values())
                     if allowed<=0:
                         t['drain_truncated']=True;offsets[name]=size;break
                     b=src.read(min(65536,size-offsets[name],allowed));offsets[name]+=len(b)
@@ -176,19 +222,62 @@ def supervise(argv,output,env,policy,*,lease_fd=None,lease_identity=None,cancel_
         return total
     def stop(reason):
         if t['stop_reason'] is None:t['stop_reason']=reason
-        if p is not None and p.poll() is None and not group_absent(p.pid):
-            try:os.killpg(p.pid,signal.SIGTERM)
-            except PermissionError as error:
-                t.setdefault('settlement_errors',[]).append('group signal refused: '+str(error))
-                p.terminate()
+    def observe_group():
+        try:return group_absent(p.pid)
+        except BaseException as error:
+            cleanup_error('group observation',error);return None
+    def send(sig):
+        try:os.killpg(p.pid,sig)
+        except ProcessLookupError:pass
+        except BaseException as error:
+            cleanup_error('group signal',error)
+            # Group refusal must not skip an independent root signal or wait.
+            if p.returncode is None:
+                try:os.kill(p.pid,sig)
+                except ProcessLookupError:pass
+                except BaseException as second:cleanup_error('root signal',second)
+    def wait_root():
+        try:
+            status=p.wait(timeout=policy['settlement_seconds'])
+            if type(status) is not int or type(p.returncode) is not int or status!=p.returncode:
+                raise RuntimeError('unverified original child wait status')
+            t['child_waited']=True;t['child_exit']=status
+        except subprocess.TimeoutExpired:return False
+        except BaseException as error:cleanup_error('root wait',error)
+        return t['child_waited']
+    def wait_group():
+        try:
+            limit=time.monotonic()+policy['settlement_seconds']
+            while True:
+                absent=observe_group()
+                if absent is not False or time.monotonic()>=limit:return absent
+                time.sleep(min(0.01,max(0,limit-time.monotonic())))
+        except BaseException as error:
+            cleanup_error('group wait',error);return None
+    def settle():
+        # The exact same root wait and descendant TERM/KILL path follows every
+        # body exit. Each signal/observation failure retains NONPASS but does
+        # not skip the independent root wait or the remaining cleanup stages.
+        if t['stop_reason'] is not None:send(signal.SIGTERM)
+        if not wait_root():
+            send(signal.SIGKILL);wait_root()
+        absent=observe_group()
+        if absent is not True:
+            stop('descendant_survived');send(signal.SIGTERM);absent=wait_group()
+            if absent is not True:
+                send(signal.SIGKILL);absent=wait_group()
+        t['process_group_absent']=absent is True
     previous_handlers={}
     def interrupted(signum,frame):raise InterruptedError('explicit supervisor signal '+str(signum))
-    if __import__('threading').current_thread() is __import__('threading').main_thread():
-        for signum in (signal.SIGTERM,signal.SIGINT):
-            previous_handlers[signum]=signal.signal(signum,interrupted)
     try:
+        if __import__('threading').current_thread() is __import__('threading').main_thread():
+            for signum in (signal.SIGTERM,signal.SIGINT):
+                previous_handlers[signum]=signal.signal(signum,interrupted)
         for name in ('stdout','stderr'):
             fd=os.open(output/name,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);files[name]=os.fdopen(fd,'wb')
+        # Duplicate only the already held canonical lease, before child spawn.
+        if lease_fd is not None:lease_guard=os.dup(lease_fd)
+        require_safe_child_wait()
         p=subprocess.Popen(argv,env=env,stdout=files['stdout'],stderr=files['stderr'],start_new_session=True,
             pass_fds=() if lease_fd is None else (lease_fd,))
         t.update(pid=p.pid,pgid=p.pid)
@@ -211,44 +300,49 @@ def supervise(argv,output,env,policy,*,lease_fd=None,lease_identity=None,cancel_
                 persist(output/'heartbeat.json',dict(t,observer_running=True),replace=True);last_heartbeat=time.monotonic()
             if t['stop_reason'] is not None:break
             time.sleep(policy['poll_seconds'])
-        if t['stop_reason'] is not None:
-            try:p.wait(timeout=policy['settlement_seconds'])
-            except subprocess.TimeoutExpired:
-                os.killpg(p.pid,signal.SIGKILL);p.wait(timeout=policy['settlement_seconds'])
-        else:p.wait()
-        t['child_waited']=True;t['child_exit']=p.returncode
-        if not group_absent(p.pid):
-            stop('descendant_survived')
-            try:os.killpg(p.pid,signal.SIGTERM)
-            except PermissionError as error:t.setdefault('settlement_errors',[]).append(str(error))
-            except ProcessLookupError:pass
-            limit=time.monotonic()+policy['settlement_seconds']
-            while not group_absent(p.pid) and time.monotonic()<limit:time.sleep(0.01)
-            if not group_absent(p.pid):
-                os.killpg(p.pid,signal.SIGKILL);limit=time.monotonic()+policy['settlement_seconds']
-                while not group_absent(p.pid) and time.monotonic()<limit:time.sleep(0.01)
-        # Terminal drain is after real wait and checks the entire final tail.
-        if drain()>policy['max_stream_bytes'] and t['stop_reason'] is None:t['stop_reason']='stream_limit'
-        if t['progress_errors'] and t['stop_reason'] is None:t['stop_reason']='progress_error'
     except BaseException as error:
-        t['error']=type(error).__name__+': '+str(error)
-        if p is not None:
-            try:
-                stop('observer_error');p.wait(timeout=policy['settlement_seconds'])
-            except subprocess.TimeoutExpired:
-                os.killpg(p.pid,signal.SIGKILL);p.wait(timeout=policy['settlement_seconds'])
-            t['child_waited']=True;t['child_exit']=p.returncode
-            try:drain()
-            except BaseException as e:t['progress_errors'].append('terminal drain: '+str(e))
+        primary_error=error;t['error']=describe(error);stop('observer_error')
     finally:
-        for signum,handler in previous_handlers.items():signal.signal(signum,handler)
-        for f in files.values():f.close()
+        if p is not None:
+            # Strong custody is registered before any fallible cleanup/diagnostic.
+            UNRESOLVED_CUSTODY[p.pid]=(p,lease_guard,primary_error,cleanup_errors)
+            try:settle()
+            except BaseException as error:cleanup_error('settlement',error)
+        # Independent terminal drains: one broken stream cannot hide its sibling.
+        for name in files:
+            try:drain((name,))
+            except BaseException as error:cleanup_error('terminal drain '+name,error)
+        if t['progress_errors'] and t['stop_reason'] is None:stop('progress_error')
+        for name,f in files.items():
+            try:f.close()
+            except BaseException as error:cleanup_error('stream close '+name,error)
+        for signum,handler in previous_handlers.items():
+            try:signal.signal(signum,handler)
+            except BaseException as error:cleanup_error('signal handler restore',error)
         t['partial_tail_bytes']={k:len(v) for k,v in buffers.items()}
-        if any(t['partial_tail_bytes'].values()) and t['stop_reason'] is None:t['stop_reason']='partial_terminal_tail'
+        if any(t['partial_tail_bytes'].values()) and t['stop_reason'] is None:stop('partial_terminal_tail')
         t['elapsed_seconds']=time.monotonic()-start
-        t['process_group_absent']=p is not None and group_absent(p.pid)
-        t['streams']={name:reference(output/name) for name in files}
-        persist(output/'terminal.json',t)
+        t['custody_status']=('settled' if t['child_waited'] and t['process_group_absent']
+            else 'not_spawned' if p is None else 'retained_no_automatic_retry')
+        t['lease_retained']=p is not None and t['custody_status']=='retained_no_automatic_retry' and lease_guard is not None
+        if p is None or t['custody_status']=='settled':
+            if lease_guard is not None:
+                try:os.close(lease_guard)
+                except BaseException as error:cleanup_error('lease guard close',error)
+            if p is not None:UNRESOLVED_CUSTODY.pop(p.pid,None)
+        t['streams']={}
+        for name in files:
+            if t['custody_status']=='retained_no_automatic_retry':
+                t['streams'][name]=None  # live/unknown writers prohibit final-byte attestation
+                continue
+            try:t['streams'][name]=reference(output/name)
+            except BaseException as error:cleanup_error('stream reference '+name,error)
+        try:persist(output/'terminal.json',t)
+        except BaseException as error:
+            cleanup_error('terminal persistence',error)
+            # Preserve the exact primary object/traceback if receipt I/O fails.
+            if primary_error is not None:raise primary_error from error
+            raise
     return t
 
 def parser():
@@ -263,6 +357,8 @@ def parser():
 
 def main(argv=None):
     a=parser().parse_args(argv)
+    require_safe_child_wait()
+    if UNRESOLVED_CUSTODY:raise RuntimeError('unresolved custody: no new child spawn')
     if a.execute and (a.admission is None or a.output is None):raise ValueError('execution needs parent admission and new output')
     if a.execute and a.cancel_file is None:raise ValueError('explicit cancellation path required')
     if a.cancel_file is not None and a.cancel_file.exists():raise ValueError('explicit cancellation already requested')
@@ -328,8 +424,13 @@ def main(argv=None):
         return 0 if manifest['status']=='complete' else 2
     except BaseException as e:
         manifest['status']='blocked_no_automatic_retry';manifest['error']=type(e).__name__+': '+str(e)
-        persist(a.output/'manifest.json',manifest,replace=True);raise
+        try:persist(a.output/'manifest.json',manifest,replace=True)
+        except BaseException as publication:raise e from publication
+        raise
     finally:
+        # Never let CLI exit/main's lease close abandon a retained original
+        # parent. The durable unresolved terminal prevents automatic retry.
+        hold_unresolved_custody(policy['poll_seconds'])
         if lease is not None:lease.close()
 
 if __name__=='__main__':
