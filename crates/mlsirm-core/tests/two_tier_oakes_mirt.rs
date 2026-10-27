@@ -30,8 +30,7 @@ const QUADPTS: usize = 15;
 const SPECIFIC_MAP: [i32; N_ITEMS] = [0, 0, 1, 1, 1, 0, 0, 1, 1, 1];
 
 fn fixture_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/two_tier_grm_oakes")
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/two_tier_grm_oakes")
 }
 
 fn stage4_dir() -> std::path::PathBuf {
@@ -55,7 +54,10 @@ fn fixture_numbers(text: &str, key: &str) -> Vec<f64> {
         .find(&anchor)
         .unwrap_or_else(|| panic!("fixture is missing key {key:?}"));
     let after = &text[start + anchor.len()..];
-    assert!(after.starts_with(':'), "fixture key {key:?} must be followed by ':'");
+    assert!(
+        after.starts_with(':'),
+        "fixture key {key:?} must be followed by ':'"
+    );
     let open = after.find('[').expect("fixture array must open with [");
     let mut depth = 0usize;
     let mut end = None;
@@ -219,6 +221,9 @@ fn rust_two_tier_oakes_se_matches_mirt_fixture() {
         );
         compared += 1;
     }
-    assert!(compared >= 40, "expected >=40 item SEs compared; got {compared}");
+    assert!(
+        compared >= 40,
+        "expected >=40 item SEs compared; got {compared}"
+    );
     assert!(max_rel <= 0.05, "max relative SE error {max_rel}");
 }

@@ -116,7 +116,13 @@ fn sigmoid(x: f64) -> f64 {
     1.0 / (1.0 + (-x).exp())
 }
 
-fn simulate_group(slopes: &[f64; N_ITEMS], n_persons: usize, mean: f64, sd: f64, seed: u64) -> Vec<usize> {
+fn simulate_group(
+    slopes: &[f64; N_ITEMS],
+    n_persons: usize,
+    mean: f64,
+    sd: f64,
+    seed: u64,
+) -> Vec<usize> {
     let mut rng = Lcg(seed);
     let mut y = vec![0usize; n_persons * N_ITEMS];
     for p in 0..n_persons {
@@ -166,25 +172,59 @@ fn fipc_recovers_shifted_population() {
 
     let y_foc = simulate_group(&TRUE_A, N_FOC, FOCAL_MEAN, FOCAL_SD, 22);
     let fit = fit_poly_fipc(
-        &y_foc, None, N_FOC, N_ITEMS, N_CAT, &anchor, &anchor_slope, &anchor_cat, 61, 300, 1e-6,
+        &y_foc,
+        None,
+        N_FOC,
+        N_ITEMS,
+        N_CAT,
+        &anchor,
+        &anchor_slope,
+        &anchor_cat,
+        61,
+        300,
+        1e-6,
     )
     .expect("FIPC fit on well-conditioned simulated data must succeed");
-    assert!(fit.converged, "FIPC fit must converge: {}", fit.termination_reason);
+    assert!(
+        fit.converged,
+        "FIPC fit must converge: {}",
+        fit.termination_reason
+    );
 
     // Anchors echoed exactly: fixed means fixed.
     for i in 0..N_ANCHOR {
-        assert!((fit.slope[i] - anchor_slope[i]).abs() == 0.0, "anchor slope {i} must be bit-exact");
+        assert!(
+            (fit.slope[i] - anchor_slope[i]).abs() == 0.0,
+            "anchor slope {i} must be bit-exact"
+        );
         assert!((fit.cat_params[i][0] - anchor_cat[i][0]).abs() == 0.0);
         assert!((fit.cat_params[i][1] - anchor_cat[i][1]).abs() == 0.0);
     }
     // Focal distribution recovery (Kim's middle shift condition).
-    assert!((fit.mu - FOCAL_MEAN).abs() < MAX_MU_ERROR, "mu = {}", fit.mu);
-    assert!((fit.sigma - FOCAL_SD).abs() < MAX_SIGMA_ERROR, "sigma = {}", fit.sigma);
+    assert!(
+        (fit.mu - FOCAL_MEAN).abs() < MAX_MU_ERROR,
+        "mu = {}",
+        fit.mu
+    );
+    assert!(
+        (fit.sigma - FOCAL_SD).abs() < MAX_SIGMA_ERROR,
+        "sigma = {}",
+        fit.sigma
+    );
     // Free-item recovery against truth.
     for i in N_ANCHOR..N_ITEMS {
-        assert!((fit.slope[i] - TRUE_A[i]).abs() < MAX_FREE_A_ERROR, "free slope {i}");
-        assert!((fit.cat_params[i][0] - TRUE_D1[i]).abs() < MAX_FREE_D_ERROR, "free d1 {i}");
-        assert!((fit.cat_params[i][1] - TRUE_D2[i]).abs() < MAX_FREE_D_ERROR, "free d2 {i}");
+        assert!(
+            (fit.slope[i] - TRUE_A[i]).abs() < MAX_FREE_A_ERROR,
+            "free slope {i}"
+        );
+        assert!(
+            (fit.cat_params[i][0] - TRUE_D1[i]).abs() < MAX_FREE_D_ERROR,
+            "free d1 {i}"
+        );
+        assert!(
+            (fit.cat_params[i][1] - TRUE_D2[i]).abs() < MAX_FREE_D_ERROR,
+            "free d2 {i}"
+        );
     }
     assert!(fit.loglik.is_finite());
     assert_eq!(fit.loglik_trace.len(), fit.n_iter + 1);
@@ -203,7 +243,16 @@ fn fipc_matches_concurrent_at_true_anchors() {
 
     let y_foc = simulate_group(&TRUE_A, N_FOC_CONC, FOCAL_MEAN, FOCAL_SD, 33);
     let fipc = fit_poly_fipc(
-        &y_foc, None, N_FOC_CONC, N_ITEMS, N_CAT, &anchor, &anchor_slope, &anchor_cat, 61, 300,
+        &y_foc,
+        None,
+        N_FOC_CONC,
+        N_ITEMS,
+        N_CAT,
+        &anchor,
+        &anchor_slope,
+        &anchor_cat,
+        61,
+        300,
         1e-6,
     )
     .expect("FIPC fit must succeed");
@@ -246,7 +295,12 @@ fn fipc_matches_concurrent_at_true_anchors() {
             );
         }
     }
-    assert!((fipc.mu - conc.mu[1]).abs() < MAX_CONCURRENT_MU_GAP, "mu: {} vs {}", fipc.mu, conc.mu[1]);
+    assert!(
+        (fipc.mu - conc.mu[1]).abs() < MAX_CONCURRENT_MU_GAP,
+        "mu: {} vs {}",
+        fipc.mu,
+        conc.mu[1]
+    );
     assert!(
         (fipc.sigma - conc.sigma[1]).abs() < MAX_CONCURRENT_MU_GAP,
         "sigma: {} vs {}",
@@ -261,8 +315,14 @@ fn fipc_reverse_keyed_anchors() {
     // the orientation, so no reflection canonicalization may flip them.
     let y_ref = simulate_group(&RK_A, N_REF, 0.0, 1.0, 55);
     let (ref_slope, ref_cat) = reference_anchor_params(&y_ref);
-    assert!(ref_slope[1] < 0.0, "reference must recover the reverse keying");
-    assert!(ref_slope[4] < 0.0, "reference must recover the reverse keying");
+    assert!(
+        ref_slope[1] < 0.0,
+        "reference must recover the reverse keying"
+    );
+    assert!(
+        ref_slope[4] < 0.0,
+        "reference must recover the reverse keying"
+    );
     let anchor = vec![true; N_ANCHOR]
         .into_iter()
         .chain(vec![false; N_ITEMS - N_ANCHOR])
@@ -272,18 +332,42 @@ fn fipc_reverse_keyed_anchors() {
 
     let y_foc = simulate_group(&RK_A, N_FOC, FOCAL_MEAN, FOCAL_SD, 66);
     let fit = fit_poly_fipc(
-        &y_foc, None, N_FOC, N_ITEMS, N_CAT, &anchor, &anchor_slope, &anchor_cat, 61, 300, 1e-6,
+        &y_foc,
+        None,
+        N_FOC,
+        N_ITEMS,
+        N_CAT,
+        &anchor,
+        &anchor_slope,
+        &anchor_cat,
+        61,
+        300,
+        1e-6,
     )
     .expect("FIPC fit with reverse-keyed anchors must succeed");
     assert!(fit.converged);
     for i in 0..N_ANCHOR {
-        assert!((fit.slope[i] - anchor_slope[i]).abs() == 0.0, "anchor {i} sign must survive");
+        assert!(
+            (fit.slope[i] - anchor_slope[i]).abs() == 0.0,
+            "anchor {i} sign must survive"
+        );
     }
     assert!(fit.slope[1] < 0.0 && fit.slope[4] < 0.0);
-    assert!((fit.mu - FOCAL_MEAN).abs() < MAX_MU_ERROR, "mu = {}", fit.mu);
-    assert!((fit.sigma - FOCAL_SD).abs() < MAX_SIGMA_ERROR, "sigma = {}", fit.sigma);
+    assert!(
+        (fit.mu - FOCAL_MEAN).abs() < MAX_MU_ERROR,
+        "mu = {}",
+        fit.mu
+    );
+    assert!(
+        (fit.sigma - FOCAL_SD).abs() < MAX_SIGMA_ERROR,
+        "sigma = {}",
+        fit.sigma
+    );
     // Reverse-keyed NEW item 7 recovered with its sign.
-    assert!(fit.slope[7] < 0.0, "new reverse-keyed slope must stay negative");
+    assert!(
+        fit.slope[7] < 0.0,
+        "new reverse-keyed slope must stay negative"
+    );
     assert!((fit.slope[7] - RK_A[7]).abs() < MAX_FREE_A_ERROR);
 }
 
@@ -303,7 +387,9 @@ fn parse_number_list(s: &str) -> Vec<f64> {
 
 fn fixture_numbers(text: &str, key: &str) -> Vec<f64> {
     let anchor = format!("\"{key}\"");
-    let start = text.find(&anchor).unwrap_or_else(|| panic!("fixture is missing key {key:?}"));
+    let start = text
+        .find(&anchor)
+        .unwrap_or_else(|| panic!("fixture is missing key {key:?}"));
     let after = &text[start + anchor.len()..];
     let open = after.find('[').expect("fixture array must open with [");
     let mut depth = 0usize;
@@ -326,7 +412,9 @@ fn fixture_numbers(text: &str, key: &str) -> Vec<f64> {
 fn fixture_scalar(text: &str, key: &str) -> f64 {
     // Minimal reader for a flat scalar value (`"key": number`).
     let anchor = format!("\"{key}\"");
-    let start = text.find(&anchor).unwrap_or_else(|| panic!("fixture is missing key {key:?}"));
+    let start = text
+        .find(&anchor)
+        .unwrap_or_else(|| panic!("fixture is missing key {key:?}"));
     let after = &text[start + anchor.len()..];
     let colon = after.find(':').expect("fixture scalar must have a colon");
     let tail = after[colon + 1..].trim_start();
@@ -390,10 +478,24 @@ fn fipc_agrees_with_mirt_fixture() {
         })
         .collect();
     let fit = fit_poly_fipc(
-        &y, None, n_persons, N_ITEMS, N_CAT, &anchor, &anchor_slope, &anchor_cat, 61, 500, 1e-7,
+        &y,
+        None,
+        n_persons,
+        N_ITEMS,
+        N_CAT,
+        &anchor,
+        &anchor_slope,
+        &anchor_cat,
+        61,
+        500,
+        1e-7,
     )
     .expect("FIPC fit on the mirt fixture data must succeed");
-    assert!(fit.converged, "fixture fit must converge: {}", fit.termination_reason);
+    assert!(
+        fit.converged,
+        "fixture fit must converge: {}",
+        fit.termination_reason
+    );
 
     let mut worst_a = 0.0f64;
     let mut worst_d = 0.0f64;
@@ -414,7 +516,13 @@ fn fipc_agrees_with_mirt_fixture() {
     // so it is recorded in the fixture but not directly comparable.)
     let anchor_all = vec![true; N_ITEMS];
     let all_slope: Vec<f64> = (0..N_ITEMS)
-        .map(|i| if i < N_ANCHOR { anchor_a[i] } else { fit.slope[i] })
+        .map(|i| {
+            if i < N_ANCHOR {
+                anchor_a[i]
+            } else {
+                fit.slope[i]
+            }
+        })
         .collect();
     let _ = &all_slope;
     let mirt_slope: Vec<f64> = (0..N_ITEMS)
@@ -440,7 +548,17 @@ fn fipc_agrees_with_mirt_fixture() {
         })
         .collect();
     let at_mirt = fit_poly_fipc(
-        &y, None, n_persons, N_ITEMS, N_CAT, &anchor_all, &mirt_slope, &mirt_cat, 61, 500, 1e-7,
+        &y,
+        None,
+        n_persons,
+        N_ITEMS,
+        N_CAT,
+        &anchor_all,
+        &mirt_slope,
+        &mirt_cat,
+        61,
+        500,
+        1e-7,
     )
     .expect("profile fit at mirt values must succeed");
     assert!(at_mirt.converged);
@@ -464,8 +582,18 @@ fn fipc_study_recovery_n1020_q121() {
     let n_foc = 1020usize;
     let y_ref = simulate_group(&TRUE_A, 3000, 0.0, 1.0, 111);
     let (ref_slope, ref_cat) = {
-        let fit = fit_poly_unidim(&y_ref, None, 3000, N_ITEMS, N_CAT, PolyModel::Grm, 81, 500, 1e-7)
-            .expect("reference fit must succeed");
+        let fit = fit_poly_unidim(
+            &y_ref,
+            None,
+            3000,
+            N_ITEMS,
+            N_CAT,
+            PolyModel::Grm,
+            81,
+            500,
+            1e-7,
+        )
+        .expect("reference fit must succeed");
         assert!(fit.converged);
         (fit.slope, fit.cat_params)
     };
@@ -477,15 +605,44 @@ fn fipc_study_recovery_n1020_q121() {
     let anchor_cat: Vec<Vec<f64>> = (0..N_ITEMS).map(|i| ref_cat[i].clone()).collect();
     let y_foc = simulate_group(&TRUE_A, n_foc, FOCAL_MEAN, FOCAL_SD, 222);
     let fit = fit_poly_fipc(
-        &y_foc, None, n_foc, N_ITEMS, N_CAT, &anchor, &anchor_slope, &anchor_cat, 121, 1000, 1e-7,
+        &y_foc,
+        None,
+        n_foc,
+        N_ITEMS,
+        N_CAT,
+        &anchor,
+        &anchor_slope,
+        &anchor_cat,
+        121,
+        1000,
+        1e-7,
     )
     .expect("study FIPC fit must succeed");
-    assert!(fit.converged, "study fit must converge: {}", fit.termination_reason);
+    assert!(
+        fit.converged,
+        "study fit must converge: {}",
+        fit.termination_reason
+    );
     assert!((fit.mu - FOCAL_MEAN).abs() < 0.20, "mu = {}", fit.mu);
     assert!((fit.sigma - FOCAL_SD).abs() < 0.15, "sigma = {}", fit.sigma);
     for i in N_ANCHOR..N_ITEMS {
-        assert!((fit.slope[i] - TRUE_A[i]).abs() < 0.30, "free slope {i}: {} vs {}", fit.slope[i], TRUE_A[i]);
-        assert!((fit.cat_params[i][0] - TRUE_D1[i]).abs() < 0.30, "free d1 {i}: {} vs {}", fit.cat_params[i][0], TRUE_D1[i]);
-        assert!((fit.cat_params[i][1] - TRUE_D2[i]).abs() < 0.30, "free d2 {i}: {} vs {}", fit.cat_params[i][1], TRUE_D2[i]);
+        assert!(
+            (fit.slope[i] - TRUE_A[i]).abs() < 0.30,
+            "free slope {i}: {} vs {}",
+            fit.slope[i],
+            TRUE_A[i]
+        );
+        assert!(
+            (fit.cat_params[i][0] - TRUE_D1[i]).abs() < 0.30,
+            "free d1 {i}: {} vs {}",
+            fit.cat_params[i][0],
+            TRUE_D1[i]
+        );
+        assert!(
+            (fit.cat_params[i][1] - TRUE_D2[i]).abs() < 0.30,
+            "free d2 {i}: {} vs {}",
+            fit.cat_params[i][1],
+            TRUE_D2[i]
+        );
     }
 }
