@@ -73,6 +73,16 @@ struct Moments {
     cross: Vec<f64>,
 }
 
+struct ObservedPairMoments {
+    mean_i: Vec<f64>,
+    second_i: Vec<f64>,
+    mean_j: Vec<f64>,
+    second_j: Vec<f64>,
+    cross: Vec<f64>,
+    pair_count: Vec<usize>,
+    n_group: usize,
+}
+
 fn pair_index(i: usize, j: usize, n_items: usize) -> usize {
     i * (2 * n_items - i - 1) / 2 + (j - i - 1)
 }
@@ -84,17 +94,22 @@ fn observed_moments(
     group: usize,
     n_items: usize,
     n_cat: usize,
-) -> Result<(Moments, Vec<usize>), String> {
+) -> Result<ObservedPairMoments, String> {
+    let pairs = n_items * (n_items - 1) / 2;
     let mut count = vec![0usize; n_items];
-    let mut pair_count = vec![0usize; n_items * (n_items - 1) / 2];
-    let mut mean = vec![0.0; n_items];
-    let mut second = vec![0.0; n_items];
-    let mut cross = vec![0.0; pair_count.len()];
+    let mut pair_count = vec![0usize; pairs];
+    let mut mean_i = vec![0.0; pairs];
+    let mut second_i = vec![0.0; pairs];
+    let mut mean_j = vec![0.0; pairs];
+    let mut second_j = vec![0.0; pairs];
+    let mut cross = vec![0.0; pairs];
+    let mut n_group = 0usize;
     for (person, &g) in groups.iter().enumerate() {
         if g != group {
             continue;
         }
         let row = person * n_items;
+        let mut person_observed = false;
         for i in 0..n_items {
             if observed.is_some_and(|mask| !mask[row + i]) {
                 continue;
@@ -103,36 +118,53 @@ fn observed_moments(
             if value >= n_cat {
                 return Err("observed response category out of range".into());
             }
-            let score = value as f64;
             count[i] += 1;
-            mean[i] += score;
-            second[i] += score * score;
+            person_observed = true;
+        }
+        if person_observed {
+            n_group += 1;
         }
         for i in 0..n_items {
             if observed.is_some_and(|mask| !mask[row + i]) {
                 continue;
             }
+            let xi = y[row + i] as f64;
+            let xi2 = xi * xi;
             for j in i + 1..n_items {
                 if observed.is_some_and(|mask| !mask[row + j]) {
                     continue;
                 }
+                let xj = y[row + j] as f64;
                 let idx = pair_index(i, j, n_items);
                 pair_count[idx] += 1;
-                cross[idx] += y[row + i] as f64 * y[row + j] as f64;
+                mean_i[idx] += xi;
+                second_i[idx] += xi2;
+                mean_j[idx] += xj;
+                second_j[idx] += xj * xj;
+                cross[idx] += xi * xj;
             }
         }
     }
-    if count.iter().any(|&n| n == 0) || pair_count.iter().any(|&n| n == 0) {
+    if n_group == 0 || count.iter().any(|&n| n == 0) || pair_count.iter().any(|&n| n == 0) {
         return Err("empty group or unobserved item pair".into());
     }
-    for i in 0..n_items {
-        mean[i] /= count[i] as f64;
-        second[i] /= count[i] as f64;
+    for (idx, &n) in pair_count.iter().enumerate() {
+        let nf = n as f64;
+        mean_i[idx] /= nf;
+        second_i[idx] /= nf;
+        mean_j[idx] /= nf;
+        second_j[idx] /= nf;
+        cross[idx] /= nf;
     }
-    for (value, &n) in cross.iter_mut().zip(&pair_count) {
-        *value /= n as f64;
-    }
-    Ok((Moments { mean, second, cross }, pair_count))
+    Ok(ObservedPairMoments {
+        mean_i,
+        second_i,
+        mean_j,
+        second_j,
+        cross,
+        pair_count,
+        n_group,
+    })
 }
 
 fn model_moments(
@@ -315,7 +347,7 @@ pub fn evaluate_multigroup_bifactor_grm(
     let mut weighted = 0.0;
     let mut weight_total = 0.0;
     for group in 0..n_groups {
-        let (observed_moments, pair_counts) = observed_moments(y, observed, groups, group, n_items, n_cat)?;
+        let observed_moments = observed_moments(y, observed, groups, group, n_items, n_cat)?;
         let model = model_moments(
             &a_general[group], &a_specific[group], &threshold[group], specific_map, n_specific,
             general_mean[group], general_sd[group], &specific_mean[group], &specific_sd[group],
@@ -325,14 +357,14 @@ pub fn evaluate_multigroup_bifactor_grm(
         for i in 0..n_items {
             for j in i + 1..n_items {
                 let idx = pair_index(i, j, n_items);
-                let observed_variance_i = observed_moments.second[i] - observed_moments.mean[i].powi(2);
-                let observed_variance_j = observed_moments.second[j] - observed_moments.mean[j].powi(2);
+                let observed_variance_i = observed_moments.second_i[idx] - observed_moments.mean_i[idx].powi(2);
+                let observed_variance_j = observed_moments.second_j[idx] - observed_moments.mean_j[idx].powi(2);
                 let model_variance_i = model.second[i] - model.mean[i].powi(2);
                 let model_variance_j = model.second[j] - model.mean[j].powi(2);
                 if observed_variance_i <= 0.0 || observed_variance_j <= 0.0 || model_variance_i <= 0.0 || model_variance_j <= 0.0 {
                     return Err("zero item variance prevents declared ordinal correlation".into());
                 }
-                let observed_corr = (observed_moments.cross[idx] - observed_moments.mean[i] * observed_moments.mean[j])
+                let observed_corr = (observed_moments.cross[idx] - observed_moments.mean_i[idx] * observed_moments.mean_j[idx])
                     / (observed_variance_i * observed_variance_j).sqrt();
                 let expected_corr = (model.cross[idx] - model.mean[i] * model.mean[j])
                     / (model_variance_i * model_variance_j).sqrt();
@@ -342,12 +374,12 @@ pub fn evaluate_multigroup_bifactor_grm(
                 let residual = observed_corr - expected_corr;
                 sum_squared += residual * residual;
                 residuals.push(PairResidual {
-                    group, item_i: i, item_j: j, n_pair: pair_counts[idx], observed_corr, expected_corr, residual,
+                    group, item_i: i, item_j: j, n_pair: observed_moments.pair_count[idx], observed_corr, expected_corr, residual,
                 });
             }
         }
         let srmsr = (sum_squared / pairs as f64).sqrt();
-        let n_group = groups.iter().filter(|&&value| value == group).count();
+        let n_group = observed_moments.n_group;
         unweighted += sum_squared;
         weighted += n_group as f64 * sum_squared;
         weight_total += n_group as f64;

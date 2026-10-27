@@ -8,7 +8,7 @@ from pathlib import Path
 import json
 W=Path(__file__).resolve().parents[1]
 paths=sorted(p for p in W.rglob('*') if p.is_file()
- and not any(x in p.parts for x in ('.git','.codegraph','target-official','__pycache__'))
+ and not any(x in ('.git','.codegraph','target','target-official','__pycache__') or x.startswith('target-') for x in p.parts)
  and (p.suffix in ('.rs','.wgsl') or p.name in ('Cargo.toml','Cargo.lock','rust-toolchain.toml'))
  and p.name!='mask_grm_resume_sources.rs')
 lines=['//! Compile-time complete numerical Rust/WGSL and Cargo dependency binding.',
