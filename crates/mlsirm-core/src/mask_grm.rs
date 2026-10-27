@@ -161,6 +161,9 @@ pub fn run_json(request: &str) -> Result<String, String> {
 use crate::bifactor_grm::{
     fit_bifactor_grm_multigroup, BifactorMultigroupConfig, BifactorMultigroupResult,
 };
+#[cfg(test)]
+#[path="mask_grm_receipt_tests.rs"]
+mod receipt_consumer_tests;
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MaskFit {
@@ -461,6 +464,10 @@ pub fn select_removal(
     }
 
 impl MaskFit {
+    pub fn validate_gpu_evidence(&self)->Result<(),String> {
+        self.result.validate_gpu_evidence(&self.y,self.observed.as_deref(),&self.groups,self.n_groups,
+            &self.specific_map,&self.anchor,&self.cfg,self.embedded_parent.is_some())
+    }
     pub fn anchor_location_link(&self, atol: f64, rtol: f64) -> Result<serde_json::Value, String> {
         anchor_location_link_from_loadings(&self.anchor,&self.result.a_general[0],&self.result.a_specific[0],
             &self.specific_map,self.n_specific,self.cfg.estimate_specific_means,atol,rtol)
@@ -484,6 +491,10 @@ impl MaskFit {
             if !v.is_finite() || v < 0.0 {
                 return Err("invalid LR numerical tolerance".into());
             }
+        }
+        if c.require_gpu && (self.validate_gpu_evidence().is_err() || alt.validate_gpu_evidence().is_err()) {
+            // Refuse before likelihood/information/inference consumers run.
+            return Ok(json!({"status":"gpu_receipt_required","p_value":null,"df":null}));
         }
         if self.y != alt.y
             || self.observed != alt.observed
@@ -676,12 +687,17 @@ impl MaskFit {
         .map_err(|e| e.to_string())?;
         Ok(format!("{:x}", Sha256::digest(bytes)))
     }
+    /// Pure documentary view: never evaluates likelihood or starts a fitter.
+    pub fn execution_summary(&self)->serde_json::Value {
+        serde_json::json!({"dispatch":self.result.dispatch,"starts":self.result.start_outcomes,
+            "execution_evidence":self.result.execution_evidence,"dispatch_complete":self.validate_gpu_evidence().is_ok()})
+    }
     pub fn summary(&self) -> Result<serde_json::Value, String> {
         use serde_json::json;
         let r = &self.result;
-        let dispatch:Vec<_>=r.dispatch.iter().map(|d|json!({"start":d.start,"iteration":d.iteration,"gpu_used":d.gpu_used,"backend":d.backend,"device_name":d.device_name,"fallback_reason":d.fallback_reason})).collect();
+        let dispatch=&r.dispatch;
         Ok(
-            json!({"fit_identity":self.identity()?,"anchor":self.anchor,"coordinate_map":self.coordinate_map()?,"packed":self.packed()?,"loglik_cpu_f64":self.loglik_at(&self.packed()?)?,"loglik_trace":r.loglik_trace,"converged":r.converged,"termination_reason":r.termination_reason,"n_iter":r.n_iter,"final_loglik_change":r.final_loglik_change,"stopping_rule":"delta <= tol*(1+abs(previous_LL))","tol":self.cfg.tol,"n_parameters":r.n_parameters,"best_start":r.best_start,"q_general":self.cfg.q_general,"general_mean":r.general_mean,"general_sd":r.general_sd,"specific_mean":r.specific_mean,"specific_sd":r.specific_sd,"specific_map":self.specific_map,"n_specific":self.n_specific,"q_specific":self.cfg.q_specific,"estimate_specific_means":self.cfg.estimate_specific_means,"estimate_specific_vars":self.cfg.estimate_specific_vars,"dispatch":dispatch,"dispatch_complete":r.dispatch_complete,"starts":r.start_outcomes,"start_selection":"maximum_terminal_LL; reject nonconverged winner","m_step_device":if self.cfg.device == crate::Device::Gpu {"gpu"} else {"cpu_f64"},"m_step_gpu_dispatches":r.m_step_gpu_dispatches,"final_eap_device":"cpu_f64","final_posterior_device":if r.scoring_posterior_gpu {"gpu_two_word"} else {"cpu_f64"},"embedded_start":self.embedded_start,"embedded_parent":self.embedded_parent}),
+            json!({"fit_identity":self.identity()?,"anchor":self.anchor,"coordinate_map":self.coordinate_map()?,"packed":self.packed()?,"loglik_cpu_f64":self.loglik_at(&self.packed()?)?,"loglik_trace":r.loglik_trace,"converged":r.converged,"termination_reason":r.termination_reason,"n_iter":r.n_iter,"final_loglik_change":r.final_loglik_change,"stopping_rule":"delta <= tol*(1+abs(previous_LL))","tol":self.cfg.tol,"n_parameters":r.n_parameters,"best_start":r.best_start,"q_general":self.cfg.q_general,"general_mean":r.general_mean,"general_sd":r.general_sd,"specific_mean":r.specific_mean,"specific_sd":r.specific_sd,"specific_map":self.specific_map,"n_specific":self.n_specific,"q_specific":self.cfg.q_specific,"estimate_specific_means":self.cfg.estimate_specific_means,"estimate_specific_vars":self.cfg.estimate_specific_vars,"execution":self.execution_summary(),"dispatch":dispatch,"dispatch_complete":self.validate_gpu_evidence().is_ok(),"execution_evidence":r.execution_evidence,"starts":r.start_outcomes,"start_selection":"maximum_terminal_LL; reject nonconverged winner","m_step_device":if self.cfg.device == crate::Device::Gpu {"gpu"} else {"cpu_f64"},"m_step_gpu_dispatches":r.m_step_gpu_dispatches,"final_eap_device":if r.scoring_posterior_gpu {"gpu_two_word"} else {"cpu_f64"},"final_posterior_device":if r.scoring_posterior_gpu {"gpu_two_word"} else {"cpu_f64"},"embedded_start":self.embedded_start,"embedded_parent":self.embedded_parent}),
         )
     }
 
@@ -831,7 +847,7 @@ impl MaskFit {
             Some(anchor),
             cfg,
         )?;
-        Ok(Self {
+        let fit=Self {
             y: y.to_vec(),
             observed: observed.map(|x| x.to_vec()),
             groups: groups.to_vec(),
@@ -845,7 +861,9 @@ impl MaskFit {
             n_specific,
             embedded_start: None,
             embedded_parent: None,
-        })
+        };
+        fit.checkpoint_private()?;
+        Ok(fit)
     }
     pub fn coordinate_map(&self) -> Result<Vec<Coordinate>, String> {
         bifactor_coordinates(&self.anchor,self.n_groups,self.n_cat,&self.specific_map,self.n_specific,
@@ -998,7 +1016,7 @@ impl MaskFit {
             Some(&self.result),
             &mut embedded_start,
         )?;
-        Ok(Self {
+        let fit=Self {
             y: self.y.clone(),
             observed: self.observed.clone(),
             groups: self.groups.clone(),
@@ -1012,7 +1030,9 @@ impl MaskFit {
             n_specific: self.n_specific,
             embedded_start,
             embedded_parent: Some(self.identity()?),
-        })
+        };
+        fit.checkpoint_private()?;
+        Ok(fit)
     }
     pub fn embedded_start_loglik(&self) -> Option<f64> {
         self.embedded_start

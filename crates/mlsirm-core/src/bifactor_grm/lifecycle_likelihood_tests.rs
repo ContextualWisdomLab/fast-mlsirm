@@ -557,7 +557,7 @@ fn conditional_group_m_step_ascends_same_counts_mixed() {
         5,
         crate::Device::Gpu,
     );
-    let limited = group_em::update(
+    let (limited, _, _) = group_em::update(
         &v,
         &pars,
         &before.1,

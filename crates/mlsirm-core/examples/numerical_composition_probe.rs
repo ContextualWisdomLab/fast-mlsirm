@@ -1,6 +1,16 @@
 //! Synthetic integration probe; no study input and no estimator implementation.
 use mlsirm_core::mask_grm;
 fn main() {
+    let mode=std::env::args().nth(1).expect("mode");
+    if mode=="restore" {
+        let path=std::env::args().nth(2).expect("state path");
+        let raw=std::fs::read_to_string(&path).unwrap();
+        let f=mask_grm::MaskFit::restore_private(&raw).unwrap();
+        assert!(f.export_private().unwrap()==raw,"exact native typed re-export");
+        f.validate_gpu_evidence().unwrap();
+        println!("{}",serde_json::json!({"identity":f.summary().unwrap()["fit_identity"],"loglik_bits":f.loglik_at(&f.packed().unwrap()).unwrap().to_bits(),"trace_bits":f.trace_loglik().to_bits(),"byte_identical":true}));
+        return;
+    }
     assert_eq!(std::env::var("FMLS_DS_GPU_LEASED").as_deref(), Ok("1"));
     let mut seed=98231u64;
     let mut uniform=||{seed=seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);((seed>>11) as f64+0.5)/9007199254740992.0};
@@ -16,7 +26,9 @@ fn main() {
         "alpha":0.05,"max_rounds":1,"controls":{"fd_step":0.001,"rank_atol":1e-9,"rank_rtol":1e-7,
         "objective_call_budget":10000,"workspace_bytes":10000000,"ll_roundoff_tolerance":1e-7,
         "fit_ll_tolerance":1e-4,"lr_backend_tolerance":1e-4,"hessian_rtol":0.01,"require_gpu":true}});
-    let mode=std::env::args().nth(1).expect("initial or complete");
-    let out=if mode=="initial" {mask_grm::lifecycle::fit_gpu(&request.to_string())} else {assert_eq!(mode,"complete");mask_grm::lifecycle::complete_gpu(&request.to_string())};
+    let path=std::env::args().nth(2).expect("new checkpoint directory");
+    let out=mask_grm::state::with_private_checkpoints(std::path::Path::new(&path), || {
+        if mode=="initial" {mask_grm::lifecycle::fit_gpu(&request.to_string())} else {assert_eq!(mode,"complete");mask_grm::lifecycle::complete_gpu(&request.to_string())}
+    });
     match out {Ok(s)=>println!("{}",s),Err(e)=>{eprintln!("NATIVE_REFUSAL {}",e);std::process::exit(2);}}
 }

@@ -2059,7 +2059,9 @@ impl Default for BifactorMultigroupConfig {
 /// general-factor EAPs on the COMMON (reference) scale.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BifactorMultigroupResult {
-    /// Final posterior and EAP moment reduction use GPU kernels when explicit GPU succeeds.
+    /// Final posterior uses the reduced GPU kernel; EAP moments remain host f64.
+    #[serde(default)]
+    pub execution_evidence: Option<ExecutionEvidence>,
     pub scoring_posterior_gpu: bool,
     pub start_outcomes: Vec<serde_json::Value>,
     pub dispatch: Vec<ConcurrentSweepReceipt>,
@@ -2103,6 +2105,13 @@ pub struct BifactorMultigroupResult {
 
 
 include!("multigroup_parameters.rs");
+#[path="bifactor_receipts.rs"]
+mod receipts;
+pub use receipts::{ItemCoordinateReceipt,ConsumedStateReceipt,NativeStageReceipt,ItemStageReceipt,GroupStageReceipt,GroupCoordinateReceipt,ExecutionEvidence,FinalPosteriorReceipt};
+#[cfg(test)]
+#[path="bifactor_grm/receipt_tests.rs"]
+mod receipt_tests;
+
 #[cfg(all(feature="gpu",not(coverage)))]
 #[path="gpu_group_em.rs"]
 mod group_em;
@@ -2110,6 +2119,12 @@ mod group_em;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ConcurrentSweepReceipt {
+    #[serde(default)]
+    pub input: Option<ConsumedStateReceipt>,
+    #[serde(default)]
+    pub items: Vec<ItemStageReceipt>,
+    #[serde(default)]
+    pub group_update: Option<GroupStageReceipt>,
     pub start: usize,
     pub iteration: usize,
     pub gpu_used: bool,
@@ -2748,7 +2763,7 @@ fn multigroup_m_step_item(
     device: crate::Device, params: Vec<f64>, has_specific: bool,
     node_g: &[f64], node_s: &[f64], counts: &[Vec<f64>], n_cat: usize,
     ridge: f64, n_newton: usize, prior: SlopePrior,
-) -> Result<(Vec<f64>, bool), String> {
+) -> Result<(Vec<f64>, Option<NativeStageReceipt>), String> {
     if device == crate::Device::Gpu {
         #[cfg(all(feature = "gpu", not(coverage)))]
         {
@@ -2765,13 +2780,13 @@ fn multigroup_m_step_item(
             };
             let (updated, receipt) = crate::gpu_mstep::update_grm(
                 &params, off, &nodes, counts, prior, &control)?;
-            return Ok((updated, receipt.iteration_limit_updates != 0));
+            return Ok((updated, Some(receipt.into())));
         }
         #[cfg(not(all(feature = "gpu", not(coverage))))]
         return Err("GPU M-step unavailable; CPU fallback forbidden".into());
     }
     Ok((m_step_item(params, has_specific, node_g, node_s, counts,
-        n_cat, ridge, n_newton, prior), false))
+        n_cat, ridge, n_newton, prior), None))
 }
 
 fn run_single_start_multigroup(
@@ -2848,6 +2863,8 @@ fn run_single_start_multigroup(
         }
         #[cfg(test)]
         specific_mean_tests::begin_fit_sweep();
+        let consumed_input = (cfg.device==crate::Device::Gpu).then(||
+            ConsumedStateReceipt::capture(&params_groups,&mus,&sigmas,&specific_mus,&taus));
         let (ll, counts, w_acc, s1_g, s2_g, s1_spec, s2_spec, w_spec) = e_step_multigroup(
             v,
             y,
@@ -2877,7 +2894,7 @@ fn run_single_start_multigroup(
             }
             dispatch.push(ConcurrentSweepReceipt { start, iteration:n_iter,
                 gpu_used:r.used, backend:r.backend, device_name:r.device_name,
-                fallback_reason:r.fallback_reason });
+                fallback_reason:r.fallback_reason, input:consumed_input, items:Vec::new(), group_update:None });
         }
         #[cfg(test)]
         let sweep_index = specific_mean_tests::record_fit_sweep(start, n_iter);
@@ -2954,7 +2971,9 @@ fn run_single_start_multigroup(
                     packed.push(a_s);
                 }
                 packed.extend_from_slice(&params_groups[0][i].d);
-                let (updated, limited) = multigroup_m_step_item(
+                let item_input=(cfg.device==crate::Device::Gpu).then(||
+                    ItemCoordinateReceipt::from_packed(&packed,has_specific));
+                let (updated, stages) = multigroup_m_step_item(
                     cfg.device,
                     packed,
                     has_specific,
@@ -2971,7 +2990,12 @@ fn run_single_start_multigroup(
                     cfg.slope_prior,
                 )?;
                 if cfg.device == crate::Device::Gpu { *m_dispatch += 1; }
-                last_m_step_limited |= limited;
+                last_m_step_limited |= stages.as_ref().is_some_and(|r|r.iteration_limit_updates!=0);
+                if let Some(stages)=stages {
+                    dispatch.last_mut().ok_or("missing current item sweep")?.items.push(
+                        ItemStageReceipt{start,iteration:n_iter,item:i,group_scope:None,stages,
+                            input:item_input,output:Some(ItemCoordinateReceipt::from_packed(&updated,has_specific))});
+                }
                 for g in 0..n_groups {
                     params_groups[g][i].a_g = updated[0];
                     if has_specific {
@@ -3003,7 +3027,9 @@ fn run_single_start_multigroup(
                         packed.push(a_s);
                     }
                     packed.extend_from_slice(&params_groups[g][i].d);
-                    let (updated, limited) = multigroup_m_step_item(
+                    let item_input=(cfg.device==crate::Device::Gpu).then(||
+                        ItemCoordinateReceipt::from_packed(&packed,has_specific));
+                    let (updated, stages) = multigroup_m_step_item(
                         cfg.device,
                         packed,
                         has_specific,
@@ -3016,7 +3042,12 @@ fn run_single_start_multigroup(
                         cfg.slope_prior,
                     )?;
                     if cfg.device == crate::Device::Gpu { *m_dispatch += 1; }
-                    last_m_step_limited |= limited;
+                    last_m_step_limited |= stages.as_ref().is_some_and(|r|r.iteration_limit_updates!=0);
+                    if let Some(stages)=stages {
+                        dispatch.last_mut().ok_or("missing current item sweep")?.items.push(
+                            ItemStageReceipt{start,iteration:n_iter,item:i,group_scope:Some(g),stages,
+                                input:item_input,output:Some(ItemCoordinateReceipt::from_packed(&updated,has_specific))});
+                    }
                     params_groups[g][i].a_g = updated[0];
                     if has_specific {
                         params_groups[g][i].a_s = Some(updated[1]);
@@ -3032,8 +3063,21 @@ fn run_single_start_multigroup(
             &params_groups, &tg_groups, &ts_groups, log_wg, log_ws, qg, qs);
         #[cfg(all(feature = "gpu", not(coverage)))]
         if cfg.device == crate::Device::Gpu {
-            last_m_step_limited |= group_em::update(v,&params_groups,&counts,cfg,tg_std,ts_std,
+            let group_input=ConsumedStateReceipt::capture(&params_groups,&mus,&sigmas,&specific_mus,&taus);
+            let (limited,backend,device_name)=group_em::update(v,&params_groups,&counts,cfg,tg_std,ts_std,
                 &mut mus,&mut sigmas,&mut specific_mus,&mut taus)?;
+            last_m_step_limited |= limited;
+            let mut coordinates=Vec::new();
+            for g in 1..n_groups {
+                coordinates.push(GroupCoordinateReceipt{group:g,specific:None,is_sd:false,owner:"gpu".into(),value:mus[g]});
+                coordinates.push(GroupCoordinateReceipt{group:g,specific:None,is_sd:true,owner:"gpu".into(),value:sigmas[g]});
+                for s in 0..v.n_specific {
+                    if cfg.estimate_specific_means {coordinates.push(GroupCoordinateReceipt{group:g,specific:Some(s),is_sd:false,owner:"gpu".into(),value:specific_mus[g][s]});}
+                    if cfg.estimate_specific_vars {coordinates.push(GroupCoordinateReceipt{group:g,specific:Some(s),is_sd:true,owner:"gpu".into(),value:taus[g][s]});}
+                }
+            }
+            dispatch.last_mut().ok_or("missing current group sweep")?.group_update=Some(GroupStageReceipt{
+                start,iteration:n_iter,completed:true,iteration_limited:limited,algorithm:"finite_grid_conditional_em".into(),input:Some(group_input),coordinates,backend,device_name});
             n_iter += 1;
             continue;
         }
@@ -3225,7 +3269,7 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
             &single_cfg,
         )?;
         return Ok(BifactorMultigroupResult {
-            start_outcomes: Vec::new(), dispatch: Vec::new(), dispatch_complete: false,
+            execution_evidence: None, start_outcomes: Vec::new(), dispatch: Vec::new(), dispatch_complete: false,
             m_step_gpu_dispatches: 0,
             a_general: vec![single.a_general],
             a_specific: vec![single.a_specific],
@@ -3487,6 +3531,7 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
     if let Some(tables) = device_tables { tables_groups = tables; }
     // Reuse the actual bifactor posterior, not the binary marginal-score kernel.
     let mut scoring_posterior: Option<Vec<[f64;2]>> = None;
+    let mut final_posterior=Vec::new();
     #[cfg(all(feature = "gpu", not(coverage)))]
     if cfg.device == crate::Device::Gpu {
         let inputs = crate::gpu_bifactor::ReducedEstepInputs {
@@ -3502,6 +3547,12 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
         if output.postg.len() != n_persons * qg || output.postg.iter().any(|x| !x.is_finite() || *x < 0.0) {
             return Err("invalid GPU final scoring posterior".into());
         }
+        let receipt=crate::gpu_bifactor::gpu_dispatch_receipt();
+        final_posterior.push(FinalPosteriorReceipt{start:best_start,iteration:outcome.n_iter,n_persons,n_items,
+            n_specific:v.n_specific,q_general:qg,q_specific:qs,gpu_used:receipt.used,backend:receipt.backend,
+            device_name:receipt.device_name,fallback_reason:receipt.fallback_reason,output_consumed:true,
+            input:Some(ConsumedStateReceipt::capture(&outcome.params_groups,&outcome.mus,&outcome.sigmas,
+                &outcome.specific_mus,&outcome.taus))});
         scoring_posterior = Some(crate::gpu_bifactor_scoring::eap(&output.postg, group_id, &tg_groups)?);
     }
     let scoring_posterior_gpu = scoring_posterior.is_some();
@@ -3647,8 +3698,8 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
         n_parameters += (n_groups - 1) * v.n_specific;
     }
 
-    Ok(BifactorMultigroupResult {
-        scoring_posterior_gpu,
+    let mut result=BifactorMultigroupResult {
+        execution_evidence: None, scoring_posterior_gpu,
         dispatch_complete: cfg.device == crate::Device::Gpu && !dispatch.is_empty(),
         dispatch, start_outcomes, m_step_gpu_dispatches,
         a_general,
@@ -3670,7 +3721,18 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
         n_parameters,
         slope_prior: cfg.slope_prior,
         em_objective_trace: outcome.em_objective_trace,
-    })
+    };
+    if cfg.device==crate::Device::Gpu {
+        result.execution_evidence=Some(ExecutionEvidence{schema_version:2,device:format!("{:?}",cfg.device),
+            configured_starts:cfg.n_starts,embedded:initial.is_some(),
+            request_sha256:receipts::request_binding(y,observed,group_id,n_groups,specific_map,&anchor_vec,cfg)?,
+            result_sha256:String::new(),final_posterior,host_probability_tables:false,
+            host_eap:false,host_information:true,full_gpu:false});
+        let binding=result.evidence_result_binding()?;
+        result.execution_evidence.as_mut().unwrap().result_sha256=binding;
+        result.validate_gpu_evidence(y,observed,group_id,n_groups,specific_map,&anchor_vec,cfg,initial.is_some())?;
+    }
+    Ok(result)
 }
 
 // ---------------------------------------------------------------------------

@@ -3,7 +3,46 @@
 use super::*;
 use sha2::{Digest, Sha256};
 
+thread_local! {
+    static CHECKPOINT_DIR: std::cell::RefCell<Option<std::path::PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Opt-in private fitted-state journal. Never resumes an optimizer or authenticates execution.
+/// A new directory is required; nested scopes are refused and panic unwinding clears ownership.
+pub fn with_private_checkpoints<T>(path: &std::path::Path, run: impl FnOnce() -> Result<T,String>) -> Result<T,String> {
+    use std::os::unix::fs::DirBuilderExt;
+    if CHECKPOINT_DIR.with(|d|d.borrow().is_some()) { return Err("nested checkpoint scope".into()); }
+    std::fs::DirBuilder::new().mode(0o700).create(path).map_err(|e|format!("checkpoint directory: {e}"))?;
+    CHECKPOINT_DIR.with(|d|*d.borrow_mut()=Some(path.to_owned()));
+    struct Clear;
+    impl Drop for Clear { fn drop(&mut self) {CHECKPOINT_DIR.with(|d|*d.borrow_mut()=None);} }
+    let _clear=Clear;
+    run()
+}
+
 impl MaskFit {
+    /// Persist the complete native typed object before its caller consumes a completed unit.
+    pub fn checkpoint_private(&self) -> Result<(),String> {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let dir=CHECKPOINT_DIR.with(|d|d.borrow().clone());
+        let Some(dir)=dir else {return Ok(());};
+        let raw=self.export_private()?;
+        let digest=format!("{:x}",Sha256::digest(raw.as_bytes()));
+        let dest=dir.join(format!("{digest}.maskfit.json"));
+        if dest.exists() {
+            return if std::fs::read(&dest).map_err(|e|e.to_string())?==raw.as_bytes() {Ok(())} else {Err("checkpoint collision".into())};
+        }
+        let tmp=dir.join(format!(".{digest}.tmp"));
+        let mut file=std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp).map_err(|e|e.to_string())?;
+        file.write_all(raw.as_bytes()).and_then(|_|file.sync_all()).map_err(|e|e.to_string())?;
+        // Hard-link publication refuses replacement of an existing checkpoint.
+        std::fs::hard_link(&tmp,&dest).map_err(|e|e.to_string())?;
+        std::fs::remove_file(&tmp).map_err(|e|e.to_string())?;
+        std::fs::File::open(&dir).and_then(|f|f.sync_all()).map_err(|e|e.to_string())?;
+        Ok(())
+    }
+
     pub fn export_private(&self) -> Result<String, String> {
         let state = serde_json::to_string(self).map_err(|_| "state serialization failed")?;
         // String payload retains binary64 round-trip spelling and prevents Value conversion loss.
