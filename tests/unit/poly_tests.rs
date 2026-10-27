@@ -3089,3 +3089,38 @@ fn poly_u3_monte_carlo_500() {
         "per-score-group miscalibration too large: {bindev_n}"
     );
 }
+
+
+#[path = "signed_boundary_reference.rs"]
+mod signed_boundary_reference;
+
+#[test]
+fn signed_boundary_native_exact_parameter_precision() {
+    let mut max_error = 0.0_f64;
+    for &(base, thresholds, exact, _) in signed_boundary_reference::CASES {
+        let actual = grm_logprobs(base, &thresholds);
+        for k in 0..4 {
+            let error = (actual[k] - exact[k]).abs();
+            max_error = max_error.max(error);
+            assert!(error < 1e-9, "exact-parameter native error={error:e} base={base} thresholds={thresholds:?} category={k}");
+        }
+        assert!(logsumexp0(&actual).abs() < 1e-9);
+    }
+    eprintln!("NATIVE_EXACT cases={} max_log_error={max_error:e}", signed_boundary_reference::CASES.len());
+}
+
+#[test]
+fn signed_boundary_native_rounded_logits_reference() {
+    let mut max_error = 0.0_f64;
+    for &(base, thresholds, _, rounded_reference) in signed_boundary_reference::CASES {
+        // This explicitly requests the distinct rounded-full-logit target.
+        let rounded: Vec<f64> = thresholds.iter().map(|d| base + d).collect();
+        let actual = grm_logprobs(0.0, &rounded);
+        for k in 0..4 {
+            let error = (actual[k] - rounded_reference[k]).abs();
+            max_error = max_error.max(error);
+            assert!(error < 1e-9, "rounded-logit native error={error:e}");
+        }
+    }
+    eprintln!("NATIVE_ROUNDED cases={} max_log_error={max_error:e}", signed_boundary_reference::CASES.len());
+}

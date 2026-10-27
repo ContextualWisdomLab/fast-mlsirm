@@ -199,7 +199,7 @@ use std::time::Instant;
 /// Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
 /// (Research Report RR-85-33). Educational Testing Service.
 /// https://doi.org/10.1002/j.2330-8516.1985.tb00118.x
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SlopePrior {
     /// No slope prior (default MML).
     #[default]
@@ -386,8 +386,9 @@ fn validate_with_category_policy(
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
     }
-    if n_specific < 1 {
-        return Err("n_specific must be >= 1".into());
+    // Empty specific map is the exact general-only reduction.
+    if n_specific == 0 && specific_map.iter().any(|&s| s != -1) {
+        return Err("zero specifics requires exclusively general-only items".into());
     }
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
@@ -611,6 +612,8 @@ pub(crate) fn fill_logprob_tables(
                 for g in 0..qg {
                     for h in 0..qs {
                         let base = par.a_g * tg[g] + a_s * ts[h];
+                        #[cfg(all(test, feature = "gpu", not(coverage)))]
+                        scoring_completion_tests::host_table();
                         let probs = grm_logprobs(base, &par.d);
                         lp[(g * qs + h) * v.n_cat..(g * qs + h + 1) * v.n_cat]
                             .copy_from_slice(&probs);
@@ -1165,6 +1168,8 @@ fn m_step_item(
     n_newton: usize,
     slope_prior: SlopePrior,
 ) -> Vec<f64> {
+    #[cfg(all(test,feature="gpu",not(coverage)))]
+    lifecycle_likelihood_tests::deny_cpu_item_fit();
     for _ in 0..n_newton {
         bump_sweep(SweepKind::Newton);
         let (mut f0, mut g, mut hess) =
@@ -1574,6 +1579,8 @@ pub fn fit_bifactor_grm(
             }
             log_like_g[g] = acc;
         }
+        #[cfg(all(test, feature = "gpu", not(coverage)))]
+        scoring_completion_tests::host_eap();
         let log_lp = log_sum_exp(&log_like_g);
         let (mut m1, mut m2) = (0.0f64, 0.0f64);
         for (&t, &ll) in tg.iter().zip(log_like_g.iter()) {
@@ -1989,7 +1996,7 @@ pub(crate) fn pack_params(
 /// [`BifactorGrmConfig`]; `estimate_specific_vars` selects whether focal
 /// specific-factor variances are estimated (`true`) or
 /// held at the reference value 1 (`false`).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BifactorMultigroupConfig {
     /// Gauss-Hermite nodes for the general factor (any `n >= 1`).
     pub q_general: usize,
@@ -2050,8 +2057,14 @@ impl Default for BifactorMultigroupConfig {
 /// `general_mean[0] == 0`, `general_sd[0] == 1`, `specific_sd[0][*] == 1` are
 /// the pinned reference. `theta_g_eap`/`theta_g_sd` are per-person
 /// general-factor EAPs on the COMMON (reference) scale.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BifactorMultigroupResult {
+    /// Final posterior and EAP moment reduction use GPU kernels when explicit GPU succeeds.
+    pub scoring_posterior_gpu: bool,
+    pub start_outcomes: Vec<serde_json::Value>,
+    pub dispatch: Vec<ConcurrentSweepReceipt>,
+    pub dispatch_complete: bool,
+    pub m_step_gpu_dispatches: usize,
     pub a_general: Vec<Vec<f64>>,
     pub a_specific: Vec<Vec<f64>>,
     pub threshold: Vec<Vec<f64>>,
@@ -2088,6 +2101,22 @@ pub struct BifactorMultigroupResult {
     pub em_objective_trace: Vec<f64>,
 }
 
+
+include!("multigroup_parameters.rs");
+#[cfg(all(feature="gpu",not(coverage)))]
+#[path="gpu_group_em.rs"]
+mod group_em;
+
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ConcurrentSweepReceipt {
+    pub start: usize,
+    pub iteration: usize,
+    pub gpu_used: bool,
+    pub backend: Option<String>,
+    pub device_name: Option<String>,
+    pub fallback_reason: Option<String>,
+}
 
 fn canonicalize_multigroup_specific(
     blocks: &[Vec<usize>], anchor_vec: &[bool],
@@ -2362,9 +2391,23 @@ pub(crate) fn e_step_multigroup(
     Vec<Vec<f64>>,
 ) {
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
+    // Explicit GPU never computes category probabilities on the host.
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    let device_tables = if device == crate::Device::Gpu {
+        crate::gpu_bifactor::reset_gpu_dispatch_receipt();
+        match crate::gpu_bifactor_scoring::tables(params_groups, &v.item_block, tg_groups, ts_groups, v.n_cat) {
+            Ok(t) => Some(t),
+            Err(_) => {
+                crate::gpu_bifactor::set_fallback_reason("device_probability_table_refused");
+                return (f64::NAN, vec![], vec![], vec![], vec![], vec![], vec![], vec![]);
+            },
+        }
+    } else {None};
+    #[cfg(not(all(feature = "gpu", not(coverage))))]
+    let device_tables: Option<Vec<Vec<Vec<f64>>>> = None;
     // Per-group logprob tables at the CURRENT group nodes.
     let mut tables_groups: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_groups);
-    for g in 0..n_groups {
+    for g in 0..if device_tables.is_some() {0} else {n_groups} {
         let mut tables = Vec::with_capacity(v.n_items);
         for (i, par) in params_groups[g].iter().enumerate() {
             match par.a_s {
@@ -2375,6 +2418,8 @@ pub(crate) fn e_step_multigroup(
                         for h in 0..qs {
                             let base =
                                 par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
+                            #[cfg(all(test, feature = "gpu", not(coverage)))]
+                            scoring_completion_tests::host_table();
                             let probs = grm_logprobs(base, &par.d);
                             lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
                                 .copy_from_slice(&probs);
@@ -2386,6 +2431,8 @@ pub(crate) fn e_step_multigroup(
                     let mut lp = vec![0.0f64; qg * v.n_cat];
                     for t in 0..qg {
                         let base = par.a_g * tg_groups[g][t];
+                        #[cfg(all(test, feature = "gpu", not(coverage)))]
+                        scoring_completion_tests::host_table();
                         let probs = grm_logprobs(base, &par.d);
                         lp[t * v.n_cat..(t + 1) * v.n_cat].copy_from_slice(&probs);
                     }
@@ -2396,9 +2443,11 @@ pub(crate) fn e_step_multigroup(
         tables_groups.push(tables);
     }
 
+    if let Some(tables) = device_tables { tables_groups = tables; }
     #[cfg(all(feature = "gpu", not(coverage)))]
     {
         if device == crate::Device::Gpu || device == crate::Device::Auto {
+            crate::gpu_bifactor::reset_gpu_dispatch_receipt();
             let inputs = crate::gpu_bifactor::ReducedEstepInputs {
                 y,
                 observed,
@@ -2418,7 +2467,12 @@ pub(crate) fn e_step_multigroup(
                 log_wg,
                 log_ws,
             };
-            if let Some(res) = crate::gpu_bifactor::e_step_reduced_gpu(&inputs) {
+            let res = if device == crate::Device::Gpu {
+                crate::gpu_bifactor::e_step_reduced_gpu_strict(&inputs)
+            } else {
+                crate::gpu_bifactor::e_step_reduced_gpu(&inputs)
+            };
+            if let Some(res) = res {
                 let stride = res.counts_stride_nodes;
                 let mut counts: Vec<Vec<Vec<Vec<f64>>>> =
                     Vec::with_capacity(n_groups);
@@ -2457,10 +2511,9 @@ pub(crate) fn e_step_multigroup(
         }
     }
     if device == crate::Device::Gpu {
-        eprintln!(
-            "fast-mlsirm: GPU bifactor E-step requested but no usable GPU adapter was found; \
-             falling back to CPU implementation."
-        );
+        // No CPU work after an explicit GPU refusal. Callers validate the
+        // likelihood/dispatch before consuming counts.
+        return (f64::NAN, vec![], vec![], vec![], vec![], vec![], vec![], vec![]);
     }
 
     // Private storage discriminator: one numeric buffer during accumulation.
@@ -2736,6 +2789,9 @@ fn run_single_start_multigroup(
     qg: usize,
     qs: usize,
     start: usize,
+    initial: Option<&BifactorMultigroupResult>,
+    dispatch: &mut Vec<ConcurrentSweepReceipt>,
+    m_dispatch: &mut usize,
 ) -> Result<MultiStartOutcome, String> {
     let (mut params_groups, mut mus, mut sigmas, mut taus, mut specific_mus) = initial_params_multigroup(
         v,
@@ -2749,6 +2805,15 @@ fn run_single_start_multigroup(
         cfg.estimate_specific_vars,
         cfg.estimate_specific_means,
     );
+    if let Some(r) = initial {
+        for g in 0..n_groups {
+            params_groups[g] = pack_params(v, &r.a_general[g], &r.a_specific[g], &r.threshold[g]);
+        }
+        mus = r.general_mean.clone(); sigmas = r.general_sd.clone();
+        taus = r.specific_sd.clone(); specific_mus = r.specific_mean.clone();
+    }
+    #[cfg(all(test, feature="gpu", not(coverage)))]
+    lifecycle_likelihood_tests::seed_retained(&mut params_groups, &mut mus, &mut sigmas);
     let start_params_groups = params_groups.clone();
     // Latent coordinates per expected-count node (rebuilt when mus/sigmas/
     // taus move): node_g[node]/node_s[node] parallel `counts[g][i]`.
@@ -2798,6 +2863,22 @@ fn run_single_start_multigroup(
             qs,
             cfg.device,
         );
+        if !ll.is_finite() {
+            #[cfg(all(feature="gpu",not(coverage)))]
+            return Err(format!("GPU required: E-step unavailable or nonfinite: {:?}",crate::gpu_bifactor::gpu_dispatch_receipt()));
+            #[cfg(not(all(feature="gpu",not(coverage))))]
+            return Err("GPU required: E-step unavailable or nonfinite".into());
+        }
+        #[cfg(all(feature = "gpu", not(coverage)))]
+        if cfg.device == crate::Device::Gpu {
+            let r = crate::gpu_bifactor::gpu_dispatch_receipt();
+            if !r.used || r.fallback_reason.is_some() {
+                return Err("GPU required: incomplete same-sweep receipt".into());
+            }
+            dispatch.push(ConcurrentSweepReceipt { start, iteration:n_iter,
+                gpu_used:r.used, backend:r.backend, device_name:r.device_name,
+                fallback_reason:r.fallback_reason });
+        }
         #[cfg(test)]
         let sweep_index = specific_mean_tests::record_fit_sweep(start, n_iter);
         // MAP: GEM ascends log-likelihood + log prior. Common (anchored)
@@ -2812,6 +2893,9 @@ fn run_single_start_multigroup(
                     .map(|(_, item)| item)
             }),
         );
+        #[cfg(all(test, feature="gpu", not(coverage)))]
+        lifecycle_likelihood_tests::observe("sweep", n_iter, ll, v, y, observed, group_id,
+            &params_groups, &tg_groups, &ts_groups, log_wg, log_ws, qg, qs);
         let objective = ll - prior_nll;
         let change = checked_em_loglik_change(objective, previous, n_iter, objective_name)?;
         loglik_trace.push(ll);
@@ -2886,6 +2970,7 @@ fn run_single_start_multigroup(
                     // under the default all-common `anchor = None`.
                     cfg.slope_prior,
                 )?;
+                if cfg.device == crate::Device::Gpu { *m_dispatch += 1; }
                 last_m_step_limited |= limited;
                 for g in 0..n_groups {
                     params_groups[g][i].a_g = updated[0];
@@ -2930,6 +3015,7 @@ fn run_single_start_multigroup(
                         cfg.newton_iter,
                         cfg.slope_prior,
                     )?;
+                    if cfg.device == crate::Device::Gpu { *m_dispatch += 1; }
                     last_m_step_limited |= limited;
                     params_groups[g][i].a_g = updated[0];
                     if has_specific {
@@ -2940,6 +3026,16 @@ fn run_single_start_multigroup(
                     }
                 }
             }
+        }
+        #[cfg(all(test, feature="gpu", not(coverage)))]
+        lifecycle_likelihood_tests::observe("items_only", n_iter, f64::NAN, v, y, observed, group_id,
+            &params_groups, &tg_groups, &ts_groups, log_wg, log_ws, qg, qs);
+        #[cfg(all(feature = "gpu", not(coverage)))]
+        if cfg.device == crate::Device::Gpu {
+            last_m_step_limited |= group_em::update(v,&params_groups,&counts,cfg,tg_std,ts_std,
+                &mut mus,&mut sigmas,&mut specific_mus,&mut taus)?;
+            n_iter += 1;
+            continue;
         }
         // M-step, focal group distributions (reference g = 0 pinned to
         // N(0, I)). General: mu = mean EAP, var = mean posterior second
@@ -3070,6 +3166,16 @@ pub fn fit_bifactor_grm_multigroup(
     anchor: Option<&[bool]>,
     cfg: &BifactorMultigroupConfig,
 ) -> Result<BifactorMultigroupResult, String> {
+    fit_bifactor_grm_multigroup_initialized(y, observed, group_id, n_groups, specific_map,
+        n_persons, n_items, n_specific, n_cat, anchor, cfg, None, &mut None)
+}
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fit_bifactor_grm_multigroup_initialized(
+    y: &[usize], observed: Option<&[bool]>, group_id: &[usize], n_groups: usize,
+    specific_map: &[i32], n_persons: usize, n_items: usize, n_specific: usize,
+    n_cat: usize, anchor: Option<&[bool]>, cfg: &BifactorMultigroupConfig,
+    initial: Option<&BifactorMultigroupResult>, embedded_start: &mut Option<f64>,
+) -> Result<BifactorMultigroupResult,String> {
     validate_multigroup_cfg(cfg)?;
     if n_groups < 1 {
         return Err("n_groups must be >= 1".into());
@@ -3119,6 +3225,8 @@ pub fn fit_bifactor_grm_multigroup(
             &single_cfg,
         )?;
         return Ok(BifactorMultigroupResult {
+            start_outcomes: Vec::new(), dispatch: Vec::new(), dispatch_complete: false,
+            m_step_gpu_dispatches: 0,
             a_general: vec![single.a_general],
             a_specific: vec![single.a_specific],
             threshold: vec![single.threshold],
@@ -3126,6 +3234,7 @@ pub fn fit_bifactor_grm_multigroup(
             general_sd: vec![1.0],
             specific_sd: vec![vec![1.0; n_specific]],
             specific_mean: vec![vec![0.0; n_specific]],
+            scoring_posterior_gpu: false,
             theta_g_eap: single.theta_g_eap,
             theta_g_sd: single.theta_g_sd,
             group_category_counts: vec![single.category_counts],
@@ -3243,7 +3352,26 @@ pub fn fit_bifactor_grm_multigroup(
     let mut best_ll = f64::NEG_INFINITY;
     let mut best_start = 0usize;
     let mut first_error: Option<String> = None;
-    for start in 0..cfg.n_starts {
+    let mut dispatch = Vec::new();
+    let mut start_outcomes = Vec::new();
+    let mut m_step_gpu_dispatches = 0;
+    if let Some(r)=initial {
+        if n_groups<2 || r.a_general.len()!=n_groups || r.a_specific.len()!=n_groups || r.threshold.len()!=n_groups || r.general_mean.len()!=n_groups || r.general_sd.len()!=n_groups || r.specific_sd.len()!=n_groups || r.specific_mean.len()!=n_groups {return Err("invalid embedded model geometry".into());}
+        for g in 0..n_groups {
+            check_param_shapes(&v,&r.a_general[g],&r.a_specific[g],&r.threshold[g])?;
+            if !r.general_mean[g].is_finite() || !r.general_sd[g].is_finite() || r.general_sd[g]<=0.0 || r.specific_sd[g].len()!=n_specific || r.specific_mean[g].len()!=n_specific {return Err("invalid embedded prior".into());}
+            for s in 0..n_specific {
+                let mean=r.specific_mean[g][s]; let sd=r.specific_sd[g][s];
+                if !mean.is_finite() || !sd.is_finite() || sd<=0.0 {return Err("invalid embedded specific prior".into());}
+                if (g==0 || !cfg.estimate_specific_means) && mean!=0.0 {return Err("embedded fixed specific mean mismatch".into());}
+                if (g==0 || !cfg.estimate_specific_vars) && sd!=1.0 {return Err("embedded fixed specific SD mismatch".into());}
+            }
+            for i in 0..n_items {if anchor_vec[i] && (r.a_general[g][i]!=r.a_general[0][i] || r.a_specific[g][i]!=r.a_specific[0][i] || r.threshold[g][i*v.m1..(i+1)*v.m1]!=r.threshold[0][i*v.m1..(i+1)*v.m1]) {return Err("embedded anchor mismatch".into());}}
+        }
+        if r.general_mean[0]!=0.0 || r.general_sd[0]!=1.0 {return Err("embedded reference mismatch".into());}
+    }
+    for start in 0..cfg.n_starts.checked_add(usize::from(initial.is_some())).ok_or("start overflow")? {
+        crate::mask_grm::progress_event(serde_json::json!({"event":"optimizer_start","start":start,"embedded":start==cfg.n_starts}))?;
         match run_single_start_multigroup(
             &v,
             y,
@@ -3259,8 +3387,16 @@ pub fn fit_bifactor_grm_multigroup(
             qg,
             qs,
             start,
+            if start == cfg.n_starts { initial } else { None },
+            &mut dispatch, &mut m_step_gpu_dispatches,
         ) {
             Ok(outcome) => {
+                if start == cfg.n_starts { *embedded_start = outcome.loglik_trace.first().copied(); }
+                start_outcomes.push(serde_json::json!({"start":start,"embedded":start==cfg.n_starts,
+                    "converged":outcome.converged,"termination_reason":outcome.termination_reason,
+                    "n_iter":outcome.n_iter,"final_loglik_change":outcome.final_loglik_change,
+                    "loglik_trace":outcome.loglik_trace}));
+                crate::mask_grm::progress_event(serde_json::json!({"event":"optimizer_terminal","result":start_outcomes.last()}))?;
                 // Best EM objective (log posterior under a prior) wins.
                 let ll = *outcome
                     .em_objective_trace
@@ -3273,6 +3409,9 @@ pub fn fit_bifactor_grm_multigroup(
                 }
             }
             Err(e) => {
+                start_outcomes.push(serde_json::json!({"start":start,"converged":false,"error":e}));
+                crate::mask_grm::progress_event(serde_json::json!({"event":"optimizer_terminal","result":start_outcomes.last()}))?;
+                if cfg.device == crate::Device::Gpu || start == cfg.n_starts { return Err(format!("{e}; start {start}")); }
                 if first_error.is_none() {
                     first_error = Some(format!("start {start}: {e}"));
                 }
@@ -3302,9 +3441,15 @@ pub fn fit_bifactor_grm_multigroup(
             }
         }
     }
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    let device_tables = if cfg.device == crate::Device::Gpu {
+        Some(crate::gpu_bifactor_scoring::tables(&outcome.params_groups, &v.item_block, &tg_groups, &ts_groups, n_cat)?)
+    } else { None };
+    #[cfg(not(all(feature = "gpu", not(coverage))))]
+    let device_tables: Option<Vec<Vec<Vec<f64>>>> = None;
     // Rebuild per-group tables at the winning parameters.
     let mut tables_groups: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_groups);
-    for g in 0..n_groups {
+    for g in 0..if device_tables.is_some() {0} else {n_groups} {
         let mut tables = Vec::with_capacity(v.n_items);
         for (i, par) in outcome.params_groups[g].iter().enumerate() {
             match par.a_s {
@@ -3315,6 +3460,8 @@ pub fn fit_bifactor_grm_multigroup(
                         for h in 0..qs {
                             let base =
                                 par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
+                            #[cfg(all(test, feature = "gpu", not(coverage)))]
+                            scoring_completion_tests::host_table();
                             let probs = grm_logprobs(base, &par.d);
                             lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
                                 .copy_from_slice(&probs);
@@ -3326,6 +3473,8 @@ pub fn fit_bifactor_grm_multigroup(
                     let mut lp = vec![0.0f64; qg * v.n_cat];
                     for t in 0..qg {
                         let base = par.a_g * tg_groups[g][t];
+                        #[cfg(all(test, feature = "gpu", not(coverage)))]
+                        scoring_completion_tests::host_table();
                         let probs = grm_logprobs(base, &par.d);
                         lp[t * v.n_cat..(t + 1) * v.n_cat].copy_from_slice(&probs);
                     }
@@ -3335,6 +3484,27 @@ pub fn fit_bifactor_grm_multigroup(
         }
         tables_groups.push(tables);
     }
+    if let Some(tables) = device_tables { tables_groups = tables; }
+    // Reuse the actual bifactor posterior, not the binary marginal-score kernel.
+    let mut scoring_posterior: Option<Vec<[f64;2]>> = None;
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    if cfg.device == crate::Device::Gpu {
+        let inputs = crate::gpu_bifactor::ReducedEstepInputs {
+            y, observed, group_id: Some(group_id), n_persons, n_items,
+            n_specific: v.n_specific, n_cat, qg, qs, n_groups,
+            tables_groups: &tables_groups, item_block: &v.item_block,
+            blocks: &v.blocks, tg_groups: &tg_groups, ts_groups: &ts_groups,
+            log_wg: &log_wg, log_ws: &log_ws,
+        };
+        crate::gpu_bifactor::reset_gpu_dispatch_receipt();
+        let output = crate::gpu_bifactor::e_step_reduced_gpu_strict(&inputs)
+            .ok_or("GPU required: final scoring posterior unavailable")?;
+        if output.postg.len() != n_persons * qg || output.postg.iter().any(|x| !x.is_finite() || *x < 0.0) {
+            return Err("invalid GPU final scoring posterior".into());
+        }
+        scoring_posterior = Some(crate::gpu_bifactor_scoring::eap(&output.postg, group_id, &tg_groups)?);
+    }
+    let scoring_posterior_gpu = scoring_posterior.is_some();
     let mut theta_g_eap = vec![0.0f64; n_persons];
     let mut theta_g_sd = vec![0.0f64; n_persons];
     let mut block_acc = vec![0.0f64; v.n_specific * qg * qs];
@@ -3343,6 +3513,11 @@ pub fn fit_bifactor_grm_multigroup(
     let mut tmp_h = vec![0.0f64; qs];
     for p in 0..n_persons {
         let g = group_id[p];
+        if let Some(post) = &scoring_posterior {
+            theta_g_eap[p] = post[p][0];
+            theta_g_sd[p] = post[p][1];
+            continue;
+        }
         let tables = &tables_groups[g];
         let mut gen_log = log_wg.clone();
         for &i in &v.general_only {
@@ -3380,6 +3555,8 @@ pub fn fit_bifactor_grm_multigroup(
             }
             log_like_g[t] = acc;
         }
+        #[cfg(all(test, feature = "gpu", not(coverage)))]
+        scoring_completion_tests::host_eap();
         let log_lp = log_sum_exp(&log_like_g);
         let (mut m1, mut m2) = (0.0f64, 0.0f64);
         for (t, &ll) in log_like_g.iter().enumerate() {
@@ -3471,6 +3648,9 @@ pub fn fit_bifactor_grm_multigroup(
     }
 
     Ok(BifactorMultigroupResult {
+        scoring_posterior_gpu,
+        dispatch_complete: cfg.device == crate::Device::Gpu && !dispatch.is_empty(),
+        dispatch, start_outcomes, m_step_gpu_dispatches,
         a_general,
         a_specific,
         threshold,
@@ -3997,6 +4177,8 @@ pub fn fit_bifactor_grm_fipc(
                 for t in 0..qg {
                     for h in 0..qs {
                         let base = par.a_g * tg_focal[t] + a_s * ts_focal[s][h];
+                        #[cfg(all(test, feature = "gpu", not(coverage)))]
+                        scoring_completion_tests::host_table();
                         let probs = grm_logprobs(base, &par.d);
                         lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
                             .copy_from_slice(&probs);
@@ -4058,6 +4240,8 @@ pub fn fit_bifactor_grm_fipc(
             }
             log_like_g[t] = acc;
         }
+        #[cfg(all(test, feature = "gpu", not(coverage)))]
+        scoring_completion_tests::host_eap();
         let log_lp = log_sum_exp(&log_like_g);
         let (mut m1, mut m2) = (0.0f64, 0.0f64);
         for (t, &ll) in log_like_g.iter().enumerate() {
@@ -4155,3 +4339,8 @@ mod fixed_category_policy_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/specific_mean_tests.rs"]
 mod specific_mean_tests;
+#[cfg(all(test, feature="gpu", not(coverage)))]
+mod lifecycle_likelihood_tests;
+#[cfg(all(test, feature = "gpu", not(coverage)))]
+#[path = "../../../tests/unit/gpu_scoring_completion_tests.rs"]
+pub(crate) mod scoring_completion_tests;

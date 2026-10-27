@@ -256,6 +256,16 @@ mod zero_primary_mass_regression {
     }
 
     #[test]
+    fn signed_boundary_selected_exact_parameter_precision() {
+        // Independent 180-digit cumulative-probability reference at exact
+        // binary64 inputs base=-1.1, boundaries=[-1,-1-1e-7,-2].
+        let actual = grm_selected_logprob(-1.1, &[-1.0, -1.0-1e-7, -2.0], 1);
+        let expected = -18.4491347358242805847636078026662086816_f64;
+        let error = (actual-expected).abs();
+        assert!(error < 1e-9, "selected exact-parameter error={error:e}");
+    }
+
+    #[test]
     #[should_panic]
     fn selected_category_rejects_invalid_category() {
         grm_selected_logprob(0.0, &[], 1);
@@ -1151,6 +1161,84 @@ let old = crate::two_tier_grm::symmetry_corrected_reference::analytic_reference_
         );
     }
 
+    mod signed_buffer_reference {
+        include!("signed_buffer_reference.rs");
+    }
+
+    /// Separate exact-parameter accuracy from caller-buffer reuse. Constants
+    /// independently evaluate the documented cumulative-logit probabilities.
+    /// Uses the parameter formula documented by poly::grm_logprobs.
+    #[test]
+    fn signed_boundary_buffer_exact_parameter_accuracy() {
+        let mut cases = 0;
+        let mut cells = 0;
+        let mut max_error = 0.0_f64;
+        let mut frozen_changed = 0;
+        let mut frozen_max_error = 0.0_f64;
+        for &(base, thresholds, exact) in signed_buffer_reference::BUFFER_CASES {
+            let mut out = vec![f64::NAN; thresholds.len() + 1];
+            crate::poly::grm_logprobs_into(base, thresholds, &mut out);
+            let frozen = frozen_buffer_logprobs(base, thresholds);
+            for (category, ((&actual, &expected), &old)) in
+                out.iter().zip(exact).zip(&frozen).enumerate()
+            {
+                frozen_changed += usize::from(actual.to_bits() != old.to_bits());
+                if expected.is_nan() {
+                    assert!(actual.is_nan());
+                } else if expected.is_infinite() {
+                    assert_eq!(actual, expected);
+                } else {
+                    let error = (actual - expected).abs();
+                    let old_error = (old - expected).abs();
+                    eprintln!("BUFFER_EXACT base={base:e} thresholds={thresholds:?} category={category} actual={actual:.17e} reference={expected:.17e} error={error:e} frozen_error={old_error:e}");
+                    assert!(error < 1e-9, "base={base}, thresholds={thresholds:?}, category={category}, error={error:e}");
+                    max_error = max_error.max(error);
+                    frozen_max_error = frozen_max_error.max(old_error);
+                }
+                cells += 1;
+            }
+            cases += 1;
+        }
+        assert_eq!((cases, cells), (70, 210));
+        eprintln!("BUFFER_SUMMARY cases={cases} cells={cells} max_error={max_error:e} frozen_changed={frozen_changed} frozen_max_error={frozen_max_error:e}");
+    }
+
+    #[test]
+    fn signed_boundary_buffer_reuse_semantic_control() {
+        let banks = vec![
+            vec![], vec![0.], vec![2., 0.3, -1.2],
+            vec![1000., 999.999999999, -1000.],
+            vec![1e-12, 0., -1e-12], vec![0., 0.], vec![-1., 1.],
+        ];
+        let mut comparisons = 0;
+        for thresholds in &banks {
+            let mut out = vec![f64::NAN; thresholds.len() + 1];
+            let mut gout = vec![f64::NAN; thresholds.len()];
+            for base in [-1e6, -1000., -40., -1., -0., 0., 0.3, 40., 1000., 1e6] {
+                let expected = grm_logprobs(base, thresholds);
+                crate::poly::grm_logprobs_into(base, thresholds, &mut out);
+                assert_eq!(
+                    expected.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                    out.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+                );
+                for pattern in 0..3 {
+                    let counts = (0..=thresholds.len())
+                        .map(|i| if pattern == 0 || pattern == 1 && i % 2 == 0 { 0. } else { 1. + i as f64 / 3. })
+                        .collect::<Vec<_>>();
+                    let old = legacy_node_gradient(base, thresholds, &counts);
+                    let gb = crate::poly::grm_node_gradient_into(base, thresholds, &counts, &out, &mut gout);
+                    assert_eq!(old.0.to_bits(), gb.to_bits());
+                    assert_eq!(
+                        old.1.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                        gout.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+                    );
+                    comparisons += 1;
+                }
+            }
+        }
+        assert_eq!(comparisons, 210);
+    }
+
     fn frozen_buffer_logprobs(base: f64, thresholds: &[f64]) -> Vec<f64> {
         let kb = thresholds.len(); // number of boundaries = K-1
         let mut out = vec![0.0_f64; kb + 1];
@@ -1177,13 +1265,78 @@ let old = crate::two_tier_grm::symmetry_corrected_reference::analytic_reference_
         out
     }
 
-    /// Exercises overwritten caller buffers against the frozen prior formula.
+    /// Exercises overwritten caller buffers against the exact-parameter formula.
+    /// Independent accuracy is checked by signed_boundary_buffer_exact_parameter_accuracy;
+    /// the frozen full-logit operation contract is retained as an explicit NONPASS.
     /// Basis: Cai (2010, p. 589, Eqs. 11-12), not a new probability model.
     /// Reference: Cai, L. (2010). A two-tier full-information item factor
     /// analysis model with applications. Psychometrika, 75(4), 581-612.
     /// doi:10.1007/s11336-010-9178-0.
     #[test]
     fn reused_buffers_preserve_boundary_cells_and_overwrite_prior_values() {
+        let banks = vec![
+            vec![],
+            vec![0.],
+            vec![2., 0.3, -1.2],
+            vec![1000., 999.999999999, -1000.],
+            vec![1e-12, 0., -1e-12],
+            vec![0., 0.],
+            vec![-1., 1.],
+        ];
+        let mut comparisons = 0;
+        for thresholds in &banks {
+            let mut out = vec![f64::NAN; thresholds.len() + 1];
+            let mut gout = vec![f64::NAN; thresholds.len()];
+            for base in [-1e6, -1000., -40., -1., -0., 0., 0.3, 40., 1000., 1e6] {
+                let expected = grm_logprobs(base, thresholds);
+                crate::poly::grm_logprobs_into(base, thresholds, &mut out);
+                assert_eq!(
+                    expected.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                    out.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+                );
+                assert_eq!(
+                    expected.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                    grm_logprobs(base, thresholds)
+                        .iter()
+                        .map(|v| v.to_bits())
+                        .collect::<Vec<_>>()
+                );
+                for pattern in 0..3 {
+                    let counts = (0..=thresholds.len())
+                        .map(|i| {
+                            if pattern == 0 {
+                                0.
+                            } else if pattern == 1 && i % 2 == 0 {
+                                0.
+                            } else {
+                                1. + i as f64 / 3.
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    let old = legacy_node_gradient(base, thresholds, &counts);
+                    let gb = crate::poly::grm_node_gradient_into(
+                        base, thresholds, &counts, &out, &mut gout,
+                    );
+                    assert_eq!(old.0.to_bits(), gb.to_bits());
+                    assert_eq!(
+                        old.1.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                        gout.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+                    );
+                    comparisons += 1;
+                }
+            }
+        }
+        assert_eq!(comparisons, 210);
+    }
+
+    /// Exercises overwritten caller buffers against the frozen prior formula.
+    /// Basis: Cai (2010, p. 589, Eqs. 11-12), not a new probability model.
+    /// Reference: Cai, L. (2010). A two-tier full-information item factor
+    /// analysis model with applications. Psychometrika, 75(4), 581-612.
+    /// doi:10.1007/s11336-010-9178-0.
+    #[test]
+    #[ignore = "frozen rounded-logit bit compatibility; known NONPASS after exact-input arithmetic repair"]
+    fn signed_boundary_frozen_operation_compatibility_nonpass() {
         let banks = vec![
             vec![],
             vec![0.],

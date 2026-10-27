@@ -336,7 +336,7 @@ fn specific_mean_centered_variance_matches_first_estep() {
     let (pars,_,_,_,_)=initial_params_multigroup(&v,&y,Some(&obs),&gid,2,&anchor,cfg.seed,0,true,true);
     let tg=vec![x.to_vec();2]; let ts=vec![vec![x.to_vec();3];2];
     let (_,_,_,_,_,s1,s2,mass)=e_step_multigroup(&v,&y,Some(&obs),&gid,2,&pars,&tg,&ts,&lw,&lw,7,7,crate::Device::Cpu);
-    let result=run_single_start_multigroup(&v,&y,Some(&obs),&gid,2,&anchor,&cfg,x,x,&lw,&lw,7,7,0).unwrap();
+    let result=run_single_start_multigroup(&v,&y,Some(&obs),&gid,2,&anchor,&cfg,x,x,&lw,&lw,7,7,0,None,&mut Vec::new(),&mut 0).unwrap();
     assert!(!result.converged);
     for s in 0..3 {
         let mean=s1[1][s]/mass[1][s]; let variance=s2[1][s]/mass[1][s]-mean*mean;
