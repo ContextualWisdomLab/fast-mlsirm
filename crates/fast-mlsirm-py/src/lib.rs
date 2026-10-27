@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+include!("sequential_dif.rs");
 
 use mlsirm_core::agreement::{
     validate_scoring_with_thresholds as core_validate_scoring, ValidationThresholds,
@@ -11143,6 +11144,13 @@ fn residual_interaction_map(
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(sequential_dif_complete_gpu, m)?)?;
+    m.add_function(wrap_pyfunction!(sequential_dif_fit_private, m)?)?;
+    m.add_function(wrap_pyfunction!(sequential_dif_restore_summary, m)?)?;
+    m.add_function(wrap_pyfunction!(sequential_dif_roundtrip_private, m)?)?;
+    m.add_function(wrap_pyfunction!(sequential_dif_capabilities, m)?)?;
+    m.add_function(wrap_pyfunction!(sequential_dif_round_gpu, m)?)?;
+    m.add_function(wrap_pyfunction!(sequential_dif_fit_gpu, m)?)?;
     m.add("MARGINAL_CAPABILITY_VERSION", MARGINAL_CAPABILITY_VERSION)?;
     m.add(
         "SAMPLING_DESIGN_SCHEMA_VERSION",

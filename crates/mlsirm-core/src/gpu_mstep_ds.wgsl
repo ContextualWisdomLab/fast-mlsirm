@@ -62,7 +62,13 @@ fn ls(x:vec2<f32>)->vec2<f32>{
  }
  if(lt(x,ds(0.0))){return sub(x,l);}return -l;
 }
-fn sig(x:vec2<f32>)->vec2<f32>{return ex(ls(x));}
+// Logistic directly from one range-reduced exponential. Avoid composing
+// log-sigmoid with another exponential for every gradient/Hessian entry.
+fn sig(x:vec2<f32>)->vec2<f32>{
+ let z=ex(-ab(x));let denominator=add(ds(1.0),z);
+ if(lt(x,ds(0.0))){return divd(z,denominator);}
+ return divd(ds(1.0),denominator);
+}
 fn gap_mass(x:vec2<f32>)->vec2<f32>{
  if(x.x<0.1){var term=x;var sum=x;for(var j=2u;j<=14u;j++){term=divd(mul(term,-x),ds(f32(j)));sum=add(sum,term);}return sum;}
  return sub(ds(1.0),ex(-x));
@@ -93,19 +99,21 @@ fn criterion(slot:u32)->vec2<f32>{
     }
    }else{
     let bj=off+c-1u;let bk=bj+1u;let u=add(eta,par(bj));let v=add(eta,par(bk));let gap=sub(par(bj),par(bk));
-    lp=add(add(ls(u),ls(-v)),lg(gap_mass(gap)));
+    if(slot==0u){lp=add(add(ls(u),ls(-v)),lg(gap_mass(gap)));}else{
     let r=divd(ex(-gap),gap_mass(gap));let t=mul(r,add(ds(1.0),r));
-    let a=mul(sig(u),sig(-u));let b=mul(sig(v),sig(-v));
+    let su=sig(u);let snu=sig(-u);let sv=sig(v);let snv=sig(-v);
+    let a=mul(su,snu);let b=mul(sv,snv);
     if(!h){
-     if(j<off){deriv=mul(sub(sig(v),sig(-u)),xj);}
-     if(j==bj){deriv=sub(-sig(-u),r);}
-     if(j==bk){deriv=add(sig(v),r);}
+     if(j<off){deriv=mul(sub(sv,snu),xj);}
+     if(j==bj){deriv=sub(-snu,r);}
+     if(j==bk){deriv=add(sv,r);}
     }else{
      if(j<off && k<off){deriv=mul(add(a,b),mul(xj,xk));}
      if(j<off && k==bj){deriv=mul(a,xj);}if(j<off && k==bk){deriv=mul(b,xj);}
      if(k<off && j==bj){deriv=mul(a,xk);}if(k<off && j==bk){deriv=mul(b,xk);}
      if(j==bj && k==bj){deriv=add(a,t);}if(j==bk && k==bk){deriv=add(b,t);}
      if((j==bj && k==bk)||(j==bk && k==bj)){deriv=-t;}
+    }
     }
    }
    if(slot==0u){total=sub(total,mul(count,lp));}else{total=add(total,mul(count,deriv));}

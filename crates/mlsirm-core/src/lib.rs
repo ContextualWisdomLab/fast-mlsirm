@@ -1,5 +1,7 @@
 pub mod agreement;
 pub mod bifactor_grm;
+pub mod mask_grm;
+pub mod multiplicity;
 pub mod bifactor_indices;
 pub mod bifactor_oakes;
 pub mod bifactor_multigroup_oakes;
@@ -99,6 +101,10 @@ pub(crate) mod gpu_plausible;
 pub(crate) mod gpu_scoring;
 pub(crate) mod gpu_bifactor;
 #[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) mod gpu_group_update;
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) mod gpu_bifactor_scoring;
+#[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_multilevel;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelType {
@@ -151,7 +157,7 @@ pub fn interaction_kind(model_type: ModelType) -> InteractionKind {
 /// axis: `Gpu`/`Auto` run the wgpu GPGPU kernels when a GPU adapter is present
 /// and otherwise fall back to the identical CPU implementation. The numerical
 /// contract is the same for every variant.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Device {
     /// Always use the scalar CPU implementation.
     Cpu,

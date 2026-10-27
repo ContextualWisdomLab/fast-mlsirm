@@ -963,7 +963,9 @@ fn grm_selected_logprob(base: f64, thresholds: &[f64], category: usize) -> f64 {
     }
     let upper = base + thresholds[category - 1];
     let lower = base + thresholds[category];
-    log_sigmoid(upper) + log_sigmoid(-lower) + (-(lower - upper).exp_m1()).ln()
+    // Match grm_logprobs: cancel the shared base before full-logit rounding.
+    let gap = thresholds[category] - thresholds[category - 1];
+    log_sigmoid(upper) + log_sigmoid(-lower) + (-gap.exp_m1()).ln()
 }
 
 #[cfg(test)]
@@ -4002,6 +4004,8 @@ fn m_step_item<C: CountRows + ?Sized>(
     ridge: f64,
     n_newton: usize,
 ) -> Vec<f64> {
+    #[cfg(test)]
+    CPU_ITEM_FIT_CALLS.with(|c| c.set(c.get() + 1));
     for _ in 0..n_newton {
         let (f0, g, mut hess) = item_neg_ll_grad_hess(
             &params,
@@ -4296,6 +4300,16 @@ struct SingleStartOutcome {
 
 #[allow(clippy::too_many_arguments)]
 fn run_single_start(
+    v: &Validated, y: &[usize], observed: Option<&[bool]>, cfg: &TwoTierGrmConfig,
+    coords: &[f64], log_w0: &[f64], ts: &[f64], log_ws: &[f64],
+    n_grid: usize, qs: usize, start: usize,
+) -> Result<SingleStartOutcome, String> {
+    run_single_start_with_item_device(v, y, observed, cfg, coords, log_w0, ts, log_ws,
+        n_grid, qs, start, crate::Device::Cpu)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_single_start_with_item_device(
     v: &Validated,
     y: &[usize],
     observed: Option<&[bool]>,
@@ -4307,8 +4321,13 @@ fn run_single_start(
     n_grid: usize,
     qs: usize,
     start: usize,
+    item_device: crate::Device,
 ) -> Result<SingleStartOutcome, String> {
     let p = v.n_primary;
+    if item_device == crate::Device::Auto {
+        return Err("two-tier item device must be explicit CPU or GPU".into());
+    }
+    let mut last_m_step_limited = false;
     let (mut params, mut z_phi) = initial_params(
         v,
         y,
@@ -4342,7 +4361,7 @@ fn run_single_start(
         if let Some(change) = change {
             let prev = previous.expect("change requires a previous log-likelihood");
             final_loglik_change = change;
-            if final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
+            if !last_m_step_limited && final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
                 converged = true;
                 termination_reason = "tolerance_met".to_string();
                 break;
@@ -4358,6 +4377,7 @@ fn run_single_start(
         if cfg.estimate_primary_correlation {
             z_phi = m_step_phi(z_phi, p, &s_bar, v.n_persons, cfg.ridge, cfg.newton_iter);
         }
+        last_m_step_limited = false;
         for i in 0..v.n_items {
             let free = &v.free_primaries[i];
             let has_specific = v.item_block[i].is_some();
@@ -4369,20 +4389,27 @@ fn run_single_start(
                 packed.push(a_s);
             }
             packed.extend_from_slice(&params[i].d);
-            let updated = m_step_item(
-                packed,
-                free,
-                has_specific,
-                coords,
-                ts,
-                p,
-                n_grid,
-                qs,
-                &counts[i],
-                v.n_cat,
-                cfg.ridge,
-                cfg.newton_iter,
-            );
+            let updated = if item_device == crate::Device::Gpu {
+                #[cfg(all(feature = "gpu", not(coverage)))]
+                {
+                    let rows: Vec<Vec<f64>> = counts[i].rows().map(<[f64]>::to_vec).collect();
+                    let control = crate::gpu_mstep::NewtonControl {
+                        iterations: cfg.newton_iter, backtracks: 25, ridge: cfg.ridge,
+                        gradient_tolerance: 1e-9, step_tolerance: 1e-9,
+                        pivot_tolerance: 1e-14, armijo: 1e-4,
+                    };
+                    let (updated, receipt) = crate::two_tier_gpu_item::update_item(
+                        &packed, free, has_specific, coords, ts, p, n_grid, qs,
+                        &rows, v.n_cat, &control, item_device)?;
+                    last_m_step_limited |= receipt.iteration_limit_updates != 0;
+                    updated
+                }
+                #[cfg(not(all(feature = "gpu", not(coverage))))]
+                return Err("two-tier GPU item optimizer unavailable; CPU fallback forbidden".into());
+            } else {
+                m_step_item(packed, free, has_specific, coords, ts, p, n_grid, qs,
+                    &counts[i], v.n_cat, cfg.ridge, cfg.newton_iter)
+            };
             for (t, &dim) in free.iter().enumerate() {
                 params[i].a_p[dim] = updated[t];
             }
@@ -5193,3 +5220,17 @@ mod hessian_symmetry_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/two_tier_symmetry_corrected_reference.rs"]
 mod symmetry_corrected_reference;
+
+#[cfg(test)]
+thread_local! {
+    static CPU_ITEM_FIT_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[path = "two_tier_concurrent.rs"]
+pub mod concurrent;
+#[cfg(all(test, feature = "gpu", not(coverage)))]
+#[path = "../../../tests/unit/two_tier_concurrent_gpu_tests.rs"]
+mod concurrent_gpu_tests;
+#[cfg(test)]
+#[path = "../../../tests/unit/two_tier_bifactor_count_parity_tests.rs"]
+mod bifactor_count_parity_tests;

@@ -78,7 +78,7 @@ pub(crate) fn gpu_dispatch_receipt() -> GpuDispatchReceipt {
     LAST_RECEIPT.with(|receipt| receipt.borrow().clone())
 }
 
-fn set_fallback_reason(reason: &'static str) {
+pub(crate) fn set_fallback_reason(reason: &'static str) {
     LAST_RECEIPT.with(|receipt| receipt.borrow_mut().fallback_reason = Some(reason.into()));
 }
 
@@ -141,6 +141,25 @@ pub(crate) struct ReducedEstepOutputs {
     /// Per-person posterior over the general-node axis. FIPC uses this to
     /// recover moments on its affine multi-primary coordinates.
     pub postg: Vec<f64>,
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[path = "gpu_bifactor_precision.rs"]
+mod precision;
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) fn e_step_reduced_gpu_strict(inputs: &ReducedEstepInputs) -> Option<ReducedEstepOutputs> {
+    match precision::expectation(inputs) {
+        Ok(out) => {
+            let ctx=GpuContext::get()?;
+            record_gpu_success(ctx.backend(),ctx.device_name());
+            Some(out)
+        }
+        Err(reason) => {
+            LAST_RECEIPT.with(|r|r.borrow_mut().fallback_reason=Some(reason));
+            None
+        }
+    }
 }
 
 #[cfg(all(feature = "gpu", not(coverage)))]
@@ -701,7 +720,9 @@ pub(crate) fn e_step_reduced_gpu_consumed(
     let mk_init = |label: &str, bytes: &[u8]| {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(label),
-            contents: bytes,
+            // WebGPU storage bindings require nonzero allocation. This inert
+            // padding is never indexed when ns=0; logical geometry stays zero.
+            contents: if bytes.is_empty() { &[0u8; 4] } else { bytes },
             usage: wgpu::BufferUsages::STORAGE,
         })
     };
@@ -723,12 +744,12 @@ pub(crate) fn e_step_reduced_gpu_consumed(
     let ts_buf = mk_init("ts", bytemuck::cast_slice(&ts));
 
     let genlog_buf = output_buffer(device, "genlog", np * qg);
-    let logi_buf = output_buffer(device, "logi", np * ns * qg);
-    let blockacc_buf = output_buffer(device, "blockacc", np * ns * qg * qs);
+    let logi_buf = output_buffer(device, "logi", (np * ns * qg).max(1));
+    let blockacc_buf = output_buffer(device, "blockacc", (np * ns * qg * qs).max(1));
     let ll_buf = output_buffer(device, "ll", np);
     let postg_buf = output_buffer(device, "postg", np * qg);
-    let joint_buf = output_buffer(device, "joint", np * ns * qg * qs);
-    let anyobs_buf = output_buffer(device, "anyobs", np * ns);
+    let joint_buf = output_buffer(device, "joint", (np * ns * qg * qs).max(1));
+    let anyobs_buf = output_buffer(device, "anyobs", (np * ns).max(1));
     if !storage_buffer_fits(&limits, counts_len) {
         set_fallback_reason("specific_tree_storage_limit");
         return None;

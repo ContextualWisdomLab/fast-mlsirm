@@ -438,6 +438,10 @@ pub fn update_grm(
         let hi = value as f32;
         packed.extend([hi, (value - hi as f64) as f32]);
     }
+    #[cfg(test)]
+    if std::env::var_os("FMLS_POLY_TRACE").is_some() {
+        eprintln!("POLY_DISPATCH np={} off={} nn={} input_f32={} output_f32={} groups=1 workgroup=1 iterations={} backtracks={}", params.len(), off, counts.len(), packed.len(), cells*2, control.iterations, control.backtracks);
+    }
     let raw = dispatch(
         include_str!("gpu_mstep_ds.wgsl"),
         &packed,
