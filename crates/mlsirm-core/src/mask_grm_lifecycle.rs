@@ -5,12 +5,12 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 pub fn capabilities_json() -> String {
-    json!({"schema_version":1,"fit_backend":"gpu_two_word_e_item_m_group_cm_host_tables_eap_information",
+    json!({"schema_version":1,"fit_backend":"gpu_two_word_e_tables_item_m_group_cm_eap_host_information",
         "full_matrix_single_removal":true,"all_items_retested":true,
         "native_identity":format!("{:x}",Sha256::digest(include_bytes!("mask_grm.rs"))),
         "group_moment_backend":"gpu_two_word_finite_grid_conditional_em",
-        "final_posterior_backend":"gpu_two_word_multigroup","final_eap_backend":"cpu_f64",
-        "probability_table_backend":"cpu_f64","full_gpu":false,"information_backend":"cpu_f64",
+        "final_posterior_backend":"gpu_two_word_multigroup","final_eap_backend":"gpu_two_word",
+        "probability_table_backend":"gpu_two_word","full_gpu":false,"information_backend":"cpu_f64",
         "gradient_tolerance":1e-9,"step_tolerance":1e-9}).to_string()
 }
 

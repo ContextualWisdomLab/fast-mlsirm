@@ -697,7 +697,7 @@ impl MaskFit {
         let r = &self.result;
         let dispatch=&r.dispatch;
         Ok(
-            json!({"fit_identity":self.identity()?,"anchor":self.anchor,"coordinate_map":self.coordinate_map()?,"packed":self.packed()?,"loglik_cpu_f64":self.loglik_at(&self.packed()?)?,"loglik_trace":r.loglik_trace,"converged":r.converged,"termination_reason":r.termination_reason,"n_iter":r.n_iter,"final_loglik_change":r.final_loglik_change,"stopping_rule":"delta <= tol*(1+abs(previous_LL))","tol":self.cfg.tol,"n_parameters":r.n_parameters,"best_start":r.best_start,"q_general":self.cfg.q_general,"general_mean":r.general_mean,"general_sd":r.general_sd,"specific_mean":r.specific_mean,"specific_sd":r.specific_sd,"specific_map":self.specific_map,"n_specific":self.n_specific,"q_specific":self.cfg.q_specific,"estimate_specific_means":self.cfg.estimate_specific_means,"estimate_specific_vars":self.cfg.estimate_specific_vars,"execution":self.execution_summary(),"dispatch":dispatch,"dispatch_complete":self.validate_gpu_evidence().is_ok(),"execution_evidence":r.execution_evidence,"starts":r.start_outcomes,"start_selection":"maximum_terminal_LL; reject nonconverged winner","m_step_device":if self.cfg.device == crate::Device::Gpu {"gpu"} else {"cpu_f64"},"m_step_gpu_dispatches":r.m_step_gpu_dispatches,"final_eap_device":"cpu_f64","final_posterior_device":if r.scoring_posterior_gpu {"gpu_two_word"} else {"cpu_f64"},"embedded_start":self.embedded_start,"embedded_parent":self.embedded_parent}),
+            json!({"fit_identity":self.identity()?,"anchor":self.anchor,"coordinate_map":self.coordinate_map()?,"packed":self.packed()?,"loglik_cpu_f64":self.loglik_at(&self.packed()?)?,"loglik_trace":r.loglik_trace,"converged":r.converged,"termination_reason":r.termination_reason,"n_iter":r.n_iter,"final_loglik_change":r.final_loglik_change,"stopping_rule":"delta <= tol*(1+abs(previous_LL))","tol":self.cfg.tol,"n_parameters":r.n_parameters,"best_start":r.best_start,"q_general":self.cfg.q_general,"general_mean":r.general_mean,"general_sd":r.general_sd,"specific_mean":r.specific_mean,"specific_sd":r.specific_sd,"specific_map":self.specific_map,"n_specific":self.n_specific,"q_specific":self.cfg.q_specific,"estimate_specific_means":self.cfg.estimate_specific_means,"estimate_specific_vars":self.cfg.estimate_specific_vars,"execution":self.execution_summary(),"dispatch":dispatch,"dispatch_complete":self.validate_gpu_evidence().is_ok(),"execution_evidence":r.execution_evidence,"starts":r.start_outcomes,"start_selection":"maximum_terminal_LL; reject nonconverged winner","m_step_device":if self.cfg.device == crate::Device::Gpu {"gpu"} else {"cpu_f64"},"m_step_gpu_dispatches":r.m_step_gpu_dispatches,"final_eap_device":if r.scoring_posterior_gpu {"gpu_two_word"} else {"cpu_f64"},"final_posterior_device":if r.scoring_posterior_gpu {"gpu_two_word"} else {"cpu_f64"},"embedded_start":self.embedded_start,"embedded_parent":self.embedded_parent}),
         )
     }
 
@@ -847,7 +847,7 @@ impl MaskFit {
             Some(anchor),
             cfg,
         )?;
-        Ok(Self {
+        let fit=Self {
             y: y.to_vec(),
             observed: observed.map(|x| x.to_vec()),
             groups: groups.to_vec(),
@@ -861,7 +861,9 @@ impl MaskFit {
             n_specific,
             embedded_start: None,
             embedded_parent: None,
-        })
+        };
+        fit.checkpoint_private()?;
+        Ok(fit)
     }
     pub fn coordinate_map(&self) -> Result<Vec<Coordinate>, String> {
         bifactor_coordinates(&self.anchor,self.n_groups,self.n_cat,&self.specific_map,self.n_specific,
@@ -1014,7 +1016,7 @@ impl MaskFit {
             Some(&self.result),
             &mut embedded_start,
         )?;
-        Ok(Self {
+        let fit=Self {
             y: self.y.clone(),
             observed: self.observed.clone(),
             groups: self.groups.clone(),
@@ -1028,7 +1030,9 @@ impl MaskFit {
             n_specific: self.n_specific,
             embedded_start,
             embedded_parent: Some(self.identity()?),
-        })
+        };
+        fit.checkpoint_private()?;
+        Ok(fit)
     }
     pub fn embedded_start_loglik(&self) -> Option<f64> {
         self.embedded_start

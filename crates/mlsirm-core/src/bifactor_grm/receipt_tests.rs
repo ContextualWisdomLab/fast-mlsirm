@@ -565,8 +565,8 @@ fn complete_fixture() -> (
             output_consumed: true,
             input: None,
         }],
-        host_probability_tables: true,
-        host_eap: true,
+        host_probability_tables: false,
+        host_eap: false,
         host_information: true,
         full_gpu: false,
     });

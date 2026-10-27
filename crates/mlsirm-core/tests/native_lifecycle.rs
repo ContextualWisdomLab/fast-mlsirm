@@ -1,4 +1,16 @@
 use mlsirm_core::{mask_grm, bifactor_grm::*, Device};
+#[cfg(feature = "gpu")]
+#[path = "support/fifa_hardware.rs"]
+mod hardware_support;
+
+#[cfg(feature = "gpu")]
+#[test]
+fn native_hardware_enrollment_is_explicit() {
+    hardware_support::assert_hardware_cases_are_ignored(&[
+        "native_gpu_bifactor_mixed_control",
+        "native_gpu_general_only_control",
+    ]);
+}
 #[cfg(not(feature="gpu"))]
 #[test]
 fn native_gpu_unavailable_no_fallback() {
@@ -27,7 +39,9 @@ fn native_zero_specific_validator_is_real_reduction() {
     assert!(r.specific_mean.iter().all(|x|x.is_empty()));
     assert_eq!(r.n_parameters,6);
 }
+#[cfg(feature = "gpu")]
 #[test]
+#[ignore = "required physical GPU cohort: tools/verify_lifecycle_hardware.py with the canonical host lease"]
 fn native_gpu_bifactor_mixed_control() {
     assert_eq!(std::env::var("FMLS_DS_GPU_LEASED").as_deref(),Ok("1"));
     let mut y=Vec::new(); let mut groups=Vec::new(); let mut seed=77231u64;
@@ -43,7 +57,9 @@ fn native_gpu_bifactor_mixed_control() {
     assert_eq!(r.m_step_gpu_dispatches,9);
     assert_eq!(r.specific_mean[1].len(),3);
 }
+#[cfg(feature = "gpu")]
 #[test]
+#[ignore = "required physical GPU cohort: tools/verify_lifecycle_hardware.py with the canonical host lease"]
 fn native_gpu_general_only_control() {
     assert_eq!(std::env::var("FMLS_DS_GPU_LEASED").as_deref(),Ok("1"));
     let y=vec![0,0,1,1,0,1,1,0,0,0,1,1,0,1,1,0];

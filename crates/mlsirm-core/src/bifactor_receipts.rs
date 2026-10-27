@@ -391,8 +391,8 @@ impl BifactorMultigroupResult {
             || e.embedded != embedded
             || e.request_sha256 != request_binding(y, obs, gid, ng, map, anchor, cfg)?
             || e.result_sha256 != self.evidence_result_binding()?
-            || !e.host_probability_tables
-            || !e.host_eap
+            || e.host_probability_tables
+            || e.host_eap
             || !e.host_information
             || e.full_gpu
             || ng < 2

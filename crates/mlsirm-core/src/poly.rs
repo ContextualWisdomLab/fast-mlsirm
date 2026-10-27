@@ -115,9 +115,11 @@ pub(crate) fn grm_logprobs_into(base: f64, thresholds: &[f64], out: &mut [f64]) 
         let lower = base + thresholds[k];
         // sigmoid(upper) - sigmoid(lower)
         // = sigmoid(upper) * sigmoid(-lower) * (1 - exp(lower - upper)).
-        // `-expm1` preserves a narrow category and avoids subtracting two
-        // rounded log-sigmoids in the same extreme tail.
-        out[k] = log_sigmoid(upper) + log_sigmoid(-lower) + (-(lower - upper).exp_m1()).ln();
+        // Cancel the shared base before rounding the full logits: their
+        // separately rounded difference can lose relative precision in a
+        // narrow category. This gap uses the supplied boundary parameters.
+        let gap = thresholds[k] - thresholds[k - 1];
+        out[k] = log_sigmoid(upper) + log_sigmoid(-lower) + (-gap.exp_m1()).ln();
     }
     // top category K-1: sigmoid(base + beta_{K-2})
     out[kb] = log_sigmoid(base + thresholds[kb - 1]);

@@ -612,6 +612,8 @@ pub(crate) fn fill_logprob_tables(
                 for g in 0..qg {
                     for h in 0..qs {
                         let base = par.a_g * tg[g] + a_s * ts[h];
+                        #[cfg(all(test, feature = "gpu", not(coverage)))]
+                        scoring_completion_tests::host_table();
                         let probs = grm_logprobs(base, &par.d);
                         lp[(g * qs + h) * v.n_cat..(g * qs + h + 1) * v.n_cat]
                             .copy_from_slice(&probs);
@@ -1577,6 +1579,8 @@ pub fn fit_bifactor_grm(
             }
             log_like_g[g] = acc;
         }
+        #[cfg(all(test, feature = "gpu", not(coverage)))]
+        scoring_completion_tests::host_eap();
         let log_lp = log_sum_exp(&log_like_g);
         let (mut m1, mut m2) = (0.0f64, 0.0f64);
         for (&t, &ll) in tg.iter().zip(log_like_g.iter()) {
@@ -2402,9 +2406,23 @@ pub(crate) fn e_step_multigroup(
     Vec<Vec<f64>>,
 ) {
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
+    // Explicit GPU never computes category probabilities on the host.
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    let device_tables = if device == crate::Device::Gpu {
+        crate::gpu_bifactor::reset_gpu_dispatch_receipt();
+        match crate::gpu_bifactor_scoring::tables(params_groups, &v.item_block, tg_groups, ts_groups, v.n_cat) {
+            Ok(t) => Some(t),
+            Err(_) => {
+                crate::gpu_bifactor::set_fallback_reason("device_probability_table_refused");
+                return (f64::NAN, vec![], vec![], vec![], vec![], vec![], vec![], vec![]);
+            },
+        }
+    } else {None};
+    #[cfg(not(all(feature = "gpu", not(coverage))))]
+    let device_tables: Option<Vec<Vec<Vec<f64>>>> = None;
     // Per-group logprob tables at the CURRENT group nodes.
     let mut tables_groups: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_groups);
-    for g in 0..n_groups {
+    for g in 0..if device_tables.is_some() {0} else {n_groups} {
         let mut tables = Vec::with_capacity(v.n_items);
         for (i, par) in params_groups[g].iter().enumerate() {
             match par.a_s {
@@ -2415,6 +2433,8 @@ pub(crate) fn e_step_multigroup(
                         for h in 0..qs {
                             let base =
                                 par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
+                            #[cfg(all(test, feature = "gpu", not(coverage)))]
+                            scoring_completion_tests::host_table();
                             let probs = grm_logprobs(base, &par.d);
                             lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
                                 .copy_from_slice(&probs);
@@ -2426,6 +2446,8 @@ pub(crate) fn e_step_multigroup(
                     let mut lp = vec![0.0f64; qg * v.n_cat];
                     for t in 0..qg {
                         let base = par.a_g * tg_groups[g][t];
+                        #[cfg(all(test, feature = "gpu", not(coverage)))]
+                        scoring_completion_tests::host_table();
                         let probs = grm_logprobs(base, &par.d);
                         lp[t * v.n_cat..(t + 1) * v.n_cat].copy_from_slice(&probs);
                     }
@@ -2436,6 +2458,7 @@ pub(crate) fn e_step_multigroup(
         tables_groups.push(tables);
     }
 
+    if let Some(tables) = device_tables { tables_groups = tables; }
     #[cfg(all(feature = "gpu", not(coverage)))]
     {
         if device == crate::Device::Gpu || device == crate::Device::Auto {
@@ -3462,9 +3485,15 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
             }
         }
     }
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    let device_tables = if cfg.device == crate::Device::Gpu {
+        Some(crate::gpu_bifactor_scoring::tables(&outcome.params_groups, &v.item_block, &tg_groups, &ts_groups, n_cat)?)
+    } else { None };
+    #[cfg(not(all(feature = "gpu", not(coverage))))]
+    let device_tables: Option<Vec<Vec<Vec<f64>>>> = None;
     // Rebuild per-group tables at the winning parameters.
     let mut tables_groups: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_groups);
-    for g in 0..n_groups {
+    for g in 0..if device_tables.is_some() {0} else {n_groups} {
         let mut tables = Vec::with_capacity(v.n_items);
         for (i, par) in outcome.params_groups[g].iter().enumerate() {
             match par.a_s {
@@ -3475,6 +3504,8 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
                         for h in 0..qs {
                             let base =
                                 par.a_g * tg_groups[g][t] + a_s * ts_groups[g][s][h];
+                            #[cfg(all(test, feature = "gpu", not(coverage)))]
+                            scoring_completion_tests::host_table();
                             let probs = grm_logprobs(base, &par.d);
                             lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
                                 .copy_from_slice(&probs);
@@ -3486,6 +3517,8 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
                     let mut lp = vec![0.0f64; qg * v.n_cat];
                     for t in 0..qg {
                         let base = par.a_g * tg_groups[g][t];
+                        #[cfg(all(test, feature = "gpu", not(coverage)))]
+                        scoring_completion_tests::host_table();
                         let probs = grm_logprobs(base, &par.d);
                         lp[t * v.n_cat..(t + 1) * v.n_cat].copy_from_slice(&probs);
                     }
@@ -3495,8 +3528,9 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
         }
         tables_groups.push(tables);
     }
+    if let Some(tables) = device_tables { tables_groups = tables; }
     // Reuse the actual bifactor posterior, not the binary marginal-score kernel.
-    let mut scoring_posterior: Option<Vec<f64>> = None;
+    let mut scoring_posterior: Option<Vec<[f64;2]>> = None;
     let mut final_posterior=Vec::new();
     #[cfg(all(feature = "gpu", not(coverage)))]
     if cfg.device == crate::Device::Gpu {
@@ -3519,7 +3553,7 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
             device_name:receipt.device_name,fallback_reason:receipt.fallback_reason,output_consumed:true,
             input:Some(ConsumedStateReceipt::capture(&outcome.params_groups,&outcome.mus,&outcome.sigmas,
                 &outcome.specific_mus,&outcome.taus))});
-        scoring_posterior = Some(output.postg);
+        scoring_posterior = Some(crate::gpu_bifactor_scoring::eap(&output.postg, group_id, &tg_groups)?);
     }
     let scoring_posterior_gpu = scoring_posterior.is_some();
     let mut theta_g_eap = vec![0.0f64; n_persons];
@@ -3531,13 +3565,8 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
     for p in 0..n_persons {
         let g = group_id[p];
         if let Some(post) = &scoring_posterior {
-            let row = &post[p*qg..(p+1)*qg];
-            let mass: f64 = row.iter().sum();
-            if !mass.is_finite() || mass <= 0.0 { return Err("invalid scoring posterior mass".into()); }
-            let mean: f64 = row.iter().zip(&tg_groups[g]).map(|(w,t)| w*t).sum::<f64>() / mass;
-            let second: f64 = row.iter().zip(&tg_groups[g]).map(|(w,t)| w*t*t).sum::<f64>() / mass;
-            theta_g_eap[p] = mean;
-            theta_g_sd[p] = (second-mean*mean).max(0.0).sqrt();
+            theta_g_eap[p] = post[p][0];
+            theta_g_sd[p] = post[p][1];
             continue;
         }
         let tables = &tables_groups[g];
@@ -3577,6 +3606,8 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
             }
             log_like_g[t] = acc;
         }
+        #[cfg(all(test, feature = "gpu", not(coverage)))]
+        scoring_completion_tests::host_eap();
         let log_lp = log_sum_exp(&log_like_g);
         let (mut m1, mut m2) = (0.0f64, 0.0f64);
         for (t, &ll) in log_like_g.iter().enumerate() {
@@ -3695,8 +3726,8 @@ pub(crate) fn fit_bifactor_grm_multigroup_initialized(
         result.execution_evidence=Some(ExecutionEvidence{schema_version:2,device:format!("{:?}",cfg.device),
             configured_starts:cfg.n_starts,embedded:initial.is_some(),
             request_sha256:receipts::request_binding(y,observed,group_id,n_groups,specific_map,&anchor_vec,cfg)?,
-            result_sha256:String::new(),final_posterior,host_probability_tables:true,
-            host_eap:true,host_information:true,full_gpu:false});
+            result_sha256:String::new(),final_posterior,host_probability_tables:false,
+            host_eap:false,host_information:true,full_gpu:false});
         let binding=result.evidence_result_binding()?;
         result.execution_evidence.as_mut().unwrap().result_sha256=binding;
         result.validate_gpu_evidence(y,observed,group_id,n_groups,specific_map,&anchor_vec,cfg,initial.is_some())?;
@@ -4208,6 +4239,8 @@ pub fn fit_bifactor_grm_fipc(
                 for t in 0..qg {
                     for h in 0..qs {
                         let base = par.a_g * tg_focal[t] + a_s * ts_focal[s][h];
+                        #[cfg(all(test, feature = "gpu", not(coverage)))]
+                        scoring_completion_tests::host_table();
                         let probs = grm_logprobs(base, &par.d);
                         lp[(t * qs + h) * v.n_cat..(t * qs + h + 1) * v.n_cat]
                             .copy_from_slice(&probs);
@@ -4269,6 +4302,8 @@ pub fn fit_bifactor_grm_fipc(
             }
             log_like_g[t] = acc;
         }
+        #[cfg(all(test, feature = "gpu", not(coverage)))]
+        scoring_completion_tests::host_eap();
         let log_lp = log_sum_exp(&log_like_g);
         let (mut m1, mut m2) = (0.0f64, 0.0f64);
         for (t, &ll) in log_like_g.iter().enumerate() {
@@ -4366,6 +4401,8 @@ mod fixed_category_policy_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/specific_mean_tests.rs"]
 mod specific_mean_tests;
-
 #[cfg(all(test, feature="gpu", not(coverage)))]
 mod lifecycle_likelihood_tests;
+#[cfg(all(test, feature = "gpu", not(coverage)))]
+#[path = "../../../tests/unit/gpu_scoring_completion_tests.rs"]
+pub(crate) mod scoring_completion_tests;
