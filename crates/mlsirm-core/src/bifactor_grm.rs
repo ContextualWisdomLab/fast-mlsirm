@@ -860,19 +860,21 @@ pub(crate) fn e_step(
                 continue;
             }
             for g in 0..qg {
-                // Sum of the OTHER blocks' log-integrals at g.
-                // Skip exactly-zero prior mass: `gen_log - log_wg` is NaN when
-                // both are -inf and would poison every item's expected counts.
-                let Some(mut others) = general_only_without_prior(gen_log[g], log_wg[g]) else {
+                // Keep the primary prior in the joint numerator, as in the
+                // two-tier reduction (Cai, 2010, pp. 607–609, Appendix A).
+                // Subtracting and then re-adding it changes rounding at P=1.
+                // Zero-mass nodes contribute zero without forming -inf - -inf.
+                if !log_wg[g].is_finite() {
                     continue;
-                };
+                }
+                let mut others = gen_log[g];
                 for s2 in 0..v.n_specific {
                     if s2 != s {
                         others += log_i[s2 * qg + g];
                     }
                 }
                 for h in 0..qs {
-                    let log_post = log_wg[g] + block_acc[(s * qg + g) * qs + h] + others - log_lp;
+                    let log_post = block_acc[(s * qg + g) * qs + h] + others - log_lp;
                     let post = log_post.exp();
                     if !post.is_finite() {
                         continue;
@@ -2013,6 +2015,10 @@ pub struct BifactorMultigroupConfig {
     /// reference-link screen is not a full-model identification proof.
     pub estimate_specific_means: bool,
     /// Compute device for the E-step sweep (see [`BifactorGrmConfig::device`]).
+    /// For multiple groups, explicit `Gpu` also requires hardware GPU item
+    /// M-steps: unavailable GPU builds/adapters and numerical errors are
+    /// returned without CPU M-step fallback. `Auto` retains its existing
+    /// routing; one-group calls delegate to [`fit_bifactor_grm`].
     pub device: crate::Device,
 }
 
@@ -2683,6 +2689,38 @@ fn validate_specific_mean_location_rank(
 
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
+// Candidate connection: preserve caller Newton controls; never recover a device
+// optimizer error with CPU numerical work. Full strict E/M composition is separate.
+fn multigroup_m_step_item(
+    device: crate::Device, params: Vec<f64>, has_specific: bool,
+    node_g: &[f64], node_s: &[f64], counts: &[Vec<f64>], n_cat: usize,
+    ridge: f64, n_newton: usize, prior: SlopePrior,
+) -> Result<(Vec<f64>, bool), String> {
+    if device == crate::Device::Gpu {
+        #[cfg(all(feature = "gpu", not(coverage)))]
+        {
+            let off = if has_specific { 2 } else { 1 };
+            let mut nodes = Vec::with_capacity(node_g.len() * off);
+            for (i, &g) in node_g.iter().enumerate() {
+                nodes.push(g);
+                if has_specific { nodes.push(node_s[i]); }
+            }
+            let control = crate::gpu_mstep::NewtonControl {
+                iterations: n_newton, backtracks: 25, ridge,
+                gradient_tolerance: 1e-9, step_tolerance: 1e-9,
+                pivot_tolerance: 1e-14, armijo: 1e-4,
+            };
+            let (updated, receipt) = crate::gpu_mstep::update_grm(
+                &params, off, &nodes, counts, prior, &control)?;
+            return Ok((updated, receipt.iteration_limit_updates != 0));
+        }
+        #[cfg(not(all(feature = "gpu", not(coverage))))]
+        return Err("GPU M-step unavailable; CPU fallback forbidden".into());
+    }
+    Ok((m_step_item(params, has_specific, node_g, node_s, counts,
+        n_cat, ridge, n_newton, prior), false))
+}
+
 fn run_single_start_multigroup(
     v: &Validated,
     y: &[usize],
@@ -2725,6 +2763,9 @@ fn run_single_start_multigroup(
     let mut previous: Option<f64> = None;
     let mut em_objective_trace: Vec<f64> = Vec::new();
     let objective_name = em_objective_name(cfg.slope_prior);
+    // Preserve bounded GPU updates without promoting their iteration limit
+    // into EM convergence. Reset this witness for every completed sweep.
+    let mut last_m_step_limited = false;
 
     loop {
         // Common-scale group nodes for this sweep.
@@ -2779,7 +2820,8 @@ fn run_single_start_multigroup(
         if let Some(change) = change {
             let prev = prev_objective.expect("change requires a previous objective");
             final_loglik_change = change;
-            if final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
+            if !last_m_step_limited
+                && final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
                 converged = true;
                 termination_reason = "tolerance_met".to_string();
                 #[cfg(test)]
@@ -2792,6 +2834,7 @@ fn run_single_start_multigroup(
             specific_mean_tests::mark_terminal_fit_sweep(sweep_index);
             break;
         }
+        last_m_step_limited = false;
         // M-step, item parameters: anchored items pool every group's nodes
         // and expected counts (Bock-Zimowski pooling); free items fit per
         // group. Stacked node order is groups outer, `(t, h)` inner with
@@ -2827,7 +2870,8 @@ fn run_single_start_multigroup(
                     packed.push(a_s);
                 }
                 packed.extend_from_slice(&params_groups[0][i].d);
-                let updated = m_step_item(
+                let (updated, limited) = multigroup_m_step_item(
+                    cfg.device,
                     packed,
                     has_specific,
                     &stacked_g,
@@ -2841,7 +2885,8 @@ fn run_single_start_multigroup(
                     // parameter — otherwise the prior would be a silent no-op
                     // under the default all-common `anchor = None`.
                     cfg.slope_prior,
-                );
+                )?;
+                last_m_step_limited |= limited;
                 for g in 0..n_groups {
                     params_groups[g][i].a_g = updated[0];
                     if has_specific {
@@ -2873,7 +2918,8 @@ fn run_single_start_multigroup(
                         packed.push(a_s);
                     }
                     packed.extend_from_slice(&params_groups[g][i].d);
-                    let updated = m_step_item(
+                    let (updated, limited) = multigroup_m_step_item(
+                        cfg.device,
                         packed,
                         has_specific,
                         &node_g,
@@ -2883,7 +2929,8 @@ fn run_single_start_multigroup(
                         cfg.ridge,
                         cfg.newton_iter,
                         cfg.slope_prior,
-                    );
+                    )?;
+                    last_m_step_limited |= limited;
                     params_groups[g][i].a_g = updated[0];
                     if has_specific {
                         params_groups[g][i].a_s = Some(updated[1]);
