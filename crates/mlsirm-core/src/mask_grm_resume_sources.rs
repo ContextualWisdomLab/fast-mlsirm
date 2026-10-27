@@ -108,6 +108,7 @@ pub fn current() -> serde_json::Value {
     out.insert("crates/mlsirm-core/src/nominal.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("nominal.rs")))));
     out.insert("crates/mlsirm-core/src/normal_quantile.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("normal_quantile.rs")))));
     out.insert("crates/mlsirm-core/src/oakes.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("oakes.rs")))));
+    out.insert("crates/mlsirm-core/src/ordinal_srmsr.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("ordinal_srmsr.rs")))));
     out.insert("crates/mlsirm-core/src/parallel.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("parallel.rs")))));
     out.insert("crates/mlsirm-core/src/personfit_multidim.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("personfit_multidim.rs")))));
     out.insert("crates/mlsirm-core/src/personfit_np.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("personfit_np.rs")))));
@@ -187,6 +188,7 @@ pub fn current() -> serde_json::Value {
     out.insert("crates/mlsirm-core/tests/multilevel_duplicate_context.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/multilevel_duplicate_context.rs")))));
     out.insert("crates/mlsirm-core/tests/multilevel_finite_effects.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/multilevel_finite_effects.rs")))));
     out.insert("crates/mlsirm-core/tests/native_lifecycle.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/native_lifecycle.rs")))));
+    out.insert("crates/mlsirm-core/tests/ordinal_srmsr_declared.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/ordinal_srmsr_declared.rs")))));
     out.insert("crates/mlsirm-core/tests/poly_fipc_tests.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/poly_fipc_tests.rs")))));
     out.insert("crates/mlsirm-core/tests/poly_multigroup_reflection.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/poly_multigroup_reflection.rs")))));
     out.insert("crates/mlsirm-core/tests/poly_signed_slope_recovery.rs".into(), serde_json::json!(format!("{:x}", Sha256::digest(include_bytes!("../tests/poly_signed_slope_recovery.rs")))));
