@@ -156,6 +156,132 @@ fn config(r: &Request) -> BifactorMultigroupConfig {
     }
 }
 fn matches_request(f: &MaskFit, r: &Request) -> Result<(), String> {
+    matches_inputs(f, r)?;
+    if !f.result.converged || f.result.termination_reason != "tolerance_met" {
+        return Err("retained fit not converged".into());
+    }
+    f.validate_gpu_evidence()
+}
+
+/// A predecessor may be continued only when its selected embedded-null start
+/// stopped solely because the per-call EM sweep count was exhausted. Tolerance
+/// success, numerical stalls, errors and random-start winners are never continued.
+fn continuation_admissible(f: &MaskFit) -> Result<(), String> {
+    let r = &f.result;
+    if r.converged || r.termination_reason != "max_iter_reached" || r.n_iter != f.cfg.max_iter {
+        return Err("continuation requires a max_iter_reached predecessor".into());
+    }
+    if r.best_start != f.cfg.n_starts || f.embedded_parent.is_none() || f.embedded_start.is_none() {
+        return Err("continuation requires the embedded-null start as selected winner".into());
+    }
+    Ok(())
+}
+
+/// Join a continued EM segment to its predecessor. The segment's first E-step
+/// re-evaluates the predecessor's terminal state, so its likelihood must be the
+/// identical binary64 value; the duplicated junction value is kept once.
+fn splice_trace(previous: &[f64], segment: &[f64]) -> Result<Vec<f64>, String> {
+    let (Some(last), Some(first)) = (previous.last(), segment.first()) else {
+        return Err("empty continuation trace".into());
+    };
+    if last.to_bits() != first.to_bits() || segment.iter().any(|v| !v.is_finite()) {
+        return Err("continuation junction likelihood mismatch".into());
+    }
+    let mut out = previous.to_vec();
+    out.extend_from_slice(&segment[1..]);
+    Ok(out)
+}
+
+/// One further native EM call from the predecessor's exact returned state.
+/// Same request, settings (tol, max_iter, Newton, ridge, seed, device) and mask;
+/// the unchanged multistart routine reruns its configured random start and
+/// continues the embedded start from `prev`. No stopping rule is altered.
+fn continue_segment(null: &MaskFit, prev: &MaskFit) -> Result<MaskFit, String> {
+    continuation_admissible(prev)?;
+    if prev.y != null.y
+        || prev.observed != null.observed
+        || prev.groups != null.groups
+        || prev.n_groups != null.n_groups
+        || prev.n_items != null.n_items
+        || prev.n_cat != null.n_cat
+        || prev.specific_map != null.specific_map
+        || prev.n_specific != null.n_specific
+        || format!("{:?}", prev.cfg) != format!("{:?}", null.cfg)
+        || prev.embedded_parent.as_deref() != Some(null.identity()?.as_str())
+    {
+        return Err("continuation predecessor/null identity mismatch".into());
+    }
+    let mut segment_start = None;
+    let result = crate::bifactor_grm::fit_bifactor_grm_multigroup_initialized(
+        &null.y,
+        null.observed.as_deref(),
+        &null.groups,
+        null.n_groups,
+        &null.specific_map,
+        null.groups.len(),
+        null.n_items,
+        null.n_specific,
+        null.n_cat,
+        Some(&prev.anchor),
+        &null.cfg,
+        Some(&prev.result),
+        &mut segment_start,
+    )?;
+    if segment_start.map(f64::to_bits) != prev.result.loglik_trace.last().map(|v| v.to_bits()) {
+        return Err("continuation junction likelihood mismatch".into());
+    }
+    if result.best_start != null.cfg.n_starts {
+        return Err("continued embedded start did not win start selection".into());
+    }
+    let fit = MaskFit {
+        y: null.y.clone(),
+        observed: null.observed.clone(),
+        groups: null.groups.clone(),
+        n_groups: null.n_groups,
+        n_items: null.n_items,
+        n_cat: null.n_cat,
+        anchor: prev.anchor.clone(),
+        cfg: null.cfg,
+        result,
+        specific_map: null.specific_map.clone(),
+        n_specific: null.n_specific,
+        // The chain's embedded start is still the null optimum (bound by the record).
+        embedded_start: prev.embedded_start,
+        embedded_parent: prev.embedded_parent.clone(),
+    };
+    fit.checkpoint_private()?;
+    Ok(fit)
+}
+
+/// Continue until the unchanged tolerance rule is met. There is no total sweep
+/// cap: monotone EM on a bounded likelihood, explicit cancellation, resource
+/// policy or a native error end the loop. Every segment is a checkpointed fit.
+fn continue_to_tolerance(null: &MaskFit, first: MaskFit) -> Result<(MaskFit, Value), String> {
+    let mut trace = first.result.loglik_trace.clone();
+    let mut segments = vec![json!({"identity":first.identity()?,"n_iter":first.result.n_iter,
+        "termination_reason":first.result.termination_reason,"converged":first.result.converged,
+        "start_outcomes":first.result.start_outcomes})];
+    let mut cur = first;
+    while !(cur.result.converged && cur.result.termination_reason == "tolerance_met") {
+        let next = continue_segment(null, &cur)?;
+        trace = splice_trace(&trace, &next.result.loglik_trace)?;
+        segments.push(json!({"identity":next.identity()?,"predecessor_identity":cur.identity()?,
+            "n_iter":next.result.n_iter,"termination_reason":next.result.termination_reason,
+            "converged":next.result.converged,"start_outcomes":next.result.start_outcomes,
+            "random_start_bitwise_replicated":next.result.start_outcomes.first()==cur.result.start_outcomes.first()}));
+        cur = next;
+    }
+    let n = trace.len() - 1;
+    let change = trace[n] - trace[n - 1];
+    let record = json!({"embedded_chain_loglik_trace":trace,"embedded_chain_sweeps":n,
+        "segments":segments,"final_loglik_change":change,
+        "stopping_rule":"delta <= tol*(1+abs(previous_LL))","tol":cur.cfg.tol,
+        "per_call_max_iter":cur.cfg.max_iter,"total_sweep_cap":Value::Null,
+        "embedded_start":cur.embedded_start,"embedded_parent":cur.embedded_parent});
+    Ok((cur, record))
+}
+
+fn matches_inputs(f: &MaskFit, r: &Request) -> Result<(), String> {
     let map = r
         .bifactor
         .as_ref()
@@ -172,15 +298,19 @@ fn matches_request(f: &MaskFit, r: &Request) -> Result<(), String> {
     {
         return Err("fit/request identity mismatch".into());
     }
-    if !f.result.converged || f.result.termination_reason != "tolerance_met" {
-        return Err("retained fit not converged".into());
-    }
-    f.validate_gpu_evidence()
+    Ok(())
 }
 fn restore(raw: &str) -> Result<MaskFit, String> {
     let f = MaskFit::restore_private(raw)?;
     if f.export_private()? != raw {
         return Err("typed state roundtrip mismatch".into());
+    }
+    Ok(f)
+}
+fn restore_converged(raw: &str) -> Result<MaskFit, String> {
+    let f = restore(raw)?;
+    if !f.result.converged || f.result.termination_reason != "tolerance_met" {
+        return Err("retained fit not converged".into());
     }
     Ok(f)
 }
@@ -341,7 +471,7 @@ impl Recovered {
             return Err("saved state coverage mismatch".into());
         }
         for file in &spec.states {
-            let f = restore(&checked(file, 16 * 1024 * 1024)?)?;
+            let f = restore_converged(&checked(file, 16 * 1024 * 1024)?)?;
             matches_request(&f, &r)?;
             let id = f.identity()?;
             let qualified = authentic
@@ -406,8 +536,27 @@ impl Recovered {
             "anchor":f.anchor,"converged":f.result.converged,"byte_identical":true}))).collect::<Result<Vec<Value>,String>>()?}),
         )
     }
+    /// Authentic returned nonconverged alternative of the exact missing item.
+    fn predecessor(&self, raw: &str, item: usize) -> Result<MaskFit, String> {
+        if remaining_items(self.request.item_ids.len(), &self.pairs)? != vec![item] {
+            return Err("completed or non-exact missing unit refused".into());
+        }
+        let f = restore(raw)?;
+        matches_inputs(&f, &self.request)?;
+        f.validate_gpu_evidence()?;
+        let mut expected = self.request.anchor.clone();
+        expected[item] = false;
+        if f.anchor != expected || f.embedded_parent.as_deref() != Some(self.initial_id.as_str()) {
+            return Err("predecessor mask/parent mismatch".into());
+        }
+        if f.embedded_start.map(f64::to_bits) != Some(self.null().trace_loglik().to_bits()) {
+            return Err("predecessor embedded start is not the authentic null terminal".into());
+        }
+        continuation_admissible(&f)?;
+        Ok(f)
+    }
     fn alt_from_file(&self, path: &Path, item: usize) -> Result<MaskFit, String> {
-        let f = restore(&read(path, 16 * 1024 * 1024)?)?;
+        let f = restore_converged(&read(path, 16 * 1024 * 1024)?)?;
         matches_request(&f, &self.request)?;
         let mut expected = self.request.anchor.clone();
         expected[item] = false;
@@ -585,6 +734,7 @@ pub fn main_cli() -> Result<(), String> {
         "pair" => 6,
         "family" => 6,
         "final" => 7,
+        "continue" => 6,
         _ => return Err("unknown mode".into()),
     };
     if a.len() != expected {
@@ -602,6 +752,7 @@ pub fn main_cli() -> Result<(), String> {
     }
     for (index, name) in match mode.as_str() {
         "pair" => vec![(4, "ALTERNATIVE")],
+        "continue" => vec![(4, "PREDECESSOR")],
         "family" => vec![(3, "PAIR"), (4, "ALTERNATIVE")],
         "final" => vec![(3, "PAIR"), (4, "ALTERNATIVE"), (5, "FAMILY")],
         _ => vec![],
@@ -643,6 +794,26 @@ pub fn main_cli() -> Result<(), String> {
                 new_dir(out)?;
                 json!({"spec_sha256":rec.spec_sha256,"alternative_sha256":sha(read(Path::new(&a[4]),16*1024*1024)?.as_bytes()),"result":result,"fit_launches":0})
             }
+        }
+        "continue" => {
+            let item: usize = a[3].parse().map_err(|_| "invalid item")?;
+            let path = Path::new(&a[4]);
+            let raw_prev = read(path, 16 * 1024 * 1024)?;
+            let prev = rec.predecessor(&raw_prev, item)?;
+            gpu_lease()?;
+            new_dir(out)?;
+            let (alt, record) = missing_with(rec.request.item_ids.len(), &rec.pairs, item, || {
+                state::with_private_checkpoints(&out.join("typed"), || {
+                    continue_to_tolerance(rec.null(), prev)
+                })
+            })?;
+            let raw = alt.export_private()?;
+            let digest = sha(raw.as_bytes());
+            let launches = record["segments"].as_array().map_or(0, |s| s.len().saturating_sub(1));
+            json!({"spec_sha256":rec.spec_sha256,"tested_item":item,"fit":alt.summary()?,
+            "state":out.join("typed").join(format!("{digest}.maskfit.json")),"sha256":digest,
+            "predecessor":{"path":path,"sha256":sha(raw_prev.as_bytes())},
+            "continuation":record,"fit_launches":launches})
         }
         "family" => {
             let family = merged_family(&rec, Path::new(&a[3]), Path::new(&a[4]))?;
@@ -849,5 +1020,137 @@ mod tests {
         let a = complete_family(&[true; 4], &p, 0.05).unwrap();
         assert_eq!(a["removed"], 3);
         assert_eq!(a["status"], "round_limit_incomplete");
+    }
+
+    // Small deterministic CPU f64 control-flow fixture; not study data and not
+    // GPU/precision evidence. It exercises the actual native EM and M-steps.
+    fn continuation_fixture(max_iter: usize) -> MaskFit {
+        let raw = r#"{"y":[0,1,1,0,0,1,0,0,0,0,1,1,0,0,1,0,1,0,0,1,0,1,1,1,0,0,1,0,1,0,0,0,1,0,1,1,0,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,0,0,1,1,0,0,0,0,1,1,1,1,0,0,1,1,0,1,1,1,1,0,1,1,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,1,1,1,1,0,1,0,0,1,0,1,0,0,0,1,1,0,0,1,1,1,1,1,1,0,0,1,1,0,1,1,1,1,0,1,1,1,1,0,1,0,1,1,1,1,0,1,1,0,1,1,0,1,1,1,1,0,0,0,1,0,0,0,0,1,1,1,1,1,0,1,1,0,1,0,1,1,0,0,1,1,1,1,1,0,0,1,0,1,1,0,1,0,0,1,0,0,0,1,1,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,1,0,1,0,0,0,0,0,0,1,1,1,0,0,1,1,1,0,1,1,0,1,1,1,1,0,1,0,0,0,0,0,0,1,1,1,0,1,0,0,0,0,1,1,0,1,1,1,0,1,1,1,0,0,0,0,1,1,1,1,0,1,1,1,1,1,1,1,1,0,0,0,0,1,0,0,1,1,0,0,0,1,0,1,1,1,1,1,0,0,0,1,1,1,0,1,0,0,1,0,0,0,0,0,0,1,0,1,1,1,1,1,0,0,0,0,1,0,1,1,1,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,0,1,1,1,1,0,1,0,1,0,1,1,0,0,0,0,0,1,1,1,1,1,1,0,1,1,1,1,1,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,1,1,1,1,0,1,1,0,0,0,1,1,0,0,0,0,0,1,1,0,1,1,0,1,1,0,0,0,0,1,1,1,0,1,1,0,1,0,0,1,1,1,1,1,1,1,1,1,0,1,1,0,0,0,0,0,0,0,1,1,0,0,0,1,0,1,0,1,0,1,0,1,0,0,1,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,1,0,0,1,0,0,1,1,1,0,0,0,0,1,0,0,0,0,0,1,0,1,1,0,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,0,0,1,0,0,1,1,0,0,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,1,1,1,1,1,1,0,1,0,1,1,0,0,1,1,0,0,0,1,1,0,1,1,1,0,0,1,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,1,1,1,1,0,1,1,0,0,1,0,1,1,1,1,0,1,0,1,1,1,0,1,1,1,0,1,0,0,0,1,1,1,0,1,1,1,0,1,1,0,1,0,1,1,0,1,1,0,0,1,0,0,0,0,0,1,1,1,1,1,0,0,1,1,1,0,1,1,1,0,1,1,0,0,0,1,0,1,0,1,1,0,1,1,0,0,1,0,0,0,0,0,1,0,1,1,0,0,1,0,0,1,0,0,1,0,1,0,1,1,1,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,1,1,1,1,0,0,0,0,0,1,0,0,1,0,1,1,0,0,0,0,0,1,1,1,0,0,0,1,1,0,1,0,0,0,0,1,1,1,1,0,1,0,0,0,1,0,0,1,0,0,1,0,1,0,1,0,0,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,0,0,0,1,0,0,0,0,0,0,1,0,0,0,1,0,0,0,1,0,1,1,1,0,0,0,0,0,1,0,1,1,0,0,0,0,0,1,0,0,0,1,0,0,0,1,1,1,0,0,0,1,0,1,0,1,1,0,0,0,1,1,1,1,0,1,1,0,0,1,0,0,1,1,1,0,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,1,0,1,1,1,1,1,1,0,0,0,1,1,0,1,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1,1,1,1,1,1,1,0,1,0,0,1,0,0,0,0,0,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,0,1,1,0,1,0,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0]}"#;
+        let y: Vec<usize> = serde_json::from_str::<Value>(raw).unwrap()["y"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap() as usize).collect();
+        let groups: Vec<usize> = (0..256).map(|p| usize::from(p >= 128)).collect();
+        let cfg = BifactorMultigroupConfig {
+            q_general: 7,
+            q_specific: 1,
+            max_iter: 2000,
+            tol: 1e-8,
+            n_starts: 1,
+            seed: 42,
+            newton_iter: 20,
+            ridge: 1e-6,
+            slope_prior: crate::bifactor_grm::SlopePrior::None,
+            estimate_specific_vars: false,
+            estimate_specific_means: false,
+            device: crate::Device::Cpu,
+        };
+        let mut null = MaskFit::fit(&y, None, &groups, 2, 4, 2, &[true; 4], &cfg).unwrap();
+        assert!(null.result.converged && null.result.termination_reason == "tolerance_met");
+        // Same converged null bank under a different per-call sweep budget.
+        null.cfg.max_iter = max_iter;
+        null
+    }
+
+    #[test]
+    fn continuation_reproduces_uninterrupted_em_bitwise_and_keeps_tolerance() {
+        let reference_null = continuation_fixture(2000);
+        let reference = reference_null.release_item(3).unwrap();
+        assert!(reference.result.converged);
+        assert_eq!(reference.result.best_start, 1, "fixture requires embedded winner");
+        let reference_trace: Vec<f64> =
+            serde_json::from_value(reference.result.start_outcomes[1]["loglik_trace"].clone())
+                .unwrap();
+        let reference_sweeps = reference.result.n_iter;
+        for k in [5usize, 20, 45, 60] {
+            assert!(reference_sweeps > k);
+            let null = continuation_fixture(k);
+            let first = null.release_item(3).unwrap();
+            assert!(!first.result.converged);
+            assert_eq!(first.result.termination_reason, "max_iter_reached");
+            let (done, record) = continue_to_tolerance(&null, first).unwrap();
+            assert!(done.result.converged && done.result.termination_reason == "tolerance_met");
+            assert!(record["segments"].as_array().unwrap().len() >= 2);
+            // Bitwise identical EM path: same sweeps, likelihoods and parameters.
+            assert_eq!(record["embedded_chain_loglik_trace"], json!(reference_trace));
+            assert_eq!(record["embedded_chain_sweeps"], reference_sweeps);
+            assert_eq!(done.packed().unwrap().iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                reference.packed().unwrap().iter().map(|v| v.to_bits()).collect::<Vec<_>>());
+            assert_eq!(done.result.general_mean, reference.result.general_mean);
+            assert_eq!(done.result.general_sd, reference.result.general_sd);
+            // Unchanged stopping rule on the spliced chain.
+            let t: Vec<f64> = serde_json::from_value(record["embedded_chain_loglik_trace"].clone()).unwrap();
+            let n = t.len() - 1;
+            assert!(t[n] - t[n - 1] <= done.cfg.tol * (1.0 + t[n - 1].abs()));
+            assert!(t[n - 1] - t[n - 2] > done.cfg.tol * (1.0 + t[n - 2].abs()));
+            assert!(t.windows(2).all(|w| w[1] >= w[0]));
+            assert_eq!(done.cfg.tol, 1e-8);
+            assert_eq!(done.embedded_start.map(f64::to_bits), Some(null.trace_loglik().to_bits()));
+            assert_eq!(done.embedded_parent.as_deref(), Some(null.identity().unwrap().as_str()));
+            // The unchanged LR consumer still enforces the converged/embedded contract.
+            let c = InferenceControls { fd_step: 1e-3, rank_atol: 1e-9, rank_rtol: 1e-7,
+                objective_call_budget: 10000, workspace_bytes: 10_000_000,
+                ll_roundoff_tolerance: 1e-7, fit_ll_tolerance: 1e-4,
+                lr_backend_tolerance: 1e-4, hessian_rtol: 1e-2, require_gpu: false };
+            let lr = null.nested_lr(&done, 3, &c).unwrap();
+            assert_ne!(lr["status"], "nonconverged");
+            assert_ne!(lr["status"], "embedding_likelihood_mismatch");
+        }
+    }
+
+    #[test]
+    fn nonconverged_rejection_and_continuation_refusals_are_preserved() {
+        let null = continuation_fixture(10);
+        let first = null.release_item(3).unwrap();
+        // The unconverged returned fit remains inadmissible as an alternative.
+        let c = InferenceControls { fd_step: 1e-3, rank_atol: 1e-9, rank_rtol: 1e-7,
+            objective_call_budget: 10000, workspace_bytes: 10_000_000,
+            ll_roundoff_tolerance: 1e-7, fit_ll_tolerance: 1e-4,
+            lr_backend_tolerance: 1e-4, hessian_rtol: 1e-2, require_gpu: false };
+        assert_eq!(null.nested_lr(&first, 3, &c).unwrap()["status"], "nonconverged");
+        continuation_admissible(&first).unwrap();
+        // A converged fit, a stall, a short count or a random-start winner is never continued.
+        assert!(continuation_admissible(&null).is_err());
+        let mut stall = continuation_fixture(10).release_item(3).unwrap();
+        stall.result.termination_reason = "numerical_em_stall".into();
+        assert!(continuation_admissible(&stall).is_err());
+        let mut short = continuation_fixture(10).release_item(3).unwrap();
+        short.result.n_iter = 2;
+        assert!(continuation_admissible(&short).is_err());
+        let mut random = continuation_fixture(10).release_item(3).unwrap();
+        random.result.best_start = 0;
+        assert!(continuation_admissible(&random).is_err());
+        // Settings/identity drift refuses before any optimizer call.
+        for mutate in [
+            (|f: &mut MaskFit| f.cfg.tol = 1e-7) as fn(&mut MaskFit),
+            |f: &mut MaskFit| f.cfg.max_iter = 4,
+            |f: &mut MaskFit| f.cfg.newton_iter = 21,
+            |f: &mut MaskFit| f.embedded_parent = Some("foreign".into()),
+            |f: &mut MaskFit| f.y[0] = 1 - f.y[0],
+        ] {
+            let mut p = continuation_fixture(10).release_item(3).unwrap();
+            mutate(&mut p);
+            assert!(continue_segment(&null, &p).is_err());
+        }
+        // Junction must be the identical binary64 likelihood.
+        assert!(splice_trace(&[-2.0, -1.5], &[-1.5, -1.2]).is_ok());
+        assert!(splice_trace(&[-2.0, -1.5], &[f64::from_bits((-1.5f64).to_bits() + 1), -1.2]).is_err());
+        assert!(splice_trace(&[-2.0], &[]).is_err());
+    }
+
+    #[test]
+    #[ignore = "explicit authentic synthetic restore-only predecessor control; no optimizer"]
+    fn authentic_predecessor_admission_restore_only() {
+        let path = std::env::var("FMLS_RESUME_TEST_SPEC").unwrap();
+        let hash = std::env::var("FMLS_RESUME_TEST_SHA256").unwrap();
+        let pred = std::env::var("FMLS_RESUME_TEST_PREDECESSOR").unwrap();
+        let rec = Recovered::load(Path::new(&path), &hash).unwrap();
+        let raw = read(Path::new(&pred), 16 * 1024 * 1024).unwrap();
+        let f = rec.predecessor(&raw, 3).unwrap();
+        assert_eq!(f.result.termination_reason, "max_iter_reached");
+        assert!(rec.predecessor(&raw, 2).is_err());
+        // Completed converged alternatives are not continuation predecessors.
+        for p in &rec.pairs {
+            let alt = &rec.fits[p["alternative"]["fit_identity"].as_str().unwrap()];
+            assert!(continuation_admissible(alt).is_err());
+        }
+        assert!(continuation_admissible(rec.null()).is_err());
     }
 }

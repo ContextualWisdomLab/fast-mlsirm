@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 
-UNITS=('alternative','pair','family')
+UNITS=('alternative','pair','family','continue')
 DEFAULT_POLICY={'max_rss_bytes':8*1024**3,'max_stream_bytes':128*1024**2,
  'min_free_bytes':1024**3,'poll_seconds':1.0,'heartbeat_seconds':5.0,'settlement_seconds':10.0}
 EVENTS={'optimizer_start','optimizer_terminal','fit_start','resume_unit_start','resume_unit_terminal'}
@@ -133,7 +133,7 @@ def validate_admission(admission,bindings,policy,unit):
         if not p.stat().st_size:raise ValueError('empty independent verdict')
     if type(admission.get('claim_path')) is not str or not Path(admission['claim_path']).is_absolute():raise ValueError('absolute exclusive claim path required')
     if admission.get('cancel_file')!=bindings.get('cancel_file'):raise ValueError('cancel control mismatch')
-    if unit=='alternative':
+    if unit in ('alternative','continue'):
         l=admission['lease'];p=Path(l['path'])
         if p.is_symlink() or not p.is_file() or p.stat().st_ino!=l['inode']:raise ValueError('canonical lease inode mismatch')
     return admission
@@ -376,6 +376,7 @@ def main(argv=None):
       'initial_fit_launches':0,'completed_pair_refits':0,'selected_final_admitted':False,'native_deadline_seconds':None}
     if not a.execute:print(json.dumps(plan,indent=2));return 0
     if a.unit in ('pair','family','final') and a.alternative_state is None:raise ValueError('authentic alternative required')
+    if a.unit=='continue' and a.alternative_state is None:raise ValueError('authentic predecessor required')
     if a.unit in ('family','final') and a.pair_result is None:raise ValueError('complete missing pair required')
     if a.unit=='final' and a.family_result is None:raise ValueError('complete stable family required')
     a.output.mkdir(mode=0o700,exist_ok=False)
@@ -384,11 +385,11 @@ def main(argv=None):
     fd=os.open(claim,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
     with os.fdopen(fd,'w') as f:f.write(str(a.output.resolve())+'\n');f.flush();os.fsync(f.fileno())
     lease=None;manifest={'schema':2,'unit':a.unit,'status':'running','bindings':bindings,'policy':policy,
-      'admission':reference(a.admission),'claim_path':str(claim),'fit_launches_authorized':int(a.unit=='alternative')}
+      'admission':reference(a.admission),'claim_path':str(claim),'fit_launches_authorized':int(a.unit in ('alternative','continue'))}
     persist(a.output/'manifest.json',manifest)
     try:
         identity=None
-        if a.unit=='alternative':
+        if a.unit in ('alternative','continue'):
             identity=admission['lease'];p=Path(identity['path'])
             fd=os.open(p,os.O_RDWR|os.O_NOFOLLOW);lease=os.fdopen(fd,'r+')
             if not stat.S_ISREG(os.fstat(fd).st_mode) or os.fstat(fd).st_ino!=identity['inode']:raise ValueError('canonical lease changed')
@@ -401,10 +402,11 @@ def main(argv=None):
         verify_spec(a.spec,a.spec_sha256)
         env=dict(os.environ,FAST_MLSIRM_DIF_PROGRESS='1',FMLS_DS_GPU_LEASED='1' if lease else '0',
           FMLS_RESUME_ADMITTED_SPEC=a.spec_sha256,FMLS_RESUME_ADMITTED_UNIT=a.unit)
-        for key,name in (('alternative_state','ALTERNATIVE'),('pair_result','PAIR'),('family_result','FAMILY')):
+        for key,name in (('alternative_state','ALTERNATIVE' if a.unit!='continue' else 'PREDECESSOR'),('pair_result','PAIR'),('family_result','FAMILY')):
             if key in bindings:env['FMLS_RESUME_ADMITTED_'+name+'_SHA256']=bindings[key]['sha256']
         args=[str(a.binary),a.unit,str(a.spec),a.spec_sha256]
-        if a.unit in ('alternative','pair'):args+=['3']
+        if a.unit in ('alternative','pair','continue'):args+=['3']
+        if a.unit=='continue':args+=[str(a.alternative_state)]
         if a.unit=='pair':args+=[str(a.alternative_state)]
         if a.unit in ('family','final'):args+=[str(a.pair_result),str(a.alternative_state)]
         if a.unit=='final':args+=[str(a.family_result)]
@@ -419,7 +421,7 @@ def main(argv=None):
             manifest['native_status']=status
             if a.unit=='pair' and status!='complete':manifest['status']='scientific_pair_incomplete'
             if a.unit=='family' and status!='stable_no_further_removal':manifest['status']='round_limit_incomplete'
-            if a.unit=='alternative' and (result['fit']['converged'] is not True or result['fit']['dispatch_complete'] is not True):manifest['status']='alternative_not_admitted'
+            if a.unit in ('alternative','continue') and (result['fit']['converged'] is not True or result['fit']['dispatch_complete'] is not True):manifest['status']='alternative_not_admitted'
         persist(a.output/'manifest.json',manifest,replace=True)
         return 0 if manifest['status']=='complete' else 2
     except BaseException as e:

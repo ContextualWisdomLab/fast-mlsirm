@@ -90,4 +90,15 @@ class RunnerContracts(unittest.TestCase):
    script='import sys; sys.stderr.write((\'FMLSIRM_DIF_PROGRESS {"event":"optimizer_terminal"}\\n\')*2000)'
    t=m.supervise([sys.executable,'-c',script],Path(d)/'tail',dict(os.environ),dict(m.DEFAULT_POLICY,poll_seconds=0.1))
    self.assertTrue(m.successful_terminal(t),t);self.assertEqual(t['progress_records'],2000)
+ def test_continue_unit_requires_lease_and_predecessor(self):
+  with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as d:
+   v=Path(d)/'verdict';v.write_text('inert test verdict, not review acceptance')
+   lease=Path(d)/'lease';lease.write_text('lock')
+   ref=m.reference(v);b={'binary':{'path':'inert','sha256':'one'},'alternative_state':ref,'cancel_file':{'path':str(Path(d)/'cancel')}}
+   a={'schema':2,'decision':'admit_exact_remaining_units','enabled':True,'bindings':b,
+    'policy':m.DEFAULT_POLICY,'allowed_units':['continue'],'checkpoint_verdict':ref,
+    'resume_consumer_verdict':ref,'claim_path':str(Path(d)/'claim'),'cancel_file':b['cancel_file']}
+   with self.assertRaises(KeyError):m.validate_admission(a,b,m.DEFAULT_POLICY,'continue')
+   a['lease']={'path':str(lease),'inode':lease.stat().st_ino}
+   self.assertEqual(m.validate_admission(a,b,m.DEFAULT_POLICY,'continue'),a)
 if __name__=='__main__':unittest.main(verbosity=2)
