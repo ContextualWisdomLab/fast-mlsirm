@@ -97,7 +97,11 @@ fn linear_contrast_wald_matches_manual() {
     let out = linear_contrast(&fit.beta, &vcov, &c, (n - k) as f64).unwrap();
     assert_close(out.estimate, fit.beta[1], 1e-12);
     assert_close(out.se, vcov[1 * k + 1].sqrt(), 1e-12);
-    assert_close(out.wald_chi2, out.estimate.powi(2) / out.se.powi(2), 1e-12);
+    assert_close(
+        out.wald_chi2 / (out.estimate.powi(2) / out.se.powi(2)),
+        1.0,
+        1e-12,
+    );
     assert_close(out.p_chi2, chi2_sf_df1(out.wald_chi2), 1e-12);
     assert_close(out.f_stat, out.t_stat.powi(2), 1e-12);
     assert_close(out.p_f, f_sf(out.f_stat, 1.0, (n - k) as f64), 1e-12);
