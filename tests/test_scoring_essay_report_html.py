@@ -217,3 +217,8 @@ def test_renderer_rejects_post_construction_report_mutation(tmp_path: Path) -> N
     with pytest.raises(AssessmentSpecError) as caught:
         render_essay_score_report_html(report, tmp_path / "mutated.html")
     assert caught.value.code == "essay_score_report_replay_mismatch"
+
+def test_export_pre_user_select_all() -> None:
+    """Export pre regions should use user-select: all."""
+    from fast_mlsirm.scoring.essay.report_html import _css
+    assert ".export-block pre { user-select: all; }" in _css()
