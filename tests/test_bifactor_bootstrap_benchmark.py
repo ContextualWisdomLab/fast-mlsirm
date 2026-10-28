@@ -14,9 +14,8 @@ Gauss-Hermite rules generated on demand via Golub & Welsch, 1969, issue
 study-precision benchmark (``test_joint_bootstrap_cpu_vs_gpu_wall_time_q121``)
 runs at the maintainer-standard 121-point grid.
 
-Implementation basis: Andrews, D. W. K., & Buchinsky, M. (2000). A
-three-step method for choosing the number of bootstrap repetitions.
-*Econometrica, 68*(1), 23–51. https://www.jstor.org/stable/2999474
+The endpoint-movement early stop is a heuristic, not an Andrews–Buchinsky
+``(pdb, τ)`` accuracy rule.
 """
 
 import os
