@@ -11,7 +11,7 @@ from .cross_engine_conformance import ConformanceInventory
 _CSP = (
     "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; "
     "img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; "
-    "style-src 'none'"
+    "style-src 'unsafe-inline'"
 )
 _DISCLAIMER = (
     "Numerical conformance evidence is not construct validity, fairness, or "
@@ -36,7 +36,13 @@ def _header_row(labels: tuple[str, ...]) -> str:
 
 def _data_row(values: tuple[object | None, ...]) -> str:
     """Render one escaped table row."""
-    return "<tr>" + "".join(f"<td>{_text(value)}</td>" for value in values) + "</tr>"
+    cells = []
+    for i, value in enumerate(values):
+        if i == 0:
+            cells.append(f'<th scope="row">{_text(value)}</th>')
+        else:
+            cells.append(f"<td>{_text(value)}</td>")
+    return "<tr>" + "".join(cells) + "</tr>"
 
 
 def _key_value_table(caption: str, rows: tuple[tuple[str, object | None], ...]) -> str:
@@ -353,9 +359,25 @@ def render_conformance_report(manifest_json: str) -> tuple[str, str]:
         f'<meta http-equiv="Content-Security-Policy" content="{escape(_CSP, quote=True)}">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<title>Cross-engine conformance evidence</title>",
+        "<style>",
+        ":root { color-scheme: light dark; font-family: system-ui, sans-serif; }",
+        "body { margin: 0; background: Canvas; color: CanvasText; }",
+        "main { padding: 20px; max-width: 1200px; margin: 0 auto; }",
+        "main:focus:not(:focus-visible) { outline: none; }",
+        "main:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }",
+        ".skip-link { position: absolute; left: 8px; top: -80px; padding: 10px; background: Canvas; color: CanvasText; z-index: 10; transition: top 0.2s ease-in-out; text-decoration: none; font-weight: bold; }",
+        ".skip-link:focus { top: 8px; }",
+        ".skip-link:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }",
+        "table { border-collapse: collapse; margin-bottom: 24px; width: 100%; }",
+        "caption { text-align: left; font-weight: bold; margin-bottom: 8px; }",
+        "thead th, tbody th, td { border: 1px solid currentColor; padding: 8px; text-align: left; font-variant-numeric: tabular-nums; }",
+        "tbody th { font-weight: normal; }",
+        "@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0.01ms !important; } }",
+        "</style>",
         "</head>",
         "<body>",
-        "<main>",
+        '<a class="skip-link" href="#main-content">Skip to main content</a>',
+        '<main id="main-content" tabindex="-1">',
         "<h1>Cross-engine conformance evidence</h1>",
         f"<p>{escape(_DISCLAIMER, quote=True)}</p>",
         "<p>Exact values are shown in text; this report has no hover-only evidence.</p>",
