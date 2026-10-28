@@ -46,7 +46,18 @@ python-source = "python"
 # Maturin mixed layouts with manifest-path under crates/ can emit
 # License-File: LICENSE in PKG-INFO while omitting the file from the sdist
 # (PyO3/maturin#2531). Explicit sdist include keeps PyPI upload valid.
-include = [{ path = "LICENSE", format = "sdist" }]
+# The resume source catalog embeds these out-of-crate inputs at compile time.
+# Preserve their repository-relative paths in source distributions; do not add
+# them to wheels or prune the numerical provenance catalog to hide omissions.
+include = [
+    { path = "LICENSE", format = "sdist" },
+    { path = "Cargo.lock", format = "sdist" },
+    { path = "rust-toolchain.toml", format = "sdist" },
+    { path = "fuzz/Cargo.toml", format = "sdist" },
+    { path = "fuzz/Cargo.lock", format = "sdist" },
+    { path = "fuzz/fuzz_targets/*.rs", format = "sdist" },
+    { path = "tests/unit/**/*", format = "sdist" },
+]
 
 [tool.pytest.ini_options]
 pythonpath = [".", "python"]
