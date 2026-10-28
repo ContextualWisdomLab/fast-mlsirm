@@ -2379,8 +2379,7 @@ def test_dif_purification():
     import numpy as np
     import pytest
     from fast_mlsirm import (
-    velicer_map,
-    velicer_map_from_data,logistic_dif_purified, mantel_haenszel_dif,
+    logistic_dif_purified, mantel_haenszel_dif,
                              mantel_haenszel_dif_purified)
     from fast_mlsirm.fitstats import _core_module
 
@@ -2696,9 +2695,7 @@ def test_u3_person_fit_polytomous():
     import numpy as np
     import pytest
     from fast_mlsirm import (
-    velicer_map,
-    velicer_map_from_data,
-        fit_polytomous,
+    fit_polytomous,
         u3_cutoff_polytomous,
         u3_person_fit_polytomous,
     )
@@ -2830,9 +2827,7 @@ def test_kernel_equating_and_presmoothing():
     import numpy as np
     import pytest
     from fast_mlsirm import (
-    velicer_map,
-    velicer_map_from_data,
-        equate_observed_scores,
+    equate_observed_scores,
         equate_observed_scores_kernel,
         loglinear_smooth,
     )
@@ -7016,7 +7011,6 @@ class TestWollackOmega:
         r = wollack_omega(copier.astype(float), source.astype(float), probs, 5)
         assert r.observed_matches == 6
     def test_rejects_bool_indices(self):
-        import numpy as np
         import pytest
 
         from fast_mlsirm import wollack_omega
@@ -7065,7 +7059,6 @@ class TestKIndex:
         assert isinstance(r.subgroup, np.ndarray)
 
     def test_validation(self):
-        import numpy as np
         import pytest
 
         from fast_mlsirm import k_index
@@ -7198,7 +7191,6 @@ class TestKVariants:
         assert isinstance(r.pr, np.ndarray)
 
     def test_error_paths(self):
-        import numpy as np
         import pytest
 
         from fast_mlsirm import k_variants
@@ -9873,7 +9865,6 @@ class TestElom:
 
 class TestMetrics:
     def test_anchor_m1_and_cap_quirk(self):
-        import numpy as np
         from fast_mlsirm import metrics_rating
 
         out = metrics_rating(
@@ -9958,7 +9949,6 @@ class TestMetrics:
 
 class TestFide:
     def test_anchor_f1_exact(self):
-        import numpy as np
         from fast_mlsirm import fide_rating
 
         res = fide_rating([[1, 0, 1, 1.0]], 2)
@@ -9987,7 +9977,6 @@ class TestFide:
         assert res.elite.tolist() == [0] * 31
 
     def test_elite_sticky_f3(self):
-        import numpy as np
         from fast_mlsirm import fide_rating
 
         res = fide_rating(
@@ -10001,7 +9990,6 @@ class TestFide:
         assert abs(res.opponent[0] - 2398.603771437728) < 1e-12
 
     def test_opponent_weights_f5(self):
-        import numpy as np
         from fast_mlsirm import fide_rating
 
         res = fide_rating(
@@ -10078,7 +10066,6 @@ class TestFide:
             fide_rating([[1, 0, 1, 1.0]], 2, init=np.array(True, dtype=object))
 
     def test_elo_reduction(self):
-        import numpy as np
         from fast_mlsirm import elo_rating, fide_rating
 
         sched = [[1, 0, 1, 1.0], [1, 2, 3, 0.5], [2, 0, 2, 0.0]]
