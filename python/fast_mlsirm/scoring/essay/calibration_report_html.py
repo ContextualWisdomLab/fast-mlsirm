@@ -459,7 +459,7 @@ def _render_html(report: EssayFacetsCalibrationReport, title: str) -> str:
             '<section aria-labelledby="json-heading">',
             '<h2 id="json-heading">Canonical JSON</h2>',
             "<p>The complete deterministic evidence payload is available below for audit reconstruction.</p>",
-            '<pre tabindex="0" role="region" aria-label="Canonical essay facets calibration JSON">',
+            '<pre class="json-export" tabindex="0" role="region" aria-label="Canonical essay facets calibration JSON">',
             _canonical_json(report),
             "</pre>",
             "</section>",
