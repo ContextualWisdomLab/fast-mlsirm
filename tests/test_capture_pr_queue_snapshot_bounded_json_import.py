@@ -1,10 +1,11 @@
-"""Import-boundary regressions for PR queue bounded JSON parsing."""
+"""Import-boundary regressions for PR queue bounded helper availability."""
 
 from __future__ import annotations
 
 import builtins
 from pathlib import Path
 import runpy
+import types
 
 import pytest
 
@@ -32,6 +33,26 @@ def test_capture_import_fails_closed_when_bounded_parser_is_unavailable(monkeypa
     monkeypatch.setattr(builtins, "__import__", guarded_import)
     with pytest.raises(RuntimeError, match="bounded JSON parser is unavailable"):
         runpy.run_path(str(_SCRIPT), run_name="isolated_pr_queue_capture")
+
+
+def test_capture_import_fails_closed_when_bounded_subprocess_is_unavailable(monkeypatch):
+    """Direct-script fallback must keep the bounded subprocess helper mandatory."""
+    real_import = builtins.__import__
+    direct_json = types.ModuleType("_bounded_json")
+    direct_json.parse_json_bounded = lambda payload: payload
+
+    def guarded_import(name, *args, **kwargs):
+        if name == "scripts._bounded_subprocess":
+            raise _missing_module("scripts._bounded_subprocess")
+        if name == "_bounded_json":
+            return direct_json
+        if name == "_bounded_subprocess":
+            raise _missing_module("_bounded_subprocess")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    with pytest.raises(RuntimeError, match="bounded subprocess runner is unavailable"):
+        runpy.run_path(str(_SCRIPT), run_name="isolated_pr_queue_capture_subprocess")
 
 
 def test_capture_import_does_not_mask_helper_internal_module_failures(monkeypatch):
