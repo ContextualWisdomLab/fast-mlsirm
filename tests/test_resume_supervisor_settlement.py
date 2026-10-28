@@ -21,7 +21,7 @@ from unittest.mock import patch
 ROOT=Path(os.environ.get('SUPERVISOR_SOURCE',Path(__file__).resolve().parents[1]))
 sp=importlib.util.spec_from_file_location('settlement_candidate',ROOT/'tools/resume_remaining_units.py')
 m=importlib.util.module_from_spec(sp);sp.loader.exec_module(m)
-EVIDENCE=Path(os.environ.get('SUPERVISOR_EVIDENCE',os.environ['TMPDIR']))
+EVIDENCE=Path(os.environ.get('SUPERVISOR_EVIDENCE',tempfile.gettempdir()))
 POLICY=dict(m.DEFAULT_POLICY,poll_seconds=0.01,heartbeat_seconds=0.02,settlement_seconds=0.4,min_free_bytes=1)
 FORK_SCRIPT='''import os,signal,sys,time
 from pathlib import Path
@@ -38,7 +38,7 @@ while True:time.sleep(.05)
 
 class SettlementTests(unittest.TestCase):
  def setUp(self):
-  self.tmp=tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']);self.root=Path(self.tmp.name)
+  self.tmp=tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR'));self.root=Path(self.tmp.name)
   self.children=[];self.terminals=[];self.events=[]
   self.original_popen=m.subprocess.Popen;self.original_resources=m.group_resources
   self.original_killpg=os.killpg;self.original_absent=m.group_absent
