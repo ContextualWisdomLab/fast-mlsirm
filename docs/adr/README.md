@@ -13,6 +13,27 @@ Template for new material decisions: `docs/adr/0000-template.md`. The template i
 
 A conversation, issue, PR body, design note, or paper summary is not an Accepted decision by itself. Accepted ADRs must match current code/policy or explicitly describe an accepted invariant whose implementation is tracked.
 
+## Number allocation and active reservations
+
+ADR numbers are monotonic decision identities, not disposable branch-local labels. Before publishing a new numbered ADR, the writer must inventory both protected `docs/adr/` and every still-valid active PR reservation. Looking only at the highest number on protected main is insufficient because Draft and Proposed branches reserve identities before integration.
+
+When concurrent, unprotected proposals collide on one number, preserve the earliest-created still-valid proposal's reservation and assign later colliders the next free numbers in PR creation order. The free-number search includes protected ADRs and all live reservations. A stacked proposal keeps its reservation until it is protected-integrated or explicitly retired with no surviving decision delta.
+
+Renumbering is an ordinary-forward repair. Preserve the decision content, tests, citations, review history, and maturity state; update the ADR filename, in-file identity, index, traceability/doctoring/changelog references, tests, and PR authority that encode the number. Do not force-rewrite history, close valid work solely because of a number collision, recycle an identity silently, or mark a branch-only proposal Accepted merely because its number was repaired.
+
+The protected tree itself must contain at most one material ADR per four-digit number. The repository contract test enforces that local invariant; active-reservation coordination remains a live PR/issue governance responsibility because concurrent proposals do not coexist in one checkout before integration.
+
+### Standards basis and local-policy scope
+
+ISO/IEC/IEEE 42010:2022 requires architecture descriptions to record architecture decisions considered essential to the architecture and recommends that organizations/projects establish a decision-recording and sharing strategy with rationale. Nygard's original ADR proposal uses sequentially numbered records with explicit status and preserves superseded decisions instead of rewriting their history. These sources support keeping stable decision identities, maturity, rationale, and non-destructive lineage. They do **not** prescribe GitHub PR reservation semantics or a collision winner.
+
+The rule above that preserves the earliest-created still-valid reservation and assigns later colliders the next free numbers in PR creation order is therefore a repository-local concurrency policy. It is chosen because active proposal branches cannot share one filesystem namespace before integration, while deterministic reservation order prevents two valid decisions from silently reusing one identity. Do not describe this allocation rule as mandated by ISO/IEC/IEEE 42010 or by Nygard.
+
+References:
+
+- International Organization for Standardization, International Electrotechnical Commission, & Institute of Electrical and Electronics Engineers. (2022). *ISO/IEC/IEEE 42010:2022, Software, systems and enterprise—Architecture description* (2nd ed.). https://www.iso.org/standard/74393.html
+- Nygard, M. (2011, November 15). *Documenting architecture decisions*. Cognitect. https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions
+
 ## Decision index
 
 | ADR | Status | Decision |
