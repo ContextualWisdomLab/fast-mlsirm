@@ -1,6 +1,91 @@
 use super::*;
 
 #[test]
+fn workspace_estimate_checks_large_dimensions_without_allocating_them() {
+    let large_estimate = lsirm_workspace_bytes(1, 1, 64, 3, PolyModel::Gpcm, 81, 41, 1);
+    let two_table_payloads = 2u64 * 81 * 41u64.pow(3) * 64 * 8;
+    if usize::BITS >= 64 {
+        assert!(large_estimate.unwrap() as u64 > two_table_payloads);
+    } else {
+        assert!(large_estimate.is_err());
+    }
+    assert!(lsirm_workspace_bytes(usize::MAX, 1, 2, 1, PolyModel::Grm, 7, 7, 1).is_err());
+    assert!(lsirm_workspace_bytes(1, usize::MAX, 2, 1, PolyModel::Grm, 7, 7, 1).is_err());
+}
+
+#[test]
+fn explicit_workspace_budget_rejects_small_request() {
+    for model_family in [PolyModel::Grm, PolyModel::Gpcm] {
+        let rejected_fit = fit_poly_lsirm_with_budget(
+            &[0],
+            None,
+            1,
+            1,
+            2,
+            1,
+            model_family,
+            7,
+            7,
+            1,
+            1e-6,
+            Some(1),
+        );
+        assert!(rejected_fit
+            .err()
+            .unwrap()
+            .contains("workspace_budget_bytes"));
+    }
+}
+
+#[test]
+fn explicit_workspace_budget_preserves_small_fit_results() {
+    for model_family in [PolyModel::Grm, PolyModel::Gpcm] {
+        let response_values = [0, 1, 1, 0];
+        let required_bytes = lsirm_workspace_bytes(2, 2, 2, 1, model_family, 7, 7, 1).unwrap();
+        for rejected_budget in [0, required_bytes - 1] {
+            assert!(fit_poly_lsirm_with_budget(
+                &response_values, None, 2, 2, 2, 1, model_family, 7, 7, 1, 1e-6,
+                Some(rejected_budget),
+            ).is_err());
+        }
+        let legacy_fit = fit_poly_lsirm(
+            &response_values,
+            None,
+            2,
+            2,
+            2,
+            1,
+            model_family,
+            7,
+            7,
+            1,
+            1e-6,
+        )
+        .unwrap();
+        let budgeted_fit = fit_poly_lsirm_with_budget(
+            &response_values,
+            None,
+            2,
+            2,
+            2,
+            1,
+            model_family,
+            7,
+            7,
+            1,
+            1e-6,
+            Some(required_bytes),
+        )
+        .unwrap();
+        assert_eq!(legacy_fit.loglik, budgeted_fit.loglik);
+        assert_eq!(legacy_fit.slope, budgeted_fit.slope);
+        assert_eq!(legacy_fit.cat_params, budgeted_fit.cat_params);
+        assert_eq!(legacy_fit.xi_eap, budgeted_fit.xi_eap);
+        assert_eq!(legacy_fit.loglik_trace, budgeted_fit.loglik_trace);
+    }
+}
+
+#[test]
 fn lsirm_rejects_unbounded_categories_and_iterations() {
     let y = [0usize];
     assert!(fit_poly_lsirm(
@@ -31,6 +116,12 @@ fn lsirm_rejects_unbounded_categories_and_iterations() {
         1e-6,
     )
     .is_err());
+    for tol in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        assert!(fit_poly_lsirm(
+            &y, None, 1, 1, 2, 1, PolyModel::Grm, 7, 7, 1, tol,
+        )
+        .is_err());
+    }
 }
 
 #[test]
@@ -144,6 +235,41 @@ fn poly_marginal_boundaries_and_grm_paths_are_explicit() {
         .chain(&fit.theta_sd)
         .chain(&fit.xi_eap)
         .all(|v| v.is_finite()));
+}
+
+#[test]
+fn lsirm_reports_native_termination_evidence_at_returned_state() {
+    let fit = fit_poly_lsirm(
+        &[0, 1, 2, 1],
+        None,
+        4,
+        1,
+        3,
+        1,
+        PolyModel::Grm,
+        7,
+        7,
+        1,
+        1e-6,
+    )
+    .unwrap();
+    assert!(!fit.converged);
+    assert_eq!(fit.termination_reason, "max_iter");
+    assert_eq!(fit.stopping_criterion, "observed_loglik_abs_delta");
+    assert_eq!(fit.loglik_trace.len(), fit.n_iter + 1);
+    assert_eq!(fit.final_delta, fit.loglik_trace[1] - fit.loglik_trace[0]);
+    assert!(fit.stopping_tolerance.is_finite());
+
+    let gpcm = fit_poly_lsirm(
+        &[0, 1, 2, 1], None, 4, 1, 3, 1, PolyModel::Gpcm, 7, 7, 1, 1e6,
+    )
+    .unwrap();
+    assert!(gpcm.converged);
+    assert_eq!(gpcm.termination_reason, "tolerance");
+    assert_eq!(gpcm.n_iter, 1);
+    assert_eq!(gpcm.loglik_trace.len(), 2);
+    assert_eq!(gpcm.loglik, *gpcm.loglik_trace.last().unwrap());
+    assert!(gpcm.final_delta.is_finite());
 }
 
 fn dist_matrix(z: &[f64], n: usize, d: usize) -> Vec<f64> {
@@ -263,4 +389,106 @@ fn fit_poly_lsirm_recovers_positions_and_slopes() {
     };
     assert!(corr > 0.6, "theta EAP corr {corr}");
     assert!(fit.theta_sd.iter().all(|s| s.is_finite() && *s > 0.0));
+}
+
+#[test]
+fn returned_loglik_matches_final_bank_quadrature() {
+    let mut response_categories = vec![0usize; 40 * 5];
+    for (cell_index, response_category) in response_categories.iter_mut().enumerate() {
+        *response_category = cell_index % 4;
+    }
+    let mut observed_cells = vec![true; response_categories.len()];
+    observed_cells[..5].fill(false);
+    observed_cells[7] = false;
+    for response_model in [PolyModel::Grm, PolyModel::Gpcm] {
+        for latent_dim in [1, 2] {
+            for iteration_limit in [1, 3] {
+                let fitted_bank = fit_poly_lsirm(
+                    &response_categories,
+                    Some(&observed_cells),
+                    40,
+                    5,
+                    4,
+                    latent_dim,
+                    response_model,
+                    7,
+                    7,
+                    iteration_limit,
+                    1e-12,
+                )
+                .unwrap();
+                let expected_log_likelihood = final_bank_loglik(
+                    &response_categories,
+                    &observed_cells,
+                    &fitted_bank,
+                    5,
+                    4,
+                    latent_dim,
+                    response_model,
+                );
+                assert!(
+                    (fitted_bank.loglik - expected_log_likelihood).abs() < 1e-9,
+                    "{response_model:?} latent_dim={latent_dim} iteration_limit={iteration_limit}"
+                );
+            }
+        }
+    }
+}
+
+fn final_bank_loglik(
+    response_categories: &[usize],
+    observed_cells: &[bool],
+    fitted_bank: &PolyLsirmFit,
+    item_count: usize,
+    category_count: usize,
+    latent_dim: usize,
+    response_model: PolyModel,
+) -> f64 {
+    let (quadrature_nodes, quadrature_weights) =
+        crate::quadrature::require_gh_rule(7, "q").unwrap();
+    let mut total_log_likelihood = 0.0;
+    for person_index in 0..response_categories.len() / item_count {
+        let mut log_terms = Vec::new();
+        for (trait_index, &trait_node) in quadrature_nodes.iter().enumerate() {
+            for latent_index in 0..7usize.pow(latent_dim as u32) {
+                let mut remaining_index = latent_index;
+                let mut log_weight = quadrature_weights[trait_index].ln();
+                for _latent_dimension in 0..latent_dim {
+                    let axis_index = remaining_index % 7;
+                    remaining_index /= 7;
+                    log_weight += quadrature_weights[axis_index].ln();
+                }
+                let mut log_term = log_weight;
+                for item_index in 0..item_count {
+                    if observed_cells[person_index * item_count + item_index] {
+                        let mut squared_distance = 1e-8;
+                        for dimension_index in 0..latent_dim {
+                            let axis_index =
+                                (latent_index / 7usize.pow(dimension_index as u32)) % 7;
+                            let position_difference = quadrature_nodes[axis_index]
+                                - fitted_bank.zeta[item_index * latent_dim + dimension_index];
+                            squared_distance += position_difference * position_difference;
+                        }
+                        let linear_predictor =
+                            fitted_bank.slope[item_index] * trait_node - squared_distance.sqrt();
+                        log_term += poly_cell(
+                            linear_predictor,
+                            response_model,
+                            &fitted_bank.cat_params[item_index],
+                            category_count,
+                        )[response_categories[person_index * item_count + item_index]];
+                    }
+                }
+                log_terms.push(log_term);
+            }
+        }
+        let maximum_log_term = log_terms.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        total_log_likelihood += maximum_log_term
+            + log_terms
+                .iter()
+                .map(|log_term| (log_term - maximum_log_term).exp())
+                .sum::<f64>()
+                .ln();
+    }
+    total_log_likelihood
 }
