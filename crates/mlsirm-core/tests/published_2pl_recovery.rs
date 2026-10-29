@@ -21,7 +21,7 @@ fn published_norm_simulator_and_scale() {
 
 #[test]
 #[ignore = "bounded hardware GPU recovery; run under the canonical GPU lease"]
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "gpu", not(coverage)))]
 fn published_norm_gpu_parameter_recovery() {
     use mlsirm_core::gpu_mstep::NewtonControl;
     use mlsirm_core::grm::{fit_grm_gpu_strict, GrmConfig};
@@ -47,7 +47,11 @@ fn published_norm_gpu_parameter_recovery() {
         newton_iter: ctrl.iterations,
         ..GrmConfig::default()
     };
-    let y = published_norm::simulate(2000, 15110668);
+    let seed: u64 = std::env::var("RECOVERY_SEED")
+        .map(|value| value.parse().expect("integer RECOVERY_SEED"))
+        .unwrap_or(15110668);
+    println!("RECOVERY_SEED {seed}");
+    let y = published_norm::simulate(2000, seed);
     // Only responses/pattern/settings cross this boundary: no truth/start vector.
     // Canonical initialization is slope=1 and empirical marginal logits.
     let outcome = fit_grm_gpu_strict(&y, None, &[1; 10], 2000, 10, 1, 2, &cfg, &ctrl);
