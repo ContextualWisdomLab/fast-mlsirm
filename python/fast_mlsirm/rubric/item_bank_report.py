@@ -391,6 +391,23 @@ def _table_row(label: str, value: str) -> str:
     return f"<dt>{escape(label)}</dt><dd>{escape(value)}</dd>"
 
 
+def _content_security_policy() -> str:
+    """Return a restrictive meta-delivered policy for the standalone artifact.
+
+    The report embeds one ``<style>`` element and carries no images, scripts, or
+    outbound references, so everything but inline style is denied.
+    """
+    return "; ".join(
+        (
+            "default-src 'none'",
+            "style-src 'unsafe-inline'",
+            "object-src 'none'",
+            "base-uri 'none'",
+            "form-action 'none'",
+        )
+    )
+
+
 def render_item_bank_report_html(
     records: tuple[ItemBankLifecycleRecord, ...],
     *,
@@ -468,6 +485,8 @@ def render_item_bank_report_html(
         "<!doctype html>\n"
         '<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f'<meta http-equiv="Content-Security-Policy" '
+        f'content="{escape(_content_security_policy(), quote=True)}">\n'
         f"<title>{escaped_title}</title>\n"
         "<style>"
         "body{font-family:system-ui,sans-serif;line-height:1.5;margin:0;}"
