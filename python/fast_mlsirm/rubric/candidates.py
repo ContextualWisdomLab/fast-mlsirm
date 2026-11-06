@@ -114,7 +114,8 @@ def _validate_raw_json_depth(content: str) -> None:
                     f"JSON nesting exceeds the maximum depth of {MAX_JSON_DEPTH}",
                 )
         elif char in "]}":
-            depth -= 1
+            if depth > 0:
+                depth -= 1
 
 
 def _validate_json_depth(value: Any) -> None:
