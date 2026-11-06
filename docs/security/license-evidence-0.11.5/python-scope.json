@@ -62,6 +62,6 @@
  "sortedcontainers": {
   "in_published_artifact_scope": false,
   "runtime_dependency_of_published_artifact": false,
-  "scope": "explicit optional extra 'dev' with hash-locked local wheel; transitive of hypothesis in fuzz/CI"
+  "scope": "transitive of hypothesis (dev/CI)"
  }
 }
