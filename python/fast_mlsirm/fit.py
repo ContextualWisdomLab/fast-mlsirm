@@ -20,6 +20,27 @@ from .types import FitResult, MLSIRMParams
 
 _MARGINAL_CAPABILITY_VERSION = 1
 
+_TRUSTED_POPULATION_LABEL_SCALAR_TYPES = frozenset(
+    {
+        bool,
+        int,
+        float,
+        np.bool_,
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+        np.float16,
+        np.float32,
+        np.float64,
+        np.longdouble,
+    }
+)
+
 
 def _compact_population_labels(raw, n_persons: int, name: str):
     """Validate and compact caller-supplied population labels to contiguous
@@ -30,9 +51,39 @@ def _compact_population_labels(raw, n_persons: int, name: str):
     force unbounded population allocations (memory-exhaustion DoS)."""
     import numpy as _np
 
-    arr = _np.asarray(raw)
+    if type(raw) is _np.ndarray:
+        arr = raw
+    elif type(raw) in (list, tuple):
+        if len(raw) != n_persons:
+            raise ValueError(f"{name} must be a 1-D array of length n_persons ({n_persons})")
+        if any(type(value) not in _TRUSTED_POPULATION_LABEL_SCALAR_TYPES for value in raw):
+            raise ValueError(f"{name} must contain exact real numeric scalars")
+        int64_info = _np.iinfo(_np.int64)
+        normalized: list[int] = []
+        for value in raw:
+            value_type = type(value)
+            if value_type in {float, _np.float16, _np.float32, _np.float64, _np.longdouble}:
+                if not bool(_np.isfinite(value)):
+                    raise ValueError(f"{name} must be finite")
+                if value < 0 or value != _np.floor(value):
+                    raise ValueError(f"{name} must be non-negative integers")
+                normalized_value = int(value)
+                if not (int64_info.min <= normalized_value <= int64_info.max):
+                    raise ValueError(f"{name} must fit in signed 64-bit integers")
+            else:
+                normalized_value = int(value)
+                if not (int64_info.min <= normalized_value <= int64_info.max):
+                    raise ValueError(f"{name} must fit in signed 64-bit integers")
+                if normalized_value < 0:
+                    raise ValueError(f"{name} must be non-negative integers")
+            normalized.append(normalized_value)
+        arr = _np.asarray(normalized, dtype=_np.int64)
+    else:
+        raise ValueError(f"{name} must be a 1-D numeric array")
     if arr.ndim != 1 or arr.shape[0] != n_persons:
         raise ValueError(f"{name} must be a 1-D array of length n_persons ({n_persons})")
+    if arr.dtype.kind not in {"b", "i", "u", "f"}:
+        raise ValueError(f"{name} must contain only real numeric values")
     validated = arr if arr.dtype.kind == "f" else arr.astype(_np.float64)
     if not _np.all(_np.isfinite(validated)):
         raise ValueError(f"{name} must be finite")
@@ -151,7 +202,7 @@ def fit(
         raise ValueError("factor_id implies more dimensions than items")
 
     if model in {"ULS2PLM", "ULSRM"}:
-        factors = np.zeros_like(factors)  # pragma: no cover
+        factors = np.zeros_like(factors)
     factors = validate_factor_id(factors, n_items, n_dims)
     if group_id is not None and cluster_id is not None:
         raise ValueError("group_id and cluster_id are mutually exclusive")
@@ -203,15 +254,15 @@ def fit(
             "use 'jmle' or 'mmle'."
         )
 
-    best: FitResult | None = None
-    for restart in range(config.n_restarts):
+    best = _run_single_fit(
+        y, observed, factors, n_dims, config, model, 0, backend, device
+    )
+    for restart in range(1, config.n_restarts):
         candidate = _run_single_fit(
             y, observed, factors, n_dims, config, model, restart, backend, device
         )
-        if best is None or candidate.objective < best.objective:
+        if candidate.objective < best.objective:
             best = candidate
-    if best is None:
-        raise RuntimeError("Optimization failed to find a valid fit.")  # pragma: no cover
     return best
 
 
