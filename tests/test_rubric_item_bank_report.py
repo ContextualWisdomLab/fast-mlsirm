@@ -168,7 +168,7 @@ def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
     assert rendered.startswith("<!doctype html>")
     assert '<html lang="en">' in rendered
     assert '<meta charset="utf-8">' in rendered
-    assert '<main id="main-content">' in rendered
+    assert '<main id="main-content" tabindex="-1">' in rendered
     assert '<a class="skip-link" href="#main-content">Skip to report</a>' in rendered
     assert "Item bank &lt;release&gt; &amp; review" in rendered
     assert f"<dt>Blueprint</dt><dd>{records[-1].blueprint_id}</dd>" in rendered
@@ -177,6 +177,7 @@ def test_html_report_is_standalone_accessible_and_escapes_title() -> None:
     assert "<caption>Lifecycle timeline</caption>" in rendered
     assert "<caption>Evidence inventory</caption>" in rendered
     assert ":focus-visible" in rendered
+    assert "prefers-reduced-motion: reduce" in rendered
     assert "outline: none" not in rendered
 
 
