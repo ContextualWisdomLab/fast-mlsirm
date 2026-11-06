@@ -1058,11 +1058,19 @@ class ConformanceInventory:
                 f"manifest JSON must contain at most {MAX_MANIFEST_JSON_BYTES} bytes"
             )
         _validate_raw_manifest_depth(value)
+        def _reject_float_nonfinite(v):
+            import math
+            f_val = float(v)
+            if not math.isfinite(f_val):
+                raise ValueError("manifest JSON contains non-finite numbers")
+            return f_val
+
         try:
             parsed = json.loads(
                 value,
                 object_pairs_hook=_reject_duplicate_json_keys,
                 parse_constant=_reject_json_constant,
+                parse_float=_reject_float_nonfinite,
             )
         except json.JSONDecodeError as exc:
             raise ValueError("manifest JSON must contain valid JSON") from exc

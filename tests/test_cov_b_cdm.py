@@ -9,7 +9,6 @@ import fast_mlsirm.fitstats as fitstats
 from fast_mlsirm import (
     HoGdinaFit,
     SeqGdinaFit,
-    cdm,
     fit_cdm,
     fit_gdina,
     fit_ho_cdm,

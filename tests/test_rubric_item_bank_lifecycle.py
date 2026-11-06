@@ -8,7 +8,6 @@ import runpy
 import pytest
 
 from fast_mlsirm.rubric import (
-    CandidateLifecycleState,
     PilotCandidateRecord,
     audit_generated_item_candidate,
     build_pilot_candidate_record,
