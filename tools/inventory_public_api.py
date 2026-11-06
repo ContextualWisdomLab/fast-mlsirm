@@ -117,6 +117,8 @@ def collect_python_rows() -> list[dict]:
     ):
         if any(part.startswith("_") for part in modname.split(".")):
             continue
+        if not modname.startswith('fast_mlsirm.'):
+            continue
         try:
             # modname comes from pkgutil.walk_packages over fast_mlsirm.__path__,
             # so the only importable values are this package's own installed
