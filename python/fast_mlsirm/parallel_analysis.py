@@ -11,6 +11,8 @@ import numpy as np
 
 
 _MAX_PARALLEL_RANDOM_WORKSPACE_BYTES = 128 * 1024 * 1024
+_MAX_PARALLEL_DATA_CELLS = 20_000_000
+_MAX_PARALLEL_DATA_STRUCTURE_NODES = 2 * _MAX_PARALLEL_DATA_CELLS
 _U64_MAX = (1 << 64) - 1
 _TRUSTED_NUMPY_INTEGER_TYPES = (
     np.int8,
@@ -103,9 +105,45 @@ def _validate_random_workspace(n_iterations: int, n_items: int) -> None:
         )
 
 
+def _validate_random_workspace_for_shape(
+    explicit_iterations: int | None,
+    n_items: int,
+) -> None:
+    """Replay the explicit/default benchmark bound from inert item-count metadata."""
+    iterations = 30 * n_items if explicit_iterations is None else explicit_iterations
+    _validate_random_workspace(iterations, n_items)
+
+
+def _validate_data_cell_budget(cell_count: int) -> None:
+    """Reject observed evidence above the bounded dense-marshalling envelope."""
+    if cell_count > _MAX_PARALLEL_DATA_CELLS:
+        raise ValueError("parallel analysis observed matrix exceeds governed cell limit")
+
+
+def _validate_data_structure_budget(node_count: int) -> None:
+    """Reject built-in matrix traversal above the bounded structural envelope."""
+    if node_count > _MAX_PARALLEL_DATA_STRUCTURE_NODES:
+        raise ValueError(
+            "parallel analysis observed matrix exceeds governed structural traversal limit"
+        )
+
+
+def _validate_minimum_matrix_shape(n_persons: int, n_items: int) -> None:
+    """Replay the Rust minimum design contract before dense marshalling."""
+    if n_persons < 3:
+        raise ValueError("parallel analysis needs n_persons >= 3")
+    if n_items < 2:
+        raise ValueError("parallel analysis needs n_items >= 2")
+
+
 def _raise_lossy_data() -> None:
     """Raise the stable observed-evidence binary64 identity diagnostic."""
     raise ValueError("data must be exactly representable as float64")
+
+
+def _raise_nonfinite_data() -> None:
+    """Raise the public complete-data diagnostic before dense/native work."""
+    raise ValueError("data must be finite (no NaN/inf; complete data required)")
 
 
 def _lossless_float64_matrix(raw: np.ndarray) -> np.ndarray:
@@ -135,17 +173,23 @@ def _lossless_float64_matrix(raw: np.ndarray) -> np.ndarray:
 
 
 def _validate_real_array_storage(value: np.ndarray) -> None:
-    """Reject non-real exact NumPy storage without converting array elements."""
+    """Reject non-real/non-finite exact NumPy storage without element coercion."""
     if value.dtype.kind == "c":
         raise ValueError("data must be real-valued")
     if value.dtype.kind not in ("b", "i", "u", "f"):
         raise ValueError("data must be numeric and convertible to float64")
+    if value.dtype.kind == "f" and not bool(np.all(np.isfinite(value))):
+        _raise_nonfinite_data()
 
 
 def _validate_scalar_float64_identity(value: object) -> None:
     """Reject concrete scalars that would change value at the Rust ``f64`` boundary."""
     value_type = type(value)
-    if value_type is bool or value_type is np.bool_ or value_type is float:
+    if value_type is bool or value_type is np.bool_:
+        return
+    if value_type is float:
+        if not math.isfinite(value):
+            _raise_nonfinite_data()
         return
     if value_type is int or any(
         value_type is scalar_type for scalar_type in _TRUSTED_NUMPY_INTEGER_TYPES
@@ -162,12 +206,15 @@ def _validate_scalar_float64_identity(value: object) -> None:
         value_type is scalar_type
         for scalar_type in (np.float16, np.float32, np.float64)
     ):
+        if not bool(np.isfinite(value)):
+            _raise_nonfinite_data()
         return
     if value_type is np.longdouble:
-        if np.isfinite(value):
-            narrowed = float(value)
-            if not math.isfinite(narrowed) or np.longdouble(narrowed) != value:
-                _raise_lossy_data()
+        if not bool(np.isfinite(value)):
+            _raise_nonfinite_data()
+        narrowed = float(value)
+        if not math.isfinite(narrowed) or np.longdouble(narrowed) != value:
+            _raise_lossy_data()
         return
 
 
@@ -196,46 +243,88 @@ def _validate_trusted_real_scalar(value: object) -> None:
     raise ValueError("data must be numeric and convertible to float64")
 
 
-def _preflight_real_matrix(data: object) -> None:
-    """Validate the known 2-D carrier shape without recursive caller protocols."""
+def _preflight_real_matrix(
+    data: object,
+    explicit_iterations: int | None,
+) -> None:
+    """Validate 2-D carrier shape/resources without recursive caller protocols."""
     data_type = type(data)
     if data_type is np.ndarray:
+        if data.ndim != 2:
+            raise ValueError("data must be a 2-D persons x items array")
+        _validate_data_cell_budget(int(data.size))
+        n_persons, n_items = int(data.shape[0]), int(data.shape[1])
+        _validate_minimum_matrix_shape(n_persons, n_items)
+        _validate_random_workspace_for_shape(explicit_iterations, n_items)
         _validate_real_array_storage(data)
         return
     if data_type is not list and data_type is not tuple:
         _validate_trusted_real_scalar(data)
         return
 
-    for row_index in range(len(data)):
+    n_persons = len(data)
+    cell_count = 0
+    structure_count = 0
+    row_width: int | None = None
+
+    # First pass: replay only inert carrier metadata and resource bounds. This
+    # allows known-invalid shape/workspace to fail before value-wise admission.
+    for row_index in range(n_persons):
         row = data[row_index]
+        structure_count += 1
+        _validate_data_structure_budget(structure_count)
         row_type = type(row)
         if row_type is np.ndarray:
-            _validate_real_array_storage(row)
             if row.ndim != 1:
                 raise ValueError("data must be a 2-D persons x items array")
+            current_width = int(row.size)
+        elif row_type is list or row_type is tuple:
+            current_width = len(row)
+            structure_count += current_width
+            _validate_data_structure_budget(structure_count)
+        else:
+            raise ValueError("data must be a 2-D persons x items array")
+
+        if row_width is None:
+            row_width = current_width
+        elif current_width != row_width:
+            raise ValueError("data must be a 2-D persons x items array")
+        cell_count += current_width
+        _validate_data_cell_budget(cell_count)
+
+    n_items = 0 if row_width is None else row_width
+    _validate_minimum_matrix_shape(n_persons, n_items)
+    _validate_random_workspace_for_shape(explicit_iterations, n_items)
+
+    # Second pass: validate values only after resource/shape admission succeeds.
+    for row_index in range(n_persons):
+        row = data[row_index]
+        if type(row) is np.ndarray:
+            _validate_real_array_storage(row)
             if row.dtype.kind in ("i", "u") or (
                 row.dtype.kind == "f"
                 and row.dtype.itemsize > np.dtype(np.float64).itemsize
             ):
                 _lossless_float64_matrix(row)
             continue
-        if row_type is list or row_type is tuple:
-            for column_index in range(len(row)):
-                cell = row[column_index]
-                if (
-                    type(cell) is list
-                    or type(cell) is tuple
-                    or type(cell) is np.ndarray
-                ):
-                    raise ValueError("data must be a 2-D persons x items array")
-                _validate_trusted_real_scalar(cell)
-            continue
-        _validate_trusted_real_scalar(row)
+
+        for column_index in range(len(row)):
+            cell = row[column_index]
+            if (
+                type(cell) is list
+                or type(cell) is tuple
+                or type(cell) is np.ndarray
+            ):
+                raise ValueError("data must be a 2-D persons x items array")
+            _validate_trusted_real_scalar(cell)
 
 
-def _real_numeric_matrix(data: object) -> np.ndarray:
+def _real_numeric_matrix(
+    data: object,
+    explicit_iterations: int | None,
+) -> np.ndarray:
     """Validate inert real evidence before narrowing it to contiguous ``float64``."""
-    _preflight_real_matrix(data)
+    _preflight_real_matrix(data, explicit_iterations)
     try:
         raw = np.asarray(data)
     except (TypeError, ValueError, OverflowError):
@@ -278,13 +367,20 @@ def parallel_analysis(
     arrays or exact built-in list/tuple matrices of package-trusted concrete
     scalar evidence; arbitrary array/container/numeric subclasses and
     conversion providers are rejected before NumPy protocols execute. The
-    known 2-D carrier structure is preflighted without unbounded recursive
-    container traversal. Finite integer and extended-precision floating
-    observations must preserve their numeric identity through the Rust `f64`
-    boundary, including before mixed built-in evidence can trigger NumPy dtype
-    promotion. Complex and non-real storage is rejected before the accepted
-    matrix is marshalled to contiguous ``float64``. The random-eigenvalue
-    benchmark workspace is bounded to 128 MiB before compiled dispatch.
+    known 2-D rectangular carrier structure, a 20,000,000-cell logical
+    evidence ceiling, a 40,000,000-node built-in traversal ceiling, and the
+    Rust minimum design of three persons by two items are preflighted before
+    contiguous ``float64`` materialization. The explicit or default random-
+    eigenvalue workspace is also bounded from inert item-count metadata before
+    value-wise observed-evidence admission or dense conversion. Non-finite
+    floating evidence is rejected during the same preflight, before dense
+    conversion or compiled-core discovery. Finite integer and extended-
+    precision floating observations must preserve their numeric identity
+    through the Rust `f64` boundary, including before mixed built-in evidence
+    can trigger NumPy dtype promotion. Complex and non-real storage is rejected
+    before the accepted matrix is marshalled to contiguous ``float64``. The
+    random-eigenvalue benchmark workspace is bounded to 128 MiB before compiled
+    dispatch.
 
     """
     explicit_iterations = (
@@ -295,10 +391,9 @@ def parallel_analysis(
     centile_value = _integer_control("centile", centile, minimum=0, maximum=99)
     seed_value = _integer_control("seed", seed, minimum=0, maximum=_U64_MAX)
 
-    x = _real_numeric_matrix(data)
+    x = _real_numeric_matrix(data, explicit_iterations)
     n_persons, n_items = x.shape
     iters = 30 * n_items if explicit_iterations is None else explicit_iterations
-    _validate_random_workspace(iters, n_items)
 
     from .fitstats import _core_module
 
