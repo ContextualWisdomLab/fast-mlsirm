@@ -228,7 +228,8 @@ def _render_report_html(report: dict[str, Any]) -> str:
             "</style>",
             "</head>",
             "<body>",
-            "<main>",
+            '<a href="#main-content" class="skip-link">Skip to main content</a>',
+            '<main id="main-content" tabindex="-1">',
             '<section class="hero">',
             "<p>fast-mlsirm release benchmark</p>",
             "<h1>Benchmark Evidence Report</h1>",
@@ -423,6 +424,10 @@ tbody tr:last-child td {
     break-inside: avoid;
   }
 }
+.skip-link { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.skip-link:focus, .skip-link:focus-visible { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; white-space: normal; background: #12343b; color: #fff; padding: 12px; display: block; text-align: center; z-index: 100; }
+main:focus:not(:focus-visible) { outline: none; }
+main:focus-visible { outline: 3px solid #0f766e; outline-offset: 3px; }
 """
 
 
