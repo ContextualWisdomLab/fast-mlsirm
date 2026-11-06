@@ -34,28 +34,36 @@
 //! Z   = (sum_{i < j} S_ij) * sqrt(N-1) / sqrt(sum_{i < j} s_ii * s_jj)
 //! ```
 //!
-//! The AISP ("search normal") partitions items into Mokken scales: a start
-//! pair maximizing `Hij` among pairs significantly positive (`|Zij| >= Z_c`)
-//! with pair `H >= c`, then repeatedly adds the free item that (1) has no
-//! negative `Hij` with any selected item (nonnegative allowed), (2) has
-//! within-augmented-set `Hi >= c`, (3) has `Zi >= Z_c`, and (4) maximizes the
-//! augmented set's total `H`; the scale closes when the best augmented-set
-//! `H < c`, and further scales are formed from leftover items. The
-//! significance level is Bonferroni-adjusted per scale as
+//! The AISP ("search normal") partitions items into Mokken scales. Each scale
+//! starts from exactly one eligible two-item pair with the maximum
+//! epsilon-adjusted `Hij`; an exact adjusted tie is resolved deterministically
+//! by scan order so the published two-item start invariant is preserved. That
+//! pair must satisfy `Hi >= c`, after which free items are repeatedly
+//! evaluated. A free item must (1) satisfy pairwise Criterion 1 against every
+//! already-selected item (`Zij >= Z_c`, hence positive observed pairwise
+//! scalability), (2) have within-augmented-set `Hi >= c`, and (3) have
+//! `Zi >= Z_c`. Each add step chooses one admissible candidate with the maximum
+//! augmented-set `H`; exact `H` ties resolve in deterministic candidate order.
+//! The step is then repeated against the enlarged selected set so pairwise
+//! admissibility is replayed for remaining candidates. The scale closes when
+//! the best augmented-set `H < c`, and further scales are formed from leftover
+//! items. The significance level is Bonferroni-adjusted per scale as
 //! `alpha / (K1*(K1-1)/2 + sum of later step candidate counts)`, with the
 //! candidate-count vector resetting at each new scale, matching
 //! `search.normal.R` (`adjusted.alpha`).
 //!
 //! Verification status: the coefficient definitions, rules of thumb, and the
-//! Mokken-scale definition (all inter-item covariances nonnegative in the
-//! selection sense and `Hi >= c > 0`) were read in van der Ark (2007) and
-//! Straat et al. (2013); the exact sample statistics, Z forms, tie-breaking,
-//! and AISP mechanics were verified line-by-line against the mokken R package
-//! source (CRAN, `R/internalFunctions.R::coefHTiny`, `R/coefZ.R`,
-//! `R/search.normal.R`). Mokken (1971) and Sijtsma & Molenaar (2002) were NOT
-//! read directly; claims from them are relayed via the above sources. No
-//! primary-source derivation of the Z normal approximation was verified;
-//! it is implementation-verified only.
+//! Mokken-scale definition (`Hij > 0` for every pair and `Hi >= c > 0`) were
+//! read in van der Ark (2007), Straat et al. (2013), and Koopman et al. (2022).
+//! Exact sample statistics, Z forms, row-epsilon ranking, and Bonferroni
+//! adjustment were verified line-by-line against the mokken R package source
+//! (CRAN, `R/internalFunctions.R::coefHTiny`, `R/coefZ.R`, `R/search.normal.R`).
+//! Start-set cardinality, one-next-item selection, and pairwise Criterion 1
+//! follow the published AISP algorithm where CRAN implementation edges are
+//! weaker or vectorized differently. Mokken (1971) and Sijtsma & Molenaar
+//! (2002) were NOT read directly; claims from them are relayed via the above
+//! sources. No primary-source derivation of the Z normal approximation was
+//! verified; it is implementation-verified only.
 //!
 //! References (APA 7th ed.):
 //! - van der Ark, L. A. (2007). Mokken scale analysis in R. *Journal of
@@ -64,10 +72,20 @@
 //!   optimization algorithms for item selection in Mokken scale analysis.
 //!   *Journal of Classification, 30*(1), 75-99.
 //!   https://doi.org/10.1007/s00357-013-9122-y
+//! - Koopman, L., Zijlstra, B. J. H., & van der Ark, L. A. (2022). A two-step,
+//!   test-guided Mokken scale analysis, for nonclustered and clustered data.
+//!   *Quality of Life Research, 31*, 25-36.
+//!   https://doi.org/10.1007/s11136-021-02840-2
 //! - Mokken, R. J. (1971). *A theory and procedure of scale analysis*.
 //!   De Gruyter. (as cited in van der Ark, 2007, and Straat et al., 2013)
 //! - Sijtsma, K., & Molenaar, I. W. (2002). *Introduction to nonparametric
 //!   item response theory*. Sage. (as cited in Straat et al., 2013)
+
+/// Maximum number of cells in each quadratic item-pair matrix.
+pub const MOKKEN_MAX_MATRIX_CELLS: usize = 4_000_000;
+
+/// Maximum number of logical response cells admitted by direct Mokken APIs.
+pub const MOKKEN_MAX_RESPONSE_CELLS: usize = 20_000_000;
 
 /// Scalability coefficients and Mokken Z statistics for one item set.
 #[derive(Debug, Clone)]
@@ -93,7 +111,20 @@ fn validate(x: &[i64], n_persons: usize, n_items: usize) -> Result<(), String> {
     if n_items < 2 {
         return Err("mokken requires at least 2 items".to_string());
     }
+    let matrix_cells = n_items
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_items * n_items overflows usize".to_string())?;
+    if matrix_cells > MOKKEN_MAX_MATRIX_CELLS {
+        return Err(format!(
+            "n_items * n_items = {matrix_cells} exceeds the {MOKKEN_MAX_MATRIX_CELLS}-cell matrix budget"
+        ));
+    }
     let expected = crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
+    if expected > MOKKEN_MAX_RESPONSE_CELLS {
+        return Err(format!(
+            "n_persons * n_items = {expected} exceeds the {MOKKEN_MAX_RESPONSE_CELLS}-cell response budget"
+        ));
+    }
     if x.len() != expected {
         return Err(format!(
             "responses length {} != n_persons*n_items {}",
@@ -103,6 +134,12 @@ fn validate(x: &[i64], n_persons: usize, n_items: usize) -> Result<(), String> {
     }
     if x.iter().any(|&v| v < 0) {
         return Err("scores must be nonnegative integers".to_string());
+    }
+    if x
+        .iter()
+        .any(|&v| (v as f64) as i128 != i128::from(v))
+    {
+        return Err("scores must be exactly representable as f64".to_string());
     }
     Ok(())
 }
@@ -206,13 +243,20 @@ pub fn coef_h(x: &[i64], n_persons: usize, n_items: usize) -> Result<MokkenH, St
     Ok(MokkenH { hij, hi, h, zij, zi, z })
 }
 
-/// Standard-normal upper quantile via inverse complementary error function
-/// (Acklam-style rational approximation; |error| < 1.15e-9, sufficient for
-/// an alpha cut-off). Returns z such that P(N(0,1) > z) = p.
+/// Standard-normal upper quantile via an Acklam-style rational approximation.
+///
+/// Returns `z` such that `P(N(0,1) > z) = p`. Tail branches work directly
+/// from the supplied tail probability so tiny positive probabilities do not
+/// disappear when rounded through `1.0 - p`. Derived probabilities that
+/// round to an endpoint use the exact limiting quantile.
 pub(crate) fn normal_upper_quantile(p: f64) -> f64 {
-    // invert the CDF at 1 - p using Peter Acklam's approximation
-    let q = 1.0 - p;
-    debug_assert!(q > 0.0 && q < 1.0);
+    debug_assert!((0.0..=1.0).contains(&p));
+    if p == 0.0 {
+        return f64::INFINITY;
+    }
+    if p == 1.0 {
+        return f64::NEG_INFINITY;
+    }
     const A: [f64; 6] = [
         -3.969683028665376e+01,
         2.209460984245205e+02,
@@ -243,21 +287,23 @@ pub(crate) fn normal_upper_quantile(p: f64) -> f64 {
         3.754408661907416e+00,
     ];
     let plow = 0.02425;
-    // standard Acklam sign convention: lower branch yields negative values,
-    // central passes through, upper is the negated lower expression.
-    if q < plow {
-        let r = (-2.0 * q.ln()).sqrt();
+    let tail_ratio = |r: f64| {
         (((((C[0] * r + C[1]) * r + C[2]) * r + C[3]) * r + C[4]) * r + C[5])
             / ((((D[0] * r + D[1]) * r + D[2]) * r + D[3]) * r + 1.0)
-    } else if q <= 1.0 - plow {
+    };
+
+    if p < plow {
+        let r = (-2.0 * p.ln()).sqrt();
+        -tail_ratio(r)
+    } else if p <= 1.0 - plow {
+        let q = 1.0 - p;
         let r = q - 0.5;
         let t = r * r;
         (((((A[0] * t + A[1]) * t + A[2]) * t + A[3]) * t + A[4]) * t + A[5]) * r
             / (((((B[0] * t + B[1]) * t + B[2]) * t + B[3]) * t + B[4]) * t + 1.0)
     } else {
-        let r = (-2.0 * (1.0 - q).ln()).sqrt();
-        -((((((C[0] * r + C[1]) * r + C[2]) * r + C[3]) * r + C[4]) * r + C[5])
-            / ((((D[0] * r + D[1]) * r + D[2]) * r + D[3]) * r + 1.0))
+        let r = (-2.0 * (-p).ln_1p()).sqrt();
+        tail_ratio(r)
     }
 }
 
@@ -273,13 +319,13 @@ pub fn aisp(
     c: f64,
     alpha: f64,
 ) -> Result<Vec<u32>, String> {
-    validate(x, n_persons, n_items)?;
     if !(0.0..1.0).contains(&c) {
         return Err("lower bound c must be in [0, 1)".to_string());
     }
     if !(alpha > 0.0 && alpha < 1.0) {
         return Err("alpha must be in (0, 1)".to_string());
     }
+    validate(x, n_persons, n_items)?;
     let (s, smax) = pairwise(x, n_persons, n_items)?;
     let j = n_items;
     let sqn = ((n_persons - 1) as f64).sqrt();
@@ -300,38 +346,42 @@ pub fn aisp(
         let mut k_rest = 0.0f64;
         let z_c = |k_rest: f64| {
             let adj = alpha / (k1 * (k1 - 1.0) * 0.5 + k_rest);
-            normal_upper_quantile(adj)
+            normal_upper_quantile(adj).abs()
         };
-        // start pair: max Hij among free pairs with |Zij| >= Z_c. Ties mirror
-        // mokken's eps rule (search.normal.R subtracts row*1e-10 where row is
-        // the LARGER member index): smaller larger-member index wins, then
-        // smaller smaller-member index.
+        // The methodological AISP starts a scale from exactly two items. Keep
+        // the CRAN lower-triangle row epsilon, then resolve any remaining exact
+        // adjusted tie by deterministic scan order instead of vectorizing all
+        // equal maxima into a larger/duplicated start set.
+        // Here b is the larger zero-based member index, hence R row = b + 1.
         let zc0 = z_c(0.0);
-        let mut best: Option<(usize, usize, f64)> = None;
+        let mut best_rank = f64::NEG_INFINITY;
+        let mut best_pair: Option<(usize, usize)> = None;
         for (ai, &a) in free.iter().enumerate() {
             for &b in free.iter().skip(ai + 1) {
-                if zij(a, b).abs() < zc0 {
+                if zij(a, b) < zc0 {
                     continue;
                 }
-                let h = hij(a, b);
-                let better = match best {
-                    None => true,
-                    Some((ba, bb, bh)) => h > bh || (h == bh && (b, a) < (bb, ba)),
-                };
-                if better {
-                    best = Some((a, b, h));
+                let rank = hij(a, b) - (b + 1) as f64 * 1e-10;
+                if rank > best_rank {
+                    best_rank = rank;
+                    best_pair = Some((a, b));
                 }
             }
         }
-        let Some((a0, b0, h0)) = best else { break };
-        // pair Hi == Hij for both members; require >= c
-        if h0 < c {
+        let Some((a, b)) = best_pair else {
+            break;
+        };
+        let mut selected = vec![a, b];
+        let (start_hi, _, _, _) = h_subset(&s, &smax, j, &selected, n_persons);
+        if start_hi.iter().any(|&value| value < c) {
             break;
         }
-        let mut selected = vec![a0, b0];
-        in_set[a0] = scale;
-        in_set[b0] = scale;
-        // add loop
+        for &item in &selected {
+            in_set[item] = scale;
+        }
+        // Add one next item, then replay candidate admissibility against the
+        // enlarged scale. This preserves both pairwise Mokken Criterion 1 and
+        // the one-next-item-at-a-time invariant after every addition.
         loop {
             let candidates: Vec<usize> = (0..j)
                 .filter(|&i| in_set[i] == 0)
@@ -343,8 +393,11 @@ pub fn aisp(
             k_rest += candidates.len() as f64;
             let zc = z_c(k_rest);
             let mut best_h = f64::NEG_INFINITY;
-            let mut best_item = None;
+            let mut best_item: Option<usize> = None;
             for &cand in &candidates {
+                if selected.iter().any(|&sj| zij(cand, sj) < zc) {
+                    continue;
+                }
                 let mut aug = selected.clone();
                 aug.push(cand);
                 let (hi, h_total, zi, _) = h_subset(&s, &smax, j, &aug, n_persons);
@@ -360,13 +413,14 @@ pub fn aisp(
                     best_item = Some(cand);
                 }
             }
-            match best_item {
-                Some(it) if best_h >= c => {
-                    in_set[it] = scale;
-                    selected.push(it);
-                }
-                _ => break,
+            let Some(item) = best_item else {
+                break;
+            };
+            if best_h < c {
+                break;
             }
+            in_set[item] = scale;
+            selected.push(item);
         }
     }
     Ok(in_set)
