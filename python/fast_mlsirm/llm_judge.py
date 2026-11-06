@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+
 import re
 from collections.abc import Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -408,8 +409,21 @@ def _validate_raw_json_depth(content: str) -> None:
 def _response_object(raw: str, *, required_fields: set[str]) -> dict[str, Any]:
     text = raw.strip()
     _validate_raw_json_depth(text)
+    def _reject_nonfinite_llm(s: str) -> None:
+        raise ValueError("JSON input contains a non-finite JSON numeric value")
+
+    def _reject_float_nonfinite(s: str) -> float:
+        f = float(s)
+        if not math.isfinite(f):
+            raise ValueError("JSON input contains an overflowing numeric value")
+        return f
     try:
-        value = json.loads(text, object_pairs_hook=_duplicate_free_object)
+        value = json.loads(
+            text,
+            object_pairs_hook=_duplicate_free_object,
+            parse_constant=_reject_nonfinite_llm,
+            parse_float=_reject_float_nonfinite,
+        )
     except _DuplicateJsonKeyError as exc:
         raise JudgeFormatError("judge response contains duplicate JSON object keys") from exc
     except json.JSONDecodeError as exc:
