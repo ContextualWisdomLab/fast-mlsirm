@@ -52,6 +52,7 @@ include = [{ path = "LICENSE", format = "sdist" }]
 pythonpath = [".", "python"]
 testpaths = ["tests"]
 xfail_strict = true
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.interrogate]
 ignore-init-method = true

@@ -1044,3 +1044,24 @@ graph TD
 ### Loop 3: Ecosystem Interoperability & Governance
 - Maintain bi-directional contract compatibility with `TEPP`, `contextual-orchestrator`, `LineageWeave`, and `RankWeave`.
 - Update `CHANGELOG.md` and cut version releases according to SemVer once PR batches land.
+
+---
+
+## 24. Bounded JSON Numeric Admission Reconciliation
+
+- **Context Map:** `fast-mlsirm` owns repository-automation JSON admission in
+  `scripts/_bounded_json.py`; downstream automation consumes its bounded parser
+  contract rather than maintaining parallel decoders.
+- **Gap:** protected `main` accepts exponent-overflow JSON numbers such as
+  `1e999` as infinity. PR #2194 reproduces the finding but overlaps the existing
+  canonical bounded-JSON writer in PR #1599.
+- **Action:** retain PR #1599 as the single writer, reconcile it with current
+  protected `main` by an ordinary two-parent merge, and preserve direct-string,
+  file-backed, finite-positive-control, integer-capacity, UTF-8, depth, duplicate
+  member, and stable-descriptor contracts together. Retire overlapping writers
+  only after complete semantic and test carryover is verified.
+- **Evidence:** protected `main` fails the direct `1e999` rejection probe; the
+  canonical owner suite covers `1e999`, `-1e999`, `1.25e3`, and both direct and
+  file-backed paths. Exact-head hosted Checks and independent review remain
+  mandatory.
+- **Status:** Proposed / Draft / release HOLD.
