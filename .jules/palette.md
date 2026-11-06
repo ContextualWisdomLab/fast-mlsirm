@@ -51,3 +51,6 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+## 2024-10-25 - Cross-engine conformance report keyboard accessibility
+**Learning:** A generated evidence report can add a functional skip-to-content link without weakening its no-script/no-style Content Security Policy. Keeping the link visible by default also avoids hiding the only bypass control from keyboard users.
+**Action:** Add a semantic skip-link and an identified, programmatically focusable main target to standalone HTML reports. Preserve `style-src 'none'`; do not add inline style, remove focus indicators, or weaken CSP for visual treatment.
