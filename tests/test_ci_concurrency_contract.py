@@ -1,6 +1,7 @@
 """Contract tests for pull-request CI concurrency."""
 
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 from pathlib import Path
 import re
@@ -9,6 +10,7 @@ from typing import Any
 
 _WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml"
 _EXPECTED_GROUP = (
+    "central-fast-mlsirm-ci-"
     "${{ github.workflow }}-${{ github.repository }}-"
     "${{ github.event.pull_request.number || github.run_id }}"
 )
@@ -28,7 +30,7 @@ def _scalar(value: str) -> Any:
 
 def _top_level_mapping(section: str) -> dict[str, Any]:
     """Parse direct scalar children of one top-level workflow mapping."""
-    lines = _WORKFLOW.read_text(encoding="utf-8").splitlines()
+    lines = workflow_source(_WORKFLOW).splitlines()
     marker = f"{section}:"
     try:
         start = next(index for index, line in enumerate(lines) if line == marker) + 1
@@ -83,11 +85,11 @@ def test_ci_push_runs_remain_independent():
 
 
 def test_ci_skips_expensive_jobs_for_inactive_pull_requests():
-    workflow = _WORKFLOW.read_text(encoding="utf-8")
+    workflow = workflow_source(_WORKFLOW)
     assert (
         "types: [opened, synchronize, reopened, ready_for_review, "
         "converted_to_draft, closed]"
-    ) in workflow
+    ) in _WORKFLOW.read_text(encoding="utf-8")
     for job_name in (
         "python-matrix",
         "python",

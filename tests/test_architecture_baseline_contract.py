@@ -1,6 +1,8 @@
 """Require the living architecture baseline document at repository root."""
 
+import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -31,4 +33,6 @@ def test_architecture_doctoring_note_exists() -> None:
     assert "Fox" in note
     assert "Jeon" in note
     assert "Kang" in note
-    assert "https://doi.org/" in note
+    citations = [urlsplit(url) for url in re.findall(r"https://[^\s)>\]]+", note)]
+    assert any(url.scheme == "https" and url.hostname == "doi.org"
+               and url.path.startswith("/10.") for url in citations)

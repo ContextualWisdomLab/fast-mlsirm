@@ -116,6 +116,57 @@ def gauss_hermite_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
     return nodes, weights
 
 
+def equal_probability_normal_nodes(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
+    """Equal-probability mid-bin normal quantiles for a standard-normal prior.
+
+    For ``n_nodes = n``, nodes are ``Phi^{-1}((arange(1, n+1) - 0.5) / n)``
+    with uniform weights ``1/n``: the composite midpoint rule on the
+    probability scale after the substitution ``u = Phi(z)``, so
+    ``E[f(Z)] = integral_0^1 f(Phi^{-1}(u)) du``. It is not Gauss-Hermite
+    quadrature and carries no polynomial-exactness guarantee. There is no
+    upper bound on ``n``; callers choose the node count for their study.
+
+    ``Phi^{-1}`` is computed in the Rust core from exact rational midpoint
+    probabilities. Wichura's (1988, pp. 478–480, 482–484) AS 241 supplies the
+    seed; repository-derived twofold residual correction uses the direct-tail
+    continued fraction in NIST DLMF §7.9, Eq. 7.9.1. Nodes are reflected exactly
+    and an odd-count center is positive zero. No SciPy dependency is required.
+    Independent fixed-reference tests retain a one-ULP criterion; no universal
+    correctly-rounded or continuous-integral error bound is asserted.
+
+    References
+    ----------
+    Wichura, M. J. (1988). Algorithm AS 241: The percentage points of the
+    normal distribution. *Applied Statistics, 37*(3), 477-484.
+    https://doi.org/10.2307/2347330
+
+    National Institute of Standards and Technology. (n.d.). Continued fractions
+    (Eq. 7.9.1). *Digital Library of Mathematical Functions*.
+    https://dlmf.nist.gov/7.9
+    """
+    if isinstance(n_nodes, (bool, np.bool_)) or not isinstance(
+        n_nodes, (int, np.integer)
+    ):
+        raise ValueError("n_nodes must be a positive integer")
+    n = int(n_nodes)
+    if n < 1:
+        raise ValueError("n_nodes must be >= 1")
+    try:
+        from .. import _core
+    except ImportError as exc:
+        raise RuntimeError("equal-probability nodes require the compiled Rust core") from exc
+    if not hasattr(_core, "equal_probability_normal_nodes"):
+        raise RuntimeError("equal-probability nodes require an updated compiled Rust core")
+    try:
+        result = _core.equal_probability_normal_nodes(n)
+    except OverflowError:
+        raise ValueError("requested node array exceeds platform representation") from None
+    return (
+        np.asarray(result["nodes"], dtype=np.float64),
+        np.asarray(result["weights"], dtype=np.float64),
+    )
+
+
 def fit_mmle_2pl(
     y: np.ndarray,
     observed: np.ndarray,

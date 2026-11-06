@@ -113,8 +113,10 @@ fn multigroup_means_follow_the_general_reflection() {
         seed: SEED,
         newton_iter: 10,
         ridge: 1e-8,
+        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
         device: mlsirm_core::Device::Cpu,
         estimate_specific_vars: false,
+        estimate_specific_means: false,
     };
     let fit = fit_bifactor_grm_multigroup(
         &responses,

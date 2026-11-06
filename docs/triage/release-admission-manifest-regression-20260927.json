@@ -1,0 +1,36 @@
+{
+  "control_source_parent_sha": "f47cb0f0e93b35a79fc1117946cc57e9b25ae2b3",
+  "workflow_sha256": "5e4f87f837a51b22c70542ad1f24f0fe743468f80dbcb3bfc55e73d73bd3d564",
+  "transport_verifier_sha256": "3582b43390a16cb5c56716e2a96543b2d8d560b569a16fd7c3c591b0694e02de",
+  "fixture_source_sha": "3d7f17de1bc834413ef4a347c70926fe50d72abd",
+  "manifest_sha256": "b1ed275a6ad8d5191f8173b1711be4994c5a102ffd69ebd9813f0d7ea5d320ee",
+  "manifest_rows": [
+    "c91a5db0b2ee33c31c9dae8f5ed9e4061d16ce5ac8f29a3b65569ef99db1fe2d  fast_mlsirm-1.2.3-cp312-cp312-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl",
+    "795fe76c2e8c3c91c188ad5f8386a0f8bad3ad5f0c79b94bc7b12340aaec2057  fast_mlsirm-1.2.3-cp312-cp312-manylinux2014_aarch64.whl",
+    "5d4db3fe7238d6360df607175cb3325b7c6a236efa7a405ee4cd51f50cf985ac  fast_mlsirm-1.2.3-cp312-cp312-manylinux2014_x86_64.whl",
+    "18f7d8be9ff93d020008ce1f6039d51fd6992af6fea3b60e36e825a3732f86c1  fast_mlsirm-1.2.3-cp312-cp312-win_amd64.whl",
+    "c608f780c1dd254ae59809197879f5c215b865c3d10a4513fe2f46809d37c4ec  fast_mlsirm-1.2.3-cp313-cp313-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl",
+    "10d4bcf35b48fbefc4ca51390092a8343bf473b36633d071d5cbcc6514d0ff59  fast_mlsirm-1.2.3-cp313-cp313-manylinux2014_aarch64.whl",
+    "fab4e5d21b2be99474595d2826d27d2890086e27155408bc7b933d81d108eebb  fast_mlsirm-1.2.3-cp313-cp313-manylinux2014_x86_64.whl",
+    "edad4fa5300d539102a25615d65b37f9197fc2ce51f0b20c1d4b0cdf94e69bd8  fast_mlsirm-1.2.3-cp313-cp313-win_amd64.whl",
+    "640f96f5d61546e0b70f2a5907ca01a2559e51c2eef9d1a539d51d57d02de052  fast_mlsirm-1.2.3-cp314-cp314-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl",
+    "028656020359c08f49a87236cd0fd41bb36e5bd63f45d8874be18cd36b23ec51  fast_mlsirm-1.2.3-cp314-cp314-manylinux2014_aarch64.whl",
+    "99db9c595ed1e86afaa4e920c49cabcbf40dfa25d2e77aba3b8b5c06656ab339  fast_mlsirm-1.2.3-cp314-cp314-manylinux2014_x86_64.whl",
+    "283324e65c10442d2ca11d60b9d3ce2be44ad69de69a63e38e109345a41b8f74  fast_mlsirm-1.2.3-cp314-cp314-win_amd64.whl",
+    "7a5b66e17667ba108f14fcd053649f356392781b5eb267ba558cf3f283917bf4  fast_mlsirm-1.2.3.tar.gz"
+  ],
+  "negative_cases": [
+    "Changed committed root Cargo.lock",
+    "Same omitted Cargo node in first/second build receipts",
+    "Forged PASS declaration scopes",
+    "Pre-existing output preserves bytes and fails exclusive creation",
+    "Foreign workflow run attempt",
+    "Distribution bytes changed after authenticated transport"
+  ],
+  "limitations": [
+    "Inert synthetic distributions, installations, licences, Strix results and GitHub API metadata; real Git and Cargo metadata for local fixture crates.",
+    "Tests verify manifest gating and byte identities, not actual security review or hosted acceptance.",
+    "Real release still requires resolution of 21 Cargo licence failures, latest required hosted CI, original PR integration and 0.11.5 platform build evidence.",
+    "No workflow dispatch, merge, tag or PyPI publication was performed."
+  ]
+}

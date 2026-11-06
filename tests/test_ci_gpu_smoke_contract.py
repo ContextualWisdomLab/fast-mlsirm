@@ -1,6 +1,7 @@
 """Repository-owned CI contracts for deterministic GPU smoke provisioning."""
 
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 from pathlib import Path
 
@@ -11,7 +12,7 @@ _APT_SOURCES = "/tmp/fast-mlsirm-ubuntu.sources"  # noqa: S108 - asserts CI cont
 
 def _gpu_install_script() -> str:
     """Return the software-Vulkan provisioning shell from the CI workflow."""
-    text = _CI_WORKFLOW.read_text(encoding="utf-8")
+    text = workflow_source(_CI_WORKFLOW)
     start_marker = "      - name: Install software Vulkan adapter\n        run: |\n"
     end_marker = "      - name: Prove Vulkan compute adapter availability\n"
     assert start_marker in text, "gpu-smoke Vulkan provisioning step is missing"

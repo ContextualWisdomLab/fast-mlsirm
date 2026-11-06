@@ -1,6 +1,7 @@
 """Adversarial tests for read-only GitHub Actions workflow-registry auditing."""
 
 from __future__ import annotations
+from tests.workflow_contract_source import workflow_source
 
 from datetime import UTC, datetime
 from pathlib import Path
@@ -271,12 +272,14 @@ def test_audit_surfaces_permission_missing_and_server_failures(status):
 
 def test_hourly_governance_publishes_workflow_registry_audit_read_only():
     """The hourly evidence loop observes registry drift without mutation authority."""
-    workflow = (
+    workflow_path = (
         Path(__file__).parents[1]
         / ".github"
         / "workflows"
         / "hourly-pr-governance.yml"
-    ).read_text(encoding="utf-8")
+    )
+    workflow = workflow_source(workflow_path)
+    wrapper = workflow_path.read_text(encoding="utf-8")
 
     assert "actions: read" in workflow
     assert "actions: write" not in workflow
@@ -286,4 +289,4 @@ def test_hourly_governance_publishes_workflow_registry_audit_read_only():
     assert "--repo ContextualWisdomLab/fast-mlsirm" in workflow
     assert "workflow_registry_audit.json" in workflow
     assert "scripts/audit_workflow_registry.py" in workflow
-    assert "tests/test_workflow_registry_audit.py" in workflow
+    assert "tests/test_workflow_registry_audit.py" in wrapper

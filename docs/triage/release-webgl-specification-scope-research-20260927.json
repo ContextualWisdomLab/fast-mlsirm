@@ -1,0 +1,101 @@
+{
+  "schema": "cwl.release-webgl-specification-scope-research/1",
+  "source_sha": "b0da15c10d55845319d60c6dd160420ca009a6dd",
+  "subject": "cargo/khronos_api@3.1.0",
+  "admitted": false,
+  "original_input_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+  "immutable_source_files": [
+    {
+      "path": "specs/latest/1.0/index.html",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/c987f075bfdca44119175c41f547d849c08983a3/specs/latest/1.0/index.html",
+      "sha256": "b1b5647fabbc2aa9aae6cf49cb563b40c9c112e3cf2b937e4a187b4b16fc3e80",
+      "git_blob_oid": "5450e4dda827bed9d753aaa6565add798160c996",
+      "bytes": 255698,
+      "legal_marker_lines": [
+        77,
+        542,
+        543
+      ]
+    },
+    {
+      "path": "specs/latest/2.0/index.html",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/c987f075bfdca44119175c41f547d849c08983a3/specs/latest/2.0/index.html",
+      "sha256": "7d7eef5091ed21651d21b8b01e5fbe97a135ae7daf31c30cf6cfc26ffc9e182a",
+      "git_blob_oid": "f43925bb89397fe6c03eb0330542e7768e2eb4c2",
+      "bytes": 264342,
+      "legal_marker_lines": [
+        76
+      ]
+    },
+    {
+      "path": "extensions/template/extension.xml",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/c987f075bfdca44119175c41f547d849c08983a3/extensions/template/extension.xml",
+      "sha256": "8da65e0a5d053bf36373c6fcfdf7d8fa2738c48345671cf61b62e30ba9cce117",
+      "git_blob_oid": "b80d3cad8802e6232a0d58b29fd254b36f2ac6de",
+      "bytes": 6894,
+      "legal_marker_lines": []
+    },
+    {
+      "path": "extensions/registry.html",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/c987f075bfdca44119175c41f547d849c08983a3/extensions/registry.html",
+      "sha256": "cd04f8e6a48cda87dbd91ce0e5fdd5ea778272002425a3c01b45c6f57a2d1530",
+      "git_blob_oid": "7fa6218499ec2326b9fa09500a2b26d153a673dc",
+      "bytes": 8721,
+      "legal_marker_lines": []
+    }
+  ],
+  "observed_current_policy_pages": [
+    {
+      "url": "https://registry.khronos.org/speccopyright.html",
+      "http_status": 403,
+      "raw_sha256": null,
+      "historical_2018_bytes_verified": false
+    },
+    {
+      "url": "https://www.khronos.org/legal/Khronos_Specification_Copyright_License_Header",
+      "http_status": 200,
+      "raw_sha256": "ff1abc7615ee7d37f851b74333c9443ed79606f6ae59121ff94e62a73da79e3e",
+      "bytes": 29182,
+      "historical_2018_bytes_verified": false
+    },
+    {
+      "url": "https://registry.khronos.org/Sample/specs/html/sample.html",
+      "http_status": 403,
+      "raw_sha256": null,
+      "historical_2018_bytes_verified": false
+    }
+  ],
+  "policy_findings": [
+    {
+      "url": "https://registry.khronos.org/speccopyright.html",
+      "locator": "Heading states last updated August 2015; opening applicability and reproduction paragraphs.",
+      "finding": "Observed default terms limit copying/distribution, give express unmodified redistribution permission to specified Khronos members subject to conditions, and distinguish implementation use from redistribution rights. Current retrieval does not authenticate exact historical 2018 page bytes."
+    },
+    {
+      "url": "https://www.khronos.org/legal/Khronos_Specification_Copyright_License_Header",
+      "locator": "Complete current header, conditional copyright grant paragraph.",
+      "finding": "Observed current header permits conditional reproduction of an unmodified specification and excludes patent/trademark rights. It is not an unrestricted MIT grant, and its historical applicability to these XML inputs is unproven."
+    },
+    {
+      "url": "https://registry.khronos.org/Sample/specs/html/sample.html",
+      "locator": "Version 1.0.1, commit 9e5be828964f6206c84c7cb815157cd7dd3e7fd1; sections 4.1 and 4.2.",
+      "finding": "Current guidance distinguishes specification source/markup licences from published HTML/PDF artifact licences and says the specification copyright licence should not be used on markup/source. This later guidance cannot assign a licence to the 2018 XMLs."
+    }
+  ],
+  "immutable_source_findings": [
+    "The exact two 2018 core specification HTML sources contain copyright statements; targeted searches found no explicit permissive grant. Permission hits in WebGL 1.0 concern CORS rather than copyright.",
+    "The exact extension template XML and registry HTML contain no matches for the searched copyright/permission/licence/reproduction/redistribution markers. This bounded source search is not a rendered-site rights audit."
+  ],
+  "unresolved_original_xml_inputs": [
+    "extensions/EXT_float_blend/extension.xml",
+    "extensions/EXT_texture_compression_bptc/extension.xml",
+    "extensions/EXT_texture_compression_rgtc/extension.xml",
+    "extensions/KHR_parallel_shader_compile/extension.xml",
+    "extensions/WEBGL_draw_buffers/extension.xml",
+    "extensions/WEBGL_multiview/extension.xml",
+    "extensions/proposals/EXT_multi_draw_arrays/extension.xml",
+    "extensions/proposals/WEBGL_blend_equation_advanced_coherent/extension.xml"
+  ],
+  "decision": "UNKNOWN historical source rights; no new gate admission and no blanket specification-to-source licence inference.",
+  "next_action": "A source-specific historical grant or licence-holder clarification is needed for the eight XML inputs; the inspected generic pages do not close that requirement. Continue independent blockers while preserving this evidence."
+}

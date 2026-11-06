@@ -28,6 +28,7 @@ fn tiny_design() -> (Vec<usize>, Vec<bool>, Vec<i32>, usize, usize) {
 fn fd_step_must_be_positive() {
     let (y, pmap, smap, n_persons, n_items) = tiny_design();
     let cfg = TwoTierOakesConfig {
+        estimate_primary_correlation: true,
         q_primary: 5,
         q_specific: 5,
         fd_step: 0.0,
@@ -49,6 +50,7 @@ fn returns_finite_information_on_tiny_case() {
     // Need every category observed per item — expand categories carefully.
     // With n_cat=2 the design above observes both cats on each item.
     let cfg = TwoTierOakesConfig {
+        estimate_primary_correlation: true,
         q_primary: 7,
         q_specific: 7,
         fd_step: 1e-5,
@@ -113,6 +115,7 @@ fn two_tier_q241_rss_probe() {
     }
     let specific_map = vec![0i32, 0, 0, 0, 1, 1, 1, 1];
     let cfg = TwoTierGrmConfig {
+        estimate_primary_correlation: true,
         q_primary: q,
         q_specific: q,
         max_iter: 1,

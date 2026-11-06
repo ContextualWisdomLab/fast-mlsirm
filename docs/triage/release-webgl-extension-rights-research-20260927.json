@@ -1,0 +1,430 @@
+{
+  "schema": "cwl.release-upstream-rights-research/1",
+  "source_sha": "4e076b6beaf11be48d1bc84d31d5cb81571a37b6",
+  "subject": "cargo/khronos_api@3.1.0",
+  "archive_sha256": "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc",
+  "input_repository": "KhronosGroup/WebGL",
+  "input_commit": "c987f075bfdca44119175c41f547d849c08983a3",
+  "admitted": false,
+  "root_and_extensions_tree": {
+    "root": {
+      "entries": [
+        {
+          "name": ".gitattributes",
+          "type": "blob",
+          "oid": "7cd7e0653d1fcb128fbfcae50c0a5c8d09b1a912"
+        },
+        {
+          "name": ".gitconfig",
+          "type": "blob",
+          "oid": "db4fc59c1e673812f8f5efb7f6644807f754abd8"
+        },
+        {
+          "name": ".gitignore",
+          "type": "blob",
+          "oid": "e2ab5132ef3f51eff66b6a61a87aedc6cecae5ce"
+        },
+        {
+          "name": ".gitmodules",
+          "type": "blob",
+          "oid": "e1101bf2c6a7c7453e795450aa25b63b5d226f5e"
+        },
+        {
+          "name": ".travis.yml",
+          "type": "blob",
+          "oid": "8770227e6acbc2c8528d541338473a29f035615e"
+        },
+        {
+          "name": "CODE_OF_CONDUCT.md",
+          "type": "blob",
+          "oid": "a11610bd300bc0ad8135cda4ccc581dda85e0e57"
+        },
+        {
+          "name": "CONTRIBUTING.md",
+          "type": "blob",
+          "oid": "b37b78523639f1f8402c0496f902884dde46e52d"
+        },
+        {
+          "name": "README.md",
+          "type": "blob",
+          "oid": "6a5b22c89ba9184f56ec5745b92b53dec8082d48"
+        },
+        {
+          "name": "codereview.settings",
+          "type": "blob",
+          "oid": "ecbf547dce36d2923ef253158b481ee18a861703"
+        },
+        {
+          "name": "conformance-suites",
+          "type": "tree",
+          "oid": "2a744d2b53771d64e52acf6141b8e60ab8fb5887"
+        },
+        {
+          "name": "doc",
+          "type": "tree",
+          "oid": "0105d528deeef5d27f8b893803dd6516ab3ef9fb"
+        },
+        {
+          "name": "expand_date",
+          "type": "blob",
+          "oid": "e4415b8cd86324bacfb6a03770dcab3ba5849ec5"
+        },
+        {
+          "name": "extensions",
+          "type": "tree",
+          "oid": "5ba79c373d9b0b03080c87c06acfd98c3a6d70d7"
+        },
+        {
+          "name": "index.php",
+          "type": "blob",
+          "oid": "6a029bad795a95619f0711aa04bbd12dd17db5fb"
+        },
+        {
+          "name": "install-gitconfig.bat",
+          "type": "blob",
+          "oid": "b406ab5e685d5d9156551b7c8c2109acedd5d634"
+        },
+        {
+          "name": "install-gitconfig.sh",
+          "type": "blob",
+          "oid": "d6f0689d5336e438e247610b64dea66f5ecca79c"
+        },
+        {
+          "name": "other",
+          "type": "tree",
+          "oid": "5d1b9705a627076e7a43198a64fc0a44d52a32ba"
+        },
+        {
+          "name": "resources",
+          "type": "tree",
+          "oid": "c9ecbf36aa1043f56eaf003b26155abce1d2e757"
+        },
+        {
+          "name": "sdk",
+          "type": "tree",
+          "oid": "166f088a0d892defec45e9cda2cadfce89317c1c"
+        },
+        {
+          "name": "specs",
+          "type": "tree",
+          "oid": "e8b9137cecd70271e6826ecf0de33eae171b2b70"
+        },
+        {
+          "name": "tools",
+          "type": "tree",
+          "oid": "3f4f4154ce78753b0a0900ae3ba2785928f2ee8c"
+        }
+      ]
+    },
+    "extensions": {
+      "entries": [
+        {
+          "name": "ANGLE_instanced_arrays",
+          "type": "tree",
+          "oid": "37622a531d4ec61f7272fd20d8a8b2643d4a1c0b"
+        },
+        {
+          "name": "EXT_blend_minmax",
+          "type": "tree",
+          "oid": "b64dccfeef0431b064d38a158ffc3b51ddeaea2a"
+        },
+        {
+          "name": "EXT_color_buffer_float",
+          "type": "tree",
+          "oid": "50a432f016f6659d8290bea40c6b77100258b386"
+        },
+        {
+          "name": "EXT_color_buffer_half_float",
+          "type": "tree",
+          "oid": "4f3b54285b7a4660309938a200907132906a0458"
+        },
+        {
+          "name": "EXT_disjoint_timer_query",
+          "type": "tree",
+          "oid": "bc1572758f2004558b8d5267aac9e055c2d37cd2"
+        },
+        {
+          "name": "EXT_disjoint_timer_query_webgl2",
+          "type": "tree",
+          "oid": "a97c24ef9c202e9571d0fffbbc07addb57cee2c4"
+        },
+        {
+          "name": "EXT_float_blend",
+          "type": "tree",
+          "oid": "4a418716aedb2e9a0e520d32992fd673496046e5"
+        },
+        {
+          "name": "EXT_frag_depth",
+          "type": "tree",
+          "oid": "8ebff81b4f5ace909530559842e2a27f8ff09d84"
+        },
+        {
+          "name": "EXT_sRGB",
+          "type": "tree",
+          "oid": "5426618a9abf93382e2d9489f23670f20b4ee4e5"
+        },
+        {
+          "name": "EXT_shader_texture_lod",
+          "type": "tree",
+          "oid": "d86628cc4a972308399fb05074933db39f4bc304"
+        },
+        {
+          "name": "EXT_texture_compression_bptc",
+          "type": "tree",
+          "oid": "f8f5ad92a12f1a08b6ec2b7dadb53fd27211105f"
+        },
+        {
+          "name": "EXT_texture_compression_rgtc",
+          "type": "tree",
+          "oid": "84e5fffd774b0c56907d5941941e702d63e6c604"
+        },
+        {
+          "name": "EXT_texture_filter_anisotropic",
+          "type": "tree",
+          "oid": "fc9d42c7b85e7eac10578f6f0a928ec8cc2533b1"
+        },
+        {
+          "name": "KHR_parallel_shader_compile",
+          "type": "tree",
+          "oid": "8aa6696810bc0acb47fc0f9e256260965da1cf97"
+        },
+        {
+          "name": "Makefile",
+          "type": "blob",
+          "oid": "5bab3a227b0e2b21f3218fabda4dbd9357720f2e"
+        },
+        {
+          "name": "OES_element_index_uint",
+          "type": "tree",
+          "oid": "64c3ca1a5a455d734d1936a335b1ce600b1128bd"
+        },
+        {
+          "name": "OES_fbo_render_mipmap",
+          "type": "tree",
+          "oid": "7cc236e3f5f81ba6328f2a7122bee0be357db316"
+        },
+        {
+          "name": "OES_standard_derivatives",
+          "type": "tree",
+          "oid": "2879cc4a74095c8544204538d979b44053198baf"
+        },
+        {
+          "name": "OES_texture_float",
+          "type": "tree",
+          "oid": "e8227a9f9eeabe99f593f5da4fa3236876622e56"
+        },
+        {
+          "name": "OES_texture_float_linear",
+          "type": "tree",
+          "oid": "0d6c12f987a2a420b1f37374d4d68bc569936042"
+        },
+        {
+          "name": "OES_texture_half_float",
+          "type": "tree",
+          "oid": "2bd51657353f238dc1a50ec25fe0461f111d262a"
+        },
+        {
+          "name": "OES_texture_half_float_linear",
+          "type": "tree",
+          "oid": "2b3eda9864918261d608e06495ee727a6f7c0fe3"
+        },
+        {
+          "name": "OES_vertex_array_object",
+          "type": "tree",
+          "oid": "8d106dc1f4499f8ff3fb27620a399c2e1048900c"
+        },
+        {
+          "name": "README.md",
+          "type": "blob",
+          "oid": "f242f4da18a5819a3b22796b5ba121a9190cbdb9"
+        },
+        {
+          "name": "WEBGL_color_buffer_float",
+          "type": "tree",
+          "oid": "bb5d0947a699cf0621f1e515c9a02dba3f689dc4"
+        },
+        {
+          "name": "WEBGL_compressed_texture_astc",
+          "type": "tree",
+          "oid": "79dc5233015daf20ab33a92c9348a43a76d15d9d"
+        },
+        {
+          "name": "WEBGL_compressed_texture_etc",
+          "type": "tree",
+          "oid": "9600cbaf597a2ab89c57209bb65cbeecbbcf25e9"
+        },
+        {
+          "name": "WEBGL_compressed_texture_etc1",
+          "type": "tree",
+          "oid": "75f601485e56e2424b308eac81ad2fbef924057e"
+        },
+        {
+          "name": "WEBGL_compressed_texture_pvrtc",
+          "type": "tree",
+          "oid": "0e8f1961965b2c9a168726d6daf5ed4719875571"
+        },
+        {
+          "name": "WEBGL_compressed_texture_s3tc",
+          "type": "tree",
+          "oid": "89c616f8225215ce7a2aad6575be199fd97ba984"
+        },
+        {
+          "name": "WEBGL_compressed_texture_s3tc_srgb",
+          "type": "tree",
+          "oid": "8509561112524d083f265dae4a2a69561ee41119"
+        },
+        {
+          "name": "WEBGL_debug_renderer_info",
+          "type": "tree",
+          "oid": "47c685b569808b4baee94ea0ba2d87894f838ab2"
+        },
+        {
+          "name": "WEBGL_debug_shaders",
+          "type": "tree",
+          "oid": "4bec9be708b2386aeb5bc7954cb9ad5d923f6940"
+        },
+        {
+          "name": "WEBGL_depth_texture",
+          "type": "tree",
+          "oid": "7363c142b5a7006fa2a756fd332e5e4c65760175"
+        },
+        {
+          "name": "WEBGL_draw_buffers",
+          "type": "tree",
+          "oid": "c86e100bff7f0ec0731217dc4365c60f1ff1700e"
+        },
+        {
+          "name": "WEBGL_lose_context",
+          "type": "tree",
+          "oid": "921b664af82685017cf666a6df2fc29f3f7dffb4"
+        },
+        {
+          "name": "WEBGL_multiview",
+          "type": "tree",
+          "oid": "8196a8c91026e1c9ad0269901210094db3e46d6d"
+        },
+        {
+          "name": "WEBGL_security_sensitive_resources",
+          "type": "tree",
+          "oid": "412ccf9952652ce561a6f37e76a13d5b28b7efb6"
+        },
+        {
+          "name": "atom.xsl",
+          "type": "blob",
+          "oid": "f9095806dadf9ecce6fd3442a8dd584c13898b83"
+        },
+        {
+          "name": "extension.sch",
+          "type": "blob",
+          "oid": "5f9349b0c666b8088c6c1d82ee48ab5c7fb55c93"
+        },
+        {
+          "name": "extension.xsl",
+          "type": "blob",
+          "oid": "d286b76f676323b94639ab7a5ce18d299743c1a6"
+        },
+        {
+          "name": "find-exts",
+          "type": "blob",
+          "oid": "19f21affc7aa0873d50e74e43d5fd28fb3ea3505"
+        },
+        {
+          "name": "proposals",
+          "type": "tree",
+          "oid": "4b2afc7f3e15b6aece4f7af729b8d48f4bbb1680"
+        },
+        {
+          "name": "registry.html",
+          "type": "blob",
+          "oid": "7fa6218499ec2326b9fa09500a2b26d153a673dc"
+        },
+        {
+          "name": "registry.xsl",
+          "type": "blob",
+          "oid": "d86b20ab605c83acd5bba214cf192ce98e2b85ec"
+        },
+        {
+          "name": "rejected",
+          "type": "tree",
+          "oid": "c4a70aa89e052a5a932dd09a3e7afdc43a482ed6"
+        },
+        {
+          "name": "rev_utils.xsl",
+          "type": "blob",
+          "oid": "fd0575f8bdef17a3bbdf49df4bc16d1dc9c7482e"
+        },
+        {
+          "name": "revisions.atom",
+          "type": "blob",
+          "oid": "e26532f270ffa6765db9a79de4b6b636fb90f7da"
+        },
+        {
+          "name": "schematron",
+          "type": "tree",
+          "oid": "997b91f57e5258c6238477e513ab7f88731c25ca"
+        },
+        {
+          "name": "standards.xsl",
+          "type": "blob",
+          "oid": "0cbc16e5e3c93875c1b75b23ece4b0e4fa6d1758"
+        },
+        {
+          "name": "summary.xml",
+          "type": "blob",
+          "oid": "93baf3c6c6489f55e13dbbf69a047f769b9c007f"
+        },
+        {
+          "name": "summary.xsl",
+          "type": "blob",
+          "oid": "7e6c21346b0658189d4cb8e3c63d7ce9e5b5956b"
+        },
+        {
+          "name": "template",
+          "type": "tree",
+          "oid": "41e8f898dff730339c4f9b5391b2b88d0100d58b"
+        },
+        {
+          "name": "validate",
+          "type": "blob",
+          "oid": "1d40e9f18dfde8031830f4b45c5fb8e734dd8190"
+        }
+      ]
+    }
+  },
+  "verified_source_files": [
+    {
+      "path": "CONTRIBUTING.md",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/c987f075bfdca44119175c41f547d849c08983a3/CONTRIBUTING.md",
+      "sha256": "89d5b2a90ade0026c6a6530bf1e854f08efa68b201b4a890d05ee73d5da2a1f3",
+      "git_blob_oid": "b37b78523639f1f8402c0496f902884dde46e52d",
+      "bytes": 383
+    },
+    {
+      "path": "extensions/README.md",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/c987f075bfdca44119175c41f547d849c08983a3/extensions/README.md",
+      "sha256": "e8833be4aa5faa4e93178a031200aebc3ef25804886c6112cd09a8a97c74a99a",
+      "git_blob_oid": "f242f4da18a5819a3b22796b5ba121a9190cbdb9",
+      "bytes": 396
+    },
+    {
+      "path": "extensions/extension.xsl",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/WebGL/c987f075bfdca44119175c41f547d849c08983a3/extensions/extension.xsl",
+      "sha256": "89017aee1e5cbc74300ff948efce4da6a6e325f52f4ddff7edfb315e8048a639",
+      "git_blob_oid": "d286b76f676323b94639ab7a5ce18d299743c1a6",
+      "bytes": 15712
+    }
+  ],
+  "findings": [
+    "Exact root tree has no licence file; root README describes repository/workflow and grants no redistribution rights.",
+    "extensions/README.md and CONTRIBUTING.md were read completely and contain no licence grant.",
+    "extension.xsl was searched for licence/copyright/permission/reproduction/redistribution markers: none found. This is a bounded search, not proof of absence in every possible upstream file.",
+    "Actual bundled EXT_blend_minmax/extension.xml was read completely; it supplies technical definition and contributor/history data but no explicit grant.",
+    "No blanket Apache or MIT grant for the 55 bundled WebGL extension XML files has been established; the existing NOT_ADMITTED result remains."
+  ],
+  "limitations": [
+    "Previous exact-byte source comparison is historical and separately retained; this receipt investigates additional scope documents only.",
+    "Git object IDs of all three retrieved files match the exact upstream tree; no latest-version substitution.",
+    "No generator executed, no licence inferred from mere repository inclusion or other files."
+  ],
+  "next_action": "Inspect immutable specification/template and registry-wide terms for an explicit extension XML grant; retain unresolved scope if no such grant can be proven."
+}

@@ -160,6 +160,7 @@ fn rust_oakes_se_matches_mirt_oakes_fixture() {
         q_general: QUADPTS,
         q_specific: QUADPTS,
         fd_step: 1e-5,
+        slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
     };
     let res = bifactor_oakes_se(
         &a_g,

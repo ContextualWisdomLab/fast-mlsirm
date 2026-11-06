@@ -2,7 +2,7 @@
 Cai, Yang, & Hansen, 2011; Gibbons et al., 2007).
 
 Each item's ordered categories load a caller-supplied subset of the
-correlated primary dimensions plus at most one orthogonal specific factor.
+primary dimensions plus at most one orthogonal specific factor.
 Estimation is Bock-Aitkin marginal maximum likelihood (Cai et al., 2011,
 "Maximum Marginal Likelihood Estimation" section) with dimension reduction
 over the specific tier; the numerical work runs in Rust
@@ -19,11 +19,12 @@ decisions without a paper source are marked as implementation choices):
   comparison.
 - Two-tier latent covariance ``Sigma = [[G, 0], [0, diag(S)]]``: primaries
   ``theta_P ~ MVN(0, Phi)`` with ``Phi`` a correlation matrix (unit
-  diagonal, free off-diagonals — the single-group identification), specifics
+  diagonal, optionally fixed to identity), specifics
   orthogonal ``N(0, 1)`` (Chalmers, 2026, mirt ``bfactor`` documentation,
   "Details" section, which cites Cai, 2010). The bifactor model is the
   special case of one primary dimension (same source). The two-tier model
-  itself is Cai (2010) (abstract read; full text not accessible).
+  itself is Cai (2010, pp. 583-584, full text read). Fixing ``Phi = I`` is
+  an orthogonal-primary restriction of its covariance structure.
 - Caller-supplied confirmatory primary pattern (fixed zeros are never
   estimated); rotation with correlated primaries is the caller's
   identification responsibility (implementation scope choice; Cai, 2010, is a
@@ -71,8 +72,7 @@ References (APA 7th ed.):
 
     Cai, L. (2010). A two-tier full-information item factor analysis model
         with applications. *Psychometrika, 75*(4), 581-612.
-        https://doi.org/10.1007/s11336-010-9178-0 (abstract read; full text
-        not accessible — no equation locator is drawn from it)
+        https://doi.org/10.1007/s11336-010-9178-0 (full text read)
 
     Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
         item bifactor analysis. *Psychological Methods, 16*(3), 221-248.
@@ -109,6 +109,35 @@ def _finite_integer_control(value: object, name: str) -> int:
     if not np.isfinite(numeric) or numeric != np.floor(numeric):
         raise ValueError(f"{name} must be a finite integer")
     return int(numeric)
+
+
+def _specific_map_control(specific_map: object, n_items: int, n_specific: int) -> np.ndarray:
+    """Validate a two-tier specific map: -1 (specific-free) or 0..n_specific-1."""
+
+    smap = np.asarray(specific_map)
+    if smap.ndim != 1 or smap.shape[0] != n_items:
+        raise ValueError("specific_map must be a 1-D array of length n_items")
+    if smap.dtype.kind in "bc" or (
+        smap.dtype.kind == "O"
+        and any(isinstance(v, (bool, np.bool_, complex, np.complexfloating)) for v in smap)
+    ):
+        raise ValueError("specific_map entries must be integers")
+    # Validate on exact float values for every dtype (object, uint64, ...):
+    # a direct astype(int64) would truncate 1.9 -> 1 or wrap 2**64-1 -> -1.
+    try:
+        values = smap.astype(np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("specific_map entries must be integers") from None
+    if not bool(np.isfinite(values).all()):
+        raise ValueError("specific_map entries must be finite integers")
+    if bool((values != np.floor(values)).any()):
+        raise ValueError("specific_map entries must be integers")
+    if bool((values < -1).any()) or bool((values >= n_specific).any()):
+        raise ValueError(
+            "specific_map entries must be -1 (specific-free) or in "
+            f"0..{n_specific - 1}"
+        )
+    return values.astype(np.int64)
 
 
 def _positive_real_control(value: object, name: str) -> float:
@@ -151,12 +180,14 @@ class TwoTierGrmFit:
     ``a_specific`` the ``n_items`` specific slopes (``0`` for specific-free
     items, canonicalized within each block); ``threshold`` the
     ``n_items x (n_cat-1)`` strictly decreasing boundary intercepts; ``phi``
-    the ``n_primary x n_primary`` estimated primary correlation matrix (unit
+    the ``n_primary x n_primary`` primary correlation matrix (unit
     diagonal); ``theta_p_eap`` / ``theta_p_sd`` the primary-factor EAPs and
     marginal posterior SDs (``n_persons x n_primary``); ``category_counts``
     the observed ``n_items x n_cat`` counts. ``termination_reason`` is
     ``"tolerance_met"`` or ``"max_iter_reached"``; ``best_start`` the winning
-    start in ``0..n_starts``.
+    start in ``0..n_starts``. ``primary_identification`` is
+    ``"orthogonal"`` when Phi was fixed to I or ``"correlated"`` when
+    its off-diagonal entries were estimated (Cai, 2010, pp. 583-584).
     """
 
     a_primary: np.ndarray
@@ -176,6 +207,7 @@ class TwoTierGrmFit:
     final_loglik_change: float
     best_start: int
     n_parameters: int
+    primary_identification: str
 
 
 def fit_two_tier_grm(
@@ -191,6 +223,7 @@ def fit_two_tier_grm(
     tol: float,
     n_starts: int,
     seed: int,
+    primary_correlation: str = "estimate",
 ) -> TwoTierGrmFit:
     """Fit the single-group polytomous two-tier GRM (compute in Rust).
 
@@ -216,7 +249,22 @@ def fit_two_tier_grm(
 
     See the module docstring for the model, the paper basis of every
     non-obvious decision, and the APA 7th references.
+    ``primary_correlation='estimate'`` preserves the existing correlated-primary
+    fit; ``'identity'`` fixes Phi exactly to I (Cai, 2010, pp. 583-584).
+    In identity mode, distinct free-loading item sets for each primary pair
+    are necessary to rule out continuous orthogonal rotations; per-column
+    reflection canonicalization handles the remaining sign ambiguity.
+
+    References (APA 7th ed.): Cai, L. (2010). A two-tier full-information item
+    factor analysis model with applications. *Psychometrika, 75*(4), 581-612.
+    https://doi.org/10.1007/s11336-010-9178-0; Cai, L., Yang, J. S., &
+    Hansen, M. (2011). Generalized full-information item bifactor analysis.
+    *Psychological Methods, 16*(3), 221-248. https://doi.org/10.1037/a0023350.
     """
+    if not isinstance(primary_correlation, str) or primary_correlation not in (
+        "estimate", "identity"
+    ):
+        raise ValueError("primary_correlation must be 'estimate' or 'identity'")
     n_cat_int = _finite_integer_control(n_cat, "n_cat")
     if n_cat_int < 2:
         raise ValueError("n_cat must be >= 2")
@@ -259,24 +307,17 @@ def fit_two_tier_grm(
     if pmap.ndim != 2 or pmap.shape != (n_items, n_primary_int):
         raise ValueError("primary_map must be an n_items x n_primary boolean array")
     pmap_bool = np.asarray(pmap, dtype=bool)
+    if primary_correlation == "identity":
+        for d in range(n_primary_int):
+            for other in range(d + 1, n_primary_int):
+                if np.array_equal(pmap_bool[:, d], pmap_bool[:, other]):
+                    raise ValueError(
+                        "identity primary correlation requires distinct free-loading item sets "
+                        "for every pair of primary columns; identical free-loading item sets "
+                        f"at columns {d} and {other} admit orthogonal rotation"
+                    )
 
-    smap = np.asarray(specific_map)
-    if smap.ndim != 1 or smap.shape[0] != n_items:
-        raise ValueError("specific_map must be a 1-D array of length n_items")
-    if smap.dtype.kind == "f":
-        if not bool(np.isfinite(smap).all()):
-            raise ValueError("specific_map entries must be finite integers")
-        if bool((smap != np.floor(smap)).any()):
-            raise ValueError("specific_map entries must be integers")
-    try:
-        smap_int = smap.astype(np.int64, copy=False)
-    except (TypeError, ValueError):
-        raise ValueError("specific_map entries must be integers") from None
-    if bool((smap_int < -1).any()) or bool((smap_int >= n_specific_int).any()):
-        raise ValueError(
-            "specific_map entries must be -1 (specific-free) or in "
-            f"0..{n_specific_int - 1}"
-        )
+    smap_int = _specific_map_control(specific_map, n_items, n_specific_int)
 
     observed = np.isfinite(y) & (y >= 0)
     if np.any(observed):
@@ -309,6 +350,7 @@ def fit_two_tier_grm(
         float(tol_float),
         int(n_starts_int),
         int(seed_int),
+        primary_correlation,
     )
     return TwoTierGrmFit(
         a_primary=np.asarray(res["a_primary"], dtype=np.float64).reshape(
@@ -340,6 +382,7 @@ def fit_two_tier_grm(
         final_loglik_change=float(res["final_loglik_change"]),
         best_start=int(res["best_start"]),
         n_parameters=int(res["n_parameters"]),
+        primary_identification=str(res["primary_identification"]),
     )
 
 
@@ -382,6 +425,7 @@ def two_tier_oakes_se(
     q_primary: int,
     q_specific: int,
     fd_step: float,
+    primary_correlation: str = "estimate",
 ) -> TwoTierOakesSe:
     """Observed-information SEs via Oakes (1999, eq. 6, p. 480) at given
     two-tier parameters (valid at every point, not only the MLE).
@@ -391,7 +435,20 @@ def two_tier_oakes_se(
 
     Implementation basis: Oakes (1999, eq. 6, p. 480); Cai et al. (2011,
     eq. 6, p. 227); Gibbons et al. (2007, eq. 15).
+    ``primary_correlation='identity'`` excludes fixed Phi from the information
+    matrix (Cai, 2010, pp. 583-584; Oakes, 1999, eq. 6, p. 480).
+
+    References (APA 7th ed.): Cai, L. (2010). A two-tier full-information item
+    factor analysis model with applications. *Psychometrika, 75*(4), 581-612.
+    https://doi.org/10.1007/s11336-010-9178-0; Oakes, D. (1999). Direct
+    calculation of the information matrix via the EM algorithm. *Journal of
+    the Royal Statistical Society: Series B, 61*(2), 479-482.
+    https://doi.org/10.1111/1467-9868.00188.
     """
+    if not isinstance(primary_correlation, str) or primary_correlation not in (
+        "estimate", "identity"
+    ):
+        raise ValueError("primary_correlation must be 'estimate' or 'identity'")
 
     n_cat_int = _finite_integer_control(n_cat, "n_cat")
     if n_cat_int < 2:
@@ -421,10 +478,7 @@ def two_tier_oakes_se(
         raise ValueError("primary_map must be an n_items x n_primary boolean array")
     pmap_bool = np.asarray(pmap, dtype=bool)
 
-    smap = np.asarray(specific_map)
-    if smap.ndim != 1 or smap.shape[0] != n_items:
-        raise ValueError("specific_map must be a 1-D array of length n_items")
-    smap_int = smap.astype(np.int64, copy=False)
+    smap_int = _specific_map_control(specific_map, n_items, n_specific_int)
 
     ag = np.asarray(a_primary, dtype=np.float64)
     if ag.shape != (n_items, n_primary_int):
@@ -464,6 +518,7 @@ def two_tier_oakes_se(
         int(q_primary_int),
         int(q_specific_int),
         float(fd_float),
+        primary_correlation,
     )
     labels = [str(v) for v in res["labels"]]
     k = len(labels)
@@ -481,3 +536,96 @@ def two_tier_oakes_se(
         positive_definite=bool(res["positive_definite"]),
         non_pd_reason=None if reason_raw is None else str(reason_raw),
     )
+
+
+def expected_raw_two_tier_grm(
+    fit: TwoTierGrmFit,
+    specific_map: np.ndarray,
+    q_specific: int,
+) -> np.ndarray:
+    """Plug-in expected raw totals for a fitted two-tier GRM (compute in Rust).
+
+    Returns length-``n_persons`` expected raw scores on the observed category
+    scale (0 .. ``n_items * (n_cat - 1)``). Primary coordinates are fixed at
+    ``fit.theta_p_eap``; each item-block specific factor is integrated out
+    with ``q_specific`` Gauss-Hermite nodes. This is the two-tier analogue of
+    ``bifactor_lord_wingersky`` + ``dist @ scores`` used for bifactor FIPC
+    person scores — **expected raw**, not latent primary EAP.
+
+    The adopted emotionality G+4+W pattern is represented as ``n_primary=2``
+    (G, W) plus ``n_specific`` orthogonal specifics. ``fit.phi`` may freely
+    estimate ``Phi(G, W)`` under ``fit_two_tier_grm``; scoring treats the
+    supplied primary EAP columns as plug-in coordinates and does not
+    reintegrate ``Phi`` (same contract as bifactor expected-raw scoring at
+    ``theta_g_eap``).
+
+    ``q_specific`` is REQUIRED (no default; ADR-0028 / #1929).
+
+    The recursion is the conditional-on-primary stage of Lord-Wingersky 2.0
+    (Cai, 2015, Eqs. 14-17, pp. 543-544), evaluated at the plug-in primary
+    EAP rather than integrated over the primary density.
+
+    Implementation basis: Cai, L. (2015). Lord-Wingersky algorithm version
+    2.0 for hierarchical item factor models with applications in test
+    scoring, scale alignment, and model fit testing. *Psychometrika, 80*(2),
+    535-559. https://doi.org/10.1007/s11336-014-9411-3; Lord, F. M., &
+    Wingersky, M. S. (1984). Comparison
+    of IRT true-score and equipercentile observed-score "equatings."
+    *Applied Psychological Measurement, 8*(4), 453-461.
+    https://doi.org/10.1177/014662168400800409; Gibbons, R. D., & Hedeker,
+    D. R. (1992). Full-information item bi-factor analysis. *Psychometrika,
+    57*(3), 423-436. https://doi.org/10.1007/BF02295430; Cai, L., Yang, J.
+    S., & Hansen, M. (2011). Generalized full-information item bifactor
+    analysis. *Psychological Methods, 16*(3), 221-248.
+    https://doi.org/10.1037/a0023350.
+    """
+    q_specific_int = _finite_integer_control(q_specific, "q_specific")
+    if q_specific_int < 1:
+        raise ValueError("q_specific must be >= 1")
+
+    n_primary = int(fit.n_primary)
+    n_specific = int(fit.n_specific)
+    n_cat = int(fit.n_cat)
+    a_specific = np.asarray(fit.a_specific, dtype=np.float64)
+    if a_specific.ndim != 1:
+        raise ValueError("fit.a_specific must be a 1-D array of length n_items")
+    n_items = int(a_specific.shape[0])
+
+    smap_int = _specific_map_control(specific_map, n_items, n_specific)
+
+    a_primary = np.asarray(fit.a_primary, dtype=np.float64)
+    if a_primary.shape != (n_items, n_primary):
+        raise ValueError("fit.a_primary must have shape (n_items, n_primary)")
+    threshold = np.asarray(fit.threshold, dtype=np.float64)
+    if threshold.shape != (n_items, n_cat - 1):
+        raise ValueError("fit.threshold must have shape (n_items, n_cat - 1)")
+
+    theta = np.asarray(fit.theta_p_eap, dtype=np.float64)
+    if theta.ndim != 2 or theta.shape[1] != n_primary:
+        raise ValueError("fit.theta_p_eap must have shape (n_persons, n_primary)")
+    if not bool(np.isfinite(theta).all()):
+        raise ValueError("fit.theta_p_eap must be finite")
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "two_tier_expected_raw"):
+        raise RuntimeError("expected_raw_two_tier_grm requires the compiled Rust core")
+
+    scores = np.asarray(
+        core.two_tier_expected_raw(
+            np.require(a_primary, requirements=["C", "A"]).reshape(-1),
+            np.require(a_specific, requirements=["C", "A"]),
+            np.require(threshold, requirements=["C", "A"]).reshape(-1),
+            np.require(theta, requirements=["C", "A"]).reshape(-1),
+            smap_int.reshape(-1),
+            int(n_cat),
+            int(n_primary),
+            int(n_specific),
+            int(q_specific_int),
+        ),
+        dtype=np.float64,
+    )
+    if scores.shape != (theta.shape[0],):
+        raise ValueError("expected raw scores must have shape (n_persons,)")
+    return scores

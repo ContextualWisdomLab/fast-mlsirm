@@ -1,0 +1,17 @@
+
+fast_mlsirm-0.11.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+is consistent with the following platform tag:
+"manylinux_2_17_x86_64".
+
+The wheel references external versioned symbols in these
+system-provided shared libraries: libdl.so.2 with versions
+{'GLIBC_2.2.5'}, libgcc_s.so.1 with versions {'GCC_3.0', 'GCC_3.3',
+'GCC_4.2.0'}, librt.so.1 with versions {'GLIBC_2.2.5'},
+libpthread.so.0 with versions {'GLIBC_2.2.5', 'GLIBC_2.12'}, libm.so.6
+with versions {'GLIBC_2.2.5'}, libc.so.6 with versions {'GLIBC_2.14',
+'GLIBC_2.3', 'GLIBC_2.3.4', 'GLIBC_2.16', 'GLIBC_2.2.5'}
+
+This constrains the platform tag to "manylinux_2_17_x86_64". In order
+to achieve a more compatible tag, you would need to recompile a new
+wheel from source on a system with earlier versions of these
+libraries, such as a recent manylinux image.

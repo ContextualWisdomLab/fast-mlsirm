@@ -251,6 +251,9 @@ pub(crate) struct GpuContext {
     grad_theta: wgpu::ComputePipeline,
     grad_xi: wgpu::ComputePipeline,
     grad_zeta: wgpu::ComputePipeline,
+    backend: String,
+    device_name: String,
+    pub(crate) device_type: wgpu::DeviceType,
 }
 
 static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
@@ -275,6 +278,7 @@ impl GpuContext {
             pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
                 .ok()?;
         let adapter_limits = adapter.limits();
+        let adapter_info = adapter.get_info();
         // The layout binds 16 storage buffers (bindings 1..=16) plus a uniform at
         // binding 0; fall back to the f64 CPU reference on an adapter that cannot
         // satisfy that count instead of panicking at pipeline creation (matching
@@ -341,6 +345,9 @@ impl GpuContext {
             grad_theta: make("grad_theta_kernel"),
             grad_xi: make("grad_xi_kernel"),
             grad_zeta: make("grad_zeta_kernel"),
+            backend: format!("{:?}", adapter_info.backend),
+            device_name: adapter_info.name,
+            device_type: adapter_info.device_type,
             layout,
             device,
             queue,
@@ -357,6 +364,14 @@ impl GpuContext {
     /// fall back to CPU when their layout does not fit).
     pub(crate) fn adapter_storage_buffers(&self) -> u32 {
         self.storage_buffers_per_stage
+    }
+
+    pub(crate) fn backend(&self) -> &str {
+        &self.backend
+    }
+
+    pub(crate) fn device_name(&self) -> &str {
+        &self.device_name
     }
 }
 

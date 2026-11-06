@@ -87,11 +87,25 @@ fn log_sigmoid(x: f64) -> f64 {
 /// of graded scores. *Psychometrika, 34*(S1), 1–97.
 /// https://doi.org/10.1007/BF03372160
 pub fn grm_logprobs(base: f64, thresholds: &[f64]) -> Vec<f64> {
+    let mut out = vec![0.0_f64; thresholds.len() + 1];
+    grm_logprobs_into(base, thresholds, &mut out);
+    out
+}
+
+/// Write this node's graded-category probabilities into caller-local storage.
+/// This uses the identical cumulative differences and operation order as
+/// `grm_logprobs` (Cai, 2010, p. 589, Eqs. 11-12). The caller must provide
+/// exactly `thresholds.len() + 1` cells; no quadrature choice is implied.
+///
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581-612.
+/// doi:10.1007/s11336-010-9178-0.
+pub(crate) fn grm_logprobs_into(base: f64, thresholds: &[f64], out: &mut [f64]) {
     let kb = thresholds.len(); // number of boundaries = K-1
-    let mut out = vec![0.0_f64; kb + 1];
+    debug_assert_eq!(out.len(), kb + 1);
     if kb == 0 {
         out[0] = 0.0;
-        return out;
+        return;
     }
     // category 0: 1 - sigmoid(base + beta_0) = sigmoid(-(base + beta_0))
     out[0] = log_sigmoid(-(base + thresholds[0]));
@@ -107,20 +121,63 @@ pub fn grm_logprobs(base: f64, thresholds: &[f64]) -> Vec<f64> {
     }
     // top category K-1: sigmoid(base + beta_{K-2})
     out[kb] = log_sigmoid(base + thresholds[kb - 1]);
-    out
 }
 
 /// Gradient of the expected complete-data log-likelihood `sum_k r_k log P(Y=k)`
 /// at one node for the GRM cell. Returns `(g_base, g_thresholds)` where
 /// `g_thresholds[j]` is the derivative wrt boundary intercept `beta_j`.
 pub fn grm_node_gradient(base: f64, thresholds: &[f64], counts: &[f64]) -> (f64, Vec<f64>) {
-    let kb = thresholds.len();
-    let mut g_t = vec![0.0_f64; kb];
-    let mut g_base = 0.0_f64;
-    if kb == 0 {
-        return (0.0, g_t);
+    if thresholds.is_empty() {
+        return (0.0, Vec::new());
     }
     let log_p = grm_logprobs(base, thresholds);
+    grm_node_gradient_from_logprobs(base, thresholds, counts, &log_p)
+}
+
+/// Evaluate the existing graded-response gradient using this same node's
+/// already computed category log-probabilities. The derivative uses the
+/// same P_jk as the complete-data objective (Cai, 2010, p. 589, Eqs. 11-12;
+/// pp. 608-609, Appendix A); this only reuses values, not a different model.
+/// Callers must supply `grm_logprobs(base, thresholds)` for these parameters.
+///
+/// # References (APA 7th ed.)
+///
+/// Cai, L. (2010). A two-tier full-information item factor analysis model
+/// with applications. *Psychometrika, 75*(4), 581-612.
+/// doi:10.1007/s11336-010-9178-0.
+pub(crate) fn grm_node_gradient_from_logprobs(
+    base: f64,
+    thresholds: &[f64],
+    counts: &[f64],
+    log_p: &[f64],
+) -> (f64, Vec<f64>) {
+    let mut g_t = vec![0.0_f64; thresholds.len()];
+    let g_base = grm_node_gradient_into(base, thresholds, counts, log_p, &mut g_t);
+    (g_base, g_t)
+}
+
+/// Write the identical node gradient into caller-local boundary storage.
+/// The provided probabilities must be from these same parameters; this only
+/// reuses storage for the expected-complete-data calculation (Cai, 2010,
+/// p. 589, Eqs. 11-12; pp. 608-609, Appendix A). Every boundary cell is
+/// overwritten; the caller supplies exactly `thresholds.len()` cells.
+///
+/// Reference: Cai, L. (2010). A two-tier full-information item factor analysis
+/// model with applications. Psychometrika, 75(4), 581-612.
+/// doi:10.1007/s11336-010-9178-0.
+pub(crate) fn grm_node_gradient_into(
+    base: f64,
+    thresholds: &[f64],
+    counts: &[f64],
+    log_p: &[f64],
+    g_t: &mut [f64],
+) -> f64 {
+    let kb = thresholds.len();
+    debug_assert_eq!(g_t.len(), kb);
+    let mut g_base = 0.0_f64;
+    if kb == 0 {
+        return 0.0;
+    }
     // Evaluate v/P in log space. Directly exponentiating a valid tail category
     // can underflow P to zero even though its score contribution is finite.
     for j in 0..kb {
@@ -140,7 +197,7 @@ pub fn grm_node_gradient(base: f64, thresholds: &[f64], counts: &[f64]) -> (f64,
         g_t[j] = right - left;
         g_base += right - left;
     }
-    (g_base, g_t)
+    g_base
 }
 
 /// Hessian of the expected complete-data log-likelihood `sum_k r_k log P(Y=k)`
@@ -566,11 +623,25 @@ fn m_step_item(
             }
         }
         // symmetrize + ridge for a well-posed solve
+        #[cfg(test)]
+        let raw_hessian = sibling_hessian_tests::raw_if_active(&hess);
+        // Higham (1989, author reprint p. 4, Section 2) gives (H + H^T)/2
+        // for the original square-matrix entries; write each pair only once.
+        // This symmetry projection is not a covariance/fit-accuracy guarantee.
+        // Reference: Higham, N. J. (1989). Matrix nearness problems and
+        // applications. In M. J. C. Gover & S. Barnett (Eds.), Applications
+        // of matrix theory (pp. 1–27). Oxford University Press.
         for r in 0..np {
-            for c in 0..np {
-                hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
+            for c in 0..r {
+                let pair = 0.5 * (hess[r][c] + hess[c][r]);
+                hess[r][c] = pair;
+                hess[c][r] = pair;
             }
             hess[r][r] += 1e-8;
+        }
+        #[cfg(test)]
+        if let Some(raw) = raw_hessian {
+            sibling_hessian_tests::record(raw, &hess);
         }
         let (step, directional, max_step) =
             stabilized_newton_step(solve_small(hess, g.clone()), &g, grad_norm);
@@ -928,7 +999,10 @@ pub fn fit_poly_fipc(
         if anchor_cat_params[i].iter().any(|v| !v.is_finite()) {
             return Err(format!("anchor_cat_params[{i}] must be finite"));
         }
-        if anchor_cat_params[i].windows(2).any(|pair| pair[0] <= pair[1]) {
+        if anchor_cat_params[i]
+            .windows(2)
+            .any(|pair| pair[0] <= pair[1])
+        {
             return Err(format!(
                 "anchor_cat_params[{i}] must be strictly decreasing (GRM thresholds)"
             ));
@@ -1070,7 +1144,9 @@ pub fn fit_poly_fipc(
             return Err("non-finite FIPC focal moment update".into());
         }
         if var <= 0.0 {
-            return Err(format!("non-positive FIPC focal variance update ({var:.6e})"));
+            return Err(format!(
+                "non-positive FIPC focal variance update ({var:.6e})"
+            ));
         }
         mu = mean;
         sigma = var.sqrt();
@@ -1166,11 +1242,25 @@ fn nominal_m_step(
                 hess[r][j] = (gj[r] - g[r]) / h;
             }
         }
+        #[cfg(test)]
+        let raw_hessian = sibling_hessian_tests::raw_if_active(&hess);
+        // Higham (1989, author reprint p. 4, Section 2) gives (H + H^T)/2
+        // for the original square-matrix entries; write each pair only once.
+        // This symmetry projection is not a covariance/fit-accuracy guarantee.
+        // Reference: Higham, N. J. (1989). Matrix nearness problems and
+        // applications. In M. J. C. Gover & S. Barnett (Eds.), Applications
+        // of matrix theory (pp. 1–27). Oxford University Press.
         for r in 0..np {
-            for c in 0..np {
-                hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
+            for c in 0..r {
+                let pair = 0.5 * (hess[r][c] + hess[c][r]);
+                hess[r][c] = pair;
+                hess[c][r] = pair;
             }
             hess[r][r] += 1e-8;
+        }
+        #[cfg(test)]
+        if let Some(raw) = raw_hessian {
+            sibling_hessian_tests::record(raw, &hess);
         }
         let (step, directional, max_step) =
             stabilized_newton_step(solve_small(hess, g.clone()), &g, grad_norm);
@@ -1296,8 +1386,8 @@ pub fn fit_nominal(
         for i in 0..n_items {
             let mut scores = vec![0.0_f64; n_cat];
             let mut intercepts = vec![0.0_f64; n_cat];
-    scores[1..(z + 1)].copy_from_slice(&params[i][..z]);
-    intercepts[1..(z + 1)].copy_from_slice(&params[i][z..(z + z)]);
+            scores[1..(z + 1)].copy_from_slice(&params[i][..z]);
+            intercepts[1..(z + 1)].copy_from_slice(&params[i][z..(z + z)]);
             for (nd, &theta) in nodes.iter().enumerate() {
                 let lp = gpcm_logprobs(theta, &scores, &intercepts);
                 item_lp[i][nd * n_cat..(nd + 1) * n_cat].copy_from_slice(&lp);
@@ -1385,18 +1475,30 @@ pub struct PolyPersonFit {
 }
 
 /// Person-fit statistics for polytomous responses under a fitted GRM/GPCM: the
-/// standardized log-likelihood `l_z` (Drasgow, Levine & Williams, 1985) and its
+/// standardized log-likelihood `l_z` (Drasgow et al., 1985, pp. 71–72) and its
 /// estimated-trait correction `l_z*` (Snijders, 2001), evaluated at the EAP
-/// trait. With `l_0 = Σ_i log P_i(y_i|θ̂)`, `E = Σ_i Σ_k P_ik log P_ik`, and
+/// trait under `N(0,1)`. With `l_0 = Σ_i log P_i(y_i|θ̂)`,
+/// `E = Σ_i Σ_k P_ik log P_ik`, and
 /// `V = Σ_i (Σ_k P_ik (log P_ik)² − (Σ_k P_ik log P_ik)²)`,
 /// `l_z = (l_0 − E) / √V`; `l_z*` subtracts the covariance of the log-likelihood
 /// with the trait score (`c = ΣCov / ΣI`, `τ² = V − (ΣCov)²/ΣI`) and adds the
-/// MAP prior score `r_0 = −(θ̂ − μ)/σ²`. The score derivative `∂/∂θ log P_ik` is
+/// MAP prior score `r_0 = −(θ̂ − μ)/σ²`. Indeed,
+/// `log N(θ; μ, σ²) = const − (θ − μ)²/(2σ²)`, hence
+/// `d/dθ log N(θ; μ, σ²) = −(θ − μ)/σ²`; this enters the numerator as `c*r_0`.
+/// Applying Snijders' (2001) correction to polytomous EAP is an extrapolation;
+/// its original pinpoint was not verified here. Albers et al. (2016, p. 277,
+/// Equations 6–8) give the estimated-trait correction structure. The score
+/// derivative `∂/∂θ log P_ik` is
 /// taken by central difference, so the routine is model-agnostic. This reduces
 /// exactly to the binary [`crate::fitstats::person_fit`] `l_z` at `n_cat = 2`.
 /// Low (negative) values flag aberrant patterns.
 ///
 /// # References (APA 7th ed.)
+///
+/// Albers, C. J., Meijer, R. R., & Tendeiro, J. N. (2016). Derivation and
+///   applicability of asymptotic results for multiple subtests person-fit
+///   statistics. *Applied Psychological Measurement, 40*(4), 274–288.
+///   https://doi.org/10.1177/0146621615622832
 ///
 /// Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness
 ///   measurement with polychotomous item response models and standardized
@@ -1421,6 +1523,73 @@ pub fn poly_person_fit(
     prior_sd: f64,
     flag_threshold: f64,
 ) -> Result<PolyPersonFit, String> {
+    poly_person_fit_impl(
+        y,
+        observed,
+        n_persons,
+        n_items,
+        n_cat,
+        slope,
+        cat_params,
+        model,
+        q_theta,
+        prior_mean,
+        prior_sd,
+        flag_threshold,
+        false,
+    )
+}
+
+/// Focal-prior variant for a fitted FIPC population: its `N(μ, σ²)` prior
+/// enters both EAP and `r_0`; see [`poly_person_fit`] for method and references.
+#[allow(clippy::too_many_arguments)]
+pub fn poly_person_fit_focal(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: PolyModel,
+    q_theta: usize,
+    prior_mean: f64,
+    prior_sd: f64,
+    flag_threshold: f64,
+) -> Result<PolyPersonFit, String> {
+    poly_person_fit_impl(
+        y,
+        observed,
+        n_persons,
+        n_items,
+        n_cat,
+        slope,
+        cat_params,
+        model,
+        q_theta,
+        prior_mean,
+        prior_sd,
+        flag_threshold,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn poly_person_fit_impl(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: PolyModel,
+    q_theta: usize,
+    prior_mean: f64,
+    prior_sd: f64,
+    flag_threshold: f64,
+    focal_eap: bool,
+) -> Result<PolyPersonFit, String> {
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
@@ -1429,9 +1598,16 @@ pub fn poly_person_fit(
         return Err("prior_sd must be positive".into());
     }
     let z = n_cat - 1;
-    let (theta_eap, _sd) = score_poly_eap(
-        y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta,
-    )?;
+    let (theta_eap, _sd) = if focal_eap {
+        score_poly_eap_with_prior(
+            y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta, prior_mean,
+            prior_sd,
+        )?
+    } else {
+        score_poly_eap(
+            y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta,
+        )?
+    };
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
     let cell = |i: usize, theta: f64| -> Vec<f64> {
         let a = slope[i];
@@ -2615,8 +2791,8 @@ pub fn poly_information_curves(
 /// EAP trait scores from polytomous responses given fitted item parameters
 /// (the Rust scoring companion to [`fit_poly_unidim`]). `slope[i]` is `a_i`;
 /// `cat_params` is flattened `n_items * (n_cat-1)` (GPCM intercepts or GRM
-/// thresholds). Returns `(theta_eap, theta_sd)` per person over a `theta~N(0,1)`
-/// Gauss-Hermite grid.
+/// thresholds). Returns `(theta_eap, theta_sd)` per person over a
+/// Gauss-Hermite grid shifted and scaled to `N(prior_mean, prior_sd²)`.
 ///
 /// # References
 ///
@@ -2624,7 +2800,7 @@ pub fn poly_information_curves(
 /// a microcomputer environment. *Applied Psychological Measurement, 6*(4),
 /// 431–444. https://doi.org/10.1177/014662168200600405
 #[allow(clippy::too_many_arguments)]
-pub fn score_poly_eap(
+fn score_poly_eap_with_prior(
     y: &[usize],
     observed: Option<&[bool]>,
     n_persons: usize,
@@ -2634,7 +2810,12 @@ pub fn score_poly_eap(
     cat_params: &[f64],
     model: PolyModel,
     q_theta: usize,
+    prior_mean: f64,
+    prior_sd: f64,
 ) -> Result<(Vec<f64>, Vec<f64>), String> {
+    if !prior_mean.is_finite() || !prior_sd.is_finite() || prior_sd <= 0.0 {
+        return Err("prior_mean must be finite and prior_sd must be finite and positive".into());
+    }
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
@@ -2658,7 +2839,11 @@ pub fn score_poly_eap(
         }
     }
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * n_items + i]);
-    let (nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
+    let (standard_nodes, weights) = crate::quadrature::require_gh_rule_unidim(q_theta, "q_theta")?;
+    let nodes: Vec<f64> = standard_nodes
+        .iter()
+        .map(|&node| prior_mean + prior_sd * node)
+        .collect();
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
     let qn = nodes.len();
     let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
@@ -2711,6 +2896,22 @@ pub fn score_poly_eap(
         theta_sd[p] = (m2 - m1 * m1).max(0.0).sqrt();
     }
     Ok((theta_eap, theta_sd))
+}
+
+pub fn score_poly_eap(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: PolyModel,
+    q_theta: usize,
+) -> Result<(Vec<f64>, Vec<f64>), String> {
+    score_poly_eap_with_prior(
+        y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta, 0.0, 1.0,
+    )
 }
 
 /// Per-item generalized S-X² polytomous item-fit result.
@@ -2955,3 +3156,7 @@ pub fn poly_s_x2(
 #[cfg(test)]
 #[path = "../../../tests/unit/poly_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/poly_sibling_hessian_tests.rs"]
+mod sibling_hessian_tests;

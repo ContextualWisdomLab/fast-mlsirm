@@ -54,12 +54,20 @@
 //!
 //! where `G_pg` is the general-only item likelihood at node `g`. The E-step
 //! cost is `O(Q_G * sum_s Q_S * |block_s|)` per person instead of
-//! `O(Q_G * Q_S^S * n_items)`. The M-step is a per-item finite-difference-
-//! Hessian Newton over `[a_G, a_S?, d_1..d_{K-1}]`, byte-for-byte the ascent
-//! of `grm::fit_grm`'s item step (ridge = Hessian conditioning only, NOT a
-//! prior; backtracking line search REJECTS non-finite objectives, which is
-//! exactly how the ordered-threshold constraint is maintained WITHOUT an
-//! explicit reparametrization — see `grm.rs`).
+//! `O(Q_G * Q_S^S * n_items)`. The M-step is a per-item Newton step over
+//! `[a_G, a_S?, d_1..d_{K-1}]` using the **analytic** expected complete-data
+//! gradient and Hessian at the fixed E-step counts (Bock & Aitkin, 1981,
+//! pp. 445, 448; Gibbons et al., 2007, eq. 9 and Appendix A4–A6): one node
+//! sweep builds `(f, g, H)` via [`crate::poly::grm_node_hessian`] chained
+//! through `η = a_G t_G + a_S t_S + d` (the same Term-A algebra as
+//! [`crate::bifactor_oakes::q_hessian_analytic`] / Oakes, 1999, eq. 6). Ridge
+//! remains Hessian conditioning only, NOT a prior; backtracking line search
+//! REJECTS non-finite objectives, which is exactly how the ordered-threshold
+//! constraint is maintained WITHOUT an explicit reparametrization — see
+//! `grm.rs`. An optional caller-supplied lognormal MAP prior on `|a|` adds
+//! its exact gradient and curvature to the same Newton system — see
+//! [`SlopePrior`]. Finite differences are retained only as a test
+//! cross-check (#2030), never in the production Newton path.
 //!
 //! # Identification and reflection
 //!
@@ -133,8 +141,14 @@
 //! Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
 //! item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
 //! 443-459. https://doi.org/10.1007/BF02293801
+//!
+//! Oakes, D. (1999). Direct calculation of the information matrix via the EM
+//! algorithm. *Journal of the Royal Statistical Society Series B: Statistical
+//! Methodology, 61*(2), 479-482. https://doi.org/10.1111/1467-9868.00188
 
-use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
+use crate::poly::{grm_logprobs, grm_node_gradient, grm_node_hessian, solve_small};
+use std::cell::Cell;
+use std::time::Instant;
 
 // NOTE (stage-1 review fix-up, updated #1929): this module imposes no magic
 // size caps. Upper bounds without a documented origin (a previous revision
@@ -145,6 +159,108 @@ use crate::poly::{grm_logprobs, grm_node_gradient, solve_small};
 // demand, no fixed rule table required), finiteness/positivity of
 // real-valued controls, and checked arithmetic that turns size overflow
 // into `Err` instead of a panic.
+
+/// Optional MAP prior on estimated item slopes for bifactor GRM M-steps.
+///
+/// `None` is plain MML (no slope prior). `Lognormal { mu, sd }` places a
+/// lognormal density on `|a|` for every ESTIMATED general and specific slope
+/// (`log|a| ~ N(mu, sd^2)`): single-group items, multigroup free items (once
+/// per group) and multigroup common/anchored items (once per shared
+/// parameter). FIPC exposes no prior knob: its anchors are fixed at
+/// reference values and its free items are plain MML. Threshold intercepts
+/// are never penalized.
+///
+/// EM under a prior is generalized EM on the log POSTERIOR: the per-iteration
+/// monotonicity guard, the `tol` convergence test, `final_loglik_change` and
+/// multi-start ranking all use log-likelihood + log slope prior (constants
+/// omitted). `loglik_trace` still records the observed-data log-likelihood,
+/// which may legitimately decrease under a prior. Without a prior the
+/// objective IS the log-likelihood (bit-identical behavior). Numeric `(mu, sd)`
+/// are caller-owned: this crate does not ship research-specific defaults.
+///
+/// Support: the density used for a signed slope is the folded lognormal
+/// `p(a) = f_LN(|a|; mu, sd) / 2` on `a != 0`. It integrates to one over
+/// `R \ {0}` and the fold only adds the constant `ln 2` to `-log p`, so the
+/// mode, gradient and curvature equal those of the lognormal on `|a|`
+/// (derivative chain `d|a|/da = sign(a)`). `a = 0` is outside the support
+/// (`-log p = +inf`); it is a barrier, not a clamp. This signed extension is
+/// this crate's, not the cited source's.
+///
+/// Basis: Chalmers (2012, p. 14) demonstrates a MAP prior in a bifactor
+/// calibration; Mislevy (1985, p. 13, following Equation 3.9) gives the
+/// prior-augmented EM score equations. Neither source specifies this
+/// lognormal density on signed `|a|`: that distribution and its derivatives
+/// above are this crate's extension, verified by finite differences.
+///
+/// References (APA 7th ed.):
+/// Chalmers, R. P. (2012). mirt: A multidimensional item response theory
+/// package for the R environment. *Journal of Statistical Software, 48*(6),
+/// 1-29. https://doi.org/10.18637/jss.v048.i06
+/// Mislevy, R. J. (1985). *Bayes modal estimation in item response models*
+/// (Research Report RR-85-33). Educational Testing Service.
+/// https://doi.org/10.1002/j.2330-8516.1985.tb00118.x
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum SlopePrior {
+    /// No slope prior (default MML).
+    #[default]
+    None,
+    /// Lognormal prior on `|a|` with mean `mu` and SD `sd` on the log scale.
+    Lognormal {
+        /// Mean of `log|a|`.
+        mu: f64,
+        /// SD of `log|a|` (must be finite and `> 0`).
+        sd: f64,
+    },
+}
+
+impl SlopePrior {
+    /// Validate caller-owned prior hyperparameters (loud `Err`, never clamp).
+    pub fn validate(self) -> Result<(), String> {
+        match self {
+            SlopePrior::None => Ok(()),
+            SlopePrior::Lognormal { mu, sd } => {
+                if !mu.is_finite() {
+                    return Err("slope_prior_mu must be finite".into());
+                }
+                if !sd.is_finite() || sd <= 0.0 {
+                    return Err("slope_prior_sd must be finite and positive".into());
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Add `-log p(|a|)` and its derivative for `a ~` sign-preserving lognormal
+/// on `|a|` (`log|a| ~ N(mu, sd^2)`). `a = 0` is outside the support and sets
+/// the objective to `+inf` (no floor, no clamp). Constants independent of `a`
+/// are omitted (Newton compares deltas).
+pub(crate) fn add_lnorm_abs_slope_prior(a: f64, mu: f64, sd: f64, nll: &mut f64, grad_a: &mut f64) {
+    if a == 0.0 {
+        // Zero is outside the signed-support extension. Keep the objective
+        // infinite so every line-search candidate at the boundary rejects.
+        *nll = f64::INFINITY;
+        return;
+    }
+    let u = a.abs();
+    let z = (u.ln() - mu) / sd;
+    *nll += u.ln() + 0.5 * z * z;
+    // d/da = (1 + z / sd) / a, retaining the sign of an unconstrained slope.
+    *grad_a += (1.0 + z / sd) / a;
+}
+
+/// Second derivative of `-log p(a)` for [`add_lnorm_abs_slope_prior`]:
+/// `(1 / sd^2 - 1 - z / sd) / a^2` with `z = (ln|a| - mu) / sd`. It can be
+/// negative (the lognormal is not log-concave in `a`), which the Oakes
+/// assembly reports through its positive-definiteness flag. `+inf` at the
+/// unsupported point `a = 0`.
+pub(crate) fn lnorm_abs_slope_prior_curvature(a: f64, mu: f64, sd: f64) -> f64 {
+    if a == 0.0 {
+        return f64::INFINITY;
+    }
+    let z = (a.abs().ln() - mu) / sd;
+    (1.0 / (sd * sd) - 1.0 - z / sd) / (a * a)
+}
 
 /// Configuration for [`fit_bifactor_grm`]. Every field is caller-owned and
 /// range-validated; nothing is clamped.
@@ -164,6 +280,8 @@ pub struct BifactorGrmConfig {
     pub newton_iter: usize,
     /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
     pub ridge: f64,
+    /// Optional MAP prior on free slopes (`|a|`); see [`SlopePrior`].
+    pub slope_prior: SlopePrior,
     /// Compute device for the E-step sweep: `Cpu` runs the `f64` scalar
     /// sweep; `Gpu`/`Auto` run the WGSL `f32` person-parallel sweep when a
     /// compatible adapter exists and fall back to CPU otherwise (`Gpu`
@@ -200,6 +318,14 @@ pub struct BifactorGrmResult {
     pub best_start: usize,
     /// `sum_i (1 + has_specific(i) + (n_cat - 1))` free item parameters.
     pub n_parameters: usize,
+    /// The slope prior the estimates were fitted under (`None` = MML
+    /// estimates; `Lognormal` = MAP estimates). Pass the same prior to
+    /// [`crate::bifactor_oakes::bifactor_oakes_se`].
+    pub slope_prior: SlopePrior,
+    /// EM objective per E-step of the winning start: log-likelihood + log
+    /// slope prior (constants omitted) under a prior, bit-identical to
+    /// `loglik_trace` without one. Monotone non-decreasing by the EM guard.
+    pub em_objective_trace: Vec<f64>,
 }
 
 /// Validated problem structure shared by the fitter and the public
@@ -230,6 +356,33 @@ pub(crate) fn validate(
     n_cat: usize,
     cfg: &BifactorGrmConfig,
 ) -> Result<Validated, String> {
+    validate_with_category_policy(
+        y, observed, specific_map, n_persons, n_items, n_specific, n_cat, cfg, true,
+    )
+}
+
+/// Validate the existing fixed/free category-admission contract.
+/// Observed responses select modeled category probabilities (Cai, 2010,
+/// p. 588, Eq. 9). Allowing absent categories in an all-fixed bank is an
+/// adopted software policy, not a policy prescribed by that paper or
+/// proof of population identification/convergence. Other checks remain.
+///
+/// Reference: Cai, L. (2010). A two-tier full-information item factor
+/// analysis model with applications. Psychometrika, 75(4), 581–612.
+/// https://doi.org/10.1007/s11336-010-9178-0
+#[allow(clippy::too_many_arguments)]
+fn validate_with_category_policy(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    specific_map: &[i32],
+    n_persons: usize,
+    n_items: usize,
+    n_specific: usize,
+    n_cat: usize,
+    cfg: &BifactorGrmConfig,
+    require_observed_categories: bool,
+) -> Result<Validated, String> {
+    cfg.slope_prior.validate()?;
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
     }
@@ -335,7 +488,7 @@ pub(crate) fn validate(
         if !any {
             return Err(format!("item {i} has no observed responses"));
         }
-        if let Some(k) = (0..n_cat).find(|&k| !seen[k]) {
+        if let Some(k) = (0..n_cat).find(|&k| require_observed_categories && !seen[k]) {
             return Err(format!(
                 "item {i} category {k} is never observed (unidentified GRM boundary); every \
                  declared category must be observed"
@@ -563,8 +716,12 @@ pub(crate) fn e_step(
     #[cfg(all(feature = "gpu", not(coverage)))]
     {
         if device == crate::Device::Gpu || device == crate::Device::Auto {
-            // Small host-side staging wrappers (no table data is duplicated
-            // beyond this Vec-of-Vec shell): the GPU path flattens them.
+            // Host-side staging for the GPU path: `tables.to_vec()`,
+            // `tg.to_vec()`, and `ts.to_vec()` (replicated per specific)
+            // are real deep copies on every E-step call. Only `tables`
+            // changes across EM iterations; `tg`/`ts`/`log_w*`/`y`/`blocks`
+            // are fit-invariant (#2006 type C/D). The GPU kernel then
+            // flattens these Vec-of-Vec shells into device buffers.
             let tables_wrapped = vec![tables.to_vec()];
             let tg_wrapped = vec![tg.to_vec()];
             let ts_wrapped = vec![vec![ts.to_vec(); v.n_specific]];
@@ -734,9 +891,98 @@ pub(crate) fn e_step(
     (loglik, counts)
 }
 
+// Optional M-step node-sweep counters (#2030 / #2022 contract). When
+// enable_mstep_sweep_counters is on, every item_neg_ll_* entry records
+// its class; production Newton never increments fd after the analytic
+// Hessian lands.
+// Thread-local so concurrent tests (or fits on other threads) never
+// contaminate each other's counts; the M-step and phase timers run on the
+// calling thread.
+thread_local! {
+    static MSTEP_SWEEP_ENABLED: Cell<bool> = const { Cell::new(false) };
+    static MSTEP_SWEEP_BASE: Cell<u64> = const { Cell::new(0) };
+    static MSTEP_SWEEP_FD: Cell<u64> = const { Cell::new(0) };
+    static MSTEP_SWEEP_LINESEARCH: Cell<u64> = const { Cell::new(0) };
+    static MSTEP_SWEEP_NEWTON: Cell<u64> = const { Cell::new(0) };
+    static PHASE_NS_FILL: Cell<u64> = const { Cell::new(0) };
+    static PHASE_NS_ESTEP: Cell<u64> = const { Cell::new(0) };
+    static PHASE_NS_MSTEP: Cell<u64> = const { Cell::new(0) };
+}
+
+fn bump(counter: &'static std::thread::LocalKey<Cell<u64>>, by: u64) {
+    counter.with(|c| c.set(c.get() + by));
+}
+
+/// Enable or disable bifactor item M-step sweep counters on the calling
+/// thread (tests / recount).
+pub fn enable_mstep_sweep_counters(on: bool) {
+    MSTEP_SWEEP_ENABLED.with(|c| c.set(on));
+}
+
+/// Reset the calling thread's bifactor item M-step sweep counters to zero.
+pub fn reset_mstep_sweep_counters() {
+    for counter in [
+        &MSTEP_SWEEP_BASE,
+        &MSTEP_SWEEP_FD,
+        &MSTEP_SWEEP_LINESEARCH,
+        &MSTEP_SWEEP_NEWTON,
+        &PHASE_NS_FILL,
+        &PHASE_NS_ESTEP,
+        &PHASE_NS_MSTEP,
+    ] {
+        counter.with(|c| c.set(0));
+    }
+}
+
+/// `(base, fd, linesearch, newton_steps)` on the calling thread since the
+/// last reset.
+pub fn mstep_sweep_counters() -> (u64, u64, u64, u64) {
+    (
+        MSTEP_SWEEP_BASE.with(Cell::get),
+        MSTEP_SWEEP_FD.with(Cell::get),
+        MSTEP_SWEEP_LINESEARCH.with(Cell::get),
+        MSTEP_SWEEP_NEWTON.with(Cell::get),
+    )
+}
+
+/// `(fill_logprob_tables_ns, e_step_ns, m_step_ns)` accumulated on the
+/// calling thread while counters are enabled (#2030 phase recount; ratios
+/// only).
+pub fn mstep_phase_ns() -> (u64, u64, u64) {
+    (
+        PHASE_NS_FILL.with(Cell::get),
+        PHASE_NS_ESTEP.with(Cell::get),
+        PHASE_NS_MSTEP.with(Cell::get),
+    )
+}
+
+#[inline]
+fn bump_sweep(kind: SweepKind) {
+    if !MSTEP_SWEEP_ENABLED.with(Cell::get) {
+        return;
+    }
+    let counter = match kind {
+        SweepKind::Base => &MSTEP_SWEEP_BASE,
+        SweepKind::Fd => &MSTEP_SWEEP_FD,
+        SweepKind::LineSearch => &MSTEP_SWEEP_LINESEARCH,
+        SweepKind::Newton => &MSTEP_SWEEP_NEWTON,
+    };
+    bump(counter, 1);
+}
+
+#[derive(Clone, Copy)]
+enum SweepKind {
+    Base,
+    #[cfg_attr(not(test), allow(dead_code))] // only the FD test oracle records it
+    Fd,
+    LineSearch,
+    Newton,
+}
+
 /// Negative expected complete-data log-lik and gradient for ONE item.
 /// `params = [a_G, (a_S?), d_1..d_{K-1}]`; `node_g[node]` / `node_s[node]`
 /// hold the latent coordinates (`node_s` ignored for general-only items).
+/// Used by Armijo line search (value only) and the FD Hessian test oracle.
 fn item_neg_ll_grad(
     params: &[f64],
     has_specific: bool,
@@ -744,6 +990,7 @@ fn item_neg_ll_grad(
     node_s: &[f64],
     counts: &[Vec<f64>],
     _n_cat: usize,
+    slope_prior: SlopePrior,
 ) -> (f64, Vec<f64>) {
     let off = if has_specific { 2 } else { 1 };
     let beta = &params[off..];
@@ -766,46 +1013,195 @@ fn item_neg_ll_grad(
             grad[off + j] += gj;
         }
     }
-    (-ll, grad.iter().map(|g| -g).collect())
+    let mut nll = -ll;
+    let mut out_grad: Vec<f64> = grad.iter().map(|g| -g).collect();
+    if let SlopePrior::Lognormal { mu, sd } = slope_prior {
+        let mut prior_grad = 0.0;
+        add_lnorm_abs_slope_prior(params[0], mu, sd, &mut nll, &mut prior_grad);
+        out_grad[0] += prior_grad;
+        if has_specific {
+            let mut prior_grad = 0.0;
+            add_lnorm_abs_slope_prior(params[1], mu, sd, &mut nll, &mut prior_grad);
+            out_grad[1] += prior_grad;
+        }
+    }
+    (nll, out_grad)
 }
 
-/// Newton M-step for one item — the `grm::fit_grm` ascent restricted to the
-/// bifactor linear predictor (FD Hessian, ridge conditioning, backtracking;
-/// non-finite rejection keeps `d` strictly ordered).
+/// Negative expected complete-data log-lik, gradient, and analytic Hessian
+/// for ONE bifactor GRM item in a single node sweep.
+///
+/// At fixed E-step expected counts (Bock & Aitkin, 1981, pp. 445, 448;
+/// Gibbons et al., 2007, Appendix A4–A6), the complete-data criterion
+/// separates per item. Per node the GRM cell Hessian
+/// ([`grm_node_hessian`]) is chained through
+/// `η = a_G · t_G + a_S · t_S + d` (Gibbons et al., 2007, eq. 9); second
+/// derivatives of `η` vanish, so only first-order chain terms appear — the
+/// same Term-A algebra as [`crate::bifactor_oakes::q_hessian_analytic`]
+/// (Oakes, 1999, eq. 6), specialised to one item and signed for
+/// minimisation of `-Q`.
+///
+/// When `record_base` is true and sweep counters are enabled, increments the
+/// Base class (Newton evaluation).
+pub(crate) fn item_neg_ll_grad_hess(
+    params: &[f64],
+    has_specific: bool,
+    node_g: &[f64],
+    node_s: &[f64],
+    counts: &[Vec<f64>],
+    record_base: bool,
+) -> (f64, Vec<f64>, Vec<Vec<f64>>) {
+    if record_base {
+        bump_sweep(SweepKind::Base);
+    }
+    let np = params.len();
+    let off = if has_specific { 2 } else { 1 };
+    let beta = &params[off..];
+    let mut ll = 0.0f64;
+    let mut grad = vec![0.0f64; np];
+    let mut hess = vec![vec![0.0f64; np]; np];
+    for (node, cnt) in counts.iter().enumerate() {
+        let (tg, ts) = (node_g[node], if has_specific { node_s[node] } else { 0.0 });
+        let base = if has_specific {
+            params[0] * tg + params[1] * ts
+        } else {
+            params[0] * tg
+        };
+        let lp = grm_logprobs(base, beta);
+        ll += cnt.iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+        let (g_base, g_thr) = grm_node_gradient(base, beta, cnt);
+        grad[0] += g_base * tg;
+        if has_specific {
+            grad[1] += g_base * ts;
+        }
+        for (j, gj) in g_thr.iter().enumerate() {
+            grad[off + j] += gj;
+        }
+        let (grand, row_sums, mat) = grm_node_hessian(base, beta, cnt);
+        hess[0][0] += tg * tg * grand;
+        if has_specific {
+            hess[1][1] += ts * ts * grand;
+            let cross = tg * ts * grand;
+            hess[0][1] += cross;
+            hess[1][0] += cross;
+        }
+        for (j, rj) in row_sums.iter().enumerate() {
+            let dj = off + j;
+            let cg = tg * rj;
+            hess[0][dj] += cg;
+            hess[dj][0] += cg;
+            if has_specific {
+                let cs = ts * rj;
+                hess[1][dj] += cs;
+                hess[dj][1] += cs;
+            }
+            for (l, hjl) in mat[j].iter().enumerate() {
+                hess[dj][off + l] += hjl;
+            }
+        }
+    }
+    for row in &mut hess {
+        for h in row.iter_mut() {
+            *h = -*h;
+        }
+    }
+    (-ll, grad.iter().map(|g| -g).collect(), hess)
+}
+
+/// Forward finite-difference Hessian of [`item_neg_ll_grad`] — test oracle
+/// only (#2030). Each column re-enters the full node grid; production Newton
+/// must not call this.
+#[cfg(test)]
+#[allow(clippy::needless_range_loop)] // FD Hessian is inherently indexed
+pub(crate) fn item_neg_ll_fd_hessian(
+    params: &[f64],
+    has_specific: bool,
+    node_g: &[f64],
+    node_s: &[f64],
+    counts: &[Vec<f64>],
+    h: f64,
+) -> (Vec<f64>, Vec<Vec<f64>>) {
+    let np = params.len();
+    let (f0, g) = {
+        bump_sweep(SweepKind::Base);
+        item_neg_ll_grad(params, has_specific, node_g, node_s, counts, 0, SlopePrior::None)
+    };
+    let _ = f0;
+    let mut hess = vec![vec![0.0f64; np]; np];
+    for j in 0..np {
+        let mut pj = params.to_vec();
+        pj[j] += h;
+        bump_sweep(SweepKind::Fd);
+        let (_f2, gj) =
+            item_neg_ll_grad(&pj, has_specific, node_g, node_s, counts, 0, SlopePrior::None);
+        for r in 0..np {
+            hess[r][j] = (gj[r] - g[r]) / h;
+        }
+    }
+    for r in 0..np {
+        for c in 0..r {
+            let avg = 0.5 * (hess[r][c] + hess[c][r]);
+            hess[r][c] = avg;
+            hess[c][r] = avg;
+        }
+    }
+    (g, hess)
+}
+
+/// Newton M-step for one item — analytic Hessian (one node sweep per Newton
+/// evaluation), ridge conditioning, Armijo backtracking; non-finite
+/// rejection keeps `d` strictly ordered (#2030).
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::needless_range_loop)] // finite-difference Hessian is inherently indexed (mirrors `grm.rs`)
 fn m_step_item(
     mut params: Vec<f64>,
     has_specific: bool,
     node_g: &[f64],
     node_s: &[f64],
     counts: &[Vec<f64>],
-    n_cat: usize,
+    _n_cat: usize,
     ridge: f64,
     n_newton: usize,
+    slope_prior: SlopePrior,
 ) -> Vec<f64> {
-    let np = params.len();
     for _ in 0..n_newton {
-        let (f0, g) = item_neg_ll_grad(&params, has_specific, node_g, node_s, counts, n_cat);
+        bump_sweep(SweepKind::Newton);
+        let (mut f0, mut g, mut hess) =
+            item_neg_ll_grad_hess(&params, has_specific, node_g, node_s, counts, true);
+        // MAP: add -log p(|a|) on each estimated slope. The prior is separable
+        // in the slopes, so it contributes its exact derivative and diagonal
+        // curvature (lnorm_abs_slope_prior_curvature) to the analytic system.
+        if let SlopePrior::Lognormal { mu, sd } = slope_prior {
+            let n_slopes = if has_specific { 2 } else { 1 };
+            for k in 0..n_slopes {
+                let mut prior_grad = 0.0;
+                add_lnorm_abs_slope_prior(params[k], mu, sd, &mut f0, &mut prior_grad);
+                g[k] += prior_grad;
+                hess[k][k] += lnorm_abs_slope_prior_curvature(params[k], mu, sd);
+            }
+        }
         let grad_norm = g.iter().map(|x| x * x).sum::<f64>().sqrt();
         if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
             break;
         }
-        let h = 1e-5;
-        let mut hess = vec![vec![0.0f64; np]; np];
-        for j in 0..np {
-            let mut pj = params.clone();
-            pj[j] += h;
-            let (_f2, gj) = item_neg_ll_grad(&pj, has_specific, node_g, node_s, counts, n_cat);
-            for r in 0..np {
-                hess[r][j] = (gj[r] - g[r]) / h;
-            }
-        }
-        for r in 0..np {
-            for c in 0..np {
-                hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
+        #[cfg(test)]
+        let raw_hessian = sibling_hessian_tests::raw_if_active(&hess);
+        // Higham (1989, author reprint p. 4, Section 2) gives (H + H^T)/2
+        // for the original square-matrix entries; write each pair only once.
+        // This symmetry projection is not a covariance/fit-accuracy guarantee.
+        // Reference: Higham, N. J. (1989). Matrix nearness problems and
+        // applications. In M. J. C. Gover & S. Barnett (Eds.), Applications
+        // of matrix theory (pp. 1–27). Oxford University Press.
+        for r in 0..hess.len() {
+            for c in 0..r {
+                let pair = 0.5 * (hess[r][c] + hess[c][r]);
+                hess[r][c] = pair;
+                hess[c][r] = pair;
             }
             hess[r][r] += ridge;
+        }
+        #[cfg(test)]
+        if let Some(raw) = raw_hessian {
+            sibling_hessian_tests::record(raw, &hess);
         }
         let mut step = solve_small(hess, g.clone());
         let mut directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum::<f64>();
@@ -829,8 +1225,16 @@ fn m_step_item(
                 .zip(&step)
                 .map(|(value, direction)| value - alpha * direction)
                 .collect();
-            let (candidate_f, _) =
-                item_neg_ll_grad(&candidate, has_specific, node_g, node_s, counts, n_cat);
+            bump_sweep(SweepKind::LineSearch);
+            let (candidate_f, _) = item_neg_ll_grad(
+                &candidate,
+                has_specific,
+                node_g,
+                node_s,
+                counts,
+                0,
+                slope_prior,
+            );
             if candidate_f.is_finite() && candidate_f <= f0 - 1e-4 * alpha * directional {
                 params = candidate;
                 accepted = true;
@@ -845,15 +1249,48 @@ fn m_step_item(
     params
 }
 
+#[path = "bifactor_full_fipc.rs"]
+pub mod full_fipc;
+
+/// `-log p(slopes)` summed over the given estimated items (constants
+/// omitted, as in the M-step); exactly `0.0` without a prior.
+fn slope_prior_neg_log<'a>(
+    prior: SlopePrior,
+    items: impl IntoIterator<Item = &'a ItemParams>,
+) -> f64 {
+    let SlopePrior::Lognormal { mu, sd } = prior else {
+        return 0.0;
+    };
+    let mut nll = 0.0;
+    let mut ignored_grad = 0.0;
+    for item in items {
+        add_lnorm_abs_slope_prior(item.a_g, mu, sd, &mut nll, &mut ignored_grad);
+        if let Some(a_s) = item.a_s {
+            add_lnorm_abs_slope_prior(a_s, mu, sd, &mut nll, &mut ignored_grad);
+        }
+    }
+    nll
+}
+
+/// Name of the EM objective whose monotonicity and tolerance are checked:
+/// the observed-data log-likelihood for MML, the log posterior
+/// (log-likelihood + log slope prior) for MAP — generalized EM only
+/// guarantees ascent of the objective the M-step maximizes.
+fn em_objective_name(prior: SlopePrior) -> &'static str {
+    match prior {
+        SlopePrior::None => "observed-data log-likelihood",
+        SlopePrior::Lognormal { .. } => "log posterior (log-likelihood + log slope prior)",
+    }
+}
+
 fn checked_em_loglik_change(
     current: f64,
     previous: Option<f64>,
     iteration: usize,
+    objective: &str,
 ) -> Result<Option<f64>, String> {
     if !current.is_finite() {
-        return Err(format!(
-            "non-finite observed-data log-likelihood at iteration {iteration}"
-        ));
+        return Err(format!("non-finite EM {objective} at iteration {iteration}"));
     }
     let Some(previous) = previous else {
         return Ok(None);
@@ -862,7 +1299,7 @@ fn checked_em_loglik_change(
     let monotonicity_tolerance = 32.0 * f64::EPSILON * (1.0 + previous.abs());
     if change < -monotonicity_tolerance {
         return Err(format!(
-            "EM observed-data log-likelihood decreased at iteration {iteration}: delta={change:.6e}"
+            "EM {objective} decreased at iteration {iteration}: delta={change:.6e}"
         ));
     }
     Ok(Some(change))
@@ -871,6 +1308,9 @@ fn checked_em_loglik_change(
 struct SingleStartOutcome {
     params: Vec<ItemParams>,
     loglik_trace: Vec<f64>,
+    /// EM objective per E-step (== `loglik_trace` without a prior); its last
+    /// value ranks starts.
+    em_objective_trace: Vec<f64>,
     n_iter: usize,
     converged: bool,
     termination_reason: String,
@@ -922,17 +1362,32 @@ fn run_single_start(
     let mut n_iter = 0usize;
     let mut termination_reason = "max_iter_reached".to_string();
     let mut final_loglik_change = f64::NAN;
+    let mut previous: Option<f64> = None;
+    let mut em_objective_trace: Vec<f64> = Vec::new();
+    let objective_name = em_objective_name(cfg.slope_prior);
 
     loop {
+        let phase_on = MSTEP_SWEEP_ENABLED.with(Cell::get);
+        let t_fill = phase_on.then(Instant::now);
         let tables = fill_logprob_tables(v, &params, tg, ts, qg, qs);
+        if let Some(t0) = t_fill {
+            bump(&PHASE_NS_FILL, t0.elapsed().as_nanos() as u64);
+        }
+        let t_estep = phase_on.then(Instant::now);
         let (ll, counts) = e_step(
             v, y, observed, &tables, log_wg, log_ws, qg, qs, tg, ts, cfg.device,
         );
-        let previous = loglik_trace.last().copied();
-        let change = checked_em_loglik_change(ll, previous, n_iter)?;
+        if let Some(t0) = t_estep {
+            bump(&PHASE_NS_ESTEP, t0.elapsed().as_nanos() as u64);
+        }
+        // MAP: GEM ascends log-likelihood + log prior, not the likelihood.
+        let objective = ll - slope_prior_neg_log(cfg.slope_prior, &params);
+        let change = checked_em_loglik_change(objective, previous, n_iter, objective_name)?;
         loglik_trace.push(ll);
+        em_objective_trace.push(objective);
+        let prev_objective = previous.replace(objective);
         if let Some(change) = change {
-            let prev = previous.expect("change requires a previous log-likelihood");
+            let prev = prev_objective.expect("change requires a previous objective");
             final_loglik_change = change;
             if final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
                 converged = true;
@@ -943,6 +1398,7 @@ fn run_single_start(
         if n_iter == cfg.max_iter {
             break;
         }
+        let t_mstep = phase_on.then(Instant::now);
         for i in 0..v.n_items {
             let has_specific = v.item_block[i].is_some();
             let mut packed = Vec::with_capacity(1 + has_specific as usize + v.m1);
@@ -960,6 +1416,7 @@ fn run_single_start(
                 v.n_cat,
                 cfg.ridge,
                 cfg.newton_iter,
+                cfg.slope_prior,
             );
             params[i].a_g = updated[0];
             if has_specific {
@@ -968,6 +1425,9 @@ fn run_single_start(
             } else {
                 params[i].d = updated[1..].to_vec();
             }
+        }
+        if let Some(t0) = t_mstep {
+            bump(&PHASE_NS_MSTEP, t0.elapsed().as_nanos() as u64);
         }
         n_iter += 1;
     }
@@ -980,6 +1440,7 @@ fn run_single_start(
     Ok(SingleStartOutcome {
         params,
         loglik_trace,
+        em_objective_trace,
         n_iter,
         converged,
         termination_reason,
@@ -1037,10 +1498,11 @@ pub fn fit_bifactor_grm(
         ) {
             Ok(outcome) => {
                 n_succeeded += 1;
+                // Best EM objective (log posterior under a prior) wins.
                 let ll = *outcome
-                    .loglik_trace
+                    .em_objective_trace
                     .last()
-                    .expect("EM trace is never empty");
+                    .expect("EM objective trace is never empty");
                 if best.is_none() || ll > best_ll {
                     best_ll = ll;
                     best = Some(outcome);
@@ -1185,6 +1647,8 @@ pub fn fit_bifactor_grm(
         final_loglik_change: outcome.final_loglik_change,
         best_start,
         n_parameters,
+        slope_prior: cfg.slope_prior,
+        em_objective_trace: outcome.em_objective_trace,
     })
 }
 
@@ -1220,6 +1684,7 @@ pub fn bifactor_grm_marginal_loglik(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        slope_prior: SlopePrior::None,
         device: crate::Device::Cpu,
     };
     let v = validate(
@@ -1288,6 +1753,7 @@ pub fn bifactor_grm_marginal_loglik_brute(
         seed: 0,
         newton_iter: 1,
         ridge: 1.0,
+        slope_prior: SlopePrior::None,
         device: crate::Device::Cpu,
     };
     let v = validate(
@@ -1519,7 +1985,7 @@ pub(crate) fn pack_params(
 
 /// Configuration for [`fit_bifactor_grm_multigroup`]. Numeric fields mirror
 /// [`BifactorGrmConfig`]; `estimate_specific_vars` selects whether focal
-/// specific-factor variances (means fixed at 0) are estimated (`true`) or
+/// specific-factor variances are estimated (`true`) or
 /// held at the reference value 1 (`false`).
 #[derive(Clone, Copy, Debug)]
 pub struct BifactorMultigroupConfig {
@@ -1537,8 +2003,15 @@ pub struct BifactorMultigroupConfig {
     pub newton_iter: usize,
     /// Newton ridge — Hessian CONDITIONING only, NOT a parameter prior.
     pub ridge: f64,
+    /// Optional MAP prior on free slopes (`|a|`); see [`SlopePrior`].
+    pub slope_prior: SlopePrior,
     /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
     pub estimate_specific_vars: bool,
+    /// Estimate focal specific means; reference remains zero. Requires an
+    /// anchor in every block and full joint location rank of fitted shared
+    /// loading rows observed in both reference and focal groups. This direct
+    /// reference-link screen is not a full-model identification proof.
+    pub estimate_specific_means: bool,
     /// Compute device for the E-step sweep (see [`BifactorGrmConfig::device`]).
     pub device: crate::Device,
 }
@@ -1554,7 +2027,9 @@ impl Default for BifactorMultigroupConfig {
             seed: 0x9E37_79B9_7F4A_7C15,
             newton_iter: 10,
             ridge: 1e-8,
+            slope_prior: SlopePrior::None,
             estimate_specific_vars: false,
+            estimate_specific_means: false,
             device: crate::Device::Cpu,
         }
     }
@@ -1581,6 +2056,8 @@ pub struct BifactorMultigroupResult {
     /// Specific-factor SDs, `n_groups x n_specific` (`[0][*] == 1` pinned;
     /// focal rows are 1 unless `estimate_specific_vars`).
     pub specific_sd: Vec<Vec<f64>>,
+    /// Specific-factor means, group by block; reference row is zero.
+    pub specific_mean: Vec<Vec<f64>>,
     /// General-factor EAP on the common scale, length `n_persons`.
     pub theta_g_eap: Vec<f64>,
     /// General-factor posterior SD, length `n_persons`.
@@ -1598,6 +2075,47 @@ pub struct BifactorMultigroupResult {
     /// Free item parameters (anchored counted once, free per group) plus
     /// estimated group distribution parameters.
     pub n_parameters: usize,
+    /// The slope prior the estimates were fitted under (`None` = MML).
+    pub slope_prior: SlopePrior,
+    /// EM objective per E-step (see [`BifactorGrmResult::em_objective_trace`];
+    /// common items contribute their prior once, free items once per group).
+    pub em_objective_trace: Vec<f64>,
+}
+
+
+fn canonicalize_multigroup_specific(
+    blocks: &[Vec<usize>], anchor_vec: &[bool],
+    a_specific: &mut [Vec<f64>], specific_mean: &mut [Vec<f64>],
+) {
+    let n_groups = a_specific.len();
+    for (s, members) in blocks.iter().enumerate() {
+        let anchored_members: Vec<usize> =
+            members.iter().copied().filter(|&i| anchor_vec[i]).collect();
+        // Prefer anchored members; fall back to the whole block only when it
+        // has no anchored item.
+        let candidates: &[usize] = if anchored_members.is_empty() {
+            members
+        } else {
+            &anchored_members
+        };
+        let anchor = (0..n_groups)
+            .flat_map(|g| candidates.iter().map(move |&i| (g, i)))
+            .max_by(|&(g1, i1), &(g2, i2)| {
+                a_specific[g1][i1]
+                    .abs()
+                    .total_cmp(&a_specific[g2][i2].abs())
+            })
+            .expect("validated blocks are non-empty");
+        if a_specific[anchor.0][anchor.1] < 0.0 {
+            for g in 0..n_groups {
+                specific_mean[g][s] = -specific_mean[g][s];
+                for &i in members {
+                    a_specific[g][i] = -a_specific[g][i];
+                }
+            }
+        }
+    }
+
 }
 
 fn validate_multigroup_cfg(cfg: &BifactorMultigroupConfig) -> Result<(), String> {
@@ -1628,6 +2146,7 @@ fn validate_multigroup_cfg(cfg: &BifactorMultigroupConfig) -> Result<(), String>
     if !cfg.ridge.is_finite() || cfg.ridge <= 0.0 {
         return Err("ridge must be finite and positive".into());
     }
+    cfg.slope_prior.validate()?;
     Ok(())
 }
 
@@ -1651,7 +2170,8 @@ fn initial_params_multigroup(
     seed: u64,
     start: usize,
     estimate_specific_vars: bool,
-) -> (Vec<Vec<ItemParams>>, Vec<f64>, Vec<f64>, Vec<Vec<f64>>) {
+    estimate_specific_means: bool,
+) -> (Vec<Vec<ItemParams>>, Vec<f64>, Vec<f64>, Vec<Vec<f64>>, Vec<Vec<f64>>) {
     let is_obs = |p: usize, i: usize| observed.is_none_or(|o| o[p * v.n_items + i]);
     let mut rng = SplitMix64(seed ^ (0x9E37_79B9_7F4A_7C15u64.wrapping_mul(start as u64 + 1)));
     // Base-rate intercepts: pooled for anchored, per-group for free.
@@ -1753,7 +2273,14 @@ fn initial_params_multigroup(
             }
         }
     }
-    (params_groups, mus, sigmas, taus)
+    // Draw after the legacy jitter sequence so opt-out is bit-reproducible.
+    let mut specific_mus = vec![vec![0.0; v.n_specific]; n_groups];
+    if start > 0 && estimate_specific_means {
+        for row in specific_mus.iter_mut().skip(1) {
+            for mean in row { *mean = 0.2 * rng.standard_normal(); }
+        }
+    }
+    (params_groups, mus, sigmas, taus, specific_mus)
 }
 
 struct MultiStartOutcome {
@@ -1761,23 +2288,50 @@ struct MultiStartOutcome {
     mus: Vec<f64>,
     sigmas: Vec<f64>,
     taus: Vec<Vec<f64>>,
+    specific_mus: Vec<Vec<f64>>,
     loglik_trace: Vec<f64>,
+    /// EM objective per E-step (== `loglik_trace` without a prior); its last
+    /// value ranks starts.
+    em_objective_trace: Vec<f64>,
     n_iter: usize,
     converged: bool,
     termination_reason: String,
     final_loglik_change: f64,
 }
 
+#[cfg(test)]
+thread_local! {
+    static AC_BLOCK_LSE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static AC_CACHE_F64: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static AC_COUNT_BUFFERS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+fn ac_reset_calls() {AC_BLOCK_LSE.with(|n|n.set(0));AC_CACHE_F64.with(|n|n.set(0));AC_COUNT_BUFFERS.with(|n|n.set(0));}
+
 /// One reduced E-step sweep over all groups: total observed-data loglik, plus
 /// per-group expected category counts (`counts[g][i][node][k]`,
 /// `node = t * qs + h` for block items, `node = t` for general-only items)
 /// and the posterior moments that drive the group-distribution M-step
-/// (`s1_g/s2_g` for the general factor, `s2_spec[g][s]` for the specifics at
-/// zero mean).
+/// (`s1_g/s2_g` for general and `s1_spec/s2_spec` for specific factors
+/// on the common affine scale).
+///
+/// Basis: Cai et al. (2011, pp. 231–232, Equations 15–17; p. 248,
+/// Equation C6), local full-text sections read. The invocation-local integral
+/// cache and flat internal count layout are locally derived implementation
+/// choices, not methods prescribed by that article. Group/block/response-mask
+/// keys preserve table identity; individual additions retain the original order.
+/// Numeric cache payload is `unique_patterns * qg * size_of::<f64>()`, excluding
+/// map/keys/capacity. Flat counts add transient storage; nested returned counts
+/// still allocate per node. Neither choice establishes a speedup or a mode.
+///
+/// # References
+/// Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information item
+/// bifactor analysis. *Psychological Methods, 16*(3), 221–248.
+/// doi:10.1037/a0023350
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
 #[allow(clippy::needless_range_loop)] // group/item/node indexing is inherently indexed
-fn e_step_multigroup(
+pub(crate) fn e_step_multigroup(
     v: &Validated,
     y: &[usize],
     observed: Option<&[bool]>,
@@ -1797,6 +2351,7 @@ fn e_step_multigroup(
     Vec<f64>,
     Vec<f64>,
     Vec<f64>,
+    Vec<Vec<f64>>,
     Vec<Vec<f64>>,
     Vec<Vec<f64>>,
 ) {
@@ -1879,16 +2434,18 @@ fn e_step_multigroup(
                     }
                     counts.push(cg);
                 }
+                let mut s1_spec = vec![vec![0.0; v.n_specific]; n_groups];
                 let mut s2_spec = vec![vec![0.0; v.n_specific]; n_groups];
                 let mut w_spec = vec![vec![0.0; v.n_specific]; n_groups];
                 for g in 0..n_groups {
                     for s in 0..v.n_specific {
+                        s1_spec[g][s] = res.s1_spec[g * v.n_specific + s];
                         s2_spec[g][s] = res.s2_spec[g * v.n_specific + s];
                         w_spec[g][s] = res.w_spec[g * v.n_specific + s];
                     }
                 }
                 return (
-                    res.loglik, counts, res.w_acc, res.s1_g, res.s2_g, s2_spec, w_spec,
+                    res.loglik, counts, res.w_acc, res.s1_g, res.s2_g, s1_spec, s2_spec, w_spec,
                 );
             }
         }
@@ -1900,23 +2457,27 @@ fn e_step_multigroup(
         );
     }
 
-    let mut counts: Vec<Vec<Vec<Vec<f64>>>> = Vec::with_capacity(n_groups);
-    for g in 0..n_groups {
-        let _ = g;
-        let mut cg = Vec::with_capacity(v.n_items);
+    // Private storage discriminator: one numeric buffer during accumulation.
+    // The original nested return is rebuilt afterward; that adds transient
+    // memory and does not reduce total output allocations or prove a speedup.
+    let mut count_offsets = Vec::with_capacity(n_groups * v.n_items);
+    let mut count_nodes = Vec::with_capacity(n_groups * v.n_items);
+    let mut count_len = 0usize;
+    for _g in 0..n_groups {
         for i in 0..v.n_items {
-            let n_nodes = if v.item_block[i].is_some() {
-                qg * qs
-            } else {
-                qg
-            };
-            cg.push(vec![vec![0.0f64; v.n_cat]; n_nodes]);
+            let n_nodes = if v.item_block[i].is_some() { qg * qs } else { qg };
+            count_offsets.push(count_len);
+            count_nodes.push(n_nodes);
+            count_len += n_nodes * v.n_cat;
         }
-        counts.push(cg);
     }
+    #[cfg(test)]
+    AC_COUNT_BUFFERS.with(|n|n.set(n.get()+1));
+    let mut flat_counts = vec![0.0f64; count_len];
     let mut w_acc = vec![0.0f64; n_groups];
     let mut s1_g = vec![0.0f64; n_groups];
     let mut s2_g = vec![0.0f64; n_groups];
+    let mut s1_spec = vec![vec![0.0f64; v.n_specific]; n_groups];
     let mut s2_spec = vec![vec![0.0f64; v.n_specific]; n_groups];
     // Per-(group, block) posterior mass for the specific-variance M-step:
     // persons with no observed item in block `s` contribute nothing to that
@@ -1930,6 +2491,15 @@ fn e_step_multigroup(
     let mut log_like_g = vec![0.0f64; qg];
     let mut post_g = vec![0.0f64; qg];
     let mut tmp_h = vec![0.0f64; qs];
+
+    // Invocation-local reuse of identical block integrands. Group and block
+    // own their tables; masks distinguish missing from observed category 0.
+    // Store original f64 bits; all per-person posterior additions stay below.
+    // Cache only Qg log-integrals, not the Qg*Qs block arrays. Recompute
+    // block_acc for every person in the original order for posterior use.
+    let mut block_cache: std::collections::HashMap<
+        (usize, usize, Vec<Option<usize>>), Vec<f64>
+    > = std::collections::HashMap::new();
 
     let mut loglik = 0.0f64;
     for p in 0..v.n_persons {
@@ -1947,6 +2517,11 @@ fn e_step_multigroup(
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
+            let pattern: Vec<Option<usize>> = members.iter().map(|&i| {
+                if is_obs(p, i) { Some(y[p * v.n_items + i]) } else { None }
+            }).collect();
+            let key = (g, s, pattern);
+            let integral_start = s * qg;
             for t in 0..qg {
                 for h in 0..qs {
                     let mut acc = log_ws[h];
@@ -1960,12 +2535,21 @@ fn e_step_multigroup(
                     block_acc[(s * qg + t) * qs + h] = acc;
                 }
             }
+            if let Some(cached_integrals) = block_cache.get(&key) {
+                log_i[integral_start..integral_start + qg].copy_from_slice(cached_integrals);
+                continue;
+            }
             for t in 0..qg {
                 for h in 0..qs {
                     tmp_h[h] = block_acc[(s * qg + t) * qs + h];
                 }
+                #[cfg(test)]
+                AC_BLOCK_LSE.with(|n| n.set(n.get()+1));
                 log_i[s * qg + t] = log_sum_exp(&tmp_h);
             }
+            #[cfg(test)]
+            AC_CACHE_F64.with(|n| n.set(n.get() + qg));
+            block_cache.insert(key, log_i[integral_start..integral_start + qg].to_vec());
         }
         for t in 0..qg {
             let mut acc = gen_log[t];
@@ -1991,7 +2575,7 @@ fn e_step_multigroup(
             }
             let yc = y[p * v.n_items + i];
             for t in 0..qg {
-                counts[g][i][t][yc] += post_g[t];
+                flat_counts[count_offsets[g * v.n_items + i] + t * v.n_cat + yc] += post_g[t];
             }
         }
         for (s, members) in v.blocks.iter().enumerate() {
@@ -2015,22 +2599,86 @@ fn e_step_multigroup(
                     if !post.is_finite() {
                         continue;
                     }
-                    // Specific moments at zero mean for the variance M-step.
+                    // Common-scale first/second moments for location and scale.
                     let ts = ts_groups[g][s][h];
                     w_spec[g][s] += post;
+                    s1_spec[g][s] += post * ts;
                     s2_spec[g][s] += post * ts * ts;
                     for &i in members {
                         if !is_obs(p, i) {
                             continue;
                         }
                         let yc = y[p * v.n_items + i];
-                        counts[g][i][t * qs + h][yc] += post;
+                        flat_counts[count_offsets[g * v.n_items + i] + (t * qs + h) * v.n_cat + yc] += post;
                     }
                 }
             }
         }
     }
-    (loglik, counts, w_acc, s1_g, s2_g, s2_spec, w_spec)
+    let counts: Vec<Vec<Vec<Vec<f64>>>> = (0..n_groups).map(|g| {
+        (0..v.n_items).map(|i| {
+            let item = g * v.n_items + i;
+            let start = count_offsets[item];
+            let stop = start + count_nodes[item] * v.n_cat;
+            flat_counts[start..stop].chunks_exact(v.n_cat).map(<[f64]>::to_vec).collect()
+        }).collect()
+    }).collect();
+    (loglik, counts, w_acc, s1_g, s2_g, s1_spec, s2_spec, w_spec)
+}
+
+// Cai et al. (2011, p. 230) require sufficient cross-group restrictions;
+// their graded predictor (p. 225, Eq. 6) gives the local necessary condition
+// A_anchor * location_shift = 0 => location_shift = 0. This numerical
+// column-rank screen is derived here, not a full Fisher-information check.
+// Reference: Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized
+// full-information item bifactor analysis. Psychological Methods, 16(3),
+// 221–248. https://doi.org/10.1037/a0023350
+fn validate_specific_mean_location_rank(
+    v: &Validated,
+    params: &[ItemParams],
+    anchor: &[bool],
+) -> Result<(), String> {
+    let n_dim = 1 + v.n_specific;
+    let rows: Vec<Vec<f64>> = params.iter().enumerate()
+        .filter(|(i, _)| anchor[*i])
+        .map(|(i, p)| {
+            let mut row = vec![0.0; n_dim];
+            row[0] = p.a_g;
+            if let Some(s) = v.item_block[i] {
+                row[1 + s] = p.a_s.unwrap_or(0.0);
+            }
+            // Row rescaling preserves rank and avoids overflowing norms.
+            let scale = row.iter().map(|x| x.abs()).fold(0.0_f64, f64::max);
+            if scale > 0.0 { for x in &mut row { *x /= scale; } }
+            row
+        }).collect();
+    let error = || format!(
+        "anchor loading location rank is deficient; require {} independent general/specific columns",
+        n_dim
+    );
+    if rows.len() < n_dim || rows.iter().flatten().any(|x| !x.is_finite()) {
+        return Err(error());
+    }
+    let tol = 64.0 * f64::EPSILON * rows.len().max(n_dim) as f64;
+    let mut basis: Vec<Vec<f64>> = Vec::with_capacity(n_dim);
+    for col in 0..n_dim {
+        let mut column: Vec<f64> = rows.iter().map(|row| row[col]).collect();
+        let norm = column.iter().fold(0.0_f64, |norm, &x| norm.hypot(x));
+        if norm == 0.0 || !norm.is_finite() { return Err(error()); }
+        for x in &mut column { *x /= norm; }
+        // Twice-reorthogonalized modified Gram-Schmidt, column-scaled.
+        for _ in 0..2 {
+            for q in &basis {
+                let dot: f64 = column.iter().zip(q).map(|(x, y)| x * y).sum();
+                for (x, y) in column.iter_mut().zip(q) { *x -= dot * y; }
+            }
+        }
+        let norm = column.iter().fold(0.0_f64, |norm, &x| norm.hypot(x));
+        if !norm.is_finite() || norm <= tol { return Err(error()); }
+        for x in &mut column { *x /= norm; }
+        basis.push(column);
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2051,7 +2699,7 @@ fn run_single_start_multigroup(
     qs: usize,
     start: usize,
 ) -> Result<MultiStartOutcome, String> {
-    let (mut params_groups, mut mus, mut sigmas, mut taus) = initial_params_multigroup(
+    let (mut params_groups, mut mus, mut sigmas, mut taus, mut specific_mus) = initial_params_multigroup(
         v,
         y,
         observed,
@@ -2061,6 +2709,7 @@ fn run_single_start_multigroup(
         cfg.seed,
         start,
         cfg.estimate_specific_vars,
+        cfg.estimate_specific_means,
     );
     let start_params_groups = params_groups.clone();
     // Latent coordinates per expected-count node (rebuilt when mus/sigmas/
@@ -2073,6 +2722,9 @@ fn run_single_start_multigroup(
     let mut n_iter = 0usize;
     let mut termination_reason = "max_iter_reached".to_string();
     let mut final_loglik_change = f64::NAN;
+    let mut previous: Option<f64> = None;
+    let mut em_objective_trace: Vec<f64> = Vec::new();
+    let objective_name = em_objective_name(cfg.slope_prior);
 
     loop {
         // Common-scale group nodes for this sweep.
@@ -2084,11 +2736,13 @@ fn run_single_start_multigroup(
             }
             for s in 0..v.n_specific {
                 for (h, &x) in ts_std.iter().enumerate() {
-                    ts_groups[g][s][h] = taus[g][s] * x;
+                    ts_groups[g][s][h] = specific_mus[g][s] + taus[g][s] * x;
                 }
             }
         }
-        let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec) = e_step_multigroup(
+        #[cfg(test)]
+        specific_mean_tests::begin_fit_sweep();
+        let (ll, counts, w_acc, s1_g, s2_g, s1_spec, s2_spec, w_spec) = e_step_multigroup(
             v,
             y,
             observed,
@@ -2103,19 +2757,39 @@ fn run_single_start_multigroup(
             qs,
             cfg.device,
         );
-        let previous = loglik_trace.last().copied();
-        let change = checked_em_loglik_change(ll, previous, n_iter)?;
+        #[cfg(test)]
+        let sweep_index = specific_mean_tests::record_fit_sweep(start, n_iter);
+        // MAP: GEM ascends log-likelihood + log prior. Common (anchored)
+        // items count once (group 0 row), free items once per group.
+        let prior_nll = slope_prior_neg_log(
+            cfg.slope_prior,
+            (0..n_groups).flat_map(|g| {
+                params_groups[g]
+                    .iter()
+                    .enumerate()
+                    .filter(move |&(i, _)| g == 0 || !anchor[i])
+                    .map(|(_, item)| item)
+            }),
+        );
+        let objective = ll - prior_nll;
+        let change = checked_em_loglik_change(objective, previous, n_iter, objective_name)?;
         loglik_trace.push(ll);
+        em_objective_trace.push(objective);
+        let prev_objective = previous.replace(objective);
         if let Some(change) = change {
-            let prev = previous.expect("change requires a previous log-likelihood");
+            let prev = prev_objective.expect("change requires a previous objective");
             final_loglik_change = change;
             if final_loglik_change <= cfg.tol * (1.0 + prev.abs()) {
                 converged = true;
                 termination_reason = "tolerance_met".to_string();
+                #[cfg(test)]
+                specific_mean_tests::mark_terminal_fit_sweep(sweep_index);
                 break;
             }
         }
         if n_iter == cfg.max_iter {
+            #[cfg(test)]
+            specific_mean_tests::mark_terminal_fit_sweep(sweep_index);
             break;
         }
         // M-step, item parameters: anchored items pool every group's nodes
@@ -2162,6 +2836,11 @@ fn run_single_start_multigroup(
                     v.n_cat,
                     cfg.ridge,
                     cfg.newton_iter,
+                    // Common (anchored) items are ESTIMATED from the pooled
+                    // counts, so they carry the prior once per shared
+                    // parameter — otherwise the prior would be a silent no-op
+                    // under the default all-common `anchor = None`.
+                    cfg.slope_prior,
                 );
                 for g in 0..n_groups {
                     params_groups[g][i].a_g = updated[0];
@@ -2203,6 +2882,7 @@ fn run_single_start_multigroup(
                         v.n_cat,
                         cfg.ridge,
                         cfg.newton_iter,
+                        cfg.slope_prior,
                     );
                     params_groups[g][i].a_g = updated[0];
                     if has_specific {
@@ -2217,8 +2897,8 @@ fn run_single_start_multigroup(
         // M-step, focal group distributions (reference g = 0 pinned to
         // N(0, I)). General: mu = mean EAP, var = mean posterior second
         // moment minus mu^2 (Bock-Aitkin/Bock-Zimowski moment update).
-        // Specifics (when estimated): tau^2 = mean posterior second moment
-        // at zero mean. All unconstrained-positive with NO clamping: a
+        // Specifics: mean = posterior first moment; variance = posterior
+        // second moment minus the estimated mean squared (zero if fixed). All unconstrained-positive with NO clamping: a
         // non-finite or non-positive update fails the start loudly.
         for g in 1..n_groups {
             if w_acc[g] <= 0.0 || !w_acc[g].is_finite() {
@@ -2236,7 +2916,7 @@ fn run_single_start_multigroup(
             }
             mus[g] = mean;
             sigmas[g] = var.sqrt();
-            if cfg.estimate_specific_vars {
+            if cfg.estimate_specific_vars || cfg.estimate_specific_means {
                 for s in 0..v.n_specific {
                     // Denominator counts only persons observed in this block
                     // (block-wise MAR must not dilute the variance update).
@@ -2245,7 +2925,15 @@ fn run_single_start_multigroup(
                             "group {g} specific-{s} has no posterior mass"
                         ));
                     }
-                    let vrow = s2_spec[g][s] / w_spec[g][s];
+                    let mean = if cfg.estimate_specific_means {
+                        s1_spec[g][s] / w_spec[g][s]
+                    } else { 0.0 };
+                    if !mean.is_finite() {
+                        return Err(format!("non-finite group-{g} specific-{s} mean update"));
+                    }
+                    specific_mus[g][s] = mean;
+                    if !cfg.estimate_specific_vars { continue; }
+                    let vrow = s2_spec[g][s] / w_spec[g][s] - mean * mean;
                     if !vrow.is_finite() {
                         return Err(format!("non-finite group-{g} specific-{s} update"));
                     }
@@ -2269,12 +2957,29 @@ fn run_single_start_multigroup(
         converged = false;
         termination_reason = "numerical_em_stall".to_string();
     }
+    // Test the fitted shared loading rows, not their deliberately symmetric
+    // initial values. A rejected start cannot compete for the best objective.
+    if cfg.estimate_specific_means {
+        for g in 1..n_groups {
+            let effective_anchor: Vec<bool> = (0..v.n_items).map(|i| {
+                anchor[i] && [0, g].iter().all(|&side| {
+                    (0..v.n_persons).any(|p| {
+                        group_id[p] == side && observed.is_none_or(|o| o[p * v.n_items + i])
+                    })
+                })
+            }).collect();
+            validate_specific_mean_location_rank(v, &params_groups[g], &effective_anchor)
+                .map_err(|e| format!("group {g}: {e}"))?;
+        }
+    }
     Ok(MultiStartOutcome {
         params_groups,
         mus,
         sigmas,
         taus,
+        specific_mus,
         loglik_trace,
+        em_objective_trace,
         n_iter,
         converged,
         termination_reason,
@@ -2290,8 +2995,14 @@ fn run_single_start_multigroup(
 /// `specific_map` is length `n_items` with `-1` for general-only items and
 /// `0..n_specific` otherwise; `anchor` is `None` (all items common) or length
 /// `n_items` with `true` = common across groups and `false` = free per group
-/// (at least one anchored item is required when `n_groups >= 2` to link the
-/// scales — Cai, Yang, & Hansen, 2011). Runs `n_starts` EM runs and keeps the
+/// (at least one anchored item is required when `n_groups >= 2`; this is
+/// only a necessary linking condition, not a general identification theorem
+/// — Cai, Yang, & Hansen, 2011, p. 230). With free specific means, every
+/// block additionally needs an anchor and each start's fitted shared loading
+/// rows observed in both reference and focal data must have full joint
+/// location column rank for every focal group. Indirect-only linking through
+/// other focal groups is outside this conservative admission contract.
+/// Runs `n_starts` EM runs and keeps the
 /// best loglik. With `n_groups == 1` this delegates to [`fit_bifactor_grm`]
 /// and bit-reproduces the stage-1 result. Returns `Err` on malformed input,
 /// unobserved categories (pooled for every item; per-group for every free
@@ -2347,6 +3058,7 @@ pub fn fit_bifactor_grm_multigroup(
             seed: cfg.seed,
             newton_iter: cfg.newton_iter,
             ridge: cfg.ridge,
+            slope_prior: cfg.slope_prior,
             device: cfg.device,
         };
         let single = fit_bifactor_grm(
@@ -2366,6 +3078,7 @@ pub fn fit_bifactor_grm_multigroup(
             general_mean: vec![0.0],
             general_sd: vec![1.0],
             specific_sd: vec![vec![1.0; n_specific]],
+            specific_mean: vec![vec![0.0; n_specific]],
             theta_g_eap: single.theta_g_eap,
             theta_g_sd: single.theta_g_sd,
             group_category_counts: vec![single.category_counts],
@@ -2376,6 +3089,8 @@ pub fn fit_bifactor_grm_multigroup(
             final_loglik_change: single.final_loglik_change,
             best_start: single.best_start,
             n_parameters: single.n_parameters,
+            slope_prior: single.slope_prior,
+            em_objective_trace: single.em_objective_trace,
         });
     }
     // Base structural validation (pooled categories, blocks, checked
@@ -2390,6 +3105,7 @@ pub fn fit_bifactor_grm_multigroup(
         seed: cfg.seed,
         newton_iter: cfg.newton_iter,
         ridge: cfg.ridge,
+        slope_prior: cfg.slope_prior,
         device: cfg.device,
     };
     let v = validate(
@@ -2429,6 +3145,15 @@ pub fn fit_bifactor_grm_multigroup(
              (Cai, Yang, & Hansen, 2011)"
                 .into(),
         );
+    }
+    if cfg.estimate_specific_means {
+        for (s, members) in v.blocks.iter().enumerate() {
+            if !members.iter().any(|&i| anchor_vec[i]) {
+                return Err(format!(
+                    "specific-{s} mean requires an anchored (common) item in its block"
+                ));
+            }
+        }
     }
     // Free items need every declared category in EVERY group (their per-group
     // boundaries are otherwise unidentified). Anchored items are identified
@@ -2489,10 +3214,11 @@ pub fn fit_bifactor_grm_multigroup(
             start,
         ) {
             Ok(outcome) => {
+                // Best EM objective (log posterior under a prior) wins.
                 let ll = *outcome
-                    .loglik_trace
+                    .em_objective_trace
                     .last()
-                    .expect("EM trace is never empty");
+                    .expect("EM objective trace is never empty");
                 if best.is_none() || ll > best_ll {
                     best_ll = ll;
                     best = Some(outcome);
@@ -2525,7 +3251,7 @@ pub fn fit_bifactor_grm_multigroup(
         }
         for s in 0..v.n_specific {
             for (h, &x) in ts_std.iter().enumerate() {
-                ts_groups[g][s][h] = outcome.taus[g][s] * x;
+                ts_groups[g][s][h] = outcome.specific_mus[g][s] + outcome.taus[g][s] * x;
             }
         }
     }
@@ -2635,6 +3361,7 @@ pub fn fit_bifactor_grm_multigroup(
     let mut general_mean = outcome.mus;
     let general_sd = outcome.sigmas;
     let specific_sd = outcome.taus;
+    let mut specific_mean = outcome.specific_mus;
 
     // Joint reflection canonicalization across groups: one decision per
     // dimension, so anchored equality is preserved. The sign is read from
@@ -2667,32 +3394,7 @@ pub fn fit_bifactor_grm_multigroup(
             *t = -*t;
         }
     }
-    for members in v.blocks.iter() {
-        let anchored_members: Vec<usize> =
-            members.iter().copied().filter(|&i| anchor_vec[i]).collect();
-        // Prefer anchored members; fall back to the whole block only when it
-        // has no anchored item.
-        let candidates: &[usize] = if anchored_members.is_empty() {
-            members
-        } else {
-            &anchored_members
-        };
-        let anchor = (0..n_groups)
-            .flat_map(|g| candidates.iter().map(move |&i| (g, i)))
-            .max_by(|&(g1, i1), &(g2, i2)| {
-                a_specific[g1][i1]
-                    .abs()
-                    .total_cmp(&a_specific[g2][i2].abs())
-            })
-            .expect("validated blocks are non-empty");
-        if a_specific[anchor.0][anchor.1] < 0.0 {
-            for g in 0..n_groups {
-                for &i in members {
-                    a_specific[g][i] = -a_specific[g][i];
-                }
-            }
-        }
-    }
+    canonicalize_multigroup_specific(&v.blocks, &anchor_vec, &mut a_specific, &mut specific_mean);
 
     let mut group_category_counts = vec![vec![0usize; n_items * n_cat]; n_groups];
     for p in 0..n_persons {
@@ -2714,6 +3416,9 @@ pub fn fit_bifactor_grm_multigroup(
         }
     }
     n_parameters += (n_groups - 1) * 2;
+    if cfg.estimate_specific_means {
+        n_parameters += (n_groups - 1) * v.n_specific;
+    }
     if cfg.estimate_specific_vars {
         n_parameters += (n_groups - 1) * v.n_specific;
     }
@@ -2725,6 +3430,7 @@ pub fn fit_bifactor_grm_multigroup(
         general_mean,
         general_sd,
         specific_sd,
+        specific_mean,
         theta_g_eap,
         theta_g_sd,
         group_category_counts,
@@ -2735,6 +3441,8 @@ pub fn fit_bifactor_grm_multigroup(
         final_loglik_change: outcome.final_loglik_change,
         best_start,
         n_parameters,
+        slope_prior: cfg.slope_prior,
+        em_objective_trace: outcome.em_objective_trace,
     })
 }
 
@@ -2844,6 +3552,8 @@ pub struct BifactorFipcConfig {
     pub ridge: f64,
     /// Estimate focal specific-factor variances (`true`) or fix at 1 (`false`).
     pub estimate_specific_vars: bool,
+    /// E-step execution selector; explicit GPU rejects a CPU fallback result.
+    pub device: crate::Device,
 }
 
 impl Default for BifactorFipcConfig {
@@ -2856,6 +3566,7 @@ impl Default for BifactorFipcConfig {
             newton_iter: 10,
             ridge: 1e-8,
             estimate_specific_vars: false,
+            device: crate::Device::Cpu,
         }
     }
 }
@@ -2898,6 +3609,10 @@ pub struct BifactorFipcResult {
     /// focal distribution parameters (general mean/variance, and the specific
     /// variances when estimated).
     pub n_parameters: usize,
+    pub gpu_execution_used: bool,
+    pub gpu_backend: Option<String>,
+    pub gpu_device_name: Option<String>,
+    pub cpu_fallback_reason: Option<String>,
 }
 
 /// Fit the focal group with fixed anchor items (Kim, 2006, MWU-MEM) for the
@@ -2939,6 +3654,7 @@ pub fn fit_bifactor_grm_fipc(
     fixed_threshold: &[f64],
     cfg: &BifactorFipcConfig,
 ) -> Result<BifactorFipcResult, String> {
+    crate::gpu_bifactor::reset_gpu_dispatch_receipt();
     // Config checks mirror `validate_multigroup_cfg` exactly (quadrature must
     // resolve a Gauss-Hermite rule; lower bounds only; caller-owned numerics
     // behave identically).
@@ -2968,11 +3684,10 @@ pub fn fit_bifactor_grm_fipc(
         seed: 0x9E37_79B9_7F4A_7C15,
         newton_iter: cfg.newton_iter,
         ridge: cfg.ridge,
-        // FIPC (#1912 stage-2b) predates the GPU E-step (#1931, stage 5) and
-        // has no device knob of its own; this reused single-group validator
-        // only checks shapes/blocks, never runs the E-step, so the device
-        // choice here is inert either way.
-        device: crate::Device::Cpu,
+        slope_prior: SlopePrior::None,
+        // Structural validation never executes an E-step. The actual selector
+        // is forwarded to the focal sweep below without changing its measure.
+        device: cfg.device,
     };
     let v = validate(
         y,
@@ -3087,7 +3802,7 @@ pub fn fit_bifactor_grm_fipc(
             .collect();
         let tg_groups = vec![tg.clone()];
         let ts_groups = vec![ts_focal.clone()];
-        let (ll, counts, w_acc, s1_g, s2_g, s2_spec, w_spec) = e_step_multigroup(
+        let (ll, counts, w_acc, s1_g, s2_g, _s1_spec, s2_spec, w_spec) = e_step_multigroup(
             &v,
             y,
             observed,
@@ -3100,11 +3815,19 @@ pub fn fit_bifactor_grm_fipc(
             &log_ws,
             qg,
             qs,
-            // FIPC predates the GPU E-step (#1931); always run the CPU sweep.
-            crate::Device::Cpu,
+            cfg.device,
         );
+        let dispatch = crate::gpu_bifactor::gpu_dispatch_receipt();
+        if cfg.device == crate::Device::Gpu
+            && (!dispatch.used || dispatch.fallback_reason.is_some())
+        {
+            return Err(format!(
+                "GPU FIPC requested but no GPU-only E-step result is available: {}",
+                dispatch.fallback_reason.as_deref().unwrap_or("gpu_execution_unavailable")
+            ));
+        }
         let previous = loglik_trace.last().copied();
-        let change = checked_em_loglik_change(ll, previous, n_iter)?;
+        let change = checked_em_loglik_change(ll, previous, n_iter, "observed-data log-likelihood")?;
         loglik_trace.push(ll);
         if let Some(change) = change {
             let prev = previous.expect("change requires a previous log-likelihood");
@@ -3157,6 +3880,7 @@ pub fn fit_bifactor_grm_fipc(
                 v.n_cat,
                 cfg.ridge,
                 cfg.newton_iter,
+                SlopePrior::None,
             );
             params[i].a_g = updated[0];
             if has_specific {
@@ -3335,6 +4059,7 @@ pub fn fit_bifactor_grm_fipc(
         n_parameters += v.n_specific;
     }
 
+    let dispatch = crate::gpu_bifactor::gpu_dispatch_receipt();
     Ok(BifactorFipcResult {
         a_general,
         a_specific,
@@ -3351,9 +4076,35 @@ pub fn fit_bifactor_grm_fipc(
         termination_reason,
         final_loglik_change,
         n_parameters,
+        gpu_execution_used: dispatch.used,
+        gpu_backend: dispatch.backend,
+        gpu_device_name: dispatch.device_name,
+        cpu_fallback_reason: dispatch.fallback_reason,
     })
 }
 
 #[cfg(test)]
 #[path = "../../../tests/unit/bifactor_grm_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "bifactor_cpu_storage_tests.rs"]
+mod ac_cpu_storage_tests;
+
+// The GPU module is compiled out under coverage builds (see lib.rs), so the
+// fixed GPU regression only exists where a Device::Gpu entry can reach it.
+#[cfg(all(test, feature = "gpu", not(coverage)))]
+#[path="ac_gpu_fixed_tests.rs"]
+mod ac_gpu_fixed_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/bifactor_grm_sibling_hessian_tests.rs"]
+mod sibling_hessian_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/bifactor_fixed_category_policy_tests.rs"]
+mod fixed_category_policy_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/specific_mean_tests.rs"]
+mod specific_mean_tests;

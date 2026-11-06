@@ -124,6 +124,7 @@ fn two_tier_with_single_primary_matches_bifactor_fit() {
             seed: 0x9E37_79B9_7F4A_7C15,
             newton_iter: 10,
             ridge: 1e-8,
+            slope_prior: mlsirm_core::bifactor_grm::SlopePrior::None,
             device: mlsirm_core::Device::Cpu,
         },
     )
@@ -145,6 +146,7 @@ fn two_tier_with_single_primary_matches_bifactor_fit() {
         2,
         N_CAT,
         &TwoTierGrmConfig {
+            estimate_primary_correlation: false,
             q_primary: 15,
             q_specific: 11,
             max_iter: 1000,
@@ -161,6 +163,7 @@ fn two_tier_with_single_primary_matches_bifactor_fit() {
         "two-tier P=1 fit must converge ({}); the P=1 model IS the bifactor model",
         two_tier.termination_reason
     );
+    assert_eq!(two_tier.primary_identification, "orthogonal");
 
     let mut worst_slope = 0.0f64;
     for i in 0..N_ITEMS {

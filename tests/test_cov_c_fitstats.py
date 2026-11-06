@@ -693,11 +693,13 @@ def test_dif_analysis_accepts_boolean_mask():
     gid = np.tile([0, 1], 150)
     mask = np.ones_like(y, dtype=bool)
     mask[0, 0] = False  # a single unobserved cell exercises the mask branch
+    # The LR statistic stabilizes by 501 nodes on this fixture (501 vs. 961:
+    # ~3e-8 difference); 11 nodes also prevented convergence at 120 iterations.
     result = fm.dif_analysis(
         y,
         np.zeros(6, dtype=np.int64),
         gid,
-        config=FitConfig(model="MIRT", estimator="mmle", max_iter=120, q_theta=11),
+        config=FitConfig(model="MIRT", estimator="mmle", max_iter=120, q_theta=501),
         mask=mask,
         studied_items=[2],
     )

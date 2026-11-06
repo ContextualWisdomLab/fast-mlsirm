@@ -1,0 +1,1302 @@
+{
+  "source_sha": "b1512e9b46760f2096b6d68b8407c93f229e217a",
+  "subject": "cargo/libm@0.2.16",
+  "artifact_sha256": "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981",
+  "upstream_commit": "dfd2203a4d6110820ad7bb65cafe1bf331a03a3d",
+  "package_license_sha256": "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7",
+  "rust_file_count": 148,
+  "notice_candidate_count": 69,
+  "files": [
+    {
+      "member": "libm-0.2.16/src/math/acos.rs",
+      "source_sha256": "efd83a6138061209867f06421c6a756b8ca3aab5c6c0a85c4aba31bedb299da5",
+      "notice_sha256": "e43973f03c0fbe02d5d68db5ffcb1c4bdd73c5a67394519fff965821c11becf0",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_acos.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/* acos(x)\n * Method :\n *      acos(x)  = pi/2 - asin(x)\n *      acos(-x) = pi/2 + asin(x)\n * For |x|<=0.5\n *      acos(x) = pi/2 - (x + x*x^2*R(x^2))     (see asin.c)\n * For x>0.5\n *      acos(x) = pi/2 - (pi/2 - 2asin(sqrt((1-x)/2)))\n *              = 2asin(sqrt((1-x)/2))\n *              = 2s + 2s*z*R(z)        ...z=(1-x)/2, s=sqrt(z)\n *              = 2f + (2c + 2s*z*R(z))\n *     where f=hi part of s, and c = (z-f*f)/(s+f) is the correction term\n *     for f so that f+c ~ sqrt(z).\n * For x<-0.5\n *      acos(x) = pi - 2asin(sqrt((1-|x|)/2))\n *              = pi - 0.5*(s+s*z*R(z)), where z=(1-|x|)/2,s=sqrt(z)\n *\n * Special cases:\n *      if x is NaN, return x itself;\n *      if |x|>1, return NaN with invalid signal.\n *\n * Function needed: sqrt\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/acos.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 53,
+          "end_character": 433,
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/acosf.rs",
+      "source_sha256": "c5c9c74d267725bbe5f9319e6f4a396af6ce46c890b601d3f963a5d74d12e4c3",
+      "notice_sha256": "2186e7aaf95828e50d083141721eaf1ec97a865b308403a17a9bd4999f3f452d",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_acosf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/acosf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 137,
+          "end_character": 516,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/asin.rs",
+      "source_sha256": "9693a7cb61674ec6fe22be9db8fe20276729c48b1562fd86d5421e372a0a12e4",
+      "notice_sha256": "126ccb20f1f55f81a5852f3f48bb42e7d4673d77af791c8c06135e9f194e8bce",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_asin.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/* asin(x)\n * Method :\n *      Since  asin(x) = x + x^3/6 + x^5*3/40 + x^7*15/336 + ...\n *      we approximate asin(x) on [0,0.5] by\n *              asin(x) = x + x*x^2*R(x^2)\n *      where\n *              R(x^2) is a rational approximation of (asin(x)-x)/x^3\n *      and its remez error is bounded by\n *              |(asin(x)-x)/x^3 - R(x^2)| < 2^(-58.75)\n *\n *      For x in [0.5,1]\n *              asin(x) = pi/2-2*asin(sqrt((1-x)/2))\n *      Let y = (1-x), z = y/2, s := sqrt(z), and pio2_hi+pio2_lo=pi/2;\n *      then for x>0.98\n *              asin(x) = pi/2 - 2*(s+s*z*R(z))\n *                      = pio2_hi - (2*(s+s*z*R(z)) - pio2_lo)\n *      For x<=0.98, let pio4_hi = pio2_hi/2, then\n *              f = hi part of s;\n *              c = sqrt(z) - f = (z-f*f)/(s+f)         ...f+c=sqrt(z)\n *      and\n *              asin(x) = pi/2 - 2*(s+s*z*R(z))\n *                      = pio4_hi+(pio4-2s)-(2s*z*R(z)-pio2_lo)\n *                      = pio4_hi+(pio4-2f)-(2s*z*R(z)-(pio2_lo+2c))\n *\n * Special cases:\n *      if x is NaN, return x itself;\n *      if |x|>1, return NaN with invalid signal.\n *\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/asin.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 53,
+          "end_character": 433,
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/asinf.rs",
+      "source_sha256": "25f6b7bbf46fc5aac4ebdd9e00118239747dcd28a79b90b858ddc4633d773d65",
+      "notice_sha256": "190c577cbe8d50d4634fd98a69fe3c896a49b7ccf7770a23935e4a8a0618e6cc",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_asinf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/asinf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 137,
+          "end_character": 516,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/atan.rs",
+      "source_sha256": "54181dbddf4f77b90b32b9f6819ac989da570dc02b791f3685d20a23d51324be",
+      "notice_sha256": "576982b7d8a41c892aaca88edae40cef2944b1b590b41e19906a335e9f75e45b",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_atan.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/* atan(x)\n * Method\n *   1. Reduce x to positive by atan(x) = -atan(-x).\n *   2. According to the integer k=4t+0.25 chopped, t=x, the argument\n *      is further reduced to one of the following intervals and the\n *      arctangent of t is evaluated by the corresponding formula:\n *\n *      [0,7/16]      atan(x) = t-t^3*(a1+t^2*(a2+...(a10+t^2*a11)...)\n *      [7/16,11/16]  atan(x) = atan(1/2) + atan( (t-0.5)/(1+t/2) )\n *      [11/16.19/16] atan(x) = atan( 1 ) + atan( (t-1)/(1+t) )\n *      [19/16,39/16] atan(x) = atan(3/2) + atan( (t-1.5)/(1+1.5t) )\n *      [39/16,INF]   atan(x) = atan(INF) + atan( -1/t )\n *\n * Constants:\n * The hexadecimal values are the intended ones for the following\n * constants. The decimal values may be used, provided that the\n * compiler will convert from decimal to binary accurately enough\n * to produce the hexadecimal values shown.\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/atan.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 53,
+          "end_character": 432,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/atan2.rs",
+      "source_sha256": "7d028d4d397f7484b8feed7b228eda65b84acac94d27729d236d5df95e38d8f0",
+      "notice_sha256": "7ec1a3f48aa4c6744ce963f77f2b3344046db2868b3632ef7e56713d99fb4bec",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_atan2.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n *\n */\n/* atan2(y,x)\n * Method :\n *      1. Reduce y to positive by atan2(y,x)=-atan2(-y,x).\n *      2. Reduce x to positive by (if x and y are unexceptional):\n *              ARG (x+iy) = arctan(y/x)           ... if x > 0,\n *              ARG (x+iy) = pi - arctan[y/(-x)]   ... if x < 0,\n *\n * Special cases:\n *\n *      ATAN2((anything), NaN ) is NaN;\n *      ATAN2(NAN , (anything) ) is NaN;\n *      ATAN2(+-0, +(anything but NaN)) is +-0  ;\n *      ATAN2(+-0, -(anything but NaN)) is +-pi ;\n *      ATAN2(+-(anything but 0 and NaN), 0) is +-pi/2;\n *      ATAN2(+-(anything but INF and NaN), +INF) is +-0 ;\n *      ATAN2(+-(anything but INF and NaN), -INF) is +-pi;\n *      ATAN2(+-INF,+INF ) is +-pi/4 ;\n *      ATAN2(+-INF,-INF ) is +-3pi/4;\n *      ATAN2(+-INF, (anything but,0,NaN, and INF)) is +-pi/2;\n *\n * Constants:\n * The hexadecimal values are the intended ones for the following\n * constants. The decimal values may be used, provided that the\n * compiler will convert from decimal to binary accurately enough\n * to produce the hexadecimal values shown.\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/atan2.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 54,
+          "end_character": 437,
+          "sha256": "11f476f899dacfef801a097465ad0755ad4546afe03b02c9a17aa38e228344e1",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n *\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/atan2f.rs",
+      "source_sha256": "b9497b5adb75e2788c404fd121aa64dcfa0e9357b67af3b3e7e6d4624dae1ca1",
+      "notice_sha256": "a20520e1a0fe45d9383572e39689a3584333f54624d13fcef47e04239c99f53c",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_atan2f.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/atan2f.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 138,
+          "end_character": 517,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/atanf.rs",
+      "source_sha256": "197762f16ed5951236e17d0869c529e857acc329cc287df019ff69e5401f3b4d",
+      "notice_sha256": "1974df19d06c761990b58b6ae5239a48b08126ea8eb42e2d2205537346c371a4",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_atanf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/atanf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 137,
+          "end_character": 516,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/cbrt.rs",
+      "source_sha256": "1ed98a0943c46ca48e32af54b6baeb80b6e8da5dda550005711fcb26bfcf12c2",
+      "notice_sha256": "2e84c06e483145cfb8f1c4cb69f2e6b845d57ad2c32d85c3d106b662ff5a1b53",
+      "leading_comments": "/* SPDX-License-Identifier: MIT */\n/* origin: core-math/src/binary64/cbrt/cbrt.c\n * Copyright (c) 2021-2022 Alexei Sibidanov.\n * Ported to Rust in 2025 by Trevor Gross.\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/cbrt.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 34,
+          "sha256": "f73e293daa12abe52dd73882816fe4002b4f6e69065892abd57881180fb26bf2",
+          "text": "/* SPDX-License-Identifier: MIT */"
+        },
+        {
+          "start_character": 35,
+          "end_character": 172,
+          "sha256": "225167f203ade8fe5b0714aed4abf358d23fb9dd385a63580ba216ac88a7b799",
+          "text": "/* origin: core-math/src/binary64/cbrt/cbrt.c\n * Copyright (c) 2021-2022 Alexei Sibidanov.\n * Ported to Rust in 2025 by Trevor Gross.\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/cbrtf.rs",
+      "source_sha256": "7a2b4f190e8618c52cb23b47c040a4b4eacca739c68393cf14fb3f5d73988127",
+      "notice_sha256": "a23f582c1e62393b8b3873c5e1a297208fe32a46492136e13ccfe352b3733f8b",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_cbrtf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n * Debugged and optimized by Bruce D. Evans.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/* cbrtf(x)\n * Return cube root of x\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/cbrtf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 182,
+          "end_character": 561,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/cos.rs",
+      "source_sha256": "6e81752899c471bd42d04bdf08e0b22bc10a29f92fa2a343281b995fd342f035",
+      "notice_sha256": "78faf2571fe417f3bcd7b38798c4d9ddf499ca43d1ede6fa44992ba75445bff7",
+      "leading_comments": "// origin: FreeBSD /usr/src/lib/msun/src/s_cos.c */\n//\n// ====================================================\n// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n//\n// Developed at SunPro, a Sun Microsystems, Inc. business.\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/cos.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 428,
+          "sha256": "78faf2571fe417f3bcd7b38798c4d9ddf499ca43d1ede6fa44992ba75445bff7",
+          "text": "// origin: FreeBSD /usr/src/lib/msun/src/s_cos.c */\n//\n// ====================================================\n// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n//\n// Developed at SunPro, a Sun Microsystems, Inc. business.\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/cosf.rs",
+      "source_sha256": "f48aa954f199fe4f54fd73b4e7886a75f2c08afba7fc31c6a36db5b5f90ced69",
+      "notice_sha256": "5dee3f830e4be5104b87998866ad35abea52c5a1617b33e59c7166a946984413",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_cosf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n * Optimized by Bruce D. Evans.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/cosf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 168,
+          "end_character": 547,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/erf.rs",
+      "source_sha256": "5a69f440d5ca88a5c4a45119837c45b14238836a036675230e10fec41d293a3b",
+      "notice_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "leading_comments": "",
+      "keyword_offsets_outside_leading_comments": [
+        172,
+        303
+      ],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/erf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 110,
+          "end_character": 489,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/erff.rs",
+      "source_sha256": "62c30876390e532d7dc9ac1f1f1c1f654065fba2b2e534e531964d79e1766196",
+      "notice_sha256": "ecbd701408b1c1c1561a904ee381c2859095bd89e18996f99b8017914acf9caf",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_erff.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/erff.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 136,
+          "end_character": 515,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/exp.rs",
+      "source_sha256": "1d486e847e1752fb9ce74a714096a11adcac935dacd4f17625ff63819103a80d",
+      "notice_sha256": "949a685b373e26cb43cfd78641869421a0dc212ba7d9c21db4eb7ec9acaf3780",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_exp.c */\n/*\n * ====================================================\n * Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.\n *\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/* exp(x)\n * Returns the exponential of x.\n *\n * Method\n *   1. Argument reduction:\n *      Reduce x to an r so that |r| <= 0.5*ln2 ~ 0.34658.\n *      Given x, find r and integer k such that\n *\n *               x = k*ln2 + r,  |r| <= 0.5*ln2.\n *\n *      Here r will be represented as r = hi-lo for better\n *      accuracy.\n *\n *   2. Approximation of exp(r) by a special rational function on\n *      the interval [0,0.34658]:\n *      Write\n *          R(r**2) = r*(exp(r)+1)/(exp(r)-1) = 2 + r*r/6 - r**4/360 + ...\n *      We use a special Remez algorithm on [0,0.34658] to generate\n *      a polynomial of degree 5 to approximate R. The maximum error\n *      of this polynomial approximation is bounded by 2**-59. In\n *      other words,\n *          R(z) ~ 2.0 + P1*z + P2*z**2 + P3*z**3 + P4*z**4 + P5*z**5\n *      (where z=r*r, and the values of P1 to P5 are listed below)\n *      and\n *          |                  5          |     -59\n *          | 2.0+P1*z+...+P5*z   -  R(z) | <= 2\n *          |                             |\n *      The computation of exp(r) thus becomes\n *                              2*r\n *              exp(r) = 1 + ----------\n *                            R(r) - r\n *                                 r*c(r)\n *                     = 1 + r + ----------- (for better accuracy)\n *                                2 - c(r)\n *      where\n *                              2       4             10\n *              c(r) = r - (P1*r  + P2*r  + ... + P5*r   ).\n *\n *   3. Scale back to obtain exp(x):\n *      From step 1, we have\n *         exp(x) = 2^k * exp(r)\n *\n * Special cases:\n *      exp(INF) is INF, exp(NaN) is NaN;\n *      exp(-INF) is 0, and\n *      for finite argument, only exp(0)=1 is exact.\n *\n * Accuracy:\n *      according to an error analysis, the error is always less than\n *      1 ulp (unit in the last place).\n *\n * Misc. info.\n *      For IEEE double\n *          if x >  709.782712893383973096 then exp(x) overflows\n *          if x < -745.133219101941108420 then exp(x) underflows\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/exp.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 52,
+          "end_character": 372,
+          "sha256": "15e78071c8347a689c48ec92bbdd5eba7bd8dc74f86ee3e7ad31d34b24fefe83",
+          "text": "/*\n * ====================================================\n * Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.\n *\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/exp2.rs",
+      "source_sha256": "e7270f15a682b69a49e042c80503c206d37c6c895f2c63da59a5e2431fa5fedc",
+      "notice_sha256": "2728151294eb93196ab6dd7cb28ddc6e9ab76bf7ebf8c2e1a15f0d2221c98c76",
+      "leading_comments": "// origin: FreeBSD /usr/src/lib/msun/src/s_exp2.c */\n//-\n// Copyright (c) 2005 David Schultz <das@FreeBSD.ORG>\n// All rights reserved.\n//\n// Redistribution and use in source and binary forms, with or without\n// modification, are permitted provided that the following conditions\n// are met:\n// 1. Redistributions of source code must retain the above copyright\n//    notice, this list of conditions and the following disclaimer.\n// 2. Redistributions in binary form must reproduce the above copyright\n//    notice, this list of conditions and the following disclaimer in the\n//    documentation and/or other materials provided with the distribution.\n//\n// THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND\n// ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE\n// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE\n// ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE\n// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\n// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS\n// OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)\n// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT\n// LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY\n// OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF\n// SUCH DAMAGE.\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/exp2.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 1422,
+          "sha256": "2728151294eb93196ab6dd7cb28ddc6e9ab76bf7ebf8c2e1a15f0d2221c98c76",
+          "text": "// origin: FreeBSD /usr/src/lib/msun/src/s_exp2.c */\n//-\n// Copyright (c) 2005 David Schultz <das@FreeBSD.ORG>\n// All rights reserved.\n//\n// Redistribution and use in source and binary forms, with or without\n// modification, are permitted provided that the following conditions\n// are met:\n// 1. Redistributions of source code must retain the above copyright\n//    notice, this list of conditions and the following disclaimer.\n// 2. Redistributions in binary form must reproduce the above copyright\n//    notice, this list of conditions and the following disclaimer in the\n//    documentation and/or other materials provided with the distribution.\n//\n// THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND\n// ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE\n// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE\n// ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE\n// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\n// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS\n// OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)\n// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT\n// LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY\n// OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF\n// SUCH DAMAGE.\n"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/exp2f.rs",
+      "source_sha256": "3b4b5cb2e5674e1ce66a6051710738c1a6edc1d1638686fe9c78f0af4792a634",
+      "notice_sha256": "d9d31636bf6dc09dbbe83abe0514e8d867f635bf3ef99b5163b54c56e6524077",
+      "leading_comments": "// origin: FreeBSD /usr/src/lib/msun/src/s_exp2f.c\n//-\n// Copyright (c) 2005 David Schultz <das@FreeBSD.ORG>\n// All rights reserved.\n//\n// Redistribution and use in source and binary forms, with or without\n// modification, are permitted provided that the following conditions\n// are met:\n// 1. Redistributions of source code must retain the above copyright\n//    notice, this list of conditions and the following disclaimer.\n// 2. Redistributions in binary form must reproduce the above copyright\n//    notice, this list of conditions and the following disclaimer in the\n//    documentation and/or other materials provided with the distribution.\n//\n// THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND\n// ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE\n// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE\n// ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE\n// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\n// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS\n// OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)\n// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT\n// LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY\n// OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF\n// SUCH DAMAGE.\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/exp2f.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 1420,
+          "sha256": "d9d31636bf6dc09dbbe83abe0514e8d867f635bf3ef99b5163b54c56e6524077",
+          "text": "// origin: FreeBSD /usr/src/lib/msun/src/s_exp2f.c\n//-\n// Copyright (c) 2005 David Schultz <das@FreeBSD.ORG>\n// All rights reserved.\n//\n// Redistribution and use in source and binary forms, with or without\n// modification, are permitted provided that the following conditions\n// are met:\n// 1. Redistributions of source code must retain the above copyright\n//    notice, this list of conditions and the following disclaimer.\n// 2. Redistributions in binary form must reproduce the above copyright\n//    notice, this list of conditions and the following disclaimer in the\n//    documentation and/or other materials provided with the distribution.\n//\n// THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND\n// ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE\n// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE\n// ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE\n// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\n// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS\n// OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)\n// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT\n// LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY\n// OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF\n// SUCH DAMAGE.\n"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/expf.rs",
+      "source_sha256": "33b01180ebd01bb2911379476c5411fd05b066f2e17ef66e48c4dde83a7f01c0",
+      "notice_sha256": "a45adbbe0fe70bd0c3df3741271523cb72ddf5f5146390bde1878bccb70c2e41",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_expf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/expf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 136,
+          "end_character": 515,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/expm1.rs",
+      "source_sha256": "6cc612ca7cf1384dc15f541b301a1f176efbc79536aff1293408b3121cc30ad3",
+      "notice_sha256": "35308fba6e73d6001c49f65dd283fdf419aa4c4341594c3f8ee6c16a2bb57446",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_expm1.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/expm1.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 54,
+          "end_character": 433,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/expm1f.rs",
+      "source_sha256": "2b517f1bcb6279c906aad737f08c83ac30d7871e3beff266ea50a01fa18ccc81",
+      "notice_sha256": "8b3c9a5b6bdb7cf17615b7ab54df9e5b6a197d9df42e5fce055256523c90c221",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_expm1f.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/expm1f.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 138,
+          "end_character": 517,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/fma.rs",
+      "source_sha256": "16e72470f5c4407c44183cf06f5868f216c92e0532f3fb387b57dbccf815e2a7",
+      "notice_sha256": "c2dd4a69de229bc5813213deb2dbc5b4b1da8799e0dac1fe8c491fead656a218",
+      "leading_comments": "/* SPDX-License-Identifier: MIT */\n/* origin: musl src/math/fma.c, fmaf.c Ported to generic Rust algorithm in 2025, TG. */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/fma.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 34,
+          "sha256": "f73e293daa12abe52dd73882816fe4002b4f6e69065892abd57881180fb26bf2",
+          "text": "/* SPDX-License-Identifier: MIT */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/ceil.rs",
+      "source_sha256": "66b3def2b00ed9dd6a4f59c73765a050853dfe06c828fdf731987ac99e7c2a88",
+      "notice_sha256": "685afe408873997a0160f87bc5cdf9450f30adb2bf9e77d4c2d20d3bed6f87e8",
+      "leading_comments": "/* SPDX-License-Identifier: MIT */\n/* origin: musl src/math/ceilf.c */\n\n//! Generic `ceil` algorithm.\n//!\n//! Note that this uses the algorithm from musl's `ceilf` rather than `ceil` or `ceill` because\n//! performance seems to be better (based on icount) and it does not seem to experience rounding\n//! errors on i386.\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/ceil.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 34,
+          "sha256": "f73e293daa12abe52dd73882816fe4002b4f6e69065892abd57881180fb26bf2",
+          "text": "/* SPDX-License-Identifier: MIT */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/floor.rs",
+      "source_sha256": "7d4f15369abefa27645d6deda51d30febbe60ee9dca76e72a9364d574d0711c0",
+      "notice_sha256": "50bfc55401f7c8886f53d34d93f942ca7a1ddd2132dcb4705b8d24cf3cfe5929",
+      "leading_comments": "/* SPDX-License-Identifier: MIT\n * origin: musl src/math/floor.c */\n\n//! Generic `floor` algorithm.\n//!\n//! Note that this uses the algorithm from musl's `floorf` rather than `floor` or `floorl` because\n//! performance seems to be better (based on icount) and it does not seem to experience rounding\n//! errors on i386.\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/floor.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 67,
+          "sha256": "cc7ddd4aec15d176fc40570979991b6bbe00d3ec3d9bbf7c5dd8bfe0e04278b9",
+          "text": "/* SPDX-License-Identifier: MIT\n * origin: musl src/math/floor.c */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/fma.rs",
+      "source_sha256": "ba44930a56d7c1953ab0c96c7c767911c9dc6967083700c8ef02f43672c8482f",
+      "notice_sha256": "672ff8d6819ce65fbd84d1de0e7bdf59401a3e0e5d7ebcb02f3096cbf72b58b3",
+      "leading_comments": "/* SPDX-License-Identifier: MIT */\n/* origin: musl src/math/fma.c. Ported to generic Rust algorithm in 2025, TG. */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/fma.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 34,
+          "sha256": "f73e293daa12abe52dd73882816fe4002b4f6e69065892abd57881180fb26bf2",
+          "text": "/* SPDX-License-Identifier: MIT */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/fmax.rs",
+      "source_sha256": "68d923950c3f1eab68baeab24679ab50918b663904839bc349ef666d9467518f",
+      "notice_sha256": "e1f11ba985bbbc4f7b20e22d87b99dc39c4db577f42e0844d4a819dcc977f7c8",
+      "leading_comments": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */\n//! IEEE 754-2011 `maxNum`. This has been superseded by IEEE 754-2019 `maximumNumber`.\n//!\n//! Per the spec, returns the canonicalized result of:\n//! - `x` if `x > y`\n//! - `y` if `y > x`\n//! - The other number if one is NaN\n//! - Otherwise, either `x` or `y`, canonicalized\n//! - -0.0 and +0.0 may be disregarded (unlike newer operations)\n//!\n//! Excluded from our implementation is sNaN handling.\n//!\n//! More on the differences: [link].\n//!\n//! [link]: https://grouper.ieee.org/groups/msc/ANSI_IEEE-Std-754-2019/background/minNum_maxNum_Removal_Demotion_v3.pdf\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/fmax.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 48,
+          "sha256": "a997449a08324894b63f1159f979a44ef52a95bd4a0d2374c76e2e1b87e50963",
+          "text": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/fmaximum.rs",
+      "source_sha256": "c4b8b7080821a2dc65d0a50baf717ccd9ee20b813ce6d6d3f9f01b5700b674fa",
+      "notice_sha256": "a5cbb9617bc95548fbafe78d406e6ff1bff9537d083158859998d4e533057e28",
+      "leading_comments": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */\n//! IEEE 754-2019 `maximum`.\n//!\n//! Per the spec, returns the canonicalized result of:\n//! - `x` if `x > y`\n//! - `y` if `y > x`\n//! - +0.0 if x and y are zero with opposite signs\n//! - qNaN if either operation is NaN\n//!\n//! Excluded from our implementation is sNaN handling.\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/fmaximum.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 48,
+          "sha256": "a997449a08324894b63f1159f979a44ef52a95bd4a0d2374c76e2e1b87e50963",
+          "text": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/fmaximum_num.rs",
+      "source_sha256": "2f2d41e1f0160eb73469fa63db27d881b5b8eabc6d62fae7ca1b4b03eb35c5d5",
+      "notice_sha256": "75a3456aa4d78433b55a18f1112f182b7d8ffbe3f9620352494f1c673041fc9b",
+      "leading_comments": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */\n//! IEEE 754-2019 `maximumNumber`.\n//!\n//! Per the spec, returns:\n//! - `x` if `x > y`\n//! - `y` if `y > x`\n//! - +0.0 if x and y are zero with opposite signs\n//! - Either `x` or `y` if `x == y` and the signs are the same\n//! - Non-NaN if one operand is NaN\n//! - qNaN if both operands are NaNx\n//!\n//! Excluded from our implementation is sNaN handling.\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/fmaximum_num.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 48,
+          "sha256": "a997449a08324894b63f1159f979a44ef52a95bd4a0d2374c76e2e1b87e50963",
+          "text": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/fmin.rs",
+      "source_sha256": "9bbdece9606e5eac57f3a91a5db7aab814c8e2b28b6df1813723c6b5715efc55",
+      "notice_sha256": "181f85a46788cf48506f79cf5a38af30f80e79c78bcae4b891762e3e1a007c4b",
+      "leading_comments": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */\n//! IEEE 754-2008 `minNum`. This has been superseded by IEEE 754-2019 `minimumNumber`.\n//!\n//! Per the spec, returns the canonicalized result of:\n//! - `x` if `x < y`\n//! - `y` if `y < x`\n//! - The other number if one is NaN\n//! - Otherwise, either `x` or `y`, canonicalized\n//! - -0.0 and +0.0 may be disregarded (unlike newer operations)\n//!\n//! Excluded from our implementation is sNaN handling.\n//!\n//! More on the differences: [link].\n//!\n//! [link]: https://grouper.ieee.org/groups/msc/ANSI_IEEE-Std-754-2019/background/minNum_maxNum_Removal_Demotion_v3.pdf\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/fmin.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 48,
+          "sha256": "a997449a08324894b63f1159f979a44ef52a95bd4a0d2374c76e2e1b87e50963",
+          "text": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/fminimum.rs",
+      "source_sha256": "a6a33085356610eced23957ca86456b7dbe95e0f9d916298d59ce8bd90076b02",
+      "notice_sha256": "a236550bc5c35f7e53636eb058333de4d7d426e18a1938ea71c1513a86e9520f",
+      "leading_comments": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */\n//! IEEE 754-2019 `minimum`.\n//!\n//! Per the spec, returns the canonicalized result of:\n//! - `x` if `x < y`\n//! - `y` if `y < x`\n//! - -0.0 if x and y are zero with opposite signs\n//! - qNaN if either operation is NaN\n//!\n//! Excluded from our implementation is sNaN handling.\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/fminimum.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 48,
+          "sha256": "a997449a08324894b63f1159f979a44ef52a95bd4a0d2374c76e2e1b87e50963",
+          "text": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/fminimum_num.rs",
+      "source_sha256": "f5db65654e690adea16da83839d62a707cc814c998fd4a77e63caaaea1472256",
+      "notice_sha256": "d4889e0eedc2170380942b82e7228cf83a5f0770f4529d690287c5c3c946dd8a",
+      "leading_comments": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */\n//! IEEE 754-2019 `minimum`.\n//!\n//! Per the spec, returns:\n//! - `x` if `x < y`\n//! - `y` if `y < x`\n//! - -0.0 if x and y are zero with opposite signs\n//! - Either `x` or `y` if `x == y` and the signs are the same\n//! - Non-NaN if one operand is NaN\n//! - qNaN if both operands are NaNx\n//!\n//! Excluded from our implementation is sNaN handling.\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/fminimum_num.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 48,
+          "sha256": "a997449a08324894b63f1159f979a44ef52a95bd4a0d2374c76e2e1b87e50963",
+          "text": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/fmod.rs",
+      "source_sha256": "11aae62d08d656d815184eafd78a3b2d5764b6ce308b89e3819cd049bc491fe7",
+      "notice_sha256": "a997449a08324894b63f1159f979a44ef52a95bd4a0d2374c76e2e1b87e50963",
+      "leading_comments": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/fmod.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 48,
+          "sha256": "a997449a08324894b63f1159f979a44ef52a95bd4a0d2374c76e2e1b87e50963",
+          "text": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/rint.rs",
+      "source_sha256": "deec183fd0da6c0a47ab272a256990cea4f9231db7faff314697886457d6841a",
+      "notice_sha256": "ee2a420bb53949766c23505e71611c8a9ecac2d92af1a0605d01578c3b08475f",
+      "leading_comments": "/* SPDX-License-Identifier: MIT */\n/* origin: musl src/math/rint.c */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/rint.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 34,
+          "sha256": "f73e293daa12abe52dd73882816fe4002b4f6e69065892abd57881180fb26bf2",
+          "text": "/* SPDX-License-Identifier: MIT */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/sqrt.rs",
+      "source_sha256": "c58e48ec07404d618109ad45332efe46c5246f42a2ddefdf5b25ba19e4ca9a0f",
+      "notice_sha256": "a1311e57e0c1b5c671c059702534fa1e0b4738aa28388d038a52ce7bff57e80d",
+      "leading_comments": "/* SPDX-License-Identifier: MIT */\n/* origin: musl src/math/sqrt.c. Ported to generic Rust algorithm in 2025, TG. */\n\n//! Generic square root algorithm.\n//!\n//! This routine operates around `m_u2`, a U.2 (fixed point with two integral bits) mantissa\n//! within the range [1, 4). A table lookup provides an initial estimate, then goldschmidt\n//! iterations at various widths are used to approach the real values.\n//!\n//! For the iterations, `r` is a U0 number that approaches `1/sqrt(m_u2)`, and `s` is a U2 number\n//! that approaches `sqrt(m_u2)`. Recall that m_u2 ∈ [1, 4).\n//!\n//! With Newton-Raphson iterations, this would be:\n//!\n//! - `w = r * r           w ~ 1 / m`\n//! - `u = 3 - m * w       u ~ 3 - m * w = 3 - m / m = 2`\n//! - `r = r * u / 2       r ~ r`\n//!\n//! (Note that the righthand column does not show anything analytically meaningful (i.e. r ~ r),\n//! since the value of performing one iteration is in reducing the error representable by `~`).\n//!\n//! Instead of Newton-Raphson iterations, Goldschmidt iterations are used to calculate\n//! `s = m * r`:\n//!\n//! - `s = m * r           s ~ m / sqrt(m)`\n//! - `u = 3 - s * r       u ~ 3 - (m / sqrt(m)) * (1 / sqrt(m)) = 3 - m / m = 2`\n//! - `r = r * u / 2       r ~ r`\n//! - `s = s * u / 2       s ~ s`\n//!\n//! The above is precise because it uses the original value `m`. There is also a faster version\n//! that performs fewer steps but does not use `m`:\n//!\n//! - `u = 3 - s * r       u ~ 3 - 1`\n//! - `r = r * u / 2       r ~ r`\n//! - `s = s * u / 2       s ~ s`\n//!\n//! Rounding errors accumulate faster with the second version, so it is only used for subsequent\n//! iterations within the same width integer. The first version is always used for the first\n//! iteration at a new width in order to avoid this accumulation.\n//!\n//! Goldschmidt has the advantage over Newton-Raphson that `sqrt(x)` and `1/sqrt(x)` are\n//! computed at the same time, i.e. there is no need to calculate `1/sqrt(x)` and invert it.\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/sqrt.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 34,
+          "sha256": "f73e293daa12abe52dd73882816fe4002b4f6e69065892abd57881180fb26bf2",
+          "text": "/* SPDX-License-Identifier: MIT */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/generic/trunc.rs",
+      "source_sha256": "46dd2cc35f6da25099ea2202264d8da3330b5ff1a962a8afb671b54b6ef6002d",
+      "notice_sha256": "b1e0b197ab096657b36a818578674de4e4af0030827bf8a6e5b4405fafda000d",
+      "leading_comments": "/* SPDX-License-Identifier: MIT\n * origin: musl src/math/trunc.c */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/generic/trunc.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 67,
+          "sha256": "b1e0b197ab096657b36a818578674de4e4af0030827bf8a6e5b4405fafda000d",
+          "text": "/* SPDX-License-Identifier: MIT\n * origin: musl src/math/trunc.c */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/j0.rs",
+      "source_sha256": "1cb991f0151a626744ad1832d4aedfaca681bcfcecc797de5ac5e9baf2342006",
+      "notice_sha256": "37ece6a545a8ec5f359e3660a9716651cd1dc92a22fa0795337b5afab2ae5d6e",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_j0.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/* j0(x), y0(x)\n * Bessel function of the first and second kinds of order zero.\n * Method -- j0(x):\n *      1. For tiny x, we use j0(x) = 1 - x^2/4 + x^4/64 - ...\n *      2. Reduce x to |x| since j0(x)=j0(-x),  and\n *         for x in (0,2)\n *              j0(x) = 1-z/4+ z^2*R0/S0,  where z = x*x;\n *         (precision:  |j0-1+z/4-z^2R0/S0 |<2**-63.67 )\n *         for x in (2,inf)\n *              j0(x) = sqrt(2/(pi*x))*(p0(x)*cos(x0)-q0(x)*sin(x0))\n *         where x0 = x-pi/4. It is better to compute sin(x0),cos(x0)\n *         as follow:\n *              cos(x0) = cos(x)cos(pi/4)+sin(x)sin(pi/4)\n *                      = 1/sqrt(2) * (cos(x) + sin(x))\n *              sin(x0) = sin(x)cos(pi/4)-cos(x)sin(pi/4)\n *                      = 1/sqrt(2) * (sin(x) - cos(x))\n *         (To avoid cancellation, use\n *              sin(x) +- cos(x) = -cos(2x)/(sin(x) -+ cos(x))\n *          to compute the worse one.)\n *\n *      3 Special cases\n *              j0(nan)= nan\n *              j0(0) = 1\n *              j0(inf) = 0\n *\n * Method -- y0(x):\n *      1. For x<2.\n *         Since\n *              y0(x) = 2/pi*(j0(x)*(ln(x/2)+Euler) + x^2/4 - ...)\n *         therefore y0(x)-2/pi*j0(x)*ln(x) is an even function.\n *         We use the following function to approximate y0,\n *              y0(x) = U(z)/V(z) + (2/pi)*(j0(x)*ln(x)), z= x^2\n *         where\n *              U(z) = u00 + u01*z + ... + u06*z^6\n *              V(z) = 1  + v01*z + ... + v04*z^4\n *         with absolute approximation error bounded by 2**-72.\n *         Note: For tiny x, U/V = u0 and j0(x)~1, hence\n *              y0(tiny) = u0 + (2/pi)*ln(tiny), (choose tiny<2**-27)\n *      2. For x>=2.\n *              y0(x) = sqrt(2/(pi*x))*(p0(x)*cos(x0)+q0(x)*sin(x0))\n *         where x0 = x-pi/4. It is better to compute sin(x0),cos(x0)\n *         by the method mentioned above.\n *      3. Special cases: y0(0)=-inf, y0(x<0)=NaN, y0(inf)=0.\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/j0.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 51,
+          "end_character": 431,
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/j0f.rs",
+      "source_sha256": "de97374b6a0019fd8b3d1f553be1708018546491d3b4a5fc650ee2dcdfc9620e",
+      "notice_sha256": "ca307434fd217ab9ab35b783405f0e5c49722b2349ad4d226c273bf99e939f2f",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_j0f.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/j0f.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 135,
+          "end_character": 514,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/j1.rs",
+      "source_sha256": "e0a10746fd11a458d55ee61e758d9f016ff0f2203a07eb9907b5aca709a40469",
+      "notice_sha256": "3b18a994bf8bdd1108b290b90bd2246c1870db70f2b2ae9b253c8e0c0e555e7f",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_j1.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/* j1(x), y1(x)\n * Bessel function of the first and second kinds of order zero.\n * Method -- j1(x):\n *      1. For tiny x, we use j1(x) = x/2 - x^3/16 + x^5/384 - ...\n *      2. Reduce x to |x| since j1(x)=-j1(-x),  and\n *         for x in (0,2)\n *              j1(x) = x/2 + x*z*R0/S0,  where z = x*x;\n *         (precision:  |j1/x - 1/2 - R0/S0 |<2**-61.51 )\n *         for x in (2,inf)\n *              j1(x) = sqrt(2/(pi*x))*(p1(x)*cos(x1)-q1(x)*sin(x1))\n *              y1(x) = sqrt(2/(pi*x))*(p1(x)*sin(x1)+q1(x)*cos(x1))\n *         where x1 = x-3*pi/4. It is better to compute sin(x1),cos(x1)\n *         as follow:\n *              cos(x1) =  cos(x)cos(3pi/4)+sin(x)sin(3pi/4)\n *                      =  1/sqrt(2) * (sin(x) - cos(x))\n *              sin(x1) =  sin(x)cos(3pi/4)-cos(x)sin(3pi/4)\n *                      = -1/sqrt(2) * (sin(x) + cos(x))\n *         (To avoid cancellation, use\n *              sin(x) +- cos(x) = -cos(2x)/(sin(x) -+ cos(x))\n *          to compute the worse one.)\n *\n *      3 Special cases\n *              j1(nan)= nan\n *              j1(0) = 0\n *              j1(inf) = 0\n *\n * Method -- y1(x):\n *      1. screen out x<=0 cases: y1(0)=-inf, y1(x<0)=NaN\n *      2. For x<2.\n *         Since\n *              y1(x) = 2/pi*(j1(x)*(ln(x/2)+Euler)-1/x-x/2+5/64*x^3-...)\n *         therefore y1(x)-2/pi*j1(x)*ln(x)-1/x is an odd function.\n *         We use the following function to approximate y1,\n *              y1(x) = x*U(z)/V(z) + (2/pi)*(j1(x)*ln(x)-1/x), z= x^2\n *         where for x in [0,2] (abs err less than 2**-65.89)\n *              U(z) = U0[0] + U0[1]*z + ... + U0[4]*z^4\n *              V(z) = 1  + v0[0]*z + ... + v0[4]*z^5\n *         Note: For tiny x, 1/x dominate y1 and hence\n *              y1(tiny) = -2/pi/tiny, (choose tiny<2**-54)\n *      3. For x>=2.\n *              y1(x) = sqrt(2/(pi*x))*(p1(x)*sin(x1)+q1(x)*cos(x1))\n *         where x1 = x-3*pi/4. It is better to compute sin(x1),cos(x1)\n *         by method mentioned above.\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/j1.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 51,
+          "end_character": 431,
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/j1f.rs",
+      "source_sha256": "27b586c94d510aa653923b6b83cfec174e1f5da326d9120b0a0135b1190e32dc",
+      "notice_sha256": "b406d094ad7fdce62ed32f71e6340956efd313dfe5546775686c2acae397017b",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_j1f.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/j1f.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 135,
+          "end_character": 514,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/jn.rs",
+      "source_sha256": "ba36d25d4bbada83aadb3b2986879b7d88b91adb7b502061d21bf96ff3942194",
+      "notice_sha256": "eb1e47fadef4491712391a3e49c33fb57a6d17d68b7627fa09a9cdbf2b4e057d",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_jn.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/*\n * jn(n, x), yn(n, x)\n * floating point Bessel's function of the 1st and 2nd kind\n * of order n\n *\n * Special cases:\n *      y0(0)=y1(0)=yn(n,0) = -inf with division by zero signal;\n *      y0(-ve)=y1(-ve)=yn(n,-ve) are NaN with invalid signal.\n * Note 2. About jn(n,x), yn(n,x)\n *      For n=0, j0(x) is called,\n *      for n=1, j1(x) is called,\n *      for n<=x, forward recursion is used starting\n *      from values of j0(x) and j1(x).\n *      for n>x, a continued fraction approximation to\n *      j(n,x)/j(n-1,x) is evaluated and then backward\n *      recursion is used starting from a supposed value\n *      for j(n,x). The resulting value of j(0,x) is\n *      compared with the actual value to correct the\n *      supposed value of j(n,x).\n *\n *      yn(n,x) is similar in all respects, except\n *      that forward recursion is used for all\n *      values of n>1.\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/jn.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 51,
+          "end_character": 431,
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/jnf.rs",
+      "source_sha256": "b3861e19644ae669fe17db81d91aeaee9c9f9051b59957ab674017684c98fe32",
+      "notice_sha256": "810eec8e46ebc71f905ece785b02e599f61dfa8218abc6f0bb7453bc9fdc3479",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_jnf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/jnf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 135,
+          "end_character": 514,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/k_cos.rs",
+      "source_sha256": "d4867527877c846aa8e2a0b43cf06f03e2d94c321a548acaf8d5171c09ff4057",
+      "notice_sha256": "cd052f4fc22d6625c9f4439c66d4512a9011446d3f2dff15842925b024821cbb",
+      "leading_comments": "// origin: FreeBSD /usr/src/lib/msun/src/k_cos.c\n//\n// ====================================================\n// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n//\n// Developed at SunSoft, a Sun Microsystems, Inc. business.\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/k_cos.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 426,
+          "sha256": "cd052f4fc22d6625c9f4439c66d4512a9011446d3f2dff15842925b024821cbb",
+          "text": "// origin: FreeBSD /usr/src/lib/msun/src/k_cos.c\n//\n// ====================================================\n// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n//\n// Developed at SunSoft, a Sun Microsystems, Inc. business.\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/k_cosf.rs",
+      "source_sha256": "8f76089d014e217b96c9eca520271e64d467dc0d6542bf313dd70eb96c040f7f",
+      "notice_sha256": "fabb2b17d024c0d12b294246734b7639ce094915bf88f98abe4c47544d43be9c",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/k_cosf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n * Debugged and optimized by Bruce D. Evans.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n\n/* |cos(x) - c(x)| < 2**-34.1 (~[-5.37e-11, 5.295e-11]). */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/k_cosf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 181,
+          "end_character": 560,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/k_sin.rs",
+      "source_sha256": "dfe6524cb2d530ec51eb1a2ab233aeb65b3f12177c1fb2f50f044ea41170f5d8",
+      "notice_sha256": "e00a06f546cd736ac64d82d5c88c23810aec69eec0f61cc64705ea57693e6049",
+      "leading_comments": "// origin: FreeBSD /usr/src/lib/msun/src/k_sin.c\n//\n// ====================================================\n// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n//\n// Developed at SunSoft, a Sun Microsystems, Inc. business.\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/k_sin.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 426,
+          "sha256": "e00a06f546cd736ac64d82d5c88c23810aec69eec0f61cc64705ea57693e6049",
+          "text": "// origin: FreeBSD /usr/src/lib/msun/src/k_sin.c\n//\n// ====================================================\n// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n//\n// Developed at SunSoft, a Sun Microsystems, Inc. business.\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/k_sinf.rs",
+      "source_sha256": "cf0e8bbe8d73a6704b7f1f710f5b9d31f190f1c633e894d4f69c4e3bc359eba3",
+      "notice_sha256": "78547df0b3a02606b33f4e0e1f3d000a41f8123644166e6fdd208c62249d17a6",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/k_sinf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n * Optimized by Bruce D. Evans.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n\n/* |sin(x)/x - s(x)| < 2**-37.5 (~[-4.89e-12, 4.824e-12]). */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/k_sinf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 168,
+          "end_character": 547,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/k_tan.rs",
+      "source_sha256": "dc3f8ece9187bbd65792a7d1068e676092e9c2a0886f28c80579f9bd94d744b7",
+      "notice_sha256": "951052015ab2bb3e50b56e918d5925c01c27480a7db44b1ad5f9b10988f7b465",
+      "leading_comments": "// origin: FreeBSD /usr/src/lib/msun/src/k_tan.c */\n//\n// ====================================================\n// Copyright 2004 Sun Microsystems, Inc.  All Rights Reserved.\n//\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n\n// kernel tan function on ~[-pi/4, pi/4] (except on -0), pi/4 ~ 0.7854\n// Input x is assumed to be bounded by ~pi/4 in magnitude.\n// Input y is the tail of x.\n// Input odd indicates whether tan (if odd = 0) or -1/tan (if odd = 1) is returned.\n//\n// Algorithm\n//      1. Since tan(-x) = -tan(x), we need only to consider positive x.\n//      2. Callers must return tan(-0) = -0 without calling here since our\n//         odd polynomial is not evaluated in a way that preserves -0.\n//         Callers may do the optimization tan(x) ~ x for tiny x.\n//      3. tan(x) is approximated by a odd polynomial of degree 27 on\n//         [0,0.67434]\n//                               3             27\n//              tan(x) ~ x + T1*x + ... + T13*x\n//         where\n//\n//              |tan(x)         2     4            26   |     -59.2\n//              |----- - (1+T1*x +T2*x +.... +T13*x    )| <= 2\n//              |  x                                    |\n//\n//         Note: tan(x+y) = tan(x) + tan'(x)*y\n//                        ~ tan(x) + (1+x*x)*y\n//         Therefore, for better accuracy in computing tan(x+y), let\n//                   3      2      2       2       2\n//              r = x *(T2+x *(T3+x *(...+x *(T12+x *T13))))\n//         then\n//                                  3    2\n//              tan(x+y) = x + (T1*x + (x *(r+y)+y))\n//\n//      4. For x in [0.67434,pi/4],  let y = pi/4 - x, then\n//              tan(x) = tan(pi/4-y) = (1-tan(y))/(1+tan(y))\n//                     = 1 - 2*(tan(y) - (tan(y)^2)/(1+tan(y)))\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/k_tan.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 363,
+          "sha256": "ae36b8732e1a0fd7cf1b44f0840d2fca6e15432a92e6c1a1d7ef4bd5b5d83bc6",
+          "text": "// origin: FreeBSD /usr/src/lib/msun/src/k_tan.c */\n//\n// ====================================================\n// Copyright 2004 Sun Microsystems, Inc.  All Rights Reserved.\n//\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/k_tanf.rs",
+      "source_sha256": "3381d2d4865bfc98e87aadb96bd8986f7691a389569a58fb1cb8db74fb5d9c20",
+      "notice_sha256": "1173b46f5170f4702c1181eefdc9a5565751c8913e71fa4320be4d6176e40808",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/k_tan.c */\n/*\n * ====================================================\n * Copyright 2004 Sun Microsystems, Inc.  All Rights Reserved.\n *\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n\n/* |tan(x)/x - t(x)| < 2**-25.5 (~[-2e-08, 2e-08]). */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/k_tanf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 52,
+          "end_character": 366,
+          "sha256": "5a534ed1f9266ed799e9f2e3f830f15411762021829da121b23df5edc498c6b6",
+          "text": "/*\n * ====================================================\n * Copyright 2004 Sun Microsystems, Inc.  All Rights Reserved.\n *\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/lgamma_r.rs",
+      "source_sha256": "5d56169c077b5b9f88902e2d243a7a4b4d06b89295aa84283d6fa15d9c244032",
+      "notice_sha256": "72154c238dba9d658a2b9e83b35940860d5b8e2a5159f8822313a4f2a1251015",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_lgamma_r.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n *\n */\n/* lgamma_r(x, signgamp)\n * Reentrant version of the logarithm of the Gamma function\n * with user provide pointer for the sign of Gamma(x).\n *\n * Method:\n *   1. Argument Reduction for 0 < x <= 8\n *      Since gamma(1+s)=s*gamma(s), for x in [0,8], we may\n *      reduce x to a number in [1.5,2.5] by\n *              lgamma(1+s) = log(s) + lgamma(s)\n *      for example,\n *              lgamma(7.3) = log(6.3) + lgamma(6.3)\n *                          = log(6.3*5.3) + lgamma(5.3)\n *                          = log(6.3*5.3*4.3*3.3*2.3) + lgamma(2.3)\n *   2. Polynomial approximation of lgamma around its\n *      minimun ymin=1.461632144968362245 to maintain monotonicity.\n *      On [ymin-0.23, ymin+0.27] (i.e., [1.23164,1.73163]), use\n *              Let z = x-ymin;\n *              lgamma(x) = -1.214862905358496078218 + z^2*poly(z)\n *      where\n *              poly(z) is a 14 degree polynomial.\n *   2. Rational approximation in the primary interval [2,3]\n *      We use the following approximation:\n *              s = x-2.0;\n *              lgamma(x) = 0.5*s + s*P(s)/Q(s)\n *      with accuracy\n *              |P/Q - (lgamma(x)-0.5s)| < 2**-61.71\n *      Our algorithms are based on the following observation\n *\n *                             zeta(2)-1    2    zeta(3)-1    3\n * lgamma(2+s) = s*(1-Euler) + --------- * s  -  --------- * s  + ...\n *                                 2                 3\n *\n *      where Euler = 0.5771... is the Euler constant, which is very\n *      close to 0.5.\n *\n *   3. For x>=8, we have\n *      lgamma(x)~(x-0.5)log(x)-x+0.5*log(2pi)+1/(12x)-1/(360x**3)+....\n *      (better formula:\n *         lgamma(x)~(x-0.5)*(log(x)-1)-.5*(log(2pi)-1) + ...)\n *      Let z = 1/x, then we approximation\n *              f(z) = lgamma(x) - (x-0.5)(log(x)-1)\n *      by\n *                                  3       5             11\n *              w = w0 + w1*z + w2*z  + w3*z  + ... + w6*z\n *      where\n *              |w - f(z)| < 2**-58.74\n *\n *   4. For negative x, since (G is gamma function)\n *              -x*G(-x)*G(x) = PI/sin(PI*x),\n *      we have\n *              G(x) = PI/(sin(PI*x)*(-x)*G(-x))\n *      since G(-x) is positive, sign(G(x)) = sign(sin(PI*x)) for x<0\n *      Hence, for x<0, signgam = sign(sin(PI*x)) and\n *              lgamma(x) = log(|Gamma(x)|)\n *                        = log(PI/(|x*sin(PI*x)|)) - lgamma(-x);\n *      Note: one should avoid compute PI*(-x) directly in the\n *            computation of sin(PI*(-x)).\n *\n *   5. Special Cases\n *              lgamma(2+s) ~ s*(1-Euler) for tiny s\n *              lgamma(1) = lgamma(2) = 0\n *              lgamma(x) ~ -log(|x|) for tiny x\n *              lgamma(0) = lgamma(neg.integer) = inf and raise divide-by-zero\n *              lgamma(inf) = inf\n *              lgamma(-inf) = inf (bug for bug compatible with C99!?)\n *\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/lgamma_r.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 57,
+          "end_character": 440,
+          "sha256": "11f476f899dacfef801a097465ad0755ad4546afe03b02c9a17aa38e228344e1",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n *\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/lgammaf_r.rs",
+      "source_sha256": "0bc2b5e0eec7666973adaca536f4d5fe978c8793bb340484fff9e5e7abb425f0",
+      "notice_sha256": "3d6a8df3c51843d9d419ba22ab4381bb5c29c820eb9e51c00a3a50edfbf6f4b5",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_lgammaf_r.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/lgammaf_r.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 141,
+          "end_character": 520,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/log.rs",
+      "source_sha256": "df5f4d1325e89621bfcd9cf7788d0d7e20a6ef7f429110fe35b370b3c9362615",
+      "notice_sha256": "a2e9e280e65c8a44525657c1ff45e2467a5b5447f6e663e45948353ee17dd919",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_log.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/* log(x)\n * Return the logarithm of x\n *\n * Method :\n *   1. Argument Reduction: find k and f such that\n *                      x = 2^k * (1+f),\n *         where  sqrt(2)/2 < 1+f < sqrt(2) .\n *\n *   2. Approximation of log(1+f).\n *      Let s = f/(2+f) ; based on log(1+f) = log(1+s) - log(1-s)\n *               = 2s + 2/3 s**3 + 2/5 s**5 + .....,\n *               = 2s + s*R\n *      We use a special Remez algorithm on [0,0.1716] to generate\n *      a polynomial of degree 14 to approximate R The maximum error\n *      of this polynomial approximation is bounded by 2**-58.45. In\n *      other words,\n *                      2      4      6      8      10      12      14\n *          R(z) ~ Lg1*s +Lg2*s +Lg3*s +Lg4*s +Lg5*s  +Lg6*s  +Lg7*s\n *      (the values of Lg1 to Lg7 are listed in the program)\n *      and\n *          |      2          14          |     -58.45\n *          | Lg1*s +...+Lg7*s    -  R(z) | <= 2\n *          |                             |\n *      Note that 2s = f - s*f = f - hfsq + s*hfsq, where hfsq = f*f/2.\n *      In order to guarantee error in log below 1ulp, we compute log\n *      by\n *              log(1+f) = f - s*(f - R)        (if f is not too large)\n *              log(1+f) = f - (hfsq - s*(hfsq+R)).     (better accuracy)\n *\n *      3. Finally,  log(x) = k*ln2 + log(1+f).\n *                          = k*ln2_hi+(f-(hfsq-(s*(hfsq+R)+k*ln2_lo)))\n *         Here ln2 is split into two floating point number:\n *                      ln2_hi + ln2_lo,\n *         where n*ln2_hi is always exact for |n| < 2000.\n *\n * Special cases:\n *      log(x) is NaN with signal if x < 0 (including -INF) ;\n *      log(+INF) is +INF; log(0) is -INF with signal;\n *      log(NaN) is that NaN with no signal.\n *\n * Accuracy:\n *      according to an error analysis, the error is always less than\n *      1 ulp (unit in the last place).\n *\n * Constants:\n * The hexadecimal values are the intended ones for the following\n * constants. The decimal values may be used, provided that the\n * compiler will convert from decimal to binary accurately enough\n * to produce the hexadecimal values shown.\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/log.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 52,
+          "end_character": 432,
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/log10.rs",
+      "source_sha256": "4a96dd2b6a2a505497f2bb7ea956a50491d068dab1b6055a573aec1724a52e40",
+      "notice_sha256": "ecc29ae722e34001195b8bafbe93d0e49fb1754cfd5d77be2e823d671748f1ec",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_log10.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/*\n * Return the base 10 logarithm of x.  See log.c for most comments.\n *\n * Reduce x to 2^k (1+f) and calculate r = log(1+f) - f + f*f/2\n * as in log.c, then combine and scale in extra precision:\n *    log10(x) = (f - f*f/2 + r)/log(10) + k*log10(2)\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/log10.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 54,
+          "end_character": 434,
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/log10f.rs",
+      "source_sha256": "784a576dd4a4071f4f67c670eb9b221cb03014818c4b2d71afbcbd2211431caf",
+      "notice_sha256": "6f9083d9a5996203cfc453c353633933f184778bdf6c85ed0e5a73f307548090",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_log10f.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/*\n * See comments in log10.c.\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/log10f.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 55,
+          "end_character": 434,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/log1p.rs",
+      "source_sha256": "bb8ce741e54d8f001d9c12450a14a663bd413014da2ade9ba1f5fbc9ff0c9a88",
+      "notice_sha256": "7b72ebbabace08605eaeff41fd30c619e5529ac444f15517aa2bc36b7c2e79a7",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_log1p.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/* double log1p(double x)\n * Return the natural logarithm of 1+x.\n *\n * Method :\n *   1. Argument Reduction: find k and f such that\n *                      1+x = 2^k * (1+f),\n *         where  sqrt(2)/2 < 1+f < sqrt(2) .\n *\n *      Note. If k=0, then f=x is exact. However, if k!=0, then f\n *      may not be representable exactly. In that case, a correction\n *      term is need. Let u=1+x rounded. Let c = (1+x)-u, then\n *      log(1+x) - log(u) ~ c/u. Thus, we proceed to compute log(u),\n *      and add back the correction term c/u.\n *      (Note: when x > 2**53, one can simply return log(x))\n *\n *   2. Approximation of log(1+f): See log.c\n *\n *   3. Finally, log1p(x) = k*ln2 + log(1+f) + c/u. See log.c\n *\n * Special cases:\n *      log1p(x) is NaN with signal if x < -1 (including -INF) ;\n *      log1p(+INF) is +INF; log1p(-1) is -INF with signal;\n *      log1p(NaN) is that NaN with no signal.\n *\n * Accuracy:\n *      according to an error analysis, the error is always less than\n *      1 ulp (unit in the last place).\n *\n * Constants:\n * The hexadecimal values are the intended ones for the following\n * constants. The decimal values may be used, provided that the\n * compiler will convert from decimal to binary accurately enough\n * to produce the hexadecimal values shown.\n *\n * Note: Assuming log() return accurate answer, the following\n *       algorithm can be used to compute log1p(x) to within a few ULP:\n *\n *              u = 1+x;\n *              if(u==1.0) return x ; else\n *                         return log(u)*(x/(u-1.0));\n *\n *       See HP-15C Advanced Functions Handbook, p.193.\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/log1p.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 54,
+          "end_character": 433,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/log1pf.rs",
+      "source_sha256": "8736222a9b9004b061f1339bb819c63c6b54414d4a01ef79d5f5a5f0a70677b5",
+      "notice_sha256": "525f28e8380744881279a03176e953b5542f735bbd203cc25c2a5d4762fe5eca",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_log1pf.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/log1pf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 55,
+          "end_character": 434,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/log2.rs",
+      "source_sha256": "1ec0cdd94bf4435ff0402d209089b1bdbcb1ba9a4cd5f77807f9c84cf534f980",
+      "notice_sha256": "efec1883052166bae6995afa9bd51833e4c7a953c09175a743fbc5f1568b1482",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_log2.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/*\n * Return the base 2 logarithm of x.  See log.c for most comments.\n *\n * Reduce x to 2^k (1+f) and calculate r = log(1+f) - f + f*f/2\n * as in log.c, then combine and scale in extra precision:\n *    log2(x) = (f - f*f/2 + r)/log(2) + k\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/log2.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 53,
+          "end_character": 433,
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/log2f.rs",
+      "source_sha256": "7b3b17ba08df6b5a57dacf6f945bfe1a3c088bee0eb11e201ac5affc7f65925a",
+      "notice_sha256": "9c59c1e9f079272531e1ddeb5a426d0670e5a3e9cf858c61451d7720361eb886",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_log2f.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n/*\n * See comments in log2.c.\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/log2f.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 54,
+          "end_character": 433,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/logf.rs",
+      "source_sha256": "c7dfa5e89fcca0411624fdc594f64c62d5dfa3b91f061fcb7ac3aea18414f238",
+      "notice_sha256": "8321493840d6ffec09121148a782785c0591b42a3a270dfda01b4ce4d5c7aa6b",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_logf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/logf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 136,
+          "end_character": 515,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/pow.rs",
+      "source_sha256": "c5566d0f48682d107e8803b0ed204ff3521503348f18a4f26cbe3f47fef15192",
+      "notice_sha256": "cabb0f6a426ded440f6f4ae2579cdd3daddd4f00bb22c0022189e091dd84f7f8",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_pow.c */\n/*\n * ====================================================\n * Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.\n *\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */\n\n// pow(x,y) return x**y\n//\n//                    n\n// Method:  Let x =  2   * (1+f)\n//      1. Compute and return log2(x) in two pieces:\n//              log2(x) = w1 + w2,\n//         where w1 has 53-24 = 29 bit trailing zeros.\n//      2. Perform y*log2(x) = n+y' by simulating multi-precision\n//         arithmetic, where |y'|<=0.5.\n//      3. Return x**y = 2**n*exp(y'*log2)\n//\n// Special cases:\n//      1.  (anything) ** 0  is 1\n//      2.  1 ** (anything)  is 1\n//      3.  (anything except 1) ** NAN is NAN\n//      4.  NAN ** (anything except 0) is NAN\n//      5.  +-(|x| > 1) **  +INF is +INF\n//      6.  +-(|x| > 1) **  -INF is +0\n//      7.  +-(|x| < 1) **  +INF is +0\n//      8.  +-(|x| < 1) **  -INF is +INF\n//      9.  -1          ** +-INF is 1\n//      10. +0 ** (+anything except 0, NAN)               is +0\n//      11. -0 ** (+anything except 0, NAN, odd integer)  is +0\n//      12. +0 ** (-anything except 0, NAN)               is +INF, raise divbyzero\n//      13. -0 ** (-anything except 0, NAN, odd integer)  is +INF, raise divbyzero\n//      14. -0 ** (+odd integer) is -0\n//      15. -0 ** (-odd integer) is -INF, raise divbyzero\n//      16. +INF ** (+anything except 0,NAN) is +INF\n//      17. +INF ** (-anything except 0,NAN) is +0\n//      18. -INF ** (+odd integer) is -INF\n//      19. -INF ** (anything) = -0 ** (-anything), (anything except odd integer)\n//      20. (anything) ** 1 is (anything)\n//      21. (anything) ** -1 is 1/(anything)\n//      22. (-anything) ** (integer) is (-1)**(integer)*(+anything**integer)\n//      23. (-anything except 0 and inf) ** (non-integer) is NAN\n//\n// Accuracy:\n//      pow(x,y) returns x**y nearly rounded. In particular\n//                      pow(integer,integer)\n//      always returns the correct integer provided it is\n//      representable.\n//\n// Constants :\n// The hexadecimal values are the intended ones for the following\n// constants. The decimal values may be used, provided that the\n// compiler will convert from decimal to binary accurately enough\n// to produce the hexadecimal values shown.\n//\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/pow.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 52,
+          "end_character": 372,
+          "sha256": "15e78071c8347a689c48ec92bbdd5eba7bd8dc74f86ee3e7ad31d34b24fefe83",
+          "text": "/*\n * ====================================================\n * Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.\n *\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/powf.rs",
+      "source_sha256": "819971cb8e927d80113aded3cfe90dcd501c031e0eb1c562b58842fddd1751be",
+      "notice_sha256": "924933915adc80da8f918c69ec8a96153ca3a001add69eaee3216b66d55543f0",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_powf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/powf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 136,
+          "end_character": 515,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/rem_pio2.rs",
+      "source_sha256": "5a040ab09dc356bca6d57712327151ed43003e2bac156553e3eb87d1cdefd2d1",
+      "notice_sha256": "da28bd93659d512cba362af000b10121e71e63ef135f3ba398a05f376e90bc7e",
+      "leading_comments": "// origin: FreeBSD /usr/src/lib/msun/src/e_rem_pio2.c\n//\n// ====================================================\n// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n//\n// Developed at SunPro, a Sun Microsystems, Inc. business.\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n//\n// Optimized by Bruce D. Evans. */\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/rem_pio2.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 468,
+          "sha256": "da28bd93659d512cba362af000b10121e71e63ef135f3ba398a05f376e90bc7e",
+          "text": "// origin: FreeBSD /usr/src/lib/msun/src/e_rem_pio2.c\n//\n// ====================================================\n// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n//\n// Developed at SunPro, a Sun Microsystems, Inc. business.\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n//\n// Optimized by Bruce D. Evans. */\n"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/rem_pio2_large.rs",
+      "source_sha256": "986b5b9ad2c8fba828aee47bf198eab97fab243359ab03eb09783d98ca5847b5",
+      "notice_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "leading_comments": "",
+      "keyword_offsets_outside_leading_comments": [
+        144,
+        276
+      ],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/rem_pio2_large.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 82,
+          "end_character": 462,
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunSoft, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/rem_pio2f.rs",
+      "source_sha256": "fb34bab63f8d143dfefa4ef2e31e8166bf21f3c67f1519bfc3ca4fb8eb28cafe",
+      "notice_sha256": "1476250828dddf495d7f0d2f09c80448084cb8b86ebdc379e1a35839be3334d8",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/e_rem_pio2f.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n * Debugged and optimized by Bruce D. Evans.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/rem_pio2f.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 186,
+          "end_character": 565,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/sin.rs",
+      "source_sha256": "b48cebd120fc2ac93a6563059cabda28a72c8680304eb8335b92b412235cc232",
+      "notice_sha256": "0beade56a930d1c1a35daa8cd5bbe8350757c3b38ac025a553f7db8bdfaf9e16",
+      "leading_comments": "// origin: FreeBSD /usr/src/lib/msun/src/s_sin.c */\n//\n// ====================================================\n// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n//\n// Developed at SunPro, a Sun Microsystems, Inc. business.\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/sin.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 428,
+          "sha256": "0beade56a930d1c1a35daa8cd5bbe8350757c3b38ac025a553f7db8bdfaf9e16",
+          "text": "// origin: FreeBSD /usr/src/lib/msun/src/s_sin.c */\n//\n// ====================================================\n// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n//\n// Developed at SunPro, a Sun Microsystems, Inc. business.\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/sincos.rs",
+      "source_sha256": "a9c414e828c2e78b6bce4d5e4237b1baa93e81d78421aed5cedeab43df64067f",
+      "notice_sha256": "b936f53da35671684d925a3b83f0c20e073d20621bd7d9f50e83a8706a86167c",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_sin.c */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/sincos.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 52,
+          "end_character": 431,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/sincosf.rs",
+      "source_sha256": "c39b6e3b52be83ccf4015ff105dab55e693577ebfc43745881750e73eebc6fa6",
+      "notice_sha256": "5be97333be133e6ae6975e249cc3fb45da2dad52bef1a42ac8f8fa824c340e33",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_sinf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n * Optimized by Bruce D. Evans.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/sincosf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 168,
+          "end_character": 547,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/sinf.rs",
+      "source_sha256": "b17db34d5da39a0f336d831abcb700fab69402c915321823870f1845e66c03d2",
+      "notice_sha256": "5be97333be133e6ae6975e249cc3fb45da2dad52bef1a42ac8f8fa824c340e33",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_sinf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n * Optimized by Bruce D. Evans.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/sinf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 168,
+          "end_character": 547,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/support/int_traits/narrowing_div.rs",
+      "source_sha256": "5f5378e33f1da56090d0dce2514926ab465dce65b89ad4ee2f7da07a92f8d5de",
+      "notice_sha256": "a997449a08324894b63f1159f979a44ef52a95bd4a0d2374c76e2e1b87e50963",
+      "leading_comments": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/support/int_traits/narrowing_div.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 48,
+          "sha256": "a997449a08324894b63f1159f979a44ef52a95bd4a0d2374c76e2e1b87e50963",
+          "text": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/support/modular.rs",
+      "source_sha256": "cf6a562d6bdf16336f31d41c59e828ad47f85388849d20d6d3b59fc1c3e388a2",
+      "notice_sha256": "45f1d4d6c21be718f2d9dedcf3bd887e23b51ff97f2410527288e2018f11a15d",
+      "leading_comments": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */\n\n//! This module provides accelerated modular multiplication by large powers\n//! of two, which is needed for computing floating point remainders in `fmod`\n//! and similar functions.\n//!\n//! To keep the equations somewhat concise, the following conventions are used:\n//!  - all integer operations are in the mathematical sense, without overflow\n//!  - concatenation means multiplication: `2xq = 2 * x * q`\n//!  - `R = (1 << U::BITS)` is the modulus of wrapping arithmetic in `U`\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/support/modular.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 48,
+          "sha256": "a997449a08324894b63f1159f979a44ef52a95bd4a0d2374c76e2e1b87e50963",
+          "text": "/* SPDX-License-Identifier: MIT OR Apache-2.0 */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/tan.rs",
+      "source_sha256": "2ea87ca18526753db6d149635ed6c895c8fbafd1e0fa7a9c04f7dc44b4eae986",
+      "notice_sha256": "59ee71a59035c18a5043881ef760e797cc17dc0cfd65eb43075f72a0ecf8292a",
+      "leading_comments": "// origin: FreeBSD /usr/src/lib/msun/src/s_tan.c */\n//\n// ====================================================\n// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n//\n// Developed at SunPro, a Sun Microsystems, Inc. business.\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/tan.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 0,
+          "end_character": 428,
+          "sha256": "59ee71a59035c18a5043881ef760e797cc17dc0cfd65eb43075f72a0ecf8292a",
+          "text": "// origin: FreeBSD /usr/src/lib/msun/src/s_tan.c */\n//\n// ====================================================\n// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n//\n// Developed at SunPro, a Sun Microsystems, Inc. business.\n// Permission to use, copy, modify, and distribute this\n// software is freely granted, provided that this notice\n// is preserved.\n// ====================================================\n"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    },
+    {
+      "member": "libm-0.2.16/src/math/tanf.rs",
+      "source_sha256": "f7140c4193a57709acde5d290c8f83435562da42924c54cab0aa3a4f26095190",
+      "notice_sha256": "0f0786a87a0b5f240bcca1de463fef2c0a63bb4b68a789ea33ac077bb7b12add",
+      "leading_comments": "/* origin: FreeBSD /usr/src/lib/msun/src/s_tanf.c */\n/*\n * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.\n * Optimized by Bruce D. Evans.\n */\n/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */",
+      "keyword_offsets_outside_leading_comments": [],
+      "upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/src/math/tanf.rs",
+      "immutable_upstream_bytes": "MATCH",
+      "complete_notice_comments": [
+        {
+          "start_character": 168,
+          "end_character": 547,
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "text": "/*\n * ====================================================\n * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.\n *\n * Developed at SunPro, a Sun Microsystems, Inc. business.\n * Permission to use, copy, modify, and distribute this\n * software is freely granted, provided that this notice\n * is preserved.\n * ====================================================\n */"
+        }
+      ],
+      "uncovered_keyword_offsets": []
+    }
+  ],
+  "status": "NOT_ADMITTED",
+  "limitations": [
+    "Keyword and leading-comment inventory is evidence discovery, not exhaustive legal clearance.",
+    "Package LICENSE delegates third-party copyright preservation to src files. MIT package metadata alone does not replace file-specific Sun and BSD conditions.",
+    "All 69 candidate source files match exact upstream commit bytes. No fixture body or licence identifier is inferred from a snippet.",
+    "A notice candidate retaining the package licence and all 19 distinct complete notice comments is bundled; it is not an accepted licence selection or licence-gate PASS."
+  ],
+  "next_action": "Implement exact-archive source-member evidence capture for independent Sun/BSD notices, prove full grants and immutable source notice binding, then add the complete composite choice; libm remains refused until that verification passes.",
+  "complete_comment_inventory": "All licence keyword hits are contained in captured complete comment blocks; this discovery check is not an exhaustive legal or Rust lexical parser.",
+  "notice_candidate": {
+    "path": "python/fast_mlsirm/_licenses/libm-0.2.16-notice-candidate.txt",
+    "sha256": "c31b5f0e8a3b8b1bab7c8fc217959760899fe0f60bf624a70dd708184829ca6c",
+    "package_license_bytes": "PRESERVED",
+    "distinct_complete_notice_comments": 19,
+    "all_69_source_notice_candidates": "PRESERVED",
+    "status": "NOT_ADMITTED"
+  },
+  "package_license_upstream_bytes": "MATCH",
+  "package_license_upstream_url": "https://raw.githubusercontent.com/rust-lang/compiler-builtins/dfd2203a4d6110820ad7bb65cafe1bf331a03a3d/libm/LICENSE.txt",
+  "local_packaging": {
+    "source_sha": "64fcbb868fd84f491111125c7db76ec218a83ebb",
+    "artifacts": [
+      {
+        "file": "fast_mlsirm-0.11.4-cp314-cp314-macosx_11_0_arm64.whl",
+        "sha256": "4093f76a5218ed98ae7f1a42f10f96e2203b8c2e943442f0c8f3602c38927790",
+        "208_existing_selected_notices": "EXACT_MATCH",
+        "libm_notice_candidate": "EXACT_MATCH"
+      },
+      {
+        "file": "fast_mlsirm-0.11.4.tar.gz",
+        "sha256": "0c5afe97ac61a746d2a152175a736bbc940c63efd2606930157b417607dc68c3",
+        "208_existing_selected_notices": "EXACT_MATCH",
+        "libm_notice_candidate": "EXACT_MATCH"
+      }
+    ],
+    "limitations": "Local 0.11.4 CPython 3.14 macOS ARM only; preservation proves notice bytes, not licence gate acceptance or 0.11.5 release."
+  }
+}

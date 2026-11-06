@@ -1,0 +1,208 @@
+{
+  "subject": "cargo/ndk-sys@0.6.0+11769913",
+  "archive_sha256": "ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873",
+  "upstream_repository": "rust-mobile/ndk",
+  "upstream_commit": "49bbbba16c58ff63cb8a0ad0eca5a9fb7ecaec25",
+  "upstream_snapshot_url": "https://codeload.github.com/rust-mobile/ndk/tar.gz/49bbbba16c58ff63cb8a0ad0eca5a9fb7ecaec25",
+  "upstream_snapshot_sha256": "c324b1566e992a10152d137eaf638feff9e88a3628948475cb47831024bef453",
+  "member_comparison": [
+    {
+      "member": ".gitignore",
+      "upstream_path": "ndk-sys/.gitignore",
+      "sha256": "6b937008e0a58a438c32574627db6961a4d2aff4bf5c703d4e45cb56ef3b168a",
+      "upstream_sha256": "6b937008e0a58a438c32574627db6961a4d2aff4bf5c703d4e45cb56ef3b168a",
+      "bytes": 30,
+      "equal": true
+    },
+    {
+      "member": "CHANGELOG.md",
+      "upstream_path": "ndk-sys/CHANGELOG.md",
+      "sha256": "7910d431a63bb1437708f9a75435419941b2b27ba15e50ecafb159c2564e5d84",
+      "upstream_sha256": "7910d431a63bb1437708f9a75435419941b2b27ba15e50ecafb159c2564e5d84",
+      "bytes": 1434,
+      "equal": true
+    },
+    {
+      "member": "Cargo.toml.orig",
+      "upstream_path": "ndk-sys/Cargo.toml",
+      "sha256": "c860c6b92e9c7fb701d0ab8ba09b2ec6f35c78a3c609fcc32e73581b3e230eb1",
+      "upstream_sha256": "c860c6b92e9c7fb701d0ab8ba09b2ec6f35c78a3c609fcc32e73581b3e230eb1",
+      "bytes": 721,
+      "equal": true
+    },
+    {
+      "member": "README.md",
+      "upstream_path": "README.md",
+      "sha256": "27fdcf69714fcf6f81b1d2fe4e185cd698056681dfa539c716d33bb9bcc9ff6f",
+      "upstream_sha256": "27fdcf69714fcf6f81b1d2fe4e185cd698056681dfa539c716d33bb9bcc9ff6f",
+      "bytes": 2125,
+      "equal": true
+    },
+    {
+      "member": "generate_bindings.sh",
+      "upstream_path": "ndk-sys/generate_bindings.sh",
+      "sha256": "ac09eddd85323507a4b4a77634163b0da94c3e3f9f04ad061300c024b974ab1c",
+      "upstream_sha256": "ac09eddd85323507a4b4a77634163b0da94c3e3f9f04ad061300c024b974ab1c",
+      "bytes": 3152,
+      "equal": true
+    },
+    {
+      "member": "src/ffi_aarch64.rs",
+      "upstream_path": "ndk-sys/src/ffi_aarch64.rs",
+      "sha256": "d93eb87810876180e906cf02b599dbb299c581384b38e5c3e9617000e1fd332e",
+      "upstream_sha256": "d93eb87810876180e906cf02b599dbb299c581384b38e5c3e9617000e1fd332e",
+      "bytes": 837653,
+      "equal": true
+    },
+    {
+      "member": "src/ffi_arm.rs",
+      "upstream_path": "ndk-sys/src/ffi_arm.rs",
+      "sha256": "62b88068ea170726581c6b7077e2ae07dca3dc1f636af1cac20bf3cf4ccaefb3",
+      "upstream_sha256": "62b88068ea170726581c6b7077e2ae07dca3dc1f636af1cac20bf3cf4ccaefb3",
+      "bytes": 846990,
+      "equal": true
+    },
+    {
+      "member": "src/ffi_i686.rs",
+      "upstream_path": "ndk-sys/src/ffi_i686.rs",
+      "sha256": "ede1fa2a87d3c15697e0fd452d4cdf6c35ee889046064e3b2c7bfcbc629914c5",
+      "upstream_sha256": "ede1fa2a87d3c15697e0fd452d4cdf6c35ee889046064e3b2c7bfcbc629914c5",
+      "bytes": 892464,
+      "equal": true
+    },
+    {
+      "member": "src/ffi_x86_64.rs",
+      "upstream_path": "ndk-sys/src/ffi_x86_64.rs",
+      "sha256": "0a4fc4dc60378ca3433927d1ad500fa9e33e7069e974fa3f89a3c97e7fcabf6b",
+      "upstream_sha256": "0a4fc4dc60378ca3433927d1ad500fa9e33e7069e974fa3f89a3c97e7fcabf6b",
+      "bytes": 896280,
+      "equal": true
+    },
+    {
+      "member": "src/lib.rs",
+      "upstream_path": "ndk-sys/src/lib.rs",
+      "sha256": "22999084db740073e1db22d0d47ed56035cc665c1ce353c1753a8e9cb917efdd",
+      "upstream_sha256": "22999084db740073e1db22d0d47ed56035cc665c1ce353c1753a8e9cb917efdd",
+      "bytes": 1806,
+      "equal": true
+    },
+    {
+      "member": "wrapper.h",
+      "upstream_path": "ndk-sys/wrapper.h",
+      "sha256": "43f5ed0d881f221df76be881760da0ec9f355c2fc1dc11461975cc21cd297092",
+      "upstream_sha256": "43f5ed0d881f221df76be881760da0ec9f355c2fc1dc11461975cc21cd297092",
+      "bytes": 3159,
+      "equal": true
+    }
+  ],
+  "root_licences": [
+    {
+      "path": "LICENSE-APACHE",
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "git_blob_oid": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64"
+    },
+    {
+      "path": "LICENSE-MIT",
+      "bytes": 1036,
+      "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
+      "git_blob_oid": "9cf106272ac3b56b0c4c80218e8fc10a664ca5f4"
+    }
+  ],
+  "summary": {
+    "total": 11,
+    "equal": 11
+  },
+  "admitted": false,
+  "declared_generator_headers": [
+    "android/api-level.h",
+    "android/asset_manager.h",
+    "android/asset_manager_jni.h",
+    "android/bitmap.h",
+    "android/choreographer.h",
+    "android/configuration.h",
+    "android/data_space.h",
+    "android/dlext.h",
+    "android/fdsan.h",
+    "android/file_descriptor_jni.h",
+    "android/font.h",
+    "android/font_matcher.h",
+    "android/hardware_buffer.h",
+    "android/hardware_buffer_jni.h",
+    "android/hdr_metadata.h",
+    "android/imagedecoder.h",
+    "android/input.h",
+    "android/keycodes.h",
+    "android/log.h",
+    "android/looper.h",
+    "android/multinetwork.h",
+    "android/native_activity.h",
+    "android/native_window.h",
+    "android/native_window_jni.h",
+    "android/NeuralNetworks.h",
+    "android/NeuralNetworksTypes.h",
+    "android/obb.h",
+    "android/performance_hint.h",
+    "android/permission_manager.h",
+    "android/rect.h",
+    "android/sensor.h",
+    "android/set_abort_message.h",
+    "android/sharedmem.h",
+    "android/sharedmem_jni.h",
+    "android/storage_manager.h",
+    "android/surface_texture.h",
+    "android/surface_texture_jni.h",
+    "android/sync.h",
+    "android/system_fonts.h",
+    "android/trace.h",
+    "android/versioning.h",
+    "android/window.h",
+    "aaudio/AAudio.h",
+    "amidi/AMidi.h",
+    "camera/NdkCameraCaptureSession.h",
+    "camera/NdkCameraDevice.h",
+    "camera/NdkCameraError.h",
+    "camera/NdkCameraManager.h",
+    "camera/NdkCameraMetadata.h",
+    "camera/NdkCameraMetadataTags.h",
+    "camera/NdkCameraWindowType.h",
+    "camera/NdkCaptureRequest.h",
+    "media/NdkImage.h",
+    "media/NdkImageReader.h",
+    "media/NdkMediaCodec.h",
+    "media/NdkMediaCrypto.h",
+    "media/NdkMediaDataSource.h",
+    "media/NdkMediaDrm.h",
+    "media/NdkMediaError.h",
+    "media/NdkMediaExtractor.h",
+    "media/NdkMediaFormat.h",
+    "media/NdkMediaMuxer.h"
+  ],
+  "schema": "cwl.release-ndk-generated-input-research/1",
+  "source_sha": "b0da15c10d55845319d60c6dd160420ca009a6dd",
+  "root_git_tree_verified": true,
+  "generator_sha256": "ac09eddd85323507a4b4a77634163b0da94c3e3f9f04ad061300c024b974ab1c",
+  "wrapper_sha256": "43f5ed0d881f221df76be881760da0ec9f355c2fc1dc11461975cc21cd297092",
+  "declared_android_build": "11769913",
+  "declared_artifact": "ndk_platform.tar.bz2",
+  "input_metadata_observation": {
+    "url": "https://androidbuildinternal.googleapis.com/android/internal/build/v3/builds/11769913/ndk/attempts/latest/artifacts/ndk_platform.tar.bz2/url",
+    "authentication": "none",
+    "http_status": 404,
+    "body_format": "non-JSON",
+    "observation_clock_bound_utc": "2026-09-27 11:38:58 UTC",
+    "scope": "Observation time bounds this turn; endpoint result was obtained shortly before the clock receipt. No claim that producer artifact was deleted or unavailable through every route."
+  },
+  "findings": [
+    "All eleven original source/doc/manifest files, including all four generated FFI Rust files, equal the immutable upstream snapshot bytes. Normalized Cargo.toml and .cargo_vcs_info.json are excluded from this source correspondence comparison.",
+    "Complete upstream root licence files were read; their raw SHA-256 and Git blob IDs match the exact root tree. Source correspondence is proven for the Rust publisher, not for every Android generation input.",
+    "The generator reads headers from nightly build 11769913 rather than an identified stable NDK release; the exact input archive, manifest, header bytes and licence chain have not been retrieved.",
+    "The observed declared input metadata endpoint returned HTTP 404 without authentication. No alternate NDK version was substituted and no generator was executed."
+  ],
+  "limitations": [
+    "No new SPDX recognizer, source notice, licence selection or gate admission added.",
+    "Root licence text plus source equality does not establish the independent exact Android header producer chain.",
+    "No credential lookup, signed artifact URL disclosure or large SDK download."
+  ],
+  "next_action": "Locate a documented public immutable producer manifest/artifact for Android build 11769913, or obtain a publisher-maintained licence/provenance statement for the generated bindings; do not use latest NDK as a substitute."
+}

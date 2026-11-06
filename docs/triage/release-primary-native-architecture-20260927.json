@@ -1,0 +1,15 @@
+{
+  "baseline_sha": "8334ab0a16cbcb6483cdd05c212db7e9ee6a0071",
+  "baseline_prescreen_sha256": "333799aa70c9d5cb13cfb97d623c354ce705c0a4b2a2fd60386df249af7d97ef",
+  "current_prescreen_sha256": "f7565abe688eb423b512801fa447987ef0a582f30b2abcfd7b33e03db4822cc9",
+  "scenario": "Primary universal2 ARM64 install records a dependency native member reported as x86_64 only; same dependency archive is valid for the Intel supplemental run.",
+  "baseline_result": "PASS",
+  "current_result": "REFUSED",
+  "refusal": "NATIVE_LINK_UNKNOWN: package/native.dylib: runtime variant requires aarch64 architecture",
+  "limitations": [
+    "Synthetic package archives, valid synthetic artifact transport digests and mocked native analyzer output; no actual installed dependencies, LLVM execution, Strix, hosted or release acceptance."
+  ],
+  "current_helper_sha": "9d19d0de5244749a11554db2c48b93809198a3ef",
+  "central_workflow_sha": "bd65571fff0769ac44ee6196526cd3853baf2e70",
+  "consumer_verifier_sha256": "bbf3266d2ada1ff26a8a237cf20cee05cb9cc6ca730abd29526efda31991d251"
+}

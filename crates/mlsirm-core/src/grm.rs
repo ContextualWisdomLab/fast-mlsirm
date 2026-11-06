@@ -163,9 +163,9 @@ fn validate(
             // checked_mul turns that into an Err instead of a wrapped size.
             let mut n = 1usize;
             for _ in 0..n_dims {
-                n = n
-                    .checked_mul(cfg.q)
-                    .ok_or_else(|| format!("q^n_dims overflows usize (q={}, n_dims={n_dims})", cfg.q))?;
+                n = n.checked_mul(cfg.q).ok_or_else(|| {
+                    format!("q^n_dims overflows usize (q={}, n_dims={n_dims})", cfg.q)
+                })?;
             }
             n
         }
@@ -420,6 +420,86 @@ pub fn fit_grm(
     n_cat: usize,
     cfg: &GrmConfig,
 ) -> Result<GrmResult, String> {
+    fit_grm_impl(
+        y,
+        observed,
+        loading_pattern,
+        n_persons,
+        n_items,
+        n_dims,
+        n_cat,
+        cfg,
+        #[cfg(all(feature = "gpu", not(coverage)))]
+        None,
+        #[cfg(all(feature = "gpu", not(coverage)))]
+        &mut crate::gpu_mstep::StageReceipt::default(),
+    )
+}
+
+/// Strict device E/M execution of the same canonical GRM MML contract.
+/// Chalmers (2012, p. 3, Eq. 2; pp. 5–6, Eqs. 6–11); full APA reference in
+/// [`crate::gpu_mstep`]. Equations 6–11 illustrate dichotomous EM; the category
+/// probabilities in Eq. 2 define this implementation's ordinal extension.
+/// Initialization, quadrature construction and reflection canonicalization are host operations.
+/// Returns an error on unavailable GPU, failed solve/search, or EM nonconvergence.
+/// Newton iteration budget and ridge must match `cfg`; all precision controls are caller-owned.
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[allow(clippy::too_many_arguments)]
+pub fn fit_grm_gpu_strict(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    loading_pattern: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    n_dims: usize,
+    n_cat: usize,
+    cfg: &GrmConfig,
+    control: &crate::gpu_mstep::NewtonControl,
+) -> Result<(GrmResult, crate::gpu_mstep::StageReceipt), String> {
+    control.validate()?;
+    if control.iterations != cfg.newton_iter || control.ridge != cfg.ridge {
+        return Err("strict Newton controls must match canonical GRM configuration".into());
+    }
+    let mut receipt = crate::gpu_mstep::StageReceipt::default();
+    let result = fit_grm_impl(
+        y,
+        observed,
+        loading_pattern,
+        n_persons,
+        n_items,
+        n_dims,
+        n_cat,
+        cfg,
+        Some(control),
+        &mut receipt,
+    )?;
+    if !result.converged {
+        return Err(format!(
+            "strict GPU GRM nonconvergence: {}; completed receipt={receipt:?}",
+            result.termination_reason
+        ));
+    }
+    if receipt.parameter_update == 0 || receipt.e_step_gpu_dispatches == 0 {
+        return Err("strict GPU GRM has no completed E/M updates".into());
+    }
+    Ok((result, receipt))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fit_grm_impl(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    loading_pattern: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    n_dims: usize,
+    n_cat: usize,
+    cfg: &GrmConfig,
+    #[cfg(all(feature = "gpu", not(coverage)))] gpu_control: Option<
+        &crate::gpu_mstep::NewtonControl,
+    >,
+    #[cfg(all(feature = "gpu", not(coverage)))] gpu_receipt: &mut crate::gpu_mstep::StageReceipt,
+) -> Result<GrmResult, String> {
     let _n_nodes = validate(
         y,
         observed,
@@ -512,39 +592,73 @@ pub fn fit_grm(
     };
 
     loop {
-        let all_lp = fill_lp(&params);
-        let mut counts = vec![vec![vec![0.0f64; n_cat]; qn]; n_items];
+        let mut counts = Vec::new();
         let mut ll = 0.0f64;
-        for p in 0..n_persons {
-            log_node.copy_from_slice(&logw);
-            for i in 0..n_items {
-                if !is_obs(p, i) {
-                    continue;
+        #[allow(unused_mut)]
+        let mut device_e = false;
+        #[cfg(all(feature = "gpu", not(coverage)))]
+        if gpu_control.is_some() {
+            let e = crate::gpu_grm_estep::expectation(
+                y, observed, n_persons, n_items, n_dims, n_cat, &nodes, &logw, &params, &dims_of,
+            )?;
+            counts = e.counts;
+            ll = e.loglik;
+            theta = e.theta;
+            gpu_receipt.e_step_gpu_dispatches += 1;
+            device_e = true;
+        }
+        if !device_e {
+            let all_lp = fill_lp(&params);
+            counts = vec![vec![vec![0.0f64; n_cat]; qn]; n_items];
+
+            for p in 0..n_persons {
+                log_node.copy_from_slice(&logw);
+                for i in 0..n_items {
+                    if !is_obs(p, i) {
+                        continue;
+                    }
+                    let yc = y[p * n_items + i];
+                    let lp = &all_lp[i];
+                    for nd in 0..qn {
+                        log_node[nd] += lp[nd * n_cat + yc];
+                    }
                 }
-                let yc = y[p * n_items + i];
-                let lp = &all_lp[i];
-                for nd in 0..qn {
-                    log_node[nd] += lp[nd * n_cat + yc];
+                let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                let mut denom = 0.0f64;
+                for v in log_node.iter() {
+                    denom += (v - mx).exp();
                 }
-            }
-            let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-            let mut denom = 0.0f64;
-            for v in log_node.iter() {
-                denom += (v - mx).exp();
-            }
-            ll += mx + denom.ln();
-            for i in 0..n_items {
-                if !is_obs(p, i) {
-                    continue;
-                }
-                let yc = y[p * n_items + i];
-                for nd in 0..qn {
-                    counts[i][nd][yc] += (log_node[nd] - mx).exp() / denom;
+                ll += mx + denom.ln();
+                for i in 0..n_items {
+                    if !is_obs(p, i) {
+                        continue;
+                    }
+                    let yc = y[p * n_items + i];
+                    for nd in 0..qn {
+                        counts[i][nd][yc] += (log_node[nd] - mx).exp() / denom;
+                    }
                 }
             }
         }
         let previous = loglik_trace.last().copied();
-        let change = checked_em_loglik_change(ll, previous, n_iter)?;
+        let change = if device_e {
+            if !ll.is_finite() {
+                return Err("nonfinite GPU GRM log-likelihood".into());
+            }
+            match previous {
+                Some(prev) => {
+                    let delta = ll - prev;
+                    let roundoff = 32.0 * f32::EPSILON as f64 * (1.0 + prev.abs());
+                    if delta < -roundoff {
+                        return Err(format!("GPU GRM log-likelihood decreased: {delta}"));
+                    }
+                    Some(delta)
+                }
+                None => None,
+            }
+        } else {
+            checked_em_loglik_change(ll, previous, n_iter)?
+        };
         loglik_trace.push(ll);
 
         // Stopping: relative tolerance + SIGNED monotonic-decrease guard (not the .abs() check,
@@ -553,7 +667,9 @@ pub fn fit_grm(
             let prev = previous.expect("change requires a previous log-likelihood");
             final_loglik_change = change;
             let stop_tol = cfg.tol * (1.0 + prev.abs());
-            if final_loglik_change <= stop_tol {
+            if (device_e && final_loglik_change.abs() <= stop_tol)
+                || (!device_e && final_loglik_change <= stop_tol)
+            {
                 converged = true;
                 termination_reason = "tolerance_met".to_string();
                 break;
@@ -564,6 +680,24 @@ pub fn fit_grm(
         }
 
         for i in 0..n_items {
+            #[cfg(all(feature = "gpu", not(coverage)))]
+            if let Some(control) = gpu_control {
+                let node_ref = &nodes;
+                let selected_nodes: Vec<f64> = (0..qn)
+                    .flat_map(|nd| dims_of[i].iter().map(move |&d| node_ref[nd * n_dims + d]))
+                    .collect();
+                let (updated, stages) = crate::gpu_mstep::update_grm(
+                    &params[i],
+                    dims_of[i].len(),
+                    &selected_nodes,
+                    &counts[i],
+                    crate::bifactor_grm::SlopePrior::None,
+                    control,
+                )?;
+                params[i] = updated;
+                gpu_receipt.add(&stages);
+                continue;
+            }
             params[i] = grm_m_step(
                 params[i].clone(),
                 &dims_of[i],
@@ -578,8 +712,14 @@ pub fn fit_grm(
         n_iter += 1;
     }
 
-    // Final EAP pass.
-    {
+    // Strict EAP already comes from the final completed device E sweep.
+    #[allow(unused_mut)]
+    let mut needs_host_eap = true;
+    #[cfg(all(feature = "gpu", not(coverage)))]
+    if gpu_control.is_some() {
+        needs_host_eap = false;
+    }
+    if needs_host_eap {
         let all_lp = fill_lp(&params);
         for p in 0..n_persons {
             log_node.copy_from_slice(&logw);
