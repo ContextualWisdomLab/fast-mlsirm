@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys as _sys
 from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _distribution_version
 
@@ -134,7 +135,7 @@ del (
 # compatibility module or making import depend on unrelated stale names.
 for _public_name in _legacy_init.__all__:
     if hasattr(_legacy_init, _public_name):
-        globals()[_public_name] = getattr(_legacy_init, _public_name)
+        setattr(_sys.modules[__name__], _public_name, getattr(_legacy_init, _public_name))
 
 # The legacy compatibility module imports the implementation-level ``fit``
 # callable, which carries private reference-backend authority for
