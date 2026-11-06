@@ -265,6 +265,9 @@ from .regression import (
     fit_ols_hc as fit_ols_hc,
 )
 from .regression import (
+    nested_ols_column_drop as nested_ols_column_drop,
+)
+from .regression import (
     slope_difference as slope_difference,
 )
 from .regression import (
@@ -356,6 +359,7 @@ __all__ = list(_legacy_init.__all__) + [
     "design_row_dot",
     "f_sf",
     "fit_ols_hc",
+    "nested_ols_column_drop",
     "slope_difference",
     "t_sf",
     "xwz_e_design_row",
