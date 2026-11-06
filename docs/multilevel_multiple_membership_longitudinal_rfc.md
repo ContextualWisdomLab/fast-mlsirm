@@ -121,8 +121,12 @@ The same serialized artifacts are intended for:
 - contextual-orchestrator evaluation workflows.
 
 The namespace has no provider SDK, network call, model credential, or raw text.
-An LLM integration belongs in an adapter and, when tested in GitHub Actions, must
-use `NVIDIA_NIM_API_KEY` rather than `COPILOT_GITHUB_TOKEN`.
+An LLM integration belongs in an adapter. Model-backed GitHub Actions consume
+the centrally owned contextual-orchestrator gateway through `orchestrator/free`
+and its gateway token; this namespace does not receive provider credentials or
+select a provider/model/group/paid fallback. Any direct runtime/client adoption
+must use an immutable released contextual-orchestrator API/client/schema rather
+than a mutable sibling branch or source checkout. See ADR-0101.
 
 ## Numerical boundary
 
