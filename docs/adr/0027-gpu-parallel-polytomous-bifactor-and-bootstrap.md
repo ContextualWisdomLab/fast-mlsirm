@@ -19,7 +19,7 @@ Prior to this decision, `fast-mlsirm` supported bifactor scoreability indices an
 
 - **Numerical Precision**: The two-stage Lord-Wingersky recursion must match exact direct enumeration within a strict threshold of $\le 10^{-12}$ on a 257-point grid spanning $[-8.0, 8.0]$.
 - **Hardware-Parallel E-step**: The bifactor E-step runs in WGSL f32 kernels with an f64 CPU fallback; fit-level CPU/GPU agreement is asserted within a documented single-precision tolerance.
-- **Caller-controlled bootstrap scale**: replicate count, batch size, stopping ratio (Monte Carlo error of interval endpoints relative to half-width, in the role of the Andrews–Buchinsky percentage-deviation bound), and compute budget are validated caller arguments; the stopping rule follows Andrews and Buchinsky (2000, §§ 2–4).
+- **Caller-controlled bootstrap scale**: replicate count, batch size, endpoint-movement stopping ratio, and compute budget are validated caller arguments. The endpoint-movement rule is a heuristic and does not implement the Andrews–Buchinsky (2000, pp. 23–24) percentage-deviation criterion with caller-chosen `(pdb, τ)`.
 - **Reproducibility & Parity**: CPU and GPU executions, as well as deterministic replicate seeds, must produce parameter estimates matching replicate-by-replicate within device precision.
 - **Methodological Scope Integrity**: Maintain simple-structure and structured bifactor contracts in dedicated modules (`bifactor_recursion` and `bifactor_grm`) without mutating existing general multidimensional contracts in place.
 - **Identification & Standardization**: Enforce reference group standard normal constraints ($\mu_0 = 0, \sigma_0^2 = 1$) while freely estimating focal group distributions; empirical uncertainty comes from the joint person bootstrap.
@@ -45,7 +45,7 @@ We implement and verify the following components:
 3. **Parallel Bootstrap Dispatcher (`python/fast_mlsirm/bifactor_bootstrap.py`)**:
    - Implements stratified person bootstrap resampling preserving group proportions.
    - Dispatches replicates across `ThreadPoolExecutor` workers; the Rust fit releases the GIL (`py.detach`) during estimation.
-   - Stops at batch boundaries when the maximum percentile-interval endpoint movement relative to the interval half-width falls below the caller-supplied Monte Carlo stopping ratio (sequential application of Andrews & Buchinsky, 2000, §§ 2–4), when the compute budget is reached, or when all requested replicates complete.
+   - Stops at batch boundaries when the maximum percentile-interval endpoint movement relative to the interval half-width falls below the caller-supplied heuristic ratio, when the compute budget is reached, or when all requested replicates complete. This early stop does not certify Monte Carlo accuracy.
    - Reports per-replicate convergence flags, empirical standard errors, and percentile intervals. Failed replicates are excluded, never substituted.
    - Calculates empirical parameter standard errors and convergence summaries.
 
@@ -61,6 +61,7 @@ We implement and verify the following components:
 - Does not mutate or replace the existing simple-structure MLSIRM / MLS2PLM item response models in place.
 - Does not implement non-compensatory or partially-ordered multidimensional response models.
 - Does not replace Hosted Psychometrics Commons assessment execution services or persistent participant schemas.
+- Does not implement the Andrews–Buchinsky `(pdb, τ)` replicate-number procedure or a Monte Carlo accuracy guarantee for early-stopped intervals.
 
 ## Consequences and trade-offs
 
@@ -107,3 +108,7 @@ We implement and verify the following components:
 
 - Discovery of numerical instability in QMCEM estimation for dimensions $> 16$ requiring full Laplace approximation or variational alternatives.
 - Adoption of an alternative open standard for multidimensional item calibration across ContextualWisdomLab systems.
+
+## Correction (2026-09-27)
+
+The original decision text equated successive-batch endpoint movement divided by interval half-width with Andrews and Buchinsky's percentage deviation from an ideal infinite-repetition quantity. The source defines the latter with a probability requirement `1 − τ`; the implementation observes neither the ideal quantity nor that exceedance probability. The wording above now describes the implemented rule and its limit without changing its behavior.
