@@ -42,7 +42,7 @@ def test_rendered_report_uses_tabular_numerals_without_opacity_transitions(tmp_p
     assert "font-variant-numeric: tabular-nums;" in body_rule
 
     bar_row_rule = _rule_body(style, ".bar-row")
-    assert "transition:" not in bar_row_rule
+    assert "transition: background-color 0.15s ease-in-out;" in bar_row_rule
     assert "opacity:" not in bar_row_rule
     assert "padding: 4px 8px;" in bar_row_rule
     assert "border-radius: 4px;" in bar_row_rule
