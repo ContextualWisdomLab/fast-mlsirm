@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import math
 from html import escape
 from pathlib import Path
@@ -105,9 +106,7 @@ def _render_html(
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(), quote=True)}">',
             f"<title>{escape(title)}</title>",
-            "<style>",
-            _css(),
-            "</style>",
+            f"<style>{_css()}</style>",
             "</head>",
             "<body>",
             '<a href="#main-content" class="skip-link">Skip to main content</a>',
@@ -567,7 +566,10 @@ def _title_attr(value: Any) -> str:
 
 def _content_security_policy() -> str:
     """Return the strict CSP string embedded in every generated report."""
-    return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    css_bytes = _css().encode("utf-8")
+    sha256 = hashlib.sha256(css_bytes).digest()
+    b64 = base64.b64encode(sha256).decode("ascii")
+    return f"default-src 'none'; style-src 'sha256-{b64}'; style-src-attr 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _css() -> str:
