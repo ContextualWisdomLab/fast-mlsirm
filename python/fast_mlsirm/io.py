@@ -13,7 +13,13 @@ from typing import BinaryIO, Callable
 
 import numpy as np
 
-from .types import DimensionalityDiagnostics, FitDiagnostics, FitResult, MLSIRMParams, SimulationData
+from .types import (
+    DimensionalityDiagnostics,
+    FitDiagnostics,
+    FitResult,
+    MLSIRMParams,
+    SimulationData,
+)
 
 
 MAX_NUMPY_ARRAY_ELEMENTS = 50_000_000
@@ -118,7 +124,9 @@ def _json_dumps_strict(payload: object, *, indent: int = 2) -> str:
         return json.dumps(payload, indent=indent, allow_nan=False)
     except ValueError as exc:
         if str(exc).startswith("Out of range float values"):
-            raise ValueError("artifact contains a non-finite JSON numeric value") from None
+            raise ValueError(
+                "artifact contains a non-finite JSON numeric value"
+            ) from None
         raise ValueError("artifact could not be serialized as strict JSON") from None
 
 
@@ -290,7 +298,8 @@ def _load_json_bounded(
                     f"of {MAX_JSON_NESTING_DEPTH}"
                 )
         elif char in "]}":
-            depth -= 1
+            if depth > 0:
+                depth -= 1
 
     def reject_duplicate_members(pairs):
         """Build one JSON object while rejecting repeated member names."""
@@ -390,7 +399,11 @@ def save_simulation(data: SimulationData, run_dir: str | Path) -> None:
         "gamma": float(data.config.gamma),
         "phi": float(data.config.phi),
         "seed": int(data.config.seed),
-        "files": {"responses": "responses.npy", "truth": "truth.npz", "factors": "item_factor.csv"},
+        "files": {
+            "responses": "responses.npy",
+            "truth": "truth.npz",
+            "factors": "item_factor.csv",
+        },
     }
     _atomic_write_text(out / "manifest.json", _json_dumps_strict(manifest))
 
@@ -405,7 +418,16 @@ def save_fit_result(result: FitResult, run_dir: str | Path) -> None:
     out = Path(run_dir)
     out.mkdir(parents=True, exist_ok=True)
     p = result.params
-    arrays = dict(theta=p.theta, alpha=p.alpha, a=p.a, b=p.b, xi=p.xi, zeta=p.zeta, tau=p.tau, gamma=p.gamma)
+    arrays = dict(
+        theta=p.theta,
+        alpha=p.alpha,
+        a=p.a,
+        b=p.b,
+        xi=p.xi,
+        zeta=p.zeta,
+        tau=p.tau,
+        gamma=p.gamma,
+    )
     summary = {
         "model": result.model,
         "optimizer": result.optimizer,
@@ -452,7 +474,9 @@ def save_fit_diagnostics(diagnostics: FitDiagnostics, run_dir: str | Path) -> No
     _atomic_write_text(out / "fit_diagnostics.json", _json_dumps_strict(payload))
 
 
-def save_dimensionality_diagnostics(diagnostics: DimensionalityDiagnostics, run_dir: str | Path) -> None:
+def save_dimensionality_diagnostics(
+    diagnostics: DimensionalityDiagnostics, run_dir: str | Path
+) -> None:
     """Write the dimensionality-search candidates/best to JSON in ``run_dir``."""
     out = Path(run_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -463,7 +487,14 @@ def save_dimensionality_diagnostics(diagnostics: DimensionalityDiagnostics, run_
 def load_params(path: str | Path) -> MLSIRMParams:
     """Load an :class:`MLSIRMParams` from a bounded ``params.npz`` file."""
     with _load_numpy_bounded(path) as data:
-        return MLSIRMParams(theta=data["theta"], alpha=data["alpha"], b=data["b"], xi=data["xi"], zeta=data["zeta"], tau=float(data["tau"]))
+        return MLSIRMParams(
+            theta=data["theta"],
+            alpha=data["alpha"],
+            b=data["b"],
+            xi=data["xi"],
+            zeta=data["zeta"],
+            tau=float(data["tau"]),
+        )
 
 
 def load_factor_csv(path: str | Path) -> np.ndarray:
@@ -523,4 +554,6 @@ def _write_factor_csv(path: Path, factor_id: np.ndarray) -> None:
 
 def _arrays_to_lists(values: dict[str, np.ndarray]) -> dict[str, list[float]]:
     """Convert a dict of numeric arrays to JSON-serializable nested lists."""
-    return {key: np.asarray(value, dtype=float).tolist() for key, value in values.items()}
+    return {
+        key: np.asarray(value, dtype=float).tolist() for key, value in values.items()
+    }
