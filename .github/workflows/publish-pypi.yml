@@ -27,4 +27,5 @@ jobs:
       release_tag: ${{ inputs.release_tag }}
       release_commit: ${{ inputs.release_commit }}
       control_plane_commit: ${{ inputs.control_plane_commit }}
-    secrets: inherit
+    secrets:
+      OPENSAR_AUTH_TOKEN: ${{ secrets.OPENSAR_AUTH_TOKEN }}

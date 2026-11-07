@@ -21,4 +21,5 @@ jobs:
     with:
       release_version: ${{ inputs.release_version }}
       release_commit: ${{ inputs.release_commit }}
-    secrets: inherit
+    secrets:
+      OPENSAR_AUTH_TOKEN: ${{ secrets.OPENSAR_AUTH_TOKEN }}
