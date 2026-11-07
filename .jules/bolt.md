@@ -55,3 +55,7 @@
 ## 2026-09-22 - Intermediate allocations in distance calculations
 **Learning:** `np.sum(diff * diff, axis=1)` in Euclidean distance formulas creates an unnecessary intermediate 2D array before performing the sum over the axis. This can cause performance bottlenecks across many function calls.
 **Action:** Replace `np.sum(diff * diff, axis=1)` with `np.einsum('ij,ij->i', diff, diff)` when computing pairwise Euclidean distances to avoid allocating the intermediate 2D array and achieve measurable performance gains.
+
+## 2026-10-23 - Rust scalar power function call overhead
+**Learning:** In tight loops or hot paths in Rust code, calling standard library power functions like `powi(3)` or `powi(4)` can introduce significant function call overhead compared to simple scalar multiplication.
+**Action:** Replace `x.powi(3)` with `x * x * x` and `x.powi(4)` with `let x2 = x * x; x2 * x2` when calculating small integer powers in critical mathematical loops (like rotation optimization objectives or gradient computations) to eliminate function call overhead.
