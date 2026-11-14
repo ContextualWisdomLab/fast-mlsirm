@@ -413,9 +413,19 @@ pub fn update_grm(
             4 => "line-search failure",
             _ => "invalid completion status",
         };
+        let np = params.len();
+        let step = width + 2 * np;
+        let f0 = v[0] as f64;
+        let gnorm = v[1..1 + np]
+            .iter()
+            .fold(0.0f64, |m, x| m.max((*x as f64).abs()));
+        let directional: f64 = (0..np).map(|j| v[1 + j] as f64 * v[step + j] as f64).sum();
         return Err(format!(
-            "GPU M-step {reason}; CPU numerical fallback forbidden; completed stages={:?}",
-            &v[meta..]
+            "GPU M-step {reason}; CPU numerical fallback forbidden; completed stages={:?}; \
+             last objective={f0:e} gradient_max_abs={gnorm:e} newton_directional={directional:e} \
+             f32_objective_ulp={:e}",
+            &v[meta..],
+            f0.abs() * f32::EPSILON as f64
         ));
     }
     let p: Vec<f64> = v[width..width + params.len()]

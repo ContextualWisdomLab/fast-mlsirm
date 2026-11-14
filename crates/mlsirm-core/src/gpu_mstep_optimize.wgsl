@@ -48,6 +48,16 @@ fn main(){
    if(valid){
     let f=criterion(0u)+prior(0u);result[receipt_base+1u]+=1.0;result[receipt_base+4u]+=1.0;
     if(finite(f)&&f<=f0-data[ctl+9u]*alpha*directional&&actual_change>0.0){accepted=true;}
+    // Hager & Zhang (2005), SIAM J. Optim. 16(1), 170-192, Sec. 4, Eqs. (4.1)-(4.2):
+    // near a minimizer an f32 objective difference cannot resolve Armijo decrease, so also
+    // accept the derivative-based approximate Wolfe conditions with phi(alpha)<=phi(0)+eps_f.
+    // eps_f is the existing strict-EM f32 roundoff bound 32*EPS*(1+|f|) (grm.rs).
+    if(!accepted&&finite(f)&&actual_change>0.0&&f<=f0+32.0*1.1920929e-7*(1.0+abs(f0))){
+     var dphi=0.0;
+     for(var j=0u;j<np;j++){dphi-=(criterion(1u+j)+prior(1u+j))*result[step+j];}
+     let dphi0=-directional;
+     if(finite(dphi)&&(2.0*data[ctl+9u]-1.0)*dphi0>=dphi&&dphi>=0.9*dphi0){accepted=true;}
+    }
    }
    result[receipt_base+6u]+=1.0;trial=false;
    if(accepted){break;}alpha*=0.5;
