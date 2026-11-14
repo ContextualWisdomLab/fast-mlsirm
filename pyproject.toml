@@ -70,3 +70,8 @@ fail_under = 100
 
 [tool.uv.sources]
 sortedcontainers = { path = "third_party/wheels/sortedcontainers-2.4.0-py3-none-any.whl" }
+
+[dependency-groups]
+dev = [
+    "playwright>=1.63.0",
+]
