@@ -109,9 +109,8 @@ fn simulate(
 
         let mut profile = 0_usize;
         for attribute in 0..N_ATTRIBUTES {
-            let probability = sigmoid(
-                attribute_slope[attribute] * theta + attribute_intercept[attribute],
-            );
+            let probability =
+                sigmoid(attribute_slope[attribute] * theta + attribute_intercept[attribute]);
             if rng.next_f64() < probability {
                 profile |= 1 << attribute;
             }
@@ -157,8 +156,8 @@ fn attribute_agreement(estimated_probability: &[f64], profiles: &[usize]) -> f64
     let mut correct = 0_usize;
     for person in 0..N_PERSONS {
         for attribute in 0..N_ATTRIBUTES {
-            let estimate = (estimated_probability[person * N_ATTRIBUTES + attribute] >= 0.5)
-                as usize;
+            let estimate =
+                (estimated_probability[person * N_ATTRIBUTES + attribute] >= 0.5) as usize;
             let truth = (profiles[person] >> attribute) & 1;
             if estimate == truth {
                 correct += 1;
@@ -202,11 +201,9 @@ fn higher_order_dina_recovery_respects_monte_carlo_tolerance() {
         let mut converged = 0_usize;
 
         for replication in 0..REPLICATIONS {
-            let mut rng = Lcg(
-                0xA24B_AED4_963E_E407_u64
-                    .wrapping_mul(replication as u64 + 1)
-                    .wrapping_add((skew as u64 + 1) * 0x9E37_79B9_7F4A_7C15),
-            );
+            let mut rng = Lcg(0xA24B_AED4_963E_E407_u64
+                .wrapping_mul(replication as u64 + 1)
+                .wrapping_add((skew as u64 + 1) * 0x9E37_79B9_7F4A_7C15));
             let (responses, profiles) = simulate(
                 &attribute_slope,
                 &attribute_intercept,
@@ -259,16 +256,15 @@ fn higher_order_dina_recovery_respects_monte_carlo_tolerance() {
              bias(d)={intercept_bias:.3} attr-agree={agreement:.3}"
         );
 
-        let (slope_bound, intercept_bound) = if skew {
-            (0.45, 0.25)
-        } else {
-            (0.32, 0.15)
-        };
+        let (slope_bound, intercept_bound) = if skew { (0.45, 0.25) } else { (0.32, 0.15) };
         assert!(slope_rmse < slope_bound, "RMSE(a) {slope_rmse} skew={skew}");
         assert!(
             intercept_rmse < intercept_bound,
             "RMSE(d) {intercept_rmse} skew={skew}"
         );
-        assert!(agreement > 0.90, "attribute agreement {agreement} skew={skew}");
+        assert!(
+            agreement > 0.90,
+            "attribute agreement {agreement} skew={skew}"
+        );
     }
 }

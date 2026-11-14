@@ -90,7 +90,9 @@ const FOCAL_SD: f64 = 1.2;
 const TRUE_A_G: [f64; N_ITEMS] = [1.5, 1.2, 1.0, 0.9, 1.4, 1.1, 1.0, 0.8, 1.3, 1.1, 0.9, 1.2];
 const TRUE_A_S: [f64; N_ITEMS] = [1.0, 0.9, 1.1, 0.8, 1.2, 0.7, 1.0, 1.1, 0.8, 0.9, 1.2, 0.7];
 const TRUE_D1: [f64; N_ITEMS] = [1.3, 1.1, 1.4, 1.0, 1.2, 1.5, 0.9, 1.1, 1.3, 1.0, 1.2, 0.8];
-const TRUE_D2: [f64; N_ITEMS] = [-1.1, -1.3, -1.0, -1.2, -1.1, -0.9, -1.4, -1.2, -1.0, -1.1, -0.9, -1.3];
+const TRUE_D2: [f64; N_ITEMS] = [
+    -1.1, -1.3, -1.0, -1.2, -1.1, -0.9, -1.4, -1.2, -1.0, -1.1, -0.9, -1.3,
+];
 
 /// Reverse-keyed variant: anchors 1 (general) and 6 (general + specific)
 /// keyed against the construct.
@@ -194,12 +196,27 @@ fn anchor_flags() -> Vec<bool> {
 fn bifactor_fipc_recovers_shifted_general() {
     let y_ref = simulate(&TRUE_A_G, &TRUE_A_S, N_REF, 0.0, 1.0, &[1.0, 1.0], 101);
     let reference = fit_bifactor_grm(
-        &y_ref, None, &SPECIFIC_MAP, N_REF, N_ITEMS, N_SPECIFIC, N_CAT, &ref_config(),
+        &y_ref,
+        None,
+        &SPECIFIC_MAP,
+        N_REF,
+        N_ITEMS,
+        N_SPECIFIC,
+        N_CAT,
+        &ref_config(),
     )
     .expect("reference bifactor fit must succeed");
     assert!(reference.converged);
 
-    let y_foc = simulate(&TRUE_A_G, &TRUE_A_S, N_FOC, FOCAL_MEAN, FOCAL_SD, &[1.0, 1.0], 202);
+    let y_foc = simulate(
+        &TRUE_A_G,
+        &TRUE_A_S,
+        N_FOC,
+        FOCAL_MEAN,
+        FOCAL_SD,
+        &[1.0, 1.0],
+        202,
+    );
     let fit = fit_bifactor_grm_fipc(
         &y_foc,
         None,
@@ -215,30 +232,61 @@ fn bifactor_fipc_recovers_shifted_general() {
         &fipc_config(),
     )
     .expect("bifactor FIPC fit must succeed");
-    assert!(fit.converged, "FIPC must converge: {}", fit.termination_reason);
+    assert!(
+        fit.converged,
+        "FIPC must converge: {}",
+        fit.termination_reason
+    );
 
     // Anchors bit-exact (fixed means fixed, both slopes and thresholds).
     for i in 0..N_ANCHOR {
-        assert!((fit.a_general[i] - reference.a_general[i]).abs() == 0.0, "anchor a_G {i}");
-        assert!((fit.a_specific[i] - reference.a_specific[i]).abs() == 0.0, "anchor a_S {i}");
+        assert!(
+            (fit.a_general[i] - reference.a_general[i]).abs() == 0.0,
+            "anchor a_G {i}"
+        );
+        assert!(
+            (fit.a_specific[i] - reference.a_specific[i]).abs() == 0.0,
+            "anchor a_S {i}"
+        );
         for k in 0..N_CAT - 1 {
             assert!(
-                (fit.threshold[i * (N_CAT - 1) + k] - reference.threshold[i * (N_CAT - 1) + k]).abs()
+                (fit.threshold[i * (N_CAT - 1) + k] - reference.threshold[i * (N_CAT - 1) + k])
+                    .abs()
                     == 0.0,
                 "anchor d {i}[{k}]"
             );
         }
     }
-    assert!((fit.general_mean - FOCAL_MEAN).abs() < MAX_MU_ERROR, "mean = {}", fit.general_mean);
-    assert!((fit.general_sd - FOCAL_SD).abs() < MAX_SD_ERROR, "sd = {}", fit.general_sd);
+    assert!(
+        (fit.general_mean - FOCAL_MEAN).abs() < MAX_MU_ERROR,
+        "mean = {}",
+        fit.general_mean
+    );
+    assert!(
+        (fit.general_sd - FOCAL_SD).abs() < MAX_SD_ERROR,
+        "sd = {}",
+        fit.general_sd
+    );
     for s in &fit.specific_sd {
         assert!((*s - 1.0).abs() == 0.0, "specific SDs stay pinned at 1");
     }
     for i in N_ANCHOR..N_ITEMS {
-        assert!((fit.a_general[i] - TRUE_A_G[i]).abs() < MAX_FREE_A_ERROR, "free a_G {i}");
-        assert!((fit.a_specific[i] - TRUE_A_S[i]).abs() < MAX_FREE_A_ERROR, "free a_S {i}");
-        assert!((fit.threshold[i * 2] - TRUE_D1[i]).abs() < MAX_FREE_D_ERROR, "free d1 {i}");
-        assert!((fit.threshold[i * 2 + 1] - TRUE_D2[i]).abs() < MAX_FREE_D_ERROR, "free d2 {i}");
+        assert!(
+            (fit.a_general[i] - TRUE_A_G[i]).abs() < MAX_FREE_A_ERROR,
+            "free a_G {i}"
+        );
+        assert!(
+            (fit.a_specific[i] - TRUE_A_S[i]).abs() < MAX_FREE_A_ERROR,
+            "free a_S {i}"
+        );
+        assert!(
+            (fit.threshold[i * 2] - TRUE_D1[i]).abs() < MAX_FREE_D_ERROR,
+            "free d1 {i}"
+        );
+        assert!(
+            (fit.threshold[i * 2 + 1] - TRUE_D2[i]).abs() < MAX_FREE_D_ERROR,
+            "free d2 {i}"
+        );
     }
     assert!(fit.loglik_trace.iter().all(|v| v.is_finite()));
 }
@@ -249,9 +297,19 @@ fn bifactor_fipc_matches_concurrent_at_true_anchors() {
     // every item common (stage-2 compact model).
     let fixed_a_g: Vec<f64> = TRUE_A_G.to_vec();
     let fixed_a_s: Vec<f64> = TRUE_A_S.to_vec();
-    let fixed_d: Vec<f64> = (0..N_ITEMS).flat_map(|i| [TRUE_D1[i], TRUE_D2[i]]).collect();
+    let fixed_d: Vec<f64> = (0..N_ITEMS)
+        .flat_map(|i| [TRUE_D1[i], TRUE_D2[i]])
+        .collect();
 
-    let y_foc = simulate(&TRUE_A_G, &TRUE_A_S, N_FOC_CONC, FOCAL_MEAN, FOCAL_SD, &[1.0, 1.0], 303);
+    let y_foc = simulate(
+        &TRUE_A_G,
+        &TRUE_A_S,
+        N_FOC_CONC,
+        FOCAL_MEAN,
+        FOCAL_SD,
+        &[1.0, 1.0],
+        303,
+    );
     let fipc = fit_bifactor_grm_fipc(
         &y_foc,
         None,
@@ -302,19 +360,32 @@ fn bifactor_fipc_matches_concurrent_at_true_anchors() {
         },
     )
     .expect("concurrent multigroup fit must succeed");
-    assert!(conc.converged, "concurrent must converge: {}", conc.termination_reason);
+    assert!(
+        conc.converged,
+        "concurrent must converge: {}",
+        conc.termination_reason
+    );
 
     for i in N_ANCHOR..N_ITEMS {
         let (f, c) = (fipc.a_general[i], conc.a_general[1][i]);
-        assert!((f - c).abs() < MAX_CONCURRENT_PARAM_GAP, "free a_G {i}: {f} vs {c}");
+        assert!(
+            (f - c).abs() < MAX_CONCURRENT_PARAM_GAP,
+            "free a_G {i}: {f} vs {c}"
+        );
         let (f, c) = (fipc.a_specific[i], conc.a_specific[1][i]);
-        assert!((f - c).abs() < MAX_CONCURRENT_PARAM_GAP, "free a_S {i}: {f} vs {c}");
+        assert!(
+            (f - c).abs() < MAX_CONCURRENT_PARAM_GAP,
+            "free a_S {i}: {f} vs {c}"
+        );
         for k in 0..N_CAT - 1 {
             let (f, c) = (
                 fipc.threshold[i * (N_CAT - 1) + k],
                 conc.threshold[1][i * (N_CAT - 1) + k],
             );
-            assert!((f - c).abs() < MAX_CONCURRENT_PARAM_GAP, "free d {i}[{k}]: {f} vs {c}");
+            assert!(
+                (f - c).abs() < MAX_CONCURRENT_PARAM_GAP,
+                "free d {i}[{k}]: {f} vs {c}"
+            );
         }
     }
     assert!(
@@ -335,12 +406,27 @@ fn bifactor_fipc_matches_concurrent_at_true_anchors() {
 fn bifactor_fipc_reverse_keyed_anchors() {
     let y_ref = simulate(&RK_A_G, &RK_A_S, N_REF, 0.0, 1.0, &[1.0, 1.0], 505);
     let reference = fit_bifactor_grm(
-        &y_ref, None, &SPECIFIC_MAP, N_REF, N_ITEMS, N_SPECIFIC, N_CAT, &ref_config(),
+        &y_ref,
+        None,
+        &SPECIFIC_MAP,
+        N_REF,
+        N_ITEMS,
+        N_SPECIFIC,
+        N_CAT,
+        &ref_config(),
     )
     .expect("reference fit must succeed");
     assert!(reference.converged);
 
-    let y_foc = simulate(&RK_A_G, &RK_A_S, N_FOC, FOCAL_MEAN, FOCAL_SD, &[1.0, 1.0], 606);
+    let y_foc = simulate(
+        &RK_A_G,
+        &RK_A_S,
+        N_FOC,
+        FOCAL_MEAN,
+        FOCAL_SD,
+        &[1.0, 1.0],
+        606,
+    );
     let fit = fit_bifactor_grm_fipc(
         &y_foc,
         None,
@@ -360,14 +446,37 @@ fn bifactor_fipc_reverse_keyed_anchors() {
     // Fixed signs survive bit-exact — anchors 1 and 6 stay negative on both
     // their general and (item 6) specific slopes.
     for i in 0..N_ANCHOR {
-        assert!((fit.a_general[i] - reference.a_general[i]).abs() == 0.0, "anchor a_G {i}");
-        assert!((fit.a_specific[i] - reference.a_specific[i]).abs() == 0.0, "anchor a_S {i}");
+        assert!(
+            (fit.a_general[i] - reference.a_general[i]).abs() == 0.0,
+            "anchor a_G {i}"
+        );
+        assert!(
+            (fit.a_specific[i] - reference.a_specific[i]).abs() == 0.0,
+            "anchor a_S {i}"
+        );
     }
-    assert!(fit.a_general[1] < 0.0, "reverse-keyed general anchor keeps its sign");
-    assert!(fit.a_general[6] < 0.0, "reverse-keyed general anchor keeps its sign");
-    assert!(fit.a_specific[6] < 0.0, "reverse-keyed specific anchor keeps its sign");
-    assert!((fit.general_mean - FOCAL_MEAN).abs() < MAX_MU_ERROR, "mean = {}", fit.general_mean);
-    assert!((fit.general_sd - FOCAL_SD).abs() < MAX_SD_ERROR, "sd = {}", fit.general_sd);
+    assert!(
+        fit.a_general[1] < 0.0,
+        "reverse-keyed general anchor keeps its sign"
+    );
+    assert!(
+        fit.a_general[6] < 0.0,
+        "reverse-keyed general anchor keeps its sign"
+    );
+    assert!(
+        fit.a_specific[6] < 0.0,
+        "reverse-keyed specific anchor keeps its sign"
+    );
+    assert!(
+        (fit.general_mean - FOCAL_MEAN).abs() < MAX_MU_ERROR,
+        "mean = {}",
+        fit.general_mean
+    );
+    assert!(
+        (fit.general_sd - FOCAL_SD).abs() < MAX_SD_ERROR,
+        "sd = {}",
+        fit.general_sd
+    );
 }
 
 #[test]
@@ -376,12 +485,30 @@ fn bifactor_fipc_specific_variances_where_identified() {
     // the FIPC M-step recovers it; specific 1 stays at 1.
     let y_ref = simulate(&TRUE_A_G, &TRUE_A_S, N_REF, 0.0, 1.0, &[1.0, 1.0], 707);
     let reference = fit_bifactor_grm(
-        &y_ref, None, &SPECIFIC_MAP, N_REF, N_ITEMS, N_SPECIFIC, N_CAT, &ref_config(),
+        &y_ref,
+        None,
+        &SPECIFIC_MAP,
+        N_REF,
+        N_ITEMS,
+        N_SPECIFIC,
+        N_CAT,
+        &ref_config(),
     )
     .expect("reference fit must succeed");
 
-    let y_foc = simulate(&TRUE_A_G, &TRUE_A_S, N_FOC, FOCAL_MEAN, FOCAL_SD, &[1.2, 1.0], 808);
-    let cfg = BifactorFipcConfig { estimate_specific_vars: true, ..fipc_config() };
+    let y_foc = simulate(
+        &TRUE_A_G,
+        &TRUE_A_S,
+        N_FOC,
+        FOCAL_MEAN,
+        FOCAL_SD,
+        &[1.2, 1.0],
+        808,
+    );
+    let cfg = BifactorFipcConfig {
+        estimate_specific_vars: true,
+        ..fipc_config()
+    };
     let fit = fit_bifactor_grm_fipc(
         &y_foc,
         None,
@@ -398,13 +525,29 @@ fn bifactor_fipc_specific_variances_where_identified() {
     )
     .expect("FIPC with specific-variance estimation must succeed");
     assert!(fit.converged);
-    assert!((fit.general_mean - FOCAL_MEAN).abs() < MAX_MU_ERROR, "mean = {}", fit.general_mean);
-    assert!((fit.general_sd - FOCAL_SD).abs() < MAX_SD_ERROR, "sd = {}", fit.general_sd);
+    assert!(
+        (fit.general_mean - FOCAL_MEAN).abs() < MAX_MU_ERROR,
+        "mean = {}",
+        fit.general_mean
+    );
+    assert!(
+        (fit.general_sd - FOCAL_SD).abs() < MAX_SD_ERROR,
+        "sd = {}",
+        fit.general_sd
+    );
     // Band from a measured 5-seed spread (same reference anchors):
     // specific-1 SDs 1.20/1.07/1.05/0.85/0.90 around truth 1.0, so 0.25
     // covers the spread with margin.
-    assert!((fit.specific_sd[0] - 1.2).abs() < 0.25, "specific-0 sd = {}", fit.specific_sd[0]);
-    assert!((fit.specific_sd[1] - 1.0).abs() < 0.25, "specific-1 sd = {}", fit.specific_sd[1]);
+    assert!(
+        (fit.specific_sd[0] - 1.2).abs() < 0.25,
+        "specific-0 sd = {}",
+        fit.specific_sd[0]
+    );
+    assert!(
+        (fit.specific_sd[1] - 1.0).abs() < 0.25,
+        "specific-1 sd = {}",
+        fit.specific_sd[1]
+    );
 }
 
 #[test]
@@ -425,11 +568,25 @@ fn bifactor_fipc_study_n1020() {
         N_ITEMS,
         N_SPECIFIC,
         N_CAT,
-        &BifactorGrmConfig { q_general: 121, q_specific: 121, tol: 1e-6, max_iter: 1000, ..ref_config() },
+        &BifactorGrmConfig {
+            q_general: 121,
+            q_specific: 121,
+            tol: 1e-6,
+            max_iter: 1000,
+            ..ref_config()
+        },
     )
     .expect("study reference fit must succeed");
     assert!(reference.converged);
-    let y_foc = simulate(&TRUE_A_G, &TRUE_A_S, n_foc, FOCAL_MEAN, FOCAL_SD, &[1.0, 1.0], 910);
+    let y_foc = simulate(
+        &TRUE_A_G,
+        &TRUE_A_S,
+        n_foc,
+        FOCAL_MEAN,
+        FOCAL_SD,
+        &[1.0, 1.0],
+        910,
+    );
     let fit = fit_bifactor_grm_fipc(
         &y_foc,
         None,
@@ -451,11 +608,29 @@ fn bifactor_fipc_study_n1020() {
         },
     )
     .expect("study FIPC fit must succeed");
-    assert!(fit.converged, "study fit must converge: {}", fit.termination_reason);
-    assert!((fit.general_mean - FOCAL_MEAN).abs() < 0.10, "mean = {}", fit.general_mean);
-    assert!((fit.general_sd - FOCAL_SD).abs() < 0.10, "sd = {}", fit.general_sd);
+    assert!(
+        fit.converged,
+        "study fit must converge: {}",
+        fit.termination_reason
+    );
+    assert!(
+        (fit.general_mean - FOCAL_MEAN).abs() < 0.10,
+        "mean = {}",
+        fit.general_mean
+    );
+    assert!(
+        (fit.general_sd - FOCAL_SD).abs() < 0.10,
+        "sd = {}",
+        fit.general_sd
+    );
     for i in N_ANCHOR..N_ITEMS {
-        assert!((fit.a_general[i] - TRUE_A_G[i]).abs() < 0.30, "free a_G {i}");
-        assert!((fit.a_specific[i] - TRUE_A_S[i]).abs() < 0.30, "free a_S {i}");
+        assert!(
+            (fit.a_general[i] - TRUE_A_G[i]).abs() < 0.30,
+            "free a_G {i}"
+        );
+        assert!(
+            (fit.a_specific[i] - TRUE_A_S[i]).abs() < 0.30,
+            "free a_S {i}"
+        );
     }
 }

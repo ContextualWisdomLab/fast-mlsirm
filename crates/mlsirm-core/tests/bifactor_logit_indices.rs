@@ -1,16 +1,15 @@
 //! Contract for converting fitted logistic bifactor slopes to latent-response indices.
 
 use mlsirm_core::bifactor_indices::{
-    bifactor_indices, bifactor_latent_response_indices_from_logit_slopes,
-    BifactorIndicesConfig,
+    bifactor_indices, bifactor_latent_response_indices_from_logit_slopes, BifactorIndicesConfig,
 };
 
 fn standardized_example() -> Vec<f64> {
     vec![
-        0.82, 0.10, 0.00, 0.00, 0.77, 0.35, 0.00, 0.00, 0.79, 0.32, 0.00, 0.00, 0.66,
-        0.39, 0.00, 0.00, 0.51, 0.00, 0.71, 0.00, 0.56, 0.00, 0.43, 0.00, 0.68, 0.00,
-        0.13, 0.00, 0.60, 0.00, 0.50, 0.00, 0.83, 0.00, 0.00, 0.47, 0.60, 0.00, 0.00,
-        0.27, 0.78, 0.00, 0.00, 0.28, 0.55, 0.00, 0.00, 0.75,
+        0.82, 0.10, 0.00, 0.00, 0.77, 0.35, 0.00, 0.00, 0.79, 0.32, 0.00, 0.00, 0.66, 0.39, 0.00,
+        0.00, 0.51, 0.00, 0.71, 0.00, 0.56, 0.00, 0.43, 0.00, 0.68, 0.00, 0.13, 0.00, 0.60, 0.00,
+        0.50, 0.00, 0.83, 0.00, 0.00, 0.47, 0.60, 0.00, 0.00, 0.27, 0.78, 0.00, 0.00, 0.28, 0.55,
+        0.00, 0.00, 0.75,
     ]
 }
 
@@ -54,8 +53,7 @@ fn logistic_slope_standardization_recovers_direct_latent_response_indices() {
     let config = BifactorIndicesConfig::new(12, 4, 0);
 
     let direct = bifactor_indices(&loadings, &uniqueness, config).unwrap();
-    let converted =
-        bifactor_latent_response_indices_from_logit_slopes(&slopes, config).unwrap();
+    let converted = bifactor_latent_response_indices_from_logit_slopes(&slopes, config).unwrap();
 
     assert_eq!(converted.factor_item_counts, direct.factor_item_counts);
     assert_eq!(converted.is_strict_bifactor, direct.is_strict_bifactor);
@@ -65,10 +63,7 @@ fn logistic_slope_standardization_recovers_direct_latent_response_indices() {
     assert_vec_close(&converted.ecv_gs, &direct.ecv_gs);
     assert_vec_close(&converted.item_ecv, &direct.item_ecv);
     assert_vec_close(&converted.omega_total, &direct.omega_total);
-    assert_vec_close(
-        &converted.omega_hierarchical,
-        &direct.omega_hierarchical,
-    );
+    assert_vec_close(&converted.omega_hierarchical, &direct.omega_hierarchical);
     assert_vec_close(
         &converted.construct_replicability,
         &direct.construct_replicability,
@@ -78,31 +73,21 @@ fn logistic_slope_standardization_recovers_direct_latent_response_indices() {
 #[test]
 fn logistic_conversion_rejects_malformed_or_nondegenerate_limits() {
     let config = BifactorIndicesConfig::new(2, 2, 0);
-    let error = bifactor_latent_response_indices_from_logit_slopes(
-        &[0.5, 0.2, 0.6],
-        config,
-    )
-    .unwrap_err();
+    let error =
+        bifactor_latent_response_indices_from_logit_slopes(&[0.5, 0.2, 0.6], config).unwrap_err();
     assert!(error.contains("logit slope matrix length"));
 
-    let error = bifactor_latent_response_indices_from_logit_slopes(
-        &[0.5, f64::NAN, 0.6, 0.2],
-        config,
-    )
-    .unwrap_err();
+    let error =
+        bifactor_latent_response_indices_from_logit_slopes(&[0.5, f64::NAN, 0.6, 0.2], config)
+            .unwrap_err();
     assert!(error.contains("finite"));
 
-    let error = bifactor_latent_response_indices_from_logit_slopes(
-        &[0.0, 0.0, 0.6, 0.2],
-        config,
-    )
-    .unwrap_err();
+    let error = bifactor_latent_response_indices_from_logit_slopes(&[0.0, 0.0, 0.6, 0.2], config)
+        .unwrap_err();
     assert!(error.contains("every item"));
 
-    let error = bifactor_latent_response_indices_from_logit_slopes(
-        &[f64::MAX, 0.0, 0.6, 0.2],
-        config,
-    )
-    .unwrap_err();
+    let error =
+        bifactor_latent_response_indices_from_logit_slopes(&[f64::MAX, 0.0, 0.6, 0.2], config)
+            .unwrap_err();
     assert!(error.contains("absolute value below 1"));
 }

@@ -59,8 +59,20 @@ fn fit(slopes: &[f64]) -> Vec<Vec<&'static str>> {
             n_categories: 2,
         })
         .collect();
-    let fit = fit_mixed_items(&y, None, N_PERSONS, slopes.len(), &specs, 1, 21, 3, 60, 1e-5, 1)
-        .expect("mixed fit on well-conditioned simulated data must succeed");
+    let fit = fit_mixed_items(
+        &y,
+        None,
+        N_PERSONS,
+        slopes.len(),
+        &specs,
+        1,
+        21,
+        3,
+        60,
+        1e-5,
+        1,
+    )
+    .expect("mixed fit on well-conditioned simulated data must succeed");
     fit.items.into_iter().map(|item| item.at_bound).collect()
 }
 
