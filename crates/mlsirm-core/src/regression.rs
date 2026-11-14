@@ -317,6 +317,24 @@ pub fn fit_ols_hc(
     Ok((fit, vcov))
 }
 
+/// Adjusted R² for an intercept-bearing OLS design with `k` total columns.
+///
+/// `1 - (SSE / SST) * (n - 1) / (n - k)` uses residual and total degrees of
+/// freedom from the same response (Pennsylvania State University, n.d.,
+/// *STAT 501: Regression methods*, Lesson 10, "The adjusted R²-value and MSE").
+/// Reference: Pennsylvania State University. (n.d.). *10 model building*.
+/// STAT 501: Regression methods. https://online.stat.psu.edu/stat501/Lesson10
+pub fn adjusted_r_squared(n: usize, k: usize, sse: f64, sst: f64) -> Result<f64, String> {
+    if k == 0 || n <= k || !sse.is_finite() || sse < 0.0 || !sst.is_finite() || sst <= 0.0 {
+        return Err("need n > k >= 1, finite SSE >= 0, and finite SST > 0".to_owned());
+    }
+    let value = 1.0 - (sse / sst) * ((n - 1) as f64 / (n - k) as f64);
+    if !value.is_finite() {
+        return Err("non-finite adjusted R squared".to_owned());
+    }
+    Ok(value)
+}
+
 /// Linear contrast under `vcov` with Wald χ²(1) and t/F tails at `df = n - k`.
 pub fn linear_contrast(
     beta: &[f64],

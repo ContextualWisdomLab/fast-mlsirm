@@ -320,3 +320,16 @@ def f_sf(f: float, df1: float, df2: float) -> float:
 def t_sf(t: float, df: float) -> float:
     """Upper-tail ``P(T_df >= t)`` computed in Rust."""
     return float(regression_core().t_sf(float(t), float(df)))
+
+
+def adjusted_r_squared(n: int, k: int, sse: float, sst: float) -> float:
+    """Adjusted R² for an intercept design; ``k`` includes the intercept.
+
+    Compute ``1 - (SSE/SST) * (n-1)/(n-k)`` with both sums of squares from
+    the same response (Pennsylvania State University, n.d., STAT 501,
+    Lesson 10, "The adjusted R²-value and MSE").
+
+    Reference: Pennsylvania State University. (n.d.). *10 model building*.
+    STAT 501: Regression methods. https://online.stat.psu.edu/stat501/Lesson10
+    """
+    return float(regression_core().adjusted_r_squared(n, k, sse, sst))

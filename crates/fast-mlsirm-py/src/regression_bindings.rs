@@ -4,8 +4,8 @@
 //! NumPy layout, delegates to the core, and marshals results into Python dicts.
 
 use mlsirm_core::regression::{
-    chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc, linear_contrast,
-    slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
+    adjusted_r_squared, chi2_sf_df1, conditional_slope, design_row_dot, f_sf, fit_ols_hc,
+    linear_contrast, slope_difference, t_sf, xwz_e_design_row, HcType, OlsFit, XWZ_E_K,
 };
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -170,6 +170,11 @@ fn py_t_sf(t: f64, df: f64) -> f64 {
     t_sf(t, df)
 }
 
+#[pyfunction(name = "adjusted_r_squared")]
+fn py_adjusted_r_squared(n: usize, k: usize, sse: f64, sst: f64) -> PyResult<f64> {
+    adjusted_r_squared(n, k, sse, sst).map_err(PyValueError::new_err)
+}
+
 #[pymodule]
 #[pyo3(name = "_regression_core")]
 fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -183,5 +188,6 @@ fn fast_mlsirm_regression_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_chi2_sf_df1, m)?)?;
     m.add_function(wrap_pyfunction!(py_f_sf, m)?)?;
     m.add_function(wrap_pyfunction!(py_t_sf, m)?)?;
+    m.add_function(wrap_pyfunction!(py_adjusted_r_squared, m)?)?;
     Ok(())
 }

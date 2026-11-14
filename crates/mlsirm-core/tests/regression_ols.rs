@@ -1,7 +1,8 @@
 //! Integration tests for OLS + HC sandwich (links the already-built library).
 
 use mlsirm_core::regression::{
-    chi2_sf_df1, f_sf, fit_ols, fit_ols_hc, linear_contrast, sandwich_vcov, t_sf, HcType,
+    adjusted_r_squared, chi2_sf_df1, f_sf, fit_ols, fit_ols_hc, linear_contrast, sandwich_vcov,
+    t_sf, HcType,
 };
 
 fn assert_close(a: f64, b: f64, tol: f64) {
@@ -92,4 +93,33 @@ fn linear_contrast_and_tails() {
     assert_close(chi2_sf_df1(3.841458820694124), 0.05, 1e-6);
     assert_close(f_sf(3.841458820694124, 1.0, 1.0e8), 0.05, 5e-4);
     assert_close(t_sf(1.6448536269514722, 1.0e8), 0.05, 5e-4);
+}
+
+#[test]
+fn adjusted_r_squared_uses_total_design_columns() {
+    assert_close(adjusted_r_squared(8, 3, 5.0, 20.0).unwrap(), 0.65, 1e-15);
+    assert!(adjusted_r_squared(8, 3, 30.0, 20.0).unwrap() < 0.0);
+    assert!(adjusted_r_squared(3, 3, 1.0, 2.0).is_err());
+    assert!(adjusted_r_squared(8, 3, -1.0, 2.0).is_err());
+    assert!(adjusted_r_squared(8, 3, 1.0, 0.0).is_err());
+}
+
+#[test]
+fn adjusted_r_squared_rejects_nonfinite_inputs_and_arithmetic_overflow() {
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(adjusted_r_squared(8, 3, invalid, 2.0).is_err());
+        assert!(adjusted_r_squared(8, 3, 1.0, invalid).is_err());
+    }
+    assert!(adjusted_r_squared(8, 0, 1.0, 2.0).is_err());
+    // Both inputs are valid finite sums, but their ratio overflows.
+    assert_eq!(
+        adjusted_r_squared(8, 3, f64::MAX, f64::MIN_POSITIVE).unwrap_err(),
+        "non-finite adjusted R squared"
+    );
+    // A finite ratio can also overflow after the degrees-of-freedom scaling.
+    assert_eq!(
+        adjusted_r_squared(8, 7, f64::MAX / 2.0, 1.0).unwrap_err(),
+        "non-finite adjusted R squared"
+    );
+    assert_eq!(adjusted_r_squared(8, 7, 0.0, 1.0).unwrap(), 1.0);
 }
