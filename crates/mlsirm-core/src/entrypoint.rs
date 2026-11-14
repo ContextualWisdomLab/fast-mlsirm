@@ -22,3 +22,5 @@ pub mod gpu_mstep;
 mod gpu_grm_estep;
 
 pub mod samefit_fifa;
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub mod two_tier_gpu_item;

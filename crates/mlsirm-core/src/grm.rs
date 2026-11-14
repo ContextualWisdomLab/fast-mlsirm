@@ -568,6 +568,10 @@ fn fit_grm_impl(
     let mut termination_reason = "max_iter_reached".to_string();
     let mut final_loglik_change = f64::NAN;
     let mut theta = vec![0.0f64; n_persons * n_dims];
+    // A bounded M-step may return Ok without stationarity. Only the latest
+    // sweep constrains EM stopping; an earlier limited sweep can recover.
+    #[allow(unused_mut)]
+    let mut last_m_step_limited = false;
 
     let mut log_node = vec![0.0f64; qn];
 
@@ -667,7 +671,7 @@ fn fit_grm_impl(
             let prev = previous.expect("change requires a previous log-likelihood");
             final_loglik_change = change;
             let stop_tol = cfg.tol * (1.0 + prev.abs());
-            if (device_e && final_loglik_change.abs() <= stop_tol)
+            if (device_e && !last_m_step_limited && final_loglik_change.abs() <= stop_tol)
                 || (!device_e && final_loglik_change <= stop_tol)
             {
                 converged = true;
@@ -679,6 +683,7 @@ fn fit_grm_impl(
             break;
         }
 
+        last_m_step_limited = false;
         for i in 0..n_items {
             #[cfg(all(feature = "gpu", not(coverage)))]
             if let Some(control) = gpu_control {
@@ -695,6 +700,7 @@ fn fit_grm_impl(
                     control,
                 )?;
                 params[i] = updated;
+                last_m_step_limited |= stages.iteration_limit_updates != 0;
                 gpu_receipt.add(&stages);
                 continue;
             }
