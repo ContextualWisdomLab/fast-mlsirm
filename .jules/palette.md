@@ -51,3 +51,6 @@
 ## 2026-08-11 - Do Not Use Opacity Dimming for Focus Isolation
 **Learning:** Adding hover-focus isolation to dense visualizations by dropping the opacity of non-hovered elements (e.g., `tbody:hover tr:not(:hover) { opacity: 0.5; }`) breaks project accessibility rules regarding peer contrast and causes CI tests (e.g., `test_hover_does_not_dim_unrelated_chart_or_table_content`) to fail. Tests that strictly enforce contrast constraints must not be modified just to pass CI.
 **Action:** Do not apply CSS hover-focus isolation patterns (e.g., dimming non-hovered rows via `opacity`) in dense data visualizations like bar charts or list grids.
+## 2025-05-18 - [Accessibility: Row headers in tables]
+**Learning:** Screen readers need explicit row headers to navigate data grids effectively. Some manual HTML table generation (like the essay report in `fast_mlsirm`) misses the `row_header_column` parameter for secondary tables, breaking keyboard/assistive navigation associations for those specific data regions.
+**Action:** Always check all invocations of custom `_table()` functions in HTML generation to ensure `row_header_column=0` (or appropriate) is passed to generate `<th scope="row">` elements for semantic data associations.
