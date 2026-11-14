@@ -2663,6 +2663,80 @@ fn two_tier_expected_raw<'py>(
     Ok(out.to_pyarray(py))
 }
 
+/// E[T|G=g], integrating independent W and specific factors on GPU.
+/// G EAP inputs produce a plug-in score, not a posterior expected total.
+/// Basis: Cai (2010, p.589, Eqs.11-12), doi:10.1007/s11336-010-9178-0;
+/// Cai (2015, pp.542-543, Eqs.14-17), doi:10.1007/s11336-014-9411-3.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn two_tier_expected_raw_g_only<'py>(
+    py: Python<'py>,
+    a_primary: PyReadonlyArray1<'_, f64>,
+    a_specific: PyReadonlyArray1<'_, f64>,
+    threshold: PyReadonlyArray1<'_, f64>,
+    general: PyReadonlyArray1<'_, f64>,
+    specific_map: PyReadonlyArray1<'_, i64>,
+    n_cat: usize,
+    n_specific: usize,
+    mean_w: f64,
+    sd_w: f64,
+    specific_sd: PyReadonlyArray1<'_, f64>,
+    primary_covariance: f64,
+    q_wording: usize,
+    q_specific: usize,
+    device: &str,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    if device != "gpu" {
+        return Err(PyValueError::new_err(
+            "G-only scoring requires explicit GPU; fallback forbidden",
+        ));
+    }
+    let specific_map = specific_map
+        .as_slice()?
+        .iter()
+        .map(|&v| i32::try_from(v))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| PyValueError::new_err("specific_map entries must fit in i32"))?;
+    let params = TwoTierItemParams {
+        a_primary: a_primary.as_slice()?.to_vec(),
+        a_specific: a_specific.as_slice()?.to_vec(),
+        thresholds: threshold.as_slice()?.to_vec(),
+        specific_map,
+        n_primary: 2,
+        n_specific,
+        n_cat,
+    };
+    #[cfg(coverage)]
+    return Err(PyValueError::new_err(
+        "G-only GPU scoring is unavailable in coverage builds",
+    ));
+    #[cfg(not(coverage))]
+    {
+        let out = mlsirm_core::two_tier_gpu_score::expected_raw_g_only(
+            &params,
+            general.as_slice()?,
+            mean_w,
+            sd_w,
+            specific_sd.as_slice()?,
+            primary_covariance,
+            q_wording,
+            q_specific,
+            mlsirm_core::Device::Gpu,
+        )
+        .map_err(PyValueError::new_err)?;
+        let result = pyo3::types::PyDict::new(py);
+        result.set_item("scores", out.scores.to_pyarray(py))?;
+        result.set_item("backend", out.backend)?;
+        result.set_item("device", out.device)?;
+        result.set_item("dispatches", out.dispatches)?;
+        result.set_item("cpu_numerical_fallbacks", out.cpu_numerical_fallbacks)?;
+        result.set_item("q_wording", out.q_wording)?;
+        result.set_item("q_specific", out.q_specific)?;
+        result.set_item("estimand", "E[T|G=g]")?;
+        Ok(result)
+    }
+}
+
 /// Mean, second moment and variance of the anchor-only expected raw total
 /// under an independent normal reference prior on the primaries (Phi = I),
 /// each specific factor N(0, 1)
@@ -11179,6 +11253,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_two_tier_grm_fipc, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_oakes_se, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_expected_raw, m)?)?;
+    m.add_function(wrap_pyfunction!(two_tier_expected_raw_g_only, m)?)?;
     m.add_function(wrap_pyfunction!(two_tier_grm_reference_score_moments, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;

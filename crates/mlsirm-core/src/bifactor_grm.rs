@@ -860,19 +860,21 @@ pub(crate) fn e_step(
                 continue;
             }
             for g in 0..qg {
-                // Sum of the OTHER blocks' log-integrals at g.
-                // Skip exactly-zero prior mass: `gen_log - log_wg` is NaN when
-                // both are -inf and would poison every item's expected counts.
-                let Some(mut others) = general_only_without_prior(gen_log[g], log_wg[g]) else {
+                // Keep the primary prior in the joint numerator, as in the
+                // two-tier reduction (Cai, 2010, pp. 607–609, Appendix A).
+                // Subtracting and then re-adding it changes rounding at P=1.
+                // Zero-mass nodes contribute zero without forming -inf - -inf.
+                if !log_wg[g].is_finite() {
                     continue;
-                };
+                }
+                let mut others = gen_log[g];
                 for s2 in 0..v.n_specific {
                     if s2 != s {
                         others += log_i[s2 * qg + g];
                     }
                 }
                 for h in 0..qs {
-                    let log_post = log_wg[g] + block_acc[(s * qg + g) * qs + h] + others - log_lp;
+                    let log_post = block_acc[(s * qg + g) * qs + h] + others - log_lp;
                     let post = log_post.exp();
                     if !post.is_finite() {
                         continue;
